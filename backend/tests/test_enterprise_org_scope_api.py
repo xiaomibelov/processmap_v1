@@ -46,8 +46,20 @@ class EnterpriseOrgScopeApiTest(unittest.TestCase):
         self.push_scope = push_storage_request_scope
         self.pop_scope = pop_storage_request_scope
 
-        self.admin_user = create_user("ent_admin@local", "adminpass", is_admin=True)
-        self.editor_user = create_user("ent_editor@local", "editorpass", is_admin=False)
+        self.admin_user = create_user(
+            "ent_admin@local",
+            "adminpass",
+            is_admin=True,
+            full_name="Enterprise Admin",
+            job_title="Owner",
+        )
+        self.editor_user = create_user(
+            "ent_editor@local",
+            "editorpass",
+            is_admin=False,
+            full_name="Enterprise Editor",
+            job_title="Process Editor",
+        )
         self.default_org_id = get_default_org_id()
         self.org_b = create_org_record("Second Org", created_by=str(self.admin_user.get("id") or ""))
 
@@ -170,9 +182,13 @@ class EnterpriseOrgScopeApiTest(unittest.TestCase):
         self.assertIsInstance(payload, dict)
         self.assertEqual(int(payload.get("count") or 0), 2)
         rows = payload.get("items") or []
-        emails = {str(item.get("email") or "") for item in rows}
-        self.assertIn("ent_admin@local", emails)
-        self.assertIn("ent_editor@local", emails)
+        by_email = {str(item.get("email") or ""): item for item in rows}
+        self.assertIn("ent_admin@local", by_email)
+        self.assertIn("ent_editor@local", by_email)
+        self.assertEqual(by_email["ent_admin@local"].get("full_name"), "Enterprise Admin")
+        self.assertEqual(by_email["ent_admin@local"].get("job_title"), "Owner")
+        self.assertEqual(by_email["ent_editor@local"].get("full_name"), "Enterprise Editor")
+        self.assertEqual(by_email["ent_editor@local"].get("job_title"), "Process Editor")
 
 
 if __name__ == "__main__":

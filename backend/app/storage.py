@@ -35,6 +35,7 @@ _SCHEMA_READY = False
 _SCHEMA_DB_FILE = ""
 _MIGRATION_MARK = "legacy_file_to_sqlite_v1"
 _ENTERPRISE_BOOTSTRAP_MARK = "enterprise_org_bootstrap_v1"
+_AUTH_USERS_BACKFILL_MARK = "auth_users_json_to_db_v1"
 _DEFAULT_ORG_ID = str(os.environ.get("FPC_DEFAULT_ORG_ID", "org_default") or "org_default").strip() or "org_default"
 _DEFAULT_ORG_NAME = str(os.environ.get("FPC_DEFAULT_ORG_NAME", "Default") or "Default").strip() or "Default"
 _DEFAULT_WORKSPACE_NAME = (
@@ -607,6 +608,27 @@ def _ensure_schema() -> None:
             )
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS users (
+                  id TEXT PRIMARY KEY,
+                  email TEXT NOT NULL UNIQUE,
+                  password_hash TEXT NOT NULL DEFAULT '',
+                  is_active INTEGER NOT NULL DEFAULT 1,
+                  is_admin INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  activation_pending INTEGER NOT NULL DEFAULT 0,
+                  activated_at INTEGER NOT NULL DEFAULT 0,
+                  activation_required INTEGER NOT NULL DEFAULT 0,
+                  activation_token_hash TEXT NOT NULL DEFAULT '',
+                  activation_expires_at INTEGER NOT NULL DEFAULT 0,
+                  full_name TEXT NOT NULL DEFAULT '',
+                  job_title TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS projects (
                   id TEXT PRIMARY KEY,
                   title TEXT NOT NULL,
@@ -1037,6 +1059,22 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_error_events_fingerprint ON error_events(fingerprint)")
             if not _column_exists(con, "projects", "org_id"):
                 con.execute("ALTER TABLE projects ADD COLUMN org_id TEXT NOT NULL DEFAULT 'org_default'")
+            if not _column_exists(con, "users", "updated_at"):
+                con.execute("ALTER TABLE users ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "users", "activation_pending"):
+                con.execute("ALTER TABLE users ADD COLUMN activation_pending INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "users", "activated_at"):
+                con.execute("ALTER TABLE users ADD COLUMN activated_at INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "users", "activation_required"):
+                con.execute("ALTER TABLE users ADD COLUMN activation_required INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "users", "activation_token_hash"):
+                con.execute("ALTER TABLE users ADD COLUMN activation_token_hash TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "users", "activation_expires_at"):
+                con.execute("ALTER TABLE users ADD COLUMN activation_expires_at INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "users", "full_name"):
+                con.execute("ALTER TABLE users ADD COLUMN full_name TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "users", "job_title"):
+                con.execute("ALTER TABLE users ADD COLUMN job_title TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "orgs", "git_mirror_enabled"):
                 con.execute("ALTER TABLE orgs ADD COLUMN git_mirror_enabled INTEGER NOT NULL DEFAULT 0")
             if not _column_exists(con, "orgs", "git_provider"):
@@ -1249,6 +1287,7 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE projects ADD COLUMN workspace_id TEXT NOT NULL DEFAULT ''")
             con.execute("CREATE INDEX IF NOT EXISTS idx_projects_org_workspace_folder ON projects(org_id, workspace_id, folder_id)")
             _maybe_migrate_legacy_files(con)
+            _ensure_auth_users_backfill(con)
             _ensure_enterprise_bootstrap(con)
             _ensure_org_workspaces_bootstrap(con)
             _ensure_workspace_folder_backfill(con)
@@ -1412,6 +1451,340 @@ def _read_auth_users_rows() -> List[Dict[str, Any]]:
     return out
 
 
+def _as_int_bool(value: Any, *, default: bool = False) -> int:
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"1", "true", "yes", "on"}:
+            return 1
+        if text in {"0", "false", "no", "off", ""}:
+            return 0
+    if value is None:
+        return 1 if default else 0
+    return 1 if bool(value) else 0
+
+
+def _auth_user_from_mapping(raw: Mapping[str, Any], *, now: Optional[int] = None) -> Dict[str, Any]:
+    ts = int(now or _now_ts())
+    created_at_raw = raw.get("created_at")
+    try:
+        created_at = int(created_at_raw or 0)
+    except Exception:
+        created_at = 0
+    if created_at <= 0:
+        created_at = ts
+    try:
+        updated_at = int(raw.get("updated_at") or 0)
+    except Exception:
+        updated_at = 0
+    try:
+        activated_at = int(raw.get("activated_at") or 0)
+    except Exception:
+        activated_at = 0
+    try:
+        activation_expires_at = int(raw.get("activation_expires_at") or 0)
+    except Exception:
+        activation_expires_at = 0
+    return {
+        "id": str(raw.get("id") or "").strip(),
+        "email": _normalize_email(raw.get("email")),
+        "password_hash": str(raw.get("password_hash") or ""),
+        "is_active": bool(_as_int_bool(raw.get("is_active"), default=True)),
+        "is_admin": bool(_as_int_bool(raw.get("is_admin"), default=False)),
+        "created_at": created_at,
+        "updated_at": updated_at,
+        "activation_pending": bool(_as_int_bool(raw.get("activation_pending"), default=False)),
+        "activated_at": activated_at,
+        "activation_required": bool(_as_int_bool(raw.get("activation_required"), default=False)),
+        "activation_token_hash": str(raw.get("activation_token_hash") or ""),
+        "activation_expires_at": activation_expires_at,
+        "full_name": str(raw.get("full_name") or "").strip(),
+        "job_title": str(raw.get("job_title") or "").strip(),
+    }
+
+
+def _auth_user_row_to_dict(row: Any) -> Dict[str, Any]:
+    return {
+        "id": str(_row_value(row, "id") or "").strip(),
+        "email": _normalize_email(_row_value(row, "email")),
+        "password_hash": str(_row_value(row, "password_hash") or ""),
+        "is_active": bool(int(_row_value(row, "is_active") or 0)),
+        "is_admin": bool(int(_row_value(row, "is_admin") or 0)),
+        "created_at": int(_row_value(row, "created_at") or 0),
+        "updated_at": int(_row_value(row, "updated_at") or 0),
+        "activation_pending": bool(int(_row_value(row, "activation_pending") or 0)),
+        "activated_at": int(_row_value(row, "activated_at") or 0),
+        "activation_required": bool(int(_row_value(row, "activation_required") or 0)),
+        "activation_token_hash": str(_row_value(row, "activation_token_hash") or ""),
+        "activation_expires_at": int(_row_value(row, "activation_expires_at") or 0),
+        "full_name": str(_row_value(row, "full_name") or "").strip(),
+        "job_title": str(_row_value(row, "job_title") or "").strip(),
+    }
+
+
+def _auth_user_insert_params(user: Mapping[str, Any]) -> List[Any]:
+    normalized = _auth_user_from_mapping(user)
+    return [
+        normalized["id"],
+        normalized["email"],
+        normalized["password_hash"],
+        _as_int_bool(normalized["is_active"], default=True),
+        _as_int_bool(normalized["is_admin"], default=False),
+        int(normalized["created_at"] or 0),
+        int(normalized["updated_at"] or 0),
+        _as_int_bool(normalized["activation_pending"], default=False),
+        int(normalized["activated_at"] or 0),
+        _as_int_bool(normalized["activation_required"], default=False),
+        str(normalized["activation_token_hash"] or ""),
+        int(normalized["activation_expires_at"] or 0),
+        str(normalized["full_name"] or ""),
+        str(normalized["job_title"] or ""),
+    ]
+
+
+def _insert_auth_user_ignore(con: Any, raw: Mapping[str, Any]) -> None:
+    user = _auth_user_from_mapping(raw)
+    if not user["id"] or not user["email"]:
+        return
+    con.execute(
+        """
+        INSERT OR IGNORE INTO users (
+          id, email, password_hash, is_active, is_admin, created_at, updated_at,
+          activation_pending, activated_at, activation_required, activation_token_hash,
+          activation_expires_at, full_name, job_title
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        _auth_user_insert_params(user),
+    )
+
+
+def _upsert_auth_user(con: Any, raw: Mapping[str, Any]) -> None:
+    user = _auth_user_from_mapping(raw)
+    if not user["id"] or not user["email"]:
+        return
+    con.execute(
+        """
+        INSERT INTO users (
+          id, email, password_hash, is_active, is_admin, created_at, updated_at,
+          activation_pending, activated_at, activation_required, activation_token_hash,
+          activation_expires_at, full_name, job_title
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          email = excluded.email,
+          password_hash = excluded.password_hash,
+          is_active = excluded.is_active,
+          is_admin = excluded.is_admin,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at,
+          activation_pending = excluded.activation_pending,
+          activated_at = excluded.activated_at,
+          activation_required = excluded.activation_required,
+          activation_token_hash = excluded.activation_token_hash,
+          activation_expires_at = excluded.activation_expires_at,
+          full_name = excluded.full_name,
+          job_title = excluded.job_title
+        """,
+        _auth_user_insert_params(user),
+    )
+
+
+def _ensure_auth_users_backfill(con: Any) -> None:
+    if _meta_get(con, _AUTH_USERS_BACKFILL_MARK) == "done":
+        return
+    rows = _read_auth_users_rows()
+    if not rows:
+        return
+    for row in rows:
+        _insert_auth_user_ignore(con, row)
+    _meta_set(con, _AUTH_USERS_BACKFILL_MARK, "done")
+
+
+def _get_auth_user_by_id_with_connection(con: Any, user_id: str) -> Optional[Dict[str, Any]]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        return None
+    row = con.execute(
+        """
+        SELECT id, email, password_hash, is_active, is_admin, created_at, updated_at,
+               activation_pending, activated_at, activation_required, activation_token_hash,
+               activation_expires_at, full_name, job_title
+          FROM users
+         WHERE id = ?
+         LIMIT 1
+        """,
+        [uid],
+    ).fetchone()
+    return _auth_user_row_to_dict(row) if row else None
+
+
+def _get_auth_user_by_email_with_connection(con: Any, email: str) -> Optional[Dict[str, Any]]:
+    em = _normalize_email(email)
+    if not em:
+        return None
+    row = con.execute(
+        """
+        SELECT id, email, password_hash, is_active, is_admin, created_at, updated_at,
+               activation_pending, activated_at, activation_required, activation_token_hash,
+               activation_expires_at, full_name, job_title
+          FROM users
+         WHERE email = ?
+         LIMIT 1
+        """,
+        [em],
+    ).fetchone()
+    return _auth_user_row_to_dict(row) if row else None
+
+
+def _merge_auth_user_profile_with_connection(
+    con: Any,
+    user_id: str,
+    *,
+    full_name: str = "",
+    job_title: str = "",
+) -> Optional[Dict[str, Any]]:
+    current = _get_auth_user_by_id_with_connection(con, user_id)
+    if not current:
+        return None
+    next_full_name = str(current.get("full_name") or "").strip()
+    next_job_title = str(current.get("job_title") or "").strip()
+    incoming_full_name = str(full_name or "").strip()
+    incoming_job_title = str(job_title or "").strip()
+    changed = False
+    if incoming_full_name and not next_full_name:
+        next_full_name = incoming_full_name
+        changed = True
+    if incoming_job_title and not next_job_title:
+        next_job_title = incoming_job_title
+        changed = True
+    if not changed:
+        return current
+    now = _now_ts()
+    con.execute(
+        """
+        UPDATE users
+           SET full_name = ?, job_title = ?, updated_at = ?
+         WHERE id = ?
+        """,
+        [next_full_name, next_job_title, now, str(current.get("id") or "")],
+    )
+    updated = dict(current)
+    updated["full_name"] = next_full_name
+    updated["job_title"] = next_job_title
+    updated["updated_at"] = now
+    return updated
+
+
+def list_auth_users() -> List[Dict[str, Any]]:
+    _ensure_schema()
+    with _connect() as con:
+        rows = con.execute(
+            """
+            SELECT id, email, password_hash, is_active, is_admin, created_at, updated_at,
+                   activation_pending, activated_at, activation_required, activation_token_hash,
+                   activation_expires_at, full_name, job_title
+              FROM users
+             ORDER BY email ASC, id ASC
+            """
+        ).fetchall()
+    return [_auth_user_row_to_dict(row) for row in rows]
+
+
+def save_auth_users(users: List[Dict[str, Any]]) -> None:
+    _ensure_schema()
+    with _connect() as con:
+        for row in list(users or []):
+            if isinstance(row, Mapping):
+                _upsert_auth_user(con, row)
+        con.commit()
+
+
+def get_auth_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    with _connect() as con:
+        return _get_auth_user_by_email_with_connection(con, email)
+
+
+def get_auth_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    with _connect() as con:
+        return _get_auth_user_by_id_with_connection(con, user_id)
+
+
+def create_auth_user(row: Dict[str, Any]) -> Dict[str, Any]:
+    user = _auth_user_from_mapping(row)
+    if not user["id"] or not user["email"]:
+        raise ValueError("id and email are required")
+    _ensure_schema()
+    with _connect() as con:
+        if _get_auth_user_by_email_with_connection(con, str(user.get("email") or "")):
+            raise ValueError("email_exists")
+        _upsert_auth_user(con, user)
+        con.commit()
+        created = _get_auth_user_by_id_with_connection(con, str(user.get("id") or ""))
+    if not created:
+        raise ValueError("user_create_failed")
+    return created
+
+
+def update_auth_user(user_id: str, **fields: Any) -> Dict[str, Any]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id_required")
+    _ensure_schema()
+    with _connect() as con:
+        current = _get_auth_user_by_id_with_connection(con, uid)
+        if not current:
+            raise ValueError("user_not_found")
+        updated = dict(current)
+        if "email" in fields and fields.get("email") is not None:
+            em = _normalize_email(fields.get("email"))
+            if not em:
+                raise ValueError("email_required")
+            duplicate = _get_auth_user_by_email_with_connection(con, em)
+            if duplicate and str(duplicate.get("id") or "") != uid:
+                raise ValueError("email_exists")
+            updated["email"] = em
+        for key in (
+            "password_hash",
+            "is_active",
+            "is_admin",
+            "activation_pending",
+            "activated_at",
+            "activation_required",
+            "activation_token_hash",
+            "activation_expires_at",
+            "full_name",
+            "job_title",
+        ):
+            if key in fields and fields.get(key) is not None:
+                value = fields.get(key)
+                if key in {"is_active", "is_admin", "activation_pending", "activation_required"}:
+                    updated[key] = bool(value)
+                elif key in {"activated_at", "activation_expires_at"}:
+                    updated[key] = int(value or 0)
+                else:
+                    updated[key] = str(value or "").strip() if key in {"full_name", "job_title"} else str(value or "")
+        updated["updated_at"] = _now_ts()
+        _upsert_auth_user(con, updated)
+        con.commit()
+        saved = _get_auth_user_by_id_with_connection(con, uid)
+    if not saved:
+        raise ValueError("user_update_failed")
+    return saved
+
+
+def merge_auth_user_profile(user_id: str, *, full_name: str = "", job_title: str = "") -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    with _connect() as con:
+        updated = _merge_auth_user_profile_with_connection(
+            con,
+            user_id,
+            full_name=full_name,
+            job_title=job_title,
+        )
+        con.commit()
+        return updated
+
+
 _BACKFILL_FOLDER_NAME = "Импортировано"
 _BACKFILL_META_KEY = "workspace_folder_backfill_v1"
 
@@ -1573,7 +1946,18 @@ def _ensure_enterprise_bootstrap(con: sqlite3.Connection) -> None:
     owner_ids = {str(_row_value(row, "user_id", 0) or "").strip() for row in owner_rows}
     owner_ids.discard("")
 
-    users = _read_auth_users_rows()
+    users = [
+        _auth_user_row_to_dict(row)
+        for row in con.execute(
+            """
+            SELECT id, email, password_hash, is_active, is_admin, created_at, updated_at,
+                   activation_pending, activated_at, activation_required, activation_token_hash,
+                   activation_expires_at, full_name, job_title
+              FROM users
+             ORDER BY email ASC, id ASC
+            """
+        ).fetchall()
+    ]
     for user in users:
         uid = str(user.get("id") or "").strip()
         if not uid:
@@ -4914,6 +5298,12 @@ def accept_org_invite(
             ON CONFLICT(org_id, user_id) DO UPDATE SET role = excluded.role
             """,
             [oid, actor, role, now],
+        )
+        _merge_auth_user_profile_with_connection(
+            con,
+            actor,
+            full_name=str(invite.get("full_name") or ""),
+            job_title=str(invite.get("job_title") or ""),
         )
         con.execute(
             """
