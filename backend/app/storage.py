@@ -520,6 +520,21 @@ def _note_comment_row_to_dict(row: Any) -> Dict[str, Any]:
     }
 
 
+def _note_mention_row_to_dict(row: Any) -> Dict[str, Any]:
+    return {
+        "id": str(_row_value(row, "id") or ""),
+        "org_id": str(_row_value(row, "org_id") or ""),
+        "session_id": str(_row_value(row, "session_id") or ""),
+        "thread_id": str(_row_value(row, "thread_id") or ""),
+        "comment_id": str(_row_value(row, "comment_id") or ""),
+        "mentioned_user_id": str(_row_value(row, "mentioned_user_id") or ""),
+        "mentioned_label": str(_row_value(row, "mentioned_label") or ""),
+        "created_by": str(_row_value(row, "created_by") or ""),
+        "created_at": int(_row_value(row, "created_at") or 0),
+        "acknowledged_at": int(_row_value(row, "acknowledged_at") or 0),
+    }
+
+
 def _project_workspace_id_for_session(con: Any, sess: Session, org_id: str) -> str:
     project_id = str(getattr(sess, "project_id", "") or "").strip()
     if not project_id:
@@ -731,6 +746,24 @@ def _ensure_schema() -> None:
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_comments_thread_created ON note_comments(thread_id, created_at ASC)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS note_comment_mentions (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL DEFAULT 'org_default',
+                  session_id TEXT NOT NULL DEFAULT '',
+                  thread_id TEXT NOT NULL,
+                  comment_id TEXT NOT NULL,
+                  mentioned_user_id TEXT NOT NULL,
+                  mentioned_label TEXT NOT NULL DEFAULT '',
+                  created_by TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  acknowledged_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_comment_mentions_user_active ON note_comment_mentions(org_id, mentioned_user_id, acknowledged_at, created_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_comment_mentions_comment ON note_comment_mentions(comment_id, org_id)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS note_thread_attention_acknowledgements (
@@ -1118,6 +1151,24 @@ def _ensure_schema() -> None:
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_comments_thread_created ON note_comments(thread_id, created_at ASC)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS note_comment_mentions (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL DEFAULT 'org_default',
+                  session_id TEXT NOT NULL DEFAULT '',
+                  thread_id TEXT NOT NULL,
+                  comment_id TEXT NOT NULL,
+                  mentioned_user_id TEXT NOT NULL,
+                  mentioned_label TEXT NOT NULL DEFAULT '',
+                  created_by TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  acknowledged_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_comment_mentions_user_active ON note_comment_mentions(org_id, mentioned_user_id, acknowledged_at, created_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_comment_mentions_comment ON note_comment_mentions(comment_id, org_id)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS note_thread_attention_acknowledgements (
@@ -5722,6 +5773,61 @@ def _attention_count_case(table_ref: str, viewer_user_id: Optional[str]) -> tupl
         [viewer],
     )
 
+
+def _normalize_mention_targets(mention_targets: Optional[Iterable[Mapping[str, Any]]]) -> List[Dict[str, str]]:
+    out: List[Dict[str, str]] = []
+    seen: set[str] = set()
+    for item in mention_targets or []:
+        if not isinstance(item, Mapping):
+            continue
+        user_id = str(item.get("user_id") or item.get("id") or "").strip()
+        if not user_id or user_id in seen:
+            continue
+        seen.add(user_id)
+        label = str(item.get("label") or item.get("email") or user_id).strip() or user_id
+        out.append({"user_id": user_id, "label": label})
+    return out
+
+
+def _insert_note_comment_mentions(
+    con: Any,
+    *,
+    org_id: str,
+    session_id: str,
+    thread_id: str,
+    comment_id: str,
+    actor_user_id: str,
+    created_at: int,
+    mention_targets: Optional[Iterable[Mapping[str, Any]]] = None,
+) -> None:
+    oid = str(org_id or "").strip() or _default_org_id()
+    sid = str(session_id or "").strip()
+    tid = str(thread_id or "").strip()
+    cid = str(comment_id or "").strip()
+    actor = str(actor_user_id or "").strip()
+    if not tid or not cid:
+        return
+    for target in _normalize_mention_targets(mention_targets):
+        con.execute(
+            """
+            INSERT INTO note_comment_mentions (
+              id, org_id, session_id, thread_id, comment_id, mentioned_user_id,
+              mentioned_label, created_by, created_at, acknowledged_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            """,
+            [
+                uuid.uuid4().hex[:12],
+                oid,
+                sid,
+                tid,
+                cid,
+                target["user_id"],
+                target["label"],
+                actor,
+                int(created_at or _now_ts()),
+            ],
+        )
+
 def create_note_thread(
     sess: Session,
     *,
@@ -5730,6 +5836,7 @@ def create_note_thread(
     body: Any,
     priority: Any = "normal",
     requires_attention: Any = False,
+    mention_targets: Optional[Iterable[Mapping[str, Any]]] = None,
     actor_user_id: str,
     org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -5780,6 +5887,16 @@ def create_note_thread(
             """,
             [comment_id, thread_id, actor, text, now, now],
         )
+        _insert_note_comment_mentions(
+            con,
+            org_id=oid,
+            session_id=sid,
+            thread_id=thread_id,
+            comment_id=comment_id,
+            actor_user_id=actor,
+            created_at=now,
+            mention_targets=mention_targets,
+        )
         con.commit()
     thread = get_note_thread(thread_id, org_id=oid, viewer_user_id=actor)
     if not thread:
@@ -5816,8 +5933,23 @@ def get_note_thread(
             "SELECT * FROM note_comments WHERE thread_id = ? ORDER BY created_at ASC, id ASC",
             [tid],
         ).fetchall()
+        comment_ids = [str(_row_value(row, "id") or "") for row in comment_rows]
+        mention_rows: Dict[str, List[Dict[str, Any]]] = {cid: [] for cid in comment_ids if cid}
+        if comment_ids:
+            placeholders = ", ".join(["?"] * len(comment_ids))
+            for row in con.execute(
+                f"SELECT * FROM note_comment_mentions WHERE comment_id IN ({placeholders}) ORDER BY created_at ASC, id ASC",
+                comment_ids,
+            ).fetchall():
+                mention = _note_mention_row_to_dict(row)
+                mention_rows.setdefault(str(mention.get("comment_id") or ""), []).append(mention)
     thread = _note_thread_row_to_dict(thread_row, attention_acknowledged_at=acknowledged_at)
-    thread["comments"] = [_note_comment_row_to_dict(row) for row in comment_rows]
+    comments = []
+    for row in comment_rows:
+        comment = _note_comment_row_to_dict(row)
+        comment["mentions"] = mention_rows.get(str(comment.get("id") or ""), [])
+        comments.append(comment)
+    thread["comments"] = comments
     return thread
 
 
@@ -5865,6 +5997,21 @@ def list_note_threads(
             ).fetchall():
                 comment = _note_comment_row_to_dict(row)
                 comment_rows.setdefault(str(comment.get("thread_id") or ""), []).append(comment)
+        comment_ids = [
+            str(comment.get("id") or "")
+            for comments in comment_rows.values()
+            for comment in comments
+            if str(comment.get("id") or "")
+        ]
+        mention_rows: Dict[str, List[Dict[str, Any]]] = {cid: [] for cid in comment_ids}
+        if comment_ids:
+            placeholders = ", ".join(["?"] * len(comment_ids))
+            for row in con.execute(
+                f"SELECT * FROM note_comment_mentions WHERE comment_id IN ({placeholders}) ORDER BY created_at ASC, id ASC",
+                comment_ids,
+            ).fetchall():
+                mention = _note_mention_row_to_dict(row)
+                mention_rows.setdefault(str(mention.get("comment_id") or ""), []).append(mention)
         viewer = str(viewer_user_id or "").strip()
         acknowledgement_rows: Dict[str, int] = {}
         if viewer and thread_ids:
@@ -5894,7 +6041,10 @@ def list_note_threads(
             scope_ref = thread.get("scope_ref") if isinstance(thread.get("scope_ref"), dict) else {}
             if str(scope_ref.get("element_id") or "").strip() != element_filter:
                 continue
-        thread["comments"] = comment_rows.get(str(thread.get("id") or ""), [])
+        comments = comment_rows.get(str(thread.get("id") or ""), [])
+        for comment in comments:
+            comment["mentions"] = mention_rows.get(str(comment.get("id") or ""), [])
+        thread["comments"] = comments
         out.append(thread)
     return out
 
@@ -5903,6 +6053,7 @@ def add_note_comment(
     thread_id: str,
     *,
     body: Any,
+    mention_targets: Optional[Iterable[Mapping[str, Any]]] = None,
     actor_user_id: str,
     org_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
@@ -5924,7 +6075,7 @@ def add_note_comment(
     comment_id = uuid.uuid4().hex[:12]
     with _connect() as con:
         thread_row = con.execute(
-            f"SELECT id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
+            f"SELECT id, session_id, org_id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
             params,
         ).fetchone()
         if not thread_row:
@@ -5935,6 +6086,16 @@ def add_note_comment(
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             [comment_id, tid, actor, text, now, now],
+        )
+        _insert_note_comment_mentions(
+            con,
+            org_id=str(_row_value(thread_row, "org_id") or oid or _default_org_id()),
+            session_id=str(_row_value(thread_row, "session_id") or ""),
+            thread_id=tid,
+            comment_id=comment_id,
+            actor_user_id=actor,
+            created_at=now,
+            mention_targets=mention_targets,
         )
         con.execute("UPDATE note_threads SET updated_at = ? WHERE id = ?", [now, tid])
         con.commit()
@@ -6061,6 +6222,89 @@ def acknowledge_note_thread_attention(
             )
         con.commit()
     return get_note_thread(tid, org_id=oid or None, viewer_user_id=actor)
+
+
+def list_active_note_mentions_for_user(
+    user_id: str,
+    *,
+    org_id: Optional[str] = None,
+    limit: int = 20,
+) -> List[Dict[str, Any]]:
+    _ensure_schema()
+    uid = str(user_id or "").strip()
+    if not uid:
+        return []
+    oid = str(org_id or "").strip()
+    filters = ["m.mentioned_user_id = ?", "m.acknowledged_at = 0"]
+    params: List[Any] = [uid]
+    if oid:
+        filters.append("m.org_id = ?")
+        params.append(oid)
+    lim = max(1, min(100, int(limit or 20)))
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT
+              m.*,
+              nt.project_id AS thread_project_id,
+              nt.status AS thread_status,
+              nt.scope_type AS thread_scope_type,
+              nt.scope_ref_json AS thread_scope_ref_json,
+              c.body AS comment_body
+            FROM note_comment_mentions m
+            JOIN note_threads nt ON nt.id = m.thread_id AND nt.org_id = m.org_id
+            JOIN note_comments c ON c.id = m.comment_id
+            WHERE {' AND '.join(filters)}
+            ORDER BY m.created_at DESC, m.id DESC
+            LIMIT ?
+            """,
+            [*params, lim],
+        ).fetchall()
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        item = _note_mention_row_to_dict(row)
+        item["project_id"] = str(_row_value(row, "thread_project_id") or "")
+        item["thread_status"] = str(_row_value(row, "thread_status") or "open")
+        item["thread_scope_type"] = str(_row_value(row, "thread_scope_type") or "")
+        item["thread_scope_ref"] = _json_loads(_row_value(row, "thread_scope_ref_json"), {})
+        item["comment_body"] = str(_row_value(row, "comment_body") or "")
+        out.append(item)
+    return out
+
+
+def acknowledge_note_mention(
+    mention_id: str,
+    *,
+    actor_user_id: str,
+    org_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    mid = str(mention_id or "").strip()
+    actor = str(actor_user_id or "").strip()
+    if not mid or not actor:
+        return None
+    oid = str(org_id or "").strip()
+    filters = ["id = ?", "mentioned_user_id = ?"]
+    params: List[Any] = [mid, actor]
+    if oid:
+        filters.append("org_id = ?")
+        params.append(oid)
+    now = _now_ts()
+    with _connect() as con:
+        row = con.execute(
+            f"SELECT * FROM note_comment_mentions WHERE {' AND '.join(filters)} LIMIT 1",
+            params,
+        ).fetchone()
+        if not row:
+            return None
+        if int(_row_value(row, "acknowledged_at", 0) or 0) <= 0:
+            con.execute(
+                "UPDATE note_comment_mentions SET acknowledged_at = ? WHERE id = ?",
+                [now, mid],
+            )
+            con.commit()
+        refreshed = con.execute("SELECT * FROM note_comment_mentions WHERE id = ? LIMIT 1", [mid]).fetchone()
+    return _note_mention_row_to_dict(refreshed) if refreshed else None
 
 
 def _notes_aggregate_payload(count: Any, attention_count: Any = 0) -> Dict[str, Any]:

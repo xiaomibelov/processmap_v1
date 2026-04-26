@@ -376,6 +376,15 @@ export async function apiListNoteThreads(sessionId, filters = {}) {
   };
 }
 
+export async function apiListMentionableUsers(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.mentionableUsers(sid)));
+  if (!r.ok) return r;
+  const items = Array.isArray(r.data?.items) ? r.data.items : [];
+  return { ok: true, status: r.status, items, users: items, count: Number(r.data?.count || items.length || 0) };
+}
+
 function normalizeNoteAggregate(data, fallback = {}) {
   const count = Math.max(0, Number(data?.open_notes_count || 0) || 0);
   const attentionCount = Math.max(0, Number(data?.attention_discussions_count || 0) || 0);
@@ -440,6 +449,20 @@ export async function apiPatchNoteThread(threadId, patch = {}) {
   const body = isPlainObject(patch) ? patch : {};
   const r = okOrError(await request(apiRoutes.noteThreads.item(tid), { method: "PATCH", body }));
   return r.ok ? { ok: true, status: r.status, thread: r.data?.thread || null } : r;
+}
+
+export async function apiListMyNoteMentions(limit = 20) {
+  const r = okOrError(await request(apiRoutes.noteMentions.list(limit)));
+  if (!r.ok) return r;
+  const items = Array.isArray(r.data?.items) ? r.data.items : [];
+  return { ok: true, status: r.status, items, mentions: items, count: Number(r.data?.count || items.length || 0) };
+}
+
+export async function apiAcknowledgeNoteMention(mentionId) {
+  const mid = String(mentionId || "").trim();
+  if (!mid) return { ok: false, status: 0, error: "missing mention_id" };
+  const r = okOrError(await request(apiRoutes.noteMentions.acknowledge(mid), { method: "POST", body: {} }));
+  return r.ok ? { ok: true, status: r.status, mention: r.data?.mention || null } : r;
 }
 
 export async function apiAcknowledgeNoteThreadAttention(threadId) {

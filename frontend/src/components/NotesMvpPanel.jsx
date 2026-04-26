@@ -4,6 +4,7 @@ import {
   apiAddNoteThreadComment,
   apiCreateNoteThread,
   apiGetSessionNoteAggregate,
+  apiListMentionableUsers,
   apiListNoteThreads,
   apiPatchNoteThread,
 } from "../lib/api";
@@ -235,6 +236,11 @@ function emitNotesAggregateChanged(sessionId) {
   }));
 }
 
+function emitNoteMentionsChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("processmap:note-mentions-changed"));
+}
+
 const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   sessionId,
   sessionTitle = "",
@@ -274,6 +280,9 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const [aggregate, setAggregate] = useState(null);
   const [aggregateRefreshTick, setAggregateRefreshTick] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [mentionableUsers, setMentionableUsers] = useState([]);
+  const [createMentionUserId, setCreateMentionUserId] = useState("");
+  const [commentMentionByThread, setCommentMentionByThread] = useState({});
   const panelRef = useRef(null);
 
   const createDraft = createDraftByScope[createScope] || "";
@@ -340,6 +349,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const selectedThreadIsLegacyBridge = isLegacyBridgeThread(selectedThread);
 
   const commentDraft = commentDraftByThread[text(selectedThread?.id)] || "";
+  const commentMentionUserId = commentMentionByThread[text(selectedThread?.id)] || "";
   const legacyDraft = legacyDraftByThread[text(selectedThread?.id)] || "";
   const openThreadsCount = Math.max(0, Number(aggregate?.open_notes_count || 0) || 0);
   const activeFilterCount = Number(statusFilter !== "open") + Number(scopeFilter !== "all") + Number(sortOrder !== "newest");
@@ -365,6 +375,17 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       setAggregate(result.aggregate || null);
     }
   }, [sid]);
+
+  const fetchMentionableUsers = useCallback(async () => {
+    if (!sid || !open) {
+      setMentionableUsers([]);
+      return;
+    }
+    const result = await apiListMentionableUsers(sid);
+    if (result?.ok) {
+      setMentionableUsers(asArray(result.items));
+    }
+  }, [open, sid]);
 
   const fetchThreads = useCallback(async (options = {}) => {
     if (!sid || !open) return;
@@ -405,6 +426,10 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   }, [fetchThreads]);
 
   useEffect(() => {
+    void fetchMentionableUsers();
+  }, [fetchMentionableUsers]);
+
+  useEffect(() => {
     void refreshAggregate();
   }, [aggregateRefreshTick, refreshAggregate]);
 
@@ -414,6 +439,9 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setError("");
     setAggregate(null);
     setCreateOpen(false);
+    setMentionableUsers([]);
+    setCreateMentionUserId("");
+    setCommentMentionByThread({});
   }, [sid]);
 
   const applyExternalOpenRequest = useCallback((requestLike) => {
@@ -427,7 +455,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     if (nextScopeFilter) {
       setScopeFilter(nextScopeFilter);
     }
-    setSelectedThreadId("");
+    setSelectedThreadId(text(request.threadId));
     return true;
   }, [sid]);
 
@@ -480,6 +508,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       scope_ref: buildScopeRef(scopeKey, selectedElement),
       priority: createPriority,
       requires_attention: createRequiresAttention,
+      mention_user_ids: createMentionUserId ? [createMentionUserId] : [],
       body,
     });
     if (!result.ok) {
@@ -491,11 +520,13 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setCreateDraftByScope((prev) => ({ ...prev, [scopeKey]: "" }));
     setCreatePriority("normal");
     setCreateRequiresAttention(false);
+    setCreateMentionUserId("");
     setCreateOpen(false);
     setSelectedThreadId(nextThreadId);
     await fetchThreads({ preferredThreadId: nextThreadId });
     setAggregateRefreshTick((value) => value + 1);
     emitNotesAggregateChanged(sid);
+    emitNoteMentionsChanged();
     setCreateDraftByScope((prev) => (prev[scopeKey] ? { ...prev, [scopeKey]: "" } : prev));
     setBusy("");
   }
@@ -506,17 +537,22 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     if (!threadId || !body || disabled || selectedThreadIsLegacyBridge) return;
     setBusy(`comment:${threadId}`);
     setError("");
-    const result = await apiAddNoteThreadComment(threadId, { body });
+    const result = await apiAddNoteThreadComment(threadId, {
+      body,
+      mention_user_ids: commentMentionUserId ? [commentMentionUserId] : [],
+    });
     if (!result.ok) {
       setError(errorText(result, "Не удалось отправить сообщение."));
       setBusy("");
       return;
     }
     setCommentDraftByThread((prev) => ({ ...prev, [threadId]: "" }));
+    setCommentMentionByThread((prev) => ({ ...prev, [threadId]: "" }));
     setSelectedThreadId(threadId);
     await fetchThreads({ preferredThreadId: threadId });
     setAggregateRefreshTick((value) => value + 1);
     emitNotesAggregateChanged(sid);
+    emitNoteMentionsChanged();
     setCommentDraftByThread((prev) => (prev[threadId] ? { ...prev, [threadId]: "" } : prev));
     setBusy("");
   }
@@ -749,6 +785,22 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         </label>
                       </div>
                       <label className="grid gap-2">
+                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Упомянуть пользователя</span>
+                        <select
+                          className="select h-10 min-h-0 w-full text-sm"
+                          value={createMentionUserId}
+                          onChange={(event) => setCreateMentionUserId(event.target.value)}
+                          data-testid="notes-create-mention-user"
+                        >
+                          <option value="">Без персонального упоминания</option>
+                          {mentionableUsers.map((item) => (
+                            <option key={text(item?.user_id)} value={text(item?.user_id)}>
+                              {text(item?.label || item?.email || item?.user_id)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="grid gap-2">
                         <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Суть вопроса</span>
                         <textarea
                           className="textarea min-h-[180px] w-full text-sm leading-relaxed"
@@ -887,6 +939,15 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                                     <span className="text-[11px] text-muted">{formatDate(comment?.updated_at || comment?.created_at) || "только что"}</span>
                                   </div>
                                   <div className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-fg">{text(comment?.body)}</div>
+                                  {asArray(comment?.mentions).length ? (
+                                    <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted" data-testid="notes-comment-mentions">
+                                      {asArray(comment.mentions).map((mention) => (
+                                        <span key={text(mention?.id) || text(mention?.mentioned_user_id)} className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 font-semibold text-sky-900">
+                                          @{text(mention?.mentioned_label || mention?.mentioned_user_id)}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : null}
                                 </div>
                               </div>
                             </article>
@@ -952,7 +1013,26 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         placeholder="Напишите сообщение..."
                         disabled={disabled}
                       />
-                      <div className="mt-3 flex items-center justify-end gap-3">
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                        <label className="flex min-w-[220px] flex-1 items-center gap-2 text-xs text-muted">
+                          <span className="shrink-0 font-semibold">Упомянуть</span>
+                          <select
+                            className="select h-8 min-h-0 w-full text-xs"
+                            value={commentMentionUserId}
+                            onChange={(event) => {
+                              const threadId = text(selectedThread?.id);
+                              setCommentMentionByThread((prev) => ({ ...prev, [threadId]: event.target.value }));
+                            }}
+                            data-testid="notes-reply-mention-user"
+                          >
+                            <option value="">Никого</option>
+                            {mentionableUsers.map((item) => (
+                              <option key={text(item?.user_id)} value={text(item?.user_id)}>
+                                {text(item?.label || item?.email || item?.user_id)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
                         <button type="button" className="primaryBtn smallBtn" onClick={addComment} disabled={busy.startsWith("comment:") || !text(commentDraft)}>
                           {busy.startsWith("comment:") ? "Отправляем..." : "Отправить"}
                         </button>
