@@ -126,13 +126,23 @@ class NotesMvp1ApiTest(unittest.TestCase):
         self.assertEqual(thread["scope_type"], "diagram_element")
         self.assertEqual(thread["scope_ref"], {"element_id": "Task_1"})
         self.assertEqual(thread["status"], "open")
+        self.assertEqual(thread["priority"], "normal")
+        self.assertFalse(thread["requires_attention"])
         self.assertEqual(len(thread["comments"]), 1)
 
-        self.create_session_note_thread(
+        high_priority = self.create_session_note_thread(
             self.session_id,
-            self.CreateNoteThreadBody(scope_type="diagram", scope_ref={}, body="Общая заметка по диаграмме"),
+            self.CreateNoteThreadBody(
+                scope_type="diagram",
+                scope_ref={},
+                body="Общая заметка по диаграмме",
+                priority="high",
+                requires_attention=True,
+            ),
             self._req(),
-        )
+        )["thread"]
+        self.assertEqual(high_priority["priority"], "high")
+        self.assertTrue(high_priority["requires_attention"])
 
         with_comment = self.add_note_thread_comment(
             thread["id"],
@@ -149,6 +159,14 @@ class NotesMvp1ApiTest(unittest.TestCase):
         self.assertEqual(resolved["status"], "resolved")
         self.assertEqual(resolved["resolved_by"], str(self.editor.get("id") or ""))
         self.assertGreater(int(resolved["resolved_at"] or 0), 0)
+
+        meta_updated = self.patch_note_thread(
+            thread["id"],
+            self.PatchNoteThreadBody(priority="low", requires_attention=True),
+            self._req(),
+        )["thread"]
+        self.assertEqual(meta_updated["priority"], "low")
+        self.assertTrue(meta_updated["requires_attention"])
 
         resolved_list = self.list_session_note_threads(self.session_id, self._req(), status="resolved")
         self.assertEqual(resolved_list["count"], 1)

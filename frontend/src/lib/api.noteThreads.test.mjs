@@ -46,6 +46,8 @@ test("note threads API helpers use MVP-1 endpoints and payload contract", async 
     const created = await apiCreateNoteThread("sess_1", {
       scope_type: "diagram_element",
       scope_ref: { element_id: "Task_1" },
+      priority: "high",
+      requires_attention: true,
       body: "Проверить шаг",
     });
     const commented = await apiAddNoteThreadComment("thread_1", { body: "Комментарий" });
@@ -62,7 +64,9 @@ test("note threads API helpers use MVP-1 endpoints and payload contract", async 
   assert.equal(calls[0].method, "GET");
   assert.match(calls[1].url, /\/api\/sessions\/sess_1\/note-threads$/);
   assert.equal(calls[1].method, "POST");
-  assert.deepEqual(Object.keys(calls[1].body).sort(), ["body", "scope_ref", "scope_type"]);
+  assert.deepEqual(Object.keys(calls[1].body).sort(), ["body", "priority", "requires_attention", "scope_ref", "scope_type"]);
+  assert.equal(calls[1].body.priority, "high");
+  assert.equal(calls[1].body.requires_attention, true);
   assert.match(calls[2].url, /\/api\/note-threads\/thread_1\/comments$/);
   assert.equal(calls[2].method, "POST");
   assert.match(calls[3].url, /\/api\/note-threads\/thread_1$/);
