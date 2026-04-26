@@ -35,6 +35,8 @@ import {
   apiDeleteProject,
   apiDeleteSession,
   apiGetLlmSettings,
+  apiAcknowledgeNoteMention,
+  apiListMyNoteMentions,
   apiPostLlmSettings,
   apiVerifyLlmSettings,
   apiRecompute,
@@ -845,6 +847,7 @@ export default function App() {
   const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
   const [notesPanelOpenRequest, setNotesPanelOpenRequest] = useState(null);
   const [notesDiscussionsOpen, setNotesDiscussionsOpen] = useState(false);
+  const [mentionNotifications, setMentionNotifications] = useState([]);
   const notesPanelRef = useRef(null);
   const [llmHasApiKey, setLlmHasApiKey] = useState(false);
   const [llmBaseUrl, setLlmBaseUrl] = useState("https://api.deepseek.com");
@@ -1796,6 +1799,53 @@ export default function App() {
     const openedFromRef = notesPanelRef.current?.openFromExternalRequest?.(request) === true;
     setNotesPanelOpenRequest(request);
     return openedFromRef;
+  }
+
+  const refreshMentionNotifications = useCallback(async () => {
+    if (!user?.id) {
+      setMentionNotifications([]);
+      return;
+    }
+    const result = await apiListMyNoteMentions(20);
+    if (result?.ok) {
+      setMentionNotifications(ensureArray(result.items));
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    void refreshMentionNotifications();
+  }, [activeOrgId, refreshMentionNotifications]);
+
+  useEffect(() => {
+    function handleMentionChanged() {
+      void refreshMentionNotifications();
+    }
+    window.addEventListener("processmap:note-mentions-changed", handleMentionChanged);
+    return () => window.removeEventListener("processmap:note-mentions-changed", handleMentionChanged);
+  }, [refreshMentionNotifications]);
+
+  async function openMentionNotification(item) {
+    const mention = ensureObject(item);
+    const mentionId = String(mention.id || "").trim();
+    const targetSessionId = String(mention.session_id || "").trim();
+    const targetThreadId = String(mention.thread_id || "").trim();
+    if (!mentionId || !targetSessionId || !targetThreadId) return;
+    const acknowledged = await apiAcknowledgeNoteMention(mentionId);
+    if (acknowledged?.ok) {
+      setMentionNotifications((prev) => ensureArray(prev).filter((row) => String(row?.id || "") !== mentionId));
+    }
+    const activeSid = String(draft?.session_id || "").trim();
+    if (targetSessionId && targetSessionId !== activeSid) {
+      const opened = await openSessionWithLeaveGuard(targetSessionId, { openTab: "diagram" });
+      if (!opened?.ok) return;
+    }
+    openNotesDiscussions({
+      source: "mention_notification",
+      scopeFilter: "all",
+      threadId: targetThreadId,
+      commentId: String(mention.comment_id || "").trim(),
+    });
+    window.dispatchEvent(new CustomEvent("processmap:note-mentions-changed"));
   }
 
   function focusDiscussionNotificationTarget(payload = {}) {
@@ -3274,6 +3324,7 @@ export default function App() {
           await refreshProjects();
           await refreshSessions(projectId);
           await refreshLlmSettings();
+          await refreshMentionNotifications();
         }}
         onNewProject={() => setWizardOpen(true)}
         onNewBackendSession={() => setSessionFlowOpen(true)}
@@ -3303,6 +3354,9 @@ export default function App() {
         sessionNavNotice={sessionNavNotice}
         onDismissSessionNavNotice={() => setSessionNavNotice(null)}
         onReturnToSessionList={() => returnToSessionList("banner_action")}
+        mentionNotifications={mentionNotifications}
+        onOpenMentionNotification={openMentionNotification}
+        onRefreshMentionNotifications={refreshMentionNotifications}
       />
 
       <NotesMvpPanel

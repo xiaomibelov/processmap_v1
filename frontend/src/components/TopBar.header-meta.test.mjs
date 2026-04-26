@@ -12,4 +12,8 @@ test("TopBar header meta keeps only project/session/org labels without created-b
   assert.equal(source.includes("Created by"), false);
   assert.equal(source.includes("Updated by"), false);
   assert.equal(source.includes("justify-end"), true);
+  assert.match(source, /data-testid="topbar-mentions-button"/);
+  assert.match(source, /data-testid="topbar-mentions-menu"/);
+  assert.match(source, /data-testid="topbar-mention-item"/);
+  assert.match(source, /onOpenMentionNotification/);
 });

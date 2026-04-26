@@ -9,6 +9,8 @@ const appSource = fs.readFileSync(new URL("../App.jsx", import.meta.url), "utf8"
 test("TopBar exposes bounded discussion notification entry from existing note aggregate truth", () => {
   assert.match(topBarSource, /apiGetSessionNoteAggregate/);
   assert.match(topBarSource, /processmap:notes-aggregate-changed/);
+  assert.match(topBarSource, /data-testid="topbar-mentions-button"/);
+  assert.match(topBarSource, /data-testid="topbar-mentions-menu"/);
   assert.match(topBarSource, /data-testid="topbar-discussion-notifications"/);
   assert.match(topBarSource, /data-notes-panel-trigger="true"/);
   assert.match(topBarSource, /onOpenDiscussionNotifications\?\.\(\)/);

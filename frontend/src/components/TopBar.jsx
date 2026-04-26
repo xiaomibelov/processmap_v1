@@ -53,6 +53,12 @@ function userTitleFrom(user) {
   return String(user?.name || user?.email || user?.id || "").trim() || "Пользователь";
 }
 
+function mentionPreview(item) {
+  const body = toText(item?.comment_body);
+  if (!body) return "Упоминание в обсуждении";
+  return shortLabel(body.replace(/\s+/g, " "), 72);
+}
+
 function UserAvatarIcon({ className = "" }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
@@ -97,6 +103,9 @@ export default function TopBar({
   onVerifyLlmSettings,
   onOpenDiscussionNotifications,
   draft,
+  mentionNotifications = [],
+  onOpenMentionNotification,
+  onRefreshMentionNotifications,
 }) {
   const { logout, user } = useAuth();
   const orgList = useMemo(() => asArray(orgs), [orgs]);
@@ -112,6 +121,7 @@ export default function TopBar({
   const [uiTheme, setUiTheme] = useState("dark");
   const [aiToolsOpen, setAiToolsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [mentionMenuOpen, setMentionMenuOpen] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
@@ -119,6 +129,8 @@ export default function TopBar({
   const [notesAggregateTick, setNotesAggregateTick] = useState(0);
   const accountMenuRef = useRef(null);
   const accountButtonRef = useRef(null);
+  const mentionMenuRef = useRef(null);
+  const mentionButtonRef = useRef(null);
   const projectMenuRef = useRef(null);
   const projectMenuButtonRef = useRef(null);
   const sessionMenuRef = useRef(null);
@@ -156,6 +168,27 @@ export default function TopBar({
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [accountMenuOpen]);
+
+  useEffect(() => {
+    if (!mentionMenuOpen) return undefined;
+    function onPointerDown(event) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      const menu = mentionMenuRef.current;
+      const button = mentionButtonRef.current;
+      if (menu?.contains(target) || button?.contains(target)) return;
+      setMentionMenuOpen(false);
+    }
+    function onKeyDown(event) {
+      if (event.key === "Escape") setMentionMenuOpen(false);
+    }
+    window.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [mentionMenuOpen]);
 
   useEffect(() => {
     if (!projectMenuOpen) return undefined;
@@ -316,6 +349,8 @@ export default function TopBar({
   const hasMultiOrg = orgList.length > 1;
   const sessionStatusMeta = getManualSessionStatusMeta(sessionStatus);
   const canOpenOrgSettings = Boolean(user?.is_admin) || ["org_owner", "org_admin", "auditor"].includes(activeOrgRole);
+  const mentionItems = asArray(mentionNotifications);
+  const mentionCount = mentionItems.length;
 
   async function handleLogout() {
     if (typeof window !== "undefined") {
@@ -559,26 +594,6 @@ export default function TopBar({
               Админ-панель
             </button>
           ) : null}
-          {hasActiveSession ? (
-            <button
-              type="button"
-              className="secondaryBtn relative h-9 min-h-0 whitespace-nowrap px-2.5 py-0 text-sm font-semibold"
-              onClick={() => onOpenDiscussionNotifications?.()}
-              title="Discussion notifications"
-              data-testid="topbar-discussion-notifications"
-              data-notes-panel-trigger="true"
-            >
-              @
-              <NotesAggregateBadge
-                aggregate={notesAggregate}
-                count={notesAggregate?.attention_discussions_count}
-                compact
-                compactNumericOnly
-                label="Обсуждения"
-                className="ml-1 border-border bg-white/85 px-1.5 py-0 text-[10px]"
-              />
-            </button>
-          ) : null}
           <button
             type="button"
             className={`inline-flex h-9 min-h-0 items-center rounded-full border px-2.5 py-0 text-sm font-semibold ${aiButtonClass}`}
@@ -594,7 +609,96 @@ export default function TopBar({
           </button>
         </div>
 
-        <div className="topGroup relative flex shrink-0 items-center">
+        <div className="topGroup relative flex shrink-0 items-center gap-2">
+          <div className="relative">
+            <button
+              type="button"
+              ref={mentionButtonRef}
+              className={`inline-flex h-9 min-w-9 items-center justify-center gap-1 rounded-full border px-2 text-sm font-black ${mentionCount > 0 ? "border-rose-300 bg-rose-50 text-rose-900" : "border-border bg-panel2/70 text-muted"}`}
+              onClick={() => {
+                setMentionMenuOpen((prev) => !prev);
+                if (typeof onRefreshMentionNotifications === "function") void onRefreshMentionNotifications();
+              }}
+              title={mentionCount > 0 ? `Новых упоминаний: ${mentionCount}` : "Упоминаний нет"}
+              aria-label={mentionCount > 0 ? `Упоминания: ${mentionCount}` : "Упоминания"}
+              aria-expanded={mentionMenuOpen ? "true" : "false"}
+              data-testid="topbar-mentions-button"
+            >
+              <span aria-hidden="true">@</span>
+              {mentionCount > 0 ? <span className="tabular-nums text-[11px]">{mentionCount}</span> : null}
+            </button>
+
+            {mentionMenuOpen ? (
+              <div
+                ref={mentionMenuRef}
+                className="absolute right-0 top-[calc(100%+8px)] z-[140] grid w-[min(360px,calc(100vw-1rem))] gap-1 rounded-xl border border-border bg-panel p-2 shadow-panel backdrop-blur"
+                data-testid="topbar-mentions-menu"
+              >
+                <div className="flex items-center justify-between gap-2 px-2 py-1">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Упоминания</div>
+                    <div className="text-xs text-muted">{mentionCount > 0 ? "Нажмите, чтобы открыть обсуждение" : "Активных упоминаний нет"}</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondaryBtn tinyBtn h-7 px-2 text-[10px]"
+                    onClick={() => {
+                      if (typeof onRefreshMentionNotifications === "function") void onRefreshMentionNotifications();
+                    }}
+                    data-testid="topbar-mentions-refresh"
+                  >
+                    ↻
+                  </button>
+                </div>
+                {mentionCount > 0 ? mentionItems.slice(0, 8).map((item) => (
+                  <button
+                    key={toText(item?.id)}
+                    type="button"
+                    className="rounded-lg border border-border/70 bg-panel2/50 px-3 py-2 text-left transition hover:border-sky-300 hover:bg-white"
+                    onClick={() => {
+                      setMentionMenuOpen(false);
+                      if (typeof onOpenMentionNotification === "function") onOpenMentionNotification(item);
+                    }}
+                    data-testid="topbar-mention-item"
+                  >
+                    <div className="flex items-center gap-2 text-[11px] font-semibold text-rose-900">
+                      <span className="rounded-full border border-rose-300 bg-rose-50 px-1.5 py-0.5">@</span>
+                      <span>{toText(item?.mentioned_label || item?.mentioned_user_id) || "Вы"}</span>
+                    </div>
+                    <div className="mt-1 text-sm font-semibold leading-snug text-fg">{mentionPreview(item)}</div>
+                    <div className="mt-1 text-[11px] text-muted">Открыть обсуждение</div>
+                  </button>
+                )) : (
+                  <div className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted">
+                    Здесь появятся персональные упоминания из обсуждений.
+                  </div>
+                )}
+                {hasActiveSession ? (
+                  <button
+                    type="button"
+                    className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
+                    onClick={() => {
+                      setMentionMenuOpen(false);
+                      onOpenDiscussionNotifications?.();
+                    }}
+                    data-testid="topbar-discussion-notifications"
+                    data-notes-panel-trigger="true"
+                  >
+                    Inbox/history
+                    <NotesAggregateBadge
+                      aggregate={notesAggregate}
+                      count={notesAggregate?.attention_discussions_count}
+                      compact
+                      compactNumericOnly
+                      label="Обсуждения"
+                      className="ml-auto border-border bg-white/85 px-1.5 py-0 text-[10px]"
+                    />
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
           <button
             type="button"
             ref={accountButtonRef}
