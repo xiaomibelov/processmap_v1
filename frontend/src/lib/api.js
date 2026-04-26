@@ -388,6 +388,7 @@ export async function apiListMentionableUsers(sessionId) {
 function normalizeNoteAggregate(data, fallback = {}) {
   const count = Math.max(0, Number(data?.open_notes_count || 0) || 0);
   const attentionCount = Math.max(0, Number(data?.attention_discussions_count || 0) || 0);
+  const personalCount = Math.max(0, Number(data?.personal_discussions_count || 0) || 0);
   return {
     ...fallback,
     ...(isPlainObject(data) ? data : {}),
@@ -395,6 +396,8 @@ function normalizeNoteAggregate(data, fallback = {}) {
     has_open_notes: Boolean(data?.has_open_notes || count > 0),
     attention_discussions_count: attentionCount,
     has_attention_discussions: Boolean(data?.has_attention_discussions || attentionCount > 0),
+    personal_discussions_count: personalCount,
+    has_personal_discussions: Boolean(data?.has_personal_discussions || personalCount > 0),
   };
 }
 

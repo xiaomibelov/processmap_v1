@@ -1,8 +1,15 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.6",
+  currentVersion: "v1.0.7",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.7",
+      changes: [
+        "Персональный сигнал обсуждений больше не загорается от чужих новых тем.",
+        "Бейдж сессии показывает открытые обсуждения без старого текста про заметки.",
+      ],
+    },
     {
       version: "v1.0.6",
       changes: [

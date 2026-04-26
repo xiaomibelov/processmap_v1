@@ -9,7 +9,7 @@
  *   • Inline tree is folder/project only (sessions stay on project page)
  *   • Folder DoD uses rollup_dod_percent (null => "—")
  *   • Project DoD uses project.dod_percent
- *   • Session shows: name, stage, owner, dod_percent, attention_count, reports_count, status
+ *   • Session shows: name, stage, owner, dod_percent, attention_count, reports_count, status, open discussions badge
  *   • Session cannot be in folder directly — always inside project
  */
 
@@ -1320,7 +1320,7 @@ function SessionRow({
           </td>
         ) : null}
         {showSignalColumns ? (
-          <td className="px-2 py-2.5 text-center" title="Заметки и отчёты">
+          <td className="px-2 py-2.5 text-center" title="Отчёты">
             <MetricCell value={session.reports_count} />
           </td>
         ) : null}
@@ -1603,7 +1603,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                   </th>
                 ) : null}
                 {sessionColumnProfile.showSignalColumns ? (
-                  <th className="px-2 py-2 text-center" title="Заметки и отчёты" aria-label="Колонка заметок и отчётов">
+                  <th className="px-2 py-2 text-center" title="Отчёты" aria-label="Колонка отчётов">
                     <span aria-hidden>📋</span>
                   </th>
                 ) : null}
