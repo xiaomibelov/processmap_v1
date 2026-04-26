@@ -21,6 +21,8 @@ class CreateNoteThreadBody(BaseModel):
     scope_type: str
     scope_ref: Dict[str, Any] = Field(default_factory=dict)
     body: str
+    priority: str = "normal"
+    requires_attention: bool = False
 
 
 class AddNoteCommentBody(BaseModel):
@@ -28,7 +30,9 @@ class AddNoteCommentBody(BaseModel):
 
 
 class PatchNoteThreadBody(BaseModel):
-    status: str
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    requires_attention: Optional[bool] = None
 
 
 def _load_project_for_notes(request: Request, project_id: str) -> tuple[Any, str, str]:
@@ -141,6 +145,8 @@ def create_session_note_thread(session_id: str, body: CreateNoteThreadBody, requ
             scope_type=body.scope_type,
             scope_ref=body.scope_ref,
             body=body.body,
+            priority=body.priority,
+            requires_attention=body.requires_attention,
             actor_user_id=user_id,
             org_id=org_id,
         )
@@ -186,8 +192,15 @@ def add_note_thread_comment(thread_id: str, body: AddNoteCommentBody, request: R
 @router.patch("/api/note-threads/{thread_id}")
 def patch_note_thread(thread_id: str, body: PatchNoteThreadBody, request: Request) -> Dict[str, Any]:
     _thread, _sess, org_id, user_id = _load_thread_session_for_notes(request, thread_id, write=True)
+    fields_set = getattr(body, "model_fields_set", None)
+    if fields_set is None:
+        fields_set = getattr(body, "__fields_set__", set())
+    patch: Dict[str, Any] = {}
+    for key in ("status", "priority", "requires_attention"):
+        if key in fields_set:
+            patch[key] = getattr(body, key)
     try:
-        thread = storage.patch_note_thread_status(thread_id, status=body.status, actor_user_id=user_id, org_id=org_id)
+        thread = storage.patch_note_thread(thread_id, actor_user_id=user_id, org_id=org_id, **patch)
     except ValueError as exc:
         raise _validation_error(exc) from exc
     if not thread:

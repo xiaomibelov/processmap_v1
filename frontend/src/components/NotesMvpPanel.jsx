@@ -35,6 +35,12 @@ const SORT_OPTIONS = [
   { value: "oldest", label: "Сначала старые" },
 ];
 
+const PRIORITY_OPTIONS = [
+  { value: "low", label: "Низкий", shortLabel: "Низкий", tone: "border-slate-300 bg-slate-50 text-slate-700" },
+  { value: "normal", label: "Обычный", shortLabel: "Обычный", tone: "border-border bg-bg/70 text-muted" },
+  { value: "high", label: "Высокий", shortLabel: "Высокий", tone: "border-orange-300 bg-orange-50 text-orange-900" },
+];
+
 function text(value) {
   return String(value || "").trim();
 }
@@ -109,6 +115,33 @@ function threadStatusTone(thread) {
   return isLegacyBridgeThread(thread)
     ? "border-amber-300 bg-amber-50 text-amber-900"
     : statusTone(thread?.status);
+}
+
+function threadPriority(thread) {
+  const value = text(thread?.priority).toLowerCase();
+  return PRIORITY_OPTIONS.some((item) => item.value === value) ? value : "normal";
+}
+
+function priorityMeta(thread) {
+  return PRIORITY_OPTIONS.find((item) => item.value === threadPriority(thread)) || PRIORITY_OPTIONS[1];
+}
+
+function requiresAttention(thread) {
+  return thread?.requires_attention === true || thread?.requires_attention === 1 || thread?.requires_attention === "1";
+}
+
+function attentionMeta(thread) {
+  return requiresAttention(thread)
+    ? {
+        label: "Требует внимания",
+        shortLabel: "Внимание",
+        tone: "border-rose-300 bg-rose-50 text-rose-900",
+      }
+    : {
+        label: "Без срочного внимания",
+        shortLabel: "Спокойно",
+        tone: "border-border bg-bg/70 text-muted",
+      };
 }
 
 function firstComment(thread) {
@@ -216,6 +249,8 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [createScope, setCreateScope] = useState("session");
+  const [createPriority, setCreatePriority] = useState("normal");
+  const [createRequiresAttention, setCreateRequiresAttention] = useState(false);
   const [createDraftByScope, setCreateDraftByScope] = useState({
     diagram_element: "",
     diagram: "",
@@ -430,6 +465,8 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     const result = await apiCreateNoteThread(sid, {
       scope_type: scopeKey,
       scope_ref: buildScopeRef(scopeKey, selectedElement),
+      priority: createPriority,
+      requires_attention: createRequiresAttention,
       body,
     });
     if (!result.ok) {
@@ -439,6 +476,8 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     }
     const nextThreadId = text(result.thread?.id);
     setCreateDraftByScope((prev) => ({ ...prev, [scopeKey]: "" }));
+    setCreatePriority("normal");
+    setCreateRequiresAttention(false);
     setCreateOpen(false);
     setSelectedThreadId(nextThreadId);
     await fetchThreads({ preferredThreadId: nextThreadId });
@@ -521,6 +560,24 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     const result = await apiPatchNoteThread(threadId, { status: nextStatus });
     if (!result.ok) {
       setError(errorText(result, "Не удалось обновить статус обсуждения."));
+      setBusy("");
+      return;
+    }
+    setSelectedThreadId(threadId);
+    await fetchThreads({ preferredThreadId: threadId });
+    setAggregateRefreshTick((value) => value + 1);
+    emitNotesAggregateChanged(sid);
+    setBusy("");
+  }
+
+  async function patchThreadMeta(patch) {
+    const threadId = text(selectedThread?.id);
+    if (!threadId || disabled || selectedThreadIsLegacyBridge) return;
+    setBusy(`meta:${threadId}`);
+    setError("");
+    const result = await apiPatchNoteThread(threadId, patch);
+    if (!result.ok) {
+      setError(errorText(result, "Не удалось обновить свойства обсуждения."));
       setBusy("");
       return;
     }
@@ -636,6 +693,30 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                       <div className="rounded-2xl border border-border bg-bg/40 px-4 py-3 text-sm leading-relaxed text-muted">
                         {(createScopeOptions.find((item) => item.value === createScope) || {}).helper || "Выберите контекст обсуждения"}
                       </div>
+                      <div className="grid gap-3 rounded-2xl border border-border bg-bg/30 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                        <label className="grid gap-2">
+                          <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Приоритет</span>
+                          <select
+                            className="select h-10 min-h-0 w-full text-sm"
+                            value={createPriority}
+                            onChange={(event) => setCreatePriority(event.target.value)}
+                            data-testid="notes-create-priority"
+                          >
+                            {PRIORITY_OPTIONS.map((item) => (
+                              <option key={item.value} value={item.value}>{item.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="flex min-h-10 items-center gap-2 rounded-xl border border-border bg-panel px-3 text-sm text-fg">
+                          <input
+                            type="checkbox"
+                            checked={createRequiresAttention}
+                            onChange={(event) => setCreateRequiresAttention(event.target.checked)}
+                            data-testid="notes-create-attention"
+                          />
+                          <span>Требует внимания</span>
+                        </label>
+                      </div>
                       <label className="grid gap-2">
                         <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Суть вопроса</span>
                         <textarea
@@ -672,12 +753,18 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
               ) : selectedThread ? (
                 <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr_auto] overflow-hidden">
                   <div className="border-b border-border bg-panel/95 px-4 py-3 sm:px-5 sm:py-3.5">
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
-                        <div className="text-[15px] font-semibold leading-6 text-fg">{threadTitle(selectedThread)}</div>
-                        <div data-testid="notes-thread-header-meta" className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
-                          <span className="font-medium text-fg/80">{threadStatusLabel(selectedThread)}</span>
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+                          <span className="font-medium text-fg/75">Обсуждение</span>
                           <span aria-hidden="true">·</span>
+                          <span>{scopeMeta(selectedThread).short}</span>
+                        </div>
+                        <div className="mt-1 text-[15px] font-semibold leading-6 text-fg">{threadTitle(selectedThread)}</div>
+                        <div data-testid="notes-thread-header-meta" className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${threadStatusTone(selectedThread)}`}>{threadStatusLabel(selectedThread)}</span>
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${priorityMeta(selectedThread).tone}`}>{priorityMeta(selectedThread).shortLabel}</span>
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${attentionMeta(selectedThread).tone}`}>{attentionMeta(selectedThread).shortLabel}</span>
                           <span>{scopeMeta(selectedThread).relation}</span>
                           <span aria-hidden="true">·</span>
                           <span>{asArray(selectedThread.comments).length} сообщ.</span>
@@ -690,14 +777,39 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                           </div>
                         ) : null}
                       </div>
-                      {!selectedThreadIsLegacyBridge && text(selectedThread.status) === "resolved" ? (
-                        <button type="button" className="secondaryBtn tinyBtn h-8 px-3 text-xs" onClick={() => patchStatus("open")} disabled={busy.startsWith("status:")}>
-                          Вернуть в открытые
-                        </button>
-                      ) : !selectedThreadIsLegacyBridge ? (
-                        <button type="button" className="secondaryBtn tinyBtn h-8 px-3 text-xs" onClick={() => patchStatus("resolved")} disabled={busy.startsWith("status:")}>
-                          Закрыть обсуждение
-                        </button>
+                      {!selectedThreadIsLegacyBridge ? (
+                        <div className="flex max-w-[260px] flex-wrap items-center justify-end gap-2">
+                          <select
+                            className="select h-8 min-h-0 w-[118px] text-xs"
+                            value={threadPriority(selectedThread)}
+                            onChange={(event) => patchThreadMeta({ priority: event.target.value })}
+                            disabled={busy.startsWith("meta:")}
+                            aria-label="Приоритет обсуждения"
+                            data-testid="notes-thread-priority-select"
+                          >
+                            {PRIORITY_OPTIONS.map((item) => (
+                              <option key={item.value} value={item.value}>{item.label}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className={`secondaryBtn tinyBtn h-8 px-2.5 text-xs ${requiresAttention(selectedThread) ? "border-rose-300 bg-rose-50 text-rose-900" : ""}`}
+                            onClick={() => patchThreadMeta({ requires_attention: !requiresAttention(selectedThread) })}
+                            disabled={busy.startsWith("meta:")}
+                            data-testid="notes-thread-attention-toggle"
+                          >
+                            {requiresAttention(selectedThread) ? "Снять внимание" : "Требует внимания"}
+                          </button>
+                          {text(selectedThread.status) === "resolved" ? (
+                            <button type="button" className="secondaryBtn tinyBtn h-8 px-3 text-xs" onClick={() => patchStatus("open")} disabled={busy.startsWith("status:")}>
+                              Вернуть в открытые
+                            </button>
+                          ) : (
+                            <button type="button" className="secondaryBtn tinyBtn h-8 px-3 text-xs" onClick={() => patchStatus("resolved")} disabled={busy.startsWith("status:")}>
+                              Закрыть обсуждение
+                            </button>
+                          )}
+                        </div>
                       ) : null}
                     </div>
                   </div>
@@ -920,11 +1032,15 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                               <div className="line-clamp-2 text-[12px] font-semibold leading-snug text-fg">{threadTitle(thread)}</div>
                               <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted">{threadPreview(thread)}</div>
                             </div>
-                            <span className="shrink-0 text-[10px] font-medium text-muted">
-                              {threadStatusLabel(thread)}
-                            </span>
+                            {requiresAttention(thread) ? (
+                              <span className="shrink-0 rounded-full border border-rose-300 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-900">
+                                Внимание
+                              </span>
+                            ) : null}
                           </div>
-                          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-muted">
+                            <span className={`rounded-full border px-1.5 py-0.5 font-semibold ${threadStatusTone(thread)}`}>{threadStatusLabel(thread)}</span>
+                            <span className={`rounded-full border px-1.5 py-0.5 font-semibold ${priorityMeta(thread).tone}`}>{priorityMeta(thread).shortLabel}</span>
                             <span>{meta.short}</span>
                             <span aria-hidden="true">·</span>
                             <span>{formatDate(threadUpdatedAt(thread)) || "сейчас"}</span>

@@ -81,6 +81,20 @@ test("Current discussion header uses a denser metadata line instead of technical
   assert.doesNotMatch(notesMvpPanelSource, /Сообщений:/);
 });
 
+test("Discussions render entity priority and attention from the thread source of truth", () => {
+  assert.match(notesMvpPanelSource, /const PRIORITY_OPTIONS = \[/);
+  assert.match(notesMvpPanelSource, /function priorityMeta\(thread\)/);
+  assert.match(notesMvpPanelSource, /function attentionMeta\(thread\)/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-create-priority"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-create-attention"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-thread-priority-select"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-thread-attention-toggle"/);
+  assert.match(notesMvpPanelSource, /priority: createPriority/);
+  assert.match(notesMvpPanelSource, /requires_attention: createRequiresAttention/);
+  assert.match(notesMvpPanelSource, /patchThreadMeta\(\{ priority: event\.target\.value \}\)/);
+  assert.match(notesMvpPanelSource, /patchThreadMeta\(\{ requires_attention: !requiresAttention\(selectedThread\) \}\)/);
+});
+
 test("Selected discussion messages start below the header without bottom-justified dead space", () => {
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-message-scroll"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-message-flow"/);
