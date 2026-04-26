@@ -244,11 +244,24 @@ function DodBar({ percent }) {
   );
 }
 
-function MetricCell({ label, value, warn = false }) {
-  if (!value) return <span className="text-[10px] text-muted/50"> </span>;
+function MetricCell({ label, value, warn = false, icon = null, emptyLabel = " " }) {
+  const numericValue = Math.max(0, Number(value || 0) || 0);
+  const metricLabel = label ? `${label}: ${numericValue}` : undefined;
+  if (!numericValue) {
+    return (
+      <span className="text-[10px] text-muted/50" title={metricLabel} aria-label={metricLabel}>
+        {emptyLabel}
+      </span>
+    );
+  }
   return (
-    <span className={`text-xs font-medium ${warn && value > 0 ? "text-warning" : "text-muted"}`}>
-      {value}
+    <span
+      className={`inline-flex items-center justify-center gap-1 text-xs font-semibold ${warn ? "text-warning" : "text-muted"}`}
+      title={metricLabel}
+      aria-label={metricLabel}
+    >
+      {icon ? <span aria-hidden>{icon}</span> : null}
+      <span>{numericValue}</span>
     </span>
   );
 }
@@ -1279,7 +1292,7 @@ function SessionRow({
         ) : null}
         {showSignalColumns ? (
           <td className="px-2 py-2.5 text-center" title="Требует внимания">
-            <MetricCell value={session.attention_count} warn />
+            <MetricCell label="Требует внимания" value={session.attention_count} warn icon="⚠" emptyLabel="—" />
           </td>
         ) : null}
         {showSignalColumns ? (
@@ -1553,7 +1566,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
               <col className="w-[96px]" />
               <col className="w-[90px]" />
               {sessionColumnProfile.showDiscussionColumn ? <col className="w-[76px]" /> : null}
-              {sessionColumnProfile.showSignalColumns ? <col className="w-[42px]" /> : null}
+              {sessionColumnProfile.showSignalColumns ? <col className="w-[76px]" /> : null}
               {sessionColumnProfile.showSignalColumns ? <col className="w-[42px]" /> : null}
               <col className="w-[104px]" />
               <col className="w-[124px]" />
@@ -1573,7 +1586,10 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                 ) : null}
                 {sessionColumnProfile.showSignalColumns ? (
                   <th className="px-2 py-2 text-center" title="Требует внимания" aria-label="Колонка Требует внимания">
-                    <span aria-hidden>⚠</span>
+                    <span className="inline-flex items-center justify-center gap-1 whitespace-nowrap">
+                      <span aria-hidden>⚠</span>
+                      <span>Вним.</span>
+                    </span>
                   </th>
                 ) : null}
                 {sessionColumnProfile.showSignalColumns ? (
