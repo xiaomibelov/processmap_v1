@@ -88,10 +88,15 @@ test("Discussions render entity priority and attention from the thread source of
   assert.match(notesMvpPanelSource, /const PRIORITY_OPTIONS = \[/);
   assert.match(notesMvpPanelSource, /function priorityMeta\(thread\)/);
   assert.match(notesMvpPanelSource, /function attentionMeta\(thread\)/);
+  assert.match(notesMvpPanelSource, /function attentionAcknowledged\(thread\)/);
   assert.match(notesMvpPanelSource, /data-testid="notes-create-priority"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-create-attention"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-priority-select"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-attention-toggle"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-thread-attention-acknowledge"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-thread-attention-acknowledged"/);
+  assert.match(notesMvpPanelSource, /apiAcknowledgeNoteThreadAttention/);
+  assert.match(notesMvpPanelSource, /attention_acknowledged_by_me/);
   assert.match(notesMvpPanelSource, /priority: createPriority/);
   assert.match(notesMvpPanelSource, /requires_attention: createRequiresAttention/);
   assert.match(notesMvpPanelSource, /patchThreadMeta\(\{ priority: event\.target\.value \}\)/);

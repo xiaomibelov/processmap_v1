@@ -29,6 +29,7 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
         from app.routers.notes import (
             CreateNoteThreadBody,
             PatchNoteThreadBody,
+            acknowledge_note_thread_attention,
             create_session_note_thread,
             get_folder_note_aggregate,
             get_project_note_aggregate,
@@ -47,6 +48,7 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
         self.create_user = create_user
         self.CreateNoteThreadBody = CreateNoteThreadBody
         self.PatchNoteThreadBody = PatchNoteThreadBody
+        self.acknowledge_note_thread_attention = acknowledge_note_thread_attention
         self.create_session_note_thread = create_session_note_thread
         self.patch_note_thread = patch_note_thread
         self.get_session_note_aggregate = get_session_note_aggregate
@@ -210,7 +212,7 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
         parent_project_id, parent_session_id = self._create_project_session(parent_folder_id, "Parent Project", "Parent Session")
         child_project_id, child_session_id = self._create_project_session(child_folder_id, "Child Project", "Child Session")
 
-        self._create_note(parent_session_id, "diagram_element", "open element", element_id="Task_1", requires_attention=True)
+        attention_thread_id = self._create_note(parent_session_id, "diagram_element", "open element", element_id="Task_1", requires_attention=True)
         self._create_note(parent_session_id, "diagram", "open diagram")
         resolved_thread_id = self._create_note(parent_session_id, "session", "resolved session", requires_attention=True)
         self.patch_note_thread(
@@ -248,6 +250,22 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
         self.assertTrue(parent_folder_aggregate["has_open_notes"])
         self.assertEqual(parent_folder_aggregate["attention_discussions_count"], 2)
         self.assertTrue(parent_folder_aggregate["has_attention_discussions"])
+
+        acknowledged = self.acknowledge_note_thread_attention(attention_thread_id, self._req(self.viewer))["thread"]
+        self.assertTrue(acknowledged["attention_acknowledged_by_me"])
+        viewer_after_ack = self.get_session_note_aggregate(parent_session_id, self._req(self.viewer))
+        self.assertEqual(viewer_after_ack["attention_discussions_count"], 1)
+        self.assertTrue(viewer_after_ack["has_attention_discussions"])
+        editor_after_viewer_ack = self.get_session_note_aggregate(parent_session_id, self._req())
+        self.assertEqual(editor_after_viewer_ack["attention_discussions_count"], 2)
+        self.patch_note_thread(
+            attention_thread_id,
+            self.PatchNoteThreadBody(requires_attention=True),
+            self._req(),
+        )
+        viewer_after_reraise = self.get_session_note_aggregate(parent_session_id, self._req(self.viewer))
+        self.assertEqual(viewer_after_reraise["attention_discussions_count"], 2)
+        self.assertTrue(viewer_after_reraise["has_attention_discussions"])
 
         self.patch_note_thread(
             resolved_thread_id,

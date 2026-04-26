@@ -31,6 +31,7 @@ class NotesMvp1ApiTest(unittest.TestCase):
             CreateNoteThreadBody,
             PatchNoteThreadBody,
             add_note_thread_comment,
+            acknowledge_note_thread_attention,
             create_session_note_thread,
             list_session_note_threads,
             patch_note_thread,
@@ -44,6 +45,7 @@ class NotesMvp1ApiTest(unittest.TestCase):
         self.CreateNoteThreadBody = CreateNoteThreadBody
         self.AddNoteCommentBody = AddNoteCommentBody
         self.PatchNoteThreadBody = PatchNoteThreadBody
+        self.acknowledge_note_thread_attention = acknowledge_note_thread_attention
         self.create_session_note_thread = create_session_note_thread
         self.list_session_note_threads = list_session_note_threads
         self.add_note_thread_comment = add_note_thread_comment
@@ -143,6 +145,12 @@ class NotesMvp1ApiTest(unittest.TestCase):
         )["thread"]
         self.assertEqual(high_priority["priority"], "high")
         self.assertTrue(high_priority["requires_attention"])
+        self.assertFalse(high_priority["attention_acknowledged_by_me"])
+
+        acknowledged = self.acknowledge_note_thread_attention(high_priority["id"], self._req())["thread"]
+        self.assertTrue(acknowledged["requires_attention"])
+        self.assertTrue(acknowledged["attention_acknowledged_by_me"])
+        self.assertGreater(int(acknowledged["attention_acknowledged_at"] or 0), 0)
 
         with_comment = self.add_note_thread_comment(
             thread["id"],

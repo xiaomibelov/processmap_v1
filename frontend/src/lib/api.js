@@ -442,6 +442,13 @@ export async function apiPatchNoteThread(threadId, patch = {}) {
   return r.ok ? { ok: true, status: r.status, thread: r.data?.thread || null } : r;
 }
 
+export async function apiAcknowledgeNoteThreadAttention(threadId) {
+  const tid = String(threadId || "").trim();
+  if (!tid) return { ok: false, status: 0, error: "missing thread_id" };
+  const r = okOrError(await request(apiRoutes.noteThreads.attentionAcknowledgement(tid), { method: "POST", body: {} }));
+  return r.ok ? { ok: true, status: r.status, thread: r.data?.thread || null } : r;
+}
+
 export async function apiPostAnswer(sessionId, payload) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
