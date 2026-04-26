@@ -132,7 +132,7 @@ def _dedupe_session_ids(raw_session_ids: List[str], *, limit: int = 100) -> List
 
 
 def _user_label(row: Dict[str, Any]) -> str:
-    return str(row.get("name") or row.get("email") or row.get("id") or "").strip()
+    return str(row.get("full_name") or row.get("name") or row.get("email") or row.get("id") or "").strip()
 
 
 def _mentionable_users_for_session(sess: Any, org_id: str) -> List[Dict[str, str]]:
@@ -157,6 +157,8 @@ def _mentionable_users_for_session(sess: Any, org_id: str) -> List[Dict[str, str
             "user_id": user_id,
             "label": _user_label(user),
             "email": str(user.get("email") or "").strip(),
+            "full_name": str(user.get("full_name") or "").strip(),
+            "job_title": str(user.get("job_title") or "").strip(),
         })
     out.sort(key=lambda item: (item.get("label") or item.get("user_id") or "").lower())
     return out

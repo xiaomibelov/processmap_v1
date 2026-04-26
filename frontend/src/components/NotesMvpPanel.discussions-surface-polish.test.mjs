@@ -100,14 +100,19 @@ test("Current discussion header uses a denser metadata line instead of technical
 test("Discussion cards and messages render authorship without promoting raw technical IDs", () => {
   assert.match(notesMvpPanelSource, /function isTechnicalId\(value\)/);
   assert.match(notesMvpPanelSource, /function shortTechnicalId\(value\)/);
+  assert.match(notesMvpPanelSource, /function profileIdentityLabel\(\.\.\.values\)/);
+  assert.match(notesMvpPanelSource, /function setUserLabel\(out, userId, \.\.\.values\)/);
   assert.match(notesMvpPanelSource, /function authorLabel\(value, userLabels = \{\}, viewerUserId = ""\)/);
-  assert.match(notesMvpPanelSource, /return `Пользователь \$\{shortTechnicalId\(raw\)\}`;/);
+  assert.match(notesMvpPanelSource, /if \(isTechnicalId\(raw\)\) return "Пользователь";/);
+  assert.doesNotMatch(notesMvpPanelSource, /return `Пользователь \$\{shortTechnicalId\(raw\)\}`;/);
   assert.match(notesMvpPanelSource, /const authorLabelsById = useMemo\(\(\) => \{/);
-  assert.match(notesMvpPanelSource, /if \(viewerUserId\) out\[viewerUserId\] = "Вы";/);
+  assert.match(notesMvpPanelSource, /setUserLabel\(out, thread\?\.created_by, thread\?\.created_by_full_name, thread\?\.created_by_email\);/);
+  assert.match(notesMvpPanelSource, /setUserLabel\(out, comment\?\.author_user_id, comment\?\.author_full_name, comment\?\.author_email\);/);
   assert.match(notesMvpPanelSource, /const author = authorLabel\(comment\?\.author_user_id, authorLabelsById, viewerUserId\);/);
   assert.match(notesMvpPanelSource, /Создал \{threadCreatorLabel\(thread, authorLabelsById, viewerUserId\)\}/);
   assert.match(notesMvpPanelSource, /Последний: \{threadLastAuthorLabel\(thread, authorLabelsById, viewerUserId\)\}/);
   assert.match(notesMvpPanelSource, /const mentionLabel = firstMentionLabel\(thread, authorLabelsById, viewerUserId\);/);
+  assert.match(notesMvpPanelSource, /authorLabel\(mention\?\.mentioned_user_id, authorLabelsById, viewerUserId\)/);
   assert.doesNotMatch(notesMvpPanelSource, /const author = authorLabel\(comment\?\.author_user_id\);/);
   assert.doesNotMatch(notesMvpPanelSource, /<span>\{text\(ref\.element_id\)\}<\/span>/);
 });
