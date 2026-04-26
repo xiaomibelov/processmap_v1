@@ -378,11 +378,14 @@ export async function apiListNoteThreads(sessionId, filters = {}) {
 
 function normalizeNoteAggregate(data, fallback = {}) {
   const count = Math.max(0, Number(data?.open_notes_count || 0) || 0);
+  const attentionCount = Math.max(0, Number(data?.attention_discussions_count || 0) || 0);
   return {
     ...fallback,
     ...(isPlainObject(data) ? data : {}),
     open_notes_count: count,
     has_open_notes: Boolean(data?.has_open_notes || count > 0),
+    attention_discussions_count: attentionCount,
+    has_attention_discussions: Boolean(data?.has_attention_discussions || attentionCount > 0),
   };
 }
 

@@ -5914,14 +5914,25 @@ def patch_note_thread(
     return get_note_thread(tid, org_id=oid or None)
 
 
-def _notes_aggregate_payload(count: Any) -> Dict[str, Any]:
+def _notes_aggregate_payload(count: Any, attention_count: Any = 0) -> Dict[str, Any]:
     try:
         value = int(count or 0)
     except Exception:
         value = 0
     if value < 0:
         value = 0
-    return {"open_notes_count": value, "has_open_notes": value > 0}
+    try:
+        attention_value = int(attention_count or 0)
+    except Exception:
+        attention_value = 0
+    if attention_value < 0:
+        attention_value = 0
+    return {
+        "open_notes_count": value,
+        "has_open_notes": value > 0,
+        "attention_discussions_count": attention_value,
+        "has_attention_discussions": attention_value > 0,
+    }
 
 
 def get_session_open_notes_aggregate(session_id: str, *, org_id: Optional[str] = None) -> Dict[str, Any]:
@@ -5931,17 +5942,26 @@ def get_session_open_notes_aggregate(session_id: str, *, org_id: Optional[str] =
     if not sid:
         return _notes_aggregate_payload(0)
     oid = str(org_id or "").strip()
-    filters = ["session_id = ?", "status = 'open'"]
+    filters = ["session_id = ?"]
     params: List[Any] = [sid]
     if oid:
         filters.append("org_id = ?")
         params.append(oid)
     with _connect() as con:
         row = con.execute(
-            f"SELECT COUNT(*) AS open_notes_count FROM note_threads WHERE {' AND '.join(filters)}",
+            f"""
+            SELECT
+              SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) AS open_notes_count,
+              SUM(CASE WHEN requires_attention = 1 THEN 1 ELSE 0 END) AS attention_discussions_count
+            FROM note_threads
+            WHERE {' AND '.join(filters)}
+            """,
             params,
         ).fetchone()
-    return _notes_aggregate_payload(_row_value(row, "open_notes_count", 0))
+    return _notes_aggregate_payload(
+        _row_value(row, "open_notes_count", 0),
+        _row_value(row, "attention_discussions_count", 0),
+    )
 
 
 def get_project_open_notes_aggregate(project_id: str, *, org_id: Optional[str] = None) -> Dict[str, Any]:
@@ -5951,7 +5971,7 @@ def get_project_open_notes_aggregate(project_id: str, *, org_id: Optional[str] =
     if not pid:
         return _notes_aggregate_payload(0)
     oid = str(org_id or "").strip()
-    filters = ["s.project_id = ?", "nt.status = 'open'"]
+    filters = ["s.project_id = ?"]
     params: List[Any] = [pid]
     if oid:
         filters.append("s.org_id = ?")
@@ -5960,14 +5980,19 @@ def get_project_open_notes_aggregate(project_id: str, *, org_id: Optional[str] =
     with _connect() as con:
         row = con.execute(
             f"""
-            SELECT COUNT(*) AS open_notes_count
+            SELECT
+              SUM(CASE WHEN nt.status = 'open' THEN 1 ELSE 0 END) AS open_notes_count,
+              SUM(CASE WHEN nt.requires_attention = 1 THEN 1 ELSE 0 END) AS attention_discussions_count
             FROM note_threads nt
             JOIN sessions s ON s.id = nt.session_id
             WHERE {' AND '.join(filters)}
             """,
             params,
         ).fetchone()
-    return _notes_aggregate_payload(_row_value(row, "open_notes_count", 0))
+    return _notes_aggregate_payload(
+        _row_value(row, "open_notes_count", 0),
+        _row_value(row, "attention_discussions_count", 0),
+    )
 
 
 def get_folder_open_notes_aggregate(
@@ -6008,19 +6033,23 @@ def get_folder_open_notes_aggregate(
               JOIN folder_tree ft ON wf.parent_id = ft.id
               WHERE wf.org_id = ? AND wf.workspace_id = ? AND wf.archived_at IS NULL
             )
-            SELECT COUNT(*) AS open_notes_count
+            SELECT
+              SUM(CASE WHEN nt.status = 'open' THEN 1 ELSE 0 END) AS open_notes_count,
+              SUM(CASE WHEN nt.requires_attention = 1 THEN 1 ELSE 0 END) AS attention_discussions_count
             FROM note_threads nt
             JOIN sessions s ON s.id = nt.session_id AND s.org_id = nt.org_id
             JOIN projects p ON p.id = s.project_id AND p.org_id = s.org_id
-            WHERE nt.status = 'open'
-              AND nt.org_id = ?
+            WHERE nt.org_id = ?
               AND p.workspace_id = ?
               AND p.folder_id IN (SELECT id FROM folder_tree)
               {project_scope_sql}
             """,
             params,
         ).fetchone()
-    return _notes_aggregate_payload(_row_value(row, "open_notes_count", 0))
+    return _notes_aggregate_payload(
+        _row_value(row, "open_notes_count", 0),
+        _row_value(row, "attention_discussions_count", 0),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
