@@ -131,6 +131,7 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
         *,
         element_id: str = "",
         requires_attention: bool = False,
+        actor: dict | None = None,
     ) -> str:
         scope_ref = {"element_id": element_id} if scope_type == "diagram_element" else {}
         payload = self.create_session_note_thread(
@@ -141,7 +142,7 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
                 body=body,
                 requires_attention=requires_attention,
             ),
-            self._req(),
+            self._req(actor),
         )
         return str((payload.get("thread") or {}).get("id") or "")
 
@@ -165,6 +166,8 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
                 "has_open_notes": False,
                 "attention_discussions_count": 0,
                 "has_attention_discussions": False,
+                "personal_discussions_count": 0,
+                "has_personal_discussions": False,
             },
         )
         self.assertEqual(
@@ -176,6 +179,8 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
                 "has_open_notes": False,
                 "attention_discussions_count": 0,
                 "has_attention_discussions": False,
+                "personal_discussions_count": 0,
+                "has_personal_discussions": False,
             },
         )
         self.assertEqual(
@@ -188,6 +193,8 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
                 "has_open_notes": False,
                 "attention_discussions_count": 0,
                 "has_attention_discussions": False,
+                "personal_discussions_count": 0,
+                "has_personal_discussions": False,
             },
         )
 
@@ -227,12 +234,16 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
         self.assertTrue(session_aggregate["has_open_notes"])
         self.assertEqual(session_aggregate["attention_discussions_count"], 2)
         self.assertTrue(session_aggregate["has_attention_discussions"])
+        self.assertEqual(session_aggregate["personal_discussions_count"], 0)
+        self.assertFalse(session_aggregate["has_personal_discussions"])
 
         parent_project_aggregate = self.get_project_note_aggregate(parent_project_id, self._req())
         self.assertEqual(parent_project_aggregate["open_notes_count"], 2)
         self.assertTrue(parent_project_aggregate["has_open_notes"])
         self.assertEqual(parent_project_aggregate["attention_discussions_count"], 2)
         self.assertTrue(parent_project_aggregate["has_attention_discussions"])
+        self.assertEqual(parent_project_aggregate["personal_discussions_count"], 1)
+        self.assertTrue(parent_project_aggregate["has_personal_discussions"])
 
         child_project_aggregate = self.get_project_note_aggregate(child_project_id, self._req())
         self.assertEqual(child_project_aggregate["open_notes_count"], 1)
@@ -258,6 +269,7 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
         self.assertTrue(viewer_after_ack["has_attention_discussions"])
         editor_after_viewer_ack = self.get_session_note_aggregate(parent_session_id, self._req())
         self.assertEqual(editor_after_viewer_ack["attention_discussions_count"], 2)
+        self.assertEqual(editor_after_viewer_ack["personal_discussions_count"], 1)
         self.patch_note_thread(
             attention_thread_id,
             self.PatchNoteThreadBody(requires_attention=True),
@@ -266,6 +278,7 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
         viewer_after_reraise = self.get_session_note_aggregate(parent_session_id, self._req(self.viewer))
         self.assertEqual(viewer_after_reraise["attention_discussions_count"], 2)
         self.assertTrue(viewer_after_reraise["has_attention_discussions"])
+        self.assertEqual(viewer_after_reraise["personal_discussions_count"], 0)
 
         self.patch_note_thread(
             resolved_thread_id,
@@ -276,6 +289,47 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
         self.assertEqual(after_clear["open_notes_count"], 2)
         self.assertEqual(after_clear["attention_discussions_count"], 1)
         self.assertTrue(after_clear["has_attention_discussions"])
+
+    def test_personal_discussion_count_uses_thread_creator_and_attention_ack(self):
+        folder_id = str(
+            self.create_workspace_folder(
+                self.org_id,
+                self.workspace_id,
+                "Personal Folder",
+                user_id=str(self.editor.get("id") or ""),
+            ).get("id") or ""
+        )
+        project_id, session_id = self._create_project_session(folder_id, "Personal Project", "Personal Session")
+        self._insert_membership(self.org_id, str(self.viewer.get("id") or ""), "editor")
+        self.upsert_project_membership(
+            self.org_id,
+            project_id,
+            str(self.viewer.get("id") or ""),
+            "editor",
+        )
+
+        other_thread_id = self._create_note(session_id, "session", "other attention", requires_attention=True, actor=self.editor)
+        viewer_aggregate = self.get_session_note_aggregate(session_id, self._req(self.viewer))
+        self.assertEqual(viewer_aggregate["attention_discussions_count"], 1)
+        self.assertEqual(viewer_aggregate["personal_discussions_count"], 0)
+        self.assertFalse(viewer_aggregate["has_personal_discussions"])
+
+        viewer_thread_id = self._create_note(session_id, "session", "my attention", requires_attention=True, actor=self.viewer)
+        viewer_after_own_thread = self.get_session_note_aggregate(session_id, self._req(self.viewer))
+        self.assertEqual(viewer_after_own_thread["attention_discussions_count"], 2)
+        self.assertEqual(viewer_after_own_thread["personal_discussions_count"], 1)
+        self.assertTrue(viewer_after_own_thread["has_personal_discussions"])
+
+        acknowledged = self.acknowledge_note_thread_attention(viewer_thread_id, self._req(self.viewer))["thread"]
+        self.assertTrue(acknowledged["attention_acknowledged_by_me"])
+        viewer_after_ack = self.get_session_note_aggregate(session_id, self._req(self.viewer))
+        self.assertEqual(viewer_after_ack["attention_discussions_count"], 1)
+        self.assertEqual(viewer_after_ack["personal_discussions_count"], 0)
+        self.assertFalse(viewer_after_ack["has_personal_discussions"])
+
+        self.patch_note_thread(other_thread_id, self.PatchNoteThreadBody(status="resolved"), self._req())
+        viewer_after_other_resolved = self.get_session_note_aggregate(session_id, self._req(self.viewer))
+        self.assertEqual(viewer_after_other_resolved["personal_discussions_count"], 0)
 
     def test_auth_and_permission_denial_for_aggregate_reads(self):
         folder_id = str(

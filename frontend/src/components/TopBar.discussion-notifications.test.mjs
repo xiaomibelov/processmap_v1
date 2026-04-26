@@ -14,11 +14,13 @@ test("TopBar exposes bounded discussion notification entry from existing note ag
   assert.match(topBarSource, /data-testid="topbar-account-notification-count"/);
   assert.match(topBarSource, /data-testid="topbar-mentions-menu"/);
   assert.match(topBarSource, /data-testid="topbar-discussion-notifications"/);
-  assert.match(topBarSource, /Уведомления обсуждений/);
+  assert.match(topBarSource, /Мои обсуждения/);
   assert.match(topBarSource, /data-notes-panel-trigger="true"/);
   assert.match(topBarSource, /onOpenDiscussionNotifications\?\.\(\)/);
-  assert.match(topBarSource, /count=\{notesAggregate\?\.attention_discussions_count\}/);
-  assert.match(topBarSource, /NotesAggregateBadge[\s\S]*label="Обсуждения"/);
+  assert.match(topBarSource, /personalDiscussionCount = Math\.max\(0, Number\(notesAggregate\?\.personal_discussions_count \|\| 0\)/);
+  assert.match(topBarSource, /accountNotificationCount = mentionCount \+ personalDiscussionCount/);
+  assert.match(topBarSource, /count=\{notesAggregate\?\.personal_discussions_count\}/);
+  assert.match(topBarSource, /NotesAggregateBadge[\s\S]*label="Мои обсуждения"/);
   assert.match(topBarSource, /fixed right-3 top-14/);
   assert.match(topBarSource, /max-h-\[calc\(100vh-4\.25rem\)\]/);
   assert.match(topBarSource, /overflow-y-auto/);
@@ -43,4 +45,5 @@ test("App bridge opens NotesMvpPanel in notification mode without a new router",
   assert.match(appSource, /mode: "notifications"/);
   assert.match(appSource, /source: "topbar_discussion_notifications"/);
   assert.match(appSource, /onFocusNotificationTarget=\{focusDiscussionNotificationTarget\}/);
+  assert.match(appSource, /currentUserId=\{user\?\.id\}/);
 });
