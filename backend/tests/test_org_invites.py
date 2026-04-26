@@ -32,7 +32,7 @@ class OrgInvitesApiTest(unittest.TestCase):
         os.environ["RL_ACCEPT_PER_MIN"] = "50"
         os.environ["APP_BASE_URL"] = "https://pm.local"
 
-        from app.auth import create_user
+        from app.auth import create_user, find_user_by_email
         from app._legacy_main import (
             accept_org_invite_endpoint,
             create_org_invite_endpoint,
@@ -49,6 +49,7 @@ class OrgInvitesApiTest(unittest.TestCase):
         from app.storage import create_org_record, list_user_org_memberships
 
         self.create_user = create_user
+        self.find_user_by_email = find_user_by_email
         self.accept_org_invite_endpoint = accept_org_invite_endpoint
         self.create_org_invite_endpoint = create_org_invite_endpoint
         self.list_org_invites_endpoint = list_org_invites_endpoint
@@ -160,6 +161,9 @@ class OrgInvitesApiTest(unittest.TestCase):
         self.assertEqual(str((accepted.get("membership") or {}).get("user_id") or ""), str(self.user_ok.get("id") or ""))
         self.assertEqual(str((accepted.get("membership") or {}).get("role") or ""), "editor")
         self.assertEqual(str((accepted.get("invite") or {}).get("status") or ""), "used")
+        target_user = self.find_user_by_email("invite_target@local") or {}
+        self.assertEqual(str(target_user.get("full_name") or ""), "Иван Петров")
+        self.assertEqual(str(target_user.get("job_title") or ""), "Технолог")
 
     def test_accept_invite_email_mismatch_returns_409(self):
         req_admin = self._mk_req(self.admin)
@@ -203,6 +207,9 @@ class OrgInvitesApiTest(unittest.TestCase):
         self.assertTrue(str(payload.get("access_token") or "").strip())
         self.assertEqual(str((payload.get("invite") or {}).get("status") or ""), "used")
         self.assertEqual(str((payload.get("membership") or {}).get("org_id") or ""), self.default_org_id)
+        activated_user = self.find_user_by_email("invite_new_user@local") or {}
+        self.assertEqual(str(activated_user.get("full_name") or ""), "Мария")
+        self.assertEqual(str(activated_user.get("job_title") or ""), "Оператор")
 
     def test_invite_preview_hides_org_for_single_org_mode(self):
         req_admin = self._mk_req(self.admin)

@@ -33,6 +33,8 @@ export async function apiAdminCreateUser(payload = {}) {
   const body = {
     email: String(payload?.email || "").trim(),
     password: String(payload?.password || ""),
+    full_name: String(payload?.full_name || payload?.fullName || "").trim(),
+    job_title: String(payload?.job_title || payload?.jobTitle || "").trim(),
     is_admin: payload?.is_admin === true,
     is_active: payload?.is_active !== false,
     memberships: membershipsRaw.map((row) => ({
@@ -50,6 +52,10 @@ export async function apiAdminPatchUser(userId, payload = {}) {
   const body = {};
   if (Object.prototype.hasOwnProperty.call(payload || {}, "email")) body.email = String(payload?.email || "").trim();
   if (Object.prototype.hasOwnProperty.call(payload || {}, "password")) body.password = String(payload?.password || "");
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "full_name")) body.full_name = String(payload?.full_name || "").trim();
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "fullName")) body.full_name = String(payload?.fullName || "").trim();
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "job_title")) body.job_title = String(payload?.job_title || "").trim();
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "jobTitle")) body.job_title = String(payload?.jobTitle || "").trim();
   if (Object.prototype.hasOwnProperty.call(payload || {}, "is_admin")) body.is_admin = payload?.is_admin === true;
   if (Object.prototype.hasOwnProperty.call(payload || {}, "is_active")) body.is_active = Boolean(payload?.is_active);
   if (Object.prototype.hasOwnProperty.call(payload || {}, "memberships")) {
