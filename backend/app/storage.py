@@ -536,6 +536,47 @@ def _note_mention_row_to_dict(row: Any) -> Dict[str, Any]:
     }
 
 
+def _auth_user_profiles_by_id_with_connection(con: Any, user_ids: Iterable[Any]) -> Dict[str, Dict[str, str]]:
+    out: Dict[str, Dict[str, str]] = {}
+    for raw_user_id in user_ids or []:
+        user_id = str(raw_user_id or "").strip()
+        if not user_id or user_id in out:
+            continue
+        user = _get_auth_user_by_id_with_connection(con, user_id)
+        if not user:
+            continue
+        out[user_id] = {
+            "email": str(user.get("email") or "").strip(),
+            "full_name": str(user.get("full_name") or "").strip(),
+            "job_title": str(user.get("job_title") or "").strip(),
+        }
+    return out
+
+
+def _apply_note_author_profiles(thread: Dict[str, Any], profiles_by_id: Mapping[str, Mapping[str, str]]) -> Dict[str, Any]:
+    created_by = str(thread.get("created_by") or "").strip()
+    created_profile = profiles_by_id.get(created_by) or {}
+    thread["created_by_email"] = str(created_profile.get("email") or "").strip()
+    thread["created_by_full_name"] = str(created_profile.get("full_name") or "").strip()
+    thread["created_by_job_title"] = str(created_profile.get("job_title") or "").strip()
+
+    resolved_by = str(thread.get("resolved_by") or "").strip()
+    resolved_profile = profiles_by_id.get(resolved_by) or {}
+    thread["resolved_by_email"] = str(resolved_profile.get("email") or "").strip()
+    thread["resolved_by_full_name"] = str(resolved_profile.get("full_name") or "").strip()
+    thread["resolved_by_job_title"] = str(resolved_profile.get("job_title") or "").strip()
+
+    for comment in thread.get("comments") or []:
+        if not isinstance(comment, dict):
+            continue
+        author_id = str(comment.get("author_user_id") or "").strip()
+        author_profile = profiles_by_id.get(author_id) or {}
+        comment["author_email"] = str(author_profile.get("email") or "").strip()
+        comment["author_full_name"] = str(author_profile.get("full_name") or "").strip()
+        comment["author_job_title"] = str(author_profile.get("job_title") or "").strip()
+    return thread
+
+
 def _project_workspace_id_for_session(con: Any, sess: Session, org_id: str) -> str:
     project_id = str(getattr(sess, "project_id", "") or "").strip()
     if not project_id:
@@ -6357,6 +6398,12 @@ def get_note_thread(
             ).fetchall():
                 mention = _note_mention_row_to_dict(row)
                 mention_rows.setdefault(str(mention.get("comment_id") or ""), []).append(mention)
+        author_ids = {
+            str(_row_value(thread_row, "created_by") or "").strip(),
+            str(_row_value(thread_row, "resolved_by") or "").strip(),
+            *[str(_row_value(row, "author_user_id") or "").strip() for row in comment_rows],
+        }
+        profiles_by_id = _auth_user_profiles_by_id_with_connection(con, author_ids)
     thread = _note_thread_row_to_dict(thread_row, attention_acknowledged_at=acknowledged_at)
     comments = []
     for row in comment_rows:
@@ -6364,7 +6411,7 @@ def get_note_thread(
         comment["mentions"] = mention_rows.get(str(comment.get("id") or ""), [])
         comments.append(comment)
     thread["comments"] = comments
-    return thread
+    return _apply_note_author_profiles(thread, profiles_by_id)
 
 
 def list_note_threads(
@@ -6444,6 +6491,20 @@ def list_note_threads(
                 ack_params,
             ).fetchall():
                 acknowledgement_rows[str(_row_value(row, "thread_id") or "")] = int(_row_value(row, "acknowledged_at", 0) or 0)
+        author_ids = {
+            str(_row_value(row, "created_by") or "").strip()
+            for row in thread_rows
+        }
+        author_ids.update(
+            str(_row_value(row, "resolved_by") or "").strip()
+            for row in thread_rows
+        )
+        author_ids.update(
+            str(comment.get("author_user_id") or "").strip()
+            for comments in comment_rows.values()
+            for comment in comments
+        )
+        profiles_by_id = _auth_user_profiles_by_id_with_connection(con, author_ids)
     element_filter = str(element_id or "").strip()
     out: List[Dict[str, Any]] = []
     for row in thread_rows:
@@ -6459,7 +6520,7 @@ def list_note_threads(
         for comment in comments:
             comment["mentions"] = mention_rows.get(str(comment.get("id") or ""), [])
         thread["comments"] = comments
-        out.append(thread)
+        out.append(_apply_note_author_profiles(thread, profiles_by_id))
     return out
 
 

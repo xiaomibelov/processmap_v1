@@ -221,14 +221,28 @@ function shortTechnicalId(value) {
   return raw.length > 8 ? `${raw.slice(0, 6)}...${raw.slice(-2)}` : raw;
 }
 
+function profileIdentityLabel(...values) {
+  for (const value of values) {
+    const label = text(value);
+    if (label) return label;
+  }
+  return "";
+}
+
+function setUserLabel(out, userId, ...values) {
+  const uid = text(userId);
+  const label = profileIdentityLabel(...values);
+  if (uid && label) out[uid] = label;
+}
+
 function authorLabel(value, userLabels = {}, viewerUserId = "") {
   const raw = text(value);
   const viewer = text(viewerUserId);
   if (!raw) return "Автор не указан";
-  if (viewer && raw === viewer) return "Вы";
   const mapped = text(userLabels[raw]);
   if (mapped) return mapped;
-  if (isTechnicalId(raw)) return `Пользователь ${shortTechnicalId(raw)}`;
+  if (viewer && raw === viewer) return "Вы";
+  if (isTechnicalId(raw)) return "Пользователь";
   return raw;
 }
 
@@ -403,11 +417,20 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     for (const item of asArray(mentionableUsers)) {
       const userId = text(item?.user_id);
       if (!userId) continue;
-      out[userId] = text(item?.label || item?.email || userId);
+      setUserLabel(out, userId, item?.full_name, item?.label, item?.email);
     }
-    if (viewerUserId) out[viewerUserId] = "Вы";
+    for (const thread of asArray(displayThreads)) {
+      setUserLabel(out, thread?.created_by, thread?.created_by_full_name, thread?.created_by_email);
+      setUserLabel(out, thread?.resolved_by, thread?.resolved_by_full_name, thread?.resolved_by_email);
+      for (const comment of asArray(thread?.comments)) {
+        setUserLabel(out, comment?.author_user_id, comment?.author_full_name, comment?.author_email);
+        for (const mention of asArray(comment?.mentions)) {
+          setUserLabel(out, mention?.mentioned_user_id, mention?.mentioned_label);
+        }
+      }
+    }
     return out;
-  }, [mentionableUsers, viewerUserId]);
+  }, [displayThreads, mentionableUsers]);
   const notificationMode = panelMode === "notifications";
   const notificationBuckets = useMemo(
     () => buildDiscussionNotificationBuckets(threads, { currentUserId: viewerUserId }),
@@ -1185,7 +1208,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                                     <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted" data-testid="notes-comment-mentions">
                                       {asArray(comment.mentions).map((mention) => (
                                         <span key={text(mention?.id) || text(mention?.mentioned_user_id)} className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 font-semibold text-sky-900">
-                                          @{text(mention?.mentioned_label || mention?.mentioned_user_id)}
+                                          @{text(mention?.mentioned_label) || authorLabel(mention?.mentioned_user_id, authorLabelsById, viewerUserId)}
                                         </span>
                                       ))}
                                     </div>
