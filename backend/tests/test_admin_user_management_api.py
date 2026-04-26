@@ -89,6 +89,8 @@ class AdminUserManagementApiTest(unittest.TestCase):
             self.AdminUserCreateBody(
                 email="worker@local",
                 password="strongpass1",
+                full_name="Worker User",
+                job_title="Technologist",
                 memberships=[{"org_id": self.default_org_id, "role": "editor"}],
             ),
             self.request,
@@ -97,6 +99,8 @@ class AdminUserManagementApiTest(unittest.TestCase):
         user = created.get("item") or {}
         user_id = str(user.get("id") or "")
         self.assertTrue(user_id)
+        self.assertEqual(user.get("full_name"), "Worker User")
+        self.assertEqual(user.get("job_title"), "Technologist")
         self.assertEqual(
             [(item.get("org_id"), item.get("role")) for item in (user.get("memberships") or [])],
             [(self.default_org_id, "editor")],
@@ -106,6 +110,8 @@ class AdminUserManagementApiTest(unittest.TestCase):
             user_id,
             self.AdminUserPatchBody(
                 is_active=False,
+                full_name="Worker Updated",
+                job_title="Lead Technologist",
                 memberships=[{"org_id": self.org_b_id, "role": "org_admin"}],
             ),
             self.request,
@@ -113,6 +119,8 @@ class AdminUserManagementApiTest(unittest.TestCase):
         self.assertTrue(bool(patched.get("ok")))
         updated = patched.get("item") or {}
         self.assertFalse(bool(updated.get("is_active")))
+        self.assertEqual(updated.get("full_name"), "Worker Updated")
+        self.assertEqual(updated.get("job_title"), "Lead Technologist")
         self.assertEqual(
             [(item.get("org_id"), item.get("role")) for item in (updated.get("memberships") or [])],
             [(self.org_b_id, "org_admin")],
@@ -121,6 +129,8 @@ class AdminUserManagementApiTest(unittest.TestCase):
         listed = self.admin_users(self.request)
         rows = listed.get("items") or []
         target = next((row for row in rows if str(row.get("id") or "") == user_id), {})
+        self.assertEqual(target.get("full_name"), "Worker Updated")
+        self.assertEqual(target.get("job_title"), "Lead Technologist")
         self.assertEqual(
             [(item.get("org_id"), item.get("role")) for item in (target.get("memberships") or [])],
             [(self.org_b_id, "org_admin")],
