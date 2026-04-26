@@ -29,11 +29,13 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
         from app.routers.notes import (
             CreateNoteThreadBody,
             PatchNoteThreadBody,
+            SessionNoteAggregatesBody,
             acknowledge_note_thread_attention,
             create_session_note_thread,
             get_folder_note_aggregate,
             get_project_note_aggregate,
             get_session_note_aggregate,
+            get_session_note_aggregates,
             patch_note_thread,
         )
         from app.storage import (
@@ -48,10 +50,12 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
         self.create_user = create_user
         self.CreateNoteThreadBody = CreateNoteThreadBody
         self.PatchNoteThreadBody = PatchNoteThreadBody
+        self.SessionNoteAggregatesBody = SessionNoteAggregatesBody
         self.acknowledge_note_thread_attention = acknowledge_note_thread_attention
         self.create_session_note_thread = create_session_note_thread
         self.patch_note_thread = patch_note_thread
         self.get_session_note_aggregate = get_session_note_aggregate
+        self.get_session_note_aggregates = get_session_note_aggregates
         self.get_project_note_aggregate = get_project_note_aggregate
         self.get_folder_note_aggregate = get_folder_note_aggregate
         self.create_project_in_folder = create_project_in_folder
@@ -197,6 +201,42 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
                 "has_personal_discussions": False,
             },
         )
+
+    def test_session_batch_aggregate_preserves_order_zero_and_viewer_semantics(self):
+        folder_id = str(
+            self.create_workspace_folder(
+                self.org_id,
+                self.workspace_id,
+                "Batch Folder",
+                user_id=str(self.editor.get("id") or ""),
+            ).get("id") or ""
+        )
+        _project_id, first_session_id = self._create_project_session(folder_id, "Batch Project A", "Batch Session A")
+        _second_project_id, second_session_id = self._create_project_session(folder_id, "Batch Project B", "Batch Session B")
+        attention_thread_id = self._create_note(
+            first_session_id,
+            "session",
+            "first attention",
+            requires_attention=True,
+        )
+        self._create_note(first_session_id, "session", "first plain")
+        self.acknowledge_note_thread_attention(attention_thread_id, self._req(self.viewer))
+
+        payload = self.get_session_note_aggregates(
+            self.SessionNoteAggregatesBody(session_ids=[first_session_id, first_session_id, second_session_id]),
+            self._req(self.viewer),
+        )
+
+        self.assertEqual(payload["scope_type"], "sessions")
+        self.assertEqual([item["session_id"] for item in payload["items"]], [first_session_id, second_session_id])
+        first = payload["aggregates"][first_session_id]
+        second = payload["aggregates"][second_session_id]
+        self.assertEqual(first["open_notes_count"], 2)
+        self.assertEqual(first["attention_discussions_count"], 0)
+        self.assertEqual(first["personal_discussions_count"], 0)
+        self.assertFalse(first["has_personal_discussions"])
+        self.assertEqual(second["open_notes_count"], 0)
+        self.assertFalse(second["has_open_notes"])
 
     def test_session_project_and_recursive_folder_aggregation_counts_only_open_threads(self):
         parent_folder_id = str(

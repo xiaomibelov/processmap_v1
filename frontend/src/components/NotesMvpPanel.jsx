@@ -3,7 +3,6 @@ import {
   apiAcknowledgeNoteThreadAttention,
   apiAddNoteThreadComment,
   apiCreateNoteThread,
-  apiGetSessionNoteAggregate,
   apiListMentionableUsers,
   apiListNoteThreads,
   apiPatchNoteThread,
@@ -20,6 +19,7 @@ import {
   buildDiscussionNotificationBuckets,
 } from "../features/notes/discussionNotificationModel.js";
 import NotesAggregateBadge from "./NotesAggregateBadge.jsx";
+import { useSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
 
 const STATUS_OPTIONS = [
   { value: "open", label: "Открытые" },
@@ -290,8 +290,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   });
   const [commentDraftByThread, setCommentDraftByThread] = useState({});
   const [legacyDraftByThread, setLegacyDraftByThread] = useState({});
-  const [aggregate, setAggregate] = useState(null);
-  const [aggregateRefreshTick, setAggregateRefreshTick] = useState(0);
+  const aggregate = useSessionNoteAggregate(sid);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [mentionableUsers, setMentionableUsers] = useState([]);
   const [createMentionUserId, setCreateMentionUserId] = useState("");
@@ -401,17 +400,6 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     return parts.join(" · ");
   }, [displayThreads.length, notificationBuckets.activeTotal, notificationBuckets.historyTotal, notificationMode, openThreadsCount, sessionTitle, visibleThreads.length]);
 
-  const refreshAggregate = useCallback(async () => {
-    if (!sid) {
-      setAggregate(null);
-      return;
-    }
-    const result = await apiGetSessionNoteAggregate(sid);
-    if (result?.ok) {
-      setAggregate(result.aggregate || null);
-    }
-  }, [sid]);
-
   const fetchMentionableUsers = useCallback(async () => {
     if (!sid || !open) {
       setMentionableUsers([]);
@@ -466,16 +454,11 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   }, [fetchMentionableUsers]);
 
   useEffect(() => {
-    void refreshAggregate();
-  }, [aggregateRefreshTick, refreshAggregate]);
-
-  useEffect(() => {
     setThreads([]);
     setSelectedThreadId("");
     setFocusedCommentId("");
     setPanelMode("discussions");
     setError("");
-    setAggregate(null);
     setCreateOpen(false);
     setMentionableUsers([]);
     setCreateMentionUserId("");
@@ -584,7 +567,6 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       return;
     }
     await fetchThreads({ preferredThreadId: threadId });
-    setAggregateRefreshTick((value) => value + 1);
     emitNotesAggregateChanged(sid);
     setBusy("");
   }
@@ -663,7 +645,6 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setCreateOpen(false);
     setSelectedThreadId(nextThreadId);
     await fetchThreads({ preferredThreadId: nextThreadId });
-    setAggregateRefreshTick((value) => value + 1);
     emitNotesAggregateChanged(sid);
     emitNoteMentionsChanged();
     setCreateSubjectByScope((prev) => (prev[scopeKey] ? { ...prev, [scopeKey]: "" } : prev));
@@ -690,7 +671,6 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setCommentMentionByThread((prev) => ({ ...prev, [threadId]: "" }));
     setSelectedThreadId(threadId);
     await fetchThreads({ preferredThreadId: threadId });
-    setAggregateRefreshTick((value) => value + 1);
     emitNotesAggregateChanged(sid);
     emitNoteMentionsChanged();
     setCommentDraftByThread((prev) => (prev[threadId] ? { ...prev, [threadId]: "" } : prev));
@@ -713,7 +693,6 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       return;
     }
     setLegacyDraftByThread((prev) => ({ ...prev, [threadId]: "" }));
-    setAggregateRefreshTick((value) => value + 1);
     emitNotesAggregateChanged(sid);
     setBusy("");
   }
@@ -735,7 +714,6 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       setBusy("");
       return;
     }
-    setAggregateRefreshTick((value) => value + 1);
     emitNotesAggregateChanged(sid);
     setBusy("");
   }
@@ -754,7 +732,6 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     }
     setSelectedThreadId(threadId);
     await fetchThreads({ preferredThreadId: threadId });
-    setAggregateRefreshTick((value) => value + 1);
     emitNotesAggregateChanged(sid);
     setBusy("");
   }
@@ -772,7 +749,6 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     }
     setSelectedThreadId(threadId);
     await fetchThreads({ preferredThreadId: threadId });
-    setAggregateRefreshTick((value) => value + 1);
     emitNotesAggregateChanged(sid);
     setBusy("");
   }
@@ -790,7 +766,6 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     }
     setSelectedThreadId(threadId);
     await fetchThreads({ preferredThreadId: threadId });
-    setAggregateRefreshTick((value) => value + 1);
     emitNotesAggregateChanged(sid);
     setBusy("");
   }
