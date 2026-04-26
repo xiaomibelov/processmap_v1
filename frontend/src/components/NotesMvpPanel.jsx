@@ -702,34 +702,34 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                     </div>
                   </div>
 
-                  <div className="min-h-0 overflow-auto bg-bg/10 px-4 py-3.5 sm:px-5 sm:py-4">
-                    <div className="flex min-h-full flex-col justify-end gap-3">
+                  <div data-testid="notes-thread-message-scroll" className="min-h-0 overflow-auto bg-bg/10 px-4 py-2.5 sm:px-5 sm:py-3">
+                    <div data-testid="notes-thread-message-flow" className="flex flex-col gap-2.5">
                       {selectedThreadIsLegacyBridge && text(selectedThread?.legacy_summary) ? (
-                        <div className="rounded-2xl border border-amber-200/80 bg-panel px-4 py-3 shadow-sm">
+                        <div className="rounded-xl border border-amber-200/80 bg-panel px-3.5 py-2.5 shadow-sm">
                           <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-amber-900">Legacy summary</div>
                           <div className="mt-1 text-sm leading-relaxed text-fg">{text(selectedThread.legacy_summary)}</div>
                         </div>
                       ) : null}
-                      <div className="grid gap-2.5">
-                      {asArray(selectedThread.comments).map((comment, idx) => {
-                        const author = authorLabel(comment?.author_user_id);
-                        return (
-                          <article key={text(comment?.id) || `comment_${idx + 1}`} className="rounded-xl border border-border bg-panel p-3.5 shadow-sm">
-                            <div className="flex items-start gap-3">
-                              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-sky-500/10 text-xs font-black text-sky-900">
-                                {authorInitials(author)}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                                  <span className="text-[15px] font-black text-fg">{author}</span>
-                                  <span className="text-[11px] text-muted">{formatDate(comment?.updated_at || comment?.created_at) || "только что"}</span>
+                      <div className="grid gap-2">
+                        {asArray(selectedThread.comments).map((comment, idx) => {
+                          const author = authorLabel(comment?.author_user_id);
+                          return (
+                            <article key={text(comment?.id) || `comment_${idx + 1}`} className="rounded-xl border border-border bg-panel px-3 py-2.5 shadow-sm">
+                              <div className="flex items-start gap-2.5">
+                                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-sky-500/10 text-[11px] font-bold text-sky-900">
+                                  {authorInitials(author)}
                                 </div>
-                                <div className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-fg">{text(comment?.body)}</div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                                    <span className="text-[13px] font-semibold text-fg">{author}</span>
+                                    <span className="text-[11px] text-muted">{formatDate(comment?.updated_at || comment?.created_at) || "только что"}</span>
+                                  </div>
+                                  <div className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-fg">{text(comment?.body)}</div>
+                                </div>
                               </div>
-                            </div>
-                          </article>
-                        );
-                      })}
+                            </article>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
