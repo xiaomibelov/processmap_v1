@@ -442,6 +442,7 @@ def _normalize_git_mirror_health_status(value: Any) -> str:
 
 NOTE_SCOPE_TYPES = {"diagram_element", "diagram", "session"}
 NOTE_THREAD_STATUSES = {"open", "resolved"}
+NOTE_THREAD_PRIORITIES = {"low", "normal", "high"}
 
 
 def _normalize_note_scope(scope_type: Any, scope_ref: Any) -> Tuple[str, Dict[str, Any]]:
@@ -464,6 +465,27 @@ def _normalize_note_status(status: Any) -> str:
     return normalized
 
 
+def _normalize_note_priority(priority: Any) -> str:
+    normalized = str(priority or "normal").strip().lower()
+    if normalized not in NOTE_THREAD_PRIORITIES:
+        raise ValueError("invalid priority")
+    return normalized
+
+
+def _normalize_bool_flag(value: Any, *, field_name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off", ""}:
+            return False
+    raise ValueError(f"invalid {field_name}")
+
+
 def _note_thread_row_to_dict(row: Any) -> Dict[str, Any]:
     return {
         "id": str(_row_value(row, "id") or ""),
@@ -474,6 +496,8 @@ def _note_thread_row_to_dict(row: Any) -> Dict[str, Any]:
         "scope_type": str(_row_value(row, "scope_type") or ""),
         "scope_ref": _json_loads(_row_value(row, "scope_ref_json"), {}),
         "status": str(_row_value(row, "status") or "open"),
+        "priority": _normalize_note_priority(_row_value(row, "priority") or "normal"),
+        "requires_attention": bool(int(_row_value(row, "requires_attention") or 0)),
         "created_by": str(_row_value(row, "created_by") or ""),
         "created_at": int(_row_value(row, "created_at") or 0),
         "updated_at": int(_row_value(row, "updated_at") or 0),
@@ -679,6 +703,8 @@ def _ensure_schema() -> None:
                   scope_type TEXT NOT NULL,
                   scope_ref_json TEXT NOT NULL DEFAULT '{}',
                   status TEXT NOT NULL DEFAULT 'open',
+                  priority TEXT NOT NULL DEFAULT 'normal',
+                  requires_attention INTEGER NOT NULL DEFAULT 0,
                   created_by TEXT NOT NULL DEFAULT '',
                   created_at INTEGER NOT NULL DEFAULT 0,
                   updated_at INTEGER NOT NULL DEFAULT 0,
@@ -1048,6 +1074,8 @@ def _ensure_schema() -> None:
                   scope_type TEXT NOT NULL,
                   scope_ref_json TEXT NOT NULL DEFAULT '{}',
                   status TEXT NOT NULL DEFAULT 'open',
+                  priority TEXT NOT NULL DEFAULT 'normal',
+                  requires_attention INTEGER NOT NULL DEFAULT 0,
                   created_by TEXT NOT NULL DEFAULT '',
                   created_at INTEGER NOT NULL DEFAULT 0,
                   updated_at INTEGER NOT NULL DEFAULT 0,
@@ -1058,6 +1086,10 @@ def _ensure_schema() -> None:
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_session_status ON note_threads(session_id, org_id, status, updated_at DESC)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_project_status ON note_threads(project_id, org_id, status)")
+            if not _column_exists(con, "note_threads", "priority"):
+                con.execute("ALTER TABLE note_threads ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'")
+            if not _column_exists(con, "note_threads", "requires_attention"):
+                con.execute("ALTER TABLE note_threads ADD COLUMN requires_attention INTEGER NOT NULL DEFAULT 0")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS note_comments (
@@ -5630,6 +5662,8 @@ def create_note_thread(
     scope_type: Any,
     scope_ref: Any,
     body: Any,
+    priority: Any = "normal",
+    requires_attention: Any = False,
     actor_user_id: str,
     org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -5638,6 +5672,8 @@ def create_note_thread(
     if not text:
         raise ValueError("body required")
     normalized_scope_type, normalized_scope_ref = _normalize_note_scope(scope_type, scope_ref)
+    normalized_priority = _normalize_note_priority(priority)
+    normalized_requires_attention = _normalize_bool_flag(requires_attention, field_name="requires_attention")
     sid = str(getattr(sess, "id", "") or "").strip()
     if not sid:
         raise ValueError("session_id required")
@@ -5653,8 +5689,8 @@ def create_note_thread(
             """
             INSERT INTO note_threads (
               id, org_id, workspace_id, project_id, session_id, scope_type, scope_ref_json,
-              status, created_by, created_at, updated_at, resolved_by, resolved_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, '', 0)
+              status, priority, requires_attention, created_by, created_at, updated_at, resolved_by, resolved_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, '', 0)
             """,
             [
                 thread_id,
@@ -5664,6 +5700,8 @@ def create_note_thread(
                 sid,
                 normalized_scope_type,
                 _json_dumps(normalized_scope_ref, {}),
+                normalized_priority,
+                1 if normalized_requires_attention else 0,
                 actor,
                 now,
                 now,
@@ -5817,8 +5855,24 @@ def patch_note_thread_status(
     actor_user_id: str,
     org_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
+    return patch_note_thread(
+        thread_id,
+        status=status,
+        actor_user_id=actor_user_id,
+        org_id=org_id,
+    )
+
+
+def patch_note_thread(
+    thread_id: str,
+    *,
+    status: Any = None,
+    priority: Any = None,
+    requires_attention: Any = None,
+    actor_user_id: str,
+    org_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
     _ensure_schema()
-    next_status = _normalize_note_status(status)
     tid = str(thread_id or "").strip()
     if not tid:
         return None
@@ -5830,8 +5884,24 @@ def patch_note_thread_status(
         params.append(oid)
     actor = str(actor_user_id or "").strip()
     now = _now_ts()
-    resolved_by = actor if next_status == "resolved" else ""
-    resolved_at = now if next_status == "resolved" else 0
+    updates: List[str] = ["updated_at = ?"]
+    values: List[Any] = [now]
+    if status is not None:
+        next_status = _normalize_note_status(status)
+        updates.extend(["status = ?", "resolved_by = ?", "resolved_at = ?"])
+        values.extend([
+            next_status,
+            actor if next_status == "resolved" else "",
+            now if next_status == "resolved" else 0,
+        ])
+    if priority is not None:
+        updates.append("priority = ?")
+        values.append(_normalize_note_priority(priority))
+    if requires_attention is not None:
+        updates.append("requires_attention = ?")
+        values.append(1 if _normalize_bool_flag(requires_attention, field_name="requires_attention") else 0)
+    if len(updates) == 1:
+        raise ValueError("patch required")
     with _connect() as con:
         thread_row = con.execute(
             f"SELECT id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
@@ -5839,14 +5909,7 @@ def patch_note_thread_status(
         ).fetchone()
         if not thread_row:
             return None
-        con.execute(
-            """
-            UPDATE note_threads
-               SET status = ?, updated_at = ?, resolved_by = ?, resolved_at = ?
-             WHERE id = ?
-            """,
-            [next_status, now, resolved_by, resolved_at, tid],
-        )
+        con.execute(f"UPDATE note_threads SET {', '.join(updates)} WHERE id = ?", [*values, tid])
         con.commit()
     return get_note_thread(tid, org_id=oid or None)
 
