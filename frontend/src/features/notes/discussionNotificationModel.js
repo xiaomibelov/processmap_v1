@@ -41,6 +41,11 @@ export function discussionThreadAcknowledged(thread) {
   return thread?.attention_acknowledged_by_me === true || numericTime(thread?.attention_acknowledged_at) > 0;
 }
 
+export function discussionThreadOwnedByViewer(thread, currentUserId) {
+  const viewer = text(currentUserId);
+  return !!viewer && text(thread?.created_by) === viewer;
+}
+
 export function discussionThreadUpdatedAt(thread) {
   const commentTime = asArray(thread?.comments).reduce(
     (max, item) => Math.max(max, numericTime(item?.updated_at || item?.created_at)),
@@ -66,16 +71,17 @@ export function discussionThreadTitle(thread) {
   return source.length > 78 ? `${source.slice(0, 75)}...` : source;
 }
 
-export function discussionNotificationState(thread) {
+export function discussionNotificationState(thread, options = {}) {
   if (!discussionThreadRequiresAttention(thread)) return "";
+  if (!discussionThreadOwnedByViewer(thread, options?.currentUserId)) return "";
   const status = text(thread?.status || "open");
   if (status === "open" && !discussionThreadAcknowledged(thread)) return "active";
   if (discussionThreadAcknowledged(thread) || status === "resolved") return "history";
   return "";
 }
 
-export function buildDiscussionNotificationItem(thread) {
-  const state = discussionNotificationState(thread);
+export function buildDiscussionNotificationItem(thread, options = {}) {
+  const state = discussionNotificationState(thread, options);
   if (!state) return null;
   const ref = scopeRef(thread);
   const latest = latestComment(thread);
@@ -102,7 +108,7 @@ export function buildDiscussionNotificationItem(thread) {
 export function buildDiscussionNotificationBuckets(threads, options = {}) {
   const limit = Math.max(1, Number(options?.limit || DISCUSSION_NOTIFICATION_LIMIT) || DISCUSSION_NOTIFICATION_LIMIT);
   const items = asArray(threads)
-    .map(buildDiscussionNotificationItem)
+    .map((thread) => buildDiscussionNotificationItem(thread, options))
     .filter(Boolean)
     .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0));
   const activeAll = items.filter((item) => item.state === "active");

@@ -10,10 +10,10 @@ const diagramControlsSource = fs.readFileSync(new URL("../features/process/stage
 const workspaceExplorerSource = fs.readFileSync(new URL("../features/explorer/WorkspaceExplorer.jsx", import.meta.url), "utf8");
 
 test("Discussions surface uses unified discussions labeling and hides the floating trigger on desktop", () => {
-  assert.match(badgeSource, /label = "Заметки"/);
-  assert.match(badgeSource, /attention_discussions_count/);
-  assert.match(badgeSource, /has_attention_discussions/);
-  assert.match(badgeSource, /data-attention-discussions=\{hasAttention \? "true" : undefined\}/);
+  assert.match(badgeSource, /label = "Обсуждения"/);
+  assert.match(badgeSource, /Открытые \$\{chipLabel\.toLowerCase\(\)\}: \$\{openCount\}/);
+  assert.doesNotMatch(badgeSource, /data-attention-discussions/);
+  assert.doesNotMatch(badgeSource, /attention_discussions_count/);
   assert.match(badgeSource, /compactNumericOnly = false/);
   assert.match(badgeSource, /compactNumericOnly \? "pointer-events-none shrink-0" : ""/);
   assert.match(badgeSource, /\{compact && compactNumericOnly \? null : <span>\{chipLabel\}<\/span>\}/);
@@ -110,14 +110,14 @@ test("Discussions render entity priority and attention from the thread source of
 });
 
 test("Discussions panel exposes bounded notification inbox and history without new storage truth", () => {
-  assert.match(notesMvpPanelSource, /buildDiscussionNotificationBuckets\(threads\)/);
+  assert.match(notesMvpPanelSource, /buildDiscussionNotificationBuckets\(threads, \{ currentUserId: viewerUserId \}\)/);
   assert.match(notesMvpPanelSource, /const \[panelMode, setPanelMode\] = useState\("discussions"\);/);
   assert.match(notesMvpPanelSource, /const notificationMode = panelMode === "notifications";/);
   assert.match(notesMvpPanelSource, /data-testid="discussion-notification-inbox"/);
   assert.match(notesMvpPanelSource, /notificationBuckets\.active/);
   assert.match(notesMvpPanelSource, /notificationBuckets\.history/);
-  assert.match(notesMvpPanelSource, /Уведомления обсуждений/);
-  assert.match(notesMvpPanelSource, /Требуют внимания/);
+  assert.match(notesMvpPanelSource, /Мои обсуждения/);
+  assert.match(notesMvpPanelSource, /Требуют моего внимания/);
   assert.match(notesMvpPanelSource, /Недавние/);
   assert.match(notesMvpPanelSource, /\{notificationMode \? \(/);
   assert.match(notesMvpPanelSource, /\) : \(\s*<>\s*<div className="flex items-center gap-2">/);

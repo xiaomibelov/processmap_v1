@@ -254,8 +254,10 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   externalOpenRequest = null,
   onOpenChange = null,
   onFocusNotificationTarget = null,
+  currentUserId = "",
 }, ref) {
   const sid = text(sessionId);
+  const viewerUserId = text(currentUserId);
   const selectedElementId = text(selectedElement?.id);
   const selectedElementName = text(selectedElement?.name || selectedElementId);
   const selectedElementType = text(selectedElement?.type);
@@ -337,8 +339,8 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   }, [legacyBridgeThread, scopeFilter, threads]);
   const notificationMode = panelMode === "notifications";
   const notificationBuckets = useMemo(
-    () => buildDiscussionNotificationBuckets(threads),
-    [threads],
+    () => buildDiscussionNotificationBuckets(threads, { currentUserId: viewerUserId }),
+    [threads, viewerUserId],
   );
 
   const visibleThreads = useMemo(() => {
@@ -1216,7 +1218,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
               {notificationMode ? (
                 <div data-testid="discussion-notification-inbox" className="flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-panel/85 p-3 shadow-sm">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Уведомления обсуждений</div>
+                    <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Мои обсуждения</div>
                     <button
                       type="button"
                       className="secondaryBtn tinyBtn h-7 px-2 text-[10px]"
@@ -1230,17 +1232,17 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                     <div className="grid gap-3">
                     <section>
                       <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted">
-                        <span>Требуют внимания</span>
+                        <span>Требуют моего внимания</span>
                         <span className="tabular-nums">{notificationBuckets.activeTotal}</span>
                       </div>
-                      {renderNotificationList(notificationBuckets.active, "Нет обсуждений, которые требуют вашего внимания.")}
+                      {renderNotificationList(notificationBuckets.active, "Нет ваших обсуждений, которые требуют внимания.")}
                     </section>
                     <section>
                       <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted">
                         <span>Недавние</span>
                         <span className="tabular-nums">{notificationBuckets.historyTotal}</span>
                       </div>
-                      {renderNotificationList(notificationBuckets.history, "Недавних просмотренных или закрытых обсуждений пока нет.")}
+                      {renderNotificationList(notificationBuckets.history, "Недавних просмотренных или закрытых ваших обсуждений пока нет.")}
                     </section>
                     </div>
                   </div>

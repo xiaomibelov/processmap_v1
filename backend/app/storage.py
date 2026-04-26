@@ -5774,6 +5774,30 @@ def _attention_count_case(table_ref: str, viewer_user_id: Optional[str]) -> tupl
     )
 
 
+def _personal_discussion_count_case(table_ref: str, viewer_user_id: Optional[str]) -> tuple[str, List[Any]]:
+    viewer = str(viewer_user_id or "").strip()
+    if not viewer:
+        return "0 AS personal_discussions_count", []
+    return (
+        f"""
+              SUM(CASE
+                WHEN {table_ref}.status = 'open'
+                  AND {table_ref}.requires_attention = 1
+                  AND {table_ref}.created_by = ?
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM note_thread_attention_acknowledgements nta
+                    WHERE nta.thread_id = {table_ref}.id
+                      AND nta.org_id = {table_ref}.org_id
+                      AND nta.user_id = ?
+                  )
+                THEN 1 ELSE 0
+              END) AS personal_discussions_count
+        """,
+        [viewer, viewer],
+    )
+
+
 def _normalize_mention_targets(mention_targets: Optional[Iterable[Mapping[str, Any]]]) -> List[Dict[str, str]]:
     out: List[Dict[str, str]] = []
     seen: set[str] = set()
@@ -6307,7 +6331,7 @@ def acknowledge_note_mention(
     return _note_mention_row_to_dict(refreshed) if refreshed else None
 
 
-def _notes_aggregate_payload(count: Any, attention_count: Any = 0) -> Dict[str, Any]:
+def _notes_aggregate_payload(count: Any, attention_count: Any = 0, personal_count: Any = 0) -> Dict[str, Any]:
     try:
         value = int(count or 0)
     except Exception:
@@ -6320,11 +6344,19 @@ def _notes_aggregate_payload(count: Any, attention_count: Any = 0) -> Dict[str, 
         attention_value = 0
     if attention_value < 0:
         attention_value = 0
+    try:
+        personal_value = int(personal_count or 0)
+    except Exception:
+        personal_value = 0
+    if personal_value < 0:
+        personal_value = 0
     return {
         "open_notes_count": value,
         "has_open_notes": value > 0,
         "attention_discussions_count": attention_value,
         "has_attention_discussions": attention_value > 0,
+        "personal_discussions_count": personal_value,
+        "has_personal_discussions": personal_value > 0,
     }
 
 
@@ -6346,20 +6378,23 @@ def get_session_open_notes_aggregate(
         filters.append("nt.org_id = ?")
         params.append(oid)
     attention_count_case, attention_params = _attention_count_case("nt", viewer_user_id)
+    personal_count_case, personal_params = _personal_discussion_count_case("nt", viewer_user_id)
     with _connect() as con:
         row = con.execute(
             f"""
             SELECT
               SUM(CASE WHEN nt.status = 'open' THEN 1 ELSE 0 END) AS open_notes_count,
-              {attention_count_case}
+              {attention_count_case},
+              {personal_count_case}
             FROM note_threads nt
             WHERE {' AND '.join(filters)}
             """,
-            [*attention_params, *params],
+            [*attention_params, *personal_params, *params],
         ).fetchone()
     return _notes_aggregate_payload(
         _row_value(row, "open_notes_count", 0),
         _row_value(row, "attention_discussions_count", 0),
+        _row_value(row, "personal_discussions_count", 0),
     )
 
 
@@ -6382,21 +6417,24 @@ def get_project_open_notes_aggregate(
         filters.append("nt.org_id = ?")
         params.extend([oid, oid])
     attention_count_case, attention_params = _attention_count_case("nt", viewer_user_id)
+    personal_count_case, personal_params = _personal_discussion_count_case("nt", viewer_user_id)
     with _connect() as con:
         row = con.execute(
             f"""
             SELECT
               SUM(CASE WHEN nt.status = 'open' THEN 1 ELSE 0 END) AS open_notes_count,
-              {attention_count_case}
+              {attention_count_case},
+              {personal_count_case}
             FROM note_threads nt
             JOIN sessions s ON s.id = nt.session_id
             WHERE {' AND '.join(filters)}
             """,
-            [*attention_params, *params],
+            [*attention_params, *personal_params, *params],
         ).fetchone()
     return _notes_aggregate_payload(
         _row_value(row, "open_notes_count", 0),
         _row_value(row, "attention_discussions_count", 0),
+        _row_value(row, "personal_discussions_count", 0),
     )
 
 
@@ -6428,6 +6466,7 @@ def get_folder_open_notes_aggregate(
         project_scope_sql = f" AND p.id IN ({placeholders})"
         where_params.extend(allowed_projects)
     attention_count_case, attention_params = _attention_count_case("nt", viewer_user_id)
+    personal_count_case, personal_params = _personal_discussion_count_case("nt", viewer_user_id)
     with _connect() as con:
         row = con.execute(
             f"""
@@ -6443,7 +6482,8 @@ def get_folder_open_notes_aggregate(
             )
             SELECT
               SUM(CASE WHEN nt.status = 'open' THEN 1 ELSE 0 END) AS open_notes_count,
-              {attention_count_case}
+              {attention_count_case},
+              {personal_count_case}
             FROM note_threads nt
             JOIN sessions s ON s.id = nt.session_id AND s.org_id = nt.org_id
             JOIN projects p ON p.id = s.project_id AND p.org_id = s.org_id
@@ -6452,11 +6492,12 @@ def get_folder_open_notes_aggregate(
               AND p.folder_id IN (SELECT id FROM folder_tree)
               {project_scope_sql}
             """,
-            [*cte_params, *attention_params, *where_params],
+            [*cte_params, *attention_params, *personal_params, *where_params],
         ).fetchone()
     return _notes_aggregate_payload(
         _row_value(row, "open_notes_count", 0),
         _row_value(row, "attention_discussions_count", 0),
+        _row_value(row, "personal_discussions_count", 0),
     )
 
 

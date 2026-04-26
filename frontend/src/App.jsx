@@ -3370,6 +3370,7 @@ export default function App() {
         externalOpenRequest={notesPanelOpenRequest}
         onOpenChange={setNotesDiscussionsOpen}
         onFocusNotificationTarget={focusDiscussionNotificationTarget}
+        currentUserId={user?.id}
       />
 
       <DerivedContextSurface

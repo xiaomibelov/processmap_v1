@@ -327,8 +327,8 @@ export default function TopBar({
   const canOpenOrgSettings = Boolean(user?.is_admin) || ["org_owner", "org_admin", "auditor"].includes(activeOrgRole);
   const mentionItems = asArray(mentionNotifications);
   const mentionCount = mentionItems.length;
-  const discussionAttentionCount = Math.max(0, Number(notesAggregate?.attention_discussions_count || 0) || 0);
-  const accountNotificationCount = mentionCount + discussionAttentionCount;
+  const personalDiscussionCount = Math.max(0, Number(notesAggregate?.personal_discussions_count || 0) || 0);
+  const accountNotificationCount = mentionCount + personalDiscussionCount;
 
   async function handleLogout() {
     if (typeof window !== "undefined") {
@@ -630,7 +630,7 @@ export default function TopBar({
                   <div>
                     <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Уведомления</div>
                     <div className="text-xs text-muted">
-                      {accountNotificationCount > 0 ? "Упоминания и обсуждения, требующие внимания" : "Активных уведомлений нет"}
+                      {accountNotificationCount > 0 ? "Упоминания и мои обсуждения, требующие внимания" : "Активных уведомлений нет"}
                     </div>
                   </div>
                   <button
@@ -682,13 +682,13 @@ export default function TopBar({
                     data-testid="topbar-discussion-notifications"
                     data-notes-panel-trigger="true"
                   >
-                    Уведомления обсуждений
+                    Мои обсуждения
                     <NotesAggregateBadge
                       aggregate={notesAggregate}
-                      count={notesAggregate?.attention_discussions_count}
+                      count={notesAggregate?.personal_discussions_count}
                       compact
                       compactNumericOnly
-                      label="Обсуждения"
+                      label="Мои обсуждения"
                       className="ml-auto border-border bg-white/85 px-1.5 py-0 text-[10px]"
                     />
                   </button>
