@@ -67,6 +67,9 @@ export default function AppShell({
   sessionNavNotice,
   onDismissSessionNavNotice,
   onReturnToSessionList,
+  mentionNotifications,
+  onOpenMentionNotification,
+  onRefreshMentionNotifications,
 }) {
   const hasActiveSession = String(shellSessionId || sessionId || "").trim().length > 0;
   const effectiveLeftHidden = hasActiveSession ? !!leftHidden : true;
@@ -133,6 +136,9 @@ export default function AppShell({
         onSaveLlmSettings={onSaveLlmSettings}
         onVerifyLlmSettings={onVerifyLlmSettings}
         draft={draft}
+        mentionNotifications={mentionNotifications}
+        onOpenMentionNotification={onOpenMentionNotification}
+        onRefreshMentionNotifications={onRefreshMentionNotifications}
       />
 
       {sessionNavNotice ? (
