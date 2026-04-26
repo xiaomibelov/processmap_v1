@@ -278,7 +278,12 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const [createScope, setCreateScope] = useState("session");
   const [createPriority, setCreatePriority] = useState("normal");
   const [createRequiresAttention, setCreateRequiresAttention] = useState(false);
-  const [createDraftByScope, setCreateDraftByScope] = useState({
+  const [createSubjectByScope, setCreateSubjectByScope] = useState({
+    diagram_element: "",
+    diagram: "",
+    session: "",
+  });
+  const [createDetailsByScope, setCreateDetailsByScope] = useState({
     diagram_element: "",
     diagram: "",
     session: "",
@@ -293,12 +298,14 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const [commentMentionByThread, setCommentMentionByThread] = useState({});
   const panelRef = useRef(null);
 
-  const createDraft = createDraftByScope[createScope] || "";
+  const createSubject = createSubjectByScope[createScope] || "";
+  const createDetails = createDetailsByScope[createScope] || "";
   const canUseSelectedElementScope = !!selectedElementId;
   const canCreateCurrentScope = createScope !== "diagram_element" || canUseSelectedElementScope;
-  const createPlaceholder = createScope === "diagram_element" && selectedElementId
-    ? `Опишите суть вопроса по элементу ${selectedElementName}`
-    : "Опишите суть вопроса";
+  const createSubjectPlaceholder = createScope === "diagram_element" && selectedElementId
+    ? `Коротко сформулируйте вопрос по элементу ${selectedElementName}`
+    : "Коротко сформулируйте вопрос";
+  const createDetailsPlaceholder = "Добавьте детали, факты или ожидаемое решение";
 
   const createScopeOptions = useMemo(() => [
     {
@@ -320,6 +327,13 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       disabled: !canUseSelectedElementScope,
     },
   ], [canUseSelectedElementScope, selectedElementName]);
+
+  const createContextSummary = useMemo(() => {
+    const selected = createScopeOptions.find((item) => item.value === createScope) || createScopeOptions[0];
+    const label = text(selected?.label || "Общий вопрос");
+    const helper = text(selected?.helper || "");
+    return helper ? `${label}. ${helper}` : label;
+  }, [createScope, createScopeOptions]);
 
   const selectedTemplate = useMemo(
     () => getNoteTemplatePreset(selectedElementType),
@@ -617,8 +631,9 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
 
   async function createThread() {
     if (!sid || disabled) return;
-    const body = text(createDraft);
-    if (!body) return;
+    const subject = text(createSubject);
+    const details = text(createDetails);
+    if (!subject) return;
     if (!canCreateCurrentScope) {
       setError("Для обсуждения по элементу сначала выберите BPMN-элемент.");
       return;
@@ -632,7 +647,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       priority: createPriority,
       requires_attention: createRequiresAttention,
       mention_user_ids: createMentionUserId ? [createMentionUserId] : [],
-      body,
+      body: details ? `${subject}\n\n${details}` : subject,
     });
     if (!result.ok) {
       setError(errorText(result, "Не удалось создать обсуждение."));
@@ -640,7 +655,8 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       return;
     }
     const nextThreadId = text(result.thread?.id);
-    setCreateDraftByScope((prev) => ({ ...prev, [scopeKey]: "" }));
+    setCreateSubjectByScope((prev) => ({ ...prev, [scopeKey]: "" }));
+    setCreateDetailsByScope((prev) => ({ ...prev, [scopeKey]: "" }));
     setCreatePriority("normal");
     setCreateRequiresAttention(false);
     setCreateMentionUserId("");
@@ -650,7 +666,8 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setAggregateRefreshTick((value) => value + 1);
     emitNotesAggregateChanged(sid);
     emitNoteMentionsChanged();
-    setCreateDraftByScope((prev) => (prev[scopeKey] ? { ...prev, [scopeKey]: "" } : prev));
+    setCreateSubjectByScope((prev) => (prev[scopeKey] ? { ...prev, [scopeKey]: "" } : prev));
+    setCreateDetailsByScope((prev) => (prev[scopeKey] ? { ...prev, [scopeKey]: "" } : prev));
     setBusy("");
   }
 
@@ -885,7 +902,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         <div className="min-w-0">
                           <div className="text-2xl font-black text-fg">Новое обсуждение</div>
                           <div className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
-                            Сформулируйте вопрос и, если нужно, укажите контекст обсуждения.
+                            Создайте тему с понятной сутью, контекстом и первым сообщением.
                           </div>
                         </div>
                         <button type="button" className="secondaryBtn smallBtn" onClick={() => setCreateOpen(false)}>
@@ -895,11 +912,23 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                     </div>
                     <div className="grid gap-4 px-5 py-4 sm:px-6 sm:py-5">
                       <label className="grid gap-2">
-                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Контекст обсуждения</span>
+                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Суть вопроса</span>
+                        <input
+                          className="input h-11 min-h-0 w-full text-sm"
+                          value={createSubject}
+                          onChange={(event) => setCreateSubjectByScope((prev) => ({ ...prev, [createScope]: event.target.value }))}
+                          placeholder={createSubjectPlaceholder}
+                          disabled={disabled || !canCreateCurrentScope}
+                          data-testid="notes-create-subject"
+                        />
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Контекст</span>
                         <select
                           className="select h-11 min-h-0 w-full text-sm"
                           value={createScope}
                           onChange={(event) => setCreateScope(event.target.value)}
+                          data-testid="notes-create-context"
                         >
                           {createScopeOptions.map((item) => (
                             <option key={item.value} value={item.value} disabled={item.disabled}>{item.label}</option>
@@ -907,7 +936,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         </select>
                       </label>
                       <div className="rounded-2xl border border-border bg-bg/40 px-4 py-3 text-sm leading-relaxed text-muted">
-                        {(createScopeOptions.find((item) => item.value === createScope) || {}).helper || "Выберите контекст обсуждения"}
+                        {createContextSummary}
                       </div>
                       <div className="grid gap-3 rounded-2xl border border-border bg-bg/30 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                         <label className="grid gap-2">
@@ -930,18 +959,21 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                             onChange={(event) => setCreateRequiresAttention(event.target.checked)}
                             data-testid="notes-create-attention"
                           />
-                          <span>Требует внимания</span>
+                          <span className="grid leading-tight">
+                            <span>Требует внимания</span>
+                            <span className="text-[11px] text-muted">Подсветить как требующее реакции</span>
+                          </span>
                         </label>
                       </div>
                       <label className="grid gap-2">
-                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Упомянуть пользователя</span>
+                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Упомянуть</span>
                         <select
                           className="select h-10 min-h-0 w-full text-sm"
                           value={createMentionUserId}
                           onChange={(event) => setCreateMentionUserId(event.target.value)}
                           data-testid="notes-create-mention-user"
                         >
-                          <option value="">Без персонального упоминания</option>
+                          <option value="">Без упоминания</option>
                           {mentionableUsers.map((item) => (
                             <option key={text(item?.user_id)} value={text(item?.user_id)}>
                               {text(item?.label || item?.email || item?.user_id)}
@@ -950,13 +982,14 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         </select>
                       </label>
                       <label className="grid gap-2">
-                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Суть вопроса</span>
+                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Описание</span>
                         <textarea
-                          className="textarea min-h-[180px] w-full text-sm leading-relaxed"
-                          value={createDraft}
-                          onChange={(event) => setCreateDraftByScope((prev) => ({ ...prev, [createScope]: event.target.value }))}
-                          placeholder={createPlaceholder}
+                          className="textarea min-h-[140px] w-full text-sm leading-relaxed"
+                          value={createDetails}
+                          onChange={(event) => setCreateDetailsByScope((prev) => ({ ...prev, [createScope]: event.target.value }))}
+                          placeholder={createDetailsPlaceholder}
                           disabled={disabled || !canCreateCurrentScope}
+                          data-testid="notes-create-details"
                         />
                       </label>
                       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -973,7 +1006,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                             type="button"
                             className="primaryBtn smallBtn"
                             onClick={createThread}
-                            disabled={busy === "create" || !text(createDraft) || !canCreateCurrentScope}
+                            disabled={busy === "create" || !text(createSubject) || !canCreateCurrentScope}
                           >
                             {busy === "create" ? "Создаём..." : "Создать обсуждение"}
                           </button>

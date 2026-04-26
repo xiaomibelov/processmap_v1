@@ -109,6 +109,26 @@ test("Discussions render entity priority and attention from the thread source of
   assert.match(notesMvpPanelSource, /patchThreadMeta\(\{ requires_attention: !requiresAttention\(selectedThread\) \}\)/);
 });
 
+test("Create discussion flow presents an entity-style form and composes initial message from subject and details", () => {
+  assert.match(notesMvpPanelSource, /const \[createSubjectByScope, setCreateSubjectByScope\] = useState/);
+  assert.match(notesMvpPanelSource, /const \[createDetailsByScope, setCreateDetailsByScope\] = useState/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-create-subject"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-create-context"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-create-details"/);
+  assert.match(notesMvpPanelSource, />Суть вопроса</);
+  assert.match(notesMvpPanelSource, />Контекст</);
+  assert.match(notesMvpPanelSource, />Приоритет</);
+  assert.match(notesMvpPanelSource, />Требует внимания</);
+  assert.match(notesMvpPanelSource, />Упомянуть</);
+  assert.match(notesMvpPanelSource, />Описание</);
+  assert.match(notesMvpPanelSource, /Коротко сформулируйте вопрос/);
+  assert.match(notesMvpPanelSource, /Добавьте детали, факты или ожидаемое решение/);
+  assert.match(notesMvpPanelSource, /Без упоминания/);
+  assert.match(notesMvpPanelSource, /Подсветить как требующее реакции/);
+  assert.match(notesMvpPanelSource, /body: details \? `\$\{subject\}\\n\\n\$\{details\}` : subject/);
+  assert.match(notesMvpPanelSource, /disabled=\{busy === "create" \|\| !text\(createSubject\) \|\| !canCreateCurrentScope\}/);
+});
+
 test("Discussions panel exposes bounded notification inbox and history without new storage truth", () => {
   assert.match(notesMvpPanelSource, /buildDiscussionNotificationBuckets\(threads, \{ currentUserId: viewerUserId \}\)/);
   assert.match(notesMvpPanelSource, /const \[panelMode, setPanelMode\] = useState\("discussions"\);/);
