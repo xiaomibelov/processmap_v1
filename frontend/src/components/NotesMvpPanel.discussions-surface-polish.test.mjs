@@ -29,6 +29,9 @@ test("Discussions surface uses unified discussions labeling and hides the floati
   assert.match(workspaceExplorerSource, /title="Открытые обсуждения"/);
   assert.match(workspaceExplorerSource, /NotesAggregateBadge[\s\S]*aggregate=\{notesAggregate\}[\s\S]*compactNumericOnly[\s\S]*label="Обсуждения"/);
   assert.match(workspaceExplorerSource, /<th className="px-2 py-2 text-center"[\s\S]*Обс\.[\s\S]*<\/th>/);
+  assert.match(workspaceExplorerSource, /aria-label="Колонка Требует внимания"[\s\S]*⚠[\s\S]*Вним\./);
+  assert.match(workspaceExplorerSource, /<MetricCell label="Требует внимания" value=\{session\.attention_count\} warn icon="⚠" emptyLabel="—" \/>/);
+  assert.match(workspaceExplorerSource, /sessionColumnProfile\.showSignalColumns \? <col className="w-\[76px\]" \/> : null/);
 });
 
 test("Derived context is hidden in the active diagram discussions workflow", () => {
