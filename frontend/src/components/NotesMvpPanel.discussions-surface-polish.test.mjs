@@ -89,9 +89,27 @@ test("Discussions toolbar uses an explicit App to NotesMvpPanel open bridge", ()
 
 test("Current discussion header uses a denser metadata line instead of technical labels", () => {
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-header-meta"/);
+  assert.match(notesMvpPanelSource, /Создал \{threadCreatorLabel\(selectedThread, authorLabelsById, viewerUserId\)\}/);
+  assert.match(notesMvpPanelSource, /последний ответ \{threadLastAuthorLabel\(selectedThread, authorLabelsById, viewerUserId\)\}/);
+  assert.match(notesMvpPanelSource, /адресат \{firstMentionLabel\(selectedThread, authorLabelsById, viewerUserId\)\}/);
   assert.doesNotMatch(notesMvpPanelSource, /Относится к:/);
   assert.doesNotMatch(notesMvpPanelSource, /Последняя активность:/);
   assert.doesNotMatch(notesMvpPanelSource, /Сообщений:/);
+});
+
+test("Discussion cards and messages render authorship without promoting raw technical IDs", () => {
+  assert.match(notesMvpPanelSource, /function isTechnicalId\(value\)/);
+  assert.match(notesMvpPanelSource, /function shortTechnicalId\(value\)/);
+  assert.match(notesMvpPanelSource, /function authorLabel\(value, userLabels = \{\}, viewerUserId = ""\)/);
+  assert.match(notesMvpPanelSource, /return `Пользователь \$\{shortTechnicalId\(raw\)\}`;/);
+  assert.match(notesMvpPanelSource, /const authorLabelsById = useMemo\(\(\) => \{/);
+  assert.match(notesMvpPanelSource, /if \(viewerUserId\) out\[viewerUserId\] = "Вы";/);
+  assert.match(notesMvpPanelSource, /const author = authorLabel\(comment\?\.author_user_id, authorLabelsById, viewerUserId\);/);
+  assert.match(notesMvpPanelSource, /Создал \{threadCreatorLabel\(thread, authorLabelsById, viewerUserId\)\}/);
+  assert.match(notesMvpPanelSource, /Последний: \{threadLastAuthorLabel\(thread, authorLabelsById, viewerUserId\)\}/);
+  assert.match(notesMvpPanelSource, /const mentionLabel = firstMentionLabel\(thread, authorLabelsById, viewerUserId\);/);
+  assert.doesNotMatch(notesMvpPanelSource, /const author = authorLabel\(comment\?\.author_user_id\);/);
+  assert.doesNotMatch(notesMvpPanelSource, /<span>\{text\(ref\.element_id\)\}<\/span>/);
 });
 
 test("Discussions render entity priority and attention from the thread source of truth", () => {
