@@ -39,6 +39,7 @@ export default function AppShell({
   sessionStatus,
   onOpenSession,
   onOpenWorkspaceSession,
+  onOpenDiscussionNotifications,
   onDeleteSession,
   onChangeSessionStatus,
   onNewProject,
@@ -123,6 +124,7 @@ export default function AppShell({
         onChangeSessionStatus={onChangeSessionStatus}
         onOpenSession={onOpenSession}
         onOpenWorkspace={workspaceBackHandler}
+        onOpenDiscussionNotifications={onOpenDiscussionNotifications}
         onNewProject={onNewProject}
         onNewBackendSession={onNewBackendSession}
         llmHasApiKey={llmHasApiKey}
