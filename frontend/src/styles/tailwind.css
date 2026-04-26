@@ -34,6 +34,147 @@
 }
 
 @layer components {
+  /* fpc: dark_theme_contrast_guard_v1
+     Keep this as a bounded dark-theme override for proven sidebar/topbar readability defects. */
+  .dark .leftSidebarBottom {
+    border-top-color: hsl(var(--border-strong) / 0.72);
+    background: hsl(var(--panel) / 0.96);
+  }
+
+  .dark .sidebarContextChip {
+    border-color: hsl(var(--border-strong) / 0.72);
+    background: hsl(var(--panel2) / 0.78);
+    color: hsl(var(--muted) / 0.96);
+  }
+
+  .dark .sidebarContextChipLabel,
+  .dark .sidebarContextChipValue,
+  .dark .sidebarContextChipCopy {
+    color: hsl(var(--text) / 0.9);
+  }
+
+  .dark .sidebarContextChipCopy {
+    border-color: hsl(var(--border-strong) / 0.72);
+    background: hsl(var(--bg-soft) / 0.78);
+  }
+
+  .dark .sidebarFieldLabel {
+    color: hsl(var(--text) / 0.96);
+  }
+
+  .dark .sidebarSelectButton,
+  .dark .sidebarSelectPopover,
+  .dark .sidebarAdvanced {
+    border-color: hsl(var(--border-strong) / 0.78);
+    background: hsl(var(--panel2) / 0.86);
+    color: hsl(var(--text) / 0.96);
+  }
+
+  .dark .sidebarSelectButton:hover:not(:disabled),
+  .dark .sidebarSelectOption:hover {
+    border-color: hsl(var(--accent2) / 0.62);
+    background: hsl(var(--accent-soft) / 0.72);
+    color: hsl(var(--text) / 0.98);
+  }
+
+  .dark .sidebarSelectButtonChevron,
+  .dark .sidebarSelectOptionKey,
+  .dark .sidebarAdvancedSummary {
+    color: hsl(var(--muted) / 0.94);
+  }
+
+  .dark .sidebarSelectOption {
+    color: hsl(var(--text) / 0.94);
+  }
+
+  .dark .sidebarSelectOption.isActive,
+  .dark .sidebarInlineTab.isActive {
+    border-color: hsl(var(--accent2) / 0.62);
+    background: hsl(var(--accent-soft) / 0.88);
+    color: hsl(var(--text) / 0.98);
+    box-shadow:
+      0 0 0 1px hsl(var(--accent2) / 0.34) inset,
+      0 0 18px hsl(var(--accent2) / 0.16);
+  }
+
+  .dark .sidebarInlineTabs {
+    border-color: hsl(var(--border-strong) / 0.78);
+    background: hsl(var(--bg-soft) / 0.7);
+  }
+
+  .dark .sidebarStatusPill {
+    border-color: hsl(var(--border-strong) / 0.72);
+    background: hsl(var(--panel2) / 0.76);
+    color: hsl(var(--muted) / 0.96);
+  }
+
+  .dark .sidebarStatusPill.is-saved,
+  .dark .sidebarStatusPill.is-local,
+  .dark .sidebarStatusPill.is-offline {
+    border-color: hsl(var(--border-strong) / 0.76);
+    background: hsl(var(--panel2) / 0.8);
+    color: hsl(var(--text) / 0.88);
+  }
+
+  .dark .sidebarStatusPill.is-syncing {
+    border-color: hsl(var(--info) / 0.58);
+    background: hsl(var(--info) / 0.12);
+    color: hsl(var(--info) / 0.96);
+  }
+
+  .dark .sidebarStatusPill.is-attention {
+    border-color: hsl(var(--warning) / 0.58);
+    background: hsl(var(--warning) / 0.12);
+    color: hsl(var(--warning) / 0.98);
+  }
+
+  .dark .sidebarStatusPill.is-error {
+    border-color: hsl(var(--danger) / 0.58);
+    background: hsl(var(--danger) / 0.12);
+    color: hsl(var(--danger) / 0.98);
+  }
+
+  .dark .sidebarStatusHelper,
+  .dark .sidebarStatusHelper.is-saved,
+  .dark .sidebarStatusHelperMeta,
+  .dark .sidebarEmptyHint,
+  .dark .sidebarMiniItemMeta {
+    color: hsl(var(--muted) / 0.94);
+  }
+
+  .dark .sidebarStatusHelper.is-attention {
+    color: hsl(var(--warning) / 0.94);
+  }
+
+  .dark .sidebarStatusHelper.is-error {
+    color: hsl(var(--danger) / 0.94);
+  }
+
+  .dark .sidebarMiniItem,
+  .dark .sidebarEmptyHint {
+    border-color: hsl(var(--border-strong) / 0.62);
+    background: hsl(var(--panel2) / 0.64);
+  }
+
+  .dark .statusComboPill {
+    box-shadow: 0 0 0 1px hsl(var(--border) / 0.22) inset;
+  }
+
+  .dark .statusComboPill:hover,
+  .dark .statusComboPill:focus-visible {
+    border-color: hsl(var(--accent2) / 0.62);
+    box-shadow:
+      0 0 0 1px hsl(var(--accent2) / 0.26) inset,
+      0 0 0 3px hsl(var(--accent2) / 0.16);
+  }
+
+  .dark .bpmnCanvas .djs-outline {
+    stroke: hsl(var(--diagram-select-glow) / 0.96) !important;
+    stroke-width: 3px !important;
+  }
+}
+
+@layer components {
   .appRoot {
     @apply grid h-screen min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-bg text-fg;
   }
