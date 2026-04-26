@@ -1,7 +1,35 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { apiAdminCreateUser, apiAdminPatchUser } from "./api.js";
+import { apiAdminCreateUser, apiAdminListUsers, apiAdminPatchUser } from "./api.js";
+
+test("apiAdminListUsers exposes profile fields from backend payload", async () => {
+  const prevFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      items: [
+        {
+          id: "u1",
+          email: "user@local",
+          full_name: "User Name",
+          job_title: "Technologist",
+        },
+      ],
+      count: 1,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const out = await apiAdminListUsers();
+
+    assert.equal(out.ok, true);
+    assert.equal(out.data.items[0].full_name, "User Name");
+    assert.equal(out.data.items[0].job_title, "Technologist");
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
 
 test("apiAdminCreateUser posts profile fields when provided", async () => {
   const prevFetch = globalThis.fetch;
