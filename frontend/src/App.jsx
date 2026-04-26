@@ -1783,13 +1783,33 @@ export default function App() {
       || scopeRaw === "all"
     ) ? scopeRaw : "all";
     const source = String(options?.source || "toolbar_open_discussions").trim() || "toolbar_open_discussions";
+    const mode = String(options?.mode || "discussions").trim() === "notifications" ? "notifications" : "discussions";
+    const threadId = String(options?.threadId || options?.thread_id || "").trim();
+    const commentId = String(options?.commentId || options?.comment_id || "").trim();
     const request = {
-      requestKey: `${Date.now()}:${scopeFilter}:${source}`,
+      requestKey: `${Date.now()}:${scopeFilter}:${mode}:${source}`,
       scopeFilter,
+      mode,
+      threadId,
+      commentId,
     };
     const openedFromRef = notesPanelRef.current?.openFromExternalRequest?.(request) === true;
     setNotesPanelOpenRequest(request);
     return openedFromRef;
+  }
+
+  function focusDiscussionNotificationTarget(payload = {}) {
+    const targetId = String(payload?.element_id || payload?.elementId || "").trim();
+    if (!targetId) return;
+    const sid = String(draft?.session_id || "").trim();
+    if (sid) {
+      setProcessTabIntent({ sid, tab: "diagram", nonce: Date.now() });
+    }
+    focusElementNotes({
+      id: targetId,
+      name: String(payload?.element_name || payload?.elementName || targetId).trim(),
+      type: "bpmn:Task",
+    }, "discussion_notification_open", { openSidebar: false });
   }
 
   function handleBpmnElementSelect(element) {
@@ -3243,6 +3263,11 @@ export default function App() {
         sessionStatus={resolveSessionStatusFromDraft(draft, "draft")}
         onOpenSession={openSessionWithLeaveGuard}
         onOpenWorkspaceSession={openWorkspaceSession}
+        onOpenDiscussionNotifications={() => openNotesDiscussions({
+          scopeFilter: "all",
+          mode: "notifications",
+          source: "topbar_discussion_notifications",
+        })}
         onDeleteSession={workspacePermissions.canDeleteSession ? deleteCurrentSession : undefined}
         onChangeSessionStatus={workspacePermissions.canChangeStatus ? changeCurrentSessionStatus : undefined}
         onRefresh={async () => {
@@ -3290,6 +3315,7 @@ export default function App() {
         disabled={locked || isSessionLocalMode}
         externalOpenRequest={notesPanelOpenRequest}
         onOpenChange={setNotesDiscussionsOpen}
+        onFocusNotificationTarget={focusDiscussionNotificationTarget}
       />
 
       <DerivedContextSurface

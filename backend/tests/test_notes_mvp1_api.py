@@ -205,6 +205,63 @@ class NotesMvp1ApiTest(unittest.TestCase):
                     self.create_session_note_thread(self.session_id, body, self._req())
                 self.assertEqual(err.exception.status_code, 422)
 
+    def test_attention_threads_remain_queryable_for_bounded_notification_history(self):
+        active = self.create_session_note_thread(
+            self.session_id,
+            self.CreateNoteThreadBody(
+                scope_type="diagram_element",
+                scope_ref={"element_id": "Task_Active"},
+                body="Активное внимание",
+                requires_attention=True,
+            ),
+            self._req(),
+        )["thread"]
+        acknowledged = self.create_session_note_thread(
+            self.session_id,
+            self.CreateNoteThreadBody(
+                scope_type="diagram",
+                scope_ref={},
+                body="Подтверждённое внимание",
+                requires_attention=True,
+            ),
+            self._req(),
+        )["thread"]
+        resolved = self.create_session_note_thread(
+            self.session_id,
+            self.CreateNoteThreadBody(
+                scope_type="session",
+                scope_ref={},
+                body="Закрытое внимание",
+                requires_attention=True,
+            ),
+            self._req(),
+        )["thread"]
+
+        acknowledged = self.acknowledge_note_thread_attention(acknowledged["id"], self._req())["thread"]
+        resolved = self.patch_note_thread(
+            resolved["id"],
+            self.PatchNoteThreadBody(status="resolved"),
+            self._req(),
+        )["thread"]
+
+        all_items = self.list_session_note_threads(self.session_id, self._req(), status="")["items"]
+        by_id = {item["id"]: item for item in all_items}
+        self.assertIn(active["id"], by_id)
+        self.assertIn(acknowledged["id"], by_id)
+        self.assertIn(resolved["id"], by_id)
+
+        active_items = [
+            item for item in all_items
+            if item["status"] == "open" and item["requires_attention"] and not item["attention_acknowledged_by_me"]
+        ]
+        history_items = [
+            item for item in all_items
+            if item["requires_attention"] and (item["attention_acknowledged_by_me"] or item["status"] == "resolved")
+        ]
+        self.assertEqual([item["id"] for item in active_items], [active["id"]])
+        self.assertEqual({item["id"] for item in history_items}, {acknowledged["id"], resolved["id"]})
+        self.assertGreater(int(by_id[acknowledged["id"]]["attention_acknowledged_at"] or 0), 0)
+
     def test_auth_and_permission_denial(self):
         with self.assertRaises(HTTPException) as unauthorized:
             self.list_session_note_threads(self.session_id, self._req({}))

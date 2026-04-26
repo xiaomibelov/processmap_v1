@@ -103,12 +103,25 @@ test("Discussions render entity priority and attention from the thread source of
   assert.match(notesMvpPanelSource, /patchThreadMeta\(\{ requires_attention: !requiresAttention\(selectedThread\) \}\)/);
 });
 
+test("Discussions panel exposes bounded notification inbox and history without new storage truth", () => {
+  assert.match(notesMvpPanelSource, /buildDiscussionNotificationBuckets\(threads\)/);
+  assert.match(notesMvpPanelSource, /const \[panelMode, setPanelMode\] = useState\("discussions"\);/);
+  assert.match(notesMvpPanelSource, /const notificationMode = panelMode === "notifications";/);
+  assert.match(notesMvpPanelSource, /data-testid="discussion-notification-inbox"/);
+  assert.match(notesMvpPanelSource, /notificationBuckets\.active/);
+  assert.match(notesMvpPanelSource, /notificationBuckets\.history/);
+  assert.match(notesMvpPanelSource, /apiAcknowledgeNoteThreadAttention\(threadId\)/);
+  assert.match(notesMvpPanelSource, /onFocusNotificationTarget\?\.\(/);
+  assert.match(notesMvpPanelSource, /data-note-comment-id=\{commentId \|\| undefined\}/);
+  assert.doesNotMatch(notesMvpPanelSource, /notification_subscribers|watcher_model|external_delivery/);
+});
+
 test("Selected discussion messages start below the header without bottom-justified dead space", () => {
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-message-scroll"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-message-flow"/);
   assert.doesNotMatch(notesMvpPanelSource, /flex min-h-full flex-col justify-end gap-3/);
   assert.match(notesMvpPanelSource, /className="flex flex-col gap-2\.5"/);
-  assert.match(notesMvpPanelSource, /className="rounded-xl border border-border bg-panel px-3 py-2\.5 shadow-sm"/);
+  assert.match(notesMvpPanelSource, /className=\{`rounded-xl border bg-panel px-3 py-2\.5 shadow-sm/);
   assert.match(notesMvpPanelSource, /className="grid h-8 w-8 shrink-0/);
   assert.match(notesMvpPanelSource, /className="textarea min-h-\[84px\] w-full text-sm"/);
 });
