@@ -31,8 +31,11 @@ class NotesMvp1ApiTest(unittest.TestCase):
             CreateNoteThreadBody,
             PatchNoteThreadBody,
             add_note_thread_comment,
+            acknowledge_note_mention,
             acknowledge_note_thread_attention,
             create_session_note_thread,
+            list_my_note_mentions,
+            list_session_mentionable_users,
             list_session_note_threads,
             patch_note_thread,
         )
@@ -45,8 +48,11 @@ class NotesMvp1ApiTest(unittest.TestCase):
         self.CreateNoteThreadBody = CreateNoteThreadBody
         self.AddNoteCommentBody = AddNoteCommentBody
         self.PatchNoteThreadBody = PatchNoteThreadBody
+        self.acknowledge_note_mention = acknowledge_note_mention
         self.acknowledge_note_thread_attention = acknowledge_note_thread_attention
         self.create_session_note_thread = create_session_note_thread
+        self.list_my_note_mentions = list_my_note_mentions
+        self.list_session_mentionable_users = list_session_mentionable_users
         self.list_session_note_threads = list_session_note_threads
         self.add_note_thread_comment = add_note_thread_comment
         self.patch_note_thread = patch_note_thread
@@ -154,10 +160,25 @@ class NotesMvp1ApiTest(unittest.TestCase):
 
         with_comment = self.add_note_thread_comment(
             thread["id"],
-            self.AddNoteCommentBody(body="Комментарий технолога"),
+            self.AddNoteCommentBody(body="Комментарий технолога", mention_user_ids=[str(self.viewer.get("id") or "")]),
             self._req(),
         )["thread"]
         self.assertEqual(len(with_comment["comments"]), 2)
+        reply_comment = next(comment for comment in with_comment["comments"] if comment["body"] == "Комментарий технолога")
+        self.assertEqual(reply_comment["mentions"][0]["mentioned_user_id"], str(self.viewer.get("id") or ""))
+
+        mentionable = self.list_session_mentionable_users(self.session_id, self._req())
+        self.assertGreaterEqual(mentionable["count"], 1)
+        self.assertTrue(any(item["user_id"] == str(self.viewer.get("id") or "") for item in mentionable["items"]))
+
+        viewer_mentions = self.list_my_note_mentions(self._req(self.viewer))
+        self.assertEqual(viewer_mentions["count"], 1)
+        self.assertEqual(viewer_mentions["items"][0]["thread_id"], thread["id"])
+
+        acknowledged_mention = self.acknowledge_note_mention(viewer_mentions["items"][0]["id"], self._req(self.viewer))["mention"]
+        self.assertGreater(int(acknowledged_mention["acknowledged_at"] or 0), 0)
+        viewer_mentions_after_ack = self.list_my_note_mentions(self._req(self.viewer))
+        self.assertEqual(viewer_mentions_after_ack["count"], 0)
 
         resolved = self.patch_note_thread(
             thread["id"],
