@@ -203,12 +203,60 @@ function threadSearchText(thread) {
   ].join(" ").toLowerCase();
 }
 
-function authorLabel(value) {
-  return text(value) || "Автор";
+function isLikelyEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text(value));
+}
+
+function isTechnicalId(value) {
+  const raw = text(value);
+  if (!raw || isLikelyEmail(raw)) return false;
+  if (/^[a-f0-9]{10,}$/i.test(raw.replace(/-/g, ""))) return true;
+  if (/^(user|usr|auth|google|github|oidc|saml|local)[_:.-][A-Za-z0-9_.:-]{8,}$/i.test(raw)) return true;
+  return raw.length > 22 && !/\s/.test(raw);
+}
+
+function shortTechnicalId(value) {
+  const raw = text(value).replace(/-/g, "");
+  if (!raw) return "";
+  return raw.length > 8 ? `${raw.slice(0, 6)}...${raw.slice(-2)}` : raw;
+}
+
+function authorLabel(value, userLabels = {}, viewerUserId = "") {
+  const raw = text(value);
+  const viewer = text(viewerUserId);
+  if (!raw) return "Автор не указан";
+  if (viewer && raw === viewer) return "Вы";
+  const mapped = text(userLabels[raw]);
+  if (mapped) return mapped;
+  if (isTechnicalId(raw)) return `Пользователь ${shortTechnicalId(raw)}`;
+  return raw;
+}
+
+function lastComment(thread) {
+  const comments = asArray(thread?.comments);
+  return comments.length ? comments[comments.length - 1] : null;
+}
+
+function threadCreatorLabel(thread, userLabels = {}, viewerUserId = "") {
+  return authorLabel(thread?.created_by || firstComment(thread)?.author_user_id, userLabels, viewerUserId);
+}
+
+function threadLastAuthorLabel(thread, userLabels = {}, viewerUserId = "") {
+  return authorLabel(lastComment(thread)?.author_user_id || thread?.created_by, userLabels, viewerUserId);
+}
+
+function firstMentionLabel(thread, userLabels = {}, viewerUserId = "") {
+  for (const comment of asArray(thread?.comments)) {
+    const mention = asArray(comment?.mentions)[0];
+    if (!mention) continue;
+    return text(mention?.mentioned_label)
+      || authorLabel(mention?.mentioned_user_id, userLabels, viewerUserId);
+  }
+  return "";
 }
 
 function authorInitials(value) {
-  const label = authorLabel(value);
+  const label = text(value) || "Автор";
   const parts = label.split(/\s+/).filter(Boolean).slice(0, 2);
   if (!parts.length) return "A";
   return parts.map((part) => part[0]?.toUpperCase() || "").join("") || label[0]?.toUpperCase() || "A";
@@ -350,6 +398,16 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     if (scopeFilter !== "selected_element") return asArray(threads);
     return injectLegacyBridgeThread(threads, legacyBridgeThread);
   }, [legacyBridgeThread, scopeFilter, threads]);
+  const authorLabelsById = useMemo(() => {
+    const out = {};
+    for (const item of asArray(mentionableUsers)) {
+      const userId = text(item?.user_id);
+      if (!userId) continue;
+      out[userId] = text(item?.label || item?.email || userId);
+    }
+    if (viewerUserId) out[viewerUserId] = "Вы";
+    return out;
+  }, [mentionableUsers, viewerUserId]);
   const notificationMode = panelMode === "notifications";
   const notificationBuckets = useMemo(
     () => buildDiscussionNotificationBuckets(threads, { currentUserId: viewerUserId }),
@@ -992,23 +1050,37 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                 </div>
               ) : selectedThread ? (
                 <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr_auto] overflow-hidden">
-                  <div className="border-b border-border bg-panel/95 px-4 py-3 sm:px-5 sm:py-3.5">
-                    <div className="flex items-start justify-between gap-4">
+                  <div className="border-b border-border bg-panel/95 px-4 py-3.5 sm:px-5 sm:py-4">
+                    <div className="flex items-start justify-between gap-4 max-sm:flex-col">
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
-                          <span className="font-medium text-fg/75">Обсуждение</span>
-                          <span aria-hidden="true">·</span>
-                          <span>{scopeMeta(selectedThread).short}</span>
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
+                          <span className="font-medium text-fg/75">{scopeMeta(selectedThread).short}</span>
+                          <span className={`rounded-full border px-2 py-0.5 font-semibold ${threadStatusTone(selectedThread)}`}>
+                            {threadStatusLabel(selectedThread)}
+                          </span>
+                          {requiresAttention(selectedThread) ? (
+                            <span className={`rounded-full border px-2 py-0.5 font-semibold ${attentionMeta(selectedThread).tone}`}>
+                              {attentionMeta(selectedThread).label}
+                            </span>
+                          ) : null}
+                          {threadPriority(selectedThread) === "high" ? (
+                            <span className={`rounded-full border px-2 py-0.5 font-semibold ${priorityMeta(selectedThread).tone}`}>
+                              {priorityMeta(selectedThread).shortLabel}
+                            </span>
+                          ) : null}
                         </div>
-                        <div className="mt-1 text-[15px] font-semibold leading-6 text-fg">{threadTitle(selectedThread)}</div>
-                        <div data-testid="notes-thread-header-meta" className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-5 text-muted">
-                          <span>{threadStatusLabel(selectedThread)}</span>
+                        <div className="mt-1.5 text-[17px] font-semibold leading-6 text-fg">{threadTitle(selectedThread)}</div>
+                        <div className="mt-1 text-sm leading-5 text-muted">{scopeMeta(selectedThread).relation}</div>
+                        <div data-testid="notes-thread-header-meta" className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-5 text-muted">
+                          <span>Создал {threadCreatorLabel(selectedThread, authorLabelsById, viewerUserId)}</span>
                           <span aria-hidden="true">·</span>
-                          <span>{priorityMeta(selectedThread).shortLabel}</span>
-                          <span aria-hidden="true">·</span>
-                          <span>{attentionMeta(selectedThread).shortLabel}</span>
-                          <span aria-hidden="true">·</span>
-                          <span>{scopeMeta(selectedThread).relation}</span>
+                          <span>последний ответ {threadLastAuthorLabel(selectedThread, authorLabelsById, viewerUserId)}</span>
+                          {firstMentionLabel(selectedThread, authorLabelsById, viewerUserId) ? (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span>адресат {firstMentionLabel(selectedThread, authorLabelsById, viewerUserId)}</span>
+                            </>
+                          ) : null}
                           <span aria-hidden="true">·</span>
                           <span>{asArray(selectedThread.comments).length} сообщ.</span>
                           <span aria-hidden="true">·</span>
@@ -1021,8 +1093,8 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         ) : null}
                       </div>
                       {!selectedThreadIsLegacyBridge ? (
-                        <div className="flex max-w-[300px] shrink-0 flex-col items-end gap-2">
-                          <div className="flex flex-wrap items-center justify-end gap-2">
+                        <div className="flex max-w-[300px] shrink-0 flex-col items-end gap-2 max-sm:w-full max-sm:max-w-none max-sm:items-stretch">
+                          <div className="flex flex-wrap items-center justify-end gap-2 max-sm:justify-start">
                             <select
                               className="select h-8 min-h-0 w-[118px] text-xs"
                               value={threadPriority(selectedThread)}
@@ -1045,7 +1117,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                               </button>
                             )}
                           </div>
-                          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border/70 pt-2">
+                          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border/70 pt-2 max-sm:justify-start">
                             <button
                               type="button"
                               className={`secondaryBtn tinyBtn h-8 px-2.5 text-xs ${requiresAttention(selectedThread) ? "border-rose-300 bg-rose-50 text-rose-900" : ""}`}
@@ -1090,7 +1162,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                       ) : null}
                       <div className="grid gap-2">
                         {asArray(selectedThread.comments).map((comment, idx) => {
-                          const author = authorLabel(comment?.author_user_id);
+                          const author = authorLabel(comment?.author_user_id, authorLabelsById, viewerUserId);
                           const commentId = text(comment?.id);
                           const commentFocused = commentId && commentId === focusedCommentId;
                           return (
@@ -1351,33 +1423,47 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                       const threadId = text(thread?.id);
                       const active = threadId === text(selectedThread?.id);
                       const meta = scopeMeta(thread);
+                      const mentionLabel = firstMentionLabel(thread, authorLabelsById, viewerUserId);
                       return (
                         <button
                           key={threadId}
                           type="button"
-                          className={`rounded-xl border px-2.5 py-2 text-left transition ${active ? "border-sky-400 bg-sky-500/10 shadow-sm" : "border-border/80 bg-panel/80 hover:border-sky-300 hover:bg-white"}`}
+                          className={`rounded-lg border px-3 py-2.5 text-left transition ${active ? "border-sky-400 bg-sky-500/10 shadow-sm ring-1 ring-sky-300/30" : "border-border/80 bg-panel/85 hover:border-sky-300 hover:bg-bg/40 hover:shadow-sm"}`}
                           onClick={() => {
                             setCreateOpen(false);
                             setSelectedThreadId(threadId);
                           }}
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <div className="line-clamp-2 text-[12px] font-semibold leading-snug text-fg">{threadTitle(thread)}</div>
-                              <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted">{threadPreview(thread)}</div>
+                          <div className="min-w-0">
+                            <div className="line-clamp-2 text-[13px] font-semibold leading-snug text-fg">{threadTitle(thread)}</div>
+                            <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted">
+                              {meta.relation} · {threadPreview(thread)}
                             </div>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-muted">
+                            <span className={`rounded-full border px-1.5 py-0.5 font-semibold ${threadStatusTone(thread)}`}>{threadStatusLabel(thread)}</span>
                             {requiresAttention(thread) ? (
                               <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${attentionMeta(thread).tone}`}>
                                 {attentionMeta(thread).shortLabel}
                               </span>
                             ) : null}
+                            {threadPriority(thread) === "high" ? (
+                              <span className={`rounded-full border px-1.5 py-0.5 font-semibold ${priorityMeta(thread).tone}`}>{priorityMeta(thread).shortLabel}</span>
+                            ) : null}
+                            {mentionLabel ? (
+                              <span className="min-w-0 truncate rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-900">
+                                {mentionLabel}
+                              </span>
+                            ) : null}
                           </div>
-                          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-muted">
-                            <span className={`rounded-full border px-1.5 py-0.5 font-semibold ${threadStatusTone(thread)}`}>{threadStatusLabel(thread)}</span>
-                            <span className={`rounded-full border px-1.5 py-0.5 font-semibold ${priorityMeta(thread).tone}`}>{priorityMeta(thread).shortLabel}</span>
-                            <span>{meta.short}</span>
+                          <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] leading-4 text-muted">
+                            <span>Создал {threadCreatorLabel(thread, authorLabelsById, viewerUserId)}</span>
+                            <span aria-hidden="true">·</span>
+                            <span>Последний: {threadLastAuthorLabel(thread, authorLabelsById, viewerUserId)}</span>
                             <span aria-hidden="true">·</span>
                             <span>{formatDate(threadUpdatedAt(thread)) || "сейчас"}</span>
+                            <span aria-hidden="true">·</span>
+                            <span>{asArray(thread.comments).length} сообщ.</span>
                           </div>
                         </button>
                       );
