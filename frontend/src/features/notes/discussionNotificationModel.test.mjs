@@ -17,6 +17,7 @@ const baseThread = {
   requires_attention: true,
   attention_acknowledged_by_me: false,
   attention_acknowledged_at: 0,
+  created_by: "user_me",
   created_at: 100,
   updated_at: 110,
   resolved_at: 0,
@@ -27,7 +28,7 @@ const baseThread = {
 };
 
 test("discussion notification item follows the bounded entity contract", () => {
-  const item = buildDiscussionNotificationItem(baseThread);
+  const item = buildDiscussionNotificationItem(baseThread, { currentUserId: "user_me" });
 
   assert.deepEqual(item, {
     id: "discussion_attention:thread_1",
@@ -49,10 +50,11 @@ test("discussion notification item follows the bounded entity contract", () => {
 });
 
 test("active and history state derive only from thread attention truth", () => {
-  assert.equal(discussionNotificationState(baseThread), "active");
-  assert.equal(discussionNotificationState({ ...baseThread, attention_acknowledged_by_me: true, attention_acknowledged_at: 130 }), "history");
-  assert.equal(discussionNotificationState({ ...baseThread, status: "resolved", resolved_at: 140 }), "history");
-  assert.equal(discussionNotificationState({ ...baseThread, requires_attention: false }), "");
+  assert.equal(discussionNotificationState(baseThread, { currentUserId: "user_me" }), "active");
+  assert.equal(discussionNotificationState({ ...baseThread, attention_acknowledged_by_me: true, attention_acknowledged_at: 130 }, { currentUserId: "user_me" }), "history");
+  assert.equal(discussionNotificationState({ ...baseThread, status: "resolved", resolved_at: 140 }, { currentUserId: "user_me" }), "history");
+  assert.equal(discussionNotificationState({ ...baseThread, requires_attention: false }, { currentUserId: "user_me" }), "");
+  assert.equal(discussionNotificationState({ ...baseThread, created_by: "user_other" }, { currentUserId: "user_me" }), "");
 });
 
 test("notification buckets cap active and recent history independently", () => {
@@ -68,7 +70,7 @@ test("notification buckets cap active and recent history independently", () => {
     attention_acknowledged_at: 300 + index,
   })));
 
-  const buckets = buildDiscussionNotificationBuckets(threads);
+  const buckets = buildDiscussionNotificationBuckets(threads, { currentUserId: "user_me" });
 
   assert.equal(buckets.active.length, 20);
   assert.equal(buckets.history.length, 20);
@@ -76,4 +78,14 @@ test("notification buckets cap active and recent history independently", () => {
   assert.equal(buckets.historyTotal, 25);
   assert.equal(buckets.active[0].threadId, "active_24");
   assert.equal(buckets.history[0].threadId, "history_24");
+});
+
+test("unrelated attention discussions do not enter personal notification buckets", () => {
+  const buckets = buildDiscussionNotificationBuckets([
+    { ...baseThread, id: "mine", created_by: "user_me" },
+    { ...baseThread, id: "other", created_by: "user_other" },
+  ], { currentUserId: "user_me" });
+
+  assert.equal(buckets.activeTotal, 1);
+  assert.equal(buckets.active[0].threadId, "mine");
 });

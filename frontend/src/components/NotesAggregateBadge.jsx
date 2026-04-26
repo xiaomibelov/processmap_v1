@@ -10,31 +10,22 @@ export default function NotesAggregateBadge({
   className = "",
   compact = false,
   compactNumericOnly = false,
-  label = "Заметки",
+  label = "Обсуждения",
 }) {
   const openCount = normalizeCount(count ?? aggregate?.open_notes_count);
-  const attentionCount = normalizeCount(aggregate?.attention_discussions_count);
-  const hasAttention = Boolean(aggregate?.has_attention_discussions || attentionCount > 0);
-  if (openCount <= 0 && !hasAttention) return null;
+  if (openCount <= 0) return null;
 
-  const chipLabel = String(label || "Заметки").trim() || "Заметки";
-  const ariaLabel = hasAttention
-    ? `Требуют внимания ${chipLabel.toLowerCase()}: ${attentionCount || 1}. Открытые: ${openCount}`
-    : `Открытые ${chipLabel.toLowerCase()}: ${openCount}`;
+  const chipLabel = String(label || "Обсуждения").trim() || "Обсуждения";
+  const ariaLabel = `Открытые ${chipLabel.toLowerCase()}: ${openCount}`;
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${hasAttention ? "border-rose-300 bg-rose-50 text-rose-900" : "border-sky-300/70 bg-sky-500/10 text-sky-800"} ${compactNumericOnly ? "pointer-events-none shrink-0" : ""} ${className}`}
+      className={`inline-flex items-center gap-1 rounded-full border border-sky-300/70 bg-sky-500/10 px-2 py-0.5 text-[11px] font-semibold text-sky-800 ${compactNumericOnly ? "pointer-events-none shrink-0" : ""} ${className}`}
       title={ariaLabel}
       aria-label={ariaLabel}
-      data-attention-discussions={hasAttention ? "true" : undefined}
+      data-discussions-count={openCount}
     >
       {compact && compactNumericOnly ? null : <span>{chipLabel}</span>}
-      {hasAttention ? (
-        <span className="inline-grid h-4 min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-black leading-none text-white" aria-hidden="true">
-          !
-        </span>
-      ) : null}
-      {openCount > 0 ? <span className="tabular-nums">{openCount}</span> : null}
+      <span className="tabular-nums">{openCount}</span>
     </span>
   );
 }
