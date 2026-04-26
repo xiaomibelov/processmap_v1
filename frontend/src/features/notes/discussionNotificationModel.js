@@ -41,11 +41,6 @@ export function discussionThreadAcknowledged(thread) {
   return thread?.attention_acknowledged_by_me === true || numericTime(thread?.attention_acknowledged_at) > 0;
 }
 
-export function discussionThreadOwnedByViewer(thread, currentUserId) {
-  const viewer = text(currentUserId);
-  return !!viewer && text(thread?.created_by) === viewer;
-}
-
 export function discussionThreadUpdatedAt(thread) {
   const commentTime = asArray(thread?.comments).reduce(
     (max, item) => Math.max(max, numericTime(item?.updated_at || item?.created_at)),
@@ -71,9 +66,8 @@ export function discussionThreadTitle(thread) {
   return source.length > 78 ? `${source.slice(0, 75)}...` : source;
 }
 
-export function discussionNotificationState(thread, options = {}) {
+export function discussionNotificationState(thread) {
   if (!discussionThreadRequiresAttention(thread)) return "";
-  if (!discussionThreadOwnedByViewer(thread, options?.currentUserId)) return "";
   const status = text(thread?.status || "open");
   if (status === "open" && !discussionThreadAcknowledged(thread)) return "active";
   if (discussionThreadAcknowledged(thread) || status === "resolved") return "history";

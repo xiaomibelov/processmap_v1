@@ -266,6 +266,11 @@ function MetricCell({ label, value, warn = false, icon = null, emptyLabel = " " 
   );
 }
 
+function sessionDiscussionAttentionCount(aggregate) {
+  if (!aggregate) return null;
+  return Math.max(0, Number(aggregate?.attention_discussions_count || 0) || 0);
+}
+
 function LastActivityCell({ node, maxWidthClass = "max-w-[220px]", quiet = false }) {
   const label = activitySourceLabel(node);
   return (
@@ -1194,6 +1199,13 @@ function SessionRow({
     projectId: session?.project_id,
     sessionId: session?.id || session?.session_id,
   });
+  const discussionAttentionCount = sessionDiscussionAttentionCount(notesAggregate);
+  const rowAttentionCount = discussionAttentionCount === null
+    ? Math.max(0, Number(session.attention_count || 0) || 0)
+    : discussionAttentionCount;
+  const rowAttentionLabel = discussionAttentionCount === null
+    ? "Требует внимания"
+    : "Требует внимания из обсуждений";
   return (
     <>
       <tr
@@ -1291,8 +1303,8 @@ function SessionRow({
           </td>
         ) : null}
         {showSignalColumns ? (
-          <td className="px-2 py-2.5 text-center" title="Требует внимания">
-            <MetricCell label="Требует внимания" value={session.attention_count} warn icon="⚠" emptyLabel="—" />
+          <td className="px-2 py-2.5 text-center" title={rowAttentionLabel}>
+            <MetricCell label={rowAttentionLabel} value={rowAttentionCount} warn icon="⚠" emptyLabel="—" />
           </td>
         ) : null}
         {showSignalColumns ? (

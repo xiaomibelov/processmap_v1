@@ -1226,7 +1226,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
               {notificationMode ? (
                 <div data-testid="discussion-notification-inbox" className="flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-panel/85 p-3 shadow-sm">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Мои обсуждения</div>
+                    <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Требует внимания</div>
                     <button
                       type="button"
                       className="secondaryBtn tinyBtn h-7 px-2 text-[10px]"
@@ -1240,10 +1240,10 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                     <div className="grid gap-3">
                     <section>
                       <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted">
-                        <span>Требуют моего внимания</span>
+                        <span>Требуют внимания</span>
                         <span className="tabular-nums">{notificationBuckets.activeTotal}</span>
                       </div>
-                      {renderNotificationList(notificationBuckets.active, "Нет ваших обсуждений, которые требуют внимания.")}
+                      {renderNotificationList(notificationBuckets.active, "Нет обсуждений, которые требуют внимания.")}
                     </section>
                     <section>
                       <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted">
