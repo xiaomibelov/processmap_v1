@@ -25,7 +25,7 @@ import {
   apiGetProjectPage,
   apiCreateSession,
 } from "./explorerApi.js";
-import { apiDeleteProject, apiDeleteSession, apiGetSession, apiGetSessionNoteAggregate, apiPatchProject, apiPatchSession } from "../../lib/api";
+import { apiDeleteProject, apiDeleteSession, apiGetSession, apiPatchProject, apiPatchSession } from "../../lib/api";
 import {
   MANUAL_SESSION_STATUSES,
   getManualSessionStatusMeta,
@@ -35,6 +35,7 @@ import { buildVisibleRows, hasFolderChildren } from "./work3TreeState.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
 import NotesAggregateBadge from "../../components/NotesAggregateBadge.jsx";
+import { useSessionNoteAggregates } from "../../lib/sessionNoteAggregates.js";
 import { buildAppWorkspaceHref, shouldHandleClientNavigation } from "../navigation/appLinkBehavior.js";
 
 // ─── Icons (inline SVG to avoid external deps) ────────────────────────────────
@@ -190,58 +191,6 @@ const EXPLORER_COLUMN_PROFILES = {
     showSignalColumns: true,
   },
 };
-
-const noteAggregateCache = new Map();
-
-function sessionNoteAggregateCacheKey(sessionId) {
-  return `session:${String(sessionId || "").trim()}`;
-}
-
-function useSessionNoteAggregate(sessionId) {
-  const sid = String(sessionId || "").trim();
-  const cacheKey = sessionNoteAggregateCacheKey(sid);
-  const [aggregate, setAggregate] = useState(() => noteAggregateCache.get(cacheKey) || null);
-  const [refreshTick, setRefreshTick] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!sid) {
-      setAggregate(null);
-      return () => {
-        cancelled = true;
-      };
-    }
-    const cached = noteAggregateCache.get(cacheKey) || null;
-    if (cached) {
-      setAggregate(cached);
-    }
-    void apiGetSessionNoteAggregate(sid).then((result) => {
-      if (cancelled || !result?.ok) return;
-      const nextAggregate = result.aggregate || null;
-      noteAggregateCache.set(cacheKey, nextAggregate);
-      setAggregate(nextAggregate);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [cacheKey, refreshTick, sid]);
-
-  useEffect(() => {
-    if (!sid || typeof window === "undefined") return undefined;
-    const handleChanged = (event) => {
-      const changedSessionId = String(event?.detail?.sessionId || "").trim();
-      if (changedSessionId !== sid) return;
-      noteAggregateCache.delete(cacheKey);
-      setRefreshTick((value) => value + 1);
-    };
-    window.addEventListener("processmap:notes-aggregate-changed", handleChanged);
-    return () => {
-      window.removeEventListener("processmap:notes-aggregate-changed", handleChanged);
-    };
-  }, [cacheKey, sid]);
-
-  return aggregate;
-}
 
 function EntityTypePill({ type }) {
   const normalized = String(type || "").trim().toLowerCase();
@@ -1206,13 +1155,12 @@ function SessionRow({
   canDelete = false,
   canChangeStatus = false,
   showSignalColumns = true,
+  notesAggregate = null,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [pendingStatus, setPendingStatus] = useState(String(session.status || "draft"));
   const sessionStatusMeta = getManualSessionStatusMeta(pendingStatus);
-  const notesAggregate = useSessionNoteAggregate(session?.id || session?.session_id);
-
   useEffect(() => {
     setPendingStatus(String(session.status || "draft"));
   }, [session.status]);
@@ -1456,6 +1404,11 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
 
   const proj = page?.project;
   const sessions = page?.sessions || [];
+  const sessionAggregateIds = useMemo(
+    () => sessions.map((item) => item?.id || item?.session_id).filter(Boolean),
+    [sessions],
+  );
+  const noteAggregatesBySessionId = useSessionNoteAggregates(sessionAggregateIds);
   const isEmpty = !loading && !error && sessions.length === 0;
   const sessionColumnProfile = EXPLORER_COLUMN_PROFILES.sessions;
   const handleOpenSessionRequest = useCallback(async (sessionLike) => {
@@ -1616,6 +1569,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                 <SessionRow
                   key={s.id}
                   session={s}
+                  notesAggregate={noteAggregatesBySessionId.get(String(s?.id || s?.session_id || "").trim()) || null}
                   isOpening={openingSessionId === String(s.id || s.session_id || "").trim()}
                   onOpen={(sess) => handleOpenSessionRequest({
                     ...sess,

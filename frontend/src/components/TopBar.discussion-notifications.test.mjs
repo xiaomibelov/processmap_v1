@@ -7,8 +7,8 @@ const appShellSource = fs.readFileSync(new URL("./AppShell.jsx", import.meta.url
 const appSource = fs.readFileSync(new URL("../App.jsx", import.meta.url), "utf8");
 
 test("TopBar exposes bounded discussion notification entry from existing note aggregate truth", () => {
-  assert.match(topBarSource, /apiGetSessionNoteAggregate/);
-  assert.match(topBarSource, /processmap:notes-aggregate-changed/);
+  assert.match(topBarSource, /useSessionNoteAggregate\(effectiveSessionId\)/);
+  assert.doesNotMatch(topBarSource, /apiGetSessionNoteAggregate/);
   assert.doesNotMatch(topBarSource, /data-testid="topbar-mentions-button"/);
   assert.match(topBarSource, /data-testid="topbar-account-button"/);
   assert.match(topBarSource, /data-testid="topbar-account-notification-count"/);

@@ -3,7 +3,7 @@ import AiToolsModal from "./AiToolsModal";
 import NotesAggregateBadge from "./NotesAggregateBadge.jsx";
 import { useAuth } from "../features/auth/AuthProvider";
 import { getManualSessionStatusMeta, MANUAL_SESSION_STATUSES } from "../features/workspace/workspacePermissions";
-import { apiGetSessionNoteAggregate } from "../lib/api";
+import { useSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -124,8 +124,7 @@ export default function TopBar({
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
-  const [notesAggregate, setNotesAggregate] = useState(null);
-  const [notesAggregateTick, setNotesAggregateTick] = useState(0);
+  const notesAggregate = useSessionNoteAggregate(effectiveSessionId);
   const accountMenuRef = useRef(null);
   const accountButtonRef = useRef(null);
   const projectMenuRef = useRef(null);
@@ -228,36 +227,6 @@ export default function TopBar({
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [statusMenuOpen]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!effectiveSessionId) {
-      setNotesAggregate(null);
-      return () => {
-        cancelled = true;
-      };
-    }
-    void apiGetSessionNoteAggregate(effectiveSessionId).then((result) => {
-      if (cancelled || !result?.ok) return;
-      setNotesAggregate(result.aggregate || null);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeOrgId, effectiveSessionId, notesAggregateTick]);
-
-  useEffect(() => {
-    if (!effectiveSessionId || typeof window === "undefined") return undefined;
-    const handleChanged = (event) => {
-      const changedSessionId = String(event?.detail?.sessionId || "").trim();
-      if (changedSessionId !== effectiveSessionId) return;
-      setNotesAggregateTick((value) => value + 1);
-    };
-    window.addEventListener("processmap:notes-aggregate-changed", handleChanged);
-    return () => {
-      window.removeEventListener("processmap:notes-aggregate-changed", handleChanged);
-    };
-  }, [effectiveSessionId]);
 
   function toggleTheme() {
     const next = uiTheme === "dark" ? "light" : "dark";
