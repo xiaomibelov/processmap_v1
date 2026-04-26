@@ -19,7 +19,21 @@ test("TopBar exposes bounded discussion notification entry from existing note ag
   assert.match(topBarSource, /onOpenDiscussionNotifications\?\.\(\)/);
   assert.match(topBarSource, /count=\{notesAggregate\?\.attention_discussions_count\}/);
   assert.match(topBarSource, /NotesAggregateBadge[\s\S]*label="Обсуждения"/);
-  assert.match(topBarSource, /max-h-\[min\(76vh,620px\)\]/);
+  assert.match(topBarSource, /fixed right-3 top-14/);
+  assert.match(topBarSource, /max-h-\[calc\(100vh-4\.25rem\)\]/);
+  assert.match(topBarSource, /overflow-y-auto/);
+  assert.match(topBarSource, /mentionItems\.slice\(0, 4\)/);
+});
+
+test("TopBar profile menu uses a direct theme switch instead of settings row", () => {
+  assert.match(topBarSource, /data-testid="topbar-theme-toggle"/);
+  assert.match(topBarSource, /role="switch"/);
+  assert.match(topBarSource, /aria-checked=\{uiTheme === "light" \? "true" : "false"\}/);
+  assert.match(topBarSource, /toggleTheme\(\)/);
+  assert.match(topBarSource, /Тёмная/);
+  assert.match(topBarSource, /Светлая/);
+  assert.doesNotMatch(topBarSource, /data-testid="topbar-account-settings"/);
+  assert.doesNotMatch(topBarSource, />Настройки</);
 });
 
 test("App bridge opens NotesMvpPanel in notification mode without a new router", () => {
