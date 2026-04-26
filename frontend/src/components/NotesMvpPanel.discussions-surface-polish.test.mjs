@@ -30,7 +30,9 @@ test("Discussions surface uses unified discussions labeling and hides the floati
   assert.match(workspaceExplorerSource, /NotesAggregateBadge[\s\S]*aggregate=\{notesAggregate\}[\s\S]*compactNumericOnly[\s\S]*label="Обсуждения"/);
   assert.match(workspaceExplorerSource, /<th className="px-2 py-2 text-center"[\s\S]*Обс\.[\s\S]*<\/th>/);
   assert.match(workspaceExplorerSource, /aria-label="Колонка Требует внимания"[\s\S]*⚠[\s\S]*Вним\./);
-  assert.match(workspaceExplorerSource, /<MetricCell label="Требует внимания" value=\{session\.attention_count\} warn icon="⚠" emptyLabel="—" \/>/);
+  assert.match(workspaceExplorerSource, /sessionDiscussionAttentionCount\(notesAggregate\)/);
+  assert.match(workspaceExplorerSource, /attention_discussions_count/);
+  assert.match(workspaceExplorerSource, /<MetricCell label=\{rowAttentionLabel\} value=\{rowAttentionCount\} warn icon="⚠" emptyLabel="—" \/>/);
   assert.match(workspaceExplorerSource, /sessionColumnProfile\.showSignalColumns \? <col className="w-\[76px\]" \/> : null/);
 });
 
@@ -144,8 +146,8 @@ test("Discussions panel exposes bounded notification inbox and history without n
   assert.match(notesMvpPanelSource, /data-testid="discussion-notification-inbox"/);
   assert.match(notesMvpPanelSource, /notificationBuckets\.active/);
   assert.match(notesMvpPanelSource, /notificationBuckets\.history/);
-  assert.match(notesMvpPanelSource, /Мои обсуждения/);
-  assert.match(notesMvpPanelSource, /Требуют моего внимания/);
+  assert.match(notesMvpPanelSource, /Требует внимания/);
+  assert.match(notesMvpPanelSource, /Требуют внимания/);
   assert.match(notesMvpPanelSource, /Недавние/);
   assert.match(notesMvpPanelSource, /\{notificationMode \? \(/);
   assert.match(notesMvpPanelSource, /\) : \(\s*<>\s*<div className="flex items-center gap-2">/);

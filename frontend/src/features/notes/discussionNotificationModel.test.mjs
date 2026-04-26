@@ -54,7 +54,7 @@ test("active and history state derive only from thread attention truth", () => {
   assert.equal(discussionNotificationState({ ...baseThread, attention_acknowledged_by_me: true, attention_acknowledged_at: 130 }, { currentUserId: "user_me" }), "history");
   assert.equal(discussionNotificationState({ ...baseThread, status: "resolved", resolved_at: 140 }, { currentUserId: "user_me" }), "history");
   assert.equal(discussionNotificationState({ ...baseThread, requires_attention: false }, { currentUserId: "user_me" }), "");
-  assert.equal(discussionNotificationState({ ...baseThread, created_by: "user_other" }, { currentUserId: "user_me" }), "");
+  assert.equal(discussionNotificationState({ ...baseThread, created_by: "user_other" }, { currentUserId: "user_me" }), "active");
 });
 
 test("notification buckets cap active and recent history independently", () => {
@@ -80,12 +80,12 @@ test("notification buckets cap active and recent history independently", () => {
   assert.equal(buckets.history[0].threadId, "history_24");
 });
 
-test("unrelated attention discussions do not enter personal notification buckets", () => {
+test("attention discussions enter notification buckets regardless of creator", () => {
   const buckets = buildDiscussionNotificationBuckets([
     { ...baseThread, id: "mine", created_by: "user_me" },
     { ...baseThread, id: "other", created_by: "user_other" },
   ], { currentUserId: "user_me" });
 
-  assert.equal(buckets.activeTotal, 1);
-  assert.equal(buckets.active[0].threadId, "mine");
+  assert.equal(buckets.activeTotal, 2);
+  assert.deepEqual(buckets.active.map((item) => item.threadId).sort(), ["mine", "other"]);
 });
