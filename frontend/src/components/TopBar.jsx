@@ -121,7 +121,6 @@ export default function TopBar({
   const [uiTheme, setUiTheme] = useState("dark");
   const [aiToolsOpen, setAiToolsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-  const [mentionMenuOpen, setMentionMenuOpen] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
@@ -129,8 +128,6 @@ export default function TopBar({
   const [notesAggregateTick, setNotesAggregateTick] = useState(0);
   const accountMenuRef = useRef(null);
   const accountButtonRef = useRef(null);
-  const mentionMenuRef = useRef(null);
-  const mentionButtonRef = useRef(null);
   const projectMenuRef = useRef(null);
   const projectMenuButtonRef = useRef(null);
   const sessionMenuRef = useRef(null);
@@ -168,27 +165,6 @@ export default function TopBar({
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [accountMenuOpen]);
-
-  useEffect(() => {
-    if (!mentionMenuOpen) return undefined;
-    function onPointerDown(event) {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      const menu = mentionMenuRef.current;
-      const button = mentionButtonRef.current;
-      if (menu?.contains(target) || button?.contains(target)) return;
-      setMentionMenuOpen(false);
-    }
-    function onKeyDown(event) {
-      if (event.key === "Escape") setMentionMenuOpen(false);
-    }
-    window.addEventListener("mousedown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("mousedown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [mentionMenuOpen]);
 
   useEffect(() => {
     if (!projectMenuOpen) return undefined;
@@ -351,6 +327,8 @@ export default function TopBar({
   const canOpenOrgSettings = Boolean(user?.is_admin) || ["org_owner", "org_admin", "auditor"].includes(activeOrgRole);
   const mentionItems = asArray(mentionNotifications);
   const mentionCount = mentionItems.length;
+  const discussionAttentionCount = Math.max(0, Number(notesAggregate?.attention_discussions_count || 0) || 0);
+  const accountNotificationCount = mentionCount + discussionAttentionCount;
 
   async function handleLogout() {
     if (typeof window !== "undefined") {
@@ -610,34 +588,50 @@ export default function TopBar({
         </div>
 
         <div className="topGroup relative flex shrink-0 items-center gap-2">
-          <div className="relative">
-            <button
-              type="button"
-              ref={mentionButtonRef}
-              className={`inline-flex h-9 min-w-9 items-center justify-center gap-1 rounded-full border px-2 text-sm font-black ${mentionCount > 0 ? "border-rose-300 bg-rose-50 text-rose-900" : "border-border bg-panel2/70 text-muted"}`}
-              onClick={() => {
-                setMentionMenuOpen((prev) => !prev);
-                if (typeof onRefreshMentionNotifications === "function") void onRefreshMentionNotifications();
-              }}
-              title={mentionCount > 0 ? `Новых упоминаний: ${mentionCount}` : "Упоминаний нет"}
-              aria-label={mentionCount > 0 ? `Упоминания: ${mentionCount}` : "Упоминания"}
-              aria-expanded={mentionMenuOpen ? "true" : "false"}
-              data-testid="topbar-mentions-button"
-            >
-              <span aria-hidden="true">@</span>
-              {mentionCount > 0 ? <span className="tabular-nums text-[11px]">{mentionCount}</span> : null}
-            </button>
-
-            {mentionMenuOpen ? (
-              <div
-                ref={mentionMenuRef}
-                className="absolute right-0 top-[calc(100%+8px)] z-[140] grid w-[min(360px,calc(100vw-1rem))] gap-1 rounded-xl border border-border bg-panel p-2 shadow-panel backdrop-blur"
-                data-testid="topbar-mentions-menu"
+          <button
+            type="button"
+            ref={accountButtonRef}
+            className={`iconBtn relative h-9 w-9 min-w-9 rounded-full border ${accountNotificationCount > 0 ? "border-rose-300 bg-rose-50 text-rose-900" : "border-border bg-panel2/70 text-fg"}`}
+            onClick={() => {
+              const nextOpen = !accountMenuOpen;
+              setAccountMenuOpen(nextOpen);
+              if (nextOpen && typeof onRefreshMentionNotifications === "function") void onRefreshMentionNotifications();
+            }}
+            title={accountNotificationCount > 0 ? `Профиль и уведомления: ${accountNotificationCount}` : "Профиль"}
+            aria-label={accountNotificationCount > 0 ? `Профиль и уведомления: ${accountNotificationCount}` : "Профиль"}
+            aria-expanded={accountMenuOpen ? "true" : "false"}
+            data-testid="topbar-account-button"
+          >
+            <UserAvatarIcon className="h-5 w-5" />
+            {accountNotificationCount > 0 ? (
+              <span
+                className="absolute -right-1 -top-1 min-w-4 rounded-full border border-white bg-rose-600 px-1 text-[10px] font-black leading-4 text-white shadow-sm"
+                data-testid="topbar-account-notification-count"
               >
-                <div className="flex items-center justify-between gap-2 px-2 py-1">
+                {accountNotificationCount > 9 ? "9+" : accountNotificationCount}
+              </span>
+            ) : null}
+          </button>
+
+          {accountMenuOpen ? (
+            <div
+              ref={accountMenuRef}
+              className="absolute right-0 top-[calc(100%+8px)] z-[140] grid max-h-[min(76vh,620px)] w-[min(380px,calc(100vw-1rem))] gap-1 overflow-auto rounded-xl border border-border bg-panel p-1.5 shadow-panel backdrop-blur"
+              data-testid="topbar-account-menu"
+            >
+              <div className="mb-1 rounded-lg border border-border/60 bg-panel2/50 px-3 py-2">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Аккаунт</div>
+                <div className="truncate text-sm font-semibold text-fg" title={userTitleFrom(user)}>
+                  {shortLabel(userTitleFrom(user), 28)}
+                </div>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-bg/35 p-2" data-testid="topbar-mentions-menu">
+                <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
                   <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Упоминания</div>
-                    <div className="text-xs text-muted">{mentionCount > 0 ? "Нажмите, чтобы открыть обсуждение" : "Активных упоминаний нет"}</div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Уведомления</div>
+                    <div className="text-xs text-muted">
+                      {accountNotificationCount > 0 ? "Упоминания и обсуждения, требующие внимания" : "Активных уведомлений нет"}
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -650,25 +644,29 @@ export default function TopBar({
                     ↻
                   </button>
                 </div>
-                {mentionCount > 0 ? mentionItems.slice(0, 8).map((item) => (
-                  <button
-                    key={toText(item?.id)}
-                    type="button"
-                    className="rounded-lg border border-border/70 bg-panel2/50 px-3 py-2 text-left transition hover:border-sky-300 hover:bg-white"
-                    onClick={() => {
-                      setMentionMenuOpen(false);
-                      if (typeof onOpenMentionNotification === "function") onOpenMentionNotification(item);
-                    }}
-                    data-testid="topbar-mention-item"
-                  >
-                    <div className="flex items-center gap-2 text-[11px] font-semibold text-rose-900">
-                      <span className="rounded-full border border-rose-300 bg-rose-50 px-1.5 py-0.5">@</span>
-                      <span>{toText(item?.mentioned_label || item?.mentioned_user_id) || "Вы"}</span>
-                    </div>
-                    <div className="mt-1 text-sm font-semibold leading-snug text-fg">{mentionPreview(item)}</div>
-                    <div className="mt-1 text-[11px] text-muted">Открыть обсуждение</div>
-                  </button>
-                )) : (
+                {mentionCount > 0 ? (
+                  <div className="grid gap-1">
+                    {mentionItems.slice(0, 5).map((item) => (
+                      <button
+                        key={toText(item?.id)}
+                        type="button"
+                        className="rounded-lg border border-border/70 bg-panel2/50 px-3 py-2 text-left transition hover:border-sky-300 hover:bg-white"
+                        onClick={() => {
+                          setAccountMenuOpen(false);
+                          if (typeof onOpenMentionNotification === "function") onOpenMentionNotification(item);
+                        }}
+                        data-testid="topbar-mention-item"
+                      >
+                        <div className="flex items-center gap-2 text-[11px] font-semibold text-rose-900">
+                          <span className="rounded-full border border-rose-300 bg-rose-50 px-1.5 py-0.5">@</span>
+                          <span>{toText(item?.mentioned_label || item?.mentioned_user_id) || "Вы"}</span>
+                        </div>
+                        <div className="mt-1 text-sm font-semibold leading-snug text-fg">{mentionPreview(item)}</div>
+                        <div className="mt-1 text-[11px] text-muted">Открыть обсуждение</div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
                   <div className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted">
                     Здесь появятся персональные упоминания из обсуждений.
                   </div>
@@ -676,15 +674,15 @@ export default function TopBar({
                 {hasActiveSession ? (
                   <button
                     type="button"
-                    className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
+                    className="secondaryBtn mt-1.5 h-9 w-full justify-start px-3 text-left text-sm"
                     onClick={() => {
-                      setMentionMenuOpen(false);
+                      setAccountMenuOpen(false);
                       onOpenDiscussionNotifications?.();
                     }}
                     data-testid="topbar-discussion-notifications"
                     data-notes-panel-trigger="true"
                   >
-                    Inbox/history
+                    Уведомления обсуждений
                     <NotesAggregateBadge
                       aggregate={notesAggregate}
                       count={notesAggregate?.attention_discussions_count}
@@ -695,34 +693,6 @@ export default function TopBar({
                     />
                   </button>
                 ) : null}
-              </div>
-            ) : null}
-          </div>
-
-          <button
-            type="button"
-            ref={accountButtonRef}
-            className="iconBtn h-9 w-9 min-w-9 rounded-full border border-border bg-panel2/70 text-fg"
-            onClick={() => setAccountMenuOpen((prev) => !prev)}
-            title="Профиль"
-            aria-label="Профиль"
-            aria-expanded={accountMenuOpen ? "true" : "false"}
-            data-testid="topbar-account-button"
-          >
-            <UserAvatarIcon className="h-5 w-5" />
-          </button>
-
-          {accountMenuOpen ? (
-            <div
-              ref={accountMenuRef}
-              className="absolute right-0 top-[calc(100%+8px)] z-[140] grid min-w-[220px] gap-1 rounded-xl border border-border bg-panel p-1.5 shadow-panel backdrop-blur"
-              data-testid="topbar-account-menu"
-            >
-              <div className="mb-1 rounded-lg border border-border/60 bg-panel2/50 px-3 py-2">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Аккаунт</div>
-                <div className="truncate text-sm font-semibold text-fg" title={userTitleFrom(user)}>
-                  {shortLabel(userTitleFrom(user), 28)}
-                </div>
               </div>
               <button
                 type="button"
