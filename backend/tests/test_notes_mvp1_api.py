@@ -59,8 +59,20 @@ class NotesMvp1ApiTest(unittest.TestCase):
 
         _ = get_storage()
         self.org_id = get_default_org_id()
-        self.editor = create_user("notes_editor@local", "editor", is_admin=False)
-        self.viewer = create_user("notes_viewer@local", "viewer", is_admin=False)
+        self.editor = create_user(
+            "notes_editor@local",
+            "editor",
+            is_admin=False,
+            full_name="Редактор Обсуждений",
+            job_title="Технолог",
+        )
+        self.viewer = create_user(
+            "notes_viewer@local",
+            "viewer",
+            is_admin=False,
+            full_name="Наблюдатель Обсуждений",
+            job_title="Аудитор",
+        )
         self._insert_membership(self.org_id, str(self.editor.get("id") or ""), "editor")
         self._insert_membership(self.org_id, str(self.viewer.get("id") or ""), "viewer")
 
@@ -215,6 +227,32 @@ class NotesMvp1ApiTest(unittest.TestCase):
         self.assertEqual(reopened["status"], "open")
         self.assertEqual(reopened["resolved_by"], "")
         self.assertEqual(reopened["resolved_at"], 0)
+
+    def test_note_threads_include_db_backed_author_profile_identity(self):
+        created = self.create_session_note_thread(
+            self.session_id,
+            self.CreateNoteThreadBody(
+                scope_type="session",
+                scope_ref={},
+                body="Проверить отображение автора",
+                mention_user_ids=[str(self.viewer.get("id") or "")],
+            ),
+            self._req(),
+        )["thread"]
+
+        self.assertEqual(created["created_by"], str(self.editor.get("id") or ""))
+        self.assertEqual(created["created_by_full_name"], "Редактор Обсуждений")
+        self.assertEqual(created["created_by_email"], "notes_editor@local")
+        self.assertEqual(created["created_by_job_title"], "Технолог")
+        self.assertEqual(created["comments"][0]["author_user_id"], str(self.editor.get("id") or ""))
+        self.assertEqual(created["comments"][0]["author_full_name"], "Редактор Обсуждений")
+        self.assertEqual(created["comments"][0]["author_email"], "notes_editor@local")
+        self.assertEqual(created["comments"][0]["author_job_title"], "Технолог")
+        self.assertEqual(created["comments"][0]["mentions"][0]["mentioned_label"], "Наблюдатель Обсуждений")
+
+        listed = self.list_session_note_threads(self.session_id, self._req(), status="")["items"][0]
+        self.assertEqual(listed["created_by_full_name"], "Редактор Обсуждений")
+        self.assertEqual(listed["comments"][0]["author_full_name"], "Редактор Обсуждений")
 
     def test_scope_validation_rejects_invalid_scope_and_missing_element_id(self):
         for body in (
