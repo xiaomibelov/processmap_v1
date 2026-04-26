@@ -186,9 +186,11 @@ function formatSessionPatchError(resp, fallback = "Не удалось смен�
 const EXPLORER_COLUMN_PROFILES = {
   tree: {
     showSignalColumns: false,
+    showDiscussionColumn: false,
   },
   sessions: {
     showSignalColumns: true,
+    showDiscussionColumn: true,
   },
 };
 
@@ -1155,6 +1157,7 @@ function SessionRow({
   canDelete = false,
   canChangeStatus = false,
   showSignalColumns = true,
+  showDiscussionColumn = false,
   notesAggregate = null,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1202,7 +1205,6 @@ function SessionRow({
                 <span>{isOpening ? "Открываем сессию" : "Открыть сессию"}</span>
                 <IcoChevron right className="text-[10px]" />
               </span>
-              <NotesAggregateBadge aggregate={notesAggregate} compact />
             </div>
           </div>
         </td>
@@ -1262,6 +1264,19 @@ function SessionRow({
             : <span className="text-[11px] text-muted/65">—</span>}
         </td>
         <td className="px-2 py-2.5"><DodBar percent={session.dod_percent} /></td>
+        {showDiscussionColumn ? (
+          <td className="px-2 py-2.5 text-center" title="Открытые обсуждения">
+            <div className="flex min-w-0 justify-center">
+              <NotesAggregateBadge
+                aggregate={notesAggregate}
+                compact
+                compactNumericOnly
+                label="Обсуждения"
+                className="border-border bg-white/85 px-1.5 py-0 text-[10px]"
+              />
+            </div>
+          </td>
+        ) : null}
         {showSignalColumns ? (
           <td className="px-2 py-2.5 text-center" title="Требует внимания">
             <MetricCell value={session.attention_count} warn />
@@ -1537,6 +1552,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
               <col className="w-[92px]" />
               <col className="w-[96px]" />
               <col className="w-[90px]" />
+              {sessionColumnProfile.showDiscussionColumn ? <col className="w-[76px]" /> : null}
               {sessionColumnProfile.showSignalColumns ? <col className="w-[42px]" /> : null}
               {sessionColumnProfile.showSignalColumns ? <col className="w-[42px]" /> : null}
               <col className="w-[104px]" />
@@ -1550,6 +1566,11 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                 <th className="px-2 py-2">Стадия</th>
                 <th className="px-2 py-2">Owner</th>
                 <th className="px-2 py-2">DoD</th>
+                {sessionColumnProfile.showDiscussionColumn ? (
+                  <th className="px-2 py-2 text-center" title="Открытые обсуждения" aria-label="Колонка открытых обсуждений">
+                    Обс.
+                  </th>
+                ) : null}
                 {sessionColumnProfile.showSignalColumns ? (
                   <th className="px-2 py-2 text-center" title="Требует внимания" aria-label="Колонка Требует внимания">
                     <span aria-hidden>⚠</span>
@@ -1582,6 +1603,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                   canDelete={!!permissions?.canDeleteSession}
                   canChangeStatus={!!permissions?.canChangeStatus}
                   showSignalColumns={sessionColumnProfile.showSignalColumns}
+                  showDiscussionColumn={sessionColumnProfile.showDiscussionColumn}
                 />
               ))}
             </tbody>
