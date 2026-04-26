@@ -16,6 +16,13 @@ test("AppShell uses shellSessionId for shell continuity while keeping ProcessSta
   assert.match(source, /<ProcessStage[\s\S]*sessionId=\{sessionId\}/);
 });
 
+test("AppShell forwards mention notification contract into TopBar", () => {
+  assert.match(source, /mentionNotifications/);
+  assert.match(source, /<TopBar[\s\S]*mentionNotifications=\{mentionNotifications\}/);
+  assert.match(source, /<TopBar[\s\S]*onOpenMentionNotification=\{onOpenMentionNotification\}/);
+  assert.match(source, /<TopBar[\s\S]*onRefreshMentionNotifications=\{onRefreshMentionNotifications\}/);
+});
+
 test("AppShell replaces legacy footer helper copy with app version source of truth", () => {
   assert.match(source, /import \{ appVersionInfo \} from "\.\.\/config\/appVersion\.js"/);
   assert.match(source, /data-testid="app-version-footer"/);

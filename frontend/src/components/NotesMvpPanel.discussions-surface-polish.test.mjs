@@ -91,6 +91,12 @@ test("Discussions render entity priority and attention from the thread source of
   assert.match(notesMvpPanelSource, /function attentionAcknowledged\(thread\)/);
   assert.match(notesMvpPanelSource, /data-testid="notes-create-priority"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-create-attention"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-create-mention-user"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-reply-mention-user"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-comment-mentions"/);
+  assert.match(notesMvpPanelSource, /apiListMentionableUsers/);
+  assert.match(notesMvpPanelSource, /mention_user_ids/);
+  assert.match(notesMvpPanelSource, /processmap:note-mentions-changed/);
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-priority-select"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-attention-toggle"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-attention-acknowledge"/);

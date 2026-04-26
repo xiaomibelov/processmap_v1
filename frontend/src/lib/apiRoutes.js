@@ -104,6 +104,7 @@ export const apiRoutes = {
     edges: (sessionId) => `/api/sessions/${encode(sessionId)}/edges`,
     notes: (sessionId) => `/api/sessions/${encode(sessionId)}/notes`,
     noteAggregate: (sessionId) => `/api/sessions/${encode(sessionId)}/note-aggregate`,
+    mentionableUsers: (sessionId) => `/api/sessions/${encode(sessionId)}/mentionable-users`,
     noteThreads: (sessionId, filters = {}) => withQuery(`/api/sessions/${encode(sessionId)}/note-threads`, {
       status: String(filters?.status || "").trim(),
       scope_type: String(filters?.scopeType || filters?.scope_type || "").trim(),
@@ -150,6 +151,10 @@ export const apiRoutes = {
     item: (threadId) => `/api/note-threads/${encode(threadId)}`,
     comments: (threadId) => `/api/note-threads/${encode(threadId)}/comments`,
     attentionAcknowledgement: (threadId) => `/api/note-threads/${encode(threadId)}/attention-acknowledgement`,
+  },
+  noteMentions: {
+    list: (limit = "") => withQuery("/api/note-mentions", { limit: String(limit || "").trim() }),
+    acknowledge: (mentionId) => `/api/note-mentions/${encode(mentionId)}/acknowledge`,
   },
   noteAggregates: {
     project: (projectId) => `/api/projects/${encode(projectId)}/note-aggregate`,
