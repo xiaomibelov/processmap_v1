@@ -11,6 +11,9 @@ const workspaceExplorerSource = fs.readFileSync(new URL("../features/explorer/Wo
 
 test("Discussions surface uses unified discussions labeling and hides the floating trigger on desktop", () => {
   assert.match(badgeSource, /label = "Заметки"/);
+  assert.match(badgeSource, /attention_discussions_count/);
+  assert.match(badgeSource, /has_attention_discussions/);
+  assert.match(badgeSource, /data-attention-discussions=\{hasAttention \? "true" : undefined\}/);
   assert.match(badgeSource, /compactNumericOnly = false/);
   assert.match(badgeSource, /compactNumericOnly \? "pointer-events-none shrink-0" : ""/);
   assert.match(badgeSource, /\{compact && compactNumericOnly \? null : <span>\{chipLabel\}<\/span>\}/);

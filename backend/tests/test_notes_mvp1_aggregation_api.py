@@ -121,11 +121,24 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
         )
         return pid, sid
 
-    def _create_note(self, session_id: str, scope_type: str, body: str, *, element_id: str = "") -> str:
+    def _create_note(
+        self,
+        session_id: str,
+        scope_type: str,
+        body: str,
+        *,
+        element_id: str = "",
+        requires_attention: bool = False,
+    ) -> str:
         scope_ref = {"element_id": element_id} if scope_type == "diagram_element" else {}
         payload = self.create_session_note_thread(
             session_id,
-            self.CreateNoteThreadBody(scope_type=scope_type, scope_ref=scope_ref, body=body),
+            self.CreateNoteThreadBody(
+                scope_type=scope_type,
+                scope_ref=scope_ref,
+                body=body,
+                requires_attention=requires_attention,
+            ),
             self._req(),
         )
         return str((payload.get("thread") or {}).get("id") or "")
@@ -143,11 +156,25 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
 
         self.assertEqual(
             self.get_session_note_aggregate(session_id, self._req()),
-            {"scope_type": "session", "session_id": session_id, "open_notes_count": 0, "has_open_notes": False},
+            {
+                "scope_type": "session",
+                "session_id": session_id,
+                "open_notes_count": 0,
+                "has_open_notes": False,
+                "attention_discussions_count": 0,
+                "has_attention_discussions": False,
+            },
         )
         self.assertEqual(
             self.get_project_note_aggregate(project_id, self._req()),
-            {"scope_type": "project", "project_id": project_id, "open_notes_count": 0, "has_open_notes": False},
+            {
+                "scope_type": "project",
+                "project_id": project_id,
+                "open_notes_count": 0,
+                "has_open_notes": False,
+                "attention_discussions_count": 0,
+                "has_attention_discussions": False,
+            },
         )
         self.assertEqual(
             self.get_folder_note_aggregate(folder_id, self._req(), workspace_id=self.workspace_id),
@@ -157,6 +184,8 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
                 "workspace_id": self.workspace_id,
                 "open_notes_count": 0,
                 "has_open_notes": False,
+                "attention_discussions_count": 0,
+                "has_attention_discussions": False,
             },
         )
 
@@ -181,9 +210,9 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
         parent_project_id, parent_session_id = self._create_project_session(parent_folder_id, "Parent Project", "Parent Session")
         child_project_id, child_session_id = self._create_project_session(child_folder_id, "Child Project", "Child Session")
 
-        self._create_note(parent_session_id, "diagram_element", "open element", element_id="Task_1")
+        self._create_note(parent_session_id, "diagram_element", "open element", element_id="Task_1", requires_attention=True)
         self._create_note(parent_session_id, "diagram", "open diagram")
-        resolved_thread_id = self._create_note(parent_session_id, "session", "resolved session")
+        resolved_thread_id = self._create_note(parent_session_id, "session", "resolved session", requires_attention=True)
         self.patch_note_thread(
             resolved_thread_id,
             self.PatchNoteThreadBody(status="resolved"),
@@ -194,21 +223,41 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
         session_aggregate = self.get_session_note_aggregate(parent_session_id, self._req(self.viewer))
         self.assertEqual(session_aggregate["open_notes_count"], 2)
         self.assertTrue(session_aggregate["has_open_notes"])
+        self.assertEqual(session_aggregate["attention_discussions_count"], 2)
+        self.assertTrue(session_aggregate["has_attention_discussions"])
 
         parent_project_aggregate = self.get_project_note_aggregate(parent_project_id, self._req())
         self.assertEqual(parent_project_aggregate["open_notes_count"], 2)
         self.assertTrue(parent_project_aggregate["has_open_notes"])
+        self.assertEqual(parent_project_aggregate["attention_discussions_count"], 2)
+        self.assertTrue(parent_project_aggregate["has_attention_discussions"])
 
         child_project_aggregate = self.get_project_note_aggregate(child_project_id, self._req())
         self.assertEqual(child_project_aggregate["open_notes_count"], 1)
+        self.assertEqual(child_project_aggregate["attention_discussions_count"], 0)
+        self.assertFalse(child_project_aggregate["has_attention_discussions"])
 
         child_folder_aggregate = self.get_folder_note_aggregate(child_folder_id, self._req(), workspace_id=self.workspace_id)
         self.assertEqual(child_folder_aggregate["open_notes_count"], 1)
         self.assertTrue(child_folder_aggregate["has_open_notes"])
+        self.assertEqual(child_folder_aggregate["attention_discussions_count"], 0)
+        self.assertFalse(child_folder_aggregate["has_attention_discussions"])
 
         parent_folder_aggregate = self.get_folder_note_aggregate(parent_folder_id, self._req(), workspace_id=self.workspace_id)
         self.assertEqual(parent_folder_aggregate["open_notes_count"], 3)
         self.assertTrue(parent_folder_aggregate["has_open_notes"])
+        self.assertEqual(parent_folder_aggregate["attention_discussions_count"], 2)
+        self.assertTrue(parent_folder_aggregate["has_attention_discussions"])
+
+        self.patch_note_thread(
+            resolved_thread_id,
+            self.PatchNoteThreadBody(requires_attention=False),
+            self._req(),
+        )
+        after_clear = self.get_session_note_aggregate(parent_session_id, self._req())
+        self.assertEqual(after_clear["open_notes_count"], 2)
+        self.assertEqual(after_clear["attention_discussions_count"], 1)
+        self.assertTrue(after_clear["has_attention_discussions"])
 
     def test_auth_and_permission_denial_for_aggregate_reads(self):
         folder_id = str(
@@ -245,6 +294,8 @@ class NotesMvp1AggregationApiTest(unittest.TestCase):
         scoped_folder_aggregate = self.get_folder_note_aggregate(folder_id, self._req(self.viewer), workspace_id=self.workspace_id)
         self.assertEqual(scoped_folder_aggregate["open_notes_count"], 0)
         self.assertFalse(scoped_folder_aggregate["has_open_notes"])
+        self.assertEqual(scoped_folder_aggregate["attention_discussions_count"], 0)
+        self.assertFalse(scoped_folder_aggregate["has_attention_discussions"])
 
         with self.assertRaises(HTTPException) as missing_workspace:
             self.get_folder_note_aggregate(folder_id, self._req(), workspace_id="")

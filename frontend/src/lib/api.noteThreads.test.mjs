@@ -84,6 +84,8 @@ test("note aggregate API helpers use MVP-1 aggregate endpoints", async () => {
     return new Response(JSON.stringify({
       open_notes_count: 2,
       has_open_notes: true,
+      attention_discussions_count: 1,
+      has_attention_discussions: true,
     }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -95,6 +97,8 @@ test("note aggregate API helpers use MVP-1 aggregate endpoints", async () => {
 
     assert.equal(session.ok, true);
     assert.equal(session.aggregate.open_notes_count, 2);
+    assert.equal(session.aggregate.attention_discussions_count, 1);
+    assert.equal(session.aggregate.has_attention_discussions, true);
     assert.equal(project.aggregate.scope_type, "project");
     assert.equal(folder.aggregate.has_open_notes, true);
   });
