@@ -600,7 +600,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                   <div className="mt-1 truncate text-[11px] text-muted">{item.sourceLabel || "Обсуждение"}</div>
                 </div>
                 <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${item.state === "active" ? "border-rose-300 bg-rose-50 text-rose-900" : "border-emerald-300 bg-emerald-50 text-emerald-800"}`}>
-                  {item.state === "active" ? "Active" : "Recent"}
+                  {item.state === "active" ? "Требует внимания" : "Недавнее"}
                 </span>
               </div>
               <div className="mt-1.5 text-[10px] text-muted">
@@ -991,10 +991,13 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                           <span>{scopeMeta(selectedThread).short}</span>
                         </div>
                         <div className="mt-1 text-[15px] font-semibold leading-6 text-fg">{threadTitle(selectedThread)}</div>
-                        <div data-testid="notes-thread-header-meta" className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
-                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${threadStatusTone(selectedThread)}`}>{threadStatusLabel(selectedThread)}</span>
-                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${priorityMeta(selectedThread).tone}`}>{priorityMeta(selectedThread).shortLabel}</span>
-                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${attentionMeta(selectedThread).tone}`}>{attentionMeta(selectedThread).shortLabel}</span>
+                        <div data-testid="notes-thread-header-meta" className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-5 text-muted">
+                          <span>{threadStatusLabel(selectedThread)}</span>
+                          <span aria-hidden="true">·</span>
+                          <span>{priorityMeta(selectedThread).shortLabel}</span>
+                          <span aria-hidden="true">·</span>
+                          <span>{attentionMeta(selectedThread).shortLabel}</span>
+                          <span aria-hidden="true">·</span>
                           <span>{scopeMeta(selectedThread).relation}</span>
                           <span aria-hidden="true">·</span>
                           <span>{asArray(selectedThread.comments).length} сообщ.</span>
@@ -1008,56 +1011,60 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         ) : null}
                       </div>
                       {!selectedThreadIsLegacyBridge ? (
-                        <div className="flex max-w-[260px] flex-wrap items-center justify-end gap-2">
-                          <select
-                            className="select h-8 min-h-0 w-[118px] text-xs"
-                            value={threadPriority(selectedThread)}
-                            onChange={(event) => patchThreadMeta({ priority: event.target.value })}
-                            disabled={busy.startsWith("meta:")}
-                            aria-label="Приоритет обсуждения"
-                            data-testid="notes-thread-priority-select"
-                          >
-                            {PRIORITY_OPTIONS.map((item) => (
-                              <option key={item.value} value={item.value}>{item.label}</option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            className={`secondaryBtn tinyBtn h-8 px-2.5 text-xs ${requiresAttention(selectedThread) ? "border-rose-300 bg-rose-50 text-rose-900" : ""}`}
-                            onClick={() => patchThreadMeta({ requires_attention: !requiresAttention(selectedThread) })}
-                            disabled={busy.startsWith("meta:") || busy.startsWith("ack:")}
-                            data-testid="notes-thread-attention-toggle"
-                          >
-                            {requiresAttention(selectedThread) ? "Снять внимание" : "Требует внимания"}
-                          </button>
-                          {requiresAttention(selectedThread) && !attentionAcknowledged(selectedThread) ? (
+                        <div className="flex max-w-[300px] shrink-0 flex-col items-end gap-2">
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            <select
+                              className="select h-8 min-h-0 w-[118px] text-xs"
+                              value={threadPriority(selectedThread)}
+                              onChange={(event) => patchThreadMeta({ priority: event.target.value })}
+                              disabled={busy.startsWith("meta:")}
+                              aria-label="Приоритет обсуждения"
+                              data-testid="notes-thread-priority-select"
+                            >
+                              {PRIORITY_OPTIONS.map((item) => (
+                                <option key={item.value} value={item.value}>{item.label}</option>
+                              ))}
+                            </select>
+                            {text(selectedThread.status) === "resolved" ? (
+                              <button type="button" className="secondaryBtn tinyBtn h-8 px-3 text-xs" onClick={() => patchStatus("open")} disabled={busy.startsWith("status:")}>
+                                Вернуть в открытые
+                              </button>
+                            ) : (
+                              <button type="button" className="secondaryBtn tinyBtn h-8 px-3 text-xs" onClick={() => patchStatus("resolved")} disabled={busy.startsWith("status:")}>
+                                Закрыть обсуждение
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border/70 pt-2">
                             <button
                               type="button"
-                              className="secondaryBtn tinyBtn h-8 border-emerald-300 bg-emerald-50 px-2.5 text-xs text-emerald-900"
-                              onClick={acknowledgeAttention}
-                              disabled={busy.startsWith("ack:") || busy.startsWith("meta:")}
-                              data-testid="notes-thread-attention-acknowledge"
+                              className={`secondaryBtn tinyBtn h-8 px-2.5 text-xs ${requiresAttention(selectedThread) ? "border-rose-300 bg-rose-50 text-rose-900" : ""}`}
+                              onClick={() => patchThreadMeta({ requires_attention: !requiresAttention(selectedThread) })}
+                              disabled={busy.startsWith("meta:") || busy.startsWith("ack:")}
+                              data-testid="notes-thread-attention-toggle"
                             >
-                              {busy.startsWith("ack:") ? "Подтверждаем..." : "Подтвердить"}
+                              {requiresAttention(selectedThread) ? "Снять внимание" : "Требует внимания"}
                             </button>
-                          ) : null}
-                          {requiresAttention(selectedThread) && attentionAcknowledged(selectedThread) ? (
-                            <span
-                              className="inline-flex h-8 items-center rounded-full border border-emerald-300 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-800"
-                              data-testid="notes-thread-attention-acknowledged"
-                            >
-                              Подтверждено вами
-                            </span>
-                          ) : null}
-                          {text(selectedThread.status) === "resolved" ? (
-                            <button type="button" className="secondaryBtn tinyBtn h-8 px-3 text-xs" onClick={() => patchStatus("open")} disabled={busy.startsWith("status:")}>
-                              Вернуть в открытые
-                            </button>
-                          ) : (
-                            <button type="button" className="secondaryBtn tinyBtn h-8 px-3 text-xs" onClick={() => patchStatus("resolved")} disabled={busy.startsWith("status:")}>
-                              Закрыть обсуждение
-                            </button>
-                          )}
+                            {requiresAttention(selectedThread) && !attentionAcknowledged(selectedThread) ? (
+                              <button
+                                type="button"
+                                className="secondaryBtn tinyBtn h-8 border-emerald-300 bg-emerald-50 px-2.5 text-xs text-emerald-900"
+                                onClick={acknowledgeAttention}
+                                disabled={busy.startsWith("ack:") || busy.startsWith("meta:")}
+                                data-testid="notes-thread-attention-acknowledge"
+                              >
+                                {busy.startsWith("ack:") ? "Подтверждаем..." : "Подтвердить"}
+                              </button>
+                            ) : null}
+                            {requiresAttention(selectedThread) && attentionAcknowledged(selectedThread) ? (
+                              <span
+                                className="inline-flex h-8 items-center rounded-full border border-emerald-300 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-800"
+                                data-testid="notes-thread-attention-acknowledged"
+                              >
+                                Подтверждено вами
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                       ) : null}
                     </div>
@@ -1207,9 +1214,9 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
 
             <aside className="flex min-h-0 flex-col bg-bg/20 px-3 py-3">
               {notificationMode ? (
-                <div data-testid="discussion-notification-inbox" className="mb-3 rounded-2xl border border-border bg-panel/85 p-3 shadow-sm">
+                <div data-testid="discussion-notification-inbox" className="flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-panel/85 p-3 shadow-sm">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Discussion inbox</div>
+                    <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Уведомления обсуждений</div>
                     <button
                       type="button"
                       className="secondaryBtn tinyBtn h-7 px-2 text-[10px]"
@@ -1219,24 +1226,27 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                       {loading ? "..." : "↻"}
                     </button>
                   </div>
-                  <div className="mt-2 grid gap-3">
+                  <div className="mt-2 min-h-0 flex-1 overflow-auto pr-1">
+                    <div className="grid gap-3">
                     <section>
                       <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted">
-                        <span>Active</span>
+                        <span>Требуют внимания</span>
                         <span className="tabular-nums">{notificationBuckets.activeTotal}</span>
                       </div>
-                      {renderNotificationList(notificationBuckets.active, "Активных discussion notifications нет.")}
+                      {renderNotificationList(notificationBuckets.active, "Нет обсуждений, которые требуют вашего внимания.")}
                     </section>
                     <section>
                       <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted">
-                        <span>Recent</span>
+                        <span>Недавние</span>
                         <span className="tabular-nums">{notificationBuckets.historyTotal}</span>
                       </div>
-                      {renderNotificationList(notificationBuckets.history, "Недавних подтверждённых или закрытых items пока нет.")}
+                      {renderNotificationList(notificationBuckets.history, "Недавних просмотренных или закрытых обсуждений пока нет.")}
                     </section>
+                    </div>
                   </div>
                 </div>
-              ) : null}
+              ) : (
+                <>
               <div className="flex items-center gap-2">
                 <input
                   type="search"
@@ -1369,6 +1379,8 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                   </div>
                 )}
               </div>
+                </>
+              )}
             </aside>
           </div>
         </div>

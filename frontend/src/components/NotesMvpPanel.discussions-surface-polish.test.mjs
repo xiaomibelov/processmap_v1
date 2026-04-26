@@ -116,9 +116,15 @@ test("Discussions panel exposes bounded notification inbox and history without n
   assert.match(notesMvpPanelSource, /data-testid="discussion-notification-inbox"/);
   assert.match(notesMvpPanelSource, /notificationBuckets\.active/);
   assert.match(notesMvpPanelSource, /notificationBuckets\.history/);
+  assert.match(notesMvpPanelSource, /Уведомления обсуждений/);
+  assert.match(notesMvpPanelSource, /Требуют внимания/);
+  assert.match(notesMvpPanelSource, /Недавние/);
+  assert.match(notesMvpPanelSource, /\{notificationMode \? \(/);
+  assert.match(notesMvpPanelSource, /\) : \(\s*<>\s*<div className="flex items-center gap-2">/);
   assert.match(notesMvpPanelSource, /apiAcknowledgeNoteThreadAttention\(threadId\)/);
   assert.match(notesMvpPanelSource, /onFocusNotificationTarget\?\.\(/);
   assert.match(notesMvpPanelSource, /data-note-comment-id=\{commentId \|\| undefined\}/);
+  assert.doesNotMatch(notesMvpPanelSource, /Discussion inbox|Inbox\/history/);
   assert.doesNotMatch(notesMvpPanelSource, /notification_subscribers|watcher_model|external_delivery/);
 });
 
