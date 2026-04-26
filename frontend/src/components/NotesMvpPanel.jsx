@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import {
+  apiAcknowledgeNoteThreadAttention,
   apiAddNoteThreadComment,
   apiCreateNoteThread,
   apiGetSessionNoteAggregate,
@@ -130,18 +131,30 @@ function requiresAttention(thread) {
   return thread?.requires_attention === true || thread?.requires_attention === 1 || thread?.requires_attention === "1";
 }
 
+function attentionAcknowledged(thread) {
+  return thread?.attention_acknowledged_by_me === true || numericTime(thread?.attention_acknowledged_at) > 0;
+}
+
 function attentionMeta(thread) {
-  return requiresAttention(thread)
-    ? {
-        label: "Требует внимания",
-        shortLabel: "Внимание",
-        tone: "border-rose-300 bg-rose-50 text-rose-900",
-      }
-    : {
-        label: "Без срочного внимания",
-        shortLabel: "Спокойно",
-        tone: "border-border bg-bg/70 text-muted",
-      };
+  if (!requiresAttention(thread)) {
+    return {
+      label: "Без срочного внимания",
+      shortLabel: "Спокойно",
+      tone: "border-border bg-bg/70 text-muted",
+    };
+  }
+  if (attentionAcknowledged(thread)) {
+    return {
+      label: "Внимание подтверждено вами",
+      shortLabel: "Подтверждено",
+      tone: "border-emerald-300 bg-emerald-50 text-emerald-800",
+    };
+  }
+  return {
+    label: "Требует внимания",
+    shortLabel: "Внимание",
+    tone: "border-rose-300 bg-rose-50 text-rose-900",
+  };
 }
 
 function firstComment(thread) {
@@ -588,6 +601,24 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setBusy("");
   }
 
+  async function acknowledgeAttention() {
+    const threadId = text(selectedThread?.id);
+    if (!threadId || disabled || selectedThreadIsLegacyBridge || !requiresAttention(selectedThread) || attentionAcknowledged(selectedThread)) return;
+    setBusy(`ack:${threadId}`);
+    setError("");
+    const result = await apiAcknowledgeNoteThreadAttention(threadId);
+    if (!result.ok) {
+      setError(errorText(result, "Не удалось подтвердить внимание."));
+      setBusy("");
+      return;
+    }
+    setSelectedThreadId(threadId);
+    await fetchThreads({ preferredThreadId: threadId });
+    setAggregateRefreshTick((value) => value + 1);
+    emitNotesAggregateChanged(sid);
+    setBusy("");
+  }
+
   if (!sid) return null;
 
   return (
@@ -795,11 +826,30 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                             type="button"
                             className={`secondaryBtn tinyBtn h-8 px-2.5 text-xs ${requiresAttention(selectedThread) ? "border-rose-300 bg-rose-50 text-rose-900" : ""}`}
                             onClick={() => patchThreadMeta({ requires_attention: !requiresAttention(selectedThread) })}
-                            disabled={busy.startsWith("meta:")}
+                            disabled={busy.startsWith("meta:") || busy.startsWith("ack:")}
                             data-testid="notes-thread-attention-toggle"
                           >
                             {requiresAttention(selectedThread) ? "Снять внимание" : "Требует внимания"}
                           </button>
+                          {requiresAttention(selectedThread) && !attentionAcknowledged(selectedThread) ? (
+                            <button
+                              type="button"
+                              className="secondaryBtn tinyBtn h-8 border-emerald-300 bg-emerald-50 px-2.5 text-xs text-emerald-900"
+                              onClick={acknowledgeAttention}
+                              disabled={busy.startsWith("ack:") || busy.startsWith("meta:")}
+                              data-testid="notes-thread-attention-acknowledge"
+                            >
+                              {busy.startsWith("ack:") ? "Подтверждаем..." : "Подтвердить"}
+                            </button>
+                          ) : null}
+                          {requiresAttention(selectedThread) && attentionAcknowledged(selectedThread) ? (
+                            <span
+                              className="inline-flex h-8 items-center rounded-full border border-emerald-300 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-800"
+                              data-testid="notes-thread-attention-acknowledged"
+                            >
+                              Подтверждено вами
+                            </span>
+                          ) : null}
                           {text(selectedThread.status) === "resolved" ? (
                             <button type="button" className="secondaryBtn tinyBtn h-8 px-3 text-xs" onClick={() => patchStatus("open")} disabled={busy.startsWith("status:")}>
                               Вернуть в открытые
@@ -1033,8 +1083,8 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                               <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted">{threadPreview(thread)}</div>
                             </div>
                             {requiresAttention(thread) ? (
-                              <span className="shrink-0 rounded-full border border-rose-300 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-900">
-                                Внимание
+                              <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${attentionMeta(thread).tone}`}>
+                                {attentionMeta(thread).shortLabel}
                               </span>
                             ) : null}
                           </div>

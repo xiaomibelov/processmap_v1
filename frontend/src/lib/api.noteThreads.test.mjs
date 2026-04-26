@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  apiAcknowledgeNoteThreadAttention,
   apiAddNoteThreadComment,
   apiCreateNoteThread,
   apiGetFolderNoteAggregate,
@@ -32,7 +33,7 @@ test("note threads API helpers use MVP-1 endpoints and payload contract", async 
     return new Response(JSON.stringify({
       items: [{ id: "thread_1", scope_type: "diagram_element", comments: [] }],
       count: 1,
-      thread: { id: "thread_1", status: "open", comments: [] },
+      thread: { id: "thread_1", status: "open", requires_attention: true, attention_acknowledged_by_me: true, comments: [] },
     }), {
       status: init?.method === "POST" ? 201 : 200,
       headers: { "Content-Type": "application/json" },
@@ -52,12 +53,14 @@ test("note threads API helpers use MVP-1 endpoints and payload contract", async 
     });
     const commented = await apiAddNoteThreadComment("thread_1", { body: "Комментарий" });
     const patched = await apiPatchNoteThread("thread_1", { status: "resolved" });
+    const acknowledged = await apiAcknowledgeNoteThreadAttention("thread_1");
 
     assert.equal(list.ok, true);
     assert.equal(list.count, 1);
     assert.equal(created.thread.id, "thread_1");
     assert.equal(commented.thread.id, "thread_1");
     assert.equal(patched.thread.status, "open");
+    assert.equal(acknowledged.thread.attention_acknowledged_by_me, true);
   });
 
   assert.match(calls[0].url, /\/api\/sessions\/sess_1\/note-threads\?status=open&scope_type=diagram_element&element_id=Task_1$/);
@@ -72,6 +75,8 @@ test("note threads API helpers use MVP-1 endpoints and payload contract", async 
   assert.match(calls[3].url, /\/api\/note-threads\/thread_1$/);
   assert.equal(calls[3].method, "PATCH");
   assert.deepEqual(calls[3].body, { status: "resolved" });
+  assert.match(calls[4].url, /\/api\/note-threads\/thread_1\/attention-acknowledgement$/);
+  assert.equal(calls[4].method, "POST");
 });
 
 test("note aggregate API helpers use MVP-1 aggregate endpoints", async () => {

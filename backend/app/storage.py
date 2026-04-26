@@ -486,7 +486,8 @@ def _normalize_bool_flag(value: Any, *, field_name: str) -> bool:
     raise ValueError(f"invalid {field_name}")
 
 
-def _note_thread_row_to_dict(row: Any) -> Dict[str, Any]:
+def _note_thread_row_to_dict(row: Any, *, attention_acknowledged_at: Any = 0) -> Dict[str, Any]:
+    acknowledged_at = int(attention_acknowledged_at or 0)
     return {
         "id": str(_row_value(row, "id") or ""),
         "org_id": str(_row_value(row, "org_id") or ""),
@@ -498,6 +499,8 @@ def _note_thread_row_to_dict(row: Any) -> Dict[str, Any]:
         "status": str(_row_value(row, "status") or "open"),
         "priority": _normalize_note_priority(_row_value(row, "priority") or "normal"),
         "requires_attention": bool(int(_row_value(row, "requires_attention") or 0)),
+        "attention_acknowledged_by_me": acknowledged_at > 0,
+        "attention_acknowledged_at": acknowledged_at,
         "created_by": str(_row_value(row, "created_by") or ""),
         "created_at": int(_row_value(row, "created_at") or 0),
         "updated_at": int(_row_value(row, "updated_at") or 0),
@@ -728,6 +731,18 @@ def _ensure_schema() -> None:
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_comments_thread_created ON note_comments(thread_id, created_at ASC)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS note_thread_attention_acknowledgements (
+                  org_id TEXT NOT NULL DEFAULT 'org_default',
+                  thread_id TEXT NOT NULL,
+                  user_id TEXT NOT NULL,
+                  acknowledged_at INTEGER NOT NULL DEFAULT 0,
+                  PRIMARY KEY (org_id, thread_id, user_id)
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_thread_attention_ack_thread ON note_thread_attention_acknowledgements(thread_id, org_id)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS orgs (
@@ -1103,6 +1118,18 @@ def _ensure_schema() -> None:
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_comments_thread_created ON note_comments(thread_id, created_at ASC)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS note_thread_attention_acknowledgements (
+                  org_id TEXT NOT NULL DEFAULT 'org_default',
+                  thread_id TEXT NOT NULL,
+                  user_id TEXT NOT NULL,
+                  acknowledged_at INTEGER NOT NULL DEFAULT 0,
+                  PRIMARY KEY (org_id, thread_id, user_id)
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_thread_attention_ack_thread ON note_thread_attention_acknowledgements(thread_id, org_id)")
             if not _column_exists(con, "org_invites", "team_name"):
                 con.execute("ALTER TABLE org_invites ADD COLUMN team_name TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "org_invites", "subgroup_name"):
@@ -5656,6 +5683,45 @@ def get_storage() -> Storage:
 # Notes MVP-1 truth storage
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _thread_attention_acknowledged_at(con: Any, thread_id: str, org_id: str, viewer_user_id: Optional[str]) -> int:
+    viewer = str(viewer_user_id or "").strip()
+    tid = str(thread_id or "").strip()
+    oid = str(org_id or "").strip()
+    if not viewer or not tid or not oid:
+        return 0
+    row = con.execute(
+        """
+        SELECT acknowledged_at
+        FROM note_thread_attention_acknowledgements
+        WHERE thread_id = ? AND org_id = ? AND user_id = ?
+        LIMIT 1
+        """,
+        [tid, oid, viewer],
+    ).fetchone()
+    return int(_row_value(row, "acknowledged_at", 0) or 0)
+
+
+def _attention_count_case(table_ref: str, viewer_user_id: Optional[str]) -> tuple[str, List[Any]]:
+    viewer = str(viewer_user_id or "").strip()
+    if not viewer:
+        return f"SUM(CASE WHEN {table_ref}.requires_attention = 1 THEN 1 ELSE 0 END) AS attention_discussions_count", []
+    return (
+        f"""
+              SUM(CASE
+                WHEN {table_ref}.requires_attention = 1
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM note_thread_attention_acknowledgements nta
+                    WHERE nta.thread_id = {table_ref}.id
+                      AND nta.org_id = {table_ref}.org_id
+                      AND nta.user_id = ?
+                  )
+                THEN 1 ELSE 0
+              END) AS attention_discussions_count
+        """,
+        [viewer],
+    )
+
 def create_note_thread(
     sess: Session,
     *,
@@ -5715,13 +5781,18 @@ def create_note_thread(
             [comment_id, thread_id, actor, text, now, now],
         )
         con.commit()
-    thread = get_note_thread(thread_id, org_id=oid)
+    thread = get_note_thread(thread_id, org_id=oid, viewer_user_id=actor)
     if not thread:
         raise RuntimeError("note thread was not persisted")
     return thread
 
 
-def get_note_thread(thread_id: str, *, org_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def get_note_thread(
+    thread_id: str,
+    *,
+    org_id: Optional[str] = None,
+    viewer_user_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
     _ensure_schema()
     tid = str(thread_id or "").strip()
     if not tid:
@@ -5739,11 +5810,13 @@ def get_note_thread(thread_id: str, *, org_id: Optional[str] = None) -> Optional
         ).fetchone()
         if not thread_row:
             return None
+        row_org_id = str(_row_value(thread_row, "org_id") or "").strip()
+        acknowledged_at = _thread_attention_acknowledged_at(con, tid, row_org_id, viewer_user_id)
         comment_rows = con.execute(
             "SELECT * FROM note_comments WHERE thread_id = ? ORDER BY created_at ASC, id ASC",
             [tid],
         ).fetchall()
-    thread = _note_thread_row_to_dict(thread_row)
+    thread = _note_thread_row_to_dict(thread_row, attention_acknowledged_at=acknowledged_at)
     thread["comments"] = [_note_comment_row_to_dict(row) for row in comment_rows]
     return thread
 
@@ -5752,6 +5825,7 @@ def list_note_threads(
     session_id: str,
     *,
     org_id: Optional[str] = None,
+    viewer_user_id: Optional[str] = None,
     status: Optional[str] = None,
     scope_type: Optional[str] = None,
     element_id: Optional[str] = None,
@@ -5791,10 +5865,29 @@ def list_note_threads(
             ).fetchall():
                 comment = _note_comment_row_to_dict(row)
                 comment_rows.setdefault(str(comment.get("thread_id") or ""), []).append(comment)
+        viewer = str(viewer_user_id or "").strip()
+        acknowledgement_rows: Dict[str, int] = {}
+        if viewer and thread_ids:
+            placeholders = ", ".join(["?"] * len(thread_ids))
+            ack_filters = [f"thread_id IN ({placeholders})", "user_id = ?"]
+            ack_params: List[Any] = [*thread_ids, viewer]
+            if oid:
+                ack_filters.append("org_id = ?")
+                ack_params.append(oid)
+            for row in con.execute(
+                f"""
+                SELECT thread_id, acknowledged_at
+                FROM note_thread_attention_acknowledgements
+                WHERE {' AND '.join(ack_filters)}
+                """,
+                ack_params,
+            ).fetchall():
+                acknowledgement_rows[str(_row_value(row, "thread_id") or "")] = int(_row_value(row, "acknowledged_at", 0) or 0)
     element_filter = str(element_id or "").strip()
     out: List[Dict[str, Any]] = []
     for row in thread_rows:
-        thread = _note_thread_row_to_dict(row)
+        thread_id = str(_row_value(row, "id") or "")
+        thread = _note_thread_row_to_dict(row, attention_acknowledged_at=acknowledgement_rows.get(thread_id, 0))
         if element_filter:
             if thread.get("scope_type") != "diagram_element":
                 continue
@@ -5845,7 +5938,7 @@ def add_note_comment(
         )
         con.execute("UPDATE note_threads SET updated_at = ? WHERE id = ?", [now, tid])
         con.commit()
-    return get_note_thread(tid, org_id=oid or None)
+    return get_note_thread(tid, org_id=oid or None, viewer_user_id=actor)
 
 
 def patch_note_thread_status(
@@ -5898,8 +5991,9 @@ def patch_note_thread(
         updates.append("priority = ?")
         values.append(_normalize_note_priority(priority))
     if requires_attention is not None:
+        normalized_requires_attention = _normalize_bool_flag(requires_attention, field_name="requires_attention")
         updates.append("requires_attention = ?")
-        values.append(1 if _normalize_bool_flag(requires_attention, field_name="requires_attention") else 0)
+        values.append(1 if normalized_requires_attention else 0)
     if len(updates) == 1:
         raise ValueError("patch required")
     with _connect() as con:
@@ -5910,8 +6004,63 @@ def patch_note_thread(
         if not thread_row:
             return None
         con.execute(f"UPDATE note_threads SET {', '.join(updates)} WHERE id = ?", [*values, tid])
+        if requires_attention is not None:
+            ack_filters = ["thread_id = ?"]
+            ack_params: List[Any] = [tid]
+            if oid:
+                ack_filters.append("org_id = ?")
+                ack_params.append(oid)
+            con.execute(
+                f"DELETE FROM note_thread_attention_acknowledgements WHERE {' AND '.join(ack_filters)}",
+                ack_params,
+            )
         con.commit()
-    return get_note_thread(tid, org_id=oid or None)
+    return get_note_thread(tid, org_id=oid or None, viewer_user_id=actor)
+
+
+def acknowledge_note_thread_attention(
+    thread_id: str,
+    *,
+    actor_user_id: str,
+    org_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    tid = str(thread_id or "").strip()
+    actor = str(actor_user_id or "").strip()
+    if not tid or not actor:
+        return None
+    oid = str(org_id or "").strip()
+    filters = ["id = ?"]
+    params: List[Any] = [tid]
+    if oid:
+        filters.append("org_id = ?")
+        params.append(oid)
+    now = _now_ts()
+    with _connect() as con:
+        thread_row = con.execute(
+            f"SELECT * FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
+            params,
+        ).fetchone()
+        if not thread_row:
+            return None
+        row_org_id = str(_row_value(thread_row, "org_id") or "").strip() or _default_org_id()
+        con.execute(
+            """
+            DELETE FROM note_thread_attention_acknowledgements
+            WHERE thread_id = ? AND org_id = ? AND user_id = ?
+            """,
+            [tid, row_org_id, actor],
+        )
+        if bool(int(_row_value(thread_row, "requires_attention") or 0)):
+            con.execute(
+                """
+                INSERT INTO note_thread_attention_acknowledgements (org_id, thread_id, user_id, acknowledged_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                [row_org_id, tid, actor, now],
+            )
+        con.commit()
+    return get_note_thread(tid, org_id=oid or None, viewer_user_id=actor)
 
 
 def _notes_aggregate_payload(count: Any, attention_count: Any = 0) -> Dict[str, Any]:
@@ -5935,28 +6084,34 @@ def _notes_aggregate_payload(count: Any, attention_count: Any = 0) -> Dict[str, 
     }
 
 
-def get_session_open_notes_aggregate(session_id: str, *, org_id: Optional[str] = None) -> Dict[str, Any]:
+def get_session_open_notes_aggregate(
+    session_id: str,
+    *,
+    org_id: Optional[str] = None,
+    viewer_user_id: Optional[str] = None,
+) -> Dict[str, Any]:
     """Read-time Notes MVP-1 aggregate for a single session."""
     _ensure_schema()
     sid = str(session_id or "").strip()
     if not sid:
         return _notes_aggregate_payload(0)
     oid = str(org_id or "").strip()
-    filters = ["session_id = ?"]
+    filters = ["nt.session_id = ?"]
     params: List[Any] = [sid]
     if oid:
-        filters.append("org_id = ?")
+        filters.append("nt.org_id = ?")
         params.append(oid)
+    attention_count_case, attention_params = _attention_count_case("nt", viewer_user_id)
     with _connect() as con:
         row = con.execute(
             f"""
             SELECT
-              SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) AS open_notes_count,
-              SUM(CASE WHEN requires_attention = 1 THEN 1 ELSE 0 END) AS attention_discussions_count
-            FROM note_threads
+              SUM(CASE WHEN nt.status = 'open' THEN 1 ELSE 0 END) AS open_notes_count,
+              {attention_count_case}
+            FROM note_threads nt
             WHERE {' AND '.join(filters)}
             """,
-            params,
+            [*attention_params, *params],
         ).fetchone()
     return _notes_aggregate_payload(
         _row_value(row, "open_notes_count", 0),
@@ -5964,7 +6119,12 @@ def get_session_open_notes_aggregate(session_id: str, *, org_id: Optional[str] =
     )
 
 
-def get_project_open_notes_aggregate(project_id: str, *, org_id: Optional[str] = None) -> Dict[str, Any]:
+def get_project_open_notes_aggregate(
+    project_id: str,
+    *,
+    org_id: Optional[str] = None,
+    viewer_user_id: Optional[str] = None,
+) -> Dict[str, Any]:
     """Read-time Notes MVP-1 aggregate for all sessions in a project."""
     _ensure_schema()
     pid = str(project_id or "").strip()
@@ -5977,17 +6137,18 @@ def get_project_open_notes_aggregate(project_id: str, *, org_id: Optional[str] =
         filters.append("s.org_id = ?")
         filters.append("nt.org_id = ?")
         params.extend([oid, oid])
+    attention_count_case, attention_params = _attention_count_case("nt", viewer_user_id)
     with _connect() as con:
         row = con.execute(
             f"""
             SELECT
               SUM(CASE WHEN nt.status = 'open' THEN 1 ELSE 0 END) AS open_notes_count,
-              SUM(CASE WHEN nt.requires_attention = 1 THEN 1 ELSE 0 END) AS attention_discussions_count
+              {attention_count_case}
             FROM note_threads nt
             JOIN sessions s ON s.id = nt.session_id
             WHERE {' AND '.join(filters)}
             """,
-            params,
+            [*attention_params, *params],
         ).fetchone()
     return _notes_aggregate_payload(
         _row_value(row, "open_notes_count", 0),
@@ -6001,6 +6162,7 @@ def get_folder_open_notes_aggregate(
     org_id: Optional[str] = None,
     workspace_id: Optional[str] = None,
     allowed_project_ids: Optional[Iterable[str]] = None,
+    viewer_user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Read-time Notes MVP-1 aggregate for projects in a folder subtree."""
     _ensure_schema()
@@ -6015,11 +6177,13 @@ def get_folder_open_notes_aggregate(
         if not allowed_projects:
             return _notes_aggregate_payload(0)
     project_scope_sql = ""
-    params: List[Any] = [fid, oid, wid, oid, wid, oid, wid]
+    cte_params: List[Any] = [fid, oid, wid, oid, wid]
+    where_params: List[Any] = [oid, wid]
     if allowed_projects is not None:
         placeholders = ", ".join(["?"] * len(allowed_projects))
         project_scope_sql = f" AND p.id IN ({placeholders})"
-        params.extend(allowed_projects)
+        where_params.extend(allowed_projects)
+    attention_count_case, attention_params = _attention_count_case("nt", viewer_user_id)
     with _connect() as con:
         row = con.execute(
             f"""
@@ -6035,7 +6199,7 @@ def get_folder_open_notes_aggregate(
             )
             SELECT
               SUM(CASE WHEN nt.status = 'open' THEN 1 ELSE 0 END) AS open_notes_count,
-              SUM(CASE WHEN nt.requires_attention = 1 THEN 1 ELSE 0 END) AS attention_discussions_count
+              {attention_count_case}
             FROM note_threads nt
             JOIN sessions s ON s.id = nt.session_id AND s.org_id = nt.org_id
             JOIN projects p ON p.id = s.project_id AND p.org_id = s.org_id
@@ -6044,7 +6208,7 @@ def get_folder_open_notes_aggregate(
               AND p.folder_id IN (SELECT id FROM folder_tree)
               {project_scope_sql}
             """,
-            params,
+            [*cte_params, *attention_params, *where_params],
         ).fetchone()
     return _notes_aggregate_payload(
         _row_value(row, "open_notes_count", 0),

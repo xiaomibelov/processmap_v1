@@ -91,7 +91,7 @@ def _load_thread_session_for_notes(request: Request, thread_id: str, *, write: b
     user_id = require_authenticated_user(request)
     org_id = request_active_org_id(request)
     require_org_member_for_enterprise(request, org_id)
-    thread = storage.get_note_thread(thread_id, org_id=org_id)
+    thread = storage.get_note_thread(thread_id, org_id=org_id, viewer_user_id=user_id)
     if not thread:
         raise HTTPException(status_code=404, detail="note thread not found")
     st = storage.get_storage()
@@ -112,26 +112,27 @@ def _validation_error(exc: ValueError) -> HTTPException:
 
 @router.get("/api/sessions/{session_id}/note-aggregate")
 def get_session_note_aggregate(session_id: str, request: Request) -> Dict[str, Any]:
-    _sess, org_id, _user_id = _load_session_for_notes(request, session_id, write=False)
-    aggregate = storage.get_session_open_notes_aggregate(session_id, org_id=org_id)
+    _sess, org_id, user_id = _load_session_for_notes(request, session_id, write=False)
+    aggregate = storage.get_session_open_notes_aggregate(session_id, org_id=org_id, viewer_user_id=user_id)
     return {"scope_type": "session", "session_id": session_id, **aggregate}
 
 
 @router.get("/api/projects/{project_id}/note-aggregate")
 def get_project_note_aggregate(project_id: str, request: Request) -> Dict[str, Any]:
-    _project, org_id, _user_id = _load_project_for_notes(request, project_id)
-    aggregate = storage.get_project_open_notes_aggregate(project_id, org_id=org_id)
+    _project, org_id, user_id = _load_project_for_notes(request, project_id)
+    aggregate = storage.get_project_open_notes_aggregate(project_id, org_id=org_id, viewer_user_id=user_id)
     return {"scope_type": "project", "project_id": project_id, **aggregate}
 
 
 @router.get("/api/folders/{folder_id}/note-aggregate")
 def get_folder_note_aggregate(folder_id: str, request: Request, workspace_id: str) -> Dict[str, Any]:
-    _folder, org_id, wid, _user_id, allowed_project_ids = _load_folder_for_notes(request, folder_id, workspace_id)
+    _folder, org_id, wid, user_id, allowed_project_ids = _load_folder_for_notes(request, folder_id, workspace_id)
     aggregate = storage.get_folder_open_notes_aggregate(
         folder_id,
         org_id=org_id,
         workspace_id=wid,
         allowed_project_ids=allowed_project_ids,
+        viewer_user_id=user_id,
     )
     return {"scope_type": "folder", "folder_id": folder_id, "workspace_id": wid, **aggregate}
 
@@ -163,7 +164,7 @@ def list_session_note_threads(
     scope_type: Optional[str] = None,
     element_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    _sess, org_id, _user_id = _load_session_for_notes(request, session_id, write=False)
+    _sess, org_id, user_id = _load_session_for_notes(request, session_id, write=False)
     try:
         items = storage.list_note_threads(
             session_id,
@@ -171,6 +172,7 @@ def list_session_note_threads(
             status=status,
             scope_type=scope_type,
             element_id=element_id,
+            viewer_user_id=user_id,
         )
     except ValueError as exc:
         raise _validation_error(exc) from exc
@@ -184,6 +186,15 @@ def add_note_thread_comment(thread_id: str, body: AddNoteCommentBody, request: R
         thread = storage.add_note_comment(thread_id, body=body.body, actor_user_id=user_id, org_id=org_id)
     except ValueError as exc:
         raise _validation_error(exc) from exc
+    if not thread:
+        raise HTTPException(status_code=404, detail="note thread not found")
+    return {"thread": thread}
+
+
+@router.post("/api/note-threads/{thread_id}/attention-acknowledgement")
+def acknowledge_note_thread_attention(thread_id: str, request: Request) -> Dict[str, Any]:
+    _thread, _sess, org_id, user_id = _load_thread_session_for_notes(request, thread_id, write=False)
+    thread = storage.acknowledge_note_thread_attention(thread_id, actor_user_id=user_id, org_id=org_id)
     if not thread:
         raise HTTPException(status_code=404, detail="note thread not found")
     return {"thread": thread}
