@@ -30,6 +30,15 @@ function normalizeMemberships(items = [], fallbackOrgId = "") {
   return fallbackOrgId ? [blankMembership(fallbackOrgId)] : [blankMembership("")];
 }
 
+function getUserIdentity(user = {}) {
+  const fullName = toText(user?.full_name || user?.fullName);
+  const email = toText(user?.email);
+  return {
+    primary: fullName || email || "—",
+    secondary: fullName && email ? email : "",
+  };
+}
+
 function formatTs(ts) {
   const value = Number(ts || 0);
   if (!Number.isFinite(value) || value <= 0) return "—";
@@ -68,6 +77,8 @@ export default function AdminUsersPanel({
   const [users, setUsers] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
   const [password, setPassword] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
@@ -77,6 +88,8 @@ export default function AdminUsersPanel({
     const user = nextUser && typeof nextUser === "object" ? nextUser : null;
     setSelectedUserId(toText(user?.id));
     setEmail(toText(user?.email));
+    setFullName(toText(user?.full_name || user?.fullName));
+    setJobTitle(toText(user?.job_title || user?.jobTitle));
     setPassword("");
     setIsActive(user ? Boolean(user?.is_active) : true);
     setIsPlatformAdmin(Boolean(user?.is_admin));
@@ -143,6 +156,8 @@ export default function AdminUsersPanel({
     setNotice("");
     const payload = {
       email: nextEmail,
+      full_name: toText(fullName),
+      job_title: toText(jobTitle),
       is_admin: isPlatformAdmin,
       is_active: isActive,
       memberships: nextMemberships,
@@ -196,18 +211,19 @@ export default function AdminUsersPanel({
 
   return (
     <SectionCard
-      eyebrow="Users"
-      title="Пользователи и membership"
-      subtitle="Platform admin создаёт пользователя, назначает организацию и меняет org role per organization."
+      eyebrow="Доступ"
+      title="Пользователи и доступ"
+      subtitle="Администратор платформы управляет пользователями, ролями и доступом к организациям."
     >
       <div className="grid gap-4 xl:grid-cols-[1.45fr_0.9fr]">
         <div className="overflow-auto rounded-[22px] border border-slate-200 bg-white">
-          <table className="w-full min-w-[980px] border-collapse text-sm">
+          <table className="w-full min-w-[1080px] border-collapse text-sm">
             <thead className="text-left text-[11px] uppercase tracking-[0.16em] text-slate-400">
               <tr>
-                <th className="px-3 py-3">Email</th>
+                <th className="px-3 py-3">Пользователь</th>
+                <th className="px-3 py-3">Должность</th>
                 <th className="px-3 py-3">Роль платформы</th>
-                <th className="px-3 py-3">Memberships и org roles</th>
+                <th className="px-3 py-3">Организации и роли</th>
                 <th className="px-3 py-3">Статус</th>
                 <th className="px-3 py-3">Создан</th>
                 <th className="px-3 py-3 text-right">Действия</th>
@@ -216,13 +232,14 @@ export default function AdminUsersPanel({
             <tbody>
               {users.length === 0 ? (
                 <tr className="border-t border-slate-100">
-                  <td className="px-3 py-5 text-slate-500" colSpan={6}>Пользователи пока не найдены.</td>
+                  <td className="px-3 py-5 text-slate-500" colSpan={7}>Пользователи пока не найдены.</td>
                 </tr>
               ) : null}
               {users.map((row) => {
                 const userId = toText(row?.id);
                 const selected = userId && userId === selectedUserId;
                 const rowMemberships = Array.isArray(row?.memberships) ? row.memberships : [];
+                const identity = getUserIdentity(row);
                 return (
                   <tr
                     key={userId}
@@ -230,14 +247,19 @@ export default function AdminUsersPanel({
                     onClick={() => handleSelectUser(row)}
                   >
                     <td className="px-3 py-2.5 align-top">
-                      <div className="font-medium text-slate-950">{toText(row?.email) || "—"}</div>
-                      <div className="mt-1 text-xs text-slate-500">{userId || "—"}</div>
+                      <div className="font-medium text-slate-950" title={userId ? `ID: ${userId}` : ""}>{identity.primary}</div>
+                      {identity.secondary ? (
+                        <div className="mt-1 text-xs text-slate-500">{identity.secondary}</div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2.5 align-top text-slate-700">
+                      {toText(row?.job_title || row?.jobTitle) || "—"}
                     </td>
                     <td className="px-3 py-2.5 align-top">
                       {row?.is_admin ? (
-                        <StatusPill status="Platform admin" tone="accent" />
+                        <StatusPill status="Администратор платформы" tone="accent" />
                       ) : (
-                        <StatusPill status="Org member" tone="default" />
+                        <StatusPill status="Участник организации" tone="default" />
                       )}
                     </td>
                     <td className="px-3 py-2.5 align-top">
@@ -267,9 +289,9 @@ export default function AdminUsersPanel({
                     </td>
                     <td className="px-3 py-2.5 align-top">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <StatusPill status={row?.is_active ? "active" : "disabled"} tone={row?.is_active ? "ok" : "warn"} />
+                        <StatusPill status={row?.is_active ? "Активен" : "Отключён"} tone={row?.is_active ? "ok" : "warn"} />
                         {!row?.is_admin ? (
-                          <span className="text-xs text-slate-500">{`orgs: ${rowMemberships.length}`}</span>
+                          <span className="text-xs text-slate-500">{`организаций: ${rowMemberships.length}`}</span>
                         ) : null}
                       </div>
                     </td>
@@ -296,7 +318,7 @@ export default function AdminUsersPanel({
         <form className="space-y-3 rounded-[22px] border border-slate-200 bg-slate-50 p-3.5" onSubmit={handleSubmit} autoComplete="off">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Editor</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Профиль</div>
               <div className="text-lg font-semibold text-slate-950">{selectedUserId ? "Редактировать пользователя" : "Новый пользователь"}</div>
             </div>
             <button type="button" className="secondaryBtn h-9 min-h-0 px-3 py-0 text-sm" onClick={handleNewUser}>
@@ -316,6 +338,31 @@ export default function AdminUsersPanel({
               required
             />
           </label>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="block text-sm text-slate-700">
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Имя</div>
+              <input
+                className="input w-full"
+                type="text"
+                name="admin_user_full_name"
+                autoComplete="off"
+                value={fullName}
+                onChange={(event) => setFullName(event.target.value)}
+              />
+            </label>
+            <label className="block text-sm text-slate-700">
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Должность</div>
+              <input
+                className="input w-full"
+                type="text"
+                name="admin_user_job_title"
+                autoComplete="off"
+                value={jobTitle}
+                onChange={(event) => setJobTitle(event.target.value)}
+              />
+            </label>
+          </div>
 
           <label className="block text-sm text-slate-700">
             <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -344,7 +391,7 @@ export default function AdminUsersPanel({
             />
             <span>
               <span className="block font-medium text-slate-950">Администратор платформы</span>
-              <span className="block text-xs text-slate-500">Доступ ко всем организациям и переключение org-context в верхней панели.</span>
+              <span className="block text-xs text-slate-500">Доступ ко всем организациям и переключение контекста организации в верхней панели.</span>
             </span>
           </label>
 
