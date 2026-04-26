@@ -41,9 +41,9 @@ const SORT_OPTIONS = [
 ];
 
 const PRIORITY_OPTIONS = [
-  { value: "low", label: "Низкий", shortLabel: "Низкий", tone: "border-slate-300 bg-slate-50 text-slate-700" },
+  { value: "low", label: "Низкий", shortLabel: "Низкий", tone: "border-slate-300 bg-slate-50 text-slate-700 dark:border-borderStrong dark:bg-bgSoft dark:text-muted" },
   { value: "normal", label: "Обычный", shortLabel: "Обычный", tone: "border-border bg-bg/70 text-muted" },
-  { value: "high", label: "Высокий", shortLabel: "Высокий", tone: "border-orange-300 bg-orange-50 text-orange-900" },
+  { value: "high", label: "Высокий", shortLabel: "Высокий", tone: "border-orange-300 bg-orange-50 text-orange-900 dark:border-warning/55 dark:bg-warning/10 dark:text-warning" },
 ];
 
 function text(value) {
@@ -108,8 +108,8 @@ function statusLabel(status) {
 
 function statusTone(status) {
   return text(status) === "resolved"
-    ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-    : "border-sky-300 bg-sky-50 text-sky-900";
+    ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-success/55 dark:bg-success/10 dark:text-success"
+    : "border-sky-300 bg-sky-50 text-sky-900 dark:border-info/55 dark:bg-info/10 dark:text-info";
 }
 
 function threadStatusLabel(thread) {
@@ -118,7 +118,7 @@ function threadStatusLabel(thread) {
 
 function threadStatusTone(thread) {
   return isLegacyBridgeThread(thread)
-    ? "border-amber-300 bg-amber-50 text-amber-900"
+    ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-warning/55 dark:bg-warning/10 dark:text-warning"
     : statusTone(thread?.status);
 }
 
@@ -151,13 +151,13 @@ function attentionMeta(thread) {
     return {
       label: "Внимание подтверждено вами",
       shortLabel: "Подтверждено",
-      tone: "border-emerald-300 bg-emerald-50 text-emerald-800",
+      tone: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-success/55 dark:bg-success/10 dark:text-success",
     };
   }
   return {
     label: "Требует внимания",
     shortLabel: "Внимание",
-    tone: "border-rose-300 bg-rose-50 text-rose-900",
+    tone: "border-rose-300 bg-rose-50 text-rose-900 dark:border-danger/55 dark:bg-danger/10 dark:text-danger",
   };
 }
 
@@ -669,7 +669,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
             <button
               key={item.id}
               type="button"
-              className={`rounded-xl border px-2.5 py-2 text-left transition ${active ? "border-rose-300 bg-rose-50/80" : "border-border/80 bg-panel/80 hover:border-rose-300 hover:bg-white"}`}
+              className={`rounded-xl border px-2.5 py-2 text-left transition ${active ? "border-danger/50 bg-danger/10" : "border-border/80 bg-panel/80 hover:border-danger/45 hover:bg-panel2/80"}`}
               onClick={() => void openNotificationItem(item)}
               data-testid={`discussion-notification-${item.state}`}
             >
@@ -678,7 +678,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                   <div className="line-clamp-2 text-[12px] font-semibold leading-snug text-fg">{item.title}</div>
                   <div className="mt-1 truncate text-[11px] text-muted">{item.sourceLabel || "Обсуждение"}</div>
                 </div>
-                <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${item.state === "active" ? "border-rose-300 bg-rose-50 text-rose-900" : "border-emerald-300 bg-emerald-50 text-emerald-800"}`}>
+                <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${item.state === "active" ? "border-danger/50 bg-danger/10 text-danger" : "border-success/50 bg-success/10 text-success"}`}>
                   {item.state === "active" ? "Требует внимания" : "Недавнее"}
                 </span>
               </div>
@@ -859,16 +859,16 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
         <div className="fixed bottom-5 right-5 z-[86] hidden max-w-[min(92vw,560px)] flex-wrap justify-end gap-2 max-lg:flex lg:hidden">
           <button
             type="button"
-            className="group inline-flex items-center gap-2 rounded-full border border-border bg-panel/90 px-3 py-1.5 text-xs font-bold text-fg shadow-panel transition hover:border-sky-300 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="group inline-flex items-center gap-2 rounded-full border border-border bg-panel/90 px-3 py-1.5 text-xs font-bold text-fg shadow-panel transition hover:border-info/55 hover:bg-panel2/85 disabled:cursor-not-allowed disabled:opacity-60"
             onClick={openPanel}
             disabled={disabled}
             title="Открыть обсуждения"
             data-notes-panel-trigger="true"
             data-testid="notes-panel-floating-trigger"
           >
-            <span className="grid h-6 w-6 place-items-center rounded-full bg-sky-500/10 text-sm text-sky-900" aria-hidden="true">✎</span>
+            <span className="grid h-6 w-6 place-items-center rounded-full bg-info/10 text-sm text-info" aria-hidden="true">✎</span>
             <span>Обсуждения</span>
-            <NotesAggregateBadge aggregate={aggregate} compact compactNumericOnly label="Обсуждения" className="border-border bg-white/85 px-1.5 py-0 text-[10px]" />
+            <NotesAggregateBadge aggregate={aggregate} compact compactNumericOnly label="Обсуждения" className="border-border bg-panel2/85 px-1.5 py-0 text-[10px]" />
           </button>
         </div>
       ) : null}
@@ -878,12 +878,12 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
           ref={panelRef}
           className="fixed bottom-5 right-5 top-16 z-[88] flex w-[min(1040px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-[30px] border border-border bg-panel shadow-panel transition-all duration-200 max-lg:bottom-3 max-lg:right-3 max-lg:w-[calc(100vw-1.5rem)] max-sm:top-14"
         >
-          <div className="border-b border-border bg-gradient-to-r from-sky-50/85 via-panel to-panel px-4 py-3.5 sm:px-5">
+          <div className="border-b border-border bg-gradient-to-r from-info/10 via-panel to-panel px-4 py-3.5 sm:px-5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 text-[11px] text-muted">
-                  <span className="grid h-6 w-6 place-items-center rounded-full border border-sky-300/80 bg-white text-[12px] text-sky-900" aria-hidden="true">✎</span>
-                  <span className="rounded-full border border-border/80 bg-white/75 px-2 py-0.5">
+                  <span className="grid h-6 w-6 place-items-center rounded-full border border-info/45 bg-info/10 text-[12px] text-info" aria-hidden="true">✎</span>
+                  <span className="rounded-full border border-border/80 bg-panel2/75 px-2 py-0.5">
                     {notificationMode ? "Уведомления" : "Обсуждения"}
                   </span>
                 </div>
@@ -894,7 +894,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
               <div className="flex items-center gap-2 self-center">
                 <button
                   type="button"
-                  className={`primaryBtn tinyBtn h-9 px-3 text-xs ${createOpen ? "ring-1 ring-sky-300" : ""}`}
+                  className={`primaryBtn tinyBtn h-9 px-3 text-xs ${createOpen ? "ring-1 ring-info/35" : ""}`}
                   onClick={() => {
                     setCreateOpen(true);
                     setError("");
@@ -953,7 +953,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
               {createOpen ? (
                 <div className="flex min-h-0 flex-1 overflow-auto bg-bg/10 px-4 py-4 sm:px-5 sm:py-5">
                   <div className="flex w-full max-w-3xl flex-col self-start rounded-[28px] border border-sky-200 bg-panel shadow-sm">
-                    <div className="border-b border-border bg-sky-50/70 px-5 py-4 sm:px-6 sm:py-5">
+                    <div className="border-b border-border bg-info/10 px-5 py-4 sm:px-6 sm:py-5">
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0">
                           <div className="text-2xl font-black text-fg">Новое обсуждение</div>
@@ -1143,7 +1143,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border/70 pt-2 max-sm:justify-start">
                             <button
                               type="button"
-                              className={`secondaryBtn tinyBtn h-8 px-2.5 text-xs ${requiresAttention(selectedThread) ? "border-rose-300 bg-rose-50 text-rose-900" : ""}`}
+                              className={`secondaryBtn tinyBtn h-8 px-2.5 text-xs ${requiresAttention(selectedThread) ? "border-danger/50 bg-danger/10 text-danger" : ""}`}
                               onClick={() => patchThreadMeta({ requires_attention: !requiresAttention(selectedThread) })}
                               disabled={busy.startsWith("meta:") || busy.startsWith("ack:")}
                               data-testid="notes-thread-attention-toggle"
@@ -1153,7 +1153,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                             {requiresAttention(selectedThread) && !attentionAcknowledged(selectedThread) ? (
                               <button
                                 type="button"
-                                className="secondaryBtn tinyBtn h-8 border-emerald-300 bg-emerald-50 px-2.5 text-xs text-emerald-900"
+                                className="secondaryBtn tinyBtn h-8 border-success/50 bg-success/10 px-2.5 text-xs text-success"
                                 onClick={acknowledgeAttention}
                                 disabled={busy.startsWith("ack:") || busy.startsWith("meta:")}
                                 data-testid="notes-thread-attention-acknowledge"
@@ -1163,7 +1163,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                             ) : null}
                             {requiresAttention(selectedThread) && attentionAcknowledged(selectedThread) ? (
                               <span
-                                className="inline-flex h-8 items-center rounded-full border border-emerald-300 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-800"
+                                className="inline-flex h-8 items-center rounded-full border border-success/50 bg-success/10 px-2.5 text-xs font-semibold text-success"
                                 data-testid="notes-thread-attention-acknowledged"
                               >
                                 Подтверждено вами
@@ -1195,7 +1195,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                               className={`rounded-xl border bg-panel px-3 py-2.5 shadow-sm ${commentFocused ? "border-rose-300 ring-1 ring-rose-200" : "border-border"}`}
                             >
                               <div className="flex items-start gap-2.5">
-                                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-sky-500/10 text-[11px] font-bold text-sky-900">
+                                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-info/10 text-[11px] font-bold text-info">
                                   {authorInitials(author)}
                                 </div>
                                 <div className="min-w-0 flex-1">
@@ -1207,7 +1207,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                                   {asArray(comment?.mentions).length ? (
                                     <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted" data-testid="notes-comment-mentions">
                                       {asArray(comment.mentions).map((mention) => (
-                                        <span key={text(mention?.id) || text(mention?.mentioned_user_id)} className="rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 font-semibold text-sky-900">
+                                        <span key={text(mention?.id) || text(mention?.mentioned_user_id)} className="rounded-full border border-info/45 bg-info/10 px-2 py-0.5 font-semibold text-info">
                                           @{text(mention?.mentioned_label) || authorLabel(mention?.mentioned_user_id, authorLabelsById, viewerUserId)}
                                         </span>
                                       ))}
@@ -1451,7 +1451,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         <button
                           key={threadId}
                           type="button"
-                          className={`rounded-lg border px-3 py-2.5 text-left transition ${active ? "border-sky-400 bg-sky-500/10 shadow-sm ring-1 ring-sky-300/30" : "border-border/80 bg-panel/85 hover:border-sky-300 hover:bg-bg/40 hover:shadow-sm"}`}
+                          className={`rounded-lg border px-3 py-2.5 text-left transition ${active ? "border-info/60 bg-info/10 shadow-sm ring-1 ring-info/30" : "border-border/80 bg-panel/85 hover:border-info/45 hover:bg-panel2/70 hover:shadow-sm"}`}
                           onClick={() => {
                             setCreateOpen(false);
                             setSelectedThreadId(threadId);
@@ -1474,7 +1474,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                               <span className={`rounded-full border px-1.5 py-0.5 font-semibold ${priorityMeta(thread).tone}`}>{priorityMeta(thread).shortLabel}</span>
                             ) : null}
                             {mentionLabel ? (
-                              <span className="min-w-0 truncate rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-900">
+                              <span className="min-w-0 truncate rounded-full border border-info/40 bg-info/10 px-1.5 py-0.5 font-semibold text-info">
                                 {mentionLabel}
                               </span>
                             ) : null}

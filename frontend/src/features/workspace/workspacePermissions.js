@@ -53,28 +53,28 @@ export function getManualSessionStatusMeta(statusRaw) {
   const map = {
     draft: {
       label: "Черновик",
-      badgeClass: "border-slate-300 bg-slate-100 text-slate-700",
-      selectClass: "border-slate-300 bg-slate-50 text-slate-700",
+      badgeClass: "border-slate-300 bg-slate-100 text-slate-700 dark:border-borderStrong dark:bg-panel2 dark:text-fg",
+      selectClass: "border-slate-300 bg-slate-50 text-slate-700 dark:border-borderStrong dark:bg-panel2 dark:text-fg",
     },
     in_progress: {
       label: "В работе",
-      badgeClass: "border-sky-300 bg-sky-50 text-sky-700",
-      selectClass: "border-sky-300 bg-sky-50 text-sky-700",
+      badgeClass: "border-sky-300 bg-sky-50 text-sky-700 dark:border-info/55 dark:bg-info/10 dark:text-info",
+      selectClass: "border-sky-300 bg-sky-50 text-sky-700 dark:border-info/55 dark:bg-info/10 dark:text-info",
     },
     review: {
       label: "На проверке",
-      badgeClass: "border-amber-300 bg-amber-50 text-amber-700",
-      selectClass: "border-amber-300 bg-amber-50 text-amber-700",
+      badgeClass: "border-amber-300 bg-amber-50 text-amber-700 dark:border-warning/55 dark:bg-warning/10 dark:text-warning",
+      selectClass: "border-amber-300 bg-amber-50 text-amber-700 dark:border-warning/55 dark:bg-warning/10 dark:text-warning",
     },
     ready: {
       label: "Готово",
-      badgeClass: "border-emerald-300 bg-emerald-50 text-emerald-700",
-      selectClass: "border-emerald-300 bg-emerald-50 text-emerald-700",
+      badgeClass: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-success/55 dark:bg-success/10 dark:text-success",
+      selectClass: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-success/55 dark:bg-success/10 dark:text-success",
     },
     archived: {
       label: "Архив",
-      badgeClass: "border-zinc-300 bg-zinc-100 text-zinc-700",
-      selectClass: "border-zinc-300 bg-zinc-100 text-zinc-700",
+      badgeClass: "border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-borderStrong dark:bg-bgSoft dark:text-muted",
+      selectClass: "border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-borderStrong dark:bg-bgSoft dark:text-muted",
     },
   };
   return map[status] || map.draft;
