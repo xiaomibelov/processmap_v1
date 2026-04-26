@@ -77,6 +77,13 @@ function str(v) {
   return String(v || "").trim();
 }
 
+function buildCamundaPropertiesDraftKey(sessionIdRaw, elementIdRaw) {
+  const sessionId = str(sessionIdRaw);
+  const elementId = str(elementIdRaw);
+  if (!sessionId || !elementId) return "";
+  return `${sessionId}:${elementId}:camunda-properties`;
+}
+
 function normalizeFlowTier(raw) {
   const tier = String(raw || "").trim().toUpperCase();
   if (tier === "P0" || tier === "P1" || tier === "P2") return tier;
@@ -1085,6 +1092,7 @@ export default function NotesPanel({
   const sidebarHiddenRef = useRef(Boolean(sidebarHidden));
   const nodeEditorRef = useRef(null);
   const nodePathDirtyBaselineRef = useRef({ nodeId: "", snapshot: null });
+  const camundaPropertiesDraftCacheRef = useRef(new Map());
   const propertiesOverlayPreviewDispatchRef = useRef({
     draftSignature: "__init__",
     alwaysSignature: "__init__",
@@ -1121,6 +1129,10 @@ export default function NotesPanel({
   );
   const selectedElementId = str(selectedElement?.id);
   const sid = str(draft?.session_id || draft?.id);
+  const camundaPropertiesDraftKey = useMemo(
+    () => buildCamundaPropertiesDraftKey(sid, selectedElementId),
+    [sid, selectedElementId],
+  );
   const selectedElementName = str(selectedElement?.name || selectedElementId);
   const selectedElementType = str(selectedElement?.type);
   const selectedElementLaneName = str(selectedElement?.laneName || selectedElement?.lane || selectedElement?.actorRole);
@@ -1702,12 +1714,19 @@ export default function NotesPanel({
       setCamundaPropertiesInfo("");
       return;
     }
-    setCamundaPropertiesDraft(selectedCamundaExtensionEntry);
+    const cachedDraft = camundaPropertiesDraftKey
+      ? camundaPropertiesDraftCacheRef.current.get(camundaPropertiesDraftKey)
+      : null;
+    setCamundaPropertiesDraft(
+      cachedDraft && typeof cachedDraft === "object"
+        ? cachedDraft
+        : selectedCamundaExtensionEntry,
+    );
     setCamundaExtensionSaveFailed(false);
     setCamundaExtensionLastAction("save");
     setCamundaPropertiesErr("");
     setCamundaPropertiesInfo("");
-  }, [selectedCamundaPropertiesEditable, selectedCamundaExtensionEntry]);
+  }, [camundaPropertiesDraftKey, selectedCamundaPropertiesEditable, selectedCamundaExtensionEntry]);
 
   useEffect(() => {
     const nextRows = normalizeDocumentationRows(selectedBpmnDocumentationRows);
@@ -2346,10 +2365,14 @@ export default function NotesPanel({
   }, [onOpenOrgSettings, selectedOperationKey]);
 
   const updateCamundaPropertiesDraft = useCallback((nextRaw) => {
-    setCamundaPropertiesDraft(nextRaw && typeof nextRaw === "object" ? nextRaw : createEmptyCamundaExtensionState());
+    const nextDraft = nextRaw && typeof nextRaw === "object" ? nextRaw : createEmptyCamundaExtensionState();
+    setCamundaPropertiesDraft(nextDraft);
+    if (camundaPropertiesDraftKey) {
+      camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, nextDraft);
+    }
     setCamundaExtensionSaveFailed(false);
     setCamundaPropertiesErr("");
-  }, []);
+  }, [camundaPropertiesDraftKey]);
 
   const updateBpmnDocumentationDraft = useCallback((nextRowsRaw) => {
     setBpmnDocumentationDraftRows(normalizeDocumentationRows(nextRowsRaw, { keepEmpty: true }));
@@ -2436,6 +2459,10 @@ export default function NotesPanel({
     const prevCanonical = JSON.stringify(normalizeCamundaExtensionState(selectedCamundaExtensionEntry));
     const nextCanonical = JSON.stringify(normalizeCamundaExtensionState(normalized));
     if (prevCanonical === nextCanonical) {
+      if (camundaPropertiesDraftKey) {
+        camundaPropertiesDraftCacheRef.current.delete(camundaPropertiesDraftKey);
+      }
+      setCamundaPropertiesDraft(normalized);
       setCamundaExtensionSaveFailed(false);
       setCamundaPropertiesErr("");
       setCamundaPropertiesInfo("Без изменений.");
@@ -2453,6 +2480,10 @@ export default function NotesPanel({
         setCamundaPropertiesErr(str(result.error || "Не удалось сохранить Properties."));
         return;
       }
+      if (camundaPropertiesDraftKey) {
+        camundaPropertiesDraftCacheRef.current.delete(camundaPropertiesDraftKey);
+      }
+      setCamundaPropertiesDraft(normalized);
       setCamundaExtensionSaveFailed(false);
       setCamundaPropertiesInfo("Properties сохранены.");
     } catch (error) {
@@ -2483,6 +2514,9 @@ export default function NotesPanel({
         setCamundaExtensionSaveFailed(true);
         setCamundaPropertiesErr(str(result.error || "Не удалось очистить Properties."));
         return;
+      }
+      if (camundaPropertiesDraftKey) {
+        camundaPropertiesDraftCacheRef.current.delete(camundaPropertiesDraftKey);
       }
       setCamundaPropertiesDraft(nextState);
       setCamundaExtensionSaveFailed(false);
