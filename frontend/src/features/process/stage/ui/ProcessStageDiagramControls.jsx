@@ -3,8 +3,8 @@ import LayersPopover from "../components/LayersPopover";
 import TemplatesBottomMenu from "../../../templates/ui/TemplatesBottomMenu";
 import GatewaysPanel from "../../playback/ui/GatewaysPanel";
 import DiagramSearchPopover from "./DiagramSearchPopover";
-import { apiGetSessionNoteAggregate } from "../../../../lib/api";
 import NotesAggregateBadge from "../../../../components/NotesAggregateBadge.jsx";
+import { useSessionNoteAggregate } from "../../../../lib/sessionNoteAggregates.js";
 
 function ensureObject(value) {
   return value && typeof value === "object" ? value : {};
@@ -67,7 +67,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
   const latestOpenNotesDiscussionsRef = useRef(null);
   latestOpenNotesDiscussionsRef.current = explicitOpenNotesDiscussions
     || (typeof legacyView.openNotesDiscussions === "function" ? legacyView.openNotesDiscussions : null);
-  const [notesAggregate, setNotesAggregate] = useState(null);
+  const notesAggregate = useSessionNoteAggregate(hasSession ? discussionsSessionId : "");
 
   const {
     templatesMenuOpen,
@@ -412,31 +412,6 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     playbackIsPlayingResolved,
     shouldShowCurrentStep,
   ]);
-
-  useEffect(() => {
-    if (!hasSession || !discussionsSessionId) {
-      setNotesAggregate(null);
-      return undefined;
-    }
-    let cancelled = false;
-    async function refreshNotesAggregate() {
-      const result = await apiGetSessionNoteAggregate(discussionsSessionId);
-      if (cancelled) return;
-      setNotesAggregate(result?.ok ? (result.aggregate || null) : null);
-    }
-    void refreshNotesAggregate();
-    function handleNotesAggregateChanged(event) {
-      const detail = ensureObject(event?.detail);
-      const detailSessionId = toText(detail.sessionId);
-      if (detailSessionId && detailSessionId !== discussionsSessionId) return;
-      void refreshNotesAggregate();
-    }
-    window.addEventListener("processmap:notes-aggregate-changed", handleNotesAggregateChanged);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("processmap:notes-aggregate-changed", handleNotesAggregateChanged);
-    };
-  }, [discussionsSessionId, hasSession, toText]);
 
   const handlePlaybackTogglePlayWithUiMode = () => {
     const shouldCollapseAfterStart = !playbackRuntimeCollapsed

@@ -38,6 +38,10 @@ class PatchNoteThreadBody(BaseModel):
     requires_attention: Optional[bool] = None
 
 
+class SessionNoteAggregatesBody(BaseModel):
+    session_ids: List[str] = Field(default_factory=list)
+
+
 def _load_project_for_notes(request: Request, project_id: str) -> tuple[Any, str, str]:
     user_id = require_authenticated_user(request)
     org_id = request_active_org_id(request)
@@ -113,6 +117,20 @@ def _validation_error(exc: ValueError) -> HTTPException:
     return HTTPException(status_code=422, detail=str(exc) or "validation error")
 
 
+def _dedupe_session_ids(raw_session_ids: List[str], *, limit: int = 100) -> List[str]:
+    out: List[str] = []
+    seen: set[str] = set()
+    for raw in raw_session_ids or []:
+        sid = str(raw or "").strip()
+        if not sid or sid in seen:
+            continue
+        seen.add(sid)
+        out.append(sid)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _user_label(row: Dict[str, Any]) -> str:
     return str(row.get("name") or row.get("email") or row.get("id") or "").strip()
 
@@ -166,6 +184,49 @@ def get_session_note_aggregate(session_id: str, request: Request) -> Dict[str, A
     _sess, org_id, user_id = _load_session_for_notes(request, session_id, write=False)
     aggregate = storage.get_session_open_notes_aggregate(session_id, org_id=org_id, viewer_user_id=user_id)
     return {"scope_type": "session", "session_id": session_id, **aggregate}
+
+
+@router.post("/api/sessions/note-aggregates")
+def get_session_note_aggregates(body: SessionNoteAggregatesBody, request: Request) -> Dict[str, Any]:
+    user_id = require_authenticated_user(request)
+    org_id = request_active_org_id(request)
+    require_org_member_for_enterprise(request, org_id)
+    session_ids = _dedupe_session_ids(body.session_ids)
+    if not session_ids:
+        return {"scope_type": "sessions", "items": [], "aggregates": {}}
+    st = storage.get_storage()
+    for sid in session_ids:
+        sess = st.load(sid, org_id=org_id, is_admin=True)
+        if not sess:
+            raise HTTPException(status_code=404, detail="session not found")
+        project_id = str(getattr(sess, "project_id", "") or "").strip()
+        if project_id and not project_access_allowed(request, org_id, project_id):
+            raise HTTPException(status_code=404, detail="session not found")
+    aggregate_by_session = storage.get_sessions_open_notes_aggregates(
+        session_ids,
+        org_id=org_id,
+        viewer_user_id=user_id,
+    )
+    items = [
+        {
+            "scope_type": "session",
+            "session_id": sid,
+            **(aggregate_by_session.get(sid) or {
+                "open_notes_count": 0,
+                "has_open_notes": False,
+                "attention_discussions_count": 0,
+                "has_attention_discussions": False,
+                "personal_discussions_count": 0,
+                "has_personal_discussions": False,
+            }),
+        }
+        for sid in session_ids
+    ]
+    return {
+        "scope_type": "sessions",
+        "items": items,
+        "aggregates": {sid: item for sid, item in zip(session_ids, items)},
+    }
 
 
 @router.get("/api/projects/{project_id}/note-aggregate")

@@ -410,6 +410,40 @@ export async function apiGetSessionNoteAggregate(sessionId) {
     : r;
 }
 
+export async function apiGetSessionNoteAggregates(sessionIds = []) {
+  const ids = [];
+  const seen = new Set();
+  for (const raw of Array.isArray(sessionIds) ? sessionIds : []) {
+    const sid = String(raw || "").trim();
+    if (!sid || seen.has(sid)) continue;
+    seen.add(sid);
+    ids.push(sid);
+  }
+  if (!ids.length) {
+    return { ok: true, status: 0, items: [], aggregates: {} };
+  }
+  const r = okOrError(await request(apiRoutes.noteAggregates.sessions(), {
+    method: "POST",
+    body: { session_ids: ids },
+  }));
+  if (!r.ok) return r;
+  const rawItems = Array.isArray(r.data?.items) ? r.data.items : [];
+  const byId = {};
+  const items = rawItems.map((item) => {
+    const sid = String(item?.session_id || "").trim();
+    const aggregate = normalizeNoteAggregate(item, { scope_type: "session", session_id: sid });
+    if (sid) byId[sid] = aggregate;
+    return aggregate;
+  });
+  for (const sid of ids) {
+    if (!byId[sid]) {
+      byId[sid] = normalizeNoteAggregate(null, { scope_type: "session", session_id: sid });
+      items.push(byId[sid]);
+    }
+  }
+  return { ok: true, status: r.status, items, aggregates: byId };
+}
+
 export async function apiGetProjectNoteAggregate(projectId) {
   const pid = String(projectId || "").trim();
   if (!pid) return { ok: false, status: 0, error: "missing project_id" };
