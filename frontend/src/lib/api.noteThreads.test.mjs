@@ -9,6 +9,7 @@ import {
   apiGetFolderNoteAggregate,
   apiGetProjectNoteAggregate,
   apiGetSessionNoteAggregate,
+  apiGetSessionNoteAggregates,
   apiListMentionableUsers,
   apiListMyNoteMentions,
   apiListNoteThreads,
@@ -135,4 +136,44 @@ test("note aggregate API helpers use MVP-1 aggregate endpoints", async () => {
   assert.match(calls[1].url, /\/api\/projects\/proj_1\/note-aggregate$/);
   assert.match(calls[2].url, /\/api\/folders\/folder_1\/note-aggregate\?workspace_id=workspace_1$/);
   assert.deepEqual(calls.map((call) => call.method), ["GET", "GET", "GET"]);
+});
+
+test("session note aggregate batch helper normalizes duplicate ids into one POST", async () => {
+  const calls = [];
+  await withFetch(async (input, init = {}) => {
+    calls.push({
+      url: String(input || ""),
+      method: String(init?.method || "GET"),
+      body: init?.body ? JSON.parse(String(init.body)) : null,
+    });
+    return new Response(JSON.stringify({
+      items: [
+        {
+          scope_type: "session",
+          session_id: "sess_1",
+          open_notes_count: 3,
+          has_open_notes: true,
+          attention_discussions_count: 2,
+          has_attention_discussions: true,
+          personal_discussions_count: 1,
+          has_personal_discussions: true,
+        },
+      ],
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }, async () => {
+    const result = await apiGetSessionNoteAggregates(["sess_1", "sess_1", "", "sess_2"]);
+    assert.equal(result.ok, true);
+    assert.equal(result.aggregates.sess_1.open_notes_count, 3);
+    assert.equal(result.aggregates.sess_1.personal_discussions_count, 1);
+    assert.equal(result.aggregates.sess_2.open_notes_count, 0);
+    assert.equal(result.aggregates.sess_2.has_attention_discussions, false);
+  });
+
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /\/api\/sessions\/note-aggregates$/);
+  assert.equal(calls[0].method, "POST");
+  assert.deepEqual(calls[0].body, { session_ids: ["sess_1", "sess_2"] });
 });

@@ -157,6 +157,7 @@ export const apiRoutes = {
     acknowledge: (mentionId) => `/api/note-mentions/${encode(mentionId)}/acknowledge`,
   },
   noteAggregates: {
+    sessions: () => "/api/sessions/note-aggregates",
     project: (projectId) => `/api/projects/${encode(projectId)}/note-aggregate`,
     folder: (folderId, workspaceId) => withQuery(`/api/folders/${encode(folderId)}/note-aggregate`, {
       workspace_id: String(workspaceId || "").trim(),

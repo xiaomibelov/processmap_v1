@@ -6398,6 +6398,62 @@ def get_session_open_notes_aggregate(
     )
 
 
+def get_sessions_open_notes_aggregates(
+    session_ids: Iterable[str],
+    *,
+    org_id: Optional[str] = None,
+    viewer_user_id: Optional[str] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Read-time Notes aggregate for multiple sessions in one query."""
+    _ensure_schema()
+    ids: List[str] = []
+    seen: set[str] = set()
+    for raw in session_ids or []:
+        sid = str(raw or "").strip()
+        if sid and sid not in seen:
+            seen.add(sid)
+            ids.append(sid)
+    if not ids:
+        return {}
+    out: Dict[str, Dict[str, Any]] = {
+        sid: _notes_aggregate_payload(0)
+        for sid in ids
+    }
+    placeholders = ", ".join(["?"] * len(ids))
+    filters = [f"nt.session_id IN ({placeholders})"]
+    params: List[Any] = [*ids]
+    oid = str(org_id or "").strip()
+    if oid:
+        filters.append("nt.org_id = ?")
+        params.append(oid)
+    attention_count_case, attention_params = _attention_count_case("nt", viewer_user_id)
+    personal_count_case, personal_params = _personal_discussion_count_case("nt", viewer_user_id)
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT
+              nt.session_id AS session_id,
+              SUM(CASE WHEN nt.status = 'open' THEN 1 ELSE 0 END) AS open_notes_count,
+              {attention_count_case},
+              {personal_count_case}
+            FROM note_threads nt
+            WHERE {' AND '.join(filters)}
+            GROUP BY nt.session_id
+            """,
+            [*attention_params, *personal_params, *params],
+        ).fetchall()
+    for row in rows:
+        sid = str(_row_value(row, "session_id") or "").strip()
+        if not sid:
+            continue
+        out[sid] = _notes_aggregate_payload(
+            _row_value(row, "open_notes_count", 0),
+            _row_value(row, "attention_discussions_count", 0),
+            _row_value(row, "personal_discussions_count", 0),
+        )
+    return out
+
+
 def get_project_open_notes_aggregate(
     project_id: str,
     *,
