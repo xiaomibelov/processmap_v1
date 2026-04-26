@@ -225,6 +225,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const [legacyDraftByThread, setLegacyDraftByThread] = useState({});
   const [aggregate, setAggregate] = useState(null);
   const [aggregateRefreshTick, setAggregateRefreshTick] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const panelRef = useRef(null);
 
   const createDraft = createDraftByScope[createScope] || "";
@@ -292,6 +293,19 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
 
   const commentDraft = commentDraftByThread[text(selectedThread?.id)] || "";
   const legacyDraft = legacyDraftByThread[text(selectedThread?.id)] || "";
+  const openThreadsCount = Math.max(0, Number(aggregate?.open_notes_count || 0) || 0);
+  const activeFilterCount = Number(statusFilter !== "open") + Number(scopeFilter !== "all") + Number(sortOrder !== "newest");
+  const discussionSummaryLine = useMemo(() => {
+    const parts = [
+      text(sessionTitle) || "Сессия",
+      `${openThreadsCount} открытых`,
+      `${displayThreads.length} тем`,
+    ];
+    if (visibleThreads.length !== displayThreads.length) {
+      parts.push(`показано ${visibleThreads.length}`);
+    }
+    return parts.join(" · ");
+  }, [displayThreads.length, openThreadsCount, sessionTitle, visibleThreads.length]);
 
   const refreshAggregate = useCallback(async () => {
     if (!sid) {
@@ -543,20 +557,21 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
           ref={panelRef}
           className="fixed bottom-5 right-5 top-16 z-[88] flex w-[min(1040px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-[30px] border border-border bg-panel shadow-panel transition-all duration-200 max-lg:bottom-3 max-lg:right-3 max-lg:w-[calc(100vw-1.5rem)] max-sm:top-14"
         >
-          <div className="border-b border-border bg-gradient-to-r from-sky-50 via-panel to-panel px-5 py-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="grid h-8 w-8 place-items-center rounded-2xl border border-sky-300/80 bg-white text-sky-900" aria-hidden="true">✎</span>
-                  <div className="text-lg font-black text-fg">Обсуждения</div>
-                  <NotesAggregateBadge aggregate={aggregate} compact compactNumericOnly label="Обсуждения" className="bg-white/85" />
+          <div className="border-b border-border bg-gradient-to-r from-sky-50/85 via-panel to-panel px-4 py-3.5 sm:px-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 text-[11px] text-muted">
+                  <span className="grid h-6 w-6 place-items-center rounded-full border border-sky-300/80 bg-white text-[12px] text-sky-900" aria-hidden="true">✎</span>
+                  <span className="rounded-full border border-border/80 bg-white/75 px-2 py-0.5">Обсуждения</span>
                 </div>
-                <div className="mt-1 truncate text-xs text-muted">{text(sessionTitle) || "Сессия"}</div>
+                <div data-testid="notes-summary-line" className="mt-1 truncate text-sm font-medium text-fg">
+                  {discussionSummaryLine}
+                </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 self-center">
                 <button
                   type="button"
-                  className={`primaryBtn smallBtn ${createOpen ? "ring-1 ring-sky-300" : ""}`}
+                  className={`primaryBtn tinyBtn h-9 px-3 text-xs ${createOpen ? "ring-1 ring-sky-300" : ""}`}
                   onClick={() => {
                     setCreateOpen(true);
                     setError("");
@@ -567,7 +582,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                 </button>
                 <button
                   type="button"
-                  className="secondaryBtn smallBtn"
+                  className="secondaryBtn tinyBtn h-9 px-3 text-xs"
                   onClick={() => {
                     setOpen(false);
                     setCreateOpen(false);
@@ -580,7 +595,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
             </div>
           </div>
 
-          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(280px,320px)] overflow-hidden max-lg:grid-cols-1">
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(248px,288px)] overflow-hidden max-lg:grid-cols-1">
             <section className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-panel max-lg:border-b max-lg:border-r-0">
               {error ? (
                 <div className="mx-4 mt-4 rounded-xl border border-danger/50 bg-danger/10 px-3 py-2 text-xs text-danger">
@@ -655,19 +670,18 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                 </div>
               ) : selectedThread ? (
                 <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr_auto] overflow-hidden">
-                  <div className="border-b border-border bg-panel/95 px-4 py-3.5 sm:px-5 sm:py-4">
-                    <div className="flex items-start justify-between gap-4">
+                  <div className="border-b border-border bg-panel/95 px-4 py-3 sm:px-5 sm:py-3.5">
+                    <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="text-xl font-black leading-snug text-fg">{threadTitle(selectedThread)}</div>
-                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${threadStatusTone(selectedThread)}`}>
-                            {threadStatusLabel(selectedThread)}
-                          </span>
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
-                          <span className="rounded-full border border-border bg-bg/70 px-2 py-0.5">Относится к: {scopeMeta(selectedThread).relation}</span>
-                          <span>Последняя активность: {formatDate(threadUpdatedAt(selectedThread)) || "сейчас"}</span>
-                          <span>Сообщений: {asArray(selectedThread.comments).length}</span>
+                        <div className="text-[15px] font-semibold leading-6 text-fg">{threadTitle(selectedThread)}</div>
+                        <div data-testid="notes-thread-header-meta" className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+                          <span className="font-medium text-fg/80">{threadStatusLabel(selectedThread)}</span>
+                          <span aria-hidden="true">·</span>
+                          <span>{scopeMeta(selectedThread).relation}</span>
+                          <span aria-hidden="true">·</span>
+                          <span>{asArray(selectedThread.comments).length} сообщ.</span>
+                          <span aria-hidden="true">·</span>
+                          <span>{formatDate(threadUpdatedAt(selectedThread)) || "сейчас"}</span>
                         </div>
                         {selectedThreadIsLegacyBridge ? (
                           <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
@@ -676,11 +690,11 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         ) : null}
                       </div>
                       {!selectedThreadIsLegacyBridge && text(selectedThread.status) === "resolved" ? (
-                        <button type="button" className="secondaryBtn smallBtn" onClick={() => patchStatus("open")} disabled={busy.startsWith("status:")}>
+                        <button type="button" className="secondaryBtn tinyBtn h-8 px-3 text-xs" onClick={() => patchStatus("open")} disabled={busy.startsWith("status:")}>
                           Вернуть в открытые
                         </button>
                       ) : !selectedThreadIsLegacyBridge ? (
-                        <button type="button" className="secondaryBtn smallBtn" onClick={() => patchStatus("resolved")} disabled={busy.startsWith("status:")}>
+                        <button type="button" className="secondaryBtn tinyBtn h-8 px-3 text-xs" onClick={() => patchStatus("resolved")} disabled={busy.startsWith("status:")}>
                           Закрыть обсуждение
                         </button>
                       ) : null}
@@ -795,78 +809,93 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
               )}
             </section>
 
-            <aside className="flex min-h-0 flex-col bg-bg/25 p-2.5">
-              <div className="rounded-xl border border-border/80 bg-panel/80 p-2.5 shadow-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted">Навигация по обсуждениям</div>
-                    <div className="truncate text-[11px] text-muted">{loading ? "Обновляем..." : `${visibleThreads.length} из ${displayThreads.length}`}</div>
-                  </div>
-                  <button type="button" className="secondaryBtn tinyBtn h-8 px-2.5 text-[11px]" onClick={fetchThreads} disabled={loading}>
-                    {loading ? "..." : "↻"}
-                  </button>
-                </div>
+            <aside className="flex min-h-0 flex-col bg-bg/20 px-3 py-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="search"
+                  data-testid="notes-sidebar-search"
+                  className="input h-8 min-h-0 flex-1 border-border/80 bg-panel/75 text-sm shadow-none"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Поиск"
+                  aria-label="Поиск по обсуждениям"
+                />
+                <button
+                  type="button"
+                  data-testid="notes-filters-toggle"
+                  className={`secondaryBtn tinyBtn h-8 px-2.5 text-[11px] ${filtersOpen ? "ring-1 ring-accent/50" : ""}`}
+                  onClick={() => setFiltersOpen((prev) => !prev)}
+                  aria-expanded={filtersOpen}
+                  aria-label="Открыть фильтры обсуждений"
+                >
+                  {activeFilterCount > 0 ? `Фильтры ${activeFilterCount}` : "Фильтры"}
+                </button>
+                <button type="button" className="secondaryBtn tinyBtn h-8 px-2.5 text-[11px]" onClick={fetchThreads} disabled={loading} aria-label="Обновить обсуждения">
+                  {loading ? "..." : "↻"}
+                </button>
+              </div>
 
-                <div className="mt-2.5 grid gap-2.5">
-                  <label className="grid gap-1">
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Поиск</span>
-                    <input
-                      type="search"
-                      className="input h-9 min-h-0 text-sm"
-                      value={searchQuery}
-                      onChange={(event) => setSearchQuery(event.target.value)}
-                      placeholder="Поиск по обсуждениям"
-                      aria-label="Поиск по обсуждениям"
-                    />
-                  </label>
+              <div className="mt-1 truncate text-[11px] text-muted">
+                {loading ? "Обновляем..." : `${visibleThreads.length} из ${displayThreads.length}`}
+              </div>
+
+              {filtersOpen ? (
+                <div data-testid="notes-filters-panel" className="mt-2 rounded-xl border border-border/80 bg-panel/80 p-2.5 shadow-sm">
+                  <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-muted">
+                    <span>{activeFilterCount > 0 ? `Активно фильтров: ${activeFilterCount}` : "Фильтры по умолчанию"}</span>
+                    {activeFilterCount > 0 ? (
+                      <button
+                        type="button"
+                        className="secondaryBtn tinyBtn h-7 px-2 text-[10px]"
+                        onClick={() => {
+                          setStatusFilter("open");
+                          setScopeFilter("all");
+                          setSortOrder("newest");
+                        }}
+                      >
+                        Сбросить
+                      </button>
+                    ) : null}
+                  </div>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    <label className="grid gap-1">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Статус</span>
-                      <select
-                        className="select h-9 min-h-0 w-full text-sm"
-                        value={statusFilter}
-                        onChange={(event) => setStatusFilter(event.target.value)}
-                        aria-label="Фильтр по статусу"
-                      >
-                        {STATUS_OPTIONS.map((item) => (
-                          <option key={item.value} value={item.value}>{item.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="grid gap-1">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Контекст</span>
-                      <select
-                        className="select h-9 min-h-0 w-full text-sm"
-                        value={scopeFilter}
-                        onChange={(event) => setScopeFilter(event.target.value)}
-                        aria-label="Фильтр по контексту"
-                      >
-                        {CONTEXT_FILTER_OPTIONS.map((item) => (
-                          <option key={item.value} value={item.value}>{item.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="grid gap-1">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Порядок</span>
-                      <select
-                        className="select h-9 min-h-0 w-full text-sm"
-                        value={sortOrder}
-                        onChange={(event) => setSortOrder(event.target.value)}
-                        aria-label="Порядок сортировки"
-                      >
-                        {SORT_OPTIONS.map((item) => (
-                          <option key={item.value} value={item.value}>{item.label}</option>
-                        ))}
-                      </select>
-                    </label>
+                    <select
+                      className="select h-8 min-h-0 w-full text-xs"
+                      value={statusFilter}
+                      onChange={(event) => setStatusFilter(event.target.value)}
+                      aria-label="Фильтр по статусу"
+                    >
+                      {STATUS_OPTIONS.map((item) => (
+                        <option key={item.value} value={item.value}>{item.label}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="select h-8 min-h-0 w-full text-xs"
+                      value={scopeFilter}
+                      onChange={(event) => setScopeFilter(event.target.value)}
+                      aria-label="Фильтр по контексту"
+                    >
+                      {CONTEXT_FILTER_OPTIONS.map((item) => (
+                        <option key={item.value} value={item.value}>{item.label}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="select h-8 min-h-0 w-full text-xs sm:col-span-2"
+                      value={sortOrder}
+                      onChange={(event) => setSortOrder(event.target.value)}
+                      aria-label="Порядок сортировки"
+                    >
+                      {SORT_OPTIONS.map((item) => (
+                        <option key={item.value} value={item.value}>{item.label}</option>
+                      ))}
+                    </select>
                   </div>
                   {scopeFilter === "selected_element" && !canUseSelectedElementScope ? (
-                    <div className="rounded-xl border border-border bg-bg/60 px-2.5 py-2 text-[11px] text-muted">
+                    <div className="mt-2 rounded-xl border border-border bg-bg/60 px-2.5 py-2 text-[11px] text-muted">
                       Сначала выберите BPMN-элемент на диаграмме.
                     </div>
                   ) : null}
                 </div>
-              </div>
+              ) : null}
 
               <div className="mt-2 min-h-0 flex-1 overflow-auto pr-1">
                 {visibleThreads.length ? (
@@ -887,17 +916,16 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
-                              <div className="line-clamp-2 text-[12px] font-black leading-snug text-fg">{threadTitle(thread)}</div>
-                              <div className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-muted">{threadPreview(thread)}</div>
+                              <div className="line-clamp-2 text-[12px] font-semibold leading-snug text-fg">{threadTitle(thread)}</div>
+                              <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted">{threadPreview(thread)}</div>
                             </div>
-                            <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${threadStatusTone(thread)}`}>
+                            <span className="shrink-0 text-[10px] font-medium text-muted">
                               {threadStatusLabel(thread)}
                             </span>
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
-                            <span className="rounded-full border border-sky-300/80 bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-950">
-                              {meta.short}
-                            </span>
+                            <span>{meta.short}</span>
+                            <span aria-hidden="true">·</span>
                             <span>{formatDate(threadUpdatedAt(thread)) || "сейчас"}</span>
                           </div>
                         </button>
