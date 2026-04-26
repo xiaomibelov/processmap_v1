@@ -149,6 +149,7 @@ export const apiRoutes = {
   noteThreads: {
     item: (threadId) => `/api/note-threads/${encode(threadId)}`,
     comments: (threadId) => `/api/note-threads/${encode(threadId)}/comments`,
+    attentionAcknowledgement: (threadId) => `/api/note-threads/${encode(threadId)}/attention-acknowledgement`,
   },
   noteAggregates: {
     project: (projectId) => `/api/projects/${encode(projectId)}/note-aggregate`,
