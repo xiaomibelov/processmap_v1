@@ -16,6 +16,9 @@ import {
   formatTemplateNoteText,
   getNoteTemplatePreset,
 } from "../features/notes/knowledgeTools.js";
+import {
+  buildDiscussionNotificationBuckets,
+} from "../features/notes/discussionNotificationModel.js";
 import NotesAggregateBadge from "./NotesAggregateBadge.jsx";
 
 const STATUS_OPTIONS = [
@@ -250,6 +253,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   disabled = false,
   externalOpenRequest = null,
   onOpenChange = null,
+  onFocusNotificationTarget = null,
 }, ref) {
   const sid = text(sessionId);
   const selectedElementId = text(selectedElement?.id);
@@ -264,6 +268,8 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const [sortOrder, setSortOrder] = useState("newest");
   const [threads, setThreads] = useState([]);
   const [selectedThreadId, setSelectedThreadId] = useState("");
+  const [focusedCommentId, setFocusedCommentId] = useState("");
+  const [panelMode, setPanelMode] = useState("discussions");
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -329,6 +335,11 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     if (scopeFilter !== "selected_element") return asArray(threads);
     return injectLegacyBridgeThread(threads, legacyBridgeThread);
   }, [legacyBridgeThread, scopeFilter, threads]);
+  const notificationMode = panelMode === "notifications";
+  const notificationBuckets = useMemo(
+    () => buildDiscussionNotificationBuckets(threads),
+    [threads],
+  );
 
   const visibleThreads = useMemo(() => {
     const query = text(searchQuery).toLowerCase();
@@ -354,6 +365,15 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const openThreadsCount = Math.max(0, Number(aggregate?.open_notes_count || 0) || 0);
   const activeFilterCount = Number(statusFilter !== "open") + Number(scopeFilter !== "all") + Number(sortOrder !== "newest");
   const discussionSummaryLine = useMemo(() => {
+    if (notificationMode) {
+      const activeCount = notificationBuckets.activeTotal;
+      const historyCount = notificationBuckets.historyTotal;
+      return [
+        text(sessionTitle) || "Сессия",
+        `${activeCount} активных`,
+        `${historyCount} недавних`,
+      ].join(" · ");
+    }
     const parts = [
       text(sessionTitle) || "Сессия",
       `${openThreadsCount} открытых`,
@@ -363,7 +383,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       parts.push(`показано ${visibleThreads.length}`);
     }
     return parts.join(" · ");
-  }, [displayThreads.length, openThreadsCount, sessionTitle, visibleThreads.length]);
+  }, [displayThreads.length, notificationBuckets.activeTotal, notificationBuckets.historyTotal, notificationMode, openThreadsCount, sessionTitle, visibleThreads.length]);
 
   const refreshAggregate = useCallback(async () => {
     if (!sid) {
@@ -392,16 +412,16 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setLoading(true);
     setError("");
     const preferredThreadId = text(options?.preferredThreadId);
-    if (scopeFilter === "selected_element" && !selectedElementId) {
+    if (!notificationMode && scopeFilter === "selected_element" && !selectedElementId) {
       setThreads([]);
       setSelectedThreadId("");
       setLoading(false);
       return;
     }
     const filters = {
-      status: statusFilter === "all" ? "" : statusFilter,
-      scopeType: scopeFilter === "all" ? "" : (scopeFilter === "selected_element" ? "diagram_element" : scopeFilter),
-      elementId: scopeFilter === "selected_element" ? selectedElementId : "",
+      status: notificationMode || statusFilter === "all" ? "" : statusFilter,
+      scopeType: notificationMode || scopeFilter === "all" ? "" : (scopeFilter === "selected_element" ? "diagram_element" : scopeFilter),
+      elementId: notificationMode ? "" : (scopeFilter === "selected_element" ? selectedElementId : ""),
     };
     const result = await apiListNoteThreads(sid, filters);
     if (!result.ok) {
@@ -419,7 +439,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       return text(nextThreads[0]?.id);
     });
     setLoading(false);
-  }, [open, scopeFilter, selectedElementId, sid, statusFilter]);
+  }, [notificationMode, open, scopeFilter, selectedElementId, sid, statusFilter]);
 
   useEffect(() => {
     void fetchThreads();
@@ -436,6 +456,8 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   useEffect(() => {
     setThreads([]);
     setSelectedThreadId("");
+    setFocusedCommentId("");
+    setPanelMode("discussions");
     setError("");
     setAggregate(null);
     setCreateOpen(false);
@@ -448,16 +470,40 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     const request = requestLike && typeof requestLike === "object" ? requestLike : null;
     if (!sid || !request?.requestKey) return false;
     const nextScopeFilter = text(request.scopeFilter);
+    const nextMode = text(request.mode) === "notifications" ? "notifications" : "discussions";
+    const nextThreadId = text(request.threadId || request.thread_id);
+    const nextCommentId = text(request.commentId || request.comment_id);
     setOpen(true);
+    setPanelMode(nextMode);
     setCreateOpen(false);
     setError("");
     setSearchQuery("");
-    if (nextScopeFilter) {
+    if (nextMode === "notifications") {
+      setStatusFilter("all");
+      setScopeFilter("all");
+      setFiltersOpen(false);
+    } else if (nextScopeFilter) {
       setScopeFilter(nextScopeFilter);
     }
-    setSelectedThreadId(text(request.threadId));
+    setSelectedThreadId(nextThreadId);
+    setFocusedCommentId(nextCommentId);
     return true;
   }, [sid]);
+
+  useEffect(() => {
+    if (!focusedCommentId || !selectedThread) return undefined;
+    const timer = window.setTimeout(() => {
+      const root = panelRef.current;
+      const escaped = typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(focusedCommentId)
+        : focusedCommentId.replace(/"/g, '\\"');
+      const target = root?.querySelector?.(`[data-note-comment-id="${escaped}"]`);
+      if (target && typeof target.scrollIntoView === "function") {
+        target.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [focusedCommentId, selectedThread]);
 
   useImperativeHandle(ref, () => ({
     openFromExternalRequest(request) {
@@ -489,7 +535,82 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
 
   function openPanel() {
     setOpen(true);
+    setPanelMode("discussions");
     setCreateOpen(false);
+  }
+
+  async function openNotificationItem(item) {
+    const notification = item && typeof item === "object" ? item : {};
+    const threadId = text(notification.threadId);
+    if (!threadId) return;
+    setCreateOpen(false);
+    setPanelMode("notifications");
+    setStatusFilter("all");
+    setScopeFilter("all");
+    setSelectedThreadId(threadId);
+    setFocusedCommentId(text(notification.commentId));
+    if (text(notification.targetElementId)) {
+      onFocusNotificationTarget?.({
+        element_id: text(notification.targetElementId),
+        element_name: text(notification.sourceLabel),
+        scope_type: text(notification.scopeType),
+        thread_id: threadId,
+        comment_id: text(notification.commentId),
+      });
+    }
+    if (notification.state !== "active" || disabled) return;
+    setBusy(`ack:${threadId}`);
+    setError("");
+    const result = await apiAcknowledgeNoteThreadAttention(threadId);
+    if (!result.ok) {
+      setError(errorText(result, "Не удалось подтвердить внимание."));
+      setBusy("");
+      return;
+    }
+    await fetchThreads({ preferredThreadId: threadId });
+    setAggregateRefreshTick((value) => value + 1);
+    emitNotesAggregateChanged(sid);
+    setBusy("");
+  }
+
+  function renderNotificationList(items, emptyText) {
+    const list = asArray(items);
+    if (!list.length) {
+      return (
+        <div className="rounded-xl border border-dashed border-border bg-bg/50 px-3 py-2 text-[11px] leading-relaxed text-muted">
+          {emptyText}
+        </div>
+      );
+    }
+    return (
+      <div className="grid gap-1.5">
+        {list.map((item) => {
+          const active = text(item.threadId) === text(selectedThread?.id);
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className={`rounded-xl border px-2.5 py-2 text-left transition ${active ? "border-rose-300 bg-rose-50/80" : "border-border/80 bg-panel/80 hover:border-rose-300 hover:bg-white"}`}
+              onClick={() => void openNotificationItem(item)}
+              data-testid={`discussion-notification-${item.state}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="line-clamp-2 text-[12px] font-semibold leading-snug text-fg">{item.title}</div>
+                  <div className="mt-1 truncate text-[11px] text-muted">{item.sourceLabel || "Обсуждение"}</div>
+                </div>
+                <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${item.state === "active" ? "border-rose-300 bg-rose-50 text-rose-900" : "border-emerald-300 bg-emerald-50 text-emerald-800"}`}>
+                  {item.state === "active" ? "Active" : "Recent"}
+                </span>
+              </div>
+              <div className="mt-1.5 text-[10px] text-muted">
+                {formatDate(item.updatedAt) || "сейчас"}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    );
   }
 
   async function createThread() {
@@ -687,7 +808,9 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 text-[11px] text-muted">
                   <span className="grid h-6 w-6 place-items-center rounded-full border border-sky-300/80 bg-white text-[12px] text-sky-900" aria-hidden="true">✎</span>
-                  <span className="rounded-full border border-border/80 bg-white/75 px-2 py-0.5">Обсуждения</span>
+                  <span className="rounded-full border border-border/80 bg-white/75 px-2 py-0.5">
+                    {notificationMode ? "Уведомления" : "Обсуждения"}
+                  </span>
                 </div>
                 <div data-testid="notes-summary-line" className="mt-1 truncate text-sm font-medium text-fg">
                   {discussionSummaryLine}
@@ -705,6 +828,30 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                 >
                   + Новое обсуждение
                 </button>
+                {notificationMode ? (
+                  <button
+                    type="button"
+                    className="secondaryBtn tinyBtn h-9 px-3 text-xs"
+                    onClick={() => setPanelMode("discussions")}
+                    data-testid="discussion-notifications-back"
+                  >
+                    Все обсуждения
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="secondaryBtn tinyBtn h-9 px-3 text-xs"
+                    onClick={() => {
+                      setPanelMode("notifications");
+                      setStatusFilter("all");
+                      setScopeFilter("all");
+                      setFiltersOpen(false);
+                    }}
+                    data-testid="discussion-notifications-open"
+                  >
+                    @ Уведомления
+                  </button>
+                )}
                 <button
                   type="button"
                   className="secondaryBtn tinyBtn h-9 px-3 text-xs"
@@ -927,8 +1074,14 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                       <div className="grid gap-2">
                         {asArray(selectedThread.comments).map((comment, idx) => {
                           const author = authorLabel(comment?.author_user_id);
+                          const commentId = text(comment?.id);
+                          const commentFocused = commentId && commentId === focusedCommentId;
                           return (
-                            <article key={text(comment?.id) || `comment_${idx + 1}`} className="rounded-xl border border-border bg-panel px-3 py-2.5 shadow-sm">
+                            <article
+                              key={commentId || `comment_${idx + 1}`}
+                              data-note-comment-id={commentId || undefined}
+                              className={`rounded-xl border bg-panel px-3 py-2.5 shadow-sm ${commentFocused ? "border-rose-300 ring-1 ring-rose-200" : "border-border"}`}
+                            >
                               <div className="flex items-start gap-2.5">
                                 <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-sky-500/10 text-[11px] font-bold text-sky-900">
                                   {authorInitials(author)}
@@ -1053,6 +1206,37 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
             </section>
 
             <aside className="flex min-h-0 flex-col bg-bg/20 px-3 py-3">
+              {notificationMode ? (
+                <div data-testid="discussion-notification-inbox" className="mb-3 rounded-2xl border border-border bg-panel/85 p-3 shadow-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Discussion inbox</div>
+                    <button
+                      type="button"
+                      className="secondaryBtn tinyBtn h-7 px-2 text-[10px]"
+                      onClick={() => void fetchThreads()}
+                      disabled={loading}
+                    >
+                      {loading ? "..." : "↻"}
+                    </button>
+                  </div>
+                  <div className="mt-2 grid gap-3">
+                    <section>
+                      <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted">
+                        <span>Active</span>
+                        <span className="tabular-nums">{notificationBuckets.activeTotal}</span>
+                      </div>
+                      {renderNotificationList(notificationBuckets.active, "Активных discussion notifications нет.")}
+                    </section>
+                    <section>
+                      <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted">
+                        <span>Recent</span>
+                        <span className="tabular-nums">{notificationBuckets.historyTotal}</span>
+                      </div>
+                      {renderNotificationList(notificationBuckets.history, "Недавних подтверждённых или закрытых items пока нет.")}
+                    </section>
+                  </div>
+                </div>
+              ) : null}
               <div className="flex items-center gap-2">
                 <input
                   type="search"
