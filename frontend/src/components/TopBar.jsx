@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AiToolsModal from "./AiToolsModal";
-import NotesAggregateBadge from "./NotesAggregateBadge.jsx";
 import { useAuth } from "../features/auth/AuthProvider";
 import { getManualSessionStatusMeta, MANUAL_SESSION_STATUSES } from "../features/workspace/workspacePermissions";
 import { useSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
@@ -296,8 +295,8 @@ export default function TopBar({
   const canOpenOrgSettings = Boolean(user?.is_admin) || ["org_owner", "org_admin", "auditor"].includes(activeOrgRole);
   const mentionItems = asArray(mentionNotifications);
   const mentionCount = mentionItems.length;
-  const personalDiscussionCount = Math.max(0, Number(notesAggregate?.personal_discussions_count || 0) || 0);
-  const accountNotificationCount = mentionCount + personalDiscussionCount;
+  const attentionDiscussionCount = Math.max(0, Number(notesAggregate?.attention_discussions_count || 0) || 0);
+  const accountNotificationCount = mentionCount + attentionDiscussionCount;
 
   async function handleLogout() {
     if (typeof window !== "undefined") {
@@ -599,7 +598,7 @@ export default function TopBar({
                   <div className="min-w-0 flex-1">
                     <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Уведомления</div>
                     <div className="truncate text-xs text-muted">
-                      {accountNotificationCount > 0 ? "Упоминания и мои обсуждения" : "Нет активных уведомлений"}
+                      {accountNotificationCount > 0 ? "Упоминания и внимание" : "Нет активных уведомлений"}
                     </div>
                   </div>
                   <button
@@ -651,15 +650,17 @@ export default function TopBar({
                     data-testid="topbar-discussion-notifications"
                     data-notes-panel-trigger="true"
                   >
-                    <span className="min-w-0 flex-1 truncate">Мои обсуждения</span>
-                    <NotesAggregateBadge
-                      aggregate={notesAggregate}
-                      count={notesAggregate?.personal_discussions_count}
-                      compact
-                      compactNumericOnly
-                      label="Мои обсуждения"
-                      className="ml-auto shrink-0 border-border bg-white/85 px-1.5 py-0 text-[10px]"
-                    />
+                    <span className="min-w-0 flex-1 truncate">Требует внимания</span>
+                    {attentionDiscussionCount > 0 ? (
+                      <span
+                        className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border border-rose-300/80 bg-rose-50 px-1.5 py-0 text-[10px] font-semibold text-rose-900"
+                        title={`Обсуждения требуют внимания: ${attentionDiscussionCount}`}
+                        aria-label={`Обсуждения требуют внимания: ${attentionDiscussionCount}`}
+                      >
+                        <span aria-hidden>⚠</span>
+                        <span className="tabular-nums">{attentionDiscussionCount}</span>
+                      </span>
+                    ) : null}
                   </button>
                 ) : null}
               </div>
