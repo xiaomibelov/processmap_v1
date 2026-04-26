@@ -30,6 +30,34 @@ test("apiListOrgMembers: calls enterprise members endpoint", async () => {
   }
 });
 
+test("apiListOrgMembers: preserves member profile fields", async () => {
+  const prevFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      items: [{
+        user_id: "u1",
+        email: "member@local",
+        full_name: "Member Name",
+        job_title: "Technologist",
+        role: "editor",
+      }],
+      count: 1,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const out = await apiListOrgMembers("org_1");
+
+    assert.equal(out.ok, true);
+    assert.equal(out.items[0].email, "member@local");
+    assert.equal(out.items[0].full_name, "Member Name");
+    assert.equal(out.items[0].job_title, "Technologist");
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
 test("apiCreateOrgInvite: posts payload with regenerate flag", async () => {
   const prevFetch = globalThis.fetch;
   const calls = [];
