@@ -585,26 +585,26 @@ export default function TopBar({
           {accountMenuOpen ? (
             <div
               ref={accountMenuRef}
-              className="fixed right-3 top-14 z-[140] grid max-h-[calc(100vh-4.25rem)] w-[min(340px,calc(100vw-1.5rem))] gap-1 overflow-y-auto rounded-xl border border-border bg-panel p-2 shadow-panel backdrop-blur"
+              className="fixed right-3 top-14 z-[140] grid max-h-[calc(100vh-4.25rem)] w-[min(340px,calc(100vw-1.5rem))] min-w-0 gap-1 overflow-x-hidden overflow-y-auto rounded-xl border border-border bg-panel p-2 shadow-panel backdrop-blur"
               data-testid="topbar-account-menu"
             >
-              <div className="rounded-lg border border-border/60 bg-panel2/50 px-2.5 py-2">
+              <div className="min-w-0 overflow-hidden rounded-lg border border-border/60 bg-panel2/50 px-2.5 py-2">
                 <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Аккаунт</div>
                 <div className="truncate text-sm font-semibold text-fg" title={userTitleFrom(user)}>
                   {shortLabel(userTitleFrom(user), 28)}
                 </div>
               </div>
-              <div className="rounded-lg border border-border/70 bg-bg/35 p-2" data-testid="topbar-mentions-menu">
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <div>
+              <div className="min-w-0 overflow-x-hidden rounded-lg border border-border/70 bg-bg/35 p-2" data-testid="topbar-mentions-menu">
+                <div className="mb-1 flex min-w-0 items-center justify-between gap-2 overflow-hidden">
+                  <div className="min-w-0 flex-1">
                     <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Уведомления</div>
-                    <div className="text-xs text-muted">
-                      {accountNotificationCount > 0 ? "Упоминания и мои обсуждения, требующие внимания" : "Активных уведомлений нет"}
+                    <div className="truncate text-xs text-muted">
+                      {accountNotificationCount > 0 ? "Упоминания и мои обсуждения" : "Нет активных уведомлений"}
                     </div>
                   </div>
                   <button
                     type="button"
-                    className="secondaryBtn tinyBtn h-7 px-2 text-[10px]"
+                    className="secondaryBtn tinyBtn h-7 shrink-0 px-2 text-[10px]"
                     onClick={() => {
                       if (typeof onRefreshMentionNotifications === "function") void onRefreshMentionNotifications();
                     }}
@@ -614,36 +614,36 @@ export default function TopBar({
                   </button>
                 </div>
                 {mentionCount > 0 ? (
-                  <div className="grid gap-1">
+                  <div className="grid min-w-0 gap-1">
                     {mentionItems.slice(0, 4).map((item) => (
                       <button
                         key={toText(item?.id)}
                         type="button"
-                        className="rounded-lg border border-border/70 bg-panel2/50 px-2.5 py-1.5 text-left transition hover:border-sky-300 hover:bg-white"
+                        className="w-full min-w-0 overflow-hidden rounded-lg border border-border/70 bg-panel2/50 px-2.5 py-1.5 text-left transition hover:border-sky-300 hover:bg-white"
                         onClick={() => {
                           setAccountMenuOpen(false);
                           if (typeof onOpenMentionNotification === "function") onOpenMentionNotification(item);
                         }}
                         data-testid="topbar-mention-item"
                       >
-                        <div className="flex items-center gap-2 text-[11px] font-semibold text-rose-900">
-                          <span className="rounded-full border border-rose-300 bg-rose-50 px-1.5 py-0.5">@</span>
-                          <span>{toText(item?.mentioned_label || item?.mentioned_user_id) || "Вы"}</span>
+                        <div className="flex min-w-0 items-center gap-2 text-[11px] font-semibold text-rose-900">
+                          <span className="shrink-0 rounded-full border border-rose-300 bg-rose-50 px-1.5 py-0.5">@</span>
+                          <span className="min-w-0 truncate">{toText(item?.mentioned_label || item?.mentioned_user_id) || "Вы"}</span>
                         </div>
-                        <div className="mt-1 line-clamp-2 text-sm font-semibold leading-snug text-fg">{mentionPreview(item)}</div>
-                        <div className="mt-1 text-[11px] text-muted">Открыть обсуждение</div>
+                        <div className="mt-1 line-clamp-2 break-words text-sm font-semibold leading-snug text-fg">{mentionPreview(item)}</div>
+                        <div className="mt-1 truncate text-[11px] text-muted">Открыть обсуждение</div>
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-dashed border-border px-2.5 py-2 text-sm text-muted">
-                    Здесь появятся персональные упоминания из обсуждений.
+                  <div className="min-w-0 overflow-hidden rounded-lg border border-dashed border-border px-2.5 py-2 text-xs leading-snug text-muted break-words">
+                    Упоминания появятся здесь.
                   </div>
                 )}
                 {hasActiveSession ? (
                   <button
                     type="button"
-                    className="secondaryBtn mt-1 h-8 w-full justify-start px-2.5 text-left text-sm"
+                    className="secondaryBtn mt-1 h-8 w-full min-w-0 justify-start gap-2 overflow-hidden px-2.5 text-left text-sm"
                     onClick={() => {
                       setAccountMenuOpen(false);
                       onOpenDiscussionNotifications?.();
@@ -651,48 +651,48 @@ export default function TopBar({
                     data-testid="topbar-discussion-notifications"
                     data-notes-panel-trigger="true"
                   >
-                    Мои обсуждения
+                    <span className="min-w-0 flex-1 truncate">Мои обсуждения</span>
                     <NotesAggregateBadge
                       aggregate={notesAggregate}
                       count={notesAggregate?.personal_discussions_count}
                       compact
                       compactNumericOnly
                       label="Мои обсуждения"
-                      className="ml-auto border-border bg-white/85 px-1.5 py-0 text-[10px]"
+                      className="ml-auto shrink-0 border-border bg-white/85 px-1.5 py-0 text-[10px]"
                     />
                   </button>
                 ) : null}
               </div>
               <button
                 type="button"
-                className="secondaryBtn h-8 w-full justify-start px-2.5 text-left text-sm"
+                className="secondaryBtn h-8 w-full min-w-0 justify-start gap-2 overflow-hidden px-2.5 text-left text-sm"
                 onClick={openProfileSoon}
                 title="Профиль пользователя"
                 data-testid="topbar-account-profile-soon"
               >
-                Профиль
-                <span className="ml-auto text-[11px] text-muted">скоро</span>
+                <span className="min-w-0 flex-1 truncate">Профиль</span>
+                <span className="ml-auto shrink-0 text-[11px] text-muted">скоро</span>
               </button>
               <button
                 type="button"
                 role="switch"
                 aria-checked={uiTheme === "light" ? "true" : "false"}
-                className="secondaryBtn h-9 w-full justify-start gap-2 px-2.5 text-left text-sm"
+                className="secondaryBtn h-9 w-full min-w-0 justify-start gap-2 overflow-hidden px-2.5 text-left text-sm"
                 onClick={() => {
                   toggleTheme();
                 }}
                 data-testid="topbar-theme-toggle"
                 title={uiTheme === "dark" ? "Включить светлую тему" : "Включить тёмную тему"}
               >
-                <span>Тема</span>
-                <span className="ml-auto text-[11px] text-muted">{uiTheme === "dark" ? "Тёмная" : "Светлая"}</span>
-                <span className={`relative h-5 w-9 rounded-full border transition ${uiTheme === "light" ? "border-sky-300 bg-sky-100" : "border-border bg-bg/70"}`} aria-hidden="true">
+                <span className="shrink-0">Тема</span>
+                <span className="ml-auto min-w-0 flex-1 truncate text-right text-[11px] text-muted">{uiTheme === "dark" ? "Тёмная" : "Светлая"}</span>
+                <span className={`relative h-5 w-9 shrink-0 rounded-full border transition ${uiTheme === "light" ? "border-sky-300 bg-sky-100" : "border-border bg-bg/70"}`} aria-hidden="true">
                   <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-fg transition ${uiTheme === "light" ? "left-4" : "left-0.5"}`} />
                 </span>
               </button>
               <button
                 type="button"
-                className="secondaryBtn h-8 w-full justify-start border-danger/45 bg-danger/10 px-2.5 text-left text-sm text-danger hover:border-danger/60 hover:bg-danger/20"
+                className="secondaryBtn h-8 w-full min-w-0 justify-start overflow-hidden border-danger/45 bg-danger/10 px-2.5 text-left text-sm text-danger hover:border-danger/60 hover:bg-danger/20"
                 onClick={() => {
                   setAccountMenuOpen(false);
                   void handleLogout();
@@ -700,7 +700,7 @@ export default function TopBar({
                 title="Выйти из аккаунта"
                 data-testid="topbar-account-logout"
               >
-                Выйти
+                <span className="min-w-0 truncate">Выйти</span>
               </button>
             </div>
           ) : null}
