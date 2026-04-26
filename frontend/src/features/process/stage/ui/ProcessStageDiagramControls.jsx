@@ -10,6 +10,14 @@ function ensureObject(value) {
   return value && typeof value === "object" ? value : {};
 }
 
+function clickNotesPanelFloatingTrigger() {
+  if (typeof document === "undefined") return false;
+  const trigger = document.querySelector("[data-testid='notes-panel-floating-trigger']");
+  if (!(trigger instanceof HTMLButtonElement)) return false;
+  trigger.click();
+  return true;
+}
+
 export default function ProcessStageDiagramControls({ view = {} }) {
   const legacyView = ensureObject(view);
   const sections = ensureObject(legacyView.sections);
@@ -53,10 +61,12 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     diagramActionOverflowOpen,
   } = topbarSection;
   const discussionsSessionId = toText(legacyView.sessionId);
-  const latestOpenNotesDiscussionsRef = useRef(null);
-  latestOpenNotesDiscussionsRef.current = typeof legacyView.openNotesDiscussions === "function"
-    ? legacyView.openNotesDiscussions
+  const explicitOpenNotesDiscussions = typeof topbarSection.openNotesDiscussions === "function"
+    ? topbarSection.openNotesDiscussions
     : null;
+  const latestOpenNotesDiscussionsRef = useRef(null);
+  latestOpenNotesDiscussionsRef.current = explicitOpenNotesDiscussions
+    || (typeof legacyView.openNotesDiscussions === "function" ? legacyView.openNotesDiscussions : null);
   const [notesAggregate, setNotesAggregate] = useState(null);
 
   const {
@@ -479,7 +489,9 @@ export default function ProcessStageDiagramControls({ view = {} }) {
   const handleOpenNotesDiscussions = () => {
     if (!hasSession) return;
     closeDiagramPopovers();
-    latestOpenNotesDiscussionsRef.current?.();
+    const openedFromBridge = latestOpenNotesDiscussionsRef.current?.() === true;
+    if (openedFromBridge) return;
+    clickNotesPanelFloatingTrigger();
   };
 
   return (
