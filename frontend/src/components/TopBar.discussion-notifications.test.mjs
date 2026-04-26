@@ -23,6 +23,13 @@ test("TopBar exposes bounded discussion notification entry from existing note ag
   assert.match(topBarSource, /NotesAggregateBadge[\s\S]*label="Мои обсуждения"/);
   assert.match(topBarSource, /fixed right-3 top-14/);
   assert.match(topBarSource, /max-h-\[calc\(100vh-4\.25rem\)\]/);
+  assert.match(topBarSource, /overflow-x-hidden overflow-y-auto/);
+  assert.match(topBarSource, /min-w-0 gap-1 overflow-x-hidden overflow-y-auto[\s\S]*data-testid="topbar-account-menu"/);
+  assert.match(topBarSource, /min-w-0 overflow-x-hidden rounded-lg[\s\S]*data-testid="topbar-mentions-menu"/);
+  assert.match(topBarSource, /w-full min-w-0 overflow-hidden rounded-lg[\s\S]*data-testid="topbar-mention-item"/);
+  assert.match(topBarSource, /line-clamp-2 break-words/);
+  assert.match(topBarSource, /Упоминания появятся здесь\./);
+  assert.doesNotMatch(topBarSource, /Здесь появятся персональные упоминания из обсуждений\./);
   assert.match(topBarSource, /overflow-y-auto/);
   assert.match(topBarSource, /mentionItems\.slice\(0, 4\)/);
 });
@@ -32,6 +39,8 @@ test("TopBar profile menu uses a direct theme switch instead of settings row", (
   assert.match(topBarSource, /role="switch"/);
   assert.match(topBarSource, /aria-checked=\{uiTheme === "light" \? "true" : "false"\}/);
   assert.match(topBarSource, /toggleTheme\(\)/);
+  assert.match(topBarSource, /secondaryBtn h-9 w-full min-w-0 justify-start gap-2 overflow-hidden[\s\S]*data-testid="topbar-theme-toggle"/);
+  assert.match(topBarSource, /relative h-5 w-9 shrink-0/);
   assert.match(topBarSource, /Тёмная/);
   assert.match(topBarSource, /Светлая/);
   assert.doesNotMatch(topBarSource, /data-testid="topbar-account-settings"/);
