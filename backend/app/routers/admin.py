@@ -55,6 +55,8 @@ class AdminUserMembershipIn(BaseModel):
 class AdminUserCreateBody(BaseModel):
     email: str
     password: str
+    full_name: str = ""
+    job_title: str = ""
     is_admin: bool = False
     is_active: bool = True
     memberships: List[AdminUserMembershipIn] = Field(default_factory=list)
@@ -63,6 +65,8 @@ class AdminUserCreateBody(BaseModel):
 class AdminUserPatchBody(BaseModel):
     email: Optional[str] = None
     password: Optional[str] = None
+    full_name: Optional[str] = None
+    job_title: Optional[str] = None
     is_admin: Optional[bool] = None
     is_active: Optional[bool] = None
     memberships: Optional[List[AdminUserMembershipIn]] = None
@@ -275,6 +279,8 @@ def _user_payload(row: Dict[str, Any], *, org_name_by_id: Dict[str, str]) -> Dic
     return {
         "id": user_id,
         "email": _as_text(user.get("email")).lower(),
+        "full_name": _as_text(user.get("full_name")),
+        "job_title": _as_text(user.get("job_title")),
         "is_active": bool(user.get("is_active", False)),
         "is_admin": bool(user.get("is_admin", False)),
         "created_at": _as_int(user.get("created_at"), 0),
@@ -765,6 +771,8 @@ def admin_create_user(body: AdminUserCreateBody, request: Request) -> Any:
             body.password,
             is_admin=bool(body.is_admin),
             is_active=bool(body.is_active),
+            full_name=_as_text(body.full_name),
+            job_title=_as_text(body.job_title),
         )
         _replace_user_memberships(_as_text(created.get("id")), memberships)
     except AuthError as exc:
@@ -801,6 +809,8 @@ def admin_patch_user(user_id: str, body: AdminUserPatchBody, request: Request) -
             password=body.password if body.password is not None and _as_text(body.password) else None,
             is_admin=body.is_admin,
             is_active=body.is_active,
+            full_name=body.full_name,
+            job_title=body.job_title,
         )
         if body.memberships is not None:
             memberships = _normalize_admin_memberships(

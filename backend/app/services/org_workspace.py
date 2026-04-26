@@ -169,6 +169,8 @@ def list_org_members_payload(request: Request, org_id: str):
             email = str(found.get("email") or "").strip().lower()
             if email:
                 row["email"] = email
+            row["full_name"] = str(found.get("full_name") or "").strip()
+            row["job_title"] = str(found.get("job_title") or "").strip()
         items.append(row)
     return build_items_count_payload(items, org_id=oid)
 
