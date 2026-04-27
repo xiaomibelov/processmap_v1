@@ -669,7 +669,7 @@
   border: 1px solid hsl(var(--diagram-badge-border) / 0.66);
   border-left: 3px solid var(--fpc-property-accent, #6eb2e4);
   background: var(--fpc-property-bg, hsl(var(--diagram-badge-bg) / 0.95));
-  color: hsl(var(--diagram-badge-text) / 1);
+  color: var(--fpc-property-text, hsl(var(--diagram-badge-text) / 1));
   padding: var(--fpc-property-row-padding, 2px 7px);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--fpc-property-accent, hsl(var(--diagram-badge-border) / 0.45)) 20%, transparent) inset,
@@ -709,7 +709,7 @@
 }
 
 .fpcPropertyCell--key {
-  color: hsl(var(--diagram-badge-text) / 0.74);
+  color: var(--fpc-property-muted-text, hsl(var(--diagram-badge-text) / 0.74));
   font-size: 0.86em;
   font-weight: 560;
   display: grid;
@@ -719,7 +719,7 @@
 }
 
 .fpcPropertyCell--value {
-  color: hsl(var(--diagram-badge-text) / 1);
+  color: var(--fpc-property-text, hsl(var(--diagram-badge-text) / 1));
   font-size: 1em;
   font-weight: 720;
 }
@@ -732,7 +732,7 @@
 }
 
 .fpcPropertyKeySep {
-  color: hsl(var(--diagram-badge-text) / 0.58);
+  color: var(--fpc-property-separator, hsl(var(--diagram-badge-text) / 0.58));
   font-weight: 700;
   line-height: 1;
 }

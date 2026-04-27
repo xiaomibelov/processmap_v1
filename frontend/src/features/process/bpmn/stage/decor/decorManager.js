@@ -1418,6 +1418,9 @@ function rebuildPropertiesOverlayTable({ table, items, hiddenCount, visibleCount
     const colorModel = overlayPropertyColorByKey(linkedKey || item?.label);
     row.style.setProperty("--fpc-property-accent", colorModel.accent);
     row.style.setProperty("--fpc-property-bg", colorModel.background);
+    row.style.setProperty("--fpc-property-text", colorModel.text);
+    row.style.setProperty("--fpc-property-muted-text", colorModel.mutedText);
+    row.style.setProperty("--fpc-property-separator", colorModel.separator);
     row.style.setProperty("--fpc-property-accent-shadow", colorModel.shadow);
     if (linkedKey && linkedCount > 1) {
       row.dataset.linkedGroup = linkedKey;
