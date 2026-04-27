@@ -18,6 +18,7 @@ import {
 import {
   buildDiscussionNotificationBuckets,
 } from "../features/notes/discussionNotificationModel.js";
+import { readableBpmnText } from "../features/process/bpmn/bpmnIdentity";
 import NotesAggregateBadge from "./NotesAggregateBadge.jsx";
 import { useSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
 
@@ -91,10 +92,11 @@ function scopeMeta(thread) {
   const scopeType = text(thread?.scope_type);
   const ref = scopeRef(thread);
   if (scopeType === "diagram_element") {
+    const label = readableBpmnLabel(ref.element_name, ref.elementName, ref.element_title, ref.elementTitle);
     return {
       short: "Элемент",
-      long: text(ref.element_name || ref.element_title || ref.element_id) || "Элемент",
-      relation: text(ref.element_name || ref.element_title || ref.element_id) || "Элемент",
+      long: label || "Элемент BPMN",
+      relation: label || "Элемент BPMN",
     };
   }
   if (scopeType === "diagram") {
@@ -113,7 +115,7 @@ function linkedElementContext(thread) {
   if (!elementId) return null;
   return {
     elementId,
-    elementName: text(ref.element_name || ref.elementName || ref.element_title || ref.elementTitle || elementId),
+    elementName: readableBpmnLabel(ref.element_name, ref.elementName, ref.element_title, ref.elementTitle),
     elementType: text(ref.element_type || ref.elementType),
   };
 }
@@ -235,6 +237,10 @@ function isTechnicalId(value) {
   return raw.length > 22 && !/\s/.test(raw);
 }
 
+function readableBpmnLabel(...values) {
+  return readableBpmnText(...values);
+}
+
 function shortTechnicalId(value) {
   const raw = text(value).replace(/-/g, "");
   if (!raw) return "";
@@ -305,7 +311,7 @@ function buildScopeRef(scopeType, selectedElement) {
   if (scopeType === "diagram_element") {
     return {
       element_id: selectedId,
-      element_name: text(selectedElement?.name || selectedId),
+      element_name: readableBpmnLabel(selectedElement?.name),
       element_type: text(selectedElement?.type),
     };
   }
@@ -342,7 +348,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const sid = text(sessionId);
   const viewerUserId = text(currentUserId);
   const selectedElementId = text(selectedElement?.id);
-  const selectedElementName = text(selectedElement?.name || selectedElementId);
+  const selectedElementName = readableBpmnLabel(selectedElement?.name) || "Элемент BPMN";
   const selectedElementType = text(selectedElement?.type);
 
   const [open, setOpen] = useState(false);
