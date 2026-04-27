@@ -346,6 +346,9 @@ test("properties overlay decor binds to preview element id and renders rows for 
     const firstRow = table.childNodes[0];
     assert.ok(String(firstRow.style.getPropertyValue("--fpc-property-accent") || "").length > 0);
     assert.ok(String(firstRow.style.getPropertyValue("--fpc-property-bg") || "").length > 0);
+    assert.match(firstRow.style.getPropertyValue("--fpc-property-text"), /^hsl\(\d+ 48% 18%\)$/);
+    assert.match(firstRow.style.getPropertyValue("--fpc-property-muted-text"), /^hsl\(\d+ 32% 30%\)$/);
+    assert.match(firstRow.style.getPropertyValue("--fpc-property-separator"), /^hsl\(\d+ 28% 44%\)$/);
   });
 });
 
