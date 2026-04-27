@@ -197,6 +197,14 @@ function logCreateTrace(tag, payload = {}) {
   console.debug(`[${String(tag || "CREATE_FLOW").toUpperCase()}] ${suffix}`.trim());
 }
 
+function logDiscussionFocusDiag(event, payload = {}) {
+  try {
+    // eslint-disable-next-line no-console
+    console.info("[DISCUSSION_FOCUS_DIAG]", event, payload);
+  } catch {
+  }
+}
+
 function shouldLogSnapshotTrace() {
   if (typeof window === "undefined") return false;
   try {
@@ -1856,6 +1864,7 @@ export default function App() {
     if (!pending) return;
     window.clearTimeout(pending.timeoutId);
     discussionLinkedElementFocusResolversRef.current.delete(requestId);
+    logDiscussionFocusDiag("app-complete", { requestId, result });
     pending.resolve({
       ok: result?.ok !== false,
       error: String(result?.error || "").trim(),
@@ -1864,14 +1873,28 @@ export default function App() {
 
   function focusDiscussionElementTarget(payload = {}, source = "discussion_linked_element") {
     const targetId = String(payload?.element_id || payload?.elementId || "").trim();
-    if (!targetId) return Promise.resolve({ ok: false, error: "missing_element_id" });
+    if (!targetId) {
+      logDiscussionFocusDiag("app-bridge-missing-element", { source, payload });
+      return Promise.resolve({ ok: false, error: "missing_element_id" });
+    }
     const sid = String(draft?.session_id || "").trim();
     const nonce = Date.now();
-    if (!sid) return Promise.resolve({ ok: false, error: "missing_session_id" });
+    if (!sid) {
+      logDiscussionFocusDiag("app-bridge-missing-session", { source, targetId });
+      return Promise.resolve({ ok: false, error: "missing_session_id" });
+    }
     const requestId = `${sid}:${targetId}:${source}:${nonce}`;
+    logDiscussionFocusDiag("app-bridge", {
+      requestId,
+      sid,
+      targetId,
+      source,
+      threadId: String(payload?.thread_id || payload?.threadId || "").trim(),
+    });
     const focusResult = new Promise((resolve) => {
       const timeoutId = window.setTimeout(() => {
         discussionLinkedElementFocusResolversRef.current.delete(requestId);
+        logDiscussionFocusDiag("app-timeout", { requestId, sid, targetId, source });
         resolve({ ok: false, error: "focus_timeout" });
       }, 7000);
       discussionLinkedElementFocusResolversRef.current.set(requestId, { resolve, timeoutId });
