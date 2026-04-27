@@ -13,7 +13,6 @@ export default function ProcessStageHeader({ view = {} }) {
     createRevisionNoDiffHintText,
     saveActionText,
     createRevisionActionText,
-    saveSmartText,
     saveUploadStatus,
     saveConflictActions,
     sessionRevisionHistorySnapshot,
@@ -32,8 +31,6 @@ export default function ProcessStageHeader({ view = {} }) {
     attentionOpen,
     toggleAttentionPanel,
     attentionItemsRaw,
-    toolbarInlineMessage,
-    toolbarInlineTone,
     doGenerate,
     toolbarMenuButtonRef,
     toggleToolbarMenu,
@@ -60,12 +57,8 @@ export default function ProcessStageHeader({ view = {} }) {
     : (publishedRevisionBadge.title || "Версия пока не создана.");
   const resolvedSaveActionText = toText(saveActionText) || "Сохранить сессию";
   const resolvedCreateRevisionActionText = toText(createRevisionActionText) || "Создать версию BPMN";
-  const saveStatusText = toText(saveSmartText);
-  const showSaveStatusBadge = hasSession && !!saveStatusText && saveStatusText !== "Сохранить сессию";
   const isConflictState = toText(saveUploadStatus?.state) === "conflict";
-  const hasDominantConflictState = isConflictState;
   const showConflictModalActive = isConflictState && saveConflictActions?.visible === true;
-  const showSaveStatusBadgeResolved = showSaveStatusBadge && !hasDominantConflictState;
   const uploadStatusState = toText(saveUploadStatus?.state);
   const showUploadStatusBadge = saveUploadStatus?.visible
     && !showConflictModalActive
@@ -73,36 +66,6 @@ export default function ProcessStageHeader({ view = {} }) {
   const showSessionPresenceBadge = hasSession && sessionPresenceView?.visible === true && !showConflictModalActive;
   const showRemoteSaveHighlightBadge = remoteSaveHighlightView?.visible === true && !showConflictModalActive;
   const showRemoteSaveRefreshAction = showRemoteSaveHighlightBadge && typeof remoteSaveHighlightView?.onRefreshSession === "function";
-  const toolbarMessage = toText(toolbarInlineMessage);
-  const toolbarMessageNormalized = toolbarMessage.replace(/[.!]+$/g, "").trim().toLowerCase();
-  const saveSmartTextNormalized = toText(saveSmartText).replace(/[.!]+$/g, "").trim().toLowerCase();
-  const isDraftSavedToolbarMessage = (
-    toolbarMessageNormalized === "черновик сохранён"
-    || toolbarMessageNormalized === "сохранено внутри версии"
-    || toolbarMessageNormalized === "черновик синхронизирован"
-  );
-  const isSaveVersionToolbarMessage = (
-    isDraftSavedToolbarMessage
-    || toolbarMessageNormalized === "создана новая версия bpmn"
-    || toolbarMessageNormalized === "версия bpmn не создана: нет изменений bpmn"
-  );
-  const hasPrimaryDraftStatusSurface = showSaveStatusBadgeResolved;
-  const toolbarMessageLooksLikeConflict = /(?:конфликт|conflict|http\s*409|stale|верси)/i.test(toolbarMessage);
-  const showToolbarInlineBadge = !!toolbarInlineMessage
-    && !isSaveVersionToolbarMessage
-    && !hasDominantConflictState
-    && !(showConflictModalActive && toolbarMessageLooksLikeConflict)
-    && !(
-      isDraftSavedToolbarMessage
-      && hasPrimaryDraftStatusSurface
-      && (
-        !saveSmartTextNormalized
-        || toolbarMessageNormalized === saveSmartTextNormalized
-        || saveSmartTextNormalized === "черновик сохранён"
-        || saveSmartTextNormalized === "сохранено внутри версии"
-      )
-    );
-  const showGenericSaveStatusBadge = showSaveStatusBadgeResolved;
   const canCreateRevisionFromCurrentState = canCreateRevisionNow !== false
     && typeof handleCreateRevisionAction === "function";
   const showCreateRevisionNoDiffHint = hasSession
@@ -252,14 +215,6 @@ export default function ProcessStageHeader({ view = {} }) {
             </span>
           ) : null}
         </div>
-        {showToolbarInlineBadge ? (
-          <span
-            className={`badge hidden max-w-[36ch] truncate lg:inline-flex ${toolbarInlineTone ? toolbarInlineTone : ""}`}
-            title={toolbarInlineMessage}
-          >
-            {toolbarInlineMessage}
-          </span>
-        ) : null}
         <div className="diagramToolbarRightActions">
           {hasSession ? (
             <>

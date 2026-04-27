@@ -73,8 +73,6 @@ export default function useProcessStageShellController({
   manualSaveIntent,
   saveDirtyHint,
   workbench,
-  genErr,
-  infoMsg,
   selectedElementContext,
   selectedBpmnElementIds,
   selectedHybridTemplateCount = 0,
@@ -143,8 +141,6 @@ export default function useProcessStageShellController({
       createRevisionNoDiffHintText: showCreateRevisionNoDiffHint
         ? "Нет изменений сессии после последней версии BPMN"
         : "",
-      toolbarInlineMessage: String(genErr || infoMsg || "").trim(),
-      toolbarInlineTone: genErr ? "err" : "",
       canUseElementContextActions: !!selectedElementContext,
       templateSelectionCount: Math.max(Number(selectedBpmnElementIds.length || 0), Number(selectedHybridTemplateCount || 0)),
       canCreateTemplateFromSelection: hasSession
@@ -163,9 +159,7 @@ export default function useProcessStageShellController({
     };
   }, [
     availablePathTiers.length,
-    genErr,
     hasSession,
-    infoMsg,
     isBpmnTab,
     isFlushingTab,
     isManualSaveBusy,

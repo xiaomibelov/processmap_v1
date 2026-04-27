@@ -118,6 +118,7 @@ import ProcessPanels from "../features/process/stage/ui/ProcessPanels";
 import ProcessDialogs from "../features/process/stage/ui/ProcessDialogs";
 import ProcessStageHeader from "../features/process/stage/ui/ProcessStageHeader";
 import ProcessSaveAckToast from "../features/process/stage/ui/ProcessSaveAckToast";
+import { resolveProcessToastView } from "../features/process/stage/ui/processToastMessage";
 import ProcessStageDiagramControls from "../features/process/stage/ui/ProcessStageDiagramControls";
 import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDiagramOverlayLayers";
 import ProcessStageSaveConflictModal from "../features/process/stage/ui/ProcessStageSaveConflictModal";
@@ -877,16 +878,23 @@ export default function ProcessStage({
   ]);
   const hasSession = !!sid;
   const saveAckToastTimerRef = useRef(0);
+  const processStatusToastLastSignatureRef = useRef("");
+  const saveLifecycleToastLastSignatureRef = useRef("");
   const [saveAckToast, setSaveAckToast] = useState({
     visible: false,
     tone: "success",
     message: "",
   });
   const [manualSaveIntent, setManualSaveIntent] = useState("");
-  const showSaveAckToast = useCallback((messageRaw, toneRaw = "success") => {
+  const showSaveAckToast = useCallback((messageRaw, toneRaw = "success", sourceRaw = "") => {
     const message = toText(messageRaw);
     if (!message) return;
-    const tone = toText(toneRaw) || "success";
+    const toastView = resolveProcessToastView({
+      message,
+      tone: toneRaw,
+      source: sourceRaw,
+    });
+    const tone = toText(toastView.tone) || "success";
     if (typeof window !== "undefined" && saveAckToastTimerRef.current) {
       window.clearTimeout(saveAckToastTimerRef.current);
       saveAckToastTimerRef.current = 0;
@@ -894,7 +902,7 @@ export default function ProcessStage({
     setSaveAckToast({
       visible: true,
       tone,
-      message,
+      message: toastView.message,
     });
     if (typeof window === "undefined") return;
     saveAckToastTimerRef.current = window.setTimeout(() => {
@@ -911,6 +919,18 @@ export default function ProcessStage({
     window.clearTimeout(saveAckToastTimerRef.current);
     saveAckToastTimerRef.current = 0;
   }, []);
+  useEffect(() => {
+    const message = toText(genErr || infoMsg);
+    if (!message) {
+      processStatusToastLastSignatureRef.current = "";
+      return;
+    }
+    const tone = genErr ? "error" : "info";
+    const signature = `${tone}:${message}`;
+    if (processStatusToastLastSignatureRef.current === signature) return;
+    processStatusToastLastSignatureRef.current = signature;
+    showSaveAckToast(message, tone);
+  }, [genErr, infoMsg, showSaveAckToast, toText]);
   const currentUserId = toText(user?.id || user?.user_id || user?.email);
   const currentUserLabel = toText(user?.name || user?.username || user?.email || currentUserId || "Вы");
   const recordPresenceActor = useCallback((actorRaw, options = {}) => {
@@ -956,6 +976,36 @@ export default function ProcessStage({
     () => buildSaveUploadStatusBadge(saveUploadLifecycleEvent),
     [saveUploadLifecycleEvent],
   );
+  useEffect(() => {
+    if (isManualSaveBusy === true) return;
+    const state = toText(saveUploadStatus?.state);
+    const shouldNotify = (
+      state === "conflict"
+      || state === "save_failed"
+      || saveUploadLifecycleEvent?.staleRetryApplied === true
+    );
+    if (!shouldNotify) return;
+    const message = toText(saveUploadStatus?.title || saveUploadStatus?.label || saveUploadStatus?.error);
+    if (!message) return;
+    const signature = `${state}:${Number(saveUploadLifecycleEvent?.at || 0)}:${message}`;
+    if (saveLifecycleToastLastSignatureRef.current === signature) return;
+    saveLifecycleToastLastSignatureRef.current = signature;
+    const tone = state === "conflict"
+      ? "warning"
+      : (state === "save_failed" ? "error" : "info");
+    const source = state === "conflict" ? "conflict" : "save";
+    showSaveAckToast(message, tone, source);
+  }, [
+    isManualSaveBusy,
+    saveUploadLifecycleEvent?.at,
+    saveUploadLifecycleEvent?.staleRetryApplied,
+    saveUploadStatus?.error,
+    saveUploadStatus?.label,
+    saveUploadStatus?.state,
+    saveUploadStatus?.title,
+    showSaveAckToast,
+    toText,
+  ]);
   const sessionPresenceView = useMemo(() => buildSessionPresenceView({
     actorsRaw: sessionPresenceActors,
     currentUserIdRaw: currentUserId,
@@ -1758,7 +1808,7 @@ export default function ProcessStage({
     setInfoMsg("");
     setManualSaveIntent(createRevision ? "create_revision" : "save_session");
     setIsManualSaveBusy(true);
-    showSaveAckToast("Сохранение...", "info");
+    showSaveAckToast("Сохранение...", "info", createRevision ? "bpmn_version" : "save");
     try {
       const persistReason = createRevision ? "publish_manual_save" : "manual_save";
       const saved = await bpmnSync.flushFromActiveTab(tab, {
@@ -1776,7 +1826,7 @@ export default function ProcessStage({
           primarySaveOk: false,
           primarySaveError: shortErr(saved?.error || "Не удалось сохранить."),
         });
-        showSaveAckToast(failedOutcomeUi.genErr, "error");
+        showSaveAckToast(failedOutcomeUi.genErr, "error", createRevision ? "bpmn_version" : "save_error");
         return;
       }
       let companionError = "";
@@ -2016,13 +2066,13 @@ export default function ProcessStage({
       const outcomeTone = successOutcomeUi.genErr
         ? "error"
         : (successOutcomeUi.companionSeverity === "warning" ? "warning" : "success");
-      showSaveAckToast(outcomeMessage, outcomeTone);
+      showSaveAckToast(outcomeMessage, outcomeTone, createRevision ? "bpmn_version" : "save");
     } catch (e) {
       truthOwner?.saveSessionFailed({
         source: "manual_save_failed",
         error: shortErr(e?.message || e || "Не удалось сохранить."),
       });
-      showSaveAckToast(shortErr(e?.message || e || "Не удалось сохранить."), "error");
+      showSaveAckToast(shortErr(e?.message || e || "Не удалось сохранить."), "error", createRevision ? "bpmn_version" : "save_error");
     } finally {
       setIsManualSaveBusy(false);
       setManualSaveIntent("");
@@ -5828,8 +5878,6 @@ export default function ProcessStage({
     manualSaveIntent,
     saveDirtyHint,
     workbench,
-    genErr,
-    infoMsg,
     selectedElementContext,
     selectedBpmnElementIds,
     selectedHybridTemplateCount,
@@ -5847,10 +5895,6 @@ export default function ProcessStage({
     dialogsView,
   });
   const {
-    canSaveNow,
-    saveSmartText,
-    toolbarInlineMessage,
-    toolbarInlineTone,
     canUseElementContextActions,
     templateSelectionCount,
     canCreateTemplateFromSelection,
