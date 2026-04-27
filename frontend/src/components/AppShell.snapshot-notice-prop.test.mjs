@@ -26,6 +26,16 @@ test("AppShell forwards mention notification contract into TopBar", () => {
 test("AppShell replaces legacy footer helper copy with app version source of truth", () => {
   assert.match(source, /import \{ appVersionInfo \} from "\.\.\/config\/appVersion\.js"/);
   assert.match(source, /data-testid="app-version-footer"/);
+  assert.match(source, /data-testid="app-version-link"/);
+  assert.match(source, /href="#updates"/);
   assert.match(source, /Версия \{appVersionInfo\.currentVersion\}/);
   assert.doesNotMatch(source, /Навигация: мышь — пан\/зум на схеме · ✦ AI — подсветить узкие места на узлах/);
+});
+
+test("AppShell renders an updates page from appVersionInfo changelog", () => {
+  assert.match(source, /function AppUpdatesPage\(\{ onClose \}\)/);
+  assert.match(source, /data-testid="app-updates-page"/);
+  assert.match(source, /appVersionInfo\.changelog/);
+  assert.match(source, /normalizeChangelogLink\(entry\?\.link\)/);
+  assert.match(source, /У записи может быть ссылка на задачу, PR или документ с подробностями/);
 });
