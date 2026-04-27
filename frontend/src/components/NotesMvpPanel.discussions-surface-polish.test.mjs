@@ -189,6 +189,7 @@ test("Element-scoped discussion exposes a linked element focus action through Ap
   assert.match(notesMvpPanelSource, />\s*Перейти к элементу\s*<\/button>/);
   assert.match(notesMvpPanelSource, /onFocusLinkedElement\?\.\(\{/);
   assert.match(notesMvpPanelSource, /Элемент больше не найден на схеме\./);
+  assert.match(notesMvpPanelSource, /async function focusSelectedThreadLinkedElement\(\)[\s\S]*setOpen\(false\);\s*setCreateOpen\(false\);/);
   assert.match(appSource, /const \[discussionLinkedElementFocusIntent, setDiscussionLinkedElementFocusIntent\] = useState\(null\);/);
   assert.match(appSource, /function focusDiscussionElementTarget\(payload = \{\}, source = "discussion_linked_element"\)/);
   assert.match(appSource, /setDiscussionLinkedElementFocusIntent\(\{/);
