@@ -228,11 +228,20 @@ test("apiGetBpmnVersions reads backend list and include_xml query", async () => 
         ok: true,
         session_id: "sess_1",
         count: 1,
+        user_facing_count: 10,
+        latest_user_facing_revision_number: 10,
         current_session_payload_hash: "hash_current",
         latest_user_version_session_payload_hash: "hash_latest",
         has_session_changes_since_latest_bpmn_version: true,
         items: [
-          { id: "v1", version_number: 4, source_action: "import_bpmn", bpmn_xml: "<xml/>" },
+          {
+            id: "v1",
+            version_number: 55,
+            user_facing_revision_number: 10,
+            revision_display_number: 10,
+            source_action: "import_bpmn",
+            bpmn_xml: "<xml/>",
+          },
         ],
       }), {
         status: 200,
@@ -243,7 +252,10 @@ test("apiGetBpmnVersions reads backend list and include_xml query", async () => 
     const out = await apiGetBpmnVersions("sess_1", { includeXml: true, limit: 20 });
     assert.equal(out.ok, true);
     assert.equal(out.count, 1);
+    assert.equal(out.userFacingCount, 10);
+    assert.equal(out.latestUserFacingRevisionNumber, 10);
     assert.equal(out.versions[0]?.id, "v1");
+    assert.equal(out.versions[0]?.user_facing_revision_number, 10);
     assert.equal(out.currentSessionPayloadHash, "hash_current");
     assert.equal(out.latestUserVersionSessionPayloadHash, "hash_latest");
     assert.equal(out.hasSessionChangesSinceLatestBpmnVersion, true);

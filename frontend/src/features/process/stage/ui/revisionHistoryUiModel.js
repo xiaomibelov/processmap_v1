@@ -109,12 +109,20 @@ export function applyUserFacingRevisionNumbers({
 } = {}) {
   const meaningful = asArray(meaningfulRevisionsRaw);
   if (meaningful.length === 0) return [];
-  void revisionHistorySnapshotRaw;
+  const snapshot = asObject(revisionHistorySnapshotRaw);
   const headDisplayNumber = Math.max(
     0,
     toInt(
       asObject(meaningful[0]).userFacingRevisionNumber
       || asObject(meaningful[0]).revisionDisplayNumber,
+      0,
+    ),
+    toInt(
+      snapshot.latestRevisionDisplayNumber
+      || snapshot.latest_user_facing_revision_number
+      || snapshot.userFacingCount
+      || snapshot.user_facing_count
+      || snapshot.totalCount,
       0,
     ),
   );

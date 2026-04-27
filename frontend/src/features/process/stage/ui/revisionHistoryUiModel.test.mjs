@@ -145,6 +145,28 @@ test("applyUserFacingRevisionNumbers maps meaningful entries to contiguous user-
   );
 });
 
+test("applyUserFacingRevisionNumbers uses server head count when the loaded window is partial", () => {
+  const list = applyUserFacingRevisionNumbers({
+    meaningfulRevisionsRaw: [
+      { id: "r55", version_number: 55, technicalRevisionNumber: 55 },
+      { id: "r51", version_number: 51, technicalRevisionNumber: 51 },
+      { id: "r49", version_number: 49, technicalRevisionNumber: 49 },
+    ],
+    revisionHistorySnapshotRaw: {
+      latestRevisionDisplayNumber: 10,
+      totalCount: 10,
+    },
+  });
+  assert.deepEqual(
+    list.map((row) => ({ id: row.id, revisionNumber: row.revisionNumber })),
+    [
+      { id: "r55", revisionNumber: 10 },
+      { id: "r51", revisionNumber: 9 },
+      { id: "r49", revisionNumber: 8 },
+    ],
+  );
+});
+
 test("unknown source action is fail-closed and does not enter meaningful surfaces", () => {
   const classification = classifyRevisionSourceAction("custom_domain_action");
   assert.equal(classification.isMeaningful, false);
