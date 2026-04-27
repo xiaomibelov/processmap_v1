@@ -73,6 +73,7 @@ import { createBackendBpmnClipboardController } from "../../features/process/bpm
 import {
   canCopyBpmnElement,
 } from "../../features/process/bpmn/copy-paste/bpmnElementClipboard";
+import { readableBpmnText } from "../../features/process/bpmn/bpmnIdentity";
 import extractCamundaZeebePropertyEntriesFromBusinessObject from "../../features/process/stage/search/extractCamundaZeebePropertyEntries";
 
 import "bpmn-js/dist/assets/diagram-js.css";
@@ -3130,7 +3131,13 @@ const BpmnStage = forwardRef(function BpmnStage({
       return;
     }
     const bo = asObject(el?.businessObject);
-    const name = String(bo?.name || elementId).trim() || elementId;
+    const name = readableBpmnText(
+      bo?.name,
+      el?.label?.businessObject?.name,
+      el?.label?.businessObject?.text,
+      el?.businessObject?.label,
+      el?.businessObject?.text,
+    );
     const type = String(bo?.$type || el?.type || "").trim();
     const laneName = readLaneNameForElement(el);
     const aiStats = aiQuestionStats(getAiQuestionsForElement(elementId));

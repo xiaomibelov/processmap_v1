@@ -28,11 +28,43 @@ def _text(v: Any) -> str:
     return str(v)
 
 
-def _node_label(n: Dict[str, Any]) -> str:
-    for k in ("title", "label", "name", "text"):
-        if n.get(k):
-            return _text(n.get(k))
-    return _text(n.get("id") or "Task")
+def _is_technical_bpmn_id(value: Any) -> bool:
+    raw = _text(value).strip()
+    if not raw or re.search(r"\s", raw):
+        return False
+    return bool(
+        re.match(
+            r"^(Activity|Task|UserTask|ServiceTask|ScriptTask|ManualTask|BusinessRuleTask|SendTask|ReceiveTask|CallActivity|"
+            r"SubProcess|Gateway|Event|StartEvent|EndEvent|Flow|SequenceFlow|Lane|Participant|DataObject|DataStoreReference)"
+            r"_[A-Za-z0-9][A-Za-z0-9_\-]*$",
+            raw,
+        )
+    )
+
+
+def _fallback_node_label(kind: str, idx: int) -> str:
+    if kind.startswith("gateway_"):
+        return f"Решение {idx}"
+    if kind.startswith("event_"):
+        return f"Событие {idx}"
+    if "subprocess" in kind:
+        return f"Подпроцесс {idx}"
+    return f"Шаг {idx}"
+
+
+def _node_label(n: Dict[str, Any], idx: int = 1, kind: str = "task") -> str:
+    candidates: List[Any] = []
+    for k in ("title", "label", "name", "text", "action", "description"):
+        candidates.append(n.get(k))
+    params = n.get("parameters")
+    if isinstance(params, dict):
+        for k in ("title", "label", "name", "text", "action", "description"):
+            candidates.append(params.get(k))
+    for candidate in candidates:
+        label = _text(candidate).strip()
+        if label and not _is_technical_bpmn_id(label):
+            return label
+    return _fallback_node_label(kind, idx)
 
 
 def _node_kind(n: Dict[str, Any]) -> str:
@@ -296,7 +328,7 @@ def export_session_to_bpmn_xml(session: Any) -> str:
             raw_to_bpmn_id[raw_id] = nid
 
             kind = _node_kind(n)
-            label = _node_label(n)
+            label = _node_label(n, i, kind)
 
             if kind == "gateway_xor":
                 ET.SubElement(proc, f"{{{NS_BPMN}}}exclusiveGateway", attrib={"id": nid, "name": label})
