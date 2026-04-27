@@ -21,3 +21,18 @@ test("ProcessStage propagates base_diagram_state_version in import/restore secon
   );
   assert.equal(source.includes("const syncRes = await apiPatchSession(sid, syncPatchPayload);"), true);
 });
+
+test("ProcessStage sends restore CAS base and remembers restored diagram version before secondary patch", () => {
+  const source = readSource();
+  const restoreCallIdx = source.indexOf("const restored = await apiRestoreBpmnVersion(sid, versionId, {");
+  const rememberIdx = source.indexOf("rememberDiagramStateVersion(restoredDiagramStateVersion, { sessionId: sid });");
+  const secondaryPatchIdx = source.indexOf("const syncRes = await apiPatchSession(sid, syncPatchPayload);", restoreCallIdx);
+
+  assert.notEqual(restoreCallIdx, -1);
+  assert.notEqual(rememberIdx, -1);
+  assert.notEqual(secondaryPatchIdx, -1);
+  assert.ok(source.includes("baseDiagramStateVersion: restoreBaseDiagramStateVersion"));
+  assert.ok(restoreCallIdx < rememberIdx);
+  assert.ok(rememberIdx < secondaryPatchIdx);
+  assert.ok(source.includes("toBpmnRestoreUserFacingError(restored"));
+});

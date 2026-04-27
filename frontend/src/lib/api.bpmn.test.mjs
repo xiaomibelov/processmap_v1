@@ -329,6 +329,7 @@ test("apiRestoreBpmnVersion posts restore and returns xml payload", async () => 
         ok: true,
         session_id: "sess_1",
         bpmn_xml: "<bpmn:definitions id=\"R\"/>",
+        diagram_state_version: 12,
         restored_version: { id: "ver_2", version_number: 2 },
       }), {
         status: 200,
@@ -336,12 +337,15 @@ test("apiRestoreBpmnVersion posts restore and returns xml payload", async () => 
       });
     };
 
-    const out = await apiRestoreBpmnVersion("sess_1", "ver_2");
+    const out = await apiRestoreBpmnVersion("sess_1", "ver_2", { baseDiagramStateVersion: 11 });
     assert.equal(out.ok, true);
     assert.equal(out.bpmn_xml, "<bpmn:definitions id=\"R\"/>");
+    assert.equal(out.diagramStateVersion, 12);
     assert.equal(out.restored_version?.id, "ver_2");
     assert.match(calls[0]?.url || "", /\/api\/sessions\/sess_1\/bpmn\/restore\/ver_2$/);
     assert.equal(String(calls[0]?.init?.method || "GET").toUpperCase(), "POST");
+    const body = JSON.parse(String(calls[0]?.init?.body || "{}"));
+    assert.equal(body.base_diagram_state_version, 11);
   } finally {
     globalThis.fetch = prevFetch;
   }

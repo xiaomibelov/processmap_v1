@@ -57,6 +57,30 @@ function extractFromObject(rawObject, depth = 0) {
   return "";
 }
 
+function extractErrorCode(raw, depth = 0) {
+  if (depth > 4) return "";
+  const direct = normalizePlainText(raw);
+  if (direct === "DIAGRAM_STATE_BASE_VERSION_REQUIRED" || direct === "DIAGRAM_STATE_CONFLICT") {
+    return direct;
+  }
+  if (!raw || typeof raw !== "object") return "";
+  const value = asObject(raw);
+  const ownCode = normalizePlainText(value.code);
+  if (ownCode) return extractErrorCode(ownCode, depth + 1);
+  const ownError = normalizePlainText(value.error);
+  if (ownError) {
+    const fromError = extractErrorCode(ownError, depth + 1);
+    if (fromError) return fromError;
+  }
+  for (const key of ["detail", "data", "result", "payload"]) {
+    const nested = value[key];
+    if (!nested || typeof nested !== "object") continue;
+    const fromNested = extractErrorCode(nested, depth + 1);
+    if (fromNested) return fromNested;
+  }
+  return "";
+}
+
 export function toUserFacingErrorText(raw, fallback = "") {
   const direct = normalizePlainText(raw);
   if (direct) return direct;
@@ -76,3 +100,13 @@ export function shortUserFacingError(raw, maxLen = 160, fallback = "") {
   return `${text.slice(0, maxLen)}…`;
 }
 
+export function toBpmnRestoreUserFacingError(raw, fallback = "Не удалось восстановить BPMN версию.") {
+  const code = extractErrorCode(raw);
+  if (code === "DIAGRAM_STATE_BASE_VERSION_REQUIRED") {
+    return "Не удалось восстановить версию: требуется обновить состояние схемы.";
+  }
+  if (code === "DIAGRAM_STATE_CONFLICT") {
+    return "Схема изменилась после открытия истории версий. Обновите данные и повторите восстановление.";
+  }
+  return toUserFacingErrorText(raw, fallback) || normalizePlainText(fallback);
+}
