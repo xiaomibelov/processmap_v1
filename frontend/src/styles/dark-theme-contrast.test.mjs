@@ -36,6 +36,6 @@ test("dark theme topbar and discussions use semantic colors instead of white sta
   assert.match(notesPanelSource, /border-danger\/50 bg-danger\/10 text-danger/);
   assert.doesNotMatch(notesPanelSource, /hover:bg-white/);
   assert.doesNotMatch(notesPanelSource, /bg-white\/85/);
-  assert.match(versionSource, /currentVersion: "v1\.0\.24"/);
-  assert.match(versionSource, /Исправлена нумерация истории версий BPMN при скрытых технических сохранениях\./);
+  assert.match(versionSource, /currentVersion: "v1\.0\.25"/);
+  assert.match(versionSource, /Исправлен конфликт при восстановлении BPMN-версии\./);
 });
