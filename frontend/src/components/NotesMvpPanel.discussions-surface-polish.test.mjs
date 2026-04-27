@@ -36,12 +36,12 @@ test("Discussions surface uses unified discussions labeling and hides the floati
   assert.match(workspaceExplorerSource, /sessionColumnProfile\.showSignalColumns \? <col className="w-\[76px\]" \/> : null/);
 });
 
-test("Derived context is hidden in the active diagram discussions workflow", () => {
+test("Process pages do not mount the floating derived context surface", () => {
   assert.match(appSource, /const \[notesDiscussionsOpen, setNotesDiscussionsOpen\] = useState\(false\);/);
   assert.match(appSource, /<NotesMvpPanel[\s\S]*onOpenChange=\{setNotesDiscussionsOpen\}/);
-  assert.match(appSource, /<DerivedContextSurface[\s\S]*hidden=\{notesDiscussionsOpen \|\| processUiState\?\.tab === "diagram"\}/);
-  assert.match(derivedSource, /export default function DerivedContextSurface\(\{[\s\S]*hidden = false,/);
-  assert.match(derivedSource, /if \(!hasActiveSession \|\| hidden\) return null;/);
+  assert.doesNotMatch(appSource, /import DerivedContextSurface from/);
+  assert.doesNotMatch(appSource, /<DerivedContextSurface\b/);
+  assert.match(derivedSource, /export default function DerivedContextSurface\(\{/);
 });
 
 test("Legacy bridge copy no longer claims TL;DR is inside the discussions viewport", () => {
