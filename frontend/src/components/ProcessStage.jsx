@@ -384,6 +384,11 @@ export default function ProcessStage({
   const [saveConflictActionBusy, setSaveConflictActionBusy] = useState(false);
   const [latestBpmnVersionHead, setLatestBpmnVersionHead] = useState(null);
   const [latestBpmnVersionHeadStatus, setLatestBpmnVersionHeadStatus] = useState("idle");
+  const [bpmnVersionTruthState, setBpmnVersionTruthState] = useState({
+    currentSessionPayloadHash: "",
+    latestUserVersionSessionPayloadHash: "",
+    hasSessionChangesSinceLatestBpmnVersion: false,
+  });
   const [versionsServerEntriesCount, setVersionsServerEntriesCount] = useState(0);
   const [versionsTechnicalEntriesCount, setVersionsTechnicalEntriesCount] = useState(0);
   const [diagramUndoRedoState, setDiagramUndoRedoState] = useState({ canUndo: false, canRedo: false, ready: false });
@@ -1838,6 +1843,13 @@ export default function ProcessStage({
         const backendSnapshotIsMeaningful = normalizedBackendVersionSnapshot.isMeaningfulRevision === true;
         if (backendRevisionNumber > 0 && backendSnapshotIsMeaningful) {
           const backendVersionId = String(normalizedBackendVersionSnapshot.id || "").trim();
+          const backendSessionPayloadHash = String(normalizedBackendVersionSnapshot.sessionPayloadHash || "").trim();
+          setBpmnVersionTruthState((prev) => ({
+            ...prev,
+            currentSessionPayloadHash: backendSessionPayloadHash || prev.currentSessionPayloadHash || "",
+            latestUserVersionSessionPayloadHash: backendSessionPayloadHash || prev.latestUserVersionSessionPayloadHash || "",
+            hasSessionChangesSinceLatestBpmnVersion: false,
+          }));
           const nextMeaningfulHead = applyUserFacingRevisionNumbers({
             meaningfulRevisionsRaw: [normalizedBackendVersionSnapshot],
             revisionHistorySnapshotRaw: sessionRevisionHistorySnapshot,
@@ -1967,8 +1979,8 @@ export default function ProcessStage({
               } else if (createRevision) {
                 const revisionInfo = asObject(companionResult?.revision);
                 if (revisionInfo.skipped === true) {
-                  companionError = companionError || "Версия BPMN не создана: нет изменений BPMN.";
-                  saveInfo = "Версия BPMN не создана: нет изменений BPMN.";
+                  companionError = companionError || "Версия BPMN не создана: нет изменений сессии.";
+                  saveInfo = "Версия BPMN не создана: нет изменений сессии.";
                 } else {
                   saveInfo = "Создана новая версия BPMN.";
                 }
@@ -1981,7 +1993,7 @@ export default function ProcessStage({
           }
         } else {
           saveInfo = createRevision
-            ? "Версия BPMN не создана: нет изменений BPMN."
+            ? "Версия BPMN не создана: нет изменений сессии."
             : "Сохранено внутри версии.";
         }
         if (!saveInfo && !companionError) {
@@ -3996,6 +4008,9 @@ export default function ProcessStage({
       technicalRevisionNumber: versionNumber,
       revisionNumber: versionNumber,
       rev: versionNumber,
+      sessionPayloadHash: String(item?.session_payload_hash || item?.sessionPayloadHash || "").trim(),
+      sessionVersion: Number(item?.session_version || item?.sessionVersion || 0),
+      sessionUpdatedAt: Number(item?.session_updated_at || item?.sessionUpdatedAt || 0),
       authorId: author.authorId,
       authorName: author.authorName,
       authorEmail: author.authorEmail,
@@ -4022,6 +4037,11 @@ export default function ProcessStage({
       setVersionsServerEntriesCount(0);
       setVersionsTechnicalEntriesCount(0);
       setLatestBpmnVersionHead(null);
+      setBpmnVersionTruthState({
+        currentSessionPayloadHash: "",
+        latestUserVersionSessionPayloadHash: "",
+        hasSessionChangesSinceLatestBpmnVersion: false,
+      });
       if (options?.trackHeadStatus === true) setLatestBpmnVersionHeadStatus("idle");
       return;
     }
@@ -4052,11 +4072,33 @@ export default function ProcessStage({
         setVersionsLoadError(shortErr(loaded?.error || "Не удалось загрузить BPMN версии."));
         setVersionsServerEntriesCount(0);
         setVersionsTechnicalEntriesCount(0);
+        setBpmnVersionTruthState({
+          currentSessionPayloadHash: "",
+          latestUserVersionSessionPayloadHash: "",
+          hasSessionChangesSinceLatestBpmnVersion: false,
+        });
       }
       if (trackHeadStatus) setLatestBpmnVersionHeadStatus("failed");
       return;
     }
     const normalizedList = asArray(loaded?.versions).map((item) => normalizeBpmnVersionListItem(item));
+    const currentSessionPayloadHash = String(
+      loaded?.currentSessionPayloadHash
+      || loaded?.current_session_payload_hash
+      || "",
+    ).trim();
+    const latestUserVersionSessionPayloadHash = String(
+      loaded?.latestUserVersionSessionPayloadHash
+      || loaded?.latest_user_version_session_payload_hash
+      || "",
+    ).trim();
+    const hasSessionChangesSinceLatestBpmnVersion = loaded?.hasSessionChangesSinceLatestBpmnVersion === true
+      || loaded?.has_session_changes_since_latest_bpmn_version === true;
+    setBpmnVersionTruthState({
+      currentSessionPayloadHash,
+      latestUserVersionSessionPayloadHash,
+      hasSessionChangesSinceLatestBpmnVersion,
+    });
     const revisionSplit = splitMeaningfulAndTechnicalRevisions(normalizedList);
     const list = asArray(revisionSplit.meaningful);
     const technicalList = asArray(revisionSplit.technical);
@@ -4876,7 +4918,7 @@ export default function ProcessStage({
   useEffect(() => {
     if (!versionsOpen || !sid) return;
     void refreshSnapshotVersions();
-  }, [versionsOpen, sid, draft?.bpmn_xml_version, draft?.version, refreshSnapshotVersions]);
+  }, [versionsOpen, sid, draft?.bpmn_xml_version, draft?.updated_at, draft?.version, refreshSnapshotVersions]);
 
   useEffect(() => {
     if (!sid) {
@@ -4887,7 +4929,7 @@ export default function ProcessStage({
     setLatestBpmnVersionHead(null);
     setLatestBpmnVersionHeadStatus("loading");
     void refreshLatestBpmnRevisionHead();
-  }, [sid, draft?.bpmn_xml_version, draft?.version, refreshLatestBpmnRevisionHead]);
+  }, [sid, draft?.bpmn_xml_version, draft?.updated_at, draft?.version, refreshLatestBpmnRevisionHead]);
 
   useEffect(() => {
     if (!diffOpen) return;
@@ -5797,6 +5839,7 @@ export default function ProcessStage({
     sessionSaveReadSnapshot,
     saveUploadStatus,
     sessionVersionReadSnapshot,
+    bpmnVersionTruthState,
     sessionTemplateProvenanceSnapshot,
     sessionCompanionBridgeSnapshot,
     topPanelsView,
