@@ -6274,14 +6274,28 @@ def session_bpmn_versions_list(
         limit=limit,
         include_xml=include_xml_mode,
     )
+    user_facing_version_numbers = st.list_bpmn_version_numbers_by_source_actions(
+        str(getattr(sess, "id", "") or session_id),
+        org_id=oid,
+        source_actions=_USER_FACING_BPMN_VERSION_ACTIONS,
+    )
+    user_facing_number_by_storage_version = {
+        int(version_number or 0): index + 1
+        for index, version_number in enumerate(user_facing_version_numbers)
+        if int(version_number or 0) > 0
+    }
     items: List[Dict[str, Any]] = []
     for row in rows:
         created_at = int(row.get("created_at") or 0)
         author = _build_bpmn_version_author(row.get("created_by"))
+        storage_version_number = int(row.get("version_number") or 0)
+        user_facing_revision_number = int(user_facing_number_by_storage_version.get(storage_version_number) or 0)
         item = {
             "id": str(row.get("id") or ""),
             "session_id": str(row.get("session_id") or ""),
-            "version_number": int(row.get("version_number") or 0),
+            "version_number": storage_version_number,
+            "user_facing_revision_number": user_facing_revision_number,
+            "revision_display_number": user_facing_revision_number,
             "diagram_state_version": int(row.get("diagram_state_version") or 0),
             "session_payload_hash": str(row.get("session_payload_hash") or ""),
             "session_version": int(row.get("session_version") or 0),
@@ -6313,6 +6327,8 @@ def session_bpmn_versions_list(
         "ok": True,
         "session_id": str(getattr(sess, "id", "") or session_id),
         "count": len(items),
+        "user_facing_count": len(user_facing_version_numbers),
+        "latest_user_facing_revision_number": len(user_facing_version_numbers),
         "current_session_payload_hash": current_session_payload_hash,
         "current_session_version": int(getattr(sess, "version", 0) or 0),
         "current_session_updated_at": int(getattr(sess, "updated_at", 0) or 0),
