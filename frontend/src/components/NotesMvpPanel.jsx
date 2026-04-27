@@ -669,6 +669,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   async function focusSelectedThreadLinkedElement() {
     const threadId = text(selectedThread?.id);
     const target = linkedElementContext(selectedThread);
+    setError("");
     if (!target?.elementId) {
       setError("Элемент больше не найден на схеме.");
       return;
@@ -682,7 +683,10 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     }));
     if (result === false || result?.ok === false) {
       setError("Элемент больше не найден на схеме.");
+      return;
     }
+    setOpen(false);
+    setCreateOpen(false);
   }
 
   function renderNotificationList(items, emptyText) {
