@@ -203,6 +203,7 @@ test("Element-scoped discussion exposes a linked element focus action through Ap
   assert.match(appSource, /onFocusLinkedElement=\{focusDiscussionLinkedElement\}/);
   assert.match(processStageSource, /discussionLinkedElementFocusIntent = null/);
   assert.match(processStageSource, /onDiscussionLinkedElementFocusResult = null/);
+  assert.match(processStageSource, /if \(tab !== "diagram"\) \{\s*setTab\("diagram"\);\s*return;\s*\}/);
   assert.match(processStageSource, /onDiscussionLinkedElementFocusResult\?\.\(\{/);
   assert.match(processStageSource, /complete\(false, "missing_element"\)/);
   assert.match(processStageSource, /complete\(false, "focus_failed"\)/);

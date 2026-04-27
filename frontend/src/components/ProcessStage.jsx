@@ -5172,6 +5172,10 @@ export default function ProcessStage({
     const intentSid = String(intent.sid || "").trim();
     const elementId = toNodeId(intent.elementId || intent.element_id);
     if (!intentSid || intentSid !== sid || !elementId) return;
+    if (tab !== "diagram") {
+      setTab("diagram");
+      return;
+    }
     const requestId = String(intent.requestId || intent.request_id || "").trim();
     const intentNonce = String(intent.nonce || "").trim();
     const intentKey = `${intentSid}:${elementId}:${intentNonce || "none"}`;
@@ -5187,7 +5191,6 @@ export default function ProcessStage({
     };
 
     const run = async () => {
-      if (tab !== "diagram") setTab("diagram");
       let ready = false;
       try {
         ready = await Promise.resolve(
