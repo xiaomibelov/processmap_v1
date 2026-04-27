@@ -111,6 +111,7 @@ export default function AppShell({
   onOpenSession,
   onOpenWorkspaceSession,
   onOpenDiscussionNotifications,
+  onOpenNotesDiscussions,
   onDeleteSession,
   onChangeSessionStatus,
   onNewProject,
@@ -136,6 +137,9 @@ export default function AppShell({
   selectedPropertiesOverlayPreview,
   propertiesOverlayAlwaysEnabled = false,
   propertiesOverlayAlwaysPreviewByElementId = null,
+  drawioCompanionFocusIntent = null,
+  discussionLinkedElementFocusIntent = null,
+  onDiscussionLinkedElementFocusResult = null,
   sessionNavNotice,
   onDismissSessionNavNotice,
   onReturnToSessionList,
@@ -297,6 +301,10 @@ export default function AppShell({
               selectedPropertiesOverlayPreview={selectedPropertiesOverlayPreview}
               propertiesOverlayAlwaysEnabled={propertiesOverlayAlwaysEnabled}
               propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
+              drawioCompanionFocusIntent={drawioCompanionFocusIntent}
+              discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
+              onDiscussionLinkedElementFocusResult={onDiscussionLinkedElementFocusResult}
+              onOpenNotesDiscussions={onOpenNotesDiscussions}
             />
           )}
         </div>
