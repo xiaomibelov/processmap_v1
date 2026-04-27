@@ -21,6 +21,9 @@ export function overlayPropertyColorByKey(keyRaw) {
     key,
     accent: `hsl(${hue} 62% 46%)`,
     background: `hsl(${hue} 74% 95%)`,
+    text: `hsl(${hue} 48% 18%)`,
+    mutedText: `hsl(${hue} 32% 30%)`,
+    separator: `hsl(${hue} 28% 44%)`,
     shadow: `hsl(${hue} 62% 46% / 0.22)`,
   };
 }

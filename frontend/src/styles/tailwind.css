@@ -3509,6 +3509,7 @@
   .dark .sidebarSettingsHeader,
   .dark .sidebarPropertiesInlineToggle,
   .dark .sidebarPropertiesFooter,
+  .dark .sidebarPropertiesDisplaySettings,
   .dark .sidebarPropertiesDivider,
   .dark .sidebarPropertiesBlockHead,
   .dark .sidebarPropertiesRows--table,
@@ -3571,6 +3572,7 @@
 
   .dark .sidebarAccordionSubtitle,
   .dark .selectedElementSubtitle,
+  .dark .sidebarPropertiesInlineToggle,
   .dark .sidebarSchemaPropertyKey,
   .dark .sidebarBpmnPropertyPreviewValue,
   .dark .sidebarBpmnEditorLabel,
@@ -3579,6 +3581,14 @@
   .dark .sidebarPropertiesIntro,
   .dark .sidebarPropertiesBlockDescription {
     color: #9BAFCC;
+  }
+
+  .dark .sidebarPropertiesInlineToggle {
+    color: #D7E3F9;
+  }
+
+  .dark .sidebarPropertiesInlineToggle input[type="checkbox"] {
+    accent-color: #7EB0FF;
   }
 
   .dark .sidebarPropertiesBlockMeta,
