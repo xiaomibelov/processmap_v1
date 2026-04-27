@@ -378,6 +378,44 @@ def _build_diagram_truth_payload(sess: Session) -> Dict[str, Any]:
     }
 
 
+def _without_session_companion_meta(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    return {
+        str(k): v
+        for k, v in value.items()
+        if str(k) != "session_companion_v1"
+    }
+
+
+def build_session_version_payload(sess: Session) -> Dict[str, Any]:
+    return {
+        "title": str(getattr(sess, "title", "") or ""),
+        "roles": list(getattr(sess, "roles", []) or []),
+        "start_role": getattr(sess, "start_role", None),
+        "mode": getattr(sess, "mode", None),
+        "notes": str(getattr(sess, "notes", "") or ""),
+        "notes_by_element": getattr(sess, "notes_by_element", {}) or {},
+        "interview": getattr(sess, "interview", {}) or {},
+        "nodes": getattr(sess, "nodes", []) or [],
+        "edges": getattr(sess, "edges", []) or [],
+        "questions": getattr(sess, "questions", []) or [],
+        "bpmn_xml": str(getattr(sess, "bpmn_xml", "") or ""),
+        "bpmn_graph_fingerprint": str(getattr(sess, "bpmn_graph_fingerprint", "") or ""),
+        "bpmn_meta": _without_session_companion_meta(getattr(sess, "bpmn_meta", {}) or {}),
+    }
+
+
+def session_version_payload_hash(sess: Session) -> str:
+    payload = build_session_version_payload(sess)
+    raw = _json_dumps(payload, {})
+    try:
+        normalized = json.dumps(json.loads(raw), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except Exception:
+        normalized = raw
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def _diagram_truth_payload_hash(sess: Session) -> str:
     payload = _build_diagram_truth_payload(sess)
     raw = _json_dumps(payload, {})
@@ -738,6 +776,9 @@ def _ensure_schema() -> None:
                   version_number INTEGER NOT NULL,
                   diagram_state_version INTEGER NOT NULL DEFAULT 0,
                   bpmn_xml TEXT NOT NULL DEFAULT '',
+                  session_payload_hash TEXT NOT NULL DEFAULT '',
+                  session_version INTEGER NOT NULL DEFAULT 0,
+                  session_updated_at INTEGER NOT NULL DEFAULT 0,
                   source_action TEXT NOT NULL DEFAULT '',
                   import_note TEXT NOT NULL DEFAULT '',
                   created_at INTEGER NOT NULL DEFAULT 0,
@@ -1165,6 +1206,12 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE sessions ADD COLUMN diagram_last_write_changed_keys_json TEXT NOT NULL DEFAULT '[]'")
             if not _column_exists(con, "bpmn_versions", "diagram_state_version"):
                 con.execute("ALTER TABLE bpmn_versions ADD COLUMN diagram_state_version INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "bpmn_versions", "session_payload_hash"):
+                con.execute("ALTER TABLE bpmn_versions ADD COLUMN session_payload_hash TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "bpmn_versions", "session_version"):
+                con.execute("ALTER TABLE bpmn_versions ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "bpmn_versions", "session_updated_at"):
+                con.execute("ALTER TABLE bpmn_versions ADD COLUMN session_updated_at INTEGER NOT NULL DEFAULT 0")
             con.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_bpmn_versions_session_diagram_state ON bpmn_versions(session_id, org_id, diagram_state_version) WHERE diagram_state_version > 0"
             )
@@ -2558,6 +2605,9 @@ class Storage:
         bpmn_xml: str,
         source_action: str,
         diagram_state_version: Optional[int] = None,
+        session_payload_hash: Optional[str] = None,
+        session_version: Optional[int] = None,
+        session_updated_at: Optional[int] = None,
         created_by: Optional[str] = None,
         org_id: Optional[str] = None,
         import_note: Optional[str] = None,
@@ -2577,6 +2627,9 @@ class Storage:
         diagram_version: int = int(diagram_state_version or 0)
         if diagram_version < 0:
             diagram_version = 0
+        payload_hash = str(session_payload_hash or "").strip()
+        sess_version = max(0, int(session_version or 0))
+        sess_updated_at = max(0, int(session_updated_at or 0))
         now = _now_ts()
 
         with _connect() as con:
@@ -2606,10 +2659,25 @@ class Storage:
                 """
                 INSERT INTO bpmn_versions (
                   id, session_id, org_id, version_number, diagram_state_version, bpmn_xml,
+                  session_payload_hash, session_version, session_updated_at,
                   source_action, import_note, created_at, created_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                [snapshot_id, sid, scope_org, next_version, diagram_version, xml, action, note, now, actor],
+                [
+                    snapshot_id,
+                    sid,
+                    scope_org,
+                    next_version,
+                    diagram_version,
+                    xml,
+                    payload_hash,
+                    sess_version,
+                    sess_updated_at,
+                    action,
+                    note,
+                    now,
+                    actor,
+                ],
             )
             con.commit()
 
@@ -2619,6 +2687,9 @@ class Storage:
             "org_id": scope_org,
             "version_number": next_version,
             "diagram_state_version": diagram_version,
+            "session_payload_hash": payload_hash,
+            "session_version": sess_version,
+            "session_updated_at": sess_updated_at,
             "source_action": action,
             "created_at": now,
             "created_by": actor,
@@ -2653,9 +2724,9 @@ class Storage:
             if oid != session_org:
                 return []
             columns = (
-                "id, session_id, org_id, version_number, diagram_state_version, bpmn_xml, source_action, import_note, created_at, created_by"
+                "id, session_id, org_id, version_number, diagram_state_version, bpmn_xml, session_payload_hash, session_version, session_updated_at, source_action, import_note, created_at, created_by"
                 if include_xml
-                else "id, session_id, org_id, version_number, diagram_state_version, source_action, import_note, created_at, created_by"
+                else "id, session_id, org_id, version_number, diagram_state_version, session_payload_hash, session_version, session_updated_at, source_action, import_note, created_at, created_by"
             )
             rows = con.execute(
                 f"""
@@ -2677,6 +2748,9 @@ class Storage:
                 "org_id": str(row["org_id"] or ""),
                 "version_number": int(row["version_number"] or 0),
                 "diagram_state_version": int(row["diagram_state_version"] or 0),
+                "session_payload_hash": str(row["session_payload_hash"] or ""),
+                "session_version": int(row["session_version"] or 0),
+                "session_updated_at": int(row["session_updated_at"] or 0),
                 "source_action": str(row["source_action"] or ""),
                 "import_note": str(row["import_note"] or ""),
                 "created_at": int(row["created_at"] or 0),
@@ -2711,7 +2785,9 @@ class Storage:
                 return None
             row = con.execute(
                 """
-                SELECT id, session_id, org_id, version_number, diagram_state_version, bpmn_xml, source_action, import_note, created_at, created_by
+                SELECT id, session_id, org_id, version_number, diagram_state_version, bpmn_xml,
+                       session_payload_hash, session_version, session_updated_at,
+                       source_action, import_note, created_at, created_by
                   FROM bpmn_versions
                  WHERE session_id = ?
                    AND org_id = ?
@@ -2729,6 +2805,9 @@ class Storage:
             "org_id": str(row["org_id"] or ""),
             "version_number": int(row["version_number"] or 0),
             "diagram_state_version": int(row["diagram_state_version"] or 0),
+            "session_payload_hash": str(row["session_payload_hash"] or ""),
+            "session_version": int(row["session_version"] or 0),
+            "session_updated_at": int(row["session_updated_at"] or 0),
             "bpmn_xml": str(row["bpmn_xml"] or ""),
             "source_action": str(row["source_action"] or ""),
             "import_note": str(row["import_note"] or ""),

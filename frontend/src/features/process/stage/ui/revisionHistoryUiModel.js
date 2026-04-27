@@ -109,17 +109,7 @@ export function applyUserFacingRevisionNumbers({
 } = {}) {
   const meaningful = asArray(meaningfulRevisionsRaw);
   if (meaningful.length === 0) return [];
-  const revisionHistorySnapshot = asObject(revisionHistorySnapshotRaw);
-  const ledgerTotalCount = Math.max(0, toInt(revisionHistorySnapshot.totalCount, 0));
-  const ledgerDisplayNumber = Math.max(
-    0,
-    toInt(
-      revisionHistorySnapshot.latestRevisionDisplayNumber
-      || revisionHistorySnapshot.latestUserFacingRevisionNumber
-      || revisionHistorySnapshot.latestRevisionNumber,
-      0,
-    ),
-  );
+  void revisionHistorySnapshotRaw;
   const headDisplayNumber = Math.max(
     0,
     toInt(
@@ -128,7 +118,7 @@ export function applyUserFacingRevisionNumbers({
       0,
     ),
   );
-  const displayHead = Math.max(meaningful.length, ledgerTotalCount, ledgerDisplayNumber, headDisplayNumber);
+  const displayHead = Math.max(meaningful.length, headDisplayNumber);
   return meaningful.map((entryRaw, index) => {
     const entry = asObject(entryRaw);
     const technicalRevisionNumber = Math.max(

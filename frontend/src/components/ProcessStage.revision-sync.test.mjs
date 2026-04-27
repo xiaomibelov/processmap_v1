@@ -34,7 +34,7 @@ test("session save and explicit revision action stay separated by contract", () 
   assert.equal(source.includes('revisionComment: createRevision ? "Версия создана вручную" : ""'), true);
   assert.equal(source.includes("Создана новая версия BPMN."), true);
   assert.equal(source.includes("Создана новая версия BPMN. Метаданные синхронизировать не удалось."), true);
-  assert.equal(source.includes("Версия BPMN не создана: нет изменений BPMN."), true);
+  assert.equal(source.includes("Версия BPMN не создана: нет изменений сессии."), true);
   assert.equal(source.includes("cancelPendingDiagramAutosave?.();"), true);
   assert.equal(source.includes("saveInfo,"), true);
   assert.equal(source.includes('persistReason: "manual_save"'), false);

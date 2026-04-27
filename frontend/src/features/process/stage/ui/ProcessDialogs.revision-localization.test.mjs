@@ -37,7 +37,7 @@ test("revision dialogs separate loading, empty, and error states", () => {
   assert.equal(source.includes('data-testid="bpmn-versions-empty"'), true);
   assert.equal(source.includes('data-testid="bpmn-versions-error"'), true);
   assert.equal(source.includes("Пустая история не означает, что черновик не сохранён."), true);
-  assert.equal(source.includes("Новая версия BPMN создаётся отдельным действием кнопкой «Создать версию BPMN»."), true);
+  assert.equal(source.includes("Новая версия BPMN создаётся, когда изменилось состояние сессии"), true);
   assert.equal(source.includes("Чтобы понять, кто и что изменил, используйте compare-first"), true);
   assert.equal(source.includes("История ревизий ещё не загружена."), false);
   assert.equal(source.includes("История версий ещё не загружена."), true);

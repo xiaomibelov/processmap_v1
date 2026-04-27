@@ -65,6 +65,7 @@ from .storage import (
     list_workspace_snapshot_rows,
     update_org_git_mirror_config,
     get_project_explorer_invalidation_targets,
+    session_version_payload_hash,
 )
 from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
 from .redis_lock import acquire_session_lock
@@ -5930,16 +5931,6 @@ def session_bpmn_export(
         previous_xml = str(getattr(s, "bpmn_xml", "") or "")
         regenerated_xml = str(xml_text or "")
         current_diagram_state_version = int(getattr(s, "diagram_state_version", 0) or 0)
-        _create_bpmn_revision_snapshot_if_xml_changed(
-            storage=st,
-            session_id=str(getattr(s, "id", "") or session_id),
-            previous_xml=previous_xml,
-            next_xml=regenerated_xml,
-            source_action="export_regenerate",
-            created_by=user_id,
-            org_id=oid,
-            expected_next_diagram_state_version=current_diagram_state_version + 1,
-        )
         s.bpmn_xml = str(xml_text or "")
         s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
         s.bpmn_graph_fingerprint = current_graph_fp
@@ -5948,6 +5939,16 @@ def session_bpmn_export(
             changed_keys=["bpmn_xml"],
             actor_user_id=user_id,
             actor_label=_resolve_actor_label_from_user(user, user_id) or "system:export_regenerate",
+        )
+        _create_bpmn_revision_snapshot_if_needed(
+            storage=st,
+            session=s,
+            previous_xml=previous_xml,
+            next_xml=regenerated_xml,
+            source_action="export_regenerate",
+            created_by=user_id,
+            org_id=oid,
+            diagram_state_version=current_diagram_state_version + 1,
         )
         st.save(s, user_id=user_id, org_id=oid, is_admin=True)
 
@@ -6008,30 +6009,78 @@ def session_bpmn_export(
     )
 
 
-def _create_bpmn_revision_snapshot_if_xml_changed(
-    *,
+_USER_FACING_BPMN_VERSION_ACTIONS = {
+    "publish_manual_save",
+    "manual_publish",
+    "manual_publish_revision",
+    "import_bpmn",
+    "restore_bpmn",
+    "restore_revision",
+    "restore_bpmn_version",
+    "session.bpmn_restore",
+}
+
+
+def _bpmn_version_row_is_user_facing(row: Dict[str, Any] | None) -> bool:
+    if not isinstance(row, dict):
+        return False
+    return str(row.get("source_action") or "").strip().lower() in _USER_FACING_BPMN_VERSION_ACTIONS
+
+
+def _latest_user_facing_bpmn_version(
     storage: Storage,
     session_id: str,
+    *,
+    org_id: Optional[str] = None,
+    include_xml: bool = True,
+) -> Optional[Dict[str, Any]]:
+    for row in storage.list_bpmn_versions(session_id, org_id=org_id, limit=1000, include_xml=include_xml):
+        if _bpmn_version_row_is_user_facing(row):
+            return row
+    return None
+
+
+def _create_bpmn_revision_snapshot_if_needed(
+    *,
+    storage: Storage,
+    session: Session,
     previous_xml: Any,
     next_xml: Any,
     source_action: str,
     created_by: str = "",
     org_id: Optional[str] = None,
     import_note: str = "",
-    expected_next_diagram_state_version: int,
+    diagram_state_version: int,
 ) -> Optional[Dict[str, Any]]:
     prev = str(previous_xml or "")
     nxt = str(next_xml or "")
-    if prev == nxt:
-        return None
     if not nxt.strip():
         return None
     action = str(source_action or "").strip().lower() or "manual_save"
+    session_id = str(getattr(session, "id", "") or "").strip()
+    session_hash = session_version_payload_hash(session)
+    should_snapshot = prev != nxt
+    if action == "publish_manual_save":
+        latest_user_version = _latest_user_facing_bpmn_version(storage, session_id, org_id=org_id, include_xml=True)
+        latest_hash = str((latest_user_version or {}).get("session_payload_hash") or "").strip()
+        latest_xml = str((latest_user_version or {}).get("bpmn_xml") or "")
+        should_snapshot = (
+            should_snapshot
+            or not latest_user_version
+            or not latest_hash
+            or latest_hash != session_hash
+            or latest_xml != nxt
+        )
+    if not should_snapshot:
+        return None
     return storage.create_bpmn_version_snapshot(
         session_id,
         bpmn_xml=nxt,
         source_action=action,
-        diagram_state_version=max(0, int(expected_next_diagram_state_version or 0)),
+        diagram_state_version=max(0, int(diagram_state_version or 0)),
+        session_payload_hash=session_hash,
+        session_version=int(getattr(session, "version", 0) or 0),
+        session_updated_at=int(getattr(session, "updated_at", 0) or 0),
         created_by=created_by,
         org_id=org_id,
         import_note=import_note,
@@ -6079,17 +6128,7 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         )
         previous_xml = str(getattr(s, "bpmn_xml", "") or "")
         current_diagram_state_version = int(getattr(s, "diagram_state_version", 0) or 0)
-        bpmn_version_snapshot = _create_bpmn_revision_snapshot_if_xml_changed(
-            storage=st,
-            session_id=s.id,
-            previous_xml=previous_xml,
-            next_xml=xml,
-            source_action=source_action,
-            created_by=user_id,
-            org_id=oid_locked,
-            import_note=import_note,
-            expected_next_diagram_state_version=current_diagram_state_version + 1,
-        )
+        bpmn_version_snapshot = None
 
         flow_ctx = _collect_sequence_flow_meta(xml)
         flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
@@ -6182,6 +6221,17 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
             actor_user_id=user_id,
             actor_label=_resolve_actor_label_from_user(user, user_id),
         )
+        bpmn_version_snapshot = _create_bpmn_revision_snapshot_if_needed(
+            storage=st,
+            session=s,
+            previous_xml=previous_xml,
+            next_xml=xml,
+            source_action=source_action,
+            created_by=user_id,
+            org_id=oid_locked,
+            import_note=import_note,
+            diagram_state_version=current_diagram_state_version + 1,
+        )
         st.save(s, user_id=user_id, org_id=oid_locked, is_admin=True)
         if auto_pass_state_write_requested:
             _capture_persisted_auto_pass_failed_state(
@@ -6233,6 +6283,9 @@ def session_bpmn_versions_list(
             "session_id": str(row.get("session_id") or ""),
             "version_number": int(row.get("version_number") or 0),
             "diagram_state_version": int(row.get("diagram_state_version") or 0),
+            "session_payload_hash": str(row.get("session_payload_hash") or ""),
+            "session_version": int(row.get("session_version") or 0),
+            "session_updated_at": int(row.get("session_updated_at") or 0),
             "source_action": str(row.get("source_action") or ""),
             "import_note": str(row.get("import_note") or ""),
             "created_at": created_at,
@@ -6248,10 +6301,26 @@ def session_bpmn_versions_list(
         if include_xml_mode:
             item["bpmn_xml"] = str(row.get("bpmn_xml") or "")
         items.append(item)
+    current_session_payload_hash = session_version_payload_hash(sess)
+    latest_user_version = _latest_user_facing_bpmn_version(
+        st,
+        str(getattr(sess, "id", "") or session_id),
+        org_id=oid,
+        include_xml=False,
+    )
+    latest_session_payload_hash = str((latest_user_version or {}).get("session_payload_hash") or "").strip()
     return {
         "ok": True,
         "session_id": str(getattr(sess, "id", "") or session_id),
         "count": len(items),
+        "current_session_payload_hash": current_session_payload_hash,
+        "current_session_version": int(getattr(sess, "version", 0) or 0),
+        "current_session_updated_at": int(getattr(sess, "updated_at", 0) or 0),
+        "latest_user_version_session_payload_hash": latest_session_payload_hash,
+        "has_session_changes_since_latest_bpmn_version": (
+            bool(current_session_payload_hash)
+            and (not latest_session_payload_hash or latest_session_payload_hash != current_session_payload_hash)
+        ),
         "items": items,
     }
 
@@ -6276,6 +6345,9 @@ def session_bpmn_version_detail(session_id: str, version_id: str, request: Reque
         "session_id": str(row.get("session_id") or ""),
         "version_number": int(row.get("version_number") or 0),
         "diagram_state_version": int(row.get("diagram_state_version") or 0),
+        "session_payload_hash": str(row.get("session_payload_hash") or ""),
+        "session_version": int(row.get("session_version") or 0),
+        "session_updated_at": int(row.get("session_updated_at") or 0),
         "source_action": str(row.get("source_action") or ""),
         "import_note": str(row.get("import_note") or ""),
         "created_at": created_at,
@@ -6350,16 +6422,7 @@ def session_bpmn_restore(
             return {"error": "bpmn_version_xml_empty", "version_id": vid}
         previous_xml = str(getattr(s, "bpmn_xml", "") or "")
         current_diagram_state_version = int(getattr(s, "diagram_state_version", 0) or 0)
-        restored_snapshot = _create_bpmn_revision_snapshot_if_xml_changed(
-            storage=st,
-            session_id=str(getattr(s, "id", "") or session_id),
-            previous_xml=previous_xml,
-            next_xml=xml,
-            source_action="restore_bpmn_version",
-            created_by=user_id,
-            org_id=oid_locked,
-            expected_next_diagram_state_version=current_diagram_state_version + 1,
-        )
+        restored_snapshot = None
 
         flow_ctx = _collect_sequence_flow_meta(xml)
         flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
@@ -6393,6 +6456,16 @@ def session_bpmn_restore(
             changed_keys=changed_keys,
             actor_user_id=user_id,
             actor_label=_resolve_actor_label_from_user(user, user_id),
+        )
+        restored_snapshot = _create_bpmn_revision_snapshot_if_needed(
+            storage=st,
+            session=s,
+            previous_xml=previous_xml,
+            next_xml=xml,
+            source_action="restore_bpmn_version",
+            created_by=user_id,
+            org_id=oid_locked,
+            diagram_state_version=current_diagram_state_version + 1,
         )
         st.save(s, user_id=user_id, org_id=oid_locked, is_admin=True)
         _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())

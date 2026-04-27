@@ -228,6 +228,9 @@ test("apiGetBpmnVersions reads backend list and include_xml query", async () => 
         ok: true,
         session_id: "sess_1",
         count: 1,
+        current_session_payload_hash: "hash_current",
+        latest_user_version_session_payload_hash: "hash_latest",
+        has_session_changes_since_latest_bpmn_version: true,
         items: [
           { id: "v1", version_number: 4, source_action: "import_bpmn", bpmn_xml: "<xml/>" },
         ],
@@ -241,6 +244,9 @@ test("apiGetBpmnVersions reads backend list and include_xml query", async () => 
     assert.equal(out.ok, true);
     assert.equal(out.count, 1);
     assert.equal(out.versions[0]?.id, "v1");
+    assert.equal(out.currentSessionPayloadHash, "hash_current");
+    assert.equal(out.latestUserVersionSessionPayloadHash, "hash_latest");
+    assert.equal(out.hasSessionChangesSinceLatestBpmnVersion, true);
     assert.match(calls[0], /\/api\/sessions\/sess_1\/bpmn\/versions\?limit=20&include_xml=1$/);
   } finally {
     globalThis.fetch = prevFetch;

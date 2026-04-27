@@ -345,7 +345,7 @@ class BpmnMetaApiTests(unittest.TestCase):
         self.assertEqual(str(snapshot.get("source_action") or ""), "manual_save")
         self.assertEqual(len(st.list_bpmn_versions(self.sid)), before_count + 1)
 
-    def test_publish_manual_save_with_unchanged_xml_uses_non_bpmn_trace_parity(self):
+    def test_publish_manual_save_with_unchanged_xml_creates_session_truth_snapshot(self):
         st = self.get_storage()
         initial = self.session_bpmn_save(
             self.sid,
@@ -360,11 +360,34 @@ class BpmnMetaApiTests(unittest.TestCase):
             self.BpmnXmlIn(xml=PRUNED_BPMN_XML, source_action="publish_manual_save"),
         )
         self.assertEqual(published.get("ok"), True)
-        self.assertNotIn("bpmn_version_snapshot", published)
+        self.assertIsInstance(published.get("bpmn_version_snapshot"), dict)
+        self.assertEqual(str(published["bpmn_version_snapshot"].get("source_action") or ""), "publish_manual_save")
+        self.assertTrue(str(published["bpmn_version_snapshot"].get("session_payload_hash") or "").strip())
         after_versions = st.list_bpmn_versions(self.sid, include_xml=True)
-        self.assertEqual(len(after_versions), before_versions)
+        self.assertEqual(len(after_versions), before_versions + 1)
         state_versions = st.list_session_state_versions(self.sid)
         self.assertGreaterEqual(len(state_versions), 1)
+
+    def test_bpmn_versions_endpoint_uses_session_payload_hash_for_availability(self):
+        published = self.session_bpmn_save(
+            self.sid,
+            self.BpmnXmlIn(xml=PRUNED_BPMN_XML, source_action="publish_manual_save"),
+        )
+        self.assertEqual(published.get("ok"), True)
+        clean = self.session_bpmn_versions_list(self.sid, include_xml=0)
+        self.assertEqual(clean.get("has_session_changes_since_latest_bpmn_version"), False)
+
+        patched = self.patch_session(
+            self.sid,
+            self.UpdateSessionIn(interview={"doc_html": "<p>changed</p>"}),
+        )
+        self.assertEqual(patched.get("id"), self.sid)
+        dirty = self.session_bpmn_versions_list(self.sid, include_xml=0)
+        self.assertEqual(dirty.get("has_session_changes_since_latest_bpmn_version"), True)
+        self.assertNotEqual(
+            str(dirty.get("current_session_payload_hash") or ""),
+            str(dirty.get("latest_user_version_session_payload_hash") or ""),
+        )
 
     def test_bpmn_versions_endpoint_returns_metadata_and_optional_xml(self):
         before_count = int((self.session_bpmn_versions_list(self.sid, include_xml=0) or {}).get("count") or 0)
