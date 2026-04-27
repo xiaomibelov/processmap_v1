@@ -2761,6 +2761,48 @@ class Storage:
             out.append(item)
         return out
 
+    def list_bpmn_version_numbers_by_source_actions(
+        self,
+        session_id: str,
+        *,
+        org_id: Optional[str] = None,
+        source_actions: Iterable[str] = (),
+    ) -> List[int]:
+        _ensure_schema()
+        sid = str(session_id or "").strip()
+        if not sid:
+            return []
+        actions = [
+            str(action or "").strip().lower()
+            for action in source_actions
+            if str(action or "").strip()
+        ]
+        if not actions:
+            return []
+        scope_org = str(org_id or "").strip()
+
+        with _connect() as con:
+            sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
+            if not sess_row:
+                return []
+            session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
+            oid = scope_org or session_org
+            if oid != session_org:
+                return []
+            placeholders = ", ".join(["?"] * len(actions))
+            rows = con.execute(
+                f"""
+                SELECT version_number
+                  FROM bpmn_versions
+                 WHERE session_id = ?
+                   AND org_id = ?
+                   AND lower(source_action) IN ({placeholders})
+                 ORDER BY version_number ASC
+                """,
+                [sid, oid, *actions],
+            ).fetchall()
+        return [int(row["version_number"] or 0) for row in rows if int(row["version_number"] or 0) > 0]
+
     def get_bpmn_version(
         self,
         session_id: str,

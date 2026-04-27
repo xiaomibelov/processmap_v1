@@ -419,6 +419,34 @@ class BpmnMetaApiTests(unittest.TestCase):
         self.assertEqual(detail_item.get("source_action"), "import_bpmn")
         self.assertEqual(str(detail_item.get("bpmn_xml") or ""), PRUNED_BPMN_XML)
 
+    def test_bpmn_versions_endpoint_returns_user_facing_count_beyond_limited_window(self):
+        st = self.get_storage()
+        for index in range(1, 11):
+            st.create_bpmn_version_snapshot(
+                self.sid,
+                bpmn_xml=f"{XOR_BPMN_XML}\n<!-- publish {index} -->",
+                source_action="publish_manual_save",
+            )
+        for index in range(1, 46):
+            st.create_bpmn_version_snapshot(
+                self.sid,
+                bpmn_xml=f"{XOR_BPMN_XML}\n<!-- technical {index} -->",
+                source_action="manual_save",
+            )
+
+        listed = self.session_bpmn_versions_list(self.sid, limit=50, include_xml=0)
+        self.assertEqual(listed.get("ok"), True)
+        self.assertEqual(int(listed.get("count") or 0), 50)
+        self.assertEqual(int(listed.get("user_facing_count") or 0), 10)
+        self.assertEqual(int(listed.get("latest_user_facing_revision_number") or 0), 10)
+        user_items = [
+            item for item in (listed.get("items") or [])
+            if int(item.get("user_facing_revision_number") or 0) > 0
+        ]
+        self.assertEqual(len(user_items), 5)
+        self.assertEqual(int(user_items[0].get("user_facing_revision_number") or 0), 10)
+        self.assertEqual(int(user_items[-1].get("user_facing_revision_number") or 0), 6)
+
     def test_bpmn_versions_endpoint_formats_technical_author_id_to_short_display(self):
         st = self.get_storage()
         technical_id = "8f4b7f5fd3b146b4bf5160f8c0d9821a"
