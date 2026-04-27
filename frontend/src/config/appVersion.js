@@ -7,7 +7,12 @@ export const appVersionInfo = {
       version: "v1.0.23",
       changes: [
         "Удалён блок контекста процесса с рабочих вкладок.",
+        "Добавлена страница обновлений по ссылке версии приложения.",
       ],
+      link: {
+        label: "Коммит",
+        href: "https://github.com/xiaomibelov/processmap_v1/commit/222b4c1",
+      },
     },
     {
       version: "v1.0.22",
