@@ -12,3 +12,11 @@ test("manual save no-op message uses saved-within-version wording instead of leg
   assert.equal(source.includes("Сессия уже сохранена: изменений схемы нет."), false);
   assert.equal(source.includes("Сохранено внутри версии."), true);
 });
+
+test("process status feedback is bridged to source-prefixed toast instead of header inline text", () => {
+  const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
+  assert.equal(source.includes("resolveProcessToastView"), true);
+  assert.equal(source.includes("processStatusToastLastSignatureRef"), true);
+  assert.equal(source.includes("showSaveAckToast(message, tone);"), true);
+  assert.equal(source.includes("toolbarInlineMessage"), false);
+});

@@ -46,15 +46,9 @@ test("header dedupes competing conflict surfaces while modal is active", () => {
     "upload status badge must hide technical progress noise and stay only for conflict/error states",
   );
   assert.ok(
-    source.includes("const showToolbarInlineBadge = !!toolbarInlineMessage")
-      && source.includes("&& !hasDominantConflictState")
-      && source.includes("!(showConflictModalActive && toolbarMessageLooksLikeConflict)")
-      && source.includes("isDraftSavedToolbarMessage"),
-    "toolbar inline message must be suppressed when conflict is the dominant state",
-  );
-  assert.ok(
-    source.includes("const showSaveStatusBadgeResolved = showSaveStatusBadge && !hasDominantConflictState;"),
-    "generic save badge should be suppressed while conflict is active",
+    source.includes("toolbarInlineMessage") === false
+      && source.includes("showToolbarInlineBadge") === false,
+    "toolbar inline message surface must stay removed; process statuses go through toast",
   );
   assert.ok(
     source.includes("const showSessionPresenceBadge = hasSession && sessionPresenceView?.visible === true && !showConflictModalActive;"),
