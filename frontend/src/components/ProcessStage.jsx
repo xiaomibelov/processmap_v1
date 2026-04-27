@@ -61,6 +61,7 @@ import {
   buildExecutionPlan,
   normalizeExecutionPlanVersionList,
 } from "../features/process/robotmeta/executionPlan";
+import { toBpmnRestoreUserFacingError } from "../features/process/lib/userFacingErrorText";
 import {
   applyHybridModeTransition,
   applyHybridVisibilityTransition,
@@ -4274,10 +4275,35 @@ export default function ProcessStage({
     setInfoMsg("");
     setDrawioAnchorImportDiagnostics(null);
     try {
-      const restored = await apiRestoreBpmnVersion(sid, versionId);
-      if (!restored?.ok) {
-        setGenErr(shortErr(restored?.error || "Не удалось восстановить BPMN версию."));
+      let restoreBaseDiagramStateVersion = Number(getBaseDiagramStateVersion());
+      if (!Number.isFinite(restoreBaseDiagramStateVersion) || restoreBaseDiagramStateVersion < 0) {
+        const fetched = await apiGetSession(sid);
+        if (fetched?.ok) {
+          onSessionSyncWithVersion?.(fetched.session);
+          const refreshedVersion = syncDiagramStateVersionFromSession(fetched.session, { sessionId: sid });
+          restoreBaseDiagramStateVersion = Number(
+            refreshedVersion
+            ?? getBaseDiagramStateVersion()
+            ?? fetched?.session?.diagram_state_version
+            ?? fetched?.session?.diagramStateVersion,
+          );
+        }
+      }
+      if (!Number.isFinite(restoreBaseDiagramStateVersion) || restoreBaseDiagramStateVersion < 0) {
+        setGenErr("Не удалось восстановить версию: требуется обновить состояние схемы.");
         return;
+      }
+      restoreBaseDiagramStateVersion = Math.round(restoreBaseDiagramStateVersion);
+      const restored = await apiRestoreBpmnVersion(sid, versionId, {
+        baseDiagramStateVersion: restoreBaseDiagramStateVersion,
+      });
+      if (!restored?.ok) {
+        setGenErr(toBpmnRestoreUserFacingError(restored, "Не удалось восстановить BPMN версию."));
+        return;
+      }
+      const restoredDiagramStateVersion = Number(restored?.diagramStateVersion ?? restored?.result?.diagram_state_version);
+      if (Number.isFinite(restoredDiagramStateVersion) && restoredDiagramStateVersion >= 0) {
+        rememberDiagramStateVersion(restoredDiagramStateVersion, { sessionId: sid });
       }
       const xml = String(restored?.bpmn_xml || item?.xml || "");
       if (!xml.trim()) {
@@ -4323,6 +4349,9 @@ export default function ProcessStage({
             session_id: sid,
             interview: projected.nextInterview,
             bpmn_xml: xml,
+            diagram_state_version: Number.isFinite(restoredDiagramStateVersion) && restoredDiagramStateVersion >= 0
+              ? Math.round(restoredDiagramStateVersion)
+              : Number(getBaseDiagramStateVersion() ?? draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0),
             actors_derived: derivedActors,
             ...(savePlan.nodesChanged ? { nodes: projected.nextNodes } : {}),
             ...(savePlan.edgesChanged ? { edges: projected.nextEdges } : {}),
@@ -4362,7 +4391,7 @@ export default function ProcessStage({
       await Promise.resolve(bpmnRef.current?.fit?.());
       await refreshSnapshotVersions();
     } catch (error) {
-      setGenErr(shortErr(error?.message || error || "Не удалось восстановить версию."));
+      setGenErr(toBpmnRestoreUserFacingError(error, shortErr(error?.message || error || "Не удалось восстановить версию.")));
     } finally {
       setVersionsBusy(false);
     }

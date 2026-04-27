@@ -934,15 +934,24 @@ export async function apiGetBpmnVersion(sessionId, versionId) {
   };
 }
 
-export async function apiRestoreBpmnVersion(sessionId, versionId) {
+export async function apiRestoreBpmnVersion(sessionId, versionId, options = {}) {
   const sid = String(sessionId || "").trim();
   const vid = String(versionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
   if (!vid) return { ok: false, status: 0, error: "missing version_id" };
-  const r = okOrError(await request(apiRoutes.sessions.bpmnRestore(sid, vid), { method: "POST", body: {} }));
+  const body = {};
+  const baseDiagramStateVersion = Number(
+    options?.baseDiagramStateVersion
+    ?? options?.base_diagram_state_version,
+  );
+  if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
+    body.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+  }
+  const r = okOrError(await request(apiRoutes.sessions.bpmnRestore(sid, vid), { method: "POST", body }));
   if (!r.ok) return r;
   const payload = r.data && typeof r.data === "object" ? r.data : {};
-  return {
+  const diagramStateVersion = Number(payload.diagram_state_version ?? payload.diagramStateVersion);
+  const out = {
     ok: true,
     status: r.status,
     result: payload,
@@ -952,6 +961,10 @@ export async function apiRestoreBpmnVersion(sessionId, versionId) {
       ? payload.restored_version
       : {},
   };
+  if (Number.isFinite(diagramStateVersion)) {
+    out.diagramStateVersion = Math.round(diagramStateVersion);
+  }
+  return out;
 }
 
 export async function apiPutBpmnXml(sessionId, xml, options = {}) {
