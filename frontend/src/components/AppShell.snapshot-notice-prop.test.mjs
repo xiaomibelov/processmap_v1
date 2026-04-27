@@ -9,6 +9,14 @@ test("AppShell forwards snapshot notice consume callback into ProcessStage", () 
   assert.match(source, /<ProcessStage[\s\S]*onSnapshotRestoreNoticeConsumed=\{onSnapshotRestoreNoticeConsumed\}/);
 });
 
+test("AppShell forwards discussion element focus bridge into ProcessStage", () => {
+  assert.match(source, /discussionLinkedElementFocusIntent = null/);
+  assert.match(source, /onDiscussionLinkedElementFocusResult = null/);
+  assert.match(source, /<ProcessStage[\s\S]*discussionLinkedElementFocusIntent=\{discussionLinkedElementFocusIntent\}/);
+  assert.match(source, /<ProcessStage[\s\S]*onDiscussionLinkedElementFocusResult=\{onDiscussionLinkedElementFocusResult\}/);
+  assert.match(source, /<ProcessStage[\s\S]*onOpenNotesDiscussions=\{onOpenNotesDiscussions\}/);
+});
+
 test("AppShell uses shellSessionId for shell continuity while keeping ProcessStage on real sessionId", () => {
   assert.match(source, /shellSessionId = ""/);
   assert.match(source, /const hasActiveSession = String\(shellSessionId \|\| sessionId \|\| ""\)\.trim\(\)\.length > 0;/);
