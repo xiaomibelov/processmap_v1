@@ -59,7 +59,7 @@ export default function ProcessStageHeader({ view = {} }) {
     ? `Текущая версия: ${resolvedVersionNumber}`
     : (publishedRevisionBadge.title || "Версия пока не создана.");
   const resolvedSaveActionText = toText(saveActionText) || "Сохранить сессию";
-  const resolvedCreateRevisionActionText = toText(createRevisionActionText) || "Создать новую версию";
+  const resolvedCreateRevisionActionText = toText(createRevisionActionText) || "Создать версию BPMN";
   const saveStatusText = toText(saveSmartText);
   const showSaveStatusBadge = hasSession && !!saveStatusText && saveStatusText !== "Сохранить сессию";
   const isConflictState = toText(saveUploadStatus?.state) === "conflict";
@@ -84,7 +84,7 @@ export default function ProcessStageHeader({ view = {} }) {
   const isSaveVersionToolbarMessage = (
     isDraftSavedToolbarMessage
     || toolbarMessageNormalized === "создана новая версия bpmn"
-    || toolbarMessageNormalized === "новая версия не создана: нет изменений"
+    || toolbarMessageNormalized === "версия bpmn не создана: нет изменений bpmn"
   );
   const hasPrimaryDraftStatusSurface = showSaveStatusBadgeResolved;
   const toolbarMessageLooksLikeConflict = /(?:конфликт|conflict|http\s*409|stale|верси)/i.test(toolbarMessage);
@@ -108,10 +108,10 @@ export default function ProcessStageHeader({ view = {} }) {
   const showCreateRevisionNoDiffHint = hasSession
     && createRevisionNoDiffHintVisible === true;
   const revisionActionTitle = showCreateRevisionNoDiffHint
-    ? "Новая версия не будет создана: нет новых изменений с последней версии."
+    ? "Версия BPMN не будет создана: нет изменений BPMN после последней версии."
     : (!canCreateRevisionFromCurrentState
-      ? "Создание новой версии временно недоступно."
-      : "Создать новую версию из текущего состояния сессии");
+      ? "Создание версии BPMN временно недоступно."
+      : "Создать версию BPMN из текущей схемы.");
   const canRunUndo = tab === "diagram" && canUndo === true;
   const canRunRedo = tab === "diagram" && canRedo === true;
 
@@ -146,7 +146,7 @@ export default function ProcessStageHeader({ view = {} }) {
                   title={revisionActionTitle}
                   data-testid="diagram-toolbar-create-revision-no-diff-hint"
                 >
-                  {toText(createRevisionNoDiffHintText) || "Нет новых изменений для новой версии"}
+                  {toText(createRevisionNoDiffHintText) || "Нет изменений BPMN после последней версии"}
                 </span>
               ) : null}
             </div>
