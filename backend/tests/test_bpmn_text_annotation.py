@@ -2,7 +2,6 @@ import unittest
 import xml.etree.ElementTree as ET
 
 from app.exporters.bpmn import export_session_to_bpmn_xml
-from app.models import Node, Session
 
 
 def _local(tag: str) -> str:
@@ -18,12 +17,12 @@ def _iter_local(root, local_name: str):
 
 class BpmnTextAnnotationExportTest(unittest.TestCase):
     def test_exports_text_annotation_and_association_for_interview_comment(self):
-        session = Session(
-            id="s1",
-            title="Тест",
-            roles=["Повар 1", "Повар 2"],
-            start_role="Повар 1",
-            interview={
+        session = {
+            "id": "s1",
+            "title": "Тест",
+            "roles": ["Повар 1", "Повар 2"],
+            "start_role": "Повар 1",
+            "interview": {
                 "steps": [
                     {
                         "id": "step_1",
@@ -33,11 +32,11 @@ class BpmnTextAnnotationExportTest(unittest.TestCase):
                     },
                 ],
             },
-            nodes=[
-                Node(id="Activity_1", type="step", title="Первая", actor_role="Повар 1"),
+            "nodes": [
+                {"id": "Activity_1", "type": "step", "title": "Первая", "actor_role": "Повар 1"},
             ],
-            edges=[],
-        )
+            "edges": [],
+        }
 
         xml_text = export_session_to_bpmn_xml(session)
         root = ET.fromstring(xml_text)
@@ -61,6 +60,52 @@ class BpmnTextAnnotationExportTest(unittest.TestCase):
             for a in associations
         )
         self.assertTrue(linked, "Нет association между узлом Activity_1 и textAnnotation")
+
+    def test_export_does_not_use_technical_bpmn_id_as_visible_task_name(self):
+        session = {
+            "id": "s1",
+            "title": "Тест",
+            "roles": ["Повар 1"],
+            "start_role": "Повар 1",
+            "nodes": [
+                {"id": "Activity_02r3c3z", "type": "step", "title": "", "actor_role": "Повар 1"},
+            ],
+            "edges": [],
+        }
+
+        xml_text = export_session_to_bpmn_xml(session)
+        root = ET.fromstring(xml_text)
+        task = next(_iter_local(root, "task"), None)
+
+        self.assertIsNotNone(task, "В BPMN не найден task")
+        self.assertEqual(task.attrib.get("id"), "Activity_02r3c3z")
+        self.assertEqual(task.attrib.get("name"), "Шаг 1")
+
+    def test_export_uses_interview_action_before_generic_label(self):
+        session = {
+            "id": "s1",
+            "title": "Тест",
+            "roles": ["Повар 1"],
+            "start_role": "Повар 1",
+            "nodes": [
+                {
+                    "id": "Activity_02r3c3z",
+                    "type": "step",
+                    "title": "Activity_02r3c3z",
+                    "actor_role": "Повар 1",
+                    "parameters": {"action": "Проверить температуру"},
+                },
+            ],
+            "edges": [],
+        }
+
+        xml_text = export_session_to_bpmn_xml(session)
+        root = ET.fromstring(xml_text)
+        task = next(_iter_local(root, "task"), None)
+
+        self.assertIsNotNone(task, "В BPMN не найден task")
+        self.assertEqual(task.attrib.get("id"), "Activity_02r3c3z")
+        self.assertEqual(task.attrib.get("name"), "Проверить температуру")
 
 
 if __name__ == "__main__":
