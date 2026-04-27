@@ -8,7 +8,6 @@ import ProjectWizardModal from "./components/ProjectWizardModal";
 import SessionFlowModal from "./components/SessionFlowModal";
 import OrgSettingsModal from "./components/org/OrgSettingsModal";
 import Modal from "./shared/ui/Modal";
-import DerivedContextSurface from "./features/tldr/ui/DerivedContextSurface";
 import useSessionStore from "./features/sessions/hooks/useSessionStore";
 import {
   normalizeElementNotesMap,
@@ -3371,12 +3370,6 @@ export default function App() {
         onOpenChange={setNotesDiscussionsOpen}
         onFocusNotificationTarget={focusDiscussionNotificationTarget}
         currentUserId={user?.id}
-      />
-
-      <DerivedContextSurface
-        draft={draft}
-        sessionTitle={currentSessionTitle}
-        hidden={notesDiscussionsOpen || processUiState?.tab === "diagram"}
       />
 
       <OrgSettingsModal
