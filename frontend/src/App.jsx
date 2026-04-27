@@ -848,6 +848,7 @@ export default function App() {
   const [notesPanelOpenRequest, setNotesPanelOpenRequest] = useState(null);
   const [notesDiscussionsOpen, setNotesDiscussionsOpen] = useState(false);
   const [mentionNotifications, setMentionNotifications] = useState([]);
+  const discussionLinkedElementFocusResolversRef = useRef(new Map());
   const notesPanelRef = useRef(null);
   const [llmHasApiKey, setLlmHasApiKey] = useState(false);
   const [llmBaseUrl, setLlmBaseUrl] = useState("https://api.deepseek.com");
@@ -1848,15 +1849,36 @@ export default function App() {
     window.dispatchEvent(new CustomEvent("processmap:note-mentions-changed"));
   }
 
+  function completeDiscussionLinkedElementFocus(result = {}) {
+    const requestId = String(result?.requestId || result?.request_id || "").trim();
+    if (!requestId) return;
+    const pending = discussionLinkedElementFocusResolversRef.current.get(requestId);
+    if (!pending) return;
+    window.clearTimeout(pending.timeoutId);
+    discussionLinkedElementFocusResolversRef.current.delete(requestId);
+    pending.resolve({
+      ok: result?.ok !== false,
+      error: String(result?.error || "").trim(),
+    });
+  }
+
   function focusDiscussionElementTarget(payload = {}, source = "discussion_linked_element") {
     const targetId = String(payload?.element_id || payload?.elementId || "").trim();
-    if (!targetId) return false;
+    if (!targetId) return Promise.resolve({ ok: false, error: "missing_element_id" });
     const sid = String(draft?.session_id || "").trim();
     const nonce = Date.now();
-    if (sid) {
+    if (!sid) return Promise.resolve({ ok: false, error: "missing_session_id" });
+    const requestId = `${sid}:${targetId}:${source}:${nonce}`;
+    const focusResult = new Promise((resolve) => {
+      const timeoutId = window.setTimeout(() => {
+        discussionLinkedElementFocusResolversRef.current.delete(requestId);
+        resolve({ ok: false, error: "focus_timeout" });
+      }, 7000);
+      discussionLinkedElementFocusResolversRef.current.set(requestId, { resolve, timeoutId });
       setProcessTabIntent({ sid, tab: "diagram", nonce });
       setDiscussionLinkedElementFocusIntent({
         sid,
+        requestId,
         elementId: targetId,
         elementName: String(payload?.element_name || payload?.elementName || targetId).trim(),
         elementType: String(payload?.element_type || payload?.elementType || "").trim(),
@@ -1864,13 +1886,13 @@ export default function App() {
         source,
         nonce,
       });
-    }
+    });
     focusElementNotes({
       id: targetId,
       name: String(payload?.element_name || payload?.elementName || targetId).trim(),
       type: String(payload?.element_type || payload?.elementType || "bpmn:Task").trim(),
     }, source, { openSidebar: false });
-    return true;
+    return focusResult;
   }
 
   function focusDiscussionNotificationTarget(payload = {}) {
@@ -3371,6 +3393,7 @@ export default function App() {
         propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
         drawioCompanionFocusIntent={drawioCompanionFocusIntent}
         discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
+        onDiscussionLinkedElementFocusResult={completeDiscussionLinkedElementFocus}
         sessionNavNotice={sessionNavNotice}
         onDismissSessionNavNotice={() => setSessionNavNotice(null)}
         onReturnToSessionList={() => returnToSessionList("banner_action")}

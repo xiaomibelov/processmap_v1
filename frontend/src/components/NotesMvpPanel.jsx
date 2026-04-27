@@ -681,7 +681,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       scope_type: "diagram_element",
       thread_id: threadId,
     }));
-    if (result === false || result?.ok === false) {
+    if (result !== true && result?.ok !== true) {
       setError("Элемент больше не найден на схеме.");
       return;
     }

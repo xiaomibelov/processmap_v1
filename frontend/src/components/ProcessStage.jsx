@@ -335,6 +335,7 @@ export default function ProcessStage({
   propertiesOverlayAlwaysPreviewByElementId = null,
   drawioCompanionFocusIntent = null,
   discussionLinkedElementFocusIntent = null,
+  onDiscussionLinkedElementFocusResult = null,
 }) {
   const sid = String(sessionId || "");
   const { user } = useAuth();
@@ -5171,10 +5172,19 @@ export default function ProcessStage({
     const intentSid = String(intent.sid || "").trim();
     const elementId = toNodeId(intent.elementId || intent.element_id);
     if (!intentSid || intentSid !== sid || !elementId) return;
+    const requestId = String(intent.requestId || intent.request_id || "").trim();
     const intentNonce = String(intent.nonce || "").trim();
     const intentKey = `${intentSid}:${elementId}:${intentNonce || "none"}`;
     if (lastDiscussionLinkedElementFocusKeyRef.current === intentKey) return;
     lastDiscussionLinkedElementFocusKeyRef.current = intentKey;
+    const complete = (ok, error = "") => {
+      onDiscussionLinkedElementFocusResult?.({
+        requestId,
+        ok,
+        error,
+        elementId,
+      });
+    };
 
     const run = async () => {
       if (tab !== "diagram") setTab("diagram");
@@ -5191,6 +5201,7 @@ export default function ProcessStage({
       }
       if (ready === false) {
         setGenErr("Элемент больше не найден на схеме.");
+        complete(false, "not_ready");
         return;
       }
       const selected = bpmnRef.current?.selectElements?.([elementId], {
@@ -5199,9 +5210,10 @@ export default function ProcessStage({
       });
       if (!selected?.ok) {
         setGenErr("Элемент больше не найден на схеме.");
+        complete(false, "missing_element");
         return;
       }
-      bpmnRef.current?.focusNode?.(elementId, {
+      const focused = bpmnRef.current?.focusNode?.(elementId, {
         markerClass: "fpcAttentionJumpFocus",
         durationMs: 6200,
         targetZoom: 0.92,
@@ -5209,14 +5221,20 @@ export default function ProcessStage({
         clearExistingSelection: true,
         source: "discussion_linked_element",
       });
+      if (focused === false) {
+        setGenErr("Элемент больше не найден на схеме.");
+        complete(false, "focus_failed");
+        return;
+      }
       window.setTimeout(() => {
         bpmnRef.current?.flashNode?.(elementId, "accent", { label: "Показано" });
       }, 120);
       setInfoMsg(`Показан элемент схемы: ${toText(intent.elementName || intent.element_name || elementId) || elementId}`);
       setGenErr("");
+      complete(true);
     };
     void run();
-  }, [discussionLinkedElementFocusIntent, setTab, sid, tab, toNodeId, toText]);
+  }, [discussionLinkedElementFocusIntent, onDiscussionLinkedElementFocusResult, setTab, sid, tab, toNodeId, toText]);
 
   useEffect(() => {
     setToolbarMenuOpen(false);
