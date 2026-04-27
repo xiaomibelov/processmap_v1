@@ -73,7 +73,10 @@ import { createBackendBpmnClipboardController } from "../../features/process/bpm
 import {
   canCopyBpmnElement,
 } from "../../features/process/bpmn/copy-paste/bpmnElementClipboard";
-import { readableBpmnText } from "../../features/process/bpmn/bpmnIdentity";
+import {
+  normalizeTechnicalBpmnLabelsInXml,
+  readableBpmnText,
+} from "../../features/process/bpmn/bpmnIdentity";
 import extractCamundaZeebePropertyEntriesFromBusinessObject from "../../features/process/stage/search/extractCamundaZeebePropertyEntries";
 
 import "bpmn-js/dist/assets/diagram-js.css";
@@ -5263,7 +5266,8 @@ const BpmnStage = forwardRef(function BpmnStage({
       if (!sessionId || isStale("start")) return;
       const sid = String(sessionId || "");
       const draftXml = String(draft?.bpmn_xml || "");
-      const resolvedXml = (xml && xml.trim()) ? xml : draftXml;
+      const resolvedXmlRaw = (xml && xml.trim()) ? xml : draftXml;
+      const resolvedXml = normalizeTechnicalBpmnLabelsInXml(resolvedXmlRaw, draft?.nodes);
       const resolvedHash = fnv1aHex(resolvedXml);
       const storeEvent = lastStoreEventRef.current || {};
       try {
@@ -5343,7 +5347,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, xml, sessionId, draft?.bpmn_xml, draft?.title, srcHint]);
+  }, [view, xml, sessionId, draft?.bpmn_xml, draft?.nodes, draft?.title, srcHint]);
 
   useEffect(() => {
     const fromDraft = String(draft?.bpmn_xml || "");
