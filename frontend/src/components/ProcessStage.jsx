@@ -1967,8 +1967,8 @@ export default function ProcessStage({
               } else if (createRevision) {
                 const revisionInfo = asObject(companionResult?.revision);
                 if (revisionInfo.skipped === true) {
-                  companionError = companionError || "Новая версия не создана: нет изменений.";
-                  saveInfo = "Новая версия не создана: нет изменений.";
+                  companionError = companionError || "Версия BPMN не создана: нет изменений BPMN.";
+                  saveInfo = "Версия BPMN не создана: нет изменений BPMN.";
                 } else {
                   saveInfo = "Создана новая версия BPMN.";
                 }
@@ -1981,7 +1981,7 @@ export default function ProcessStage({
           }
         } else {
           saveInfo = createRevision
-            ? "Новая версия не создана: нет изменений."
+            ? "Версия BPMN не создана: нет изменений BPMN."
             : "Сохранено внутри версии.";
         }
         if (!saveInfo && !companionError) {
@@ -4496,7 +4496,7 @@ export default function ProcessStage({
       }
       setInfoMsg(
         `Автоисправление: ${applied} опер.${failed > 0 ? ` Ошибок: ${failed}.` : ""} `
-        + "Черновик обновлён; для новой версии используйте «Создать новую версию».",
+        + "Черновик обновлён; для новой версии используйте «Создать версию BPMN».",
       );
       setQualityAutoFixOpen(false);
     } catch (error) {

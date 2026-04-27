@@ -179,7 +179,7 @@ test("manual save busy state exposes explicit transitional labels", () => {
     manualSaveIntent: "create_revision",
   });
   assert.equal(saveBusy.saveActionText, "Сохранение...");
-  assert.equal(saveBusy.createRevisionActionText, "Создать новую версию");
+  assert.equal(saveBusy.createRevisionActionText, "Создать версию BPMN");
   assert.equal(createBusy.saveActionText, "Сохранить сессию");
   assert.equal(createBusy.createRevisionActionText, "Сохранение...");
 });
