@@ -187,6 +187,7 @@ test("Element-scoped discussion exposes a linked element focus action through Ap
   assert.match(notesMvpPanelSource, /text\(thread\?\.scope_type\) !== "diagram_element"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-focus-linked-element"/);
   assert.match(notesMvpPanelSource, />\s*Перейти к элементу\s*<\/button>/);
+  assert.match(notesMvpPanelSource, /\[DISCUSSION_FOCUS_DIAG\]/);
   assert.match(notesMvpPanelSource, /onFocusLinkedElement\?\.\(\{/);
   assert.match(notesMvpPanelSource, /Элемент больше не найден на схеме\./);
   assert.match(notesMvpPanelSource, /result !== true && result\?\.ok !== true/);
@@ -194,6 +195,7 @@ test("Element-scoped discussion exposes a linked element focus action through Ap
   assert.match(appSource, /const \[discussionLinkedElementFocusIntent, setDiscussionLinkedElementFocusIntent\] = useState\(null\);/);
   assert.match(appSource, /discussionLinkedElementFocusResolversRef = useRef\(new Map\(\)\)/);
   assert.match(appSource, /function completeDiscussionLinkedElementFocus\(result = \{\}\)/);
+  assert.match(appSource, /\[DISCUSSION_FOCUS_DIAG\]/);
   assert.match(appSource, /new Promise\(\(resolve\) => \{/);
   assert.match(appSource, /requestId,\s*elementId: targetId/);
   assert.match(appSource, /function focusDiscussionElementTarget\(payload = \{\}, source = "discussion_linked_element"\)/);
@@ -203,7 +205,12 @@ test("Element-scoped discussion exposes a linked element focus action through Ap
   assert.match(appSource, /onFocusLinkedElement=\{focusDiscussionLinkedElement\}/);
   assert.match(processStageSource, /discussionLinkedElementFocusIntent = null/);
   assert.match(processStageSource, /onDiscussionLinkedElementFocusResult = null/);
-  assert.match(processStageSource, /if \(tab !== "diagram"\) \{\s*setTab\("diagram"\);\s*return;\s*\}/);
+  assert.match(processStageSource, /\[DISCUSSION_FOCUS_DIAG\]/);
+  assert.match(processStageSource, /stage-runtime-ready/);
+  assert.match(processStageSource, /stage-select/);
+  assert.match(processStageSource, /stage-focus/);
+  assert.match(processStageSource, /stage-flash/);
+  assert.match(processStageSource, /if \(tab !== "diagram"\) \{[\s\S]*stage-switch-to-diagram[\s\S]*setTab\("diagram"\);[\s\S]*return;[\s\S]*\}/);
   assert.match(processStageSource, /onDiscussionLinkedElementFocusResult\?\.\(\{/);
   assert.match(processStageSource, /complete\(false, "missing_element"\)/);
   assert.match(processStageSource, /complete\(false, "focus_failed"\)/);

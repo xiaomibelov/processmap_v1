@@ -248,6 +248,14 @@ const SESSION_PRESENCE_HEARTBEAT_MS = 45000;
 const REMOTE_SESSION_SYNC_POLL_MS = 9000;
 const SAVE_ACK_TOAST_HIDE_MS = 4000;
 
+function logDiscussionFocusDiag(event, payload = {}) {
+  try {
+    // eslint-disable-next-line no-console
+    console.info("[DISCUSSION_FOCUS_DIAG]", event, payload);
+  } catch {
+  }
+}
+
 const IDLE_SAVE_UPLOAD_EVENT = Object.freeze({
   event: "",
   stage: "idle",
@@ -5172,7 +5180,15 @@ export default function ProcessStage({
     const intentSid = String(intent.sid || "").trim();
     const elementId = toNodeId(intent.elementId || intent.element_id);
     if (!intentSid || intentSid !== sid || !elementId) return;
+    logDiscussionFocusDiag("stage-intent", {
+      sid,
+      intentSid,
+      elementId,
+      tab,
+      hasBpmnRef: !!bpmnRef.current,
+    });
     if (tab !== "diagram") {
+      logDiscussionFocusDiag("stage-switch-to-diagram", { sid, elementId, tab });
       setTab("diagram");
       return;
     }
@@ -5182,6 +5198,12 @@ export default function ProcessStage({
     if (lastDiscussionLinkedElementFocusKeyRef.current === intentKey) return;
     lastDiscussionLinkedElementFocusKeyRef.current = intentKey;
     const complete = (ok, error = "") => {
+      logDiscussionFocusDiag("stage-complete", {
+        requestId,
+        ok,
+        error,
+        elementId,
+      });
       onDiscussionLinkedElementFocusResult?.({
         requestId,
         ok,
@@ -5202,6 +5224,12 @@ export default function ProcessStage({
       } catch {
         ready = false;
       }
+      logDiscussionFocusDiag("stage-runtime-ready", {
+        requestId,
+        elementId,
+        ready,
+        hasBpmnRef: !!bpmnRef.current,
+      });
       if (ready === false) {
         setGenErr("Элемент больше не найден на схеме.");
         complete(false, "not_ready");
@@ -5210,6 +5238,11 @@ export default function ProcessStage({
       const selected = bpmnRef.current?.selectElements?.([elementId], {
         focusFirst: false,
         source: "discussion_linked_element",
+      });
+      logDiscussionFocusDiag("stage-select", {
+        requestId,
+        elementId,
+        selected,
       });
       if (!selected?.ok) {
         setGenErr("Элемент больше не найден на схеме.");
@@ -5224,13 +5257,23 @@ export default function ProcessStage({
         clearExistingSelection: true,
         source: "discussion_linked_element",
       });
+      logDiscussionFocusDiag("stage-focus", {
+        requestId,
+        elementId,
+        focused,
+      });
       if (focused === false) {
         setGenErr("Элемент больше не найден на схеме.");
         complete(false, "focus_failed");
         return;
       }
       window.setTimeout(() => {
-        bpmnRef.current?.flashNode?.(elementId, "accent", { label: "Показано" });
+        const flashed = bpmnRef.current?.flashNode?.(elementId, "accent", { label: "Показано" });
+        logDiscussionFocusDiag("stage-flash", {
+          requestId,
+          elementId,
+          flashed,
+        });
       }, 120);
       setInfoMsg(`Показан элемент схемы: ${toText(intent.elementName || intent.element_name || elementId) || elementId}`);
       setGenErr("");

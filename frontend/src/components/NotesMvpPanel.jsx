@@ -50,6 +50,14 @@ function text(value) {
   return String(value || "").trim();
 }
 
+function logDiscussionFocusDiag(event, payload = {}) {
+  try {
+    // eslint-disable-next-line no-console
+    console.info("[DISCUSSION_FOCUS_DIAG]", event, payload);
+  } catch {
+  }
+}
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -671,9 +679,16 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     const target = linkedElementContext(selectedThread);
     setError("");
     if (!target?.elementId) {
+      logDiscussionFocusDiag("panel-click-missing-target", { threadId });
       setError("Элемент больше не найден на схеме.");
       return;
     }
+    logDiscussionFocusDiag("panel-click", {
+      threadId,
+      elementId: target.elementId,
+      elementName: target.elementName,
+      elementType: target.elementType,
+    });
     const result = await Promise.resolve(onFocusLinkedElement?.({
       element_id: target.elementId,
       element_name: target.elementName,
@@ -681,6 +696,11 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       scope_type: "diagram_element",
       thread_id: threadId,
     }));
+    logDiscussionFocusDiag("panel-result", {
+      threadId,
+      elementId: target.elementId,
+      result,
+    });
     if (result !== true && result?.ok !== true) {
       setError("Элемент больше не найден на схеме.");
       return;
