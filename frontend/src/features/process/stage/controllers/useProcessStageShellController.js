@@ -48,7 +48,7 @@ export function buildSaveUiState({
     : "Сохранить сессию";
   const createRevisionActionText = saveInProgress && normalizedIntent === "create_revision"
     ? "Сохранение..."
-    : "Создать новую версию";
+    : "Создать версию BPMN";
   return {
     saveSmartText,
     saveDirty,
@@ -131,10 +131,10 @@ export default function useProcessStageShellController({
       publishActionRequired: saveUi.publishActionRequired,
       showSaveActionButton: saveUi.showSaveActionButton,
       saveActionText: hasSession ? saveUi.saveActionText : workbench.labels.save,
-      createRevisionActionText: hasSession ? saveUi.createRevisionActionText : "Создать новую версию",
+      createRevisionActionText: hasSession ? saveUi.createRevisionActionText : "Создать версию BPMN",
       createRevisionNoDiffHintVisible: showCreateRevisionNoDiffHint,
       createRevisionNoDiffHintText: showCreateRevisionNoDiffHint
-        ? "Нет новых изменений для новой версии"
+        ? "Нет изменений BPMN после последней версии"
         : "",
       toolbarInlineMessage: String(genErr || infoMsg || "").trim(),
       toolbarInlineTone: genErr ? "err" : "",
