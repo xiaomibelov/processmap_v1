@@ -117,6 +117,25 @@ test("session-save button visibility remains decoupled from publish requirement"
   assert.equal(ui.showSaveActionButton, true);
 });
 
+test("server session-version truth can require a BPMN version without XML diff", () => {
+  const ui = buildSaveUiState({
+    saveSnapshotRaw: { isDirty: false, status: "saved" },
+    revisionSnapshotRaw: {
+      latestRevisionNumber: 5,
+      draftState: {
+        hasLiveDraft: true,
+        isDraftAheadOfLatestRevision: false,
+      },
+    },
+    versionTruthRaw: {
+      hasSessionChangesSinceLatestBpmnVersion: true,
+    },
+    fallbackLabel: "Save",
+  });
+  assert.equal(ui.publishActionRequired, true);
+  assert.equal(ui.createRevisionNoDiff, false);
+});
+
 test("save smart text transitions through dirty -> saving -> saved within version", () => {
   const dirty = buildSaveUiState({
     saveSnapshotRaw: { isDirty: true, status: "dirty" },
@@ -159,6 +178,7 @@ test("create-version availability requires publishActionRequired and respects sa
   assert.equal(source.includes("&& saveSnapshot.isSaving !== true"), true);
   assert.equal(source.includes("const canCreateRevisionNow = ("), true);
   assert.equal(source.includes("&& saveUi.publishActionRequired === true"), true);
+  assert.equal(source.includes("versionTruthRaw: versionTruth"), true);
   assert.equal(source.includes("const showCreateRevisionNoDiffHint = ("), true);
   assert.equal(source.includes("&& saveUi.createRevisionNoDiff === true"), true);
   assert.equal(source.includes("createRevisionNoDiffHintVisible: showCreateRevisionNoDiffHint"), true);
