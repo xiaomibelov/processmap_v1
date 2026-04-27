@@ -30,9 +30,9 @@ test("revision action availability is separated from session-save copy", () => {
   assert.ok(source.includes("const canCreateRevisionFromCurrentState = canCreateRevisionNow !== false"));
   assert.ok(source.includes("const showCreateRevisionNoDiffHint = hasSession"));
   assert.ok(source.includes("createRevisionNoDiffHintVisible === true"));
-  assert.ok(source.includes('"Создать новую версию из текущего состояния сессии"'));
-  assert.ok(source.includes('"Новая версия не будет создана: нет новых изменений с последней версии."'));
-  assert.ok(source.includes('"Создание новой версии временно недоступно."'));
+  assert.ok(source.includes('"Создать версию BPMN из текущей схемы."'));
+  assert.ok(source.includes('"Версия BPMN не будет создана: нет изменений BPMN после последней версии."'));
+  assert.ok(source.includes('"Создание версии BPMN временно недоступно."'));
   assert.ok(source.includes('data-testid="diagram-toolbar-create-revision-no-diff-hint"'));
   assert.equal(source.includes('"Создание версии доступно в Diagram/XML"'), false);
   assert.equal(source.includes("Сохранить версию"), false);
