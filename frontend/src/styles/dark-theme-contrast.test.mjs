@@ -15,6 +15,10 @@ test("dark theme contrast guard covers sidebar properties and selection states",
   assert.match(tailwindSource, /\.dark \.sidebarSelectButton,/);
   assert.match(tailwindSource, /\.dark \.sidebarSelectOption\.isActive,/);
   assert.match(tailwindSource, /\.dark \.sidebarInlineTabs/);
+  assert.match(tailwindSource, /\.dark \.sidebarPropertiesInlineToggle \{/);
+  assert.match(tailwindSource, /\.dark \.sidebarPropertiesInlineToggle \{[\s\S]*color: #D7E3F9;[\s\S]*\}/);
+  assert.match(tailwindSource, /\.dark \.sidebarPropertiesInlineToggle input\[type="checkbox"\] \{[\s\S]*accent-color: #7EB0FF;[\s\S]*\}/);
+  assert.match(tailwindSource, /\.dark \.sidebarPropertiesDisplaySettings/);
   assert.match(tailwindSource, /\.dark \.sidebarStatusPill\.is-attention/);
   assert.match(tailwindSource, /\.dark \.sidebarEmptyHint/);
   assert.match(tailwindSource, /\.dark \.bpmnCanvas \.djs-outline/);
@@ -32,6 +36,6 @@ test("dark theme topbar and discussions use semantic colors instead of white sta
   assert.match(notesPanelSource, /border-danger\/50 bg-danger\/10 text-danger/);
   assert.doesNotMatch(notesPanelSource, /hover:bg-white/);
   assert.doesNotMatch(notesPanelSource, /bg-white\/85/);
-  assert.match(versionSource, /currentVersion: "v1\.0\.18"/);
-  assert.match(versionSource, /Исправлены контраст и видимость элементов в тёмной теме\./);
+  assert.match(versionSource, /currentVersion: "v1\.0\.19"/);
+  assert.match(versionSource, /Исправлена видимость свойств и overlay-текста в тёмной теме\./);
 });
