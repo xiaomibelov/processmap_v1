@@ -26,19 +26,23 @@ function buildSaveSmartTextFromSnapshot(saveSnapshotRaw, fallbackRaw = "") {
 export function buildSaveUiState({
   saveSnapshotRaw = null,
   revisionSnapshotRaw = null,
+  versionTruthRaw = null,
   fallbackLabel = "Сохранение",
   isManualSaveBusy = false,
   manualSaveIntent = "",
 } = {}) {
   const saveSnapshot = asObject(saveSnapshotRaw);
   const revisionSnapshot = asObject(revisionSnapshotRaw);
+  const versionTruth = asObject(versionTruthRaw);
   const draftState = asObject(revisionSnapshot.draftState);
   const saveSmartText = buildSaveSmartTextFromSnapshot(saveSnapshot, fallbackLabel);
   const saveDirty = saveSnapshot.isDirty === true;
   const latestRevisionNumber = Number(revisionSnapshot.latestRevisionNumber || 0);
   const hasLiveDraft = draftState.hasLiveDraft === true;
   const draftAheadOfLatest = draftState.isDraftAheadOfLatestRevision === true;
-  const publishActionRequired = draftAheadOfLatest || (latestRevisionNumber <= 0 && hasLiveDraft);
+  const sessionChangedSinceLatest = versionTruth.hasSessionChangesSinceLatestBpmnVersion === true
+    || versionTruth.has_session_changes_since_latest_bpmn_version === true;
+  const publishActionRequired = sessionChangedSinceLatest || draftAheadOfLatest || (latestRevisionNumber <= 0 && hasLiveDraft);
   const createRevisionNoDiff = publishActionRequired !== true;
   const showSaveActionButton = true;
   const normalizedIntent = toText(manualSaveIntent).toLowerCase();
@@ -80,6 +84,7 @@ export default function useProcessStageShellController({
   sessionSaveReadSnapshot,
   saveUploadStatus,
   sessionVersionReadSnapshot,
+  bpmnVersionTruthState,
   sessionTemplateProvenanceSnapshot,
   sessionCompanionBridgeSnapshot,
   topPanelsView,
@@ -89,9 +94,11 @@ export default function useProcessStageShellController({
   const shellProps = useMemo(() => {
     const saveSnapshot = asObject(sessionSaveReadSnapshot);
     const revisionSnapshot = asObject(asObject(sessionCompanionBridgeSnapshot).revisionHistory);
+    const versionTruth = asObject(bpmnVersionTruthState);
     const saveUi = buildSaveUiState({
       saveSnapshotRaw: saveSnapshot,
       revisionSnapshotRaw: revisionSnapshot,
+      versionTruthRaw: versionTruth,
       fallbackLabel: workbench.labels.save,
       isManualSaveBusy: isManualSaveBusy === true,
       manualSaveIntent,
@@ -134,7 +141,7 @@ export default function useProcessStageShellController({
       createRevisionActionText: hasSession ? saveUi.createRevisionActionText : "Создать версию BPMN",
       createRevisionNoDiffHintVisible: showCreateRevisionNoDiffHint,
       createRevisionNoDiffHintText: showCreateRevisionNoDiffHint
-        ? "Нет изменений BPMN после последней версии"
+        ? "Нет изменений сессии после последней версии BPMN"
         : "",
       toolbarInlineMessage: String(genErr || infoMsg || "").trim(),
       toolbarInlineTone: genErr ? "err" : "",
@@ -148,6 +155,7 @@ export default function useProcessStageShellController({
       saveUploadStatus: asObject(saveUploadStatus),
       sessionSaveReadSnapshot: saveSnapshot,
       sessionVersionReadSnapshot: asObject(sessionVersionReadSnapshot),
+      bpmnVersionTruthState: versionTruth,
       sessionTemplateProvenanceSnapshot: asObject(sessionTemplateProvenanceSnapshot),
       sessionRevisionHistorySnapshot: revisionSnapshot,
       sessionCompanionBridgeSnapshot: asObject(sessionCompanionBridgeSnapshot),
@@ -165,6 +173,7 @@ export default function useProcessStageShellController({
     isSwitchingTab,
     saveDirtyHint,
     saveUploadStatus,
+    bpmnVersionTruthState,
     sessionCompanionBridgeSnapshot,
     sessionSaveReadSnapshot,
     sessionTemplateProvenanceSnapshot,

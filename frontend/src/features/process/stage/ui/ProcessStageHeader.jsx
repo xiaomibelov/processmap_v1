@@ -108,10 +108,10 @@ export default function ProcessStageHeader({ view = {} }) {
   const showCreateRevisionNoDiffHint = hasSession
     && createRevisionNoDiffHintVisible === true;
   const revisionActionTitle = showCreateRevisionNoDiffHint
-    ? "Версия BPMN не будет создана: нет изменений BPMN после последней версии."
+    ? "Версия BPMN не будет создана: нет изменений сессии после последней версии BPMN."
     : (!canCreateRevisionFromCurrentState
       ? "Создание версии BPMN временно недоступно."
-      : "Создать версию BPMN из текущей схемы.");
+      : "Создать версию BPMN из текущего состояния сессии.");
   const canRunUndo = tab === "diagram" && canUndo === true;
   const canRunRedo = tab === "diagram" && canRedo === true;
 
@@ -146,7 +146,7 @@ export default function ProcessStageHeader({ view = {} }) {
                   title={revisionActionTitle}
                   data-testid="diagram-toolbar-create-revision-no-diff-hint"
                 >
-                  {toText(createRevisionNoDiffHintText) || "Нет изменений BPMN после последней версии"}
+                  {toText(createRevisionNoDiffHintText) || "Нет изменений сессии после последней версии BPMN"}
                 </span>
               ) : null}
             </div>

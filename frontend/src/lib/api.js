@@ -890,6 +890,21 @@ export async function apiGetBpmnVersions(sessionId, options = {}) {
     items,
     count: Number(payload.count || items.length || 0),
     session_id: String(payload.session_id || sid),
+    current_session_payload_hash: String(payload.current_session_payload_hash || ""),
+    currentSessionPayloadHash: String(payload.current_session_payload_hash || payload.currentSessionPayloadHash || ""),
+    current_session_version: Number(payload.current_session_version || 0),
+    currentSessionVersion: Number(payload.current_session_version || payload.currentSessionVersion || 0),
+    current_session_updated_at: Number(payload.current_session_updated_at || 0),
+    currentSessionUpdatedAt: Number(payload.current_session_updated_at || payload.currentSessionUpdatedAt || 0),
+    latest_user_version_session_payload_hash: String(payload.latest_user_version_session_payload_hash || ""),
+    latestUserVersionSessionPayloadHash: String(
+      payload.latest_user_version_session_payload_hash
+      || payload.latestUserVersionSessionPayloadHash
+      || "",
+    ),
+    has_session_changes_since_latest_bpmn_version: payload.has_session_changes_since_latest_bpmn_version === true,
+    hasSessionChangesSinceLatestBpmnVersion: payload.has_session_changes_since_latest_bpmn_version === true
+      || payload.hasSessionChangesSinceLatestBpmnVersion === true,
   };
 }
 
