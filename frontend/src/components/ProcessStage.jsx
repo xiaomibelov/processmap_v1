@@ -178,6 +178,7 @@ import {
   buildSessionCompanionJazzScopeId,
   resolveSessionCompanionLocalFirstActivation,
 } from "../features/process/session-companion/sessionCompanionLocalFirstPilot.js";
+import { readableBpmnText } from "../features/process/bpmn/bpmnIdentity";
 import useTemplatesStore from "../features/templates/model/useTemplatesStore";
 import useTemplatesStageBridge from "../features/templates/services/useTemplatesStageBridge";
 import {
@@ -254,6 +255,10 @@ function logDiscussionFocusDiag(event, payload = {}) {
     console.info("[DISCUSSION_FOCUS_DIAG]", event, payload);
   } catch {
   }
+}
+
+function readableBpmnLabel(...values) {
+  return readableBpmnText(...values);
 }
 
 const IDLE_SAVE_UPLOAD_EVENT = Object.freeze({
@@ -2123,7 +2128,7 @@ export default function ProcessStage({
     aiStepBusy,
   });
   const selectedElementId = String(selectedBpmnElement?.id || "").trim();
-  const selectedElementName = String(selectedBpmnElement?.name || selectedElementId || "").trim();
+  const selectedElementName = readableBpmnLabel(selectedBpmnElement?.name);
   const selectedElementType = String(selectedBpmnElement?.type || "").trim();
   const selectedElementLaneName = String(selectedBpmnElement?.laneName || "").trim();
   const selectedElementContext = useMemo(() => {
@@ -5275,7 +5280,7 @@ export default function ProcessStage({
           flashed,
         });
       }, 120);
-      setInfoMsg(`Показан элемент схемы: ${toText(intent.elementName || intent.element_name || elementId) || elementId}`);
+      setInfoMsg(`Показан элемент схемы: ${readableBpmnLabel(intent.elementName, intent.element_name) || "Элемент BPMN"}`);
       setGenErr("");
       complete(true);
     };

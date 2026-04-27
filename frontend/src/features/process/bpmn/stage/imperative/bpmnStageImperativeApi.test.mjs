@@ -140,6 +140,43 @@ test("listSearchableElements reads semantic BPMN elements and skips label nodes"
   assert.equal(rows[1].typeLabel, "SequenceFlow");
 });
 
+test("listSearchableElements does not promote technical BPMN ids as visible titles", () => {
+  const registry = {
+    getAll() {
+      return [
+        {
+          id: "Activity_02r3c3z",
+          type: "bpmn:Task",
+          x: 100,
+          y: 80,
+          width: 120,
+          height: 80,
+          businessObject: { $type: "bpmn:Task", name: "Activity_02r3c3z" },
+        },
+      ];
+    },
+  };
+  const viewer = {
+    id: "viewer",
+    get(service) {
+      if (service === "elementRegistry") return registry;
+      return null;
+    },
+  };
+  const api = createBpmnStageImperativeApi(createCtx({
+    refs: {
+      viewerRef: { current: viewer },
+      modelerRef: { current: null },
+    },
+    values: { view: "viewer" },
+  }));
+
+  const rows = api.listSearchableElements({ mode: "viewer" });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].name, "");
+  assert.equal(rows[0].title, "Элемент BPMN");
+});
+
 test("listSearchableProperties proxies managed property records from stage callback", () => {
   const viewer = { id: "viewer" };
   const calls = [];

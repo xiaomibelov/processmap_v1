@@ -118,6 +118,14 @@ test("Discussion cards and messages render authorship without promoting raw tech
   assert.doesNotMatch(notesMvpPanelSource, /<span>\{text\(ref\.element_id\)\}<\/span>/);
 });
 
+test("Element-scoped discussions do not promote BPMN technical ids as element names", () => {
+  assert.match(notesMvpPanelSource, /import \{ readableBpmnText \} from "\.\.\/features\/process\/bpmn\/bpmnIdentity"/);
+  assert.match(notesMvpPanelSource, /function readableBpmnLabel\(\.\.\.values\)[\s\S]*return readableBpmnText\(\.\.\.values\);/);
+  assert.match(notesMvpPanelSource, /element_name: readableBpmnLabel\(selectedElement\?\.name\)/);
+  assert.doesNotMatch(notesMvpPanelSource, /element_name: text\(selectedElement\?\.name \|\| selectedId\)/);
+  assert.match(notesMvpPanelSource, /long: label \|\| "Элемент BPMN"/);
+});
+
 test("Discussions render entity priority and attention from the thread source of truth", () => {
   assert.match(notesMvpPanelSource, /const PRIORITY_OPTIONS = \[/);
   assert.match(notesMvpPanelSource, /function priorityMeta\(thread\)/);

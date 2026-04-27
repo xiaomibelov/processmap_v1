@@ -1,3 +1,5 @@
+import { readableBpmnText } from "../../bpmnIdentity.js";
+
 function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
 }
@@ -218,9 +220,9 @@ function readSearchableElementsFromRegistry(registry) {
     const bo = asObject(element?.businessObject);
     const type = toText(bo?.$type || element?.type);
     if (!type.toLowerCase().startsWith("bpmn:")) return;
-    const name = toText(bo?.name);
-    const label = toText(labelByTargetId.get(elementId) || readVisibleLabelForElement(element));
-    const title = toText(label || name || elementId) || elementId;
+    const name = readableBpmnText(bo?.name);
+    const label = readableBpmnText(labelByTargetId.get(elementId), readVisibleLabelForElement(element));
+    const title = toText(label || name || "Элемент BPMN");
     out.push({
       elementId,
       name,
