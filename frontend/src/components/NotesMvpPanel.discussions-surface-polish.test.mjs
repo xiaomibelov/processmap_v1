@@ -3,6 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 
 const notesMvpPanelSource = fs.readFileSync(new URL("./NotesMvpPanel.jsx", import.meta.url), "utf8");
+const processStageSource = fs.readFileSync(new URL("./ProcessStage.jsx", import.meta.url), "utf8");
 const badgeSource = fs.readFileSync(new URL("./NotesAggregateBadge.jsx", import.meta.url), "utf8");
 const appSource = fs.readFileSync(new URL("../App.jsx", import.meta.url), "utf8");
 const derivedSource = fs.readFileSync(new URL("../features/tldr/ui/DerivedContextSurface.jsx", import.meta.url), "utf8");
@@ -179,6 +180,25 @@ test("Discussions panel exposes bounded notification inbox and history without n
   assert.match(notesMvpPanelSource, /data-note-comment-id=\{commentId \|\| undefined\}/);
   assert.doesNotMatch(notesMvpPanelSource, /Discussion inbox|Inbox\/history/);
   assert.doesNotMatch(notesMvpPanelSource, /notification_subscribers|watcher_model|external_delivery/);
+});
+
+test("Element-scoped discussion exposes a linked element focus action through App and ProcessStage", () => {
+  assert.match(notesMvpPanelSource, /function linkedElementContext\(thread\)/);
+  assert.match(notesMvpPanelSource, /text\(thread\?\.scope_type\) !== "diagram_element"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-thread-focus-linked-element"/);
+  assert.match(notesMvpPanelSource, />\s*Перейти к элементу\s*<\/button>/);
+  assert.match(notesMvpPanelSource, /onFocusLinkedElement\?\.\(\{/);
+  assert.match(notesMvpPanelSource, /Элемент больше не найден на схеме\./);
+  assert.match(appSource, /const \[discussionLinkedElementFocusIntent, setDiscussionLinkedElementFocusIntent\] = useState\(null\);/);
+  assert.match(appSource, /function focusDiscussionElementTarget\(payload = \{\}, source = "discussion_linked_element"\)/);
+  assert.match(appSource, /setDiscussionLinkedElementFocusIntent\(\{/);
+  assert.match(appSource, /discussionLinkedElementFocusIntent=\{discussionLinkedElementFocusIntent\}/);
+  assert.match(appSource, /onFocusLinkedElement=\{focusDiscussionLinkedElement\}/);
+  assert.match(processStageSource, /discussionLinkedElementFocusIntent = null/);
+  assert.match(processStageSource, /bpmnRef\.current\?\.selectElements\?\.\(\[elementId\]/);
+  assert.match(processStageSource, /bpmnRef\.current\?\.focusNode\?\.\(elementId/);
+  assert.match(processStageSource, /bpmnRef\.current\?\.flashNode\?\.\(elementId, "accent"/);
+  assert.match(processStageSource, /setGenErr\("Элемент больше не найден на схеме\."\)/);
 });
 
 test("Selected discussion messages start below the header without bottom-justified dead space", () => {

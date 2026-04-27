@@ -334,6 +334,7 @@ export default function ProcessStage({
   propertiesOverlayAlwaysEnabled = false,
   propertiesOverlayAlwaysPreviewByElementId = null,
   drawioCompanionFocusIntent = null,
+  discussionLinkedElementFocusIntent = null,
 }) {
   const sid = String(sessionId || "");
   const { user } = useAuth();
@@ -361,6 +362,7 @@ export default function ProcessStage({
   const lastSuccessfulPublishRef = useRef({ sessionId: "", atMs: 0, xmlHash: "" });
   const lastAiGenerateIntentKeyRef = useRef("");
   const lastDrawioCompanionFocusKeyRef = useRef("");
+  const lastDiscussionLinkedElementFocusKeyRef = useRef("");
   const saveUploadLifecycleClearTimerRef = useRef(0);
   const attentionPanelWasOpenRef = useRef(false);
   const autoPassToastJobIdRef = useRef("");
@@ -5160,6 +5162,61 @@ export default function ProcessStage({
     setDrawioSelectedElementId(objectId);
     setDiagramActionLayersOpen(true);
   }, [drawioCompanionFocusIntent, sid, setDrawioSelectedElementId, setDiagramActionLayersOpen]);
+
+  useEffect(() => {
+    const intent = discussionLinkedElementFocusIntent && typeof discussionLinkedElementFocusIntent === "object"
+      ? discussionLinkedElementFocusIntent
+      : null;
+    if (!intent) return;
+    const intentSid = String(intent.sid || "").trim();
+    const elementId = toNodeId(intent.elementId || intent.element_id);
+    if (!intentSid || intentSid !== sid || !elementId) return;
+    const intentNonce = String(intent.nonce || "").trim();
+    const intentKey = `${intentSid}:${elementId}:${intentNonce || "none"}`;
+    if (lastDiscussionLinkedElementFocusKeyRef.current === intentKey) return;
+    lastDiscussionLinkedElementFocusKeyRef.current = intentKey;
+
+    const run = async () => {
+      if (tab !== "diagram") setTab("diagram");
+      let ready = false;
+      try {
+        ready = await Promise.resolve(
+          bpmnRef.current?.whenReady?.({
+            timeoutMs: 5000,
+            expectedSid: intentSid,
+          }),
+        );
+      } catch {
+        ready = false;
+      }
+      if (ready === false) {
+        setGenErr("Элемент больше не найден на схеме.");
+        return;
+      }
+      const selected = bpmnRef.current?.selectElements?.([elementId], {
+        focusFirst: false,
+        source: "discussion_linked_element",
+      });
+      if (!selected?.ok) {
+        setGenErr("Элемент больше не найден на схеме.");
+        return;
+      }
+      bpmnRef.current?.focusNode?.(elementId, {
+        markerClass: "fpcAttentionJumpFocus",
+        durationMs: 6200,
+        targetZoom: 0.92,
+        centerInViewport: true,
+        clearExistingSelection: true,
+        source: "discussion_linked_element",
+      });
+      window.setTimeout(() => {
+        bpmnRef.current?.flashNode?.(elementId, "accent", { label: "Показано" });
+      }, 120);
+      setInfoMsg(`Показан элемент схемы: ${toText(intent.elementName || intent.element_name || elementId) || elementId}`);
+      setGenErr("");
+    };
+    void run();
+  }, [discussionLinkedElementFocusIntent, setTab, sid, tab, toNodeId, toText]);
 
   useEffect(() => {
     setToolbarMenuOpen(false);

@@ -98,6 +98,18 @@ function scopeMeta(thread) {
   return { short: "Контекст", long: scopeType || "Контекст", relation: scopeType || "Контекст" };
 }
 
+function linkedElementContext(thread) {
+  if (text(thread?.scope_type) !== "diagram_element") return null;
+  const ref = scopeRef(thread);
+  const elementId = text(ref.element_id || ref.elementId);
+  if (!elementId) return null;
+  return {
+    elementId,
+    elementName: text(ref.element_name || ref.elementName || ref.element_title || ref.elementTitle || elementId),
+    elementType: text(ref.element_type || ref.elementType),
+  };
+}
+
 function isLegacyBridgeThread(thread) {
   return Boolean(thread?.legacy_bridge);
 }
@@ -316,6 +328,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   externalOpenRequest = null,
   onOpenChange = null,
   onFocusNotificationTarget = null,
+  onFocusLinkedElement = null,
   currentUserId = "",
 }, ref) {
   const sid = text(sessionId);
@@ -454,6 +467,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     return visibleThreads.find((item) => text(item?.id) === selectedThreadId) || visibleThreads[0] || null;
   }, [selectedThreadId, visibleThreads]);
   const selectedThreadIsLegacyBridge = isLegacyBridgeThread(selectedThread);
+  const selectedThreadLinkedElement = useMemo(() => linkedElementContext(selectedThread), [selectedThread]);
 
   const commentDraft = commentDraftByThread[text(selectedThread?.id)] || "";
   const commentMentionUserId = commentMentionByThread[text(selectedThread?.id)] || "";
@@ -650,6 +664,25 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     await fetchThreads({ preferredThreadId: threadId });
     emitNotesAggregateChanged(sid);
     setBusy("");
+  }
+
+  async function focusSelectedThreadLinkedElement() {
+    const threadId = text(selectedThread?.id);
+    const target = linkedElementContext(selectedThread);
+    if (!target?.elementId) {
+      setError("Элемент больше не найден на схеме.");
+      return;
+    }
+    const result = await Promise.resolve(onFocusLinkedElement?.({
+      element_id: target.elementId,
+      element_name: target.elementName,
+      element_type: target.elementType,
+      scope_type: "diagram_element",
+      thread_id: threadId,
+    }));
+    if (result === false || result?.ok === false) {
+      setError("Элемент больше не найден на схеме.");
+    }
   }
 
   function renderNotificationList(items, emptyText) {
@@ -1093,7 +1126,20 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                           ) : null}
                         </div>
                         <div className="mt-1.5 text-[17px] font-semibold leading-6 text-fg">{threadTitle(selectedThread)}</div>
-                        <div className="mt-1 text-sm leading-5 text-muted">{scopeMeta(selectedThread).relation}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-sm leading-5 text-muted">
+                          <span>{scopeMeta(selectedThread).relation}</span>
+                          {selectedThreadLinkedElement ? (
+                            <button
+                              type="button"
+                              className="secondaryBtn tinyBtn h-7 px-2.5 text-[11px]"
+                              onClick={focusSelectedThreadLinkedElement}
+                              title="Показать элемент на схеме"
+                              data-testid="notes-thread-focus-linked-element"
+                            >
+                              Перейти к элементу
+                            </button>
+                          ) : null}
+                        </div>
                         <div data-testid="notes-thread-header-meta" className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-5 text-muted">
                           <span>Создал {threadCreatorLabel(selectedThread, authorLabelsById, viewerUserId)}</span>
                           <span aria-hidden="true">·</span>

@@ -821,6 +821,7 @@ export default function App() {
   const [sessionFlowOpen, setSessionFlowOpen] = useState(false);
   const [sessionFlowBusy, setSessionFlowBusy] = useState(false);
   const [processTabIntent, setProcessTabIntent] = useState(null);
+  const [discussionLinkedElementFocusIntent, setDiscussionLinkedElementFocusIntent] = useState(null);
   const [drawioCompanionFocusIntent, setDrawioCompanionFocusIntent] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const openSessionReqSeqRef = useRef(0);
@@ -1847,18 +1848,37 @@ export default function App() {
     window.dispatchEvent(new CustomEvent("processmap:note-mentions-changed"));
   }
 
-  function focusDiscussionNotificationTarget(payload = {}) {
+  function focusDiscussionElementTarget(payload = {}, source = "discussion_linked_element") {
     const targetId = String(payload?.element_id || payload?.elementId || "").trim();
-    if (!targetId) return;
+    if (!targetId) return false;
     const sid = String(draft?.session_id || "").trim();
+    const nonce = Date.now();
     if (sid) {
-      setProcessTabIntent({ sid, tab: "diagram", nonce: Date.now() });
+      setProcessTabIntent({ sid, tab: "diagram", nonce });
+      setDiscussionLinkedElementFocusIntent({
+        sid,
+        elementId: targetId,
+        elementName: String(payload?.element_name || payload?.elementName || targetId).trim(),
+        elementType: String(payload?.element_type || payload?.elementType || "").trim(),
+        threadId: String(payload?.thread_id || payload?.threadId || "").trim(),
+        source,
+        nonce,
+      });
     }
     focusElementNotes({
       id: targetId,
       name: String(payload?.element_name || payload?.elementName || targetId).trim(),
-      type: "bpmn:Task",
-    }, "discussion_notification_open", { openSidebar: false });
+      type: String(payload?.element_type || payload?.elementType || "bpmn:Task").trim(),
+    }, source, { openSidebar: false });
+    return true;
+  }
+
+  function focusDiscussionNotificationTarget(payload = {}) {
+    return focusDiscussionElementTarget(payload, "discussion_notification_open");
+  }
+
+  function focusDiscussionLinkedElement(payload = {}) {
+    return focusDiscussionElementTarget(payload, "discussion_linked_element");
   }
 
   function handleBpmnElementSelect(element) {
@@ -3350,6 +3370,7 @@ export default function App() {
         propertiesOverlayAlwaysEnabled={showPropertiesOverlayAlways}
         propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
         drawioCompanionFocusIntent={drawioCompanionFocusIntent}
+        discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
         sessionNavNotice={sessionNavNotice}
         onDismissSessionNavNotice={() => setSessionNavNotice(null)}
         onReturnToSessionList={() => returnToSessionList("banner_action")}
@@ -3369,6 +3390,7 @@ export default function App() {
         externalOpenRequest={notesPanelOpenRequest}
         onOpenChange={setNotesDiscussionsOpen}
         onFocusNotificationTarget={focusDiscussionNotificationTarget}
+        onFocusLinkedElement={focusDiscussionLinkedElement}
         currentUserId={user?.id}
       />
 
