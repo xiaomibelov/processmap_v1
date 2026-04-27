@@ -460,7 +460,7 @@ export default function TopBar({
               <button
                 ref={statusMenuButtonRef}
                 type="button"
-                className={`inline-flex h-8 items-center rounded-md border px-2.5 text-[11px] font-medium transition hover:opacity-80 ${sessionStatusMeta.badgeClass}`}
+                className={`statusComboPill inline-flex h-8 items-center rounded-md border px-2.5 text-[11px] font-medium transition hover:opacity-80 ${sessionStatusMeta.badgeClass}`}
                 title="Статус сессии — нажмите чтобы изменить"
                 data-testid="topbar-session-status"
                 onClick={() => setStatusMenuOpen((prev) => !prev)}
@@ -559,7 +559,7 @@ export default function TopBar({
           <button
             type="button"
             ref={accountButtonRef}
-            className={`iconBtn relative h-9 w-9 min-w-9 rounded-full border ${accountNotificationCount > 0 ? "border-rose-300 bg-rose-50 text-rose-900" : "border-border bg-panel2/70 text-fg"}`}
+            className={`iconBtn relative h-9 w-9 min-w-9 rounded-full border ${accountNotificationCount > 0 ? "border-danger/55 bg-danger/15 text-danger" : "border-border bg-panel2/70 text-fg"}`}
             onClick={() => {
               const nextOpen = !accountMenuOpen;
               setAccountMenuOpen(nextOpen);
@@ -618,15 +618,15 @@ export default function TopBar({
                       <button
                         key={toText(item?.id)}
                         type="button"
-                        className="w-full min-w-0 overflow-hidden rounded-lg border border-border/70 bg-panel2/50 px-2.5 py-1.5 text-left transition hover:border-sky-300 hover:bg-white"
+                        className="w-full min-w-0 overflow-hidden rounded-lg border border-border/70 bg-panel2/50 px-2.5 py-1.5 text-left transition hover:border-info/55 hover:bg-panel2/85"
                         onClick={() => {
                           setAccountMenuOpen(false);
                           if (typeof onOpenMentionNotification === "function") onOpenMentionNotification(item);
                         }}
                         data-testid="topbar-mention-item"
                       >
-                        <div className="flex min-w-0 items-center gap-2 text-[11px] font-semibold text-rose-900">
-                          <span className="shrink-0 rounded-full border border-rose-300 bg-rose-50 px-1.5 py-0.5">@</span>
+                        <div className="flex min-w-0 items-center gap-2 text-[11px] font-semibold text-danger">
+                          <span className="shrink-0 rounded-full border border-danger/45 bg-danger/10 px-1.5 py-0.5">@</span>
                           <span className="min-w-0 truncate">{toText(item?.mentioned_label || item?.mentioned_user_id) || "Вы"}</span>
                         </div>
                         <div className="mt-1 line-clamp-2 break-words text-sm font-semibold leading-snug text-fg">{mentionPreview(item)}</div>
@@ -653,7 +653,7 @@ export default function TopBar({
                     <span className="min-w-0 flex-1 truncate">Требует внимания</span>
                     {attentionDiscussionCount > 0 ? (
                       <span
-                        className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border border-rose-300/80 bg-rose-50 px-1.5 py-0 text-[10px] font-semibold text-rose-900"
+                        className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border border-danger/50 bg-danger/10 px-1.5 py-0 text-[10px] font-semibold text-danger"
                         title={`Обсуждения требуют внимания: ${attentionDiscussionCount}`}
                         aria-label={`Обсуждения требуют внимания: ${attentionDiscussionCount}`}
                       >
