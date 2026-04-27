@@ -889,6 +889,14 @@ export async function apiGetBpmnVersions(sessionId, options = {}) {
     versions: items,
     items,
     count: Number(payload.count || items.length || 0),
+    user_facing_count: Number(payload.user_facing_count || 0),
+    userFacingCount: Number(payload.user_facing_count || payload.userFacingCount || 0),
+    latest_user_facing_revision_number: Number(payload.latest_user_facing_revision_number || 0),
+    latestUserFacingRevisionNumber: Number(
+      payload.latest_user_facing_revision_number
+      || payload.latestUserFacingRevisionNumber
+      || 0,
+    ),
     session_id: String(payload.session_id || sid),
     current_session_payload_hash: String(payload.current_session_payload_hash || ""),
     currentSessionPayloadHash: String(payload.current_session_payload_hash || payload.currentSessionPayloadHash || ""),

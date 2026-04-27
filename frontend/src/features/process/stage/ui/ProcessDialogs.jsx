@@ -46,6 +46,7 @@ export default function ProcessDialogs({ view = {} }) {
     versionsList,
     versionsLoadState,
     versionsLoadError,
+    versionsUserFacingCount,
     versionsServerEntriesCount,
     versionsTechnicalEntriesCount,
     setGenErr,
@@ -73,9 +74,13 @@ export default function ProcessDialogs({ view = {} }) {
     setDiffTargetSnapshotId: setDiffTargetId,
     semanticDiffView,
   } = view;
+  const userFacingVersionsCount = Math.max(
+    Number(versionsUserFacingCount || 0),
+    Array.isArray(versionsList) ? versionsList.length : 0,
+  );
   const revisionEmptyState = resolveRevisionHistoryEmptyState({
     versionsLoadStateRaw: versionsLoadState,
-    meaningfulCountRaw: Array.isArray(versionsList) ? versionsList.length : 0,
+    meaningfulCountRaw: userFacingVersionsCount,
     technicalCountRaw: Number(versionsTechnicalEntriesCount || 0),
     serverEntriesCountRaw: Number(versionsServerEntriesCount || 0),
   });
@@ -261,7 +266,7 @@ export default function ProcessDialogs({ view = {} }) {
         <div className="grid gap-3 lg:grid-cols-[minmax(320px,460px)_minmax(0,1fr)]" data-testid="bpmn-versions-modal">
           <div className="rounded-xl border border-border bg-panel2/45 p-2">
             <div className="mb-2 px-1 text-xs text-muted" data-testid="bpmn-versions-count">
-              Пользовательские версии: {versionsList.length}
+              Пользовательские версии: {userFacingVersionsCount}
               <span>
                 {" "}
                 · последняя: {Number(asArray(versionsList)[0]?.revisionNumber || 0) > 0

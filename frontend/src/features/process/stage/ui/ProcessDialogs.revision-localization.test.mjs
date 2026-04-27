@@ -49,3 +49,11 @@ test("revision dialogs align empty state text with filtered technical history", 
   assert.equal(source.includes("revisionEmptyState.message"), true);
   assert.equal(source.includes("скрыто технических"), true);
 });
+
+test("revision dialogs use server-backed user-facing count for partial windows", () => {
+  const source = fs.readFileSync(path.join(__dirname, "ProcessDialogs.jsx"), "utf8");
+  assert.equal(source.includes("versionsUserFacingCount"), true);
+  assert.equal(source.includes("const userFacingVersionsCount = Math.max("), true);
+  assert.equal(source.includes("Пользовательские версии: {userFacingVersionsCount}"), true);
+  assert.equal(source.includes("meaningfulCountRaw: userFacingVersionsCount"), true);
+});

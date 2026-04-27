@@ -390,6 +390,7 @@ export default function ProcessStage({
     latestUserVersionSessionPayloadHash: "",
     hasSessionChangesSinceLatestBpmnVersion: false,
   });
+  const [versionsUserFacingCount, setVersionsUserFacingCount] = useState(0);
   const [versionsServerEntriesCount, setVersionsServerEntriesCount] = useState(0);
   const [versionsTechnicalEntriesCount, setVersionsTechnicalEntriesCount] = useState(0);
   const [diagramUndoRedoState, setDiagramUndoRedoState] = useState({ canUndo: false, canRedo: false, ready: false });
@@ -4024,6 +4025,13 @@ export default function ProcessStage({
       || Object.prototype.hasOwnProperty.call(item, "xml");
     const xml = hasXml ? String(item?.bpmn_xml || item?.xml || "") : "";
     const versionNumber = Number(item?.version_number || item?.versionNumber || item?.revisionNumber || item?.rev || 0);
+    const userFacingRevisionNumber = Number(
+      item?.user_facing_revision_number
+      || item?.userFacingRevisionNumber
+      || item?.revision_display_number
+      || item?.revisionDisplayNumber
+      || 0,
+    );
     const createdAt = normalizeRevisionTimestampMs(
       item?.created_at_ms
       || item?.createdAtMs
@@ -4056,8 +4064,10 @@ export default function ProcessStage({
       isTechnicalRevision: sourceClassification.isTechnical === true,
       comment: importNote,
       technicalRevisionNumber: versionNumber,
-      revisionNumber: versionNumber,
-      rev: versionNumber,
+      userFacingRevisionNumber,
+      revisionDisplayNumber: userFacingRevisionNumber,
+      revisionNumber: userFacingRevisionNumber || versionNumber,
+      rev: userFacingRevisionNumber || versionNumber,
       sessionPayloadHash: String(item?.session_payload_hash || item?.sessionPayloadHash || "").trim(),
       sessionVersion: Number(item?.session_version || item?.sessionVersion || 0),
       sessionUpdatedAt: Number(item?.session_updated_at || item?.sessionUpdatedAt || 0),
@@ -4084,6 +4094,7 @@ export default function ProcessStage({
       setPreviewSnapshotId("");
       setVersionsLoadState("idle");
       setVersionsLoadError("");
+      setVersionsUserFacingCount(0);
       setVersionsServerEntriesCount(0);
       setVersionsTechnicalEntriesCount(0);
       setLatestBpmnVersionHead(null);
@@ -4120,6 +4131,7 @@ export default function ProcessStage({
         setPreviewSnapshotId("");
         setVersionsLoadState("failed");
         setVersionsLoadError(shortErr(loaded?.error || "Не удалось загрузить BPMN версии."));
+        setVersionsUserFacingCount(0);
         setVersionsServerEntriesCount(0);
         setVersionsTechnicalEntriesCount(0);
         setBpmnVersionTruthState({
@@ -4155,9 +4167,25 @@ export default function ProcessStage({
     const unknownList = asArray(revisionSplit.unknown);
     const hiddenNonMeaningfulList = asArray(revisionSplit.nonMeaningful);
     const serverEntriesCount = asArray(normalizedList).length;
+    const userFacingCount = Number(
+      loaded?.userFacingCount
+      || loaded?.user_facing_count
+      || loaded?.latestUserFacingRevisionNumber
+      || loaded?.latest_user_facing_revision_number
+      || 0,
+    );
     const listWithUserFacingNumbers = applyUserFacingRevisionNumbers({
       meaningfulRevisionsRaw: list,
-      revisionHistorySnapshotRaw: sessionRevisionHistorySnapshot,
+      revisionHistorySnapshotRaw: {
+        ...asObject(sessionRevisionHistorySnapshot),
+        latestRevisionDisplayNumber: Number(
+          loaded?.latestUserFacingRevisionNumber
+          || loaded?.latest_user_facing_revision_number
+          || userFacingCount
+          || 0,
+        ),
+        totalCount: userFacingCount,
+      },
     });
     setLatestBpmnVersionHead(asArray(listWithUserFacingNumbers)[0] || null);
     if (trackHeadStatus) setLatestBpmnVersionHeadStatus("ready");
@@ -4167,6 +4195,7 @@ export default function ProcessStage({
       `UI_VERSIONS_LOAD sid=${sid} key="${snapshotScopeKey(snapshotProjectId, sid)}" `
       + `meaningful_count=${asArray(list).length} technical_count=${technicalList.length} unknown_count=${unknownList.length}`,
     );
+    setVersionsUserFacingCount(Math.max(0, Math.round(Number(userFacingCount || 0))));
     setVersionsServerEntriesCount(serverEntriesCount);
     setVersionsTechnicalEntriesCount(hiddenNonMeaningfulList.length);
     setVersionsList(asArray(listWithUserFacingNumbers));
@@ -5843,6 +5872,7 @@ export default function ProcessStage({
     versionsList,
     versionsLoadState,
     versionsLoadError,
+    versionsUserFacingCount,
     versionsServerEntriesCount,
     versionsTechnicalEntriesCount,
     revisionHistorySnapshot: revisionHistoryUiSnapshot,
