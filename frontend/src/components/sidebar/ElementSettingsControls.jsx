@@ -326,7 +326,7 @@ export function NodePathSettings({
                 ].map((section) => (
                   <div
                     key={`nodepath_compare_${section.key}`}
-                    className="rounded border border-current/15 bg-white/50 px-2 py-1.5"
+                    className="rounded border border-current/15 bg-panel2/70 px-2 py-1.5"
                     data-testid={`nodepath-compare-${section.key}`}
                   >
                     <div className="font-medium">{section.title}</div>
@@ -350,7 +350,7 @@ export function NodePathSettings({
                   </div>
                 ))}
               </div>
-              <div className="mt-2 rounded border border-current/15 bg-white/50 px-2 py-1.5" data-testid="nodepath-attention-actions-help">
+              <div className="mt-2 rounded border border-current/15 bg-panel2/70 px-2 py-1.5" data-testid="nodepath-attention-actions-help">
                 <div className="font-medium">Что сделают действия</div>
                 <div className="mt-1 grid gap-1">
                   {actionConsequenceItems.map((item) => (
