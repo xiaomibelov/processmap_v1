@@ -170,11 +170,15 @@ export default function ProcessStageHeader({ view = {} }) {
           />
           {showSessionPresenceBadge ? (
             <span
-              className="badge text-[11px] text-muted"
+              className="badge inline-flex items-center gap-1.5 text-[11px] text-muted"
               data-testid="diagram-toolbar-session-presence"
               title={String(sessionPresenceView?.title || "")}
+              aria-label={String(sessionPresenceView?.title || "")}
             >
-              {String(sessionPresenceView?.label || "")}
+              <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full border border-info/45 bg-info/10 text-[9px] font-bold leading-none text-info" aria-hidden="true">
+                {String(sessionPresenceView?.iconLabel || "•")}
+              </span>
+              <span className="min-w-0 max-w-[150px] truncate">{String(sessionPresenceView?.label || "")}</span>
             </span>
           ) : null}
           {showUploadStatusBadge ? (

@@ -1,3 +1,5 @@
+import { SESSION_PRESENCE_TTL_MS } from "../presence/sessionPresenceConstants.js";
+
 function toText(value) {
   return String(value || "").trim();
 }
@@ -32,11 +34,11 @@ function normalizeActor(raw = null, fallbackNowMs = 0) {
 
 export function pruneSessionPresenceActors(actorsRaw = [], {
   nowMs = Date.now(),
-  ttlMs = 120000,
+  ttlMs = SESSION_PRESENCE_TTL_MS,
   maxActors = 12,
 } = {}) {
   const now = toPositiveEpochMs(nowMs, Date.now());
-  const ttl = Math.max(10000, Number(ttlMs || 120000));
+  const ttl = Math.max(10000, Number(ttlMs || SESSION_PRESENCE_TTL_MS));
   const cutoff = now - ttl;
   const items = Array.isArray(actorsRaw) ? actorsRaw : [];
   const next = [];
@@ -60,7 +62,7 @@ export function buildSessionPresenceView({
   actorsRaw = [],
   currentUserIdRaw = "",
   nowMs = Date.now(),
-  ttlMs = 120000,
+  ttlMs = SESSION_PRESENCE_TTL_MS,
 } = {}) {
   const actors = pruneSessionPresenceActors(actorsRaw, { nowMs, ttlMs });
   const currentUserId = toText(currentUserIdRaw).toLowerCase();
@@ -79,16 +81,15 @@ export function buildSessionPresenceView({
     };
   }
   const names = others.map((actor) => toText(actor.label)).filter(Boolean);
-  let label = "";
-  if (names.length <= 2) {
-    label = `В сессии: ${names.join(", ")}`;
-  } else {
-    label = `В сессии: ${names[0]} +${names.length - 1}`;
-  }
+  const label = names.length > 1
+    ? `${names[0]} +${names.length - 1}`
+    : (names[0] || "Пользователь");
+  const firstInitial = toText(names[0]).slice(0, 1).toUpperCase() || "•";
   return {
     visible: true,
     count: names.length,
     label,
+    iconLabel: firstInitial,
     title: `Активны сейчас: ${names.join(", ")}`,
     users: others,
   };

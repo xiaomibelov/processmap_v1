@@ -1035,9 +1035,9 @@ export default function ProcessStage({
   const sessionPresenceView = useMemo(() => buildSessionPresenceView({
     actorsRaw: sessionPresence.activeUsers,
     currentUserIdRaw: currentUserId,
-    nowMs: Date.now(),
+    nowMs: sessionPresence.nowMs,
     ttlMs: sessionPresence.ttlMs,
-  }), [currentUserId, sessionPresence.activeUsers, sessionPresence.ttlMs]);
+  }), [currentUserId, sessionPresence.activeUsers, sessionPresence.nowMs, sessionPresence.ttlMs]);
   const leaveNavigationRisk = useMemo(
     () => deriveLeaveNavigationRisk({
       hasSession,

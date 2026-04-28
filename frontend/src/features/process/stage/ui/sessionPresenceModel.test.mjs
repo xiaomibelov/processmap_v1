@@ -37,6 +37,25 @@ test("session presence view shows other active users and prunes stale actors by 
   assert.equal(view.visible, true);
   assert.equal(view.count, 1);
   assert.match(view.label, /Анна/);
+  assert.equal(view.iconLabel, "А");
+  assert.equal(/Старый/.test(view.title), false);
+});
+
+test("session presence default ttl is sixty seconds", () => {
+  const nowMs = Date.now();
+  const view = buildSessionPresenceView({
+    actorsRaw: [
+      { userId: "user_me", label: "Я", lastSeenAt: nowMs },
+      { userId: "user_recent", label: "Анна", lastSeenAt: nowMs - 59000 },
+      { userId: "user_stale", label: "Старый", lastSeenAt: nowMs - 61000 },
+    ],
+    currentUserIdRaw: "user_me",
+    nowMs,
+  });
+
+  assert.equal(view.visible, true);
+  assert.equal(view.count, 1);
+  assert.equal(view.label, "Анна");
   assert.equal(/Старый/.test(view.title), false);
 });
 
@@ -55,5 +74,6 @@ test("session presence view compresses many active users", () => {
 
   assert.equal(view.visible, true);
   assert.equal(view.count, 3);
-  assert.match(view.label, /^В сессии: .+ \+2$/);
+  assert.equal(view.label, "Иван +2");
+  assert.equal(view.iconLabel, "И");
 });
