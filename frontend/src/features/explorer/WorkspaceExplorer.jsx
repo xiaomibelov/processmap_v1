@@ -26,6 +26,7 @@ import {
   apiCreateProject,
   apiMoveProject,
   apiGetProjectPage,
+  apiSearchExplorer,
   apiCreateSession,
 } from "./explorerApi.js";
 import { apiDeleteProject, apiDeleteSession, apiGetSession, apiListOrgMembers, apiPatchProject, apiPatchSession } from "../../lib/api";
@@ -38,6 +39,7 @@ import { buildVisibleRows, hasFolderChildren } from "./work3TreeState.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
 import { buildFolderMoveTargets, buildProjectMoveTargets } from "./explorerMoveTargets.js";
 import {
+  buildExplorerGlobalSearchModel,
   buildExplorerSearchIndex,
   buildProjectSessionSearchIndex,
   filterExplorerSearchResults,
@@ -914,7 +916,7 @@ function ExplorerSearchBox({ id = "workspace-explorer-search", value, onChange, 
         }}
         placeholder={placeholder}
         className="min-w-0 flex-1 bg-transparent text-sm text-fg placeholder:text-muted focus:outline-none"
-        title="Поиск по загруженной структуре"
+        title="Поиск по workspace"
       />
       {value ? (
         <button
@@ -962,15 +964,26 @@ function SearchResultRow({ result, onOpen }) {
 
 function ExplorerSearchResults({ model, onOpenResult }) {
   if (!model?.active) return null;
+  const sourceCopy = model.source === "global"
+    ? "Ищет разделы, папки, проекты и сессии во всей рабочей области."
+    : "Поиск по загруженной структуре";
   return (
     <div className="flex-1 overflow-y-auto p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-sm font-medium text-fg">Найдено: {model.total}</div>
-          <div className="text-xs text-muted">Поиск по загруженной структуре</div>
+          <div className="text-xs text-muted">{sourceCopy}</div>
         </div>
       </div>
-      {model.total > 0 ? (
+      {model.loading ? (
+        <div className="flex min-h-[240px] items-center justify-center rounded-lg border border-dashed border-border p-8 text-center">
+          <p className="text-sm font-medium text-fg">Идёт поиск...</p>
+        </div>
+      ) : model.error ? (
+        <div className="flex min-h-[240px] items-center justify-center rounded-lg border border-dashed border-border p-8 text-center">
+          <p className="text-sm font-medium text-danger">Не удалось выполнить поиск.</p>
+        </div>
+      ) : model.total > 0 ? (
         <div className="space-y-4">
           {model.groups.map((group) => (
             <section key={group.type} className="space-y-1">
@@ -985,8 +998,10 @@ function ExplorerSearchResults({ model, onOpenResult }) {
         </div>
       ) : (
         <div className="flex min-h-[240px] flex-col items-center justify-center rounded-lg border border-dashed border-border p-8 text-center">
-          <p className="text-sm font-medium text-fg">Ничего не найдено в текущей области.</p>
-          <p className="mt-1 max-w-md text-xs text-muted">Для поиска по всему workspace нужен отдельный серверный индекс.</p>
+          <p className="text-sm font-medium text-fg">
+            {model.source === "global" ? "Ничего не найдено во всей рабочей области." : "Ничего не найдено в текущей области."}
+          </p>
+          <p className="mt-1 max-w-md text-xs text-muted">{sourceCopy}</p>
         </div>
       )}
     </div>
@@ -1454,6 +1469,7 @@ function ExplorerPane({
   onNavigateToFolder,
   onNavigateToProject,
   onNavigateToBreadcrumb,
+  onOpenSession,
   permissions,
 }) {
   const [page, setPage] = useState(null);
@@ -1473,6 +1489,13 @@ function ExplorerPane({
     error: "",
   });
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [globalSearchState, setGlobalSearchState] = useState({
+    query: "",
+    loading: false,
+    error: "",
+    model: null,
+  });
   const [explorerSort, setExplorerSort] = useState(null);
   const [treeStateByContext, setTreeStateByContext] = useState({});
   const inFlightFolderLoadsRef = useRef(new Set());
@@ -1570,6 +1593,56 @@ function ExplorerPane({
     () => filterExplorerSearchResults(searchIndex, searchQuery),
     [searchIndex, searchQuery],
   );
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const query = String(debouncedSearchQuery || "").trim();
+    if (!workspaceId || query.length < 2) {
+      setGlobalSearchState({ query, loading: false, error: "", model: null });
+      return undefined;
+    }
+    let disposed = false;
+    setGlobalSearchState((prev) => ({
+      query,
+      loading: true,
+      error: "",
+      model: prev.query === query ? prev.model : null,
+    }));
+    apiSearchExplorer(workspaceId, query, { limit: 50 })
+      .then((resp) => {
+        if (disposed) return;
+        if (!resp?.ok) throw new Error(resp?.error || "Не удалось выполнить поиск.");
+        setGlobalSearchState({
+          query,
+          loading: false,
+          error: "",
+          model: buildExplorerGlobalSearchModel(resp?.data || resp, query),
+        });
+      })
+      .catch(() => {
+        if (disposed) return;
+        setGlobalSearchState({ query, loading: false, error: "Не удалось выполнить поиск.", model: null });
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [debouncedSearchQuery, workspaceId]);
+  const visibleSearchModel = useMemo(() => {
+    const query = String(searchQuery || "").trim();
+    if (query.length < 2) return searchModel;
+    if (globalSearchState.loading) {
+      return { active: true, query, total: 0, groups: [], results: [], source: "global", loading: true };
+    }
+    if (globalSearchState.error) {
+      return { active: true, query, total: 0, groups: [], results: [], source: "global", error: globalSearchState.error };
+    }
+    return globalSearchState.model || { active: true, query, total: 0, groups: [], results: [], source: "global" };
+  }, [searchQuery, searchModel, globalSearchState]);
 
   useEffect(() => {
     if (!assigneeDialog) return;
@@ -1733,8 +1806,17 @@ function ExplorerPane({
     if (target.kind === "project" && target.projectId) {
       setSearchQuery("");
       onNavigateToProject(target.projectId, { breadcrumbBase: target.breadcrumbBase || page?.breadcrumbs || [] });
+      return;
     }
-  }, [onNavigateToFolder, onNavigateToProject, page?.breadcrumbs]);
+    if (target.kind === "session" && target.session) {
+      setSearchQuery("");
+      void onOpenSession?.({
+        ...target.session,
+        project_id: target.projectId || target.session.project_id,
+        workspace_id: workspaceId,
+      });
+    }
+  }, [onNavigateToFolder, onNavigateToProject, onOpenSession, page?.breadcrumbs, workspaceId]);
 
   if (loading) {
     return (
@@ -1800,8 +1882,8 @@ function ExplorerPane({
         <div className="px-4 py-2 text-sm text-accent bg-accentSoft/40 border-b border-border">{moveNotice}</div>
       ) : null}
 
-      {searchModel.active ? (
-        <ExplorerSearchResults model={searchModel} onOpenResult={handleOpenSearchResult} />
+      {visibleSearchModel.active ? (
+        <ExplorerSearchResults model={visibleSearchModel} onOpenResult={handleOpenSearchResult} />
       ) : !isEmpty ? (
         <div className="flex-1 overflow-y-auto">
           <table className="w-full table-fixed text-left border-collapse">
@@ -2656,6 +2738,7 @@ export default function WorkspaceExplorer({
                 onNavigateToFolder={handleNavigateToFolder}
                 onNavigateToProject={handleNavigateToProject}
                 onNavigateToBreadcrumb={handleNavigateToBreadcrumb}
+                onOpenSession={onOpenSession}
                 permissions={permissions}
               />
             </div>

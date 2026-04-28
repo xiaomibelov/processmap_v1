@@ -8277,6 +8277,248 @@ def get_workspace_folder_breadcrumb(org_id: str, workspace_id: str, folder_id: s
     return crumbs
 
 
+def search_workspace_explorer(
+    org_id: str,
+    workspace_id: str,
+    query: str,
+    *,
+    limit: int = 50,
+    allowed_project_ids: Optional[Iterable[str]] = None,
+) -> Dict[str, Any]:
+    """Search lightweight Explorer metadata across one workspace.
+
+    The result intentionally avoids diagram/session payload columns such as
+    BPMN XML and node/edge JSON.  Project scope is enforced by the caller via
+    allowed_project_ids; when provided, folders are limited to ancestors of
+    accessible projects.
+    """
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    wid = str(workspace_id or "").strip()
+    q = str(query or "").strip()
+    normalized_query = q.lower()
+    max_limit = max(1, min(int(limit or 50), 100))
+    allowed_projects: Optional[set[str]] = None
+    if allowed_project_ids is not None:
+        allowed_projects = {str(item or "").strip() for item in allowed_project_ids if str(item or "").strip()}
+        if not allowed_projects:
+            return {"workspace_id": wid, "query": q, "limit": max_limit, "groups": {"sections": [], "folders": [], "projects": [], "sessions": []}, "items": []}
+    if not oid or not wid or len(normalized_query) < 2:
+        return {"workspace_id": wid, "query": q, "limit": max_limit, "groups": {"sections": [], "folders": [], "projects": [], "sessions": []}, "items": []}
+
+    def user_display(row: Any, prefix: str) -> str:
+        if not row:
+            return ""
+        full_name = str((row[f"{prefix}_full_name"] if f"{prefix}_full_name" in row.keys() else "") or "").strip()
+        email = str((row[f"{prefix}_email"] if f"{prefix}_email" in row.keys() else "") or "").strip()
+        user_id = str((row[f"{prefix}_user_id"] if f"{prefix}_user_id" in row.keys() else "") or "").strip()
+        return full_name or email or user_id
+
+    def matches(*parts: Any) -> bool:
+        haystack = " ".join(str(part or "") for part in parts).lower()
+        return normalized_query in haystack
+
+    def folder_path(folder_id: str) -> List[Dict[str, str]]:
+        path: List[Dict[str, str]] = [{"type": "workspace", "id": wid, "title": workspace_name}]
+        chain: List[Dict[str, Any]] = []
+        cursor = str(folder_id or "").strip()
+        seen: set[str] = set()
+        while cursor and cursor not in seen:
+            seen.add(cursor)
+            folder = folders_by_id.get(cursor)
+            if not folder:
+                break
+            chain.append(folder)
+            cursor = str(folder.get("parent_id") or "")
+        chain.reverse()
+        for folder in chain:
+            parent_id = str(folder.get("parent_id") or "")
+            path.append({
+                "type": "section" if not parent_id else "folder",
+                "id": str(folder.get("id") or ""),
+                "title": str(folder.get("name") or ""),
+            })
+        return path
+
+    def append_item(item: Dict[str, Any]) -> None:
+        if len(items) >= max_limit:
+            return
+        kind = str(item.get("type") or "")
+        groups.setdefault(f"{kind}s", []).append(item)
+        items.append(item)
+
+    with _connect() as con:
+        workspace_row = con.execute(
+            "SELECT id, name FROM workspaces WHERE id = ? AND org_id = ? LIMIT 1",
+            [wid, oid],
+        ).fetchone()
+        workspace_name = str((workspace_row["name"] if workspace_row else "") or wid or "Workspace")
+        folder_rows = con.execute(
+            """
+            SELECT wf.*, ru.id AS responsible_user_id_lookup, ru.email AS responsible_email, ru.full_name AS responsible_full_name
+            FROM workspace_folders wf
+            LEFT JOIN users ru ON ru.id = wf.responsible_user_id
+            WHERE wf.org_id = ? AND wf.workspace_id = ? AND wf.archived_at IS NULL
+            ORDER BY wf.sort_order ASC, wf.name ASC
+            """,
+            [oid, wid],
+        ).fetchall()
+        project_rows = con.execute(
+            """
+            SELECT p.*, eu.id AS executor_user_id_lookup, eu.email AS executor_email, eu.full_name AS executor_full_name
+            FROM projects p
+            LEFT JOIN users eu ON eu.id = p.executor_user_id
+            WHERE p.org_id = ? AND p.workspace_id = ?
+            ORDER BY p.updated_at DESC, p.title ASC
+            """,
+            [oid, wid],
+        ).fetchall()
+        session_rows = con.execute(
+            """
+            SELECT s.id, s.title, s.project_id, s.interview_json, s.updated_at, s.created_at,
+                   p.title AS project_title, p.folder_id AS folder_id
+            FROM sessions s
+            JOIN projects p ON p.id = s.project_id
+            WHERE p.org_id = ? AND p.workspace_id = ?
+            ORDER BY s.updated_at DESC, s.title ASC
+            """,
+            [oid, wid],
+        ).fetchall()
+
+    folders_by_id: Dict[str, Dict[str, Any]] = {}
+    for row in folder_rows:
+        folder = _folder_row_to_dict(row)
+        fid = str(folder.get("id") or "")
+        if fid:
+            folders_by_id[fid] = folder
+
+    accessible_folder_ids: Optional[set[str]] = None
+    if allowed_projects is not None:
+        accessible_folder_ids = set()
+        for row in project_rows:
+            pid = str(row["id"] or "")
+            if pid not in allowed_projects:
+                continue
+            cursor = str(row["folder_id"] or "")
+            seen: set[str] = set()
+            while cursor and cursor not in seen:
+                seen.add(cursor)
+                accessible_folder_ids.add(cursor)
+                cursor = str((folders_by_id.get(cursor) or {}).get("parent_id") or "")
+
+    groups: Dict[str, List[Dict[str, Any]]] = {"sections": [], "folders": [], "projects": [], "sessions": []}
+    items: List[Dict[str, Any]] = []
+
+    for row in folder_rows:
+        folder = _folder_row_to_dict(row)
+        fid = str(folder.get("id") or "")
+        if not fid:
+            continue
+        if accessible_folder_ids is not None and fid not in accessible_folder_ids:
+            continue
+        responsible_label = user_display(row, "responsible")
+        context_status = str(folder.get("context_status") or "none")
+        if not matches(folder.get("name"), context_status, responsible_label):
+            continue
+        parent_id = str(folder.get("parent_id") or "")
+        kind = "section" if not parent_id else "folder"
+        append_item({
+            "type": kind,
+            "id": fid,
+            "title": str(folder.get("name") or ""),
+            "subtitle": "Раздел" if kind == "section" else "Папка",
+            "workspace_id": wid,
+            "folder_id": fid,
+            "project_id": "",
+            "session_id": "",
+            "path": folder_path(fid),
+            "updated_at": int(folder.get("updated_at") or 0),
+            "status": "",
+            "context_status": context_status,
+            "responsible_user_id": str(folder.get("responsible_user_id") or "").strip() or None,
+            "executor_user_id": None,
+        })
+
+    for row in project_rows:
+        pid = str(row["id"] or "")
+        if not pid:
+            continue
+        if allowed_projects is not None and pid not in allowed_projects:
+            continue
+        passport = _json_loads(row["passport_json"], {})
+        if not isinstance(passport, dict):
+            passport = {}
+        executor_label = user_display(row, "executor")
+        status = str(passport.get("status", "active") or "active")
+        title = str(row["title"] or "")
+        if not matches(title, status, executor_label):
+            continue
+        folder_id = str(row["folder_id"] or "")
+        path = folder_path(folder_id) if folder_id else [{"type": "workspace", "id": wid, "title": workspace_name}]
+        path = [*path, {"type": "project", "id": pid, "title": title}]
+        append_item({
+            "type": "project",
+            "id": pid,
+            "title": title,
+            "subtitle": "Проект",
+            "workspace_id": wid,
+            "folder_id": folder_id,
+            "project_id": pid,
+            "session_id": "",
+            "path": path,
+            "updated_at": int(row["updated_at"] or 0),
+            "status": status,
+            "context_status": "",
+            "responsible_user_id": None,
+            "executor_user_id": str(row["executor_user_id"] or "").strip() or None,
+        })
+
+    for row in session_rows:
+        project_id = str(row["project_id"] or "")
+        if not project_id:
+            continue
+        if allowed_projects is not None and project_id not in allowed_projects:
+            continue
+        interview = _json_loads(row["interview_json"], {})
+        if not isinstance(interview, dict):
+            interview = {}
+        status = str(interview.get("status", "draft") or "draft")
+        stage = str(interview.get("stage", "") or "")
+        title = str(row["title"] or "")
+        project_title = str(row["project_title"] or "")
+        if not matches(title, status, stage, project_title):
+            continue
+        folder_id = str(row["folder_id"] or "")
+        path = folder_path(folder_id) if folder_id else [{"type": "workspace", "id": wid, "title": workspace_name}]
+        if project_id:
+            path = [*path, {"type": "project", "id": project_id, "title": project_title or "Проект"}]
+        append_item({
+            "type": "session",
+            "id": str(row["id"] or ""),
+            "title": title,
+            "subtitle": "Сессия",
+            "workspace_id": wid,
+            "folder_id": folder_id,
+            "project_id": project_id,
+            "session_id": str(row["id"] or ""),
+            "path": path,
+            "updated_at": int(row["updated_at"] or 0),
+            "status": status,
+            "stage": stage,
+            "context_status": "",
+            "responsible_user_id": None,
+            "executor_user_id": None,
+        })
+
+    return {
+        "workspace_id": wid,
+        "query": q,
+        "limit": max_limit,
+        "groups": groups,
+        "items": items,
+    }
+
+
 def create_project_in_folder(
     org_id: str,
     workspace_id: str,

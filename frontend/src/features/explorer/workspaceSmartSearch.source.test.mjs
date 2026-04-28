@@ -14,23 +14,30 @@ function between(start, end) {
   return explorerSource.slice(startIndex, endIndex);
 }
 
-test("Explorer search is frontend-only and does not add API wrappers", () => {
+test("Explorer search keeps loaded fallback and adds backend global search wrapper", () => {
   assert.match(explorerSource, /buildExplorerSearchIndex/);
+  assert.match(explorerSource, /buildExplorerGlobalSearchModel/);
   assert.match(explorerSource, /buildProjectSessionSearchIndex/);
   assert.match(explorerSource, /filterExplorerSearchResults/);
-  assert.doesNotMatch(apiSource, /apiSearch|\/search/);
+  assert.match(apiSource, /apiSearchExplorer/);
+  assert.match(apiSource, /\/api\/explorer\/search/);
   assert.doesNotMatch(searchModelSource, /apiGetExplorerPage|apiRequest|fetch\(/);
 });
 
-test("ExplorerPane renders loaded-structure search and grouped results instead of mutating rows", () => {
+test("ExplorerPane renders workspace search and keeps loaded fallback instead of mutating rows", () => {
   const explorerPaneSource = between("function ExplorerPane(", "// ─── Session Row");
 
   assert.match(explorerSource, /placeholder = "Поиск"/);
-  assert.match(explorerSource, /title="Поиск по загруженной структуре"/);
+  assert.match(explorerSource, /title="Поиск по workspace"/);
+  assert.match(explorerPaneSource, /apiSearchExplorer\(workspaceId,\s*query,\s*\{\s*limit:\s*50\s*\}\)/);
+  assert.match(explorerPaneSource, /query\.length < 2/);
+  assert.match(explorerPaneSource, /setTimeout\(\(\) => \{/);
   assert.match(explorerPaneSource, /className="w-\[260px\]"/);
-  assert.match(explorerPaneSource, /searchModel\.active \? \(/);
+  assert.match(explorerPaneSource, /visibleSearchModel\.active \? \(/);
   assert.match(explorerPaneSource, /onNavigateToFolder\(target\.folderId\)/);
   assert.match(explorerPaneSource, /onNavigateToProject\(target\.projectId,\s*\{\s*breadcrumbBase:/);
+  assert.match(explorerPaneSource, /target\.kind === "session"/);
+  assert.match(explorerPaneSource, /onOpenSession\?\.\(\{/);
   assert.match(explorerPaneSource, /onNavigateToProject\(project\.id,\s*\{\s*breadcrumbBase:\s*page\?\.breadcrumbs\s*\|\|\s*\[\]\s*\}\)/);
 });
 
@@ -48,8 +55,11 @@ test("Search results include required grouping and empty-state copy", () => {
 
   assert.match(searchResultsSource, /Найдено:/);
   assert.match(searchResultsSource, /group\.label/);
+  assert.match(searchResultsSource, /Идёт поиск/);
+  assert.match(searchResultsSource, /Не удалось выполнить поиск/);
+  assert.match(searchResultsSource, /Ничего не найдено во всей рабочей области/);
   assert.match(searchResultsSource, /Ничего не найдено в текущей области/);
-  assert.match(searchResultsSource, /серверный индекс/);
+  assert.match(searchResultsSource, /Ищет разделы, папки, проекты и сессии во всей рабочей области/);
 });
 
 test("Project move and section labels remain present", () => {

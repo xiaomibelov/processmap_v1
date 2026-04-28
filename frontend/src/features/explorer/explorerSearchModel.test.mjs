@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildExplorerGlobalSearchModel,
   buildExplorerSearchIndex,
   buildProjectSessionSearchIndex,
   filterExplorerSearchResults,
@@ -81,6 +82,76 @@ test("empty search result model is explicit", () => {
   assert.equal(model.active, true);
   assert.equal(model.total, 0);
   assert.deepEqual(model.groups, []);
+});
+
+test("global search response groups sections, folders, projects, and sessions with targets", () => {
+  const response = {
+    ok: true,
+    groups: {
+      sections: [{
+        type: "section",
+        id: "section_global",
+        title: "Продажи",
+        folder_id: "section_global",
+        path: [
+          { type: "workspace", id: "ws_1", title: "Workspace" },
+          { type: "section", id: "section_global", title: "Продажи" },
+        ],
+        responsible_user: { display_name: "Ирина Раздел" },
+      }],
+      folders: [{
+        type: "folder",
+        id: "folder_global",
+        title: "Регламенты",
+        folder_id: "folder_global",
+        path: [
+          { type: "workspace", id: "ws_1", title: "Workspace" },
+          { type: "section", id: "section_global", title: "Продажи" },
+          { type: "folder", id: "folder_global", title: "Регламенты" },
+        ],
+        responsible_user: { display_name: "Федор Папка" },
+      }],
+      projects: [{
+        type: "project",
+        id: "project_global",
+        title: "Проект внедрения",
+        project_id: "project_global",
+        folder_id: "folder_global",
+        path: [
+          { type: "workspace", id: "ws_1", title: "Workspace" },
+          { type: "section", id: "section_global", title: "Продажи" },
+          { type: "folder", id: "folder_global", title: "Регламенты" },
+          { type: "project", id: "project_global", title: "Проект внедрения" },
+        ],
+        executor_user: { display_name: "Павел Исполнитель" },
+      }],
+      sessions: [{
+        type: "session",
+        id: "session_global",
+        title: "Интервью с бухгалтерией",
+        session_id: "session_global",
+        project_id: "project_global",
+        workspace_id: "ws_1",
+        status: "review",
+        path: [
+          { type: "workspace", id: "ws_1", title: "Workspace" },
+          { type: "section", id: "section_global", title: "Продажи" },
+          { type: "folder", id: "folder_global", title: "Регламенты" },
+          { type: "project", id: "project_global", title: "Проект внедрения" },
+        ],
+      }],
+    },
+  };
+
+  const model = buildExplorerGlobalSearchModel(response, "про");
+  assert.equal(model.source, "global");
+  assert.equal(model.total, 4);
+  assert.deepEqual(model.groups.map((group) => group.type), ["section", "folder", "project", "session"]);
+  assert.equal(model.groups[0].results[0].target.folderId, "section_global");
+  assert.equal(model.groups[2].results[0].target.projectId, "project_global");
+  assert.deepEqual(model.groups[2].results[0].target.breadcrumbBase.map((crumb) => crumb.id), ["ws_1", "section_global", "folder_global"]);
+  assert.equal(model.groups[3].results[0].target.session.id, "session_global");
+  assert.equal(model.groups[3].results[0].target.projectId, "project_global");
 });
 
 test("project view search matches session title, status, stage, owner, and project path", () => {
