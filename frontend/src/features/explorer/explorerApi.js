@@ -44,6 +44,13 @@ export async function apiRenameFolder(workspaceId, folderId, name) {
   });
 }
 
+export async function apiUpdateFolder(workspaceId, folderId, patch = {}) {
+  return call(`/api/folders/${encodeURIComponent(folderId)}${q({ workspace_id: workspaceId })}`, {
+    method: "PATCH",
+    body: patch || {},
+  });
+}
+
 export async function apiMoveFolder(workspaceId, folderId, newParentId = "") {
   return call(`/api/folders/${encodeURIComponent(folderId)}/move${q({ workspace_id: workspaceId })}`, {
     method: "POST",
