@@ -12,6 +12,29 @@ function shortUserId(value) {
   return `${raw.slice(0, 8)}...`;
 }
 
+function nestedUser(user) {
+  if (!user || typeof user !== "object") return {};
+  return user.user && typeof user.user === "object"
+    ? user.user
+    : user.profile && typeof user.profile === "object"
+      ? user.profile
+      : user.member && typeof user.member === "object"
+        ? user.member
+        : {};
+}
+
+export function getExplorerAssignableUserId(user) {
+  const nested = nestedUser(user);
+  return text(
+    user?.user_id
+      || user?.id
+      || user?.membership_user_id
+      || user?.membership?.user_id
+      || nested?.user_id
+      || nested?.id,
+  );
+}
+
 function itemType(item) {
   return text(item?.type).toLowerCase();
 }
@@ -29,13 +52,40 @@ export function getExplorerBusinessAssigneeKind(item) {
 
 export function formatExplorerUserDisplay(user) {
   if (!user || typeof user !== "object") return "";
+  const nested = nestedUser(user);
   return text(
     user.display_name
       || user.full_name
       || user.name
       || user.email
-      || shortUserId(user.user_id || user.id),
+      || nested.display_name
+      || nested.full_name
+      || nested.name
+      || nested.email
+      || shortUserId(getExplorerAssignableUserId(user)),
   );
+}
+
+function normalizeAssignableUserItem(user) {
+  if (!user || typeof user !== "object") return null;
+  const nested = nestedUser(user);
+  const userId = getExplorerAssignableUserId(user);
+  if (!userId) return null;
+  const normalized = {
+    ...user,
+    user_id: userId,
+  };
+  const email = text(user.email || nested.email);
+  const fullName = text(user.full_name || nested.full_name || nested.name);
+  const displayName = text(user.display_name || nested.display_name);
+  const jobTitle = text(user.job_title || nested.job_title);
+  const role = text(user.role || user.membership?.role);
+  if (email) normalized.email = email;
+  if (fullName) normalized.full_name = fullName;
+  if (displayName) normalized.display_name = displayName;
+  if (jobTitle) normalized.job_title = jobTitle;
+  if (role) normalized.role = role;
+  return normalized;
 }
 
 export function normalizeExplorerAssignableUsersResponse(resp) {
@@ -62,7 +112,7 @@ export function normalizeExplorerAssignableUsersResponse(resp) {
               : [];
   return {
     ok: true,
-    items,
+    items: items.map(normalizeAssignableUserItem).filter(Boolean),
     error: "",
   };
 }
@@ -114,10 +164,11 @@ export function getExplorerAssigneeDialogTitle(item, { folderLabel = "Папка
 }
 
 export function filterExplorerAssignableUsers(users, query) {
-  const list = Array.isArray(users) ? users : [];
+  const list = Array.isArray(users) ? users.map(normalizeAssignableUserItem).filter(Boolean) : [];
   const q = text(query).toLocaleLowerCase("ru-RU");
   if (!q) return list;
   return list.filter((user) => {
+    const nested = nestedUser(user);
     const haystack = [
       user?.display_name,
       user?.full_name,
@@ -125,8 +176,12 @@ export function filterExplorerAssignableUsers(users, query) {
       user?.email,
       user?.job_title,
       user?.role,
-      user?.user_id,
-      user?.id,
+      getExplorerAssignableUserId(user),
+      nested?.display_name,
+      nested?.full_name,
+      nested?.name,
+      nested?.email,
+      nested?.job_title,
     ].map((part) => text(part).toLocaleLowerCase("ru-RU")).join(" ");
     return haystack.includes(q);
   });
