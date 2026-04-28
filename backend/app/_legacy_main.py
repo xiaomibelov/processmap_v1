@@ -172,6 +172,7 @@ from .services.org_workspace import (
     evaluate_org_git_mirror_config,
     enterprise_require_org_member as _enterprise_require_org_member,
     enterprise_require_org_role as _enterprise_require_org_role,
+    validate_org_user_assignable as _validate_org_user_assignable,
     org_role_for_request as _org_role_for_request,
     project_access_allowed as _project_access_allowed,
     project_scope_for_request as _project_scope_for_request,
@@ -8746,7 +8747,14 @@ def create_project(inp: CreateProjectIn, request: Request = None) -> dict:
     }
     if title in sibling_titles:
         raise HTTPException(status_code=409, detail="project title already exists")
-    pid = st.create(title=title, passport=inp.passport, user_id=user_id, org_id=(oid or None))
+    executor_user_id = _validate_org_user_assignable(oid or get_default_org_id(), getattr(inp, "executor_user_id", ""))
+    pid = st.create(
+        title=title,
+        passport=inp.passport,
+        user_id=user_id,
+        org_id=(oid or None),
+        executor_user_id=executor_user_id,
+    )
     proj = st.load(pid, org_id=(oid or None), is_admin=True)
     if not proj:
         raise HTTPException(status_code=500, detail="create failed")
@@ -8805,6 +8813,9 @@ def patch_project(project_id: str, inp: UpdateProjectIn, request: Request = None
         merged = dict(proj.passport or {})
         merged.update(payload["passport"])
         proj.passport = merged
+
+    if "executor_user_id" in payload:
+        proj.executor_user_id = _validate_org_user_assignable(oid or get_default_org_id(), payload.get("executor_user_id")) or None
 
     st.save(proj, user_id=user_id, org_id=oid, is_admin=True)
     _audit_log_safe(

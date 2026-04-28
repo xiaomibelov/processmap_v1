@@ -768,6 +768,7 @@ def _ensure_schema() -> None:
                   updated_at INTEGER NOT NULL DEFAULT 0,
                   version INTEGER NOT NULL DEFAULT 1,
                   owner_user_id TEXT NOT NULL DEFAULT '',
+                  executor_user_id TEXT,
                   org_id TEXT NOT NULL DEFAULT 'org_default',
                   created_by TEXT NOT NULL DEFAULT '',
                   updated_by TEXT NOT NULL DEFAULT ''
@@ -1470,6 +1471,10 @@ def _ensure_schema() -> None:
                   parent_id TEXT NOT NULL DEFAULT '',
                   name TEXT NOT NULL DEFAULT '',
                   sort_order INTEGER NOT NULL DEFAULT 0,
+                  responsible_user_id TEXT,
+                  context_status TEXT NOT NULL DEFAULT 'none',
+                  responsible_assigned_at REAL,
+                  responsible_assigned_by TEXT,
                   created_by TEXT NOT NULL DEFAULT '',
                   created_at INTEGER NOT NULL DEFAULT 0,
                   updated_at INTEGER NOT NULL DEFAULT 0,
@@ -1479,6 +1484,14 @@ def _ensure_schema() -> None:
             )
             if not _column_exists(con, "workspace_folders", "workspace_id"):
                 con.execute("ALTER TABLE workspace_folders ADD COLUMN workspace_id TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "workspace_folders", "responsible_user_id"):
+                con.execute("ALTER TABLE workspace_folders ADD COLUMN responsible_user_id TEXT")
+            if not _column_exists(con, "workspace_folders", "context_status"):
+                con.execute("ALTER TABLE workspace_folders ADD COLUMN context_status TEXT NOT NULL DEFAULT 'none'")
+            if not _column_exists(con, "workspace_folders", "responsible_assigned_at"):
+                con.execute("ALTER TABLE workspace_folders ADD COLUMN responsible_assigned_at REAL")
+            if not _column_exists(con, "workspace_folders", "responsible_assigned_by"):
+                con.execute("ALTER TABLE workspace_folders ADD COLUMN responsible_assigned_by TEXT")
             con.execute("CREATE INDEX IF NOT EXISTS idx_wf_org_workspace_parent ON workspace_folders(org_id, workspace_id, parent_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_wf_org_updated ON workspace_folders(org_id, updated_at DESC)")
             try:
@@ -1491,6 +1504,8 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE projects ADD COLUMN folder_id TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "projects", "workspace_id"):
                 con.execute("ALTER TABLE projects ADD COLUMN workspace_id TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "projects", "executor_user_id"):
+                con.execute("ALTER TABLE projects ADD COLUMN executor_user_id TEXT")
             con.execute("CREATE INDEX IF NOT EXISTS idx_projects_org_workspace_folder ON projects(org_id, workspace_id, folder_id)")
             _maybe_migrate_legacy_files(con)
             _ensure_auth_users_backfill(con)
@@ -2353,6 +2368,7 @@ def _project_row_to_model(row: Any) -> "Project":
         "updated_at": int(row["updated_at"] or 0),
         "version": int(row["version"] or 1),
         "owner_user_id": str(row["owner_user_id"] or ""),
+        "executor_user_id": str((row["executor_user_id"] if "executor_user_id" in keys else "") or "").strip() or None,
         "org_id": str((row["org_id"] if "org_id" in keys else "") or ""),
         "created_by": str((row["created_by"] if "created_by" in keys else "") or ""),
         "updated_by": str((row["updated_by"] if "updated_by" in keys else "") or ""),
@@ -3052,6 +3068,7 @@ class ProjectStorage:
         user_id: Optional[str] = None,
         is_admin: Optional[bool] = None,
         org_id: Optional[str] = None,
+        executor_user_id: Optional[str] = None,
     ) -> str:
         _ensure_schema()
         _ = _scope_is_admin(is_admin)
@@ -3060,12 +3077,13 @@ class ProjectStorage:
         workspace_id = _default_workspace_id(org)
         pid = gen_project_id()
         now = _now_ts()
+        executor = str(executor_user_id or "").strip() or None
         with _connect() as con:
             _ensure_workspace_record(con, org, created_by=owner)
             con.execute(
                 """
-                INSERT INTO projects (id, title, passport_json, created_at, updated_at, version, owner_user_id, org_id, workspace_id, created_by, updated_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO projects (id, title, passport_json, created_at, updated_at, version, owner_user_id, executor_user_id, org_id, workspace_id, created_by, updated_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     pid,
@@ -3075,6 +3093,7 @@ class ProjectStorage:
                     now,
                     1,
                     owner,
+                    executor,
                     org,
                     workspace_id,
                     owner,
@@ -3148,7 +3167,7 @@ class ProjectStorage:
         org_scope = _scope_org_id(org_id) or str(getattr(proj, "org_id", "") or "").strip() or _default_org_id()
         now = _now_ts()
         with _connect() as con:
-            existing = con.execute("SELECT owner_user_id, created_at, version, org_id, workspace_id, created_by FROM projects WHERE id = ? LIMIT 1", [pid]).fetchone()
+            existing = con.execute("SELECT owner_user_id, created_at, version, org_id, workspace_id, created_by, executor_user_id FROM projects WHERE id = ? LIMIT 1", [pid]).fetchone()
             existing_owner = str(existing["owner_user_id"] or "") if existing else ""
             existing_org = str(existing["org_id"] or "") if existing else ""
             existing_workspace_id = str(existing["workspace_id"] or "") if existing else ""
@@ -3165,11 +3184,12 @@ class ProjectStorage:
             created_by = existing_created_by or owner_scope or owner or str(getattr(proj, "created_by", "") or "").strip()
             updated_by = owner_scope or owner or str(getattr(proj, "updated_by", "") or "").strip()
             workspace_id = existing_workspace_id or _default_workspace_id(existing_org or org_scope)
+            executor = str(getattr(proj, "executor_user_id", "") or "").strip() or None
             _ensure_workspace_record(con, existing_org or org_scope or _default_org_id(), created_by=created_by)
             con.execute(
                 """
-                INSERT INTO projects (id, title, passport_json, created_at, updated_at, version, owner_user_id, org_id, workspace_id, created_by, updated_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO projects (id, title, passport_json, created_at, updated_at, version, owner_user_id, executor_user_id, org_id, workspace_id, created_by, updated_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   title=excluded.title,
                   passport_json=excluded.passport_json,
@@ -3177,6 +3197,7 @@ class ProjectStorage:
                   updated_at=excluded.updated_at,
                   version=excluded.version,
                   owner_user_id=excluded.owner_user_id,
+                  executor_user_id=excluded.executor_user_id,
                   org_id=excluded.org_id,
                   workspace_id=excluded.workspace_id,
                   created_by=excluded.created_by,
@@ -3190,6 +3211,7 @@ class ProjectStorage:
                     now,
                     next_version,
                     owner,
+                    executor,
                     existing_org or org_scope or _default_org_id(),
                     workspace_id,
                     created_by,
@@ -7669,6 +7691,10 @@ def _folder_row_to_dict(row: Any) -> Dict[str, Any]:
         "parent_id": str(row["parent_id"] or ""),
         "name": str(row["name"] or ""),
         "sort_order": int(row["sort_order"] or 0),
+        "responsible_user_id": str(_row_value(row, "responsible_user_id") or "").strip() or None,
+        "context_status": str(_row_value(row, "context_status") or "none").strip() or "none",
+        "responsible_assigned_at": _row_value(row, "responsible_assigned_at"),
+        "responsible_assigned_by": _row_value(row, "responsible_assigned_by"),
         "created_by": str(row["created_by"] or ""),
         "created_at": int(row["created_at"] or 0),
         "updated_at": int(row["updated_at"] or 0),
@@ -7684,6 +7710,8 @@ def create_workspace_folder(
     *,
     user_id: Optional[str] = None,
     sort_order: int = 0,
+    responsible_user_id: Optional[str] = None,
+    context_status: str = "none",
 ) -> Dict[str, Any]:
     """Create a folder inside the given workspace. parent_id='' means workspace root."""
     _ensure_schema()
@@ -7699,6 +7727,10 @@ def create_workspace_folder(
         raise ValueError("name required")
     owner = _scope_user_id(user_id)
     now = _now_ts()
+    responsible = str(responsible_user_id or "").strip() or None
+    status = str(context_status or "none").strip() or "none"
+    assigned_at = now if responsible else None
+    assigned_by = owner if responsible else None
     fid = uuid.uuid4().hex[:12]
     with _connect() as con:
         if not get_workspace_record(wid, org_id=oid):
@@ -7720,12 +7752,69 @@ def create_workspace_folder(
             raise ValueError(f"A folder named '{fname}' already exists here")
         con.execute(
             """
-            INSERT INTO workspace_folders (id, org_id, workspace_id, parent_id, name, sort_order, created_by, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO workspace_folders (
+              id, org_id, workspace_id, parent_id, name, sort_order,
+              responsible_user_id, context_status, responsible_assigned_at, responsible_assigned_by,
+              created_by, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            [fid, oid, wid, pid, fname, sort_order, owner, now, now],
+            [fid, oid, wid, pid, fname, sort_order, responsible, status, assigned_at, assigned_by, owner, now, now],
         )
         con.commit()
+        row = con.execute("SELECT * FROM workspace_folders WHERE id = ? LIMIT 1", [fid]).fetchone()
+    return _folder_row_to_dict(row)
+
+
+def update_workspace_folder_business_fields(
+    org_id: str,
+    workspace_id: str,
+    folder_id: str,
+    *,
+    responsible_user_id: Optional[str] = None,
+    update_responsible: bool = False,
+    context_status: Optional[str] = None,
+    update_context_status: bool = False,
+    user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    wid = str(workspace_id or "").strip()
+    fid = str(folder_id or "").strip()
+    if not oid or not wid or not fid:
+        raise ValueError("org_id, workspace_id and folder_id required")
+    actor = _scope_user_id(user_id)
+    now = _now_ts()
+    with _connect() as con:
+        existing = con.execute(
+            "SELECT * FROM workspace_folders WHERE id = ? AND org_id = ? AND workspace_id = ? AND archived_at IS NULL LIMIT 1",
+            [fid, oid, wid],
+        ).fetchone()
+        if not existing:
+            raise ValueError("folder not found")
+        sets: List[str] = []
+        params: List[Any] = []
+        if update_responsible:
+            current_responsible = str(_row_value(existing, "responsible_user_id") or "").strip()
+            next_responsible = str(responsible_user_id or "").strip() or None
+            sets.append("responsible_user_id = ?")
+            params.append(next_responsible)
+            if current_responsible != (next_responsible or ""):
+                sets.append("responsible_assigned_at = ?")
+                params.append(now if next_responsible else None)
+                sets.append("responsible_assigned_by = ?")
+                params.append(actor if next_responsible else None)
+        if update_context_status:
+            sets.append("context_status = ?")
+            params.append(str(context_status or "none").strip() or "none")
+        if sets:
+            sets.append("updated_at = ?")
+            params.append(now)
+            con.execute(
+                f"UPDATE workspace_folders SET {', '.join(sets)} WHERE id = ? AND org_id = ? AND workspace_id = ?",
+                [*params, fid, oid, wid],
+            )
+            con.commit()
         row = con.execute("SELECT * FROM workspace_folders WHERE id = ? LIMIT 1", [fid]).fetchone()
     return _folder_row_to_dict(row)
 
@@ -8033,6 +8122,7 @@ def list_workspace_folder_children(org_id: str, workspace_id: str, parent_id: st
             "folder_id": folder_id,
             "workspace_id": str((_row_value(row, "workspace_id") or "") or wid),
             "owner_user_id": str(project_model.owner_user_id or ""),
+            "executor_user_id": str(getattr(project_model, "executor_user_id", "") or "").strip() or None,
             "org_id": str(project_model.org_id or oid),
             "sessions_count": _safe_int(row["sessions_count"], 0),
             "status": str(passport.get("status", "active") or "active"),
@@ -8195,6 +8285,7 @@ def create_project_in_folder(
     *,
     user_id: Optional[str] = None,
     passport: Optional[Dict[str, Any]] = None,
+    executor_user_id: Optional[str] = None,
 ) -> str:
     """Create a project inside a folder. folder_id must be a valid non-empty folder id."""
     _ensure_schema()
@@ -8211,6 +8302,7 @@ def create_project_in_folder(
     pid = gen_project_id()
     now = _now_ts()
     pdata = dict(passport or {})
+    executor = str(executor_user_id or "").strip() or None
     with _connect() as con:
         frow = con.execute(
             "SELECT id FROM workspace_folders WHERE id = ? AND org_id = ? AND workspace_id = ? AND archived_at IS NULL LIMIT 1",
@@ -8220,10 +8312,10 @@ def create_project_in_folder(
             raise ValueError("folder not found")
         con.execute(
             """
-            INSERT INTO projects (id, title, passport_json, folder_id, workspace_id, created_at, updated_at, version, owner_user_id, org_id, created_by, updated_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO projects (id, title, passport_json, folder_id, workspace_id, created_at, updated_at, version, owner_user_id, executor_user_id, org_id, created_by, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            [pid, str(title or "").strip() or "Проект", _json_dumps(pdata, {}), fid, wid, now, now, 1, owner, oid, owner, owner],
+            [pid, str(title or "").strip() or "Проект", _json_dumps(pdata, {}), fid, wid, now, now, 1, owner, executor, oid, owner, owner],
         )
         con.commit()
     return pid
