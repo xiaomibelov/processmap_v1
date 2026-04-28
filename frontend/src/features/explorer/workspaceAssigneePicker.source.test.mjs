@@ -40,6 +40,8 @@ test("Folder and project row menus expose assignment actions", () => {
   assert.match(explorerPaneSource, /folderLabel:\s*targetLabel/);
   assert.match(explorerPaneSource, /kind:\s*"executor"/);
   assert.match(explorerPaneSource, /canAssign=\{!!permissions\?\.canRenameProject\}/);
+  assert.match(explorerSource, /currentUser=\{user\}/);
+  assert.match(explorerSource, /orgs=\{orgs\}/);
 });
 
 test("Assignee picker loads org members, filters users, and has bounded loading states", () => {
@@ -47,12 +49,15 @@ test("Assignee picker loads org members, filters users, and has bounded loading 
   const explorerPaneSource = between("function ExplorerPane(", "// ─── Session Row");
 
   assert.match(explorerSource, /apiListOrgMembers/);
+  assert.match(explorerSource, /mergeExplorerAssignableCurrentUser/);
   assert.match(explorerSource, /getExplorerAssignableUserId/);
   assert.match(explorerPaneSource, /Promise\.race\(\[\s*apiListOrgMembers\(oid\),\s*assigneeMembersLoadTimeout\(\),\s*\]\)/);
   assert.match(explorerPaneSource, /normalizeExplorerAssignableUsersResponse\(resp\)/);
   assert.match(explorerPaneSource, /\}, \[activeOrgId,\s*assigneeDialog\]\);/);
   assert.doesNotMatch(explorerPaneSource, /\}, \[[^\]]*assigneeMembersState\.(?:loaded|loading|orgId)[^\]]*\]\);/);
   assert.match(explorerPaneSource, /loading:\s*false,\s*loaded:\s*true,\s*error:\s*normalized\.error/s);
+  assert.match(explorerPaneSource, /const responsibleAssigneeUsers = useMemo\(/);
+  assert.match(explorerPaneSource, /assigneeDialog\.kind === "responsible" \? responsibleAssigneeUsers : assigneeMembersState\.items/);
   assert.match(explorerPaneSource, /catch\(\(e\) => \{[\s\S]*loading:\s*false,[\s\S]*error:\s*"Не удалось загрузить пользователей\."/);
   assert.match(dialogSource, /filterExplorerAssignableUsers\(users,\s*query\)/);
   assert.match(dialogSource, /Загрузка пользователей\.\.\./);
