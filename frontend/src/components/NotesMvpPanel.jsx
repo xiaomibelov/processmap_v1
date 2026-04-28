@@ -31,6 +31,7 @@ import {
   mentionUserIdsForSubmit,
   pruneSelectedMentions,
 } from "../features/notes/mentionAutocomplete.js";
+import NoteMarkdown from "../features/notes/markdownRenderer.js";
 import { readableBpmnText } from "../features/process/bpmn/bpmnIdentity";
 import NotesAggregateBadge from "./NotesAggregateBadge.jsx";
 import { useSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
@@ -1494,7 +1495,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                                     <span className="text-[13px] font-semibold text-fg">{author}</span>
                                     <span className="text-[11px] text-muted">{formatDate(comment?.updated_at || comment?.created_at) || "только что"}</span>
                                   </div>
-                                  <div className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-fg">{text(comment?.body)}</div>
+                                  <NoteMarkdown>{comment?.body}</NoteMarkdown>
                                   {asArray(comment?.mentions).length ? (
                                     <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted" data-testid="notes-comment-mentions">
                                       {asArray(comment.mentions).map((mention) => (
@@ -1578,7 +1579,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         <div className="text-[11px] leading-relaxed text-muted">
                           {mentionUserIdsForSubmit(commentDraft, commentMentionComposer.selected).length
                             ? `Упоминаний: ${mentionUserIdsForSubmit(commentDraft, commentMentionComposer.selected).length}`
-                            : ""}
+                            : "Поддерживается Markdown"}
                         </div>
                         <button type="button" className="primaryBtn smallBtn" onClick={addComment} disabled={busy.startsWith("comment:") || !text(commentDraft)}>
                           {busy.startsWith("comment:") ? "Отправляем..." : "Отправить"}

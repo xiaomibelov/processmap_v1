@@ -1,8 +1,14 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.34",
+  currentVersion: "v1.0.35",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.35",
+      changes: [
+        "Добавлена поддержка Markdown в обсуждениях.",
+      ],
+    },
     {
       version: "v1.0.34",
       changes: [
