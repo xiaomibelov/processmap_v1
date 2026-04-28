@@ -160,8 +160,8 @@ test("Discussions render entity priority and attention from the thread source of
   assert.match(notesMvpPanelSource, /function attentionAcknowledged\(thread\)/);
   assert.match(notesMvpPanelSource, /data-testid="notes-create-priority"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-create-attention"/);
-  assert.match(notesMvpPanelSource, /data-testid="notes-create-mention-user"/);
-  assert.match(notesMvpPanelSource, /data-testid="notes-reply-mention-user"/);
+  assert.match(notesMvpPanelSource, /data-testid=\{`notes-\$\{kind\}-mention-suggestions`\}/);
+  assert.match(notesMvpPanelSource, /data-testid=\{`notes-\$\{kind\}-mention-option`\}/);
   assert.match(notesMvpPanelSource, /data-testid="notes-comment-mentions"/);
   assert.match(notesMvpPanelSource, /apiListMentionableUsers/);
   assert.match(notesMvpPanelSource, /mention_user_ids/);
@@ -188,14 +188,28 @@ test("Create discussion flow presents an entity-style form and composes initial 
   assert.match(notesMvpPanelSource, />Контекст</);
   assert.match(notesMvpPanelSource, />Приоритет</);
   assert.match(notesMvpPanelSource, />Требует внимания</);
-  assert.match(notesMvpPanelSource, />Упомянуть</);
   assert.match(notesMvpPanelSource, />Описание</);
   assert.match(notesMvpPanelSource, /Коротко сформулируйте вопрос/);
   assert.match(notesMvpPanelSource, /Добавьте детали, факты или ожидаемое решение/);
-  assert.match(notesMvpPanelSource, /Без упоминания/);
   assert.match(notesMvpPanelSource, /Подсветить как требующее реакции/);
   assert.match(notesMvpPanelSource, /body: details \? `\$\{subject\}\\n\\n\$\{details\}` : subject/);
   assert.match(notesMvpPanelSource, /disabled=\{busy === "create" \|\| !text\(createSubject\) \|\| !canCreateCurrentScope\}/);
+});
+
+test("Discussions use inline at-mention autocomplete instead of separate mention selects", () => {
+  assert.match(notesMvpPanelSource, /detectMentionQuery/);
+  assert.match(notesMvpPanelSource, /filterMentionSuggestions/);
+  assert.match(notesMvpPanelSource, /insertMentionText/);
+  assert.match(notesMvpPanelSource, /mentionUserIdsForSubmit/);
+  assert.match(notesMvpPanelSource, /const \[createMentionComposer, setCreateMentionComposer\] = useState\(\{ selected: \[\], active: null, highlightedIndex: 0 \}\);/);
+  assert.match(notesMvpPanelSource, /const \[commentMentionByThread, setCommentMentionByThread\] = useState\(\{\}\);/);
+  assert.match(notesMvpPanelSource, /onKeyDown=\{\(event\) => handleMentionKeyDown\(event, createMentionComposer, createMentionSuggestions, setCreateMentionComposer, selectCreateMention\)\}/);
+  assert.match(notesMvpPanelSource, /onKeyDown=\{\(event\) => handleMentionKeyDown\(event, commentMentionComposer, commentMentionSuggestions, setCommentComposerForSelected, selectCommentMention\)\}/);
+  assert.match(notesMvpPanelSource, /mention_user_ids: createMentionUserIds/);
+  assert.match(notesMvpPanelSource, /mention_user_ids: commentMentionUserIds/);
+  assert.doesNotMatch(notesMvpPanelSource, /data-testid="notes-create-mention-user"/);
+  assert.doesNotMatch(notesMvpPanelSource, /data-testid="notes-reply-mention-user"/);
+  assert.doesNotMatch(notesMvpPanelSource, />Упомянуть</);
 });
 
 test("Discussions panel exposes bounded notification inbox and history without new storage truth", () => {
