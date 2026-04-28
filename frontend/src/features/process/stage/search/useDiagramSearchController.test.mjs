@@ -154,6 +154,88 @@ test("useDiagramSearchController syncs highlights and uses existing focus path f
   }
 });
 
+test("useDiagramSearchController routes row and Prev/Next through navigation callback when provided", async () => {
+  const { root, cleanup } = setupDom();
+  const navigateCalls = [];
+  const focusCalls = [];
+  let latest = null;
+  let open = true;
+
+  const bpmnRef = {
+    current: {
+      listSearchableElements: () => [
+        {
+          elementId: "Task_Main",
+          name: "Main",
+          type: "bpmn:Task",
+        },
+        {
+          elementId: "Task_Child",
+          name: "Child",
+          type: "bpmn:Task",
+          isInsideSubprocess: true,
+          parentSubprocessId: "Sub_1",
+          subprocessPath: [{ id: "Sub_1", name: "Подпроцесс" }],
+        },
+      ],
+      setSearchHighlights: () => true,
+      clearSearchHighlights: () => true,
+    },
+  };
+
+  try {
+    await renderHarness(root, {
+      bpmnRef,
+      requestDiagramFocus: (elementId, options) => {
+        focusCalls.push({ elementId, options });
+      },
+      onNavigateSearchResult: (result, options) => {
+        navigateCalls.push({ elementId: result?.elementId, options });
+      },
+      sessionId: "sid_nav",
+      reloadKey: 1,
+      diagramXml: "<bpmn:definitions/>",
+      mutationVersion: 0,
+      isOpen: open,
+      setOpen: (next) => {
+        open = next === true;
+      },
+      isEnabled: true,
+    }, (value) => {
+      latest = value;
+    });
+
+    await act(async () => {
+      latest.setQuery("task");
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    });
+
+    await act(async () => {
+      latest.selectIndex(1);
+    });
+    await act(async () => {
+      latest.prev();
+    });
+    await act(async () => {
+      latest.next();
+    });
+
+    assert.deepEqual(
+      navigateCalls.map((call) => [call.elementId, call.options?.source]),
+      [
+        ["Task_Child", "diagram_search_row"],
+        ["Task_Main", "diagram_search_prev"],
+        ["Task_Child", "diagram_search_next"],
+      ],
+    );
+    assert.equal(focusCalls.length, 0);
+  } finally {
+    await cleanup();
+  }
+});
+
 test("useDiagramSearchController recomputes results on mutation trigger and clears stale highlights on session switch", async () => {
   const { root, cleanup } = setupDom();
   let latest = null;
