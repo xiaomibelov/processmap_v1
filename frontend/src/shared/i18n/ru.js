@@ -125,7 +125,7 @@ export const ru = {
       jobs: "Задания",
       audit: "Аудит",
       telemetry: "Телеметрия",
-      orgs: "Доступ и организации",
+      orgs: "Пользователи и доступ",
       projects: "Проекты",
     },
     route: {
@@ -134,8 +134,8 @@ export const ru = {
         subtitle: "Операционная сводка ProcessMap / Food Process Copilot",
       },
       orgs: {
-        title: "Доступ и организации",
-        subtitle: "Пользователи, роли, инвайты и состояние организаций",
+        title: "Пользователи и доступ",
+        subtitle: "Управление пользователями, ролями, инвайтами и организациями.",
       },
       projects: {
         title: "Проекты",
@@ -161,7 +161,7 @@ export const ru = {
     sections: {
       admin: "Админ",
       dashboard: "Сводка",
-      orgs: "Доступ и организации",
+      orgs: "Пользователи и доступ",
       projects: "Проекты",
       sessions: "Сессии",
       sessionDetail: "Сессия",
@@ -242,7 +242,7 @@ export const ru = {
       },
       table: {
         eyebrow: "Список",
-        title: "Таблица организаций",
+        title: "Организации",
         subtitle: "Список организаций в текущем административном контуре",
         org: "Организация",
         role: "Роль",
