@@ -66,6 +66,9 @@ from .storage import (
     update_org_git_mirror_config,
     get_project_explorer_invalidation_targets,
     session_version_payload_hash,
+    touch_session_presence,
+    list_session_presence,
+    prune_stale_session_presence,
 )
 from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
 from .redis_lock import acquire_session_lock
@@ -142,6 +145,7 @@ from .schemas.legacy_api import (
     OrgReportBuildIn,
     ProjectMemberPatchIn,
     ProjectMemberUpsertIn,
+    SessionPresenceTouchIn,
     SessionTitleQuestionsIn,
     UpdateSessionIn,
     norm_project_session_mode as _norm_project_session_mode,
@@ -734,6 +738,34 @@ def _session_api_dump(sess: Session) -> Dict[str, Any]:
     d["bpmn_meta"] = _normalize_bpmn_meta(d.get("bpmn_meta"))
     d["publish_git_mirror"] = _extract_publish_git_mirror(d.get("interview"))
     return d
+
+
+_SESSION_PRESENCE_TTL_SECONDS = 180
+_SESSION_PRESENCE_CLIENT_ID_RE = re.compile(r"[^A-Za-z0-9_.:-]+")
+_SESSION_PRESENCE_SURFACE_RE = re.compile(r"[^A-Za-z0-9_.:-]+")
+
+
+def _normalize_session_presence_client_id(value: Any) -> str:
+    text = _SESSION_PRESENCE_CLIENT_ID_RE.sub("", str(value or "").strip())
+    return text[:128]
+
+
+def _normalize_session_presence_surface(value: Any) -> str:
+    text = _SESSION_PRESENCE_SURFACE_RE.sub("", str(value or "").strip())
+    return (text[:64] or "process_stage")
+
+
+def _user_is_member_of_org(user_id: str, org_id: str, *, is_admin: bool = False) -> bool:
+    uid = str(user_id or "").strip()
+    oid = str(org_id or "").strip()
+    if not uid or not oid:
+        return False
+    if bool(is_admin):
+        return True
+    for row in list_user_org_memberships(uid, is_admin=is_admin):
+        if str((row or {}).get("org_id") or "").strip() == oid:
+            return True
+    return False
 
 
 _DIAGRAM_TRUTH_PATCH_KEYS = {"bpmn_meta", "interview", "nodes", "edges", "questions", "status"}
@@ -3529,6 +3561,57 @@ def get_session(session_id: str, request: Request = None) -> Dict[str, Any]:
             version_token,
         )
     return payload
+
+
+@app.post("/api/sessions/{session_id}/presence")
+def touch_session_presence_api(
+    session_id: str,
+    inp: SessionPresenceTouchIn,
+    request: Request = None,
+) -> Dict[str, Any]:
+    user_id, is_admin = _request_user_meta(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="authentication required")
+    sess, oid, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        raise HTTPException(status_code=404, detail="session not found")
+    client_id = _normalize_session_presence_client_id(getattr(inp, "client_id", ""))
+    if not client_id:
+        raise HTTPException(status_code=422, detail="client_id is required")
+    surface = _normalize_session_presence_surface(getattr(inp, "surface", "process_stage"))
+    sid = str(getattr(sess, "id", "") or session_id).strip()
+    project_id = str(getattr(sess, "project_id", "") or "").strip()
+    org_id = str(oid or getattr(sess, "org_id", "") or get_default_org_id()).strip()
+    active_org_id = _request_active_org_id(request) if request is not None else org_id
+    if active_org_id and org_id and active_org_id != org_id:
+        raise HTTPException(status_code=404, detail="session not found")
+    if not _user_is_member_of_org(user_id, org_id, is_admin=is_admin):
+        raise HTTPException(status_code=404, detail="session not found")
+    now = int(time.time())
+    touch_session_presence(
+        sid,
+        user_id,
+        client_id,
+        org_id=org_id,
+        project_id=project_id,
+        surface=surface,
+        now_ts=now,
+    )
+    prune_stale_session_presence(ttl_seconds=_SESSION_PRESENCE_TTL_SECONDS, now_ts=now)
+    active_users = list_session_presence(
+        sid,
+        org_id=org_id,
+        project_id=project_id,
+        ttl_seconds=_SESSION_PRESENCE_TTL_SECONDS,
+        now_ts=now,
+        current_user_id=user_id,
+    )
+    return {
+        "ok": True,
+        "session_id": sid,
+        "ttl_seconds": _SESSION_PRESENCE_TTL_SECONDS,
+        "active_users": active_users,
+    }
 
 
 @app.get("/api/sessions/{session_id}/tldr")
