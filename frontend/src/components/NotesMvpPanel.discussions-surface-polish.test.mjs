@@ -205,6 +205,8 @@ test("Discussions use inline at-mention autocomplete instead of separate mention
   assert.match(notesMvpPanelSource, /const \[commentMentionByThread, setCommentMentionByThread\] = useState\(\{\}\);/);
   assert.match(notesMvpPanelSource, /onKeyDown=\{\(event\) => handleMentionKeyDown\(event, createMentionComposer, createMentionSuggestions, setCreateMentionComposer, selectCreateMention\)\}/);
   assert.match(notesMvpPanelSource, /onKeyDown=\{\(event\) => handleMentionKeyDown\(event, commentMentionComposer, commentMentionSuggestions, setCommentComposerForSelected, selectCommentMention\)\}/);
+  assert.match(notesMvpPanelSource, /placement === "above" \? "bottom-full mb-1" : "top-full mt-1"/);
+  assert.match(notesMvpPanelSource, /renderMentionSuggestions\("reply", commentMentionComposer, commentMentionSuggestions, selectCommentMention, "above"\)/);
   assert.match(notesMvpPanelSource, /mention_user_ids: createMentionUserIds/);
   assert.match(notesMvpPanelSource, /mention_user_ids: commentMentionUserIds/);
   assert.doesNotMatch(notesMvpPanelSource, /data-testid="notes-create-mention-user"/);
