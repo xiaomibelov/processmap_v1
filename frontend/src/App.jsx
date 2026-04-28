@@ -3438,6 +3438,8 @@ export default function App() {
         onFocusNotificationTarget={focusDiscussionNotificationTarget}
         onFocusLinkedElement={focusDiscussionLinkedElement}
         currentUserId={user?.id}
+        mentionNotifications={mentionNotifications}
+        onOpenMentionNotification={openMentionNotification}
       />
 
       <OrgSettingsModal
