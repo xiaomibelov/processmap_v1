@@ -31,66 +31,83 @@ export function buildVisibleRows({
   childItemsByFolder,
   loadingByFolder,
   loadErrorByFolder,
+  preserveItemOrder = false,
 }) {
   const rows = [];
 
+  const appendFolder = (folder, depth, appendRows) => {
+    const folderId = String(folder?.id || "").trim();
+    const expanded = Boolean(expandedByFolder?.[folderId]);
+    const childItems = Array.isArray(childItemsByFolder?.[folderId])
+      ? childItemsByFolder[folderId]
+      : null;
+    const childrenLoaded = Array.isArray(childItems);
+    const loading = Boolean(loadingByFolder?.[folderId]);
+    const loadError = String(loadErrorByFolder?.[folderId] || "").trim();
+    const expandable = hasFolderChildren(folder);
+    rows.push({
+      rowType: "folder",
+      node: folder,
+      depth,
+      expanded,
+      expandable,
+      childrenLoaded,
+      loading,
+    });
+    if (!expandable || !expanded) return;
+    if (loading) {
+      rows.push({
+        rowType: "loading",
+        parentId: folderId,
+        depth: depth + 1,
+      });
+      return;
+    }
+    if (childrenLoaded) {
+      if (childItems.length > 0) {
+        appendRows(childItems, depth + 1);
+        return;
+      }
+      rows.push({
+        rowType: "empty",
+        parentId: folderId,
+        depth: depth + 1,
+      });
+      return;
+    }
+    if (loadError) {
+      rows.push({
+        rowType: "error",
+        parentId: folderId,
+        depth: depth + 1,
+        message: loadError,
+      });
+    }
+  };
+
+  const appendProject = (project, depth) => {
+    rows.push({
+      rowType: "project",
+      node: project,
+      depth,
+    });
+  };
+
   const appendRows = (items, depth) => {
+    if (preserveItemOrder) {
+      for (const item of asArray(items)) {
+        const type = String(item?.type || "").trim();
+        if (type === "folder") appendFolder(item, depth, appendRows);
+        if (type === "project") appendProject(item, depth);
+      }
+      return;
+    }
     const { folders, projects } = splitExplorerItems(items);
     for (const folder of folders) {
-      const folderId = String(folder?.id || "").trim();
-      const expanded = Boolean(expandedByFolder?.[folderId]);
-      const childItems = Array.isArray(childItemsByFolder?.[folderId])
-        ? childItemsByFolder[folderId]
-        : null;
-      const childrenLoaded = Array.isArray(childItems);
-      const loading = Boolean(loadingByFolder?.[folderId]);
-      const loadError = String(loadErrorByFolder?.[folderId] || "").trim();
-      const expandable = hasFolderChildren(folder);
-      rows.push({
-        rowType: "folder",
-        node: folder,
-        depth,
-        expanded,
-        expandable,
-        childrenLoaded,
-        loading,
-      });
-      if (!expandable || !expanded) continue;
-      if (loading) {
-        rows.push({
-          rowType: "loading",
-          parentId: folderId,
-          depth: depth + 1,
-        });
-        continue;
-      }
-      if (childrenLoaded) {
-        if (childItems.length > 0) {
-          appendRows(childItems, depth + 1);
-          continue;
-        }
-        rows.push({
-          rowType: "empty",
-          parentId: folderId,
-          depth: depth + 1,
-        });
-        continue;
-      }
-      if (loadError) {
-        rows.push({
-          rowType: "error",
-          parentId: folderId,
-          depth: depth + 1,
-          message: loadError,
-        });
-      }
+      appendFolder(folder, depth, appendRows);
     }
     for (const project of projects) {
-      rows.push({
-        rowType: "project",
-        node: project,
-        depth,
-      });
+      appendProject(project, depth);
     }
   };
 
