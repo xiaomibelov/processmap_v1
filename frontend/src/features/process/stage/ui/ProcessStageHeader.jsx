@@ -43,7 +43,6 @@ export default function ProcessStageHeader({ view = {} }) {
     handleDrawioImportFile,
     topPanelsView,
     sessionPresenceView,
-    remoteSaveHighlightView,
   } = view;
   const publishedRevisionBadge = resolvePublishedRevisionBadgeView(sessionRevisionHistorySnapshot);
   const latestPublishedRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestPublishedRevisionNumber || 0);
@@ -64,8 +63,6 @@ export default function ProcessStageHeader({ view = {} }) {
     && !showConflictModalActive
     && (uploadStatusState === "save_failed" || uploadStatusState === "conflict");
   const showSessionPresenceBadge = hasSession && sessionPresenceView?.visible === true && !showConflictModalActive;
-  const showRemoteSaveHighlightBadge = remoteSaveHighlightView?.visible === true && !showConflictModalActive;
-  const showRemoteSaveRefreshAction = showRemoteSaveHighlightBadge && typeof remoteSaveHighlightView?.onRefreshSession === "function";
   const canCreateRevisionFromCurrentState = canCreateRevisionNow !== false
     && typeof handleCreateRevisionAction === "function";
   const showCreateRevisionNoDiffHint = hasSession
@@ -179,31 +176,6 @@ export default function ProcessStageHeader({ view = {} }) {
             >
               {String(sessionPresenceView?.label || "")}
             </span>
-          ) : null}
-          {showRemoteSaveHighlightBadge ? (
-            <>
-              <span
-                className="badge text-[11px] info"
-                data-testid="diagram-toolbar-remote-save-highlight"
-                title={String(remoteSaveHighlightView?.title || remoteSaveHighlightView?.label || "")}
-              >
-                {String(remoteSaveHighlightView?.label || "")}
-              </span>
-              {showRemoteSaveRefreshAction ? (
-                <button
-                  type="button"
-                  className="secondaryBtn h-7 whitespace-nowrap px-2 text-[11px]"
-                  onClick={() => void remoteSaveHighlightView?.onRefreshSession?.()}
-                  disabled={remoteSaveHighlightView?.busy === true}
-                  title={String(remoteSaveHighlightView?.refreshHint || "")}
-                  data-testid="diagram-toolbar-remote-save-refresh"
-                >
-                  {remoteSaveHighlightView?.busy === true
-                    ? "Обновляем..."
-                    : String(remoteSaveHighlightView?.refreshLabel || "Обновить сессию")}
-                </button>
-              ) : null}
-            </>
           ) : null}
           {showUploadStatusBadge ? (
             <span
