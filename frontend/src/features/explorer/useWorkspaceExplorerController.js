@@ -10,6 +10,10 @@ import {
   normalizeRequestedProjectWorkspace,
   resolveExplorerWorkspaceId,
 } from "./workspaceRestore.js";
+import {
+  normalizeProjectBreadcrumbBase,
+  resolveProjectBreadcrumbTarget,
+} from "./workspaceBreadcrumbs.js";
 
 export function useWorkspaceExplorerController({
   activeOrgId,
@@ -215,6 +219,7 @@ export function useWorkspaceExplorerController({
       return;
     }
     if (pid !== currentProjectId) {
+      setBreadcrumbBase([]);
       setCurrentProjectId(pid);
     }
   }, [requestProjectId, requestProjectWorkspaceId, resolvedRequestWorkspaceId, activeWorkspaceId, currentProjectId, projectRestoreStatus, ignoredRequestProjectId]);
@@ -242,15 +247,18 @@ export function useWorkspaceExplorerController({
     setActiveWorkspaceId(created.id);
     setCurrentFolderId("");
     setCurrentProjectId(null);
+    setBreadcrumbBase([]);
   }, [activeOrgId, activeWorkspace?.role]);
 
   const handleNavigateToFolder = useCallback((folderId) => {
     dismissRequestedProjectRestore({ clearExternal: true });
     setCurrentFolderId(folderId);
     setCurrentProjectId(null);
+    setBreadcrumbBase([]);
   }, [dismissRequestedProjectRestore]);
 
-  const handleNavigateToProject = useCallback((projectId) => {
+  const handleNavigateToProject = useCallback((projectId, options = {}) => {
+    setBreadcrumbBase(normalizeProjectBreadcrumbBase(options?.breadcrumbBase));
     setCurrentProjectId(projectId);
   }, []);
 
@@ -261,15 +269,16 @@ export function useWorkspaceExplorerController({
     }
     setCurrentFolderId(folderId || "");
     setCurrentProjectId(null);
+    setBreadcrumbBase([]);
   }, [dismissRequestedProjectRestore, activeWorkspaceId]);
 
   const handleBackFromProject = useCallback((crumb) => {
     dismissRequestedProjectRestore({ clearExternal: true });
     setCurrentProjectId(null);
-    if (crumb.type === "workspace") {
-      setCurrentFolderId("");
-    } else {
-      setCurrentFolderId(crumb.id);
+    setBreadcrumbBase([]);
+    const target = resolveProjectBreadcrumbTarget(crumb);
+    if (target) {
+      setCurrentFolderId(target.folderId);
     }
   }, [dismissRequestedProjectRestore]);
 
