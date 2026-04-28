@@ -18,8 +18,8 @@ import {
   getNoteTemplatePreset,
 } from "../features/notes/knowledgeTools.js";
 import {
-  buildDiscussionNotificationBuckets,
-} from "../features/notes/discussionNotificationModel.js";
+  buildDiscussionNotificationCenter,
+} from "../features/notes/discussionNotificationCenterModel.js";
 import {
   countParticipatedThreads,
   isThreadParticipatedByCurrentUser,
@@ -387,6 +387,8 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   onFocusNotificationTarget = null,
   onFocusLinkedElement = null,
   currentUserId = "",
+  mentionNotifications = [],
+  onOpenMentionNotification = null,
 }, ref) {
   const sid = text(sessionId);
   const viewerUserId = text(currentUserId);
@@ -511,9 +513,14 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     return out;
   }, [displayThreads, mentionableUsers]);
   const notificationMode = panelMode === "notifications";
-  const notificationBuckets = useMemo(
-    () => buildDiscussionNotificationBuckets(threads, { currentUserId: viewerUserId }),
-    [threads, viewerUserId],
+  const notificationCenter = useMemo(
+    () => buildDiscussionNotificationCenter({
+      threads,
+      mentions: mentionNotifications,
+      currentUserId: viewerUserId,
+      sessionId: sid,
+    }),
+    [mentionNotifications, sid, threads, viewerUserId],
   );
   const participatedThreadsCount = useMemo(
     () => countParticipatedThreads(displayThreads, viewerUserId),
@@ -537,8 +544,8 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   }, [displayThreads, participationFilter, searchQuery, sortOrder, viewerUserId]);
 
   const selectedThread = useMemo(() => {
-    return visibleThreads.find((item) => text(item?.id) === selectedThreadId) || visibleThreads[0] || null;
-  }, [selectedThreadId, visibleThreads]);
+    return visibleThreads.find((item) => text(item?.id) === selectedThreadId) || (notificationMode ? null : visibleThreads[0]) || null;
+  }, [notificationMode, selectedThreadId, visibleThreads]);
   const selectedThreadIsLegacyBridge = isLegacyBridgeThread(selectedThread);
   const selectedThreadLinkedElement = useMemo(() => linkedElementContext(selectedThread), [selectedThread]);
 
@@ -552,12 +559,12 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const activeFilterCount = Number(statusFilter !== "open") + Number(scopeFilter !== "all") + Number(participationFilter !== "all") + Number(sortOrder !== "newest");
   const discussionSummaryLine = useMemo(() => {
     if (notificationMode) {
-      const activeCount = notificationBuckets.activeTotal;
-      const historyCount = notificationBuckets.historyTotal;
+      const totalCount = notificationCenter.totalCount;
+      const signalCount = notificationCenter.signalCount;
       return [
         text(sessionTitle) || "Сессия",
-        `${activeCount} активных`,
-        `${historyCount} недавних`,
+        `${totalCount} тем`,
+        `${signalCount} событий`,
       ].join(" · ");
     }
     const parts = [
@@ -569,7 +576,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       parts.push(`показано ${visibleThreads.length}`);
     }
     return parts.join(" · ");
-  }, [displayThreads.length, notificationBuckets.activeTotal, notificationBuckets.historyTotal, notificationMode, openThreadsCount, sessionTitle, visibleThreads.length]);
+  }, [displayThreads.length, notificationCenter.signalCount, notificationCenter.totalCount, notificationMode, openThreadsCount, sessionTitle, visibleThreads.length]);
   const createMentionSuggestions = useMemo(
     () => filterMentionSuggestions(mentionableUsers, createMentionComposer.active?.query || "", createMentionComposer.selected),
     [createMentionComposer.active?.query, createMentionComposer.selected, mentionableUsers],
@@ -834,6 +841,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
         return preferredThreadId;
       }
       if (nextThreads.some((item) => text(item?.id) === prev)) return prev;
+      if (notificationMode) return "";
       return text(nextThreads[0]?.id);
     });
     setLoading(false);
@@ -978,12 +986,17 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
 
   async function openNotificationItem(item) {
     const notification = item && typeof item === "object" ? item : {};
+    if (notification.type === "mention" && typeof onOpenMentionNotification === "function") {
+      await Promise.resolve(onOpenMentionNotification(notification.mention || notification));
+      return;
+    }
     const threadId = text(notification.threadId);
     if (!threadId) return;
     setCreateOpen(false);
-    setPanelMode("notifications");
+    setPanelMode("discussions");
     setStatusFilter("all");
     setScopeFilter("all");
+    setParticipationFilter("all");
     setSelectedThreadId(threadId);
     setFocusedCommentId(text(notification.commentId));
     if (text(notification.targetElementId)) {
@@ -995,7 +1008,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
         comment_id: text(notification.commentId),
       });
     }
-    if (notification.state !== "active" || disabled) return;
+    if (notification.type !== "attention" || notification.state !== "active" || disabled) return;
     setBusy(`ack:${threadId}`);
     setError("");
     const result = await apiAcknowledgeNoteThreadAttention(threadId);
@@ -1044,6 +1057,12 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setCreateOpen(false);
   }
 
+  function notificationTone(type) {
+    if (type === "mention") return "border-danger/50 bg-danger/10 text-danger";
+    if (type === "unread") return "border-info/50 bg-info/10 text-info";
+    return "border-warning/55 bg-warning/10 text-warning";
+  }
+
   function renderNotificationList(items, emptyText) {
     const list = asArray(items);
     if (!list.length) {
@@ -1061,25 +1080,68 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
             <button
               key={item.id}
               type="button"
-              className={`rounded-xl border px-2.5 py-2 text-left transition ${active ? "border-danger/50 bg-danger/10" : "border-border/80 bg-panel/80 hover:border-danger/45 hover:bg-panel2/80"}`}
+              className={`rounded-xl border px-2.5 py-2 text-left transition ${active ? "border-info/60 bg-info/10 shadow-sm ring-1 ring-info/25" : "border-border/80 bg-panel/80 hover:border-info/45 hover:bg-panel2/80"}`}
               onClick={() => void openNotificationItem(item)}
-              data-testid={`discussion-notification-${item.state}`}
+              data-testid={`discussion-notification-${item.type}`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="line-clamp-2 text-[12px] font-semibold leading-snug text-fg">{item.title}</div>
-                  <div className="mt-1 truncate text-[11px] text-muted">{item.sourceLabel || "Обсуждение"}</div>
+                  <div className="mt-1 truncate text-[11px] text-muted">
+                    {item.sourceLabel || "Обсуждение"}
+                    {item.authorLabel ? ` · ${item.authorLabel}` : ""}
+                  </div>
                 </div>
-                <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${item.state === "active" ? "border-danger/50 bg-danger/10 text-danger" : "border-success/50 bg-success/10 text-success"}`}>
-                  {item.state === "active" ? "Требует внимания" : "Недавнее"}
+                <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${notificationTone(item.type)}`}>
+                  {item.badgeLabel || "уведомление"}
                 </span>
               </div>
+              <div className="mt-1.5 line-clamp-2 text-[11px] leading-snug text-muted">
+                {item.excerpt || "Открыть обсуждение"}
+              </div>
               <div className="mt-1.5 text-[10px] text-muted">
-                {formatDate(item.updatedAt) || "сейчас"}
+                {formatDate(item.timestamp || item.updatedAt) || "сейчас"}
               </div>
             </button>
           );
         })}
+      </div>
+    );
+  }
+
+  function renderNotificationCenter() {
+    if (loading && notificationCenter.signalCount === 0) {
+      return (
+        <div className="rounded-xl border border-dashed border-border bg-bg/50 px-3 py-2 text-[11px] leading-relaxed text-muted">
+          Загрузка уведомлений...
+        </div>
+      );
+    }
+    if (error && notificationCenter.signalCount === 0) {
+      return (
+        <div className="rounded-xl border border-danger/45 bg-danger/10 px-3 py-2 text-[11px] leading-relaxed text-danger">
+          Не удалось загрузить уведомления.
+        </div>
+      );
+    }
+    if (notificationCenter.signalCount === 0) {
+      return (
+        <div className="rounded-xl border border-dashed border-border bg-bg/50 px-3 py-2 text-[11px] leading-relaxed text-muted">
+          Нет новых уведомлений.
+        </div>
+      );
+    }
+    return (
+      <div className="grid gap-3">
+        {notificationCenter.groups.map((group) => (
+          <section key={group.key}>
+            <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted">
+              <span>{group.label}</span>
+              <span className="tabular-nums">{group.count}</span>
+            </div>
+            {renderNotificationList(group.items, "Нет уведомлений в этой группе.")}
+          </section>
+        ))}
       </div>
     );
   }
@@ -1407,10 +1469,16 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                       setStatusFilter("all");
                       setScopeFilter("all");
                       setFiltersOpen(false);
+                      setSelectedThreadId("");
                     }}
                     data-testid="discussion-notifications-open"
                   >
-                    @ Уведомления
+                    Уведомления
+                    {notificationCenter.totalCount > 0 ? (
+                      <span className="ml-1 rounded-full border border-info/45 bg-info/10 px-1.5 py-0 text-[10px] font-bold leading-4 tabular-nums text-info">
+                        {notificationCenter.totalCount}
+                      </span>
+                    ) : null}
                   </button>
                 )}
                 <button
@@ -1917,7 +1985,14 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
               {notificationMode ? (
                 <div data-testid="discussion-notification-inbox" className="flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-panel/85 p-3 shadow-sm">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Требует внимания</div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Уведомления</div>
+                      <div className="mt-0.5 truncate text-[11px] text-muted">
+                        {notificationCenter.totalCount > 0
+                          ? `${notificationCenter.totalCount} тем требуют действия`
+                          : "Нет новых уведомлений"}
+                      </div>
+                    </div>
                     <button
                       type="button"
                       className="secondaryBtn tinyBtn h-7 px-2 text-[10px]"
@@ -1928,22 +2003,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                     </button>
                   </div>
                   <div className="mt-2 min-h-0 flex-1 overflow-auto pr-1">
-                    <div className="grid gap-3">
-                    <section>
-                      <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted">
-                        <span>Требуют внимания</span>
-                        <span className="tabular-nums">{notificationBuckets.activeTotal}</span>
-                      </div>
-                      {renderNotificationList(notificationBuckets.active, "Нет обсуждений, которые требуют внимания.")}
-                    </section>
-                    <section>
-                      <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted">
-                        <span>Недавние</span>
-                        <span className="tabular-nums">{notificationBuckets.historyTotal}</span>
-                      </div>
-                      {renderNotificationList(notificationBuckets.history, "Недавних просмотренных или закрытых ваших обсуждений пока нет.")}
-                    </section>
-                    </div>
+                    {renderNotificationCenter()}
                   </div>
                 </div>
               ) : (

@@ -9,6 +9,7 @@ const appSource = fs.readFileSync(new URL("../App.jsx", import.meta.url), "utf8"
 const derivedSource = fs.readFileSync(new URL("../features/tldr/ui/DerivedContextSurface.jsx", import.meta.url), "utf8");
 const diagramControlsSource = fs.readFileSync(new URL("../features/process/stage/ui/ProcessStageDiagramControls.jsx", import.meta.url), "utf8");
 const workspaceExplorerSource = fs.readFileSync(new URL("../features/explorer/WorkspaceExplorer.jsx", import.meta.url), "utf8");
+const notificationCenterModelSource = fs.readFileSync(new URL("../features/notes/discussionNotificationCenterModel.js", import.meta.url), "utf8");
 
 test("Discussions surface uses unified discussions labeling and hides the floating trigger on desktop", () => {
   assert.match(badgeSource, /label = "Обсуждения"/);
@@ -268,19 +269,25 @@ test("Discussion create and reply composers expose a Markdown source toolbar wit
   assert.match(notesMvpPanelSource, /mention_user_ids: commentMentionUserIds/);
 });
 
-test("Discussions panel exposes bounded notification inbox and history without new storage truth", () => {
-  assert.match(notesMvpPanelSource, /buildDiscussionNotificationBuckets\(threads, \{ currentUserId: viewerUserId \}\)/);
+test("Discussions panel exposes a grouped notification center without new storage truth", () => {
+  assert.match(notesMvpPanelSource, /buildDiscussionNotificationCenter\(\{/);
+  assert.match(notesMvpPanelSource, /mentions: mentionNotifications/);
   assert.match(notesMvpPanelSource, /const \[panelMode, setPanelMode\] = useState\("discussions"\);/);
   assert.match(notesMvpPanelSource, /const notificationMode = panelMode === "notifications";/);
   assert.match(notesMvpPanelSource, /data-testid="discussion-notification-inbox"/);
-  assert.match(notesMvpPanelSource, /notificationBuckets\.active/);
-  assert.match(notesMvpPanelSource, /notificationBuckets\.history/);
-  assert.match(notesMvpPanelSource, /Требует внимания/);
-  assert.match(notesMvpPanelSource, /Требуют внимания/);
-  assert.match(notesMvpPanelSource, /Недавние/);
+  assert.match(notesMvpPanelSource, /notificationCenter\.groups\.map/);
+  assert.match(notesMvpPanelSource, /notificationCenter\.totalCount/);
+  assert.match(notificationCenterModelSource, /Упоминания/);
+  assert.match(notificationCenterModelSource, /Новые сообщения/);
+  assert.match(notificationCenterModelSource, /Требует внимания/);
+  assert.match(notesMvpPanelSource, /Нет новых уведомлений/);
+  assert.match(notesMvpPanelSource, /Загрузка уведомлений/);
+  assert.match(notesMvpPanelSource, /Не удалось загрузить уведомления/);
   assert.match(notesMvpPanelSource, /\{notificationMode \? \(/);
   assert.match(notesMvpPanelSource, /\) : \(\s*<>\s*<div className="flex items-center gap-2">/);
   assert.match(notesMvpPanelSource, /apiAcknowledgeNoteThreadAttention\(threadId\)/);
+  assert.match(notesMvpPanelSource, /notification\.type !== "attention"/);
+  assert.match(notesMvpPanelSource, /onOpenMentionNotification/);
   assert.match(notesMvpPanelSource, /onFocusNotificationTarget\?\.\(/);
   assert.match(notesMvpPanelSource, /data-note-comment-id=\{commentId \|\| undefined\}/);
   assert.doesNotMatch(notesMvpPanelSource, /Discussion inbox|Inbox\/history/);
