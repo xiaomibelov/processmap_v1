@@ -15,7 +15,7 @@ test("ProjectPane keeps breadcrumb trail and only compact session count in heade
 
 test("project session list still renders below the cleaned header", () => {
   assert.match(explorerSource, /<span className="text-xs font-semibold uppercase tracking-wide text-muted">Сессии<\/span>/);
-  assert.match(explorerSource, /sessions\.map\(\(s\) =>/);
+  assert.match(explorerSource, /sortedSessions\.map\(\(s\) =>/);
 });
 
 test("workspace root create copy is section while nested copy remains folder", () => {
