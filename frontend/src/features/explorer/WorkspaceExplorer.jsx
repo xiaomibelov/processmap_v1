@@ -63,6 +63,7 @@ import {
   getExplorerAssigneeKind,
   getExplorerBusinessAssignee,
   getExplorerBusinessAssigneeLabel,
+  mergeExplorerAssignableCurrentUser,
   normalizeExplorerAssignableUsersResponse,
 } from "./explorerAssigneeModel.js";
 import {
@@ -1466,6 +1467,8 @@ function InlineErrorRow({ depth = 0, message = "", colSpan = 8 }) {
 
 function ExplorerPane({
   activeOrgId,
+  orgs = [],
+  currentUser = null,
   workspaceId,
   folderId,
   onNavigateToFolder,
@@ -1594,6 +1597,14 @@ function ExplorerPane({
   const searchModel = useMemo(
     () => filterExplorerSearchResults(searchIndex, searchQuery),
     [searchIndex, searchQuery],
+  );
+  const responsibleAssigneeUsers = useMemo(
+    () => mergeExplorerAssignableCurrentUser(
+      assigneeMembersState.items,
+      currentUser,
+      { orgId: activeOrgId, orgs },
+    ),
+    [assigneeMembersState.items, currentUser, activeOrgId, orgs],
   );
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -2111,7 +2122,7 @@ function ExplorerPane({
         <AssigneeDialog
           item={assigneeDialog.item}
           folderLabel={assigneeDialog.folderLabel}
-          users={assigneeMembersState.items}
+          users={assigneeDialog.kind === "responsible" ? responsibleAssigneeUsers : assigneeMembersState.items}
           loadingUsers={assigneeMembersState.loading}
           usersError={assigneeMembersState.error}
           onClose={() => setAssigneeDialog(null)}
@@ -2734,6 +2745,8 @@ export default function WorkspaceExplorer({
             <div className={`absolute inset-0 flex flex-col min-h-0 ${currentProjectId ? "invisible pointer-events-none" : ""}`}>
               <ExplorerPane
                 activeOrgId={activeOrgId}
+                orgs={orgs}
+                currentUser={user}
                 workspaceId={activeWorkspaceId}
                 folderId={currentFolderId}
                 onNavigateToFolder={handleNavigateToFolder}
