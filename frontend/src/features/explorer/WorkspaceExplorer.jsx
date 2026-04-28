@@ -20,6 +20,7 @@ import {
   apiGetExplorerPage,
   apiCreateFolder,
   apiRenameFolder,
+  apiMoveFolder,
   apiDeleteFolder,
   apiCreateProject,
   apiGetProjectPage,
@@ -33,6 +34,7 @@ import {
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { buildVisibleRows, hasFolderChildren } from "./work3TreeState.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
+import { buildFolderMoveTargets } from "./explorerMoveTargets.js";
 import { buildProjectBreadcrumbTrail, normalizeProjectBreadcrumbBase } from "./workspaceBreadcrumbs.js";
 import { folderCreateCopy, folderDisplayLabel } from "./workspaceDisplayLabels.js";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
@@ -401,6 +403,126 @@ function ConfirmModal({ title, message, actionLabel = "Удалить", danger =
   );
 }
 
+function folderMoveErrorMessage(resp) {
+  const detail = resp?.data?.detail ?? resp?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail.trim();
+  const err = String(resp?.error || "").trim();
+  if (err && err !== "[object Object]") return err;
+  return "Не удалось переместить папку";
+}
+
+function MoveFolderDialog({
+  workspaceId,
+  folder,
+  depth = 0,
+  currentFolderId = "",
+  currentParentId = "",
+  rootItems,
+  rootParentId = "",
+  childItemsByFolder,
+  onClose,
+  onMoved,
+}) {
+  const [selectedTargetId, setSelectedTargetId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const folderLabel = folderDisplayLabel({ folder, depth, currentFolderId });
+  const folderLabelAccusative = folderLabel === "Раздел" ? "раздел" : "папку";
+  const targets = useMemo(
+    () => buildFolderMoveTargets({
+      rootItems,
+      childItemsByFolder,
+      rootParentId,
+      movingFolder: folder,
+      currentParentId,
+    }),
+    [rootItems, childItemsByFolder, rootParentId, folder, currentParentId],
+  );
+  const selectedTarget = targets.find((target) => target.id === selectedTargetId) || null;
+  const hasEnabledTarget = targets.some((target) => !target.disabled);
+
+  useEffect(() => {
+    const current = targets.find((target) => target.id === selectedTargetId);
+    if (current && !current.disabled) return;
+    const firstEnabled = targets.find((target) => !target.disabled);
+    setSelectedTargetId(firstEnabled ? firstEnabled.id : "");
+  }, [targets, selectedTargetId]);
+
+  const submit = async () => {
+    if (!selectedTarget || selectedTarget.disabled) {
+      setError("Выберите доступное расположение");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const resp = await apiMoveFolder(workspaceId, folder.id, selectedTarget.id);
+      if (!resp?.ok) throw new Error(folderMoveErrorMessage(resp));
+      await onMoved?.();
+      onClose();
+    } catch (e) {
+      setError(String(e?.message || e || "Не удалось переместить папку"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title={`Переместить ${folderLabelAccusative}`} onClose={onClose}>
+      <div className="space-y-3">
+        <p className="text-sm text-muted">
+          Выберите новое расположение для «{folder?.name || "Без названия"}». Нельзя переместить элемент внутрь самого себя или дочерней папки.
+        </p>
+        <div className="max-h-[280px] overflow-y-auto rounded-lg border border-border bg-bg/60 p-1.5">
+          {targets.map((target) => (
+            <label
+              key={target.id || "__workspace_root__"}
+              className={`flex cursor-pointer items-start gap-2 rounded-md px-2.5 py-2 text-sm transition-colors ${
+                target.disabled ? "cursor-not-allowed text-muted/55" : "text-fg hover:bg-panelAlt"
+              }`}
+            >
+              <input
+                type="radio"
+                name="folder-move-target"
+                className="mt-0.5"
+                value={target.id}
+                checked={selectedTargetId === target.id}
+                disabled={target.disabled || busy}
+                onChange={() => {
+                  setSelectedTargetId(target.id);
+                  setError("");
+                }}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{target.label}</span>
+                {target.disabledReason ? (
+                  <span className="mt-0.5 block text-[11px] text-muted/70">{target.disabledReason}</span>
+                ) : null}
+              </span>
+            </label>
+          ))}
+        </div>
+        {!hasEnabledTarget ? (
+          <p className="text-xs text-muted">
+            Нет доступных загруженных расположений. Откройте или разверните нужную папку в Explorer и повторите перемещение.
+          </p>
+        ) : null}
+        {error ? <p className="text-xs text-danger">{error}</p> : null}
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="secondaryBtn h-8 px-3 text-sm" disabled={busy}>Отмена</button>
+          <button
+            onClick={submit}
+            className="primaryBtn h-8 px-3 text-sm"
+            disabled={busy || !selectedTarget || selectedTarget.disabled}
+          >
+            {busy ? "…" : "Переместить"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ─── Workspace Sidebar ────────────────────────────────────────────────────────
 
 function WorkspaceSidebar({
@@ -554,6 +676,7 @@ function FolderRow({
   loading = false,
   onToggleExpand,
   onNavigate,
+  onMove,
   workspaceId,
   onReload,
   canEdit = false,
@@ -575,7 +698,10 @@ function FolderRow({
   const menuItems = [
     { label: "Открыть", icon: <IcoChevron right />, action: () => onNavigate(folder) },
     ...(expandable ? [{ label: expanded ? "Свернуть" : "Развернуть", icon: <IcoChevron right={!expanded} />, action: () => onToggleExpand(folder) }] : []),
-    ...(canEdit ? [{ label: "Переименовать", icon: <IcoEdit />, action: () => setRenaming(true) }] : []),
+    ...(canEdit ? [
+      { label: "Переместить", icon: <IcoMove />, action: () => onMove?.(folder) },
+      { label: "Переименовать", icon: <IcoEdit />, action: () => setRenaming(true) },
+    ] : []),
     ...(canDelete ? [{ separator: true }, { label: "Удалить", icon: <IcoTrash />, danger: true, action: () => setDeleting(true) }] : []),
   ];
 
@@ -835,6 +961,8 @@ function ExplorerPane({
   const [error, setError] = useState("");
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
+  const [movingFolder, setMovingFolder] = useState(null);
+  const [moveNotice, setMoveNotice] = useState("");
   const [treeStateByContext, setTreeStateByContext] = useState({});
   const inFlightFolderLoadsRef = useRef(new Set());
   const contextKey = `${String(workspaceId || "").trim()}::${String(folderId || "").trim()}`;
@@ -905,6 +1033,12 @@ function ExplorerPane({
     }),
     [rootItems, treeState.expandedByFolder, treeState.childItemsByFolder, treeState.loadingByFolder, treeState.loadErrorByFolder]
   );
+
+  const parentIdForRowFolder = useCallback((folder, depth = 0) => {
+    const explicitParentId = String(folder?.parent_id ?? folder?.parentId ?? "").trim();
+    if (explicitParentId) return explicitParentId;
+    return Number(depth || 0) === 0 ? String(folderId || "").trim() : "";
+  }, [folderId]);
 
   const ensureFolderChildrenLoaded = useCallback(async (targetFolderId) => {
     const fid = String(targetFolderId || "").trim();
@@ -1014,6 +1148,9 @@ function ExplorerPane({
       {error && (
         <div className="px-4 py-3 text-sm text-danger bg-danger/5 border-b border-border">{error}</div>
       )}
+      {moveNotice ? (
+        <div className="px-4 py-2 text-sm text-accent bg-accentSoft/40 border-b border-border">{moveNotice}</div>
+      ) : null}
 
       {/* Table */}
       {!isEmpty ? (
@@ -1070,6 +1207,14 @@ function ExplorerPane({
                       workspaceId={workspaceId}
                       onToggleExpand={handleToggleExpand}
                       onNavigate={() => onNavigateToFolder(folder.id)}
+                      onMove={() => {
+                        setMoveNotice("");
+                        setMovingFolder({
+                          folder,
+                          depth: row.depth,
+                          currentParentId: parentIdForRowFolder(folder, row.depth),
+                        });
+                      }}
                       onReload={() => load({ resetInlineChildren: true })}
                       canEdit={!!permissions?.canRenameFolder}
                       canDelete={!!permissions?.canDeleteFolder}
@@ -1152,6 +1297,28 @@ function ExplorerPane({
             const resp = await apiCreateProject(workspaceId, folderId, { name });
             if (!resp?.ok) throw new Error(resp?.error || "Не удалось создать проект");
             load({ resetInlineChildren: true });
+          }}
+        />
+      ) : null}
+      {movingFolder && permissions?.canRenameFolder ? (
+        <MoveFolderDialog
+          workspaceId={workspaceId}
+          folder={movingFolder.folder}
+          depth={movingFolder.depth}
+          currentFolderId={folderId || ""}
+          currentParentId={movingFolder.currentParentId}
+          rootItems={rootItems}
+          rootParentId={folderId || ""}
+          childItemsByFolder={treeState.childItemsByFolder}
+          onClose={() => setMovingFolder(null)}
+          onMoved={async () => {
+            const label = folderDisplayLabel({
+              folder: movingFolder.folder,
+              depth: movingFolder.depth,
+              currentFolderId: folderId || "",
+            });
+            await load({ resetInlineChildren: true });
+            setMoveNotice(label === "Раздел" ? "Раздел перемещён." : "Папка перемещена.");
           }}
         />
       ) : null}
