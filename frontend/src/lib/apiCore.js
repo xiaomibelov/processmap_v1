@@ -286,6 +286,7 @@ async function request(path, opts = {}) {
     headers: opts.headers,
     body: opts.body,
     signal: opts.signal,
+    keepalive: opts.keepalive === true,
     authToken: opts.auth !== false ? getAccessToken() : "",
     auth: opts.auth !== false,
     orgId,
