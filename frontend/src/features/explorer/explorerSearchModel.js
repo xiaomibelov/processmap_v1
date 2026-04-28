@@ -47,7 +47,7 @@ function statusLabel(value) {
 }
 
 function pathLabel(crumbs) {
-  return asArray(crumbs).map((crumb) => text(crumb?.name)).filter(Boolean).join(" / ");
+  return asArray(crumbs).map((crumb) => text(crumb?.name || crumb?.title)).filter(Boolean).join(" / ");
 }
 
 function normalizeCrumbs(crumbs) {
@@ -55,7 +55,7 @@ function normalizeCrumbs(crumbs) {
     .map((crumb) => ({
       type: text(crumb?.type),
       id: text(crumb?.id),
-      name: text(crumb?.name),
+      name: text(crumb?.name || crumb?.title),
     }))
     .filter((crumb) => crumb.id && crumb.name);
 }
@@ -266,6 +266,115 @@ const GROUPS = [
   { type: "project", label: "Проекты" },
   { type: "session", label: "Сессии" },
 ];
+
+function normalizeGlobalPath(path) {
+  return asArray(path)
+    .map((entry) => ({
+      type: text(entry?.type),
+      id: text(entry?.id),
+      name: text(entry?.name || entry?.title),
+    }))
+    .filter((entry) => entry.id && entry.name);
+}
+
+function breadcrumbBaseForProject(path) {
+  return normalizeGlobalPath(path)
+    .filter((entry) => entry.type !== "project" && entry.type !== "session")
+    .map((entry) => ({
+      type: entry.type === "section" ? "folder" : entry.type,
+      id: entry.id,
+      name: entry.name,
+    }));
+}
+
+function itemForAssignee(item) {
+  const type = text(item?.type).toLowerCase();
+  return type === "section" ? { ...item, type: "folder" } : item;
+}
+
+function globalResultFromItem(item) {
+  const type = text(item?.type).toLowerCase();
+  const id = itemId(item);
+  if (!id || !["section", "folder", "project", "session"].includes(type)) return null;
+  const typeLabel = type === "section"
+    ? "Раздел"
+    : type === "folder"
+      ? "Папка"
+      : type === "project"
+        ? "Проект"
+        : "Сессия";
+  const title = text(item?.title || item?.name);
+  const path = normalizeGlobalPath(item?.path);
+  const assignee = businessAssigneeLabel(itemForAssignee(item));
+  const assigneeMeta = businessAssigneeMeta(itemForAssignee(item));
+  const status = text(item?.context_status || item?.status);
+  const stage = text(item?.stage);
+  const folderId = text(item?.folder_id || (type === "section" || type === "folder" ? id : ""));
+  const projectId = text(item?.project_id || (type === "project" ? id : ""));
+  const sessionId = text(item?.session_id || (type === "session" ? id : ""));
+  let target = {};
+  if (type === "section" || type === "folder") {
+    target = { kind: "folder", folderId };
+  } else if (type === "project") {
+    target = { kind: "project", projectId, breadcrumbBase: breadcrumbBaseForProject(path) };
+  } else if (type === "session") {
+    target = {
+      kind: "session",
+      projectId,
+      breadcrumbBase: breadcrumbBaseForProject(path),
+      session: {
+        id: sessionId,
+        name: title,
+        title,
+        project_id: projectId,
+        workspace_id: text(item?.workspace_id),
+        status: text(item?.status),
+        stage,
+      },
+    };
+  }
+  return makeResult({
+    id,
+    type,
+    typeLabel,
+    title,
+    path: pathLabel(path),
+    subtitle: text(item?.subtitle) || typeLabel,
+    status,
+    assignee,
+    assigneeMeta,
+    stage,
+    target,
+    searchParts: [typeLabel, type, text(item?.subtitle)],
+  });
+}
+
+export function buildExplorerGlobalSearchModel(response, queryRaw) {
+  const query = normalizeExplorerSearchQuery(queryRaw);
+  const payload = response?.data && typeof response.data === "object" ? response.data : response || {};
+  const sourceGroups = payload?.groups && typeof payload.groups === "object" ? payload.groups : {};
+  const sourceItems = [
+    ...asArray(sourceGroups.sections),
+    ...asArray(sourceGroups.folders),
+    ...asArray(sourceGroups.projects),
+    ...asArray(sourceGroups.sessions),
+  ];
+  const normalized = sourceItems.map(globalResultFromItem).filter(Boolean);
+  const groups = GROUPS
+    .map((group) => ({
+      ...group,
+      results: normalized.filter((item) => item.type === group.type),
+    }))
+    .filter((group) => group.results.length > 0);
+  return {
+    active: Boolean(query),
+    query,
+    total: normalized.length,
+    results: normalized,
+    groups,
+    source: "global",
+  };
+}
 
 export function filterExplorerSearchResults(index, queryRaw) {
   const query = normalizeExplorerSearchQuery(queryRaw);

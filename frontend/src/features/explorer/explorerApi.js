@@ -30,6 +30,10 @@ export async function apiGetExplorerPage(workspaceId, folderId = "") {
   return call(`/api/explorer${q({ workspace_id: workspaceId, folder_id: folderId || "" })}`);
 }
 
+export async function apiSearchExplorer(workspaceId, query, { limit = 50 } = {}) {
+  return call(`/api/explorer/search${q({ workspace_id: workspaceId, q: query, limit })}`);
+}
+
 export async function apiCreateFolder(workspaceId, { name, parent_id = "", sort_order = 0 }) {
   return call(`/api/workspaces/${encodeURIComponent(workspaceId)}/folders`, {
     method: "POST",
