@@ -55,15 +55,12 @@ test("header dedupes competing conflict surfaces while modal is active", () => {
     "presence badge must be suppressed while conflict modal is active",
   );
   assert.ok(
-    source.includes("const showRemoteSaveHighlightBadge = remoteSaveHighlightView?.visible === true && !showConflictModalActive;"),
-    "remote-save highlight badge must be suppressed while conflict modal is active",
+    source.includes("remoteSaveHighlightView") === false,
+    "remote-save update presentation must stay out of the header",
   );
   assert.ok(
-    source.includes("const showRemoteSaveRefreshAction = showRemoteSaveHighlightBadge && typeof remoteSaveHighlightView?.onRefreshSession === \"function\";"),
-    "remote refresh action must be coupled to passive notice visibility and hidden under conflict modal",
-  );
-  assert.ok(
-    source.includes('data-testid="diagram-toolbar-remote-save-refresh"'),
-    "header must expose explicit passive refresh action",
+    source.includes('data-testid="diagram-toolbar-remote-save-highlight"') === false
+      && source.includes('data-testid="diagram-toolbar-remote-save-refresh"') === false,
+    "header must not render passive remote update badge or refresh action",
   );
 });
