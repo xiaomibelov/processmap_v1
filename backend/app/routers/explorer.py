@@ -43,7 +43,14 @@ from ..redis_cache import (
     explorer_invalidate_sessions,
     explorer_invalidate_org_children,
 )
-from ..services.org_workspace import can_edit_workspace, can_manage_workspace, require_org_member_for_enterprise
+from ..services.org_workspace import (
+    build_assignable_user_payload,
+    can_edit_workspace,
+    can_manage_workspace,
+    normalize_context_status,
+    require_org_member_for_enterprise,
+    validate_org_user_assignable,
+)
 
 router = APIRouter(tags=["explorer"])
 logger = logging.getLogger(__name__)
@@ -104,6 +111,11 @@ class FolderItem(BaseModel):
     parent_id: str = ""
     child_folder_count: int = 0
     child_project_count: int = 0
+    responsible_user_id: Optional[str] = None
+    responsible_user: Optional[Dict[str, Any]] = None
+    context_status: str = "none"
+    responsible_assigned_at: Optional[float] = None
+    responsible_assigned_by: Optional[str] = None
     updated_at: int = 0
 
 
@@ -119,6 +131,8 @@ class ProjectItem(BaseModel):
     folder_id: str = ""
     sessions_count: int = 0
     owner: Optional[OwnerOut] = None
+    executor_user_id: Optional[str] = None
+    executor: Optional[Dict[str, Any]] = None
     dod_percent: int = 0
     attention_count: int = 0
     reports_count: int = 0
@@ -175,10 +189,14 @@ class CreateFolderBody(BaseModel):
     name: str
     parent_id: str = ""
     sort_order: int = 0
+    responsible_user_id: Optional[str] = None
+    context_status: Optional[str] = None
 
 
 class RenameFolderBody(BaseModel):
-    name: str
+    name: Optional[str] = None
+    responsible_user_id: Optional[str] = None
+    context_status: Optional[str] = None
 
 
 class MoveFolderBody(BaseModel):
@@ -193,6 +211,7 @@ class CreateProjectBody(BaseModel):
     name: str
     description: str = ""
     owner_user_id: str = ""
+    executor_user_id: Optional[str] = None
 
 
 class CreateSessionBody(BaseModel):
@@ -225,6 +244,23 @@ def _owner_out(user_id: str) -> Optional[OwnerOut]:
     if not user_id:
         return None
     return OwnerOut(id=user_id, name=_lookup_user_name(user_id))
+
+
+def _assignable_out(user_id: str) -> Optional[Dict[str, str]]:
+    return build_assignable_user_payload(user_id)
+
+
+def _enrich_folder_out(folder_raw: Dict[str, Any]) -> Dict[str, Any]:
+    folder = dict(folder_raw or {})
+    responsible_id = str(folder.get("responsible_user_id") or "").strip()
+    folder["responsible_user_id"] = responsible_id or None
+    folder["responsible_user"] = _assignable_out(responsible_id)
+    folder["context_status"] = normalize_context_status(folder.get("context_status") or "none")
+    return folder
+
+
+def _executor_out(user_id: str) -> Optional[Dict[str, str]]:
+    return build_assignable_user_payload(user_id)
 
 
 # ─── Cached read helpers ──────────────────────────────────────────────────────
@@ -494,30 +530,39 @@ def get_explorer_page(
 
     items: List[Dict[str, Any]] = []
     for f in children.get("folders", []):
+        folder_out = _enrich_folder_out(f)
         items.append({
-            "id": f["id"], "type": "folder", "name": f["name"],
-            "parent_id": f.get("parent_id", ""),
-            "child_folder_count": f.get("child_folder_count", 0),
-            "child_project_count": f.get("child_project_count", 0),
-            "descendant_projects_count": f.get("descendant_projects_count", 0),
-            "descendant_sessions_count": f.get("descendant_sessions_count", 0),
-            "self_activity_at": f.get("self_activity_at", f.get("updated_at", 0)),
-            "rollup_activity_at": f.get("rollup_activity_at", f.get("updated_at", 0)),
-            "last_activity_source_type": f.get("last_activity_source_type", "folder"),
-            "last_activity_source_id": f.get("last_activity_source_id", f.get("id", "")),
-            "last_activity_source_title": f.get("last_activity_source_title", f.get("name", "")),
-            "rollup_dod_percent": f.get("rollup_dod_percent"),
-            "created_at": f.get("created_at", 0),
-            "updated_at": f.get("updated_at", 0),
+            "id": folder_out["id"], "type": "folder", "name": folder_out["name"],
+            "parent_id": folder_out.get("parent_id", ""),
+            "child_folder_count": folder_out.get("child_folder_count", 0),
+            "child_project_count": folder_out.get("child_project_count", 0),
+            "responsible_user_id": folder_out.get("responsible_user_id"),
+            "responsible_user": folder_out.get("responsible_user"),
+            "context_status": folder_out.get("context_status", "none"),
+            "responsible_assigned_at": folder_out.get("responsible_assigned_at"),
+            "responsible_assigned_by": folder_out.get("responsible_assigned_by"),
+            "descendant_projects_count": folder_out.get("descendant_projects_count", 0),
+            "descendant_sessions_count": folder_out.get("descendant_sessions_count", 0),
+            "self_activity_at": folder_out.get("self_activity_at", folder_out.get("updated_at", 0)),
+            "rollup_activity_at": folder_out.get("rollup_activity_at", folder_out.get("updated_at", 0)),
+            "last_activity_source_type": folder_out.get("last_activity_source_type", "folder"),
+            "last_activity_source_id": folder_out.get("last_activity_source_id", folder_out.get("id", "")),
+            "last_activity_source_title": folder_out.get("last_activity_source_title", folder_out.get("name", "")),
+            "rollup_dod_percent": folder_out.get("rollup_dod_percent"),
+            "created_at": folder_out.get("created_at", 0),
+            "updated_at": folder_out.get("updated_at", 0),
         })
     for p in children.get("projects", []):
         owner_uid = str(p.get("owner_user_id", "") or "")
+        executor_uid = str(p.get("executor_user_id", "") or "")
         items.append({
             "id": p["id"], "type": "project",
             "name": p.get("title", ""),
             "folder_id": p.get("folder_id", ""),
             "sessions_count": p.get("sessions_count", 0),
             "owner": {"id": owner_uid, "name": _lookup_user_name(owner_uid)} if owner_uid else None,
+            "executor_user_id": executor_uid or None,
+            "executor": _executor_out(executor_uid),
             "dod_percent": p.get("dod_percent", 0),
             "attention_count": p.get("attention_count", 0),
             "reports_count": p.get("reports_count", 0),
@@ -553,11 +598,15 @@ def create_folder(workspace_id: str, body: CreateFolderBody, request: Request) -
         raise HTTPException(status_code=403, detail="forbidden")
     parent_id = str(body.parent_id or "").strip()
     try:
+        responsible_user_id = validate_org_user_assignable(oid, body.responsible_user_id)
+        context_status = normalize_context_status(body.context_status)
         folder = storage.create_workspace_folder(
             oid, wid, body.name,
             parent_id=parent_id,
             user_id=user_id,
             sort_order=body.sort_order,
+            responsible_user_id=responsible_user_id,
+            context_status=context_status,
         )
     except ValueError as e:
         msg = str(e)
@@ -568,7 +617,7 @@ def create_folder(workspace_id: str, body: CreateFolderBody, request: Request) -
     # ── invalidation ──────────────────────────────────────────────────────────
     # parent's children listing is now stale (new folder appeared)
     _invalidate_children_for_folder_chain(oid, wid, parent_id)
-    return folder
+    return _enrich_folder_out(folder)
 
 
 # ─── GET /api/folders/{folder_id} ────────────────────────────────────────────
@@ -582,7 +631,7 @@ def get_folder(folder_id: str, request: Request, workspace_id: str = Query(...))
     folder = storage.get_workspace_folder(oid, wid, folder_id)
     if not folder:
         raise HTTPException(status_code=404, detail="folder not found")
-    return folder
+    return _enrich_folder_out(folder)
 
 
 # ─── PATCH /api/folders/{folder_id} ──────────────────────────────────────────
@@ -602,7 +651,31 @@ def rename_folder(
     if not can_edit_workspace(request, oid):
         raise HTTPException(status_code=403, detail="forbidden")
     try:
-        folder = storage.rename_workspace_folder(oid, wid, folder_id, body.name, user_id=user_id)
+        payload = body.model_dump(exclude_unset=True)
+        has_name = "name" in payload and payload.get("name") is not None
+        has_responsible = "responsible_user_id" in payload
+        has_context_status = "context_status" in payload
+        if not (has_name or has_responsible or has_context_status):
+            raise HTTPException(status_code=422, detail="no folder fields to update")
+        if has_name:
+            folder = storage.rename_workspace_folder(oid, wid, folder_id, str(payload.get("name") or ""), user_id=user_id)
+        else:
+            folder = storage.get_workspace_folder(oid, wid, folder_id)
+            if not folder:
+                raise HTTPException(status_code=404, detail="folder not found")
+        if has_responsible or has_context_status:
+            responsible_user_id = validate_org_user_assignable(oid, payload.get("responsible_user_id")) if has_responsible else None
+            context_status = normalize_context_status(payload.get("context_status")) if has_context_status else None
+            folder = storage.update_workspace_folder_business_fields(
+                oid,
+                wid,
+                folder_id,
+                responsible_user_id=responsible_user_id,
+                update_responsible=has_responsible,
+                context_status=context_status,
+                update_context_status=has_context_status,
+                user_id=user_id,
+            )
     except ValueError as e:
         msg = str(e)
         if "already exists" in msg:
@@ -615,7 +688,7 @@ def rename_folder(
     parent_id = str(folder.get("parent_id", "") or "")
     _invalidate_children_for_folder_chain(oid, wid, parent_id)  # parent list + ancestors
     explorer_invalidate_all_breadcrumbs_for_workspace(oid, wid)      # breadcrumbs: folder name changed
-    return folder
+    return _enrich_folder_out(folder)
 
 
 # ─── POST /api/folders/{folder_id}/move ───────────────────────────────────────
@@ -716,9 +789,11 @@ def create_project_in_folder(
         passport["description"] = body.description
     if body.owner_user_id:
         passport["owner_user_id"] = body.owner_user_id
+    executor_user_id = validate_org_user_assignable(oid, body.executor_user_id)
     try:
         pid = storage.create_project_in_folder(oid, wid, fid, body.name,
-                                               user_id=user_id, passport=passport)
+                                               user_id=user_id, passport=passport,
+                                               executor_user_id=executor_user_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -727,6 +802,8 @@ def create_project_in_folder(
     return {
         "id": pid, "name": body.name, "folder_id": fid,
         "workspace_id": wid, "status": "active", "created_by": user_id,
+        "executor_user_id": executor_user_id or None,
+        "executor": _executor_out(executor_user_id),
     }
 
 
@@ -840,6 +917,8 @@ def get_project_explorer(
         name=proj.title,
         folder_id=str(getattr(proj, "folder_id", "") or ""),
         owner=_owner_out(proj.owner_user_id),
+        executor_user_id=str(getattr(proj, "executor_user_id", "") or "") or None,
+        executor=_executor_out(str(getattr(proj, "executor_user_id", "") or "")),
         status=str(passport.get("status", "active") or "active"),
         dod_percent=int(passport.get("dod_percent", 0) or 0),
         attention_count=int(passport.get("attention_count", 0) or 0),

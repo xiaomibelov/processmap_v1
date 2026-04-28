@@ -121,6 +121,7 @@ class Project(BaseModel):
     updated_at: int = 0
     version: int = 1
     owner_user_id: str = ""
+    executor_user_id: str | None = None
     org_id: str = ""
     created_by: str = ""
     updated_by: str = ""
@@ -133,6 +134,7 @@ class Project(BaseModel):
 class CreateProjectIn(BaseModel):
     title: str
     passport: Dict[str, Any] = Field(default_factory=dict)
+    executor_user_id: str | None = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -140,6 +142,7 @@ class CreateProjectIn(BaseModel):
 class UpdateProjectIn(BaseModel):
     title: str | None = None
     passport: Dict[str, Any] | None = None
+    executor_user_id: str | None = None
 
     model_config = ConfigDict(extra="allow")
 
