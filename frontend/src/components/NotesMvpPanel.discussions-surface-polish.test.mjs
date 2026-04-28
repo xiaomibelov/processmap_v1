@@ -214,6 +214,14 @@ test("Discussions use inline at-mention autocomplete instead of separate mention
   assert.doesNotMatch(notesMvpPanelSource, />Упомянуть</);
 });
 
+test("Discussions render comment bodies through safe Markdown without changing composer primitives", () => {
+  assert.match(notesMvpPanelSource, /import NoteMarkdown from "\.\.\/features\/notes\/markdownRenderer\.js";/);
+  assert.match(notesMvpPanelSource, /<NoteMarkdown>\{comment\?\.body\}<\/NoteMarkdown>/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-comment-mentions"/);
+  assert.match(notesMvpPanelSource, /Поддерживается Markdown/);
+  assert.doesNotMatch(notesMvpPanelSource, /dangerouslySetInnerHTML/);
+});
+
 test("Discussions panel exposes bounded notification inbox and history without new storage truth", () => {
   assert.match(notesMvpPanelSource, /buildDiscussionNotificationBuckets\(threads, \{ currentUserId: viewerUserId \}\)/);
   assert.match(notesMvpPanelSource, /const \[panelMode, setPanelMode\] = useState\("discussions"\);/);
