@@ -36,6 +36,11 @@ import { useAuth } from "../auth/AuthProvider.jsx";
 import { buildVisibleRows, hasFolderChildren } from "./work3TreeState.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
 import { buildFolderMoveTargets, buildProjectMoveTargets } from "./explorerMoveTargets.js";
+import {
+  buildExplorerSearchIndex,
+  buildProjectSessionSearchIndex,
+  filterExplorerSearchResults,
+} from "./explorerSearchModel.js";
 import { buildProjectBreadcrumbTrail, normalizeProjectBreadcrumbBase } from "./workspaceBreadcrumbs.js";
 import { folderCreateCopy, folderDisplayLabel } from "./workspaceDisplayLabels.js";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
@@ -642,6 +647,96 @@ function MoveProjectDialog({
   );
 }
 
+function ExplorerSearchBox({ id = "workspace-explorer-search", value, onChange, placeholder = "Раздел, папка, проект или сессия", className = "" }) {
+  return (
+    <div className={`flex min-w-[240px] max-w-full items-center gap-2 rounded-lg border border-border bg-bg px-2.5 py-1.5 ${className}`}>
+      <span className="text-xs text-muted" aria-hidden>⌕</span>
+      <label className="sr-only" htmlFor={id}>Поиск по workspace</label>
+      <input
+        id={id}
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && value) {
+            e.preventDefault();
+            onChange("");
+          }
+        }}
+        placeholder={placeholder}
+        className="min-w-0 flex-1 bg-transparent text-sm text-fg placeholder:text-muted focus:outline-none"
+      />
+      {value ? (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className="inline-flex h-5 w-5 items-center justify-center rounded text-muted transition-colors hover:bg-panelAlt hover:text-fg"
+          title="Очистить поиск"
+          aria-label="Очистить поиск"
+        >
+          ×
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function SearchResultRow({ result, onOpen }) {
+  const entityType = result.type === "section" || result.type === "folder" ? "folder" : result.type;
+  const metaParts = [result.pathLabel, result.statusLabel, result.ownerLabel ? `Owner: ${result.ownerLabel}` : "", result.stageLabel]
+    .filter(Boolean);
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(result)}
+      className="w-full rounded-md px-2.5 py-2 text-left transition-colors hover:bg-panelAlt focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        <EntityTypePill type={entityType} label={result.typeLabel} />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{result.title}</span>
+      </div>
+      {metaParts.length ? (
+        <div className="mt-1 truncate text-xs text-muted">{metaParts.join(" · ")}</div>
+      ) : result.subtitle ? (
+        <div className="mt-1 truncate text-xs text-muted">{result.subtitle}</div>
+      ) : null}
+    </button>
+  );
+}
+
+function ExplorerSearchResults({ model, onOpenResult }) {
+  if (!model?.active) return null;
+  return (
+    <div className="flex-1 overflow-y-auto p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-sm font-medium text-fg">Найдено: {model.total}</div>
+          <div className="text-xs text-muted">Поиск по загруженной структуре</div>
+        </div>
+      </div>
+      {model.total > 0 ? (
+        <div className="space-y-4">
+          {model.groups.map((group) => (
+            <section key={group.type} className="space-y-1">
+              <div className="px-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{group.label}</div>
+              <div className="rounded-lg border border-border bg-panel/40 p-1">
+                {group.results.map((result) => (
+                  <SearchResultRow key={`${result.type}-${result.id}`} result={result} onOpen={onOpenResult} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <div className="flex min-h-[240px] flex-col items-center justify-center rounded-lg border border-dashed border-border p-8 text-center">
+          <p className="text-sm font-medium text-fg">Ничего не найдено в текущей области.</p>
+          <p className="mt-1 max-w-md text-xs text-muted">Для поиска по всему workspace нужен отдельный серверный индекс.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Workspace Sidebar ────────────────────────────────────────────────────────
 
 function WorkspaceSidebar({
@@ -1094,6 +1189,7 @@ function ExplorerPane({
   const [movingFolder, setMovingFolder] = useState(null);
   const [movingProject, setMovingProject] = useState(null);
   const [moveNotice, setMoveNotice] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [treeStateByContext, setTreeStateByContext] = useState({});
   const inFlightFolderLoadsRef = useRef(new Set());
   const contextKey = `${String(workspaceId || "").trim()}::${String(folderId || "").trim()}`;
@@ -1163,6 +1259,19 @@ function ExplorerPane({
       loadErrorByFolder: treeState.loadErrorByFolder,
     }),
     [rootItems, treeState.expandedByFolder, treeState.childItemsByFolder, treeState.loadingByFolder, treeState.loadErrorByFolder]
+  );
+  const searchIndex = useMemo(
+    () => buildExplorerSearchIndex({
+      rootItems,
+      childItemsByFolder: treeState.childItemsByFolder,
+      rootParentId: folderId || "",
+      breadcrumbs: page?.breadcrumbs || [],
+    }),
+    [rootItems, treeState.childItemsByFolder, folderId, page?.breadcrumbs],
+  );
+  const searchModel = useMemo(
+    () => filterExplorerSearchResults(searchIndex, searchQuery),
+    [searchIndex, searchQuery],
   );
 
   const parentIdForRowFolder = useCallback((folder, depth = 0) => {
@@ -1242,6 +1351,19 @@ function ExplorerPane({
     }
   }, [treeState.expandedByFolder, setTreeStateForContext, ensureFolderChildrenLoaded]);
 
+  const handleOpenSearchResult = useCallback((result) => {
+    const target = result?.target || {};
+    if (target.kind === "folder" && target.folderId) {
+      setSearchQuery("");
+      onNavigateToFolder(target.folderId);
+      return;
+    }
+    if (target.kind === "project" && target.projectId) {
+      setSearchQuery("");
+      onNavigateToProject(target.projectId, { breadcrumbBase: target.breadcrumbBase || page?.breadcrumbs || [] });
+    }
+  }, [onNavigateToFolder, onNavigateToProject, page?.breadcrumbs]);
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -1257,7 +1379,7 @@ function ExplorerPane({
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {/* Header */}
-      <div className="px-4 pt-3 pb-2 border-b border-border flex items-center justify-between gap-3 flex-shrink-0">
+      <div className="px-4 pt-3 pb-2 border-b border-border flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
         <Breadcrumb
           crumbs={page?.breadcrumbs || []}
           onNavigate={(crumb) => {
@@ -1265,6 +1387,15 @@ function ExplorerPane({
             else onNavigateToBreadcrumb(workspaceId, crumb.id);
           }}
         />
+        <div className="flex min-w-[260px] flex-1 flex-col items-end gap-1">
+          <ExplorerSearchBox
+            id="workspace-explorer-tree-search"
+            value={searchQuery}
+            onChange={setSearchQuery}
+            className="w-full max-w-[360px]"
+          />
+          <span className="text-[11px] text-muted/80">Поиск по загруженной структуре</span>
+        </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {permissions?.canCreate ? (
             <button
@@ -1300,8 +1431,9 @@ function ExplorerPane({
         <div className="px-4 py-2 text-sm text-accent bg-accentSoft/40 border-b border-border">{moveNotice}</div>
       ) : null}
 
-      {/* Table */}
-      {!isEmpty ? (
+      {searchModel.active ? (
+        <ExplorerSearchResults model={searchModel} onOpenResult={handleOpenSearchResult} />
+      ) : !isEmpty ? (
         <div className="flex-1 overflow-y-auto">
           <table className="w-full table-fixed text-left border-collapse">
             <colgroup>
@@ -1731,6 +1863,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [openingSessionId, setOpeningSessionId] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const openingSessionIdRef = useRef("");
 
   const load = useCallback(async () => {
@@ -1804,6 +1937,33 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const projectBreadcrumbTrail = buildProjectBreadcrumbTrail(backCrumbs, proj?.name || "");
   const parentCrumb = backCrumbs.length ? backCrumbs[backCrumbs.length - 1] : null;
   const sessionCount = Number(proj?.sessions_count || sessions.length || 0) || 0;
+  const searchIndex = useMemo(
+    () => buildProjectSessionSearchIndex({
+      project: proj,
+      sessions,
+      breadcrumbBase: backCrumbs,
+    }),
+    [proj, sessions, backCrumbs],
+  );
+  const searchModel = useMemo(
+    () => filterExplorerSearchResults(searchIndex, searchQuery),
+    [searchIndex, searchQuery],
+  );
+  const handleOpenSearchResult = useCallback((result) => {
+    const target = result?.target || {};
+    if (target.kind === "session" && target.session) {
+      setSearchQuery("");
+      handleOpenSessionRequest({
+        ...target.session,
+        project_id: projectId,
+        workspace_id: workspaceId,
+      });
+      return;
+    }
+    if (target.kind === "project") {
+      setSearchQuery("");
+    }
+  }, [handleOpenSessionRequest, projectId, workspaceId]);
 
   if (loading) {
     return (
@@ -1856,8 +2016,17 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
       </div>
 
       {/* Sessions */}
-      <div className="px-4 py-2 border-b border-border flex items-center justify-between flex-shrink-0">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted">Сессии</span>
+      <div className="px-4 py-2 border-b border-border flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
+        <div>
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted">Сессии</span>
+          <div className="mt-0.5 text-[11px] text-muted/80">Поиск по загруженной структуре</div>
+        </div>
+        <ExplorerSearchBox
+          id="workspace-explorer-project-search"
+          value={searchQuery}
+          onChange={setSearchQuery}
+          className="w-full max-w-[360px] flex-1"
+        />
         {permissions?.canCreate ? (
           <button onClick={() => setCreating(true)} className="primaryBtn h-7 px-3 text-xs flex items-center gap-1">
             <IcoPlus /> Новая сессия
@@ -1865,7 +2034,9 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
         ) : null}
       </div>
 
-      {isEmpty ? (
+      {searchModel.active ? (
+        <ExplorerSearchResults model={searchModel} onOpenResult={handleOpenSearchResult} />
+      ) : isEmpty ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
           <IcoSession className="w-10 h-10 text-muted/30" />
           <div className="text-center">
