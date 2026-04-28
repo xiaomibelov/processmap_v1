@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { apiTouchSessionPresence } from "../../../../lib/api.js";
+import { apiLeaveSessionPresence, apiTouchSessionPresence } from "../../../../lib/api.js";
+import {
+  SESSION_PRESENCE_HEARTBEAT_MS,
+  SESSION_PRESENCE_TTL_MS,
+} from "./sessionPresenceConstants.js";
 
-export const SESSION_PRESENCE_HEARTBEAT_MS = 45000;
-export const SESSION_PRESENCE_TTL_MS = 180000;
+export { SESSION_PRESENCE_HEARTBEAT_MS, SESSION_PRESENCE_TTL_MS };
 const SESSION_PRESENCE_CLIENT_ID_KEY = "processmap:session-presence:client-id";
 
 function toText(value) {
@@ -65,10 +68,12 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
   const heartbeatMs = Math.max(5000, Number(options.heartbeatMs || SESSION_PRESENCE_HEARTBEAT_MS));
   const surface = toText(options.surface) || "process_stage";
   const touchPresence = typeof options.apiTouch === "function" ? options.apiTouch : apiTouchSessionPresence;
+  const leavePresenceApi = typeof options.apiLeave === "function" ? options.apiLeave : apiLeaveSessionPresence;
   const clientIdRef = useRef("");
   const mountedRef = useRef(false);
   const [activeUsers, setActiveUsers] = useState([]);
   const [ttlMs, setTtlMs] = useState(SESSION_PRESENCE_TTL_MS);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [lastError, setLastError] = useState("");
 
   const clearPresence = useCallback(() => {
@@ -91,6 +96,7 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
         return out;
       }
       setActiveUsers(normalizeSessionPresenceUsers(out.active_users || out.activeUsers));
+      setNowMs(Date.now());
       const ttlSeconds = Number(out.ttl_seconds || out.ttlSeconds || 0);
       if (Number.isFinite(ttlSeconds) && ttlSeconds > 0) {
         setTtlMs(Math.round(ttlSeconds * 1000));
@@ -104,6 +110,24 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
       return { ok: false, reason: "presence_failed" };
     }
   }, [currentUserId, sessionId, surface, touchPresence]);
+
+  const leavePresence = useCallback(async (reason = "leave", leaveOptions = {}) => {
+    if (!sessionId || !currentUserId) return { ok: false, reason: "disabled" };
+    const clientId = clientIdRef.current || getSessionPresenceClientId();
+    clientIdRef.current = clientId;
+    if (!clientId) return { ok: false, reason: "missing_client_id" };
+    try {
+      return await leavePresenceApi(sessionId, {
+        clientId,
+        surface,
+        reason,
+        keepalive: leaveOptions?.keepalive === true,
+        telemetry: leaveOptions?.telemetry !== false,
+      });
+    } catch (error) {
+      return { ok: false, reason: toText(error?.message || error || "presence_leave_failed") };
+    }
+  }, [currentUserId, leavePresenceApi, sessionId, surface]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -131,19 +155,48 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
     };
     window.addEventListener("focus", handleForeground);
     document.addEventListener("visibilitychange", handleForeground);
+    const handlePageExit = () => {
+      void leavePresence("page_exit", { keepalive: true, telemetry: false });
+    };
+    window.addEventListener("pagehide", handlePageExit);
+    window.addEventListener("beforeunload", handlePageExit);
     return () => {
+      void leavePresence("unmount", { telemetry: false });
       mountedRef.current = false;
       window.clearInterval(intervalId);
       window.removeEventListener("focus", handleForeground);
       document.removeEventListener("visibilitychange", handleForeground);
+      window.removeEventListener("pagehide", handlePageExit);
+      window.removeEventListener("beforeunload", handlePageExit);
+      clearPresence();
     };
-  }, [clearPresence, currentUserId, heartbeat, heartbeatMs, sessionId]);
+  }, [clearPresence, currentUserId, heartbeat, heartbeatMs, leavePresence, sessionId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (!sessionId || !currentUserId || !activeUsers.length) return undefined;
+    const now = Date.now();
+    const expiryTimes = activeUsers
+      .map((user) => Number(user?.lastSeenAt || 0) + Number(ttlMs || SESSION_PRESENCE_TTL_MS))
+      .filter((value) => Number.isFinite(value) && value > now);
+    if (!expiryTimes.length) return undefined;
+    const nextExpiry = Math.min(...expiryTimes);
+    const delayMs = Math.max(100, Math.min(5000, nextExpiry - now + 25));
+    const timeoutId = window.setTimeout(() => {
+      setNowMs(Date.now());
+    }, delayMs);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeUsers, currentUserId, nowMs, sessionId, ttlMs]);
 
   return useMemo(() => ({
     activeUsers,
     clientId: clientIdRef.current,
     ttlMs,
+    nowMs,
     lastError,
     heartbeat,
-  }), [activeUsers, heartbeat, lastError, ttlMs]);
+    leavePresence,
+  }), [activeUsers, heartbeat, lastError, leavePresence, nowMs, ttlMs]);
 }

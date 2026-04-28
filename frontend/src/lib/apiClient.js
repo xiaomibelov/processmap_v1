@@ -58,6 +58,7 @@ export async function apiFetch({
   orgId = "",
   withOrgHeader = true,
   requestId = "",
+  keepalive = false,
 }) {
   const endpoint = String(path || "");
   const requestMethod = String(method || "GET").toUpperCase();
@@ -88,6 +89,7 @@ export async function apiFetch({
       body: hasBody ? requestBody : undefined,
       credentials: "include",
       signal,
+      keepalive: keepalive === true,
     });
   } catch (error) {
     const aborted = !!signal?.aborted || String(error?.name || "").toLowerCase() === "aborterror";

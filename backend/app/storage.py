@@ -38,6 +38,7 @@ _ENTERPRISE_BOOTSTRAP_MARK = "enterprise_org_bootstrap_v1"
 _AUTH_USERS_BACKFILL_MARK = "auth_users_json_to_db_v1"
 _DEFAULT_ORG_ID = str(os.environ.get("FPC_DEFAULT_ORG_ID", "org_default") or "org_default").strip() or "org_default"
 _DEFAULT_ORG_NAME = str(os.environ.get("FPC_DEFAULT_ORG_NAME", "Default") or "Default").strip() or "Default"
+SESSION_PRESENCE_TTL_SECONDS = 60
 _DEFAULT_WORKSPACE_NAME = (
     str(os.environ.get("FPC_DEFAULT_WORKSPACE_NAME", "Main Workspace") or "Main Workspace").strip()
     or "Main Workspace"
@@ -6266,8 +6267,8 @@ def _session_presence_display_name(user_id: str, email: str = "", full_name: str
     return f"Пользователь {uid[:8]}"
 
 
-def prune_stale_session_presence(*, ttl_seconds: int = 180, now_ts: Optional[int] = None) -> int:
-    ttl = max(30, int(ttl_seconds or 180))
+def prune_stale_session_presence(*, ttl_seconds: int = SESSION_PRESENCE_TTL_SECONDS, now_ts: Optional[int] = None) -> int:
+    ttl = max(30, int(ttl_seconds or SESSION_PRESENCE_TTL_SECONDS))
     now = int(now_ts or 0) or _now_ts()
     cutoff = now - ttl
     _ensure_schema()
@@ -6330,12 +6331,42 @@ def touch_session_presence(
     }
 
 
+def leave_session_presence(
+    session_id: str,
+    user_id: str,
+    client_id: str,
+    *,
+    org_id: str = "",
+    project_id: str = "",
+) -> int:
+    sid = str(session_id or "").strip()
+    uid = str(user_id or "").strip()
+    cid = str(client_id or "").strip()[:128]
+    if not sid or not uid or not cid:
+        return 0
+    oid = str(org_id or "").strip() or _default_org_id()
+    pid = str(project_id or "").strip()
+    filters = ["session_id = ?", "user_id = ?", "client_id = ?", "org_id = ?"]
+    params: List[Any] = [sid, uid, cid, oid]
+    if pid:
+        filters.append("project_id = ?")
+        params.append(pid)
+    _ensure_schema()
+    with _connect() as con:
+        cur = con.execute(
+            f"DELETE FROM session_presence WHERE {' AND '.join(filters)}",
+            params,
+        )
+        con.commit()
+        return int(cur.rowcount or 0)
+
+
 def list_session_presence(
     session_id: str,
     *,
     org_id: str = "",
     project_id: str = "",
-    ttl_seconds: int = 180,
+    ttl_seconds: int = SESSION_PRESENCE_TTL_SECONDS,
     now_ts: Optional[int] = None,
     current_user_id: str = "",
 ) -> List[Dict[str, Any]]:
@@ -6344,7 +6375,7 @@ def list_session_presence(
         return []
     oid = str(org_id or "").strip() or _default_org_id()
     pid = str(project_id or "").strip()
-    ttl = max(30, int(ttl_seconds or 180))
+    ttl = max(30, int(ttl_seconds or SESSION_PRESENCE_TTL_SECONDS))
     now = int(now_ts or 0) or _now_ts()
     cutoff = now - ttl
     current_uid = str(current_user_id or "").strip()
