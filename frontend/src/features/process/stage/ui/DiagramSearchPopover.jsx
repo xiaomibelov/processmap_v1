@@ -6,6 +6,22 @@ function toText(value) {
   return String(value || "").trim();
 }
 
+function groupSearchRows(rowsRaw) {
+  const groups = [];
+  const byKey = new Map();
+  asArray(rowsRaw).forEach((row, index) => {
+    const key = toText(row?.searchGroupKey) || "main";
+    const label = toText(row?.searchGroupLabel) || "Основной процесс";
+    if (!byKey.has(key)) {
+      const group = { key, label, rows: [] };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    byKey.get(key).rows.push({ row, index });
+  });
+  return groups;
+}
+
 export default function DiagramSearchPopover({
   open = false,
   popoverRef = null,
@@ -26,11 +42,12 @@ export default function DiagramSearchPopover({
   const modeKey = toText(mode).toLowerCase() === "properties" ? "properties" : "elements";
   const isPropertiesMode = modeKey === "properties";
   const queryPlaceholder = isPropertiesMode
-    ? "property name / property value"
-    : "id / name / label / type";
+    ? "название или значение свойства"
+    : "id, название, метка или тип";
   const emptyPrompt = isPropertiesMode
-    ? "Введите текст для поиска по property.name/property.value."
-    : "Введите текст для поиска по id/name/label/type.";
+    ? "Введите название или значение свойства."
+    : "Введите запрос: название, id, тип элемента или значение свойства.";
+  const groupedRows = groupSearchRows(rows.slice(0, 240));
 
   return (
     <div className="diagramActionPopover diagramActionPopover--search" ref={popoverRef} data-testid="diagram-action-search-popover">
@@ -108,58 +125,69 @@ export default function DiagramSearchPopover({
         {!hasQuery ? (
           <div className="diagramActionPopoverEmpty">{emptyPrompt}</div>
         ) : rows.length === 0 ? (
-          <div className="diagramActionPopoverEmpty">Совпадений нет.</div>
+          <div className="diagramActionPopoverEmpty">Совпадений не найдено.</div>
         ) : (
           <div className="diagramIssueList" data-testid="diagram-action-search-results">
-            {rows.slice(0, 240).map((row, index) => {
-              const elementId = toText(row?.elementId || row?.id);
-              const active = index === activeIndex;
-              if (isPropertiesMode) {
-                const propertyName = toText(row?.propertyName || row?.name);
-                const propertyValue = toText(row?.propertyValue || row?.value);
-                const elementTitle = toText(row?.elementTitle || row?.title || elementId) || elementId;
-                const typeLabel = toText(row?.elementTypeLabel || row?.typeLabel || row?.elementType || row?.type);
-                const key = toText(row?.searchId || `${elementId}::${index}`);
-                return (
-                  <button
-                    key={`diagram_property_search_row_${key}`}
-                    type="button"
-                    className={`diagramIssueListItem ${active ? "ring-1 ring-accent/60" : ""}`}
-                    onClick={() => onSelect?.(index)}
-                    title={`${propertyName || "(без имени)"} = ${propertyValue || "(пусто)"} · ${elementTitle} · ${elementId}`}
-                    data-testid="diagram-action-search-row"
-                  >
-                    <span className="diagramIssueListItemTitle">{propertyName || "(без имени)"}</span>
-                    <span className="diagramIssueListItemMeta">{propertyValue || "(пусто)"}</span>
-                    <span className="diagramIssueListItemMeta">{elementTitle} · {elementId}</span>
-                    <span className="diagramIssueListItemChips">
-                      {typeLabel ? <span className="diagramIssueChip">{typeLabel}</span> : null}
-                      <span className="diagramIssueChip">property</span>
-                    </span>
-                  </button>
-                );
-              }
-              const title = toText(row?.title || row?.name || elementId) || elementId;
-              const typeLabel = toText(row?.typeLabel || row?.type);
-              const label = toText(row?.label);
-              return (
-                <button
-                  key={`diagram_search_row_${elementId}`}
-                  type="button"
-                  className={`diagramIssueListItem ${active ? "ring-1 ring-accent/60" : ""}`}
-                  onClick={() => onSelect?.(index)}
-                  title={`${title} · ${elementId}`}
-                  data-testid="diagram-action-search-row"
-                >
-                  <span className="diagramIssueListItemTitle">{title}</span>
-                  <span className="diagramIssueListItemMeta">{elementId}</span>
-                  <span className="diagramIssueListItemChips">
-                    {typeLabel ? <span className="diagramIssueChip">{typeLabel}</span> : null}
-                    {label ? <span className="diagramIssueChip">label</span> : null}
-                  </span>
-                </button>
-              );
-            })}
+            {groupedRows.map((group) => (
+              <div key={`diagram_search_group_${group.key}`} className="diagramIssueListGroup" data-testid="diagram-action-search-group">
+                <div className="diagramIssueListGroupHeader" data-testid="diagram-action-search-group-header">
+                  <span className="diagramIssueListGroupLabel">{group.label}</span>
+                  <span className="diagramIssueChip">{group.rows.length}</span>
+                </div>
+                {group.rows.map(({ row, index }) => {
+                  const elementId = toText(row?.elementId || row?.id);
+                  const active = index === activeIndex;
+                  const subprocessPathLabel = toText(row?.subprocessPathLabel);
+                  if (isPropertiesMode) {
+                    const propertyName = toText(row?.propertyName || row?.name);
+                    const propertyValue = toText(row?.propertyValue || row?.value);
+                    const elementTitle = toText(row?.elementTitle || row?.title || elementId) || elementId;
+                    const typeLabel = toText(row?.elementTypeLabel || row?.typeLabel || row?.elementType || row?.type);
+                    const key = toText(row?.searchId || `${elementId}::${index}`);
+                    return (
+                      <button
+                        key={`diagram_property_search_row_${key}`}
+                        type="button"
+                        className={`diagramIssueListItem ${active ? "ring-1 ring-accent/60" : ""}`}
+                        onClick={() => onSelect?.(index)}
+                        title={`${propertyName || "(без имени)"} = ${propertyValue || "(пусто)"} · ${elementTitle} · ${elementId}`}
+                        data-testid="diagram-action-search-row"
+                      >
+                        <span className="diagramIssueListItemTitle">{propertyName || "(без имени)"}</span>
+                        <span className="diagramIssueListItemMeta">{propertyValue || "(пусто)"}</span>
+                        <span className="diagramIssueListItemMeta">{elementTitle} · {elementId}</span>
+                        {subprocessPathLabel ? <span className="diagramIssueListItemMeta">{subprocessPathLabel}</span> : null}
+                        <span className="diagramIssueListItemChips">
+                          {typeLabel ? <span className="diagramIssueChip">{typeLabel}</span> : null}
+                          <span className="diagramIssueChip">property</span>
+                        </span>
+                      </button>
+                    );
+                  }
+                  const title = toText(row?.title || row?.name || elementId) || elementId;
+                  const typeLabel = toText(row?.typeLabel || row?.type);
+                  const label = toText(row?.label);
+                  return (
+                    <button
+                      key={`diagram_search_row_${elementId}`}
+                      type="button"
+                      className={`diagramIssueListItem ${active ? "ring-1 ring-accent/60" : ""}`}
+                      onClick={() => onSelect?.(index)}
+                      title={`${title} · ${elementId}`}
+                      data-testid="diagram-action-search-row"
+                    >
+                      <span className="diagramIssueListItemTitle">{title}</span>
+                      <span className="diagramIssueListItemMeta">{elementId}</span>
+                      {subprocessPathLabel ? <span className="diagramIssueListItemMeta">{subprocessPathLabel}</span> : null}
+                      <span className="diagramIssueListItemChips">
+                        {typeLabel ? <span className="diagramIssueChip">{typeLabel}</span> : null}
+                        {label ? <span className="diagramIssueChip">label</span> : null}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         )}
       </div>

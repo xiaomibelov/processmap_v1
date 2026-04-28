@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { normalizeDiagramSearchProcessContext } from "./diagramSearchHierarchy.js";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -40,6 +41,7 @@ export function normalizeDiagramSearchElement(raw) {
     .map((part) => normalizeLoose(part))
     .filter(Boolean)
     .join(" ");
+  const processContext = normalizeDiagramSearchProcessContext(item);
   return {
     elementId,
     name,
@@ -48,6 +50,7 @@ export function normalizeDiagramSearchElement(raw) {
     typeLabel,
     title,
     searchText,
+    ...processContext,
   };
 }
 
