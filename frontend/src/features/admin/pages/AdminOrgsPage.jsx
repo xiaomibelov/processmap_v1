@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import AdminPageContainer from "../layout/AdminPageContainer";
 import SectionCard from "../components/common/SectionCard";
-import AdminFiltersBar from "../components/filters/AdminFiltersBar";
 import OrgsSummaryRow from "../components/orgs/OrgsSummaryRow";
 import OrgsTable from "../components/orgs/OrgsTable";
 import AdminOrgInvitesPanel from "../components/orgs/AdminOrgInvitesPanel";
@@ -13,6 +12,61 @@ import {
   apiPatchOrg,
   apiPatchOrgGitMirrorConfig,
 } from "../../../lib/api";
+
+const ACCESS_SECTION_NAV = [
+  { href: "#admin-access-users", label: "Пользователи" },
+  { href: "#admin-access-invites", label: "Инвайты" },
+  { href: "#admin-access-orgs", label: "Организации" },
+  { href: "#admin-access-git", label: "Git mirror" },
+  { href: "#admin-access-system", label: "Системное состояние" },
+];
+
+function PageSectionNav() {
+  return (
+    <nav className="sticky top-[88px] z-10 rounded-[22px] border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur" aria-label="Разделы страницы пользователей и доступа">
+      <div className="flex flex-wrap items-center gap-2">
+        {ACCESS_SECTION_NAV.map((item) => (
+          <a
+            key={item.href}
+            href={item.href}
+            className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-white"
+          >
+            {item.label}
+          </a>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+function SectionIntro({ id, eyebrow, title, subtitle, children = null }) {
+  return (
+    <section id={id} className="scroll-mt-32 space-y-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">{eyebrow}</div>
+          <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">{title}</h2>
+          {subtitle ? <p className="mt-1 max-w-3xl text-sm text-slate-500">{subtitle}</p> : null}
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function SystemStatusPanel() {
+  return (
+    <details id="admin-access-system" className="scroll-mt-32 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+      <summary className="cursor-pointer text-sm font-semibold text-slate-800">
+        Системное состояние и служебные заметки
+      </summary>
+      <div className="mt-3 space-y-2 text-sm text-slate-500">
+        <p>{ru.admin.orgsPage.notesBody}</p>
+        <p>Redis и runtime health остаются в операционной сводке; на этой странице они не конкурируют с управлением пользователями и доступом.</p>
+      </div>
+    </details>
+  );
+}
 
 function CreateOrgPanel({ activeOrgRole, isAdmin = false, onCreated }) {
   const canCreate = isAdmin || ["org_owner", "org_admin"].includes(String(activeOrgRole || "").toLowerCase());
@@ -42,7 +96,7 @@ function CreateOrgPanel({ activeOrgRole, isAdmin = false, onCreated }) {
   }
 
   return (
-    <SectionCard eyebrow="Организации" title="Создать организацию" subtitle="Создание новой организации. Текущий пользователь автоматически становится org_owner.">
+    <SectionCard eyebrow="Организации" title="Создать организацию" subtitle="Новая организация появится в общем списке; текущий пользователь станет org_owner.">
       <form className="flex flex-wrap items-end gap-3" onSubmit={handleSubmit}>
         <div className="flex-1 min-w-[200px]">
           <label className="block mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -104,7 +158,7 @@ function ActiveOrgPanel({ activeOrgId, activeOrgName, activeOrgRole, isAdmin = f
   }
 
   return (
-    <SectionCard eyebrow="Организация" title="Активная организация" subtitle="Переименование текущей active organization в admin-контуре.">
+    <SectionCard eyebrow="Организация" title="Переименовать активную организацию" subtitle="Изменяет название текущей организации без изменения ролей и доступов.">
       <form className="flex flex-wrap items-end gap-3" onSubmit={handleSubmit}>
         <div className="flex-1 min-w-[200px]">
           <label className="block mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -224,9 +278,10 @@ function GitMirrorPanel({ activeOrgId = "", activeOrgRole = "", isAdmin = false,
 
   return (
     <SectionCard
-      eyebrow="Git mirror"
-      title="Git mirror"
-      subtitle="Publish-only mirror на уровне организации: provider, repository/project, branch, base path."
+      eyebrow="Техническая публикация"
+      title="Git mirror / публикация"
+      subtitle="Настройки publish-only mirror для активной организации. Поведение сохранения не меняется."
+      className="border-slate-300 bg-slate-50/70"
     >
       {!oid ? (
         <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
@@ -241,7 +296,7 @@ function GitMirrorPanel({ activeOrgId = "", activeOrgRole = "", isAdmin = false,
               disabled={!canManage || busy || loading}
               onChange={(event) => setEnabled(event.target.checked)}
             />
-            Enable Git mirror
+            Включить Git mirror
           </label>
           <div className="grid gap-3 md:grid-cols-2">
             <label>
@@ -292,11 +347,11 @@ function GitMirrorPanel({ activeOrgId = "", activeOrgRole = "", isAdmin = false,
             </label>
           </div>
           <div className={`rounded-2xl border px-3 py-2 text-sm ${healthTone(healthStatus)}`}>
-            <div className="font-medium">Health: {String(healthStatus || "unknown")}</div>
+            <div className="font-medium">Статус: {String(healthStatus || "unknown")}</div>
             <div className="mt-1 text-xs">{healthMessage || "Нет диагностического сообщения."}</div>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            Effective target: {targetParts.join(" · ")}
+            Цель публикации: {targetParts.join(" · ")}
             {updatedAt > 0 ? ` · updated at: ${new Date(updatedAt * 1000).toLocaleString("ru-RU")}` : ""}
             {updatedBy ? ` · updated by: ${updatedBy}` : ""}
           </div>
@@ -327,54 +382,67 @@ export default function AdminOrgsPage({
 }) {
   return (
     <AdminPageContainer
-      summary={<OrgsSummaryRow items={payload?.items || []} activeOrgId={activeOrgId || payload?.active_org_id} />}
-      secondary={(
-        <SectionCard
-          title={ru.admin.orgsPage.notesTitle}
-          subtitle={ru.admin.orgsPage.notesSubtitle}
-          eyebrow={ru.admin.orgsPage.notesEyebrow}
-        >
-          <div className="text-sm text-slate-500">
-            {ru.admin.orgsPage.notesBody}
-          </div>
-        </SectionCard>
+      summary={(
+        <OrgsSummaryRow
+          items={payload?.items || []}
+          activeOrgId={activeOrgId || payload?.active_org_id}
+          activeOrgName={activeOrgName}
+          activeOrgRole={activeOrgRole}
+          isAdmin={isAdmin}
+        />
       )}
     >
-      <AdminFiltersBar title={ru.admin.orgsPage.filtersTitle} subtitle={ru.admin.orgsPage.filtersSubtitle} />
-      <CreateOrgPanel
-        activeOrgRole={activeOrgRole}
-        isAdmin={isAdmin}
-        onCreated={onRefresh}
-      />
-      <ActiveOrgPanel
-        activeOrgId={activeOrgId || payload?.active_org_id}
-        activeOrgName={activeOrgName}
-        activeOrgRole={activeOrgRole}
-        isAdmin={isAdmin}
-        onSaved={onRefresh}
-      />
-      <AdminUsersPanel
-        isAdmin={isAdmin}
-        activeOrgId={activeOrgId || payload?.active_org_id}
-        orgOptions={payload?.items || []}
-      />
-      <AdminOrgInvitesPanel
-        items={payload?.items || []}
-        activeOrgId={activeOrgId || payload?.active_org_id}
-        activeOrgName={activeOrgName}
-        activeOrgRole={activeOrgRole}
-        isAdmin={isAdmin}
-        onChanged={onRefresh}
-        recentInvite={recentInvite}
-        onInviteCreated={onInviteCreated}
-      />
-      <GitMirrorPanel
-        activeOrgId={activeOrgId || payload?.active_org_id}
-        activeOrgRole={activeOrgRole}
-        isAdmin={isAdmin}
-        onSaved={onRefresh}
-      />
-      <OrgsTable items={payload?.items || []} />
+      <PageSectionNav />
+      <section id="admin-access-users" className="scroll-mt-32">
+        <AdminUsersPanel
+          isAdmin={isAdmin}
+          activeOrgId={activeOrgId || payload?.active_org_id}
+          orgOptions={payload?.items || []}
+        />
+      </section>
+      <section id="admin-access-invites" className="scroll-mt-32">
+        <AdminOrgInvitesPanel
+          items={payload?.items || []}
+          activeOrgId={activeOrgId || payload?.active_org_id}
+          activeOrgName={activeOrgName}
+          activeOrgRole={activeOrgRole}
+          isAdmin={isAdmin}
+          onChanged={onRefresh}
+          recentInvite={recentInvite}
+          onInviteCreated={onInviteCreated}
+        />
+      </section>
+      <SectionIntro
+        id="admin-access-orgs"
+        eyebrow="Организации"
+        title="Организации"
+        subtitle="Создание, переименование активной организации и обзор доступных организаций отделены от пользовательского доступа."
+      >
+        <div className="grid gap-4 lg:grid-cols-2">
+          <CreateOrgPanel
+            activeOrgRole={activeOrgRole}
+            isAdmin={isAdmin}
+            onCreated={onRefresh}
+          />
+          <ActiveOrgPanel
+            activeOrgId={activeOrgId || payload?.active_org_id}
+            activeOrgName={activeOrgName}
+            activeOrgRole={activeOrgRole}
+            isAdmin={isAdmin}
+            onSaved={onRefresh}
+          />
+        </div>
+        <OrgsTable items={payload?.items || []} />
+      </SectionIntro>
+      <section id="admin-access-git" className="scroll-mt-32">
+        <GitMirrorPanel
+          activeOrgId={activeOrgId || payload?.active_org_id}
+          activeOrgRole={activeOrgRole}
+          isAdmin={isAdmin}
+          onSaved={onRefresh}
+        />
+      </section>
+      <SystemStatusPanel />
     </AdminPageContainer>
   );
 }
