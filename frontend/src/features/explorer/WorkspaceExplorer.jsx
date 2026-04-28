@@ -33,6 +33,7 @@ import {
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { buildVisibleRows, hasFolderChildren } from "./work3TreeState.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
+import { buildProjectBreadcrumbTrail, normalizeProjectBreadcrumbBase } from "./workspaceBreadcrumbs.js";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
 import NotesAggregateBadge from "../../components/NotesAggregateBadge.jsx";
 import { useSessionNoteAggregates } from "../../lib/sessionNoteAggregates.js";
@@ -1086,7 +1087,7 @@ function ExplorerPane({
                     key={`project-${project.id}`}
                     project={project}
                     depth={row.depth}
-                    onClick={() => onNavigateToProject(project.id)}
+                    onClick={() => onNavigateToProject(project.id, { breadcrumbBase: page?.breadcrumbs || [] })}
                     onReload={() => load({ resetInlineChildren: true })}
                     canRename={!!permissions?.canRenameProject}
                     canDelete={!!permissions?.canDeleteProject}
@@ -1468,7 +1469,8 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     }
   }, [onOpenSession]);
 
-  const backCrumbs = breadcrumbBase || [];
+  const backCrumbs = normalizeProjectBreadcrumbBase(breadcrumbBase);
+  const projectBreadcrumbTrail = buildProjectBreadcrumbTrail(backCrumbs, proj?.name || "");
   const parentCrumb = backCrumbs.length ? backCrumbs[backCrumbs.length - 1] : null;
 
   if (loading) {
@@ -1501,18 +1503,16 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
           ) : null}
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
             <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted/70">Навигация</span>
-            {backCrumbs.map((c, i) => (
+            {projectBreadcrumbTrail.map((c, i) => (
               <React.Fragment key={`${c.type}-${c.id}`}>
                 {i > 0 && <IcoChevron right className="shrink-0 text-muted/35" />}
-                <BreadcrumbChip onClick={() => onBack(c)}>{c.name}</BreadcrumbChip>
+                {c.active ? (
+                  <BreadcrumbChip active>{c.name}</BreadcrumbChip>
+                ) : (
+                  <BreadcrumbChip onClick={() => onBack(c)}>{c.name}</BreadcrumbChip>
+                )}
               </React.Fragment>
             ))}
-            {proj ? (
-              <>
-                {backCrumbs.length ? <IcoChevron right className="shrink-0 text-muted/35" /> : null}
-                <BreadcrumbChip active>{proj.name}</BreadcrumbChip>
-              </>
-            ) : null}
           </div>
         </div>
 
