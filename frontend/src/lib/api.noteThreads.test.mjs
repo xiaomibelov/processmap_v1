@@ -14,6 +14,7 @@ import {
   apiListMyNoteMentions,
   apiListNoteThreads,
   apiMarkNoteThreadRead,
+  apiPatchNoteComment,
   apiPatchNoteThread,
 } from "./api.js";
 
@@ -61,7 +62,8 @@ test("note threads API helpers use MVP-1 endpoints and payload contract", async 
       mention_user_ids: ["user_2"],
       body: "Проверить шаг",
     });
-    const commented = await apiAddNoteThreadComment("thread_1", { body: "Комментарий", mention_user_ids: ["user_2"] });
+    const commented = await apiAddNoteThreadComment("thread_1", { body: "Комментарий", mention_user_ids: ["user_2"], reply_to_comment_id: "comment_1" });
+    const edited = await apiPatchNoteComment("comment_2", { body: "Правка", mention_user_ids: [] });
     const patched = await apiPatchNoteThread("thread_1", { status: "resolved" });
     const acknowledged = await apiAcknowledgeNoteThreadAttention("thread_1");
     const read = await apiMarkNoteThreadRead("thread_1");
@@ -73,6 +75,7 @@ test("note threads API helpers use MVP-1 endpoints and payload contract", async 
     assert.equal(list.count, 1);
     assert.equal(created.thread.id, "thread_1");
     assert.equal(commented.thread.id, "thread_1");
+    assert.equal(edited.thread.id, "thread_1");
     assert.equal(patched.thread.status, "open");
     assert.equal(acknowledged.thread.attention_acknowledged_by_me, true);
     assert.equal(read.threadId, "thread_1");
@@ -94,19 +97,23 @@ test("note threads API helpers use MVP-1 endpoints and payload contract", async 
   assert.match(calls[2].url, /\/api\/note-threads\/thread_1\/comments$/);
   assert.equal(calls[2].method, "POST");
   assert.deepEqual(calls[2].body.mention_user_ids, ["user_2"]);
-  assert.match(calls[3].url, /\/api\/note-threads\/thread_1$/);
+  assert.equal(calls[2].body.reply_to_comment_id, "comment_1");
+  assert.match(calls[3].url, /\/api\/note-comments\/comment_2$/);
   assert.equal(calls[3].method, "PATCH");
-  assert.deepEqual(calls[3].body, { status: "resolved" });
-  assert.match(calls[4].url, /\/api\/note-threads\/thread_1\/attention-acknowledgement$/);
-  assert.equal(calls[4].method, "POST");
-  assert.match(calls[5].url, /\/api\/note-threads\/thread_1\/read$/);
+  assert.deepEqual(calls[3].body, { body: "Правка", mention_user_ids: [] });
+  assert.match(calls[4].url, /\/api\/note-threads\/thread_1$/);
+  assert.equal(calls[4].method, "PATCH");
+  assert.deepEqual(calls[4].body, { status: "resolved" });
+  assert.match(calls[5].url, /\/api\/note-threads\/thread_1\/attention-acknowledgement$/);
   assert.equal(calls[5].method, "POST");
-  assert.match(calls[6].url, /\/api\/sessions\/sess_1\/mentionable-users$/);
-  assert.equal(calls[6].method, "GET");
-  assert.match(calls[7].url, /\/api\/note-mentions\?limit=20$/);
+  assert.match(calls[6].url, /\/api\/note-threads\/thread_1\/read$/);
+  assert.equal(calls[6].method, "POST");
+  assert.match(calls[7].url, /\/api\/sessions\/sess_1\/mentionable-users$/);
   assert.equal(calls[7].method, "GET");
-  assert.match(calls[8].url, /\/api\/note-mentions\/mention_1\/acknowledge$/);
-  assert.equal(calls[8].method, "POST");
+  assert.match(calls[8].url, /\/api\/note-mentions\?limit=20$/);
+  assert.equal(calls[8].method, "GET");
+  assert.match(calls[9].url, /\/api\/note-mentions\/mention_1\/acknowledge$/);
+  assert.equal(calls[9].method, "POST");
 });
 
 test("note aggregate API helpers use MVP-1 aggregate endpoints", async () => {

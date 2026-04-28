@@ -558,9 +558,57 @@ def _note_comment_row_to_dict(row: Any) -> Dict[str, Any]:
         "thread_id": str(_row_value(row, "thread_id") or ""),
         "author_user_id": str(_row_value(row, "author_user_id") or ""),
         "body": str(_row_value(row, "body") or ""),
+        "reply_to_comment_id": str(_row_value(row, "reply_to_comment_id") or ""),
         "created_at": int(_row_value(row, "created_at") or 0),
         "updated_at": int(_row_value(row, "updated_at") or 0),
+        "edited_at": int(_row_value(row, "edited_at") or 0),
+        "edited_by_user_id": str(_row_value(row, "edited_by_user_id") or ""),
     }
+
+
+def _note_comment_body_preview(value: Any, *, limit: int = 160) -> str:
+    body = str(value or "").strip()
+    first_line = ""
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        if line:
+            first_line = line
+            break
+    preview = first_line or body
+    max_len = max(20, int(limit or 160))
+    if len(preview) <= max_len:
+        return preview
+    return f"{preview[:max_len - 1].rstrip()}…"
+
+
+def _comment_author_display(comment: Mapping[str, Any], profiles_by_id: Mapping[str, Mapping[str, str]]) -> str:
+    author_id = str(comment.get("author_user_id") or "").strip()
+    profile = profiles_by_id.get(author_id) or {}
+    return str(profile.get("full_name") or profile.get("email") or author_id or "Пользователь").strip()
+
+
+def _apply_note_comment_reply_summaries(
+    comments: List[Dict[str, Any]],
+    profiles_by_id: Mapping[str, Mapping[str, str]],
+) -> List[Dict[str, Any]]:
+    by_id = {str(comment.get("id") or ""): comment for comment in comments if str(comment.get("id") or "")}
+    for comment in comments:
+        reply_to_comment_id = str(comment.get("reply_to_comment_id") or "").strip()
+        if not reply_to_comment_id:
+            comment["reply_to"] = None
+            continue
+        target = by_id.get(reply_to_comment_id)
+        if not target:
+            comment["reply_to"] = None
+            continue
+        comment["reply_to"] = {
+            "id": str(target.get("id") or ""),
+            "author_user_id": str(target.get("author_user_id") or ""),
+            "author_display": _comment_author_display(target, profiles_by_id),
+            "body_preview": _note_comment_body_preview(target.get("body")),
+            "created_at": int(target.get("created_at") or 0),
+        }
+    return comments
 
 
 def _note_mention_row_to_dict(row: Any) -> Dict[str, Any]:
@@ -848,12 +896,22 @@ def _ensure_schema() -> None:
                   thread_id TEXT NOT NULL,
                   author_user_id TEXT NOT NULL DEFAULT '',
                   body TEXT NOT NULL DEFAULT '',
+                  reply_to_comment_id TEXT DEFAULT '',
                   created_at INTEGER NOT NULL DEFAULT 0,
-                  updated_at INTEGER NOT NULL DEFAULT 0
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  edited_at INTEGER DEFAULT 0,
+                  edited_by_user_id TEXT DEFAULT ''
                 )
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_comments_thread_created ON note_comments(thread_id, created_at ASC)")
+            if not _column_exists(con, "note_comments", "reply_to_comment_id"):
+                con.execute("ALTER TABLE note_comments ADD COLUMN reply_to_comment_id TEXT DEFAULT ''")
+            if not _column_exists(con, "note_comments", "edited_at"):
+                con.execute("ALTER TABLE note_comments ADD COLUMN edited_at INTEGER DEFAULT 0")
+            if not _column_exists(con, "note_comments", "edited_by_user_id"):
+                con.execute("ALTER TABLE note_comments ADD COLUMN edited_by_user_id TEXT DEFAULT ''")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_comments_reply_to ON note_comments(reply_to_comment_id)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS note_comment_mentions (
@@ -1289,12 +1347,22 @@ def _ensure_schema() -> None:
                   thread_id TEXT NOT NULL,
                   author_user_id TEXT NOT NULL DEFAULT '',
                   body TEXT NOT NULL DEFAULT '',
+                  reply_to_comment_id TEXT DEFAULT '',
                   created_at INTEGER NOT NULL DEFAULT 0,
-                  updated_at INTEGER NOT NULL DEFAULT 0
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  edited_at INTEGER DEFAULT 0,
+                  edited_by_user_id TEXT DEFAULT ''
                 )
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_comments_thread_created ON note_comments(thread_id, created_at ASC)")
+            if not _column_exists(con, "note_comments", "reply_to_comment_id"):
+                con.execute("ALTER TABLE note_comments ADD COLUMN reply_to_comment_id TEXT DEFAULT ''")
+            if not _column_exists(con, "note_comments", "edited_at"):
+                con.execute("ALTER TABLE note_comments ADD COLUMN edited_at INTEGER DEFAULT 0")
+            if not _column_exists(con, "note_comments", "edited_by_user_id"):
+                con.execute("ALTER TABLE note_comments ADD COLUMN edited_by_user_id TEXT DEFAULT ''")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_comments_reply_to ON note_comments(reply_to_comment_id)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS note_comment_mentions (
@@ -6659,7 +6727,9 @@ def get_note_thread(
         comments.append(comment)
     thread["comments"] = comments
     thread = _apply_note_thread_read_state(thread, comments, viewer_user_id=viewer_user_id, last_read_at=read_at)
-    return _apply_note_author_profiles(thread, profiles_by_id)
+    thread = _apply_note_author_profiles(thread, profiles_by_id)
+    thread["comments"] = _apply_note_comment_reply_summaries(thread.get("comments") or [], profiles_by_id)
+    return thread
 
 
 def list_note_threads(
@@ -6779,7 +6849,9 @@ def list_note_threads(
             comment["mentions"] = mention_rows.get(str(comment.get("id") or ""), [])
         thread["comments"] = comments
         thread = _apply_note_thread_read_state(thread, comments, viewer_user_id=viewer_user_id, last_read_at=read_rows.get(thread_id, 0))
-        out.append(_apply_note_author_profiles(thread, profiles_by_id))
+        thread = _apply_note_author_profiles(thread, profiles_by_id)
+        thread["comments"] = _apply_note_comment_reply_summaries(thread.get("comments") or [], profiles_by_id)
+        out.append(thread)
     return out
 
 
@@ -6788,6 +6860,7 @@ def add_note_comment(
     *,
     body: Any,
     mention_targets: Optional[Iterable[Mapping[str, Any]]] = None,
+    reply_to_comment_id: Any = "",
     actor_user_id: str,
     org_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
@@ -6805,6 +6878,7 @@ def add_note_comment(
         filters.append("org_id = ?")
         params.append(oid)
     actor = str(actor_user_id or "").strip()
+    reply_to_id = str(reply_to_comment_id or "").strip()
     now = _now_ts()
     comment_id = uuid.uuid4().hex[:12]
     with _connect() as con:
@@ -6814,12 +6888,21 @@ def add_note_comment(
         ).fetchone()
         if not thread_row:
             return None
+        if reply_to_id:
+            reply_row = con.execute(
+                "SELECT id, thread_id FROM note_comments WHERE id = ? LIMIT 1",
+                [reply_to_id],
+            ).fetchone()
+            if not reply_row:
+                raise LookupError("reply target not found")
+            if str(_row_value(reply_row, "thread_id") or "").strip() != tid:
+                raise ValueError("reply target must belong to the same thread")
         con.execute(
             """
-            INSERT INTO note_comments (id, thread_id, author_user_id, body, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO note_comments (id, thread_id, author_user_id, body, reply_to_comment_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            [comment_id, tid, actor, text, now, now],
+            [comment_id, tid, actor, text, reply_to_id, now, now],
         )
         _insert_note_comment_mentions(
             con,
@@ -6839,6 +6922,100 @@ def add_note_comment(
             last_seen_comment_id=comment_id,
         )
         con.execute("UPDATE note_threads SET updated_at = ? WHERE id = ?", [now, tid])
+        con.commit()
+    return get_note_thread(tid, org_id=oid or None, viewer_user_id=actor)
+
+
+def get_note_comment(comment_id: str, *, org_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    cid = str(comment_id or "").strip()
+    if not cid:
+        return None
+    oid = str(org_id or "").strip()
+    filters = ["c.id = ?"]
+    params: List[Any] = [cid]
+    if oid:
+        filters.append("t.org_id = ?")
+        params.append(oid)
+    with _connect() as con:
+        row = con.execute(
+            f"""
+            SELECT c.*, t.org_id AS thread_org_id, t.session_id AS session_id
+            FROM note_comments c
+            JOIN note_threads t ON t.id = c.thread_id
+            WHERE {' AND '.join(filters)}
+            LIMIT 1
+            """,
+            params,
+        ).fetchone()
+    if not row:
+        return None
+    comment = _note_comment_row_to_dict(row)
+    comment["org_id"] = str(_row_value(row, "thread_org_id") or oid or "")
+    comment["session_id"] = str(_row_value(row, "session_id") or "")
+    return comment
+
+
+def update_note_comment(
+    comment_id: str,
+    *,
+    body: Any,
+    mention_targets: Optional[Iterable[Mapping[str, Any]]] = None,
+    replace_mentions: bool = False,
+    actor_user_id: str,
+    org_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    cid = str(comment_id or "").strip()
+    text = str(body or "").strip()
+    if not cid:
+        return None
+    if not text:
+        raise ValueError("body required")
+    oid = str(org_id or "").strip()
+    actor = str(actor_user_id or "").strip()
+    now = _now_ts()
+    filters = ["c.id = ?"]
+    params: List[Any] = [cid]
+    if oid:
+        filters.append("t.org_id = ?")
+        params.append(oid)
+    with _connect() as con:
+        row = con.execute(
+            f"""
+            SELECT c.*, t.org_id AS thread_org_id, t.session_id AS session_id
+            FROM note_comments c
+            JOIN note_threads t ON t.id = c.thread_id
+            WHERE {' AND '.join(filters)}
+            LIMIT 1
+            """,
+            params,
+        ).fetchone()
+        if not row:
+            return None
+        tid = str(_row_value(row, "thread_id") or "").strip()
+        thread_org_id = str(_row_value(row, "thread_org_id") or oid or _default_org_id())
+        session_id = str(_row_value(row, "session_id") or "")
+        con.execute(
+            """
+            UPDATE note_comments
+               SET body = ?, updated_at = ?, edited_at = ?, edited_by_user_id = ?
+             WHERE id = ?
+            """,
+            [text, now, now, actor, cid],
+        )
+        if replace_mentions:
+            con.execute("DELETE FROM note_comment_mentions WHERE comment_id = ? AND org_id = ?", [cid, thread_org_id])
+            _insert_note_comment_mentions(
+                con,
+                org_id=thread_org_id,
+                session_id=session_id,
+                thread_id=tid,
+                comment_id=cid,
+                actor_user_id=actor,
+                created_at=now,
+                mention_targets=mention_targets,
+            )
         con.commit()
     return get_note_thread(tid, org_id=oid or None, viewer_user_id=actor)
 
