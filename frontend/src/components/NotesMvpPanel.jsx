@@ -18,6 +18,10 @@ import {
 import {
   buildDiscussionNotificationBuckets,
 } from "../features/notes/discussionNotificationModel.js";
+import {
+  countParticipatedThreads,
+  isThreadParticipatedByCurrentUser,
+} from "../features/notes/participatedThreads.js";
 import { readableBpmnText } from "../features/process/bpmn/bpmnIdentity";
 import NotesAggregateBadge from "./NotesAggregateBadge.jsx";
 import { useSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
@@ -355,6 +359,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const [createOpen, setCreateOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("open");
   const [scopeFilter, setScopeFilter] = useState("all");
+  const [participationFilter, setParticipationFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortOrder, setSortOrder] = useState("newest");
   const [threads, setThreads] = useState([]);
@@ -463,10 +468,17 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     () => buildDiscussionNotificationBuckets(threads, { currentUserId: viewerUserId }),
     [threads, viewerUserId],
   );
+  const participatedThreadsCount = useMemo(
+    () => countParticipatedThreads(displayThreads, viewerUserId),
+    [displayThreads, viewerUserId],
+  );
 
   const visibleThreads = useMemo(() => {
     const query = text(searchQuery).toLowerCase();
     const filtered = asArray(displayThreads).filter((thread) => {
+      if (participationFilter === "my" && !isThreadParticipatedByCurrentUser(thread, viewerUserId)) {
+        return false;
+      }
       if (!query) return true;
       return threadSearchText(thread).includes(query);
     });
@@ -475,7 +487,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       return sortOrder === "oldest" ? -delta : delta;
     });
     return filtered;
-  }, [displayThreads, searchQuery, sortOrder]);
+  }, [displayThreads, participationFilter, searchQuery, sortOrder, viewerUserId]);
 
   const selectedThread = useMemo(() => {
     return visibleThreads.find((item) => text(item?.id) === selectedThreadId) || visibleThreads[0] || null;
@@ -487,7 +499,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const commentMentionUserId = commentMentionByThread[text(selectedThread?.id)] || "";
   const legacyDraft = legacyDraftByThread[text(selectedThread?.id)] || "";
   const openThreadsCount = Math.max(0, Number(aggregate?.open_notes_count || 0) || 0);
-  const activeFilterCount = Number(statusFilter !== "open") + Number(scopeFilter !== "all") + Number(sortOrder !== "newest");
+  const activeFilterCount = Number(statusFilter !== "open") + Number(scopeFilter !== "all") + Number(participationFilter !== "all") + Number(sortOrder !== "newest");
   const discussionSummaryLine = useMemo(() => {
     if (notificationMode) {
       const activeCount = notificationBuckets.activeTotal;
@@ -586,6 +598,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setCreateOpen(false);
     setError("");
     setSearchQuery("");
+    setParticipationFilter("all");
     if (nextMode === "notifications") {
       setStatusFilter("all");
       setScopeFilter("all");
@@ -1115,7 +1128,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         <div className="text-sm text-muted">
                           {createScope === "diagram_element" && !canCreateCurrentScope
                             ? "Для обсуждения по элементу сначала выберите BPMN-элемент на диаграмме."
-                            : "Новая тема будет создана без unread/new семантики: в текущем source truth доступен только общий count открытых обсуждений."}
+                            : "Тема будет создана в обсуждениях текущей сессии."}
                         </div>
                         <div className="flex items-center gap-2">
                           <button type="button" className="secondaryBtn smallBtn" onClick={() => setCreateOpen(false)}>
@@ -1453,6 +1466,26 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                 </button>
               </div>
 
+              <div className="mt-2 grid grid-cols-2 gap-1 rounded-xl border border-border/80 bg-panel/75 p-1 text-[11px] font-semibold" aria-label="Фильтр участия в обсуждениях">
+                <button
+                  type="button"
+                  className={`rounded-lg px-2 py-1.5 transition ${participationFilter === "all" ? "bg-info/10 text-info shadow-sm ring-1 ring-info/30" : "text-muted hover:bg-panel2/80 hover:text-fg"}`}
+                  onClick={() => setParticipationFilter("all")}
+                  data-testid="notes-participation-filter-all"
+                >
+                  Все
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-lg px-2 py-1.5 transition ${participationFilter === "my" ? "bg-info/10 text-info shadow-sm ring-1 ring-info/30" : "text-muted hover:bg-panel2/80 hover:text-fg"}`}
+                  onClick={() => setParticipationFilter("my")}
+                  title="Темы текущей сессии, где вы создали обсуждение, отвечали или были упомянуты."
+                  data-testid="notes-participation-filter-my"
+                >
+                  Мои {participatedThreadsCount}
+                </button>
+              </div>
+
               <div className="mt-1 truncate text-[11px] text-muted">
                 {loading ? "Обновляем..." : `${visibleThreads.length} из ${displayThreads.length}`}
               </div>
@@ -1468,6 +1501,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         onClick={() => {
                           setStatusFilter("open");
                           setScopeFilter("all");
+                          setParticipationFilter("all");
                           setSortOrder("newest");
                         }}
                       >
@@ -1570,7 +1604,11 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                   </div>
                 ) : (
                   <div className="rounded-2xl border border-dashed border-border bg-panel/70 p-4 text-sm text-muted">
-                    {loading ? "Загружаем обсуждения..." : "По текущим фильтрам ничего не найдено."}
+                    {loading
+                      ? "Загружаем обсуждения..."
+                      : participationFilter === "my" && participatedThreadsCount === 0
+                        ? "Пока нет обсуждений с вашим участием."
+                        : "По текущим фильтрам ничего не найдено."}
                   </div>
                 )}
               </div>

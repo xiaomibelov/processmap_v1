@@ -60,6 +60,21 @@ test("Discussions sidebar collapses heavy labels into a compact filters control"
   assert.doesNotMatch(notesMvpPanelSource, /text-\[10px\] font-semibold uppercase tracking-\[0\.08em\] text-muted">Порядок<\/span>/);
 });
 
+test("Discussions expose a participated threads filter without unread semantics", () => {
+  assert.match(notesMvpPanelSource, /isThreadParticipatedByCurrentUser/);
+  assert.match(notesMvpPanelSource, /countParticipatedThreads/);
+  assert.match(notesMvpPanelSource, /const \[participationFilter, setParticipationFilter\] = useState\("all"\);/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-participation-filter-all"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-participation-filter-my"/);
+  assert.match(notesMvpPanelSource, /Мои \{participatedThreadsCount\}/);
+  assert.match(notesMvpPanelSource, /Темы текущей сессии, где вы создали обсуждение, отвечали или были упомянуты\./);
+  assert.match(notesMvpPanelSource, /Пока нет обсуждений с вашим участием\./);
+  assert.match(notesMvpPanelSource, /participationFilter === "my" && !isThreadParticipatedByCurrentUser\(thread, viewerUserId\)/);
+  assert.match(notesMvpPanelSource, /setParticipationFilter\("all"\);/);
+  assert.doesNotMatch(notesMvpPanelSource, /unread\/new/);
+  assert.doesNotMatch(notesMvpPanelSource, /непрочитанные/);
+});
+
 test("Top toolbar keeps discussions as the primary entry and removes conflicting actions", () => {
   assert.match(diagramControlsSource, /const handleOpenNotesDiscussions = \(\) => \{/);
   assert.match(diagramControlsSource, /function clickNotesPanelFloatingTrigger\(\) \{/);
