@@ -56,6 +56,7 @@ import {
   filterExplorerAssignableUsers,
   formatExplorerUserDisplay,
   EXPLORER_ASSIGNEE_USERS_LOAD_TIMEOUT_MS,
+  getExplorerAssignableUserId,
   getExplorerAssigneeActionLabel,
   getExplorerAssigneeDialogTitle,
   getExplorerAssigneeId,
@@ -537,7 +538,7 @@ function ContextStatusControl({ item, disabled = false, onChange }) {
 }
 
 function assigneeMemberId(user) {
-  return String(user?.user_id || user?.id || "").trim();
+  return getExplorerAssignableUserId(user);
 }
 
 function assigneeMembersLoadTimeout() {
@@ -604,6 +605,7 @@ function AssigneeDialog({
               const name = formatExplorerUserDisplay(user) || uid;
               const email = String(user?.email || "").trim();
               const jobTitle = String(user?.job_title || "").trim();
+              if (!uid) return null;
               return (
                 <label
                   key={uid}
