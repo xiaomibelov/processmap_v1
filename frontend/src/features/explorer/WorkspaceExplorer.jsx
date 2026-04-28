@@ -1653,7 +1653,6 @@ function ExplorerPane({
       setAssigneeMembersState({ orgId: "", items: [], loading: false, loaded: true, error: "Не выбрана организация" });
       return;
     }
-    if (assigneeMembersState.orgId === oid && (assigneeMembersState.loaded || assigneeMembersState.loading)) return;
     let disposed = false;
     setAssigneeMembersState({ orgId: oid, items: [], loading: true, loaded: false, error: "" });
     Promise.race([
@@ -1680,7 +1679,7 @@ function ExplorerPane({
       });
     });
     return () => { disposed = true; };
-  }, [activeOrgId, assigneeDialog, assigneeMembersState.loaded, assigneeMembersState.loading, assigneeMembersState.orgId]);
+  }, [activeOrgId, assigneeDialog]);
 
   const parentIdForRowFolder = useCallback((folder, depth = 0) => {
     const explicitParentId = String(folder?.parent_id ?? folder?.parentId ?? "").trim();

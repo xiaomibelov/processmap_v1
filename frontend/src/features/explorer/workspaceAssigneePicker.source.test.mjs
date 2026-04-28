@@ -50,6 +50,8 @@ test("Assignee picker loads org members, filters users, and has bounded loading 
   assert.match(explorerSource, /getExplorerAssignableUserId/);
   assert.match(explorerPaneSource, /Promise\.race\(\[\s*apiListOrgMembers\(oid\),\s*assigneeMembersLoadTimeout\(\),\s*\]\)/);
   assert.match(explorerPaneSource, /normalizeExplorerAssignableUsersResponse\(resp\)/);
+  assert.match(explorerPaneSource, /\}, \[activeOrgId,\s*assigneeDialog\]\);/);
+  assert.doesNotMatch(explorerPaneSource, /\}, \[[^\]]*assigneeMembersState\.(?:loaded|loading|orgId)[^\]]*\]\);/);
   assert.match(explorerPaneSource, /loading:\s*false,\s*loaded:\s*true,\s*error:\s*normalized\.error/s);
   assert.match(explorerPaneSource, /catch\(\(e\) => \{[\s\S]*loading:\s*false,[\s\S]*error:\s*"Не удалось загрузить пользователей\."/);
   assert.match(dialogSource, /filterExplorerAssignableUsers\(users,\s*query\)/);
