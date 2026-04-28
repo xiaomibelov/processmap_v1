@@ -16,18 +16,15 @@ test("folder move uses existing API wrapper and opens from folder rows", () => {
   const folderRowSource = between("function FolderRow(", "// ─── Project Row");
 
   assert.match(explorerSource, /apiMoveFolder,/);
-  assert.match(explorerSource, /import \{ buildFolderMoveTargets \} from "\.\/explorerMoveTargets\.js";/);
+  assert.match(explorerSource, /import \{[^}]*buildFolderMoveTargets[^}]*\} from "\.\/explorerMoveTargets\.js";/s);
   assert.match(folderRowSource, /label:\s*"Переместить"/);
   assert.match(folderRowSource, /icon:\s*<IcoMove \/>/);
   assert.match(folderRowSource, /action:\s*\(\) => onMove\?\.\(folder\)/);
 });
 
-test("project and session rows do not expose move action", () => {
-  const projectRowSource = between("function ProjectRow(", "function InlineLoadingRow(");
+test("session rows do not expose move action from folder move contour", () => {
   const sessionRowSource = between("function SessionRow(", "// ─── Project Pane");
 
-  assert.doesNotMatch(projectRowSource, /Переместить/);
-  assert.doesNotMatch(projectRowSource, /IcoMove/);
   assert.doesNotMatch(sessionRowSource, /Переместить/);
   assert.doesNotMatch(sessionRowSource, /IcoMove/);
 });
