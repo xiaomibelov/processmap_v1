@@ -57,7 +57,8 @@ import {
   getExplorerAssigneeDialogTitle,
   getExplorerAssigneeId,
   getExplorerAssigneeKind,
-  getExplorerAssigneeLabel,
+  getExplorerBusinessAssignee,
+  getExplorerBusinessAssigneeLabel,
 } from "./explorerAssigneeModel.js";
 import {
   getExplorerContextStatusLabel,
@@ -453,11 +454,9 @@ function ConfirmModal({ title, message, actionLabel = "Удалить", danger =
 }
 
 function AssigneeCell({ item }) {
-  const label = getExplorerAssigneeLabel(item);
+  const label = getExplorerBusinessAssigneeLabel(item);
   const empty = label === "—";
-  const user = getExplorerAssigneeKind(item) === "responsible"
-    ? item?.responsible_user
-    : item?.executor_user || item?.executor;
+  const user = getExplorerBusinessAssignee(item);
   const title = empty ? "Не назначен" : formatExplorerUserDisplay(user);
   return (
     <span
@@ -926,7 +925,13 @@ function ExplorerSearchBox({ id = "workspace-explorer-search", value, onChange, 
 
 function SearchResultRow({ result, onOpen }) {
   const entityType = result.type === "section" || result.type === "folder" ? "folder" : result.type;
-  const metaParts = [result.pathLabel, result.statusLabel, result.ownerLabel ? `Owner: ${result.ownerLabel}` : "", result.stageLabel]
+  const metaParts = [
+    result.pathLabel,
+    result.statusLabel,
+    result.assigneeMetaLabel,
+    result.ownerLabel ? `Owner: ${result.ownerLabel}` : "",
+    result.stageLabel,
+  ]
     .filter(Boolean);
   return (
     <button
@@ -1324,9 +1329,7 @@ function ProjectRow({
           <span className="text-xs text-muted">{project.descendant_sessions_count ?? project.sessions_count ?? 0} сессий</span>
         </td>
         <td className="px-2 py-2.5">
-          {project.owner
-            ? <span className="text-[11px] text-fg/60 truncate block max-w-[120px]" title={project.owner.name || project.owner.id}>Owner: {project.owner.name || project.owner.id}</span>
-            : <span className="text-xs text-muted/70">—</span>}
+          <span className="text-xs text-muted/70">—</span>
         </td>
         <td className="px-2 py-2.5"><AssigneeCell item={project} /></td>
         <td className="px-2 py-2.5">
@@ -1519,8 +1522,8 @@ function ExplorerPane({
   const folderCopy = useMemo(() => folderCreateCopy(folderId || ""), [folderId]);
   const folderCountHeader = folderId ? "Папки / Сессии" : "Разделы / Сессии";
   const contextHeaderTitle = folderId
-    ? "Для папок: количество проектов, для проектов: владелец"
-    : "Для разделов: количество проектов, для проектов: владелец";
+    ? "Для папок: количество проектов"
+    : "Для разделов: количество проектов";
 
   const sortedRootItems = useMemo(
     () => sortExplorerItems(rootItems, explorerSort, { isRoot: !folderId }),
@@ -1822,10 +1825,12 @@ function ExplorerPane({
                   <SortHeader label="Тип" sortKey="type" sort={explorerSort} onSort={handleExplorerSort} />
                 </th>
                 <th className="px-2 py-2 text-center">{folderCountHeader}</th>
-                <th className="px-2 py-2" title={contextHeaderTitle} aria-sort={explorerSort?.key === "owner" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
-                  <SortHeader label="Контекст" sortKey="owner" sort={explorerSort} onSort={handleExplorerSort} title={`${contextHeaderTitle}. Для проектов сортирует по владельцу.`} />
+                <th className="px-2 py-2" title={contextHeaderTitle}>
+                  Контекст
                 </th>
-                <th className="px-2 py-2">Ответственный / Исполнитель</th>
+                <th className="px-2 py-2" aria-sort={explorerSort?.key === "assignee" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <SortHeader label="Ответственный / Исполнитель" sortKey="assignee" sort={explorerSort} onSort={handleExplorerSort} title="Сортирует разделы и папки по ответственному, проекты — по исполнителю." />
+                </th>
                 <th className="px-2 py-2">DoD</th>
                 {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">⚠</th> : null}
                 {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">📋</th> : null}

@@ -15,6 +15,10 @@ export function getExplorerAssigneeKind(item) {
   return "none";
 }
 
+export function getExplorerBusinessAssigneeKind(item) {
+  return getExplorerAssigneeKind(item);
+}
+
 export function formatExplorerUserDisplay(user) {
   if (!user || typeof user !== "object") return "";
   return text(
@@ -34,6 +38,10 @@ export function getExplorerAssigneeUser(item) {
   return null;
 }
 
+export function getExplorerBusinessAssignee(item) {
+  return getExplorerAssigneeUser(item);
+}
+
 export function getExplorerAssigneeId(item) {
   const kind = getExplorerAssigneeKind(item);
   if (kind === "responsible") return text(item?.responsible_user_id);
@@ -45,6 +53,10 @@ export function getExplorerAssigneeLabel(item) {
   const userLabel = formatExplorerUserDisplay(getExplorerAssigneeUser(item));
   if (userLabel) return userLabel;
   return EMPTY_LABEL;
+}
+
+export function getExplorerBusinessAssigneeLabel(item) {
+  return getExplorerAssigneeLabel(item);
 }
 
 export function getExplorerAssigneeActionLabel(item) {

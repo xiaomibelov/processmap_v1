@@ -1,3 +1,5 @@
+import { getExplorerBusinessAssigneeLabel } from "./explorerAssigneeModel.js";
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -13,6 +15,11 @@ function normalizeText(value) {
 function ownerText(owner) {
   if (!owner || typeof owner !== "object") return "";
   return text(owner.name || owner.email || owner.id);
+}
+
+function businessAssigneeText(item) {
+  const label = getExplorerBusinessAssigneeLabel(item);
+  return label === "—" ? "" : text(label);
 }
 
 function itemType(item) {
@@ -45,7 +52,7 @@ function valueForExplorerItem(item, key, { isRoot = false } = {}) {
     const status = normalizeText(item?.status);
     return status === "active" ? "" : status;
   }
-  if (key === "owner") return normalizeText(ownerText(item?.owner));
+  if (key === "assignee" || key === "owner") return normalizeText(businessAssigneeText(item));
   if (key === "updatedAt") return timestampValue(item?.rollup_activity_at || item?.updated_at || item?.created_at);
   return "";
 }
