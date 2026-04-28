@@ -23,6 +23,7 @@ import {
   apiMoveFolder,
   apiDeleteFolder,
   apiCreateProject,
+  apiMoveProject,
   apiGetProjectPage,
   apiCreateSession,
 } from "./explorerApi.js";
@@ -34,7 +35,7 @@ import {
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { buildVisibleRows, hasFolderChildren } from "./work3TreeState.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
-import { buildFolderMoveTargets } from "./explorerMoveTargets.js";
+import { buildFolderMoveTargets, buildProjectMoveTargets } from "./explorerMoveTargets.js";
 import { buildProjectBreadcrumbTrail, normalizeProjectBreadcrumbBase } from "./workspaceBreadcrumbs.js";
 import { folderCreateCopy, folderDisplayLabel } from "./workspaceDisplayLabels.js";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
@@ -411,6 +412,14 @@ function folderMoveErrorMessage(resp) {
   return "Не удалось переместить папку";
 }
 
+function projectMoveErrorMessage(resp) {
+  const detail = resp?.data?.detail ?? resp?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail.trim();
+  const err = String(resp?.error || "").trim();
+  if (err && err !== "[object Object]") return err;
+  return "Не удалось переместить проект";
+}
+
 function MoveFolderDialog({
   workspaceId,
   folder,
@@ -484,6 +493,116 @@ function MoveFolderDialog({
               <input
                 type="radio"
                 name="folder-move-target"
+                className="mt-0.5"
+                value={target.id}
+                checked={selectedTargetId === target.id}
+                disabled={target.disabled || busy}
+                onChange={() => {
+                  setSelectedTargetId(target.id);
+                  setError("");
+                }}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{target.label}</span>
+                {target.disabledReason ? (
+                  <span className="mt-0.5 block text-[11px] text-muted/70">{target.disabledReason}</span>
+                ) : null}
+              </span>
+            </label>
+          ))}
+        </div>
+        {!hasEnabledTarget ? (
+          <p className="text-xs text-muted">
+            Нет доступных загруженных расположений. Откройте или разверните нужную папку в Explorer и повторите перемещение.
+          </p>
+        ) : null}
+        {error ? <p className="text-xs text-danger">{error}</p> : null}
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="secondaryBtn h-8 px-3 text-sm" disabled={busy}>Отмена</button>
+          <button
+            onClick={submit}
+            className="primaryBtn h-8 px-3 text-sm"
+            disabled={busy || !selectedTarget || selectedTarget.disabled}
+          >
+            {busy ? "…" : "Переместить"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function MoveProjectDialog({
+  workspaceId,
+  project,
+  currentFolderId = "",
+  currentFolder = null,
+  rootItems,
+  rootParentId = "",
+  childItemsByFolder,
+  onClose,
+  onMoved,
+}) {
+  const [selectedTargetId, setSelectedTargetId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const targets = useMemo(
+    () => buildProjectMoveTargets({
+      rootItems,
+      childItemsByFolder,
+      rootParentId,
+      project,
+      currentFolderId,
+      currentFolder,
+    }),
+    [rootItems, childItemsByFolder, rootParentId, project, currentFolderId, currentFolder],
+  );
+  const selectedTarget = targets.find((target) => target.id === selectedTargetId) || null;
+  const hasEnabledTarget = targets.some((target) => !target.disabled);
+
+  useEffect(() => {
+    const current = targets.find((target) => target.id === selectedTargetId);
+    if (current && !current.disabled) return;
+    const firstEnabled = targets.find((target) => !target.disabled);
+    setSelectedTargetId(firstEnabled ? firstEnabled.id : "");
+  }, [targets, selectedTargetId]);
+
+  const submit = async () => {
+    if (!selectedTarget || selectedTarget.disabled) {
+      setError("Выберите доступное расположение");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const resp = await apiMoveProject(workspaceId, project.id, selectedTarget.id);
+      if (!resp?.ok) throw new Error(projectMoveErrorMessage(resp));
+      await onMoved?.();
+      onClose();
+    } catch (e) {
+      setError(String(e?.message || e || "Не удалось переместить проект"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title="Переместить проект" onClose={onClose}>
+      <div className="space-y-3">
+        <p className="text-sm text-muted">
+          Выберите раздел или папку, куда нужно переместить проект.
+        </p>
+        <div className="max-h-[280px] overflow-y-auto rounded-lg border border-border bg-bg/60 p-1.5">
+          {targets.map((target) => (
+            <label
+              key={target.id}
+              className={`flex cursor-pointer items-start gap-2 rounded-md px-2.5 py-2 text-sm transition-colors ${
+                target.disabled ? "cursor-not-allowed text-muted/55" : "text-fg hover:bg-panelAlt"
+              }`}
+            >
+              <input
+                type="radio"
+                name="project-move-target"
                 className="mt-0.5"
                 value={target.id}
                 checked={selectedTargetId === target.id}
@@ -803,7 +922,17 @@ function FolderRow({
 
 // ─── Project Row in Explorer ───────────────────────────────────────────────────
 
-function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, canDelete = false, showSignalColumns = false }) {
+function ProjectRow({
+  project,
+  depth = 0,
+  onClick,
+  onMove,
+  onReload,
+  canMove = false,
+  canRename = false,
+  canDelete = false,
+  showSignalColumns = false,
+}) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -813,6 +942,7 @@ function ProjectRow({ project, depth = 0, onClick, onReload, canRename = false, 
   const projectHref = buildAppWorkspaceHref({ projectId: project?.id || project?.project_id });
   const menuItems = [
     { label: "Открыть", icon: <IcoChevron right />, action: () => onClick(project) },
+    ...(canMove ? [{ label: "Переместить", icon: <IcoMove />, action: () => onMove?.(project) }] : []),
     ...(canRename ? [{ label: "Переименовать", icon: <IcoEdit />, action: () => setRenaming(true) }] : []),
     ...(canDelete ? [{ separator: true }, { label: "Удалить", icon: <IcoTrash />, danger: true, action: () => setDeleting(true) }] : []),
   ];
@@ -962,6 +1092,7 @@ function ExplorerPane({
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
   const [movingFolder, setMovingFolder] = useState(null);
+  const [movingProject, setMovingProject] = useState(null);
   const [moveNotice, setMoveNotice] = useState("");
   const [treeStateByContext, setTreeStateByContext] = useState({});
   const inFlightFolderLoadsRef = useRef(new Set());
@@ -1039,6 +1170,23 @@ function ExplorerPane({
     if (explicitParentId) return explicitParentId;
     return Number(depth || 0) === 0 ? String(folderId || "").trim() : "";
   }, [folderId]);
+
+  const currentFolderMoveTarget = useMemo(() => {
+    const fid = String(folderId || "").trim();
+    if (!fid) return null;
+    const breadcrumbs = Array.isArray(page?.breadcrumbs) ? page.breadcrumbs : [];
+    const currentIndex = breadcrumbs.findIndex((crumb) => String(crumb?.type || "") === "folder" && String(crumb?.id || "") === fid);
+    const currentCrumb = currentIndex >= 0 ? breadcrumbs[currentIndex] : page?.context?.folder;
+    if (!currentCrumb) return null;
+    const previousFolder = currentIndex > 0 ? breadcrumbs[currentIndex - 1] : null;
+    const parentId = String(previousFolder?.type || "") === "folder" ? String(previousFolder?.id || "") : "";
+    return {
+      id: fid,
+      type: "folder",
+      name: String(currentCrumb?.name || ""),
+      parent_id: parentId,
+    };
+  }, [folderId, page]);
 
   const ensureFolderChildrenLoaded = useCallback(async (targetFolderId) => {
     const fid = String(targetFolderId || "").trim();
@@ -1230,7 +1378,12 @@ function ExplorerPane({
                     project={project}
                     depth={row.depth}
                     onClick={() => onNavigateToProject(project.id, { breadcrumbBase: page?.breadcrumbs || [] })}
+                    onMove={() => {
+                      setMoveNotice("");
+                      setMovingProject(project);
+                    }}
                     onReload={() => load({ resetInlineChildren: true })}
+                    canMove={!!permissions?.canRenameProject}
                     canRename={!!permissions?.canRenameProject}
                     canDelete={!!permissions?.canDeleteProject}
                     showSignalColumns={treeColumnProfile.showSignalColumns}
@@ -1319,6 +1472,22 @@ function ExplorerPane({
             });
             await load({ resetInlineChildren: true });
             setMoveNotice(label === "Раздел" ? "Раздел перемещён." : "Папка перемещена.");
+          }}
+        />
+      ) : null}
+      {movingProject && permissions?.canRenameProject ? (
+        <MoveProjectDialog
+          workspaceId={workspaceId}
+          project={movingProject}
+          currentFolderId={movingProject.folder_id || folderId || ""}
+          currentFolder={currentFolderMoveTarget}
+          rootItems={rootItems}
+          rootParentId={folderId || ""}
+          childItemsByFolder={treeState.childItemsByFolder}
+          onClose={() => setMovingProject(null)}
+          onMoved={async () => {
+            await load({ resetInlineChildren: true });
+            setMoveNotice("Проект перемещён.");
           }}
         />
       ) : null}

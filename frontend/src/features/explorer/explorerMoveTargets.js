@@ -115,3 +115,41 @@ export function buildFolderMoveTargets({
 
   return targets;
 }
+
+export function buildProjectMoveTargets({
+  rootItems,
+  childItemsByFolder,
+  rootParentId = "",
+  project,
+  currentFolderId,
+  currentFolder,
+} = {}) {
+  const sourceFolderId = text(currentFolderId ?? project?.folder_id ?? project?.folderId);
+  const loadedFolders = collectLoadedFolders({ rootItems, childItemsByFolder, rootParentId });
+  const currentFolderItem = itemType(currentFolder) === "folder" ? currentFolder : null;
+  if (currentFolderItem) {
+    const currentId = itemId(currentFolderItem);
+    if (currentId && !loadedFolders.some((folder) => itemId(folder) === currentId)) {
+      loadedFolders.push({
+        ...currentFolderItem,
+        id: currentId,
+        parent_id: itemParentId(currentFolderItem),
+      });
+    }
+  }
+
+  return loadedFolders.map((folder) => {
+    const id = itemId(folder);
+    const parentId = itemParentId(folder);
+    const typeLabel = parentId ? "Папка" : "Раздел";
+    const disabledReason = id && id === sourceFolderId ? "Текущее расположение" : "";
+    return {
+      id,
+      label: `${typeLabel}: ${text(folder?.name) || "Без названия"}`,
+      typeLabel,
+      folder,
+      disabled: Boolean(disabledReason),
+      disabledReason,
+    };
+  });
+}

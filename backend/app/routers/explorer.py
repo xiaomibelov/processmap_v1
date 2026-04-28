@@ -14,6 +14,7 @@ PATCH /api/folders/{folder_id}              – rename folder
 POST  /api/folders/{folder_id}/move         – move folder
 DELETE /api/folders/{folder_id}             – delete folder
 POST /api/folders/{folder_id}/projects      – create project in folder
+POST /api/projects/{project_id}/move        – move project to folder
 GET  /api/projects/{project_id}/explorer    – project detail + sessions
 POST /api/projects/{project_id}/explorer/sessions – create session in project
 POST /api/backfill/workspace-folders        – admin repair: fix orphan projects
@@ -182,6 +183,10 @@ class RenameFolderBody(BaseModel):
 
 class MoveFolderBody(BaseModel):
     new_parent_id: str = ""
+
+
+class MoveProjectBody(BaseModel):
+    folder_id: str
 
 
 class CreateProjectBody(BaseModel):
@@ -751,6 +756,60 @@ def _load_project_cross_org(proj_storage: Any, pid: str, oid: str) -> Any:
     if proj:
         return proj
     return proj_storage.load(pid, org_id="", is_admin=True)
+
+
+# ─── POST /api/projects/{project_id}/move ────────────────────────────────────
+# Invalidation: old folder children and new folder children.  Ancestors are also
+# invalidated via folder-chain helper so Explorer rollups stay fresh.
+
+@router.post("/api/projects/{project_id}/move")
+def move_project(
+    project_id: str, body: MoveProjectBody, request: Request,
+    workspace_id: str = Query(...),
+) -> Dict[str, Any]:
+    workspace = _resolve_workspace(request, workspace_id)
+    oid = str(workspace.get("org_id") or "")
+    wid = str(workspace.get("id") or "")
+    user_id = _require_org_access(request, oid)
+    if not can_edit_workspace(request, oid):
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    pid = str(project_id or "").strip()
+    target_folder_id = str(body.folder_id or "").strip()
+    before = storage.get_project_workspace_details(oid, pid)
+    if not before or str(before.get("workspace_id") or "") != wid:
+        raise HTTPException(status_code=404, detail="project not found")
+    old_folder_id = str(before.get("folder_id") or "")
+
+    try:
+        project = storage.move_project_to_folder(
+            oid,
+            wid,
+            pid,
+            target_folder_id,
+            user_id=user_id,
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "project not found" in msg:
+            raise HTTPException(status_code=404, detail=msg)
+        if "target folder not found" in msg:
+            raise HTTPException(status_code=404, detail=msg)
+        raise HTTPException(status_code=422, detail=msg)
+
+    new_folder_id = str(getattr(project, "folder_id", "") or "")
+    _invalidate_children_for_folder_chain(oid, wid, old_folder_id)
+    _invalidate_children_for_folder_chain(oid, wid, new_folder_id)
+    return {
+        "ok": True,
+        "project": {
+            "id": str(getattr(project, "id", "") or ""),
+            "name": str(getattr(project, "title", "") or ""),
+            "folder_id": new_folder_id,
+            "workspace_id": str(getattr(project, "workspace_id", "") or wid),
+            "updated_at": int(getattr(project, "updated_at", 0) or 0),
+        },
+    }
 
 
 # ─── GET /api/projects/{project_id}/explorer ──────────────────────────────────

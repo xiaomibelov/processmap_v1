@@ -65,6 +65,13 @@ export async function apiCreateProject(workspaceId, folderId, { name, descriptio
   );
 }
 
+export async function apiMoveProject(workspaceId, projectId, folderId) {
+  return call(`/api/projects/${encodeURIComponent(projectId)}/move${q({ workspace_id: workspaceId })}`, {
+    method: "POST",
+    body: { folder_id: folderId || "" },
+  });
+}
+
 export async function apiGetProjectPage(workspaceId, projectId) {
   return call(`/api/projects/${encodeURIComponent(projectId)}/explorer${q({ workspace_id: workspaceId })}`);
 }

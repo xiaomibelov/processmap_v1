@@ -8072,6 +8072,76 @@ def create_project_in_folder(
     return pid
 
 
+def move_project_to_folder(
+    org_id: str,
+    workspace_id: str,
+    project_id: str,
+    target_folder_id: str,
+    *,
+    user_id: Optional[str] = None,
+) -> "Project":
+    """Move a project to another folder in the same org/workspace."""
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    wid = str(workspace_id or "").strip()
+    pid = str(project_id or "").strip()
+    fid = str(target_folder_id or "").strip()
+    actor = _scope_user_id(user_id)
+    if not oid or not wid or not pid:
+        raise ValueError("org_id, workspace_id and project_id required")
+    if not fid:
+        raise ValueError("folder_id required")
+
+    now = _now_ts()
+    with _connect() as con:
+        project_row = con.execute(
+            """
+            SELECT *
+            FROM projects
+            WHERE id = ? AND org_id = ? AND workspace_id = ?
+            LIMIT 1
+            """,
+            [pid, oid, wid],
+        ).fetchone()
+        if not project_row:
+            raise ValueError("project not found")
+
+        target_row = con.execute(
+            """
+            SELECT id
+            FROM workspace_folders
+            WHERE id = ? AND org_id = ? AND workspace_id = ? AND archived_at IS NULL
+            LIMIT 1
+            """,
+            [fid, oid, wid],
+        ).fetchone()
+        if not target_row:
+            raise ValueError("target folder not found")
+
+        current_folder_id = str(project_row["folder_id"] or "")
+        if current_folder_id != fid:
+            con.execute(
+                """
+                UPDATE projects
+                   SET folder_id = ?,
+                       updated_at = ?,
+                       updated_by = ?,
+                       version = COALESCE(version, 0) + 1
+                 WHERE id = ? AND org_id = ? AND workspace_id = ?
+                """,
+                [fid, now, actor, pid, oid, wid],
+            )
+            con.commit()
+
+        row = con.execute(
+            "SELECT * FROM projects WHERE id = ? AND org_id = ? AND workspace_id = ? LIMIT 1",
+            [pid, oid, wid],
+        ).fetchone()
+    if not row:
+        raise ValueError("project not found")
+    return _project_row_to_model(row)
+
+
 def get_project_workspace_details(org_id: str, project_id: str) -> Optional[Dict[str, str]]:
     _ensure_schema()
     oid = str(org_id or "").strip()
