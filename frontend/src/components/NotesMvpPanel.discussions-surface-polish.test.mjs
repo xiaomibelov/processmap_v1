@@ -161,6 +161,20 @@ test("Discussion cards and messages render authorship without promoting raw tech
   assert.doesNotMatch(notesMvpPanelSource, /<span>\{text\(ref\.element_id\)\}<\/span>/);
 });
 
+test("Discussion chat surface keeps compact density without dropping primitives", () => {
+  assert.match(notesMvpPanelSource, /w-\[min\(1120px,calc\(100vw-2\.5rem\)\)\]/);
+  assert.match(notesMvpPanelSource, /grid-cols-\[minmax\(0,1fr\)_minmax\(286px,320px\)\]/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-thread-message-scroll" className="min-h-0 overflow-auto bg-bg\/10 px-3 py-2\.5 sm:px-4"/);
+  assert.match(notesMvpPanelSource, /className=\{`rounded-2xl border px-3 py-2\.5 shadow-none/);
+  assert.match(notesMvpPanelSource, /border-l-2 border-info\/45[\s\S]{0,140}data-testid="notes-comment-reply-quote"/);
+  assert.match(notesMvpPanelSource, /border-l-2 border-info\/45[\s\S]{0,140}data-testid="notes-reply-preview"/);
+  assert.match(notesMvpPanelSource, /className=\{`rounded-xl border px-2\.5 py-2 text-left transition/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-thread-unread-badge"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-comment-reply-action"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-comment-edit-action"/);
+  assert.match(notesMvpPanelSource, /testId="notes-reply-markdown-toolbar"/);
+});
+
 test("Element-scoped discussions do not promote BPMN technical ids as element names", () => {
   assert.match(notesMvpPanelSource, /import \{ readableBpmnText \} from "\.\.\/features\/process\/bpmn\/bpmnIdentity"/);
   assert.match(notesMvpPanelSource, /function readableBpmnLabel\(\.\.\.values\)[\s\S]*return readableBpmnText\(\.\.\.values\);/);
@@ -316,8 +330,8 @@ test("Selected discussion messages start below the header without bottom-justifi
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-message-scroll"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-message-flow"/);
   assert.doesNotMatch(notesMvpPanelSource, /flex min-h-full flex-col justify-end gap-3/);
-  assert.match(notesMvpPanelSource, /className="flex flex-col gap-2\.5"/);
-  assert.match(notesMvpPanelSource, /className=\{`rounded-xl border bg-panel px-3 py-2\.5 shadow-sm/);
-  assert.match(notesMvpPanelSource, /className="grid h-8 w-8 shrink-0/);
-  assert.match(notesMvpPanelSource, /className="textarea min-h-\[84px\] w-full text-sm"/);
+  assert.match(notesMvpPanelSource, /className="flex flex-col gap-2"/);
+  assert.match(notesMvpPanelSource, /className=\{`rounded-2xl border px-3 py-2\.5 shadow-none/);
+  assert.match(notesMvpPanelSource, /className="mt-0\.5 grid h-7 w-7 shrink-0/);
+  assert.match(notesMvpPanelSource, /className="textarea min-h-\[78px\] w-full text-sm"/);
 });
