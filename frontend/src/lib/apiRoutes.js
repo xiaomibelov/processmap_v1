@@ -151,6 +151,7 @@ export const apiRoutes = {
     item: (threadId) => `/api/note-threads/${encode(threadId)}`,
     comments: (threadId) => `/api/note-threads/${encode(threadId)}/comments`,
     attentionAcknowledgement: (threadId) => `/api/note-threads/${encode(threadId)}/attention-acknowledgement`,
+    read: (threadId) => `/api/note-threads/${encode(threadId)}/read`,
   },
   noteMentions: {
     list: (limit = "") => withQuery("/api/note-mentions", { limit: String(limit || "").trim() }),

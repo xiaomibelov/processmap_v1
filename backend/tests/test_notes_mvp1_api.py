@@ -37,9 +37,10 @@ class NotesMvp1ApiTest(unittest.TestCase):
             list_my_note_mentions,
             list_session_mentionable_users,
             list_session_note_threads,
+            mark_note_thread_read,
             patch_note_thread,
         )
-        from app.storage import get_default_org_id, get_project_storage, get_storage
+        from app.storage import get_default_org_id, get_project_storage, get_storage, upsert_project_membership
 
         self.create_user = create_user
         self.get_default_org_id = get_default_org_id
@@ -54,8 +55,10 @@ class NotesMvp1ApiTest(unittest.TestCase):
         self.list_my_note_mentions = list_my_note_mentions
         self.list_session_mentionable_users = list_session_mentionable_users
         self.list_session_note_threads = list_session_note_threads
+        self.mark_note_thread_read = mark_note_thread_read
         self.add_note_thread_comment = add_note_thread_comment
         self.patch_note_thread = patch_note_thread
+        self.upsert_project_membership = upsert_project_membership
 
         _ = get_storage()
         self.org_id = get_default_org_id()
@@ -92,6 +95,14 @@ class NotesMvp1ApiTest(unittest.TestCase):
             user_id=str(self.editor.get("id") or ""),
             org_id=self.org_id,
             is_admin=True,
+        )
+
+    def _add_project_member(self, user: dict, role: str = "viewer"):
+        self.upsert_project_membership(
+            self.org_id,
+            self.project_id,
+            str(user.get("id") or ""),
+            role,
         )
 
     def tearDown(self):
@@ -321,6 +332,60 @@ class NotesMvp1ApiTest(unittest.TestCase):
         self.assertEqual({item["id"] for item in history_items}, {acknowledged["id"], resolved["id"]})
         self.assertGreater(int(by_id[acknowledged["id"]]["attention_acknowledged_at"] or 0), 0)
 
+    def test_note_thread_unread_counts_are_per_user_and_mark_read(self):
+        self._add_project_member(self.viewer, "viewer")
+        peer = self.create_user(
+            "notes_peer@local",
+            "editor",
+            is_admin=False,
+            full_name="Коллега Обсуждений",
+        )
+        self._insert_membership(self.org_id, str(peer.get("id") or ""), "editor")
+        self._add_project_member(peer, "editor")
+
+        created = self.create_session_note_thread(
+            self.session_id,
+            self.CreateNoteThreadBody(scope_type="session", scope_ref={}, body="Первое сообщение"),
+            self._req(),
+        )["thread"]
+        thread_id = created["id"]
+        self.assertEqual(created["unread_count"], 0)
+        self.assertGreater(int(created["last_read_at"] or 0), 0)
+
+        viewer_initial = self.list_session_note_threads(self.session_id, self._req(self.viewer), status="")["items"][0]
+        self.assertEqual(viewer_initial["unread_count"], 1)
+        self.assertEqual(viewer_initial["last_read_at"], 0)
+
+        read_result = self.mark_note_thread_read(thread_id, self._req(self.viewer))
+        self.assertTrue(read_result["ok"])
+        self.assertEqual(read_result["unread_count"], 0)
+        viewer_after_read = self.list_session_note_threads(self.session_id, self._req(self.viewer), status="")["items"][0]
+        self.assertEqual(viewer_after_read["unread_count"], 0)
+        self.assertGreater(int(viewer_after_read["last_read_at"] or 0), 0)
+
+        peer_comment_thread = self.add_note_thread_comment(
+            thread_id,
+            self.AddNoteCommentBody(body="Новое сообщение коллеги"),
+            self._req(peer),
+        )["thread"]
+        peer_comment = next(comment for comment in peer_comment_thread["comments"] if comment["body"] == "Новое сообщение коллеги")
+        bumped_at = int(viewer_after_read["last_read_at"] or 0) + 5
+        with sqlite3.connect(str(self._db_path())) as con:
+            con.execute(
+                "UPDATE note_comments SET created_at = ?, updated_at = ? WHERE id = ?",
+                [bumped_at, bumped_at, peer_comment["id"]],
+            )
+            con.execute("UPDATE note_threads SET updated_at = ? WHERE id = ?", [bumped_at, thread_id])
+            con.commit()
+
+        viewer_after_peer_comment = self.list_session_note_threads(self.session_id, self._req(self.viewer), status="")["items"][0]
+        self.assertEqual(viewer_after_peer_comment["unread_count"], 1)
+        self.assertEqual(viewer_after_peer_comment["last_comment_at"], bumped_at)
+        self.assertEqual(viewer_after_peer_comment["last_comment_author_user_id"], str(peer.get("id") or ""))
+
+        peer_after_own_comment = self.list_session_note_threads(self.session_id, self._req(peer), status="")["items"][0]
+        self.assertEqual(peer_after_own_comment["unread_count"], 0)
+
     def test_auth_and_permission_denial(self):
         with self.assertRaises(HTTPException) as unauthorized:
             self.list_session_note_threads(self.session_id, self._req({}))
@@ -336,6 +401,18 @@ class NotesMvp1ApiTest(unittest.TestCase):
 
         read_payload = self.list_session_note_threads(self.session_id, self._req(self.viewer))
         self.assertEqual(read_payload["count"], 0)
+
+        created = self.create_session_note_thread(
+            self.session_id,
+            self.CreateNoteThreadBody(scope_type="session", scope_ref={}, body="read guard"),
+            self._req(),
+        )["thread"]
+        with self.assertRaises(HTTPException) as unauthorized_read:
+            self.mark_note_thread_read(created["id"], self._req({}))
+        self.assertEqual(unauthorized_read.exception.status_code, 401)
+        with self.assertRaises(HTTPException) as missing_read:
+            self.mark_note_thread_read("missing_thread", self._req())
+        self.assertEqual(missing_read.exception.status_code, 404)
 
     def test_legacy_notes_by_element_write_path_is_not_touched(self):
         st = self.get_storage()
