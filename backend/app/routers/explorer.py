@@ -48,6 +48,7 @@ from ..services.org_workspace import (
     can_edit_workspace,
     can_manage_workspace,
     normalize_context_status,
+    project_scope_for_request,
     require_org_member_for_enterprise,
     validate_org_user_assignable,
 )
@@ -582,6 +583,62 @@ def get_explorer_page(
     logger.info("explorer /explorer org=%s workspace=%s folder=%s items=%d total=%dms",
                 oid, ws_id, fid or "root", len(items), _ms(t0))
     return ExplorerPage(context=context, breadcrumbs=breadcrumbs, items=items)
+
+
+@router.get("/api/explorer/search")
+def search_explorer(
+    request: Request,
+    workspace_id: str = Query(...),
+    q: str = Query(default=""),
+    limit: int = Query(default=50, ge=1, le=100),
+) -> Dict[str, Any]:
+    t0 = time.perf_counter()
+    workspace = _resolve_workspace(request, workspace_id)
+    oid = str(workspace.get("org_id") or "")
+    ws_id = str(workspace.get("id") or "")
+    query = str(q or "").strip()
+    scope = project_scope_for_request(request, oid)
+    allowed_project_ids: Optional[List[str]] = None
+    if str(scope.get("mode") or "") != "all":
+        allowed_project_ids = [
+            str(item or "").strip()
+            for item in (scope.get("project_ids") or [])
+            if str(item or "").strip()
+        ]
+    raw = storage.search_workspace_explorer(
+        oid,
+        ws_id,
+        query,
+        limit=limit,
+        allowed_project_ids=allowed_project_ids,
+    )
+
+    def enrich(item: Dict[str, Any]) -> Dict[str, Any]:
+        out = dict(item or {})
+        responsible_id = str(out.get("responsible_user_id") or "").strip()
+        executor_id = str(out.get("executor_user_id") or "").strip()
+        out["responsible_user"] = _assignable_out(responsible_id)
+        out["executor_user"] = _executor_out(executor_id)
+        return out
+
+    groups_in = raw.get("groups") if isinstance(raw, dict) else {}
+    groups = {
+        "sections": [enrich(item) for item in (groups_in or {}).get("sections", [])],
+        "folders": [enrich(item) for item in (groups_in or {}).get("folders", [])],
+        "projects": [enrich(item) for item in (groups_in or {}).get("projects", [])],
+        "sessions": [enrich(item) for item in (groups_in or {}).get("sessions", [])],
+    }
+    items = [item for key in ("sections", "folders", "projects", "sessions") for item in groups.get(key, [])]
+    logger.info("explorer /explorer/search org=%s workspace=%s query_len=%d items=%d total=%dms",
+                oid, ws_id, len(query), len(items), _ms(t0))
+    return {
+        "ok": True,
+        "workspace_id": ws_id,
+        "query": query,
+        "limit": int(raw.get("limit") or limit),
+        "groups": groups,
+        "items": items,
+    }
 
 
 # ─── POST /api/workspaces/{workspace_id}/folders ──────────────────────────────
