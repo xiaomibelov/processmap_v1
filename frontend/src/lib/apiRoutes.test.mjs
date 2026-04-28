@@ -7,6 +7,7 @@ import { apiRoutes } from "./apiRoutes.js";
 
 test("apiRoutes: canonical report and session routes are stable", () => {
   assert.equal(apiRoutes.sessions.item("sess_1"), "/api/sessions/sess_1");
+  assert.equal(apiRoutes.sessions.presence("sess_1"), "/api/sessions/sess_1/presence");
   assert.equal(apiRoutes.sessions.bpmn("sess_1"), "/api/sessions/sess_1/bpmn");
   assert.equal(apiRoutes.sessions.bpmnVersions("sess_1"), "/api/sessions/sess_1/bpmn/versions");
   assert.equal(apiRoutes.sessions.bpmnVersions("sess_1", { includeXml: true, limit: 50 }), "/api/sessions/sess_1/bpmn/versions?limit=50&include_xml=1");

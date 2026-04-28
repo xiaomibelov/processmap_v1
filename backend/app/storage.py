@@ -821,6 +821,24 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)")
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS session_presence (
+                  session_id TEXT NOT NULL,
+                  user_id TEXT NOT NULL,
+                  client_id TEXT NOT NULL,
+                  org_id TEXT NOT NULL DEFAULT 'org_default',
+                  project_id TEXT NOT NULL DEFAULT '',
+                  surface TEXT NOT NULL DEFAULT '',
+                  last_seen_at INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  PRIMARY KEY (session_id, user_id, client_id)
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_session_presence_active ON session_presence(session_id, org_id, project_id, last_seen_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_session_presence_stale ON session_presence(last_seen_at)")
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS bpmn_versions (
                   id TEXT PRIMARY KEY,
                   session_id TEXT NOT NULL,
@@ -6211,6 +6229,145 @@ def user_has_project_access(
         return True
     allowed = {str(item or "").strip() for item in (scope.get("project_ids") or []) if str(item or "").strip()}
     return pid in allowed
+
+
+def _session_presence_display_name(user_id: str, email: str = "", full_name: str = "") -> str:
+    name = str(full_name or "").strip()
+    if name:
+        return name
+    mail = str(email or "").strip().lower()
+    if mail:
+        return mail
+    uid = str(user_id or "").strip()
+    if not uid:
+        return "Пользователь"
+    return f"Пользователь {uid[:8]}"
+
+
+def prune_stale_session_presence(*, ttl_seconds: int = 180, now_ts: Optional[int] = None) -> int:
+    ttl = max(30, int(ttl_seconds or 180))
+    now = int(now_ts or 0) or _now_ts()
+    cutoff = now - ttl
+    _ensure_schema()
+    with _connect() as con:
+        cur = con.execute(
+            "DELETE FROM session_presence WHERE last_seen_at < ?",
+            [cutoff],
+        )
+        con.commit()
+        return int(cur.rowcount or 0)
+
+
+def touch_session_presence(
+    session_id: str,
+    user_id: str,
+    client_id: str,
+    *,
+    org_id: str = "",
+    project_id: str = "",
+    surface: str = "process_stage",
+    now_ts: Optional[int] = None,
+) -> Dict[str, Any]:
+    sid = str(session_id or "").strip()
+    uid = str(user_id or "").strip()
+    cid = str(client_id or "").strip()[:128]
+    if not sid or not uid or not cid:
+        raise ValueError("session_id, user_id and client_id are required")
+    oid = str(org_id or "").strip() or _default_org_id()
+    pid = str(project_id or "").strip()
+    surf = str(surface or "process_stage").strip()[:64] or "process_stage"
+    now = int(now_ts or 0) or _now_ts()
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            """
+            INSERT INTO session_presence (
+              session_id, user_id, client_id, org_id, project_id, surface,
+              last_seen_at, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id, user_id, client_id) DO UPDATE SET
+              org_id = excluded.org_id,
+              project_id = excluded.project_id,
+              surface = excluded.surface,
+              last_seen_at = excluded.last_seen_at,
+              updated_at = excluded.updated_at
+            """,
+            [sid, uid, cid, oid, pid, surf, now, now, now],
+        )
+        con.commit()
+    return {
+        "session_id": sid,
+        "user_id": uid,
+        "client_id": cid,
+        "org_id": oid,
+        "project_id": pid,
+        "surface": surf,
+        "last_seen_at": now,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+def list_session_presence(
+    session_id: str,
+    *,
+    org_id: str = "",
+    project_id: str = "",
+    ttl_seconds: int = 180,
+    now_ts: Optional[int] = None,
+    current_user_id: str = "",
+) -> List[Dict[str, Any]]:
+    sid = str(session_id or "").strip()
+    if not sid:
+        return []
+    oid = str(org_id or "").strip() or _default_org_id()
+    pid = str(project_id or "").strip()
+    ttl = max(30, int(ttl_seconds or 180))
+    now = int(now_ts or 0) or _now_ts()
+    cutoff = now - ttl
+    current_uid = str(current_user_id or "").strip()
+    _ensure_schema()
+    filters = ["sp.session_id = ?", "sp.org_id = ?", "sp.last_seen_at >= ?"]
+    params: List[Any] = [sid, oid, cutoff]
+    if pid:
+        filters.append("sp.project_id = ?")
+        params.append(pid)
+    where = " AND ".join(filters)
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT sp.user_id,
+                   MAX(sp.last_seen_at) AS last_seen_at,
+                   MAX(sp.updated_at) AS updated_at,
+                   MAX(u.email) AS email,
+                   MAX(u.full_name) AS full_name,
+                   MAX(u.job_title) AS job_title
+              FROM session_presence sp
+              LEFT JOIN users u ON u.id = sp.user_id
+             WHERE {where}
+             GROUP BY sp.user_id
+             ORDER BY last_seen_at DESC, sp.user_id ASC
+            """,
+            params,
+        ).fetchall()
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        uid = str(row["user_id"] or "")
+        email = str(row["email"] or "").strip().lower()
+        full_name = str(row["full_name"] or "").strip()
+        job_title = str(row["job_title"] or "").strip()
+        out.append(
+            {
+                "user_id": uid,
+                "display_name": _session_presence_display_name(uid, email=email, full_name=full_name),
+                "email": email,
+                "full_name": full_name,
+                "job_title": job_title,
+                "last_seen_at": int(row["last_seen_at"] or 0),
+                "is_current_user": bool(current_uid and uid == current_uid),
+            }
+        )
+    return out
 
 
 def list_workspace_snapshot_rows(

@@ -99,6 +99,7 @@ export const apiRoutes = {
     list: () => "/api/sessions",
     create: () => "/api/sessions",
     item: (sessionId) => `/api/sessions/${encode(sessionId)}`,
+    presence: (sessionId) => `/api/sessions/${encode(sessionId)}/presence`,
     nodes: (sessionId) => `/api/sessions/${encode(sessionId)}/nodes`,
     node: (sessionId, nodeId) => `/api/sessions/${encode(sessionId)}/nodes/${encode(nodeId)}`,
     edges: (sessionId) => `/api/sessions/${encode(sessionId)}/edges`,
