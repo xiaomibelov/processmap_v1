@@ -107,6 +107,7 @@ import useProcessStageDrawio from "../features/process/stage/orchestration/usePr
 import useProcessStageHybrid from "../features/process/stage/orchestration/useProcessStageHybrid";
 import useProcessStageLocalState from "../features/process/stage/orchestration/state/useProcessStageLocalState";
 import useDiagramSearchController from "../features/process/stage/search/useDiagramSearchController";
+import { navigateDiagramSearchResult } from "../features/process/stage/search/diagramSearchNavigation";
 import {
   buildTopPanelsView,
   buildAttentionPanelsView,
@@ -377,6 +378,7 @@ export default function ProcessStage({
   const lastAiGenerateIntentKeyRef = useRef("");
   const lastDrawioCompanionFocusKeyRef = useRef("");
   const lastDiscussionLinkedElementFocusKeyRef = useRef("");
+  const diagramSearchNavigationRequestRef = useRef(0);
   const saveUploadLifecycleClearTimerRef = useRef(0);
   const attentionPanelWasOpenRef = useRef(false);
   const autoPassToastJobIdRef = useRef("");
@@ -1675,18 +1677,6 @@ export default function ProcessStage({
     sid,
     toText,
   ]);
-
-  const diagramSearch = useDiagramSearchController({
-    bpmnRef,
-    requestDiagramFocus,
-    sessionId: sid,
-    reloadKey,
-    diagramXml: draft?.bpmn_xml,
-    mutationVersion: diagramSearchMutationVersion,
-    isOpen: diagramActionSearchOpen,
-    setOpen: setDiagramActionSearchOpen,
-    isEnabled: hasSession && tab === "diagram" && !isInterview,
-  });
 
   useEffect(() => {
     if (!hasSession || tab !== "diagram") {
@@ -3490,6 +3480,48 @@ export default function ProcessStage({
     bpmnSubprocessPreview,
     openBpmnSubprocessPreviewProperties,
   ]);
+
+  const handleDiagramSearchResultNavigation = useCallback((result, { source = "diagram_search" } = {}) => {
+    const requestId = diagramSearchNavigationRequestRef.current + 1;
+    diagramSearchNavigationRequestRef.current = requestId;
+    void navigateDiagramSearchResult(result, {
+      bpmnRef,
+      requestDiagramFocus,
+      onSubprocessPreviewResult: (actionResult, options = {}) => {
+        handleBpmnContextActionResult(actionResult, {
+          menuTarget: options.menuTarget,
+          closeContextMenu: closeBpmnContextMenu,
+        });
+      },
+      setInfoMsg,
+      setGenErr,
+      source,
+      expectedSid: sid,
+      isStale: () => diagramSearchNavigationRequestRef.current !== requestId,
+    });
+    return true;
+  }, [
+    bpmnRef,
+    closeBpmnContextMenu,
+    handleBpmnContextActionResult,
+    requestDiagramFocus,
+    setGenErr,
+    setInfoMsg,
+    sid,
+  ]);
+
+  const diagramSearch = useDiagramSearchController({
+    bpmnRef,
+    requestDiagramFocus,
+    onNavigateSearchResult: handleDiagramSearchResultNavigation,
+    sessionId: sid,
+    reloadKey,
+    diagramXml: draft?.bpmn_xml,
+    mutationVersion: diagramSearchMutationVersion,
+    isOpen: diagramActionSearchOpen,
+    setOpen: setDiagramActionSearchOpen,
+    isEnabled: hasSession && tab === "diagram" && !isInterview,
+  });
 
   const handleUndoAction = useCallback(async () => {
     const result = await Promise.resolve(bpmnRef.current?.undo?.());

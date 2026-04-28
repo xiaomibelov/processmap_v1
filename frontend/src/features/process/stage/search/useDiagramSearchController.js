@@ -34,6 +34,7 @@ export default function useDiagramSearchController({
   isOpen = false,
   setOpen = null,
   isEnabled = true,
+  onNavigateSearchResult = null,
 } = {}) {
   const [elements, setElements] = useState([]);
   const [properties, setProperties] = useState([]);
@@ -79,12 +80,17 @@ export default function useDiagramSearchController({
   const focusResult = useCallback((result, source = "search") => {
     const elementId = toText(result?.elementId);
     if (!elementId) return;
+    const focusSource = `diagram_search_${source}`;
+    if (typeof onNavigateSearchResult === "function") {
+      onNavigateSearchResult(result, { source: focusSource });
+      return;
+    }
     requestDiagramFocus?.(elementId, {
-      source: `diagram_search_${source}`,
+      source: focusSource,
       clearExistingSelection: true,
       centerInViewport: true,
     });
-  }, [requestDiagramFocus]);
+  }, [onNavigateSearchResult, requestDiagramFocus]);
 
   const next = useCallback(() => {
     if (!activeModel.results.length) return null;
