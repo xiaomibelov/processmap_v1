@@ -1,7 +1,15 @@
 const EMPTY_LABEL = "—";
+export const EXPLORER_ASSIGNEE_USERS_LOAD_TIMEOUT_MS = 12000;
 
 function text(value) {
   return String(value ?? "").trim();
+}
+
+function shortUserId(value) {
+  const raw = text(value);
+  if (!raw) return "";
+  if (raw.length <= 12) return raw;
+  return `${raw.slice(0, 8)}...`;
 }
 
 function itemType(item) {
@@ -26,9 +34,37 @@ export function formatExplorerUserDisplay(user) {
       || user.full_name
       || user.name
       || user.email
-      || user.user_id
-      || user.id,
+      || shortUserId(user.user_id || user.id),
   );
+}
+
+export function normalizeExplorerAssignableUsersResponse(resp) {
+  if (!resp?.ok) {
+    return {
+      ok: false,
+      items: [],
+      error: "Не удалось загрузить пользователей.",
+    };
+  }
+  const payload = resp?.data && typeof resp.data === "object" ? resp.data : {};
+  const items = Array.isArray(resp.items)
+    ? resp.items
+    : Array.isArray(payload.items)
+      ? payload.items
+      : Array.isArray(resp.members)
+        ? resp.members
+        : Array.isArray(payload.members)
+          ? payload.members
+          : Array.isArray(resp.users)
+            ? resp.users
+            : Array.isArray(payload.users)
+              ? payload.users
+              : [];
+  return {
+    ok: true,
+    items,
+    error: "",
+  };
 }
 
 export function getExplorerAssigneeUser(item) {
