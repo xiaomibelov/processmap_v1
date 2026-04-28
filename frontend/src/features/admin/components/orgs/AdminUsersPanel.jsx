@@ -55,6 +55,9 @@ function formatTs(ts) {
   }
 }
 
+const compactInputClass = "input h-9 min-h-0 w-full py-1.5 text-sm";
+const compactSelectClass = "select h-9 min-h-0 w-full py-1.5 text-sm";
+
 export default function AdminUsersPanel({
   isAdmin = false,
   activeOrgId = "",
@@ -215,24 +218,173 @@ export default function AdminUsersPanel({
       title="Пользователи и доступ"
       subtitle="Администратор платформы управляет пользователями, ролями и доступом к организациям."
     >
-      <div className="grid gap-4 xl:grid-cols-[1.45fr_0.9fr]">
-        <div className="overflow-auto rounded-[22px] border border-slate-200 bg-white">
-          <table className="w-full min-w-[1080px] border-collapse text-sm">
-            <thead className="text-left text-[11px] uppercase tracking-[0.16em] text-slate-400">
+      <div className="space-y-3">
+        <form className="rounded-xl border border-slate-200 bg-slate-50 p-3" onSubmit={handleSubmit} autoComplete="off">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Профиль</div>
+              <div className="text-base font-semibold text-slate-950">{selectedUserId ? "Редактировать пользователя" : "Новый пользователь"}</div>
+            </div>
+            <button type="button" className="secondaryBtn h-8 min-h-0 px-2.5 py-0 text-xs" onClick={handleNewUser}>
+              Новый / сбросить
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 lg:grid-cols-12">
+            <label className="block text-sm text-slate-700 lg:col-span-3">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Email</div>
+              <input
+                className={compactInputClass}
+                type="email"
+                name="admin_user_email"
+                autoComplete="off"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+              />
+            </label>
+
+            <label className="block text-sm text-slate-700 lg:col-span-3">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Имя</div>
+              <input
+                className={compactInputClass}
+                type="text"
+                name="admin_user_full_name"
+                autoComplete="off"
+                value={fullName}
+                onChange={(event) => setFullName(event.target.value)}
+              />
+            </label>
+
+            <label className="block text-sm text-slate-700 lg:col-span-2">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Должность</div>
+              <input
+                className={compactInputClass}
+                type="text"
+                name="admin_user_job_title"
+                autoComplete="off"
+                value={jobTitle}
+                onChange={(event) => setJobTitle(event.target.value)}
+              />
+            </label>
+
+            <label className="block text-sm text-slate-700 lg:col-span-2">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                {selectedUserId ? "Новый пароль" : "Пароль"}
+              </div>
+              <input
+                className={compactInputClass}
+                type="password"
+                name="admin_user_password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </label>
+
+            <div className="flex flex-wrap items-end gap-3 lg:col-span-2">
+              <label className="flex h-9 items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={isActive} onChange={(event) => setIsActive(event.target.checked)} />
+                <span>Активен</span>
+              </label>
+              <label className="flex h-9 items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={isPlatformAdmin}
+                  onChange={(event) => setIsPlatformAdmin(event.target.checked)}
+                />
+                <span>Платформа</span>
+              </label>
+            </div>
+          </div>
+
+          {!isPlatformAdmin ? (
+            <div className="mt-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Доступ по организациям</div>
+                <button type="button" className="secondaryBtn h-8 min-h-0 px-2.5 py-0 text-xs" onClick={handleAddMembership}>
+                  Добавить организацию
+                </button>
+              </div>
+              {memberships.map((row, index) => (
+                <div key={`${row.org_id || "membership"}_${index}`} className="grid gap-2 rounded-lg border border-slate-200 bg-white p-2 lg:grid-cols-[minmax(180px,1fr)_minmax(160px,0.75fr)_auto]">
+                  <label className="space-y-1 text-sm text-slate-700">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Организация</div>
+                    <select
+                      className={compactSelectClass}
+                      value={row.org_id}
+                      onChange={(event) => handleMembershipChange(index, "org_id", event.target.value)}
+                    >
+                      {normalizedOrgOptions.map((org) => (
+                        <option key={org.org_id} value={org.org_id}>{org.name || org.org_id}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1 text-sm text-slate-700">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Роль в организации</div>
+                    <select
+                      className={compactSelectClass}
+                      value={row.role}
+                      onChange={(event) => handleMembershipChange(index, "role", event.target.value)}
+                    >
+                      {USER_FACING_ROLE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="secondaryBtn h-9 min-h-0 self-end px-2.5 py-0 text-xs"
+                    onClick={() => handleRemoveMembership(index)}
+                    disabled={memberships.length <= 1}
+                  >
+                    Удалить
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
+              Пользователь получает доступ ко всем организациям. Персональные organization memberships для этого режима не требуются.
+            </div>
+          )}
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button type="submit" className="primaryBtn h-9 min-h-0 px-3 py-0 text-sm" disabled={busy}>
+              {selectedUserId ? "Сохранить пользователя" : "Создать пользователя"}
+            </button>
+            {error ? <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
+            {notice ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</div> : null}
+            {busy ? <div className="text-sm text-slate-500">Сохраняем…</div> : null}
+          </div>
+        </form>
+
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <table className="min-w-full table-fixed border-collapse text-[13px]">
+            <colgroup>
+              <col className="w-[20%]" />
+              <col className="w-[13%]" />
+              <col className="w-[13%]" />
+              <col className="w-[24%]" />
+              <col className="w-[10%]" />
+              <col className="w-[11%]" />
+              <col className="w-[9%]" />
+            </colgroup>
+            <thead className="text-left text-[10px] uppercase tracking-[0.12em] text-slate-400">
               <tr>
-                <th className="px-3 py-3">Пользователь</th>
-                <th className="px-3 py-3">Должность</th>
-                <th className="px-3 py-3">Роль платформы</th>
-                <th className="px-3 py-3">Организации и роли</th>
-                <th className="px-3 py-3">Статус</th>
-                <th className="px-3 py-3">Создан</th>
-                <th className="px-3 py-3 text-right">Действия</th>
+                <th className="px-2.5 py-2">Пользователь</th>
+                <th className="px-2.5 py-2">Должность</th>
+                <th className="px-2.5 py-2">Роль платформы</th>
+                <th className="px-2.5 py-2">Организации / роли</th>
+                <th className="px-2.5 py-2">Статус</th>
+                <th className="px-2.5 py-2">Создан</th>
+                <th className="px-2.5 py-2 text-right">Действия</th>
               </tr>
             </thead>
             <tbody>
               {users.length === 0 ? (
                 <tr className="border-t border-slate-100">
-                  <td className="px-3 py-5 text-slate-500" colSpan={7}>Пользователи пока не найдены.</td>
+                  <td className="px-2.5 py-4 text-slate-500" colSpan={7}>Пользователи пока не найдены.</td>
                 </tr>
               ) : null}
               {users.map((row) => {
@@ -246,38 +398,38 @@ export default function AdminUsersPanel({
                     className={`border-t border-slate-100 ${selected ? "bg-amber-50/80" : "hover:bg-slate-50/70"}`}
                     onClick={() => handleSelectUser(row)}
                   >
-                    <td className="px-3 py-2.5 align-top">
-                      <div className="font-medium text-slate-950" title={userId ? `ID: ${userId}` : ""}>{identity.primary}</div>
+                    <td className="px-2.5 py-2 align-top">
+                      <div className="break-words font-medium leading-snug text-slate-950" title={userId ? `ID: ${userId}` : ""}>{identity.primary}</div>
                       {identity.secondary ? (
-                        <div className="mt-1 text-xs text-slate-500">{identity.secondary}</div>
+                        <div className="mt-0.5 break-all text-[11px] leading-snug text-slate-500">{identity.secondary}</div>
                       ) : null}
                     </td>
-                    <td className="px-3 py-2.5 align-top text-slate-700">
+                    <td className="break-words px-2.5 py-2 align-top text-slate-700">
                       {toText(row?.job_title || row?.jobTitle) || "—"}
                     </td>
-                    <td className="px-3 py-2.5 align-top">
+                    <td className="px-2.5 py-2 align-top">
                       {row?.is_admin ? (
-                        <StatusPill status="Администратор платформы" tone="accent" />
+                        <span className="inline-flex rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">Админ</span>
                       ) : (
-                        <StatusPill status="Участник организации" tone="default" />
+                        <span className="inline-flex rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-700">Участник</span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 align-top">
+                    <td className="px-2.5 py-2 align-top">
                       {row?.is_admin ? (
-                        <div className="inline-flex items-center rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] text-indigo-700">
+                        <div className="inline-flex items-center rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[11px] text-indigo-700">
                           Доступ ко всем организациям
                         </div>
                       ) : rowMemberships.length > 0 ? (
-                        <div className="flex flex-wrap items-center gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1">
                           {rowMemberships.map((membership, index) => {
                             const orgName = toText(membership?.org_name || membership?.org_id || "Организация");
                             const roleLabel = formatRoleWithScope(membership?.role);
                             return (
                               <span
                                 key={`${userId}_membership_${index}`}
-                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700"
+                                className="inline-flex max-w-full items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-700"
                               >
-                                <span className="font-medium">{orgName}</span>
+                                <span className="truncate font-medium">{orgName}</span>
                                 <span className="text-slate-500">· {roleLabel}</span>
                               </span>
                             );
@@ -287,19 +439,19 @@ export default function AdminUsersPanel({
                         <span className="text-slate-500">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 align-top">
-                      <div className="flex flex-wrap items-center gap-1.5">
+                    <td className="px-2.5 py-2 align-top">
+                      <div className="flex flex-wrap items-center gap-1">
                         <StatusPill status={row?.is_active ? "Активен" : "Отключён"} tone={row?.is_active ? "ok" : "warn"} />
                         {!row?.is_admin ? (
-                          <span className="text-xs text-slate-500">{`организаций: ${rowMemberships.length}`}</span>
+                          <span className="text-[11px] text-slate-500">{`орг.: ${rowMemberships.length}`}</span>
                         ) : null}
                       </div>
                     </td>
-                    <td className="px-3 py-2.5 align-top text-xs text-slate-600">{formatTs(row?.created_at)}</td>
-                    <td className="px-3 py-2.5 align-top text-right">
+                    <td className="px-2.5 py-2 align-top text-[11px] text-slate-600">{formatTs(row?.created_at)}</td>
+                    <td className="px-2.5 py-2 align-top text-right">
                       <button
                         type="button"
-                        className="secondaryBtn h-7 min-h-0 px-2.5 py-0 text-xs"
+                        className="secondaryBtn h-7 min-h-0 px-2 py-0 text-xs"
                         onClick={(event) => {
                           event.stopPropagation();
                           handleSelectUser(row);
@@ -314,146 +466,6 @@ export default function AdminUsersPanel({
             </tbody>
           </table>
         </div>
-
-        <form className="space-y-3 rounded-[22px] border border-slate-200 bg-slate-50 p-3.5" onSubmit={handleSubmit} autoComplete="off">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Профиль</div>
-              <div className="text-lg font-semibold text-slate-950">{selectedUserId ? "Редактировать пользователя" : "Новый пользователь"}</div>
-            </div>
-            <button type="button" className="secondaryBtn h-9 min-h-0 px-3 py-0 text-sm" onClick={handleNewUser}>
-              Новый
-            </button>
-          </div>
-
-          <label className="block text-sm text-slate-700">
-            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Email</div>
-            <input
-              className="input w-full"
-              type="email"
-              name="admin_user_email"
-              autoComplete="off"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-            />
-          </label>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="block text-sm text-slate-700">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Имя</div>
-              <input
-                className="input w-full"
-                type="text"
-                name="admin_user_full_name"
-                autoComplete="off"
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
-              />
-            </label>
-            <label className="block text-sm text-slate-700">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Должность</div>
-              <input
-                className="input w-full"
-                type="text"
-                name="admin_user_job_title"
-                autoComplete="off"
-                value={jobTitle}
-                onChange={(event) => setJobTitle(event.target.value)}
-              />
-            </label>
-          </div>
-
-          <label className="block text-sm text-slate-700">
-            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              {selectedUserId ? "Новый пароль (опционально)" : "Пароль"}
-            </div>
-            <input
-              className="input w-full"
-              type="password"
-              name="admin_user_password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </label>
-
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" checked={isActive} onChange={(event) => setIsActive(event.target.checked)} />
-            <span>Пользователь активен</span>
-          </label>
-
-          <label className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={isPlatformAdmin}
-              onChange={(event) => setIsPlatformAdmin(event.target.checked)}
-            />
-            <span>
-              <span className="block font-medium text-slate-950">Администратор платформы</span>
-              <span className="block text-xs text-slate-500">Доступ ко всем организациям и переключение контекста организации в верхней панели.</span>
-            </span>
-          </label>
-
-          {!isPlatformAdmin ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Доступ по организациям</div>
-                <button type="button" className="secondaryBtn h-8 min-h-0 px-2 py-0 text-xs" onClick={handleAddMembership}>
-                  Добавить организацию
-                </button>
-              </div>
-              {memberships.map((row, index) => (
-                <div key={`${row.org_id || "membership"}_${index}`} className="grid gap-2 rounded-2xl border border-slate-200 bg-white p-3 md:grid-cols-[1.2fr_1fr_auto]">
-                  <label className="space-y-1 text-sm text-slate-700">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Организация</div>
-                    <select
-                      className="select"
-                      value={row.org_id}
-                      onChange={(event) => handleMembershipChange(index, "org_id", event.target.value)}
-                    >
-                      {normalizedOrgOptions.map((org) => (
-                        <option key={org.org_id} value={org.org_id}>{org.name || org.org_id}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-1 text-sm text-slate-700">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Роль в организации</div>
-                    <select
-                      className="select"
-                      value={row.role}
-                      onChange={(event) => handleMembershipChange(index, "role", event.target.value)}
-                    >
-                      {USER_FACING_ROLE_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    className="secondaryBtn h-10 min-h-0 self-end px-3 py-0 text-sm"
-                    onClick={() => handleRemoveMembership(index)}
-                    disabled={memberships.length <= 1}
-                  >
-                    Удалить
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-600">
-              Пользователь получает доступ ко всем организациям. Персональные organization memberships для этого режима не требуются.
-            </div>
-          )}
-
-          {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
-          {notice ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</div> : null}
-          {busy ? <div className="text-sm text-slate-500">Сохраняем…</div> : null}
-
-          <button type="submit" className="primaryBtn h-10 min-h-0 px-4 py-0 text-sm" disabled={busy}>
-            {selectedUserId ? "Сохранить пользователя" : "Создать пользователя"}
-          </button>
-        </form>
       </div>
     </SectionCard>
   );

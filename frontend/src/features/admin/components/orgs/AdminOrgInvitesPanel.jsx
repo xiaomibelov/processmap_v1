@@ -81,6 +81,7 @@ export default function AdminOrgInvitesPanel({
   const [lastCreatedInvite, setLastCreatedInvite] = useState(null);
   const [currentInvite, setCurrentInvite] = useState(null);
   const [copyState, setCopyState] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
   const visibleCreatedInvite = useMemo(() => {
     const localInvite = lastCreatedInvite && toText(lastCreatedInvite.orgId) === oid ? lastCreatedInvite : null;
     if (localInvite) return localInvite;
@@ -211,7 +212,7 @@ export default function AdminOrgInvitesPanel({
       title={ru.admin.orgsPage.invites.title}
       subtitle={ru.admin.orgsPage.invites.subtitle}
     >
-      <div className="space-y-4">
+      <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
           <span className="font-medium text-slate-950">{ru.admin.orgsPage.invites.activeOrgLabel}:</span>
           <span>{activeOrgLabel || ru.admin.orgsPage.invites.emptyOrg}</span>
@@ -228,15 +229,15 @@ export default function AdminOrgInvitesPanel({
         ) : null}
 
         {oid && canManageInvites ? (
-          <form className="grid grid-cols-1 gap-3 rounded-[22px] border border-slate-200 bg-slate-50 p-4 md:grid-cols-12" onSubmit={handleCreateInvite}>
+          <form className="grid grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-12" onSubmit={handleCreateInvite}>
             <label className="md:col-span-3">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Организация</div>
-              <input className="input w-full" type="text" value={activeOrgLabel} disabled />
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Организация</div>
+              <input className="input h-9 min-h-0 w-full py-1.5 text-sm" type="text" value={activeOrgLabel} disabled />
             </label>
             <label className="md:col-span-4">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Email</div>
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Email</div>
               <input
-                className="input w-full"
+                className="input h-9 min-h-0 w-full py-1.5 text-sm"
                 type="email"
                 placeholder={ru.org.inviteForm.emailPlaceholder}
                 value={inviteEmail}
@@ -245,9 +246,9 @@ export default function AdminOrgInvitesPanel({
               />
             </label>
             <label className="md:col-span-2">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Имя</div>
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Имя</div>
               <input
-                className="input w-full"
+                className="input h-9 min-h-0 w-full py-1.5 text-sm"
                 type="text"
                 placeholder={ru.org.inviteForm.fullNamePlaceholder}
                 value={inviteFullName}
@@ -255,9 +256,9 @@ export default function AdminOrgInvitesPanel({
               />
             </label>
             <label className="md:col-span-3">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Должность</div>
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Должность</div>
               <input
-                className="input w-full"
+                className="input h-9 min-h-0 w-full py-1.5 text-sm"
                 type="text"
                 placeholder={ru.org.inviteForm.jobTitlePlaceholder}
                 value={inviteJobTitle}
@@ -265,9 +266,9 @@ export default function AdminOrgInvitesPanel({
               />
             </label>
             <label className="md:col-span-3">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Роль</div>
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Роль</div>
               <select
-                className="input w-full"
+                className="input h-9 min-h-0 w-full py-1.5 text-sm"
                 value={inviteRole}
                 onChange={(event) => setInviteRole(event.target.value)}
               >
@@ -277,9 +278,9 @@ export default function AdminOrgInvitesPanel({
               </select>
             </label>
             <label className="md:col-span-2">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Срок действия, дней</div>
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Срок действия, дней</div>
               <input
-                className="input w-full"
+                className="input h-9 min-h-0 w-full py-1.5 text-sm"
                 type="number"
                 min="1"
                 max="60"
@@ -289,7 +290,7 @@ export default function AdminOrgInvitesPanel({
               />
             </label>
             <div className="md:col-span-2 flex items-end">
-              <button type="submit" className="primaryBtn w-full">{ru.org.inviteForm.createButton}</button>
+              <button type="submit" className="primaryBtn h-9 min-h-0 w-full px-3 py-0 text-sm">{ru.org.inviteForm.createButton}</button>
             </div>
             <div className="md:col-span-12 text-xs text-slate-500">
               {ru.org.noInviteCreateHint}
@@ -310,13 +311,13 @@ export default function AdminOrgInvitesPanel({
         ) : null}
 
         {visibleCreatedInvite && (toText(visibleCreatedInvite.key) || toText(visibleCreatedInvite.link)) ? (
-          <div className="space-y-3 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4">
+          <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
             {toText(visibleCreatedInvite.key) ? (
               <div className="space-y-2">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{ru.org.inviteForm.inviteKeyLabel}</div>
                 <div className="flex flex-col gap-2 md:flex-row">
-                  <input className="input w-full" type="text" value={toText(visibleCreatedInvite.key)} readOnly />
-                  <button type="button" className="secondaryBtn whitespace-nowrap" onClick={() => void handleCopy(visibleCreatedInvite.key)}>
+                  <input className="input h-9 min-h-0 w-full py-1.5 text-sm" type="text" value={toText(visibleCreatedInvite.key)} readOnly />
+                  <button type="button" className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm" onClick={() => void handleCopy(visibleCreatedInvite.key)}>
                     {copyState === "copied" ? ru.common.copied : ru.org.inviteForm.copyButton}
                   </button>
                 </div>
@@ -327,8 +328,8 @@ export default function AdminOrgInvitesPanel({
               <div className="space-y-2">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{ru.org.inviteForm.inviteLinkLabel}</div>
                 <div className="flex flex-col gap-2 md:flex-row">
-                  <input className="input w-full" type="text" value={toText(visibleCreatedInvite.link)} readOnly />
-                  <button type="button" className="secondaryBtn whitespace-nowrap" onClick={() => void handleCopy(visibleCreatedInvite.link)}>
+                  <input className="input h-9 min-h-0 w-full py-1.5 text-sm" type="text" value={toText(visibleCreatedInvite.link)} readOnly />
+                  <button type="button" className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm" onClick={() => void handleCopy(visibleCreatedInvite.link)}>
                     {copyState === "copied" ? ru.common.copied : ru.org.inviteForm.copyLinkButton}
                   </button>
                 </div>
@@ -337,62 +338,75 @@ export default function AdminOrgInvitesPanel({
           </div>
         ) : null}
 
-        <div className="overflow-auto rounded-[22px] border border-slate-200">
-          <table className="w-full min-w-[920px] border-collapse text-sm">
-            <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-[0.16em] text-slate-400">
-              <tr>
-                <th className="px-3 py-3">{ru.org.inviteTable.email}</th>
-                <th className="px-3 py-3">{ru.org.inviteTable.fullName}</th>
-                <th className="px-3 py-3">{ru.org.inviteTable.jobTitle}</th>
-                <th className="px-3 py-3">Роль</th>
-                <th className="px-3 py-3">{ru.org.inviteTable.status}</th>
-                <th className="px-3 py-3">{ru.org.inviteTable.createdAt}</th>
-                <th className="px-3 py-3">{ru.org.inviteTable.expiresAt}</th>
-                <th className="px-3 py-3">{ru.org.inviteTable.usedAt}</th>
-                <th className="px-3 py-3">{ru.org.inviteTable.action}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {invites.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-5 text-sm text-slate-500" colSpan={9}>{ru.org.inviteTable.empty}</td>
-                </tr>
-              ) : null}
-              {invites.map((row) => {
-                const inviteId = toText(row?.id);
-                const status = toText(row?.status);
-                const isPending = status === "pending";
-                return (
-                  <tr key={inviteId} className="border-t border-slate-100">
-                    <td className="px-3 py-3 text-slate-950">{toText(row?.email) || ru.common.unknown}</td>
-                    <td className="px-3 py-3 text-slate-600">{toText(row?.full_name) || ru.common.unknown}</td>
-                    <td className="px-3 py-3 text-slate-600">{toText(row?.job_title) || ru.common.unknown}</td>
-                    <td className="px-3 py-3 text-slate-600">{toUserFacingRoleLabel(row?.role)}</td>
-                    <td className="px-3 py-3">
-                      <StatusPill status={trStatusInvite(status)} tone={inviteTone(status)} />
-                    </td>
-                    <td className="px-3 py-3 text-slate-500">{formatTs(row?.created_at)}</td>
-                    <td className="px-3 py-3 text-slate-500">{formatTs(row?.expires_at)}</td>
-                    <td className="px-3 py-3 text-slate-500">{formatTs(row?.used_at || row?.accepted_at)}</td>
-                    <td className="px-3 py-3">
-                      {canManageInvites && isPending ? (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button type="button" className="secondaryBtn h-8 min-h-0 px-3 py-0 text-xs" onClick={() => void handleRegenerateInvite(row)}>
-                            Перевыпустить
-                          </button>
-                          <button type="button" className="secondaryBtn h-8 min-h-0 px-3 py-0 text-xs" onClick={() => void handleRevokeInvite(inviteId)}>
-                            {ru.common.revoke}
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400">{ru.common.notAvailable}</span>
-                      )}
-                    </td>
+        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+          <button
+            type="button"
+            className="secondaryBtn h-8 min-h-0 px-2.5 py-0 text-xs"
+            aria-expanded={historyOpen}
+            onClick={() => setHistoryOpen((value) => !value)}
+          >
+            {historyOpen ? "Скрыть историю инвайтов" : `Показать историю инвайтов · ${invites.length}`}
+          </button>
+
+          {historyOpen ? (
+            <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200">
+              <table className="min-w-full border-collapse text-[13px]">
+                <thead className="bg-slate-50 text-left text-[10px] uppercase tracking-[0.12em] text-slate-400">
+                  <tr>
+                    <th className="px-2.5 py-2">{ru.org.inviteTable.email}</th>
+                    <th className="px-2.5 py-2">{ru.org.inviteTable.fullName}</th>
+                    <th className="px-2.5 py-2">{ru.org.inviteTable.jobTitle}</th>
+                    <th className="px-2.5 py-2">Роль</th>
+                    <th className="px-2.5 py-2">{ru.org.inviteTable.status}</th>
+                    <th className="px-2.5 py-2">{ru.org.inviteTable.createdAt}</th>
+                    <th className="px-2.5 py-2">{ru.org.inviteTable.expiresAt}</th>
+                    <th className="px-2.5 py-2">{ru.org.inviteTable.usedAt}</th>
+                    <th className="px-2.5 py-2">{ru.org.inviteTable.action}</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {invites.length === 0 ? (
+                    <tr>
+                      <td className="px-2.5 py-4 text-sm text-slate-500" colSpan={9}>{ru.org.inviteTable.empty}</td>
+                    </tr>
+                  ) : null}
+                  {invites.map((row) => {
+                    const inviteId = toText(row?.id);
+                    const status = toText(row?.status);
+                    const isPending = status === "pending";
+                    return (
+                      <tr key={inviteId} className="border-t border-slate-100">
+                        <td className="break-all px-2.5 py-2 text-slate-950">{toText(row?.email) || ru.common.unknown}</td>
+                        <td className="px-2.5 py-2 text-slate-600">{toText(row?.full_name) || ru.common.unknown}</td>
+                        <td className="px-2.5 py-2 text-slate-600">{toText(row?.job_title) || ru.common.unknown}</td>
+                        <td className="px-2.5 py-2 text-slate-600">{toUserFacingRoleLabel(row?.role)}</td>
+                        <td className="px-2.5 py-2">
+                          <StatusPill status={trStatusInvite(status)} tone={inviteTone(status)} />
+                        </td>
+                        <td className="px-2.5 py-2 text-slate-500">{formatTs(row?.created_at)}</td>
+                        <td className="px-2.5 py-2 text-slate-500">{formatTs(row?.expires_at)}</td>
+                        <td className="px-2.5 py-2 text-slate-500">{formatTs(row?.used_at || row?.accepted_at)}</td>
+                        <td className="px-2.5 py-2">
+                          {canManageInvites && isPending ? (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <button type="button" className="secondaryBtn h-7 min-h-0 px-2 py-0 text-xs" onClick={() => void handleRegenerateInvite(row)}>
+                                Перевыпустить
+                              </button>
+                              <button type="button" className="secondaryBtn h-7 min-h-0 px-2 py-0 text-xs" onClick={() => void handleRevokeInvite(inviteId)}>
+                                {ru.common.revoke}
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">{ru.common.notAvailable}</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </div>
       </div>
     </SectionCard>
