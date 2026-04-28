@@ -5,6 +5,7 @@ import {
   EXPLORER_ASSIGNEE_USERS_LOAD_TIMEOUT_MS,
   filterExplorerAssignableUsers,
   formatExplorerUserDisplay,
+  getExplorerAssignableUserId,
   getExplorerAssigneeActionLabel,
   getExplorerAssigneeDialogTitle,
   getExplorerAssigneeId,
@@ -94,6 +95,32 @@ test("assignable users response accepts known shapes and normalizes failures", (
   assert.deepEqual(
     normalizeExplorerAssignableUsersResponse({ ok: true, data: { members: [{ user_id: "u2" }] } }).items,
     [{ user_id: "u2" }],
+  );
+  assert.deepEqual(
+    normalizeExplorerAssignableUsersResponse({
+      ok: true,
+      data: {
+        items: [
+          {
+            membership: { user_id: "u3", role: "editor" },
+            user: { id: "u3", email: "nested@example.test", full_name: "Nested User" },
+          },
+          { membership: { role: "viewer" }, user: { email: "missing-id@example.test" } },
+        ],
+      },
+    }).items,
+    [{
+      membership: { user_id: "u3", role: "editor" },
+      user: { id: "u3", email: "nested@example.test", full_name: "Nested User" },
+      user_id: "u3",
+      email: "nested@example.test",
+      full_name: "Nested User",
+      role: "editor",
+    }],
+  );
+  assert.equal(
+    getExplorerAssignableUserId({ membership: { user_id: "u4" }, user: { id: "u4" } }),
+    "u4",
   );
   assert.deepEqual(
     normalizeExplorerAssignableUsersResponse({ ok: true, data: {} }).items,

@@ -47,6 +47,7 @@ test("Assignee picker loads org members, filters users, and has bounded loading 
   const explorerPaneSource = between("function ExplorerPane(", "// ─── Session Row");
 
   assert.match(explorerSource, /apiListOrgMembers/);
+  assert.match(explorerSource, /getExplorerAssignableUserId/);
   assert.match(explorerPaneSource, /Promise\.race\(\[\s*apiListOrgMembers\(oid\),\s*assigneeMembersLoadTimeout\(\),\s*\]\)/);
   assert.match(explorerPaneSource, /normalizeExplorerAssignableUsersResponse\(resp\)/);
   assert.match(explorerPaneSource, /loading:\s*false,\s*loaded:\s*true,\s*error:\s*normalized\.error/s);
