@@ -7,7 +7,10 @@ const ruSource = fs.readFileSync(new URL("../../../shared/i18n/ru.js", import.me
 const topbarSource = fs.readFileSync(new URL("../layout/AdminTopbar.jsx", import.meta.url), "utf8");
 
 test("AdminOrgsPage uses access-first information architecture", () => {
-  assert.match(pageSource, /ACCESS_SECTION_NAV/);
+  assert.equal(pageSource.includes("ACCESS_SECTION_NAV"), false);
+  assert.equal(pageSource.includes("function PageSectionNav"), false);
+  assert.equal(pageSource.includes("Разделы страницы пользователей и доступа"), false);
+  assert.equal(pageSource.includes("<PageSectionNav"), false);
   assert.match(pageSource, /admin-access-users/);
   assert.match(pageSource, /admin-access-invites/);
   assert.match(pageSource, /admin-access-orgs/);
@@ -23,7 +26,9 @@ test("AdminOrgsPage keeps existing admin actions while separating organizations 
   assert.match(pageSource, /Создать организацию/);
   assert.match(pageSource, /Переименовать активную организацию/);
   assert.match(pageSource, /<OrgsTable items=\{payload\?\.items \|\| \[\]\} \/>/);
+  assert.match(pageSource, /<details id="admin-access-orgs"/);
   assert.match(pageSource, /Git mirror \/ публикация/);
+  assert.match(pageSource, /<details id="admin-access-git"/);
   assert.match(pageSource, /Сохранить Git mirror/);
   assert.match(pageSource, /<AdminUsersPanel/);
   assert.match(pageSource, /<AdminOrgInvitesPanel/);
