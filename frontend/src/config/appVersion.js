@@ -1,8 +1,14 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.48",
+  currentVersion: "v1.0.49",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.49",
+      changes: [
+        "Добавлена сортировка по колонкам в Workspace Explorer.",
+      ],
+    },
     {
       version: "v1.0.48",
       changes: [

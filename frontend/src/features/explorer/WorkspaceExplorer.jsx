@@ -41,6 +41,12 @@ import {
   buildProjectSessionSearchIndex,
   filterExplorerSearchResults,
 } from "./explorerSearchModel.js";
+import {
+  sortExplorerChildItemsByFolder,
+  sortExplorerItems,
+  sortProjectSessions,
+  toggleExplorerSort,
+} from "./explorerSortModel.js";
 import { buildProjectBreadcrumbTrail, normalizeProjectBreadcrumbBase } from "./workspaceBreadcrumbs.js";
 import { folderCreateCopy, folderDisplayLabel } from "./workspaceDisplayLabels.js";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
@@ -216,6 +222,27 @@ function EntityTypePill({ type, label = "" }) {
     return <span className="inline-flex items-center rounded-full border border-emerald-300/65 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fg/85">Сессия</span>;
   }
   return <span className="inline-flex items-center rounded-full border border-border/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-fg/70">—</span>;
+}
+
+function SortHeader({ label, sortKey, sort, onSort, align = "left", title = "" }) {
+  const active = sort?.key === sortKey;
+  const direction = active ? sort?.direction : "";
+  const alignClass = align === "right" ? "justify-end text-right" : align === "center" ? "justify-center text-center" : "justify-start text-left";
+  const nextDirection = active && direction === "asc" ? "по убыванию" : "по возрастанию";
+  return (
+    <button
+      type="button"
+      className={`inline-flex w-full items-center gap-1 rounded px-0 py-0 text-[11px] font-semibold uppercase tracking-wide text-inherit transition-colors hover:text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${alignClass}`}
+      onClick={() => onSort(sortKey)}
+      title={title || `Сортировать ${label} ${nextDirection}`}
+      aria-label={`Сортировать ${label} ${nextDirection}`}
+    >
+      <span className="truncate">{label}</span>
+      <span className={`inline-flex w-3 shrink-0 justify-center text-[10px] ${active ? "text-accent" : "text-transparent"}`} aria-hidden>
+        {direction === "desc" ? "↓" : "↑"}
+      </span>
+    </button>
+  );
 }
 
 function StatusBadge({ status }) {
@@ -1191,6 +1218,7 @@ function ExplorerPane({
   const [movingProject, setMovingProject] = useState(null);
   const [moveNotice, setMoveNotice] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [explorerSort, setExplorerSort] = useState(null);
   const [treeStateByContext, setTreeStateByContext] = useState({});
   const inFlightFolderLoadsRef = useRef(new Set());
   const contextKey = `${String(workspaceId || "").trim()}::${String(folderId || "").trim()}`;
@@ -1251,15 +1279,28 @@ function ExplorerPane({
     ? "Для папок: количество проектов, для проектов: владелец"
     : "Для разделов: количество проектов, для проектов: владелец";
 
+  const sortedRootItems = useMemo(
+    () => sortExplorerItems(rootItems, explorerSort, { isRoot: !folderId }),
+    [rootItems, explorerSort, folderId],
+  );
+  const sortedChildItemsByFolder = useMemo(
+    () => sortExplorerChildItemsByFolder(treeState.childItemsByFolder, explorerSort),
+    [treeState.childItemsByFolder, explorerSort],
+  );
+  const handleExplorerSort = useCallback((key) => {
+    setExplorerSort((prev) => toggleExplorerSort(prev, key));
+  }, []);
+
   const visibleRows = useMemo(
     () => buildVisibleRows({
-      rootItems,
+      rootItems: sortedRootItems,
       expandedByFolder: treeState.expandedByFolder,
-      childItemsByFolder: treeState.childItemsByFolder,
+      childItemsByFolder: sortedChildItemsByFolder,
       loadingByFolder: treeState.loadingByFolder,
       loadErrorByFolder: treeState.loadErrorByFolder,
+      preserveItemOrder: Boolean(explorerSort),
     }),
-    [rootItems, treeState.expandedByFolder, treeState.childItemsByFolder, treeState.loadingByFolder, treeState.loadErrorByFolder]
+    [sortedRootItems, treeState.expandedByFolder, sortedChildItemsByFolder, treeState.loadingByFolder, treeState.loadErrorByFolder, explorerSort]
   );
   const searchIndex = useMemo(
     () => buildExplorerSearchIndex({
@@ -1449,15 +1490,25 @@ function ExplorerPane({
             </colgroup>
             <thead>
               <tr className="border-b border-border/80 bg-panelAlt/25 text-[11px] uppercase tracking-wide text-fg/65">
-                <th className="px-2 py-2">Название</th>
-                <th className="px-2 py-2">Тип</th>
+                <th className="px-2 py-2" aria-sort={explorerSort?.key === "name" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <SortHeader label="Название" sortKey="name" sort={explorerSort} onSort={handleExplorerSort} />
+                </th>
+                <th className="px-2 py-2" aria-sort={explorerSort?.key === "type" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <SortHeader label="Тип" sortKey="type" sort={explorerSort} onSort={handleExplorerSort} />
+                </th>
                 <th className="px-2 py-2 text-center">{folderCountHeader}</th>
-                <th className="px-2 py-2" title={contextHeaderTitle}>Контекст</th>
+                <th className="px-2 py-2" title={contextHeaderTitle} aria-sort={explorerSort?.key === "owner" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <SortHeader label="Контекст" sortKey="owner" sort={explorerSort} onSort={handleExplorerSort} title={`${contextHeaderTitle}. Для проектов сортирует по владельцу.`} />
+                </th>
                 <th className="px-2 py-2">DoD</th>
                 {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">⚠</th> : null}
                 {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">📋</th> : null}
-                <th className="px-2 py-2">Статус</th>
-                <th className="px-2 py-2 text-right">Обновлён</th>
+                <th className="px-2 py-2" aria-sort={explorerSort?.key === "status" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <SortHeader label="Статус" sortKey="status" sort={explorerSort} onSort={handleExplorerSort} />
+                </th>
+                <th className="px-2 py-2 text-right" aria-sort={explorerSort?.key === "updatedAt" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <SortHeader label="Обновлён" sortKey="updatedAt" sort={explorerSort} onSort={handleExplorerSort} align="right" />
+                </th>
                 <th className="px-2 py-2">Последнее изменение</th>
                 <th className="px-2 py-2 w-8" />
               </tr>
@@ -1862,6 +1913,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const [creating, setCreating] = useState(false);
   const [openingSessionId, setOpeningSessionId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sessionSort, setSessionSort] = useState(null);
   const openingSessionIdRef = useRef("");
 
   const load = useCallback(async () => {
@@ -1907,6 +1959,13 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
 
   const proj = page?.project;
   const sessions = page?.sessions || [];
+  const sortedSessions = useMemo(
+    () => sortProjectSessions(sessions, sessionSort),
+    [sessions, sessionSort],
+  );
+  const handleSessionSort = useCallback((key) => {
+    setSessionSort((prev) => toggleExplorerSort(prev, key));
+  }, []);
   const sessionAggregateIds = useMemo(
     () => sessions.map((item) => item?.id || item?.session_id).filter(Boolean),
     [sessions],
@@ -2063,10 +2122,18 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
             <thead>
               <tr className="border-b border-border/80 bg-panelAlt/25 text-[11px] uppercase tracking-wide text-fg/65">
                 <th className="px-3 py-2 w-5" />
-                <th className="px-2 py-2">Название</th>
-                <th className="px-2 py-2">Статус</th>
-                <th className="px-2 py-2">Стадия</th>
-                <th className="px-2 py-2">Owner</th>
+                <th className="px-2 py-2" aria-sort={sessionSort?.key === "name" ? (sessionSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <SortHeader label="Название" sortKey="name" sort={sessionSort} onSort={handleSessionSort} />
+                </th>
+                <th className="px-2 py-2" aria-sort={sessionSort?.key === "status" ? (sessionSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <SortHeader label="Статус" sortKey="status" sort={sessionSort} onSort={handleSessionSort} />
+                </th>
+                <th className="px-2 py-2" aria-sort={sessionSort?.key === "stage" ? (sessionSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <SortHeader label="Стадия" sortKey="stage" sort={sessionSort} onSort={handleSessionSort} />
+                </th>
+                <th className="px-2 py-2" aria-sort={sessionSort?.key === "owner" ? (sessionSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <SortHeader label="Owner" sortKey="owner" sort={sessionSort} onSort={handleSessionSort} />
+                </th>
                 <th className="px-2 py-2">DoD</th>
                 {sessionColumnProfile.showDiscussionColumn ? (
                   <th className="px-2 py-2 text-center" title="Открытые обсуждения" aria-label="Колонка открытых обсуждений">
@@ -2086,12 +2153,14 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                     <span aria-hidden>📋</span>
                   </th>
                 ) : null}
-                <th className="px-2 py-2 text-right">Обновлена</th>
+                <th className="px-2 py-2 text-right" aria-sort={sessionSort?.key === "updatedAt" ? (sessionSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <SortHeader label="Обновлена" sortKey="updatedAt" sort={sessionSort} onSort={handleSessionSort} align="right" />
+                </th>
                 <th className="px-2 py-2" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border/65">
-              {sessions.map((s) => (
+              {sortedSessions.map((s) => (
                 <SessionRow
                   key={s.id}
                   session={s}
