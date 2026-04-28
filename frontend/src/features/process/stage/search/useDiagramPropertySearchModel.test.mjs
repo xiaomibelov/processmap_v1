@@ -146,6 +146,30 @@ test("collectDiagramPropertySearchResults matches multi-word values with whitesp
   );
 });
 
+test("collectDiagramPropertySearchResults preserves owner subprocess hierarchy metadata", () => {
+  const rows = [
+    {
+      elementId: "Task_CheckOrder",
+      elementTitle: "Проверить заказ",
+      elementType: "bpmn:ServiceTask",
+      propertyName: "instruction",
+      propertyValue: "Проверить заказ перед отправкой",
+      parentSubprocessId: "Sub_1",
+      parentSubprocessName: "Проверить заказ",
+      subprocessPath: [{ id: "Sub_1", name: "Проверить заказ" }],
+      searchGroupKey: "subprocess:Sub_1",
+      searchGroupLabel: "Subprocess: Проверить заказ",
+      isInsideSubprocess: true,
+    },
+  ];
+  const [row] = collectDiagramPropertySearchResults(rows, "отправкой");
+  assert.equal(row.searchGroupKey, "subprocess:Sub_1");
+  assert.equal(row.searchGroupLabel, "Subprocess: Проверить заказ");
+  assert.equal(row.parentSubprocessId, "Sub_1");
+  assert.equal(row.subprocessPathLabel, "Проверить заказ");
+  assert.equal(row.isInsideSubprocess, true);
+});
+
 test("useDiagramPropertySearchModel supports wrap-around navigation and clears state on close", async () => {
   const { root, cleanup } = setupDom();
   let latest = null;

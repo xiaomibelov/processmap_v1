@@ -78,6 +78,7 @@ import {
   readableBpmnText,
 } from "../../features/process/bpmn/bpmnIdentity";
 import extractCamundaZeebePropertyEntriesFromBusinessObject from "../../features/process/stage/search/extractCamundaZeebePropertyEntries";
+import { deriveElementProcessContext } from "../../features/process/stage/search/diagramSearchHierarchy";
 
 import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
@@ -2174,6 +2175,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           title: toText(label || name || elementId) || elementId,
           type,
           typeLabel: toText(type.split(":").pop()) || type,
+          ...deriveElementProcessContext(element),
         });
         seen.add(elementId);
       });
@@ -2212,6 +2214,14 @@ const BpmnStage = forwardRef(function BpmnStage({
             propertyValue,
             sourcePath,
             propertyIndex: Math.max(0, Number(propertyIndex) || 0),
+            parentSubprocessId: toText(elementRow?.parentSubprocessId),
+            parentSubprocessName: toText(elementRow?.parentSubprocessName),
+            subprocessPath: asArray(elementRow?.subprocessPath),
+            subprocessPathLabel: toText(elementRow?.subprocessPathLabel),
+            subprocessDepth: Math.max(0, Number(elementRow?.subprocessDepth) || 0),
+            searchGroupKey: toText(elementRow?.searchGroupKey) || "main",
+            searchGroupLabel: toText(elementRow?.searchGroupLabel) || "Основной процесс",
+            isInsideSubprocess: elementRow?.isInsideSubprocess === true,
           });
         });
       });
