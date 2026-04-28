@@ -29,6 +29,7 @@ class NotesMvp1ApiTest(unittest.TestCase):
         from app.routers.notes import (
             AddNoteCommentBody,
             CreateNoteThreadBody,
+            PatchNoteCommentBody,
             PatchNoteThreadBody,
             add_note_thread_comment,
             acknowledge_note_mention,
@@ -38,6 +39,7 @@ class NotesMvp1ApiTest(unittest.TestCase):
             list_session_mentionable_users,
             list_session_note_threads,
             mark_note_thread_read,
+            patch_note_comment,
             patch_note_thread,
         )
         from app.storage import get_default_org_id, get_project_storage, get_storage, upsert_project_membership
@@ -48,6 +50,7 @@ class NotesMvp1ApiTest(unittest.TestCase):
         self.get_storage = get_storage
         self.CreateNoteThreadBody = CreateNoteThreadBody
         self.AddNoteCommentBody = AddNoteCommentBody
+        self.PatchNoteCommentBody = PatchNoteCommentBody
         self.PatchNoteThreadBody = PatchNoteThreadBody
         self.acknowledge_note_mention = acknowledge_note_mention
         self.acknowledge_note_thread_attention = acknowledge_note_thread_attention
@@ -57,6 +60,7 @@ class NotesMvp1ApiTest(unittest.TestCase):
         self.list_session_note_threads = list_session_note_threads
         self.mark_note_thread_read = mark_note_thread_read
         self.add_note_thread_comment = add_note_thread_comment
+        self.patch_note_comment = patch_note_comment
         self.patch_note_thread = patch_note_thread
         self.upsert_project_membership = upsert_project_membership
 
@@ -264,6 +268,115 @@ class NotesMvp1ApiTest(unittest.TestCase):
         listed = self.list_session_note_threads(self.session_id, self._req(), status="")["items"][0]
         self.assertEqual(listed["created_by_full_name"], "Редактор Обсуждений")
         self.assertEqual(listed["comments"][0]["author_full_name"], "Редактор Обсуждений")
+
+    def test_note_comment_reply_and_edit_contract(self):
+        self._add_project_member(self.viewer, "viewer")
+        peer = self.create_user(
+            "notes_edit_peer@local",
+            "editor",
+            is_admin=False,
+            full_name="Редактор Коллега",
+        )
+        self._insert_membership(self.org_id, str(peer.get("id") or ""), "editor")
+        self._add_project_member(peer, "editor")
+
+        created = self.create_session_note_thread(
+            self.session_id,
+            self.CreateNoteThreadBody(scope_type="session", scope_ref={}, body="Исходное **сообщение**"),
+            self._req(),
+        )["thread"]
+        thread_id = created["id"]
+        root_comment = created["comments"][0]
+
+        replied = self.add_note_thread_comment(
+            thread_id,
+            self.AddNoteCommentBody(
+                body="Ответ с @Наблюдатель Обсуждений",
+                mention_user_ids=[str(self.viewer.get("id") or "")],
+                reply_to_comment_id=root_comment["id"],
+            ),
+            self._req(),
+        )["thread"]
+        reply_comment = next(comment for comment in replied["comments"] if comment["body"].startswith("Ответ"))
+        self.assertEqual(reply_comment["reply_to_comment_id"], root_comment["id"])
+        self.assertEqual(reply_comment["reply_to"]["id"], root_comment["id"])
+        self.assertEqual(reply_comment["reply_to"]["author_display"], "Редактор Обсуждений")
+        self.assertIn("Исходное", reply_comment["reply_to"]["body_preview"])
+        self.assertEqual(reply_comment["mentions"][0]["mentioned_user_id"], str(self.viewer.get("id") or ""))
+
+        listed = self.list_session_note_threads(self.session_id, self._req(), status="")["items"]
+        listed_reply = next(
+            comment
+            for item in listed if item["id"] == thread_id
+            for comment in item["comments"]
+            if comment["id"] == reply_comment["id"]
+        )
+        self.assertEqual(listed_reply["reply_to"]["id"], root_comment["id"])
+
+        other_thread = self.create_session_note_thread(
+            self.session_id,
+            self.CreateNoteThreadBody(scope_type="diagram", scope_ref={}, body="Другая тема"),
+            self._req(),
+        )["thread"]
+        with self.assertRaises(HTTPException) as cross_thread:
+            self.add_note_thread_comment(
+                other_thread["id"],
+                self.AddNoteCommentBody(body="bad", reply_to_comment_id=root_comment["id"]),
+                self._req(),
+            )
+        self.assertEqual(cross_thread.exception.status_code, 400)
+
+        with self.assertRaises(HTTPException) as missing_reply:
+            self.add_note_thread_comment(
+                thread_id,
+                self.AddNoteCommentBody(body="bad", reply_to_comment_id="missing_comment"),
+                self._req(),
+            )
+        self.assertEqual(missing_reply.exception.status_code, 404)
+
+        read_result = self.mark_note_thread_read(thread_id, self._req(self.viewer))
+        self.assertEqual(read_result["unread_count"], 0)
+
+        edited = self.patch_note_comment(
+            reply_comment["id"],
+            self.PatchNoteCommentBody(
+                body="Обновлённый **Markdown** для @Наблюдатель Обсуждений",
+                mention_user_ids=[str(self.viewer.get("id") or "")],
+            ),
+            self._req(),
+        )
+        edited_comment = edited["comment"]
+        self.assertEqual(edited_comment["body"], "Обновлённый **Markdown** для @Наблюдатель Обсуждений")
+        self.assertGreater(int(edited_comment["edited_at"] or 0), 0)
+        self.assertEqual(edited_comment["edited_by_user_id"], str(self.editor.get("id") or ""))
+        self.assertEqual(edited_comment["mentions"][0]["mentioned_user_id"], str(self.viewer.get("id") or ""))
+
+        edited_without_mention = self.patch_note_comment(
+            reply_comment["id"],
+            self.PatchNoteCommentBody(body="Обновлённый **Markdown** без адресата", mention_user_ids=[]),
+            self._req(),
+        )["comment"]
+        self.assertEqual(edited_without_mention["mentions"], [])
+
+        viewer_after_edit = self.list_session_note_threads(self.session_id, self._req(self.viewer), status="")["items"]
+        viewer_thread = next(item for item in viewer_after_edit if item["id"] == thread_id)
+        self.assertEqual(viewer_thread["unread_count"], 0)
+
+        with self.assertRaises(HTTPException) as forbidden_edit:
+            self.patch_note_comment(
+                reply_comment["id"],
+                self.PatchNoteCommentBody(body="Попытка чужого редактирования"),
+                self._req(peer),
+            )
+        self.assertEqual(forbidden_edit.exception.status_code, 403)
+
+        with self.assertRaises(HTTPException) as missing_edit:
+            self.patch_note_comment(
+                "missing_comment",
+                self.PatchNoteCommentBody(body="Нет сообщения"),
+                self._req(),
+            )
+        self.assertEqual(missing_edit.exception.status_code, 404)
 
     def test_scope_validation_rejects_invalid_scope_and_missing_element_id(self):
         for body in (

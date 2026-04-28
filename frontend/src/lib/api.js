@@ -480,6 +480,16 @@ export async function apiAddNoteThreadComment(threadId, payload = {}) {
   return r.ok ? { ok: true, status: r.status, thread: r.data?.thread || null } : r;
 }
 
+export async function apiPatchNoteComment(commentId, payload = {}) {
+  const cid = String(commentId || "").trim();
+  if (!cid) return { ok: false, status: 0, error: "missing comment_id" };
+  const body = isPlainObject(payload) ? payload : {};
+  const r = okOrError(await request(apiRoutes.noteComments.item(cid), { method: "PATCH", body }));
+  return r.ok
+    ? { ok: true, status: r.status, comment: r.data?.comment || null, thread: r.data?.thread || null }
+    : r;
+}
+
 export async function apiPatchNoteThread(threadId, patch = {}) {
   const tid = String(threadId || "").trim();
   if (!tid) return { ok: false, status: 0, error: "missing thread_id" };
