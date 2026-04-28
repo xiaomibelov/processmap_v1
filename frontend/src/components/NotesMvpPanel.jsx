@@ -655,12 +655,13 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     });
   }
 
-  function renderMentionSuggestions(kind, composer, suggestions, onSelect) {
+  function renderMentionSuggestions(kind, composer, suggestions, onSelect, placement = "below") {
     if (!composer?.active || !asArray(suggestions).length) return null;
     const activeIndex = Math.max(0, Math.min(Number(composer.highlightedIndex || 0), suggestions.length - 1));
+    const placementClass = placement === "above" ? "bottom-full mb-1" : "top-full mt-1";
     return (
       <div
-        className="absolute left-0 right-0 top-full z-[95] mt-1 max-h-56 overflow-auto rounded-xl border border-border bg-panel p-1 shadow-xl"
+        className={`absolute left-0 right-0 ${placementClass} z-[95] max-h-56 overflow-auto rounded-xl border border-border bg-panel p-1 shadow-xl`}
         role="listbox"
         data-testid={`notes-${kind}-mention-suggestions`}
       >
@@ -1571,7 +1572,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                           placeholder="Напишите сообщение..."
                           disabled={disabled}
                         />
-                        {renderMentionSuggestions("reply", commentMentionComposer, commentMentionSuggestions, selectCommentMention)}
+                        {renderMentionSuggestions("reply", commentMentionComposer, commentMentionSuggestions, selectCommentMention, "above")}
                       </div>
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                         <div className="text-[11px] leading-relaxed text-muted">
