@@ -87,6 +87,22 @@ test("Discussion unread badges are separate from attention and clear through rea
   assert.doesNotMatch(notesMvpPanelSource, /attentionMeta\(thread\)[\s\S]{0,240}unread_count/);
 });
 
+test("Discussions support durable replies and raw Markdown message editing", () => {
+  assert.match(notesMvpPanelSource, /apiPatchNoteComment/);
+  assert.match(notesMvpPanelSource, /const \[replyTargetByThread, setReplyTargetByThread\] = useState\(\{\}\);/);
+  assert.match(notesMvpPanelSource, /reply_to_comment_id: text\(replyTarget\?\.id\) \|\| undefined/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-reply-preview"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-reply-cancel"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-comment-reply-quote"/);
+  assert.match(notesMvpPanelSource, /Исходное сообщение недоступно\./);
+  assert.match(notesMvpPanelSource, /data-testid="notes-comment-edit-action"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-comment-edit-textarea"/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-comment-edited-marker"/);
+  assert.match(notesMvpPanelSource, /<NoteMarkdown>\{comment\?\.body\}<\/NoteMarkdown>/);
+  assert.match(notesMvpPanelSource, /mention_user_ids: editMentionUserIds/);
+  assert.match(notesMvpPanelSource, /pruneSelectedMentions\(nextValue, current\.selected\)/);
+});
+
 test("Top toolbar keeps discussions as the primary entry and removes conflicting actions", () => {
   assert.match(diagramControlsSource, /const handleOpenNotesDiscussions = \(\) => \{/);
   assert.match(diagramControlsSource, /function clickNotesPanelFloatingTrigger\(\) \{/);
