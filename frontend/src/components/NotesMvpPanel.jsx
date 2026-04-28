@@ -23,6 +23,14 @@ import {
   countParticipatedThreads,
   isThreadParticipatedByCurrentUser,
 } from "../features/notes/participatedThreads.js";
+import {
+  detectMentionQuery,
+  filterMentionSuggestions,
+  insertMentionText,
+  mentionSecondaryLabel,
+  mentionUserIdsForSubmit,
+  pruneSelectedMentions,
+} from "../features/notes/mentionAutocomplete.js";
 import { readableBpmnText } from "../features/process/bpmn/bpmnIdentity";
 import NotesAggregateBadge from "./NotesAggregateBadge.jsx";
 import { useSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
@@ -393,9 +401,11 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const aggregate = useSessionNoteAggregate(sid);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [mentionableUsers, setMentionableUsers] = useState([]);
-  const [createMentionUserId, setCreateMentionUserId] = useState("");
+  const [createMentionComposer, setCreateMentionComposer] = useState({ selected: [], active: null, highlightedIndex: 0 });
   const [commentMentionByThread, setCommentMentionByThread] = useState({});
   const panelRef = useRef(null);
+  const createDetailsRef = useRef(null);
+  const commentDraftRef = useRef(null);
   const markReadInFlightRef = useRef(new Set());
 
   const createSubject = createSubjectByScope[createScope] || "";
@@ -503,7 +513,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const selectedThreadLinkedElement = useMemo(() => linkedElementContext(selectedThread), [selectedThread]);
 
   const commentDraft = commentDraftByThread[text(selectedThread?.id)] || "";
-  const commentMentionUserId = commentMentionByThread[text(selectedThread?.id)] || "";
+  const commentMentionComposer = commentMentionByThread[text(selectedThread?.id)] || { selected: [], active: null, highlightedIndex: 0 };
   const legacyDraft = legacyDraftByThread[text(selectedThread?.id)] || "";
   const openThreadsCount = Math.max(0, Number(aggregate?.open_notes_count || 0) || 0);
   const activeFilterCount = Number(statusFilter !== "open") + Number(scopeFilter !== "all") + Number(participationFilter !== "all") + Number(sortOrder !== "newest");
@@ -527,6 +537,159 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     }
     return parts.join(" · ");
   }, [displayThreads.length, notificationBuckets.activeTotal, notificationBuckets.historyTotal, notificationMode, openThreadsCount, sessionTitle, visibleThreads.length]);
+  const createMentionSuggestions = useMemo(
+    () => filterMentionSuggestions(mentionableUsers, createMentionComposer.active?.query || "", createMentionComposer.selected),
+    [createMentionComposer.active?.query, createMentionComposer.selected, mentionableUsers],
+  );
+  const commentMentionSuggestions = useMemo(
+    () => filterMentionSuggestions(mentionableUsers, commentMentionComposer.active?.query || "", commentMentionComposer.selected),
+    [commentMentionComposer.active?.query, commentMentionComposer.selected, mentionableUsers],
+  );
+
+  function focusTextareaAt(ref, caretIndex) {
+    window.requestAnimationFrame?.(() => {
+      const node = ref?.current;
+      if (!node || typeof node.focus !== "function") return;
+      node.focus();
+      if (typeof node.setSelectionRange === "function") {
+        node.setSelectionRange(caretIndex, caretIndex);
+      }
+    });
+  }
+
+  function updateCreateDetails(nextValue, caretIndex) {
+    setCreateDetailsByScope((prev) => ({ ...prev, [createScope]: nextValue }));
+    setCreateMentionComposer((prev) => ({
+      selected: pruneSelectedMentions(nextValue, prev.selected),
+      active: detectMentionQuery(nextValue, caretIndex),
+      highlightedIndex: 0,
+    }));
+  }
+
+  function updateCommentDraft(threadId, nextValue, caretIndex) {
+    const tid = text(threadId);
+    if (!tid) return;
+    setCommentDraftByThread((prev) => ({ ...prev, [tid]: nextValue }));
+    setCommentMentionByThread((prev) => {
+      const current = prev[tid] || { selected: [], active: null, highlightedIndex: 0 };
+      return {
+        ...prev,
+        [tid]: {
+          selected: pruneSelectedMentions(nextValue, current.selected),
+          active: detectMentionQuery(nextValue, caretIndex),
+          highlightedIndex: 0,
+        },
+      };
+    });
+  }
+
+  function selectCreateMention(user) {
+    const caret = createDetailsRef.current?.selectionStart ?? createDetails.length;
+    const result = insertMentionText(createDetails, createMentionComposer.active, user, caret);
+    if (!result.mention) return;
+    setCreateDetailsByScope((prev) => ({ ...prev, [createScope]: result.text }));
+    setCreateMentionComposer((prev) => ({
+      selected: pruneSelectedMentions(result.text, [...asArray(prev.selected), result.mention]),
+      active: null,
+      highlightedIndex: 0,
+    }));
+    focusTextareaAt(createDetailsRef, result.caretIndex);
+  }
+
+  function selectCommentMention(user) {
+    const threadId = text(selectedThread?.id);
+    if (!threadId) return;
+    const caret = commentDraftRef.current?.selectionStart ?? commentDraft.length;
+    const result = insertMentionText(commentDraft, commentMentionComposer.active, user, caret);
+    if (!result.mention) return;
+    setCommentDraftByThread((prev) => ({ ...prev, [threadId]: result.text }));
+    setCommentMentionByThread((prev) => {
+      const current = prev[threadId] || { selected: [], active: null, highlightedIndex: 0 };
+      return {
+        ...prev,
+        [threadId]: {
+          selected: pruneSelectedMentions(result.text, [...asArray(current.selected), result.mention]),
+          active: null,
+          highlightedIndex: 0,
+        },
+      };
+    });
+    focusTextareaAt(commentDraftRef, result.caretIndex);
+  }
+
+  function handleMentionKeyDown(event, composer, suggestions, setComposer, onSelect) {
+    if (!composer?.active || !asArray(suggestions).length) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setComposer((prev) => ({
+        ...prev,
+        highlightedIndex: (Number(prev?.highlightedIndex || 0) + 1) % suggestions.length,
+      }));
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setComposer((prev) => ({
+        ...prev,
+        highlightedIndex: (Number(prev?.highlightedIndex || 0) - 1 + suggestions.length) % suggestions.length,
+      }));
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      onSelect(suggestions[Math.max(0, Math.min(Number(composer.highlightedIndex || 0), suggestions.length - 1))]);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setComposer((prev) => ({ ...prev, active: null, highlightedIndex: 0 }));
+    }
+  }
+
+  function setCommentComposerForSelected(updater) {
+    const threadId = text(selectedThread?.id);
+    if (!threadId) return;
+    setCommentMentionByThread((prev) => {
+      const current = prev[threadId] || { selected: [], active: null, highlightedIndex: 0 };
+      return { ...prev, [threadId]: updater(current) };
+    });
+  }
+
+  function renderMentionSuggestions(kind, composer, suggestions, onSelect) {
+    if (!composer?.active || !asArray(suggestions).length) return null;
+    const activeIndex = Math.max(0, Math.min(Number(composer.highlightedIndex || 0), suggestions.length - 1));
+    return (
+      <div
+        className="absolute left-0 right-0 top-full z-[95] mt-1 max-h-56 overflow-auto rounded-xl border border-border bg-panel p-1 shadow-xl"
+        role="listbox"
+        data-testid={`notes-${kind}-mention-suggestions`}
+      >
+        {suggestions.map((item, index) => {
+          const secondary = mentionSecondaryLabel(item);
+          return (
+            <button
+              key={text(item.user_id)}
+              type="button"
+              className={`flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-sm ${index === activeIndex ? "bg-info/10 text-info" : "text-fg hover:bg-bg/70"}`}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onSelect(item);
+              }}
+              role="option"
+              aria-selected={index === activeIndex}
+              data-testid={`notes-${kind}-mention-option`}
+            >
+              <span className="min-w-0">
+                <span className="block truncate font-semibold">@{text(item.label)}</span>
+                {secondary ? <span className="block truncate text-[11px] text-muted">{secondary}</span> : null}
+              </span>
+              {text(item.job_title) ? <span className="max-w-[150px] truncate text-[11px] text-muted">{text(item.job_title)}</span> : null}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
 
   const fetchMentionableUsers = useCallback(async () => {
     if (!sid || !open) {
@@ -589,7 +752,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setError("");
     setCreateOpen(false);
     setMentionableUsers([]);
-    setCreateMentionUserId("");
+    setCreateMentionComposer({ selected: [], active: null, highlightedIndex: 0 });
     setCommentMentionByThread({});
   }, [sid]);
 
@@ -826,12 +989,13 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     const scopeKey = createScope;
     setBusy("create");
     setError("");
+    const createMentionUserIds = mentionUserIdsForSubmit(details, createMentionComposer.selected);
     const result = await apiCreateNoteThread(sid, {
       scope_type: scopeKey,
       scope_ref: buildScopeRef(scopeKey, selectedElement),
       priority: createPriority,
       requires_attention: createRequiresAttention,
-      mention_user_ids: createMentionUserId ? [createMentionUserId] : [],
+      mention_user_ids: createMentionUserIds,
       body: details ? `${subject}\n\n${details}` : subject,
     });
     if (!result.ok) {
@@ -844,7 +1008,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setCreateDetailsByScope((prev) => ({ ...prev, [scopeKey]: "" }));
     setCreatePriority("normal");
     setCreateRequiresAttention(false);
-    setCreateMentionUserId("");
+    setCreateMentionComposer({ selected: [], active: null, highlightedIndex: 0 });
     setCreateOpen(false);
     setSelectedThreadId(nextThreadId);
     await fetchThreads({ preferredThreadId: nextThreadId });
@@ -861,9 +1025,10 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     if (!threadId || !body || disabled || selectedThreadIsLegacyBridge) return;
     setBusy(`comment:${threadId}`);
     setError("");
+    const commentMentionUserIds = mentionUserIdsForSubmit(body, commentMentionComposer.selected);
     const result = await apiAddNoteThreadComment(threadId, {
       body,
-      mention_user_ids: commentMentionUserId ? [commentMentionUserId] : [],
+      mention_user_ids: commentMentionUserIds,
     });
     if (!result.ok) {
       setError(errorText(result, "Не удалось отправить сообщение."));
@@ -871,7 +1036,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       return;
     }
     setCommentDraftByThread((prev) => ({ ...prev, [threadId]: "" }));
-    setCommentMentionByThread((prev) => ({ ...prev, [threadId]: "" }));
+    setCommentMentionByThread((prev) => ({ ...prev, [threadId]: { selected: [], active: null, highlightedIndex: 0 } }));
     setSelectedThreadId(threadId);
     await fetchThreads({ preferredThreadId: threadId });
     clearThreadUnread(threadId, result);
@@ -1144,33 +1309,22 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                           </span>
                         </label>
                       </div>
-                      <label className="grid gap-2">
-                        <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Упомянуть</span>
-                        <select
-                          className="select h-10 min-h-0 w-full text-sm"
-                          value={createMentionUserId}
-                          onChange={(event) => setCreateMentionUserId(event.target.value)}
-                          data-testid="notes-create-mention-user"
-                        >
-                          <option value="">Без упоминания</option>
-                          {mentionableUsers.map((item) => (
-                            <option key={text(item?.user_id)} value={text(item?.user_id)}>
-                              {text(item?.label || item?.email || item?.user_id)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="grid gap-2">
+                      <div className="grid gap-2">
                         <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Описание</span>
-                        <textarea
-                          className="textarea min-h-[140px] w-full text-sm leading-relaxed"
-                          value={createDetails}
-                          onChange={(event) => setCreateDetailsByScope((prev) => ({ ...prev, [createScope]: event.target.value }))}
-                          placeholder={createDetailsPlaceholder}
-                          disabled={disabled || !canCreateCurrentScope}
-                          data-testid="notes-create-details"
-                        />
-                      </label>
+                        <span className="relative">
+                          <textarea
+                            ref={createDetailsRef}
+                            className="textarea min-h-[140px] w-full text-sm leading-relaxed"
+                            value={createDetails}
+                            onChange={(event) => updateCreateDetails(event.target.value, event.target.selectionStart)}
+                            onKeyDown={(event) => handleMentionKeyDown(event, createMentionComposer, createMentionSuggestions, setCreateMentionComposer, selectCreateMention)}
+                            placeholder={createDetailsPlaceholder}
+                            disabled={disabled || !canCreateCurrentScope}
+                            data-testid="notes-create-details"
+                          />
+                          {renderMentionSuggestions("create", createMentionComposer, createMentionSuggestions, selectCreateMention)}
+                        </span>
+                      </div>
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="text-sm text-muted">
                           {createScope === "diagram_element" && !canCreateCurrentScope
@@ -1404,36 +1558,27 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Ответить</div>
                         <div className="text-[11px] text-muted">Сообщение добавится в текущее обсуждение.</div>
                       </div>
-                      <textarea
-                        className="textarea min-h-[84px] w-full text-sm"
-                        value={commentDraft}
-                        onChange={(event) => {
-                          const threadId = text(selectedThread?.id);
-                          setCommentDraftByThread((prev) => ({ ...prev, [threadId]: event.target.value }));
-                        }}
-                        placeholder="Напишите сообщение..."
-                        disabled={disabled}
-                      />
+                      <div className="relative">
+                        <textarea
+                          ref={commentDraftRef}
+                          className="textarea min-h-[84px] w-full text-sm"
+                          value={commentDraft}
+                          onChange={(event) => {
+                            const threadId = text(selectedThread?.id);
+                            updateCommentDraft(threadId, event.target.value, event.target.selectionStart);
+                          }}
+                          onKeyDown={(event) => handleMentionKeyDown(event, commentMentionComposer, commentMentionSuggestions, setCommentComposerForSelected, selectCommentMention)}
+                          placeholder="Напишите сообщение..."
+                          disabled={disabled}
+                        />
+                        {renderMentionSuggestions("reply", commentMentionComposer, commentMentionSuggestions, selectCommentMention)}
+                      </div>
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                        <label className="flex min-w-[220px] flex-1 items-center gap-2 text-xs text-muted">
-                          <span className="shrink-0 font-semibold">Упомянуть</span>
-                          <select
-                            className="select h-8 min-h-0 w-full text-xs"
-                            value={commentMentionUserId}
-                            onChange={(event) => {
-                              const threadId = text(selectedThread?.id);
-                              setCommentMentionByThread((prev) => ({ ...prev, [threadId]: event.target.value }));
-                            }}
-                            data-testid="notes-reply-mention-user"
-                          >
-                            <option value="">Никого</option>
-                            {mentionableUsers.map((item) => (
-                              <option key={text(item?.user_id)} value={text(item?.user_id)}>
-                                {text(item?.label || item?.email || item?.user_id)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                        <div className="text-[11px] leading-relaxed text-muted">
+                          {mentionUserIdsForSubmit(commentDraft, commentMentionComposer.selected).length
+                            ? `Упоминаний: ${mentionUserIdsForSubmit(commentDraft, commentMentionComposer.selected).length}`
+                            : ""}
+                        </div>
                         <button type="button" className="primaryBtn smallBtn" onClick={addComment} disabled={busy.startsWith("comment:") || !text(commentDraft)}>
                           {busy.startsWith("comment:") ? "Отправляем..." : "Отправить"}
                         </button>
