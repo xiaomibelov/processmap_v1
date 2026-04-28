@@ -13,39 +13,13 @@ import {
   apiPatchOrgGitMirrorConfig,
 } from "../../../lib/api";
 
-const ACCESS_SECTION_NAV = [
-  { href: "#admin-access-users", label: "Пользователи" },
-  { href: "#admin-access-invites", label: "Инвайты" },
-  { href: "#admin-access-orgs", label: "Организации" },
-  { href: "#admin-access-git", label: "Git mirror" },
-  { href: "#admin-access-system", label: "Системное состояние" },
-];
-
-function PageSectionNav() {
-  return (
-    <nav className="sticky top-[88px] z-10 rounded-[22px] border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur" aria-label="Разделы страницы пользователей и доступа">
-      <div className="flex flex-wrap items-center gap-2">
-        {ACCESS_SECTION_NAV.map((item) => (
-          <a
-            key={item.href}
-            href={item.href}
-            className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-white"
-          >
-            {item.label}
-          </a>
-        ))}
-      </div>
-    </nav>
-  );
-}
-
 function SectionIntro({ id, eyebrow, title, subtitle, children = null }) {
   return (
-    <section id={id} className="scroll-mt-32 space-y-3">
+    <section id={id} className="scroll-mt-20 space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">{eyebrow}</div>
-          <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">{title}</h2>
+          <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-950">{title}</h2>
           {subtitle ? <p className="mt-1 max-w-3xl text-sm text-slate-500">{subtitle}</p> : null}
         </div>
       </div>
@@ -56,7 +30,7 @@ function SectionIntro({ id, eyebrow, title, subtitle, children = null }) {
 
 function SystemStatusPanel() {
   return (
-    <details id="admin-access-system" className="scroll-mt-32 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+    <details id="admin-access-system" className="scroll-mt-20 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
       <summary className="cursor-pointer text-sm font-semibold text-slate-800">
         Системное состояние и служебные заметки
       </summary>
@@ -97,13 +71,13 @@ function CreateOrgPanel({ activeOrgRole, isAdmin = false, onCreated }) {
 
   return (
     <SectionCard eyebrow="Организации" title="Создать организацию" subtitle="Новая организация появится в общем списке; текущий пользователь станет org_owner.">
-      <form className="flex flex-wrap items-end gap-3" onSubmit={handleSubmit}>
+      <form className="flex flex-wrap items-end gap-2" onSubmit={handleSubmit}>
         <div className="flex-1 min-w-[200px]">
           <label className="block mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Название организации
           </label>
           <input
-            className="input w-full"
+            className="input h-9 min-h-0 w-full py-1.5 text-sm"
             type="text"
             placeholder="Название новой организации"
             value={name}
@@ -112,7 +86,7 @@ function CreateOrgPanel({ activeOrgRole, isAdmin = false, onCreated }) {
             required
           />
         </div>
-        <button type="submit" className="primaryBtn h-10 min-h-0 px-4 py-0 text-sm" disabled={busy || !name.trim()}>
+        <button type="submit" className="primaryBtn h-9 min-h-0 px-3 py-0 text-sm" disabled={busy || !name.trim()}>
           {busy ? "Создание…" : "Создать"}
         </button>
         {error ? <div className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
@@ -159,13 +133,13 @@ function ActiveOrgPanel({ activeOrgId, activeOrgName, activeOrgRole, isAdmin = f
 
   return (
     <SectionCard eyebrow="Организация" title="Переименовать активную организацию" subtitle="Изменяет название текущей организации без изменения ролей и доступов.">
-      <form className="flex flex-wrap items-end gap-3" onSubmit={handleSubmit}>
+      <form className="flex flex-wrap items-end gap-2" onSubmit={handleSubmit}>
         <div className="flex-1 min-w-[200px]">
           <label className="block mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
             Название организации
           </label>
           <input
-            className="input w-full"
+            className="input h-9 min-h-0 w-full py-1.5 text-sm"
             type="text"
             value={name}
             onChange={(e) => { setName(e.target.value); setError(""); setSuccess(""); }}
@@ -173,7 +147,7 @@ function ActiveOrgPanel({ activeOrgId, activeOrgName, activeOrgRole, isAdmin = f
             required
           />
         </div>
-        <button type="submit" className="secondaryBtn h-10 min-h-0 px-4 py-0 text-sm" disabled={busy || !String(name || "").trim()}>
+        <button type="submit" className="secondaryBtn h-9 min-h-0 px-3 py-0 text-sm" disabled={busy || !String(name || "").trim()}>
           {busy ? "Сохранение…" : "Сохранить"}
         </button>
         {error ? <div className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
@@ -277,18 +251,18 @@ function GitMirrorPanel({ activeOrgId = "", activeOrgRole = "", isAdmin = false,
   ];
 
   return (
-    <SectionCard
-      eyebrow="Техническая публикация"
-      title="Git mirror / публикация"
-      subtitle="Настройки publish-only mirror для активной организации. Поведение сохранения не меняется."
-      className="border-slate-300 bg-slate-50/70"
-    >
+    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+      <div className="mb-3">
+        <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400">Техническая публикация</div>
+        <h3 className="mt-1 text-sm font-semibold text-slate-950">Git mirror / публикация</h3>
+        <p className="mt-1 text-xs text-slate-500">Настройки publish-only mirror для активной организации. Поведение сохранения не меняется.</p>
+      </div>
       {!oid ? (
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500">
           Сначала выберите активную организацию.
         </div>
       ) : (
-        <form className="space-y-3" onSubmit={handleSave}>
+        <form className="space-y-2.5" onSubmit={handleSave}>
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input
               type="checkbox"
@@ -298,11 +272,11 @@ function GitMirrorPanel({ activeOrgId = "", activeOrgRole = "", isAdmin = false,
             />
             Включить Git mirror
           </label>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-2 md:grid-cols-2">
             <label>
               <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Provider</div>
               <select
-                className="input w-full"
+                className="input h-9 min-h-0 w-full py-1.5 text-sm"
                 value={provider}
                 disabled={!canManage || busy || loading}
                 onChange={(event) => setProvider(event.target.value)}
@@ -315,7 +289,7 @@ function GitMirrorPanel({ activeOrgId = "", activeOrgRole = "", isAdmin = false,
             <label>
               <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Repository / Project</div>
               <input
-                className="input w-full"
+                className="input h-9 min-h-0 w-full py-1.5 text-sm"
                 type="text"
                 placeholder="owner/repo или group/subgroup/project"
                 value={repository}
@@ -326,7 +300,7 @@ function GitMirrorPanel({ activeOrgId = "", activeOrgRole = "", isAdmin = false,
             <label>
               <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Branch</div>
               <input
-                className="input w-full"
+                className="input h-9 min-h-0 w-full py-1.5 text-sm"
                 type="text"
                 placeholder="main"
                 value={branch}
@@ -337,7 +311,7 @@ function GitMirrorPanel({ activeOrgId = "", activeOrgRole = "", isAdmin = false,
             <label>
               <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Base path</div>
               <input
-                className="input w-full"
+                className="input h-9 min-h-0 w-full py-1.5 text-sm"
                 type="text"
                 placeholder="processmap/published"
                 value={basePath}
@@ -346,19 +320,19 @@ function GitMirrorPanel({ activeOrgId = "", activeOrgRole = "", isAdmin = false,
               />
             </label>
           </div>
-          <div className={`rounded-2xl border px-3 py-2 text-sm ${healthTone(healthStatus)}`}>
+          <div className={`rounded-lg border px-3 py-2 text-sm ${healthTone(healthStatus)}`}>
             <div className="font-medium">Статус: {String(healthStatus || "unknown")}</div>
             <div className="mt-1 text-xs">{healthMessage || "Нет диагностического сообщения."}</div>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
             Цель публикации: {targetParts.join(" · ")}
             {updatedAt > 0 ? ` · updated at: ${new Date(updatedAt * 1000).toLocaleString("ru-RU")}` : ""}
             {updatedBy ? ` · updated by: ${updatedBy}` : ""}
           </div>
-          {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
-          {success ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</div> : null}
+          {error ? <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
+          {success ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</div> : null}
           {canManage ? (
-            <button type="submit" className="secondaryBtn h-10 min-h-0 px-4 py-0 text-sm" disabled={busy || loading}>
+            <button type="submit" className="secondaryBtn h-9 min-h-0 px-3 py-0 text-sm" disabled={busy || loading}>
               {busy ? "Сохранение…" : "Сохранить Git mirror"}
             </button>
           ) : (
@@ -366,7 +340,7 @@ function GitMirrorPanel({ activeOrgId = "", activeOrgRole = "", isAdmin = false,
           )}
         </form>
       )}
-    </SectionCard>
+    </div>
   );
 }
 
@@ -392,15 +366,14 @@ export default function AdminOrgsPage({
         />
       )}
     >
-      <PageSectionNav />
-      <section id="admin-access-users" className="scroll-mt-32">
+      <section id="admin-access-users" className="scroll-mt-20">
         <AdminUsersPanel
           isAdmin={isAdmin}
           activeOrgId={activeOrgId || payload?.active_org_id}
           orgOptions={payload?.items || []}
         />
       </section>
-      <section id="admin-access-invites" className="scroll-mt-32">
+      <section id="admin-access-invites" className="scroll-mt-20">
         <AdminOrgInvitesPanel
           items={payload?.items || []}
           activeOrgId={activeOrgId || payload?.active_org_id}
@@ -412,36 +385,43 @@ export default function AdminOrgsPage({
           onInviteCreated={onInviteCreated}
         />
       </section>
-      <SectionIntro
-        id="admin-access-orgs"
-        eyebrow="Организации"
-        title="Организации"
-        subtitle="Создание, переименование активной организации и обзор доступных организаций отделены от пользовательского доступа."
-      >
-        <div className="grid gap-4 lg:grid-cols-2">
-          <CreateOrgPanel
-            activeOrgRole={activeOrgRole}
-            isAdmin={isAdmin}
-            onCreated={onRefresh}
-          />
-          <ActiveOrgPanel
-            activeOrgId={activeOrgId || payload?.active_org_id}
-            activeOrgName={activeOrgName}
-            activeOrgRole={activeOrgRole}
-            isAdmin={isAdmin}
-            onSaved={onRefresh}
-          />
+      <details id="admin-access-orgs" className="scroll-mt-20 rounded-xl border border-slate-200 bg-white px-3 py-2">
+        <summary className="cursor-pointer text-sm font-semibold text-slate-900">Организации</summary>
+        <div className="mt-3 space-y-3">
+          <SectionIntro
+            eyebrow="Организации"
+            title="Организации"
+            subtitle="Создание, переименование активной организации и обзор доступных организаций отделены от пользовательского доступа."
+          >
+            <div className="grid gap-3 lg:grid-cols-2">
+              <CreateOrgPanel
+                activeOrgRole={activeOrgRole}
+                isAdmin={isAdmin}
+                onCreated={onRefresh}
+              />
+              <ActiveOrgPanel
+                activeOrgId={activeOrgId || payload?.active_org_id}
+                activeOrgName={activeOrgName}
+                activeOrgRole={activeOrgRole}
+                isAdmin={isAdmin}
+                onSaved={onRefresh}
+              />
+            </div>
+            <OrgsTable items={payload?.items || []} />
+          </SectionIntro>
         </div>
-        <OrgsTable items={payload?.items || []} />
-      </SectionIntro>
-      <section id="admin-access-git" className="scroll-mt-32">
+      </details>
+      <details id="admin-access-git" className="scroll-mt-20 rounded-xl border border-slate-200 bg-white px-3 py-2">
+        <summary className="cursor-pointer text-sm font-semibold text-slate-900">Git mirror / публикация</summary>
+        <div className="mt-3">
         <GitMirrorPanel
           activeOrgId={activeOrgId || payload?.active_org_id}
           activeOrgRole={activeOrgRole}
           isAdmin={isAdmin}
           onSaved={onRefresh}
         />
-      </section>
+        </div>
+      </details>
       <SystemStatusPanel />
     </AdminPageContainer>
   );
