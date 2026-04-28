@@ -1362,9 +1362,9 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       {open ? (
         <div
           ref={panelRef}
-          className="fixed bottom-5 right-5 top-16 z-[88] flex w-[min(1040px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-[30px] border border-border bg-panel shadow-panel transition-all duration-200 max-lg:bottom-3 max-lg:right-3 max-lg:w-[calc(100vw-1.5rem)] max-sm:top-14"
+          className="fixed bottom-5 right-5 top-16 z-[88] flex w-[min(1120px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-3xl border border-border bg-panel shadow-panel transition-all duration-200 max-lg:bottom-3 max-lg:right-3 max-lg:w-[calc(100vw-1.5rem)] max-sm:top-14"
         >
-          <div className="border-b border-border bg-gradient-to-r from-info/10 via-panel to-panel px-4 py-3.5 sm:px-5">
+          <div className="border-b border-border bg-panel/95 px-4 py-3 sm:px-5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 text-[11px] text-muted">
@@ -1428,7 +1428,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
             </div>
           </div>
 
-          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(248px,288px)] overflow-hidden max-lg:grid-cols-1">
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(286px,320px)] overflow-hidden max-lg:grid-cols-1">
             <section className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-panel max-lg:border-b max-lg:border-r-0">
               {error ? (
                 <div className="mx-4 mt-4 rounded-xl border border-danger/50 bg-danger/10 px-3 py-2 text-xs text-danger">
@@ -1553,27 +1553,27 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                 </div>
               ) : selectedThread ? (
                 <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr_auto] overflow-hidden">
-                  <div className="border-b border-border bg-panel/95 px-4 py-3.5 sm:px-5 sm:py-4">
+                  <div className="border-b border-border bg-panel/95 px-4 py-3 sm:px-5">
                     <div className="flex items-start justify-between gap-4 max-sm:flex-col">
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
                           <span className="font-medium text-fg/75">{scopeMeta(selectedThread).short}</span>
-                          <span className={`rounded-full border px-2 py-0.5 font-semibold ${threadStatusTone(selectedThread)}`}>
+                          <span className={`rounded-full border px-1.5 py-0.5 font-semibold ${threadStatusTone(selectedThread)}`}>
                             {threadStatusLabel(selectedThread)}
                           </span>
                           {requiresAttention(selectedThread) ? (
-                            <span className={`rounded-full border px-2 py-0.5 font-semibold ${attentionMeta(selectedThread).tone}`}>
+                            <span className={`rounded-full border px-1.5 py-0.5 font-semibold ${attentionMeta(selectedThread).tone}`}>
                               {attentionMeta(selectedThread).label}
                             </span>
                           ) : null}
                           {threadPriority(selectedThread) === "high" ? (
-                            <span className={`rounded-full border px-2 py-0.5 font-semibold ${priorityMeta(selectedThread).tone}`}>
+                            <span className={`rounded-full border px-1.5 py-0.5 font-semibold ${priorityMeta(selectedThread).tone}`}>
                               {priorityMeta(selectedThread).shortLabel}
                             </span>
                           ) : null}
                         </div>
-                        <div className="mt-1.5 text-[17px] font-semibold leading-6 text-fg">{threadTitle(selectedThread)}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-sm leading-5 text-muted">
+                        <div className="mt-1 text-[17px] font-semibold leading-6 text-fg">{threadTitle(selectedThread)}</div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[12px] leading-5 text-muted">
                           <span>{scopeMeta(selectedThread).relation}</span>
                           {selectedThreadLinkedElement ? (
                             <button
@@ -1587,7 +1587,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                             </button>
                           ) : null}
                         </div>
-                        <div data-testid="notes-thread-header-meta" className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-5 text-muted">
+                        <div data-testid="notes-thread-header-meta" className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-5 text-muted">
                           <span>Создал {threadCreatorLabel(selectedThread, authorLabelsById, viewerUserId)}</span>
                           <span aria-hidden="true">·</span>
                           <span>последний ответ {threadLastAuthorLabel(selectedThread, authorLabelsById, viewerUserId)}</span>
@@ -1609,7 +1609,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         ) : null}
                       </div>
                       {!selectedThreadIsLegacyBridge ? (
-                        <div className="flex max-w-[300px] shrink-0 flex-col items-end gap-2 max-sm:w-full max-sm:max-w-none max-sm:items-stretch">
+                        <div className="flex max-w-[292px] shrink-0 flex-col items-end gap-1.5 max-sm:w-full max-sm:max-w-none max-sm:items-stretch">
                           <div className="flex flex-wrap items-center justify-end gap-2 max-sm:justify-start">
                             <select
                               className="select h-8 min-h-0 w-[118px] text-xs"
@@ -1668,8 +1668,8 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                     </div>
                   </div>
 
-                  <div data-testid="notes-thread-message-scroll" className="min-h-0 overflow-auto bg-bg/10 px-4 py-2.5 sm:px-5 sm:py-3">
-                    <div data-testid="notes-thread-message-flow" className="flex flex-col gap-2.5">
+                  <div data-testid="notes-thread-message-scroll" className="min-h-0 overflow-auto bg-bg/10 px-3 py-2.5 sm:px-4">
+                    <div data-testid="notes-thread-message-flow" className="flex flex-col gap-2">
                       {selectedThreadIsLegacyBridge && text(selectedThread?.legacy_summary) ? (
                         <div className="rounded-xl border border-amber-200/80 bg-panel px-3.5 py-2.5 shadow-sm">
                           <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-amber-900">Legacy summary</div>
@@ -1697,16 +1697,16 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                             <article
                               key={commentId || `comment_${idx + 1}`}
                               data-note-comment-id={commentId || undefined}
-                              className={`rounded-xl border bg-panel px-3 py-2.5 shadow-sm ${commentFocused ? "border-rose-300 ring-1 ring-rose-200" : "border-border"}`}
+                              className={`rounded-2xl border px-3 py-2.5 shadow-none ${commentFocused ? "border-rose-300 bg-rose-50/60 ring-1 ring-rose-200 dark:bg-danger/10" : "border-border/70 bg-panel/78"}`}
                             >
-                              <div className="flex items-start gap-2.5">
-                                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-info/10 text-[11px] font-bold text-info">
+                              <div className="flex items-start gap-2">
+                                <div className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-info/10 text-[10px] font-bold text-info">
                                   {authorInitials(author)}
                                 </div>
                                 <div className="min-w-0 flex-1">
                                   <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                                     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                                      <span className="text-[13px] font-semibold text-fg">{author}</span>
+                                      <span className="text-[13px] font-semibold leading-5 text-fg">{author}</span>
                                       <span className="text-[11px] text-muted">{formatDate(comment?.updated_at || comment?.created_at) || "только что"}</span>
                                       {numericTime(comment?.edited_at) ? (
                                         <span className="text-[11px] font-semibold text-muted" data-testid="notes-comment-edited-marker">изменено</span>
@@ -1716,7 +1716,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                                       {commentId ? (
                                         <button
                                           type="button"
-                                          className="secondaryBtn tinyBtn h-7 px-2 text-[11px]"
+                                          className="secondaryBtn tinyBtn h-6 px-2 text-[10px]"
                                           onClick={() => startReply(comment, author)}
                                           disabled={disabled || busy.startsWith("comment:") || busy.startsWith("edit:")}
                                           data-testid="notes-comment-reply-action"
@@ -1727,7 +1727,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                                       {canEditComment ? (
                                         <button
                                           type="button"
-                                          className="secondaryBtn tinyBtn h-7 px-2 text-[11px]"
+                                          className="secondaryBtn tinyBtn h-6 px-2 text-[10px]"
                                           onClick={() => startEditComment(comment)}
                                           disabled={disabled || busy.startsWith("edit:")}
                                           data-testid="notes-comment-edit-action"
@@ -1738,7 +1738,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                                     </div>
                                   </div>
                                   {replyToId ? (
-                                    <div className="mt-2 rounded-lg border border-info/30 bg-info/5 px-2.5 py-2 text-xs leading-relaxed text-muted" data-testid="notes-comment-reply-quote">
+                                    <div className="mt-2 rounded-lg border-l-2 border-info/45 bg-info/5 px-2.5 py-1.5 text-xs leading-relaxed text-muted" data-testid="notes-comment-reply-quote">
                                       {replySummary ? (
                                         <>
                                           <div className="font-semibold text-fg">{text(replySummary.author_display) || "Пользователь"}</div>
@@ -1789,7 +1789,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                                     <NoteMarkdown>{comment?.body}</NoteMarkdown>
                                   )}
                                   {asArray(comment?.mentions).length ? (
-                                    <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted" data-testid="notes-comment-mentions">
+                                    <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] text-muted" data-testid="notes-comment-mentions">
                                       {asArray(comment.mentions).map((mention) => (
                                         <span key={text(mention?.id) || text(mention?.mentioned_user_id)} className="rounded-full border border-info/45 bg-info/10 px-2 py-0.5 font-semibold text-info">
                                           @{text(mention?.mentioned_label) || authorLabel(mention?.mentioned_user_id, authorLabelsById, viewerUserId)}
@@ -1807,7 +1807,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                   </div>
 
                   {selectedThreadIsLegacyBridge ? (
-                    <div className="border-t border-border bg-panel/95 px-4 py-3.5 sm:px-5 sm:py-4">
+                    <div className="border-t border-border bg-panel/98 px-4 py-3 shadow-[0_-10px_24px_rgba(15,23,42,0.08)] sm:px-5">
                       <div className="mb-2 flex items-center justify-between gap-2">
                         <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Локальная заметка элемента</div>
                         <div className="text-[11px] text-muted">Пишется в legacy `notes_by_element` для режима совместимости.</div>
@@ -1847,13 +1847,13 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                       </div>
                     </div>
                   ) : (
-                    <div className="border-t border-border bg-panel/95 px-4 py-3.5 sm:px-5 sm:py-4">
-                      <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="border-t border-border bg-panel/98 px-4 py-3 shadow-[0_-10px_24px_rgba(15,23,42,0.08)] sm:px-5">
+                      <div className="mb-1.5 flex items-center justify-between gap-2">
                         <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Ответить</div>
                         <div className="text-[11px] text-muted">Сообщение добавится в текущее обсуждение.</div>
                       </div>
                       {replyTarget ? (
-                        <div className="mb-2 flex items-start justify-between gap-3 rounded-xl border border-info/35 bg-info/5 px-3 py-2 text-xs leading-relaxed" data-testid="notes-reply-preview">
+                        <div className="mb-2 flex items-start justify-between gap-3 rounded-lg border-l-2 border-info/45 bg-info/5 px-3 py-1.5 text-xs leading-relaxed" data-testid="notes-reply-preview">
                           <div className="min-w-0">
                             <div className="font-semibold text-fg">{text(replyTarget.author_display) || "Пользователь"}</div>
                             <div className="mt-0.5 line-clamp-2 text-muted">{text(replyTarget.body_preview) || "Сообщение без текста"}</div>
@@ -1876,7 +1876,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                       <div className="relative">
                         <textarea
                           ref={commentDraftRef}
-                          className="textarea min-h-[84px] w-full text-sm"
+                          className="textarea min-h-[78px] w-full text-sm"
                           value={commentDraft}
                           onChange={(event) => {
                             const threadId = text(selectedThread?.id);
@@ -1888,7 +1888,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         />
                         {renderMentionSuggestions("reply", commentMentionComposer, commentMentionSuggestions, selectCommentMention, "above")}
                       </div>
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                      <div className="mt-2.5 flex flex-wrap items-center justify-between gap-3">
                         <div className="text-[11px] leading-relaxed text-muted">
                           {mentionUserIdsForSubmit(commentDraft, commentMentionComposer.selected).length
                             ? `Упоминаний: ${mentionUserIdsForSubmit(commentDraft, commentMentionComposer.selected).length}`
@@ -1913,7 +1913,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
               )}
             </section>
 
-            <aside className="flex min-h-0 flex-col bg-bg/20 px-3 py-3">
+            <aside className="flex min-h-0 flex-col bg-bg/20 px-2.5 py-2.5">
               {notificationMode ? (
                 <div data-testid="discussion-notification-inbox" className="flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-panel/85 p-3 shadow-sm">
                   <div className="flex items-center justify-between gap-2">
@@ -2058,7 +2058,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
 
               <div className="mt-2 min-h-0 flex-1 overflow-auto pr-1">
                 {visibleThreads.length ? (
-                  <div className="grid gap-2">
+                  <div className="grid gap-1.5">
                     {visibleThreads.map((thread) => {
                       const threadId = text(thread?.id);
                       const active = threadId === text(selectedThread?.id);
@@ -2069,52 +2069,51 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         <button
                           key={threadId}
                           type="button"
-                          className={`rounded-lg border px-3 py-2.5 text-left transition ${active ? "border-info/60 bg-info/10 shadow-sm ring-1 ring-info/30" : "border-border/80 bg-panel/85 hover:border-info/45 hover:bg-panel2/70 hover:shadow-sm"}`}
+                          className={`rounded-xl border px-2.5 py-2 text-left transition ${active ? "border-info/60 bg-info/10 shadow-sm ring-1 ring-info/30" : "border-border/70 bg-panel/75 hover:border-info/45 hover:bg-panel2/70 hover:shadow-sm"}`}
                           onClick={() => {
                             setCreateOpen(false);
                             setSelectedThreadId(threadId);
                           }}
                         >
                           <div className="min-w-0">
-                            <div className="line-clamp-2 text-[13px] font-semibold leading-snug text-fg">{threadTitle(thread)}</div>
-                            <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted">
-                              {meta.relation} · {threadPreview(thread)}
+                            <div className="flex min-w-0 items-start justify-between gap-2">
+                              <div className="line-clamp-2 text-[13px] font-semibold leading-snug text-fg">{threadTitle(thread)}</div>
+                              {newMessagesCount > 0 ? (
+                                <span
+                                  className="shrink-0 rounded-full border border-info/55 bg-info/10 px-1.5 py-0.5 text-[10px] font-bold leading-4 tabular-nums text-info"
+                                  title={`Новые сообщения: ${newMessagesCount}`}
+                                  aria-label={`Новые сообщения: ${newMessagesCount}`}
+                                  data-testid="notes-thread-unread-badge"
+                                >
+                                  {newMessagesCount}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="mt-0.5 line-clamp-1 text-[11px] leading-5 text-muted">
+                              {meta.relation} · Создал {threadCreatorLabel(thread, authorLabelsById, viewerUserId)} · {formatDate(threadUpdatedAt(thread)) || "сейчас"}
                             </div>
                           </div>
-                          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-muted">
-                            <span className={`rounded-full border px-1.5 py-0.5 font-semibold ${threadStatusTone(thread)}`}>{threadStatusLabel(thread)}</span>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[10px] text-muted">
+                            <span className={`rounded-full border px-1.5 py-0.5 font-semibold leading-4 ${threadStatusTone(thread)}`}>{threadStatusLabel(thread)}</span>
                             {requiresAttention(thread) ? (
-                              <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${attentionMeta(thread).tone}`}>
+                              <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold leading-4 ${attentionMeta(thread).tone}`}>
                                 {attentionMeta(thread).shortLabel}
                               </span>
                             ) : null}
                             {threadPriority(thread) === "high" ? (
-                              <span className={`rounded-full border px-1.5 py-0.5 font-semibold ${priorityMeta(thread).tone}`}>{priorityMeta(thread).shortLabel}</span>
-                            ) : null}
-                            {newMessagesCount > 0 ? (
-                              <span
-                                className="shrink-0 rounded-full border border-info/55 bg-info/10 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-info"
-                                title={`Новые сообщения: ${newMessagesCount}`}
-                                aria-label={`Новые сообщения: ${newMessagesCount}`}
-                                data-testid="notes-thread-unread-badge"
-                              >
-                                {newMessagesCount}
-                              </span>
+                              <span className={`rounded-full border px-1.5 py-0.5 font-semibold leading-4 ${priorityMeta(thread).tone}`}>{priorityMeta(thread).shortLabel}</span>
                             ) : null}
                             {mentionLabel ? (
-                              <span className="min-w-0 truncate rounded-full border border-info/40 bg-info/10 px-1.5 py-0.5 font-semibold text-info">
+                              <span className="min-w-0 max-w-full truncate rounded-full border border-info/40 bg-info/10 px-1.5 py-0.5 font-semibold leading-4 text-info">
                                 {mentionLabel}
                               </span>
                             ) : null}
+                            <span className="ml-auto text-[10px] leading-4 text-muted">{asArray(thread.comments).length} сообщ.</span>
                           </div>
-                          <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] leading-4 text-muted">
-                            <span>Создал {threadCreatorLabel(thread, authorLabelsById, viewerUserId)}</span>
+                          <div className="mt-1 flex min-w-0 items-center gap-x-1.5 text-[10px] leading-4 text-muted">
+                            <span className="truncate">Последний: {threadLastAuthorLabel(thread, authorLabelsById, viewerUserId)}</span>
                             <span aria-hidden="true">·</span>
-                            <span>Последний: {threadLastAuthorLabel(thread, authorLabelsById, viewerUserId)}</span>
-                            <span aria-hidden="true">·</span>
-                            <span>{formatDate(threadUpdatedAt(thread)) || "сейчас"}</span>
-                            <span aria-hidden="true">·</span>
-                            <span>{asArray(thread.comments).length} сообщ.</span>
+                            <span className="truncate">{commentBodyPreview(threadPreview(thread), "Без текста")}</span>
                           </div>
                         </button>
                       );
