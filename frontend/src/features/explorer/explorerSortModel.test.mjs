@@ -31,17 +31,19 @@ test("sorts explorer rows by type asc and desc", () => {
   assert.deepEqual(sortExplorerItems(rows, { key: "type", direction: "desc" }, { isRoot: true }).map((row) => row.id), ["f1", "p1", "f2"]);
 });
 
-test("sorts status and owner with missing values last", () => {
+test("sorts status and business assignee with missing values last", () => {
   const rows = [
     { id: "missing", type: "folder", name: "Без статуса" },
-    { id: "ready", type: "project", name: "Ready", status: "ready", owner: { name: "Яна" } },
-    { id: "draft", type: "project", name: "Draft", status: "draft", owner: { name: "Анна" } },
+    { id: "folder", type: "folder", name: "Folder", status: "ready", responsible_user: { display_name: "Борис Ответственный" } },
+    { id: "ready", type: "project", name: "Ready", status: "ready", executor_user: { display_name: "Яна Исполнитель" } },
+    { id: "draft", type: "project", name: "Draft", status: "draft", owner: { name: "Анна Owner" }, executor_user: { display_name: "Анна Исполнитель" } },
   ];
 
-  assert.deepEqual(sortExplorerItems(rows, { key: "status", direction: "asc" }).map((row) => row.id), ["draft", "ready", "missing"]);
-  assert.deepEqual(sortExplorerItems(rows, { key: "status", direction: "desc" }).map((row) => row.id), ["ready", "draft", "missing"]);
-  assert.deepEqual(sortExplorerItems(rows, { key: "owner", direction: "asc" }).map((row) => row.id), ["draft", "ready", "missing"]);
-  assert.deepEqual(sortExplorerItems(rows, { key: "owner", direction: "desc" }).map((row) => row.id), ["ready", "draft", "missing"]);
+  assert.deepEqual(sortExplorerItems(rows, { key: "status", direction: "asc" }).map((row) => row.id), ["draft", "folder", "ready", "missing"]);
+  assert.deepEqual(sortExplorerItems(rows, { key: "status", direction: "desc" }).map((row) => row.id), ["folder", "ready", "draft", "missing"]);
+  assert.deepEqual(sortExplorerItems(rows, { key: "assignee", direction: "asc" }).map((row) => row.id), ["draft", "folder", "ready", "missing"]);
+  assert.deepEqual(sortExplorerItems(rows, { key: "assignee", direction: "desc" }).map((row) => row.id), ["ready", "folder", "draft", "missing"]);
+  assert.deepEqual(sortExplorerItems(rows, { key: "owner", direction: "asc" }).map((row) => row.id), ["draft", "folder", "ready", "missing"]);
 });
 
 test("sorts explorer rows by updated date desc and asc", () => {

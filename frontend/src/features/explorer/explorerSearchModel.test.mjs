@@ -8,14 +8,30 @@ import {
   normalizeExplorerSearchQuery,
 } from "./explorerSearchModel.js";
 
-const section = { id: "section_a", type: "folder", name: "Продажи", parent_id: "" };
-const nestedFolder = { id: "folder_a", type: "folder", name: "Регламенты 2026", parent_id: "section_a" };
+const section = {
+  id: "section_a",
+  type: "folder",
+  name: "Продажи",
+  parent_id: "",
+  responsible_user_id: "u_section",
+  responsible_user: { display_name: "Ирина Раздел" },
+};
+const nestedFolder = {
+  id: "folder_a",
+  type: "folder",
+  name: "Регламенты 2026",
+  parent_id: "section_a",
+  responsible_user_id: "u_folder",
+  responsible_user: { display_name: "Федор Папка" },
+};
 const project = {
   id: "project_a",
   type: "project",
   name: "Проект внедрения",
   status: "active",
-  owner: { id: "u1", name: "Анна Owner" },
+  owner: { id: "owner_uuid_1", name: "Технический Owner" },
+  executor_user_id: "u_executor",
+  executor_user: { display_name: "Павел Исполнитель" },
 };
 
 test("normalizeExplorerSearchQuery is case-insensitive and whitespace tolerant", () => {
@@ -34,7 +50,10 @@ test("query matches section, nested folder, and project fields", () => {
   assert.equal(filterExplorerSearchResults(index, "продажи").results[0].type, "section");
   assert.equal(filterExplorerSearchResults(index, "регламенты 2026").results[0].type, "folder");
   assert.equal(filterExplorerSearchResults(index, "проект внедрения").results[0].type, "project");
-  assert.equal(filterExplorerSearchResults(index, "анна owner").results[0].type, "project");
+  assert.equal(filterExplorerSearchResults(index, "ирина раздел").results[0].type, "section");
+  assert.equal(filterExplorerSearchResults(index, "федор папка").results[0].type, "folder");
+  assert.equal(filterExplorerSearchResults(index, "павел исполнитель").results[0].type, "project");
+  assert.equal(filterExplorerSearchResults(index, "технический owner").total, 0);
 });
 
 test("results are grouped by type and include navigation targets", () => {
@@ -66,7 +85,14 @@ test("empty search result model is explicit", () => {
 
 test("project view search matches session title, status, stage, owner, and project path", () => {
   const index = buildProjectSessionSearchIndex({
-    project: { id: "project_a", name: "Проект внедрения", owner: { name: "Project Owner" } },
+    project: {
+      id: "project_a",
+      type: "project",
+      name: "Проект внедрения",
+      owner: { name: "Project Owner" },
+      executor_user_id: "u_executor",
+      executor_user: { display_name: "Павел Исполнитель" },
+    },
     sessions: [
       {
         id: "session_a",
@@ -87,4 +113,6 @@ test("project view search matches session title, status, stage, owner, and proje
   assert.equal(filterExplorerSearchResults(index, "discovery").results[0].type, "session");
   assert.equal(filterExplorerSearchResults(index, "мария analyst").results[0].type, "session");
   assert.equal(filterExplorerSearchResults(index, "проект внедрения").results[0].type, "project");
+  assert.equal(filterExplorerSearchResults(index, "павел исполнитель").results[0].type, "project");
+  assert.equal(filterExplorerSearchResults(index, "project owner").total, 0);
 });
