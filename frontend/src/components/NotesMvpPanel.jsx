@@ -32,6 +32,8 @@ import {
   mentionUserIdsForSubmit,
   pruneSelectedMentions,
 } from "../features/notes/mentionAutocomplete.js";
+import MarkdownComposerToolbar from "../features/notes/MarkdownComposerToolbar.jsx";
+import { applyMarkdownAction } from "../features/notes/markdownComposerActions.js";
 import NoteMarkdown from "../features/notes/markdownRenderer.js";
 import { readableBpmnText } from "../features/process/bpmn/bpmnIdentity";
 import NotesAggregateBadge from "./NotesAggregateBadge.jsx";
@@ -581,15 +583,33 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     [editMentionComposer.active?.query, editMentionComposer.selected, mentionableUsers],
   );
 
-  function focusTextareaAt(ref, caretIndex) {
+  function focusTextareaAt(ref, selectionStart, selectionEnd = selectionStart) {
     window.requestAnimationFrame?.(() => {
       const node = ref?.current;
       if (!node || typeof node.focus !== "function") return;
       node.focus();
       if (typeof node.setSelectionRange === "function") {
-        node.setSelectionRange(caretIndex, caretIndex);
+        node.setSelectionRange(selectionStart, selectionEnd);
       }
     });
+  }
+
+  function applyComposerMarkdownAction(kind, action) {
+    const targetRef = kind === "create" ? createDetailsRef : commentDraftRef;
+    const node = targetRef.current;
+    const selectionStart = node?.selectionStart ?? 0;
+    const selectionEnd = node?.selectionEnd ?? selectionStart;
+    if (kind === "create") {
+      const result = applyMarkdownAction(createDetails, selectionStart, selectionEnd, action);
+      updateCreateDetails(result.text, result.selectionEnd);
+      focusTextareaAt(createDetailsRef, result.selectionStart, result.selectionEnd);
+      return;
+    }
+    const threadId = text(selectedThread?.id);
+    if (!threadId) return;
+    const result = applyMarkdownAction(commentDraft, selectionStart, selectionEnd, action);
+    updateCommentDraft(threadId, result.text, result.selectionEnd);
+    focusTextareaAt(commentDraftRef, result.selectionStart, result.selectionEnd);
   }
 
   function updateCreateDetails(nextValue, caretIndex) {
@@ -1489,6 +1509,11 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                       </div>
                       <div className="grid gap-2">
                         <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Описание</span>
+                        <MarkdownComposerToolbar
+                          onAction={(action) => applyComposerMarkdownAction("create", action)}
+                          disabled={disabled || !canCreateCurrentScope}
+                          testId="notes-create-markdown-toolbar"
+                        />
                         <span className="relative">
                           <textarea
                             ref={createDetailsRef}
@@ -1843,6 +1868,11 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                           </button>
                         </div>
                       ) : null}
+                      <MarkdownComposerToolbar
+                        onAction={(action) => applyComposerMarkdownAction("reply", action)}
+                        disabled={disabled}
+                        testId="notes-reply-markdown-toolbar"
+                      />
                       <div className="relative">
                         <textarea
                           ref={commentDraftRef}

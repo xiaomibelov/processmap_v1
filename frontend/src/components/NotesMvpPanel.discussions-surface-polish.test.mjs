@@ -238,6 +238,22 @@ test("Discussions render comment bodies through safe Markdown without changing c
   assert.doesNotMatch(notesMvpPanelSource, /dangerouslySetInnerHTML/);
 });
 
+test("Discussion create and reply composers expose a Markdown source toolbar without changing mention flow", () => {
+  assert.match(notesMvpPanelSource, /import MarkdownComposerToolbar from "\.\.\/features\/notes\/MarkdownComposerToolbar\.jsx";/);
+  assert.match(notesMvpPanelSource, /import \{ applyMarkdownAction \} from "\.\.\/features\/notes\/markdownComposerActions\.js";/);
+  assert.match(notesMvpPanelSource, /function applyComposerMarkdownAction\(kind, action\)/);
+  assert.match(notesMvpPanelSource, /applyMarkdownAction\(createDetails, selectionStart, selectionEnd, action\)/);
+  assert.match(notesMvpPanelSource, /updateCreateDetails\(result\.text, result\.selectionEnd\)/);
+  assert.match(notesMvpPanelSource, /applyMarkdownAction\(commentDraft, selectionStart, selectionEnd, action\)/);
+  assert.match(notesMvpPanelSource, /updateCommentDraft\(threadId, result\.text, result\.selectionEnd\)/);
+  assert.match(notesMvpPanelSource, /testId="notes-create-markdown-toolbar"/);
+  assert.match(notesMvpPanelSource, /testId="notes-reply-markdown-toolbar"/);
+  assert.match(notesMvpPanelSource, /renderMentionSuggestions\("create", createMentionComposer, createMentionSuggestions, selectCreateMention\)/);
+  assert.match(notesMvpPanelSource, /renderMentionSuggestions\("reply", commentMentionComposer, commentMentionSuggestions, selectCommentMention, "above"\)/);
+  assert.match(notesMvpPanelSource, /mention_user_ids: createMentionUserIds/);
+  assert.match(notesMvpPanelSource, /mention_user_ids: commentMentionUserIds/);
+});
+
 test("Discussions panel exposes bounded notification inbox and history without new storage truth", () => {
   assert.match(notesMvpPanelSource, /buildDiscussionNotificationBuckets\(threads, \{ currentUserId: viewerUserId \}\)/);
   assert.match(notesMvpPanelSource, /const \[panelMode, setPanelMode\] = useState\("discussions"\);/);
