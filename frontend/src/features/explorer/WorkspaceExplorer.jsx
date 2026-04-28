@@ -20,6 +20,7 @@ import {
   apiGetExplorerPage,
   apiCreateFolder,
   apiRenameFolder,
+  apiUpdateFolder,
   apiMoveFolder,
   apiDeleteFolder,
   apiCreateProject,
@@ -27,7 +28,7 @@ import {
   apiGetProjectPage,
   apiCreateSession,
 } from "./explorerApi.js";
-import { apiDeleteProject, apiDeleteSession, apiGetSession, apiPatchProject, apiPatchSession } from "../../lib/api";
+import { apiDeleteProject, apiDeleteSession, apiGetSession, apiListOrgMembers, apiPatchProject, apiPatchSession } from "../../lib/api";
 import {
   MANUAL_SESSION_STATUSES,
   getManualSessionStatusMeta,
@@ -49,6 +50,15 @@ import {
 } from "./explorerSortModel.js";
 import { buildProjectBreadcrumbTrail, normalizeProjectBreadcrumbBase } from "./workspaceBreadcrumbs.js";
 import { folderCreateCopy, folderDisplayLabel } from "./workspaceDisplayLabels.js";
+import {
+  filterExplorerAssignableUsers,
+  formatExplorerUserDisplay,
+  getExplorerAssigneeActionLabel,
+  getExplorerAssigneeDialogTitle,
+  getExplorerAssigneeId,
+  getExplorerAssigneeKind,
+  getExplorerAssigneeLabel,
+} from "./explorerAssigneeModel.js";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
 import NotesAggregateBadge from "../../components/NotesAggregateBadge.jsx";
 import { useSessionNoteAggregates } from "../../lib/sessionNoteAggregates.js";
@@ -431,6 +441,141 @@ function ConfirmModal({ title, message, actionLabel = "Удалить", danger =
         >
           {busy ? "…" : actionLabel}
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+function AssigneeCell({ item }) {
+  const label = getExplorerAssigneeLabel(item);
+  const empty = label === "—";
+  const user = getExplorerAssigneeKind(item) === "responsible"
+    ? item?.responsible_user
+    : item?.executor_user || item?.executor;
+  const title = empty ? "Не назначен" : formatExplorerUserDisplay(user);
+  return (
+    <span
+      className={`block max-w-[150px] truncate text-[11px] ${empty ? "text-muted/70" : "text-fg/70"}`}
+      title={title || label}
+    >
+      {label}
+    </span>
+  );
+}
+
+function assigneeMemberId(user) {
+  return String(user?.user_id || user?.id || "").trim();
+}
+
+function AssigneeDialog({
+  item,
+  folderLabel = "Папка",
+  users,
+  loadingUsers = false,
+  usersError = "",
+  onClose,
+  onSave,
+}) {
+  const [selectedUserId, setSelectedUserId] = useState(getExplorerAssigneeId(item));
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const title = getExplorerAssigneeDialogTitle(item, { folderLabel });
+  const filteredUsers = useMemo(() => filterExplorerAssignableUsers(users, query), [users, query]);
+
+  useEffect(() => {
+    setSelectedUserId(getExplorerAssigneeId(item));
+    setQuery("");
+    setError("");
+  }, [item]);
+
+  const submit = async (userId = selectedUserId) => {
+    setBusy(true);
+    setError("");
+    try {
+      await onSave(userId || null);
+      onClose();
+    } catch (e) {
+      setError(String(e?.message || e || "Не удалось сохранить назначение"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div className="space-y-3">
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setError("");
+          }}
+          placeholder="Найти пользователя"
+          className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent"
+          disabled={busy || loadingUsers}
+        />
+        <div className="max-h-[280px] overflow-y-auto rounded-lg border border-border bg-bg/60 p-1.5">
+          {loadingUsers ? (
+            <div className="px-2.5 py-3 text-sm text-muted">Загрузка пользователей…</div>
+          ) : filteredUsers.length ? (
+            filteredUsers.map((user) => {
+              const uid = assigneeMemberId(user);
+              const name = formatExplorerUserDisplay(user) || uid;
+              const email = String(user?.email || "").trim();
+              const jobTitle = String(user?.job_title || "").trim();
+              return (
+                <label
+                  key={uid}
+                  className="flex cursor-pointer items-start gap-2 rounded-md px-2.5 py-2 text-sm text-fg transition-colors hover:bg-panelAlt"
+                >
+                  <input
+                    type="radio"
+                    name="explorer-assignee"
+                    className="mt-1"
+                    value={uid}
+                    checked={selectedUserId === uid}
+                    disabled={busy}
+                    onChange={() => {
+                      setSelectedUserId(uid);
+                      setError("");
+                    }}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{name}</span>
+                    <span className="mt-0.5 block truncate text-[11px] text-muted">
+                      {[email, jobTitle].filter(Boolean).join(" · ") || uid}
+                    </span>
+                  </span>
+                </label>
+              );
+            })
+          ) : (
+            <div className="px-2.5 py-3 text-sm text-muted">
+              {query ? "Пользователи не найдены." : "Нет доступных пользователей для назначения."}
+            </div>
+          )}
+        </div>
+        {usersError ? <p className="text-xs text-danger">{usersError}</p> : null}
+        {error ? <p className="text-xs text-danger">{error}</p> : null}
+        <div className="flex flex-wrap justify-end gap-2">
+          <button onClick={onClose} className="secondaryBtn h-8 px-3 text-sm" disabled={busy}>Отмена</button>
+          <button
+            onClick={() => submit(null)}
+            className="secondaryBtn h-8 px-3 text-sm"
+            disabled={busy || loadingUsers || (!getExplorerAssigneeId(item) && !selectedUserId)}
+          >
+            Очистить
+          </button>
+          <button
+            onClick={() => submit()}
+            className="primaryBtn h-8 px-3 text-sm"
+            disabled={busy || loadingUsers || !selectedUserId}
+          >
+            {busy ? "…" : "Сохранить"}
+          </button>
+        </div>
       </div>
     </Modal>
   );
@@ -919,6 +1064,7 @@ function FolderRow({
   onToggleExpand,
   onNavigate,
   onMove,
+  onAssign,
   workspaceId,
   onReload,
   canEdit = false,
@@ -936,11 +1082,13 @@ function FolderRow({
   const folderLabelAccusative = folderLabel === "Раздел" ? "раздел" : "папку";
   const folderLabelGenitive = folderLabel === "Раздел" ? "раздела" : "папки";
   const folderLabelInstrumental = folderLabel === "Раздел" ? "разделом" : "папкой";
+  const assigneeActionLabel = getExplorerAssigneeActionLabel(folder);
 
   const menuItems = [
     { label: "Открыть", icon: <IcoChevron right />, action: () => onNavigate(folder) },
     ...(expandable ? [{ label: expanded ? "Свернуть" : "Развернуть", icon: <IcoChevron right={!expanded} />, action: () => onToggleExpand(folder) }] : []),
     ...(canEdit ? [
+      { label: assigneeActionLabel, icon: <IcoEdit />, action: () => onAssign?.(folder, folderLabel) },
       { label: "Переместить", icon: <IcoMove />, action: () => onMove?.(folder) },
       { label: "Переименовать", icon: <IcoEdit />, action: () => setRenaming(true) },
     ] : []),
@@ -984,6 +1132,7 @@ function FolderRow({
         <td className="px-2 py-2.5 text-xs text-muted text-center">
           <span className="text-[11px] text-fg/60">Проектов: {folder.descendant_projects_count ?? 0}</span>
         </td>
+        <td className="px-2 py-2.5"><AssigneeCell item={folder} /></td>
         <td className="px-2 py-2.5">
           {dodPercent && dodPercent > 0 ? <DodBar percent={dodPercent} /> : <span className="text-xs text-muted/70">—</span>}
         </td>
@@ -1050,6 +1199,7 @@ function ProjectRow({
   depth = 0,
   onClick,
   onMove,
+  onAssign,
   onReload,
   canMove = false,
   canRename = false,
@@ -1063,8 +1213,10 @@ function ProjectRow({
   const dodPercent = normalizeDodPercent(project.dod_percent);
   const normalizedStatus = String(project.status || "").trim().toLowerCase();
   const projectHref = buildAppWorkspaceHref({ projectId: project?.id || project?.project_id });
+  const assigneeActionLabel = getExplorerAssigneeActionLabel(project);
   const menuItems = [
     { label: "Открыть", icon: <IcoChevron right />, action: () => onClick(project) },
+    ...(canRename ? [{ label: assigneeActionLabel, icon: <IcoEdit />, action: () => onAssign?.(project) }] : []),
     ...(canMove ? [{ label: "Переместить", icon: <IcoMove />, action: () => onMove?.(project) }] : []),
     ...(canRename ? [{ label: "Переименовать", icon: <IcoEdit />, action: () => setRenaming(true) }] : []),
     ...(canDelete ? [{ separator: true }, { label: "Удалить", icon: <IcoTrash />, danger: true, action: () => setDeleting(true) }] : []),
@@ -1095,6 +1247,7 @@ function ProjectRow({
             ? <span className="text-[11px] text-fg/60 truncate block max-w-[120px]" title={project.owner.name || project.owner.id}>Owner: {project.owner.name || project.owner.id}</span>
             : <span className="text-xs text-muted/70">—</span>}
         </td>
+        <td className="px-2 py-2.5"><AssigneeCell item={project} /></td>
         <td className="px-2 py-2.5">
           {dodPercent && dodPercent > 0 ? <DodBar percent={dodPercent} /> : <span className="text-xs text-muted/70">—</span>}
         </td>
@@ -1202,6 +1355,7 @@ function InlineErrorRow({ depth = 0, message = "", colSpan = 8 }) {
 // ─── Explorer Pane (folder contents) ─────────────────────────────────────────
 
 function ExplorerPane({
+  activeOrgId,
   workspaceId,
   folderId,
   onNavigateToFolder,
@@ -1217,6 +1371,14 @@ function ExplorerPane({
   const [movingFolder, setMovingFolder] = useState(null);
   const [movingProject, setMovingProject] = useState(null);
   const [moveNotice, setMoveNotice] = useState("");
+  const [assigneeDialog, setAssigneeDialog] = useState(null);
+  const [assigneeMembersState, setAssigneeMembersState] = useState({
+    orgId: "",
+    items: [],
+    loading: false,
+    loaded: false,
+    error: "",
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [explorerSort, setExplorerSort] = useState(null);
   const [treeStateByContext, setTreeStateByContext] = useState({});
@@ -1272,7 +1434,7 @@ function ExplorerPane({
   const rootItems = useMemo(() => (Array.isArray(page?.items) ? page.items : []), [page]);
   const isEmpty = !loading && !error && rootItems.length === 0;
   const treeColumnProfile = EXPLORER_COLUMN_PROFILES.tree;
-  const inlineColSpan = treeColumnProfile.showSignalColumns ? 10 : 8;
+  const inlineColSpan = treeColumnProfile.showSignalColumns ? 11 : 9;
   const folderCopy = useMemo(() => folderCreateCopy(folderId || ""), [folderId]);
   const folderCountHeader = folderId ? "Папки / Сессии" : "Разделы / Сессии";
   const contextHeaderTitle = folderId
@@ -1316,6 +1478,48 @@ function ExplorerPane({
     [searchIndex, searchQuery],
   );
 
+  useEffect(() => {
+    if (!assigneeDialog) return;
+    const oid = String(activeOrgId || "").trim();
+    if (!oid) {
+      setAssigneeMembersState({ orgId: "", items: [], loading: false, loaded: true, error: "Не выбрана организация" });
+      return;
+    }
+    if (assigneeMembersState.orgId === oid && (assigneeMembersState.loaded || assigneeMembersState.loading)) return;
+    let disposed = false;
+    setAssigneeMembersState({ orgId: oid, items: [], loading: true, loaded: false, error: "" });
+    apiListOrgMembers(oid).then((resp) => {
+      if (disposed) return;
+      if (!resp?.ok) {
+        setAssigneeMembersState({
+          orgId: oid,
+          items: [],
+          loading: false,
+          loaded: true,
+          error: String(resp?.error || "Не удалось загрузить пользователей"),
+        });
+        return;
+      }
+      setAssigneeMembersState({
+        orgId: oid,
+        items: Array.isArray(resp.items) ? resp.items : [],
+        loading: false,
+        loaded: true,
+        error: "",
+      });
+    }).catch((e) => {
+      if (disposed) return;
+      setAssigneeMembersState({
+        orgId: oid,
+        items: [],
+        loading: false,
+        loaded: true,
+        error: String(e?.message || "Не удалось загрузить пользователей"),
+      });
+    });
+    return () => { disposed = true; };
+  }, [activeOrgId, assigneeDialog, assigneeMembersState.loaded, assigneeMembersState.loading, assigneeMembersState.orgId]);
+
   const parentIdForRowFolder = useCallback((folder, depth = 0) => {
     const explicitParentId = String(folder?.parent_id ?? folder?.parentId ?? "").trim();
     if (explicitParentId) return explicitParentId;
@@ -1338,6 +1542,27 @@ function ExplorerPane({
       parent_id: parentId,
     };
   }, [folderId, page]);
+
+  const handleSaveAssignee = useCallback(async (dialog, userId) => {
+    const item = dialog?.item || {};
+    const kind = dialog?.kind || getExplorerAssigneeKind(item);
+    const normalizedUserId = String(userId || "").trim() || null;
+    if (kind === "responsible") {
+      const resp = await apiUpdateFolder(workspaceId, item.id, { responsible_user_id: normalizedUserId });
+      if (!resp?.ok) throw new Error(resp?.error || "Не удалось сохранить ответственного");
+      await load({ resetInlineChildren: true });
+      setMoveNotice(normalizedUserId ? "Ответственный назначен." : "Назначение очищено.");
+      return;
+    }
+    if (kind === "executor") {
+      const resp = await apiPatchProject(item.id, { executor_user_id: normalizedUserId });
+      if (!resp?.ok) throw new Error(resp?.error || "Не удалось сохранить исполнителя");
+      await load({ resetInlineChildren: true });
+      setMoveNotice(normalizedUserId ? "Исполнитель назначен." : "Назначение очищено.");
+      return;
+    }
+    throw new Error("Назначение недоступно для этого элемента");
+  }, [load, workspaceId]);
 
   const ensureFolderChildrenLoaded = useCallback(async (targetFolderId) => {
     const fid = String(targetFolderId || "").trim();
@@ -1480,6 +1705,7 @@ function ExplorerPane({
               <col className="w-[88px]" />
               <col className="w-[108px]" />
               <col className="w-[112px]" />
+              <col className="w-[136px]" />
               <col className="w-[92px]" />
               {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
               {treeColumnProfile.showSignalColumns ? <col className="w-[36px]" /> : null}
@@ -1500,6 +1726,7 @@ function ExplorerPane({
                 <th className="px-2 py-2" title={contextHeaderTitle} aria-sort={explorerSort?.key === "owner" ? (explorerSort.direction === "asc" ? "ascending" : "descending") : "none"}>
                   <SortHeader label="Контекст" sortKey="owner" sort={explorerSort} onSort={handleExplorerSort} title={`${contextHeaderTitle}. Для проектов сортирует по владельцу.`} />
                 </th>
+                <th className="px-2 py-2">Ответственный / Исполнитель</th>
                 <th className="px-2 py-2">DoD</th>
                 {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">⚠</th> : null}
                 {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">📋</th> : null}
@@ -1544,6 +1771,14 @@ function ExplorerPane({
                           currentParentId: parentIdForRowFolder(folder, row.depth),
                         });
                       }}
+                      onAssign={(targetFolder, targetLabel) => {
+                        setMoveNotice("");
+                        setAssigneeDialog({
+                          item: targetFolder,
+                          kind: "responsible",
+                          folderLabel: targetLabel,
+                        });
+                      }}
                       onReload={() => load({ resetInlineChildren: true })}
                       canEdit={!!permissions?.canRenameFolder}
                       canDelete={!!permissions?.canDeleteFolder}
@@ -1562,6 +1797,14 @@ function ExplorerPane({
                     onMove={() => {
                       setMoveNotice("");
                       setMovingProject(project);
+                    }}
+                    onAssign={(targetProject) => {
+                      setMoveNotice("");
+                      setAssigneeDialog({
+                        item: targetProject,
+                        kind: "executor",
+                        folderLabel: "",
+                      });
                     }}
                     onReload={() => load({ resetInlineChildren: true })}
                     canMove={!!permissions?.canRenameProject}
@@ -1670,6 +1913,17 @@ function ExplorerPane({
             await load({ resetInlineChildren: true });
             setMoveNotice("Проект перемещён.");
           }}
+        />
+      ) : null}
+      {assigneeDialog ? (
+        <AssigneeDialog
+          item={assigneeDialog.item}
+          folderLabel={assigneeDialog.folderLabel}
+          users={assigneeMembersState.items}
+          loadingUsers={assigneeMembersState.loading}
+          usersError={assigneeMembersState.error}
+          onClose={() => setAssigneeDialog(null)}
+          onSave={(userId) => handleSaveAssignee(assigneeDialog, userId)}
         />
       ) : null}
     </div>
@@ -2287,6 +2541,7 @@ export default function WorkspaceExplorer({
             {/* ExplorerPane: always mounted, hidden while a project is open */}
             <div className={`absolute inset-0 flex flex-col min-h-0 ${currentProjectId ? "invisible pointer-events-none" : ""}`}>
               <ExplorerPane
+                activeOrgId={activeOrgId}
                 workspaceId={activeWorkspaceId}
                 folderId={currentFolderId}
                 onNavigateToFolder={handleNavigateToFolder}
