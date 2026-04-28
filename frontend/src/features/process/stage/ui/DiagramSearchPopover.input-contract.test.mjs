@@ -15,3 +15,16 @@ test("DiagramSearchPopover passes raw input value to query state", () => {
     true,
   );
 });
+
+test("DiagramSearchPopover renders grouped result sections without changing row selection contract", () => {
+  assert.equal(source.includes("groupSearchRows(rows.slice(0, 240))"), true);
+  assert.equal(source.includes('data-testid="diagram-action-search-group"'), true);
+  assert.equal(source.includes('data-testid="diagram-action-search-group-header"'), true);
+  assert.equal(source.includes("onSelect?.(index)"), true);
+});
+
+test("DiagramSearchPopover uses localized placeholders and empty states", () => {
+  assert.equal(source.includes("id, название, метка или тип"), true);
+  assert.equal(source.includes("название или значение свойства"), true);
+  assert.equal(source.includes("Совпадений не найдено."), true);
+});

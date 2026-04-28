@@ -1016,6 +1016,22 @@
     @apply max-h-[32vh] space-y-1 overflow-auto pr-1;
   }
 
+  .diagramIssueListGroup {
+    @apply space-y-1 rounded-md border border-border/60 bg-panel/30 p-1;
+  }
+
+  .diagramIssueListGroup + .diagramIssueListGroup {
+    @apply mt-2;
+  }
+
+  .diagramIssueListGroupHeader {
+    @apply flex min-w-0 items-center justify-between gap-2 px-1 py-1 text-[11px] font-semibold text-fg;
+  }
+
+  .diagramIssueListGroupLabel {
+    @apply min-w-0 truncate;
+  }
+
   .diagramIssueListItem {
     @apply flex w-full min-w-0 items-center justify-between gap-2 rounded-md border border-border bg-panel2 px-2 py-1 text-left text-xs;
   }
