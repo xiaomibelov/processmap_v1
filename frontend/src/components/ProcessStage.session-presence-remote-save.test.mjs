@@ -26,6 +26,10 @@ test("session presence and remote-save highlight path is read-only and does not 
     true,
   );
   assert.equal(
+    source.includes("versionHeadItem: latestHead,"),
+    true,
+  );
+  assert.equal(
     source.includes("reason: \"head_not_newer\""),
     true,
   );
@@ -41,6 +45,8 @@ test("session presence and remote-save highlight path is read-only and does not 
   const pollBody = String(pollBodyMatch?.[1] || "");
   assert.equal(/apiPatchSession\(/.test(pollBody), false);
   assert.equal(/apiPutBpmnXml\(/.test(pollBody), false);
+  assert.equal(/apiGetBpmnVersions\(sid, \{ limit: 1 \}\)/.test(pollBody), true);
+  assert.equal(/apiGetSession\(sid\)/.test(pollBody), true);
 });
 
 test("passive remote-save notice is queued for manual refresh while own-writes stay auto-synced", () => {
@@ -58,7 +64,7 @@ test("passive remote-save notice is queued for manual refresh while own-writes s
     true,
   );
   assert.equal(
-    source.includes("if (sameActor) {"),
+    source.includes("if (sameActor || versionHeadActor.isCurrentUser === true) {"),
     true,
   );
   assert.equal(
@@ -71,6 +77,51 @@ test("passive remote-save notice is queued for manual refresh while own-writes s
   );
   assert.equal(
     source.includes("bpmnRef.current?.flashNode?.(elementId, \"sync\", { label: \"Remote\" });"),
+    true,
+  );
+});
+
+test("remote update toast uses version head actor, preserves refresh action, and dedupes by key", () => {
+  const source = readSource();
+  assert.equal(
+    source.includes("deriveRemoteVersionActor(versionHeadItem, currentUserId)"),
+    true,
+  );
+  assert.equal(
+    source.includes("buildRemoteUpdateToastMessage(remoteSaveHighlightView?.remoteToastActorLabel)"),
+    true,
+  );
+  assert.equal(
+    source.includes("buildRemoteUpdateToastKey({"),
+    true,
+  );
+  assert.equal(
+    source.includes("remoteUpdateToastLastShownKeyRef.current === remoteToastKey"),
+    true,
+  );
+  assert.equal(
+    source.includes("remoteUpdateToastDismissedKeyRef.current === remoteToastKey"),
+    true,
+  );
+  assert.equal(
+    source.includes("actionLabel: \"Обновить сессию\""),
+    true,
+  );
+  assert.equal(
+    source.includes("description: \"Обновите сессию, чтобы увидеть актуальную версию.\""),
+    true,
+  );
+  assert.equal(
+    source.includes("persistent: true"),
+    true,
+  );
+  assert.equal(
+    source.includes("requestedKind !== \"remote_update\"")
+      && source.includes("remoteUpdateToastDismissedKeyRef.current !== activeRemoteUpdateKey"),
+    true,
+  );
+  assert.equal(
+    source.includes("void applyPendingRemoteSaveRefresh();"),
     true,
   );
 });

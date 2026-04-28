@@ -121,6 +121,11 @@ import ProcessDialogs from "../features/process/stage/ui/ProcessDialogs";
 import ProcessStageHeader from "../features/process/stage/ui/ProcessStageHeader";
 import ProcessSaveAckToast from "../features/process/stage/ui/ProcessSaveAckToast";
 import { resolveProcessToastView } from "../features/process/stage/ui/processToastMessage";
+import {
+  buildRemoteUpdateToastKey,
+  buildRemoteUpdateToastMessage,
+  deriveRemoteVersionActor,
+} from "../features/process/stage/remoteSessionUpdateToast";
 import ProcessStageDiagramControls from "../features/process/stage/ui/ProcessStageDiagramControls";
 import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDiagramOverlayLayers";
 import ProcessStageSaveConflictModal from "../features/process/stage/ui/ProcessStageSaveConflictModal";
@@ -900,21 +905,48 @@ export default function ProcessStage({
   const saveAckToastTimerRef = useRef(0);
   const processStatusToastLastSignatureRef = useRef("");
   const saveLifecycleToastLastSignatureRef = useRef("");
+  const remoteUpdateToastLastShownKeyRef = useRef("");
+  const remoteUpdateToastDismissedKeyRef = useRef("");
   const [saveAckToast, setSaveAckToast] = useState({
     visible: false,
     tone: "success",
     message: "",
+    description: "",
+    actionLabel: "",
+    onAction: null,
+    actionDisabled: false,
+    persistent: false,
+    onDismiss: null,
+    kind: "",
+    remoteUpdateKey: "",
   });
   const [manualSaveIntent, setManualSaveIntent] = useState("");
-  const showSaveAckToast = useCallback((messageRaw, toneRaw = "success", sourceRaw = "") => {
+  const showSaveAckToast = useCallback((messageRaw, toneRaw = "success", sourceRaw = "", optionsRaw = {}) => {
     const message = toText(messageRaw);
     if (!message) return;
-    const toastView = resolveProcessToastView({
-      message,
-      tone: toneRaw,
-      source: sourceRaw,
-    });
+    const options = optionsRaw && typeof optionsRaw === "object" ? optionsRaw : {};
+    const requestedKind = toText(options.kind);
+    const activeRemoteUpdateKey = remoteUpdateToastLastShownKeyRef.current;
+    if (
+      requestedKind !== "remote_update"
+      && activeRemoteUpdateKey
+      && remoteUpdateToastDismissedKeyRef.current !== activeRemoteUpdateKey
+    ) {
+      return;
+    }
+    const shouldResolveMessage = options.resolveMessage !== false;
+    const toastView = shouldResolveMessage
+      ? resolveProcessToastView({
+        message,
+        tone: toneRaw,
+        source: sourceRaw,
+      })
+      : {
+        message,
+        tone: toneRaw,
+      };
     const tone = toText(toastView.tone) || "success";
+    const persistent = options.persistent === true;
     if (typeof window !== "undefined" && saveAckToastTimerRef.current) {
       window.clearTimeout(saveAckToastTimerRef.current);
       saveAckToastTimerRef.current = 0;
@@ -923,8 +955,16 @@ export default function ProcessStage({
       visible: true,
       tone,
       message: toastView.message,
+      description: toText(options.description),
+      actionLabel: toText(options.actionLabel),
+      onAction: typeof options.onAction === "function" ? options.onAction : null,
+      actionDisabled: options.actionDisabled === true,
+      persistent,
+      onDismiss: typeof options.onDismiss === "function" ? options.onDismiss : null,
+      kind: requestedKind,
+      remoteUpdateKey: toText(options.remoteUpdateKey),
     });
-    if (typeof window === "undefined") return;
+    if (persistent || typeof window === "undefined") return;
     saveAckToastTimerRef.current = window.setTimeout(() => {
       setSaveAckToast((prev) => ({
         ...prev,
@@ -1214,6 +1254,8 @@ export default function ProcessStage({
   const clearRemoteSaveHighlightBadge = useCallback(() => {
     setRemoteSaveHighlightBadge(null);
     setRemoteSaveHighlightBusy(false);
+    remoteUpdateToastLastShownKeyRef.current = "";
+    remoteUpdateToastDismissedKeyRef.current = "";
   }, []);
 
   useEffect(() => {
@@ -1264,6 +1306,12 @@ export default function ProcessStage({
         }, delayMs);
       });
       setRemoteSaveHighlightBadge(null);
+      remoteUpdateToastLastShownKeyRef.current = "";
+      setSaveAckToast((prev) => (
+        prev?.kind === "remote_update"
+          ? { ...prev, visible: false }
+          : prev
+      ));
       setInfoMsg("Сессия обновлена до актуального состояния.");
       return { ok: true, changedCount: changedElementIds.length };
     } catch (error) {
@@ -1293,8 +1341,10 @@ export default function ProcessStage({
     toText,
   ]);
 
-  const applyRemoteSaveHighlightFromServerSession = useCallback((sessionRaw, source = "remote_poll") => {
+  const applyRemoteSaveHighlightFromServerSession = useCallback((sessionRaw, source = "remote_poll", options = {}) => {
     const serverSession = asObject(sessionRaw);
+    const versionHeadItem = asObject(options?.versionHeadItem);
+    const versionHeadActor = deriveRemoteVersionActor(versionHeadItem, currentUserId);
     const currentSid = normalizeDiagramSessionId(sid);
     const sessionSid = normalizeDiagramSessionId(serverSession?.session_id || serverSession?.id || "");
     if (!isDiagramVersionSessionMatch(currentSid, sessionSid)) {
@@ -1326,13 +1376,19 @@ export default function ProcessStage({
       && lastWrite.actorUserId
       && String(currentUserId).trim().toLowerCase() === String(lastWrite.actorUserId).trim().toLowerCase()
     );
-    if (sameActor) {
+    if (sameActor || versionHeadActor.isCurrentUser === true) {
       onSessionSyncWithVersion?.({
         ...serverSession,
         _sync_source: `${source}_self_actor_sync`,
       });
       rememberDiagramStateVersion(serverVersionRounded, { sessionId: currentSid });
       setRemoteSaveHighlightBadge(null);
+      remoteUpdateToastLastShownKeyRef.current = "";
+      setSaveAckToast((prev) => (
+        prev?.kind === "remote_update"
+          ? { ...prev, visible: false }
+          : prev
+      ));
       return { ok: true, applied: true, highlighted: false, sameActor: true };
     }
     const localUnsafe = (
@@ -1357,10 +1413,17 @@ export default function ProcessStage({
       maxIds: 12,
     });
     const badgeView = buildRemoteSaveHighlightView({
-      actorLabelRaw: lastWrite.actorLabel,
+      actorLabelRaw: versionHeadActor.actorLabel || lastWrite.actorLabel,
       changedElementIdsRaw: changedElementIds,
       changedKeysRaw: lastWrite.changedKeys,
       atRaw: lastWrite.at,
+    });
+    const remoteToastKey = buildRemoteUpdateToastKey({
+      sessionId: currentSid,
+      diagramStateVersion: serverVersionRounded,
+      sessionPayloadHash: versionHeadItem.session_payload_hash || versionHeadItem.sessionPayloadHash || serverSession.session_payload_hash || serverSession.sessionPayloadHash,
+      versionId: versionHeadItem.id || versionHeadItem.version_id || versionHeadItem.versionId,
+      createdAt: versionHeadItem.created_at || versionHeadItem.createdAt,
     });
     setRemoteSaveHighlightBadge((prev) => {
       const prevVersion = Number(prev?.serverVersion || 0);
@@ -1372,6 +1435,8 @@ export default function ProcessStage({
         serverVersion: serverVersionRounded,
         source: toText(source),
         serverSession,
+        remoteToastKey,
+        remoteToastActorLabel: versionHeadActor.actorLabel,
       };
     });
     return { ok: true, applied: false, highlighted: true, pendingRefresh: true, changedCount: changedElementIds.length };
@@ -1458,7 +1523,9 @@ export default function ProcessStage({
           headVersionRounded,
         );
       }
-      return applyRemoteSaveHighlightFromServerSession(sessionLike, `remote_poll_${reason}`);
+      return applyRemoteSaveHighlightFromServerSession(sessionLike, `remote_poll_${reason}`, {
+        versionHeadItem: latestHead,
+      });
     } finally {
       remoteSessionPollInFlightRef.current = false;
     }
@@ -1514,12 +1581,57 @@ export default function ProcessStage({
       actorLabel: toText(value.actorLabel),
       changedElementIds: Array.isArray(value.changedElementIds) ? value.changedElementIds : [],
       at: Number(value.at || 0),
+      serverVersion: Number(value.serverVersion || 0),
+      remoteToastKey: toText(value.remoteToastKey),
+      remoteToastActorLabel: toText(value.remoteToastActorLabel || value.actorLabel),
       refreshLabel: toText(value.refreshLabel) || "Обновить сессию",
       refreshHint: toText(value.refreshHint) || "Загрузить актуальное состояние сессии с сервера.",
       busy: remoteSaveHighlightBusy === true,
       onRefreshSession: hasServerSession ? applyPendingRemoteSaveRefresh : undefined,
     };
   }, [applyPendingRemoteSaveRefresh, remoteSaveHighlightBadge, remoteSaveHighlightBusy, toText]);
+
+  useEffect(() => {
+    if (remoteSaveHighlightView?.visible !== true) return;
+    const remoteToastKey = toText(remoteSaveHighlightView?.remoteToastKey)
+      || buildRemoteUpdateToastKey({
+        sessionId: sid,
+        diagramStateVersion: remoteSaveHighlightView?.serverVersion,
+      });
+    if (!remoteToastKey) return;
+    if (remoteUpdateToastDismissedKeyRef.current === remoteToastKey) return;
+    if (remoteUpdateToastLastShownKeyRef.current === remoteToastKey) return;
+    remoteUpdateToastLastShownKeyRef.current = remoteToastKey;
+    const message = buildRemoteUpdateToastMessage(remoteSaveHighlightView?.remoteToastActorLabel);
+    showSaveAckToast(message, "warning", "remote_user", {
+      resolveMessage: false,
+      description: "Обновите сессию, чтобы увидеть актуальную версию.",
+      actionLabel: "Обновить сессию",
+      onAction: () => {
+        void applyPendingRemoteSaveRefresh();
+      },
+      persistent: true,
+      kind: "remote_update",
+      remoteUpdateKey: remoteToastKey,
+      onDismiss: () => {
+        remoteUpdateToastDismissedKeyRef.current = remoteToastKey;
+        setSaveAckToast((prev) => (
+          prev?.remoteUpdateKey === remoteToastKey
+            ? { ...prev, visible: false }
+            : prev
+        ));
+      },
+    });
+  }, [
+    applyPendingRemoteSaveRefresh,
+    remoteSaveHighlightView?.remoteToastActorLabel,
+    remoteSaveHighlightView?.remoteToastKey,
+    remoteSaveHighlightView?.serverVersion,
+    remoteSaveHighlightView?.visible,
+    showSaveAckToast,
+    sid,
+    toText,
+  ]);
 
   // Track the last project that had an active session so the explorer can
   // navigate back to it when the session is closed.
@@ -6174,6 +6286,16 @@ export default function ProcessStage({
         visible={saveAckToast.visible === true}
         message={saveAckToast.message}
         tone={saveAckToast.tone}
+        description={saveAckToast.description}
+        actionLabel={saveAckToast.kind === "remote_update" && remoteSaveHighlightBusy === true
+          ? "Обновляем..."
+          : saveAckToast.actionLabel}
+        onAction={saveAckToast.onAction}
+        actionDisabled={saveAckToast.kind === "remote_update"
+          ? remoteSaveHighlightBusy === true
+          : saveAckToast.actionDisabled === true}
+        persistent={saveAckToast.persistent === true}
+        onDismiss={saveAckToast.onDismiss}
       />
 
       <div

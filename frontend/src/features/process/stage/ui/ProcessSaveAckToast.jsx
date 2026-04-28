@@ -26,9 +26,19 @@ export default function ProcessSaveAckToast({
   visible = false,
   message = "",
   tone = "success",
+  description = "",
+  actionLabel = "",
+  onAction,
+  actionDisabled = false,
+  persistent = false,
+  onDismiss,
 } = {}) {
   const normalizedMessage = String(message || "").trim();
+  const normalizedDescription = String(description || "").trim();
+  const normalizedActionLabel = String(actionLabel || "").trim();
   const shouldRender = visible === true && normalizedMessage.length > 0;
+  const canDismiss = typeof onDismiss === "function";
+  const canAct = normalizedActionLabel.length > 0 && typeof onAction === "function";
   const [isMounted, setIsMounted] = useState(shouldRender);
   const [isShown, setIsShown] = useState(shouldRender);
 
@@ -252,10 +262,44 @@ export default function ProcessSaveAckToast({
       <div
         role="status"
         aria-live="polite"
-        className={`rounded-xl border px-3.5 py-2 text-[13px] font-medium leading-5 shadow-2xl backdrop-blur transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${isShown ? "translate-y-0 opacity-100" : "-translate-y-1 opacity-0"} ${toneClass}`}
+        className={`pointer-events-auto rounded-xl border px-3.5 py-2 text-[13px] font-medium leading-5 shadow-2xl backdrop-blur transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${isShown ? "translate-y-0 opacity-100" : "-translate-y-1 opacity-0"} ${toneClass}`}
         data-testid="process-save-ack-toast"
+        data-persistent={persistent === true ? "true" : undefined}
       >
-        {normalizedMessage}
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <div>{normalizedMessage}</div>
+            {normalizedDescription ? (
+              <div className="mt-0.5 text-[12px] font-normal opacity-80" data-testid="process-save-ack-toast-description">
+                {normalizedDescription}
+              </div>
+            ) : null}
+          </div>
+          {canDismiss ? (
+            <button
+              type="button"
+              className="-mr-1 -mt-1 h-7 w-7 shrink-0 rounded-md text-base leading-none opacity-70 transition hover:bg-black/10 hover:opacity-100 disabled:opacity-40"
+              onClick={onDismiss}
+              aria-label="Закрыть уведомление"
+              data-testid="process-save-ack-toast-dismiss"
+            >
+              ×
+            </button>
+          ) : null}
+        </div>
+        {canAct ? (
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              className="rounded-md border border-current/25 bg-white/35 px-2.5 py-1 text-[12px] font-semibold leading-4 transition hover:bg-white/55 disabled:cursor-not-allowed disabled:opacity-55"
+              onClick={onAction}
+              disabled={actionDisabled === true}
+              data-testid="process-save-ack-toast-action"
+            >
+              {normalizedActionLabel}
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );
