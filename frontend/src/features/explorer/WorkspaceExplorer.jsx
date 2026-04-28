@@ -34,6 +34,7 @@ import { useAuth } from "../auth/AuthProvider.jsx";
 import { buildVisibleRows, hasFolderChildren } from "./work3TreeState.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
 import { buildProjectBreadcrumbTrail, normalizeProjectBreadcrumbBase } from "./workspaceBreadcrumbs.js";
+import { folderCreateCopy, folderDisplayLabel } from "./workspaceDisplayLabels.js";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
 import NotesAggregateBadge from "../../components/NotesAggregateBadge.jsx";
 import { useSessionNoteAggregates } from "../../lib/sessionNoteAggregates.js";
@@ -195,10 +196,10 @@ const EXPLORER_COLUMN_PROFILES = {
   },
 };
 
-function EntityTypePill({ type }) {
+function EntityTypePill({ type, label = "" }) {
   const normalized = String(type || "").trim().toLowerCase();
   if (normalized === "folder") {
-    return <span className="inline-flex items-center rounded-full border border-sky-300/65 bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fg/85">Папка</span>;
+    return <span className="inline-flex items-center rounded-full border border-sky-300/65 bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fg/85">{label || "Папка"}</span>;
   }
   if (normalized === "project") {
     return <span className="inline-flex items-center rounded-full border border-violet-300/65 bg-violet-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fg/85">Проект</span>;
@@ -280,21 +281,6 @@ function LastActivityCell({ node, maxWidthClass = "max-w-[220px]", quiet = false
         {label}
       </div>
     </td>
-  );
-}
-
-function SummaryPill({ label, value, tone = "default" }) {
-  const toneClass = {
-    default: "border-border bg-panelAlt/60 text-fg",
-    muted: "border-border bg-bg text-muted",
-    success: "border-emerald-300 bg-emerald-50 text-emerald-700",
-    warning: "border-amber-300 bg-amber-50 text-amber-700",
-  }[tone] || "border-border bg-panelAlt/60 text-fg";
-  return (
-    <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs ${toneClass}`}>
-      <span className="uppercase tracking-[0.14em] text-[10px] opacity-60">{label}</span>
-      <span className="font-medium whitespace-nowrap">{value}</span>
-    </div>
   );
 }
 
@@ -572,6 +558,7 @@ function FolderRow({
   onReload,
   canEdit = false,
   canDelete = false,
+  currentFolderId = "",
   showSignalColumns = false,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -580,6 +567,10 @@ function FolderRow({
   const expandable = hasFolderChildren(folder);
   const leftPadding = 8 + depth * 18;
   const dodPercent = normalizeDodPercent(folder.rollup_dod_percent);
+  const folderLabel = folderDisplayLabel({ folder, depth, currentFolderId });
+  const folderLabelAccusative = folderLabel === "Раздел" ? "раздел" : "папку";
+  const folderLabelGenitive = folderLabel === "Раздел" ? "раздела" : "папки";
+  const folderLabelInstrumental = folderLabel === "Раздел" ? "разделом" : "папкой";
 
   const menuItems = [
     { label: "Открыть", icon: <IcoChevron right />, action: () => onNavigate(folder) },
@@ -599,8 +590,8 @@ function FolderRow({
                 onClick={() => onToggleExpand(folder)}
                 className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border bg-panelAlt/70 text-muted shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 ${loading ? "cursor-wait border-border/70" : "border-border/70 hover:border-border hover:bg-bg hover:text-fg active:bg-panelAlt"}`}
                 disabled={loading}
-                title={expanded ? "Скрыть вложенные папки и проекты" : "Показать вложенные папки и проекты"}
-                aria-label={expanded ? `Скрыть вложенные элементы папки ${folder.name}` : `Показать вложенные элементы папки ${folder.name}`}
+                title={expanded ? `Скрыть вложенные элементы ${folderLabelGenitive}` : `Показать вложенные элементы ${folderLabelGenitive}`}
+                aria-label={expanded ? `Скрыть вложенные элементы ${folderLabelGenitive} ${folder.name}` : `Показать вложенные элементы ${folderLabelGenitive} ${folder.name}`}
                 aria-expanded={expanded ? "true" : "false"}
               >
                 {loading ? (
@@ -618,7 +609,7 @@ function FolderRow({
             </button>
           </div>
         </td>
-        <td className="px-2 py-2.5 text-xs text-muted"><EntityTypePill type="folder" /></td>
+        <td className="px-2 py-2.5 text-xs text-muted"><EntityTypePill type="folder" label={folderLabel} /></td>
         <td className="px-2 py-2.5 text-xs text-muted text-center">
           {folder.child_folder_count ?? 0} / {folder.descendant_sessions_count ?? 0}
         </td>
@@ -637,8 +628,8 @@ function FolderRow({
           <button
             onClick={() => setMenuOpen((v) => !v)}
             className="opacity-45 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
-            title="Действия с папкой"
-            aria-label="Действия с папкой"
+            title={`Действия с ${folderLabelInstrumental}`}
+            aria-label={`Действия с ${folderLabelInstrumental}`}
           >
             ···
           </button>
@@ -647,7 +638,7 @@ function FolderRow({
       </tr>
       {renaming && canEdit && (
         <InputModal
-          title="Переименовать папку"
+          title={`Переименовать ${folderLabelAccusative}`}
           placeholder="Новое название"
           initialValue={folder.name}
           actionLabel="Сохранить"
@@ -661,8 +652,8 @@ function FolderRow({
       )}
       {deleting && canDelete && (
         <ConfirmModal
-          title="Удалить папку"
-          message={`Удалить папку «${folder.name}»? Если папка непустая, нужно подтвердить удаление с каскадом.`}
+          title={`Удалить ${folderLabelAccusative}`}
+          message={`Удалить ${folderLabelAccusative} «${folder.name}»? Если внутри есть элементы, нужно подтвердить удаление с каскадом.`}
           actionLabel="Удалить"
           onClose={() => setDeleting(false)}
           onConfirm={async () => {
@@ -898,6 +889,11 @@ function ExplorerPane({
   const isEmpty = !loading && !error && rootItems.length === 0;
   const treeColumnProfile = EXPLORER_COLUMN_PROFILES.tree;
   const inlineColSpan = treeColumnProfile.showSignalColumns ? 10 : 8;
+  const folderCopy = useMemo(() => folderCreateCopy(folderId || ""), [folderId]);
+  const folderCountHeader = folderId ? "Папки / Сессии" : "Разделы / Сессии";
+  const contextHeaderTitle = folderId
+    ? "Для папок: количество проектов, для проектов: владелец"
+    : "Для разделов: количество проектов, для проектов: владелец";
 
   const visibleRows = useMemo(
     () => buildVisibleRows({
@@ -993,7 +989,7 @@ function ExplorerPane({
               onClick={() => setCreatingFolder(true)}
               className="secondaryBtn h-7 px-2.5 text-xs flex items-center gap-1"
             >
-              <IcoPlus className="opacity-70" /> Папка
+              <IcoPlus className="opacity-70" /> {folderCopy.createLabel}
             </button>
           ) : null}
           {/* Project can only be created inside a folder, not at workspace root */}
@@ -1040,8 +1036,8 @@ function ExplorerPane({
               <tr className="border-b border-border/80 bg-panelAlt/25 text-[11px] uppercase tracking-wide text-fg/65">
                 <th className="px-2 py-2">Название</th>
                 <th className="px-2 py-2">Тип</th>
-                <th className="px-2 py-2 text-center">Папки / Сессии</th>
-                <th className="px-2 py-2" title="Для папок: количество проектов, для проектов: владелец">Контекст</th>
+                <th className="px-2 py-2 text-center">{folderCountHeader}</th>
+                <th className="px-2 py-2" title={contextHeaderTitle}>Контекст</th>
                 <th className="px-2 py-2">DoD</th>
                 {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">⚠</th> : null}
                 {treeColumnProfile.showSignalColumns ? <th className="px-2 py-2 text-center">📋</th> : null}
@@ -1077,6 +1073,7 @@ function ExplorerPane({
                       onReload={() => load({ resetInlineChildren: true })}
                       canEdit={!!permissions?.canRenameFolder}
                       canDelete={!!permissions?.canDeleteFolder}
+                      currentFolderId={folderId || ""}
                       showSignalColumns={treeColumnProfile.showSignalColumns}
                     />
                   );
@@ -1103,12 +1100,10 @@ function ExplorerPane({
           <IcoFolder className="w-12 h-12 text-muted/30" />
           <div className="text-center">
             <p className="text-base font-medium text-fg mb-1">
-              {folderId ? "Папка пустая" : "Workspace пустой"}
+              {folderCopy.emptyTitle}
             </p>
             <p className="text-sm text-muted">
-              {folderId
-                ? "Создайте вложенную папку или добавьте проект сюда"
-                : "Создайте папку — проекты хранятся внутри папок"}
+              {folderCopy.emptyHint}
             </p>
           </div>
           <div className="flex gap-2">
@@ -1117,7 +1112,7 @@ function ExplorerPane({
                 onClick={() => setCreatingFolder(true)}
                 className="secondaryBtn h-8 px-4 text-sm flex items-center gap-1"
               >
-                <IcoPlus className="opacity-70" /> Создать папку
+                <IcoPlus className="opacity-70" /> {folderCopy.createLabel}
               </button>
             ) : null}
             {folderId && permissions?.canCreate ? (
@@ -1135,8 +1130,8 @@ function ExplorerPane({
       {/* Modals */}
       {creatingFolder && permissions?.canCreate ? (
         <InputModal
-          title="Новая папка"
-          placeholder="Название папки"
+          title={folderCopy.modalTitle}
+          placeholder={folderCopy.placeholder}
           onClose={() => setCreatingFolder(false)}
           onSubmit={async (name) => {
             const resp = await apiCreateFolder(workspaceId, { name, parent_id: folderId || "" });
@@ -1472,6 +1467,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const backCrumbs = normalizeProjectBreadcrumbBase(breadcrumbBase);
   const projectBreadcrumbTrail = buildProjectBreadcrumbTrail(backCrumbs, proj?.name || "");
   const parentCrumb = backCrumbs.length ? backCrumbs[backCrumbs.length - 1] : null;
+  const sessionCount = Number(proj?.sessions_count || sessions.length || 0) || 0;
 
   if (loading) {
     return (
@@ -1516,30 +1512,9 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
           </div>
         </div>
 
-        {/* Project info strip */}
         {proj && (
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-xl font-semibold text-fg truncate">{proj.name}</h1>
-                <StatusBadge status={proj.status} />
-              </div>
-              {proj.description ? (
-                <p className="mt-1 text-sm text-muted truncate max-w-[420px]">{proj.description}</p>
-              ) : null}
-            </div>
-            <div className="flex items-center gap-2 flex-wrap justify-end">
-              {proj.owner ? (
-                <SummaryPill label="Owner" value={proj.owner.name || proj.owner.id} tone="muted" />
-              ) : null}
-              <SummaryPill label="DoD" value={<DodBar percent={proj.dod_percent} />} />
-              <SummaryPill label="Сессии" value={String(proj.sessions_count || sessions.length || 0)} tone="muted" />
-              <SummaryPill
-                label="Активность"
-                value={ts(proj.updated_at)}
-                tone={proj.attention_count > 0 ? "warning" : "default"}
-              />
-            </div>
+          <div className="mt-2 text-xs text-muted">
+            Сессии: {sessionCount}
           </div>
         )}
       </div>
