@@ -60,7 +60,7 @@ test("Discussions sidebar collapses heavy labels into a compact filters control"
   assert.doesNotMatch(notesMvpPanelSource, /text-\[10px\] font-semibold uppercase tracking-\[0\.08em\] text-muted">Порядок<\/span>/);
 });
 
-test("Discussions expose a participated threads filter without unread semantics", () => {
+test("Discussions expose a participated threads filter without changing unread semantics", () => {
   assert.match(notesMvpPanelSource, /isThreadParticipatedByCurrentUser/);
   assert.match(notesMvpPanelSource, /countParticipatedThreads/);
   assert.match(notesMvpPanelSource, /const \[participationFilter, setParticipationFilter\] = useState\("all"\);/);
@@ -71,8 +71,20 @@ test("Discussions expose a participated threads filter without unread semantics"
   assert.match(notesMvpPanelSource, /Пока нет обсуждений с вашим участием\./);
   assert.match(notesMvpPanelSource, /participationFilter === "my" && !isThreadParticipatedByCurrentUser\(thread, viewerUserId\)/);
   assert.match(notesMvpPanelSource, /setParticipationFilter\("all"\);/);
-  assert.doesNotMatch(notesMvpPanelSource, /unread\/new/);
   assert.doesNotMatch(notesMvpPanelSource, /непрочитанные/);
+});
+
+test("Discussion unread badges are separate from attention and clear through read state", () => {
+  assert.match(notesMvpPanelSource, /apiMarkNoteThreadRead/);
+  assert.match(notesMvpPanelSource, /function unreadCount\(thread\)/);
+  assert.match(notesMvpPanelSource, /const markReadInFlightRef = useRef\(new Set\(\)\);/);
+  assert.match(notesMvpPanelSource, /data-testid="notes-thread-unread-badge"/);
+  assert.match(notesMvpPanelSource, /Новые сообщения: \$\{newMessagesCount\}/);
+  assert.match(notesMvpPanelSource, /clearThreadUnread\(threadId, result\)/);
+  assert.match(notesMvpPanelSource, /unread_count: 0/);
+  assert.match(notesMvpPanelSource, /participatedThreadsCount/);
+  assert.match(notesMvpPanelSource, /requiresAttention\(thread\)/);
+  assert.doesNotMatch(notesMvpPanelSource, /attentionMeta\(thread\)[\s\S]{0,240}unread_count/);
 });
 
 test("Top toolbar keeps discussions as the primary entry and removes conflicting actions", () => {

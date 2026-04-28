@@ -509,6 +509,22 @@ export async function apiAcknowledgeNoteThreadAttention(threadId) {
   return r.ok ? { ok: true, status: r.status, thread: r.data?.thread || null } : r;
 }
 
+export async function apiMarkNoteThreadRead(threadId) {
+  const tid = String(threadId || "").trim();
+  if (!tid) return { ok: false, status: 0, error: "missing thread_id" };
+  const r = okOrError(await request(apiRoutes.noteThreads.read(tid), { method: "POST", body: {} }));
+  return r.ok
+    ? {
+      ok: true,
+      status: r.status,
+      threadId: String(r.data?.thread_id || tid),
+      lastReadAt: Number(r.data?.last_read_at || 0),
+      unreadCount: Number(r.data?.unread_count || 0),
+      result: r.data || null,
+    }
+    : r;
+}
+
 export async function apiPostAnswer(sessionId, payload) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
