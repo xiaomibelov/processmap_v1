@@ -66,7 +66,9 @@ from .storage import (
     update_org_git_mirror_config,
     get_project_explorer_invalidation_targets,
     session_version_payload_hash,
+    SESSION_PRESENCE_TTL_SECONDS,
     touch_session_presence,
+    leave_session_presence,
     list_session_presence,
     prune_stale_session_presence,
 )
@@ -741,7 +743,7 @@ def _session_api_dump(sess: Session) -> Dict[str, Any]:
     return d
 
 
-_SESSION_PRESENCE_TTL_SECONDS = 180
+_SESSION_PRESENCE_TTL_SECONDS = SESSION_PRESENCE_TTL_SECONDS
 _SESSION_PRESENCE_CLIENT_ID_RE = re.compile(r"[^A-Za-z0-9_.:-]+")
 _SESSION_PRESENCE_SURFACE_RE = re.compile(r"[^A-Za-z0-9_.:-]+")
 
@@ -3612,6 +3614,44 @@ def touch_session_presence_api(
         "session_id": sid,
         "ttl_seconds": _SESSION_PRESENCE_TTL_SECONDS,
         "active_users": active_users,
+    }
+
+
+@app.delete("/api/sessions/{session_id}/presence")
+def leave_session_presence_api(
+    session_id: str,
+    inp: SessionPresenceTouchIn,
+    request: Request = None,
+) -> Dict[str, Any]:
+    user_id, is_admin = _request_user_meta(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="authentication required")
+    sess, oid, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        raise HTTPException(status_code=404, detail="session not found")
+    client_id = _normalize_session_presence_client_id(getattr(inp, "client_id", ""))
+    if not client_id:
+        raise HTTPException(status_code=422, detail="client_id is required")
+    sid = str(getattr(sess, "id", "") or session_id).strip()
+    project_id = str(getattr(sess, "project_id", "") or "").strip()
+    org_id = str(oid or getattr(sess, "org_id", "") or get_default_org_id()).strip()
+    active_org_id = _request_active_org_id(request) if request is not None else org_id
+    if active_org_id and org_id and active_org_id != org_id:
+        raise HTTPException(status_code=404, detail="session not found")
+    if not _user_is_member_of_org(user_id, org_id, is_admin=is_admin):
+        raise HTTPException(status_code=404, detail="session not found")
+    removed = leave_session_presence(
+        sid,
+        user_id,
+        client_id,
+        org_id=org_id,
+        project_id=project_id,
+    )
+    prune_stale_session_presence(ttl_seconds=_SESSION_PRESENCE_TTL_SECONDS)
+    return {
+        "ok": True,
+        "session_id": sid,
+        "removed": removed,
     }
 
 

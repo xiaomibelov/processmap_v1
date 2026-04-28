@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { JSDOM } from "jsdom";
 
 import useSessionPresence, {
+  SESSION_PRESENCE_TTL_MS,
   getSessionPresenceClientId,
   normalizeSessionPresenceUsers,
 } from "./useSessionPresence.js";
@@ -78,6 +79,10 @@ test("session presence client id is stable in per-tab sessionStorage", () => {
   assert.equal(second, first);
 });
 
+test("session presence ttl constant is one minute", () => {
+  assert.equal(SESSION_PRESENCE_TTL_MS, 60000);
+});
+
 test("normalizeSessionPresenceUsers maps backend shape to header model shape", () => {
   const users = normalizeSessionPresenceUsers([
     {
@@ -107,18 +112,23 @@ test("normalizeSessionPresenceUsers maps backend shape to header model shape", (
 test("useSessionPresence heartbeats on mount and stops on unmount", async () => {
   const env = setupDom();
   const calls = [];
+  const leaveCalls = [];
   let latest = null;
   let cleaned = false;
   const apiTouch = async (sessionId, payload) => {
     calls.push({ sessionId, payload });
     return {
       ok: true,
-      ttl_seconds: 180,
+      ttl_seconds: 60,
       active_users: [
         { user_id: "user_me", display_name: "Я", last_seen_at: 100 },
         { user_id: "user_other", display_name: "Анна", last_seen_at: 100 },
       ],
     };
+  };
+  const apiLeave = async (sessionId, payload) => {
+    leaveCalls.push({ sessionId, payload });
+    return { ok: true, removed: 1 };
   };
   try {
     await act(async () => {
@@ -129,7 +139,7 @@ test("useSessionPresence heartbeats on mount and stops on unmount", async () => 
         hookProps: [
           "sess_1",
           { id: "user_me", email: "me@example.test" },
-          { apiTouch, heartbeatMs: 50 },
+          { apiTouch, apiLeave, heartbeatMs: 50 },
         ],
       }));
     });
@@ -140,15 +150,58 @@ test("useSessionPresence heartbeats on mount and stops on unmount", async () => 
     assert.ok(calls[0].payload.clientId);
     assert.equal(calls[0].payload.surface, "process_stage");
     assert.equal(latest.activeUsers.length, 2);
+    assert.equal(latest.ttlMs, 60000);
 
     await env.cleanup();
     cleaned = true;
     await wait(80);
     assert.equal(calls.length, 1);
+    assert.equal(leaveCalls.length, 1);
+    assert.equal(leaveCalls[0].sessionId, "sess_1");
+    assert.equal(leaveCalls[0].payload.clientId, calls[0].payload.clientId);
+    assert.equal(leaveCalls[0].payload.surface, "process_stage");
+    assert.equal(leaveCalls[0].payload.reason, "unmount");
   } finally {
     if (!cleaned) {
       await env.cleanup().catch(() => {});
     }
+  }
+});
+
+test("useSessionPresence sends best-effort leave on pagehide", async () => {
+  const env = setupDom();
+  const leaveCalls = [];
+  const apiTouch = async () => ({
+    ok: true,
+    ttl_seconds: 60,
+    active_users: [{ user_id: "user_me", display_name: "Я", last_seen_at: 100 }],
+  });
+  const apiLeave = async (sessionId, payload) => {
+    leaveCalls.push({ sessionId, payload });
+    return { ok: true, removed: 1 };
+  };
+  try {
+    await act(async () => {
+      env.root.render(React.createElement(Harness, {
+        expose: () => {},
+        hookProps: [
+          "sess_1",
+          { id: "user_me" },
+          { apiTouch, apiLeave, heartbeatMs: 5000 },
+        ],
+      }));
+    });
+    await wait(30);
+
+    env.dom.window.dispatchEvent(new env.dom.window.Event("pagehide"));
+    await wait(30);
+
+    assert.equal(leaveCalls.length, 1);
+    assert.equal(leaveCalls[0].sessionId, "sess_1");
+    assert.equal(leaveCalls[0].payload.reason, "page_exit");
+    assert.equal(leaveCalls[0].payload.keepalive, true);
+  } finally {
+    await env.cleanup();
   }
 });
 

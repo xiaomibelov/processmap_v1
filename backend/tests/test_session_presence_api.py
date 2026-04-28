@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -30,12 +31,14 @@ class SessionPresenceApiTests(unittest.TestCase):
         os.environ.pop("PROCESS_DB_PATH", None)
 
         from app.auth import create_user
-        from app._legacy_main import SessionPresenceTouchIn, touch_session_presence_api
+        from app._legacy_main import SessionPresenceTouchIn, leave_session_presence_api, touch_session_presence_api
         from app.storage import (
+            SESSION_PRESENCE_TTL_SECONDS,
             create_org_record,
             get_default_org_id,
             get_project_storage,
             get_storage,
+            leave_session_presence,
             list_session_presence,
             touch_session_presence,
             upsert_org_membership,
@@ -43,11 +46,14 @@ class SessionPresenceApiTests(unittest.TestCase):
         )
 
         self.SessionPresenceTouchIn = SessionPresenceTouchIn
+        self.SESSION_PRESENCE_TTL_SECONDS = SESSION_PRESENCE_TTL_SECONDS
+        self.leave_session_presence_api = leave_session_presence_api
         self.touch_session_presence_api = touch_session_presence_api
         self.get_default_org_id = get_default_org_id
         self.get_project_storage = get_project_storage
         self.get_storage = get_storage
         self.create_org_record = create_org_record
+        self.leave_session_presence = leave_session_presence
         self.list_session_presence = list_session_presence
         self.touch_session_presence = touch_session_presence
         self.upsert_org_membership = upsert_org_membership
@@ -125,7 +131,7 @@ class SessionPresenceApiTests(unittest.TestCase):
 
         self.assertEqual(out.get("ok"), True)
         self.assertEqual(out.get("session_id"), self.session_id)
-        self.assertEqual(out.get("ttl_seconds"), 180)
+        self.assertEqual(out.get("ttl_seconds"), 60)
         users = out.get("active_users") or []
         self.assertEqual(len(users), 1)
         self.assertEqual(users[0].get("display_name"), "Иван Петров")
@@ -184,7 +190,7 @@ class SessionPresenceApiTests(unittest.TestCase):
             self.session_id,
             org_id=self.org_id,
             project_id=self.project_id,
-            ttl_seconds=180,
+            ttl_seconds=self.SESSION_PRESENCE_TTL_SECONDS,
             now_ts=now + 10,
             current_user_id=user_a_id,
         )
@@ -224,10 +230,126 @@ class SessionPresenceApiTests(unittest.TestCase):
             self.session_id,
             org_id=self.org_id,
             project_id=self.project_id,
-            ttl_seconds=180,
+            ttl_seconds=self.SESSION_PRESENCE_TTL_SECONDS,
             now_ts=300010,
         )
         self.assertEqual(users, [])
+
+    def test_presence_default_ttl_excludes_users_inactive_over_sixty_seconds(self):
+        now = 400000
+        user_a_id = str(self.user_a.get("id") or "")
+        user_b_id = str(self.user_b.get("id") or "")
+        self.touch_session_presence(
+            self.session_id,
+            user_a_id,
+            "tab_a",
+            org_id=self.org_id,
+            project_id=self.project_id,
+            now_ts=now,
+        )
+        self.touch_session_presence(
+            self.session_id,
+            user_b_id,
+            "tab_b_stale",
+            org_id=self.org_id,
+            project_id=self.project_id,
+            now_ts=now - 61,
+        )
+
+        users = self.list_session_presence(
+            self.session_id,
+            org_id=self.org_id,
+            project_id=self.project_id,
+            now_ts=now,
+        )
+
+        self.assertEqual([item.get("user_id") for item in users], [user_a_id])
+
+    def test_leave_presence_removes_only_current_client(self):
+        now = int(time.time())
+        user_a_id = str(self.user_a.get("id") or "")
+        user_b_id = str(self.user_b.get("id") or "")
+        self.touch_session_presence(
+            self.session_id,
+            user_a_id,
+            "tab_a_1",
+            org_id=self.org_id,
+            project_id=self.project_id,
+            now_ts=now,
+        )
+        self.touch_session_presence(
+            self.session_id,
+            user_a_id,
+            "tab_a_2",
+            org_id=self.org_id,
+            project_id=self.project_id,
+            now_ts=now,
+        )
+        self.touch_session_presence(
+            self.session_id,
+            user_b_id,
+            "tab_b",
+            org_id=self.org_id,
+            project_id=self.project_id,
+            now_ts=now,
+        )
+
+        out = self.leave_session_presence_api(
+            self.session_id,
+            self._body("tab_a_1"),
+            request=self._req(self.user_a),
+        )
+
+        self.assertEqual(out.get("ok"), True)
+        self.assertEqual(out.get("removed"), 1)
+        users = self.list_session_presence(
+            self.session_id,
+            org_id=self.org_id,
+            project_id=self.project_id,
+            now_ts=now,
+            current_user_id=user_a_id,
+        )
+        self.assertEqual({item.get("user_id") for item in users}, {user_a_id, user_b_id})
+
+    def test_storage_leave_presence_does_not_cross_session_or_org(self):
+        st = self.get_storage()
+        other_session_id = st.create(
+            title="Other Leave Session",
+            roles=["owner"],
+            project_id=self.project_id,
+            user_id=str(self.user_a.get("id") or ""),
+            org_id=self.org_id,
+            is_admin=True,
+        )
+        user_a_id = str(self.user_a.get("id") or "")
+        self.touch_session_presence(
+            self.session_id,
+            user_a_id,
+            "tab_same",
+            org_id=self.org_id,
+            project_id=self.project_id,
+            now_ts=600000,
+        )
+        self.touch_session_presence(
+            other_session_id,
+            user_a_id,
+            "tab_same",
+            org_id=self.org_id,
+            project_id=self.project_id,
+            now_ts=600000,
+        )
+
+        removed = self.leave_session_presence(
+            self.session_id,
+            user_a_id,
+            "tab_same",
+            org_id=self.foreign_org_id,
+            project_id=self.project_id,
+        )
+
+        self.assertEqual(removed, 0)
+        self.assertEqual(len(self.list_session_presence(self.session_id, org_id=self.org_id, project_id=self.project_id, now_ts=600001)), 1)
+        self.assertEqual(len(self.list_session_presence(other_session_id, org_id=self.org_id, project_id=self.project_id, now_ts=600001)), 1)
 
 
 if __name__ == "__main__":

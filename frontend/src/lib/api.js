@@ -285,6 +285,31 @@ export async function apiTouchSessionPresence(sessionId, options = {}) {
   };
 }
 
+export async function apiLeaveSessionPresence(sessionId, options = {}) {
+  const id = String(sessionId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing session_id" };
+  const clientId = String(options?.clientId || options?.client_id || "").trim();
+  if (!clientId) return { ok: false, status: 0, error: "missing client_id" };
+  const body = {
+    client_id: clientId,
+    surface: String(options?.surface || "process_stage").trim() || "process_stage",
+  };
+  const r = okOrError(await request(apiRoutes.sessions.presence(id), {
+    method: "DELETE",
+    body,
+    keepalive: options?.keepalive === true,
+    telemetry: options?.telemetry !== false,
+  }));
+  if (!r.ok) return r;
+  const payload = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    session_id: String(payload.session_id || id),
+    removed: Number(payload.removed || 0),
+  };
+}
+
 export async function apiPatchSession(sessionId, patch) {
   const id = String(sessionId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing session_id" };

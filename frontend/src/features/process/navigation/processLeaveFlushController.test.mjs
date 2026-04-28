@@ -38,6 +38,26 @@ test("post-publish clean state bypasses leave flush and avoids false timeout", a
   assert.equal(flushCalls, 0);
 });
 
+test("clean project navigation skips leave flush to avoid false remote update", async () => {
+  let flushCalls = 0;
+  const result = await flushProcessStageBeforeLeave({
+    requestedSessionId: "sid_clean",
+    activeSessionId: "sid_clean",
+    saveDirtyHint: false,
+    hasXmlDraftChanges: false,
+    now: () => 120_000,
+    flushFromActiveTab: async () => {
+      flushCalls += 1;
+      return { ok: true, pending: false, xml: "<xml />" };
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.skipped, true);
+  assert.equal(result.reason, "clean_session_no_local_changes");
+  assert.equal(flushCalls, 0);
+});
+
 test("real flush failure still blocks leave navigation", async () => {
   let flushCalls = 0;
   const result = await flushProcessStageBeforeLeave({

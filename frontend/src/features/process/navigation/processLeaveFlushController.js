@@ -82,7 +82,6 @@ export async function flushProcessStageBeforeLeave({
   if (requestedSid && requestedSid !== sid) {
     return { ok: true, skipped: true, reason: "session_mismatch" };
   }
-
   const bypass = shouldBypassLeaveFlushAfterRecentPublish({
     activeSessionId: sid,
     saveDirtyHint,
@@ -92,6 +91,9 @@ export async function flushProcessStageBeforeLeave({
   });
   if (bypass.skip) {
     return { ok: true, skipped: true, reason: bypass.reason };
+  }
+  if (!hasDirtyDraftState({ saveDirtyHint, hasXmlDraftChanges })) {
+    return { ok: true, skipped: true, reason: "clean_session_no_local_changes" };
   }
 
   const flushFn = typeof flushFromActiveTab === "function"
