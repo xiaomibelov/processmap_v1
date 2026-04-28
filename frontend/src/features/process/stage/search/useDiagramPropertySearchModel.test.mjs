@@ -115,6 +115,37 @@ test("collectDiagramPropertySearchResults matches only by property name/value (c
   );
 });
 
+test("collectDiagramPropertySearchResults matches multi-word values with whitespace-normalized query", () => {
+  const rows = [
+    {
+      elementId: "Task_CheckOrder",
+      elementTitle: "Проверить заказ",
+      elementType: "bpmn:ServiceTask",
+      propertyName: "instruction",
+      propertyValue: "Проверить заказ перед отправкой",
+    },
+    {
+      elementId: "Task_Signal",
+      elementTitle: "Звуковой сигнал",
+      elementType: "bpmn:ServiceTask",
+      propertyName: "signal",
+      propertyValue: "Звуковой сигнал готов",
+    },
+  ];
+  assert.deepEqual(
+    collectDiagramPropertySearchResults(rows, "проверить заказ").map((item) => item.elementId),
+    ["Task_CheckOrder"],
+  );
+  assert.deepEqual(
+    collectDiagramPropertySearchResults(rows, "  проверить   заказ  ").map((item) => item.elementId),
+    ["Task_CheckOrder"],
+  );
+  assert.deepEqual(
+    collectDiagramPropertySearchResults(rows, "звуковой сигнал").map((item) => item.elementId),
+    ["Task_Signal"],
+  );
+});
+
 test("useDiagramPropertySearchModel supports wrap-around navigation and clears state on close", async () => {
   const { root, cleanup } = setupDom();
   let latest = null;

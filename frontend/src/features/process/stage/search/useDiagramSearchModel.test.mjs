@@ -98,6 +98,25 @@ test("collectDiagramSearchResults matches by id/name/label/type case-insensitive
   );
 });
 
+test("collectDiagramSearchResults matches multi-word names with whitespace-normalized query", () => {
+  const rows = [
+    { elementId: "Task_CheckOrder", name: "Проверить заказ", type: "bpmn:Task" },
+    { elementId: "Task_Signal", name: "Звуковой сигнал", type: "bpmn:Task" },
+  ];
+  assert.deepEqual(
+    collectDiagramSearchResults(rows, "проверить заказ").map((item) => item.elementId),
+    ["Task_CheckOrder"],
+  );
+  assert.deepEqual(
+    collectDiagramSearchResults(rows, "  проверить   заказ  ").map((item) => item.elementId),
+    ["Task_CheckOrder"],
+  );
+  assert.deepEqual(
+    collectDiagramSearchResults(rows, "звуковой сигнал").map((item) => item.elementId),
+    ["Task_Signal"],
+  );
+});
+
 test("useDiagramSearchModel supports wrap-around next/prev and clears state on close", async () => {
   const { root, cleanup } = setupDom();
   let latest = null;
