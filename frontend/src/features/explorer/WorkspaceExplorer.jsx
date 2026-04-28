@@ -53,12 +53,14 @@ import { folderCreateCopy, folderDisplayLabel } from "./workspaceDisplayLabels.j
 import {
   filterExplorerAssignableUsers,
   formatExplorerUserDisplay,
+  EXPLORER_ASSIGNEE_USERS_LOAD_TIMEOUT_MS,
   getExplorerAssigneeActionLabel,
   getExplorerAssigneeDialogTitle,
   getExplorerAssigneeId,
   getExplorerAssigneeKind,
   getExplorerBusinessAssignee,
   getExplorerBusinessAssigneeLabel,
+  normalizeExplorerAssignableUsersResponse,
 } from "./explorerAssigneeModel.js";
 import {
   getExplorerContextStatusLabel,
@@ -536,6 +538,12 @@ function assigneeMemberId(user) {
   return String(user?.user_id || user?.id || "").trim();
 }
 
+function assigneeMembersLoadTimeout() {
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(new Error("assignee_members_timeout")), EXPLORER_ASSIGNEE_USERS_LOAD_TIMEOUT_MS);
+  });
+}
+
 function AssigneeDialog({
   item,
   folderLabel = "Папка",
@@ -587,7 +595,7 @@ function AssigneeDialog({
         />
         <div className="max-h-[280px] overflow-y-auto rounded-lg border border-border bg-bg/60 p-1.5">
           {loadingUsers ? (
-            <div className="px-2.5 py-3 text-sm text-muted">Загрузка пользователей…</div>
+            <div className="px-2.5 py-3 text-sm text-muted">Загрузка пользователей...</div>
           ) : filteredUsers.length ? (
             filteredUsers.map((user) => {
               const uid = assigneeMemberId(user);
@@ -1288,6 +1296,7 @@ function ProjectRow({
   onAssign,
   onReload,
   canMove = false,
+  canAssign = false,
   canRename = false,
   canDelete = false,
   showSignalColumns = false,
@@ -1302,7 +1311,7 @@ function ProjectRow({
   const assigneeActionLabel = getExplorerAssigneeActionLabel(project);
   const menuItems = [
     { label: "Открыть", icon: <IcoChevron right />, action: () => onClick(project) },
-    ...(canRename ? [{ label: assigneeActionLabel, icon: <IcoEdit />, action: () => onAssign?.(project) }] : []),
+    ...(canAssign ? [{ label: assigneeActionLabel, icon: <IcoEdit />, action: () => onAssign?.(project) }] : []),
     ...(canMove ? [{ label: "Переместить", icon: <IcoMove />, action: () => onMove?.(project) }] : []),
     ...(canRename ? [{ label: "Переименовать", icon: <IcoEdit />, action: () => setRenaming(true) }] : []),
     ...(canDelete ? [{ separator: true }, { label: "Удалить", icon: <IcoTrash />, danger: true, action: () => setDeleting(true) }] : []),
@@ -1572,24 +1581,18 @@ function ExplorerPane({
     if (assigneeMembersState.orgId === oid && (assigneeMembersState.loaded || assigneeMembersState.loading)) return;
     let disposed = false;
     setAssigneeMembersState({ orgId: oid, items: [], loading: true, loaded: false, error: "" });
-    apiListOrgMembers(oid).then((resp) => {
+    Promise.race([
+      apiListOrgMembers(oid),
+      assigneeMembersLoadTimeout(),
+    ]).then((resp) => {
       if (disposed) return;
-      if (!resp?.ok) {
-        setAssigneeMembersState({
-          orgId: oid,
-          items: [],
-          loading: false,
-          loaded: true,
-          error: String(resp?.error || "Не удалось загрузить пользователей"),
-        });
-        return;
-      }
+      const normalized = normalizeExplorerAssignableUsersResponse(resp);
       setAssigneeMembersState({
         orgId: oid,
-        items: Array.isArray(resp.items) ? resp.items : [],
+        items: normalized.items,
         loading: false,
         loaded: true,
-        error: "",
+        error: normalized.error,
       });
     }).catch((e) => {
       if (disposed) return;
@@ -1598,7 +1601,7 @@ function ExplorerPane({
         items: [],
         loading: false,
         loaded: true,
-        error: String(e?.message || "Не удалось загрузить пользователей"),
+        error: "Не удалось загрузить пользователей.",
       });
     });
     return () => { disposed = true; };
@@ -1913,6 +1916,7 @@ function ExplorerPane({
                     }}
                     onReload={() => load({ resetInlineChildren: true })}
                     canMove={!!permissions?.canRenameProject}
+                    canAssign={!!permissions?.canRenameProject}
                     canRename={!!permissions?.canRenameProject}
                     canDelete={!!permissions?.canDeleteProject}
                     showSignalColumns={treeColumnProfile.showSignalColumns}

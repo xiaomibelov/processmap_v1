@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  EXPLORER_ASSIGNEE_USERS_LOAD_TIMEOUT_MS,
   filterExplorerAssignableUsers,
   formatExplorerUserDisplay,
   getExplorerAssigneeActionLabel,
@@ -12,6 +13,7 @@ import {
   getExplorerBusinessAssignee,
   getExplorerBusinessAssigneeKind,
   getExplorerBusinessAssigneeLabel,
+  normalizeExplorerAssignableUsersResponse,
 } from "./explorerAssigneeModel.js";
 
 test("folder and section rows use responsible user display", () => {
@@ -29,6 +31,7 @@ test("folder and section rows use responsible user display", () => {
   assert.deepEqual(getExplorerBusinessAssignee(section), section.responsible_user);
   assert.equal(getExplorerAssigneeActionLabel(section), "Изменить ответственного");
   assert.equal(getExplorerAssigneeDialogTitle(section, { folderLabel: "Раздел" }), "Ответственный за раздел");
+  assert.equal(getExplorerAssigneeDialogTitle(section, { folderLabel: "Папка" }), "Ответственный за папку");
 });
 
 test("project rows use executor user display and never fall back to owner", () => {
@@ -74,4 +77,30 @@ test("user display and filtering use name email and job title", () => {
   assert.equal(formatExplorerUserDisplay(users[0]), "Анна Иванова");
   assert.deepEqual(filterExplorerAssignableUsers(users, "тех").map((user) => user.user_id), ["u2"]);
   assert.deepEqual(filterExplorerAssignableUsers(users, "anna").map((user) => user.user_id), ["u1"]);
+});
+
+test("user display falls back to short user id only when names and email are missing", () => {
+  assert.equal(formatExplorerUserDisplay({ user_id: "1234567890abcdef" }), "12345678...");
+  assert.equal(formatExplorerUserDisplay({ user_id: "1234567890abcdef", email: "member@example.test" }), "member@example.test");
+});
+
+test("assignable users response accepts known shapes and normalizes failures", () => {
+  assert.ok(EXPLORER_ASSIGNEE_USERS_LOAD_TIMEOUT_MS > 0);
+
+  assert.deepEqual(
+    normalizeExplorerAssignableUsersResponse({ ok: true, items: [{ user_id: "u1" }] }).items,
+    [{ user_id: "u1" }],
+  );
+  assert.deepEqual(
+    normalizeExplorerAssignableUsersResponse({ ok: true, data: { members: [{ user_id: "u2" }] } }).items,
+    [{ user_id: "u2" }],
+  );
+  assert.deepEqual(
+    normalizeExplorerAssignableUsersResponse({ ok: true, data: {} }).items,
+    [],
+  );
+  assert.equal(
+    normalizeExplorerAssignableUsersResponse({ ok: false, status: 403, error: "insufficient_permissions" }).error,
+    "Не удалось загрузить пользователей.",
+  );
 });
