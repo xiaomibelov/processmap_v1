@@ -70,7 +70,7 @@ export default function DiagramSearchPopover({
           type="text"
           className="input h-8 min-h-0 text-xs"
           value={query}
-          onChange={(event) => onQueryChange?.(toText(event.target.value))}
+          onChange={(event) => onQueryChange?.(event.target.value)}
           placeholder={queryPlaceholder}
           data-testid="diagram-action-search-input"
         />
