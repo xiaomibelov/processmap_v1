@@ -354,6 +354,15 @@ def acknowledge_note_thread_attention(thread_id: str, request: Request) -> Dict[
     return {"thread": thread}
 
 
+@router.post("/api/note-threads/{thread_id}/read")
+def mark_note_thread_read(thread_id: str, request: Request) -> Dict[str, Any]:
+    _thread, _sess, org_id, user_id = _load_thread_session_for_notes(request, thread_id, write=False)
+    result = storage.mark_note_thread_read(thread_id, actor_user_id=user_id, org_id=org_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="note thread not found")
+    return result
+
+
 @router.patch("/api/note-threads/{thread_id}")
 def patch_note_thread(thread_id: str, body: PatchNoteThreadBody, request: Request) -> Dict[str, Any]:
     _thread, _sess, org_id, user_id = _load_thread_session_for_notes(request, thread_id, write=True)
