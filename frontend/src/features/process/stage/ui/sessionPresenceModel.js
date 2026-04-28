@@ -56,56 +56,6 @@ export function pruneSessionPresenceActors(actorsRaw = [], {
   return next;
 }
 
-export function upsertSessionPresenceActor(actorsRaw = [], actorRaw = null, {
-  nowMs = Date.now(),
-  ttlMs = 120000,
-  minTouchMs = 15000,
-  maxActors = 12,
-} = {}) {
-  const now = toPositiveEpochMs(nowMs, Date.now());
-  const actor = normalizeActor(actorRaw, now);
-  const current = pruneSessionPresenceActors(actorsRaw, { nowMs: now, ttlMs, maxActors });
-  if (!actor) return current;
-  const existingIndex = current.findIndex((item) => item.key === actor.key);
-  if (existingIndex >= 0) {
-    const existing = current[existingIndex];
-    const nextSeenAt = Math.max(existing.lastSeenAt, actor.lastSeenAt || now);
-    const shouldTouch = (
-      nextSeenAt - existing.lastSeenAt >= Math.max(0, Number(minTouchMs || 0))
-      || toText(existing.label) !== toText(actor.label)
-    );
-    if (!shouldTouch) return current;
-    const updated = [...current];
-    updated[existingIndex] = {
-      ...existing,
-      label: toText(actor.label) || existing.label,
-      lastSeenAt: nextSeenAt,
-    };
-    updated.sort((a, b) => b.lastSeenAt - a.lastSeenAt);
-    return updated;
-  }
-  const next = [
-    ...current,
-    {
-      key: actor.key,
-      userId: actor.userId,
-      label: actor.label,
-      lastSeenAt: actor.lastSeenAt || now,
-    },
-  ];
-  next.sort((a, b) => b.lastSeenAt - a.lastSeenAt);
-  return next.slice(0, maxActors);
-}
-
-function pluralizeUsersRu(count = 0) {
-  const n = Math.abs(Number(count || 0));
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return "пользователь";
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "пользователя";
-  return "пользователей";
-}
-
 export function buildSessionPresenceView({
   actorsRaw = [],
   currentUserIdRaw = "",
@@ -133,7 +83,7 @@ export function buildSessionPresenceView({
   if (names.length <= 2) {
     label = `В сессии: ${names.join(", ")}`;
   } else {
-    label = `В сессии ещё ${names.length} ${pluralizeUsersRu(names.length)}`;
+    label = `В сессии: ${names[0]} +${names.length - 1}`;
   }
   return {
     visible: true,
@@ -143,4 +93,3 @@ export function buildSessionPresenceView({
     users: others,
   };
 }
-
