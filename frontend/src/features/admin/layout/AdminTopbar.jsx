@@ -1,14 +1,21 @@
-import StatusPill from "../components/common/StatusPill";
 import { formatRoleWithScope } from "../adminRoles";
 import { toText } from "../adminUtils";
 import { ru } from "../../../shared/i18n/ru";
 
 function ContextBadge({ label, value, tone = "default" }) {
+  const toneClass = (
+    tone === "danger"
+      ? "border-rose-200 bg-rose-50 text-rose-700"
+      : tone === "warn"
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : tone === "ok"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          : "border-slate-200 bg-white text-slate-950"
+  );
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-      <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400">{label}</div>
-      <div className="mt-1 text-sm font-medium text-slate-950">{value}</div>
-      {tone !== "default" ? <div className="mt-2"><StatusPill status={value} tone={tone} label={label} /></div> : null}
+    <div className={`inline-flex min-w-0 items-center gap-2 rounded-2xl border px-3 py-1.5 text-sm shadow-sm ${toneClass}`}>
+      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.18em] opacity-70">{label}</span>
+      <span className="min-w-0 truncate font-medium">{value}</span>
     </div>
   );
 }
@@ -37,7 +44,7 @@ export default function AdminTopbar({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <ContextBadge label={ru.admin.topbar.org} value={currentOrgLabel} />
-          <ContextBadge label="Redis" value={toText(redisMode) || "UNKNOWN"} tone={redisTone} />
+          <ContextBadge label="Система" value={`Redis ${toText(redisMode) || "UNKNOWN"}`} tone={redisTone} />
           <ContextBadge label={ru.admin.topbar.user} value={userLabel} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
