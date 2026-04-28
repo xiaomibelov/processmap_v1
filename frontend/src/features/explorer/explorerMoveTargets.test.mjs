@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildProjectMoveTargets,
   buildFolderMoveTargets,
   collectLoadedFolders,
   isKnownDescendantFolder,
@@ -96,4 +97,37 @@ test("folder page root items inherit current folder parent for display labels", 
   const byId = new Map(targets.map((item) => [item.id, item]));
 
   assert.equal(byId.get("folder_without_parent").label, "Папка: Без parent_id");
+});
+
+test("project move targets show sections and folders and disable current folder", () => {
+  const targets = buildProjectMoveTargets({
+    rootItems: [section, siblingSection],
+    childItemsByFolder: {
+      section_a: [folder],
+      folder_a: [childFolder],
+    },
+    project: { id: "project_a", type: "project", name: "Проект", folder_id: "folder_a" },
+  });
+  const byId = new Map(targets.map((item) => [item.id, item]));
+
+  assert.equal(byId.get("section_a").label, "Раздел: Продажи");
+  assert.equal(byId.get("section_b").disabled, false);
+  assert.equal(byId.get("folder_a").label, "Папка: Регламенты");
+  assert.equal(byId.get("folder_a").disabledReason, "Текущее расположение");
+  assert.equal(byId.get("folder_child").disabled, false);
+});
+
+test("project move targets include current folder when current page omits it", () => {
+  const targets = buildProjectMoveTargets({
+    rootItems: [childFolder],
+    rootParentId: "folder_a",
+    currentFolder: folder,
+    currentFolderId: "folder_a",
+    project: { id: "project_a", type: "project", name: "Проект", folder_id: "folder_a" },
+  });
+  const byId = new Map(targets.map((item) => [item.id, item]));
+
+  assert.equal(byId.get("folder_a").label, "Папка: Регламенты");
+  assert.equal(byId.get("folder_a").disabledReason, "Текущее расположение");
+  assert.equal(byId.get("folder_child").label, "Папка: Архив");
 });
