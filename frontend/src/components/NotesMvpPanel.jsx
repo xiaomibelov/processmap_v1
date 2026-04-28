@@ -6,6 +6,7 @@ import {
   apiListMentionableUsers,
   apiListNoteThreads,
   apiMarkNoteThreadRead,
+  apiPatchNoteComment,
   apiPatchNoteThread,
 } from "../lib/api";
 import {
@@ -75,6 +76,27 @@ function logDiscussionFocusDiag(event, payload = {}) {
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function emptyMentionComposer() {
+  return { selected: [], active: null, highlightedIndex: 0 };
+}
+
+function commentBodyPreview(value, fallback = "Сообщение") {
+  const body = text(value);
+  const firstLine = String(value || "").split(/\r?\n/u).map((line) => text(line)).find(Boolean) || body;
+  if (!firstLine) return fallback;
+  return firstLine.length > 160 ? `${firstLine.slice(0, 159).trim()}…` : firstLine;
+}
+
+function storedMentionsForEdit(comment) {
+  return asArray(comment?.mentions).map((mention) => ({
+    user_id: text(mention?.mentioned_user_id),
+    label: text(mention?.mentioned_label),
+    email: "",
+    full_name: text(mention?.mentioned_label),
+    job_title: "",
+  })).filter((item) => item.user_id && item.label);
 }
 
 function numericTime(value) {
@@ -398,6 +420,10 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     session: "",
   });
   const [commentDraftByThread, setCommentDraftByThread] = useState({});
+  const [replyTargetByThread, setReplyTargetByThread] = useState({});
+  const [editingCommentId, setEditingCommentId] = useState("");
+  const [editDraftByComment, setEditDraftByComment] = useState({});
+  const [editMentionByComment, setEditMentionByComment] = useState({});
   const [legacyDraftByThread, setLegacyDraftByThread] = useState({});
   const aggregate = useSessionNoteAggregate(sid);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -407,6 +433,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const panelRef = useRef(null);
   const createDetailsRef = useRef(null);
   const commentDraftRef = useRef(null);
+  const editDraftRef = useRef(null);
   const markReadInFlightRef = useRef(new Set());
 
   const createSubject = createSubjectByScope[createScope] || "";
@@ -514,7 +541,10 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const selectedThreadLinkedElement = useMemo(() => linkedElementContext(selectedThread), [selectedThread]);
 
   const commentDraft = commentDraftByThread[text(selectedThread?.id)] || "";
-  const commentMentionComposer = commentMentionByThread[text(selectedThread?.id)] || { selected: [], active: null, highlightedIndex: 0 };
+  const commentMentionComposer = commentMentionByThread[text(selectedThread?.id)] || emptyMentionComposer();
+  const replyTarget = replyTargetByThread[text(selectedThread?.id)] || null;
+  const editDraft = editDraftByComment[editingCommentId] || "";
+  const editMentionComposer = editMentionByComment[editingCommentId] || emptyMentionComposer();
   const legacyDraft = legacyDraftByThread[text(selectedThread?.id)] || "";
   const openThreadsCount = Math.max(0, Number(aggregate?.open_notes_count || 0) || 0);
   const activeFilterCount = Number(statusFilter !== "open") + Number(scopeFilter !== "all") + Number(participationFilter !== "all") + Number(sortOrder !== "newest");
@@ -545,6 +575,10 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const commentMentionSuggestions = useMemo(
     () => filterMentionSuggestions(mentionableUsers, commentMentionComposer.active?.query || "", commentMentionComposer.selected),
     [commentMentionComposer.active?.query, commentMentionComposer.selected, mentionableUsers],
+  );
+  const editMentionSuggestions = useMemo(
+    () => filterMentionSuggestions(mentionableUsers, editMentionComposer.active?.query || "", editMentionComposer.selected),
+    [editMentionComposer.active?.query, editMentionComposer.selected, mentionableUsers],
   );
 
   function focusTextareaAt(ref, caretIndex) {
@@ -618,6 +652,44 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     focusTextareaAt(commentDraftRef, result.caretIndex);
   }
 
+  function updateEditDraft(commentId, nextValue, caretIndex) {
+    const cid = text(commentId);
+    if (!cid) return;
+    setEditDraftByComment((prev) => ({ ...prev, [cid]: nextValue }));
+    setEditMentionByComment((prev) => {
+      const current = prev[cid] || emptyMentionComposer();
+      return {
+        ...prev,
+        [cid]: {
+          selected: pruneSelectedMentions(nextValue, current.selected),
+          active: detectMentionQuery(nextValue, caretIndex),
+          highlightedIndex: 0,
+        },
+      };
+    });
+  }
+
+  function selectEditMention(user) {
+    const commentId = text(editingCommentId);
+    if (!commentId) return;
+    const caret = editDraftRef.current?.selectionStart ?? editDraft.length;
+    const result = insertMentionText(editDraft, editMentionComposer.active, user, caret);
+    if (!result.mention) return;
+    setEditDraftByComment((prev) => ({ ...prev, [commentId]: result.text }));
+    setEditMentionByComment((prev) => {
+      const current = prev[commentId] || emptyMentionComposer();
+      return {
+        ...prev,
+        [commentId]: {
+          selected: pruneSelectedMentions(result.text, [...asArray(current.selected), result.mention]),
+          active: null,
+          highlightedIndex: 0,
+        },
+      };
+    });
+    focusTextareaAt(editDraftRef, result.caretIndex);
+  }
+
   function handleMentionKeyDown(event, composer, suggestions, setComposer, onSelect) {
     if (!composer?.active || !asArray(suggestions).length) return;
     if (event.key === "ArrowDown") {
@@ -651,8 +723,17 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     const threadId = text(selectedThread?.id);
     if (!threadId) return;
     setCommentMentionByThread((prev) => {
-      const current = prev[threadId] || { selected: [], active: null, highlightedIndex: 0 };
+      const current = prev[threadId] || emptyMentionComposer();
       return { ...prev, [threadId]: updater(current) };
+    });
+  }
+
+  function setEditComposerForActive(updater) {
+    const commentId = text(editingCommentId);
+    if (!commentId) return;
+    setEditMentionByComment((prev) => {
+      const current = prev[commentId] || emptyMentionComposer();
+      return { ...prev, [commentId]: updater(current) };
     });
   }
 
@@ -754,8 +835,12 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setError("");
     setCreateOpen(false);
     setMentionableUsers([]);
-    setCreateMentionComposer({ selected: [], active: null, highlightedIndex: 0 });
+    setCreateMentionComposer(emptyMentionComposer());
     setCommentMentionByThread({});
+    setReplyTargetByThread({});
+    setEditingCommentId("");
+    setEditDraftByComment({});
+    setEditMentionByComment({});
   }, [sid]);
 
   const applyExternalOpenRequest = useCallback((requestLike) => {
@@ -1010,7 +1095,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setCreateDetailsByScope((prev) => ({ ...prev, [scopeKey]: "" }));
     setCreatePriority("normal");
     setCreateRequiresAttention(false);
-    setCreateMentionComposer({ selected: [], active: null, highlightedIndex: 0 });
+    setCreateMentionComposer(emptyMentionComposer());
     setCreateOpen(false);
     setSelectedThreadId(nextThreadId);
     await fetchThreads({ preferredThreadId: nextThreadId });
@@ -1018,6 +1103,95 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     emitNoteMentionsChanged();
     setCreateSubjectByScope((prev) => (prev[scopeKey] ? { ...prev, [scopeKey]: "" } : prev));
     setCreateDetailsByScope((prev) => (prev[scopeKey] ? { ...prev, [scopeKey]: "" } : prev));
+    setBusy("");
+  }
+
+  function startReply(comment, author) {
+    const threadId = text(selectedThread?.id);
+    const commentId = text(comment?.id);
+    if (!threadId || !commentId || selectedThreadIsLegacyBridge) return;
+    setReplyTargetByThread((prev) => ({
+      ...prev,
+      [threadId]: {
+        id: commentId,
+        author_display: text(author) || authorLabel(comment?.author_user_id, authorLabelsById, viewerUserId),
+        body_preview: commentBodyPreview(comment?.body),
+        created_at: Number(comment?.created_at || 0) || 0,
+      },
+    }));
+    focusTextareaAt(commentDraftRef, commentDraft.length);
+  }
+
+  function clearReplyTarget(threadId = text(selectedThread?.id)) {
+    const tid = text(threadId);
+    if (!tid) return;
+    setReplyTargetByThread((prev) => {
+      if (!prev[tid]) return prev;
+      const next = { ...prev };
+      delete next[tid];
+      return next;
+    });
+  }
+
+  function startEditComment(comment) {
+    const commentId = text(comment?.id);
+    if (!commentId || selectedThreadIsLegacyBridge) return;
+    setEditingCommentId(commentId);
+    setEditDraftByComment((prev) => ({ ...prev, [commentId]: String(comment?.body || "") }));
+    setEditMentionByComment((prev) => ({
+      ...prev,
+      [commentId]: {
+        selected: pruneSelectedMentions(comment?.body || "", storedMentionsForEdit(comment)),
+        active: null,
+        highlightedIndex: 0,
+      },
+    }));
+    focusTextareaAt(editDraftRef, String(comment?.body || "").length);
+  }
+
+  function cancelEditComment(commentId = editingCommentId) {
+    const cid = text(commentId);
+    if (!cid) return;
+    setEditingCommentId((current) => (current === cid ? "" : current));
+    setEditDraftByComment((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, cid)) return prev;
+      const next = { ...prev };
+      delete next[cid];
+      return next;
+    });
+    setEditMentionByComment((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, cid)) return prev;
+      const next = { ...prev };
+      delete next[cid];
+      return next;
+    });
+  }
+
+  async function saveEditComment(comment) {
+    const commentId = text(comment?.id);
+    const body = text(editDraftByComment[commentId]);
+    if (!commentId || !body || disabled || selectedThreadIsLegacyBridge) return;
+    const editMentionUserIds = mentionUserIdsForSubmit(body, (editMentionByComment[commentId] || emptyMentionComposer()).selected);
+    setBusy(`edit:${commentId}`);
+    setError("");
+    const result = await apiPatchNoteComment(commentId, {
+      body,
+      mention_user_ids: editMentionUserIds,
+    });
+    if (!result.ok) {
+      setError(errorText(result, "Не удалось сохранить сообщение."));
+      setBusy("");
+      return;
+    }
+    const nextThread = result.thread;
+    if (nextThread?.id) {
+      setThreads((prev) => asArray(prev).map((thread) => (text(thread?.id) === text(nextThread.id) ? nextThread : thread)));
+      setSelectedThreadId(text(nextThread.id));
+    } else {
+      await fetchThreads({ preferredThreadId: text(selectedThread?.id) });
+    }
+    cancelEditComment(commentId);
+    emitNoteMentionsChanged();
     setBusy("");
   }
 
@@ -1031,6 +1205,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     const result = await apiAddNoteThreadComment(threadId, {
       body,
       mention_user_ids: commentMentionUserIds,
+      reply_to_comment_id: text(replyTarget?.id) || undefined,
     });
     if (!result.ok) {
       setError(errorText(result, "Не удалось отправить сообщение."));
@@ -1038,7 +1213,8 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       return;
     }
     setCommentDraftByThread((prev) => ({ ...prev, [threadId]: "" }));
-    setCommentMentionByThread((prev) => ({ ...prev, [threadId]: { selected: [], active: null, highlightedIndex: 0 } }));
+    setCommentMentionByThread((prev) => ({ ...prev, [threadId]: emptyMentionComposer() }));
+    clearReplyTarget(threadId);
     setSelectedThreadId(threadId);
     await fetchThreads({ preferredThreadId: threadId });
     clearThreadUnread(threadId, result);
@@ -1480,6 +1656,18 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                           const author = authorLabel(comment?.author_user_id, authorLabelsById, viewerUserId);
                           const commentId = text(comment?.id);
                           const commentFocused = commentId && commentId === focusedCommentId;
+                          const replyToId = text(comment?.reply_to_comment_id);
+                          const replyTargetComment = replyToId
+                            ? asArray(selectedThread.comments).find((item) => text(item?.id) === replyToId)
+                            : null;
+                          const replySummary = comment?.reply_to || (replyTargetComment ? {
+                            id: text(replyTargetComment.id),
+                            author_display: authorLabel(replyTargetComment?.author_user_id, authorLabelsById, viewerUserId),
+                            body_preview: commentBodyPreview(replyTargetComment?.body),
+                            created_at: Number(replyTargetComment?.created_at || 0) || 0,
+                          } : null);
+                          const isEditing = commentId && editingCommentId === commentId;
+                          const canEditComment = !!viewerUserId && text(comment?.author_user_id) === viewerUserId;
                           return (
                             <article
                               key={commentId || `comment_${idx + 1}`}
@@ -1491,11 +1679,90 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                                   {authorInitials(author)}
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                                    <span className="text-[13px] font-semibold text-fg">{author}</span>
-                                    <span className="text-[11px] text-muted">{formatDate(comment?.updated_at || comment?.created_at) || "только что"}</span>
+                                  <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                                      <span className="text-[13px] font-semibold text-fg">{author}</span>
+                                      <span className="text-[11px] text-muted">{formatDate(comment?.updated_at || comment?.created_at) || "только что"}</span>
+                                      {numericTime(comment?.edited_at) ? (
+                                        <span className="text-[11px] font-semibold text-muted" data-testid="notes-comment-edited-marker">изменено</span>
+                                      ) : null}
+                                    </div>
+                                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                                      {commentId ? (
+                                        <button
+                                          type="button"
+                                          className="secondaryBtn tinyBtn h-7 px-2 text-[11px]"
+                                          onClick={() => startReply(comment, author)}
+                                          disabled={disabled || busy.startsWith("comment:") || busy.startsWith("edit:")}
+                                          data-testid="notes-comment-reply-action"
+                                        >
+                                          Ответить
+                                        </button>
+                                      ) : null}
+                                      {canEditComment ? (
+                                        <button
+                                          type="button"
+                                          className="secondaryBtn tinyBtn h-7 px-2 text-[11px]"
+                                          onClick={() => startEditComment(comment)}
+                                          disabled={disabled || busy.startsWith("edit:")}
+                                          data-testid="notes-comment-edit-action"
+                                        >
+                                          Редактировать
+                                        </button>
+                                      ) : null}
+                                    </div>
                                   </div>
-                                  <NoteMarkdown>{comment?.body}</NoteMarkdown>
+                                  {replyToId ? (
+                                    <div className="mt-2 rounded-lg border border-info/30 bg-info/5 px-2.5 py-2 text-xs leading-relaxed text-muted" data-testid="notes-comment-reply-quote">
+                                      {replySummary ? (
+                                        <>
+                                          <div className="font-semibold text-fg">{text(replySummary.author_display) || "Пользователь"}</div>
+                                          <div className="mt-0.5 line-clamp-2">{text(replySummary.body_preview) || "Сообщение без текста"}</div>
+                                        </>
+                                      ) : (
+                                        <div className="font-semibold">Исходное сообщение недоступно.</div>
+                                      )}
+                                    </div>
+                                  ) : null}
+                                  {isEditing ? (
+                                    <div className="mt-2" data-testid="notes-comment-edit-form">
+                                      <div className="relative">
+                                        <textarea
+                                          ref={editDraftRef}
+                                          className="textarea min-h-[92px] w-full text-sm"
+                                          value={editDraftByComment[commentId] || ""}
+                                          onChange={(event) => updateEditDraft(commentId, event.target.value, event.target.selectionStart)}
+                                          onKeyDown={(event) => handleMentionKeyDown(event, editMentionComposer, editMentionSuggestions, setEditComposerForActive, selectEditMention)}
+                                          disabled={disabled || busy === `edit:${commentId}`}
+                                          data-testid="notes-comment-edit-textarea"
+                                        />
+                                        {renderMentionSuggestions("edit", editMentionComposer, editMentionSuggestions, selectEditMention, "below")}
+                                      </div>
+                                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                                        <div className="text-[11px] text-muted">
+                                          {mentionUserIdsForSubmit(editDraftByComment[commentId] || "", editMentionComposer.selected).length
+                                            ? `Упоминаний: ${mentionUserIdsForSubmit(editDraftByComment[commentId] || "", editMentionComposer.selected).length}`
+                                            : "Поддерживается Markdown"}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <button type="button" className="secondaryBtn smallBtn" onClick={() => cancelEditComment(commentId)} disabled={busy === `edit:${commentId}`}>
+                                            Отмена
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="primaryBtn smallBtn"
+                                            onClick={() => saveEditComment(comment)}
+                                            disabled={busy === `edit:${commentId}` || !text(editDraftByComment[commentId])}
+                                            data-testid="notes-comment-edit-save"
+                                          >
+                                            {busy === `edit:${commentId}` ? "Сохраняем..." : "Сохранить"}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <NoteMarkdown>{comment?.body}</NoteMarkdown>
+                                  )}
                                   {asArray(comment?.mentions).length ? (
                                     <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted" data-testid="notes-comment-mentions">
                                       {asArray(comment.mentions).map((mention) => (
@@ -1560,6 +1827,22 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         <div className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Ответить</div>
                         <div className="text-[11px] text-muted">Сообщение добавится в текущее обсуждение.</div>
                       </div>
+                      {replyTarget ? (
+                        <div className="mb-2 flex items-start justify-between gap-3 rounded-xl border border-info/35 bg-info/5 px-3 py-2 text-xs leading-relaxed" data-testid="notes-reply-preview">
+                          <div className="min-w-0">
+                            <div className="font-semibold text-fg">{text(replyTarget.author_display) || "Пользователь"}</div>
+                            <div className="mt-0.5 line-clamp-2 text-muted">{text(replyTarget.body_preview) || "Сообщение без текста"}</div>
+                          </div>
+                          <button
+                            type="button"
+                            className="secondaryBtn tinyBtn h-7 px-2 text-[11px]"
+                            onClick={() => clearReplyTarget()}
+                            data-testid="notes-reply-cancel"
+                          >
+                            Отмена
+                          </button>
+                        </div>
+                      ) : null}
                       <div className="relative">
                         <textarea
                           ref={commentDraftRef}

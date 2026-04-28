@@ -30,6 +30,12 @@ class CreateNoteThreadBody(BaseModel):
 class AddNoteCommentBody(BaseModel):
     body: str
     mention_user_ids: List[str] = Field(default_factory=list)
+    reply_to_comment_id: Optional[str] = None
+
+
+class PatchNoteCommentBody(BaseModel):
+    body: str
+    mention_user_ids: Optional[List[str]] = None
 
 
 class PatchNoteThreadBody(BaseModel):
@@ -115,6 +121,13 @@ def _load_thread_session_for_notes(request: Request, thread_id: str, *, write: b
 
 def _validation_error(exc: ValueError) -> HTTPException:
     return HTTPException(status_code=422, detail=str(exc) or "validation error")
+
+
+def _reply_validation_error(exc: ValueError) -> HTTPException:
+    detail = str(exc) or "validation error"
+    if "same thread" in detail:
+        return HTTPException(status_code=400, detail=detail)
+    return _validation_error(exc)
 
 
 def _dedupe_session_ids(raw_session_ids: List[str], *, limit: int = 100) -> List[str]:
@@ -324,14 +337,56 @@ def add_note_thread_comment(thread_id: str, body: AddNoteCommentBody, request: R
             thread_id,
             body=body.body,
             mention_targets=mention_targets,
+            reply_to_comment_id=body.reply_to_comment_id,
+            actor_user_id=user_id,
+            org_id=org_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc) or "reply target not found") from exc
+    except ValueError as exc:
+        raise _reply_validation_error(exc) from exc
+    if not thread:
+        raise HTTPException(status_code=404, detail="note thread not found")
+    return {"thread": thread}
+
+
+@router.patch("/api/note-comments/{comment_id}")
+def patch_note_comment(comment_id: str, body: PatchNoteCommentBody, request: Request) -> Dict[str, Any]:
+    user_id = require_authenticated_user(request)
+    org_id = request_active_org_id(request)
+    comment = storage.get_note_comment(comment_id, org_id=org_id)
+    if not comment:
+        raise HTTPException(status_code=404, detail="note comment not found")
+    _thread, sess, _org_id, _user_id = _load_thread_session_for_notes(
+        request,
+        str(comment.get("thread_id") or ""),
+        write=True,
+    )
+    if str(comment.get("author_user_id") or "").strip() != str(user_id or "").strip():
+        raise HTTPException(status_code=403, detail="forbidden")
+    fields_set = getattr(body, "model_fields_set", None)
+    if fields_set is None:
+        fields_set = getattr(body, "__fields_set__", set())
+    replace_mentions = "mention_user_ids" in fields_set
+    try:
+        mention_targets = _resolve_mention_targets(sess, org_id, body.mention_user_ids or []) if replace_mentions else None
+        thread = storage.update_note_comment(
+            comment_id,
+            body=body.body,
+            mention_targets=mention_targets,
+            replace_mentions=replace_mentions,
             actor_user_id=user_id,
             org_id=org_id,
         )
     except ValueError as exc:
         raise _validation_error(exc) from exc
     if not thread:
-        raise HTTPException(status_code=404, detail="note thread not found")
-    return {"thread": thread}
+        raise HTTPException(status_code=404, detail="note comment not found")
+    updated = next(
+        (item for item in thread.get("comments") or [] if str(item.get("id") or "") == str(comment_id or "").strip()),
+        None,
+    )
+    return {"ok": True, "comment": updated, "thread": thread}
 
 
 @router.post("/api/note-mentions/{mention_id}/acknowledge")
