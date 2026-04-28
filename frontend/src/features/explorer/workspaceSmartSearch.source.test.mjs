@@ -25,8 +25,9 @@ test("Explorer search is frontend-only and does not add API wrappers", () => {
 test("ExplorerPane renders loaded-structure search and grouped results instead of mutating rows", () => {
   const explorerPaneSource = between("function ExplorerPane(", "// ─── Session Row");
 
-  assert.match(explorerPaneSource, /Поиск по загруженной структуре/);
-  assert.match(explorerSource, /Раздел, папка, проект или сессия/);
+  assert.match(explorerSource, /placeholder = "Поиск"/);
+  assert.match(explorerSource, /title="Поиск по загруженной структуре"/);
+  assert.match(explorerPaneSource, /className="w-\[260px\]"/);
   assert.match(explorerPaneSource, /searchModel\.active \? \(/);
   assert.match(explorerPaneSource, /onNavigateToFolder\(target\.folderId\)/);
   assert.match(explorerPaneSource, /onNavigateToProject\(target\.projectId,\s*\{\s*breadcrumbBase:/);
