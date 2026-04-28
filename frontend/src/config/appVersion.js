@@ -1,8 +1,14 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.53",
+  currentVersion: "v1.0.54",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.54",
+      changes: [
+        "Добавлено управление статусом AS IS / TO BE для разделов и папок.",
+      ],
+    },
     {
       version: "v1.0.53",
       changes: [

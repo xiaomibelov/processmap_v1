@@ -59,6 +59,12 @@ import {
   getExplorerAssigneeKind,
   getExplorerAssigneeLabel,
 } from "./explorerAssigneeModel.js";
+import {
+  getExplorerContextStatusLabel,
+  getExplorerContextStatusOptions,
+  isExplorerContextStatusEditable,
+  normalizeExplorerContextStatus,
+} from "./explorerContextStatusModel.js";
 import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
 import NotesAggregateBadge from "../../components/NotesAggregateBadge.jsx";
 import { useSessionNoteAggregates } from "../../lib/sessionNoteAggregates.js";
@@ -460,6 +466,70 @@ function AssigneeCell({ item }) {
     >
       {label}
     </span>
+  );
+}
+
+function contextStatusClass(value) {
+  const normalized = normalizeExplorerContextStatus(value);
+  if (normalized === "as_is") return "border-cyan-300/70 bg-cyan-500/12 text-fg/85";
+  if (normalized === "to_be") return "border-amber-300/75 bg-amber-400/15 text-fg/85";
+  return "border-border/80 bg-panelAlt/45 text-muted";
+}
+
+function ContextStatusBadge({ value }) {
+  const normalized = normalizeExplorerContextStatus(value);
+  return (
+    <span
+      className={`inline-flex h-7 min-w-[62px] items-center justify-center rounded-full border px-2 text-xs font-semibold ${contextStatusClass(normalized)}`}
+      title={getExplorerContextStatusLabel(normalized)}
+    >
+      {getExplorerContextStatusLabel(normalized)}
+    </span>
+  );
+}
+
+function ContextStatusControl({ item, disabled = false, onChange }) {
+  const normalized = normalizeExplorerContextStatus(item?.context_status);
+  const [pendingStatus, setPendingStatus] = useState(normalized);
+  const [saving, setSaving] = useState(false);
+  const options = useMemo(() => getExplorerContextStatusOptions(), []);
+
+  useEffect(() => {
+    setPendingStatus(normalized);
+  }, [normalized]);
+
+  const handleChange = async (event) => {
+    const nextStatus = normalizeExplorerContextStatus(event.target.value);
+    setPendingStatus(nextStatus);
+    if (nextStatus === normalized) return;
+    setSaving(true);
+    try {
+      const ok = await onChange?.(item, nextStatus);
+      if (ok === false) setPendingStatus(normalized);
+    } catch {
+      setPendingStatus(normalized);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <select
+      value={pendingStatus}
+      onChange={handleChange}
+      onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+      disabled={disabled || saving}
+      className={`h-7 w-[86px] rounded-full border px-2 text-xs font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-60 ${contextStatusClass(pendingStatus)}`}
+      title="Статус контекста"
+      aria-label="Статус контекста"
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -1065,6 +1135,7 @@ function FolderRow({
   onNavigate,
   onMove,
   onAssign,
+  onContextStatusChange,
   workspaceId,
   onReload,
   canEdit = false,
@@ -1138,7 +1209,17 @@ function FolderRow({
         </td>
         {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
         {showSignalColumns ? <td className="px-2 py-2.5 text-xs text-muted text-center">—</td> : null}
-        <td className="px-2 py-2.5 text-xs text-muted/70">—</td>
+        <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
+          {canEdit && isExplorerContextStatusEditable(folder) ? (
+            <ContextStatusControl
+              item={folder}
+              disabled={loading}
+              onChange={onContextStatusChange}
+            />
+          ) : (
+            <ContextStatusBadge value={folder.context_status} />
+          )}
+        </td>
         <td className="px-2 py-2.5 text-xs text-fg/60 text-right">{ts(folder.rollup_activity_at || folder.updated_at) || "—"}</td>
         <LastActivityCell node={folder} maxWidthClass="max-w-[180px]" quiet />
         <td className="px-2 py-2.5 w-8 text-right relative" onClick={(e) => e.stopPropagation()}>
@@ -1564,6 +1645,24 @@ function ExplorerPane({
     throw new Error("Назначение недоступно для этого элемента");
   }, [load, workspaceId]);
 
+  const handleFolderContextStatusChange = useCallback(async (folder, nextStatus) => {
+    const normalizedStatus = normalizeExplorerContextStatus(nextStatus);
+    const folderIdToUpdate = String(folder?.id || "").trim();
+    if (!workspaceId || !folderIdToUpdate) return false;
+    setError("");
+    setMoveNotice("");
+    try {
+      const resp = await apiUpdateFolder(workspaceId, folderIdToUpdate, { context_status: normalizedStatus });
+      if (!resp?.ok) throw new Error(resp?.error || "Не удалось обновить статус");
+      await load({ resetInlineChildren: true });
+      setMoveNotice("Статус обновлён.");
+      return true;
+    } catch (e) {
+      setError(String(e?.message || e || "Не удалось обновить статус"));
+      return false;
+    }
+  }, [load, workspaceId]);
+
   const ensureFolderChildrenLoaded = useCallback(async (targetFolderId) => {
     const fid = String(targetFolderId || "").trim();
     if (!workspaceId || !fid) return;
@@ -1779,6 +1878,7 @@ function ExplorerPane({
                           folderLabel: targetLabel,
                         });
                       }}
+                      onContextStatusChange={handleFolderContextStatusChange}
                       onReload={() => load({ resetInlineChildren: true })}
                       canEdit={!!permissions?.canRenameFolder}
                       canDelete={!!permissions?.canDeleteFolder}
