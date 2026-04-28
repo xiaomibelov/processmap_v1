@@ -14,6 +14,7 @@ import {
   getExplorerBusinessAssignee,
   getExplorerBusinessAssigneeKind,
   getExplorerBusinessAssigneeLabel,
+  mergeExplorerAssignableCurrentUser,
   normalizeExplorerAssignableUsersResponse,
 } from "./explorerAssigneeModel.js";
 
@@ -129,5 +130,38 @@ test("assignable users response accepts known shapes and normalizes failures", (
   assert.equal(
     normalizeExplorerAssignableUsersResponse({ ok: false, status: 403, error: "insufficient_permissions" }).error,
     "Не удалось загрузить пользователей.",
+  );
+});
+
+test("current user is merged into responsible assignable list for current org only", () => {
+  const currentUser = {
+    id: "u_self",
+    email: "self@example.test",
+    full_name: "Self User",
+    active_org_id: "org_a",
+  };
+  const merged = mergeExplorerAssignableCurrentUser(
+    [{ user_id: "u_other", full_name: "Other User" }],
+    currentUser,
+    { orgId: "org_a", orgs: [{ org_id: "org_a", role: "editor" }] },
+  );
+
+  assert.deepEqual(merged.map((user) => user.user_id), ["u_self", "u_other"]);
+  assert.equal(merged[0].full_name, "Self User");
+  assert.equal(merged[0].email, "self@example.test");
+  assert.equal(merged[0].role, "editor");
+});
+
+test("current user merge deduplicates existing members and ignores wrong org", () => {
+  const currentUser = { id: "u_self", email: "self@example.test" };
+  const existing = [{ user_id: "u_self", full_name: "Already Listed" }];
+
+  assert.deepEqual(
+    mergeExplorerAssignableCurrentUser(existing, currentUser, { orgId: "org_a", orgs: [{ org_id: "org_a", role: "owner" }] }),
+    existing,
+  );
+  assert.deepEqual(
+    mergeExplorerAssignableCurrentUser([], currentUser, { orgId: "org_b", orgs: [{ org_id: "org_a", role: "owner" }] }),
+    [],
   );
 });

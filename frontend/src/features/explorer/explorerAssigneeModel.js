@@ -88,6 +88,46 @@ function normalizeAssignableUserItem(user) {
   return normalized;
 }
 
+function orgIdOf(row) {
+  return text(row?.org_id || row?.id);
+}
+
+function findCurrentUserOrgRole(orgId, orgs = []) {
+  const oid = text(orgId);
+  if (!oid) return "";
+  const list = Array.isArray(orgs) ? orgs : [];
+  const found = list.find((row) => orgIdOf(row) === oid);
+  return text(found?.role || found?.membership?.role);
+}
+
+function currentUserBelongsToOrg(currentUser, orgId, orgs = []) {
+  const oid = text(orgId);
+  if (!oid || !currentUser || typeof currentUser !== "object") return false;
+  if (findCurrentUserOrgRole(oid, orgs)) return true;
+  const userOrgs = Array.isArray(currentUser.orgs) ? currentUser.orgs : [];
+  if (findCurrentUserOrgRole(oid, userOrgs)) return true;
+  return [currentUser.active_org_id, currentUser.default_org_id]
+    .map(text)
+    .some((candidate) => candidate === oid);
+}
+
+export function mergeExplorerAssignableCurrentUser(users, currentUser, { orgId = "", orgs = [] } = {}) {
+  const normalizedUsers = Array.isArray(users) ? users.map(normalizeAssignableUserItem).filter(Boolean) : [];
+  const currentUserId = text(currentUser?.id || currentUser?.user_id);
+  if (!currentUserId || !currentUserBelongsToOrg(currentUser, orgId, orgs)) {
+    return normalizedUsers;
+  }
+  const seen = new Set(normalizedUsers.map((user) => getExplorerAssignableUserId(user)).filter(Boolean));
+  if (seen.has(currentUserId)) return normalizedUsers;
+  const role = findCurrentUserOrgRole(orgId, orgs) || findCurrentUserOrgRole(orgId, currentUser?.orgs);
+  const current = normalizeAssignableUserItem({
+    ...currentUser,
+    user_id: currentUserId,
+    role,
+  });
+  return current ? [current, ...normalizedUsers] : normalizedUsers;
+}
+
 export function normalizeExplorerAssignableUsersResponse(resp) {
   if (!resp?.ok) {
     return {
