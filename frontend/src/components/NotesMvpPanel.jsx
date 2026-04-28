@@ -5,6 +5,7 @@ import {
   apiCreateNoteThread,
   apiListMentionableUsers,
   apiListNoteThreads,
+  apiMarkNoteThreadRead,
   apiPatchNoteThread,
 } from "../lib/api";
 import {
@@ -159,6 +160,11 @@ function priorityMeta(thread) {
 
 function requiresAttention(thread) {
   return thread?.requires_attention === true || thread?.requires_attention === 1 || thread?.requires_attention === "1";
+}
+
+function unreadCount(thread) {
+  const value = Number(thread?.unread_count || 0);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 }
 
 function attentionAcknowledged(thread) {
@@ -390,6 +396,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const [createMentionUserId, setCreateMentionUserId] = useState("");
   const [commentMentionByThread, setCommentMentionByThread] = useState({});
   const panelRef = useRef(null);
+  const markReadInFlightRef = useRef(new Set());
 
   const createSubject = createSubjectByScope[createScope] || "";
   const createDetails = createDetailsByScope[createScope] || "";
@@ -626,6 +633,45 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     return () => window.clearTimeout(timer);
   }, [focusedCommentId, selectedThread]);
 
+  const clearThreadUnread = useCallback((threadId, result = {}) => {
+    const tid = text(threadId);
+    if (!tid) return;
+    const lastReadAt = Number(result?.lastReadAt || result?.last_read_at || 0) || 0;
+    setThreads((prev) => asArray(prev).map((thread) => (
+      text(thread?.id) === tid
+        ? {
+          ...thread,
+          unread_count: 0,
+          last_read_at: lastReadAt || Number(thread?.last_read_at || 0) || Number(threadUpdatedAt(thread) || 0),
+        }
+        : thread
+    )));
+  }, []);
+
+  useEffect(() => {
+    if (!open || selectedThreadIsLegacyBridge || disabled) return undefined;
+    const threadId = text(selectedThread?.id);
+    if (!threadId || unreadCount(selectedThread) <= 0) return undefined;
+    if (markReadInFlightRef.current.has(threadId)) return undefined;
+    markReadInFlightRef.current.add(threadId);
+    let cancelled = false;
+    apiMarkNoteThreadRead(threadId)
+      .then((result) => {
+        if (!cancelled && result?.ok) {
+          clearThreadUnread(threadId, result);
+        }
+      })
+      .catch(() => {
+        // Keep the badge until the next successful refresh/read acknowledgement.
+      })
+      .finally(() => {
+        markReadInFlightRef.current.delete(threadId);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clearThreadUnread, disabled, open, selectedThread, selectedThreadIsLegacyBridge]);
+
   useImperativeHandle(ref, () => ({
     openFromExternalRequest(request) {
       return applyExternalOpenRequest(request);
@@ -828,6 +874,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setCommentMentionByThread((prev) => ({ ...prev, [threadId]: "" }));
     setSelectedThreadId(threadId);
     await fetchThreads({ preferredThreadId: threadId });
+    clearThreadUnread(threadId, result);
     emitNotesAggregateChanged(sid);
     emitNoteMentionsChanged();
     setCommentDraftByThread((prev) => (prev[threadId] ? { ...prev, [threadId]: "" } : prev));
@@ -1557,6 +1604,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                       const active = threadId === text(selectedThread?.id);
                       const meta = scopeMeta(thread);
                       const mentionLabel = firstMentionLabel(thread, authorLabelsById, viewerUserId);
+                      const newMessagesCount = unreadCount(thread);
                       return (
                         <button
                           key={threadId}
@@ -1582,6 +1630,16 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                             ) : null}
                             {threadPriority(thread) === "high" ? (
                               <span className={`rounded-full border px-1.5 py-0.5 font-semibold ${priorityMeta(thread).tone}`}>{priorityMeta(thread).shortLabel}</span>
+                            ) : null}
+                            {newMessagesCount > 0 ? (
+                              <span
+                                className="shrink-0 rounded-full border border-info/55 bg-info/10 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-info"
+                                title={`Новые сообщения: ${newMessagesCount}`}
+                                aria-label={`Новые сообщения: ${newMessagesCount}`}
+                                data-testid="notes-thread-unread-badge"
+                              >
+                                {newMessagesCount}
+                              </span>
                             ) : null}
                             {mentionLabel ? (
                               <span className="min-w-0 truncate rounded-full border border-info/40 bg-info/10 px-1.5 py-0.5 font-semibold text-info">

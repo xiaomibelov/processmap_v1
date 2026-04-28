@@ -540,6 +540,10 @@ def _note_thread_row_to_dict(row: Any, *, attention_acknowledged_at: Any = 0) ->
         "requires_attention": bool(int(_row_value(row, "requires_attention") or 0)),
         "attention_acknowledged_by_me": acknowledged_at > 0,
         "attention_acknowledged_at": acknowledged_at,
+        "unread_count": 0,
+        "last_read_at": 0,
+        "last_comment_at": 0,
+        "last_comment_author_user_id": "",
         "created_by": str(_row_value(row, "created_by") or ""),
         "created_at": int(_row_value(row, "created_at") or 0),
         "updated_at": int(_row_value(row, "updated_at") or 0),
@@ -880,6 +884,20 @@ def _ensure_schema() -> None:
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_thread_attention_ack_thread ON note_thread_attention_acknowledgements(thread_id, org_id)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS note_thread_reads (
+                  thread_id TEXT NOT NULL,
+                  user_id TEXT NOT NULL,
+                  last_read_at INTEGER NOT NULL DEFAULT 0,
+                  last_seen_comment_id TEXT DEFAULT '',
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  PRIMARY KEY (thread_id, user_id)
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_thread_reads_user_updated ON note_thread_reads(user_id, updated_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_thread_reads_thread ON note_thread_reads(thread_id)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS orgs (
@@ -1307,6 +1325,20 @@ def _ensure_schema() -> None:
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_thread_attention_ack_thread ON note_thread_attention_acknowledgements(thread_id, org_id)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS note_thread_reads (
+                  thread_id TEXT NOT NULL,
+                  user_id TEXT NOT NULL,
+                  last_read_at INTEGER NOT NULL DEFAULT 0,
+                  last_seen_comment_id TEXT DEFAULT '',
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  PRIMARY KEY (thread_id, user_id)
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_thread_reads_user_updated ON note_thread_reads(user_id, updated_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_note_thread_reads_thread ON note_thread_reads(thread_id)")
             if not _column_exists(con, "org_invites", "team_name"):
                 con.execute("ALTER TABLE org_invites ADD COLUMN team_name TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "org_invites", "subgroup_name"):
@@ -6304,6 +6336,80 @@ def _thread_attention_acknowledged_at(con: Any, thread_id: str, org_id: str, vie
     return int(_row_value(row, "acknowledged_at", 0) or 0)
 
 
+def _latest_note_comment_info(comments: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
+    latest_at = 0
+    latest_id = ""
+    latest_author = ""
+    for comment in comments or []:
+        comment_id = str(comment.get("id") or "").strip()
+        created_at = int(comment.get("created_at") or 0)
+        if created_at > latest_at or (created_at == latest_at and comment_id > latest_id):
+            latest_at = created_at
+            latest_id = comment_id
+            latest_author = str(comment.get("author_user_id") or "").strip()
+    return {
+        "last_comment_at": latest_at,
+        "last_seen_comment_id": latest_id,
+        "last_comment_author_user_id": latest_author,
+    }
+
+
+def _apply_note_thread_read_state(
+    thread: Dict[str, Any],
+    comments: Iterable[Mapping[str, Any]],
+    *,
+    viewer_user_id: Optional[str],
+    last_read_at: Any = 0,
+) -> Dict[str, Any]:
+    viewer = str(viewer_user_id or "").strip()
+    read_at = int(last_read_at or 0)
+    info = _latest_note_comment_info(comments)
+    unread = 0
+    if viewer:
+        for comment in comments or []:
+            created_at = int(comment.get("created_at") or 0)
+            author = str(comment.get("author_user_id") or "").strip()
+            if created_at > read_at and author != viewer:
+                unread += 1
+    thread["unread_count"] = int(unread)
+    thread["last_read_at"] = read_at if viewer else 0
+    thread["last_comment_at"] = int(info.get("last_comment_at") or 0)
+    thread["last_comment_author_user_id"] = str(info.get("last_comment_author_user_id") or "")
+    return thread
+
+
+def _upsert_note_thread_read(
+    con: Any,
+    *,
+    thread_id: str,
+    user_id: str,
+    last_read_at: int,
+    last_seen_comment_id: str = "",
+) -> None:
+    tid = str(thread_id or "").strip()
+    uid = str(user_id or "").strip()
+    if not tid or not uid:
+        return
+    now = _now_ts()
+    con.execute(
+        """
+        INSERT INTO note_thread_reads (thread_id, user_id, last_read_at, last_seen_comment_id, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(thread_id, user_id) DO UPDATE SET
+          last_read_at = CASE
+            WHEN excluded.last_read_at > note_thread_reads.last_read_at THEN excluded.last_read_at
+            ELSE note_thread_reads.last_read_at
+          END,
+          last_seen_comment_id = CASE
+            WHEN excluded.last_read_at >= note_thread_reads.last_read_at THEN excluded.last_seen_comment_id
+            ELSE note_thread_reads.last_seen_comment_id
+          END,
+          updated_at = excluded.updated_at
+        """,
+        [tid, uid, int(last_read_at or 0), str(last_seen_comment_id or ""), now],
+    )
+
+
 def _attention_count_case(table_ref: str, viewer_user_id: Optional[str]) -> tuple[str, List[Any]]:
     viewer = str(viewer_user_id or "").strip()
     if not viewer:
@@ -6473,6 +6579,13 @@ def create_note_thread(
             created_at=now,
             mention_targets=mention_targets,
         )
+        _upsert_note_thread_read(
+            con,
+            thread_id=thread_id,
+            user_id=actor,
+            last_read_at=now,
+            last_seen_comment_id=comment_id,
+        )
         con.commit()
     thread = get_note_thread(thread_id, org_id=oid, viewer_user_id=actor)
     if not thread:
@@ -6525,6 +6638,19 @@ def get_note_thread(
             *[str(_row_value(row, "author_user_id") or "").strip() for row in comment_rows],
         }
         profiles_by_id = _auth_user_profiles_by_id_with_connection(con, author_ids)
+        read_at = 0
+        viewer = str(viewer_user_id or "").strip()
+        if viewer:
+            read_row = con.execute(
+                """
+                SELECT last_read_at
+                FROM note_thread_reads
+                WHERE thread_id = ? AND user_id = ?
+                LIMIT 1
+                """,
+                [tid, viewer],
+            ).fetchone()
+            read_at = int(_row_value(read_row, "last_read_at", 0) or 0)
     thread = _note_thread_row_to_dict(thread_row, attention_acknowledged_at=acknowledged_at)
     comments = []
     for row in comment_rows:
@@ -6532,6 +6658,7 @@ def get_note_thread(
         comment["mentions"] = mention_rows.get(str(comment.get("id") or ""), [])
         comments.append(comment)
     thread["comments"] = comments
+    thread = _apply_note_thread_read_state(thread, comments, viewer_user_id=viewer_user_id, last_read_at=read_at)
     return _apply_note_author_profiles(thread, profiles_by_id)
 
 
@@ -6596,6 +6723,7 @@ def list_note_threads(
                 mention_rows.setdefault(str(mention.get("comment_id") or ""), []).append(mention)
         viewer = str(viewer_user_id or "").strip()
         acknowledgement_rows: Dict[str, int] = {}
+        read_rows: Dict[str, int] = {}
         if viewer and thread_ids:
             placeholders = ", ".join(["?"] * len(thread_ids))
             ack_filters = [f"thread_id IN ({placeholders})", "user_id = ?"]
@@ -6612,6 +6740,15 @@ def list_note_threads(
                 ack_params,
             ).fetchall():
                 acknowledgement_rows[str(_row_value(row, "thread_id") or "")] = int(_row_value(row, "acknowledged_at", 0) or 0)
+            for row in con.execute(
+                f"""
+                SELECT thread_id, last_read_at
+                FROM note_thread_reads
+                WHERE thread_id IN ({placeholders}) AND user_id = ?
+                """,
+                [*thread_ids, viewer],
+            ).fetchall():
+                read_rows[str(_row_value(row, "thread_id") or "")] = int(_row_value(row, "last_read_at", 0) or 0)
         author_ids = {
             str(_row_value(row, "created_by") or "").strip()
             for row in thread_rows
@@ -6641,6 +6778,7 @@ def list_note_threads(
         for comment in comments:
             comment["mentions"] = mention_rows.get(str(comment.get("id") or ""), [])
         thread["comments"] = comments
+        thread = _apply_note_thread_read_state(thread, comments, viewer_user_id=viewer_user_id, last_read_at=read_rows.get(thread_id, 0))
         out.append(_apply_note_author_profiles(thread, profiles_by_id))
     return out
 
@@ -6693,9 +6831,65 @@ def add_note_comment(
             created_at=now,
             mention_targets=mention_targets,
         )
+        _upsert_note_thread_read(
+            con,
+            thread_id=tid,
+            user_id=actor,
+            last_read_at=now,
+            last_seen_comment_id=comment_id,
+        )
         con.execute("UPDATE note_threads SET updated_at = ? WHERE id = ?", [now, tid])
         con.commit()
     return get_note_thread(tid, org_id=oid or None, viewer_user_id=actor)
+
+
+def mark_note_thread_read(
+    thread_id: str,
+    *,
+    actor_user_id: str,
+    org_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    tid = str(thread_id or "").strip()
+    actor = str(actor_user_id or "").strip()
+    if not tid or not actor:
+        return None
+    oid = str(org_id or "").strip()
+    filters = ["id = ?"]
+    params: List[Any] = [tid]
+    if oid:
+        filters.append("org_id = ?")
+        params.append(oid)
+    with _connect() as con:
+        thread_row = con.execute(
+            f"SELECT id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
+            params,
+        ).fetchone()
+        if not thread_row:
+            return None
+        comment_rows = con.execute(
+            "SELECT * FROM note_comments WHERE thread_id = ? ORDER BY created_at ASC, id ASC",
+            [tid],
+        ).fetchall()
+        comments = [_note_comment_row_to_dict(row) for row in comment_rows]
+        latest = _latest_note_comment_info(comments)
+        last_read_at = int(latest.get("last_comment_at") or _now_ts())
+        last_seen_comment_id = str(latest.get("last_seen_comment_id") or "")
+        _upsert_note_thread_read(
+            con,
+            thread_id=tid,
+            user_id=actor,
+            last_read_at=last_read_at,
+            last_seen_comment_id=last_seen_comment_id,
+        )
+        con.commit()
+    return {
+        "ok": True,
+        "thread_id": tid,
+        "last_read_at": last_read_at,
+        "last_seen_comment_id": last_seen_comment_id,
+        "unread_count": 0,
+    }
 
 
 def patch_note_thread_status(
