@@ -107,6 +107,12 @@ class UpdateSessionIn(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class SessionPresenceTouchIn(BaseModel):
+    client_id: str
+    surface: Optional[str] = "process_stage"
+    model_config = ConfigDict(extra="allow")
+
+
 ALLOWED_PROJECT_SESSION_MODES = ("quick_skeleton", "deep_audit")
 
 

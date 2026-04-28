@@ -132,10 +132,8 @@ import ProcessStageSaveConflictModal from "../features/process/stage/ui/ProcessS
 import BottomViewportScrubber from "../features/process/stage/scrubber/BottomViewportScrubber";
 import BpmnPropertiesOverlayModal from "../features/process/bpmn/context-menu/properties-overlay/BpmnPropertiesOverlayModal";
 import { buildSaveConflictModalView } from "../features/process/stage/ui/saveConflictModalModel";
-import {
-  buildSessionPresenceView,
-  upsertSessionPresenceActor,
-} from "../features/process/stage/ui/sessionPresenceModel";
+import { buildSessionPresenceView } from "../features/process/stage/ui/sessionPresenceModel";
+import useSessionPresence from "../features/process/stage/presence/useSessionPresence";
 import {
   buildRemoteSaveHighlightView,
   deriveRemoteChangedElementIds,
@@ -250,8 +248,6 @@ import { pushDeleteTrace } from "../features/process/stage/utils/deleteTrace";
 
 const DIAGRAM_UNDO_REDO_VISIBLE_POLL_MS = 2000;
 const BPMN_VERSION_HEADERS_LIMIT = 50;
-const SESSION_PRESENCE_TTL_MS = 180000;
-const SESSION_PRESENCE_HEARTBEAT_MS = 45000;
 const REMOTE_SESSION_SYNC_POLL_MS = 9000;
 const SAVE_ACK_TOAST_HIDE_MS = 4000;
 
@@ -419,7 +415,6 @@ export default function ProcessStage({
   const [versionsTechnicalEntriesCount, setVersionsTechnicalEntriesCount] = useState(0);
   const [diagramUndoRedoState, setDiagramUndoRedoState] = useState({ canUndo: false, canRedo: false, ready: false });
   const [diagramSearchMutationVersion, setDiagramSearchMutationVersion] = useState(0);
-  const [sessionPresenceActors, setSessionPresenceActors] = useState([]);
   const [remoteSaveHighlightBadge, setRemoteSaveHighlightBadge] = useState(null);
   const [remoteSaveHighlightBusy, setRemoteSaveHighlightBusy] = useState(false);
   const sessionWorkspaceTruthOwnerRef = useRef(null);
@@ -992,38 +987,9 @@ export default function ProcessStage({
     showSaveAckToast(message, tone);
   }, [genErr, infoMsg, showSaveAckToast, toText]);
   const currentUserId = toText(user?.id || user?.user_id || user?.email);
-  const currentUserLabel = toText(user?.name || user?.username || user?.email || currentUserId || "Вы");
-  const recordPresenceActor = useCallback((actorRaw, options = {}) => {
-    if (!sid) return;
-    setSessionPresenceActors((prev) => upsertSessionPresenceActor(prev, actorRaw, {
-      nowMs: Number(options?.nowMs || Date.now()),
-      ttlMs: SESSION_PRESENCE_TTL_MS,
-      minTouchMs: Number(options?.minTouchMs ?? 15000),
-      maxActors: 12,
-    }));
-  }, [sid]);
-
-  useEffect(() => {
-    if (!hasSession || !sid || !currentUserId) {
-      setSessionPresenceActors([]);
-      return undefined;
-    }
-    recordPresenceActor({
-      userId: currentUserId,
-      label: currentUserLabel || "Вы",
-      lastSeenAt: Date.now(),
-    }, { minTouchMs: 0 });
-    const timer = window.setInterval(() => {
-      recordPresenceActor({
-        userId: currentUserId,
-        label: currentUserLabel || "Вы",
-        lastSeenAt: Date.now(),
-      });
-    }, SESSION_PRESENCE_HEARTBEAT_MS);
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [currentUserId, currentUserLabel, hasSession, recordPresenceActor, sid]);
+  const sessionPresence = useSessionPresence(hasSession ? sid : "", user, {
+    surface: "process_stage",
+  });
 
   const sessionCompanionMetaLive = useMemo(() => {
     return normalizeSessionCompanion(sessionCompanionBridgeSnapshot.companion);
@@ -1067,11 +1033,11 @@ export default function ProcessStage({
     toText,
   ]);
   const sessionPresenceView = useMemo(() => buildSessionPresenceView({
-    actorsRaw: sessionPresenceActors,
+    actorsRaw: sessionPresence.activeUsers,
     currentUserIdRaw: currentUserId,
     nowMs: Date.now(),
-    ttlMs: SESSION_PRESENCE_TTL_MS,
-  }), [currentUserId, sessionPresenceActors]);
+    ttlMs: sessionPresence.ttlMs,
+  }), [currentUserId, sessionPresence.activeUsers, sessionPresence.ttlMs]);
   const leaveNavigationRisk = useMemo(
     () => deriveLeaveNavigationRisk({
       hasSession,
@@ -1364,13 +1330,6 @@ export default function ProcessStage({
     }
     const serverVersionRounded = Math.round(serverVersion);
     const lastWrite = readServerLastWriteFromSession(serverSession);
-    if (lastWrite.actorUserId || lastWrite.actorLabel) {
-      recordPresenceActor({
-        userId: lastWrite.actorUserId,
-        label: lastWrite.actorLabel,
-        lastSeenAt: lastWrite.at > 0 ? lastWrite.at * 1000 : Date.now(),
-      }, { minTouchMs: 0 });
-    }
     const sameActor = (
       currentUserId
       && lastWrite.actorUserId
@@ -1449,7 +1408,6 @@ export default function ProcessStage({
     getBaseDiagramStateVersion,
     isManualSaveBusy,
     onSessionSyncWithVersion,
-    recordPresenceActor,
     rememberDiagramStateVersion,
     saveDirtyHint,
     saveUploadStatus?.state,
@@ -1503,14 +1461,6 @@ export default function ProcessStage({
       if (!isDiagramVersionSessionMatch(currentSid, fetchedSid)) {
         return { ok: false, reason: "poll_sid_mismatch" };
       }
-      const lastWrite = readServerLastWriteFromSession(sessionLike);
-      if (lastWrite.actorUserId || lastWrite.actorLabel) {
-        recordPresenceActor({
-          userId: lastWrite.actorUserId,
-          label: lastWrite.actorLabel,
-          lastSeenAt: lastWrite.at > 0 ? lastWrite.at * 1000 : Date.now(),
-        }, { minTouchMs: 0 });
-      }
       const serverVersion = Number(sessionLike?.diagram_state_version ?? sessionLike?.diagramStateVersion);
       if (Number.isFinite(serverVersion) && serverVersion > 0) {
         remoteSessionPollSeenDiagramStateVersionRef.current = Math.max(
@@ -1537,7 +1487,6 @@ export default function ProcessStage({
     getBaseDiagramStateVersion,
     hasSession,
     isLocal,
-    recordPresenceActor,
     sid,
   ]);
 
