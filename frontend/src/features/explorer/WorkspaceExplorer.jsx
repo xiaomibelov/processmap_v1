@@ -647,9 +647,9 @@ function MoveProjectDialog({
   );
 }
 
-function ExplorerSearchBox({ id = "workspace-explorer-search", value, onChange, placeholder = "Раздел, папка, проект или сессия", className = "" }) {
+function ExplorerSearchBox({ id = "workspace-explorer-search", value, onChange, placeholder = "Поиск", className = "" }) {
   return (
-    <div className={`flex min-w-[240px] max-w-full items-center gap-2 rounded-lg border border-border bg-bg px-2.5 py-1.5 ${className}`}>
+    <div className={`flex h-8 max-w-full items-center gap-2 rounded-lg border border-border bg-bg px-2.5 ${className}`}>
       <span className="text-xs text-muted" aria-hidden>⌕</span>
       <label className="sr-only" htmlFor={id}>Поиск по workspace</label>
       <input
@@ -665,6 +665,7 @@ function ExplorerSearchBox({ id = "workspace-explorer-search", value, onChange, 
         }}
         placeholder={placeholder}
         className="min-w-0 flex-1 bg-transparent text-sm text-fg placeholder:text-muted focus:outline-none"
+        title="Поиск по загруженной структуре"
       />
       {value ? (
         <button
@@ -1379,7 +1380,7 @@ function ExplorerPane({
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {/* Header */}
-      <div className="px-4 pt-3 pb-2 border-b border-border flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
+      <div className="px-4 pt-3 pb-2 border-b border-border flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
         <Breadcrumb
           crumbs={page?.breadcrumbs || []}
           onNavigate={(crumb) => {
@@ -1387,16 +1388,13 @@ function ExplorerPane({
             else onNavigateToBreadcrumb(workspaceId, crumb.id);
           }}
         />
-        <div className="flex min-w-[260px] flex-1 flex-col items-end gap-1">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           <ExplorerSearchBox
             id="workspace-explorer-tree-search"
             value={searchQuery}
             onChange={setSearchQuery}
-            className="w-full max-w-[360px]"
+            className="w-[260px]"
           />
-          <span className="text-[11px] text-muted/80">Поиск по загруженной структуре</span>
-        </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
           {permissions?.canCreate ? (
             <button
               onClick={() => setCreatingFolder(true)}
@@ -2016,16 +2014,13 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
       </div>
 
       {/* Sessions */}
-      <div className="px-4 py-2 border-b border-border flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
-        <div>
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted">Сессии</span>
-          <div className="mt-0.5 text-[11px] text-muted/80">Поиск по загруженной структуре</div>
-        </div>
+      <div className="px-4 py-2 border-b border-border flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted">Сессии</span>
         <ExplorerSearchBox
           id="workspace-explorer-project-search"
           value={searchQuery}
           onChange={setSearchQuery}
-          className="w-full max-w-[360px] flex-1"
+          className="ml-auto w-[260px]"
         />
         {permissions?.canCreate ? (
           <button onClick={() => setCreating(true)} className="primaryBtn h-7 px-3 text-xs flex items-center gap-1">
