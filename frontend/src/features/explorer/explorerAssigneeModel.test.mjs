@@ -9,6 +9,9 @@ import {
   getExplorerAssigneeId,
   getExplorerAssigneeKind,
   getExplorerAssigneeLabel,
+  getExplorerBusinessAssignee,
+  getExplorerBusinessAssigneeKind,
+  getExplorerBusinessAssigneeLabel,
 } from "./explorerAssigneeModel.js";
 
 test("folder and section rows use responsible user display", () => {
@@ -19,8 +22,11 @@ test("folder and section rows use responsible user display", () => {
   };
 
   assert.equal(getExplorerAssigneeKind(section), "responsible");
+  assert.equal(getExplorerBusinessAssigneeKind(section), "responsible");
   assert.equal(getExplorerAssigneeId(section), "u1");
   assert.equal(getExplorerAssigneeLabel(section), "Ирина Ответственная");
+  assert.equal(getExplorerBusinessAssigneeLabel(section), "Ирина Ответственная");
+  assert.deepEqual(getExplorerBusinessAssignee(section), section.responsible_user);
   assert.equal(getExplorerAssigneeActionLabel(section), "Изменить ответственного");
   assert.equal(getExplorerAssigneeDialogTitle(section, { folderLabel: "Раздел" }), "Ответственный за раздел");
 });
@@ -34,7 +40,10 @@ test("project rows use executor user display and never fall back to owner", () =
   };
 
   assert.equal(getExplorerAssigneeKind(project), "executor");
+  assert.equal(getExplorerBusinessAssigneeKind(project), "executor");
   assert.equal(getExplorerAssigneeLabel(project), "—");
+  assert.equal(getExplorerBusinessAssigneeLabel(project), "—");
+  assert.equal(getExplorerBusinessAssignee(project), null);
   assert.equal(getExplorerAssigneeActionLabel(project), "Назначить исполнителя");
   assert.equal(getExplorerAssigneeDialogTitle(project), "Исполнитель проекта");
 });

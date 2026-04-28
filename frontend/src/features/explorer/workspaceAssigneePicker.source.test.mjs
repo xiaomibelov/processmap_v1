@@ -13,7 +13,7 @@ function between(start, end) {
   return explorerSource.slice(startIndex, endIndex);
 }
 
-test("Explorer renders type-aware assignee column without replacing owner semantics", () => {
+test("Explorer renders type-aware assignee column and removes project owner from primary row", () => {
   const explorerPaneSource = between("function ExplorerPane(", "// ─── Session Row");
   const folderRowSource = between("function FolderRow(", "// ─── Project Row");
   const projectRowSource = between("function ProjectRow(", "function InlineLoadingRow(");
@@ -21,7 +21,8 @@ test("Explorer renders type-aware assignee column without replacing owner semant
   assert.match(explorerPaneSource, /Ответственный \/ Исполнитель/);
   assert.match(folderRowSource, /<AssigneeCell item=\{folder\} \/>/);
   assert.match(projectRowSource, /<AssigneeCell item=\{project\} \/>/);
-  assert.match(projectRowSource, /Owner:\s*\{project\.owner\.name \|\| project\.owner\.id\}/);
+  assert.doesNotMatch(projectRowSource, /Owner:\s*\{project\.owner\.name \|\| project\.owner\.id\}/);
+  assert.doesNotMatch(projectRowSource, /project\.owner\.id/);
 });
 
 test("Folder and project row menus expose assignment actions", () => {

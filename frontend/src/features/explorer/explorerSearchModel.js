@@ -1,3 +1,8 @@
+import {
+  getExplorerBusinessAssigneeKind,
+  getExplorerBusinessAssigneeLabel,
+} from "./explorerAssigneeModel.js";
+
 function text(value) {
   return String(value || "").trim();
 }
@@ -21,6 +26,20 @@ function itemParentId(item, fallbackParentId = "") {
 function ownerLabel(owner) {
   if (!owner || typeof owner !== "object") return "";
   return text(owner.name || owner.email || owner.id);
+}
+
+function businessAssigneeLabel(item) {
+  const label = getExplorerBusinessAssigneeLabel(item);
+  return label === "—" ? "" : text(label);
+}
+
+function businessAssigneeMeta(item) {
+  const label = businessAssigneeLabel(item);
+  if (!label) return "";
+  const kind = getExplorerBusinessAssigneeKind(item);
+  if (kind === "responsible") return `Ответственный: ${label}`;
+  if (kind === "executor") return `Исполнитель: ${label}`;
+  return label;
 }
 
 function statusLabel(value) {
@@ -54,6 +73,8 @@ function makeResult({
   path = "",
   status = "",
   owner = "",
+  assignee = "",
+  assigneeMeta = "",
   stage = "",
   target = {},
   searchParts = [],
@@ -63,6 +84,8 @@ function makeResult({
   const resultPath = text(path);
   const resultStatus = statusLabel(status);
   const resultOwner = text(owner);
+  const resultAssignee = text(assignee);
+  const resultAssigneeMeta = text(assigneeMeta);
   const resultStage = text(stage);
   return {
     id: text(id),
@@ -73,6 +96,8 @@ function makeResult({
     pathLabel: resultPath,
     statusLabel: resultStatus,
     ownerLabel: resultOwner,
+    assigneeLabel: resultAssignee,
+    assigneeMetaLabel: resultAssigneeMeta,
     stageLabel: resultStage,
     target,
     searchText: resultSearchText([
@@ -81,6 +106,8 @@ function makeResult({
       resultPath,
       resultStatus,
       resultOwner,
+      resultAssignee,
+      resultAssigneeMeta,
       resultStage,
       ...searchParts,
     ]),
@@ -128,13 +155,17 @@ export function buildExplorerSearchIndex({
       const type = isSection ? "section" : "folder";
       const typeLabel = isSection ? "Раздел" : "Папка";
       const ownCrumb = { type: "folder", id, name: title };
+      const assignee = businessAssigneeLabel(folder);
+      const assigneeMeta = businessAssigneeMeta(folder);
       appendResult(makeResult({
         id,
         type,
         typeLabel,
         title,
         path: pathLabel(parentCrumbs),
-        subtitle: typeLabel,
+        subtitle: assigneeMeta || typeLabel,
+        assignee,
+        assigneeMeta,
         target: { kind: "folder", folderId: id },
         searchParts: [isSection ? "section" : "folder"],
       }));
@@ -147,17 +178,19 @@ export function buildExplorerSearchIndex({
       const id = itemId(project);
       if (!id) continue;
       const title = text(project?.name || project?.title);
-      const owner = ownerLabel(project?.owner);
       const status = statusLabel(project?.status);
+      const assignee = businessAssigneeLabel(project);
+      const assigneeMeta = businessAssigneeMeta(project);
       appendResult(makeResult({
         id,
         type: "project",
         typeLabel: "Проект",
         title,
         path: pathLabel(parentCrumbs),
-        subtitle: owner ? `Owner: ${owner}` : "Проект",
+        subtitle: assigneeMeta || "Проект",
         status,
-        owner,
+        assignee,
+        assigneeMeta,
         target: {
           kind: "project",
           projectId: id,
@@ -184,16 +217,18 @@ export function buildProjectSessionSearchIndex({
   const results = [];
 
   if (projectId || projectTitle) {
-    const owner = ownerLabel(project?.owner);
     const status = statusLabel(project?.status);
+    const assignee = businessAssigneeLabel(project);
+    const assigneeMeta = businessAssigneeMeta(project);
     results.push(makeResult({
       id: projectId || "__current_project__",
       type: "project",
       typeLabel: "Проект",
       title: projectTitle || "Проект",
       path: pathLabel(baseCrumbs),
-      subtitle: owner ? `Owner: ${owner}` : "Текущий проект",
-      owner,
+      subtitle: assigneeMeta || "Текущий проект",
+      assignee,
+      assigneeMeta,
       status,
       target: { kind: "project", projectId, breadcrumbBase: baseCrumbs },
       searchParts: ["project"],
