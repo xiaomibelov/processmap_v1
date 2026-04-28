@@ -22,6 +22,7 @@ from ..utils.response_builders import build_items_count_payload, build_items_pay
 
 ORG_READ_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "org_viewer", "auditor"}
 ORG_MEMBER_READ_ROLES = {"org_owner", "org_admin", "auditor"}
+EXPLORER_CONTEXT_STATUSES = {"none", "as_is", "to_be"}
 _GIT_MIRROR_PROVIDERS = {"github", "gitlab"}
 _GITHUB_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 _GITLAB_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)+$")
@@ -74,6 +75,49 @@ def can_manage_workspace(request: Request, org_id: str) -> bool:
         "org_owner",
         "org_admin",
     }
+
+
+def normalize_context_status(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return "none"
+    if text not in EXPLORER_CONTEXT_STATUSES:
+        raise HTTPException(status_code=400, detail="invalid context_status")
+    return text
+
+
+def build_assignable_user_payload(user_id: str) -> Optional[Dict[str, str]]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        return None
+    user = find_user_by_id(uid) or {}
+    if not user:
+        return None
+    email = str(user.get("email") or "").strip().lower()
+    full_name = str(user.get("full_name") or "").strip()
+    job_title = str(user.get("job_title") or "").strip()
+    display_name = full_name or email or uid
+    return {
+        "user_id": uid,
+        "email": email,
+        "full_name": full_name,
+        "job_title": job_title,
+        "display_name": display_name,
+    }
+
+
+def validate_org_user_assignable(org_id: str, user_id: Any) -> str:
+    oid = str(org_id or "").strip()
+    uid = str(user_id or "").strip()
+    if not uid:
+        return ""
+    if not oid:
+        raise HTTPException(status_code=404, detail="not found")
+    if not build_assignable_user_payload(uid):
+        raise HTTPException(status_code=422, detail="assigned user not found")
+    if not user_has_org_membership(uid, oid, is_admin=False):
+        raise HTTPException(status_code=422, detail="assigned user is not an org member")
+    return uid
 
 
 def enterprise_require_org_member(request: Request, org_id: str) -> Tuple[Optional[str], Optional[JSONResponse]]:
