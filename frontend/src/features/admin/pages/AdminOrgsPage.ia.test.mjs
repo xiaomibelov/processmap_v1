@@ -32,6 +32,7 @@ test("AdminOrgsPage keeps existing admin actions while separating organizations 
   assert.match(pageSource, /Сохранить Git mirror/);
   assert.match(pageSource, /<AdminUsersPanel/);
   assert.match(pageSource, /<AdminOrgInvitesPanel/);
+  assert.ok(pageSource.indexOf("<AdminUsersPanel") < pageSource.indexOf("<AdminOrgInvitesPanel"));
 });
 
 test("AdminOrgsPage removes empty filters block and demotes system notes", () => {
