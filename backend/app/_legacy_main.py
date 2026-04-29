@@ -183,6 +183,7 @@ from .services.org_workspace import (
     require_org_role as _require_org_role,
 )
 from .services.publish_git_mirror import execute_git_mirror_publish
+from .services.runtime_meta import get_runtime_build_meta
 from .utils.legacy_normalization import (
     norm_edges as _norm_edges,
     norm_interview as _norm_interview,
@@ -6781,7 +6782,8 @@ def export_zip(session_id: str):
     )
 
 @app.get("/api/meta")
-def api_meta():
+def api_meta(response: Response):
+    response.headers["Cache-Control"] = "no-store"
     redis = runtime_status(force_ping=True)
     return {
         "api_version": 2,
@@ -6799,6 +6801,7 @@ def api_meta():
             "incident": bool(redis.get("incident")),
             "required": bool(redis.get("required")),
         },
+        "runtime": get_runtime_build_meta(),
     }
 
 
