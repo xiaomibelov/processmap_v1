@@ -4,6 +4,8 @@ import ProcessStage from "./ProcessStage";
 import SidebarHandle from "./sidebar/SidebarHandle";
 import { resolveSessionNavNoticeCopy } from "../features/process/navigation/sessionNavNoticeUi";
 import { appVersionInfo } from "../config/appVersion.js";
+import AppUpdateBanner from "../features/appUpdate/AppUpdateBanner.jsx";
+import useAppUpdateAvailable from "../features/appUpdate/useAppUpdateAvailable.js";
 
 function isUpdatesHash() {
   if (typeof window === "undefined") return false;
@@ -159,6 +161,7 @@ export default function AppShell({
     ? String(latestChangeEntry.changes[0] || "").trim()
     : "";
   const [updatesOpen, setUpdatesOpen] = useState(() => isUpdatesHash());
+  const appUpdate = useAppUpdateAvailable();
 
   useEffect(() => {
     // eslint-disable-next-line no-console
@@ -233,6 +236,13 @@ export default function AppShell({
         mentionNotifications={mentionNotifications}
         onOpenMentionNotification={onOpenMentionNotification}
         onRefreshMentionNotifications={onRefreshMentionNotifications}
+      />
+
+      <AppUpdateBanner
+        visible={appUpdate.visible}
+        runtime={appUpdate.runtime}
+        onRefresh={appUpdate.refresh}
+        onDismiss={appUpdate.dismiss}
       />
 
       {sessionNavNotice ? (
