@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  pushSessionSelectionToUrl,
   readSelectionFromUrl,
   shouldPreserveSelectionRouteDuringRestore,
   shouldSkipDuplicateUrlRestore,
@@ -14,8 +15,17 @@ function makeWindow(href = "https://processmap.local/app") {
     location: {},
     history: {
       state: { existing: true },
+      pushState(state, title, url) {
+        calls.push({ type: "push", state, title, url });
+        this.state = state;
+        const next = new URL(url, "https://processmap.local");
+        win.location.href = next.href;
+        win.location.pathname = next.pathname;
+        win.location.search = next.search;
+        win.location.hash = next.hash;
+      },
       replaceState(state, title, url) {
-        calls.push({ state, title, url });
+        calls.push({ type: "replace", state, title, url });
         this.state = state;
         const next = new URL(url, "https://processmap.local");
         win.location.href = next.href;
@@ -109,8 +119,46 @@ test("writeSelectionToUrl preserves replace-only behavior and unrelated query pa
   writeSelectionToUrl({ projectId: "p1", sessionId: "s1" }, win);
 
   assert.equal(win.calls.length, 1);
+  assert.equal(win.calls[0].type, "replace");
   assert.equal(win.calls[0].url, "/app/org?tab=dictionary&project=p1&session=s1#updates");
   assert.equal(win.location.pathname, "/app/org");
   assert.equal(win.location.search, "?tab=dictionary&project=p1&session=s1");
   assert.equal(win.location.hash, "#updates");
+});
+
+test("pushSessionSelectionToUrl replaces parent project entry then pushes session entry", () => {
+  const win = makeWindow("https://processmap.local/app?workspace=w1&folder=f1");
+  const result = pushSessionSelectionToUrl({ projectId: "p1", sessionId: "s1" }, win);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.parentAction, "replace");
+  assert.equal(result.sessionAction, "push");
+  assert.deepEqual(
+    win.calls.map((call) => [call.type, call.url]),
+    [
+      ["replace", "/app?workspace=w1&folder=f1&project=p1"],
+      ["push", "/app?workspace=w1&folder=f1&project=p1&session=s1"],
+    ],
+  );
+  assert.equal(win.location.search, "?workspace=w1&folder=f1&project=p1&session=s1");
+});
+
+test("pushSessionSelectionToUrl skips duplicate current session", () => {
+  const win = makeWindow("https://processmap.local/app?project=p1&session=s1");
+  const result = pushSessionSelectionToUrl({ projectId: "p1", sessionId: "s1" }, win);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.action, "none");
+  assert.equal(win.calls.length, 0);
+});
+
+test("pushSessionSelectionToUrl requires project and session ids", () => {
+  const win = makeWindow("https://processmap.local/app");
+
+  assert.deepEqual(pushSessionSelectionToUrl({ projectId: "", sessionId: "s1" }, win), {
+    ok: false,
+    action: "none",
+    reason: "missing_selection",
+  });
+  assert.equal(win.calls.length, 0);
 });

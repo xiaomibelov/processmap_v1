@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 import {
   buildProcessMapUrl,
   parseProcessMapRoute,
+  pushProcessMapHistory,
   replaceProcessMapHistory,
 } from "./processMapRouteModel.js";
 
@@ -39,6 +40,37 @@ export function writeSelectionToUrl({ projectId, sessionId }, win = typeof windo
     }
   } catch {
     // ignore route write failures
+  }
+}
+
+export function pushSessionSelectionToUrl({ projectId, sessionId }, win = typeof window !== "undefined" ? window : undefined) {
+  if (!win) return { ok: false, action: "none", reason: "missing_window" };
+  const pid = String(projectId || "").trim();
+  const sid = String(sessionId || "").trim();
+  if (!pid || !sid) return { ok: false, action: "none", reason: "missing_selection" };
+  try {
+    const currentRoute = parseProcessMapRoute(win.location || win);
+    if (currentRoute.projectId === pid && currentRoute.sessionId === sid) {
+      return { ok: true, action: "none", reason: "already_current_session" };
+    }
+    const parentResult = replaceProcessMapHistory({ projectId: pid, sessionId: "", source: "internal" }, {
+      win,
+      baseSearch: win.location.search || "",
+    });
+    const sessionResult = pushProcessMapHistory({ projectId: pid, sessionId: sid, source: "internal" }, {
+      win,
+      baseSearch: win.location.search || "",
+    });
+    return {
+      ok: true,
+      action: sessionResult?.action || "none",
+      parentAction: parentResult?.action || "none",
+      sessionAction: sessionResult?.action || "none",
+      parentUrl: parentResult?.url || "",
+      sessionUrl: sessionResult?.url || "",
+    };
+  } catch {
+    return { ok: false, action: "none", reason: "history_write_failed" };
   }
 }
 
