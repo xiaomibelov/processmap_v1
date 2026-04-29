@@ -153,7 +153,7 @@ export default function useSessionActivationOrchestration({
         bpmnHash: fnv1aHex(""),
         mode: "empty_sid",
       });
-      return;
+      return { ok: false, error: "empty_session_id" };
     }
 
     if (isLocalSessionId(sid)) {
@@ -171,11 +171,11 @@ export default function useSessionActivationOrchestration({
         bpmnHash: fnv1aHex(""),
         mode: "local",
       });
-      return;
+      return { ok: true, sessionId: sid, projectId: String(projectId || "").trim(), local: true };
     }
 
     const r = await apiGetSession(sid);
-    if (reqSeq !== openSessionReqSeqRef.current) return;
+    if (reqSeq !== openSessionReqSeqRef.current) return { ok: false, cancelled: true, error: "stale_open_session" };
     if (!r.ok) {
       const status = Number(r?.status || 0);
       setActivationPhase("failed", {
@@ -203,7 +203,7 @@ export default function useSessionActivationOrchestration({
         });
       }
       logNav("open_session_error", { sessionId: sid, source, status, error: String(r?.error || "api_error") });
-      return;
+      return { ok: false, error: String(r.error || "api_get_session_failed"), status };
     }
 
     const nextRaw = r.session || ensureDraftShape(sid);
@@ -298,6 +298,7 @@ export default function useSessionActivationOrchestration({
       source,
     });
     markOk("API OK");
+    return { ok: true, sessionId: sid, projectId: sidProject || String(projectId || "").trim() };
   }, [
     clearSessionRestoreMemory,
     ensureDraftShape,
@@ -533,7 +534,7 @@ export default function useSessionActivationOrchestration({
     if (pid && pid !== String(projectId || "").trim()) {
       setProjectId(pid);
     }
-    await openSession(sid, { source });
+    return openSession(sid, { source });
   }, [ensureObject, openSession, projectId, projectWorkspaceHintsRef, setProjectId]);
 
   const createLocalSession = useCallback(() => {
