@@ -555,6 +555,20 @@ export async function apiListMyNoteMentions(limit = 20) {
   return { ok: true, status: r.status, items, mentions: items, count: Number(r.data?.count || items.length || 0) };
 }
 
+export async function apiListNoteNotifications({ limit = 20, includeRead = false } = {}) {
+  const r = okOrError(await request(apiRoutes.noteNotifications.list({ limit, includeRead })));
+  if (!r.ok) return r;
+  const items = Array.isArray(r.data?.items) ? r.data.items : [];
+  return {
+    ok: true,
+    status: r.status,
+    items,
+    notifications: items,
+    count: Number(r.data?.count || items.length || 0),
+    limit: Number(r.data?.limit || limit || 0),
+  };
+}
+
 export async function apiAcknowledgeNoteMention(mentionId) {
   const mid = String(mentionId || "").trim();
   if (!mid) return { ok: false, status: 0, error: "missing mention_id" };

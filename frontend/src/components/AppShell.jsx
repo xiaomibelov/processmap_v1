@@ -147,6 +147,8 @@ export default function AppShell({
   onDismissSessionNavNotice,
   onReturnToSessionList,
   mentionNotifications,
+  noteNotifications,
+  noteNotificationsAvailable = false,
   onOpenMentionNotification,
   onRefreshMentionNotifications,
 }) {
@@ -235,6 +237,8 @@ export default function AppShell({
         onVerifyLlmSettings={onVerifyLlmSettings}
         draft={draft}
         mentionNotifications={mentionNotifications}
+        noteNotifications={noteNotifications}
+        noteNotificationsAvailable={noteNotificationsAvailable}
         onOpenMentionNotification={onOpenMentionNotification}
         onRefreshMentionNotifications={onRefreshMentionNotifications}
       />
