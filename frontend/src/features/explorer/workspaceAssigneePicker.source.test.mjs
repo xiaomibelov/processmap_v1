@@ -44,14 +44,15 @@ test("Folder and project row menus expose assignment actions", () => {
   assert.match(explorerSource, /orgs=\{orgs\}/);
 });
 
-test("Assignee picker loads org members, filters users, and has bounded loading states", () => {
+test("Assignee picker loads assignable users, filters users, and has bounded loading states", () => {
   const dialogSource = between("function AssigneeDialog(", "function folderMoveErrorMessage(");
   const explorerPaneSource = between("function ExplorerPane(", "// ─── Session Row");
 
-  assert.match(explorerSource, /apiListOrgMembers/);
+  assert.match(explorerSource, /apiListOrgAssignableUsers/);
+  assert.doesNotMatch(explorerSource, /apiListOrgMembers/);
   assert.match(explorerSource, /mergeExplorerAssignableCurrentUser/);
   assert.match(explorerSource, /getExplorerAssignableUserId/);
-  assert.match(explorerPaneSource, /Promise\.race\(\[\s*apiListOrgMembers\(oid\),\s*assigneeMembersLoadTimeout\(\),\s*\]\)/);
+  assert.match(explorerPaneSource, /Promise\.race\(\[\s*apiListOrgAssignableUsers\(oid\),\s*assigneeMembersLoadTimeout\(\),\s*\]\)/);
   assert.match(explorerPaneSource, /normalizeExplorerAssignableUsersResponse\(resp\)/);
   assert.match(explorerPaneSource, /\}, \[activeOrgId,\s*assigneeDialog\]\);/);
   assert.doesNotMatch(explorerPaneSource, /\}, \[[^\]]*assigneeMembersState\.(?:loaded|loading|orgId)[^\]]*\]\);/);
