@@ -25,7 +25,7 @@ class EnterpriseOrgScopeApiTest(unittest.TestCase):
         from app.auth import create_user
         from app._legacy_main import AuthMeOut, auth_me, create_org_project, list_projects
         from app.models import CreateProjectIn
-        from app.routers.org_members import list_org_members_endpoint
+        from app.routers.org_members import list_org_assignable_users_endpoint, list_org_members_endpoint
         from app.storage import (
             create_org_record,
             get_default_org_id,
@@ -39,6 +39,7 @@ class EnterpriseOrgScopeApiTest(unittest.TestCase):
         self.auth_me = auth_me
         self.create_org_project = create_org_project
         self.list_projects = list_projects
+        self.list_org_assignable_users_endpoint = list_org_assignable_users_endpoint
         self.list_org_members_endpoint = list_org_members_endpoint
         self.create_org_record = create_org_record
         self.get_default_org_id = get_default_org_id
@@ -60,6 +61,27 @@ class EnterpriseOrgScopeApiTest(unittest.TestCase):
             full_name="Enterprise Editor",
             job_title="Process Editor",
         )
+        self.platform_admin_without_membership = create_user(
+            "ent_platform_admin_without_membership@local",
+            "adminpass",
+            is_admin=True,
+            full_name="Platform Assignable",
+            job_title="Platform Lead",
+        )
+        self.foreign_user = create_user(
+            "ent_foreign@local",
+            "foreignpass",
+            is_admin=False,
+            full_name="Foreign User",
+            job_title="Other Org",
+        )
+        self.outsider_user = create_user(
+            "ent_outsider@local",
+            "outsiderpass",
+            is_admin=False,
+            full_name="Outsider User",
+            job_title="No Org",
+        )
         self.default_org_id = get_default_org_id()
         self.org_b = create_org_record("Second Org", created_by=str(self.admin_user.get("id") or ""))
 
@@ -71,6 +93,11 @@ class EnterpriseOrgScopeApiTest(unittest.TestCase):
         self._insert_membership(
             org_id=self.default_org_id,
             user_id=str(self.editor_user.get("id") or ""),
+            role="editor",
+        )
+        self._insert_membership(
+            org_id=str(self.org_b.get("id") or ""),
+            user_id=str(self.foreign_user.get("id") or ""),
             role="editor",
         )
 
@@ -189,6 +216,75 @@ class EnterpriseOrgScopeApiTest(unittest.TestCase):
         self.assertEqual(by_email["ent_admin@local"].get("job_title"), "Owner")
         self.assertEqual(by_email["ent_editor@local"].get("full_name"), "Enterprise Editor")
         self.assertEqual(by_email["ent_editor@local"].get("job_title"), "Process Editor")
+        self.assertNotIn("ent_platform_admin_without_membership@local", by_email)
+
+    def test_assignable_users_endpoint_returns_physical_members_and_platform_admin_for_platform_admin_requester(self):
+        req = _DummyRequest(self.admin_user, active_org_id=self.default_org_id)
+        before_members = self._org_member_user_ids(self.default_org_id)
+
+        payload = self.list_org_assignable_users_endpoint(self.default_org_id, req)
+
+        self.assertIsInstance(payload, dict)
+        rows = payload.get("items") or []
+        by_email = {str(item.get("email") or ""): item for item in rows}
+        self.assertIn("ent_admin@local", by_email)
+        self.assertIn("ent_editor@local", by_email)
+        self.assertIn("ent_platform_admin_without_membership@local", by_email)
+        self.assertNotIn("ent_foreign@local", by_email)
+        self.assertEqual(by_email["ent_editor@local"].get("assignable_reason"), "org_member")
+        self.assertEqual(by_email["ent_editor@local"].get("membership_role"), "editor")
+        platform_row = by_email["ent_platform_admin_without_membership@local"]
+        self.assertTrue(platform_row.get("is_platform_admin"))
+        self.assertIsNone(platform_row.get("membership_role"))
+        self.assertEqual(platform_row.get("assignable_reason"), "platform_admin")
+        self.assertEqual(platform_row.get("display_name"), "Platform Assignable")
+        for row in rows:
+            self.assertNotIn("password_hash", row)
+            self.assertNotIn("activation_token_hash", row)
+            self.assertNotIn("is_admin", row)
+        self.assertEqual(len(rows), len({str(item.get("user_id") or "") for item in rows}))
+        self.assertEqual(before_members, self._org_member_user_ids(self.default_org_id))
+
+    def test_assignable_users_endpoint_dedupes_platform_admin_who_is_also_org_member(self):
+        req = _DummyRequest(self.admin_user, active_org_id=self.default_org_id)
+
+        payload = self.list_org_assignable_users_endpoint(self.default_org_id, req)
+
+        admin_id = str(self.admin_user.get("id") or "")
+        rows = [item for item in (payload.get("items") or []) if str(item.get("user_id") or "") == admin_id]
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0].get("is_platform_admin"))
+        self.assertEqual(rows[0].get("membership_role"), "org_admin")
+        self.assertEqual(rows[0].get("assignable_reason"), "org_member_platform_admin")
+
+    def test_assignable_users_endpoint_for_editor_returns_physical_members_only(self):
+        req = _DummyRequest(self.editor_user, active_org_id=self.default_org_id)
+
+        payload = self.list_org_assignable_users_endpoint(self.default_org_id, req)
+
+        rows = payload.get("items") or []
+        by_email = {str(item.get("email") or ""): item for item in rows}
+        self.assertIn("ent_admin@local", by_email)
+        self.assertIn("ent_editor@local", by_email)
+        self.assertNotIn("ent_platform_admin_without_membership@local", by_email)
+        self.assertNotIn("ent_foreign@local", by_email)
+
+    def test_assignable_users_endpoint_rejects_unauthorized_requester(self):
+        req = _DummyRequest(self.outsider_user, active_org_id=self.default_org_id)
+
+        payload = self.list_org_assignable_users_endpoint(self.default_org_id, req)
+
+        self.assertEqual(int(getattr(payload, "status_code", 0) or 0), 404)
+
+    def _org_member_user_ids(self, org_id: str) -> set[str]:
+        with sqlite3.connect(str(self._db_path())) as con:
+            return {
+                str(row[0] or "")
+                for row in con.execute(
+                    "SELECT user_id FROM org_memberships WHERE org_id = ?",
+                    [org_id],
+                ).fetchall()
+            }
 
 
 if __name__ == "__main__":

@@ -98,6 +98,9 @@ class RouteCompatibilityTest(unittest.TestCase):
         self.assertEqual(route_keys.count(("GET", "/api/orgs/{org_id}/members")), 1)
         self.assertIn(("GET", "/api/orgs/{org_id}/members", "app.routers.org_members"), owners)
         self.assertNotIn(("GET", "/api/orgs/{org_id}/members", "app._legacy_main"), owners)
+        self.assertEqual(route_keys.count(("GET", "/api/orgs/{org_id}/assignable-users")), 1)
+        self.assertIn(("GET", "/api/orgs/{org_id}/assignable-users", "app.routers.org_members"), owners)
+        self.assertNotIn(("GET", "/api/orgs/{org_id}/assignable-users", "app._legacy_main"), owners)
 
 
 if __name__ == "__main__":

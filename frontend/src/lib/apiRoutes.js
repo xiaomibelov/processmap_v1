@@ -30,6 +30,7 @@ export const apiRoutes = {
     list: () => "/api/orgs",
     item: (orgId) => `/api/orgs/${encode(orgId)}`,
     members: (orgId) => `/api/orgs/${encode(orgId)}/members`,
+    assignableUsers: (orgId) => `/api/orgs/${encode(orgId)}/assignable-users`,
     member: (orgId, userId) => `/api/orgs/${encode(orgId)}/members/${encode(userId)}`,
     memberAssign: (orgId) => `/api/orgs/${encode(orgId)}/members/assign`,
     propertyDictionaryOperations: (orgId) => `/api/orgs/${encode(orgId)}/property-dictionary/operations`,
