@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import AiToolsModal from "./AiToolsModal";
 import { useAuth } from "../features/auth/AuthProvider";
 import { getManualSessionStatusMeta, MANUAL_SESSION_STATUSES } from "../features/workspace/workspacePermissions";
-import { useSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
+import { buildAccountDiscussionNotificationGroups } from "../features/notes/discussionNotificationCenterDropdownModel.js";
+import { useSessionNoteAggregate, useSessionNoteAggregates } from "../lib/sessionNoteAggregates.js";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -52,10 +53,20 @@ function userTitleFrom(user) {
   return String(user?.name || user?.email || user?.id || "").trim() || "Пользователь";
 }
 
-function mentionPreview(item) {
-  const body = toText(item?.comment_body);
-  if (!body) return "Упоминание в обсуждении";
-  return shortLabel(body.replace(/\s+/g, " "), 72);
+function formatNotificationTime(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  const ms = n < 100000000000 ? n * 1000 : n;
+  try {
+    return new Intl.DateTimeFormat("ru-RU", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(ms));
+  } catch {
+    return "";
+  }
 }
 
 function UserAvatarIcon({ className = "" }) {
@@ -124,6 +135,11 @@ export default function TopBar({
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const notesAggregate = useSessionNoteAggregate(effectiveSessionId);
+  const sessionAggregateIds = useMemo(
+    () => (accountMenuOpen ? sessList.map((item) => sessionIdFrom(item)).filter(Boolean) : []),
+    [accountMenuOpen, sessList],
+  );
+  const sessionAggregatesBySessionId = useSessionNoteAggregates(sessionAggregateIds);
   const accountMenuRef = useRef(null);
   const accountButtonRef = useRef(null);
   const projectMenuRef = useRef(null);
@@ -294,9 +310,38 @@ export default function TopBar({
   const sessionStatusMeta = getManualSessionStatusMeta(sessionStatus);
   const canOpenOrgSettings = Boolean(user?.is_admin) || ["org_owner", "org_admin", "auditor"].includes(activeOrgRole);
   const mentionItems = asArray(mentionNotifications);
-  const mentionCount = mentionItems.length;
-  const attentionDiscussionCount = Math.max(0, Number(notesAggregate?.attention_discussions_count || 0) || 0);
-  const accountNotificationCount = mentionCount + attentionDiscussionCount;
+  const accountNotificationCenter = useMemo(() => {
+    const aggregates = new Map(sessionAggregatesBySessionId);
+    if (effectiveSessionId && notesAggregate && !aggregates.has(effectiveSessionId)) {
+      aggregates.set(effectiveSessionId, notesAggregate);
+    }
+    return buildAccountDiscussionNotificationGroups({
+      mentionNotifications: mentionItems,
+      sessionAggregates: aggregates,
+      currentSession: {
+        id: effectiveSessionId,
+        title: selectedSessionTitle,
+        project_id: effectiveProjectId,
+        aggregate: notesAggregate,
+      },
+      currentProject: {
+        id: effectiveProjectId,
+        title: selectedProjectTitle,
+      },
+      knownSessions: sessList,
+    });
+  }, [
+    effectiveProjectId,
+    effectiveSessionId,
+    mentionItems,
+    notesAggregate,
+    selectedProjectTitle,
+    selectedSessionTitle,
+    sessList,
+    sessionAggregatesBySessionId,
+  ]);
+  const accountNotificationCount = accountNotificationCenter.badgeCount;
+  const hasAccountNotifications = accountNotificationCenter.rowCount > 0;
 
   async function handleLogout() {
     if (typeof window !== "undefined") {
@@ -316,6 +361,38 @@ export default function TopBar({
     setAccountMenuOpen(false);
     if (typeof window === "undefined") return;
     window.alert("Раздел «Профиль» будет доступен в следующих релизах.");
+  }
+
+  async function handleAccountNotificationOpen(row) {
+    const item = row && typeof row === "object" ? row : {};
+    setAccountMenuOpen(false);
+    if (item.type === "mention") {
+      if (typeof onOpenMentionNotification === "function") {
+        await Promise.resolve(onOpenMentionNotification(item.mention || item));
+      }
+      return;
+    }
+
+    const targetSessionId = toText(item.sessionId);
+    if (targetSessionId && targetSessionId === effectiveSessionId) {
+      onOpenDiscussionNotifications?.();
+      return;
+    }
+
+    const session = sessList.find((candidate) => sessionIdFrom(candidate) === targetSessionId) || null;
+    if (session && typeof openSessionHandler === "function") {
+      await Promise.resolve(openSessionHandler(session));
+      return;
+    }
+
+    onOpenDiscussionNotifications?.();
+  }
+
+  function badgeToneClass(tone) {
+    if (tone === "mention") return "border-danger/45 bg-danger/10 text-danger";
+    if (tone === "attention") return "border-warning/55 bg-warning/10 text-warning";
+    if (tone === "personal") return "border-info/50 bg-info/10 text-info";
+    return "border-border/80 bg-panel2/70 text-muted";
   }
 
   return (
@@ -598,7 +675,7 @@ export default function TopBar({
                   <div className="min-w-0 flex-1">
                     <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Уведомления</div>
                     <div className="truncate text-xs text-muted">
-                      {accountNotificationCount > 0 ? "Упоминания и внимание" : "Нет активных уведомлений"}
+                      {hasAccountNotifications ? `${accountNotificationCenter.rowCount} событий` : "Нет активных уведомлений"}
                     </div>
                   </div>
                   <button
@@ -612,57 +689,92 @@ export default function TopBar({
                     ↻
                   </button>
                 </div>
-                {mentionCount > 0 ? (
-                  <div className="grid min-w-0 gap-1">
-                    {mentionItems.slice(0, 4).map((item) => (
-                      <button
-                        key={toText(item?.id)}
-                        type="button"
-                        className="w-full min-w-0 overflow-hidden rounded-lg border border-border/70 bg-panel2/50 px-2.5 py-1.5 text-left transition hover:border-info/55 hover:bg-panel2/85"
-                        onClick={() => {
-                          setAccountMenuOpen(false);
-                          if (typeof onOpenMentionNotification === "function") onOpenMentionNotification(item);
-                        }}
-                        data-testid="topbar-mention-item"
+                {hasAccountNotifications ? (
+                  <div className="grid max-h-[286px] min-w-0 gap-1.5 overflow-y-auto pr-1" data-testid="topbar-notification-center">
+                    {accountNotificationCenter.groups.slice(0, 8).map((group) => (
+                      <section
+                        key={group.id}
+                        className="min-w-0 overflow-hidden rounded-lg border border-border/70 bg-panel2/45 p-1.5"
+                        data-testid="topbar-notification-session-group"
                       >
-                        <div className="flex min-w-0 items-center gap-2 text-[11px] font-semibold text-danger">
-                          <span className="shrink-0 rounded-full border border-danger/45 bg-danger/10 px-1.5 py-0.5">@</span>
-                          <span className="min-w-0 truncate">{toText(item?.mentioned_label || item?.mentioned_user_id) || "Вы"}</span>
+                        <div className="mb-1 flex min-w-0 items-start justify-between gap-2 px-1">
+                          <div className="min-w-0">
+                            <div className="truncate text-[12px] font-black leading-tight text-fg" title={group.sessionTitle}>
+                              {shortLabel(group.sessionTitle, 34)}
+                            </div>
+                            {group.projectTitle ? (
+                              <div className="truncate text-[10px] leading-tight text-muted" title={group.projectTitle}>
+                                {shortLabel(group.projectTitle, 40)}
+                              </div>
+                            ) : null}
+                          </div>
+                          <span className="shrink-0 rounded-full border border-border/80 bg-bg/55 px-1.5 py-0 text-[10px] font-semibold text-muted tabular-nums">
+                            {group.rows.length}
+                          </span>
                         </div>
-                        <div className="mt-1 line-clamp-2 break-words text-sm font-semibold leading-snug text-fg">{mentionPreview(item)}</div>
-                        <div className="mt-1 truncate text-[11px] text-muted">Открыть обсуждение</div>
-                      </button>
+                        <div className="grid gap-1">
+                          {group.rows.slice(0, 3).map((row) => {
+                            const isMention = row.type === "mention";
+                            const isCurrentAggregate = row.type === "aggregate" && row.sessionId === effectiveSessionId;
+                            const rowTestId = isMention
+                              ? "topbar-mention-item"
+                              : isCurrentAggregate
+                                ? "topbar-discussion-notifications"
+                                : "topbar-notification-row";
+                            const timeLabel = formatNotificationTime(row.timestamp);
+                            return (
+                              <button
+                                key={row.id}
+                                type="button"
+                                className="w-full min-w-0 overflow-hidden rounded-md border border-border/70 bg-bg/35 px-2 py-1.5 text-left transition hover:border-info/55 hover:bg-panel2/85"
+                                onClick={() => void handleAccountNotificationOpen(row)}
+                                data-testid={rowTestId}
+                                data-notes-panel-trigger={isCurrentAggregate ? "true" : undefined}
+                              >
+                                <div className="flex min-w-0 items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="line-clamp-2 break-words text-[12px] font-semibold leading-snug text-fg">
+                                      {row.title || "Обсуждение"}
+                                    </div>
+                                    {row.excerpt ? (
+                                      <div className="mt-0.5 line-clamp-2 break-words text-[11px] leading-snug text-muted">
+                                        {row.excerpt}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                  <div className="flex shrink-0 flex-col items-end gap-1">
+                                    {row.badges?.slice(0, 2).map((badge) => (
+                                      <span
+                                        key={`${row.id}:${badge.label}`}
+                                        className={`rounded-full border px-1.5 py-0 text-[9px] font-bold leading-4 ${badgeToneClass(badge.tone)}`}
+                                      >
+                                        {badge.label}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px] text-muted">
+                                  {row.authorLabel ? <span className="truncate">{shortLabel(row.authorLabel, 24)}</span> : null}
+                                  {row.authorLabel && timeLabel ? <span className="shrink-0">·</span> : null}
+                                  {timeLabel ? <span className="shrink-0">{timeLabel}</span> : null}
+                                  {!row.authorLabel && !timeLabel ? <span>Открыть обсуждения</span> : null}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </section>
                     ))}
                   </div>
                 ) : (
-                  <div className="min-w-0 overflow-hidden rounded-lg border border-dashed border-border px-2.5 py-2 text-xs leading-snug text-muted break-words">
-                    Упоминания появятся здесь.
+                  <div
+                    className="min-w-0 overflow-hidden rounded-lg border border-dashed border-border px-2.5 py-2 text-xs leading-snug text-muted break-words"
+                    data-testid="topbar-notification-empty"
+                  >
+                    <div className="font-semibold text-fg/80">Нет активных уведомлений</div>
+                    <div className="mt-0.5">Новые сообщения, упоминания и обсуждения появятся здесь.</div>
                   </div>
                 )}
-                {hasActiveSession ? (
-                  <button
-                    type="button"
-                    className="secondaryBtn mt-1 h-8 w-full min-w-0 justify-start gap-2 overflow-hidden px-2.5 text-left text-sm"
-                    onClick={() => {
-                      setAccountMenuOpen(false);
-                      onOpenDiscussionNotifications?.();
-                    }}
-                    data-testid="topbar-discussion-notifications"
-                    data-notes-panel-trigger="true"
-                  >
-                    <span className="min-w-0 flex-1 truncate">Требует внимания</span>
-                    {attentionDiscussionCount > 0 ? (
-                      <span
-                        className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border border-danger/50 bg-danger/10 px-1.5 py-0 text-[10px] font-semibold text-danger"
-                        title={`Обсуждения требуют внимания: ${attentionDiscussionCount}`}
-                        aria-label={`Обсуждения требуют внимания: ${attentionDiscussionCount}`}
-                      >
-                        <span aria-hidden>⚠</span>
-                        <span className="tabular-nums">{attentionDiscussionCount}</span>
-                      </span>
-                    ) : null}
-                  </button>
-                ) : null}
               </div>
               <button
                 type="button"
