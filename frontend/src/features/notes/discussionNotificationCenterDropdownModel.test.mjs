@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildAccountDiscussionNotificationGroups } from "./discussionNotificationCenterDropdownModel.js";
+import {
+  buildAccountDiscussionNotificationGroups,
+  filterDiscussionNotificationGroups,
+} from "./discussionNotificationCenterDropdownModel.js";
 
 test("returns useful empty state counts when there are no source-backed signals", () => {
   const center = buildAccountDiscussionNotificationGroups({
@@ -101,6 +104,10 @@ test("builds backend feed rows with source-backed snippets and target metadata",
   assert.equal(row.mention.id, "mention_1");
   assert.equal(row.target.thread_id, "thread_1");
   assert.equal(row.target.comment_id, "comment_1");
+  assert.equal(row.canOpen, true);
+  assert.equal(row.canMarkRead, true);
+  assert.equal(row.canAcknowledgeMention, true);
+  assert.equal(row.canAcknowledgeAttention, true);
 });
 
 test("backend aggregate-only feed rows do not invent message snippets", () => {
@@ -122,6 +129,8 @@ test("backend aggregate-only feed rows do not invent message snippets", () => {
   assert.equal(row.type, "feed");
   assert.equal(row.excerpt, "");
   assert.deepEqual(row.badges.map((badge) => badge.label), ["Новые 2"]);
+  assert.equal(row.canMarkRead, true);
+  assert.equal(row.canAcknowledgeAttention, false);
 });
 
 test("builds aggregate-only rows from counts without inventing message snippets", () => {
@@ -145,6 +154,55 @@ test("builds aggregate-only rows from counts without inventing message snippets"
   assert.equal(row.excerpt, "Открытые обсуждения: 4");
   assert.deepEqual(row.badges.map((badge) => badge.label), ["Внимание 2", "Мои 1", "Открыто 4"]);
   assert.equal(center.badgeCount, 3);
+  assert.equal(row.canOpen, true);
+  assert.equal(row.canMarkRead, false);
+  assert.equal(row.canAcknowledgeAttention, false);
+});
+
+test("filters notification groups by all, mentions, unread, and attention", () => {
+  const center = buildAccountDiscussionNotificationGroups({
+    noteNotifications: [
+      {
+        id: "mention",
+        reason: "mention",
+        session_id: "sess_1",
+        thread_id: "thread_mention",
+        mention_id: "mention_1",
+        comment_id: "comment_1",
+        mention_count: 1,
+        snippet: "mention",
+      },
+      {
+        id: "unread",
+        reason: "unread",
+        session_id: "sess_1",
+        thread_id: "thread_unread",
+        unread_count: 2,
+      },
+      {
+        id: "attention",
+        reason: "attention",
+        session_id: "sess_2",
+        thread_id: "thread_attention",
+        attention_count: 1,
+        requires_attention: true,
+      },
+    ],
+  });
+
+  assert.equal(filterDiscussionNotificationGroups(center, "all").rowCount, 3);
+  assert.deepEqual(
+    filterDiscussionNotificationGroups(center, "mention").groups.flatMap((group) => group.rows.map((row) => row.threadId)),
+    ["thread_mention"],
+  );
+  assert.deepEqual(
+    filterDiscussionNotificationGroups(center, "unread").groups.flatMap((group) => group.rows.map((row) => row.threadId)),
+    ["thread_unread"],
+  );
+  assert.deepEqual(
+    filterDiscussionNotificationGroups(center, "attention").groups.flatMap((group) => group.rows.map((row) => row.threadId)),
+    ["thread_attention"],
+  );
 });
 
 test("sorts mention rows before aggregate rows for the same session", () => {
