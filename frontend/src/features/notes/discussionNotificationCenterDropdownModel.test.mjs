@@ -46,8 +46,10 @@ test("groups mention notifications by session and keeps the comment snippet", ()
   assert.equal(center.groups.length, 1);
   assert.equal(center.groups[0].sessionTitle, "Разогрев супа");
   assert.equal(center.groups[0].projectTitle, "Борщ с говядиной");
+  assert.equal(center.groups[0].notificationType, "discussion");
   assert.equal(center.groups[0].rows.length, 1);
   assert.equal(center.groups[0].rows[0].type, "mention");
+  assert.equal(center.groups[0].rows[0].notificationType, "discussion");
   assert.match(center.groups[0].rows[0].excerpt, /Проверьте температуру/);
   assert.equal(center.groups[0].rows[0].badges[0].label, "Упоминание");
 });
@@ -68,6 +70,7 @@ test("builds aggregate-only rows from counts without inventing message snippets"
 
   const row = center.groups[0].rows[0];
   assert.equal(row.type, "aggregate");
+  assert.equal(row.notificationType, "discussion");
   assert.equal(row.title, "Есть обсуждения, требующие внимания");
   assert.equal(row.excerpt, "Открытые обсуждения: 4");
   assert.deepEqual(row.badges.map((badge) => badge.label), ["Внимание 2", "Мои 1", "Открыто 4"]);

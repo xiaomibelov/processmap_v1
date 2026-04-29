@@ -76,6 +76,7 @@ function addGroup(groups, sessionId, seed = {}) {
   if (!groups.has(sid)) {
     groups.set(sid, {
       id: sid,
+      notificationType: "discussion",
       sessionId: sid === "unknown" ? "" : sid,
       projectId: text(seed.projectId),
       sessionTitle: text(seed.sessionTitle) || sessionTitleFrom({}, sid === "unknown" ? "" : sid),
@@ -130,6 +131,7 @@ function buildAggregateRow({ sessionId, sessionTitle, projectId, projectTitle, a
   return {
     id: `aggregate:${text(sessionId)}`,
     type: "aggregate",
+    notificationType: "discussion",
     sessionId: text(sessionId),
     projectId: text(projectId),
     sessionTitle,
@@ -180,6 +182,7 @@ export function buildAccountDiscussionNotificationGroups({
     pushRow(group, {
       id: `mention:${key}`,
       type: "mention",
+      notificationType: "discussion",
       sessionId,
       projectId,
       sessionTitle: group.sessionTitle,
