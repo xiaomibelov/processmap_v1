@@ -93,6 +93,8 @@ test("builds backend feed rows with source-backed snippets and target metadata",
   assert.equal(center.mentionCount, 1);
   assert.equal(center.attentionCount, 1);
   assert.equal(center.unreadCount, 3);
+  assert.equal(center.unviewedCount, 1);
+  assert.equal(center.viewedCount, 0);
   assert.equal(center.badgeCount, 5);
   assert.equal(center.groups[0].sessionTitle, "Разогрев супа");
   assert.equal(center.groups[0].projectTitle, "Борщ с говядиной");
@@ -108,9 +110,11 @@ test("builds backend feed rows with source-backed snippets and target metadata",
   assert.equal(row.canMarkRead, true);
   assert.equal(row.canAcknowledgeMention, true);
   assert.equal(row.canAcknowledgeAttention, true);
+  assert.equal(row.requiresAttentionActive, true);
+  assert.equal(row.viewState, "unviewed");
 });
 
-test("backend aggregate-only feed rows do not invent message snippets", () => {
+test("backend unread-only feed rows do not invent message snippets", () => {
   const center = buildAccountDiscussionNotificationGroups({
     noteNotifications: [
       {
@@ -131,6 +135,46 @@ test("backend aggregate-only feed rows do not invent message snippets", () => {
   assert.deepEqual(row.badges.map((badge) => badge.label), ["Новые 2"]);
   assert.equal(row.canMarkRead, true);
   assert.equal(row.canAcknowledgeAttention, false);
+  assert.equal(row.viewState, "unviewed");
+});
+
+test("backend viewed feed rows with zero active badges are retained and openable", () => {
+  const center = buildAccountDiscussionNotificationGroups({
+    noteNotifications: [
+      {
+        id: "viewed",
+        reason: "activity",
+        session_id: "sess_1",
+        session_title: "Разогрев супа",
+        project_id: "proj_1",
+        project_title: "Борщ с говядиной",
+        thread_id: "thread_viewed",
+        thread_title: "Просмотренная тема",
+        comment_id: "comment_seen",
+        snippet: "Историческое сообщение остаётся в ленте",
+        author_display: "Иван",
+        last_comment_at: 220,
+        mention_count: 0,
+        attention_count: 0,
+        unread_count: 0,
+        requires_attention: true,
+      },
+    ],
+  });
+
+  assert.equal(center.rowCount, 1);
+  assert.equal(center.badgeCount, 0);
+  assert.equal(center.viewedCount, 1);
+  assert.equal(center.unviewedCount, 0);
+  assert.equal(center.attentionCount, 0);
+  const row = center.groups[0].rows[0];
+  assert.equal(row.threadId, "thread_viewed");
+  assert.equal(row.viewState, "viewed");
+  assert.equal(row.requiresAttentionActive, false);
+  assert.equal(row.canOpen, true);
+  assert.equal(row.canMarkRead, false);
+  assert.equal(row.canAcknowledgeAttention, false);
+  assert.deepEqual(row.badges.map((badge) => badge.label), ["Просмотрено"]);
 });
 
 test("builds aggregate-only rows from counts without inventing message snippets", () => {
@@ -159,7 +203,7 @@ test("builds aggregate-only rows from counts without inventing message snippets"
   assert.equal(row.canAcknowledgeAttention, false);
 });
 
-test("filters notification groups by all, mentions, unread, and attention", () => {
+test("filters notification groups by all, unviewed, viewed, and attention", () => {
   const center = buildAccountDiscussionNotificationGroups({
     noteNotifications: [
       {
@@ -187,17 +231,27 @@ test("filters notification groups by all, mentions, unread, and attention", () =
         attention_count: 1,
         requires_attention: true,
       },
+      {
+        id: "viewed",
+        reason: "activity",
+        session_id: "sess_3",
+        thread_id: "thread_viewed",
+        unread_count: 0,
+        mention_count: 0,
+        attention_count: 0,
+        snippet: "viewed",
+      },
     ],
   });
 
-  assert.equal(filterDiscussionNotificationGroups(center, "all").rowCount, 3);
+  assert.equal(filterDiscussionNotificationGroups(center, "all").rowCount, 4);
   assert.deepEqual(
-    filterDiscussionNotificationGroups(center, "mention").groups.flatMap((group) => group.rows.map((row) => row.threadId)),
-    ["thread_mention"],
+    filterDiscussionNotificationGroups(center, "unviewed").groups.flatMap((group) => group.rows.map((row) => row.threadId)),
+    ["thread_mention", "thread_unread"],
   );
   assert.deepEqual(
-    filterDiscussionNotificationGroups(center, "unread").groups.flatMap((group) => group.rows.map((row) => row.threadId)),
-    ["thread_unread"],
+    filterDiscussionNotificationGroups(center, "viewed").groups.flatMap((group) => group.rows.map((row) => row.threadId)),
+    ["thread_viewed"],
   );
   assert.deepEqual(
     filterDiscussionNotificationGroups(center, "attention").groups.flatMap((group) => group.rows.map((row) => row.threadId)),

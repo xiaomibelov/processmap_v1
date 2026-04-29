@@ -5,6 +5,7 @@ import test from "node:test";
 const topBarSource = fs.readFileSync(new URL("./TopBar.jsx", import.meta.url), "utf8");
 const appShellSource = fs.readFileSync(new URL("./AppShell.jsx", import.meta.url), "utf8");
 const appSource = fs.readFileSync(new URL("../App.jsx", import.meta.url), "utf8");
+const indexSource = fs.readFileSync(new URL("../../index.html", import.meta.url), "utf8");
 
 test("TopBar exposes bounded discussion notification entry from existing note aggregate truth", () => {
   assert.match(topBarSource, /useSessionNoteAggregate\(effectiveSessionId\)/);
@@ -24,14 +25,15 @@ test("TopBar exposes bounded discussion notification entry from existing note ag
   assert.match(topBarSource, /data-testid="topbar-account-notification-count"/);
   assert.match(topBarSource, /data-testid="topbar-mentions-menu"/);
   assert.match(topBarSource, /data-testid="topbar-notification-center"/);
-  assert.match(topBarSource, /data-testid="topbar-notification-session-group"/);
   assert.match(topBarSource, /data-testid="topbar-notification-empty"/);
   assert.match(topBarSource, /"topbar-discussion-notifications"/);
   assert.match(topBarSource, /data-notes-panel-trigger=\{isCurrentAggregate \? "true" : undefined\}/);
   assert.match(topBarSource, /onOpenDiscussionNotifications\?\.\(\{/);
   assert.match(topBarSource, /accountNotificationCount = accountNotificationCenter\.badgeCount/);
   assert.match(topBarSource, /hasAccountNotifications = accountNotificationCenter\.rowCount > 0/);
-  assert.match(topBarSource, /Нет активных уведомлений/);
+  assert.match(topBarSource, /visibleNotificationRows/);
+  assert.match(topBarSource, /data-view-state=\{row\.viewState \|\| ""\}/);
+  assert.match(topBarSource, /Нет уведомлений/);
   assert.match(topBarSource, /Новые сообщения и упоминания из обсуждений появятся здесь\./);
   assert.doesNotMatch(topBarSource, /personalDiscussionCount/);
   assert.match(topBarSource, /fixed right-3 top-14/);
@@ -44,16 +46,19 @@ test("TopBar exposes bounded discussion notification entry from existing note ag
   assert.match(topBarSource, /flex max-h-\[calc\(100vh-4\.25rem\)\]/);
   assert.match(topBarSource, /data-testid="topbar-account-actions"/);
   assert.match(topBarSource, /min-h-0 flex-1 overflow-y-auto[\s\S]*data-testid="topbar-notification-center"/);
-  assert.match(topBarSource, /group w-full min-w-0 overflow-hidden rounded-md px-2 py-2/);
+  assert.match(topBarSource, /divide-y divide-border\/60 border-t border-border\/60/);
+  assert.match(topBarSource, /group w-full min-w-0 px-1 py-2\.5/);
   assert.match(topBarSource, />\s*Открыть\s*</);
   assert.match(topBarSource, /line-clamp-2 break-words/);
   assert.match(topBarSource, /row\.badges\?\.slice\(0, 4\)/);
   assert.match(topBarSource, /data-testid="topbar-notification-filters"/);
   assert.match(topBarSource, /data-testid="topbar-notification-filter"/);
   assert.match(topBarSource, /\{ key: "all", label: "Все"/);
-  assert.match(topBarSource, /\{ key: "mention", label: "Упоминания"/);
-  assert.match(topBarSource, /\{ key: "unread", label: "Новые"/);
-  assert.match(topBarSource, /\{ key: "attention", label: "Внимание"/);
+  assert.match(topBarSource, /\{ key: "unviewed", label: "Не просмотренные"/);
+  assert.match(topBarSource, /\{ key: "viewed", label: "Просмотренные"/);
+  assert.match(topBarSource, /\{ key: "attention", label: "Требуют внимания"/);
+  assert.doesNotMatch(topBarSource, /\{ key: "mention", label: "Упоминания"/);
+  assert.doesNotMatch(topBarSource, /\{ key: "unread", label: "Новые"/);
   assert.match(topBarSource, /data-testid="topbar-notification-open"/);
   assert.match(topBarSource, /data-testid="topbar-notification-mark-read"/);
   assert.match(topBarSource, /data-testid="topbar-notification-ack-attention"/);
@@ -64,17 +69,20 @@ test("TopBar exposes bounded discussion notification entry from existing note ag
   assert.match(topBarSource, /await apiAcknowledgeNoteThreadAttention\(threadId\)/);
   assert.match(topBarSource, /await refreshAccountNotificationsAfterAction\(\)/);
   assert.match(topBarSource, /setNotificationActionError\(\{\s*rowId,/);
-  assert.match(topBarSource, /В этом фильтре пусто/);
-  assert.match(topBarSource, /shortLabel\(group\.sessionTitle, 46\)/);
-  assert.match(topBarSource, /shortLabel\(group\.projectTitle, 54\)/);
+  assert.match(topBarSource, /Нет непросмотренных/);
+  assert.match(topBarSource, /Нет просмотренных/);
+  assert.match(topBarSource, /Нет уведомлений, требующих внимания/);
+  assert.match(topBarSource, /shortLabel\(row\.sessionTitle, 48\)/);
+  assert.match(topBarSource, /shortLabel\(row\.projectTitle, 56\)/);
   assert.doesNotMatch(topBarSource, /w-\[min\(340px,calc\(100vw-1\.5rem\)\)\]/);
   assert.doesNotMatch(topBarSource, /max-h-\[286px\]/);
   assert.doesNotMatch(topBarSource, /rounded-lg border border-border\/70 bg-panel2\/45/);
   assert.doesNotMatch(topBarSource, /rounded-md border border-border\/70 bg-bg\/35/);
   assert.doesNotMatch(topBarSource, /Здесь появятся персональные упоминания из обсуждений\./);
   assert.match(topBarSource, /overflow-y-auto/);
-  assert.match(topBarSource, /groups\.slice\(0, 8\)/);
-  assert.match(topBarSource, /rows\.slice\(0, 3\)/);
+  assert.match(topBarSource, /visibleNotificationRows\.slice\(0, 24\)/);
+  assert.doesNotMatch(topBarSource, /groups\.slice\(0, 8\)/);
+  assert.doesNotMatch(topBarSource, /rows\.slice\(0, 3\)/);
 });
 
 test("TopBar profile menu uses a direct theme switch instead of settings row", () => {
@@ -97,7 +105,7 @@ test("App bridge opens NotesMvpPanel in notification mode without a new router",
   assert.match(appShellSource, /noteNotificationsAvailable=\{noteNotificationsAvailable\}/);
   assert.match(appSource, /apiListNoteNotifications/);
   assert.match(appSource, /Promise\.allSettled\(\[/);
-  assert.match(appSource, /apiListNoteNotifications\(\{ limit: 20, includeRead: false \}\)/);
+  assert.match(appSource, /apiListNoteNotifications\(\{ limit: 20, includeRead: true \}\)/);
   assert.match(appSource, /setNoteNotificationsAvailable\(true\)/);
   assert.match(appSource, /setNoteNotificationsAvailable\(false\)/);
   assert.match(appSource, /const mode = String\(options\?\.mode \|\| "discussions"\)\.trim\(\) === "notifications" \? "notifications" : "discussions";/);
@@ -107,4 +115,8 @@ test("App bridge opens NotesMvpPanel in notification mode without a new router",
   assert.match(appSource, /commentId: options\?\.commentId \|\| options\?\.comment_id \|\| ""/);
   assert.match(appSource, /onFocusNotificationTarget=\{focusDiscussionNotificationTarget\}/);
   assert.match(appSource, /currentUserId=\{user\?\.id\}/);
+});
+
+test("frontend index links the source-backed backend favicon", () => {
+  assert.match(indexSource, /<link rel="icon" href="\/favicon\.ico" \/>/);
 });

@@ -1858,7 +1858,7 @@ export default function App() {
     }
     const [mentionsResult, notificationsResult] = await Promise.allSettled([
       apiListMyNoteMentions(20),
-      apiListNoteNotifications({ limit: 20, includeRead: false }),
+      apiListNoteNotifications({ limit: 20, includeRead: true }),
     ]);
     if (mentionsResult.status === "fulfilled" && mentionsResult.value?.ok) {
       setMentionNotifications(ensureArray(mentionsResult.value.items));

@@ -77,6 +77,12 @@ function makeBadge(label, tone = "neutral") {
   return { label, tone };
 }
 
+function deriveViewState({ mentionCount = 0, unreadCount = 0, requiresAttentionActive = false } = {}) {
+  const unviewed = Number(mentionCount || 0) > 0 || Number(unreadCount || 0) > 0;
+  if (unviewed || requiresAttentionActive) return "unviewed";
+  return "viewed";
+}
+
 function decorateRowCapabilities(row) {
   const item = row && typeof row === "object" ? row : {};
   const threadId = text(item.threadId || item.thread_id || item.target?.thread_id || item.mention?.thread_id);
@@ -84,15 +90,21 @@ function decorateRowCapabilities(row) {
   const mentionCount = aggregateNumber(item, "mentionCount") || (item.type === "mention" ? 1 : 0);
   const attentionCount = aggregateNumber(item, "attentionCount");
   const unreadCount = aggregateNumber(item, "unreadCount");
-  const hasAttention = attentionCount > 0 || item.requires_attention === true || item.requiresAttention === true;
+  const requiresAttentionActive = item.requiresAttentionActive === true || attentionCount > 0;
+  const viewState = text(item.viewState) || deriveViewState({ mentionCount, unreadCount, requiresAttentionActive });
   return {
     ...item,
     threadId,
     mentionId,
+    mentionCount,
+    attentionCount,
+    unreadCount,
+    requiresAttentionActive,
+    viewState,
     canOpen: Boolean(text(item.sessionId || item.session_id || item.target?.session_id || item.mention?.session_id)),
     canMarkRead: Boolean(threadId && unreadCount > 0),
     canAcknowledgeMention: Boolean(mentionId && (item.reason === "mention" || mentionCount > 0 || item.type === "mention")),
-    canAcknowledgeAttention: Boolean(threadId && hasAttention),
+    canAcknowledgeAttention: Boolean(threadId && requiresAttentionActive),
   };
 }
 
@@ -103,9 +115,12 @@ function rowMatchesDiscussionNotificationFilter(row, filter) {
   const mentionCount = aggregateNumber(item, "mentionCount") || (item.type === "mention" ? 1 : 0);
   const attentionCount = aggregateNumber(item, "attentionCount");
   const unreadCount = aggregateNumber(item, "unreadCount");
+  const requiresAttentionActive = item.requiresAttentionActive === true || attentionCount > 0;
+  const viewState = text(item.viewState) || deriveViewState({ mentionCount, unreadCount, requiresAttentionActive });
   if (kind === "mention") return item.reason === "mention" || mentionCount > 0;
-  if (kind === "unread") return unreadCount > 0;
-  if (kind === "attention") return item.reason === "attention" || attentionCount > 0 || item.requires_attention === true || item.requiresAttention === true;
+  if (kind === "unviewed" || kind === "unread") return mentionCount > 0 || unreadCount > 0;
+  if (kind === "viewed") return viewState === "viewed";
+  if (kind === "attention") return requiresAttentionActive;
   return true;
 }
 
@@ -116,6 +131,16 @@ function summarizeGroups(groups) {
   const attentionCount = normalizedGroups.reduce((sum, group) => sum + aggregateNumber(group, "attentionCount"), 0);
   const personalCount = normalizedGroups.reduce((sum, group) => sum + aggregateNumber(group, "personalCount"), 0);
   const unreadCount = normalizedGroups.reduce((sum, group) => sum + aggregateNumber(group, "unreadCount"), 0);
+  const unviewedCount = normalizedGroups.reduce((sum, group) => (
+    sum + asArray(group?.rows).filter((row) => {
+      const mentionCount = aggregateNumber(row, "mentionCount") || (row?.type === "mention" ? 1 : 0);
+      const unreadCount = aggregateNumber(row, "unreadCount");
+      return mentionCount > 0 || unreadCount > 0;
+    }).length
+  ), 0);
+  const viewedCount = normalizedGroups.reduce((sum, group) => (
+    sum + asArray(group?.rows).filter((row) => text(row?.viewState) === "viewed").length
+  ), 0);
   return {
     groups: normalizedGroups,
     rowCount,
@@ -123,6 +148,8 @@ function summarizeGroups(groups) {
     attentionCount,
     personalCount,
     unreadCount,
+    unviewedCount,
+    viewedCount,
     badgeCount: mentionCount + attentionCount + personalCount + unreadCount,
   };
 }
@@ -183,6 +210,7 @@ function buildAggregateRow({ sessionId, sessionTitle, projectId, projectTitle, a
   if (attention > 0) badges.push(makeBadge(`Внимание ${attention}`, "attention"));
   if (personal > 0) badges.push(makeBadge(`Мои ${personal}`, "personal"));
   if (open > 0) badges.push(makeBadge(`Открыто ${open}`, "neutral"));
+  const requiresAttentionActive = attention > 0;
 
   const headline = attention > 0
     ? "Есть обсуждения, требующие внимания"
@@ -211,6 +239,8 @@ function buildAggregateRow({ sessionId, sessionTitle, projectId, projectTitle, a
     canAcknowledgeAttention: false,
     mentionCount: 0,
     attentionCount: attention,
+    requiresAttentionActive,
+    viewState: deriveViewState({ requiresAttentionActive }),
     personalCount: personal,
     unreadCount: 0,
     openCount: open,
@@ -227,21 +257,27 @@ function buildFeedRow(rawItem) {
   if (!sessionId || !threadId) return null;
 
   const mentionCount = aggregateNumber(item, "mention_count");
-  const attentionCount = aggregateNumber(item, "attention_count") || (item.requires_attention === true ? 1 : 0);
+  const rawAttentionCount = aggregateNumber(item, "attention_count");
   const unreadCount = aggregateNumber(item, "unread_count");
   const reason = text(item.reason);
+  const requiresAttentionActive = rawAttentionCount > 0
+    || ((item.requires_attention === true || item.requiresAttention === true) && reason === "attention");
+  const attentionCount = requiresAttentionActive ? Math.max(1, rawAttentionCount) : 0;
+  const viewState = deriveViewState({ mentionCount, unreadCount, requiresAttentionActive });
   const badges = [];
   if (mentionCount > 0) badges.push(makeBadge(mentionCount > 1 ? `Упоминание ${mentionCount}` : "Упоминание", "mention"));
   if (attentionCount > 0) badges.push(makeBadge(attentionCount > 1 ? `Внимание ${attentionCount}` : "Внимание", "attention"));
   if (unreadCount > 0) badges.push(makeBadge(`Новые ${unreadCount}`, "personal"));
-  if (badges.length <= 0) return null;
+  if (badges.length <= 0 && viewState === "viewed") badges.push(makeBadge("Просмотрено", "viewed"));
 
   const timestamp = numericTime(item.last_comment_at || item.created_at);
   const priority = reason === "mention" || mentionCount > 0
     ? 35
     : reason === "attention" || attentionCount > 0
       ? 25
-      : 15;
+      : unreadCount > 0
+        ? 15
+        : 1;
 
   const row = {
     id: `feed:${notificationKey(item)}`,
@@ -279,7 +315,9 @@ function buildFeedRow(rawItem) {
     badges,
     mentionCount,
     attentionCount,
+    requiresAttentionActive,
     unreadCount,
+    viewState,
     feedItem: item,
   };
   return decorateRowCapabilities(row);
@@ -418,6 +456,12 @@ export function filterDiscussionNotificationGroups(centerOrGroups, filter = "all
         attentionCount: rows.reduce((sum, row) => sum + aggregateNumber(row, "attentionCount"), 0),
         personalCount: rows.reduce((sum, row) => sum + aggregateNumber(row, "personalCount"), 0),
         unreadCount: rows.reduce((sum, row) => sum + aggregateNumber(row, "unreadCount"), 0),
+        unviewedCount: rows.filter((row) => {
+          const mentionCount = aggregateNumber(row, "mentionCount") || (row?.type === "mention" ? 1 : 0);
+          const unreadCount = aggregateNumber(row, "unreadCount");
+          return mentionCount > 0 || unreadCount > 0;
+        }).length,
+        viewedCount: rows.filter((row) => text(row?.viewState) === "viewed").length,
       };
     })
     .filter(Boolean);
