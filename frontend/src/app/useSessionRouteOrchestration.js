@@ -1,5 +1,6 @@
 import { useCallback, useRef } from "react";
 import {
+  PROCESS_MAP_ROUTE_STATE_KEY,
   buildProcessMapUrl,
   parseProcessMapRoute,
   pushProcessMapHistory,
@@ -71,6 +72,46 @@ export function pushSessionSelectionToUrl({ projectId, sessionId }, win = typeof
     };
   } catch {
     return { ok: false, action: "none", reason: "history_write_failed" };
+  }
+}
+
+export function seedSessionParentHistoryToUrl({ projectId, sessionId }, win = typeof window !== "undefined" ? window : undefined) {
+  if (!win) return { ok: false, action: "none", reason: "missing_window" };
+  const pid = String(projectId || "").trim();
+  const sid = String(sessionId || "").trim();
+  if (!pid || !sid) return { ok: false, action: "none", reason: "missing_selection" };
+  try {
+    const currentRoute = parseProcessMapRoute(win.location || win);
+    if (currentRoute.projectId !== pid || currentRoute.sessionId !== sid) {
+      return { ok: true, action: "none", reason: "not_current_session_route" };
+    }
+    const stateRoute = win.history?.state?.[PROCESS_MAP_ROUTE_STATE_KEY];
+    if (
+      stateRoute
+      && String(stateRoute.projectId || "").trim() === pid
+      && String(stateRoute.sessionId || "").trim() === sid
+      && String(stateRoute.source || "").trim() === "internal"
+    ) {
+      return { ok: true, action: "none", reason: "already_internal_session" };
+    }
+    const parentResult = replaceProcessMapHistory({ projectId: pid, sessionId: "", source: "internal" }, {
+      win,
+      baseSearch: win.location.search || "",
+    });
+    const sessionResult = pushProcessMapHistory({ projectId: pid, sessionId: sid, source: "internal" }, {
+      win,
+      baseSearch: win.location.search || "",
+    });
+    return {
+      ok: true,
+      action: "seed",
+      parentAction: parentResult?.action || "none",
+      sessionAction: sessionResult?.action || "none",
+      parentUrl: parentResult?.url || "",
+      sessionUrl: sessionResult?.url || "",
+    };
+  } catch {
+    return { ok: false, action: "none", reason: "history_seed_failed" };
   }
 }
 
