@@ -13,3 +13,12 @@ test("leave-to-project flush waits for stable non-pending XML before allowing na
   assert.match(controllerSource, /stableXmlHash/);
   assert.match(controllerSource, /if \(stableFlushCount >= 2\)/);
 });
+
+test("ProcessStage registers app safe refresh without replacing leave flush", () => {
+  assert.match(stageSource, /import \{ registerAppSafeRefreshHandler \}/);
+  assert.match(stageSource, /attachProcessStageFlushBeforeLeaveListener/);
+  assert.match(stageSource, /registerAppSafeRefreshHandler\(\{/);
+  assert.match(stageSource, /status: "dirty"/);
+  assert.match(stageSource, /source: "app_update_refresh"/);
+  assert.match(stageSource, /flush\?\.skipped === true \? "clean" : "saved"/);
+});

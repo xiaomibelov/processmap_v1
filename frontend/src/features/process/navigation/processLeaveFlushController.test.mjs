@@ -103,6 +103,29 @@ test("dirty pending loop still times out and blocks leave", async () => {
   assert.ok(flushCalls >= 1);
 });
 
+test("flush controller preserves leave default and accepts app update reason override", async () => {
+  const calls = [];
+  const result = await flushProcessStageBeforeLeave({
+    requestedSessionId: "sid_app_update",
+    activeSessionId: "sid_app_update",
+    saveDirtyHint: true,
+    hasXmlDraftChanges: true,
+    now: createSteppedNow(0, 200),
+    sleep: async () => {},
+    source: "app_update_refresh",
+    reason: "app_update_refresh",
+    flushFromActiveTab: async (tab, options) => {
+      calls.push({ tab, options });
+      return { ok: true, pending: false, xml: "<xml />" };
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(calls[0].tab, "diagram");
+  assert.equal(calls[0].options.source, "app_update_refresh");
+  assert.equal(calls[0].options.reason, "app_update_refresh");
+});
+
 test("bypass helper requires same session and fresh publish timestamp", () => {
   const fresh = shouldBypassLeaveFlushAfterRecentPublish({
     activeSessionId: "sid_1",
