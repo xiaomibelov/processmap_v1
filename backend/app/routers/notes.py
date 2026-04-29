@@ -284,6 +284,30 @@ def list_my_note_mentions(request: Request, limit: int = 20) -> Dict[str, Any]:
     return {"items": items, "count": len(items)}
 
 
+@router.get("/api/note-notifications")
+def list_my_note_notifications(request: Request, limit: int = 20, include_read: bool = False) -> Dict[str, Any]:
+    user_id = require_authenticated_user(request)
+    org_id = request_active_org_id(request)
+    require_org_member_for_enterprise(request, org_id)
+    scope = project_scope_for_request(request, org_id)
+    allowed_project_ids = None
+    if str((scope or {}).get("mode") or "") != "all":
+        allowed_project_ids = [
+            str(item or "").strip()
+            for item in ((scope or {}).get("project_ids") or [])
+            if str(item or "").strip()
+        ]
+    bounded_limit = max(1, min(100, int(limit or 20)))
+    items = storage.list_note_notifications_for_user(
+        user_id,
+        org_id=org_id,
+        allowed_project_ids=allowed_project_ids,
+        limit=bounded_limit,
+        include_read=include_read,
+    )
+    return {"ok": True, "items": items, "count": len(items), "limit": bounded_limit}
+
+
 @router.post("/api/sessions/{session_id}/note-threads", status_code=201)
 def create_session_note_thread(session_id: str, body: CreateNoteThreadBody, request: Request) -> Dict[str, Any]:
     sess, org_id, user_id = _load_session_for_notes(request, session_id, write=True)

@@ -114,6 +114,8 @@ export default function TopBar({
   onOpenDiscussionNotifications,
   draft,
   mentionNotifications = [],
+  noteNotifications = [],
+  noteNotificationsAvailable = false,
   onOpenMentionNotification,
   onRefreshMentionNotifications,
 }) {
@@ -310,14 +312,17 @@ export default function TopBar({
   const sessionStatusMeta = getManualSessionStatusMeta(sessionStatus);
   const canOpenOrgSettings = Boolean(user?.is_admin) || ["org_owner", "org_admin", "auditor"].includes(activeOrgRole);
   const mentionItems = asArray(mentionNotifications);
+  const noteNotificationItems = asArray(noteNotifications);
+  const hasBackendNotificationFeed = noteNotificationsAvailable === true;
   const accountNotificationCenter = useMemo(() => {
     const aggregates = new Map(sessionAggregatesBySessionId);
     if (effectiveSessionId && notesAggregate && !aggregates.has(effectiveSessionId)) {
       aggregates.set(effectiveSessionId, notesAggregate);
     }
     return buildAccountDiscussionNotificationGroups({
-      mentionNotifications: mentionItems,
-      sessionAggregates: aggregates,
+      noteNotifications: hasBackendNotificationFeed ? noteNotificationItems : [],
+      mentionNotifications: hasBackendNotificationFeed ? [] : mentionItems,
+      sessionAggregates: hasBackendNotificationFeed ? new Map() : aggregates,
       currentSession: {
         id: effectiveSessionId,
         title: selectedSessionTitle,
@@ -333,7 +338,9 @@ export default function TopBar({
   }, [
     effectiveProjectId,
     effectiveSessionId,
+    hasBackendNotificationFeed,
     mentionItems,
+    noteNotificationItems,
     notesAggregate,
     selectedProjectTitle,
     selectedSessionTitle,
@@ -366,7 +373,11 @@ export default function TopBar({
   async function handleAccountNotificationOpen(row) {
     const item = row && typeof row === "object" ? row : {};
     setAccountMenuOpen(false);
-    if (item.type === "mention") {
+    const openDiscussionTarget = () => onOpenDiscussionNotifications?.({
+      threadId: item.threadId || item.thread_id || item.target?.thread_id || "",
+      commentId: item.commentId || item.comment_id || item.target?.comment_id || "",
+    });
+    if (item.type === "mention" || (item.reason === "mention" && item.mention)) {
       if (typeof onOpenMentionNotification === "function") {
         await Promise.resolve(onOpenMentionNotification(item.mention || item));
       }
@@ -375,17 +386,21 @@ export default function TopBar({
 
     const targetSessionId = toText(item.sessionId);
     if (targetSessionId && targetSessionId === effectiveSessionId) {
-      onOpenDiscussionNotifications?.();
+      openDiscussionTarget();
       return;
     }
 
-    const session = sessList.find((candidate) => sessionIdFrom(candidate) === targetSessionId) || null;
-    if (session && typeof openSessionHandler === "function") {
-      await Promise.resolve(openSessionHandler(session));
+    if (targetSessionId && typeof openSessionHandler === "function") {
+      const opened = await Promise.resolve(openSessionHandler(
+        targetSessionId,
+        { openTab: "diagram", source: "note_notification" },
+      ));
+      if (opened?.ok === false) return;
+      openDiscussionTarget();
       return;
     }
 
-    onOpenDiscussionNotifications?.();
+    openDiscussionTarget();
   }
 
   function badgeToneClass(tone) {

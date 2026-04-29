@@ -162,6 +162,12 @@ export const apiRoutes = {
     list: (limit = "") => withQuery("/api/note-mentions", { limit: String(limit || "").trim() }),
     acknowledge: (mentionId) => `/api/note-mentions/${encode(mentionId)}/acknowledge`,
   },
+  noteNotifications: {
+    list: ({ limit = "", includeRead = false } = {}) => withQuery("/api/note-notifications", {
+      limit: String(limit || "").trim(),
+      include_read: includeRead === true ? "1" : "",
+    }),
+  },
   noteAggregates: {
     sessions: () => "/api/sessions/note-aggregates",
     project: (projectId) => `/api/projects/${encode(projectId)}/note-aggregate`,

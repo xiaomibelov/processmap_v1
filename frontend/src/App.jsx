@@ -36,6 +36,7 @@ import {
   apiGetLlmSettings,
   apiAcknowledgeNoteMention,
   apiListMyNoteMentions,
+  apiListNoteNotifications,
   apiPostLlmSettings,
   apiVerifyLlmSettings,
   apiRecompute,
@@ -871,6 +872,8 @@ export default function App() {
   const [notesPanelOpenRequest, setNotesPanelOpenRequest] = useState(null);
   const [notesDiscussionsOpen, setNotesDiscussionsOpen] = useState(false);
   const [mentionNotifications, setMentionNotifications] = useState([]);
+  const [noteNotifications, setNoteNotifications] = useState([]);
+  const [noteNotificationsAvailable, setNoteNotificationsAvailable] = useState(false);
   const discussionLinkedElementFocusResolversRef = useRef(new Map());
   const notesPanelRef = useRef(null);
   const [llmHasApiKey, setLlmHasApiKey] = useState(false);
@@ -1849,11 +1852,22 @@ export default function App() {
   const refreshMentionNotifications = useCallback(async () => {
     if (!user?.id) {
       setMentionNotifications([]);
+      setNoteNotifications([]);
+      setNoteNotificationsAvailable(false);
       return;
     }
-    const result = await apiListMyNoteMentions(20);
-    if (result?.ok) {
-      setMentionNotifications(ensureArray(result.items));
+    const [mentionsResult, notificationsResult] = await Promise.allSettled([
+      apiListMyNoteMentions(20),
+      apiListNoteNotifications({ limit: 20, includeRead: false }),
+    ]);
+    if (mentionsResult.status === "fulfilled" && mentionsResult.value?.ok) {
+      setMentionNotifications(ensureArray(mentionsResult.value.items));
+    }
+    if (notificationsResult.status === "fulfilled" && notificationsResult.value?.ok) {
+      setNoteNotifications(ensureArray(notificationsResult.value.items));
+      setNoteNotificationsAvailable(true);
+    } else {
+      setNoteNotificationsAvailable(false);
     }
   }, [user?.id]);
 
@@ -3492,10 +3506,12 @@ export default function App() {
         sessionStatus={resolveSessionStatusFromDraft(draft, "draft")}
         onOpenSession={openSessionWithLeaveGuard}
         onOpenWorkspaceSession={openWorkspaceSession}
-        onOpenDiscussionNotifications={() => openNotesDiscussions({
+        onOpenDiscussionNotifications={(options = {}) => openNotesDiscussions({
           scopeFilter: "all",
           mode: "notifications",
           source: "topbar_discussion_notifications",
+          threadId: options?.threadId || options?.thread_id || "",
+          commentId: options?.commentId || options?.comment_id || "",
         })}
         onDeleteSession={workspacePermissions.canDeleteSession ? deleteCurrentSession : undefined}
         onChangeSessionStatus={workspacePermissions.canChangeStatus ? changeCurrentSessionStatus : undefined}
@@ -3536,6 +3552,8 @@ export default function App() {
         onDismissSessionNavNotice={() => setSessionNavNotice(null)}
         onReturnToSessionList={() => returnToSessionList("banner_action")}
         mentionNotifications={mentionNotifications}
+        noteNotifications={noteNotifications}
+        noteNotificationsAvailable={noteNotificationsAvailable}
         onOpenMentionNotification={openMentionNotification}
         onRefreshMentionNotifications={refreshMentionNotifications}
       />
