@@ -19,6 +19,7 @@ export function useWorkspaceExplorerController({
   activeOrgId,
   requestProjectId,
   requestProjectWorkspaceId = "",
+  requestProjectContext = null,
   onClearRequestedProject,
   orgs = [],
   isAdmin = false,
@@ -50,6 +51,21 @@ export function useWorkspaceExplorerController({
     () => buildWorkspacePermissions(activeWorkspace?.role || "", Boolean(isAdmin)),
     [activeWorkspace?.role, isAdmin]
   );
+  const normalizedRequestProjectContext = useMemo(() => {
+    const context = requestProjectContext && typeof requestProjectContext === "object" ? requestProjectContext : {};
+    const projectContextId = String(context?.projectId || context?.project_id || "").trim();
+    const requestedProjectId = String(requestProjectId || "").trim();
+    if (!projectContextId || projectContextId !== requestedProjectId) {
+      return null;
+    }
+    const normalizedBreadcrumbBase = normalizeProjectBreadcrumbBase(context?.breadcrumbBase || context?.breadcrumb_base);
+    return {
+      projectId: projectContextId,
+      workspaceId: String(context?.workspaceId || context?.workspace_id || "").trim(),
+      folderId: String(context?.folderId || context?.folder_id || "").trim(),
+      breadcrumbBase: normalizedBreadcrumbBase,
+    };
+  }, [requestProjectContext, requestProjectId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,13 +104,13 @@ export function useWorkspaceExplorerController({
     const nextWorkspaceId = resolveExplorerWorkspaceId({
       workspaces,
       activeWorkspaceId,
-      requestProjectWorkspaceId,
+      requestProjectWorkspaceId: normalizedRequestProjectContext?.workspaceId || requestProjectWorkspaceId,
     });
     if (nextWorkspaceId && nextWorkspaceId !== String(activeWorkspaceId || "").trim()) {
       setActiveWorkspaceId(nextWorkspaceId);
       setCurrentFolderId("");
     }
-  }, [workspaces, wsLoading, activeWorkspaceId, requestProjectWorkspaceId]);
+  }, [workspaces, wsLoading, activeWorkspaceId, requestProjectWorkspaceId, normalizedRequestProjectContext]);
 
   useEffect(() => {
     setActiveWorkspaceId("");
@@ -130,7 +146,7 @@ export function useWorkspaceExplorerController({
     }
 
     const workspaceIds = workspaces.map((item) => String(item?.id || "").trim()).filter(Boolean);
-    const explicitWorkspaceId = String(requestProjectWorkspaceId || "").trim();
+    const explicitWorkspaceId = String(normalizedRequestProjectContext?.workspaceId || requestProjectWorkspaceId || "").trim();
     const cachedWorkspaceId = String(resolvedWorkspaceCacheRef.current.get(pid) || "").trim();
     const immediateWorkspaceId = [explicitWorkspaceId, cachedWorkspaceId]
       .find((candidate) => candidate && workspaceIds.includes(candidate)) || "";
@@ -169,7 +185,7 @@ export function useWorkspaceExplorerController({
     return () => {
       cancelled = true;
     };
-  }, [requestProjectId, requestProjectWorkspaceId, workspaces, wsLoading, activeWorkspaceId, ignoredRequestProjectId]);
+  }, [requestProjectId, requestProjectWorkspaceId, normalizedRequestProjectContext, workspaces, wsLoading, activeWorkspaceId, ignoredRequestProjectId]);
 
   useEffect(() => {
     const pid = String(requestProjectId || "").trim();
@@ -207,7 +223,7 @@ export function useWorkspaceExplorerController({
     }
     const effectiveRequestedWorkspaceId = normalizeRequestedProjectWorkspace({
       requestProjectId: pid,
-      requestProjectWorkspaceId,
+      requestProjectWorkspaceId: normalizedRequestProjectContext?.workspaceId || requestProjectWorkspaceId,
       resolvedWorkspaceId: resolvedRequestWorkspaceId,
       activeWorkspaceId,
     });
@@ -219,10 +235,14 @@ export function useWorkspaceExplorerController({
       return;
     }
     if (pid !== currentProjectId) {
-      setBreadcrumbBase([]);
+      const restoredBreadcrumbBase = normalizedRequestProjectContext?.breadcrumbBase || [];
+      setBreadcrumbBase(restoredBreadcrumbBase);
+      if (normalizedRequestProjectContext?.folderId) {
+        setCurrentFolderId(normalizedRequestProjectContext.folderId);
+      }
       setCurrentProjectId(pid);
     }
-  }, [requestProjectId, requestProjectWorkspaceId, resolvedRequestWorkspaceId, activeWorkspaceId, currentProjectId, projectRestoreStatus, ignoredRequestProjectId]);
+  }, [requestProjectId, requestProjectWorkspaceId, resolvedRequestWorkspaceId, activeWorkspaceId, currentProjectId, projectRestoreStatus, ignoredRequestProjectId, normalizedRequestProjectContext]);
 
   const handleSelectWorkspace = useCallback((wsId) => {
     dismissRequestedProjectRestore({ clearExternal: true });

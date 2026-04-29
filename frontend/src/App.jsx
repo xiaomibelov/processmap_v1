@@ -93,6 +93,10 @@ import useSessionRouteOrchestration, {
   shouldPreserveSelectionRouteDuringRestore,
   writeSelectionToUrl,
 } from "./app/useSessionRouteOrchestration";
+import {
+  normalizeProcessMapProjectContext,
+  readProcessMapProjectContextFromHistory,
+} from "./app/processMapRouteModel";
 import useSessionActivationOrchestration from "./app/useSessionActivationOrchestration";
 import useSessionShellOrchestration from "./app/useSessionShellOrchestration";
 import useAppShellController from "./app/useAppShellController";
@@ -817,6 +821,7 @@ export default function App() {
 
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState("");
+  const [projectRouteContext, setProjectRouteContext] = useState(() => readProcessMapProjectContextFromHistory());
 
   const [sessions, setSessions] = useState([]);
   const sessionStore = useSessionStore(ensureDraftShape(null), { normalize: normalizeDraftForStore });
@@ -849,6 +854,14 @@ export default function App() {
     clearSessionRestoreMemory,
   } = useSessionRouteOrchestration();
   const projectWorkspaceHintsRef = useRef(new Map());
+  const rememberProjectRouteContext = useCallback((contextRaw) => {
+    const context = normalizeProcessMapProjectContext(contextRaw);
+    setProjectRouteContext(context);
+    if (context?.projectId && context?.workspaceId) {
+      projectWorkspaceHintsRef.current.set(context.projectId, context.workspaceId);
+    }
+    return context;
+  }, []);
   const [snapshotRestoreNotice, setSnapshotRestoreNotice] = useState(null);
   const [sessionNavNotice, setSessionNavNotice] = useState(null);
   const [renameDialog, setRenameDialog] = useState({ open: false, scope: "", value: "", error: "", busy: false });
@@ -1120,18 +1133,21 @@ export default function App() {
       pushSessionSelectionToUrl({
         projectId: result?.projectId || projectId,
         sessionId: result?.sessionId || targetSid,
+        projectContext: projectRouteContext,
       });
     }
     return result;
-  }, [confirmLeaveIfUnsafe, draft?.session_id, openSession, projectId]);
+  }, [confirmLeaveIfUnsafe, draft?.session_id, openSession, projectId, projectRouteContext]);
 
   const openWorkspaceSession = useCallback(async (sessionLike, options = {}) => {
     const row = ensureObject(sessionLike);
     const sid = String(row?.id || row?.session_id || sessionLike || "").trim();
+    const pid = String(row?.project_id || "").trim();
     const openTab = String(options?.openTab || "").trim().toLowerCase();
     const source = String(options?.source || "workspace_dashboard").trim() || "workspace_dashboard";
     const activeSid = String(draft?.session_id || "").trim();
     const bypassLeaveGuard = options?.bypassLeaveGuard === true;
+    const nextProjectContext = rememberProjectRouteContext(row?.projectContext || row?.project_context || null);
     if (
       !bypassLeaveGuard
       && sid
@@ -1147,13 +1163,14 @@ export default function App() {
       pushSessionSelectionToUrl({
         projectId: result?.projectId || pid || projectId,
         sessionId: result?.sessionId || sid,
+        projectContext: nextProjectContext,
       });
     }
     if (sid && (openTab === "diagram" || openTab === "interview" || openTab === "xml" || openTab === "doc" || openTab === "dod")) {
       setProcessTabIntent({ sid, tab: openTab, nonce: Date.now() });
     }
     return result?.ok === false ? result : { ok: true };
-  }, [confirmLeaveIfUnsafe, draft?.session_id, openWorkspaceSessionBase, projectId]);
+  }, [confirmLeaveIfUnsafe, draft?.session_id, openWorkspaceSessionBase, projectId, rememberProjectRouteContext]);
 
   const {
     orgSettingsOpen,
@@ -3238,6 +3255,7 @@ export default function App() {
     activeOrgIdRef.current = nextOrg;
     let canceled = false;
     setProjectId("");
+    setProjectRouteContext(null);
     setSessions([]);
     setSessionNavNotice(null);
     clearSessionRestoreMemory();
@@ -3272,6 +3290,7 @@ export default function App() {
       const currentSessionId = String(draft?.session_id || "").trim();
       const nextProjectId = String(fromUrl.projectId || "").trim();
       const nextSessionId = String(fromUrl.sessionId || "").trim();
+      const nextProjectContext = readProcessMapProjectContextFromHistory();
       const leavesCurrentSession = !!currentSessionId && nextSessionId !== currentSessionId;
       const changesProject = !!nextProjectId && nextProjectId !== currentProjectId;
       const clearsProjectSelection = !!currentProjectId && !nextProjectId && !orgOpen;
@@ -3287,6 +3306,7 @@ export default function App() {
         return;
       }
       if (leavesCurrentSession && !nextSessionId) {
+        rememberProjectRouteContext(nextProjectContext);
         if (nextProjectId && nextProjectId !== currentProjectId) {
           setProjectId(nextProjectId);
         }
@@ -3303,7 +3323,11 @@ export default function App() {
         return;
       }
       if (fromUrl.projectId && fromUrl.projectId !== String(projectId || "").trim()) {
+        rememberProjectRouteContext(nextProjectContext);
         setProjectId(fromUrl.projectId);
+      }
+      if (!fromUrl.projectId && !orgOpen) {
+        setProjectRouteContext(null);
       }
       if (fromUrl.sessionId) {
         setRequestedSessionId(fromUrl.sessionId);
@@ -3311,7 +3335,7 @@ export default function App() {
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [confirmLeaveIfUnsafe, draft?.session_id, projectId, returnToSessionList, setRequestedSessionId]);
+  }, [confirmLeaveIfUnsafe, draft?.session_id, projectId, rememberProjectRouteContext, returnToSessionList, setRequestedSessionId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -3445,6 +3469,7 @@ export default function App() {
         projects={projects}
         projectId={projectId}
         projectWorkspaceId={currentProjectWorkspaceId}
+        projectRouteContext={projectRouteContext}
         onProjectChange={async (pid) => {
           const next = String(pid || "");
           const activeSid = String(draft?.session_id || "").trim();
@@ -3453,6 +3478,7 @@ export default function App() {
           if (!next.trim()) {
             suppressProjectAutoselectRef.current = true;
           }
+          setProjectRouteContext(null);
           setProjectId(next);
           setSessionNavNotice(null);
           clearSessionRestoreMemory();

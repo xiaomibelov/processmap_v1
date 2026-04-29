@@ -9,6 +9,7 @@ import {
   shouldSkipDuplicateUrlRestore,
   writeSelectionToUrl,
 } from "./useSessionRouteOrchestration.js";
+import { PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY } from "./processMapRouteModel.js";
 
 function makeWindow(href = "https://processmap.local/app") {
   const calls = [];
@@ -142,6 +143,68 @@ test("pushSessionSelectionToUrl replaces parent project entry then pushes sessio
     ],
   );
   assert.equal(win.location.search, "?workspace=w1&folder=f1&project=p1&session=s1");
+});
+
+test("pushSessionSelectionToUrl preserves parent breadcrumb context on parent and session entries", () => {
+  const win = makeWindow("https://processmap.local/app");
+  const projectContext = {
+    projectId: "p1",
+    workspaceId: "w1",
+    folderId: "f2",
+    breadcrumbBase: [
+      { type: "workspace", id: "w1", name: "ДК" },
+      { type: "folder", id: "f1", name: "Суп ДК" },
+      { type: "folder", id: "f2", name: "Борщ с говядиной" },
+    ],
+    projectTitle: "Разогрев супа",
+  };
+
+  pushSessionSelectionToUrl({ projectId: "p1", sessionId: "s1", projectContext }, win);
+
+  assert.equal(win.calls[0].type, "replace");
+  assert.equal(win.calls[0].url, "/app?project=p1");
+  assert.deepEqual(win.calls[0].state[PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY], projectContext);
+  assert.equal(win.calls[1].type, "push");
+  assert.equal(win.calls[1].url, "/app?project=p1&session=s1");
+  assert.deepEqual(win.calls[1].state[PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY], projectContext);
+});
+
+test("pushSessionSelectionToUrl updates same parent URL with context without adding a duplicate parent entry", () => {
+  const win = makeWindow("https://processmap.local/app?project=p1");
+  const projectContext = {
+    projectId: "p1",
+    workspaceId: "w1",
+    folderId: "f1",
+    breadcrumbBase: [
+      { type: "workspace", id: "w1", name: "ДК" },
+      { type: "folder", id: "f1", name: "Суп ДК" },
+    ],
+    projectTitle: "Разогрев супа",
+  };
+
+  pushSessionSelectionToUrl({ projectId: "p1", sessionId: "s1", projectContext }, win);
+
+  assert.deepEqual(
+    win.calls.map((call) => [call.type, call.url]),
+    [
+      ["replace", "/app?project=p1"],
+      ["push", "/app?project=p1&session=s1"],
+    ],
+  );
+  assert.deepEqual(win.calls[0].state[PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY], projectContext);
+});
+
+test("pushSessionSelectionToUrl still works without breadcrumb context for direct links", () => {
+  const win = makeWindow("https://processmap.local/app");
+
+  pushSessionSelectionToUrl({ projectId: "p1", sessionId: "s1" }, win);
+
+  assert.equal(win.calls[0].type, "replace");
+  assert.equal(win.calls[0].url, "/app?project=p1");
+  assert.equal(win.calls[0].state[PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY], undefined);
+  assert.equal(win.calls[1].type, "push");
+  assert.equal(win.calls[1].url, "/app?project=p1&session=s1");
+  assert.equal(win.calls[1].state[PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY], undefined);
 });
 
 test("pushSessionSelectionToUrl skips duplicate current session", () => {

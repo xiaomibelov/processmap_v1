@@ -44,7 +44,7 @@ export function writeSelectionToUrl({ projectId, sessionId }, win = typeof windo
   }
 }
 
-export function pushSessionSelectionToUrl({ projectId, sessionId }, win = typeof window !== "undefined" ? window : undefined) {
+export function pushSessionSelectionToUrl({ projectId, sessionId, projectContext }, win = typeof window !== "undefined" ? window : undefined) {
   if (!win) return { ok: false, action: "none", reason: "missing_window" };
   const pid = String(projectId || "").trim();
   const sid = String(sessionId || "").trim();
@@ -54,11 +54,11 @@ export function pushSessionSelectionToUrl({ projectId, sessionId }, win = typeof
     if (currentRoute.projectId === pid && currentRoute.sessionId === sid) {
       return { ok: true, action: "none", reason: "already_current_session" };
     }
-    const parentResult = replaceProcessMapHistory({ projectId: pid, sessionId: "", source: "internal" }, {
+    const parentResult = replaceProcessMapHistory({ projectId: pid, sessionId: "", source: "internal", projectContext }, {
       win,
       baseSearch: win.location.search || "",
     });
-    const sessionResult = pushProcessMapHistory({ projectId: pid, sessionId: sid, source: "internal" }, {
+    const sessionResult = pushProcessMapHistory({ projectId: pid, sessionId: sid, source: "internal", projectContext }, {
       win,
       baseSearch: win.location.search || "",
     });

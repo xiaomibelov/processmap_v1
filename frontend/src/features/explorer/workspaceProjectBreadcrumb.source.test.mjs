@@ -16,6 +16,11 @@ test("controller stores project breadcrumbBase from in-app navigation", () => {
   assert.match(controllerSource, /setBreadcrumbBase\(normalizeProjectBreadcrumbBase\(options\?\.breadcrumbBase\)\)/);
 });
 
+test("controller restores project breadcrumbBase from route context", () => {
+  assert.match(controllerSource, /const restoredBreadcrumbBase = normalizedRequestProjectContext\?\.breadcrumbBase \|\| \[\]/);
+  assert.match(controllerSource, /setBreadcrumbBase\(restoredBreadcrumbBase\)/);
+});
+
 test("ProjectPane renders a safe project breadcrumb trail", () => {
   assert.match(explorerSource, /buildProjectBreadcrumbTrail\(backCrumbs,\s*proj\?\.name\s*\|\|\s*""\)/);
   assert.match(explorerSource, /<BreadcrumbChip active>\{c\.name\}<\/BreadcrumbChip>/);
@@ -24,6 +29,11 @@ test("ProjectPane renders a safe project breadcrumb trail", () => {
 test("direct project restore clears breadcrumbBase instead of showing stale path", () => {
   assert.match(
     controllerSource,
-    /if \(pid !== currentProjectId\) \{\s*setBreadcrumbBase\(\[\]\);\s*setCurrentProjectId\(pid\);/s,
+    /const restoredBreadcrumbBase = normalizedRequestProjectContext\?\.breadcrumbBase \|\| \[\];\s*setBreadcrumbBase\(restoredBreadcrumbBase\);/s,
   );
+});
+
+test("ProjectPane passes parent project context when opening a session", () => {
+  assert.match(explorerSource, /const projectContext = \{\s*projectId,\s*workspaceId,\s*folderId:/s);
+  assert.match(explorerSource, /await onOpenSession\?\.\(\{\s*\.\.\.row,\s*project_id:/s);
 });
