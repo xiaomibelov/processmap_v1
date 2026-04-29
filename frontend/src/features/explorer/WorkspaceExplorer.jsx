@@ -1822,10 +1822,19 @@ function ExplorerPane({
     }
     if (target.kind === "session" && target.session) {
       setSearchQuery("");
+      const targetBreadcrumbBase = normalizeProjectBreadcrumbBase(target.breadcrumbBase || page?.breadcrumbs || []);
+      const parentFolderCrumb = [...targetBreadcrumbBase].reverse().find((crumb) => crumb.type === "folder") || null;
       void onOpenSession?.({
         ...target.session,
         project_id: target.projectId || target.session.project_id,
         workspace_id: workspaceId,
+        projectContext: {
+          projectId: target.projectId || target.session.project_id,
+          workspaceId,
+          folderId: parentFolderCrumb?.id || "",
+          breadcrumbBase: targetBreadcrumbBase,
+          projectTitle: target.session.project_name || target.session.project_title || "",
+        },
       });
     }
   }, [onNavigateToFolder, onNavigateToProject, onOpenSession, page?.breadcrumbs, workspaceId]);
@@ -2430,6 +2439,15 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const noteAggregatesBySessionId = useSessionNoteAggregates(sessionAggregateIds);
   const isEmpty = !loading && !error && sessions.length === 0;
   const sessionColumnProfile = EXPLORER_COLUMN_PROFILES.sessions;
+  const backCrumbs = normalizeProjectBreadcrumbBase(breadcrumbBase);
+  const parentFolderCrumb = [...backCrumbs].reverse().find((crumb) => crumb.type === "folder") || null;
+  const projectContext = {
+    projectId,
+    workspaceId,
+    folderId: parentFolderCrumb?.id || "",
+    breadcrumbBase: backCrumbs,
+    projectTitle: proj?.name || proj?.title || "",
+  };
   const handleOpenSessionRequest = useCallback(async (sessionLike) => {
     const row = sessionLike && typeof sessionLike === "object" ? sessionLike : {};
     const sid = String(row?.id || row?.session_id || "").trim();
@@ -2438,16 +2456,20 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     openingSessionIdRef.current = sid;
     setOpeningSessionId(sid);
     try {
-      await onOpenSession?.(sessionLike);
+      await onOpenSession?.({
+        ...row,
+        project_id: row?.project_id || projectId,
+        workspace_id: row?.workspace_id || workspaceId,
+        projectContext,
+      });
     } finally {
       if (openingSessionIdRef.current === sid) {
         openingSessionIdRef.current = "";
         setOpeningSessionId((prev) => (prev === sid ? "" : prev));
       }
     }
-  }, [onOpenSession]);
+  }, [onOpenSession, projectContext, projectId, workspaceId]);
 
-  const backCrumbs = normalizeProjectBreadcrumbBase(breadcrumbBase);
   const projectBreadcrumbTrail = buildProjectBreadcrumbTrail(backCrumbs, proj?.name || "");
   const parentCrumb = backCrumbs.length ? backCrumbs[backCrumbs.length - 1] : null;
   const sessionCount = Number(proj?.sessions_count || sessions.length || 0) || 0;
@@ -2665,6 +2687,7 @@ export default function WorkspaceExplorer({
   onOpenSession,
   requestProjectId,
   requestProjectWorkspaceId = "",
+  requestProjectContext = null,
   onClearRequestedProject,
 }) {
   const { user, orgs } = useAuth();
@@ -2690,6 +2713,7 @@ export default function WorkspaceExplorer({
     activeOrgId,
     requestProjectId,
     requestProjectWorkspaceId,
+    requestProjectContext,
     onClearRequestedProject,
     orgs,
     isAdmin: Boolean(user?.is_admin),
