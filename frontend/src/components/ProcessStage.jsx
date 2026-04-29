@@ -322,6 +322,7 @@ export default function ProcessStage({
   sessionId,
   activeProjectId,
   activeProjectWorkspaceId = "",
+  activeProjectRouteContext = null,
   workspaceActiveOrgId = "",
   canInviteWorkspaceUsers = false,
   canManageSharedTemplates = false,
@@ -6338,6 +6339,7 @@ export default function ProcessStage({
             activeOrgId={workspaceActiveOrgId}
             requestProjectId={activeProjectId}
             requestProjectWorkspaceId={activeProjectWorkspaceId}
+            requestProjectContext={activeProjectRouteContext}
             onOpenSession={(sessionLike) => onOpenWorkspaceSession?.(sessionLike)}
             onClearRequestedProject={onClearWorkspaceProject}
           />
