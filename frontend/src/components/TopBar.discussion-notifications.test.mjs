@@ -7,7 +7,7 @@ const appShellSource = fs.readFileSync(new URL("./AppShell.jsx", import.meta.url
 const appSource = fs.readFileSync(new URL("../App.jsx", import.meta.url), "utf8");
 const indexSource = fs.readFileSync(new URL("../../index.html", import.meta.url), "utf8");
 
-test("TopBar exposes bounded discussion notification entry from existing note aggregate truth", () => {
+test("TopBar keeps existing notification source truth and actions", () => {
   assert.match(topBarSource, /useSessionNoteAggregate\(effectiveSessionId\)/);
   assert.match(topBarSource, /useSessionNoteAggregates\(sessionAggregateIds\)/);
   assert.match(topBarSource, /buildAccountDiscussionNotificationGroups/);
@@ -19,110 +19,69 @@ test("TopBar exposes bounded discussion notification entry from existing note ag
   assert.match(topBarSource, /hasBackendNotificationFeed \? \[\] : mentionItems/);
   assert.match(topBarSource, /hasBackendNotificationFeed \? new Map\(\) : aggregates/);
   assert.match(topBarSource, /item\.reason === "mention" && item\.mention/);
-  assert.doesNotMatch(topBarSource, /apiGetSessionNoteAggregate/);
-  assert.doesNotMatch(topBarSource, /data-testid="topbar-mentions-button"/);
-  assert.match(topBarSource, /data-testid="topbar-account-button"/);
-  assert.match(topBarSource, /data-testid="topbar-account-notification-count"/);
-  assert.match(topBarSource, /data-testid="topbar-mentions-menu"/);
-  assert.match(topBarSource, /data-testid="topbar-notification-center"/);
-  assert.match(topBarSource, /data-testid="topbar-notification-empty"/);
-  assert.match(topBarSource, /"topbar-discussion-notifications"/);
-  assert.match(topBarSource, /data-notes-panel-trigger=\{isCurrentAggregate \? "true" : undefined\}/);
-  assert.match(topBarSource, /onOpenDiscussionNotifications\?\.\(\{/);
-  assert.match(topBarSource, /useState\("unviewed"\)/);
-  assert.match(topBarSource, /accountNotificationCount = accountNotificationCenter\.badgeCount/);
-  assert.match(topBarSource, /hasAccountNotifications = accountNotificationCenter\.rowCount > 0/);
-  assert.match(topBarSource, /visibleNotificationRows/);
-  assert.match(topBarSource, /compactNotificationContext/);
-  assert.match(topBarSource, /contextLabel: toText\(row\?\.contextLabel\) \|\| compactNotificationContext\(sessionTitle, projectTitle\)/);
-  assert.match(topBarSource, /primaryLabel: toText\(row\?\.primaryLabel \|\| row\?\.title\) \|\| "Обсуждение"/);
-  assert.match(topBarSource, /data-view-state=\{row\.viewState \|\| ""\}/);
-  assert.match(topBarSource, /Нет уведомлений/);
-  assert.match(topBarSource, /Новые сообщения и упоминания из обсуждений появятся здесь\./);
-  assert.doesNotMatch(topBarSource, /personalDiscussionCount/);
-  assert.match(topBarSource, /fixed right-3 top-14/);
-  assert.match(topBarSource, /max-h-\[calc\(100vh-4\.25rem\)\]/);
-  assert.match(topBarSource, /flex max-h-\[calc\(100vh-4\.25rem\)\][\s\S]*overflow-hidden rounded-xl[\s\S]*data-testid="topbar-account-menu"/);
-  assert.match(topBarSource, /flex min-h-0 flex-1 flex-col border-b[\s\S]*data-testid="topbar-mentions-menu"/);
-  assert.match(topBarSource, /"topbar-mention-item"/);
-  assert.match(topBarSource, /w-\[560px\]/);
-  assert.match(topBarSource, /max-w-\[calc\(100vw-1\.5rem\)\]/);
-  assert.match(topBarSource, /flex max-h-\[calc\(100vh-4\.25rem\)\]/);
-  assert.match(topBarSource, /data-testid="topbar-account-actions"/);
-  assert.match(topBarSource, /min-h-0 flex-1 overflow-y-auto[\s\S]*data-testid="topbar-notification-center"/);
-  assert.match(topBarSource, /divide-y divide-border\/55/);
-  assert.match(topBarSource, /group relative w-full min-w-0 px-1\.5 py-2/);
-  assert.match(topBarSource, /data-testid="topbar-notification-primary"/);
-  assert.match(topBarSource, /data-testid="topbar-notification-secondary"/);
-  assert.match(topBarSource, /data-testid="topbar-notification-context"/);
-  assert.match(topBarSource, />\s*Открыть\s*</);
-  assert.match(topBarSource, /line-clamp-2 break-words/);
-  assert.match(topBarSource, /row\.badges\?\.slice\(0, 4\)/);
-  assert.match(topBarSource, /data-testid="topbar-notification-filters"/);
-  assert.match(topBarSource, /data-testid="topbar-notification-filter"/);
-  assert.doesNotMatch(topBarSource, /\{ key: "all", label: "Все"/);
-  assert.match(topBarSource, /\{ key: "unviewed", label: "Не просмотренные"/);
-  assert.match(topBarSource, /\{ key: "viewed", label: "Просмотренные"/);
-  assert.match(topBarSource, /\{ key: "attention", label: "Требуют внимания"/);
-  assert.doesNotMatch(topBarSource, /\{ key: "mention", label: "Упоминания"/);
-  assert.doesNotMatch(topBarSource, /\{ key: "unread", label: "Новые"/);
-  assert.match(topBarSource, /data-testid="topbar-notification-open"/);
-  assert.match(topBarSource, /data-testid="topbar-notification-mark-read"/);
-  assert.match(topBarSource, /data-testid="topbar-notification-ack-attention"/);
-  assert.match(topBarSource, /data-testid="topbar-notification-action-error"/);
-  assert.match(topBarSource, /row\.canMarkRead \? \(/);
-  assert.match(topBarSource, /row\.canAcknowledgeAttention \? \(/);
   assert.match(topBarSource, /await apiMarkNoteThreadRead\(threadId\)/);
   assert.match(topBarSource, /await apiAcknowledgeNoteThreadAttention\(threadId\)/);
   assert.match(topBarSource, /await refreshAccountNotificationsAfterAction\(\)/);
-  assert.match(topBarSource, /setNotificationActionError\(\{\s*rowId,/);
-  assert.match(topBarSource, /Нет непросмотренных/);
-  assert.match(topBarSource, /Нет просмотренных/);
-  assert.match(topBarSource, /Нет уведомлений, требующих внимания/);
-  assert.doesNotMatch(topBarSource, /shortLabel\(row\.sessionTitle, 48\)/);
-  assert.doesNotMatch(topBarSource, /shortLabel\(row\.projectTitle, 56\)/);
-  assert.doesNotMatch(topBarSource, /w-\[min\(340px,calc\(100vw-1\.5rem\)\)\]/);
-  assert.doesNotMatch(topBarSource, /w-\[480px\]/);
-  assert.doesNotMatch(topBarSource, /max-h-\[286px\]/);
-  assert.doesNotMatch(topBarSource, /rounded-lg border border-border\/70 bg-panel2\/45/);
-  assert.doesNotMatch(topBarSource, /rounded-md border border-border\/70 bg-bg\/35/);
-  assert.doesNotMatch(topBarSource, /Здесь появятся персональные упоминания из обсуждений\./);
-  assert.match(topBarSource, /overflow-y-auto/);
-  assert.match(topBarSource, /visibleNotificationRows\.slice\(0, 24\)/);
-  assert.doesNotMatch(topBarSource, /groups\.slice\(0, 8\)/);
-  assert.doesNotMatch(topBarSource, /rows\.slice\(0, 3\)/);
+  assert.doesNotMatch(topBarSource, /apiGetSessionNoteAggregate/);
 });
 
-test("TopBar profile menu uses a direct theme switch instead of settings row", () => {
+test("TopBar account dropdown is a compact notification entry point", () => {
+  assert.match(topBarSource, /import DiscussionNotificationCenterPanel from "\.\.\/features\/notes\/DiscussionNotificationCenterPanel\.jsx";/);
+  assert.match(topBarSource, /useState\(false\)/);
+  assert.match(topBarSource, /const \[notificationCenterOpen, setNotificationCenterOpen\] = useState\(false\)/);
+  assert.match(topBarSource, /accountMenuOpen \|\| notificationCenterOpen/);
+  assert.match(topBarSource, /rowsFromNotificationCenter\(accountNotificationCenter\)\.slice\(0, 3\)/);
+  assert.match(topBarSource, /data-testid="topbar-account-button"/);
+  assert.match(topBarSource, /data-testid="topbar-account-menu"/);
+  assert.match(topBarSource, /w-\[360px\]/);
+  assert.match(topBarSource, /data-testid="topbar-mentions-menu"/);
+  assert.match(topBarSource, /data-testid="topbar-notification-summary"/);
+  assert.match(topBarSource, /data-testid="topbar-notification-preview-list"/);
+  assert.match(topBarSource, /data-testid="topbar-notification-preview-row"/);
+  assert.match(topBarSource, /data-testid="topbar-open-notification-center"/);
+  assert.match(topBarSource, />\s*Открыть центр уведомлений\s*</);
+  assert.match(topBarSource, /onClick=\{openNotificationCenterPanel\}/);
+  assert.doesNotMatch(topBarSource, /data-testid="topbar-notification-filters"/);
+  assert.doesNotMatch(topBarSource, /data-testid="topbar-notification-filter"/);
+  assert.doesNotMatch(topBarSource, /data-testid="topbar-notification-center"/);
+  assert.doesNotMatch(topBarSource, /data-testid="topbar-notification-open"/);
+  assert.doesNotMatch(topBarSource, /data-testid="topbar-notification-mark-read"/);
+  assert.doesNotMatch(topBarSource, /data-testid="topbar-notification-ack-attention"/);
+  assert.doesNotMatch(topBarSource, /visibleNotificationRows\.slice\(0, 24\)/);
+});
+
+test("TopBar opens the dedicated panel with reused filtered rows and actions", () => {
+  assert.match(topBarSource, /function preferredNotificationFilter\(\)/);
+  assert.match(topBarSource, /accountNotificationCenter\.unviewedCount > 0/);
+  assert.match(topBarSource, /accountNotificationCenter\.attentionCount > 0/);
+  assert.match(topBarSource, /setNotificationFilter\(preferredNotificationFilter\(\)\)/);
+  assert.match(topBarSource, /setAccountMenuOpen\(false\)/);
+  assert.match(topBarSource, /<DiscussionNotificationCenterPanel/);
+  assert.match(topBarSource, /open=\{notificationCenterOpen\}/);
+  assert.match(topBarSource, /rows=\{visibleNotificationRows\}/);
+  assert.match(topBarSource, /totalCount=\{accountNotificationCenter\.rowCount\}/);
+  assert.match(topBarSource, /filters=\{notificationFilters\}/);
+  assert.match(topBarSource, /activeFilter=\{notificationFilter\}/);
+  assert.match(topBarSource, /onOpenNotification=\{\(row\) => void handleAccountNotificationOpen\(row\)\}/);
+  assert.match(topBarSource, /onRowAction=\{\(row, action\) => void handleNotificationRowAction\(row, action\)\}/);
+  assert.match(topBarSource, /\{ key: "unviewed", label: "Не просмотренные"/);
+  assert.match(topBarSource, /\{ key: "attention", label: "Требуют внимания"/);
+  assert.match(topBarSource, /\{ key: "viewed", label: "Просмотренные"/);
+  assert.doesNotMatch(topBarSource, /\{ key: "all", label: "Все"/);
+  assert.doesNotMatch(topBarSource, /\{ key: "mention", label: "Упоминания"/);
+  assert.doesNotMatch(topBarSource, /\{ key: "unread", label: "Новые"/);
+});
+
+test("TopBar profile menu keeps account actions separate from notifications", () => {
+  assert.match(topBarSource, /data-testid="topbar-account-actions"/);
+  assert.match(topBarSource, /data-testid="topbar-account-profile-soon"/);
   assert.match(topBarSource, /data-testid="topbar-theme-toggle"/);
+  assert.match(topBarSource, /data-testid="topbar-account-logout"/);
   assert.match(topBarSource, /role="switch"/);
   assert.match(topBarSource, /aria-checked=\{uiTheme === "light" \? "true" : "false"\}/);
   assert.match(topBarSource, /toggleTheme\(\)/);
-  assert.match(topBarSource, /secondaryBtn h-9 w-full min-w-0 justify-start gap-2 overflow-hidden[\s\S]*data-testid="topbar-theme-toggle"/);
-  assert.match(topBarSource, /relative h-5 w-9 shrink-0/);
-  assert.match(topBarSource, /Тёмная/);
-  assert.match(topBarSource, /Светлая/);
   assert.doesNotMatch(topBarSource, /data-testid="topbar-account-settings"/);
   assert.doesNotMatch(topBarSource, />Настройки</);
-});
-
-test("notification row renders topic before compact context", () => {
-  const primaryIdx = topBarSource.indexOf('data-testid="topbar-notification-primary"');
-  const secondaryIdx = topBarSource.indexOf('data-testid="topbar-notification-secondary"');
-  const contextIdx = topBarSource.indexOf('data-testid="topbar-notification-context"');
-  assert.ok(primaryIdx > 0, "primary notification line must be present");
-  assert.ok(secondaryIdx > primaryIdx, "snippet line must follow the topic");
-  assert.ok(contextIdx > secondaryIdx, "context line must follow topic and snippet");
-});
-
-test("visible notification filters are focused on actionable view states", () => {
-  const filtersStart = topBarSource.indexOf("const notificationFilters = useMemo");
-  const filtersEnd = topBarSource.indexOf("]), [", filtersStart);
-  const filterSource = topBarSource.slice(filtersStart, filtersEnd);
-  assert.doesNotMatch(filterSource, /label: "Все"/);
-  assert.match(filterSource, /label: "Не просмотренные"/);
-  assert.match(filterSource, /label: "Просмотренные"/);
-  assert.match(filterSource, /label: "Требуют внимания"/);
 });
 
 test("App bridge opens NotesMvpPanel in notification mode without a new router", () => {

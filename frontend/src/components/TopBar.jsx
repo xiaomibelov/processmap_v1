@@ -6,6 +6,7 @@ import {
   buildAccountDiscussionNotificationGroups,
   filterDiscussionNotificationGroups,
 } from "../features/notes/discussionNotificationCenterDropdownModel.js";
+import DiscussionNotificationCenterPanel from "../features/notes/DiscussionNotificationCenterPanel.jsx";
 import {
   apiAcknowledgeNoteThreadAttention,
   apiMarkNoteThreadRead,
@@ -68,24 +69,25 @@ function compactNotificationContext(sessionTitle, projectTitle) {
   return session || project || "Сессия";
 }
 
-function userTitleFrom(user) {
-  return String(user?.name || user?.email || user?.id || "").trim() || "Пользователь";
+function rowsFromNotificationCenter(center) {
+  return asArray(center?.groups).flatMap((group) => (
+    asArray(group?.rows).map((row) => {
+      const sessionTitle = toText(row?.sessionTitle) || toText(group?.sessionTitle);
+      const projectTitle = toText(row?.projectTitle) || toText(group?.projectTitle);
+      return {
+        ...row,
+        sessionTitle,
+        projectTitle,
+        contextLabel: toText(row?.contextLabel) || compactNotificationContext(sessionTitle, projectTitle),
+        primaryLabel: toText(row?.primaryLabel || row?.title) || "Обсуждение",
+        secondaryLabel: toText(row?.secondaryLabel || row?.excerpt),
+      };
+    })
+  ));
 }
 
-function formatNotificationTime(value) {
-  const n = Number(value || 0);
-  if (!Number.isFinite(n) || n <= 0) return "";
-  const ms = n < 100000000000 ? n * 1000 : n;
-  try {
-    return new Intl.DateTimeFormat("ru-RU", {
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(ms));
-  } catch {
-    return "";
-  }
+function userTitleFrom(user) {
+  return String(user?.name || user?.email || user?.id || "").trim() || "Пользователь";
 }
 
 function notificationActionErrorText(result, fallback) {
@@ -156,6 +158,7 @@ export default function TopBar({
   const [uiTheme, setUiTheme] = useState("dark");
   const [aiToolsOpen, setAiToolsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState("unviewed");
   const [notificationActionPending, setNotificationActionPending] = useState("");
   const [notificationActionError, setNotificationActionError] = useState({ rowId: "", text: "" });
@@ -164,8 +167,8 @@ export default function TopBar({
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const notesAggregate = useSessionNoteAggregate(effectiveSessionId);
   const sessionAggregateIds = useMemo(
-    () => (accountMenuOpen ? sessList.map((item) => sessionIdFrom(item)).filter(Boolean) : []),
-    [accountMenuOpen, sessList],
+    () => ((accountMenuOpen || notificationCenterOpen) ? sessList.map((item) => sessionIdFrom(item)).filter(Boolean) : []),
+    [accountMenuOpen, notificationCenterOpen, sessList],
   );
   const sessionAggregatesBySessionId = useSessionNoteAggregates(sessionAggregateIds);
   const accountMenuRef = useRef(null);
@@ -198,7 +201,10 @@ export default function TopBar({
       setAccountMenuOpen(false);
     }
     function onKeyDown(event) {
-      if (event.key === "Escape") setAccountMenuOpen(false);
+      if (event.key === "Escape") {
+        setAccountMenuOpen(false);
+        setNotificationCenterOpen(false);
+      }
     }
     window.addEventListener("mousedown", onPointerDown);
     window.addEventListener("keydown", onKeyDown);
@@ -207,6 +213,17 @@ export default function TopBar({
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [accountMenuOpen]);
+
+  useEffect(() => {
+    if (!notificationCenterOpen) return undefined;
+    function onKeyDown(event) {
+      if (event.key === "Escape") setNotificationCenterOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [notificationCenterOpen]);
 
   useEffect(() => {
     if (!projectMenuOpen) return undefined;
@@ -379,28 +396,21 @@ export default function TopBar({
     () => filterDiscussionNotificationGroups(accountNotificationCenter, notificationFilter),
     [accountNotificationCenter, notificationFilter],
   );
-  const hasVisibleAccountNotifications = visibleNotificationCenter.rowCount > 0;
   const visibleNotificationRows = useMemo(
-    () => visibleNotificationCenter.groups.flatMap((group) => (
-      asArray(group?.rows).map((row) => {
-        const sessionTitle = toText(row?.sessionTitle) || toText(group?.sessionTitle);
-        const projectTitle = toText(row?.projectTitle) || toText(group?.projectTitle);
-        return {
-          ...row,
-          sessionTitle,
-          projectTitle,
-          contextLabel: toText(row?.contextLabel) || compactNotificationContext(sessionTitle, projectTitle),
-          primaryLabel: toText(row?.primaryLabel || row?.title) || "Обсуждение",
-          secondaryLabel: toText(row?.secondaryLabel || row?.excerpt),
-        };
-      })
-    )),
+    () => rowsFromNotificationCenter(visibleNotificationCenter),
     [visibleNotificationCenter],
   );
+  const accountNotificationPreviewRows = useMemo(
+    () => rowsFromNotificationCenter(accountNotificationCenter).slice(0, 3),
+    [accountNotificationCenter],
+  );
+  const notificationSummary = hasAccountNotifications
+    ? `${accountNotificationCenter.unviewedCount} непросмотренных · ${accountNotificationCenter.attentionCount} требуют внимания · ${accountNotificationCenter.viewedCount} просмотренных`
+    : "Нет уведомлений";
   const notificationFilters = useMemo(() => ([
     { key: "unviewed", label: "Не просмотренные", count: accountNotificationCenter.unviewedCount },
-    { key: "viewed", label: "Просмотренные", count: accountNotificationCenter.viewedCount },
     { key: "attention", label: "Требуют внимания", count: accountNotificationCenter.attentionCount },
+    { key: "viewed", label: "Просмотренные", count: accountNotificationCenter.viewedCount },
   ]), [
     accountNotificationCenter.attentionCount,
     accountNotificationCenter.rowCount,
@@ -424,13 +434,28 @@ export default function TopBar({
 
   function openProfileSoon() {
     setAccountMenuOpen(false);
+    setNotificationCenterOpen(false);
     if (typeof window === "undefined") return;
     window.alert("Раздел «Профиль» будет доступен в следующих релизах.");
+  }
+
+  function preferredNotificationFilter() {
+    if (accountNotificationCenter.unviewedCount > 0) return "unviewed";
+    if (accountNotificationCenter.attentionCount > 0) return "attention";
+    return "viewed";
+  }
+
+  function openNotificationCenterPanel() {
+    setNotificationFilter(preferredNotificationFilter());
+    setNotificationActionError({ rowId: "", text: "" });
+    setNotificationCenterOpen(true);
+    setAccountMenuOpen(false);
   }
 
   async function handleAccountNotificationOpen(row) {
     const item = row && typeof row === "object" ? row : {};
     setAccountMenuOpen(false);
+    setNotificationCenterOpen(false);
     const openDiscussionTarget = () => onOpenDiscussionNotifications?.({
       threadId: item.threadId || item.thread_id || item.target?.thread_id || "",
       commentId: item.commentId || item.comment_id || item.target?.comment_id || "",
@@ -496,33 +521,6 @@ export default function TopBar({
     } finally {
       setNotificationActionPending("");
     }
-  }
-
-  function badgeToneClass(tone) {
-    if (tone === "mention") return "border-danger/45 bg-danger/10 text-danger";
-    if (tone === "attention") return "border-warning/55 bg-warning/10 text-warning";
-    if (tone === "personal") return "border-info/50 bg-info/10 text-info";
-    if (tone === "viewed") return "border-border/70 bg-transparent text-muted";
-    return "border-border/80 bg-panel2/70 text-muted";
-  }
-
-  function notificationEmptyCopy() {
-    if (!hasAccountNotifications) {
-      return {
-        title: "Нет уведомлений",
-        body: "Новые сообщения и упоминания из обсуждений появятся здесь.",
-      };
-    }
-    if (notificationFilter === "unviewed") {
-      return { title: "Нет непросмотренных", body: "Новые сообщения и упоминания появятся в этом фильтре." };
-    }
-    if (notificationFilter === "viewed") {
-      return { title: "Нет просмотренных", body: "После просмотра события останутся здесь как история." };
-    }
-    if (notificationFilter === "attention") {
-      return { title: "Нет уведомлений, требующих внимания", body: "Активные attention-события появятся отдельно от непросмотренных." };
-    }
-    return { title: "Нет уведомлений", body: "Выберите другой фильтр или обновите список." };
   }
 
   return (
@@ -770,6 +768,7 @@ export default function TopBar({
             onClick={() => {
               const nextOpen = !accountMenuOpen;
               setAccountMenuOpen(nextOpen);
+              if (nextOpen) setNotificationCenterOpen(false);
               if (nextOpen && typeof onRefreshMentionNotifications === "function") void onRefreshMentionNotifications();
             }}
             title={accountNotificationCount > 0 ? `Профиль и уведомления: ${accountNotificationCount}` : "Профиль"}
@@ -791,7 +790,7 @@ export default function TopBar({
           {accountMenuOpen ? (
             <div
               ref={accountMenuRef}
-              className="fixed right-3 top-14 z-[140] flex max-h-[calc(100vh-4.25rem)] w-[560px] max-w-[calc(100vw-1.5rem)] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-panel backdrop-blur"
+              className="fixed right-3 top-14 z-[140] flex max-h-[calc(100vh-4.25rem)] w-[360px] max-w-[calc(100vw-1.5rem)] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-panel backdrop-blur"
               data-testid="topbar-account-menu"
             >
               <div className="min-w-0 border-b border-border/70 px-4 py-3">
@@ -800,181 +799,52 @@ export default function TopBar({
                 </div>
                 <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Аккаунт</div>
               </div>
-              <div className="flex min-h-0 flex-1 flex-col border-b border-border/70" data-testid="topbar-mentions-menu">
-                <div className="flex min-w-0 items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0 border-b border-border/70 px-4 py-3" data-testid="topbar-mentions-menu">
+                <div className="flex min-w-0 items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-bold leading-tight text-fg">Уведомления</div>
-                    <div className="mt-0.5 truncate text-xs text-muted">
-                      {hasAccountNotifications ? `${visibleNotificationCenter.rowCount} из ${accountNotificationCenter.rowCount} событий` : "Нет уведомлений"}
+                    <div className="mt-0.5 truncate text-xs text-muted" data-testid="topbar-notification-summary">
+                      {notificationSummary}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="secondaryBtn tinyBtn h-8 shrink-0 px-2 text-[12px]"
-                    onClick={() => {
-                      setNotificationActionError({ rowId: "", text: "" });
-                      if (typeof onRefreshMentionNotifications === "function") void onRefreshMentionNotifications();
-                    }}
-                    title="Обновить уведомления"
-                    data-testid="topbar-mentions-refresh"
-                  >
-                    ↻
-                  </button>
                 </div>
-                <div className="flex min-w-0 flex-wrap gap-1.5 border-b border-border/55 px-4 pb-2" data-testid="topbar-notification-filters">
-                  {notificationFilters.map((filter) => {
-                    const active = notificationFilter === filter.key;
-                    return (
+                {hasAccountNotifications ? (
+                  <div className="mt-2 grid gap-1" data-testid="topbar-notification-preview-list">
+                    {accountNotificationPreviewRows.map((row) => (
                       <button
-                        key={filter.key}
+                        key={row.id}
                         type="button"
-                        className={`h-7 rounded-full border px-2.5 text-[11px] font-bold transition ${active ? "border-info/55 bg-info/10 text-info" : "border-border/70 bg-transparent text-muted hover:border-border hover:bg-panel2/35 hover:text-fg"}`}
-                        onClick={() => {
-                          setNotificationFilter(filter.key);
-                          setNotificationActionError({ rowId: "", text: "" });
-                        }}
-                        data-testid="topbar-notification-filter"
-                        data-filter={filter.key}
+                        className="group grid min-w-0 gap-0.5 rounded-md px-2 py-1.5 text-left transition hover:bg-panel2/45"
+                        onClick={openNotificationCenterPanel}
+                        data-testid="topbar-notification-preview-row"
                       >
-                        {filter.label}
-                        {filter.count > 0 ? (
-                          <span className="ml-1 tabular-nums">{filter.count}</span>
+                        <span className="min-w-0 truncate text-[12px] font-semibold text-fg" title={row.primaryLabel || row.title || "Обсуждение"}>
+                          {shortLabel(row.primaryLabel || row.title || "Обсуждение", 42)}
+                        </span>
+                        {row.secondaryLabel ? (
+                          <span className="min-w-0 truncate text-[11px] text-muted" title={row.secondaryLabel}>
+                            {shortLabel(row.secondaryLabel, 64)}
+                          </span>
                         ) : null}
                       </button>
-                    );
-                  })}
-                </div>
-                {hasVisibleAccountNotifications ? (
-                  <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-3 pt-1" data-testid="topbar-notification-center">
-                    <div className="divide-y divide-border/55">
-                      {visibleNotificationRows.slice(0, 24).map((row) => {
-                        const isMention = row.type === "mention";
-                        const isCurrentAggregate = row.type === "aggregate" && row.sessionId === effectiveSessionId;
-                        const rowTestId = isMention
-                          ? "topbar-mention-item"
-                          : isCurrentAggregate
-                            ? "topbar-discussion-notifications"
-                            : "topbar-notification-row";
-                        const timeLabel = formatNotificationTime(row.timestamp);
-                        const readPending = notificationActionPending === `${row.id}:read`;
-                        const attentionPending = notificationActionPending === `${row.id}:attention`;
-                        const rowError = notificationActionError.rowId === row.id ? notificationActionError.text : "";
-                        const viewed = row.viewState === "viewed";
-                        const attentionActive = row.isAttentionActive === true || row.requiresAttentionActive === true;
-                        const unviewed = !viewed;
-                        return (
-                          <div
-                            key={row.id}
-                            className={`group relative w-full min-w-0 px-1.5 py-2 text-left transition hover:bg-panel2/35 ${viewed ? "text-fg/80" : "text-fg"}`}
-                            data-testid={rowTestId}
-                            data-view-state={row.viewState || ""}
-                          >
-                            <span
-                              className={`absolute left-0 top-2.5 h-[calc(100%-1.25rem)] w-0.5 rounded-full ${attentionActive ? "bg-warning/70" : unviewed ? "bg-info/65" : "bg-transparent"}`}
-                              aria-hidden="true"
-                            />
-                            <div className="min-w-0 pl-2">
-                              <div className="flex min-w-0 items-start gap-2">
-                                <div className="min-w-0 flex-1">
-                                  <div
-                                    className={`line-clamp-1 break-words text-[13px] font-bold leading-snug ${viewed ? "text-fg/75" : "text-fg"}`}
-                                    title={row.primaryLabel || row.title || "Обсуждение"}
-                                    data-testid="topbar-notification-primary"
-                                  >
-                                    {row.primaryLabel || row.title || "Обсуждение"}
-                                  </div>
-                                  {row.secondaryLabel ? (
-                                    <div
-                                      className={`mt-0.5 line-clamp-2 break-words text-[11px] leading-snug ${viewed ? "text-muted/85" : "text-fg/75"}`}
-                                      data-testid="topbar-notification-secondary"
-                                    >
-                                      {row.secondaryLabel}
-                                    </div>
-                                  ) : null}
-                                  <div
-                                    className="mt-1 line-clamp-1 break-words text-[10px] font-semibold uppercase tracking-[0.04em] text-muted"
-                                    title={row.contextLabel || compactNotificationContext(row.sessionTitle, row.projectTitle)}
-                                    data-testid="topbar-notification-context"
-                                  >
-                                    {shortLabel(row.contextLabel || compactNotificationContext(row.sessionTitle, row.projectTitle), 72)}
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
-                                {row.authorLabel ? <span className="truncate text-[10px] text-muted">{shortLabel(row.authorLabel, 24)}</span> : null}
-                                {timeLabel ? <span className="shrink-0 text-[10px] text-muted">{timeLabel}</span> : null}
-                                {viewed ? <span className="shrink-0 text-[10px] text-muted">Просмотрено</span> : null}
-                                {row.badges?.length > 0 ? <span className="hidden text-[10px] text-muted sm:inline">·</span> : null}
-                                <div className="flex min-w-0 flex-wrap items-center gap-1">
-                                  {row.badges?.slice(0, 4).map((badge) => (
-                                    <span
-                                      key={`${row.id}:${badge.label}`}
-                                      className={`shrink-0 rounded-full border px-1.5 py-0 text-[9px] font-bold leading-4 ${badgeToneClass(badge.tone)}`}
-                                    >
-                                      {badge.label}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                              <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
-                                {row.canOpen ? (
-                                  <button
-                                    type="button"
-                                    className="rounded-full border border-info/30 bg-transparent px-2 py-0.5 text-[10px] font-bold text-info transition hover:border-info/60 hover:bg-info/10 disabled:cursor-not-allowed disabled:opacity-60"
-                                    onClick={() => void handleAccountNotificationOpen(row)}
-                                    data-testid="topbar-notification-open"
-                                    data-notes-panel-trigger={isCurrentAggregate ? "true" : undefined}
-                                  >
-                                    Открыть
-                                  </button>
-                                ) : null}
-                                {row.canMarkRead ? (
-                                  <button
-                                    type="button"
-                                    className="rounded-full border border-success/30 bg-transparent px-2 py-0.5 text-[10px] font-bold text-success transition hover:border-success/60 hover:bg-success/10 disabled:cursor-not-allowed disabled:opacity-60"
-                                    onClick={() => void handleNotificationRowAction(row, "read")}
-                                    disabled={Boolean(notificationActionPending)}
-                                    data-testid="topbar-notification-mark-read"
-                                  >
-                                    {readPending ? "..." : "Прочитано"}
-                                  </button>
-                                ) : null}
-                                {row.canAcknowledgeAttention ? (
-                                  <button
-                                    type="button"
-                                    className="rounded-full border border-warning/35 bg-transparent px-2 py-0.5 text-[10px] font-bold text-warning transition hover:border-warning/65 hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-60"
-                                    onClick={() => void handleNotificationRowAction(row, "attention")}
-                                    disabled={Boolean(notificationActionPending)}
-                                    data-testid="topbar-notification-ack-attention"
-                                  >
-                                    {attentionPending ? "..." : "Принять"}
-                                  </button>
-                                ) : null}
-                              </div>
-                              {rowError ? (
-                                <div className="mt-1 rounded-md border border-danger/45 bg-danger/10 px-2 py-1 text-[10px] font-semibold text-danger" data-testid="topbar-notification-action-error">
-                                  {rowError}
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    ))}
                   </div>
                 ) : (
                   <div
-                    className="mx-4 mb-3 min-w-0 border-t border-dashed border-border px-2 py-3 text-xs leading-snug text-muted break-words"
+                    className="mt-2 min-w-0 rounded-md border border-dashed border-border px-2 py-2 text-xs leading-snug text-muted break-words"
                     data-testid="topbar-notification-empty"
                   >
-                    <div className="font-semibold text-fg/80">
-                      {notificationEmptyCopy().title}
-                    </div>
-                    <div className="mt-0.5">
-                      {notificationEmptyCopy().body}
-                    </div>
+                    Нет уведомлений
                   </div>
                 )}
+                <button
+                  type="button"
+                  className="secondaryBtn mt-3 h-8 w-full min-w-0 justify-center px-3 text-sm"
+                  onClick={openNotificationCenterPanel}
+                  data-testid="topbar-open-notification-center"
+                >
+                  Открыть центр уведомлений
+                </button>
               </div>
               <div className="grid gap-1 p-2" data-testid="topbar-account-actions">
                 <button
@@ -1009,6 +879,7 @@ export default function TopBar({
                   className="secondaryBtn h-8 w-full min-w-0 justify-start overflow-hidden border-danger/45 bg-danger/10 px-2.5 text-left text-sm text-danger hover:border-danger/60 hover:bg-danger/20"
                   onClick={() => {
                     setAccountMenuOpen(false);
+                    setNotificationCenterOpen(false);
                     void handleLogout();
                   }}
                   title="Выйти из аккаунта"
@@ -1021,6 +892,27 @@ export default function TopBar({
           ) : null}
         </div>
       </div>
+
+      <DiscussionNotificationCenterPanel
+        open={notificationCenterOpen}
+        rows={visibleNotificationRows}
+        totalCount={accountNotificationCenter.rowCount}
+        filters={notificationFilters}
+        activeFilter={notificationFilter}
+        onFilterChange={(key) => {
+          setNotificationFilter(key);
+          setNotificationActionError({ rowId: "", text: "" });
+        }}
+        onClose={() => setNotificationCenterOpen(false)}
+        onRefresh={() => {
+          setNotificationActionError({ rowId: "", text: "" });
+          if (typeof onRefreshMentionNotifications === "function") void onRefreshMentionNotifications();
+        }}
+        onOpenNotification={(row) => void handleAccountNotificationOpen(row)}
+        onRowAction={(row, action) => void handleNotificationRowAction(row, action)}
+        actionPendingKey={notificationActionPending}
+        actionError={notificationActionError}
+      />
 
       <AiToolsModal
         open={aiToolsOpen}
