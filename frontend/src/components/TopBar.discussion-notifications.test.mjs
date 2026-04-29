@@ -29,9 +29,13 @@ test("TopBar exposes bounded discussion notification entry from existing note ag
   assert.match(topBarSource, /"topbar-discussion-notifications"/);
   assert.match(topBarSource, /data-notes-panel-trigger=\{isCurrentAggregate \? "true" : undefined\}/);
   assert.match(topBarSource, /onOpenDiscussionNotifications\?\.\(\{/);
+  assert.match(topBarSource, /useState\("unviewed"\)/);
   assert.match(topBarSource, /accountNotificationCount = accountNotificationCenter\.badgeCount/);
   assert.match(topBarSource, /hasAccountNotifications = accountNotificationCenter\.rowCount > 0/);
   assert.match(topBarSource, /visibleNotificationRows/);
+  assert.match(topBarSource, /compactNotificationContext/);
+  assert.match(topBarSource, /contextLabel: toText\(row\?\.contextLabel\) \|\| compactNotificationContext\(sessionTitle, projectTitle\)/);
+  assert.match(topBarSource, /primaryLabel: toText\(row\?\.primaryLabel \|\| row\?\.title\) \|\| "Обсуждение"/);
   assert.match(topBarSource, /data-view-state=\{row\.viewState \|\| ""\}/);
   assert.match(topBarSource, /Нет уведомлений/);
   assert.match(topBarSource, /Новые сообщения и упоминания из обсуждений появятся здесь\./);
@@ -41,19 +45,22 @@ test("TopBar exposes bounded discussion notification entry from existing note ag
   assert.match(topBarSource, /flex max-h-\[calc\(100vh-4\.25rem\)\][\s\S]*overflow-hidden rounded-xl[\s\S]*data-testid="topbar-account-menu"/);
   assert.match(topBarSource, /flex min-h-0 flex-1 flex-col border-b[\s\S]*data-testid="topbar-mentions-menu"/);
   assert.match(topBarSource, /"topbar-mention-item"/);
-  assert.match(topBarSource, /w-\[480px\]/);
+  assert.match(topBarSource, /w-\[560px\]/);
   assert.match(topBarSource, /max-w-\[calc\(100vw-1\.5rem\)\]/);
   assert.match(topBarSource, /flex max-h-\[calc\(100vh-4\.25rem\)\]/);
   assert.match(topBarSource, /data-testid="topbar-account-actions"/);
   assert.match(topBarSource, /min-h-0 flex-1 overflow-y-auto[\s\S]*data-testid="topbar-notification-center"/);
-  assert.match(topBarSource, /divide-y divide-border\/60 border-t border-border\/60/);
-  assert.match(topBarSource, /group w-full min-w-0 px-1 py-2\.5/);
+  assert.match(topBarSource, /divide-y divide-border\/55/);
+  assert.match(topBarSource, /group relative w-full min-w-0 px-1\.5 py-2/);
+  assert.match(topBarSource, /data-testid="topbar-notification-primary"/);
+  assert.match(topBarSource, /data-testid="topbar-notification-secondary"/);
+  assert.match(topBarSource, /data-testid="topbar-notification-context"/);
   assert.match(topBarSource, />\s*Открыть\s*</);
   assert.match(topBarSource, /line-clamp-2 break-words/);
   assert.match(topBarSource, /row\.badges\?\.slice\(0, 4\)/);
   assert.match(topBarSource, /data-testid="topbar-notification-filters"/);
   assert.match(topBarSource, /data-testid="topbar-notification-filter"/);
-  assert.match(topBarSource, /\{ key: "all", label: "Все"/);
+  assert.doesNotMatch(topBarSource, /\{ key: "all", label: "Все"/);
   assert.match(topBarSource, /\{ key: "unviewed", label: "Не просмотренные"/);
   assert.match(topBarSource, /\{ key: "viewed", label: "Просмотренные"/);
   assert.match(topBarSource, /\{ key: "attention", label: "Требуют внимания"/);
@@ -72,9 +79,10 @@ test("TopBar exposes bounded discussion notification entry from existing note ag
   assert.match(topBarSource, /Нет непросмотренных/);
   assert.match(topBarSource, /Нет просмотренных/);
   assert.match(topBarSource, /Нет уведомлений, требующих внимания/);
-  assert.match(topBarSource, /shortLabel\(row\.sessionTitle, 48\)/);
-  assert.match(topBarSource, /shortLabel\(row\.projectTitle, 56\)/);
+  assert.doesNotMatch(topBarSource, /shortLabel\(row\.sessionTitle, 48\)/);
+  assert.doesNotMatch(topBarSource, /shortLabel\(row\.projectTitle, 56\)/);
   assert.doesNotMatch(topBarSource, /w-\[min\(340px,calc\(100vw-1\.5rem\)\)\]/);
+  assert.doesNotMatch(topBarSource, /w-\[480px\]/);
   assert.doesNotMatch(topBarSource, /max-h-\[286px\]/);
   assert.doesNotMatch(topBarSource, /rounded-lg border border-border\/70 bg-panel2\/45/);
   assert.doesNotMatch(topBarSource, /rounded-md border border-border\/70 bg-bg\/35/);
@@ -96,6 +104,25 @@ test("TopBar profile menu uses a direct theme switch instead of settings row", (
   assert.match(topBarSource, /Светлая/);
   assert.doesNotMatch(topBarSource, /data-testid="topbar-account-settings"/);
   assert.doesNotMatch(topBarSource, />Настройки</);
+});
+
+test("notification row renders topic before compact context", () => {
+  const primaryIdx = topBarSource.indexOf('data-testid="topbar-notification-primary"');
+  const secondaryIdx = topBarSource.indexOf('data-testid="topbar-notification-secondary"');
+  const contextIdx = topBarSource.indexOf('data-testid="topbar-notification-context"');
+  assert.ok(primaryIdx > 0, "primary notification line must be present");
+  assert.ok(secondaryIdx > primaryIdx, "snippet line must follow the topic");
+  assert.ok(contextIdx > secondaryIdx, "context line must follow topic and snippet");
+});
+
+test("visible notification filters are focused on actionable view states", () => {
+  const filtersStart = topBarSource.indexOf("const notificationFilters = useMemo");
+  const filtersEnd = topBarSource.indexOf("]), [", filtersStart);
+  const filterSource = topBarSource.slice(filtersStart, filtersEnd);
+  assert.doesNotMatch(filterSource, /label: "Все"/);
+  assert.match(filterSource, /label: "Не просмотренные"/);
+  assert.match(filterSource, /label: "Просмотренные"/);
+  assert.match(filterSource, /label: "Требуют внимания"/);
 });
 
 test("App bridge opens NotesMvpPanel in notification mode without a new router", () => {

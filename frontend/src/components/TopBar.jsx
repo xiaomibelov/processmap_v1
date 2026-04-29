@@ -56,6 +56,18 @@ function shortLabel(value, max = 34) {
   return `${text.slice(0, Math.max(8, max - 1)).trim()}…`;
 }
 
+function normalizedNotificationLabel(value) {
+  return toText(value).replace(/\s+/g, " ").toLowerCase();
+}
+
+function compactNotificationContext(sessionTitle, projectTitle) {
+  const session = toText(sessionTitle);
+  const project = toText(projectTitle);
+  if (session && project && normalizedNotificationLabel(session) === normalizedNotificationLabel(project)) return session;
+  if (session && project) return `${session} · ${project}`;
+  return session || project || "Сессия";
+}
+
 function userTitleFrom(user) {
   return String(user?.name || user?.email || user?.id || "").trim() || "Пользователь";
 }
@@ -144,7 +156,7 @@ export default function TopBar({
   const [uiTheme, setUiTheme] = useState("dark");
   const [aiToolsOpen, setAiToolsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-  const [notificationFilter, setNotificationFilter] = useState("all");
+  const [notificationFilter, setNotificationFilter] = useState("unviewed");
   const [notificationActionPending, setNotificationActionPending] = useState("");
   const [notificationActionError, setNotificationActionError] = useState({ rowId: "", text: "" });
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
@@ -370,16 +382,22 @@ export default function TopBar({
   const hasVisibleAccountNotifications = visibleNotificationCenter.rowCount > 0;
   const visibleNotificationRows = useMemo(
     () => visibleNotificationCenter.groups.flatMap((group) => (
-      asArray(group?.rows).map((row) => ({
-        ...row,
-        sessionTitle: toText(row?.sessionTitle) || toText(group?.sessionTitle),
-        projectTitle: toText(row?.projectTitle) || toText(group?.projectTitle),
-      }))
+      asArray(group?.rows).map((row) => {
+        const sessionTitle = toText(row?.sessionTitle) || toText(group?.sessionTitle);
+        const projectTitle = toText(row?.projectTitle) || toText(group?.projectTitle);
+        return {
+          ...row,
+          sessionTitle,
+          projectTitle,
+          contextLabel: toText(row?.contextLabel) || compactNotificationContext(sessionTitle, projectTitle),
+          primaryLabel: toText(row?.primaryLabel || row?.title) || "Обсуждение",
+          secondaryLabel: toText(row?.secondaryLabel || row?.excerpt),
+        };
+      })
     )),
     [visibleNotificationCenter],
   );
   const notificationFilters = useMemo(() => ([
-    { key: "all", label: "Все", count: accountNotificationCenter.rowCount },
     { key: "unviewed", label: "Не просмотренные", count: accountNotificationCenter.unviewedCount },
     { key: "viewed", label: "Просмотренные", count: accountNotificationCenter.viewedCount },
     { key: "attention", label: "Требуют внимания", count: accountNotificationCenter.attentionCount },
@@ -773,7 +791,7 @@ export default function TopBar({
           {accountMenuOpen ? (
             <div
               ref={accountMenuRef}
-              className="fixed right-3 top-14 z-[140] flex max-h-[calc(100vh-4.25rem)] w-[480px] max-w-[calc(100vw-1.5rem)] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-panel backdrop-blur"
+              className="fixed right-3 top-14 z-[140] flex max-h-[calc(100vh-4.25rem)] w-[560px] max-w-[calc(100vw-1.5rem)] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-panel backdrop-blur"
               data-testid="topbar-account-menu"
             >
               <div className="min-w-0 border-b border-border/70 px-4 py-3">
@@ -803,14 +821,14 @@ export default function TopBar({
                     ↻
                   </button>
                 </div>
-                <div className="flex min-w-0 flex-wrap gap-1.5 px-4 pb-2" data-testid="topbar-notification-filters">
+                <div className="flex min-w-0 flex-wrap gap-1.5 border-b border-border/55 px-4 pb-2" data-testid="topbar-notification-filters">
                   {notificationFilters.map((filter) => {
                     const active = notificationFilter === filter.key;
                     return (
                       <button
                         key={filter.key}
                         type="button"
-                        className={`h-7 rounded-full border px-2 text-[11px] font-bold transition ${active ? "border-info/55 bg-info/10 text-info" : "border-border/75 bg-panel2/45 text-muted hover:text-fg"}`}
+                        className={`h-7 rounded-full border px-2.5 text-[11px] font-bold transition ${active ? "border-info/55 bg-info/10 text-info" : "border-border/70 bg-transparent text-muted hover:border-border hover:bg-panel2/35 hover:text-fg"}`}
                         onClick={() => {
                           setNotificationFilter(filter.key);
                           setNotificationActionError({ rowId: "", text: "" });
@@ -819,7 +837,7 @@ export default function TopBar({
                         data-filter={filter.key}
                       >
                         {filter.label}
-                        {filter.key !== "all" && filter.count > 0 ? (
+                        {filter.count > 0 ? (
                           <span className="ml-1 tabular-nums">{filter.count}</span>
                         ) : null}
                       </button>
@@ -827,8 +845,8 @@ export default function TopBar({
                   })}
                 </div>
                 {hasVisibleAccountNotifications ? (
-                  <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-3" data-testid="topbar-notification-center">
-                    <div className="divide-y divide-border/60 border-t border-border/60">
+                  <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-3 pt-1" data-testid="topbar-notification-center">
+                    <div className="divide-y divide-border/55">
                       {visibleNotificationRows.slice(0, 24).map((row) => {
                         const isMention = row.type === "mention";
                         const isCurrentAggregate = row.type === "aggregate" && row.sessionId === effectiveSessionId;
@@ -842,36 +860,52 @@ export default function TopBar({
                         const attentionPending = notificationActionPending === `${row.id}:attention`;
                         const rowError = notificationActionError.rowId === row.id ? notificationActionError.text : "";
                         const viewed = row.viewState === "viewed";
+                        const attentionActive = row.isAttentionActive === true || row.requiresAttentionActive === true;
+                        const unviewed = !viewed;
                         return (
                           <div
                             key={row.id}
-                            className={`group w-full min-w-0 px-1 py-2.5 text-left transition hover:bg-panel2/50 ${viewed ? "text-fg/85" : "text-fg"}`}
+                            className={`group relative w-full min-w-0 px-1.5 py-2 text-left transition hover:bg-panel2/35 ${viewed ? "text-fg/80" : "text-fg"}`}
                             data-testid={rowTestId}
                             data-view-state={row.viewState || ""}
                           >
-                            <div className="flex min-w-0 items-start justify-between gap-3">
-                              <div className="min-w-0 flex-1">
-                                <div className="flex min-w-0 items-center gap-2">
-                                  <div className={`min-w-0 truncate text-[13px] font-bold leading-tight ${viewed ? "text-fg/80" : "text-fg"}`} title={row.sessionTitle}>
-                                    {shortLabel(row.sessionTitle, 48)}
+                            <span
+                              className={`absolute left-0 top-2.5 h-[calc(100%-1.25rem)] w-0.5 rounded-full ${attentionActive ? "bg-warning/70" : unviewed ? "bg-info/65" : "bg-transparent"}`}
+                              aria-hidden="true"
+                            />
+                            <div className="min-w-0 pl-2">
+                              <div className="flex min-w-0 items-start gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <div
+                                    className={`line-clamp-1 break-words text-[13px] font-bold leading-snug ${viewed ? "text-fg/75" : "text-fg"}`}
+                                    title={row.primaryLabel || row.title || "Обсуждение"}
+                                    data-testid="topbar-notification-primary"
+                                  >
+                                    {row.primaryLabel || row.title || "Обсуждение"}
+                                  </div>
+                                  {row.secondaryLabel ? (
+                                    <div
+                                      className={`mt-0.5 line-clamp-2 break-words text-[11px] leading-snug ${viewed ? "text-muted/85" : "text-fg/75"}`}
+                                      data-testid="topbar-notification-secondary"
+                                    >
+                                      {row.secondaryLabel}
+                                    </div>
+                                  ) : null}
+                                  <div
+                                    className="mt-1 line-clamp-1 break-words text-[10px] font-semibold uppercase tracking-[0.04em] text-muted"
+                                    title={row.contextLabel || compactNotificationContext(row.sessionTitle, row.projectTitle)}
+                                    data-testid="topbar-notification-context"
+                                  >
+                                    {shortLabel(row.contextLabel || compactNotificationContext(row.sessionTitle, row.projectTitle), 72)}
                                   </div>
                                 </div>
-                                {row.projectTitle ? (
-                                  <div className="mt-0.5 truncate text-[11px] leading-snug text-muted" title={row.projectTitle}>
-                                    {shortLabel(row.projectTitle, 56)}
-                                  </div>
-                                ) : null}
-                                <div className={`mt-1 line-clamp-2 break-words text-[12px] font-semibold leading-snug ${viewed ? "text-fg/75" : "text-fg/90"}`}>
-                                  {row.title || "Обсуждение"}
-                                </div>
-                                {row.excerpt ? (
-                                  <div className="mt-0.5 line-clamp-2 break-words text-[11px] leading-snug text-muted">
-                                    {row.excerpt}
-                                  </div>
-                                ) : null}
-                                <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
-                                  {row.authorLabel ? <span className="truncate text-[10px] text-muted">{shortLabel(row.authorLabel, 24)}</span> : null}
-                                  {timeLabel ? <span className="shrink-0 text-[10px] text-muted">{timeLabel}</span> : null}
+                              </div>
+                              <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
+                                {row.authorLabel ? <span className="truncate text-[10px] text-muted">{shortLabel(row.authorLabel, 24)}</span> : null}
+                                {timeLabel ? <span className="shrink-0 text-[10px] text-muted">{timeLabel}</span> : null}
+                                {viewed ? <span className="shrink-0 text-[10px] text-muted">Просмотрено</span> : null}
+                                {row.badges?.length > 0 ? <span className="hidden text-[10px] text-muted sm:inline">·</span> : null}
+                                <div className="flex min-w-0 flex-wrap items-center gap-1">
                                   {row.badges?.slice(0, 4).map((badge) => (
                                     <span
                                       key={`${row.id}:${badge.label}`}
@@ -881,17 +915,12 @@ export default function TopBar({
                                     </span>
                                   ))}
                                 </div>
-                                {rowError ? (
-                                  <div className="mt-1 rounded-md border border-danger/45 bg-danger/10 px-2 py-1 text-[10px] font-semibold text-danger" data-testid="topbar-notification-action-error">
-                                    {rowError}
-                                  </div>
-                                ) : null}
                               </div>
-                              <div className="mt-0.5 flex shrink-0 flex-col items-end gap-1">
+                              <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
                                 {row.canOpen ? (
                                   <button
                                     type="button"
-                                    className="rounded-full border border-info/35 bg-transparent px-2 py-1 text-[11px] font-bold text-info transition hover:border-info/65 hover:bg-info/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="rounded-full border border-info/30 bg-transparent px-2 py-0.5 text-[10px] font-bold text-info transition hover:border-info/60 hover:bg-info/10 disabled:cursor-not-allowed disabled:opacity-60"
                                     onClick={() => void handleAccountNotificationOpen(row)}
                                     data-testid="topbar-notification-open"
                                     data-notes-panel-trigger={isCurrentAggregate ? "true" : undefined}
@@ -902,7 +931,7 @@ export default function TopBar({
                                 {row.canMarkRead ? (
                                   <button
                                     type="button"
-                                    className="rounded-full border border-success/35 bg-transparent px-2 py-1 text-[11px] font-bold text-success transition hover:border-success/65 hover:bg-success/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="rounded-full border border-success/30 bg-transparent px-2 py-0.5 text-[10px] font-bold text-success transition hover:border-success/60 hover:bg-success/10 disabled:cursor-not-allowed disabled:opacity-60"
                                     onClick={() => void handleNotificationRowAction(row, "read")}
                                     disabled={Boolean(notificationActionPending)}
                                     data-testid="topbar-notification-mark-read"
@@ -913,7 +942,7 @@ export default function TopBar({
                                 {row.canAcknowledgeAttention ? (
                                   <button
                                     type="button"
-                                    className="rounded-full border border-warning/40 bg-transparent px-2 py-1 text-[11px] font-bold text-warning transition hover:border-warning/70 hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="rounded-full border border-warning/35 bg-transparent px-2 py-0.5 text-[10px] font-bold text-warning transition hover:border-warning/65 hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-60"
                                     onClick={() => void handleNotificationRowAction(row, "attention")}
                                     disabled={Boolean(notificationActionPending)}
                                     data-testid="topbar-notification-ack-attention"
@@ -922,6 +951,11 @@ export default function TopBar({
                                   </button>
                                 ) : null}
                               </div>
+                              {rowError ? (
+                                <div className="mt-1 rounded-md border border-danger/45 bg-danger/10 px-2 py-1 text-[10px] font-semibold text-danger" data-testid="topbar-notification-action-error">
+                                  {rowError}
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         );

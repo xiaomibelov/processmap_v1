@@ -19,6 +19,18 @@ function shortText(value, limit = 120) {
   return `${body.slice(0, Math.max(8, limit - 3)).trim()}...`;
 }
 
+function normalizedLabel(value) {
+  return text(value).replace(/\s+/g, " ").toLowerCase();
+}
+
+function buildContextLabel(sessionTitle, projectTitle) {
+  const session = text(sessionTitle);
+  const project = text(projectTitle);
+  if (session && project && normalizedLabel(session) === normalizedLabel(project)) return session;
+  if (session && project) return `${session} · ${project}`;
+  return session || project || "Сессия";
+}
+
 function sessionIdFrom(value) {
   return text(value?.session_id || value?.sessionId || value?.id);
 }
@@ -92,6 +104,10 @@ function decorateRowCapabilities(row) {
   const unreadCount = aggregateNumber(item, "unreadCount");
   const requiresAttentionActive = item.requiresAttentionActive === true || attentionCount > 0;
   const viewState = text(item.viewState) || deriveViewState({ mentionCount, unreadCount, requiresAttentionActive });
+  const sessionTitle = text(item.sessionTitle || item.session_title);
+  const projectTitle = text(item.projectTitle || item.project_title);
+  const primaryLabel = text(item.primaryLabel || item.threadTitle || item.thread_title || item.title) || "Обсуждение";
+  const secondaryLabel = text(item.secondaryLabel || item.snippet || item.excerpt);
   return {
     ...item,
     threadId,
@@ -100,7 +116,12 @@ function decorateRowCapabilities(row) {
     attentionCount,
     unreadCount,
     requiresAttentionActive,
+    isAttentionActive: requiresAttentionActive,
     viewState,
+    primaryLabel,
+    secondaryLabel,
+    contextLabel: text(item.contextLabel) || buildContextLabel(sessionTitle, projectTitle),
+    attentionLabel: requiresAttentionActive ? (attentionCount > 1 ? `Внимание ${attentionCount}` : "Внимание") : "",
     canOpen: Boolean(text(item.sessionId || item.session_id || item.target?.session_id || item.mention?.session_id)),
     canMarkRead: Boolean(threadId && unreadCount > 0),
     canAcknowledgeMention: Boolean(mentionId && (item.reason === "mention" || mentionCount > 0 || item.type === "mention")),
@@ -268,7 +289,6 @@ function buildFeedRow(rawItem) {
   if (mentionCount > 0) badges.push(makeBadge(mentionCount > 1 ? `Упоминание ${mentionCount}` : "Упоминание", "mention"));
   if (attentionCount > 0) badges.push(makeBadge(attentionCount > 1 ? `Внимание ${attentionCount}` : "Внимание", "attention"));
   if (unreadCount > 0) badges.push(makeBadge(`Новые ${unreadCount}`, "personal"));
-  if (badges.length <= 0 && viewState === "viewed") badges.push(makeBadge("Просмотрено", "viewed"));
 
   const timestamp = numericTime(item.last_comment_at || item.created_at);
   const priority = reason === "mention" || mentionCount > 0
