@@ -1,4 +1,5 @@
 export const PROCESS_MAP_ROUTE_STATE_KEY = "processMapRoute";
+export const PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY = "processMapProjectContext";
 
 const DEFAULT_APP_PATHNAME = "/app";
 const VALID_SOURCES = new Set(["internal", "direct", "popstate"]);
@@ -10,6 +11,44 @@ function text(value) {
 function normalizeSource(value) {
   const source = text(value).toLowerCase();
   return VALID_SOURCES.has(source) ? source : "direct";
+}
+
+function normalizeBreadcrumbBase(crumbsRaw) {
+  const crumbs = Array.isArray(crumbsRaw) ? crumbsRaw : [];
+  return crumbs
+    .map((crumb) => {
+      const type = text(crumb?.type).toLowerCase();
+      const id = text(crumb?.id);
+      const name = text(crumb?.name);
+      if (!id || !name) return null;
+      if (type !== "workspace" && type !== "folder") return null;
+      return { type, id, name };
+    })
+    .filter(Boolean);
+}
+
+export function normalizeProcessMapProjectContext(contextRaw = {}) {
+  const context = contextRaw && typeof contextRaw === "object" ? contextRaw : {};
+  const breadcrumbBase = normalizeBreadcrumbBase(context.breadcrumbBase ?? context.breadcrumb_base);
+  const workspaceCrumb = breadcrumbBase.find((crumb) => crumb.type === "workspace");
+  const folderCrumbs = breadcrumbBase.filter((crumb) => crumb.type === "folder");
+  const lastFolderCrumb = folderCrumbs.length ? folderCrumbs[folderCrumbs.length - 1] : null;
+  const projectId = text(context.projectId ?? context.project_id);
+  const workspaceId = text(context.workspaceId ?? context.workspace_id) || text(workspaceCrumb?.id);
+  const folderId = text(context.folderId ?? context.folder_id) || text(lastFolderCrumb?.id);
+  const projectTitle = text(context.projectTitle ?? context.project_title ?? context.title ?? context.name);
+
+  if (!projectId && !workspaceId && !folderId && !projectTitle && !breadcrumbBase.length) {
+    return null;
+  }
+
+  return {
+    projectId,
+    workspaceId,
+    folderId,
+    breadcrumbBase,
+    projectTitle,
+  };
 }
 
 function asLocationUrl(locationLike) {
@@ -110,6 +149,12 @@ export function routesEqual(a, b) {
     && left.sessionId === right.sessionId;
 }
 
+export function readProcessMapProjectContextFromHistory(win = typeof window !== "undefined" ? window : undefined) {
+  const state = win?.history?.state;
+  if (!state || typeof state !== "object") return null;
+  return normalizeProcessMapProjectContext(state[PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY]);
+}
+
 function writeProcessMapHistory(routeRaw, options = {}) {
   const win = options?.win || (typeof window !== "undefined" ? window : undefined);
   if (!win?.history || !win?.location) return { ok: false, action: "none", url: "" };
@@ -124,16 +169,23 @@ function writeProcessMapHistory(routeRaw, options = {}) {
     hash: Object.prototype.hasOwnProperty.call(options, "hash") ? options.hash : win.location.hash || "",
     baseSearch: options?.baseSearch || "",
   });
+  const prevStateRaw = win.history.state && typeof win.history.state === "object" ? win.history.state : {};
+  const {
+    [PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY]: _prevProjectContext,
+    ...prevState
+  } = prevStateRaw;
+  const projectContext = normalizeProcessMapProjectContext(routeRaw?.projectContext ?? options?.projectContext);
   const currentUrl = `${win.location.pathname || ""}${win.location.search || ""}${win.location.hash || ""}`;
-  if (url === currentUrl && options?.force !== true) {
+  if (url === currentUrl && options?.force !== true && !projectContext) {
     return { ok: true, action: "none", url, route };
   }
-
-  const prevState = win.history.state && typeof win.history.state === "object" ? win.history.state : {};
   const state = {
     ...prevState,
     [PROCESS_MAP_ROUTE_STATE_KEY]: route,
   };
+  if (projectContext) {
+    state[PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY] = projectContext;
+  }
   const replace = options?.replace === true;
   if (replace) win.history.replaceState(state, "", url);
   else win.history.pushState(state, "", url);

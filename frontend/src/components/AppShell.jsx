@@ -104,6 +104,7 @@ export default function AppShell({
   projects,
   projectId,
   projectWorkspaceId,
+  projectRouteContext,
   onProjectChange,
   onDeleteProject,
   canManageProjectEntities,
@@ -287,6 +288,7 @@ export default function AppShell({
               sessionId={sessionId}
               activeProjectId={projectId}
               activeProjectWorkspaceId={projectWorkspaceId}
+              activeProjectRouteContext={projectRouteContext}
               workspaceActiveOrgId={activeOrgId}
               canInviteWorkspaceUsers={!!canInviteWorkspaceUsers}
               canManageSharedTemplates={!!canManageSharedTemplates}

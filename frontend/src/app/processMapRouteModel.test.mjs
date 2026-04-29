@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY,
   PROCESS_MAP_ROUTE_STATE_KEY,
   buildProcessMapUrl,
   normalizeProcessMapRoute,
+  normalizeProcessMapProjectContext,
   parseProcessMapRoute,
   pushProcessMapHistory,
+  readProcessMapProjectContextFromHistory,
   replaceProcessMapHistory,
   routesEqual,
 } from "./processMapRouteModel.js";
@@ -147,6 +150,61 @@ test("pushProcessMapHistory writes URL and route state", () => {
     sessionId: "",
     source: "internal",
   });
+});
+
+test("process map history can carry parent project breadcrumb context in state only", () => {
+  const win = makeWindow("https://processmap.local/app");
+  const result = pushProcessMapHistory({
+    projectId: "p1",
+    sessionId: "s1",
+    projectContext: {
+      projectId: "p1",
+      workspaceId: "w1",
+      breadcrumbBase: [
+        { type: "workspace", id: "w1", name: "ДК" },
+        { type: "folder", id: "f1", name: "Суп ДК" },
+        { type: "folder", id: "f2", name: "Борщ с говядиной" },
+      ],
+      projectTitle: "Разогрев супа",
+    },
+  }, { win });
+
+  assert.equal(result.url, "/app?project=p1&session=s1");
+  assert.deepEqual(win.history.state[PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY], {
+    projectId: "p1",
+    workspaceId: "w1",
+    folderId: "f2",
+    breadcrumbBase: [
+      { type: "workspace", id: "w1", name: "ДК" },
+      { type: "folder", id: "f1", name: "Суп ДК" },
+      { type: "folder", id: "f2", name: "Борщ с говядиной" },
+    ],
+    projectTitle: "Разогрев супа",
+  });
+  assert.deepEqual(readProcessMapProjectContextFromHistory(win), win.history.state[PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY]);
+});
+
+test("process map project context drops broken crumbs and remains optional", () => {
+  assert.equal(normalizeProcessMapProjectContext(null), null);
+  assert.deepEqual(
+    normalizeProcessMapProjectContext({
+      project_id: "p1",
+      breadcrumb_base: [
+        { type: "workspace", id: "w1", name: "ДК" },
+        { type: "folder", id: "", name: "Broken" },
+        { type: "project", id: "p1", name: "Current project" },
+      ],
+    }),
+    {
+      projectId: "p1",
+      workspaceId: "w1",
+      folderId: "",
+      breadcrumbBase: [
+        { type: "workspace", id: "w1", name: "ДК" },
+      ],
+      projectTitle: "",
+    },
+  );
 });
 
 test("replaceProcessMapHistory preserves unrelated search params when requested", () => {
