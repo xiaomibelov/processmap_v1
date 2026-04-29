@@ -36,14 +36,16 @@ class NotesMvp1ApiTest(unittest.TestCase):
             acknowledge_note_thread_attention,
             create_session_note_thread,
             list_my_note_mentions,
+            list_my_note_notifications,
             list_session_mentionable_users,
             list_session_note_threads,
             mark_note_thread_read,
             patch_note_comment,
             patch_note_thread,
         )
-        from app.storage import get_default_org_id, get_project_storage, get_storage, upsert_project_membership
+        from app.storage import create_org_record, get_default_org_id, get_project_storage, get_storage, upsert_project_membership
 
+        self.create_org_record = create_org_record
         self.create_user = create_user
         self.get_default_org_id = get_default_org_id
         self.get_project_storage = get_project_storage
@@ -56,6 +58,7 @@ class NotesMvp1ApiTest(unittest.TestCase):
         self.acknowledge_note_thread_attention = acknowledge_note_thread_attention
         self.create_session_note_thread = create_session_note_thread
         self.list_my_note_mentions = list_my_note_mentions
+        self.list_my_note_notifications = list_my_note_notifications
         self.list_session_mentionable_users = list_session_mentionable_users
         self.list_session_note_threads = list_session_note_threads
         self.mark_note_thread_read = mark_note_thread_read
@@ -498,6 +501,165 @@ class NotesMvp1ApiTest(unittest.TestCase):
 
         peer_after_own_comment = self.list_session_note_threads(self.session_id, self._req(peer), status="")["items"][0]
         self.assertEqual(peer_after_own_comment["unread_count"], 0)
+
+    def test_note_notifications_feed_returns_actionable_discussions(self):
+        self._add_project_member(self.viewer, "viewer")
+        peer = self.create_user(
+            "notes_feed_peer@local",
+            "editor",
+            is_admin=False,
+            full_name="Коллега Ленты",
+        )
+        self._insert_membership(self.org_id, str(peer.get("id") or ""), "editor")
+        self._add_project_member(peer, "editor")
+
+        empty = self.list_my_note_notifications(self._req(self.viewer))
+        self.assertTrue(empty["ok"])
+        self.assertEqual(empty["items"], [])
+
+        mention_thread = self.create_session_note_thread(
+            self.session_id,
+            self.CreateNoteThreadBody(
+                scope_type="diagram_element",
+                scope_ref={"element_id": "Task_Feed", "element_name": "Проверить этап разогрева"},
+                body="<b>Посмотри</b>, пожалуйста, температуру подачи",
+                mention_user_ids=[str(self.viewer.get("id") or "")],
+            ),
+            self._req(),
+        )["thread"]
+        attention_thread = self.create_session_note_thread(
+            self.session_id,
+            self.CreateNoteThreadBody(
+                scope_type="session",
+                scope_ref={},
+                body="Требует внимания технолога",
+                requires_attention=True,
+            ),
+            self._req(),
+        )["thread"]
+        unread_thread = self.create_session_note_thread(
+            self.session_id,
+            self.CreateNoteThreadBody(
+                scope_type="diagram",
+                scope_ref={},
+                body="Новое сообщение для чтения",
+            ),
+            self._req(peer),
+        )["thread"]
+        own_thread = self.create_session_note_thread(
+            self.session_id,
+            self.CreateNoteThreadBody(scope_type="session", scope_ref={}, body="Моё собственное сообщение"),
+            self._req(peer),
+        )["thread"]
+
+        feed = self.list_my_note_notifications(self._req(self.viewer), limit=20)
+        self.assertTrue(feed["ok"])
+        self.assertEqual(feed["limit"], 20)
+        items = feed["items"]
+        by_thread = {item["thread_id"]: item for item in items}
+        self.assertIn(mention_thread["id"], by_thread)
+        self.assertIn(attention_thread["id"], by_thread)
+        self.assertIn(unread_thread["id"], by_thread)
+        self.assertIn(own_thread["id"], by_thread)
+
+        peer_feed = self.list_my_note_notifications(self._req(peer), limit=20)
+        peer_thread_ids = {item["thread_id"] for item in peer_feed["items"]}
+        self.assertNotIn(unread_thread["id"], peer_thread_ids)
+        self.assertNotIn(own_thread["id"], peer_thread_ids)
+
+        mention = by_thread[mention_thread["id"]]
+        self.assertEqual(mention["reason"], "mention")
+        self.assertEqual(mention["type"], "discussion")
+        self.assertEqual(mention["session_id"], self.session_id)
+        self.assertEqual(mention["session_title"], "Notes Session")
+        self.assertEqual(mention["project_id"], self.project_id)
+        self.assertEqual(mention["project_title"], "Notes Project")
+        self.assertEqual(mention["thread_title"], "Task_Feed")
+        self.assertTrue(str(mention.get("mention_id") or "").strip())
+        self.assertEqual(mention["comment_id"], mention_thread["comments"][0]["id"])
+        self.assertIn("Посмотри", mention["snippet"])
+        self.assertNotIn("<b>", mention["snippet"])
+        self.assertEqual(mention["mention_count"], 1)
+        self.assertGreaterEqual(mention["unread_count"], 1)
+        self.assertEqual(mention["target"]["thread_id"], mention_thread["id"])
+        self.assertEqual(mention["target"]["comment_id"], mention_thread["comments"][0]["id"])
+        self.assertNotIn("comments", mention)
+        self.assertNotIn("bpmn_xml", mention)
+
+        attention = by_thread[attention_thread["id"]]
+        self.assertEqual(attention["reason"], "attention")
+        self.assertTrue(attention["requires_attention"])
+        self.assertEqual(attention["attention_count"], 1)
+
+        unread = by_thread[unread_thread["id"]]
+        self.assertEqual(unread["reason"], "unread")
+        self.assertEqual(unread["unread_count"], 1)
+        self.assertEqual(unread["author_display"], "Коллега Ленты")
+
+        limited = self.list_my_note_notifications(self._req(self.viewer), limit=2)
+        self.assertEqual(limited["limit"], 2)
+        self.assertEqual(len(limited["items"]), 2)
+        self.assertEqual(limited["items"][0]["reason"], "mention")
+
+    def test_note_notifications_feed_filters_unauthorized_projects(self):
+        self._add_project_member(self.viewer, "viewer")
+        ps = self.get_project_storage()
+        st = self.get_storage()
+        hidden_project_id = ps.create(
+            "Hidden Notes Project",
+            {},
+            user_id=str(self.editor.get("id") or ""),
+            org_id=self.org_id,
+            is_admin=True,
+        )
+        hidden_session_id = st.create(
+            title="Hidden Notes Session",
+            roles=["operator"],
+            project_id=hidden_project_id,
+            user_id=str(self.editor.get("id") or ""),
+            org_id=self.org_id,
+            is_admin=True,
+        )
+        visible_thread = self.create_session_note_thread(
+            self.session_id,
+            self.CreateNoteThreadBody(scope_type="session", scope_ref={}, body="Видимое уведомление"),
+            self._req(),
+        )["thread"]
+        hidden_thread = self.create_session_note_thread(
+            hidden_session_id,
+            self.CreateNoteThreadBody(scope_type="session", scope_ref={}, body="Скрытое уведомление"),
+            self._req(),
+        )["thread"]
+        foreign_org = self.create_org_record("Foreign Notes Org", created_by=str(self.editor.get("id") or ""))
+        foreign_org_id = str(foreign_org.get("id") or "")
+        self._insert_membership(foreign_org_id, str(self.editor.get("id") or ""), "editor")
+        foreign_project_id = ps.create(
+            "Foreign Notes Project",
+            {},
+            user_id=str(self.editor.get("id") or ""),
+            org_id=foreign_org_id,
+            is_admin=True,
+        )
+        foreign_session_id = st.create(
+            title="Foreign Notes Session",
+            roles=["operator"],
+            project_id=foreign_project_id,
+            user_id=str(self.editor.get("id") or ""),
+            org_id=foreign_org_id,
+            is_admin=True,
+        )
+        foreign_thread = self.create_session_note_thread(
+            foreign_session_id,
+            self.CreateNoteThreadBody(scope_type="session", scope_ref={}, body="Чужая организация"),
+            _DummyRequest(self.editor, active_org_id=foreign_org_id),
+        )["thread"]
+
+        feed = self.list_my_note_notifications(self._req(self.viewer))
+        thread_ids = {item["thread_id"] for item in feed["items"]}
+        self.assertIn(visible_thread["id"], thread_ids)
+        self.assertNotIn(hidden_thread["id"], thread_ids)
+        self.assertNotIn(foreign_thread["id"], thread_ids)
+        self.assertTrue(all(item["project_id"] == self.project_id for item in feed["items"]))
 
     def test_auth_and_permission_denial(self):
         with self.assertRaises(HTTPException) as unauthorized:

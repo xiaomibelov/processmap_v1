@@ -12,6 +12,7 @@ import {
   apiGetSessionNoteAggregates,
   apiListMentionableUsers,
   apiListMyNoteMentions,
+  apiListNoteNotifications,
   apiListNoteThreads,
   apiMarkNoteThreadRead,
   apiPatchNoteComment,
@@ -39,6 +40,7 @@ test("note threads API helpers use MVP-1 endpoints and payload contract", async 
     return new Response(JSON.stringify({
       items: [{ id: "thread_1", scope_type: "diagram_element", comments: [] }],
       count: 1,
+      limit: 20,
       mention: { id: "mention_1", thread_id: "thread_1", acknowledged_at: 1 },
       thread_id: "thread_1",
       last_read_at: 123,
@@ -69,6 +71,7 @@ test("note threads API helpers use MVP-1 endpoints and payload contract", async 
     const read = await apiMarkNoteThreadRead("thread_1");
     const mentionable = await apiListMentionableUsers("sess_1");
     const mentions = await apiListMyNoteMentions(20);
+    const notifications = await apiListNoteNotifications({ limit: 20, includeRead: false });
     const mentionAck = await apiAcknowledgeNoteMention("mention_1");
 
     assert.equal(list.ok, true);
@@ -83,6 +86,7 @@ test("note threads API helpers use MVP-1 endpoints and payload contract", async 
     assert.equal(read.lastReadAt, 123);
     assert.equal(mentionable.ok, true);
     assert.equal(mentions.count, 1);
+    assert.equal(notifications.count, 1);
     assert.equal(mentionAck.mention.id, "mention_1");
   });
 
@@ -112,8 +116,10 @@ test("note threads API helpers use MVP-1 endpoints and payload contract", async 
   assert.equal(calls[7].method, "GET");
   assert.match(calls[8].url, /\/api\/note-mentions\?limit=20$/);
   assert.equal(calls[8].method, "GET");
-  assert.match(calls[9].url, /\/api\/note-mentions\/mention_1\/acknowledge$/);
-  assert.equal(calls[9].method, "POST");
+  assert.match(calls[9].url, /\/api\/note-notifications\?limit=20$/);
+  assert.equal(calls[9].method, "GET");
+  assert.match(calls[10].url, /\/api\/note-mentions\/mention_1\/acknowledge$/);
+  assert.equal(calls[10].method, "POST");
 });
 
 test("note aggregate API helpers use MVP-1 aggregate endpoints", async () => {
