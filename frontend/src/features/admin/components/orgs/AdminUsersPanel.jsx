@@ -136,7 +136,20 @@ export default function AdminUsersPanel({
     setMemberships((prev) => normalizeMemberships(prev, fallbackOrgId));
   }, [fallbackOrgId]);
 
-  if (!isAdmin) return null;
+  if (!isAdmin) {
+    return (
+      <SectionCard
+        eyebrow="Доступ"
+        title="Пользователи платформы"
+        subtitle="Управление пользователями и их доступом к организациям."
+      >
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+          <div className="font-semibold text-slate-950">Пользователи платформы доступны только администратору платформы.</div>
+          <div className="mt-1 text-slate-600">Вы управляете участниками выбранной организации в блоке доступа организации.</div>
+        </div>
+      </SectionCard>
+    );
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -215,8 +228,8 @@ export default function AdminUsersPanel({
   return (
     <SectionCard
       eyebrow="Доступ"
-      title="Пользователи и доступ"
-      subtitle="Администратор платформы управляет пользователями, ролями и доступом к организациям."
+      title="Пользователи платформы"
+      subtitle="Управление пользователями и их доступом к организациям."
     >
       <div className="space-y-3">
         <form className="rounded-xl border border-slate-200 bg-slate-50 p-3" onSubmit={handleSubmit} autoComplete="off">
