@@ -48,6 +48,7 @@ class ExplorerResponsibleContextFieldsTest(unittest.TestCase):
             create_org_record,
             get_default_org_id,
             get_storage,
+            list_org_memberships,
             list_org_workspaces,
             upsert_org_membership,
         )
@@ -64,6 +65,7 @@ class ExplorerResponsibleContextFieldsTest(unittest.TestCase):
         self.get_explorer_page = get_explorer_page
         self.get_folder = get_folder
         self.get_project_explorer = get_project_explorer
+        self.list_org_memberships = list_org_memberships
         self.rename_folder = rename_folder
         self.list_org_workspaces = list_org_workspaces
         self.upsert_org_membership = upsert_org_membership
@@ -85,9 +87,17 @@ class ExplorerResponsibleContextFieldsTest(unittest.TestCase):
             job_title="Технолог",
         )
         self.viewer = create_user("explorer_resp_viewer@local", "viewer", is_admin=False)
+        self.platform_admin = create_user(
+            "explorer_resp_platform_admin@local",
+            "platform-admin",
+            is_admin=True,
+            full_name="Платформенный админ",
+            job_title="Администратор платформы",
+        )
         self.admin_id = str(self.admin.get("id") or "")
         self.editor_id = str(self.editor.get("id") or "")
         self.viewer_id = str(self.viewer.get("id") or "")
+        self.platform_admin_id = str(self.platform_admin.get("id") or "")
         self.upsert_org_membership(self.org_id, self.admin_id, "org_admin")
         self.upsert_org_membership(self.org_id, self.editor_id, "editor")
         self.upsert_org_membership(self.org_id, self.viewer_id, "viewer")
@@ -140,6 +150,12 @@ class ExplorerResponsibleContextFieldsTest(unittest.TestCase):
             workspace_id=self.workspace_id,
         )
 
+    def _org_member_user_ids(self, org_id: str | None = None) -> set[str]:
+        return {
+            str(row.get("user_id") or "").strip()
+            for row in self.list_org_memberships(str(org_id or self.org_id))
+        }
+
     def test_schema_has_folder_responsible_context_and_project_executor_fields(self):
         folder_columns = self._columns("workspace_folders")
         project_columns = self._columns("projects")
@@ -186,6 +202,23 @@ class ExplorerResponsibleContextFieldsTest(unittest.TestCase):
         self.assertIsNone(cleared.get("responsible_user"))
         self.assertIsNone(cleared.get("responsible_assigned_at"))
 
+    def test_platform_admin_without_membership_can_be_folder_responsible_without_membership_write(self):
+        self.assertNotIn(self.platform_admin_id, self._org_member_user_ids())
+
+        updated = self.rename_folder(
+            self.folder_id,
+            self.RenameFolderBody(responsible_user_id=self.platform_admin_id),
+            self._req(self.platform_admin),
+            workspace_id=self.workspace_id,
+        )
+
+        self.assertEqual(updated.get("responsible_user_id"), self.platform_admin_id)
+        responsible = updated.get("responsible_user") or {}
+        self.assertEqual(responsible.get("user_id"), self.platform_admin_id)
+        self.assertEqual(responsible.get("full_name"), "Платформенный админ")
+        self.assertEqual(responsible.get("job_title"), "Администратор платформы")
+        self.assertNotIn(self.platform_admin_id, self._org_member_user_ids())
+
     def test_folder_responsible_rejects_missing_cross_org_and_viewer_updates(self):
         with self.assertRaises(HTTPException) as missing:
             self._patch_folder(responsible_user_id="missing_user")
@@ -225,6 +258,22 @@ class ExplorerResponsibleContextFieldsTest(unittest.TestCase):
         self.assertEqual(project_page.project.executor_user_id, self.editor_id)
         self.assertEqual((project_page.project.executor or {}).get("email"), "explorer_resp_editor@local")
 
+    def test_platform_admin_without_membership_can_be_project_executor_without_membership_write(self):
+        self.assertNotIn(self.platform_admin_id, self._org_member_user_ids())
+
+        out = self.create_project_in_folder(
+            self.folder_id,
+            self.CreateProjectBody(name="Проект с platform admin", executor_user_id=self.platform_admin_id),
+            self._req(self.platform_admin),
+            workspace_id=self.workspace_id,
+        )
+
+        self.assertEqual(out.get("executor_user_id"), self.platform_admin_id)
+        executor = out.get("executor") or {}
+        self.assertEqual(executor.get("user_id"), self.platform_admin_id)
+        self.assertEqual(executor.get("display_name"), "Платформенный админ")
+        self.assertNotIn(self.platform_admin_id, self._org_member_user_ids())
+
     def test_project_executor_can_be_set_cleared_and_rejects_invalid_users(self):
         project = self.create_project(
             self.CreateProjectIn(title="Legacy Executor Project", executor_user_id=self.editor_id),
@@ -255,6 +304,26 @@ class ExplorerResponsibleContextFieldsTest(unittest.TestCase):
                 self._req(self.admin),
             )
         self.assertEqual(cross_org.exception.status_code, 422)
+
+    def test_legacy_project_executor_accepts_platform_admin_without_membership(self):
+        self.assertNotIn(self.platform_admin_id, self._org_member_user_ids())
+
+        project = self.create_project(
+            self.CreateProjectIn(title="Legacy Platform Admin Executor", executor_user_id=self.platform_admin_id),
+            self._req(self.platform_admin),
+        )
+
+        project_id = str(project.get("id") or "")
+        self.assertEqual(str(project.get("executor_user_id") or ""), self.platform_admin_id)
+        self.assertNotIn(self.platform_admin_id, self._org_member_user_ids())
+
+        cleared = self.patch_project(
+            project_id,
+            self.UpdateProjectIn(executor_user_id=""),
+            self._req(self.platform_admin),
+        )
+        self.assertIsNone(cleared.get("executor_user_id"))
+        self.assertNotIn(self.platform_admin_id, self._org_member_user_ids())
 
 
 if __name__ == "__main__":
