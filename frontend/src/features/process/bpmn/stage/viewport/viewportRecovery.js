@@ -1,3 +1,5 @@
+import { disableBpmnZoomScroll } from "../../runtime/zoomScrollLifecycle.js";
+
 function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
 }
@@ -247,6 +249,7 @@ export async function recoverByHardReset(ctx, inst, options = {}) {
   if (guard && !guard("recover3.start", inst, { allowTokenDrift: true })) return false;
   if (inst === refs.modelerRef?.current) {
     if (guard && !guard("recover3.modeler.before_destroy", inst, { allowTokenDrift: true })) return false;
+    disableBpmnZoomScroll(refs.modelerRef.current);
     try {
       refs.modelerRuntimeRef.current?.destroy?.();
     } catch {
@@ -296,6 +299,7 @@ export async function recoverByHardReset(ctx, inst, options = {}) {
 
   if (inst === refs.viewerRef?.current) {
     if (guard && !guard("recover3.viewer.before_destroy", inst, { allowTokenDrift: true })) return false;
+    disableBpmnZoomScroll(refs.viewerRef.current);
     try {
       refs.viewerRef.current?.destroy?.();
     } catch {
