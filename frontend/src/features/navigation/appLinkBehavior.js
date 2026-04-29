@@ -1,11 +1,7 @@
+import { buildProcessMapUrl } from "../../app/processMapRouteModel.js";
+
 export function buildAppWorkspaceHref({ projectId = "", sessionId = "" } = {}) {
-  const pid = String(projectId || "").trim();
-  const sid = String(sessionId || "").trim();
-  const params = new URLSearchParams();
-  if (pid) params.set("project", pid);
-  if (sid) params.set("session", sid);
-  const search = params.toString();
-  return search ? `/app?${search}` : "/app";
+  return buildProcessMapUrl({ projectId, sessionId });
 }
 
 export function shouldHandleClientNavigation(event, target = "") {
