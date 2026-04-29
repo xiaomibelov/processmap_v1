@@ -89,6 +89,7 @@ import { resolveSessionStatusFromDraft } from "./features/workspace/sessionStatu
 import useSessionRouteOrchestration, {
   pushSessionSelectionToUrl,
   readSelectionFromUrl,
+  seedSessionParentHistoryToUrl,
   shouldPreserveSelectionRouteDuringRestore,
   writeSelectionToUrl,
 } from "./app/useSessionRouteOrchestration";
@@ -3346,6 +3347,20 @@ export default function App() {
     writeSelectionToUrl({ projectId: pid, sessionId: sid });
     logNav("selection_sync", { projectId: pid || "-", sessionId: sid || "-" });
     if (sid) setRequestedSessionId(sid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, draft?.session_id]);
+
+  useEffect(() => {
+    const pid = String(projectId || "").trim();
+    const sid = String(draft?.session_id || "").trim();
+    if (!pid || !sid) return;
+    const result = seedSessionParentHistoryToUrl({ projectId: pid, sessionId: sid });
+    if (result?.action === "seed") {
+      logNav("session_parent_history_seed", {
+        projectId: pid,
+        sessionId: sid,
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, draft?.session_id]);
 
