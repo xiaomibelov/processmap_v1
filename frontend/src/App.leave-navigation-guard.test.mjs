@@ -28,8 +28,11 @@ test("app guards popstate and project/session navigation with same leave confirm
   assert.equal(source.includes("pushSessionSelectionToUrl({"), true);
   assert.equal(source.includes("seedSessionParentHistoryToUrl({ projectId: pid, sessionId: sid });"), true);
   assert.equal(source.includes("confirmLeaveIfUnsafe(\"popstate_navigation\")"), true);
+  assert.equal(source.includes("confirmLeaveIfUnsafe(\"session_parent_route\")"), true);
   assert.equal(source.includes("writeSelectionToUrl({ projectId: currentProjectId, sessionId: currentSessionId });"), true);
+  assert.equal(source.includes("selection_sync_preserve_parent_route"), true);
   assert.equal(source.includes("await returnToSessionList(\"popstate_navigation\", { skipLeaveGuard: true });"), true);
+  assert.equal(source.includes("returnToSessionList(\"session_parent_route\", { skipLeaveGuard: true });"), true);
   assert.equal(source.includes("if (activeSid && !confirmLeaveIfUnsafe(\"project_change\")) return;"), true);
   assert.equal(source.includes("onOpenSession={openSessionWithLeaveGuard}"), true);
   assert.equal(source.includes("returnToSessionList(reason = \"manual_return\", options = {})"), true);
