@@ -1,12 +1,17 @@
 import { useCallback, useRef } from "react";
+import {
+  buildProcessMapUrl,
+  parseProcessMapRoute,
+  replaceProcessMapHistory,
+} from "./processMapRouteModel.js";
 
 export function readSelectionFromUrl(win = typeof window !== "undefined" ? window : undefined) {
   if (!win) return { projectId: "", sessionId: "" };
   try {
-    const params = new URLSearchParams(win.location.search || "");
+    const route = parseProcessMapRoute(win.location || win);
     return {
-      projectId: String(params.get("project") || "").trim(),
-      sessionId: String(params.get("session") || "").trim(),
+      projectId: String(route.projectId || "").trim(),
+      sessionId: String(route.sessionId || "").trim(),
     };
   } catch {
     return { projectId: "", sessionId: "" };
@@ -16,15 +21,21 @@ export function readSelectionFromUrl(win = typeof window !== "undefined" ? windo
 export function writeSelectionToUrl({ projectId, sessionId }, win = typeof window !== "undefined" ? window : undefined) {
   if (!win) return;
   try {
-    const url = new URL(win.location.href);
-    if (projectId) url.searchParams.set("project", String(projectId || "").trim());
-    else url.searchParams.delete("project");
-    if (sessionId) url.searchParams.set("session", String(sessionId || "").trim());
-    else url.searchParams.delete("session");
-    const nextHref = `${url.pathname}${url.search}${url.hash}`;
+    const nextHref = buildProcessMapUrl({
+      projectId,
+      sessionId,
+      source: "internal",
+    }, {
+      pathname: win.location.pathname || "/app",
+      baseSearch: win.location.search || "",
+      hash: win.location.hash || "",
+    });
     const currentHref = `${win.location.pathname}${win.location.search}${win.location.hash}`;
     if (nextHref !== currentHref) {
-      win.history.replaceState(win.history.state, "", nextHref);
+      replaceProcessMapHistory({ projectId, sessionId, source: "internal" }, {
+        win,
+        baseSearch: win.location.search || "",
+      });
     }
   } catch {
     // ignore route write failures
