@@ -77,6 +77,56 @@ function makeBadge(label, tone = "neutral") {
   return { label, tone };
 }
 
+function decorateRowCapabilities(row) {
+  const item = row && typeof row === "object" ? row : {};
+  const threadId = text(item.threadId || item.thread_id || item.target?.thread_id || item.mention?.thread_id);
+  const mentionId = text(item.mention?.id || item.mention_id || item.mentionId);
+  const mentionCount = aggregateNumber(item, "mentionCount") || (item.type === "mention" ? 1 : 0);
+  const attentionCount = aggregateNumber(item, "attentionCount");
+  const unreadCount = aggregateNumber(item, "unreadCount");
+  const hasAttention = attentionCount > 0 || item.requires_attention === true || item.requiresAttention === true;
+  return {
+    ...item,
+    threadId,
+    mentionId,
+    canOpen: Boolean(text(item.sessionId || item.session_id || item.target?.session_id || item.mention?.session_id)),
+    canMarkRead: Boolean(threadId && unreadCount > 0),
+    canAcknowledgeMention: Boolean(mentionId && (item.reason === "mention" || mentionCount > 0 || item.type === "mention")),
+    canAcknowledgeAttention: Boolean(threadId && hasAttention),
+  };
+}
+
+function rowMatchesDiscussionNotificationFilter(row, filter) {
+  const kind = text(filter || "all") || "all";
+  if (kind === "all") return true;
+  const item = row && typeof row === "object" ? row : {};
+  const mentionCount = aggregateNumber(item, "mentionCount") || (item.type === "mention" ? 1 : 0);
+  const attentionCount = aggregateNumber(item, "attentionCount");
+  const unreadCount = aggregateNumber(item, "unreadCount");
+  if (kind === "mention") return item.reason === "mention" || mentionCount > 0;
+  if (kind === "unread") return unreadCount > 0;
+  if (kind === "attention") return item.reason === "attention" || attentionCount > 0 || item.requires_attention === true || item.requiresAttention === true;
+  return true;
+}
+
+function summarizeGroups(groups) {
+  const normalizedGroups = asArray(groups);
+  const rowCount = normalizedGroups.reduce((sum, group) => sum + asArray(group?.rows).length, 0);
+  const mentionCount = normalizedGroups.reduce((sum, group) => sum + aggregateNumber(group, "mentionCount"), 0);
+  const attentionCount = normalizedGroups.reduce((sum, group) => sum + aggregateNumber(group, "attentionCount"), 0);
+  const personalCount = normalizedGroups.reduce((sum, group) => sum + aggregateNumber(group, "personalCount"), 0);
+  const unreadCount = normalizedGroups.reduce((sum, group) => sum + aggregateNumber(group, "unreadCount"), 0);
+  return {
+    groups: normalizedGroups,
+    rowCount,
+    mentionCount,
+    attentionCount,
+    personalCount,
+    unreadCount,
+    badgeCount: mentionCount + attentionCount + personalCount + unreadCount,
+  };
+}
+
 function addGroup(groups, sessionId, seed = {}) {
   const sid = text(sessionId) || "unknown";
   if (!groups.has(sid)) {
@@ -155,6 +205,15 @@ function buildAggregateRow({ sessionId, sessionTitle, projectId, projectTitle, a
     badges,
     aggregate,
     isCurrentSession: Boolean(isCurrentSession),
+    canOpen: Boolean(text(sessionId)),
+    canMarkRead: false,
+    canAcknowledgeMention: false,
+    canAcknowledgeAttention: false,
+    mentionCount: 0,
+    attentionCount: attention,
+    personalCount: personal,
+    unreadCount: 0,
+    openCount: open,
   };
 }
 
@@ -184,7 +243,7 @@ function buildFeedRow(rawItem) {
       ? 25
       : 15;
 
-  return {
+  const row = {
     id: `feed:${notificationKey(item)}`,
     type: "feed",
     notificationType: "discussion",
@@ -223,6 +282,7 @@ function buildFeedRow(rawItem) {
     unreadCount,
     feedItem: item,
   };
+  return decorateRowCapabilities(row);
 }
 
 export function buildAccountDiscussionNotificationGroups({
@@ -274,7 +334,7 @@ export function buildAccountDiscussionNotificationGroups({
       projectTitle: projectId && projectId === currentProjectId ? currentProjectTitle : "",
     });
 
-    pushRow(group, {
+    pushRow(group, decorateRowCapabilities({
       id: `mention:${key}`,
       type: "mention",
       notificationType: "discussion",
@@ -289,7 +349,7 @@ export function buildAccountDiscussionNotificationGroups({
       priority: 30,
       badges: [makeBadge("Упоминание", "mention")],
       mention: rawMention,
-    });
+    }));
   }
 
   for (const session of asArray(knownSessions)) {
@@ -328,7 +388,7 @@ export function buildAccountDiscussionNotificationGroups({
   const normalizedGroups = Array.from(groups.values())
     .map((group) => ({
       ...group,
-      rows: group.rows.sort((left, right) => {
+      rows: group.rows.map((row) => decorateRowCapabilities(row)).sort((left, right) => {
         const priorityDelta = Number(right.priority || 0) - Number(left.priority || 0);
         if (priorityDelta) return priorityDelta;
         return Number(right.timestamp || 0) - Number(left.timestamp || 0);
@@ -340,19 +400,26 @@ export function buildAccountDiscussionNotificationGroups({
       return Number(right.latestAt || 0) - Number(left.latestAt || 0);
     });
 
-  const rowCount = normalizedGroups.reduce((sum, group) => sum + group.rows.length, 0);
-  const mentionCount = normalizedGroups.reduce((sum, group) => sum + group.mentionCount, 0);
-  const attentionCount = normalizedGroups.reduce((sum, group) => sum + group.attentionCount, 0);
-  const personalCount = normalizedGroups.reduce((sum, group) => sum + group.personalCount, 0);
-  const unreadCount = normalizedGroups.reduce((sum, group) => sum + group.unreadCount, 0);
+  return summarizeGroups(normalizedGroups);
+}
 
-  return {
-    groups: normalizedGroups,
-    rowCount,
-    mentionCount,
-    attentionCount,
-    personalCount,
-    unreadCount,
-    badgeCount: mentionCount + attentionCount + personalCount + unreadCount,
-  };
+export function filterDiscussionNotificationGroups(centerOrGroups, filter = "all") {
+  const sourceGroups = Array.isArray(centerOrGroups)
+    ? centerOrGroups
+    : asArray(centerOrGroups?.groups);
+  const groups = sourceGroups
+    .map((group) => {
+      const rows = asArray(group?.rows).filter((row) => rowMatchesDiscussionNotificationFilter(row, filter));
+      if (rows.length <= 0) return null;
+      return {
+        ...group,
+        rows,
+        mentionCount: rows.reduce((sum, row) => sum + (aggregateNumber(row, "mentionCount") || (row?.type === "mention" ? 1 : 0)), 0),
+        attentionCount: rows.reduce((sum, row) => sum + aggregateNumber(row, "attentionCount"), 0),
+        personalCount: rows.reduce((sum, row) => sum + aggregateNumber(row, "personalCount"), 0),
+        unreadCount: rows.reduce((sum, row) => sum + aggregateNumber(row, "unreadCount"), 0),
+      };
+    })
+    .filter(Boolean);
+  return summarizeGroups(groups);
 }
