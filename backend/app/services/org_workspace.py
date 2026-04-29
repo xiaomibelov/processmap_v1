@@ -106,6 +106,17 @@ def build_assignable_user_payload(user_id: str) -> Optional[Dict[str, str]]:
     }
 
 
+def user_is_assignable_to_org(user_id: str, org_id: str) -> bool:
+    uid = str(user_id or "").strip()
+    oid = str(org_id or "").strip()
+    if not uid or not oid:
+        return False
+    if any(str(row.get("user_id") or "").strip() == uid for row in list_org_memberships(oid)):
+        return True
+    user = find_user_by_id(uid) or {}
+    return bool(user.get("is_admin", False))
+
+
 def validate_org_user_assignable(org_id: str, user_id: Any) -> str:
     oid = str(org_id or "").strip()
     uid = str(user_id or "").strip()
@@ -115,7 +126,7 @@ def validate_org_user_assignable(org_id: str, user_id: Any) -> str:
         raise HTTPException(status_code=404, detail="not found")
     if not build_assignable_user_payload(uid):
         raise HTTPException(status_code=422, detail="assigned user not found")
-    if not user_has_org_membership(uid, oid, is_admin=False):
+    if not user_is_assignable_to_org(uid, oid):
         raise HTTPException(status_code=422, detail="assigned user is not an org member")
     return uid
 
