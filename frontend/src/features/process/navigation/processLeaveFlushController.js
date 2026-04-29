@@ -73,6 +73,8 @@ export async function flushProcessStageBeforeLeave({
   maxWaitMs = 4_200,
   pendingSleepMs = 220,
   stableSleepMs = 180,
+  source = "leave_to_project",
+  reason = "",
 } = {}) {
   const sid = toText(activeSessionId);
   const requestedSid = toText(requestedSessionId);
@@ -113,8 +115,8 @@ export async function flushProcessStageBeforeLeave({
     attempts += 1;
     const flush = await flushFn(flushTab, {
       force: true,
-      source: "leave_to_project",
-      reason: "leave_to_project",
+      source: toText(source) || "leave_to_project",
+      reason: toText(reason) || toText(source) || "leave_to_project",
     });
     if (!flush?.ok) {
       return {

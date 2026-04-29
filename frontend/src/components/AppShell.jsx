@@ -241,6 +241,9 @@ export default function AppShell({
       <AppUpdateBanner
         visible={appUpdate.visible}
         runtime={appUpdate.runtime}
+        refreshRisk={appUpdate.refreshRisk}
+        refreshBusy={appUpdate.refreshBusy}
+        refreshError={appUpdate.refreshError}
         onRefresh={appUpdate.refresh}
         onDismiss={appUpdate.dismiss}
       />

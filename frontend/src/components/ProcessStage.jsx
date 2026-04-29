@@ -83,6 +83,7 @@ import {
   resolveDiagramBaseVersionForActiveSession,
 } from "../features/process/stage/utils/diagramVersionContext";
 import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
+import { registerAppSafeRefreshHandler } from "../features/appUpdate/appSafeRefreshController";
 import { attachProcessStageFlushBeforeLeaveListener } from "../features/process/navigation/processLeaveFlush";
 import { flushProcessStageBeforeLeave } from "../features/process/navigation/processLeaveFlushController";
 import {
@@ -5199,6 +5200,87 @@ export default function ProcessStage({
       });
     });
   }, [sid, tab, bpmnSync, saveDirtyHint]);
+
+  useEffect(() => {
+    const sidValue = String(sid || "").trim();
+    return registerAppSafeRefreshHandler({
+      getRisk: () => {
+        if (!sidValue || !hasSession) return { status: "clean", message: "" };
+        const uploadState = toText(saveUploadStatus?.state).toLowerCase();
+        if (isManualSaveBusy === true || uploadState === "saving") {
+          return {
+            status: "saving",
+            message: "Дождитесь завершения сохранения перед обновлением.",
+          };
+        }
+        if (uploadState === "conflict") {
+          return {
+            status: "conflict",
+            message: "Не удалось безопасно обновить приложение: есть несохранённые изменения или конфликт сохранения.",
+          };
+        }
+        if (uploadState === "save_failed") {
+          return {
+            status: "failed",
+            message: "Не удалось безопасно обновить приложение: есть несохранённые изменения или конфликт сохранения.",
+          };
+        }
+        if (leaveNavigationRisk?.unsafe === true) {
+          const reason = toText(leaveNavigationRisk?.reason);
+          if (reason === "save_conflict") return { status: "conflict", message: leaveNavigationRisk.message };
+          if (reason === "save_failed") return { status: "failed", message: leaveNavigationRisk.message };
+          if (reason === "save_stale") return { status: "stale", message: leaveNavigationRisk.message };
+          if (reason === "saving_in_progress") return { status: "saving", message: leaveNavigationRisk.message };
+          return { status: "dirty", message: leaveNavigationRisk.message };
+        }
+        if (saveDirtyHint === true || bpmnRef.current?.hasXmlDraftChanges?.() === true) {
+          return {
+            status: "dirty",
+            message: "Доступна новая версия ProcessMap. Сохраните изменения перед обновлением.",
+          };
+        }
+        return { status: "clean", message: "" };
+      },
+      flush: async ({ reason = "app_update_refresh" } = {}) => {
+        const flush = await flushProcessStageBeforeLeave({
+          requestedSessionId: sidValue,
+          activeSessionId: sidValue,
+          activeTab: tab,
+          bpmnSync,
+          saveDirtyHint,
+          hasXmlDraftChanges: !!bpmnRef.current?.hasXmlDraftChanges?.(),
+          lastSuccessfulPublish: lastSuccessfulPublishRef.current,
+          source: "app_update_refresh",
+          reason,
+        });
+        if (flush?.ok === true) {
+          return {
+            ok: true,
+            status: flush?.skipped === true ? "clean" : "saved",
+          };
+        }
+        const flushError = toText(flush?.error);
+        const flushErrorLower = flushError.toLowerCase();
+        return {
+          ok: false,
+          status: flush?.timeout === true || flushError === "flush_before_leave_pending_timeout"
+            ? "timeout"
+            : (flushErrorLower.includes("conflict") || flushErrorLower.includes("409") ? "conflict" : "failed"),
+          message: "Не удалось безопасно обновить приложение: есть несохранённые изменения или конфликт сохранения.",
+        };
+      },
+    });
+  }, [
+    bpmnSync,
+    hasSession,
+    isManualSaveBusy,
+    leaveNavigationRisk,
+    saveDirtyHint,
+    saveUploadStatus?.state,
+    sid,
+    tab,
+    toText,
+  ]);
 
   useEffect(() => {
     // eslint-disable-next-line no-console
