@@ -55,6 +55,12 @@ function mentionKey(mention) {
     || `${text(mention?.session_id)}:${text(mention?.created_at)}`;
 }
 
+function notificationKey(item) {
+  return text(item?.id)
+    || `${text(item?.session_id || item?.sessionId)}:${text(item?.thread_id || item?.threadId)}:${text(item?.comment_id || item?.commentId)}`
+    || `${text(item?.session_id || item?.sessionId)}:${text(item?.last_comment_at || item?.created_at)}`;
+}
+
 function mentionThreadTitle(mention) {
   const scopeType = text(mention?.thread_scope_type);
   const scopeRef = mention?.thread_scope_ref && typeof mention.thread_scope_ref === "object"
@@ -85,6 +91,7 @@ function addGroup(groups, sessionId, seed = {}) {
       mentionCount: 0,
       attentionCount: 0,
       personalCount: 0,
+      unreadCount: 0,
       openCount: 0,
       latestAt: 0,
       priority: 0,
@@ -104,6 +111,11 @@ function pushRow(group, row) {
   group.latestAt = Math.max(group.latestAt, Number(row.timestamp || 0));
   group.priority = Math.max(group.priority, Number(row.priority || 0));
   if (row.type === "mention") group.mentionCount += 1;
+  if (row.type === "feed") {
+    group.mentionCount += aggregateNumber(row, "mentionCount");
+    group.attentionCount += aggregateNumber(row, "attentionCount");
+    group.unreadCount += aggregateNumber(row, "unreadCount");
+  }
   if (row.type === "aggregate") {
     group.attentionCount += aggregateNumber(row.aggregate, "attention_discussions_count");
     group.personalCount += aggregateNumber(row.aggregate, "personal_discussions_count");
@@ -146,7 +158,75 @@ function buildAggregateRow({ sessionId, sessionTitle, projectId, projectTitle, a
   };
 }
 
+function buildFeedRow(rawItem) {
+  const item = rawItem && typeof rawItem === "object" ? rawItem : {};
+  const sessionId = text(item.session_id || item.sessionId || item.target?.session_id);
+  const projectId = text(item.project_id || item.projectId || item.target?.project_id);
+  const threadId = text(item.thread_id || item.threadId || item.target?.thread_id);
+  const commentId = text(item.comment_id || item.commentId || item.target?.comment_id);
+  const mentionId = text(item.mention_id || item.mentionId);
+  if (!sessionId || !threadId) return null;
+
+  const mentionCount = aggregateNumber(item, "mention_count");
+  const attentionCount = aggregateNumber(item, "attention_count") || (item.requires_attention === true ? 1 : 0);
+  const unreadCount = aggregateNumber(item, "unread_count");
+  const reason = text(item.reason);
+  const badges = [];
+  if (mentionCount > 0) badges.push(makeBadge(mentionCount > 1 ? `Упоминание ${mentionCount}` : "Упоминание", "mention"));
+  if (attentionCount > 0) badges.push(makeBadge(attentionCount > 1 ? `Внимание ${attentionCount}` : "Внимание", "attention"));
+  if (unreadCount > 0) badges.push(makeBadge(`Новые ${unreadCount}`, "personal"));
+  if (badges.length <= 0) return null;
+
+  const timestamp = numericTime(item.last_comment_at || item.created_at);
+  const priority = reason === "mention" || mentionCount > 0
+    ? 35
+    : reason === "attention" || attentionCount > 0
+      ? 25
+      : 15;
+
+  return {
+    id: `feed:${notificationKey(item)}`,
+    type: "feed",
+    notificationType: "discussion",
+    reason: reason || (mentionCount > 0 ? "mention" : attentionCount > 0 ? "attention" : "unread"),
+    sessionId,
+    projectId,
+    threadId,
+    commentId,
+    target: {
+      ...(item.target && typeof item.target === "object" ? item.target : {}),
+      project_id: projectId,
+      session_id: sessionId,
+      thread_id: threadId,
+      comment_id: commentId,
+    },
+    mention: mentionId ? {
+      id: mentionId,
+      session_id: sessionId,
+      project_id: projectId,
+      thread_id: threadId,
+      comment_id: commentId,
+      comment_body: text(item.snippet),
+      created_by: text(item.author_display || item.authorDisplay || item.author_user_id || item.authorUserId),
+      created_at: item.created_at || item.last_comment_at || 0,
+    } : null,
+    sessionTitle: sessionTitleFrom({ title: item.session_title || item.sessionTitle }, sessionId),
+    projectTitle: projectTitleFrom({ title: item.project_title || item.projectTitle }),
+    title: text(item.thread_title || item.threadTitle) || "Обсуждение",
+    excerpt: shortText(item.snippet, 140),
+    authorLabel: text(item.author_display || item.authorDisplay || item.author_user_id || item.authorUserId),
+    timestamp,
+    priority,
+    badges,
+    mentionCount,
+    attentionCount,
+    unreadCount,
+    feedItem: item,
+  };
+}
+
 export function buildAccountDiscussionNotificationGroups({
+  noteNotifications = [],
   mentionNotifications = [],
   sessionAggregates = null,
   currentSession = null,
@@ -164,6 +244,21 @@ export function buildAccountDiscussionNotificationGroups({
   const currentSessionId = sessionIdFrom(currentSession);
   const currentProjectId = projectIdFrom(currentProject) || projectIdFrom(currentSession);
   const currentProjectTitle = projectTitleFrom(currentProject);
+
+  const seenFeedItems = new Set();
+  for (const rawItem of asArray(noteNotifications)) {
+    const row = buildFeedRow(rawItem);
+    if (!row) continue;
+    const key = row.id;
+    if (seenFeedItems.has(key)) continue;
+    seenFeedItems.add(key);
+    const group = addGroup(groups, row.sessionId, {
+      projectId: row.projectId,
+      sessionTitle: row.sessionTitle,
+      projectTitle: row.projectTitle,
+    });
+    pushRow(group, row);
+  }
 
   for (const rawMention of asArray(mentionNotifications)) {
     const key = mentionKey(rawMention);
@@ -249,6 +344,7 @@ export function buildAccountDiscussionNotificationGroups({
   const mentionCount = normalizedGroups.reduce((sum, group) => sum + group.mentionCount, 0);
   const attentionCount = normalizedGroups.reduce((sum, group) => sum + group.attentionCount, 0);
   const personalCount = normalizedGroups.reduce((sum, group) => sum + group.personalCount, 0);
+  const unreadCount = normalizedGroups.reduce((sum, group) => sum + group.unreadCount, 0);
 
   return {
     groups: normalizedGroups,
@@ -256,6 +352,7 @@ export function buildAccountDiscussionNotificationGroups({
     mentionCount,
     attentionCount,
     personalCount,
-    badgeCount: mentionCount + attentionCount + personalCount,
+    unreadCount,
+    badgeCount: mentionCount + attentionCount + personalCount + unreadCount,
   };
 }

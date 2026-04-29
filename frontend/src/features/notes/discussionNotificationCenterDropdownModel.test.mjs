@@ -54,6 +54,76 @@ test("groups mention notifications by session and keeps the comment snippet", ()
   assert.equal(center.groups[0].rows[0].badges[0].label, "Упоминание");
 });
 
+test("builds backend feed rows with source-backed snippets and target metadata", () => {
+  const center = buildAccountDiscussionNotificationGroups({
+    noteNotifications: [
+      {
+        id: "sess_1:thread_1:comment_1",
+        reason: "mention",
+        session_id: "sess_1",
+        session_title: "Разогрев супа",
+        project_id: "proj_1",
+        project_title: "Борщ с говядиной",
+        thread_id: "thread_1",
+        thread_title: "Проверить этап разогрева",
+        mention_id: "mention_1",
+        comment_id: "comment_1",
+        snippet: "Посмотри, пожалуйста, температуру перед публикацией",
+        author_display: "Иван",
+        created_at: 200,
+        last_comment_at: 210,
+        unread_count: 3,
+        mention_count: 1,
+        requires_attention: true,
+        attention_count: 1,
+        target: {
+          project_id: "proj_1",
+          session_id: "sess_1",
+          thread_id: "thread_1",
+          comment_id: "comment_1",
+        },
+      },
+    ],
+  });
+
+  assert.equal(center.rowCount, 1);
+  assert.equal(center.mentionCount, 1);
+  assert.equal(center.attentionCount, 1);
+  assert.equal(center.unreadCount, 3);
+  assert.equal(center.badgeCount, 5);
+  assert.equal(center.groups[0].sessionTitle, "Разогрев супа");
+  assert.equal(center.groups[0].projectTitle, "Борщ с говядиной");
+  const row = center.groups[0].rows[0];
+  assert.equal(row.type, "feed");
+  assert.equal(row.title, "Проверить этап разогрева");
+  assert.match(row.excerpt, /Посмотри/);
+  assert.deepEqual(row.badges.map((badge) => badge.label), ["Упоминание", "Внимание", "Новые 3"]);
+  assert.equal(row.mention.id, "mention_1");
+  assert.equal(row.target.thread_id, "thread_1");
+  assert.equal(row.target.comment_id, "comment_1");
+});
+
+test("backend aggregate-only feed rows do not invent message snippets", () => {
+  const center = buildAccountDiscussionNotificationGroups({
+    noteNotifications: [
+      {
+        id: "sess_1:thread_1",
+        reason: "unread",
+        session_id: "sess_1",
+        session_title: "Разогрев супа",
+        thread_id: "thread_1",
+        thread_title: "Обсуждение",
+        unread_count: 2,
+      },
+    ],
+  });
+
+  const row = center.groups[0].rows[0];
+  assert.equal(row.type, "feed");
+  assert.equal(row.excerpt, "");
+  assert.deepEqual(row.badges.map((badge) => badge.label), ["Новые 2"]);
+});
+
 test("builds aggregate-only rows from counts without inventing message snippets", () => {
   const center = buildAccountDiscussionNotificationGroups({
     sessionAggregates: new Map([

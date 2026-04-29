@@ -10,6 +10,11 @@ test("TopBar exposes bounded discussion notification entry from existing note ag
   assert.match(topBarSource, /useSessionNoteAggregate\(effectiveSessionId\)/);
   assert.match(topBarSource, /useSessionNoteAggregates\(sessionAggregateIds\)/);
   assert.match(topBarSource, /buildAccountDiscussionNotificationGroups/);
+  assert.match(topBarSource, /noteNotificationsAvailable/);
+  assert.match(topBarSource, /hasBackendNotificationFeed \? noteNotificationItems : \[\]/);
+  assert.match(topBarSource, /hasBackendNotificationFeed \? \[\] : mentionItems/);
+  assert.match(topBarSource, /hasBackendNotificationFeed \? new Map\(\) : aggregates/);
+  assert.match(topBarSource, /item\.reason === "mention" && item\.mention/);
   assert.doesNotMatch(topBarSource, /apiGetSessionNoteAggregate/);
   assert.doesNotMatch(topBarSource, /data-testid="topbar-mentions-button"/);
   assert.match(topBarSource, /data-testid="topbar-account-button"/);
@@ -20,7 +25,7 @@ test("TopBar exposes bounded discussion notification entry from existing note ag
   assert.match(topBarSource, /data-testid="topbar-notification-empty"/);
   assert.match(topBarSource, /"topbar-discussion-notifications"/);
   assert.match(topBarSource, /data-notes-panel-trigger=\{isCurrentAggregate \? "true" : undefined\}/);
-  assert.match(topBarSource, /onOpenDiscussionNotifications\?\.\(\)/);
+  assert.match(topBarSource, /onOpenDiscussionNotifications\?\.\(\{/);
   assert.match(topBarSource, /accountNotificationCount = accountNotificationCenter\.badgeCount/);
   assert.match(topBarSource, /hasAccountNotifications = accountNotificationCenter\.rowCount > 0/);
   assert.match(topBarSource, /Нет активных уведомлений/);
@@ -68,9 +73,18 @@ test("TopBar profile menu uses a direct theme switch instead of settings row", (
 test("App bridge opens NotesMvpPanel in notification mode without a new router", () => {
   assert.match(appShellSource, /onOpenDiscussionNotifications/);
   assert.match(appShellSource, /<TopBar[\s\S]*onOpenDiscussionNotifications=\{onOpenDiscussionNotifications\}/);
+  assert.match(appShellSource, /noteNotifications=\{noteNotifications\}/);
+  assert.match(appShellSource, /noteNotificationsAvailable=\{noteNotificationsAvailable\}/);
+  assert.match(appSource, /apiListNoteNotifications/);
+  assert.match(appSource, /Promise\.allSettled\(\[/);
+  assert.match(appSource, /apiListNoteNotifications\(\{ limit: 20, includeRead: false \}\)/);
+  assert.match(appSource, /setNoteNotificationsAvailable\(true\)/);
+  assert.match(appSource, /setNoteNotificationsAvailable\(false\)/);
   assert.match(appSource, /const mode = String\(options\?\.mode \|\| "discussions"\)\.trim\(\) === "notifications" \? "notifications" : "discussions";/);
   assert.match(appSource, /mode: "notifications"/);
   assert.match(appSource, /source: "topbar_discussion_notifications"/);
+  assert.match(appSource, /threadId: options\?\.threadId \|\| options\?\.thread_id \|\| ""/);
+  assert.match(appSource, /commentId: options\?\.commentId \|\| options\?\.comment_id \|\| ""/);
   assert.match(appSource, /onFocusNotificationTarget=\{focusDiscussionNotificationTarget\}/);
   assert.match(appSource, /currentUserId=\{user\?\.id\}/);
 });

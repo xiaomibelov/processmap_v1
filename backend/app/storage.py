@@ -582,6 +582,37 @@ def _note_comment_body_preview(value: Any, *, limit: int = 160) -> str:
     return f"{preview[:max_len - 1].rstrip()}…"
 
 
+def _note_notification_plain_preview(value: Any, *, limit: int = 180) -> str:
+    text = re.sub(r"<[^>]*>", "", str(value or ""))
+    text = re.sub(r"\s+", " ", text).strip()
+    max_len = max(20, min(240, int(limit or 180)))
+    if len(text) <= max_len:
+        return text
+    return f"{text[:max_len - 1].rstrip()}…"
+
+
+def _note_thread_title_from_scope(scope_type: Any, scope_ref: Any) -> str:
+    kind = str(scope_type or "").strip()
+    ref = scope_ref if isinstance(scope_ref, Mapping) else {}
+    title = str(
+        ref.get("element_name")
+        or ref.get("element_title")
+        or ref.get("name")
+        or ref.get("title")
+        or ref.get("element_id")
+        or ""
+    ).strip()
+    if title:
+        return title
+    if kind == "diagram":
+        return "Диаграмма"
+    if kind == "session":
+        return "Общий вопрос"
+    if kind == "diagram_element":
+        return "Элемент диаграммы"
+    return "Обсуждение"
+
+
 def _comment_author_display(comment: Mapping[str, Any], profiles_by_id: Mapping[str, Mapping[str, str]]) -> str:
     author_id = str(comment.get("author_user_id") or "").strip()
     profile = profiles_by_id.get(author_id) or {}
@@ -7445,6 +7476,319 @@ def list_active_note_mentions_for_user(
         item["thread_scope_type"] = str(_row_value(row, "thread_scope_type") or "")
         item["thread_scope_ref"] = _json_loads(_row_value(row, "thread_scope_ref_json"), {})
         item["comment_body"] = str(_row_value(row, "comment_body") or "")
+        out.append(item)
+    return out
+
+
+def list_note_notifications_for_user(
+    user_id: str,
+    *,
+    org_id: Optional[str] = None,
+    allowed_project_ids: Optional[Iterable[str]] = None,
+    limit: int = 20,
+    include_read: bool = False,
+) -> List[Dict[str, Any]]:
+    _ensure_schema()
+    uid = str(user_id or "").strip()
+    if not uid:
+        return []
+    oid = str(org_id or "").strip()
+    lim = max(1, min(100, int(limit or 20)))
+    allowed: Optional[List[str]] = None
+    if allowed_project_ids is not None:
+        seen: set[str] = set()
+        allowed = []
+        for raw in allowed_project_ids or []:
+            pid = str(raw or "").strip()
+            if pid and pid not in seen:
+                seen.add(pid)
+                allowed.append(pid)
+        if not allowed:
+            return []
+
+    filters = ["nt.org_id = ?"] if oid else []
+    params: List[Any] = [oid] if oid else []
+    if allowed is not None:
+        placeholders = ", ".join(["?"] * len(allowed))
+        filters.append(f"nt.project_id IN ({placeholders})")
+        params.extend(allowed)
+    where = f"WHERE {' AND '.join(filters)}" if filters else ""
+
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            WITH base AS (
+              SELECT
+                nt.id AS thread_id,
+                nt.org_id AS org_id,
+                nt.workspace_id AS workspace_id,
+                nt.project_id AS project_id,
+                nt.session_id AS session_id,
+                nt.scope_type AS scope_type,
+                nt.scope_ref_json AS scope_ref_json,
+                nt.status AS status,
+                nt.requires_attention AS requires_attention,
+                nt.created_at AS thread_created_at,
+                nt.updated_at AS thread_updated_at,
+                COALESCE(ntr.last_read_at, 0) AS last_read_at,
+                COALESCE(s.title, nt.session_id) AS session_title,
+                COALESCE(p.title, nt.project_id) AS project_title
+              FROM note_threads nt
+              JOIN sessions s ON s.id = nt.session_id AND s.org_id = nt.org_id
+              LEFT JOIN projects p ON p.id = nt.project_id AND p.org_id = nt.org_id
+              LEFT JOIN note_thread_reads ntr ON ntr.thread_id = nt.id AND ntr.user_id = ?
+              {where}
+            ),
+            feed AS (
+              SELECT
+                b.*,
+                (
+                  SELECT COUNT(*)
+                  FROM note_comment_mentions m
+                  WHERE m.thread_id = b.thread_id
+                    AND m.org_id = b.org_id
+                    AND m.mentioned_user_id = ?
+                    AND m.acknowledged_at = 0
+                ) AS mention_count,
+                COALESCE(
+                  (
+                    SELECT m.id
+                    FROM note_comment_mentions m
+                    WHERE m.thread_id = b.thread_id
+                      AND m.org_id = b.org_id
+                      AND m.mentioned_user_id = ?
+                      AND m.acknowledged_at = 0
+                    ORDER BY m.created_at DESC, m.id DESC
+                    LIMIT 1
+                  ),
+                  ''
+                ) AS selected_mention_id,
+                CASE
+                  WHEN b.status = 'open'
+                    AND b.requires_attention = 1
+                    AND NOT EXISTS (
+                      SELECT 1
+                      FROM note_thread_attention_acknowledgements nta
+                      WHERE nta.thread_id = b.thread_id
+                        AND nta.org_id = b.org_id
+                        AND nta.user_id = ?
+                    )
+                  THEN 1 ELSE 0
+                END AS attention_count,
+                (
+                  SELECT COUNT(*)
+                  FROM note_comments c
+                  WHERE c.thread_id = b.thread_id
+                    AND c.created_at > b.last_read_at
+                    AND c.author_user_id != ?
+                ) AS unread_count,
+                COALESCE(
+                  (
+                    SELECT c.id
+                    FROM note_comment_mentions m
+                    JOIN note_comments c ON c.id = m.comment_id
+                    WHERE m.thread_id = b.thread_id
+                      AND m.org_id = b.org_id
+                      AND m.mentioned_user_id = ?
+                      AND m.acknowledged_at = 0
+                    ORDER BY m.created_at DESC, m.id DESC
+                    LIMIT 1
+                  ),
+                  (
+                    SELECT c.id
+                    FROM note_comments c
+                    WHERE c.thread_id = b.thread_id
+                      AND c.created_at > b.last_read_at
+                      AND c.author_user_id != ?
+                    ORDER BY c.created_at DESC, c.id DESC
+                    LIMIT 1
+                  ),
+                  (
+                    SELECT c.id
+                    FROM note_comments c
+                    WHERE c.thread_id = b.thread_id
+                    ORDER BY c.created_at DESC, c.id DESC
+                    LIMIT 1
+                  )
+                ) AS selected_comment_id,
+                COALESCE(
+                  (
+                    SELECT c.body
+                    FROM note_comment_mentions m
+                    JOIN note_comments c ON c.id = m.comment_id
+                    WHERE m.thread_id = b.thread_id
+                      AND m.org_id = b.org_id
+                      AND m.mentioned_user_id = ?
+                      AND m.acknowledged_at = 0
+                    ORDER BY m.created_at DESC, m.id DESC
+                    LIMIT 1
+                  ),
+                  (
+                    SELECT c.body
+                    FROM note_comments c
+                    WHERE c.thread_id = b.thread_id
+                      AND c.created_at > b.last_read_at
+                      AND c.author_user_id != ?
+                    ORDER BY c.created_at DESC, c.id DESC
+                    LIMIT 1
+                  ),
+                  (
+                    SELECT c.body
+                    FROM note_comments c
+                    WHERE c.thread_id = b.thread_id
+                    ORDER BY c.created_at DESC, c.id DESC
+                    LIMIT 1
+                  ),
+                  ''
+                ) AS selected_comment_body,
+                COALESCE(
+                  (
+                    SELECT c.author_user_id
+                    FROM note_comment_mentions m
+                    JOIN note_comments c ON c.id = m.comment_id
+                    WHERE m.thread_id = b.thread_id
+                      AND m.org_id = b.org_id
+                      AND m.mentioned_user_id = ?
+                      AND m.acknowledged_at = 0
+                    ORDER BY m.created_at DESC, m.id DESC
+                    LIMIT 1
+                  ),
+                  (
+                    SELECT c.author_user_id
+                    FROM note_comments c
+                    WHERE c.thread_id = b.thread_id
+                      AND c.created_at > b.last_read_at
+                      AND c.author_user_id != ?
+                    ORDER BY c.created_at DESC, c.id DESC
+                    LIMIT 1
+                  ),
+                  (
+                    SELECT c.author_user_id
+                    FROM note_comments c
+                    WHERE c.thread_id = b.thread_id
+                    ORDER BY c.created_at DESC, c.id DESC
+                    LIMIT 1
+                  ),
+                  ''
+                ) AS selected_author_user_id,
+                COALESCE(
+                  (
+                    SELECT c.created_at
+                    FROM note_comment_mentions m
+                    JOIN note_comments c ON c.id = m.comment_id
+                    WHERE m.thread_id = b.thread_id
+                      AND m.org_id = b.org_id
+                      AND m.mentioned_user_id = ?
+                      AND m.acknowledged_at = 0
+                    ORDER BY m.created_at DESC, m.id DESC
+                    LIMIT 1
+                  ),
+                  (
+                    SELECT c.created_at
+                    FROM note_comments c
+                    WHERE c.thread_id = b.thread_id
+                      AND c.created_at > b.last_read_at
+                      AND c.author_user_id != ?
+                    ORDER BY c.created_at DESC, c.id DESC
+                    LIMIT 1
+                  ),
+                  (
+                    SELECT c.created_at
+                    FROM note_comments c
+                    WHERE c.thread_id = b.thread_id
+                    ORDER BY c.created_at DESC, c.id DESC
+                    LIMIT 1
+                  ),
+                  b.thread_updated_at,
+                  b.thread_created_at
+                ) AS selected_comment_at,
+                COALESCE(
+                  (
+                    SELECT c.created_at
+                    FROM note_comments c
+                    WHERE c.thread_id = b.thread_id
+                    ORDER BY c.created_at DESC, c.id DESC
+                    LIMIT 1
+                  ),
+                  b.thread_updated_at,
+                  b.thread_created_at
+                ) AS last_comment_at
+              FROM base b
+            )
+            SELECT *
+            FROM feed
+            WHERE ? = 1
+               OR mention_count > 0
+               OR attention_count > 0
+               OR unread_count > 0
+            ORDER BY
+              CASE
+                WHEN mention_count > 0 THEN 0
+                WHEN attention_count > 0 THEN 1
+                WHEN unread_count > 0 THEN 2
+                ELSE 3
+              END ASC,
+              COALESCE(last_comment_at, selected_comment_at, thread_updated_at, thread_created_at) DESC,
+              thread_id DESC
+            LIMIT ?
+            """,
+            [uid, *params, *([uid] * 12), 1 if include_read else 0, lim],
+        ).fetchall()
+        author_ids = {
+            str(_row_value(row, "selected_author_user_id") or "").strip()
+            for row in rows
+            if str(_row_value(row, "selected_author_user_id") or "").strip()
+        }
+        profiles_by_id = _auth_user_profiles_by_id_with_connection(con, author_ids)
+
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        mention_count = max(0, int(_row_value(row, "mention_count", 0) or 0))
+        attention_count = max(0, int(_row_value(row, "attention_count", 0) or 0))
+        unread_count = max(0, int(_row_value(row, "unread_count", 0) or 0))
+        reason = "activity"
+        if mention_count > 0:
+            reason = "mention"
+        elif attention_count > 0:
+            reason = "attention"
+        elif unread_count > 0:
+            reason = "unread"
+        thread_id = str(_row_value(row, "thread_id") or "")
+        session_id = str(_row_value(row, "session_id") or "")
+        project_id = str(_row_value(row, "project_id") or "")
+        comment_id = str(_row_value(row, "selected_comment_id") or "")
+        author_id = str(_row_value(row, "selected_author_user_id") or "")
+        profile = profiles_by_id.get(author_id) or {}
+        author_display = str(profile.get("full_name") or profile.get("email") or author_id or "").strip()
+        scope_ref = _json_loads(_row_value(row, "scope_ref_json"), {})
+        item = {
+            "id": f"{session_id}:{thread_id}:{comment_id or thread_id}",
+            "type": "discussion",
+            "reason": reason,
+            "session_id": session_id,
+            "session_title": str(_row_value(row, "session_title") or session_id or "Сессия"),
+            "project_id": project_id,
+            "project_title": str(_row_value(row, "project_title") or project_id or "Проект"),
+            "thread_id": thread_id,
+            "thread_title": _note_thread_title_from_scope(_row_value(row, "scope_type"), scope_ref),
+            "mention_id": str(_row_value(row, "selected_mention_id") or ""),
+            "comment_id": comment_id,
+            "snippet": _note_notification_plain_preview(_row_value(row, "selected_comment_body"), limit=180),
+            "author_user_id": author_id,
+            "author_display": author_display,
+            "created_at": int(_row_value(row, "selected_comment_at", 0) or 0),
+            "unread_count": unread_count,
+            "mention_count": mention_count,
+            "requires_attention": bool(int(_row_value(row, "requires_attention", 0) or 0)),
+            "attention_count": attention_count,
+            "last_comment_at": int(_row_value(row, "last_comment_at", 0) or 0),
+            "target": {
+                "project_id": project_id,
+                "session_id": session_id,
+                "thread_id": thread_id,
+                "comment_id": comment_id,
+            },
+        }
         out.append(item)
     return out
 
