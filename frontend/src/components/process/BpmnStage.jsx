@@ -77,6 +77,7 @@ import {
   normalizeTechnicalBpmnLabelsInXml,
   readableBpmnText,
 } from "../../features/process/bpmn/bpmnIdentity";
+import { disableBpmnZoomScroll } from "../../features/process/bpmn/runtime/zoomScrollLifecycle";
 import extractCamundaZeebePropertyEntriesFromBusinessObject from "../../features/process/stage/search/extractCamundaZeebePropertyEntries";
 import { deriveElementProcessContext } from "../../features/process/stage/search/diagramSearchHierarchy";
 
@@ -4176,6 +4177,12 @@ const BpmnStage = forwardRef(function BpmnStage({
     clearPlaybackDecor(modelerRef.current, "editor");
     clearFlashDecor(viewerRef.current, "viewer");
     clearFlashDecor(modelerRef.current, "editor");
+    disableBpmnZoomScroll(viewerRef.current);
+    disableBpmnZoomScroll(modelerRef.current);
+    try {
+      disableBpmnZoomScroll(modelerRuntime?.getInstance?.());
+    } catch {
+    }
     try {
       viewerRef.current?.destroy?.();
     } catch {
@@ -4338,6 +4345,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     if (viewerInitPromiseRef.current) return viewerInitPromiseRef.current;
     viewerInitPromiseRef.current = (async () => {
       try {
+        disableBpmnZoomScroll(viewerRef.current);
         if (viewerEl.current) viewerEl.current.innerHTML = "";
       } catch {
       }
@@ -4424,6 +4432,8 @@ const BpmnStage = forwardRef(function BpmnStage({
         throw new Error("layout_not_ready_before_modeler_init");
       }
       try {
+        disableBpmnZoomScroll(modelerRef.current);
+        disableBpmnZoomScroll(runtime?.getInstance?.());
         if (editorEl.current) editorEl.current.innerHTML = "";
       } catch {
       }

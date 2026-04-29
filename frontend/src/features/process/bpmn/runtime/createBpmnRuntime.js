@@ -1,3 +1,5 @@
+import { disableBpmnZoomScroll } from "./zoomScrollLifecycle.js";
+
 function asMode(value) {
   return String(value || "").trim().toLowerCase() === "viewer" ? "viewer" : "modeler";
 }
@@ -217,6 +219,7 @@ export default function createBpmnRuntime(options = {}) {
     if (initPromise) return initPromise;
     destroyed = false;
     initPromise = (async () => {
+      disableBpmnZoomScroll(instance);
       clearBjsContainers(container);
       const RuntimeCtor = await importCtor(mode);
       const ctorOptions = resolveCtorOptions(mode);
@@ -446,6 +449,7 @@ export default function createBpmnRuntime(options = {}) {
       }
       unbindCommandStack = null;
     }
+    disableBpmnZoomScroll(instance);
     try {
       instance?.destroy?.();
     } catch {
