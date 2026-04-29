@@ -661,160 +661,158 @@ export default function TopBar({
           {accountMenuOpen ? (
             <div
               ref={accountMenuRef}
-              className="fixed right-3 top-14 z-[140] grid max-h-[calc(100vh-4.25rem)] w-[min(340px,calc(100vw-1.5rem))] min-w-0 gap-1 overflow-x-hidden overflow-y-auto rounded-xl border border-border bg-panel p-2 shadow-panel backdrop-blur"
+              className="fixed right-3 top-14 z-[140] flex max-h-[calc(100vh-4.25rem)] w-[480px] max-w-[calc(100vw-1.5rem)] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-panel backdrop-blur"
               data-testid="topbar-account-menu"
             >
-              <div className="min-w-0 overflow-hidden rounded-lg border border-border/60 bg-panel2/50 px-2.5 py-2">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Аккаунт</div>
+              <div className="min-w-0 border-b border-border/70 px-4 py-3">
                 <div className="truncate text-sm font-semibold text-fg" title={userTitleFrom(user)}>
-                  {shortLabel(userTitleFrom(user), 28)}
+                  {shortLabel(userTitleFrom(user), 46)}
                 </div>
+                <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Аккаунт</div>
               </div>
-              <div className="min-w-0 overflow-x-hidden rounded-lg border border-border/70 bg-bg/35 p-2" data-testid="topbar-mentions-menu">
-                <div className="mb-1 flex min-w-0 items-center justify-between gap-2 overflow-hidden">
+              <div className="flex min-h-0 flex-1 flex-col border-b border-border/70" data-testid="topbar-mentions-menu">
+                <div className="flex min-w-0 items-center justify-between gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">Уведомления</div>
-                    <div className="truncate text-xs text-muted">
+                    <div className="text-sm font-bold leading-tight text-fg">Уведомления</div>
+                    <div className="mt-0.5 truncate text-xs text-muted">
                       {hasAccountNotifications ? `${accountNotificationCenter.rowCount} событий` : "Нет активных уведомлений"}
                     </div>
                   </div>
                   <button
                     type="button"
-                    className="secondaryBtn tinyBtn h-7 shrink-0 px-2 text-[10px]"
+                    className="secondaryBtn tinyBtn h-8 shrink-0 px-2 text-[12px]"
                     onClick={() => {
                       if (typeof onRefreshMentionNotifications === "function") void onRefreshMentionNotifications();
                     }}
+                    title="Обновить уведомления"
                     data-testid="topbar-mentions-refresh"
                   >
                     ↻
                   </button>
                 </div>
                 {hasAccountNotifications ? (
-                  <div className="grid max-h-[286px] min-w-0 gap-1.5 overflow-y-auto pr-1" data-testid="topbar-notification-center">
+                  <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-3" data-testid="topbar-notification-center">
                     {accountNotificationCenter.groups.slice(0, 8).map((group) => (
                       <section
                         key={group.id}
-                        className="min-w-0 overflow-hidden rounded-lg border border-border/70 bg-panel2/45 p-1.5"
+                        className="min-w-0 border-t border-border/60 py-2 first:border-t-0 first:pt-0"
                         data-testid="topbar-notification-session-group"
                       >
-                        <div className="mb-1 flex min-w-0 items-start justify-between gap-2 px-1">
-                          <div className="min-w-0">
-                            <div className="truncate text-[12px] font-black leading-tight text-fg" title={group.sessionTitle}>
-                              {shortLabel(group.sessionTitle, 34)}
-                            </div>
-                            {group.projectTitle ? (
-                              <div className="truncate text-[10px] leading-tight text-muted" title={group.projectTitle}>
-                                {shortLabel(group.projectTitle, 40)}
-                              </div>
-                            ) : null}
-                          </div>
-                          <span className="shrink-0 rounded-full border border-border/80 bg-bg/55 px-1.5 py-0 text-[10px] font-semibold text-muted tabular-nums">
-                            {group.rows.length}
-                          </span>
-                        </div>
-                        <div className="grid gap-1">
-                          {group.rows.slice(0, 3).map((row) => {
-                            const isMention = row.type === "mention";
-                            const isCurrentAggregate = row.type === "aggregate" && row.sessionId === effectiveSessionId;
-                            const rowTestId = isMention
-                              ? "topbar-mention-item"
-                              : isCurrentAggregate
-                                ? "topbar-discussion-notifications"
-                                : "topbar-notification-row";
-                            const timeLabel = formatNotificationTime(row.timestamp);
-                            return (
-                              <button
-                                key={row.id}
-                                type="button"
-                                className="w-full min-w-0 overflow-hidden rounded-md border border-border/70 bg-bg/35 px-2 py-1.5 text-left transition hover:border-info/55 hover:bg-panel2/85"
-                                onClick={() => void handleAccountNotificationOpen(row)}
-                                data-testid={rowTestId}
-                                data-notes-panel-trigger={isCurrentAggregate ? "true" : undefined}
-                              >
-                                <div className="flex min-w-0 items-start justify-between gap-2">
-                                  <div className="min-w-0 flex-1">
-                                    <div className="line-clamp-2 break-words text-[12px] font-semibold leading-snug text-fg">
-                                      {row.title || "Обсуждение"}
+                        {group.rows.slice(0, 3).map((row) => {
+                          const isMention = row.type === "mention";
+                          const isCurrentAggregate = row.type === "aggregate" && row.sessionId === effectiveSessionId;
+                          const rowTestId = isMention
+                            ? "topbar-mention-item"
+                            : isCurrentAggregate
+                              ? "topbar-discussion-notifications"
+                              : "topbar-notification-row";
+                          const timeLabel = formatNotificationTime(row.timestamp);
+                          return (
+                            <button
+                              key={row.id}
+                              type="button"
+                              className="group w-full min-w-0 overflow-hidden rounded-md px-2 py-2 text-left transition hover:bg-panel2/70"
+                              onClick={() => void handleAccountNotificationOpen(row)}
+                              data-testid={rowTestId}
+                              data-notes-panel-trigger={isCurrentAggregate ? "true" : undefined}
+                            >
+                              <div className="flex min-w-0 items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    <div className="min-w-0 truncate text-[13px] font-black leading-tight text-fg" title={group.sessionTitle}>
+                                      {shortLabel(group.sessionTitle, 46)}
                                     </div>
-                                    {row.excerpt ? (
-                                      <div className="mt-0.5 line-clamp-2 break-words text-[11px] leading-snug text-muted">
-                                        {row.excerpt}
-                                      </div>
-                                    ) : null}
+                                    <span className="shrink-0 rounded-full border border-border/70 bg-panel2/60 px-1.5 py-0 text-[10px] font-semibold leading-4 text-muted tabular-nums">
+                                      {group.rows.length}
+                                    </span>
                                   </div>
-                                  <div className="flex shrink-0 flex-col items-end gap-1">
-                                    {row.badges?.slice(0, 2).map((badge) => (
+                                  {group.projectTitle ? (
+                                    <div className="mt-0.5 truncate text-[11px] leading-snug text-muted" title={group.projectTitle}>
+                                      {shortLabel(group.projectTitle, 54)}
+                                    </div>
+                                  ) : null}
+                                  <div className="mt-1 line-clamp-2 break-words text-[12px] font-semibold leading-snug text-fg/90">
+                                    {row.title || "Обсуждение"}
+                                  </div>
+                                  {row.excerpt ? (
+                                    <div className="mt-0.5 line-clamp-2 break-words text-[11px] leading-snug text-muted">
+                                      {row.excerpt}
+                                    </div>
+                                  ) : null}
+                                  <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
+                                    {row.badges?.slice(0, 4).map((badge) => (
                                       <span
                                         key={`${row.id}:${badge.label}`}
-                                        className={`rounded-full border px-1.5 py-0 text-[9px] font-bold leading-4 ${badgeToneClass(badge.tone)}`}
+                                        className={`shrink-0 rounded-full border px-1.5 py-0 text-[9px] font-bold leading-4 ${badgeToneClass(badge.tone)}`}
                                       >
                                         {badge.label}
                                       </span>
                                     ))}
+                                    {row.authorLabel ? <span className="truncate text-[10px] text-muted">{shortLabel(row.authorLabel, 24)}</span> : null}
+                                    {timeLabel ? <span className="shrink-0 text-[10px] text-muted">{timeLabel}</span> : null}
                                   </div>
                                 </div>
-                                <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px] text-muted">
-                                  {row.authorLabel ? <span className="truncate">{shortLabel(row.authorLabel, 24)}</span> : null}
-                                  {row.authorLabel && timeLabel ? <span className="shrink-0">·</span> : null}
-                                  {timeLabel ? <span className="shrink-0">{timeLabel}</span> : null}
-                                  {!row.authorLabel && !timeLabel ? <span>Открыть обсуждения</span> : null}
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
+                                <span className="mt-0.5 shrink-0 rounded-full border border-info/45 bg-info/10 px-2 py-1 text-[11px] font-bold text-info group-hover:border-info/70">
+                                  Открыть
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </section>
                     ))}
                   </div>
                 ) : (
                   <div
-                    className="min-w-0 overflow-hidden rounded-lg border border-dashed border-border px-2.5 py-2 text-xs leading-snug text-muted break-words"
+                    className="mx-4 mb-3 min-w-0 border-t border-dashed border-border px-2 py-3 text-xs leading-snug text-muted break-words"
                     data-testid="topbar-notification-empty"
                   >
                     <div className="font-semibold text-fg/80">Нет активных уведомлений</div>
-                    <div className="mt-0.5">Новые сообщения, упоминания и обсуждения появятся здесь.</div>
+                    <div className="mt-0.5">Новые сообщения и упоминания из обсуждений появятся здесь.</div>
                   </div>
                 )}
               </div>
-              <button
-                type="button"
-                className="secondaryBtn h-8 w-full min-w-0 justify-start gap-2 overflow-hidden px-2.5 text-left text-sm"
-                onClick={openProfileSoon}
-                title="Профиль пользователя"
-                data-testid="topbar-account-profile-soon"
-              >
-                <span className="min-w-0 flex-1 truncate">Профиль</span>
-                <span className="ml-auto shrink-0 text-[11px] text-muted">скоро</span>
-              </button>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={uiTheme === "light" ? "true" : "false"}
-                className="secondaryBtn h-9 w-full min-w-0 justify-start gap-2 overflow-hidden px-2.5 text-left text-sm"
-                onClick={() => {
-                  toggleTheme();
-                }}
-                data-testid="topbar-theme-toggle"
-                title={uiTheme === "dark" ? "Включить светлую тему" : "Включить тёмную тему"}
-              >
-                <span className="shrink-0">Тема</span>
-                <span className="ml-auto min-w-0 flex-1 truncate text-right text-[11px] text-muted">{uiTheme === "dark" ? "Тёмная" : "Светлая"}</span>
-                <span className={`relative h-5 w-9 shrink-0 rounded-full border transition ${uiTheme === "light" ? "border-sky-300 bg-sky-100" : "border-border bg-bg/70"}`} aria-hidden="true">
-                  <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-fg transition ${uiTheme === "light" ? "left-4" : "left-0.5"}`} />
-                </span>
-              </button>
-              <button
-                type="button"
-                className="secondaryBtn h-8 w-full min-w-0 justify-start overflow-hidden border-danger/45 bg-danger/10 px-2.5 text-left text-sm text-danger hover:border-danger/60 hover:bg-danger/20"
-                onClick={() => {
-                  setAccountMenuOpen(false);
-                  void handleLogout();
-                }}
-                title="Выйти из аккаунта"
-                data-testid="topbar-account-logout"
-              >
-                <span className="min-w-0 truncate">Выйти</span>
-              </button>
+              <div className="grid gap-1 p-2" data-testid="topbar-account-actions">
+                <button
+                  type="button"
+                  className="secondaryBtn h-8 w-full min-w-0 justify-start gap-2 overflow-hidden px-2.5 text-left text-sm"
+                  onClick={openProfileSoon}
+                  title="Профиль пользователя"
+                  data-testid="topbar-account-profile-soon"
+                >
+                  <span className="min-w-0 flex-1 truncate">Профиль</span>
+                  <span className="ml-auto shrink-0 text-[11px] text-muted">скоро</span>
+                </button>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={uiTheme === "light" ? "true" : "false"}
+                  className="secondaryBtn h-9 w-full min-w-0 justify-start gap-2 overflow-hidden px-2.5 text-left text-sm"
+                  onClick={() => {
+                    toggleTheme();
+                  }}
+                  data-testid="topbar-theme-toggle"
+                  title={uiTheme === "dark" ? "Включить светлую тему" : "Включить тёмную тему"}
+                >
+                  <span className="shrink-0">Тема</span>
+                  <span className="ml-auto min-w-0 flex-1 truncate text-right text-[11px] text-muted">{uiTheme === "dark" ? "Тёмная" : "Светлая"}</span>
+                  <span className={`relative h-5 w-9 shrink-0 rounded-full border transition ${uiTheme === "light" ? "border-sky-300 bg-sky-100" : "border-border bg-bg/70"}`} aria-hidden="true">
+                    <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-fg transition ${uiTheme === "light" ? "left-4" : "left-0.5"}`} />
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="secondaryBtn h-8 w-full min-w-0 justify-start overflow-hidden border-danger/45 bg-danger/10 px-2.5 text-left text-sm text-danger hover:border-danger/60 hover:bg-danger/20"
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    void handleLogout();
+                  }}
+                  title="Выйти из аккаунта"
+                  data-testid="topbar-account-logout"
+                >
+                  <span className="min-w-0 truncate">Выйти</span>
+                </button>
+              </div>
             </div>
           ) : null}
         </div>
