@@ -3327,10 +3327,50 @@ export default function App() {
   }, [leaveNavigationRisk?.unsafe]);
 
   useEffect(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) return;
+    const fromUrl = readSelectionFromUrl();
+    const nextProjectId = String(fromUrl.projectId || "").trim();
+    const nextSessionId = String(fromUrl.sessionId || "").trim();
+    if (!nextProjectId || nextSessionId) return;
+    const currentProjectId = String(projectId || "").trim();
+    if (!confirmLeaveIfUnsafe("session_parent_route")) {
+      writeSelectionToUrl({ projectId: currentProjectId || nextProjectId, sessionId: sid });
+      logNav("session_parent_route_cancelled", {
+        projectId: currentProjectId || nextProjectId || "-",
+        sessionId: sid,
+      });
+      return;
+    }
+    if (nextProjectId && nextProjectId !== currentProjectId) {
+      setProjectId(nextProjectId);
+    }
+    void (async () => {
+      const returned = await returnToSessionList("session_parent_route", { skipLeaveGuard: true });
+      if (!returned?.ok) {
+        writeSelectionToUrl({ projectId: currentProjectId || nextProjectId, sessionId: sid });
+        logNav("session_parent_route_failed", {
+          projectId: currentProjectId || nextProjectId || "-",
+          sessionId: sid,
+          error: String(returned?.error || "return_failed"),
+        });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft?.session_id, projectId, confirmLeaveIfUnsafe, returnToSessionList]);
+
+  useEffect(() => {
     const pid = String(projectId || "").trim();
     const sid = String(draft?.session_id || "").trim();
     const requestedSid = String(requestedSessionIdRef.current || "").trim();
     const fromUrl = readSelectionFromUrl();
+    if (sid && fromUrl.projectId && !fromUrl.sessionId) {
+      logNav("selection_sync_preserve_parent_route", {
+        projectId: fromUrl.projectId,
+        sessionId: sid,
+      });
+      return;
+    }
     if (shouldPreserveSelectionRouteDuringRestore({
       projectId: pid,
       sessionId: sid,
