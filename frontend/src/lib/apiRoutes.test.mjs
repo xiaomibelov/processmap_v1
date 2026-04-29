@@ -26,6 +26,7 @@ test("apiRoutes: template scope routes are canonical", () => {
 
 test("apiRoutes: org property dictionary routes are canonical", () => {
   assert.equal(apiRoutes.orgs.memberAssign("org_1"), "/api/orgs/org_1/members/assign");
+  assert.equal(apiRoutes.orgs.assignableUsers("org_1"), "/api/orgs/org_1/assignable-users");
   assert.equal(apiRoutes.orgs.propertyDictionaryOperations("org_1"), "/api/orgs/org_1/property-dictionary/operations");
   assert.equal(apiRoutes.orgs.propertyDictionaryOperation("org_1", "set_container"), "/api/orgs/org_1/property-dictionary/operations/set_container");
   assert.equal(apiRoutes.orgs.propertyDictionaryProperties("org_1", "set_container"), "/api/orgs/org_1/property-dictionary/operations/set_container/properties");

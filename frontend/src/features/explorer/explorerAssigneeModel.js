@@ -79,7 +79,7 @@ function normalizeAssignableUserItem(user) {
   const fullName = text(user.full_name || nested.full_name || nested.name);
   const displayName = text(user.display_name || nested.display_name);
   const jobTitle = text(user.job_title || nested.job_title);
-  const role = text(user.role || user.membership?.role);
+  const role = text(user.role || user.membership_role || user.membership?.role);
   if (email) normalized.email = email;
   if (fullName) normalized.full_name = fullName;
   if (displayName) normalized.display_name = displayName;

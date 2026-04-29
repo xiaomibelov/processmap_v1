@@ -12,6 +12,7 @@ from ..storage import (
     get_default_org_id,
     get_effective_project_scope,
     get_user_org_role,
+    list_auth_users,
     list_org_memberships,
     list_user_org_memberships,
     rename_org_record,
@@ -129,6 +130,81 @@ def validate_org_user_assignable(org_id: str, user_id: Any) -> str:
     if not user_is_assignable_to_org(uid, oid):
         raise HTTPException(status_code=422, detail="assigned user is not an org member")
     return uid
+
+
+def _assignable_user_row(user: Dict[str, Any], *, membership_role: Optional[str], reason: str) -> Optional[Dict[str, Any]]:
+    uid = str(user.get("id") or user.get("user_id") or "").strip()
+    if not uid:
+        return None
+    email = str(user.get("email") or "").strip().lower()
+    full_name = str(user.get("full_name") or "").strip()
+    job_title = str(user.get("job_title") or "").strip()
+    display_name = full_name or email or uid
+    return {
+        "user_id": uid,
+        "email": email,
+        "full_name": full_name,
+        "job_title": job_title,
+        "display_name": display_name,
+        "is_platform_admin": bool(user.get("is_admin", False)),
+        "membership_role": str(membership_role or "").strip() or None,
+        "assignable_reason": str(reason or "").strip() or "org_member",
+    }
+
+
+def list_org_assignable_users_payload(request: Request, org_id: str):
+    oid = str(org_id or "").strip()
+    _role, err = enterprise_require_org_member(request, oid)
+    if err is not None:
+        return err
+    _, requester_is_admin = request_user_meta(request)
+    if not can_edit_workspace(request, oid):
+        return enterprise_error(403, "forbidden", "insufficient_permissions")
+
+    by_user_id: Dict[str, Dict[str, Any]] = {}
+    for membership in list_org_memberships(oid):
+        user_id = str(membership.get("user_id") or "").strip()
+        if not user_id:
+            continue
+        user = find_user_by_id(user_id) or {}
+        if not user:
+            continue
+        row = _assignable_user_row(
+            user,
+            membership_role=str(membership.get("role") or "").strip() or None,
+            reason="org_member_platform_admin" if bool(user.get("is_admin", False)) else "org_member",
+        )
+        if row:
+            by_user_id[str(row["user_id"])] = row
+
+    if requester_is_admin:
+        for user in list_auth_users():
+            if not bool(user.get("is_admin", False)):
+                continue
+            if user.get("is_active", True) is False:
+                continue
+            user_id = str(user.get("id") or "").strip()
+            if not user_id:
+                continue
+            existing = by_user_id.get(user_id)
+            if existing:
+                existing["is_platform_admin"] = True
+                if existing.get("assignable_reason") == "org_member":
+                    existing["assignable_reason"] = "org_member_platform_admin"
+                continue
+            row = _assignable_user_row(user, membership_role=None, reason="platform_admin")
+            if row:
+                by_user_id[str(row["user_id"])] = row
+
+    items = sorted(
+        by_user_id.values(),
+        key=lambda item: (
+            str(item.get("display_name") or "").lower(),
+            str(item.get("email") or "").lower(),
+            str(item.get("user_id") or ""),
+        ),
+    )
+    return build_items_count_payload(items, org_id=oid)
 
 
 def enterprise_require_org_member(request: Request, org_id: str) -> Tuple[Optional[str], Optional[JSONResponse]]:

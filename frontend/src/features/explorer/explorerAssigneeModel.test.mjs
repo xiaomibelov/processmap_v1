@@ -94,6 +94,10 @@ test("assignable users response accepts known shapes and normalizes failures", (
     [{ user_id: "u1" }],
   );
   assert.deepEqual(
+    normalizeExplorerAssignableUsersResponse({ ok: true, items: [{ user_id: "u_admin", membership_role: "org_admin", is_platform_admin: true }] }).items,
+    [{ user_id: "u_admin", membership_role: "org_admin", is_platform_admin: true, role: "org_admin" }],
+  );
+  assert.deepEqual(
     normalizeExplorerAssignableUsersResponse({ ok: true, data: { members: [{ user_id: "u2" }] } }).items,
     [{ user_id: "u2" }],
   );

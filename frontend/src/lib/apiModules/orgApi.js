@@ -171,6 +171,15 @@ export async function apiListOrgMembers(orgId) {
   return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
 }
 
+export async function apiListOrgAssignableUsers(orgId) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  const endpoint = apiRoutes.orgs.assignableUsers(oid);
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  const items = Array.isArray(r?.data?.items) ? r.data.items : [];
+  return r.ok ? { ok: true, status: r.status, items, count: Number(r?.data?.count || items.length || 0) } : r;
+}
+
 export async function apiPatchOrgMember(orgId, userId, role) {
   const oid = String(orgId || "").trim();
   const uid = String(userId || "").trim();
