@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   pushSessionSelectionToUrl,
   readSelectionFromUrl,
+  seedSessionParentHistoryToUrl,
   shouldPreserveSelectionRouteDuringRestore,
   shouldSkipDuplicateUrlRestore,
   writeSelectionToUrl,
@@ -160,5 +161,39 @@ test("pushSessionSelectionToUrl requires project and session ids", () => {
     action: "none",
     reason: "missing_selection",
   });
+  assert.equal(win.calls.length, 0);
+});
+
+test("seedSessionParentHistoryToUrl seeds parent when direct session URL has no internal route state", () => {
+  const win = makeWindow("https://processmap.local/app?project=p1&session=s1");
+  const result = seedSessionParentHistoryToUrl({ projectId: "p1", sessionId: "s1" }, win);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.action, "seed");
+  assert.deepEqual(
+    win.calls.map((call) => [call.type, call.url]),
+    [
+      ["replace", "/app?project=p1"],
+      ["push", "/app?project=p1&session=s1"],
+    ],
+  );
+  assert.equal(win.location.search, "?project=p1&session=s1");
+});
+
+test("seedSessionParentHistoryToUrl skips sessions already opened through internal history", () => {
+  const win = makeWindow("https://processmap.local/app?project=p1&session=s1");
+  win.history.state.processMapRoute = {
+    surface: "session",
+    workspaceId: "",
+    folderId: "",
+    projectId: "p1",
+    sessionId: "s1",
+    source: "internal",
+  };
+  const result = seedSessionParentHistoryToUrl({ projectId: "p1", sessionId: "s1" }, win);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.action, "none");
+  assert.equal(result.reason, "already_internal_session");
   assert.equal(win.calls.length, 0);
 });
