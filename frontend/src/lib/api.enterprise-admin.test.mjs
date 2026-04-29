@@ -6,6 +6,7 @@ import {
   apiCreateOrgInvite,
   apiListOrgInvites,
   apiListOrgAudit,
+  apiListOrgAssignableUsers,
   apiListOrgMembers,
   apiRevokeOrgInvite,
 } from "./api.js";
@@ -25,6 +26,43 @@ test("apiListOrgMembers: calls enterprise members endpoint", async () => {
     assert.equal(out.ok, true);
     assert.equal(out.count, 1);
     assert.match(calls[0], /\/api\/orgs\/org_1\/members$/);
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
+test("apiListOrgAssignableUsers: calls assignable users endpoint and preserves safe profile fields", async () => {
+  const prevFetch = globalThis.fetch;
+  const calls = [];
+  try {
+    globalThis.fetch = async (input) => {
+      calls.push(String(input || ""));
+      return new Response(JSON.stringify({
+        items: [{
+          user_id: "u_admin",
+          email: "admin@local",
+          full_name: "Platform Admin",
+          job_title: "Lead",
+          display_name: "Platform Admin",
+          is_platform_admin: true,
+          membership_role: null,
+          assignable_reason: "platform_admin",
+        }],
+        count: 1,
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    const out = await apiListOrgAssignableUsers("org_1");
+
+    assert.equal(out.ok, true);
+    assert.equal(out.count, 1);
+    assert.match(calls[0], /\/api\/orgs\/org_1\/assignable-users$/);
+    assert.equal(out.items[0].email, "admin@local");
+    assert.equal(out.items[0].is_platform_admin, true);
+    assert.equal(out.items[0].assignable_reason, "platform_admin");
   } finally {
     globalThis.fetch = prevFetch;
   }

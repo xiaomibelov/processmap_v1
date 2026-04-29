@@ -29,7 +29,7 @@ import {
   apiSearchExplorer,
   apiCreateSession,
 } from "./explorerApi.js";
-import { apiDeleteProject, apiDeleteSession, apiGetSession, apiListOrgMembers, apiPatchProject, apiPatchSession } from "../../lib/api";
+import { apiDeleteProject, apiDeleteSession, apiGetSession, apiListOrgAssignableUsers, apiPatchProject, apiPatchSession } from "../../lib/api";
 import {
   MANUAL_SESSION_STATUSES,
   getManualSessionStatusMeta,
@@ -1667,7 +1667,7 @@ function ExplorerPane({
     let disposed = false;
     setAssigneeMembersState({ orgId: oid, items: [], loading: true, loaded: false, error: "" });
     Promise.race([
-      apiListOrgMembers(oid),
+      apiListOrgAssignableUsers(oid),
       assigneeMembersLoadTimeout(),
     ]).then((resp) => {
       if (disposed) return;
