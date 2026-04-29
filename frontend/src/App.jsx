@@ -87,6 +87,7 @@ import { canCreateOrgTemplateForRole } from "./features/templates/model/template
 import { buildWorkspacePermissions } from "./features/workspace/workspacePermissions";
 import { resolveSessionStatusFromDraft } from "./features/workspace/sessionStatus";
 import useSessionRouteOrchestration, {
+  pushSessionSelectionToUrl,
   readSelectionFromUrl,
   shouldPreserveSelectionRouteDuringRestore,
   writeSelectionToUrl,
@@ -1111,13 +1112,23 @@ export default function App() {
     ) {
       return { ok: false, cancelled: true, error: "leave_guard_cancelled" };
     }
-    return openSession(targetSid, options);
-  }, [confirmLeaveIfUnsafe, draft?.session_id, openSession]);
+    const result = await openSession(targetSid, options);
+    const source = String(options?.source || "manual_select").trim();
+    const shouldPushHistory = options?.pushHistory !== false && source !== "url_restore";
+    if (shouldPushHistory && targetSid && result?.ok !== false) {
+      pushSessionSelectionToUrl({
+        projectId: result?.projectId || projectId,
+        sessionId: result?.sessionId || targetSid,
+      });
+    }
+    return result;
+  }, [confirmLeaveIfUnsafe, draft?.session_id, openSession, projectId]);
 
   const openWorkspaceSession = useCallback(async (sessionLike, options = {}) => {
     const row = ensureObject(sessionLike);
     const sid = String(row?.id || row?.session_id || sessionLike || "").trim();
     const openTab = String(options?.openTab || "").trim().toLowerCase();
+    const source = String(options?.source || "workspace_dashboard").trim() || "workspace_dashboard";
     const activeSid = String(draft?.session_id || "").trim();
     const bypassLeaveGuard = options?.bypassLeaveGuard === true;
     if (
@@ -1129,12 +1140,19 @@ export default function App() {
     ) {
       return { ok: false, cancelled: true, error: "leave_guard_cancelled" };
     }
-    await openWorkspaceSessionBase(sessionLike, options);
+    const result = await openWorkspaceSessionBase(sessionLike, options);
+    const shouldPushHistory = options?.pushHistory !== false && source !== "url_restore";
+    if (shouldPushHistory && sid && result?.ok !== false) {
+      pushSessionSelectionToUrl({
+        projectId: result?.projectId || pid || projectId,
+        sessionId: result?.sessionId || sid,
+      });
+    }
     if (sid && (openTab === "diagram" || openTab === "interview" || openTab === "xml" || openTab === "doc" || openTab === "dod")) {
       setProcessTabIntent({ sid, tab: openTab, nonce: Date.now() });
     }
-    return { ok: true };
-  }, [confirmLeaveIfUnsafe, draft?.session_id, openWorkspaceSessionBase]);
+    return result?.ok === false ? result : { ok: true };
+  }, [confirmLeaveIfUnsafe, draft?.session_id, openWorkspaceSessionBase, projectId]);
 
   const {
     orgSettingsOpen,
@@ -3235,7 +3253,7 @@ export default function App() {
   }, [activeOrgId]);
 
   useEffect(() => {
-    function onPopState() {
+    async function onPopState() {
       const fromUrl = readSelectionFromUrl();
       const pathname = String(window.location.pathname || "");
       const orgOpen = pathname.startsWith("/app/org");
@@ -3267,6 +3285,22 @@ export default function App() {
         });
         return;
       }
+      if (leavesCurrentSession && !nextSessionId) {
+        if (nextProjectId && nextProjectId !== currentProjectId) {
+          setProjectId(nextProjectId);
+        }
+        const returned = await returnToSessionList("popstate_navigation", { skipLeaveGuard: true });
+        if (!returned?.ok) {
+          writeSelectionToUrl({ projectId: currentProjectId, sessionId: currentSessionId });
+          logNav("popstate_return_to_project_failed", {
+            projectId: currentProjectId || "-",
+            sessionId: currentSessionId || "-",
+            error: String(returned?.error || "return_failed"),
+          });
+          return;
+        }
+        return;
+      }
       if (fromUrl.projectId && fromUrl.projectId !== String(projectId || "").trim()) {
         setProjectId(fromUrl.projectId);
       }
@@ -3276,7 +3310,7 @@ export default function App() {
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [confirmLeaveIfUnsafe, draft?.session_id, projectId, setRequestedSessionId]);
+  }, [confirmLeaveIfUnsafe, draft?.session_id, projectId, returnToSessionList, setRequestedSessionId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;

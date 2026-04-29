@@ -24,9 +24,11 @@ test("app guards popstate and project/session navigation with same leave confirm
   assert.equal(source.includes("const {\n    openSession,\n    openWorkspaceSession: openWorkspaceSessionBase,"), true);
   assert.equal(source.includes("const {\n    openSessionWithLeaveGuard,\n    openWorkspaceSession: openWorkspaceSessionBase,"), false);
   assert.equal(source.includes("const openSessionWithLeaveGuard = useCallback"), true);
-  assert.equal(source.includes("return openSession(targetSid, options);"), true);
+  assert.equal(source.includes("const result = await openSession(targetSid, options);"), true);
+  assert.equal(source.includes("pushSessionSelectionToUrl({"), true);
   assert.equal(source.includes("confirmLeaveIfUnsafe(\"popstate_navigation\")"), true);
   assert.equal(source.includes("writeSelectionToUrl({ projectId: currentProjectId, sessionId: currentSessionId });"), true);
+  assert.equal(source.includes("await returnToSessionList(\"popstate_navigation\", { skipLeaveGuard: true });"), true);
   assert.equal(source.includes("if (activeSid && !confirmLeaveIfUnsafe(\"project_change\")) return;"), true);
   assert.equal(source.includes("onOpenSession={openSessionWithLeaveGuard}"), true);
   assert.equal(source.includes("returnToSessionList(reason = \"manual_return\", options = {})"), true);
