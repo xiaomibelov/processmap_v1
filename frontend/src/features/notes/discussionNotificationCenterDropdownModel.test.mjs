@@ -101,6 +101,9 @@ test("builds backend feed rows with source-backed snippets and target metadata",
   const row = center.groups[0].rows[0];
   assert.equal(row.type, "feed");
   assert.equal(row.title, "Проверить этап разогрева");
+  assert.equal(row.primaryLabel, "Проверить этап разогрева");
+  assert.equal(row.secondaryLabel, "Посмотри, пожалуйста, температуру перед публикацией");
+  assert.equal(row.contextLabel, "Разогрев супа · Борщ с говядиной");
   assert.match(row.excerpt, /Посмотри/);
   assert.deepEqual(row.badges.map((badge) => badge.label), ["Упоминание", "Внимание", "Новые 3"]);
   assert.equal(row.mention.id, "mention_1");
@@ -174,7 +177,30 @@ test("backend viewed feed rows with zero active badges are retained and openable
   assert.equal(row.canOpen, true);
   assert.equal(row.canMarkRead, false);
   assert.equal(row.canAcknowledgeAttention, false);
-  assert.deepEqual(row.badges.map((badge) => badge.label), ["Просмотрено"]);
+  assert.deepEqual(row.badges.map((badge) => badge.label), []);
+});
+
+test("render hints dedupe equal session and project labels", () => {
+  const center = buildAccountDiscussionNotificationGroups({
+    noteNotifications: [
+      {
+        id: "same-context",
+        reason: "activity",
+        session_id: "sess_1",
+        session_title: "Разогрев супа",
+        project_id: "proj_1",
+        project_title: "Разогрев супа",
+        thread_id: "thread_context",
+        thread_title: "Температура подачи",
+        snippet: "История остается в ленте",
+      },
+    ],
+  });
+
+  const row = center.groups[0].rows[0];
+  assert.equal(row.contextLabel, "Разогрев супа");
+  assert.equal(row.primaryLabel, "Температура подачи");
+  assert.equal(row.secondaryLabel, "История остается в ленте");
 });
 
 test("builds aggregate-only rows from counts without inventing message snippets", () => {
