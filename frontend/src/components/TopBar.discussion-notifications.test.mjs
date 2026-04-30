@@ -38,6 +38,11 @@ test("TopBar account dropdown is a compact notification entry point", () => {
   assert.match(topBarSource, /data-testid="topbar-notification-summary"/);
   assert.match(topBarSource, /data-testid="topbar-notification-preview-list"/);
   assert.match(topBarSource, /data-testid="topbar-notification-preview-row"/);
+  assert.match(topBarSource, /data-testid="topbar-notification-preview-context"/);
+  assert.match(topBarSource, /rounded-md border border-border\/65 bg-panel2\/30 px-2\.5 py-2/);
+  assert.match(topBarSource, /hover:border-info\/35 hover:bg-panel2\/55/);
+  assert.match(topBarSource, /row\.contextLabel \|\| compactNotificationContext\(row\.sessionTitle, row\.projectTitle\)/);
+  assert.match(topBarSource, /row\.badges\?\.\[0\]\?\.label/);
   assert.match(topBarSource, /data-testid="topbar-open-notification-center"/);
   assert.match(topBarSource, />\s*Открыть центр уведомлений\s*</);
   assert.match(topBarSource, /onClick=\{openNotificationCenterPanel\}/);
