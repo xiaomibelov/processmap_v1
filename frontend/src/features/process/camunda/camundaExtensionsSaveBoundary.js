@@ -97,6 +97,11 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
   apiPutBpmnXml,
   apiGetSession,
   onSessionSync,
+  backgroundSessionRefresh = false,
+  onDurableSaveAck,
+  onBackgroundSessionSyncStart,
+  onBackgroundSessionSyncComplete,
+  onBackgroundSessionSyncError,
   syncSource = "camunda_extensions_xml_boundary_save",
 }) {
   const sid = toText(sessionIdRaw);
@@ -189,6 +194,73 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
     };
   }
 
+  const durableAckPayload = {
+    ok: true,
+    status: Number(saveRes?.status || 200),
+    storedRev: Number(saveRes?.storedRev || 0),
+    diagramStateVersion: Number(saveRes?.diagramStateVersion || 0),
+    nextXml: persistedXml,
+    nextMeta: persistedMeta,
+    nextCamundaExtensionsByElementId,
+  };
+  if (saveRes?.bpmnVersionSnapshot) {
+    durableAckPayload.bpmnVersionSnapshot = saveRes.bpmnVersionSnapshot;
+  }
+  onDurableSaveAck?.(durableAckPayload);
+
+  const fallbackPatch = buildFallbackSessionPatch({
+    sid,
+    nextXml: persistedXml,
+    nextMeta: persistedMeta,
+    storedRev: Number(saveRes?.storedRev || 0),
+    diagramStateVersion: Number(saveRes?.diagramStateVersion || 0),
+    syncSource,
+  });
+
+  if (backgroundSessionRefresh) {
+    onSessionSync?.(fallbackPatch);
+    let backgroundSessionSyncPromise = null;
+    if (typeof apiGetSession === "function") {
+      onBackgroundSessionSyncStart?.(durableAckPayload);
+      backgroundSessionSyncPromise = (async () => {
+        try {
+          const fresh = await apiGetSession(sid);
+          if (fresh?.ok && fresh.session && typeof fresh.session === "object") {
+            const syncPayload = {
+              ...fresh.session,
+              _sync_source: syncSource,
+            };
+            onSessionSync?.(syncPayload);
+            onBackgroundSessionSyncComplete?.({ ok: true, session: syncPayload, durableAck: durableAckPayload });
+            return { ok: true, session: syncPayload };
+          }
+          const errorPayload = {
+            ok: false,
+            status: Number(fresh?.status || 0),
+            error: String(fresh?.error || "session_refresh_failed"),
+            durableAck: durableAckPayload,
+          };
+          onBackgroundSessionSyncError?.(errorPayload);
+          return errorPayload;
+        } catch (error) {
+          const errorPayload = {
+            ok: false,
+            status: 0,
+            error: String(error?.message || error || "session_refresh_failed"),
+            durableAck: durableAckPayload,
+          };
+          onBackgroundSessionSyncError?.(errorPayload);
+          return errorPayload;
+        }
+      })();
+    }
+    return {
+      ...durableAckPayload,
+      backgroundSessionRefresh: typeof apiGetSession === "function",
+      backgroundSessionSyncPromise,
+    };
+  }
+
   let sessionSynced = false;
   if (typeof apiGetSession === "function") {
     const fresh = await apiGetSession(sid);
@@ -201,25 +273,8 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
     }
   }
   if (!sessionSynced) {
-    onSessionSync?.(
-      buildFallbackSessionPatch({
-        sid,
-        nextXml: persistedXml,
-        nextMeta: persistedMeta,
-        storedRev: Number(saveRes?.storedRev || 0),
-        diagramStateVersion: Number(saveRes?.diagramStateVersion || 0),
-        syncSource,
-      }),
-    );
+    onSessionSync?.(fallbackPatch);
   }
 
-  return {
-    ok: true,
-    status: Number(saveRes?.status || 200),
-    storedRev: Number(saveRes?.storedRev || 0),
-    diagramStateVersion: Number(saveRes?.diagramStateVersion || 0),
-    nextXml: persistedXml,
-    nextMeta: persistedMeta,
-    nextCamundaExtensionsByElementId,
-  };
+  return durableAckPayload;
 }
