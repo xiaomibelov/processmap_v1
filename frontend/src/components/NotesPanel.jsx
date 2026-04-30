@@ -1044,6 +1044,7 @@ export default function NotesPanel({
   const [camundaPropertiesBusy, setCamundaPropertiesBusy] = useState(false);
   const [camundaExtensionSaveFailed, setCamundaExtensionSaveFailed] = useState(false);
   const [camundaExtensionLastAction, setCamundaExtensionLastAction] = useState("save");
+  const [camundaExtensionSavePhase, setCamundaExtensionSavePhase] = useState("idle");
   const [camundaPropertiesErr, setCamundaPropertiesErr] = useState("");
   const [camundaPropertiesInfo, setCamundaPropertiesInfo] = useState("");
   const [bpmnDocumentationDraftRows, setBpmnDocumentationDraftRows] = useState([]);
@@ -1413,9 +1414,16 @@ export default function NotesPanel({
   });
   const camundaExtensionHasLocalChanges = selectedCamundaPropertiesEditable
     && finalizedCamundaPropertiesDraftCanonical !== selectedCamundaExtensionCanonical;
-  const camundaExtensionSyncState = camundaPropertiesBusy
-    ? "syncing"
-    : (camundaExtensionSaveFailed ? "error" : (camundaExtensionHasLocalChanges ? "local" : "saved"));
+  const camundaExtensionSavePhaseKey = str(camundaExtensionSavePhase).toLowerCase();
+  const camundaExtensionSyncState = camundaExtensionSaveFailed
+    ? "error"
+    : (camundaPropertiesBusy
+      ? "saving"
+      : (camundaExtensionSavePhaseKey === "refreshing"
+        ? "refreshing"
+        : (camundaExtensionSavePhaseKey === "durable_saved"
+          ? "durable_saved"
+          : (camundaExtensionHasLocalChanges ? "local" : "saved"))));
   const selectedElementTierLabel = useMemo(() => {
     const tags = asArray(selectedNodePathEntry?.paths).map((item) => normalizeNodePathTag(item)).filter(Boolean);
     if (!tags.length) return "";
@@ -1699,6 +1707,7 @@ export default function NotesPanel({
       setCamundaPropertiesDraft(createEmptyCamundaExtensionState());
       setCamundaExtensionSaveFailed(false);
       setCamundaExtensionLastAction("save");
+      setCamundaExtensionSavePhase("idle");
       setCamundaPropertiesErr("");
       setCamundaPropertiesInfo("");
       return;
@@ -1713,6 +1722,7 @@ export default function NotesPanel({
     );
     setCamundaExtensionSaveFailed(false);
     setCamundaExtensionLastAction("save");
+    setCamundaExtensionSavePhase("idle");
     setCamundaPropertiesErr("");
     setCamundaPropertiesInfo("");
   }, [camundaPropertiesDraftKey, selectedCamundaPropertiesEditable, selectedCamundaExtensionEntry]);
@@ -2339,6 +2349,7 @@ export default function NotesPanel({
       camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, nextDraft);
     }
     setCamundaExtensionSaveFailed(false);
+    setCamundaExtensionSavePhase("idle");
     setCamundaPropertiesErr("");
   }, [camundaPropertiesDraftKey]);
 
@@ -2437,13 +2448,33 @@ export default function NotesPanel({
       return;
     }
     setCamundaExtensionLastAction("save");
+    setCamundaExtensionSavePhase("saving");
     setCamundaPropertiesBusy(true);
     setCamundaExtensionSaveFailed(false);
     setCamundaPropertiesErr("");
     setCamundaPropertiesInfo("");
     try {
-      const result = await Promise.resolve(onSetElementCamundaExtensions(selectedElementId, normalized));
+      const result = await Promise.resolve(onSetElementCamundaExtensions(selectedElementId, normalized, {
+        backgroundSessionRefresh: true,
+        onDurableSaveAck: () => {
+          setCamundaExtensionSavePhase("durable_saved");
+          setCamundaPropertiesInfo("Сохранено на сервере.");
+        },
+        onBackgroundSessionSyncStart: () => {
+          setCamundaExtensionSavePhase("refreshing");
+          setCamundaPropertiesInfo("Сохранено на сервере. Обновляем состояние…");
+        },
+        onBackgroundSessionSyncComplete: () => {
+          setCamundaExtensionSavePhase("durable_saved");
+          setCamundaPropertiesInfo("Сохранено на сервере.");
+        },
+        onBackgroundSessionSyncError: () => {
+          setCamundaExtensionSavePhase("durable_saved");
+          setCamundaPropertiesInfo("Сохранено на сервере. Не удалось обновить состояние.");
+        },
+      }));
       if (result && result.ok === false) {
+        setCamundaExtensionSavePhase("idle");
         setCamundaExtensionSaveFailed(true);
         setCamundaPropertiesErr(str(result.error || "Не удалось сохранить Properties."));
         return;
@@ -2453,8 +2484,15 @@ export default function NotesPanel({
       }
       setCamundaPropertiesDraft(normalized);
       setCamundaExtensionSaveFailed(false);
-      setCamundaPropertiesInfo("Properties сохранены.");
+      if (result?.local) {
+        setCamundaExtensionSavePhase("idle");
+        setCamundaPropertiesInfo("Properties сохранены.");
+      } else if (!result?.backgroundSessionRefresh) {
+        setCamundaExtensionSavePhase("durable_saved");
+        setCamundaPropertiesInfo("Сохранено на сервере.");
+      }
     } catch (error) {
+      setCamundaExtensionSavePhase("idle");
       setCamundaExtensionSaveFailed(true);
       setCamundaPropertiesErr(str(error?.message || error || "Не удалось сохранить Properties."));
     } finally {
@@ -2472,13 +2510,33 @@ export default function NotesPanel({
         : [],
     };
     setCamundaExtensionLastAction("reset");
+    setCamundaExtensionSavePhase("saving");
     setCamundaPropertiesBusy(true);
     setCamundaExtensionSaveFailed(false);
     setCamundaPropertiesErr("");
     setCamundaPropertiesInfo("");
     try {
-      const result = await Promise.resolve(onSetElementCamundaExtensions(selectedElementId, nextState));
+      const result = await Promise.resolve(onSetElementCamundaExtensions(selectedElementId, nextState, {
+        backgroundSessionRefresh: true,
+        onDurableSaveAck: () => {
+          setCamundaExtensionSavePhase("durable_saved");
+          setCamundaPropertiesInfo("Сохранено на сервере.");
+        },
+        onBackgroundSessionSyncStart: () => {
+          setCamundaExtensionSavePhase("refreshing");
+          setCamundaPropertiesInfo("Сохранено на сервере. Обновляем состояние…");
+        },
+        onBackgroundSessionSyncComplete: () => {
+          setCamundaExtensionSavePhase("durable_saved");
+          setCamundaPropertiesInfo("Сохранено на сервере.");
+        },
+        onBackgroundSessionSyncError: () => {
+          setCamundaExtensionSavePhase("durable_saved");
+          setCamundaPropertiesInfo("Сохранено на сервере. Не удалось обновить состояние.");
+        },
+      }));
       if (result && result.ok === false) {
+        setCamundaExtensionSavePhase("idle");
         setCamundaExtensionSaveFailed(true);
         setCamundaPropertiesErr(str(result.error || "Не удалось очистить Properties."));
         return;
@@ -2488,8 +2546,15 @@ export default function NotesPanel({
       }
       setCamundaPropertiesDraft(nextState);
       setCamundaExtensionSaveFailed(false);
-      setCamundaPropertiesInfo("Properties очищены.");
+      if (result?.local) {
+        setCamundaExtensionSavePhase("idle");
+        setCamundaPropertiesInfo("Properties очищены.");
+      } else if (!result?.backgroundSessionRefresh) {
+        setCamundaExtensionSavePhase("durable_saved");
+        setCamundaPropertiesInfo("Сохранено на сервере.");
+      }
     } catch (error) {
+      setCamundaExtensionSavePhase("idle");
       setCamundaExtensionSaveFailed(true);
       setCamundaPropertiesErr(str(error?.message || error || "Не удалось очистить Properties."));
     } finally {
