@@ -12,7 +12,7 @@ obsidian_status: OBSIDIAN_WRITE_BLOCKED
 
 | Поле | Значение |
 | ---- | -------- |
-| Source | `origin/main` at `c3d02fdf74ae7352d921115930c9266f79ae818e` |
+| Source | `origin/main` at `a34533f7eee7f89382940006ad4fa0515639c41d`; contour merged via PR #264 |
 | Branch | `fix/session-remote-poll-head-to-lightweight-summary-v1` |
 | App version | `v1.0.95` |
 | Scenario | background remote sync polling in `ProcessStage.jsx` |
