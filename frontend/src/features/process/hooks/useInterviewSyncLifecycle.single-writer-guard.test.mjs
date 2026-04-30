@@ -34,7 +34,7 @@ test("L1 non-semantic allowlist for report_build_debug is preserved", () => {
   const source = readInterviewSyncSource();
   assert.equal(source.includes("mutationType === \"paths.report_build_debug.update\""), true);
   assert.equal(source.includes("key === \"report_build_debug\""), true);
-  assert.equal(source.includes("const patchRes = await apiPatchSession(sid, patchPayload);"), true);
+  assert.equal(source.includes("const patchRes = await enqueueSessionPatchCasWrite({"), true);
 });
 
 test("canonical XML-first writer path remains intact", () => {

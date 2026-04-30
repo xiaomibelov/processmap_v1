@@ -21,6 +21,8 @@ test("session meta gateway includes base_diagram_state_version in default patch 
     source.includes("baseDiagramStateVersion,"),
     true,
   );
+  assert.equal(source.includes("enqueueSessionPatchCasWrite({"), true);
+  assert.equal(source.includes("rememberDiagramStateVersion,"), true);
   assert.equal(
     source.includes("if (fromOptionNormalized <= 0 && fromGatewayNormalized > 0) return fromGatewayNormalized;"),
     true,

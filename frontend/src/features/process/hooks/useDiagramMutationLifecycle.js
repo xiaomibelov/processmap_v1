@@ -7,6 +7,7 @@ import { resolveDiagramMutationSecondaryPatchBaseVersion } from "./diagramMutati
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
 import { shortUserFacingError } from "../lib/userFacingErrorText";
+import { enqueueSessionPatchCasWrite } from "../stage/utils/sessionPatchCasCoordinator";
 import {
   asArray,
   asObject,
@@ -167,7 +168,13 @@ export default function useDiagramMutationLifecycle({
         base_diagram_state_version: secondaryBaseDiagramStateVersion,
       };
 
-      const patchRes = await apiPatchSession(sid, patchPayload);
+      const patchRes = await enqueueSessionPatchCasWrite({
+        sessionId: sid,
+        patch: patchPayload,
+        apiPatchSession,
+        getBaseDiagramStateVersion,
+        rememberDiagramStateVersion,
+      });
       traceProcess("diagram.autosave_patch_backend", {
         sid,
         ok: !!patchRes.ok,
