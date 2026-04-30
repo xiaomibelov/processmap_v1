@@ -89,6 +89,42 @@ function logAiPersist(tag, payload = {}) {
   console.debug(`[AI_PERSIST] ${String(tag || "trace")} ${suffix}`.trim());
 }
 
+function readServerCurrentDiagramStateVersion(responseRaw = null) {
+  const response = responseRaw && typeof responseRaw === "object" ? responseRaw : {};
+  const details = asObject(response?.data || response?.errorDetails || response?.details);
+  const rawVersion = response?.server_current_version
+    ?? response?.serverCurrentVersion
+    ?? details?.server_current_version
+    ?? details?.serverCurrentVersion;
+  const version = Number(rawVersion);
+  if (!Number.isFinite(version) || version < 0) return null;
+  return Math.round(version);
+}
+
+function readAckDiagramStateVersion(sessionRaw = null) {
+  const session = asObject(sessionRaw);
+  const version = Number(session?.diagram_state_version ?? session?.diagramStateVersion);
+  if (!Number.isFinite(version) || version < 0) return null;
+  return Math.round(version);
+}
+
+async function waitForSingleWriterToClear(coordinator, ownerRaw, { isStale, timeoutMs = 15000 } = {}) {
+  const owner = String(ownerRaw || "").trim().toLowerCase();
+  const readDebugState = typeof coordinator?.getDebugState === "function"
+    ? () => coordinator.getDebugState()
+    : (typeof coordinator?.getSaveDebugState === "function" ? () => coordinator.getSaveDebugState() : null);
+  if (!owner || !readDebugState) return true;
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (typeof isStale === "function" && isStale()) return false;
+    const debugState = asObject(readDebugState());
+    const activeOwner = String(debugState?.singleWriterOwner || "").trim().toLowerCase();
+    if (!activeOwner || activeOwner !== owner) return true;
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 40));
+  }
+  return true;
+}
+
 function isAllowedNonSemanticInterviewPatchKey(keyRaw = "") {
   const key = String(keyRaw || "").trim();
   return key === "ai_questions_by_element" || key === "aiQuestionsByElementId" || key === "report_build_debug";
@@ -131,6 +167,8 @@ export default function useInterviewSyncLifecycle({
   bpmnSync,
   projectionHelpers,
   getBaseDiagramStateVersion,
+  rememberDiagramStateVersion,
+  coordinator,
   onError,
 }) {
   const interviewLastSavedRef = useRef("{}");
@@ -210,6 +248,10 @@ export default function useInterviewSyncLifecycle({
         return true;
       }
 
+      const waitedForTemplateApply = await waitForSingleWriterToClear(coordinator, "template_apply", {
+        isStale: () => isStale?.() || isSessionStale(),
+      });
+      if (!waitedForTemplateApply || isStale?.() || isSessionStale()) return true;
       const patchPayload = { ...patch };
       const baseDiagramStateVersion = Number(getBaseDiagramStateVersion?.());
       if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
@@ -243,8 +285,16 @@ export default function useInterviewSyncLifecycle({
         patch_keys: Object.keys(patchPayload),
       });
       if (!patchRes.ok) {
+        const serverCurrentVersion = readServerCurrentDiagramStateVersion(patchRes);
+        if (serverCurrentVersion !== null) {
+          rememberDiagramStateVersion?.(serverCurrentVersion, { sessionId: sid });
+        }
         onError?.(shortErr(patchRes.error || "Не удалось сохранить Interview"));
         return false;
+      }
+      const ackDiagramStateVersion = readAckDiagramStateVersion(patchRes.session);
+      if (ackDiagramStateVersion !== null) {
+        rememberDiagramStateVersion?.(ackDiagramStateVersion, { sessionId: sid });
       }
       const patchedSession = patchRes.session && typeof patchRes.session === "object" ? patchRes.session : optimisticSession;
       onSessionSync?.({
@@ -355,7 +405,7 @@ export default function useInterviewSyncLifecycle({
       });
       return true;
     },
-    [sid, isLocal, onSessionSync, bpmnSync, getBaseDiagramStateVersion, onError],
+    [sid, isLocal, onSessionSync, bpmnSync, getBaseDiagramStateVersion, rememberDiagramStateVersion, coordinator, onError],
   );
 
   const {
@@ -583,6 +633,10 @@ export default function useInterviewSyncLifecycle({
         interviewHashAfter: fnv1aHex(nextHash),
         xmlHash: fnv1aHex(xml),
       });
+      const waitedForTemplateApply = await waitForSingleWriterToClear(coordinator, "template_apply", {
+        isStale: isHydrateStale,
+      });
+      if (!waitedForTemplateApply || isHydrateStale()) return;
       const hydratePatchPayload = { ...savePlan.patch };
       const baseDiagramStateVersion = Number(getBaseDiagramStateVersion?.());
       if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
@@ -591,6 +645,10 @@ export default function useInterviewSyncLifecycle({
       const r = await apiPatchSession(sid, hydratePatchPayload);
       if (isHydrateStale()) return;
       if (!r.ok && !cancelled) {
+        const serverCurrentVersion = readServerCurrentDiagramStateVersion(r);
+        if (serverCurrentVersion !== null) {
+          rememberDiagramStateVersion?.(serverCurrentVersion, { sessionId: sid });
+        }
         onError?.(shortErr(r.error || "Не удалось заполнить Interview из BPMN"));
         delete interviewHydrateTriedRef.current[sid];
         logInterviewTrace("save", {
@@ -600,6 +658,10 @@ export default function useInterviewSyncLifecycle({
           status: Number(r?.status || 0),
         });
         return;
+      }
+      const ackDiagramStateVersion = readAckDiagramStateVersion(r.session);
+      if (ackDiagramStateVersion !== null) {
+        rememberDiagramStateVersion?.(ackDiagramStateVersion, { sessionId: sid });
       }
       interviewHydrateTriedRef.current[sid] = "done";
       logInterviewTrace("save", {
@@ -613,7 +675,19 @@ export default function useInterviewSyncLifecycle({
     return () => {
       cancelled = true;
     };
-  }, [sid, isLocal, isInterview, draft, onSessionSync, bpmnSync, projectionHelpers, getBaseDiagramStateVersion, onError]);
+  }, [
+    sid,
+    isLocal,
+    isInterview,
+    draft,
+    onSessionSync,
+    bpmnSync,
+    projectionHelpers,
+    getBaseDiagramStateVersion,
+    rememberDiagramStateVersion,
+    coordinator,
+    onError,
+  ]);
 
   const handleInterviewChange = useCallback(
     (nextInterview, mutationMeta = null) => {
