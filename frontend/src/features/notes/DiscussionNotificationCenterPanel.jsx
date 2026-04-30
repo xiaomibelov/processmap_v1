@@ -1,3 +1,5 @@
+import { createPortal } from "react-dom";
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -61,7 +63,7 @@ export default function DiscussionNotificationCenterPanel({
   const safeRows = asArray(rows);
   const safeFilters = asArray(filters);
 
-  return (
+  const content = (
     <div className="fixed inset-0 z-[150]" data-testid="discussion-notification-center-panel">
       <button
         type="button"
@@ -214,4 +216,10 @@ export default function DiscussionNotificationCenterPanel({
       </aside>
     </div>
   );
+
+  if (typeof document === "undefined" || !document.body) {
+    return content;
+  }
+
+  return createPortal(content, document.body);
 }
