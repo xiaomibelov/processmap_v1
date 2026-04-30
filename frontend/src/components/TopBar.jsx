@@ -809,12 +809,12 @@ export default function TopBar({
                   </div>
                 </div>
                 {hasAccountNotifications ? (
-                  <div className="mt-2 grid gap-1" data-testid="topbar-notification-preview-list">
+                  <div className="mt-2 grid gap-1.5" data-testid="topbar-notification-preview-list">
                     {accountNotificationPreviewRows.map((row) => (
                       <button
                         key={row.id}
                         type="button"
-                        className="group grid min-w-0 gap-0.5 rounded-md px-2 py-1.5 text-left transition hover:bg-panel2/45"
+                        className="group grid min-w-0 gap-1 rounded-md border border-border/65 bg-panel2/30 px-2.5 py-2 text-left transition hover:border-info/35 hover:bg-panel2/55"
                         onClick={openNotificationCenterPanel}
                         data-testid="topbar-notification-preview-row"
                       >
@@ -826,6 +826,16 @@ export default function TopBar({
                             {shortLabel(row.secondaryLabel, 64)}
                           </span>
                         ) : null}
+                        <span className="flex min-w-0 items-center gap-1.5 text-[10px] leading-4 text-muted/85" data-testid="topbar-notification-preview-context">
+                          <span className="min-w-0 truncate" title={row.contextLabel || compactNotificationContext(row.sessionTitle, row.projectTitle)}>
+                            {shortLabel(row.contextLabel || compactNotificationContext(row.sessionTitle, row.projectTitle), 58)}
+                          </span>
+                          {row.badges?.[0]?.label ? (
+                            <span className="shrink-0 rounded-full border border-border/70 bg-bg/30 px-1.5 py-0 text-[9px] font-semibold leading-4 text-muted">
+                              {shortLabel(row.badges[0].label, 18)}
+                            </span>
+                          ) : null}
+                        </span>
                       </button>
                     ))}
                   </div>
