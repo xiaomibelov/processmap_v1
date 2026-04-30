@@ -102,6 +102,21 @@ test("template insert seed falls back to template semantic payload under generat
   assert.match(source, /upsertCamundaExtensionStateByElementId\(nextMap, targetId, state\)/);
 });
 
+test("template insert seed refreshes property overlay preview for generated ids before reload", () => {
+  assert.match(source, /import \{ buildPropertiesOverlayPreview \} from "\.\.\/\.\.\/features\/process\/camunda\/propertyDictionaryModel";/);
+  assert.match(source, /function refreshPropertiesOverlayPreviewFromCamundaMap\(nextMapRaw, elementIdsRaw = \[\]\) \{/);
+  assert.match(source, /propertiesOverlayAlwaysPreviewByElementIdRef\.current = nextPreviewMap;/);
+  assert.match(source, /applyPropertiesOverlayDecor\(modelerRef\.current, "editor"\);/);
+  assert.match(source, /applyPropertiesOverlayDecor\(viewerRef\.current, "viewer"\);/);
+});
+
+test("template insert seed tracks duplicate generated target ids separately", () => {
+  assert.match(source, /const seededTargetIds = \[\];/);
+  assert.match(source, /seededTargetIds\.push\(targetId\);/);
+  assert.match(source, /refreshPropertiesOverlayPreviewFromCamundaMap\(nextMap, seededTargetIds\);/);
+  assert.match(source, /return \{ ok: true, seeded, seededTargetIds, nextMeta \};/);
+});
+
 test("template/session meta patch uses monotonic diagram version context and remembers conflict current version", () => {
   assert.match(source, /const monotonicBaseDiagramStateVersion = Number\(getBaseDiagramStateVersion\?\.\(\)\);/);
   assert.match(source, /const baseDiagramStateVersion = Number\.isFinite\(monotonicBaseDiagramStateVersion\)[\s\S]*: draftBaseDiagramStateVersion;/);

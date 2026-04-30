@@ -19,3 +19,32 @@ test("interview autosave and hydrate secondary patches propagate base_diagram_st
   assert.equal(source.includes("const patchRes = await apiPatchSession(sid, patchPayload);"), true);
   assert.equal(source.includes("const r = await apiPatchSession(sid, hydratePatchPayload);"), true);
 });
+
+test("interview autosave and hydrate wait for template-apply owner before reading CAS base", () => {
+  const source = readSource();
+  assert.equal(source.includes("async function waitForSingleWriterToClear(coordinator, ownerRaw"), true);
+  assert.equal(source.includes("coordinator?.getSaveDebugState"), true);
+  assert.match(
+    source,
+    /const waitedForTemplateApply = await waitForSingleWriterToClear\(coordinator, "template_apply"[\s\S]*?const patchPayload = \{ \.\.\.patch \};[\s\S]*?const baseDiagramStateVersion = Number\(getBaseDiagramStateVersion\?\.\(\)\);/,
+  );
+  assert.match(
+    source,
+    /const waitedForTemplateApply = await waitForSingleWriterToClear\(coordinator, "template_apply"[\s\S]*?const hydratePatchPayload = \{ \.\.\.savePlan\.patch \};[\s\S]*?const baseDiagramStateVersion = Number\(getBaseDiagramStateVersion\?\.\(\)\);/,
+  );
+});
+
+test("interview 409 remembers server current version but still propagates the conflict", () => {
+  const source = readSource();
+  assert.equal(source.includes("rememberDiagramStateVersion,"), true);
+  assert.equal(source.includes("const serverCurrentVersion = readServerCurrentDiagramStateVersion(patchRes);"), true);
+  assert.equal(source.includes("const serverCurrentVersion = readServerCurrentDiagramStateVersion(r);"), true);
+  assert.match(
+    source,
+    /if \(!patchRes\.ok\) \{[\s\S]*?rememberDiagramStateVersion\?\.\(serverCurrentVersion, \{ sessionId: sid \}\);[\s\S]*?onError\?\.\(shortErr\(patchRes\.error \|\| "Не удалось сохранить Interview"\)\);[\s\S]*?return false;/,
+  );
+  assert.match(
+    source,
+    /if \(!r\.ok && !cancelled\) \{[\s\S]*?rememberDiagramStateVersion\?\.\(serverCurrentVersion, \{ sessionId: sid \}\);[\s\S]*?onError\?\.\(shortErr\(r\.error \|\| "Не удалось заполнить Interview из BPMN"\)\);/,
+  );
+});

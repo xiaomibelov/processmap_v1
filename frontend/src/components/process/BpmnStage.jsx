@@ -80,6 +80,7 @@ import {
 import { disableBpmnZoomScroll } from "../../features/process/bpmn/runtime/zoomScrollLifecycle";
 import extractCamundaZeebePropertyEntriesFromBusinessObject from "../../features/process/stage/search/extractCamundaZeebePropertyEntries";
 import { deriveElementProcessContext } from "../../features/process/stage/search/diagramSearchHierarchy";
+import { buildPropertiesOverlayPreview } from "../../features/process/camunda/propertyDictionaryModel";
 
 import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
@@ -2459,6 +2460,40 @@ const BpmnStage = forwardRef(function BpmnStage({
     return nextMeta;
   }
 
+  function refreshPropertiesOverlayPreviewFromCamundaMap(nextMapRaw, elementIdsRaw = []) {
+    if (propertiesOverlayAlwaysEnabledRef.current !== true) return { ok: true, refreshed: 0, skipped: true };
+    const elementIds = Array.from(new Set(
+      asArray(elementIdsRaw)
+        .map((value) => toText(value))
+        .filter(Boolean),
+    ));
+    if (!elementIds.length) return { ok: true, refreshed: 0, reason: "empty_element_ids" };
+    const nextMap = normalizeCamundaExtensionsMap(nextMapRaw);
+    const nextPreviewMap = {
+      ...asObject(propertiesOverlayAlwaysPreviewByElementIdRef.current),
+    };
+    let refreshed = 0;
+    elementIds.forEach((elementId) => {
+      const preview = buildPropertiesOverlayPreview({
+        elementId,
+        extensionStateRaw: nextMap[elementId],
+        showPropertiesOverlay: true,
+      });
+      if (preview?.enabled && asArray(preview?.items).length) {
+        nextPreviewMap[elementId] = preview;
+        refreshed += 1;
+      } else if (Object.prototype.hasOwnProperty.call(nextPreviewMap, elementId)) {
+        delete nextPreviewMap[elementId];
+        refreshed += 1;
+      }
+    });
+    if (!refreshed) return { ok: true, refreshed: 0, reason: "no_preview_changes" };
+    propertiesOverlayAlwaysPreviewByElementIdRef.current = nextPreviewMap;
+    applyPropertiesOverlayDecor(modelerRef.current, "editor");
+    applyPropertiesOverlayDecor(viewerRef.current, "viewer");
+    return { ok: true, refreshed };
+  }
+
   function reconcileTemplateInsertCamundaStateFromXml(xmlText, preserveIdsRaw = []) {
     const preserveIds = asArray(preserveIdsRaw)
       .map((value) => toText(value))
@@ -2732,6 +2767,7 @@ const BpmnStage = forwardRef(function BpmnStage({
 
     let nextMap = getCamundaExtensionsMap();
     let seeded = 0;
+    const seededTargetIds = [];
     templateNodes.forEach((node) => {
       const sourceId = toText(node?.id);
       if (!sourceId) return;
@@ -2749,13 +2785,15 @@ const BpmnStage = forwardRef(function BpmnStage({
       if (beforeSig === afterSig) return;
       nextMap = candidateMap;
       seeded += 1;
+      seededTargetIds.push(targetId);
     });
 
     if (!seeded) return { ok: true, seeded: 0, reason: "no_managed_entries" };
 
     const nextMeta = syncDraftCamundaExtensionsMap(nextMap, "camunda_extensions_template_insert_seed");
+    refreshPropertiesOverlayPreviewFromCamundaMap(nextMap, seededTargetIds);
 
-    return { ok: true, seeded, nextMeta };
+    return { ok: true, seeded, seededTargetIds, nextMeta };
   }
 
   function hydrateRobotMetaFromImportedBpmn(inst, xmlText, source = "import_xml") {
