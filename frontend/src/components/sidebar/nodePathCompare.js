@@ -1,26 +1,18 @@
+import {
+  normalizePathSequenceKey,
+  normalizePathTierList,
+} from "../../features/process/pathClassification.js";
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function normalizeNodePathTag(value) {
-  const tag = String(value || "").trim().toUpperCase();
-  if (tag === "P0" || tag === "P1" || tag === "P2") return tag;
-  return "";
-}
-
 function normalizeNodePathTagList(value) {
-  return Array.from(new Set(
-    asArray(value)
-      .map((item) => normalizeNodePathTag(item))
-      .filter(Boolean),
-  )).sort((left, right) => {
-    const order = ["P0", "P1", "P2"];
-    return order.indexOf(left) - order.indexOf(right);
-  });
+  return normalizePathTierList(asArray(value));
 }
 
 function normalizeSequenceKey(value) {
-  return String(value || "").trim().toLowerCase();
+  return normalizePathSequenceKey(value);
 }
 
 export function deriveNodePathCompareSummary({

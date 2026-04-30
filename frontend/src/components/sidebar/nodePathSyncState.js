@@ -1,4 +1,9 @@
-const NODE_PATH_TAG_ORDER = ["P0", "P1", "P2"];
+import {
+  normalizePathSequenceKey,
+  normalizePathTier,
+  normalizePathTierList,
+} from "../../features/process/pathClassification.js";
+
 const NODE_PATH_SYNC_PREVIEW_STATES = ["saved", "local", "syncing", "offline", "attention", "error"];
 
 function asArray(value) {
@@ -6,34 +11,17 @@ function asArray(value) {
 }
 
 export function normalizeNodePathTag(value) {
-  const tag = String(value || "").trim().toUpperCase();
-  if (tag === "P0" || tag === "P1" || tag === "P2") return tag;
-  return "";
+  return normalizePathTier(value);
 }
 
 export function normalizeSequenceKey(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  if (!raw) return "";
-  return raw
-    .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_-]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 64);
+  return normalizePathSequenceKey(value);
 }
 
 export function buildNodePathComparableSnapshot(rawEntry) {
   const entry = rawEntry && typeof rawEntry === "object" ? rawEntry : {};
-  const seen = new Set();
   return {
-    paths: asArray(entry.paths)
-      .map((item) => normalizeNodePathTag(item))
-      .filter((tag) => {
-        if (!tag || seen.has(tag)) return false;
-        seen.add(tag);
-        return true;
-      })
-      .sort((a, b) => NODE_PATH_TAG_ORDER.indexOf(a) - NODE_PATH_TAG_ORDER.indexOf(b)),
+    paths: normalizePathTierList(asArray(entry.paths)),
     sequence_key: normalizeSequenceKey(entry.sequence_key || entry.sequenceKey),
   };
 }

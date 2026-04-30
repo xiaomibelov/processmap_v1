@@ -1202,7 +1202,6 @@ function buildStructureSection({ snapshot }) {
 
 function buildPathsSection({ snapshot, draft }) {
   const bpmnFlows = asArray(snapshot?.bpmn_flows);
-  const bpmnNodes = asArray(snapshot?.bpmn_nodes);
   const flowMeta = asObject(asObject(asObject(draft).bpmn_meta).flow_meta);
   const nodePathMeta = asObject(asObject(asObject(draft).bpmn_meta).node_path_meta);
 
@@ -1217,27 +1216,6 @@ function buildPathsSection({ snapshot, draft }) {
   const taggedNodesCount = taggedNodeIds.length;
   const missingSequenceNodes = taggedNodeIds.filter((nodeId) => !toText(asObject(nodePathMeta[nodeId]).sequence_key));
   const missingSequenceCount = missingSequenceNodes.length;
-
-  const xorGateways = bpmnNodes
-    .filter((node) => toLower(node?.type) === "exclusivegateway")
-    .map((node) => toText(node?.bpmn_id || node?.nodeId || node?.id))
-    .filter(Boolean);
-  const xorConflicts = [];
-  xorGateways.forEach((gatewayId) => {
-    const outgoing = bpmnFlows.filter((flow) => toText(flow?.from_id || flow?.sourceId) === gatewayId);
-    const tierCounters = { P0: 0, P1: 0 };
-    outgoing.forEach((flow) => {
-      const tier = normalizeTier(flow?.tier);
-      if (tier === "P0" || tier === "P1") tierCounters[tier] += 1;
-    });
-    if (tierCounters.P0 > 1 || tierCounters.P1 > 1) {
-      xorConflicts.push({
-        gatewayId,
-        p0: tierCounters.P0,
-        p1: tierCounters.P1,
-      });
-    }
-  });
 
   const signals = [
     {
@@ -1286,28 +1264,6 @@ function buildPathsSection({ snapshot, draft }) {
         isBlocking: true,
       }),
     },
-    {
-      code: "PATH_003",
-      pass: xorConflicts.length === 0,
-      weight: 3,
-      severity: "hard",
-      isBlocking: true,
-      issue: xorConflicts.length > 0
-        ? `Найдены XOR-конфликты tier у ${xorConflicts.length} gateway.`
-        : "XOR tier-конфликтов не найдено.",
-      where: "XOR / Пути",
-      explainability: makeExplainability({
-        code: "PATH_003",
-        label: "XOR tier conflict guard",
-        description: "Проверка конфликтов tier в исходящих XOR-ветках.",
-        whatChecked: "Повторная установка P0/P1 на несколько исходов одной XOR.",
-        howCalculated: "Анализ outgoing flow tiers для exclusiveGateway.",
-        source: "bpmn_xml + bpmn_meta.flow_meta",
-        impact: "Жёсткий guard path-контракта.",
-        severity: "hard",
-        isBlocking: true,
-      }),
-    },
   ];
 
   const summary = summarizeSignals(signals);
@@ -1326,8 +1282,8 @@ function buildPathsSection({ snapshot, draft }) {
       code: "SEC_002",
       label: "Пути / Последовательность",
       description: "Реальный раздел по path/tier/sequence контрактам.",
-      whatChecked: "PATH_001..PATH_003.",
-      howCalculated: "Агрегация flow tiers + node_path_meta + XOR guard.",
+      whatChecked: "PATH_001..PATH_002.",
+      howCalculated: "Агрегация flow tiers + node_path_meta.",
       source: "bpmn_meta + bpmn_xml",
       impact: "Жёсткий раздел DoD V1.",
       severity: "hard",
@@ -1340,7 +1296,6 @@ function buildPathsSection({ snapshot, draft }) {
       missingTierCount,
       taggedNodesCount,
       missingSequenceCount,
-      xorConflictCount: xorConflicts.length,
       flowMetaEntries: Object.keys(flowMeta).length,
     },
   };
@@ -1531,7 +1486,6 @@ function to100ActionsMap() {
     STR_004: { task: "Закрыть split gateway корректными join", sectionId: "structure_graph", section: "Структура / Граф", delta: "+2%", type: "Мягкий" },
     PATH_001: { task: "Назначить P0/P1/P2 для всех flow", sectionId: "paths_sequence", section: "Пути / Последовательность", delta: "+3%", type: "Мягкий" },
     PATH_002: { task: "Заполнить sequence_key у path-узлов", sectionId: "paths_sequence", section: "Пути / Последовательность", delta: "+6%", type: "Жёсткий" },
-    PATH_003: { task: "Устранить XOR tier-конфликты", sectionId: "paths_sequence", section: "Пути / Последовательность", delta: "+4%", type: "Жёсткий" },
     EXEC_001: { task: "Снять блок precheck до EndEvent", sectionId: "autopass_execution", section: "AutoPass / Исполнение", delta: "+4%", type: "Жёсткий" },
     EXEC_002: { task: "Завершить AutoPass run без ошибок", sectionId: "autopass_execution", section: "AutoPass / Исполнение", delta: "+3%", type: "Жёсткий" },
     STEP_001: { task: "Закрыть core-пропуски в шагах (required fields)", sectionId: "steps_completeness", section: "Полнота шагов", delta: "+4%", type: "Мягкий" },
