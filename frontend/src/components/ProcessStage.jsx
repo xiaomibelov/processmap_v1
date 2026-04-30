@@ -79,7 +79,9 @@ import {
 } from "../features/process/stage/utils/hybridCoords";
 import {
   isDiagramVersionSessionMatch,
+  rememberMonotonicDiagramStateVersion,
   normalizeDiagramSessionId,
+  normalizeDiagramStateVersion,
   resolveDiagramBaseVersionForActiveSession,
 } from "../features/process/stage/utils/diagramVersionContext";
 import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
@@ -469,9 +471,7 @@ export default function ProcessStage({
   ]);
 
   const resolveDraftDiagramStateVersion = useCallback(() => {
-    const raw = Number(draft?.diagram_state_version ?? draft?.diagramStateVersion);
-    if (!Number.isFinite(raw) || raw < 0) return null;
-    return Math.round(raw);
+    return normalizeDiagramStateVersion(draft?.diagram_state_version ?? draft?.diagramStateVersion);
   }, [draft?.diagramStateVersion, draft?.diagram_state_version]);
 
   useEffect(() => {
@@ -482,14 +482,15 @@ export default function ProcessStage({
       diagramStateVersionRef.current = 0;
       return;
     }
-    if (diagramStateVersionSidRef.current !== currentSid) {
-      diagramStateVersionSidRef.current = currentSid;
-      diagramStateVersionRef.current = nextVersion ?? 0;
-      return;
-    }
-    if (nextVersion !== null) {
-      diagramStateVersionRef.current = nextVersion;
-    }
+    const nextContext = rememberMonotonicDiagramStateVersion({
+      activeSessionId: currentSid,
+      storedSessionId: diagramStateVersionSidRef.current,
+      storedVersion: diagramStateVersionRef.current,
+      incomingSessionId: currentSid,
+      incomingVersion: nextVersion,
+    });
+    diagramStateVersionSidRef.current = nextContext.sessionId;
+    diagramStateVersionRef.current = nextContext.version;
   }, [resolveDraftDiagramStateVersion, sid]);
 
   const getBaseDiagramStateVersion = useCallback(() => {
@@ -503,22 +504,21 @@ export default function ProcessStage({
   }, [sid]);
 
   const rememberDiagramStateVersion = useCallback((rawVersion, options = {}) => {
-    const next = Number(rawVersion);
-    if (!Number.isFinite(next) || next < 0) return null;
-    const normalized = Math.round(next);
+    const normalized = normalizeDiagramStateVersion(rawVersion);
+    if (normalized === null) return null;
     const optionSid = normalizeDiagramSessionId(options?.sessionId || options?.sid || "");
     const currentSid = normalizeDiagramSessionId(sid);
     const targetSid = optionSid || currentSid;
     if (!isDiagramVersionSessionMatch(currentSid, targetSid)) return null;
-    if (diagramStateVersionSidRef.current !== currentSid) {
-      diagramStateVersionSidRef.current = currentSid;
-      diagramStateVersionRef.current = normalized;
-      return normalized;
-    }
-    const prev = Number(diagramStateVersionRef.current);
-    if (!Number.isFinite(prev) || normalized > prev) {
-      diagramStateVersionRef.current = normalized;
-    }
+    const nextContext = rememberMonotonicDiagramStateVersion({
+      activeSessionId: currentSid,
+      storedSessionId: diagramStateVersionSidRef.current,
+      storedVersion: diagramStateVersionRef.current,
+      incomingSessionId: targetSid,
+      incomingVersion: normalized,
+    });
+    diagramStateVersionSidRef.current = nextContext.sessionId;
+    diagramStateVersionRef.current = nextContext.version;
     return Math.round(Number(diagramStateVersionRef.current) || 0);
   }, [sid]);
 
