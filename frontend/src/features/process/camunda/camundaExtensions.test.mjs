@@ -219,6 +219,58 @@ test("import parser treats uppercase camunda:Properties tags as managed properti
   assert.deepEqual(state.preservedExtensionElements, []);
 }));
 
+test("finalize preserves guarded template-insert managed properties when state map has not caught up", () => withDom(() => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+  <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+    id="Defs_1" targetNamespace="http://bpmn.io/schema/bpmn">
+    <bpmn:process id="Process_1" isExecutable="true">
+      <bpmn:task id="Task_inserted">
+        <bpmn:extensionElements>
+          <camunda:properties>
+            <camunda:property name="AUDIT_PROP_TEXT_1777550880336" value="text-value" />
+            <camunda:property name="AUDIT_PROP_ROLE_1777550880336" value="role-value" />
+          </camunda:properties>
+        </bpmn:extensionElements>
+      </bpmn:task>
+    </bpmn:process>
+  </bpmn:definitions>`;
+
+  const finalized = finalizeCamundaExtensionsXml({
+    xmlText: xml,
+    camundaExtensionsByElementId: {},
+    preserveManagedForElementIds: ["Task_inserted"],
+  });
+
+  assert.match(finalized, /AUDIT_PROP_TEXT_1777550880336/);
+  assert.match(finalized, /AUDIT_PROP_ROLE_1777550880336/);
+  assert.doesNotMatch(finalized, /\[object Object\]/);
+}));
+
+test("finalize still removes unguarded managed properties when explicit state is absent", () => withDom(() => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+  <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+    id="Defs_1" targetNamespace="http://bpmn.io/schema/bpmn">
+    <bpmn:process id="Process_1" isExecutable="true">
+      <bpmn:task id="Task_stale">
+        <bpmn:extensionElements>
+          <camunda:properties>
+            <camunda:property name="AUDIT_PROP_TEXT_1777550880336" value="text-value" />
+          </camunda:properties>
+        </bpmn:extensionElements>
+      </bpmn:task>
+    </bpmn:process>
+  </bpmn:definitions>`;
+
+  const finalized = finalizeCamundaExtensionsXml({
+    xmlText: xml,
+    camundaExtensionsByElementId: {},
+  });
+
+  assert.doesNotMatch(finalized, /AUDIT_PROP_TEXT_1777550880336/);
+}));
+
 test("import parser reads camunda:executionListener type mapping", () => withDom(() => {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
   <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
