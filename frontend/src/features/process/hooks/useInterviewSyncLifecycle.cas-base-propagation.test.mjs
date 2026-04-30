@@ -14,10 +14,13 @@ function readSource() {
 test("interview autosave and hydrate secondary patches propagate base_diagram_state_version", () => {
   const source = readSource();
   assert.equal(source.includes("getBaseDiagramStateVersion,"), true);
+  assert.equal(source.includes("enqueueSessionPatchCasWrite({"), true);
   assert.equal(source.includes("patchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);"), true);
   assert.equal(source.includes("hydratePatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);"), true);
-  assert.equal(source.includes("const patchRes = await apiPatchSession(sid, patchPayload);"), true);
-  assert.equal(source.includes("const r = await apiPatchSession(sid, hydratePatchPayload);"), true);
+  assert.equal(source.includes("patch: patchPayload,"), true);
+  assert.equal(source.includes("patch: hydratePatchPayload,"), true);
+  assert.equal(source.includes("apiPatchSession,"), true);
+  assert.equal(source.includes("rememberDiagramStateVersion,"), true);
 });
 
 test("interview autosave and hydrate wait for template-apply owner before reading CAS base", () => {

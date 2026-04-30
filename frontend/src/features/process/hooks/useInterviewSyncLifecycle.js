@@ -6,6 +6,7 @@ import { parseAndProjectBpmnToInterview } from "./useInterviewProjection";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
 import { shortUserFacingError } from "../lib/userFacingErrorText";
+import { enqueueSessionPatchCasWrite } from "../stage/utils/sessionPatchCasCoordinator";
 import {
   asArray,
   asObject,
@@ -270,7 +271,13 @@ export default function useInterviewSyncLifecycle({
       if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
         patchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
       }
-      const patchRes = await apiPatchSession(sid, patchPayload);
+      const patchRes = await enqueueSessionPatchCasWrite({
+        sessionId: sid,
+        patch: patchPayload,
+        apiPatchSession,
+        getBaseDiagramStateVersion,
+        rememberDiagramStateVersion,
+      });
       if (isSessionStale()) return true;
       if (hasAiQuestionsByElement) {
         const sessionInterview = asObject(patchRes?.session?.interview);
@@ -655,7 +662,13 @@ export default function useInterviewSyncLifecycle({
       if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
         hydratePatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
       }
-      const r = await apiPatchSession(sid, hydratePatchPayload);
+      const r = await enqueueSessionPatchCasWrite({
+        sessionId: sid,
+        patch: hydratePatchPayload,
+        apiPatchSession,
+        getBaseDiagramStateVersion,
+        rememberDiagramStateVersion,
+      });
       if (isHydrateStale()) return;
       if (!r.ok && !cancelled) {
         const serverCurrentVersion = readServerCurrentDiagramStateVersion(r);

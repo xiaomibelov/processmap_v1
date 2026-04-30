@@ -39,6 +39,7 @@ import { elementNotesCount, normalizeElementNotesMap } from "../../features/note
 import { measureInterviewPerf } from "./interview/perf";
 import pmModdleDescriptor from "../../features/process/robotmeta/pmModdleDescriptor";
 import camundaModdleDescriptor from "../../features/process/camunda/camundaModdleDescriptor";
+import { enqueueSessionPatchCasWrite } from "../../features/process/stage/utils/sessionPatchCasCoordinator";
 import {
   canonicalRobotMetaMapString,
   extractRobotMetaFromBpmn,
@@ -2712,7 +2713,13 @@ const BpmnStage = forwardRef(function BpmnStage({
     if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
       syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
     }
-    const syncRes = await apiPatchSession(sid, syncPatchPayload);
+    const syncRes = await enqueueSessionPatchCasWrite({
+      sessionId: sid,
+      patch: syncPatchPayload,
+      apiPatchSession,
+      getBaseDiagramStateVersion,
+      rememberDiagramStateVersion,
+    });
     if (!syncRes?.ok) {
       const errorPayload = asObject(syncRes?.data || syncRes?.errorDetails || syncRes?.details);
       const serverCurrentVersion = Number(
