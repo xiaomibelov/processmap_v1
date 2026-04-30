@@ -6,12 +6,14 @@ import { normalizeHybridLayerMap } from "../features/process/hybrid/hybridLayerU
 import { normalizeHybridV2Doc } from "../features/process/hybrid/hybridLayerV2.js";
 import { mergeDrawioMeta } from "../features/process/drawio/drawioMeta.js";
 import { normalizeSessionCompanion } from "../features/process/session-companion/sessionCompanionContracts.js";
+import {
+  normalizePathSequenceKey,
+  normalizePathTier,
+  normalizePathTierList,
+} from "../features/process/pathClassification.js";
 
-const FLOW_TIER_SET = new Set(["P0", "P1", "P2"]);
 const R_FLOW_TIER_SET = new Set(["R0", "R1", "R2"]);
 const FLOW_R_SOURCE_SET = new Set(["manual", "inferred"]);
-const NODE_PATH_TAG_ORDER = ["P0", "P1", "P2"];
-const NODE_PATH_TAG_SET = new Set(NODE_PATH_TAG_ORDER);
 
 function ensureArray(x) {
   return Array.isArray(x) ? x : [];
@@ -22,8 +24,7 @@ function ensureObject(x) {
 }
 
 export function normalizeFlowTier(value) {
-  const tier = String(value || "").trim().toUpperCase();
-  return FLOW_TIER_SET.has(tier) ? tier : "";
+  return normalizePathTier(value);
 }
 
 export function normalizeRFlowTier(value) {
@@ -74,19 +75,11 @@ export function normalizeFlowMetaMap(rawMap) {
 }
 
 export function normalizeNodePathTag(value) {
-  const tag = String(value || "").trim().toUpperCase();
-  return NODE_PATH_TAG_SET.has(tag) ? tag : "";
+  return normalizePathTier(value);
 }
 
 export function normalizeSequenceKey(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  if (!raw) return "";
-  const compact = raw
-    .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_-]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return compact.slice(0, 64);
+  return normalizePathSequenceKey(value);
 }
 
 export function normalizeNodePathEntry(rawEntry) {
@@ -94,15 +87,7 @@ export function normalizeNodePathEntry(rawEntry) {
   const pathValues = Array.isArray(entry.paths)
     ? entry.paths
     : (entry.path ? [entry.path] : (entry.tier ? [entry.tier] : []));
-  const seen = new Set();
-  const paths = pathValues
-    .map((item) => normalizeNodePathTag(item))
-    .filter((item) => {
-      if (!item || seen.has(item)) return false;
-      seen.add(item);
-      return true;
-    })
-    .sort((a, b) => NODE_PATH_TAG_ORDER.indexOf(a) - NODE_PATH_TAG_ORDER.indexOf(b));
+  const paths = normalizePathTierList(pathValues);
   if (!paths.length) return null;
   const sourceRaw = String(entry.source || "").trim().toLowerCase();
   const source = sourceRaw === "color_auto" ? "color_auto" : "manual";
