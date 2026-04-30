@@ -67,6 +67,8 @@ export default function useProcessOrchestrator({
     bpmnSync,
     projectionHelpers,
     getBaseDiagramStateVersion,
+    rememberDiagramStateVersion,
+    coordinator,
     onError,
   });
 
