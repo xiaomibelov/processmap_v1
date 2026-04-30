@@ -1235,10 +1235,10 @@ export default function ProcessStage({
     const pending = remoteSaveHighlightBadge && typeof remoteSaveHighlightBadge === "object"
       ? remoteSaveHighlightBadge
       : null;
-    const serverSession = pending?.serverSession && typeof pending.serverSession === "object"
+    let serverSession = pending?.serverSession && typeof pending.serverSession === "object"
       ? pending.serverSession
       : null;
-    if (!serverSession) return { ok: false, reason: "no_pending_remote_snapshot" };
+    if (!serverSession && !pending) return { ok: false, reason: "no_pending_remote_snapshot" };
     const localUnsafe = (
       saveDirtyHint === true
       || isManualSaveBusy === true
@@ -1254,6 +1254,22 @@ export default function ProcessStage({
     setRemoteSaveHighlightBusy(true);
     setGenErr("");
     try {
+      if (!serverSession) {
+        const fetched = await apiGetSession(sid);
+        if (!fetched?.ok) {
+          const message = shortErr(fetched?.error || "Не удалось обновить сессию.");
+          setGenErr(message);
+          return { ok: false, reason: "fetch_failed", status: Number(fetched?.status || 0), error: message };
+        }
+        serverSession = asObject(fetched?.session || fetched?.result || {});
+      }
+      const currentSid = normalizeDiagramSessionId(sid);
+      const fetchedSid = normalizeDiagramSessionId(serverSession?.session_id || serverSession?.id || "");
+      if (!isDiagramVersionSessionMatch(currentSid, fetchedSid)) {
+        const message = "Не удалось обновить сессию: сервер вернул другую сессию.";
+        setGenErr(message);
+        return { ok: false, reason: "refresh_sid_mismatch", error: message };
+      }
       const serverVersion = Number(serverSession?.diagram_state_version ?? serverSession?.diagramStateVersion);
       onSessionSyncWithVersion?.({
         ...serverSession,
@@ -1264,9 +1280,18 @@ export default function ProcessStage({
       }
       await bpmnSync.resetBackend();
       setSaveDirtyHint(false);
-      const changedElementIds = Array.isArray(pending?.changedElementIds)
+      const lastWrite = readServerLastWriteFromSession(serverSession);
+      const pendingChangedElementIds = Array.isArray(pending?.changedElementIds)
         ? pending.changedElementIds
         : [];
+      const changedElementIds = pendingChangedElementIds.length > 0
+        ? pendingChangedElementIds
+        : deriveRemoteChangedElementIds({
+          previousXmlRaw: draft?.bpmn_xml || "",
+          nextXmlRaw: serverSession?.bpmn_xml || "",
+          changedKeysRaw: lastWrite.changedKeys,
+          maxIds: 12,
+        });
       changedElementIds.forEach((elementId, index) => {
         const delayMs = index * 80;
         window.setTimeout(() => {
@@ -1292,6 +1317,7 @@ export default function ProcessStage({
   }, [
     asObject,
     bpmnSync,
+    draft?.bpmn_xml,
     hasSession,
     isLocal,
     isManualSaveBusy,
@@ -1309,16 +1335,15 @@ export default function ProcessStage({
     toText,
   ]);
 
-  const applyRemoteSaveHighlightFromServerSession = useCallback((sessionRaw, source = "remote_poll", options = {}) => {
-    const serverSession = asObject(sessionRaw);
-    const versionHeadItem = asObject(options?.versionHeadItem);
+  const applyRemoteSaveHighlightFromVersionHead = useCallback((versionHeadItemRaw, source = "remote_poll") => {
+    const versionHeadItem = asObject(versionHeadItemRaw);
     const versionHeadActor = deriveRemoteVersionActor(versionHeadItem, currentUserId);
     const currentSid = normalizeDiagramSessionId(sid);
-    const sessionSid = normalizeDiagramSessionId(serverSession?.session_id || serverSession?.id || "");
-    if (!isDiagramVersionSessionMatch(currentSid, sessionSid)) {
+    const headSid = normalizeDiagramSessionId(versionHeadItem?.session_id || versionHeadItem?.sessionId || sid || "");
+    if (!isDiagramVersionSessionMatch(currentSid, headSid)) {
       return { ok: false, reason: "sid_mismatch" };
     }
-    const serverVersion = Number(serverSession?.diagram_state_version ?? serverSession?.diagramStateVersion);
+    const serverVersion = Number(versionHeadItem?.diagram_state_version ?? versionHeadItem?.diagramStateVersion);
     if (!Number.isFinite(serverVersion) || serverVersion < 0) {
       return { ok: false, reason: "missing_server_version" };
     }
@@ -1327,30 +1352,9 @@ export default function ProcessStage({
     const localVersion = Number.isFinite(knownBaseVersion) && knownBaseVersion >= 0
       ? Math.round(knownBaseVersion)
       : (Number.isFinite(fallbackVersion) && fallbackVersion >= 0 ? Math.round(fallbackVersion) : 0);
-    if (Math.round(serverVersion) <= localVersion) {
-      return { ok: false, reason: "not_newer_than_local" };
-    }
     const serverVersionRounded = Math.round(serverVersion);
-    const lastWrite = readServerLastWriteFromSession(serverSession);
-    const sameActor = (
-      currentUserId
-      && lastWrite.actorUserId
-      && String(currentUserId).trim().toLowerCase() === String(lastWrite.actorUserId).trim().toLowerCase()
-    );
-    if (sameActor || versionHeadActor.isCurrentUser === true) {
-      onSessionSyncWithVersion?.({
-        ...serverSession,
-        _sync_source: `${source}_self_actor_sync`,
-      });
-      rememberDiagramStateVersion(serverVersionRounded, { sessionId: currentSid });
-      setRemoteSaveHighlightBadge(null);
-      remoteUpdateToastLastShownKeyRef.current = "";
-      setSaveAckToast((prev) => (
-        prev?.kind === "remote_update"
-          ? { ...prev, visible: false }
-          : prev
-      ));
-      return { ok: true, applied: true, highlighted: false, sameActor: true };
+    if (serverVersionRounded <= localVersion) {
+      return { ok: false, reason: "not_newer_than_local" };
     }
     const localUnsafe = (
       saveDirtyHint === true
@@ -1362,27 +1366,17 @@ export default function ProcessStage({
     if (localUnsafe) {
       return { ok: false, reason: "local_state_unsafe_for_remote_notice" };
     }
-    const nextXml = toText(serverSession?.bpmn_xml || "");
-    if (!nextXml) {
-      return { ok: false, reason: "missing_server_xml" };
-    }
-    const prevXml = toText(draft?.bpmn_xml || "");
-    const changedElementIds = deriveRemoteChangedElementIds({
-      previousXmlRaw: prevXml,
-      nextXmlRaw: nextXml,
-      changedKeysRaw: lastWrite.changedKeys,
-      maxIds: 12,
-    });
+    const changedKeys = ["bpmn_xml"];
     const badgeView = buildRemoteSaveHighlightView({
-      actorLabelRaw: versionHeadActor.actorLabel || lastWrite.actorLabel,
-      changedElementIdsRaw: changedElementIds,
-      changedKeysRaw: lastWrite.changedKeys,
-      atRaw: lastWrite.at,
+      actorLabelRaw: versionHeadActor.actorLabel,
+      changedElementIdsRaw: [],
+      changedKeysRaw: changedKeys,
+      atRaw: versionHeadItem.created_at || versionHeadItem.createdAt || versionHeadItem.session_updated_at || versionHeadItem.sessionUpdatedAt,
     });
     const remoteToastKey = buildRemoteUpdateToastKey({
       sessionId: currentSid,
       diagramStateVersion: serverVersionRounded,
-      sessionPayloadHash: versionHeadItem.session_payload_hash || versionHeadItem.sessionPayloadHash || serverSession.session_payload_hash || serverSession.sessionPayloadHash,
+      sessionPayloadHash: versionHeadItem.session_payload_hash || versionHeadItem.sessionPayloadHash,
       versionId: versionHeadItem.id || versionHeadItem.version_id || versionHeadItem.versionId,
       createdAt: versionHeadItem.created_at || versionHeadItem.createdAt,
     });
@@ -1393,24 +1387,22 @@ export default function ProcessStage({
       }
       return {
         ...badgeView,
+        changedKeys,
         serverVersion: serverVersionRounded,
         source: toText(source),
-        serverSession,
+        serverHead: versionHeadItem,
         remoteToastKey,
         remoteToastActorLabel: versionHeadActor.actorLabel,
       };
     });
-    return { ok: true, applied: false, highlighted: true, pendingRefresh: true, changedCount: changedElementIds.length };
+    return { ok: true, applied: false, highlighted: true, pendingRefresh: true, changedCount: 0 };
   }, [
     asObject,
     currentUserId,
-    draft?.bpmn_xml,
     draft?.diagramStateVersion,
     draft?.diagram_state_version,
     getBaseDiagramStateVersion,
     isManualSaveBusy,
-    onSessionSyncWithVersion,
-    rememberDiagramStateVersion,
     saveDirtyHint,
     saveUploadStatus?.state,
     sessionSaveReadSnapshot,
@@ -1455,34 +1447,16 @@ export default function ProcessStage({
           seenVersion: seenBaselineVersion,
         };
       }
-      const fetched = await apiGetSession(sid);
-      if (!fetched?.ok) return { ok: false, reason: "fetch_failed", status: Number(fetched?.status || 0) };
-      const sessionLike = asObject(fetched?.session || fetched?.result || {});
-      const currentSid = normalizeDiagramSessionId(sid);
-      const fetchedSid = normalizeDiagramSessionId(sessionLike?.session_id || sessionLike?.id || "");
-      if (!isDiagramVersionSessionMatch(currentSid, fetchedSid)) {
-        return { ok: false, reason: "poll_sid_mismatch" };
-      }
-      const serverVersion = Number(sessionLike?.diagram_state_version ?? sessionLike?.diagramStateVersion);
-      if (Number.isFinite(serverVersion) && serverVersion > 0) {
-        remoteSessionPollSeenDiagramStateVersionRef.current = Math.max(
-          seenBaselineVersion,
-          Math.round(serverVersion),
-        );
-      } else {
-        remoteSessionPollSeenDiagramStateVersionRef.current = Math.max(
-          seenBaselineVersion,
-          headVersionRounded,
-        );
-      }
-      return applyRemoteSaveHighlightFromServerSession(sessionLike, `remote_poll_${reason}`, {
-        versionHeadItem: latestHead,
-      });
+      remoteSessionPollSeenDiagramStateVersionRef.current = Math.max(
+        seenBaselineVersion,
+        headVersionRounded,
+      );
+      return applyRemoteSaveHighlightFromVersionHead(latestHead, `remote_poll_${reason}`);
     } finally {
       remoteSessionPollInFlightRef.current = false;
     }
   }, [
-    applyRemoteSaveHighlightFromServerSession,
+    applyRemoteSaveHighlightFromVersionHead,
     asObject,
     draft?.diagramStateVersion,
     draft?.diagram_state_version,
