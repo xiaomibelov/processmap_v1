@@ -12,6 +12,8 @@ test("dedicated panel renders a responsive drawer with header controls", () => {
   assert.match(panelSource, /w-\[720px\]/);
   assert.match(panelSource, /max-w-\[calc\(100vw-1rem\)\]/);
   assert.match(panelSource, />\s*Уведомления\s*</);
+  assert.match(panelSource, /показано/);
+  assert.match(panelSource, /всего/);
   assert.match(panelSource, /data-testid="discussion-notification-panel-refresh"/);
   assert.match(panelSource, /data-testid="discussion-notification-panel-close"/);
   assert.match(panelSource, /onClick=\{\(\) => onClose\?\.\(\)\}/);
@@ -31,8 +33,12 @@ test("dedicated panel portals to document body to avoid TopBar containing block"
 
 test("dedicated panel owns the full filter and list UI", () => {
   assert.match(panelSource, /data-testid="discussion-notification-panel-filters"/);
+  assert.match(panelSource, /rounded-lg border border-border\/60 bg-bg\/20 p-1/);
   assert.match(panelSource, /data-testid="discussion-notification-panel-filter"/);
   assert.match(panelSource, /data-filter=\{filter\.key\}/);
+  assert.match(panelSource, /aria-pressed=\{active \? "true" : "false"\}/);
+  assert.match(panelSource, /min-h-7 rounded-md px-2\.5 text-\[12px\] font-semibold/);
+  assert.match(panelSource, /inline-flex min-w-5 justify-center rounded-full/);
   assert.match(panelSource, /onClick=\{\(\) => onFilterChange\?\.\(filter\.key\)\}/);
   assert.match(panelSource, /data-testid="discussion-notification-panel-list"/);
   assert.match(panelSource, /data-testid="discussion-notification-panel-row"/);
@@ -41,14 +47,22 @@ test("dedicated panel owns the full filter and list UI", () => {
 });
 
 test("dedicated panel renders row hierarchy, state, and source-backed actions", () => {
+  assert.match(panelSource, /function rowShellClass/);
+  assert.match(panelSource, /function markerClass/);
+  assert.match(panelSource, /rounded-lg border px-3 py-2\.5/);
   assert.match(panelSource, /row\?\.primaryLabel \|\| row\?\.title \|\| "Обсуждение"/);
   assert.match(panelSource, /row\?\.secondaryLabel/);
   assert.match(panelSource, /row\?\.contextLabel/);
+  assert.match(panelSource, /data-testid="discussion-notification-panel-context"/);
   assert.match(panelSource, /row\?\.authorLabel/);
   assert.match(panelSource, /formatNotificationTime\(row\?\.timestamp\)/);
   assert.match(panelSource, /data-view-state=\{row\?\.viewState \|\| ""\}/);
+  assert.match(panelSource, /data-attention-active=\{attentionActive \? "true" : "false"\}/);
   assert.match(panelSource, /row\?\.viewState === "viewed"/);
   assert.match(panelSource, /row\?\.isAttentionActive === true \|\| row\?\.requiresAttentionActive === true/);
+  assert.match(panelSource, /data-testid="discussion-notification-panel-attention-chip"/);
+  assert.match(panelSource, /data-testid="discussion-notification-panel-viewed-chip"/);
+  assert.match(panelSource, /data-testid="discussion-notification-panel-actions"/);
   assert.match(panelSource, /data-testid="discussion-notification-panel-open"/);
   assert.match(panelSource, /onOpenNotification\?\.\(row\)/);
   assert.match(panelSource, /data-testid="discussion-notification-panel-mark-read"/);
@@ -60,8 +74,11 @@ test("dedicated panel renders row hierarchy, state, and source-backed actions", 
 
 test("dedicated panel keeps viewed and empty states visible", () => {
   assert.match(panelSource, />\s*Просмотрено\s*</);
-  assert.match(panelSource, /Просмотренные уведомления появятся здесь после обработки\./);
-  assert.match(panelSource, /Нет уведомлений, требующих внимания\./);
-  assert.match(panelSource, /Нет непросмотренных уведомлений\./);
+  assert.match(panelSource, /Нет просмотренных уведомлений/);
+  assert.match(panelSource, /После обработки события останутся здесь как история\./);
+  assert.match(panelSource, /Нет уведомлений, требующих внимания/);
+  assert.match(panelSource, /Активные запросы внимания появятся в этом фильтре\./);
+  assert.match(panelSource, /Нет непросмотренных уведомлений/);
+  assert.match(panelSource, /Новые сообщения и упоминания появятся здесь\./);
   assert.match(panelSource, /data-testid="discussion-notification-panel-empty"/);
 });
