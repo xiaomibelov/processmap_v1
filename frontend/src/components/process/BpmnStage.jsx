@@ -2425,6 +2425,65 @@ const BpmnStage = forwardRef(function BpmnStage({
     });
   }
 
+  function buildBpmnMetaWithCamundaExtensions(currentMetaRaw, camundaExtensionsByElementIdRaw) {
+    const currentMeta = asObject(currentMetaRaw);
+    return {
+      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
+      node_path_meta: normalizeNodePathMetaMap(currentMeta?.node_path_meta),
+      robot_meta_by_element_id: normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id),
+      camunda_extensions_by_element_id: normalizeCamundaExtensionsMap(camundaExtensionsByElementIdRaw),
+      hybrid_layer_by_element_id: normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id),
+      hybrid_v2: currentMeta?.hybrid_v2,
+      drawio: currentMeta?.drawio,
+      execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
+    };
+  }
+
+  function syncDraftCamundaExtensionsMap(nextMapRaw, source = "camunda_extensions_map_sync") {
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    const currentDraft = asObject(draftRef.current);
+    const nextMeta = buildBpmnMetaWithCamundaExtensions(currentDraft.bpmn_meta, nextMapRaw);
+    draftRef.current = {
+      ...currentDraft,
+      bpmn_meta: nextMeta,
+    };
+    if (sid) {
+      onSessionSyncRef.current?.({
+        id: sid,
+        session_id: sid,
+        bpmn_meta: nextMeta,
+        _sync_source: source,
+      });
+    }
+    return nextMeta;
+  }
+
+  function reconcileTemplateInsertCamundaStateFromXml(xmlText, preserveIdsRaw = []) {
+    const preserveIds = asArray(preserveIdsRaw)
+      .map((value) => toText(value))
+      .filter(Boolean);
+    if (!preserveIds.length) return getCamundaExtensionsMap();
+    const extractedMap = normalizeCamundaExtensionsMap(extractCamundaExtensionsMapFromBpmnXml(xmlText));
+    if (!Object.keys(extractedMap).length) return getCamundaExtensionsMap();
+
+    let nextMap = getCamundaExtensionsMap();
+    let adopted = 0;
+    preserveIds.forEach((elementId) => {
+      if (nextMap[elementId]) return;
+      const state = extractedMap[elementId];
+      if (!state) return;
+      const candidateMap = upsertCamundaExtensionStateByElementId(nextMap, elementId, state);
+      if (JSON.stringify(asObject(candidateMap[elementId])) === JSON.stringify(asObject(nextMap[elementId]))) return;
+      nextMap = candidateMap;
+      adopted += 1;
+    });
+    if (adopted > 0) {
+      syncDraftCamundaExtensionsMap(nextMap, "camunda_extensions_template_insert_xml_reconcile");
+    }
+    return nextMap;
+  }
+
   function resolveRobotMetaStateFromSemanticPayload(payloadRaw) {
     const payload = asObject(payloadRaw);
     const extensionElements = asObject(payload.extensionElements);
@@ -2462,9 +2521,12 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   function transformPersistedXml(xmlText) {
+    const templateInsertGuardIds = readTemplateInsertCamundaClearGuardIds();
+    const camundaExtensionsByElementId = reconcileTemplateInsertCamundaStateFromXml(xmlText, templateInsertGuardIds);
     return finalizeCamundaExtensionsXml({
       xmlText,
-      camundaExtensionsByElementId: getCamundaExtensionsMap(),
+      camundaExtensionsByElementId,
+      preserveManagedForElementIds: templateInsertGuardIds,
     });
   }
 
@@ -2605,18 +2667,37 @@ const BpmnStage = forwardRef(function BpmnStage({
     const nextMeta = asObject(nextMetaRaw);
     const syncPatchPayload = { bpmn_meta: nextMeta };
     const currentDraft = asObject(draftRef.current);
-    const baseDiagramStateVersion = Number(
+    const monotonicBaseDiagramStateVersion = Number(getBaseDiagramStateVersion?.());
+    const draftBaseDiagramStateVersion = Number(
       currentDraft?.diagram_state_version ?? currentDraft?.diagramStateVersion,
     );
+    const baseDiagramStateVersion = Number.isFinite(monotonicBaseDiagramStateVersion)
+      ? monotonicBaseDiagramStateVersion
+      : draftBaseDiagramStateVersion;
     if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
       syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
     }
     const syncRes = await apiPatchSession(sid, syncPatchPayload);
     if (!syncRes?.ok) {
+      const errorPayload = asObject(syncRes?.data || syncRes?.errorDetails || syncRes?.details);
+      const serverCurrentVersion = Number(
+        syncRes?.server_current_version
+        ?? syncRes?.serverCurrentVersion
+        ?? errorPayload?.server_current_version
+        ?? errorPayload?.serverCurrentVersion,
+      );
+      if (Number.isFinite(serverCurrentVersion) && serverCurrentVersion >= 0) {
+        try {
+          rememberDiagramStateVersion?.(Math.round(serverCurrentVersion), { sessionId: sid });
+        } catch {
+          // no-op
+        }
+      }
       return {
         ok: false,
         error: String(syncRes?.error || "session_meta_patch_failed"),
         status: Number(syncRes?.status || 0),
+        errorDetails: errorPayload,
       };
     }
     if (syncRes.session && typeof syncRes.session === "object") {
@@ -2658,7 +2739,8 @@ const BpmnStage = forwardRef(function BpmnStage({
       if (!targetId) return;
       const target = registry.get(targetId);
       if (!target || !isShapeElement(target)) return;
-      const state = extractManagedCamundaExtensionStateFromBusinessObject(target?.businessObject);
+      const state = extractManagedCamundaExtensionStateFromBusinessObject(target?.businessObject)
+        || resolveCamundaStateFromSemanticPayload(node?.semanticPayload || node?.semantic_payload);
       const hasManagedData = state?.properties?.extensionProperties?.length || state?.properties?.extensionListeners?.length;
       if (!hasManagedData) return;
       const beforeSig = JSON.stringify(asObject(nextMap[targetId]));
@@ -2671,30 +2753,7 @@ const BpmnStage = forwardRef(function BpmnStage({
 
     if (!seeded) return { ok: true, seeded: 0, reason: "no_managed_entries" };
 
-    const currentDraft = asObject(draftRef.current);
-    const currentMeta = asObject(currentDraft.bpmn_meta);
-    const nextMeta = {
-      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
-      flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
-      node_path_meta: normalizeNodePathMetaMap(currentMeta?.node_path_meta),
-      robot_meta_by_element_id: normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id),
-      camunda_extensions_by_element_id: normalizeCamundaExtensionsMap(nextMap),
-      hybrid_layer_by_element_id: normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id),
-      hybrid_v2: currentMeta?.hybrid_v2,
-      drawio: currentMeta?.drawio,
-      execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
-    };
-
-    draftRef.current = {
-      ...currentDraft,
-      bpmn_meta: nextMeta,
-    };
-    onSessionSyncRef.current?.({
-      id: sid,
-      session_id: sid,
-      bpmn_meta: nextMeta,
-      _sync_source: "camunda_extensions_template_insert_seed",
-    });
+    const nextMeta = syncDraftCamundaExtensionsMap(nextMap, "camunda_extensions_template_insert_seed");
 
     return { ok: true, seeded, nextMeta };
   }

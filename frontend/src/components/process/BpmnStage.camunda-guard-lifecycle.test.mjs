@@ -83,6 +83,33 @@ test("save path exposes camunda finalize transform to coordinator before first p
   assert.match(source, /transformPersistedXml,/);
 });
 
+test("template insert reconcile adopts guarded XML properties into local extension-state before finalize", () => {
+  assert.match(source, /function reconcileTemplateInsertCamundaStateFromXml\(xmlText, preserveIdsRaw = \[\]\) \{/);
+  assert.match(source, /extractCamundaExtensionsMapFromBpmnXml\(xmlText\)/);
+  assert.match(source, /upsertCamundaExtensionStateByElementId\(nextMap, elementId, state\)/);
+  assert.match(source, /syncDraftCamundaExtensionsMap\(nextMap, "camunda_extensions_template_insert_xml_reconcile"\)/);
+  assert.match(
+    source,
+    /const camundaExtensionsByElementId = reconcileTemplateInsertCamundaStateFromXml\(xmlText, templateInsertGuardIds\);[\s\S]*finalizeCamundaExtensionsXml\(\{[\s\S]*camundaExtensionsByElementId,[\s\S]*preserveManagedForElementIds: templateInsertGuardIds,/,
+  );
+});
+
+test("template insert seed falls back to template semantic payload under generated element id", () => {
+  assert.match(
+    source,
+    /const state = extractManagedCamundaExtensionStateFromBusinessObject\(target\?\.businessObject\)\s*\|\|\s*resolveCamundaStateFromSemanticPayload\(node\?\.semanticPayload \|\| node\?\.semantic_payload\);/,
+  );
+  assert.match(source, /upsertCamundaExtensionStateByElementId\(nextMap, targetId, state\)/);
+});
+
+test("template/session meta patch uses monotonic diagram version context and remembers conflict current version", () => {
+  assert.match(source, /const monotonicBaseDiagramStateVersion = Number\(getBaseDiagramStateVersion\?\.\(\)\);/);
+  assert.match(source, /const baseDiagramStateVersion = Number\.isFinite\(monotonicBaseDiagramStateVersion\)[\s\S]*: draftBaseDiagramStateVersion;/);
+  assert.match(source, /syncPatchPayload\.base_diagram_state_version = Math\.round\(baseDiagramStateVersion\);/);
+  assert.match(source, /errorPayload\?\.server_current_version[\s\S]*errorPayload\?\.serverCurrentVersion/);
+  assert.match(source, /rememberDiagramStateVersion\?\.\(Math\.round\(serverCurrentVersion\), \{ sessionId: sid \}\);/);
+});
+
 test("camunda finalize explicit persist keeps canonical transport reason while preserving debug suffix in lifecycle logs", () => {
   assert.match(source, /if \(out !== rawOut && flushed\?\.xmlAlreadyTransformed !== true\) \{/);
   assert.match(source, /const transportPersistReason = persistReason;/);
