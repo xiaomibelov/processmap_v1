@@ -53,9 +53,9 @@ export const apiRoutes = {
     projects: (orgId) => `/api/orgs/${encode(orgId)}/projects`,
     projectMembers: (orgId, projectId) => `/api/orgs/${encode(orgId)}/projects/${encode(projectId)}/members`,
     projectMember: (orgId, projectId, userId) => `/api/orgs/${encode(orgId)}/projects/${encode(projectId)}/members/${encode(userId)}`,
-    projectSessions: (orgId, projectId, mode = "") => {
+    projectSessions: (orgId, projectId, mode = "", view = "") => {
       const path = `/api/orgs/${encode(orgId)}/projects/${encode(projectId)}/sessions`;
-      return withQuery(path, { mode: String(mode || "").trim() });
+      return withQuery(path, { mode: String(mode || "").trim(), view: String(view || "").trim() });
     },
     gitMirror: (orgId) => `/api/orgs/${encode(orgId)}/git-mirror`,
     gitMirrorValidate: (orgId) => `/api/orgs/${encode(orgId)}/git-mirror/validate`,
@@ -91,9 +91,9 @@ export const apiRoutes = {
     list: () => "/api/projects",
     create: () => "/api/projects",
     item: (projectId) => `/api/projects/${encode(projectId)}`,
-    sessions: (projectId, mode = "") => {
+    sessions: (projectId, mode = "", view = "") => {
       const path = `/api/projects/${encode(projectId)}/sessions`;
-      return withQuery(path, { mode: String(mode || "").trim() });
+      return withQuery(path, { mode: String(mode || "").trim(), view: String(view || "").trim() });
     },
   },
   sessions: {

@@ -744,6 +744,15 @@ def _session_api_dump(sess: Session) -> Dict[str, Any]:
     return d
 
 
+def _norm_project_sessions_view(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"", "full"}:
+        return "full"
+    if text == "summary":
+        return "summary"
+    return ""
+
+
 _SESSION_PRESENCE_TTL_SECONDS = SESSION_PRESENCE_TTL_SECONDS
 _SESSION_PRESENCE_CLIENT_ID_RE = re.compile(r"[^A-Za-z0-9_.:-]+")
 _SESSION_PRESENCE_SURFACE_RE = re.compile(r"[^A-Za-z0-9_.:-]+")
@@ -3439,7 +3448,7 @@ def create_session(inp: CreateSessionIn) -> Dict[str, Any]:
 
 
 @app.get("/api/projects/{project_id}/sessions")
-def list_project_sessions(project_id: str, mode: str | None = None, request: Request = None):
+def list_project_sessions(project_id: str, mode: str | None = None, view: str | None = None, request: Request = None):
     proj, oid, _ = _legacy_load_project_scoped(project_id, request)
     if proj is None:
         raise HTTPException(status_code=404, detail="project not found")
@@ -3447,7 +3456,12 @@ def list_project_sessions(project_id: str, mode: str | None = None, request: Req
     mode = _norm_project_session_mode(mode)
     if raw_mode is not None and mode is None:
         raise HTTPException(status_code=422, detail="invalid mode; allowed: quick_skeleton, deep_audit")
+    view_mode = _norm_project_sessions_view(view)
+    if not view_mode:
+        raise HTTPException(status_code=422, detail="invalid view; allowed: summary, full")
     st = get_storage()
+    if view_mode == "summary":
+        return st.list_project_session_summaries(project_id=project_id, mode=mode, limit=500, org_id=oid, is_admin=True)
     rows = st.list(project_id=project_id, mode=mode, limit=500, org_id=oid, is_admin=True)
     out = []
     for row in rows:
@@ -8045,7 +8059,7 @@ def get_org_project(org_id: str, project_id: str, request: Request) -> Dict[str,
 
 
 @app.get("/api/orgs/{org_id}/projects/{project_id}/sessions")
-def list_org_project_sessions(org_id: str, project_id: str, request: Request, mode: str | None = None) -> List[Dict[str, Any]]:
+def list_org_project_sessions(org_id: str, project_id: str, request: Request, mode: str | None = None, view: str | None = None) -> List[Dict[str, Any]]:
     oid = str(org_id or "").strip()
     _, _, err = _enterprise_require_project_access(request, oid, project_id)
     if err is not None:
@@ -8054,10 +8068,15 @@ def list_org_project_sessions(org_id: str, project_id: str, request: Request, mo
     mode = _norm_project_session_mode(mode)
     if raw_mode is not None and mode is None:
         return _enterprise_error(422, "validation_error", "invalid mode; allowed: quick_skeleton, deep_audit")
+    view_mode = _norm_project_sessions_view(view)
+    if not view_mode:
+        return _enterprise_error(422, "validation_error", "invalid view; allowed: summary, full")
     ps = get_project_storage()
     if ps.load(project_id, org_id=oid, is_admin=True) is None:
         return _enterprise_error(404, "not_found", "not_found")
     st = get_storage()
+    if view_mode == "summary":
+        return st.list_project_session_summaries(project_id=project_id, mode=mode, limit=500, org_id=oid, is_admin=True)
     rows = st.list(project_id=project_id, mode=mode, limit=500, org_id=oid, is_admin=True)
     out: List[Dict[str, Any]] = []
     for row in rows:
