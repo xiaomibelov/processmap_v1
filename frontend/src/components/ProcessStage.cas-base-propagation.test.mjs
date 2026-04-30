@@ -36,3 +36,15 @@ test("ProcessStage sends restore CAS base and remembers restored diagram version
   assert.ok(rememberIdx < secondaryPatchIdx);
   assert.ok(source.includes("toBpmnRestoreUserFacingError(restored"));
 });
+
+test("template apply companion persist rebases camunda meta from saved XML and latest diagram version", () => {
+  const source = readSource();
+  assert.match(
+    source,
+    /return persistSessionCompanion\(nextCompanion, \{\s*source: `\$\{source\}_session_companion`,\s*savedXml: xml,\s*baseDiagramStateVersion: diagramStateVersion,\s*\}\);/,
+  );
+  assert.match(
+    source,
+    /diagramStateVersion: Number\(saved\?\.diagramStateVersion \|\| getBaseDiagramStateVersion\(\) \|\| 0\),/,
+  );
+});
