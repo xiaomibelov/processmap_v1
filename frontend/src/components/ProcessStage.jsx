@@ -428,7 +428,6 @@ export default function ProcessStage({
   const sessionWorkspaceTruthOwnerRef = useRef(null);
   const sessionWorkspaceTruthOwnerSidRef = useRef("");
   bpmnVersionsActiveSessionRef.current = normalizeDiagramSessionId(sid);
-  bpmnVersionsOpenRef.current = versionsOpen;
 
   const buildOwnerSnapshot = useCallback((sessionLikeRaw, source = "session_sync") => {
     return buildWorkspaceTruthSnapshotFromSession(sessionLikeRaw, {
@@ -780,6 +779,7 @@ export default function ProcessStage({
     readDiagramMode,
     readQualityProfile,
   });
+  bpmnVersionsOpenRef.current = versionsOpen;
   const {
     hybridLayerDragRef,
     hybridLayerMapRef,
