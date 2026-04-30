@@ -109,7 +109,6 @@ test("buildDodReadinessV1 emits canonical STR/PATH/EXEC codes and explainability
   assert.ok(allSignals.includes("STR_004"));
   assert.ok(allSignals.includes("PATH_001"));
   assert.ok(allSignals.includes("PATH_002"));
-  assert.ok(allSignals.includes("PATH_003"));
   assert.ok(allSignals.includes("EXEC_001"));
   assert.ok(allSignals.includes("EXEC_002"));
   assert.ok(allSignals.includes("STEP_001"));
@@ -137,6 +136,43 @@ test("buildDodReadinessV1 emits canonical STR/PATH/EXEC codes and explainability
   const stepIssues = result.gaps.filter((row) => String(row.id || "").startsWith("STEP_"));
   assert.ok(stepIssues.length > 0);
   assert.equal(stepIssues.every((row) => row.isBlocking === false), true);
+});
+
+test("buildDodReadinessV1 allows multiple P0 and P1 outgoing XOR branches", () => {
+  const snapshot = baseSnapshot();
+  snapshot.bpmn_flows = [
+    { flow_id: "F1", from_id: "Start_1", to_id: "GW_1", tier: "P0" },
+    { flow_id: "F2", from_id: "GW_1", to_id: "Task_1", tier: "P0" },
+    { flow_id: "F3", from_id: "GW_1", to_id: "Task_2", tier: "P0" },
+    { flow_id: "F4", from_id: "GW_1", to_id: "End_1", tier: "P1" },
+  ];
+  const result = buildDodReadinessV1({
+    draft: {
+      session_id: "sess_multi_path",
+      title: "Тест",
+      bpmn_meta: {
+        flow_meta: {
+          F1: { tier: "P0" },
+          F2: { tier: "P0" },
+          F3: { tier: "P0" },
+          F4: { tier: "P1" },
+        },
+        node_path_meta: {
+          Task_1: { paths: ["P0"], sequence_key: "primary" },
+          Task_2: { paths: ["P0"], sequence_key: "primary_alt_2" },
+          End_1: { paths: ["P1"], sequence_key: "mitigated_1" },
+        },
+      },
+    },
+    dodSnapshot: snapshot,
+    autoPassPrecheck: { canRun: true, reason: "", code: "" },
+    autoPassJobState: { status: "idle" },
+    coverageMatrix: { summary: { total: 0 } },
+  });
+
+  const pathSignals = result.sections.find((section) => section.id === "paths_sequence")?.signals || [];
+  assert.equal(pathSignals.some((signal) => signal.code === "PATH_003"), false);
+  assert.equal(result.blockers.some((row) => row.id === "PATH_003"), false);
 });
 
 test("buildDodReadinessV1 derives mixed traceability section with TRACE_001..TRACE_004", () => {

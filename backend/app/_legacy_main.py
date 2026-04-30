@@ -1718,12 +1718,44 @@ _NODE_PATH_CODES: Tuple[str, ...] = ("P0", "P1", "P2")
 _NODE_PATH_CODE_SET: Set[str] = set(_NODE_PATH_CODES)
 _NODE_PATH_SOURCE_SET: Set[str] = {"manual", "color_auto"}
 _FLOW_META_R_SOURCE_SET: Set[str] = {"manual", "inferred"}
+_PATH_TIER_ALIASES: Dict[str, str] = {
+    "IDEAL": "P0",
+    "ИДЕАЛЬНЫЙ": "P0",
+    "ИДЕАЛЬНАЯ": "P0",
+    "ALTERNATIVE": "P1",
+    "АЛЬТЕРНАТИВНЫЙ": "P1",
+    "АЛЬТЕРНАТИВНАЯ": "P1",
+    "RECOVERY": "P1",
+    "ВОССТАНОВЛЕНИЕ": "P1",
+    "ESCALATION": "P2",
+    "FAILURE": "P2",
+    "FAIL": "P2",
+    "НЕУСПЕХ": "P2",
+    "ЭСКАЛАЦИЯ": "P2",
+}
+
+
+def _primitive_path_value(value: Any, keys: Tuple[str, ...] = ("value", "key", "code", "tier", "path")) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (str, int, float, bool)):
+        return str(value or "").strip()
+    if isinstance(value, dict):
+        for key in keys:
+            if key not in value:
+                continue
+            nested = _primitive_path_value(value.get(key), keys)
+            if nested:
+                return nested
+    return ""
 
 
 def _normalize_flow_tier(value: Any) -> Optional[str]:
-    txt = str(value or "").strip().upper()
+    txt = _primitive_path_value(value).upper()
     if txt in _FLOW_TIERS:
         return txt
+    if txt in _PATH_TIER_ALIASES:
+        return _PATH_TIER_ALIASES[txt]
     return None
 
 
@@ -1774,9 +1806,11 @@ def _normalize_flow_meta_entry(entry_raw: Any) -> Optional[Dict[str, Any]]:
 
 
 def _normalize_node_path_code(value: Any) -> Optional[str]:
-    code = str(value or "").strip().upper()
+    code = _primitive_path_value(value).upper()
     if code in _NODE_PATH_CODE_SET:
         return code
+    if code in _PATH_TIER_ALIASES:
+        return _PATH_TIER_ALIASES[code]
     return None
 
 
@@ -1796,7 +1830,10 @@ def _normalize_node_paths(value: Any) -> List[str]:
 
 
 def _normalize_sequence_key(value: Any) -> str:
-    raw = str(value or "").strip().lower()
+    raw = _primitive_path_value(
+        value,
+        ("key", "value", "sequence_key", "sequenceKey", "id"),
+    ).lower()
     if not raw:
         return ""
     compact = re.sub(r"\s+", "_", raw)
@@ -2785,31 +2822,6 @@ def _enforce_gateway_tier_constraints(
         if not normalized_entry:
             continue
         base[flow_id] = normalized_entry
-
-    outgoing_map = outgoing_by_source or {}
-    mode_map = gateway_mode_by_node or {}
-    if not outgoing_map or not mode_map:
-        return base
-
-    for source_id, siblings_raw in outgoing_map.items():
-        if str(mode_map.get(source_id) or "") != "xor":
-            continue
-        siblings = [str(fid or "").strip() for fid in (siblings_raw or []) if str(fid or "").strip()]
-        if not siblings:
-            continue
-        for tier_key in ("P0", "P1"):
-            matched = [fid for fid in siblings if _normalize_flow_tier((base.get(fid) or {}).get("tier")) == tier_key]
-            if len(matched) <= 1:
-                continue
-            keep = sorted(matched)[0]
-            for fid in matched:
-                if fid != keep:
-                    existing = dict(base.get(fid) or {})
-                    existing.pop("tier", None)
-                    if existing.get("rtier"):
-                        base[fid] = existing
-                    else:
-                        base.pop(fid, None)
     return base
 
 
@@ -5798,23 +5810,6 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn, request: Requ
                     tier = "P0" if _coerce_bool(happy_raw) else None
                 elif has_tier:
                     tier = None
-
-            source_id = str((flow_source_by_id or {}).get(flow_id) or "").strip()
-            if tier in {"P0", "P1"} and source_id and str((gateway_mode_by_node or {}).get(source_id) or "") == "xor":
-                for sibling_flow_id in (outgoing_by_source or {}).get(source_id, []) or []:
-                    fid = str(sibling_flow_id or "").strip()
-                    if not fid:
-                        continue
-                    sibling = dict(flow_meta.get(fid) or {})
-                    existing_tier = _normalize_flow_tier(sibling.get("tier"))
-                    if existing_tier != tier:
-                        continue
-                    sibling.pop("tier", None)
-                    normalized_sibling = _normalize_flow_meta_entry(sibling)
-                    if normalized_sibling:
-                        flow_meta[fid] = normalized_sibling
-                    else:
-                        flow_meta.pop(fid, None)
 
             if tier:
                 existing["tier"] = tier

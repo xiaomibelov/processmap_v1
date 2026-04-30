@@ -62,6 +62,11 @@ import { useNodePathModuleController } from "../features/process/nodepath/nodePa
 import { createNodePathJazzSpikeAdapter } from "../features/process/nodepath/nodePathJazzSpikeAdapter";
 import { normalizeDrawioMeta } from "../features/process/drawio/drawioMeta";
 import {
+  normalizePathSequenceKey,
+  normalizePathTier,
+  normalizePathTierList,
+} from "../features/process/pathClassification.js";
+import {
   applyDrawioAnchorValidation,
   buildBpmnNodeOverlayCompanionSummary,
   readDrawioAnchorValidationState,
@@ -85,42 +90,26 @@ function buildCamundaPropertiesDraftKey(sessionIdRaw, elementIdRaw) {
 }
 
 function normalizeFlowTier(raw) {
-  const tier = String(raw || "").trim().toUpperCase();
-  if (tier === "P0" || tier === "P1" || tier === "P2") return tier;
-  return "";
+  return normalizePathTier(raw);
 }
 
 const NODE_PATH_TAG_ORDER = ["P0", "P1", "P2"];
-const NODE_PATH_TAG_SET = new Set(NODE_PATH_TAG_ORDER);
 const NODE_PATH_GATEWAY_KINDS = new Set(["exclusivegateway", "inclusivegateway", "parallelgateway", "eventbasedgateway"]);
 
 function normalizeNodePathTag(value) {
-  const tag = String(value || "").trim().toUpperCase();
-  return NODE_PATH_TAG_SET.has(tag) ? tag : "";
+  return normalizePathTier(value);
 }
 
 function normalizeSequenceKey(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  if (!raw) return "";
-  return raw
-    .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_-]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 64);
+  return normalizePathSequenceKey(value);
 }
 
 function normalizeNodePathEntry(rawEntry) {
   const entry = rawEntry && typeof rawEntry === "object" ? rawEntry : {};
-  const seen = new Set();
-  const paths = asArray(entry.paths)
-    .map((item) => normalizeNodePathTag(item))
-    .filter((tag) => {
-      if (!tag || seen.has(tag)) return false;
-      seen.add(tag);
-      return true;
-    })
-    .sort((a, b) => NODE_PATH_TAG_ORDER.indexOf(a) - NODE_PATH_TAG_ORDER.indexOf(b));
+  const pathValues = Array.isArray(entry.paths)
+    ? entry.paths
+    : (entry.path ? [entry.path] : (entry.tier ? [entry.tier] : []));
+  const paths = normalizePathTierList(pathValues);
   if (!paths.length) return null;
   const sequence_key = normalizeSequenceKey(entry.sequence_key || entry.sequenceKey);
   const sourceRaw = str(entry.source).toLowerCase();
@@ -2095,26 +2084,7 @@ export default function NotesPanel({
     if (disabled || flowHappyBusy) return;
     const nextTier = normalizeFlowTier(nextTierRaw);
     const sourceId = str(flowGatewayContext?.flowSourceById?.[selectedElementId]);
-    const sourceMode = str(flowGatewayContext?.gatewayModeByNode?.[sourceId]);
-    const siblingFlowIds = asArray(flowGatewayContext?.outgoingBySource?.[sourceId])
-      .map((flowId) => str(flowId))
-      .filter((flowId) => flowId && flowId !== selectedElementId);
-    const conflictingTierFlowIds = (nextTier === "P0" || nextTier === "P1")
-      && sourceMode === "xor"
-      ? siblingFlowIds.filter((flowId) => normalizeFlowTier(bpmnFlowMetaById?.[flowId]?.tier) === nextTier)
-      : [];
-
-    if (conflictingTierFlowIds.length) {
-      const tierTitle = nextTier === "P0" ? "P0 (идеальный путь)" : "P1 (восстановление)";
-      const conflictLabel = conflictingTierFlowIds.join(", ");
-      const shouldReplace = window.confirm(
-        `Для XOR уже выбран ${tierTitle}: ${conflictLabel}.\nЗаменить на текущий flow (${selectedElementId})?`,
-      );
-      if (!shouldReplace) return;
-      setFlowHappyInfo(`Замена ${nextTier}: ${conflictLabel} → ${selectedElementId}`);
-    } else {
-      setFlowHappyInfo("");
-    }
+    setFlowHappyInfo("");
 
     setFlowHappyBusy(true);
     setFlowHappyErr("");
@@ -2122,7 +2092,7 @@ export default function NotesPanel({
       const result = await Promise.resolve(
         setFlowTierHandler(selectedElementId, nextTier || null, {
           source: "selected_node_section",
-          xorConflictFlowIds: conflictingTierFlowIds,
+          xorConflictFlowIds: [],
           xorSourceId: sourceId,
           xorTier: nextTier,
         }),
@@ -2136,8 +2106,6 @@ export default function NotesPanel({
         }
       } else if (result?.normalizationNotice) {
         setFlowHappyInfo(str(result.normalizationNotice));
-      } else if (conflictingTierFlowIds.length && nextTier) {
-        setFlowHappyInfo(`Нормализация: ${nextTier} оставлен на ${selectedElementId}, конфликтующие значения сняты.`);
       }
     } catch (error) {
       setFlowHappyErr(str(error?.message || error || "Не удалось сохранить уровень пути."));

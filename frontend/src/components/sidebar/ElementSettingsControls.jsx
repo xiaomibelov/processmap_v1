@@ -11,6 +11,11 @@ import {
   normalizeCamundaExtensionState,
 } from "../../features/process/camunda/camundaExtensions";
 import {
+  formatPathTierTitle,
+  normalizePathSequenceKey,
+  normalizePathTier,
+} from "../../features/process/pathClassification.js";
+import {
   buildVisibleExtensionPropertyRows,
   buildPropertyDictionaryEditorModel,
   countVisibleExtensionPropertyRows,
@@ -70,13 +75,11 @@ function normalizeDocumentationRows(rowsRaw, options = {}) {
 }
 
 function normalizeNodePathTag(value) {
-  const tag = String(value || "").trim().toUpperCase();
-  if (tag === "P0" || tag === "P1" || tag === "P2") return tag;
-  return "";
+  return normalizePathTier(value);
 }
 
 function normalizeSequenceKey(value) {
-  return String(value || "").trim().toLowerCase();
+  return normalizePathSequenceKey(value);
 }
 
 function formatSequenceLabel(value) {
@@ -204,13 +207,13 @@ export function NodePathSettings({
   const normalizedNodePathSet = new Set(
     asArray(nodePathPaths).map((item) => normalizeNodePathTag(item)).filter(Boolean),
   );
-  const normalizedNodePathSequence = String(nodePathSequenceKey || "").trim();
+  const normalizedNodePathSequence = normalizeSequenceKey(nodePathSequenceKey);
   const normalizedNodePathSequenceLower = normalizedNodePathSequence.toLowerCase();
   const hasPresetSequence = NODE_PATH_SEQUENCE_PRESETS.some((preset) => preset.key === normalizedNodePathSequenceLower);
   const sequenceSelectValue = hasPresetSequence ? normalizedNodePathSequenceLower : normalizedNodePathSequence;
   const selectedSequenceLabel = NODE_PATH_SEQUENCE_PRESETS.find((preset) => preset.key === sequenceSelectValue)?.label
     || (sequenceSelectValue ? `Пользовательская: ${sequenceSelectValue}` : "Не выбрано");
-  const normalizedFlowPathTier = String(flowPathTier || "").trim().toUpperCase();
+  const normalizedFlowPathTier = normalizePathTier(flowPathTier);
   const sequenceOptions = [
     { key: "", label: "Не выбрано" },
     ...NODE_PATH_SEQUENCE_PRESETS,
@@ -529,8 +532,8 @@ export function NodePathSettings({
             {[
               { value: "", label: "Нет", title: "Без приоритета" },
               { value: "P0", label: "P0", title: "Идеальный путь" },
-              { value: "P1", label: "P1", title: "Восстановление" },
-              { value: "P2", label: "P2", title: "Неуспех/эскалация" },
+              { value: "P1", label: "P1", title: "Альтернативный" },
+              { value: "P2", label: "P2", title: "Неуспех / эскалация" },
             ].map((btn) => {
               const isActive = (normalizedFlowPathTier || "") === btn.value;
               return (
@@ -543,7 +546,7 @@ export function NodePathSettings({
                     void onSetFlowPathTier?.(btn.value || null);
                   }}
                   disabled={!!disabled || !!flowHappyBusy}
-                  title={btn.title}
+                  title={formatPathTierTitle(btn.value, btn.title)}
                 >
                   {btn.label}
                 </button>

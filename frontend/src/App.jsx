@@ -2305,10 +2305,6 @@ export default function App() {
     const flowId = String(flowIdRaw || "").trim();
     if (!flowId) return { ok: false, error: "Переход не выбран." };
     const tier = normalizeFlowTier(tierRaw);
-    const xorConflictFlowIds = ensureArray(options?.xorConflictFlowIds)
-      .map((id) => String(id || "").trim())
-      .filter((id) => id && id !== flowId);
-    const xorTier = normalizeFlowTier(options?.xorTier || tier);
 
     const currentMeta = normalizeBpmnMeta(draft?.bpmn_meta);
     const currentFlowMeta = normalizeFlowMetaMap(currentMeta.flow_meta);
@@ -2319,15 +2315,6 @@ export default function App() {
     const currentHybridLayerByElementId = normalizeHybridLayerMap(currentMeta.hybrid_layer_by_element_id);
     const currentExecutionPlans = normalizeExecutionPlans(currentMeta.execution_plans);
     const nextFlowMeta = { ...currentFlowMeta };
-    if (xorConflictFlowIds.length && (xorTier === "P0" || xorTier === "P1")) {
-      xorConflictFlowIds.forEach((conflictFlowId) => {
-        const prev = ensureObject(nextFlowMeta[conflictFlowId]);
-        const next = { ...prev };
-        delete next.tier;
-        if (next.rtier) nextFlowMeta[conflictFlowId] = next;
-        else delete nextFlowMeta[conflictFlowId];
-      });
-    }
     if (tier) {
       const prev = ensureObject(nextFlowMeta[flowId]);
       nextFlowMeta[flowId] = { ...prev, tier };
@@ -2364,20 +2351,12 @@ export default function App() {
     const requestedTier = tier;
     let normalizationNotice = "";
     if (requestedTier && Object.keys(normalizedFlowMeta).length && normalizedFlowMeta[flowId]?.tier !== requestedTier) {
-      const competingFlowIds = [flowId, ...xorConflictFlowIds];
-      const keptFlowId = Object.keys(normalizedFlowMeta).find((id) => (
-        competingFlowIds.includes(id) && normalizeFlowTier(normalizedFlowMeta[id]?.tier) === requestedTier
-      ));
-      normalizationNotice = keptFlowId
-        ? `Нормализация: ${requestedTier} оставлен на ${keptFlowId}.`
-        : `Нормализация: ${requestedTier} скорректирован по правилам XOR.`;
-    } else if (xorConflictFlowIds.length && requestedTier) {
-      normalizationNotice = `Нормализация: ${requestedTier} оставлен на ${flowId}, конфликтующие значения сняты.`;
+      normalizationNotice = `Нормализация: ${requestedTier} скорректирован сервером.`;
     }
     if (normalizationNotice) markOk(normalizationNotice);
     return {
       ok: true,
-      normalizedConflicts: xorConflictFlowIds,
+      normalizedConflicts: [],
       normalizationNotice,
     };
   }
