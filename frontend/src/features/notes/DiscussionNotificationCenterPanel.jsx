@@ -40,9 +40,38 @@ function badgeToneClass(tone) {
 }
 
 function emptyCopy(activeFilter) {
-  if (activeFilter === "viewed") return "Просмотренные уведомления появятся здесь после обработки.";
-  if (activeFilter === "attention") return "Нет уведомлений, требующих внимания.";
-  return "Нет непросмотренных уведомлений.";
+  if (activeFilter === "viewed") {
+    return {
+      title: "Нет просмотренных уведомлений",
+      body: "После обработки события останутся здесь как история.",
+    };
+  }
+  if (activeFilter === "attention") {
+    return {
+      title: "Нет уведомлений, требующих внимания",
+      body: "Активные запросы внимания появятся в этом фильтре.",
+    };
+  }
+  return {
+    title: "Нет непросмотренных уведомлений",
+    body: "Новые сообщения и упоминания появятся здесь.",
+  };
+}
+
+function rowShellClass({ viewed, attentionActive }) {
+  if (attentionActive) {
+    return "border-warning/35 bg-warning/5 text-fg hover:border-warning/55 hover:bg-warning/10";
+  }
+  if (viewed) {
+    return "border-border/55 bg-bg/10 text-fg/80 hover:border-border/75 hover:bg-panel2/30";
+  }
+  return "border-info/25 bg-info/5 text-fg hover:border-info/45 hover:bg-info/10";
+}
+
+function markerClass({ viewed, attentionActive }) {
+  if (attentionActive) return "bg-warning/70";
+  if (viewed) return "bg-border/70";
+  return "bg-info/65";
 }
 
 export default function DiscussionNotificationCenterPanel({
@@ -62,6 +91,7 @@ export default function DiscussionNotificationCenterPanel({
   if (!open) return null;
   const safeRows = asArray(rows);
   const safeFilters = asArray(filters);
+  const empty = emptyCopy(activeFilter);
 
   const content = (
     <div className="fixed inset-0 z-[150]" data-testid="discussion-notification-center-panel">
@@ -76,7 +106,11 @@ export default function DiscussionNotificationCenterPanel({
         <header className="flex min-w-0 items-start justify-between gap-3 border-b border-border/70 px-4 py-3">
           <div className="min-w-0 flex-1">
             <div className="text-base font-bold leading-tight text-fg">Уведомления</div>
-            <div className="mt-0.5 text-xs text-muted">{Number(totalCount || 0)} событий</div>
+            <div className="mt-0.5 text-xs text-muted">
+              <span className="tabular-nums">{safeRows.length}</span> показано
+              <span className="mx-1 text-muted/60">·</span>
+              <span className="tabular-nums">{Number(totalCount || 0)}</span> всего
+            </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             <button
@@ -100,28 +134,35 @@ export default function DiscussionNotificationCenterPanel({
           </div>
         </header>
 
-        <div className="flex min-w-0 flex-wrap gap-1.5 border-b border-border/60 px-4 py-2" data-testid="discussion-notification-panel-filters">
+        <div className="border-b border-border/60 px-4 py-2" data-testid="discussion-notification-panel-filters">
+          <div className="flex min-w-0 flex-wrap gap-1 rounded-lg border border-border/60 bg-bg/20 p-1">
           {safeFilters.map((filter) => {
             const active = activeFilter === filter.key;
             return (
               <button
                 key={filter.key}
                 type="button"
-                className={`h-8 rounded-full border px-3 text-[12px] font-bold transition ${active ? "border-info/55 bg-info/10 text-info" : "border-border/70 bg-transparent text-muted hover:border-border hover:bg-panel2/35 hover:text-fg"}`}
+                className={`min-h-7 rounded-md px-2.5 text-[12px] font-semibold transition ${active ? "bg-panel2 text-fg shadow-sm" : "text-muted hover:bg-panel2/50 hover:text-fg"}`}
                 onClick={() => onFilterChange?.(filter.key)}
+                aria-pressed={active ? "true" : "false"}
                 data-testid="discussion-notification-panel-filter"
                 data-filter={filter.key}
               >
                 {filter.label}
-                {Number(filter.count || 0) > 0 ? <span className="ml-1 tabular-nums">{filter.count}</span> : null}
+                {Number(filter.count || 0) > 0 ? (
+                  <span className={`ml-2 inline-flex min-w-5 justify-center rounded-full px-1.5 py-0.5 text-[10px] leading-none tabular-nums ${active ? "bg-info/10 text-info" : "bg-panel2/70 text-muted"}`}>
+                    {filter.count}
+                  </span>
+                ) : null}
               </button>
             );
           })}
+          </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2" data-testid="discussion-notification-panel-list">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3" data-testid="discussion-notification-panel-list">
           {safeRows.length > 0 ? (
-            <div className="divide-y divide-border/55">
+            <div className="space-y-2">
               {safeRows.map((row) => {
                 const viewed = row?.viewState === "viewed";
                 const attentionActive = row?.isAttentionActive === true || row?.requiresAttentionActive === true;
@@ -132,70 +173,90 @@ export default function DiscussionNotificationCenterPanel({
                 return (
                   <article
                     key={row?.id}
-                    className={`relative min-w-0 px-2 py-3 transition hover:bg-panel2/35 ${viewed ? "text-fg/80" : "text-fg"}`}
+                    className={`relative min-w-0 rounded-lg border px-3 py-2.5 transition ${rowShellClass({ viewed, attentionActive })}`}
                     data-testid="discussion-notification-panel-row"
                     data-view-state={row?.viewState || ""}
+                    data-attention-active={attentionActive ? "true" : "false"}
                   >
                     <span
-                      className={`absolute left-0 top-3 h-[calc(100%-1.5rem)] w-0.5 rounded-full ${attentionActive ? "bg-warning/70" : viewed ? "bg-transparent" : "bg-info/65"}`}
+                      className={`absolute bottom-2.5 left-2 top-2.5 w-0.5 rounded-full ${markerClass({ viewed, attentionActive })}`}
                       aria-hidden="true"
                     />
-                    <div className="min-w-0 pl-2">
-                      <div className={`line-clamp-1 break-words text-[14px] font-bold leading-snug ${viewed ? "text-fg/75" : "text-fg"}`}>
-                        {row?.primaryLabel || row?.title || "Обсуждение"}
+                    <div className="min-w-0 pl-3">
+                      <div className="flex min-w-0 items-start gap-2">
+                        <div className={`min-w-0 flex-1 line-clamp-1 break-words text-[14px] font-bold leading-snug ${viewed ? "text-fg/75" : "text-fg"}`}>
+                          {row?.primaryLabel || row?.title || "Обсуждение"}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          {attentionActive ? (
+                            <span className="rounded-full border border-warning/45 bg-warning/10 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-warning" data-testid="discussion-notification-panel-attention-chip">
+                              {row?.attentionLabel || "Внимание"}
+                            </span>
+                          ) : null}
+                          {viewed ? (
+                            <span className="rounded-full border border-border/65 bg-transparent px-1.5 py-0.5 text-[10px] font-semibold leading-none text-muted" data-testid="discussion-notification-panel-viewed-chip">
+                              Просмотрено
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                       {row?.secondaryLabel ? (
-                        <div className={`mt-0.5 line-clamp-2 break-words text-[12px] leading-snug ${viewed ? "text-muted/85" : "text-fg/75"}`}>
+                        <div className={`mt-1 line-clamp-2 break-words text-[12px] leading-snug ${viewed ? "text-muted/90" : "text-fg/75"}`}>
                           {row.secondaryLabel}
                         </div>
                       ) : null}
-                      <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] text-muted">
-                        {row?.contextLabel ? <span className="truncate font-semibold uppercase tracking-[0.04em]">{shortLabel(row.contextLabel, 96)}</span> : null}
-                        {row?.authorLabel ? <span>{shortLabel(row.authorLabel, 28)}</span> : null}
-                        {timeLabel ? <span>{timeLabel}</span> : null}
-                        {viewed ? <span>Просмотрено</span> : null}
-                        {asArray(row?.badges).map((badge) => (
-                          <span
-                            key={`${row?.id}:${badge.label}`}
-                            className={`shrink-0 rounded-full border px-1.5 py-0 text-[9px] font-bold leading-4 ${badgeToneClass(badge.tone)}`}
-                          >
-                            {badge.label}
-                          </span>
-                        ))}
-                      </div>
-                      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-                        {row?.canOpen ? (
-                          <button
-                            type="button"
-                            className="rounded-full border border-info/30 bg-transparent px-2.5 py-1 text-[11px] font-bold text-info transition hover:border-info/60 hover:bg-info/10 disabled:cursor-not-allowed disabled:opacity-60"
-                            onClick={() => onOpenNotification?.(row)}
-                            data-testid="discussion-notification-panel-open"
-                          >
-                            Открыть
-                          </button>
-                        ) : null}
-                        {row?.canMarkRead ? (
-                          <button
-                            type="button"
-                            className="rounded-full border border-success/30 bg-transparent px-2.5 py-1 text-[11px] font-bold text-success transition hover:border-success/60 hover:bg-success/10 disabled:cursor-not-allowed disabled:opacity-60"
-                            onClick={() => onRowAction?.(row, "read")}
-                            disabled={Boolean(actionPendingKey)}
-                            data-testid="discussion-notification-panel-mark-read"
-                          >
-                            {readPending ? "..." : "Прочитано"}
-                          </button>
-                        ) : null}
-                        {row?.canAcknowledgeAttention ? (
-                          <button
-                            type="button"
-                            className="rounded-full border border-warning/35 bg-transparent px-2.5 py-1 text-[11px] font-bold text-warning transition hover:border-warning/65 hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-60"
-                            onClick={() => onRowAction?.(row, "attention")}
-                            disabled={Boolean(actionPendingKey)}
-                            data-testid="discussion-notification-panel-ack-attention"
-                          >
-                            {attentionPending ? "..." : "Принять"}
-                          </button>
-                        ) : null}
+                      {row?.contextLabel ? (
+                        <div className="mt-1 min-w-0 truncate text-[11px] font-medium leading-snug text-muted" data-testid="discussion-notification-panel-context">
+                          {shortLabel(row.contextLabel, 104)}
+                        </div>
+                      ) : null}
+                      <div className="mt-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] leading-4 text-muted">
+                          {row?.authorLabel ? <span>{shortLabel(row.authorLabel, 28)}</span> : null}
+                          {timeLabel ? <span>{timeLabel}</span> : null}
+                          {asArray(row?.badges).map((badge) => (
+                            <span
+                              key={`${row?.id}:${badge.label}`}
+                              className={`shrink-0 rounded-full border px-1.5 py-0 text-[9px] font-semibold leading-4 ${badgeToneClass(badge.tone)}`}
+                            >
+                              {badge.label}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5" data-testid="discussion-notification-panel-actions">
+                          {row?.canOpen ? (
+                            <button
+                              type="button"
+                              className="rounded-md border border-border/70 bg-transparent px-2 py-1 text-[11px] font-semibold text-fg/85 transition hover:border-info/45 hover:bg-info/10 hover:text-info disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={() => onOpenNotification?.(row)}
+                              data-testid="discussion-notification-panel-open"
+                            >
+                              Открыть
+                            </button>
+                          ) : null}
+                          {row?.canMarkRead ? (
+                            <button
+                              type="button"
+                              className="rounded-md border border-border/70 bg-transparent px-2 py-1 text-[11px] font-semibold text-fg/80 transition hover:border-success/45 hover:bg-success/10 hover:text-success disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={() => onRowAction?.(row, "read")}
+                              disabled={Boolean(actionPendingKey)}
+                              data-testid="discussion-notification-panel-mark-read"
+                            >
+                              {readPending ? "..." : "Прочитано"}
+                            </button>
+                          ) : null}
+                          {row?.canAcknowledgeAttention ? (
+                            <button
+                              type="button"
+                              className="rounded-md border border-warning/35 bg-transparent px-2 py-1 text-[11px] font-semibold text-warning transition hover:border-warning/65 hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={() => onRowAction?.(row, "attention")}
+                              disabled={Boolean(actionPendingKey)}
+                              data-testid="discussion-notification-panel-ack-attention"
+                            >
+                              {attentionPending ? "..." : "Принять"}
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
                       {rowError ? (
                         <div className="mt-1 rounded-md border border-danger/45 bg-danger/10 px-2 py-1 text-[10px] font-semibold text-danger" data-testid="discussion-notification-panel-action-error">
@@ -208,8 +269,9 @@ export default function DiscussionNotificationCenterPanel({
               })}
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted" data-testid="discussion-notification-panel-empty">
-              {emptyCopy(activeFilter)}
+            <div className="rounded-lg border border-dashed border-border bg-bg/10 px-4 py-5 text-sm text-muted" data-testid="discussion-notification-panel-empty">
+              <div className="font-semibold text-fg/80">{empty.title}</div>
+              <div className="mt-1 text-xs leading-snug">{empty.body}</div>
             </div>
           )}
         </div>
