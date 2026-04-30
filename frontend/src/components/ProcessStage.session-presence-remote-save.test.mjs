@@ -11,7 +11,7 @@ function readSource() {
   return fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
 }
 
-test("session presence and remote-save highlight path is read-only and does not add save writes", () => {
+test("session presence and remote-save highlight poll stays lightweight and read-only", () => {
   const source = readSource();
   assert.equal(
     source.includes("const pollRemoteSessionSnapshot = useCallback(async (reason = \"interval\") => {"),
@@ -22,11 +22,7 @@ test("session presence and remote-save highlight path is read-only and does not 
     true,
   );
   assert.equal(
-    source.includes("const fetched = await apiGetSession(sid);"),
-    true,
-  );
-  assert.equal(
-    source.includes("versionHeadItem: latestHead,"),
+    source.includes("return applyRemoteSaveHighlightFromVersionHead(latestHead, `remote_poll_${reason}`);"),
     true,
   );
   assert.equal(
@@ -46,13 +42,13 @@ test("session presence and remote-save highlight path is read-only and does not 
   assert.equal(/apiPatchSession\(/.test(pollBody), false);
   assert.equal(/apiPutBpmnXml\(/.test(pollBody), false);
   assert.equal(/apiGetBpmnVersions\(sid, \{ limit: 1 \}\)/.test(pollBody), true);
-  assert.equal(/apiGetSession\(sid\)/.test(pollBody), true);
+  assert.equal(/apiGetSession\(sid\)/.test(pollBody), false);
 });
 
-test("passive remote-save notice is queued for manual refresh while own-writes stay auto-synced", () => {
+test("passive remote-save notice is queued from head and full refresh is explicit", () => {
   const source = readSource();
   assert.equal(
-    source.includes("const changedElementIds = deriveRemoteChangedElementIds({"),
+    source.includes("const applyRemoteSaveHighlightFromVersionHead = useCallback((versionHeadItemRaw, source = \"remote_poll\") => {"),
     true,
   );
   assert.equal(
@@ -64,11 +60,11 @@ test("passive remote-save notice is queued for manual refresh while own-writes s
     true,
   );
   assert.equal(
-    source.includes("if (sameActor || versionHeadActor.isCurrentUser === true) {"),
+    source.includes("serverHead: versionHeadItem,"),
     true,
   );
   assert.equal(
-    source.includes("_sync_source: `${source}_self_actor_sync`"),
+    source.includes("const fetched = await apiGetSession(sid);"),
     true,
   );
   assert.equal(
