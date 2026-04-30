@@ -11,6 +11,11 @@ import {
   ROBOT_EXECUTOR_OPTIONS,
   robotMetaMissingFields,
 } from "../../features/process/robotmeta/robotMeta";
+import {
+  formatPathTierTitle,
+  normalizePathSequenceKey,
+  normalizePathTier,
+} from "../../features/process/pathClassification.js";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -150,17 +155,17 @@ export default function SelectedNodeSection({
   );
   const hasUnsavedNode = String(elementText || "").trim().length > 0;
   const canToggleHappyFlow = hasSelected && flowHappyEditable;
-  const normalizedFlowPathTier = String(flowPathTier || "").trim().toUpperCase();
-  const normalizedNodePathSet = new Set(asArray(nodePathPaths).map((item) => String(item || "").trim().toUpperCase()).filter(Boolean));
-  const normalizedNodePathSequence = String(nodePathSequenceKey || "").trim();
+  const normalizedFlowPathTier = normalizePathTier(flowPathTier);
+  const normalizedNodePathSet = new Set(asArray(nodePathPaths).map((item) => normalizePathTier(item)).filter(Boolean));
+  const normalizedNodePathSequence = normalizePathSequenceKey(nodePathSequenceKey);
   const normalizedNodePathSequenceLower = normalizedNodePathSequence.toLowerCase();
   const hasPresetSequence = NODE_PATH_SEQUENCE_PRESETS.some((preset) => preset.key === normalizedNodePathSequenceLower);
   const sequenceSelectValue = hasPresetSequence ? normalizedNodePathSequenceLower : normalizedNodePathSequence;
   const flowTierButtons = [
     { value: "", label: "Нет", title: "Без приоритета" },
     { value: "P0", label: "P0", title: "Идеальный путь" },
-    { value: "P1", label: "P1", title: "Восстановление" },
-    { value: "P2", label: "P2", title: "Неуспех/эскалация" },
+    { value: "P1", label: "P1", title: "Альтернативный" },
+    { value: "P2", label: "P2", title: "Неуспех / эскалация" },
   ];
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [timePresetOpen, setTimePresetOpen] = useState(false);
@@ -425,7 +430,7 @@ export default function SelectedNodeSection({
                               void onSetFlowPathTier?.(btn.value || null);
                             }}
                             disabled={!!disabled || !!flowHappyBusy}
-                            title={btn.title}
+                            title={formatPathTierTitle(btn.value, btn.title)}
                           >
                             {btn.label}
                           </button>

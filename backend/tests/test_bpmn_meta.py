@@ -117,24 +117,59 @@ class BpmnMetaApiTests(unittest.TestCase):
         sess.bpmn_meta = dict(meta or {})
         st.save(sess, user_id="test-user", is_admin=True)
 
-    def test_xor_p0_and_p1_are_unique_per_gateway(self):
+    def test_xor_p0_p1_and_p2_allow_multiple_flows_per_gateway(self):
         first = self.session_bpmn_meta_patch(self.sid, self.BpmnMetaPatchIn(flowId="Flow_yes", tier="P0"))
         self.assertEqual(first.get("flow_meta", {}).get("Flow_yes", {}).get("tier"), "P0")
 
         second = self.session_bpmn_meta_patch(self.sid, self.BpmnMetaPatchIn(flowId="Flow_no", tier="P0"))
         flow_meta = second.get("flow_meta", {})
         self.assertEqual(flow_meta.get("Flow_no", {}).get("tier"), "P0")
-        self.assertNotIn("Flow_yes", flow_meta)
+        self.assertEqual(flow_meta.get("Flow_yes", {}).get("tier"), "P0")
 
         third = self.session_bpmn_meta_patch(self.sid, self.BpmnMetaPatchIn(flowId="Flow_yes", tier="P1"))
         self.assertEqual(third.get("flow_meta", {}).get("Flow_yes", {}).get("tier"), "P1")
         fourth = self.session_bpmn_meta_patch(self.sid, self.BpmnMetaPatchIn(flowId="Flow_no", tier="P1"))
-        self.assertEqual(fourth.get("flow_meta", {}).get("Flow_no", {}).get("tier"), "P1")
-        self.assertNotIn("Flow_yes", fourth.get("flow_meta", {}))
+        flow_meta = fourth.get("flow_meta", {})
+        self.assertEqual(flow_meta.get("Flow_no", {}).get("tier"), "P1")
+        self.assertEqual(flow_meta.get("Flow_yes", {}).get("tier"), "P1")
+
+        fifth = self.session_bpmn_meta_patch(self.sid, self.BpmnMetaPatchIn(flowId="Flow_yes", tier="P2"))
+        self.assertEqual(fifth.get("flow_meta", {}).get("Flow_yes", {}).get("tier"), "P2")
+        sixth = self.session_bpmn_meta_patch(self.sid, self.BpmnMetaPatchIn(flowId="Flow_no", tier="P2"))
+        flow_meta = sixth.get("flow_meta", {})
+        self.assertEqual(flow_meta.get("Flow_no", {}).get("tier"), "P2")
+        self.assertEqual(flow_meta.get("Flow_yes", {}).get("tier"), "P2")
 
     def test_legacy_happy_is_migrated_to_p0(self):
         meta = self.session_bpmn_meta_patch(self.sid, self.BpmnMetaPatchIn(flowId="Flow_yes", happy=True))
         self.assertEqual(meta.get("flow_meta", {}).get("Flow_yes", {}).get("tier"), "P0")
+
+    def test_path_classification_aliases_and_option_objects_normalize_to_primitives(self):
+        meta = self.session_bpmn_meta_patch(
+            self.sid,
+            self.BpmnMetaPatchIn(
+                flow_meta={
+                    "Flow_yes": {"tier": {"value": "ideal", "label": "Идеальный"}},
+                    "Flow_no": {"tier": {"value": "recovery", "label": "Восстановление"}},
+                },
+                node_path_meta={
+                    "Task_yes": {
+                        "paths": [
+                            {"value": "alternative", "label": "Альтернативный"},
+                            {"value": "failure", "label": "Неуспех"},
+                        ],
+                        "sequence_key": {"key": "Primary alt 2", "label": "Основной 2"},
+                        "source": "manual",
+                    },
+                },
+            ),
+        )
+        self.assertEqual(meta.get("flow_meta", {}).get("Flow_yes", {}).get("tier"), "P0")
+        self.assertEqual(meta.get("flow_meta", {}).get("Flow_no", {}).get("tier"), "P1")
+        entry = meta.get("node_path_meta", {}).get("Task_yes", {})
+        self.assertEqual(entry.get("paths"), ["P1", "P2"])
+        self.assertEqual(entry.get("sequence_key"), "primary_alt_2")
+        self.assertNotIn("object_object", str(meta))
 
     def test_bpmn_save_prunes_stale_flow_meta(self):
         self.session_bpmn_meta_patch(self.sid, self.BpmnMetaPatchIn(flowId="Flow_yes", tier="P0"))
