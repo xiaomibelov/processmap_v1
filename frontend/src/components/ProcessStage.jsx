@@ -2283,6 +2283,7 @@ export default function ProcessStage({
     savedAt = "",
     storedRev = 0,
     requestedBaseRev = 0,
+    diagramStateVersion = null,
   } = {}) => {
     if (!sid || typeof persistSessionCompanion !== "function") return { ok: true, skipped: true };
     const nextCompanion = buildSessionCompanionAfterTemplateApply(sessionCompanionMetaLive, {
@@ -2294,7 +2295,11 @@ export default function ProcessStage({
       requestedBaseRev,
       template,
     });
-    return persistSessionCompanion(nextCompanion, { source: `${source}_session_companion` });
+    return persistSessionCompanion(nextCompanion, {
+      source: `${source}_session_companion`,
+      savedXml: xml,
+      baseDiagramStateVersion: diagramStateVersion,
+    });
   }, [draft, persistSessionCompanion, sessionCompanionMetaLive, sid]);
   const persistTraversalSessionCompanion = useCallback(async (autoPassResultRaw, source = "auto_pass_result_sync") => {
     if (!sid || typeof persistSessionCompanion !== "function") return { ok: true, skipped: true };
@@ -3336,6 +3341,7 @@ export default function ProcessStage({
         savedAt: new Date().toISOString(),
         storedRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
         requestedBaseRev: Number(draft?.bpmn_xml_version || draft?.version || 0),
+        diagramStateVersion: Number(saved?.diagramStateVersion || getBaseDiagramStateVersion() || 0),
       });
       if (!result?.ok) {
         setGenErr(shortErr(result?.error || "Не удалось синхронизировать template provenance."));
