@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 
 import { apiPatchSession } from "../../../lib/api/sessionApi";
 import { buildSessionMetaWriteEnvelope } from "./sessionMetaMergePolicy";
+import { enqueueSessionPatchCasWrite } from "../../process/stage/utils/sessionPatchCasCoordinator";
 
 function toText(value) {
   return String(value || "").trim();
@@ -14,6 +15,7 @@ export default function useSessionMetaWriteGateway({
   serializeMeta,
   getPersistedMeta,
   getBaseDiagramStateVersion,
+  rememberDiagramStateVersion,
   onSessionSync,
   shortErr,
   setGenErr,
@@ -75,7 +77,13 @@ export default function useSessionMetaWriteGateway({
         if (Number.isFinite(baseVersion) && baseVersion >= 0) {
           payload.base_diagram_state_version = Math.round(baseVersion);
         }
-        return apiPatchSession(writeSid, payload);
+        return enqueueSessionPatchCasWrite({
+          sessionId: writeSid,
+          patch: payload,
+          apiPatchSession,
+          getBaseDiagramStateVersion,
+          rememberDiagramStateVersion,
+        });
       };
     const runWrite = async () => {
       const baseDiagramStateVersion = resolveBaseDiagramStateVersion();
@@ -130,6 +138,7 @@ export default function useSessionMetaWriteGateway({
     isLocal,
     normalizeMeta,
     onSessionSync,
+    rememberDiagramStateVersion,
     serializeMeta,
     setGenErr,
     shortErr,

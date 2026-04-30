@@ -31,7 +31,9 @@ test("diagram mutation autosave propagates base_diagram_state_version to seconda
     true,
   );
   assert.equal(
-    source.includes("const patchRes = await apiPatchSession(sid, patchPayload);"),
+    source.includes("const patchRes = await enqueueSessionPatchCasWrite({"),
     true,
   );
+  assert.equal(source.includes("patch: patchPayload,"), true);
+  assert.equal(source.includes("apiPatchSession,"), true);
 });

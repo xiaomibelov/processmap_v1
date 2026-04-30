@@ -84,6 +84,7 @@ import {
   normalizeDiagramStateVersion,
   resolveDiagramBaseVersionForActiveSession,
 } from "../features/process/stage/utils/diagramVersionContext";
+import { enqueueSessionPatchCasWrite } from "../features/process/stage/utils/sessionPatchCasCoordinator";
 import useSessionMetaPersist from "../features/process/stage/controllers/useSessionMetaPersist";
 import { registerAppSafeRefreshHandler } from "../features/appUpdate/appSafeRefreshController";
 import { attachProcessStageFlushBeforeLeaveListener } from "../features/process/navigation/processLeaveFlush";
@@ -2018,7 +2019,13 @@ export default function ProcessStage({
                     ...projectionPatch,
                     base_diagram_state_version: Math.round(companionBaseDiagramStateVersion),
                   };
-                  const syncRes = await apiPatchSession(sid, syncPatchPayload);
+                  const syncRes = await enqueueSessionPatchCasWrite({
+                    sessionId: sid,
+                    patch: syncPatchPayload,
+                    apiPatchSession,
+                    getBaseDiagramStateVersion,
+                    rememberDiagramStateVersion,
+                  });
                   if (!syncRes?.ok) {
                     companionError = shortErr(
                       syncRes?.error
@@ -2178,6 +2185,7 @@ export default function ProcessStage({
     isLocal,
     draftBpmnMeta: draft?.bpmn_meta,
     getBaseDiagramStateVersion,
+    rememberDiagramStateVersion,
     onSessionSync: onSessionSyncWithVersion,
     setGenErr,
     shortErr,
@@ -4483,7 +4491,13 @@ export default function ProcessStage({
             if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
               syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
             }
-            const syncRes = await apiPatchSession(sid, syncPatchPayload);
+            const syncRes = await enqueueSessionPatchCasWrite({
+              sessionId: sid,
+              patch: syncPatchPayload,
+              apiPatchSession,
+              getBaseDiagramStateVersion,
+              rememberDiagramStateVersion,
+            });
             if (syncRes.ok) {
               const serverSession =
                 syncRes.session && typeof syncRes.session === "object"
@@ -5760,7 +5774,13 @@ export default function ProcessStage({
             if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
               syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
             }
-            const syncRes = await apiPatchSession(sid, syncPatchPayload);
+            const syncRes = await enqueueSessionPatchCasWrite({
+              sessionId: sid,
+              patch: syncPatchPayload,
+              apiPatchSession,
+              getBaseDiagramStateVersion,
+              rememberDiagramStateVersion,
+            });
             if (syncRes.ok) {
               const serverSession =
                 syncRes.session && typeof syncRes.session === "object"

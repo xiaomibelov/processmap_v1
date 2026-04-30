@@ -18,5 +18,7 @@ test("execution-plan save session patch propagates base_diagram_state_version", 
     source.includes("syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);"),
     true,
   );
-  assert.equal(source.includes("const syncRes = await apiPatchSession(sid, syncPatchPayload);"), true);
+  assert.equal(source.includes("rememberDiagramStateVersion,"), true);
+  assert.equal(source.includes("const syncRes = await enqueueSessionPatchCasWrite({"), true);
+  assert.equal(source.includes("patch: syncPatchPayload,"), true);
 });

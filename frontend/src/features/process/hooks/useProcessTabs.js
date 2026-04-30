@@ -5,6 +5,7 @@ import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { traceProcess } from "../lib/processDebugTrace";
 import { buildBpmnSaveFailureDiagnostics } from "../bpmn/save/saveBeforeSwitchDiagnostics.js";
 import { shortUserFacingError } from "../lib/userFacingErrorText";
+import { enqueueSessionPatchCasWrite } from "../stage/utils/sessionPatchCasCoordinator";
 
 function shortErr(x) {
   return shortUserFacingError(x, 160);
@@ -142,6 +143,7 @@ export default function useProcessTabs({
   invalidateHydrateForSession,
   markHydrateDoneForSession,
   getBaseDiagramStateVersion,
+  rememberDiagramStateVersion,
   onError,
 }) {
   const [tab, setTabState] = useState(() => defaultTabForSession(draft));
@@ -841,7 +843,13 @@ export default function useProcessTabs({
                     if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
                       syncPatch.base_diagram_state_version = Math.round(baseDiagramStateVersion);
                     }
-                    const syncRes = await apiPatchSession(sid, syncPatch);
+                    const syncRes = await enqueueSessionPatchCasWrite({
+                      sessionId: sid,
+                      patch: syncPatch,
+                      apiPatchSession,
+                      getBaseDiagramStateVersion,
+                      rememberDiagramStateVersion,
+                    });
                     if (isStaleSwitch()) return;
                     traceProcess("tabs.sync_interview_from_bpmn", {
                       sid,

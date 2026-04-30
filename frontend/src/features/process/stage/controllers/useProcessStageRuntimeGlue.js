@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from "react";
+import { enqueueSessionPatchCasWrite } from "../utils/sessionPatchCasCoordinator";
 
 export default function useProcessStageRuntimeGlue({
   importInputRef,
@@ -76,6 +77,7 @@ export default function useProcessStageRuntimeGlue({
   apiGetBpmnXml,
   apiPatchSession,
   getBaseDiagramStateVersion,
+  rememberDiagramStateVersion,
   buildExecutionPlan,
   appendExecutionPlanVersionEntry,
   copyText,
@@ -444,7 +446,13 @@ export default function useProcessStageRuntimeGlue({
       if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
         syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
       }
-      const syncRes = await apiPatchSession(sid, syncPatchPayload);
+      const syncRes = await enqueueSessionPatchCasWrite({
+        sessionId: sid,
+        patch: syncPatchPayload,
+        apiPatchSession,
+        getBaseDiagramStateVersion,
+        rememberDiagramStateVersion,
+      });
       if (!syncRes?.ok) {
         onSessionSync?.({
           id: sid,
