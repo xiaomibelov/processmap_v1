@@ -1254,15 +1254,33 @@ export function CamundaPropertiesSettings({
       tone: "saved",
       cta: null,
     },
+    durable_saved: {
+      label: "Сохранено на сервере",
+      helper: "",
+      tone: "saved",
+      cta: null,
+    },
     local: {
       label: "Есть локальные изменения",
       helper: "",
       tone: "local",
       cta: null,
     },
+    saving: {
+      label: "Сохраняем…",
+      helper: "",
+      tone: "syncing",
+      cta: null,
+    },
     syncing: {
       label: "Синхронизация…",
       helper: "",
+      tone: "syncing",
+      cta: null,
+    },
+    refreshing: {
+      label: "Сохранено на сервере",
+      helper: "Обновляем состояние…",
       tone: "syncing",
       cta: null,
     },
