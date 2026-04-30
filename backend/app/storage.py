@@ -2764,6 +2764,106 @@ class Storage:
             out.append(sess.model_dump())
         return out
 
+    def list_project_session_summaries(
+        self,
+        *,
+        project_id: str,
+        mode: Optional[str] = None,
+        limit: int = 500,
+        user_id: Optional[str] = None,
+        is_admin: Optional[bool] = None,
+        org_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return project session list rows without loading large session JSON/XML fields."""
+        pid = str(project_id or "").strip()
+        if not pid:
+            return []
+        try:
+            lim = int(limit)
+        except Exception:
+            lim = 500
+        lim = min(max(lim, 1), 500)
+        owner = _scope_user_id(user_id)
+        admin = _scope_is_admin(is_admin)
+        org = _scope_org_id(org_id) or _default_org_id()
+        filters = ["COALESCE(project_id,'') = ?"]
+        params: List[Any] = [pid]
+        if org:
+            filters.append("org_id = ?")
+            params.append(org)
+        if not admin and owner:
+            filters.append("owner_user_id = ?")
+            params.append(owner)
+        if mode is not None:
+            filters.append("COALESCE(mode,'') = ?")
+            params.append(str(mode or ""))
+        where = f"WHERE {' AND '.join(filters)}"
+        _ensure_schema()
+        with _connect() as con:
+            rows = con.execute(
+                f"""
+                SELECT
+                  id,
+                  title,
+                  roles_json,
+                  start_role,
+                  project_id,
+                  mode,
+                  bpmn_xml_version,
+                  diagram_state_version,
+                  bpmn_graph_fingerprint,
+                  version,
+                  owner_user_id,
+                  org_id,
+                  created_by,
+                  updated_by,
+                  created_at,
+                  updated_at,
+                  LENGTH(COALESCE(bpmn_xml, '')) AS bpmn_xml_length
+                FROM sessions
+                {where}
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                [*params, lim],
+            ).fetchall()
+        out: List[Dict[str, Any]] = []
+        for row in rows:
+            sid = str(_row_value(row, "id") or "").strip()
+            title = str(_row_value(row, "title") or "").strip()
+            roles = _json_loads(_row_value(row, "roles_json"), [])
+            if not isinstance(roles, list):
+                roles = []
+            xml_len_raw = _row_value(row, "bpmn_xml_length")
+            try:
+                xml_len = max(0, int(xml_len_raw or 0))
+            except Exception:
+                xml_len = 0
+            out.append({
+                "id": sid,
+                "session_id": sid,
+                "title": title,
+                "name": title,
+                "roles": [str(item) for item in roles if str(item or "").strip()],
+                "start_role": str(_row_value(row, "start_role") or "").strip() or None,
+                "project_id": str(_row_value(row, "project_id") or "").strip(),
+                "mode": str(_row_value(row, "mode") or "").strip() or None,
+                "bpmn_xml_version": int(_row_value(row, "bpmn_xml_version") or 0),
+                "diagram_state_version": int(_row_value(row, "diagram_state_version") or 0),
+                "bpmn_graph_fingerprint": str(_row_value(row, "bpmn_graph_fingerprint") or ""),
+                "version": int(_row_value(row, "version") or 0),
+                "owner_user_id": str(_row_value(row, "owner_user_id") or ""),
+                "org_id": str(_row_value(row, "org_id") or ""),
+                "created_by": str(_row_value(row, "created_by") or ""),
+                "updated_by": str(_row_value(row, "updated_by") or ""),
+                "created_at": int(_row_value(row, "created_at") or 0),
+                "updated_at": int(_row_value(row, "updated_at") or 0),
+                "has_bpmn_xml": xml_len > 0,
+                "status": "draft",
+                "stage": "",
+            })
+        return out
+
     def create_bpmn_version_snapshot(
         self,
         session_id: str,
