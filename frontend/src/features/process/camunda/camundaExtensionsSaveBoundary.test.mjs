@@ -71,6 +71,118 @@ test("persistCamundaExtensionsViaCanonicalXmlBoundary uses canonical PUT path an
   assert.equal(syncCalls[0]._sync_source, "camunda_extensions_xml_boundary_save");
 });
 
+test("persistCamundaExtensionsViaCanonicalXmlBoundary can acknowledge durable PUT before slow background session refresh", async () => {
+  const syncCalls = [];
+  const events = [];
+  let resolveRefresh;
+  const refreshGate = new Promise((resolve) => {
+    resolveRefresh = resolve;
+  });
+
+  const out = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+    sessionIdRaw: "sess_bg",
+    isLocal: false,
+    currentXmlRaw: BASE_XML,
+    nextMetaRaw: NEXT_META,
+    nextCamundaExtensionsByElementIdRaw: NEXT_META.camunda_extensions_by_element_id,
+    baseDiagramStateVersionRaw: 7,
+    buildCanonicalXml: ({ xmlText }) => `${xmlText}<!--changed-->`,
+    apiPutBpmnXml: async () => {
+      events.push("put");
+      return { ok: true, status: 200, storedRev: 5, diagramStateVersion: 8 };
+    },
+    apiGetSession: async (sid) => {
+      events.push("refresh-start");
+      await refreshGate;
+      events.push("refresh-resolve");
+      return { ok: true, session: { id: sid, session_id: sid, bpmn_xml: "<server-xml/>", bpmn_meta: NEXT_META } };
+    },
+    onSessionSync: (payload) => {
+      syncCalls.push(payload);
+    },
+    backgroundSessionRefresh: true,
+    onDurableSaveAck: (payload) => {
+      events.push(`durable:${payload.diagramStateVersion}`);
+    },
+    onBackgroundSessionSyncStart: () => {
+      events.push("background-start");
+    },
+    onBackgroundSessionSyncComplete: () => {
+      events.push("background-complete");
+    },
+  });
+
+  assert.equal(out.ok, true);
+  assert.equal(out.diagramStateVersion, 8);
+  assert.equal(out.backgroundSessionRefresh, true);
+  assert.equal(events.includes("durable:8"), true);
+  assert.equal(events.includes("background-start"), true);
+  assert.equal(events.includes("background-complete"), false);
+  assert.equal(syncCalls.length, 1);
+  assert.equal(syncCalls[0].bpmn_xml.includes("<!--changed-->"), true);
+  assert.equal(syncCalls[0].diagram_state_version, 8);
+
+  resolveRefresh();
+  const backgroundOut = await out.backgroundSessionSyncPromise;
+  assert.equal(backgroundOut.ok, true);
+  assert.equal(events.includes("background-complete"), true);
+  assert.equal(syncCalls.length, 2);
+  assert.equal(syncCalls[1].bpmn_xml, "<server-xml/>");
+});
+
+test("persistCamundaExtensionsViaCanonicalXmlBoundary keeps durable success when background refresh fails", async () => {
+  const events = [];
+  const out = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+    sessionIdRaw: "sess_bg_fail",
+    isLocal: false,
+    currentXmlRaw: BASE_XML,
+    nextMetaRaw: NEXT_META,
+    nextCamundaExtensionsByElementIdRaw: NEXT_META.camunda_extensions_by_element_id,
+    baseDiagramStateVersionRaw: 3,
+    buildCanonicalXml: ({ xmlText }) => `${xmlText}<!--changed-->`,
+    apiPutBpmnXml: async () => ({ ok: true, status: 200, storedRev: 4, diagramStateVersion: 5 }),
+    apiGetSession: async () => ({ ok: false, status: 500, error: "boom" }),
+    onSessionSync: () => {},
+    backgroundSessionRefresh: true,
+    onDurableSaveAck: () => {
+      events.push("durable");
+    },
+    onBackgroundSessionSyncError: (payload) => {
+      events.push(`background-error:${payload.status}`);
+    },
+  });
+
+  assert.equal(out.ok, true);
+  assert.equal(events.includes("durable"), true);
+  const backgroundOut = await out.backgroundSessionSyncPromise;
+  assert.equal(backgroundOut.ok, false);
+  assert.equal(backgroundOut.status, 500);
+  assert.equal(events.includes("background-error:500"), true);
+});
+
+test("persistCamundaExtensionsViaCanonicalXmlBoundary does not acknowledge durable save when PUT fails", async () => {
+  const events = [];
+  const out = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+    sessionIdRaw: "sess_put_fail",
+    isLocal: false,
+    currentXmlRaw: BASE_XML,
+    nextMetaRaw: NEXT_META,
+    nextCamundaExtensionsByElementIdRaw: NEXT_META.camunda_extensions_by_element_id,
+    baseDiagramStateVersionRaw: 3,
+    buildCanonicalXml: ({ xmlText }) => `${xmlText}<!--changed-->`,
+    apiPutBpmnXml: async () => ({ ok: false, status: 500, error: "boom" }),
+    apiGetSession: async () => ({ ok: true, session: {} }),
+    backgroundSessionRefresh: true,
+    onDurableSaveAck: () => {
+      events.push("durable");
+    },
+  });
+
+  assert.equal(out.ok, false);
+  assert.equal(out.status, 500);
+  assert.deepEqual(events, []);
+});
+
 test("persistCamundaExtensionsViaCanonicalXmlBoundary falls back to canonical XML session patch when refetch is unavailable", async () => {
   const syncCalls = [];
   const out = await persistCamundaExtensionsViaCanonicalXmlBoundary({
@@ -129,6 +241,7 @@ test("persistCamundaExtensionsViaCanonicalXmlBoundary retries once on diagram-st
   const getCalls = [];
   const syncCalls = [];
   let putAttempt = 0;
+  const durableAcks = [];
 
   const out = await persistCamundaExtensionsViaCanonicalXmlBoundary({
     sessionIdRaw: "sess_conflict",
@@ -173,6 +286,9 @@ test("persistCamundaExtensionsViaCanonicalXmlBoundary retries once on diagram-st
     onSessionSync: (payload) => {
       syncCalls.push(payload);
     },
+    onDurableSaveAck: (payload) => {
+      durableAcks.push(payload);
+    },
   });
 
   assert.equal(out.ok, true);
@@ -183,4 +299,41 @@ test("persistCamundaExtensionsViaCanonicalXmlBoundary retries once on diagram-st
   assert.equal(putCalls[1].options.bpmnMeta.flow_meta.Flow_1.tier, "P1");
   assert.equal(getCalls.length >= 2, true);
   assert.equal(syncCalls.length, 1);
+  assert.equal(durableAcks.length, 1);
+  assert.equal(durableAcks[0].diagramStateVersion, 12);
+});
+
+test("persistCamundaExtensionsViaCanonicalXmlBoundary does not acknowledge durable save when conflict retry cannot persist", async () => {
+  const durableAcks = [];
+  const out = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+    sessionIdRaw: "sess_conflict_fail",
+    isLocal: false,
+    currentXmlRaw: BASE_XML,
+    nextMetaRaw: NEXT_META,
+    nextCamundaExtensionsByElementIdRaw: NEXT_META.camunda_extensions_by_element_id,
+    baseDiagramStateVersionRaw: 5,
+    buildCanonicalXml: ({ xmlText }) => `${xmlText}<!--changed-->`,
+    apiPutBpmnXml: async () => ({
+      ok: false,
+      status: 409,
+      error: "DIAGRAM_STATE_CONFLICT",
+    }),
+    apiGetSession: async (sid) => ({
+      ok: true,
+      session: {
+        id: sid,
+        session_id: sid,
+        bpmn_xml: "<server-xml/>",
+        bpmn_meta: NEXT_META,
+        diagram_state_version: 9,
+      },
+    }),
+    onDurableSaveAck: (payload) => {
+      durableAcks.push(payload);
+    },
+  });
+
+  assert.equal(out.ok, false);
+  assert.equal(out.status, 409);
+  assert.equal(durableAcks.length, 0);
 });

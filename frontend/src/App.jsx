@@ -2541,6 +2541,11 @@ export default function App() {
       apiPutBpmnXml,
       apiGetSession,
       onSessionSync,
+      backgroundSessionRefresh: options?.backgroundSessionRefresh === true,
+      onDurableSaveAck: options?.onDurableSaveAck,
+      onBackgroundSessionSyncStart: options?.onBackgroundSessionSyncStart,
+      onBackgroundSessionSyncComplete: options?.onBackgroundSessionSyncComplete,
+      onBackgroundSessionSyncError: options?.onBackgroundSessionSyncError,
       syncSource: "camunda_extensions_xml_boundary_save",
     });
     if (!persistResult?.ok) {
@@ -2549,7 +2554,12 @@ export default function App() {
     markOk(sid && !isLocalSessionId(sid)
       ? (shouldRemove ? "Properties удалены." : "Properties сохранены.")
       : (shouldRemove ? "Properties удалены локально." : "Properties сохранены локально."));
-    return { ok: true };
+    return {
+      ok: true,
+      local: persistResult?.local === true,
+      backgroundSessionRefresh: persistResult?.backgroundSessionRefresh === true,
+      backgroundSessionSyncPromise: persistResult?.backgroundSessionSyncPromise || null,
+    };
   }
 
   async function setElementCamundaPresentation(elementIdRaw, presentationRaw, options = {}) {
