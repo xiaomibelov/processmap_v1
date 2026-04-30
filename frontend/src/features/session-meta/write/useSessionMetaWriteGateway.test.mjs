@@ -30,3 +30,16 @@ test("session meta gateway includes base_diagram_state_version in default patch 
     true,
   );
 });
+
+test("session meta gateway resolves CAS base immediately before each queued remote write", () => {
+  const source = readSource();
+  const runWriteIdx = source.indexOf("const runWrite = async () => {");
+  const resolveInsideRunIdx = source.indexOf("const baseDiagramStateVersion = resolveBaseDiagramStateVersion();", runWriteIdx);
+  const remoteWriteIdx = source.indexOf("const syncRes = await remoteWrite({", runWriteIdx);
+
+  assert.notEqual(runWriteIdx, -1);
+  assert.notEqual(resolveInsideRunIdx, -1);
+  assert.notEqual(remoteWriteIdx, -1);
+  assert.ok(resolveInsideRunIdx > runWriteIdx);
+  assert.ok(resolveInsideRunIdx < remoteWriteIdx);
+});

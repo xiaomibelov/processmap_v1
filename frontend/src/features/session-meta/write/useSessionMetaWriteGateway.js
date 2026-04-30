@@ -68,7 +68,6 @@ export default function useSessionMetaWriteGateway({
       if (fromGatewayNormalized !== null) return fromGatewayNormalized;
       return null;
     };
-    const baseDiagramStateVersion = resolveBaseDiagramStateVersion();
     const remoteWrite = typeof options?.remoteWrite === "function"
       ? options.remoteWrite
       : async ({ sid: writeSid, nextMeta: writeMeta, baseDiagramStateVersion: baseVersion }) => {
@@ -79,6 +78,7 @@ export default function useSessionMetaWriteGateway({
         return apiPatchSession(writeSid, payload);
       };
     const runWrite = async () => {
+      const baseDiagramStateVersion = resolveBaseDiagramStateVersion();
       const syncRes = await remoteWrite({
         sid,
         nextMeta,
