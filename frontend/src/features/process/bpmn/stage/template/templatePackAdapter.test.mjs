@@ -962,6 +962,74 @@ test("insertTemplatePackOnModeler reapplies semantic payload to inserted node bu
   assert.equal(createShapeCalls[0]?.shapeDef?.height, 130);
 });
 
+test("duplicate insert of same template creates unique nodes with independent camunda properties", async () => {
+  const anchor = createShape("Anchor_1", 100, 100, "Anchor");
+  const { adapter, registryItems } = createModelerWithServices({
+    anchorShape: anchor,
+    selectionItems: [anchor],
+    registryItems: [anchor],
+  });
+
+  const payload = {
+    mode: "after",
+    pack: {
+      packId: "pack_duplicate_props_apply",
+      entryNodeId: "N1",
+      exitNodeId: "N1",
+      fragment: {
+        nodes: [
+          {
+            id: "N1",
+            type: "bpmn:Task",
+            name: "Copied node",
+            laneHint: "lane 1",
+            di: { x: 10, y: 20, w: 260, h: 130 },
+            semanticPayload: {
+              extensionElements: {
+                $type: "bpmn:ExtensionElements",
+                values: [
+                  {
+                    $type: "camunda:Properties",
+                    values: [
+                      { $type: "camunda:Property", name: "AUDIT_PROP_TEXT_1777550880336", value: "text-value" },
+                      { $type: "camunda:Property", name: "AUDIT_PROP_ROLE_1777550880336", value: "role-value" },
+                      { $type: "camunda:Property", name: "AUDIT_PROP_FLAG_1777550880336", value: "true" },
+                      { $type: "camunda:Property", name: "AUDIT_PROP_NUMBER_1777550880336", value: "42" },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+        edges: [],
+      },
+    },
+  };
+
+  const first = await adapter.insertTemplatePackOnModeler(payload);
+  const second = await adapter.insertTemplatePackOnModeler(payload);
+
+  assert.equal(first?.ok, true);
+  assert.equal(second?.ok, true);
+  assert.notEqual(first?.entryNodeId, second?.entryNodeId);
+  const insertedIds = [first?.entryNodeId, second?.entryNodeId].map((value) => String(value || ""));
+  insertedIds.forEach((createdId) => {
+    const created = registryItems.find((row) => String(row?.id || "") === createdId);
+    assert.ok(created);
+    const props = created?.businessObject?.extensionElements?.values?.[0]?.values || [];
+    assert.deepEqual(
+      props.map((item) => [item?.name, item?.value]),
+      [
+        ["AUDIT_PROP_TEXT_1777550880336", "text-value"],
+        ["AUDIT_PROP_ROLE_1777550880336", "role-value"],
+        ["AUDIT_PROP_FLAG_1777550880336", "true"],
+        ["AUDIT_PROP_NUMBER_1777550880336", "42"],
+      ],
+    );
+  });
+});
+
 test("insertTemplatePackOnModeler rehydrates extensionElements when legacy businessObjectCustom branch carries camunda props", async () => {
   const anchor = createShape("Anchor_1", 100, 100, "Anchor");
   const { adapter, registryItems } = createModelerWithServices({

@@ -1667,12 +1667,18 @@ function hasAnyManagedListenersInMap(mapRaw) {
   return Object.values(normalizeCamundaExtensionsMap(mapRaw)).some((entry) => hasManagedListeners(entry));
 }
 
-export function finalizeCamundaExtensionsXml({ xmlText, camundaExtensionsByElementId } = {}) {
+export function finalizeCamundaExtensionsXml({
+  xmlText,
+  camundaExtensionsByElementId,
+  preserveManagedForElementIds,
+} = {}) {
   const rawXml = String(xmlText || "").trim();
   if (!rawXml) return rawXml;
   const doc = parseXmlDocument(rawXml);
   if (!doc) return rawXml;
+  const explicitMapEntryIds = normalizeElementIdSet(Object.keys(asObject(camundaExtensionsByElementId)));
   const normalizedMap = normalizeCamundaExtensionsMap(camundaExtensionsByElementId);
+  const preserveManagedIds = normalizeElementIdSet(preserveManagedForElementIds);
   const useZeebeProperties = shouldUseZeebePropertiesProfile(doc);
   const candidateIds = collectCurrentManagedCandidateIds(doc);
   Object.keys(normalizedMap).forEach((elementId) => candidateIds.add(elementId));
@@ -1686,6 +1692,17 @@ export function finalizeCamundaExtensionsXml({ xmlText, camundaExtensionsByEleme
       || findDirectChild(owner, "extensionElements");
     const state = normalizeCamundaExtensionState(normalizedMap[elementId]);
     const currentChildren = directChildElements(currentExt);
+    const hasCurrentManagedEntries = currentChildren.some((child) => (
+      isManagedPropertiesNode(child)
+      || (namespaceOf(child) === CAMUNDA_NAMESPACE_URI && localNameOf(child) === "executionListener")
+    ));
+    if (
+      hasCurrentManagedEntries
+      && !explicitMapEntryIds.has(elementId)
+      && preserveManagedIds.has(elementId)
+    ) {
+      return;
+    }
     const preservedRaw = state.preservedExtensionElements.slice();
     const currentExtraRaw = currentChildren
       .filter((child) => {
