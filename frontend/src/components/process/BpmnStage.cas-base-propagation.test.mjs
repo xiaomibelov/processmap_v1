@@ -9,5 +9,6 @@ test("BpmnStage session-meta boundary patch propagates base_diagram_state_versio
     source.includes("syncPatchPayload.base_diagram_state_version = Math.round(baseDiagramStateVersion);"),
     true,
   );
-  assert.equal(source.includes("const syncRes = await apiPatchSession(sid, syncPatchPayload);"), true);
+  assert.equal(source.includes("const syncRes = await enqueueSessionPatchCasWrite({"), true);
+  assert.equal(source.includes("patch: syncPatchPayload,"), true);
 });

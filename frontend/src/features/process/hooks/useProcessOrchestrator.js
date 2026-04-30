@@ -42,6 +42,7 @@ export default function useProcessOrchestrator({
     bpmnSync,
     projectionHelpers,
     getBaseDiagramStateVersion,
+    rememberDiagramStateVersion,
     onSessionSync,
     flushInterviewBeforeTabSwitch: (currentTab, targetTab) =>
       flushBeforeSwitchRef.current?.(currentTab, targetTab),

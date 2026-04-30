@@ -14,9 +14,11 @@ function readSource() {
 test("tab-switch interview sync propagates base_diagram_state_version into secondary session patch", () => {
   const source = readSource();
   assert.equal(source.includes("getBaseDiagramStateVersion,"), true);
+  assert.equal(source.includes("rememberDiagramStateVersion,"), true);
   assert.equal(
     source.includes("syncPatch.base_diagram_state_version = Math.round(baseDiagramStateVersion);"),
     true,
   );
-  assert.equal(source.includes("const syncRes = await apiPatchSession(sid, syncPatch);"), true);
+  assert.equal(source.includes("const syncRes = await enqueueSessionPatchCasWrite({"), true);
+  assert.equal(source.includes("patch: syncPatch,"), true);
 });
