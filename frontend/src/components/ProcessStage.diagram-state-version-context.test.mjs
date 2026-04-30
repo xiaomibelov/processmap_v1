@@ -16,9 +16,21 @@ test("ProcessStage keeps version context via dedicated remember/sync seam", () =
   assert.equal(source.includes("const rememberDiagramStateVersion = useCallback"), true);
   assert.equal(source.includes("const syncDiagramStateVersionFromSession = useCallback"), true);
   assert.equal(source.includes("const onSessionSyncWithVersion = useCallback"), true);
-  assert.equal(source.includes("syncDiagramStateVersionFromSession(sessionLikeRaw);"), true);
+  assert.equal(source.includes("rememberMonotonicDiagramStateVersion({"), true);
+  assert.equal(source.includes("syncDiagramStateVersionFromSession(payload);"), true);
   assert.equal(source.includes("isDiagramVersionSessionMatch(currentSid, targetSid)"), true);
   assert.equal(source.includes("resolveDiagramBaseVersionForActiveSession"), true);
+});
+
+test("ProcessStage draft echo path updates version context through monotonic helper", () => {
+  const source = readSource();
+  const draftEffectIdx = source.indexOf("const nextVersion = resolveDraftDiagramStateVersion();");
+  const helperIdx = source.indexOf("rememberMonotonicDiagramStateVersion({", draftEffectIdx);
+  const directLoweringIdx = source.indexOf("diagramStateVersionRef.current = nextVersion;", draftEffectIdx);
+
+  assert.notEqual(draftEffectIdx, -1);
+  assert.notEqual(helperIdx, -1);
+  assert.equal(directLoweringIdx, -1);
 });
 
 test("ProcessStage routes orchestration and overlay writes through onSessionSyncWithVersion", () => {
