@@ -48,3 +48,12 @@ test("interview 409 remembers server current version but still propagates the co
     /if \(!r\.ok && !cancelled\) \{[\s\S]*?rememberDiagramStateVersion\?\.\(serverCurrentVersion, \{ sessionId: sid \}\);[\s\S]*?onError\?\.\(shortErr\(r\.error \|\| "Не удалось заполнить Interview из BPMN"\)\);/,
   );
 });
+
+test("interview optimistic sync does not carry stale bpmn_meta from draft", () => {
+  const source = readSource();
+  assert.equal(source.includes("function buildInterviewOptimisticSessionPatch"), true);
+  assert.equal(source.includes("...patch,"), true);
+  assert.equal(source.includes("_sync_source: \"interview_hydrate_from_bpmn_optimistic\""), true);
+  assert.equal(source.includes("_sync_source: \"interview_autosave_optimistic\""), true);
+  assert.equal(source.includes("...(draft || {})"), false);
+});

@@ -108,6 +108,19 @@ function readAckDiagramStateVersion(sessionRaw = null) {
   return Math.round(version);
 }
 
+function buildInterviewOptimisticSessionPatch(draftRaw = null, patchRaw = {}) {
+  const draft = asObject(draftRaw);
+  const patch = asObject(patchRaw);
+  return {
+    id: patch.id ?? draft.id,
+    session_id: patch.session_id ?? patch.sessionId ?? draft.session_id ?? draft.sessionId,
+    title: patch.title ?? draft.title,
+    project_id: patch.project_id ?? patch.projectId ?? draft.project_id ?? draft.projectId,
+    projectId: patch.projectId ?? patch.project_id ?? draft.projectId ?? draft.project_id,
+    ...patch,
+  };
+}
+
 async function waitForSingleWriterToClear(coordinator, ownerRaw, { isStale, timeoutMs = 15000 } = {}) {
   const owner = String(ownerRaw || "").trim().toLowerCase();
   const readDebugState = typeof coordinator?.getDebugState === "function"
@@ -615,8 +628,7 @@ export default function useInterviewSyncLifecycle({
       interviewLastSavedNodesRef.current = nextNodesHash;
       interviewLastSavedEdgesRef.current = nextEdgesHash;
 
-      const optimisticSession = {
-        ...(draft || {}),
+      const optimisticSession = buildInterviewOptimisticSessionPatch(draft, {
         id: sid,
         session_id: sid,
         interview: nextInterview,
@@ -624,7 +636,8 @@ export default function useInterviewSyncLifecycle({
         actors_derived: derivedActors,
         ...(savePlan.nodesChanged ? { nodes: nextNodes } : {}),
         ...(savePlan.edgesChanged ? { edges: nextEdges } : {}),
-      };
+        _sync_source: "interview_hydrate_from_bpmn_optimistic",
+      });
       onSessionSync?.(optimisticSession);
       logInterviewTrace("apply", {
         sid,
@@ -718,14 +731,14 @@ export default function useInterviewSyncLifecycle({
         edges_changed: edgesJson !== currentEdgesJson,
       });
 
-      const optimisticSession = {
-        ...(draft || {}),
+      const optimisticSession = buildInterviewOptimisticSessionPatch(draft, {
         id: sid,
         session_id: sid,
         interview: nextPayload,
         ...(savePlan.nodesChanged ? { nodes: nextNodes } : {}),
         ...(savePlan.edgesChanged ? { edges: nextEdges } : {}),
-      };
+        _sync_source: "interview_autosave_optimistic",
+      });
       onSessionSync?.(optimisticSession);
       if (
         payloadJson === interviewLastSavedRef.current
