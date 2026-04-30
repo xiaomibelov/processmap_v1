@@ -42,6 +42,15 @@ test("BPMN history list requests are deduped and stale responses are ignored", (
   assert.equal(source.includes("if (updateList && !bpmnVersionsOpenRef.current) return;"), true);
 });
 
+test("BPMN history open ref is updated after versionsOpen is initialized", () => {
+  const source = readSource();
+  const versionsOpenIndex = source.indexOf("versionsOpen,\n    setVersionsOpen,");
+  const openRefUpdateIndex = source.indexOf("bpmnVersionsOpenRef.current = versionsOpen;");
+  assert.notEqual(versionsOpenIndex, -1);
+  assert.notEqual(openRefUpdateIndex, -1);
+  assert.equal(openRefUpdateIndex > versionsOpenIndex, true);
+});
+
 test("BPMN version XML is lazy-loaded through selected-version detail only", () => {
   const source = readSource();
   const ensureMatch = source.match(/const ensureBpmnVersionXml = useCallback\(async \(versionOrId\) => \{([\s\S]*?)\n  \}, \[/);
