@@ -19,19 +19,53 @@ function joinUrl(path) {
 
 export { API_BASE, joinUrl, readApiBase };
 
+function normalizeApiErrorText(value, depth = 0) {
+  if (depth > 4) return "";
+  if (typeof value === "string") {
+    const text = value.trim();
+    return text && text !== "[object Object]" ? text : "";
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value).trim();
+  }
+  if (!value || typeof value !== "object") return "";
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeApiErrorText(item, depth + 1)).filter(Boolean).join("; ");
+  }
+
+  const direct = normalizeApiErrorText(
+    value.message
+    || value.error
+    || value.reason
+    || value.title
+    || value.detail,
+    depth + 1,
+  );
+  if (direct) return direct;
+
+  const code = normalizeApiErrorText(value.code, depth + 1);
+  if (code) return code;
+
+  try {
+    const json = JSON.stringify(value);
+    return typeof json === "string" && json !== "{}" && json !== "[object Object]" ? json : "";
+  } catch {
+    return "";
+  }
+}
+
 export function normalizeApiErrorPayload(payload) {
   if (!payload) return "";
-  if (typeof payload === "string") return payload;
+  const normalized = normalizeApiErrorText(payload);
+  if (normalized) return normalized;
   if (typeof payload === "object") {
-    if (payload.detail) return String(payload.detail);
-    if (payload.message) return String(payload.message);
-    if (payload.error) return String(payload.error);
-    if (Array.isArray(payload.errors)) return payload.errors.map(String).join("; ");
+    const errors = normalizeApiErrorText(payload.errors);
+    if (errors) return errors;
   }
   try {
     return JSON.stringify(payload);
   } catch {
-    return String(payload);
+    return "";
   }
 }
 

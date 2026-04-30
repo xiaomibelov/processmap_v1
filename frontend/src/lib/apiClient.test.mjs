@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { apiFetch, apiFetchWithFallback } from "./apiClient.js";
+import { apiFetch, apiFetchWithFallback, normalizeApiErrorPayload } from "./apiClient.js";
 
 test("apiFetch: normalizes JSON error payload", async () => {
   const prevFetch = globalThis.fetch;
@@ -17,6 +17,39 @@ test("apiFetch: normalizes JSON error payload", async () => {
   } finally {
     globalThis.fetch = prevFetch;
   }
+});
+
+test("apiFetch: normalizes structured detail object without [object Object]", async () => {
+  const prevFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      detail: {
+        code: "DIAGRAM_STATE_BASE_VERSION_REQUIRED",
+        server_current_version: 248,
+      },
+    }), {
+      status: 409,
+      headers: { "Content-Type": "application/json" },
+    });
+    const out = await apiFetch({ path: "/api/sessions/s1", method: "PATCH", body: { bpmn_meta: {} } });
+    assert.equal(out.ok, false);
+    assert.equal(out.status, 409);
+    assert.equal(out.error, "DIAGRAM_STATE_BASE_VERSION_REQUIRED");
+    assert.equal(out.error.includes("[object Object]"), false);
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
+test("normalizeApiErrorPayload extracts nested message before JSON fallback", () => {
+  const out = normalizeApiErrorPayload({
+    detail: {
+      code: "DIAGRAM_STATE_CONFLICT",
+      message: "Версия диаграммы изменилась.",
+    },
+  });
+  assert.equal(out, "Версия диаграммы изменилась.");
+  assert.equal(out.includes("[object Object]"), false);
 });
 
 test("apiFetchWithFallback: retries only on configured status (404/405)", async () => {
