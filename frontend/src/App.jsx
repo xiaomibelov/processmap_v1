@@ -87,6 +87,7 @@ import { useAuth } from "./features/auth/AuthProvider";
 import { canCreateOrgTemplateForRole } from "./features/templates/model/templatesRbac";
 import { buildWorkspacePermissions } from "./features/workspace/workspacePermissions";
 import { resolveSessionStatusFromDraft } from "./features/workspace/sessionStatus";
+import { shortUserFacingError } from "./features/process/lib/userFacingErrorText";
 import useSessionRouteOrchestration, {
   pushSessionSelectionToUrl,
   readSelectionFromUrl,
@@ -909,7 +910,13 @@ export default function App() {
   const draftSessionId = String(draft?.session_id || "").trim();
   const isSessionLocalMode = !draftSessionId || isLocalSessionId(draftSessionId);
   const serializeSessionMetaForBoundary = useCallback((valueRaw) => JSON.stringify(normalizeBpmnMeta(valueRaw)), []);
-  const shortSessionMetaErr = useCallback((value) => String(value || "Не удалось сохранить session meta."), []);
+  const getSessionMetaBaseDiagramStateVersion = useCallback(() => Number(
+    draft?.diagram_state_version ?? draft?.diagramStateVersion,
+  ), [draft?.diagram_state_version, draft?.diagramStateVersion]);
+  const shortSessionMetaErr = useCallback((value) => (
+    shortUserFacingError(value, 160, "Не удалось сохранить session meta.")
+      || "Не удалось сохранить session meta."
+  ), []);
   const ignoreSessionMetaErr = useCallback(() => {}, []);
   const sessionMetaWriteGateway = useSessionMetaWriteGateway({
     sid: draftSessionId,
@@ -917,6 +924,7 @@ export default function App() {
     normalizeMeta: normalizeBpmnMeta,
     serializeMeta: serializeSessionMetaForBoundary,
     getPersistedMeta: () => normalizeBpmnMeta(draft?.bpmn_meta),
+    getBaseDiagramStateVersion: getSessionMetaBaseDiagramStateVersion,
     onSessionSync,
     shortErr: shortSessionMetaErr,
     setGenErr: ignoreSessionMetaErr,
