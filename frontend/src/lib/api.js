@@ -134,12 +134,13 @@ export async function apiDeleteProject(projectId) {
 }
 
 // ------- Project Sessions -------
-export async function apiListProjectSessions(projectId, mode) {
+export async function apiListProjectSessions(projectId, mode, options = {}) {
   const pid = String(projectId || "").trim();
   if (!pid) return { ok: false, status: 0, error: "missing project_id" };
 
   const m = String(mode || "").trim();
-  const r = okOrError(await request(apiRoutes.projects.sessions(pid, m)));
+  const view = String(options?.view || "summary").trim() || "summary";
+  const r = okOrError(await request(apiRoutes.projects.sessions(pid, m, view)));
   const list = Array.isArray(r.data) ? r.data : [];
   return r.ok ? { ok: true, status: r.status, sessions: list } : r;
 }
