@@ -403,6 +403,10 @@ export default function ProcessStage({
   });
   const remoteSessionPollInFlightRef = useRef(false);
   const remoteSessionPollSeenDiagramStateVersionRef = useRef(0);
+  const bpmnVersionsActiveSessionRef = useRef("");
+  const bpmnVersionsOpenRef = useRef(false);
+  const bpmnVersionsListRequestRef = useRef({ key: "", promise: null });
+  const bpmnVersionDetailRequestRef = useRef(new Map());
   const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
   const [saveConflictNoticeDismissed, setSaveConflictNoticeDismissed] = useState(false);
@@ -423,6 +427,8 @@ export default function ProcessStage({
   const [remoteSaveHighlightBusy, setRemoteSaveHighlightBusy] = useState(false);
   const sessionWorkspaceTruthOwnerRef = useRef(null);
   const sessionWorkspaceTruthOwnerSidRef = useRef("");
+  bpmnVersionsActiveSessionRef.current = normalizeDiagramSessionId(sid);
+  bpmnVersionsOpenRef.current = versionsOpen;
 
   const buildOwnerSnapshot = useCallback((sessionLikeRaw, source = "session_sync") => {
     return buildWorkspaceTruthSnapshotFromSession(sessionLikeRaw, {
@@ -4198,106 +4204,125 @@ export default function ProcessStage({
       if (options?.trackHeadStatus === true) setLatestBpmnVersionHeadStatus("idle");
       return;
     }
+    const requestSid = normalizeDiagramSessionId(sid);
     const includeXml = options?.includeXml === true;
     const updateList = options?.updateList !== false;
     const trackHeadStatus = options?.trackHeadStatus === true;
-    const fallbackLimit = includeXml ? 200 : BPMN_VERSION_HEADERS_LIMIT;
+    const fallbackLimit = BPMN_VERSION_HEADERS_LIMIT;
     const requestedLimit = Number(options?.limit || fallbackLimit);
     const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
-      ? Math.min(Math.round(requestedLimit), 500)
+      ? Math.min(Math.round(requestedLimit), BPMN_VERSION_HEADERS_LIMIT)
       : fallbackLimit;
-    if (trackHeadStatus) setLatestBpmnVersionHeadStatus("loading");
-    if (updateList) {
-      setVersionsLoadState("loading");
-      setVersionsLoadError("");
+    const requestKey = `${requestSid}|limit=${limit}|includeXml=${includeXml ? "1" : "0"}|updateList=${updateList ? "1" : "0"}|trackHead=${trackHeadStatus ? "1" : "0"}`;
+    if (updateList && bpmnVersionsListRequestRef.current?.key === requestKey && bpmnVersionsListRequestRef.current?.promise) {
+      return bpmnVersionsListRequestRef.current.promise;
     }
-    let loaded = null;
-    try {
-      loaded = await apiGetBpmnVersions(sid, { limit, includeXml });
-    } catch (error) {
-      loaded = { ok: false, error: error?.message || error || "Не удалось загрузить BPMN версии." };
-    }
-    if (!loaded?.ok) {
+    const runRequest = async () => {
+      if (trackHeadStatus) setLatestBpmnVersionHeadStatus("loading");
       if (updateList) {
-        setVersionsList([]);
-        setPreviewSnapshotId("");
-        setVersionsLoadState("failed");
-        setVersionsLoadError(shortErr(loaded?.error || "Не удалось загрузить BPMN версии."));
-        setVersionsUserFacingCount(0);
-        setVersionsServerEntriesCount(0);
-        setVersionsTechnicalEntriesCount(0);
-        setBpmnVersionTruthState({
-          currentSessionPayloadHash: "",
-          latestUserVersionSessionPayloadHash: "",
-          hasSessionChangesSinceLatestBpmnVersion: false,
-        });
+        setVersionsLoadState("loading");
+        setVersionsLoadError("");
       }
-      if (trackHeadStatus) setLatestBpmnVersionHeadStatus("failed");
-      return;
-    }
-    const normalizedList = asArray(loaded?.versions).map((item) => normalizeBpmnVersionListItem(item));
-    const currentSessionPayloadHash = String(
-      loaded?.currentSessionPayloadHash
-      || loaded?.current_session_payload_hash
-      || "",
-    ).trim();
-    const latestUserVersionSessionPayloadHash = String(
-      loaded?.latestUserVersionSessionPayloadHash
-      || loaded?.latest_user_version_session_payload_hash
-      || "",
-    ).trim();
-    const hasSessionChangesSinceLatestBpmnVersion = loaded?.hasSessionChangesSinceLatestBpmnVersion === true
-      || loaded?.has_session_changes_since_latest_bpmn_version === true;
-    setBpmnVersionTruthState({
-      currentSessionPayloadHash,
-      latestUserVersionSessionPayloadHash,
-      hasSessionChangesSinceLatestBpmnVersion,
-    });
-    const revisionSplit = splitMeaningfulAndTechnicalRevisions(normalizedList);
-    const list = asArray(revisionSplit.meaningful);
-    const technicalList = asArray(revisionSplit.technical);
-    const unknownList = asArray(revisionSplit.unknown);
-    const hiddenNonMeaningfulList = asArray(revisionSplit.nonMeaningful);
-    const serverEntriesCount = asArray(normalizedList).length;
-    const userFacingCount = Number(
-      loaded?.userFacingCount
-      || loaded?.user_facing_count
-      || loaded?.latestUserFacingRevisionNumber
-      || loaded?.latest_user_facing_revision_number
-      || 0,
-    );
-    const listWithUserFacingNumbers = applyUserFacingRevisionNumbers({
-      meaningfulRevisionsRaw: list,
-      revisionHistorySnapshotRaw: {
-        ...asObject(sessionRevisionHistorySnapshot),
-        latestRevisionDisplayNumber: Number(
-          loaded?.latestUserFacingRevisionNumber
-          || loaded?.latest_user_facing_revision_number
-          || userFacingCount
-          || 0,
-        ),
+      let loaded = null;
+      try {
+        loaded = await apiGetBpmnVersions(sid, { limit, includeXml });
+      } catch (error) {
+        loaded = { ok: false, error: error?.message || error || "Не удалось загрузить BPMN версии." };
+      }
+      if (bpmnVersionsActiveSessionRef.current !== requestSid) return;
+      if (updateList && !bpmnVersionsOpenRef.current) return;
+      if (!loaded?.ok) {
+        if (updateList) {
+          setVersionsList([]);
+          setPreviewSnapshotId("");
+          setVersionsLoadState("failed");
+          setVersionsLoadError(shortErr(loaded?.error || "Не удалось загрузить BPMN версии."));
+          setVersionsUserFacingCount(0);
+          setVersionsServerEntriesCount(0);
+          setVersionsTechnicalEntriesCount(0);
+          setBpmnVersionTruthState({
+            currentSessionPayloadHash: "",
+            latestUserVersionSessionPayloadHash: "",
+            hasSessionChangesSinceLatestBpmnVersion: false,
+          });
+        }
+        if (trackHeadStatus) setLatestBpmnVersionHeadStatus("failed");
+        return;
+      }
+      const normalizedList = asArray(loaded?.versions).map((item) => normalizeBpmnVersionListItem(item));
+      const currentSessionPayloadHash = String(
+        loaded?.currentSessionPayloadHash
+        || loaded?.current_session_payload_hash
+        || "",
+      ).trim();
+      const latestUserVersionSessionPayloadHash = String(
+        loaded?.latestUserVersionSessionPayloadHash
+        || loaded?.latest_user_version_session_payload_hash
+        || "",
+      ).trim();
+      const hasSessionChangesSinceLatestBpmnVersion = loaded?.hasSessionChangesSinceLatestBpmnVersion === true
+        || loaded?.has_session_changes_since_latest_bpmn_version === true;
+      setBpmnVersionTruthState({
+        currentSessionPayloadHash,
+        latestUserVersionSessionPayloadHash,
+        hasSessionChangesSinceLatestBpmnVersion,
+      });
+      const revisionSplit = splitMeaningfulAndTechnicalRevisions(normalizedList);
+      const list = asArray(revisionSplit.meaningful);
+      const technicalList = asArray(revisionSplit.technical);
+      const unknownList = asArray(revisionSplit.unknown);
+      const hiddenNonMeaningfulList = asArray(revisionSplit.nonMeaningful);
+      const serverEntriesCount = asArray(normalizedList).length;
+      const userFacingCount = Number(
+        loaded?.userFacingCount
+        || loaded?.user_facing_count
+        || loaded?.latestUserFacingRevisionNumber
+        || loaded?.latest_user_facing_revision_number
+        || 0,
+      );
+      const listWithUserFacingNumbers = applyUserFacingRevisionNumbers({
+        meaningfulRevisionsRaw: list,
+        revisionHistorySnapshotRaw: {
+          ...asObject(sessionRevisionHistorySnapshot),
+          latestRevisionDisplayNumber: Number(
+            loaded?.latestUserFacingRevisionNumber
+            || loaded?.latest_user_facing_revision_number
+            || userFacingCount
+            || 0,
+          ),
+          totalCount: userFacingCount,
+        },
         totalCount: userFacingCount,
-      },
+      });
+      setLatestBpmnVersionHead(asArray(listWithUserFacingNumbers)[0] || null);
+      if (trackHeadStatus) setLatestBpmnVersionHeadStatus("ready");
+      if (!updateList) return;
+      // eslint-disable-next-line no-console
+      console.debug(
+        `UI_VERSIONS_LOAD sid=${sid} key="${snapshotScopeKey(snapshotProjectId, sid)}" `
+        + `meaningful_count=${asArray(list).length} technical_count=${technicalList.length} unknown_count=${unknownList.length}`,
+      );
+      setVersionsUserFacingCount(Math.max(0, Math.round(Number(userFacingCount || 0))));
+      setVersionsServerEntriesCount(serverEntriesCount);
+      setVersionsTechnicalEntriesCount(hiddenNonMeaningfulList.length);
+      setVersionsList(asArray(listWithUserFacingNumbers));
+      setVersionsLoadState(asArray(listWithUserFacingNumbers).length > 0 ? "ready" : "empty");
+      setVersionsLoadError("");
+      setPreviewSnapshotId((prev) => {
+        const exists = asArray(listWithUserFacingNumbers).some((item) => String(item?.id || "") === String(prev || ""));
+        if (exists) return prev;
+        return asArray(listWithUserFacingNumbers)[0]?.id || "";
+      });
+    };
+    const promise = runRequest().finally(() => {
+      if (bpmnVersionsListRequestRef.current?.key === requestKey) {
+        bpmnVersionsListRequestRef.current = { key: "", promise: null };
+      }
     });
-    setLatestBpmnVersionHead(asArray(listWithUserFacingNumbers)[0] || null);
-    if (trackHeadStatus) setLatestBpmnVersionHeadStatus("ready");
-    if (!updateList) return;
-    // eslint-disable-next-line no-console
-    console.debug(
-      `UI_VERSIONS_LOAD sid=${sid} key="${snapshotScopeKey(snapshotProjectId, sid)}" `
-      + `meaningful_count=${asArray(list).length} technical_count=${technicalList.length} unknown_count=${unknownList.length}`,
-    );
-    setVersionsUserFacingCount(Math.max(0, Math.round(Number(userFacingCount || 0))));
-    setVersionsServerEntriesCount(serverEntriesCount);
-    setVersionsTechnicalEntriesCount(hiddenNonMeaningfulList.length);
-    setVersionsList(asArray(listWithUserFacingNumbers));
-    setVersionsLoadState(asArray(listWithUserFacingNumbers).length > 0 ? "ready" : "empty");
-    setVersionsLoadError("");
-    setPreviewSnapshotId((prev) => {
-      const exists = asArray(listWithUserFacingNumbers).some((item) => String(item?.id || "") === String(prev || ""));
-      if (exists) return prev;
-      return asArray(listWithUserFacingNumbers)[0]?.id || "";
-    });
+    if (updateList) {
+      bpmnVersionsListRequestRef.current = { key: requestKey, promise };
+    }
+    return promise;
   }, [applyUserFacingRevisionNumbers, normalizeBpmnVersionListItem, sessionRevisionHistorySnapshot, sid, snapshotProjectId]);
 
   const ensureBpmnVersionXml = useCallback(async (versionOrId) => {
@@ -4305,37 +4330,47 @@ export default function ProcessStage({
       typeof versionOrId === "object" ? versionOrId?.id : versionOrId,
     ).trim();
     if (!sid || !versionId) return null;
+    const requestSid = normalizeDiagramSessionId(sid);
     const existing = asArray(versionsList).find((item) => String(item?.id || "") === versionId);
     if (existing?.hasXml === true || String(existing?.xml || "").trim()) return existing;
-    setVersionsBusy(true);
-    setVersionsLoadError("");
-    try {
-      let loaded = null;
+    const existingRequest = bpmnVersionDetailRequestRef.current.get(`${requestSid}:${versionId}`);
+    if (existingRequest) return existingRequest;
+    const runRequest = async () => {
+      setVersionsBusy(true);
+      setVersionsLoadError("");
       try {
-        loaded = await apiGetBpmnVersion(sid, versionId);
-      } catch (error) {
-        loaded = { ok: false, error: error?.message || error || "Не удалось загрузить XML версии." };
+        let loaded = null;
+        try {
+          loaded = await apiGetBpmnVersion(sid, versionId);
+        } catch (error) {
+          loaded = { ok: false, error: error?.message || error || "Не удалось загрузить XML версии." };
+        }
+        if (bpmnVersionsActiveSessionRef.current !== requestSid || !bpmnVersionsOpenRef.current) return null;
+        if (!loaded?.ok) {
+          const reason = shortErr(loaded?.error || "Не удалось загрузить XML версии.");
+          setVersionsLoadError(reason);
+          setGenErr(reason);
+          return null;
+        }
+        const normalized = normalizeBpmnVersionListItem(loaded?.item || loaded?.version || {});
+        setVersionsList((prev) => asArray(prev).map((item) => (
+          String(item?.id || "") === versionId ? { ...item, ...normalized, hasXml: true } : item
+        )));
+        return normalized;
+      } finally {
+        setVersionsBusy(false);
+        bpmnVersionDetailRequestRef.current.delete(`${requestSid}:${versionId}`);
       }
-      if (!loaded?.ok) {
-        const reason = shortErr(loaded?.error || "Не удалось загрузить XML версии.");
-        setVersionsLoadError(reason);
-        setGenErr(reason);
-        return null;
-      }
-      const normalized = normalizeBpmnVersionListItem(loaded?.item || loaded?.version || {});
-      setVersionsList((prev) => asArray(prev).map((item) => (
-        String(item?.id || "") === versionId ? { ...item, ...normalized, hasXml: true } : item
-      )));
-      return normalized;
-    } finally {
-      setVersionsBusy(false);
-    }
-  }, [normalizeBpmnVersionListItem, sid, versionsList]);
+    };
+    const promise = runRequest();
+    bpmnVersionDetailRequestRef.current.set(`${requestSid}:${versionId}`, promise);
+    return promise;
+  }, [normalizeBpmnVersionListItem, sid, versionsList, versionsOpen]);
 
   const refreshLatestBpmnRevisionHead = useCallback(async () => {
     await refreshSnapshotVersions({
       includeXml: false,
-      limit: BPMN_VERSION_HEADERS_LIMIT,
+      limit: 1,
       updateList: false,
       trackHeadStatus: true,
     });
@@ -4343,12 +4378,6 @@ export default function ProcessStage({
 
   async function openVersionsModal() {
     setVersionsOpen(true);
-    setVersionsBusy(true);
-    try {
-      await refreshSnapshotVersions({ includeXml: false, limit: BPMN_VERSION_HEADERS_LIMIT });
-    } finally {
-      setVersionsBusy(false);
-    }
   }
 
   async function restoreSnapshot(item) {
