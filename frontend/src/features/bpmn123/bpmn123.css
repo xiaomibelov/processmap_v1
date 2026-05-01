@@ -1,0 +1,226 @@
+.bpmn123-root {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 18% 10%, rgba(47, 199, 172, 0.16), transparent 28rem),
+    linear-gradient(135deg, #101418 0%, #18221f 46%, #211d18 100%);
+  color: #f4f7f5;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.bpmn123-shell {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  min-height: 100vh;
+  padding: 18px;
+}
+
+.bpmn123-topbar,
+.bpmn123-panel,
+.bpmn123-bottom-panel,
+.bpmn123-canvas-frame {
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background: rgba(18, 24, 24, 0.82);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.2);
+}
+
+.bpmn123-topbar {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.7fr) minmax(260px, 1.8fr) minmax(120px, 0.45fr);
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+}
+
+.bpmn123-brand-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bpmn123-brand {
+  color: #65e4c7;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.bpmn123-tier,
+.bpmn123-panel-kicker,
+.bpmn123-progress-pill span,
+.bpmn123-canvas-label {
+  color: #afbbb4;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.bpmn123-level-heading h1,
+.bpmn123-panel h2,
+.bpmn123-canvas-frame h2 {
+  margin: 0;
+  color: #ffffff;
+  letter-spacing: 0;
+}
+
+.bpmn123-level-heading h1 {
+  font-size: clamp(1.15rem, 1.6vw, 1.65rem);
+  line-height: 1.2;
+}
+
+.bpmn123-level-heading p,
+.bpmn123-panel p,
+.bpmn123-canvas-frame p {
+  margin: 6px 0 0;
+  color: #c9d4cf;
+  line-height: 1.5;
+}
+
+.bpmn123-progress-pill {
+  display: flex;
+  flex-direction: column;
+  justify-self: end;
+  min-width: 96px;
+  gap: 2px;
+  border-radius: 8px;
+  background: rgba(101, 228, 199, 0.12);
+  padding: 8px 10px;
+  text-align: right;
+}
+
+.bpmn123-progress-pill strong {
+  color: #ffffff;
+  font-size: 1.15rem;
+}
+
+.bpmn123-main-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.78fr) minmax(360px, 1.6fr) minmax(250px, 0.86fr);
+  gap: 16px;
+  min-height: 0;
+}
+
+.bpmn123-panel {
+  min-width: 0;
+  padding: 16px;
+}
+
+.bpmn123-panel h2,
+.bpmn123-canvas-frame h2 {
+  margin-top: 6px;
+  font-size: 1.05rem;
+}
+
+.bpmn123-mentor-note {
+  margin-top: 16px;
+  border-left: 3px solid #f2c66d;
+  border-radius: 0 8px 8px 0;
+  background: rgba(242, 198, 109, 0.1);
+  padding: 12px;
+}
+
+.bpmn123-mentor-note span {
+  color: #f2c66d;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.bpmn123-canvas-placeholder {
+  min-width: 0;
+  min-height: 420px;
+}
+
+.bpmn123-canvas-frame {
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+}
+
+.bpmn123-canvas-frame h2 {
+  margin-top: 10px;
+  font-size: 1.25rem;
+}
+
+.bpmn123-objective-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bpmn123-objective-list li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+  padding: 9px 10px;
+}
+
+.bpmn123-objective-list li span {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.bpmn123-objective-list p {
+  margin: 0;
+  color: #edf5f1;
+}
+
+.bpmn123-bottom-panel {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(220px, 1fr);
+  align-items: center;
+  gap: 18px;
+  padding: 12px 16px;
+}
+
+.bpmn123-bottom-panel strong {
+  display: block;
+  margin-top: 4px;
+  color: #ffffff;
+  font-size: 0.98rem;
+}
+
+.bpmn123-progress-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.bpmn123-progress-track span {
+  display: block;
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: #65e4c7;
+}
+
+@media (max-width: 980px) {
+  .bpmn123-topbar,
+  .bpmn123-main-grid,
+  .bpmn123-bottom-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .bpmn123-progress-pill {
+    justify-self: stretch;
+    text-align: left;
+  }
+
+  .bpmn123-canvas-placeholder {
+    min-height: 320px;
+  }
+}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 
 import App from "./App";
 import AdminApp from "./features/admin/AdminApp";
@@ -7,7 +7,10 @@ import LoginModal from "./features/auth/LoginModal";
 import LoginPage from "./features/auth/LoginPage";
 import PublicHomePage from "./features/auth/PublicHomePage";
 import { canAccessAdminConsole } from "./features/admin/adminUtils";
+import { resolveBpmn123Route } from "./features/bpmn123/bpmn123RouteModel";
 import { ru } from "./shared/i18n/ru";
+
+const Bpmn123GameShell = lazy(() => import("./features/bpmn123/Bpmn123GameShell.jsx"));
 
 function readLocation() {
   if (typeof window === "undefined") {
@@ -104,6 +107,8 @@ function AppRoutes() {
   const pathname = String(loc.pathname || "/");
   const search = String(loc.search || "");
   const hash = String(loc.hash || "");
+  const bpmn123Route = useMemo(() => resolveBpmn123Route(pathname), [pathname]);
+  const wantsBpmn123 = bpmn123Route.isBpmn123Route;
   const orgItems = useMemo(() => normalizeOrgMemberships(orgs), [orgs]);
   const orgChoiceKey = useMemo(() => {
     const uid = String(user?.id || "").trim();
@@ -131,11 +136,11 @@ function AppRoutes() {
       return;
     }
 
-    if (!isAuthed && (pathname.startsWith("/app") || pathname.startsWith("/admin")) && !reauthRequired) {
+    if (!isAuthed && !wantsBpmn123 && (pathname.startsWith("/app") || pathname.startsWith("/admin")) && !reauthRequired) {
       const next = encodeURIComponent(`${pathname}${search}${hash}`);
       navigate(`/?next=${next}`, { replace: true });
     }
-  }, [hash, isAuthed, loading, pathname, reauthRequired, search]);
+  }, [hash, isAuthed, loading, pathname, reauthRequired, search, wantsBpmn123]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -166,7 +171,7 @@ function AppRoutes() {
   }, [activeOrg, isAuthed, loading, orgItems, switchOrg]);
 
   useEffect(() => {
-    const privateRoute = pathname.startsWith("/app") || pathname.startsWith("/admin");
+    const privateRoute = (pathname.startsWith("/app") && !wantsBpmn123) || pathname.startsWith("/admin");
     if (!loading && !privateRoute && !isAuthed && reauthRequired) {
       setLoginModalOpen(true);
     }
@@ -176,7 +181,7 @@ function AppRoutes() {
     if (isAuthed) {
       setReauthRequired(false);
     }
-  }, [isAuthed, loading, pathname, reauthRequired, setReauthRequired]);
+  }, [isAuthed, loading, pathname, reauthRequired, setReauthRequired, wantsBpmn123]);
 
   function resolvePostLoginPath() {
     if (pathname.startsWith("/app")) return `${pathname}${search}${hash}`;
@@ -212,7 +217,7 @@ function AppRoutes() {
           // ignore storage errors
         }
       }
-      if (pathname !== "/app") navigate("/app", { replace: true });
+      if (pathname !== "/app" && !wantsBpmn123) navigate("/app", { replace: true });
     } finally {
       setOrgSwitchBusy(false);
     }
@@ -233,7 +238,17 @@ function AppRoutes() {
 
   return (
     <>
-      {showAdmin ? (
+      {wantsBpmn123 ? (
+        <Suspense
+          fallback={
+            <div className="flex h-screen items-center justify-center">
+              <div className="rounded-xl border border-border bg-panel px-4 py-3 text-sm text-muted">Загружаем BPMN 123...</div>
+            </div>
+          }
+        >
+          <Bpmn123GameShell levelId={bpmn123Route.levelId} />
+        </Suspense>
+      ) : showAdmin ? (
         isAuthed ? (
           canAccessAdmin ? (
             <AdminApp pathname={pathname} search={search} onNavigate={navigate} />
@@ -312,7 +327,7 @@ function AppRoutes() {
 
       <LoginModal
         open={loginModalOpen}
-        locked={Boolean((pathname.startsWith("/app") || pathname.startsWith("/admin")) && !isAuthed)}
+        locked={Boolean(((pathname.startsWith("/app") && !wantsBpmn123) || pathname.startsWith("/admin")) && !isAuthed)}
         onClose={handleModalClose}
         onSuccess={handleLoginSuccess}
       />
