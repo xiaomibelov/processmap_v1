@@ -304,6 +304,94 @@
   color: rgba(252,211,77,.92);
 }
 
+.productActionsPanel{
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  background: rgba(255,255,255,.035);
+  padding: 12px;
+}
+
+.productActionsHeader,
+.productActionsStepRow,
+.productActionsFooter{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.productActionsTitle{
+  font-size: 14px;
+  font-weight: 800;
+  color: rgba(255,255,255,.94);
+}
+
+.productActionsSub,
+.productActionsEmpty{
+  font-size: 12px;
+  color: rgba(255,255,255,.62);
+}
+
+.productActionsStepSelect{
+  min-width: min(100%, 360px);
+  flex: 1 1 360px;
+}
+
+.productActionsBinding,
+.productActionsList{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.productActionChip{
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 8px;
+  background: rgba(255,255,255,.06);
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255,255,255,.80);
+}
+
+.productActionChip.active{
+  border-color: rgba(88,166,255,.65);
+  background: rgba(88,166,255,.18);
+  color: rgba(255,255,255,.94);
+}
+
+.productActionsEditor{
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.productActionsStatus{
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.productActionsStatus.saving,
+.productActionsStatus.pending{
+  color: var(--c-info);
+}
+
+.productActionsStatus.saved{
+  color: var(--c-success);
+}
+
+.productActionsStatus.conflict,
+.productActionsStatus.error{
+  color: var(--c-danger);
+}
+
 .interviewStepRow{
   border-left: 3px solid color-mix(in srgb, var(--lane-accent, rgba(255,255,255,.22)) 74%, transparent);
 }

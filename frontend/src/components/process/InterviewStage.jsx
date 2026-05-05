@@ -6,6 +6,7 @@ import useInterviewSessionState from "./interview/useInterviewSessionState";
 import BoundariesBlock from "./interview/BoundariesBlock";
 import TimelineControls from "./interview/TimelineControls";
 import TimelineTable from "./interview/TimelineTable";
+import ProductActionsPanel from "./interview/ProductActionsPanel";
 import InterviewDiagramView from "./interview/InterviewDiagramView";
 import TransitionsBlock from "./interview/TransitionsBlock";
 import SummaryBlock from "./interview/SummaryBlock";
@@ -92,6 +93,9 @@ export default function InterviewStage({
   actorsDerived,
   bpmnXml,
   onChange,
+  onSessionSync,
+  getBaseDiagramStateVersion,
+  rememberDiagramStateVersion,
   selectedDiagramElement,
   stepTimeUnit = "min",
   pathsUiIntent = null,
@@ -913,6 +917,17 @@ export default function InterviewStage({
               pathMetrics={pathMetrics}
             />
           </Profiler>
+        ) : null}
+        {timelineViewMode === "matrix" ? (
+          <ProductActionsPanel
+            sessionId={sid}
+            interviewData={data}
+            timelineView={timelineView}
+            selectedStepIds={selectedTimelineStepIds}
+            getBaseDiagramStateVersion={getBaseDiagramStateVersion}
+            rememberDiagramStateVersion={rememberDiagramStateVersion}
+            onSessionSync={onSessionSync}
+          />
         ) : null}
         </>
         ) : null}
