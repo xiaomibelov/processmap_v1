@@ -30,7 +30,7 @@ export default function SummaryBlock({
   return (
     <div className="interviewBlock">
       <div className="interviewBlockHead">
-        <div className="interviewBlockTitle">C. Подсветка времени и итоги</div>
+        <div className="interviewBlockTitle">C. Итоги и время</div>
         <button type="button" className="secondaryBtn smallBtn interviewCollapseBtn" onClick={() => toggleBlock("summary")}>
           {collapsed ? "Показать" : "Скрыть"}
         </button>
@@ -63,75 +63,9 @@ export default function SummaryBlock({
               <div className="muted small">{formatPercent(totalSteps > 0 ? (boundSteps / totalSteps) * 100 : 0)}</div>
             </div>
             <div className="interviewSummaryCard">
-              <div className="muted small">Tiers (flows)</div>
-              <div className="interviewSummaryValue">P0:{Number(tiers?.P0 || 0)} P1:{Number(tiers?.P1 || 0)} P2:{Number(tiers?.P2 || 0)}</div>
-              <div className="muted small">None: {Number(tiers?.None || 0)}</div>
-            </div>
-            <div className="interviewSummaryCard">
-              <div className="muted small">AI-покрытие шагов</div>
-              <div className="interviewSummaryValue">{aiTotal}</div>
-              <div className="muted small">open: {aiOpen} · done: {aiDone}</div>
-            </div>
-            <div className="interviewSummaryCard">
               <div className="muted small">Пропускная способность</div>
               <div className="interviewSummaryValue">{extendedAnalytics.stepsPerHour}</div>
               <div className="muted small">шага/час</div>
-            </div>
-          </div>
-
-          <div className="interviewAnalyticsGrid">
-            <div className="interviewSummaryCard">
-              <div className="muted small">Распределение по типам шагов</div>
-              {!extendedAnalytics.typeStats.length ? (
-                <div className="muted">Нет шагов.</div>
-              ) : (
-                <ul className="interviewList">
-                  {extendedAnalytics.typeStats.map((x) => (
-                    <li key={x.key}>
-                      {x.label}: {x.count} ({formatPercent(x.sharePct)}) · lead {x.lead} мин
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div className="interviewSummaryCard">
-              <div className="muted small">Распределение по лайнам</div>
-              {!extendedAnalytics.laneStats.length ? (
-                <div className="muted">Нет лайнов.</div>
-              ) : (
-                <ul className="interviewList">
-                  {extendedAnalytics.laneStats.map((x) => (
-                    <li key={x.key}>
-                      {x.name}: {x.count} ({formatPercent(x.sharePct)}) · lead {x.lead} мин
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div className="interviewSummaryCard">
-              <div className="muted small">Распределение по подпроцессам</div>
-              {!extendedAnalytics.subprocessStats.length ? (
-                <div className="muted">Подпроцессы не выделены.</div>
-              ) : (
-                <ul className="interviewList">
-                  {extendedAnalytics.subprocessStats.map((x) => (
-                    <li key={x.key}>
-                      {x.name}: {x.count} ({formatPercent(x.sharePct)}) · lead {x.lead} мин
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div className="interviewSummaryCard">
-              <div className="muted small">AI и исключения</div>
-              <ul className="interviewList">
-                <li>AI-вопросы: {aiTotal}</li>
-                <li>Подтверждено: {aiDone}</li>
-                <li>Уточнить: {aiOpen}</li>
-                <li>Неизвестно: {Math.max(0, aiTotal - aiDone - aiOpen)}</li>
-                <li>Исключений: {Number(snapshotCounts?.exceptionsTotal || exceptionsCount || 0)}</li>
-                <li>Суммарно добавляет: +{extendedAnalytics.exceptionAddMinTotal} мин</li>
-              </ul>
             </div>
           </div>
 
@@ -156,6 +90,77 @@ export default function SummaryBlock({
                 : "Самое длинное ожидание пока не определено."}
             </div>
           </div>
+
+          <details className="interviewAdvancedDetails">
+            <summary>Дополнительно: распределения, AI и диагностика покрытия</summary>
+            <div className="interviewSummaryRow" style={{ marginTop: 10 }}>
+              <div className="interviewSummaryCard">
+                <div className="muted small">Tiers (flows)</div>
+                <div className="interviewSummaryValue">P0:{Number(tiers?.P0 || 0)} P1:{Number(tiers?.P1 || 0)} P2:{Number(tiers?.P2 || 0)}</div>
+                <div className="muted small">None: {Number(tiers?.None || 0)}</div>
+              </div>
+              <div className="interviewSummaryCard">
+                <div className="muted small">AI-покрытие шагов</div>
+                <div className="interviewSummaryValue">{aiTotal}</div>
+                <div className="muted small">open: {aiOpen} · done: {aiDone}</div>
+              </div>
+            </div>
+            <div className="interviewAnalyticsGrid">
+              <div className="interviewSummaryCard">
+                <div className="muted small">Распределение по типам шагов</div>
+                {!extendedAnalytics.typeStats.length ? (
+                  <div className="muted">Нет шагов.</div>
+                ) : (
+                  <ul className="interviewList">
+                    {extendedAnalytics.typeStats.map((x) => (
+                      <li key={x.key}>
+                        {x.label}: {x.count} ({formatPercent(x.sharePct)}) · lead {x.lead} мин
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="interviewSummaryCard">
+                <div className="muted small">Распределение по лайнам</div>
+                {!extendedAnalytics.laneStats.length ? (
+                  <div className="muted">Нет лайнов.</div>
+                ) : (
+                  <ul className="interviewList">
+                    {extendedAnalytics.laneStats.map((x) => (
+                      <li key={x.key}>
+                        {x.name}: {x.count} ({formatPercent(x.sharePct)}) · lead {x.lead} мин
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="interviewSummaryCard">
+                <div className="muted small">Распределение по подпроцессам</div>
+                {!extendedAnalytics.subprocessStats.length ? (
+                  <div className="muted">Подпроцессы не выделены.</div>
+                ) : (
+                  <ul className="interviewList">
+                    {extendedAnalytics.subprocessStats.map((x) => (
+                      <li key={x.key}>
+                        {x.name}: {x.count} ({formatPercent(x.sharePct)}) · lead {x.lead} мин
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="interviewSummaryCard">
+                <div className="muted small">AI и исключения</div>
+                <ul className="interviewList">
+                  <li>AI-вопросы: {aiTotal}</li>
+                  <li>Подтверждено: {aiDone}</li>
+                  <li>Уточнить: {aiOpen}</li>
+                  <li>Неизвестно: {Math.max(0, aiTotal - aiDone - aiOpen)}</li>
+                  <li>Исключений: {Number(snapshotCounts?.exceptionsTotal || exceptionsCount || 0)}</li>
+                  <li>Суммарно добавляет: +{extendedAnalytics.exceptionAddMinTotal} мин</li>
+                </ul>
+              </div>
+            </div>
+          </details>
         </>
       ) : null}
     </div>

@@ -706,7 +706,7 @@ export default function InterviewStage({
       <div className="interviewBlock">
         <div className="interviewBlockHead">
           <div>
-            <div className="interviewBlockTitle">B. Таймлайн шагов</div>
+            <div className="interviewBlockTitle">B. Таблица шагов / действия процесса</div>
           </div>
         </div>
 
@@ -769,7 +769,7 @@ export default function InterviewStage({
         ) : null}
         {IS_DEV_BUILD && Array.isArray(interviewVMWarnings) && interviewVMWarnings.length ? (
           <div className="interviewAnnotationNotice warn" data-testid="interview-vm-warning">
-            InterviewVM warning: {interviewVMWarnings[0]}
+            Диагностика представления: {interviewVMWarnings[0]}
           </div>
         ) : null}
         {selectedStep ? (
@@ -845,7 +845,7 @@ export default function InterviewStage({
         ) : null}
         {timelineViewMode === "paths" ? (
           <Profiler id="InterviewPathsView" onRender={handleProfilerRender}>
-            <Suspense fallback={<div className="interviewAnnotationNotice pending">Загружаю Paths View…</div>}>
+            <Suspense fallback={<div className="interviewAnnotationNotice pending">Загружаю сценарии и отчёты…</div>}>
               <LazyInterviewPathsView
                 active
                 sessionId={sid}

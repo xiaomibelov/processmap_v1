@@ -5140,6 +5140,21 @@
     @apply mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-panel/50 px-2.5 py-2;
   }
 
+  .interviewAdvancedDetails,
+  .interviewPathReportAdvancedDetails {
+    @apply mt-2 rounded-lg border border-border/70 bg-panel/45 p-2 text-sm;
+  }
+
+  .interviewAdvancedDetails > summary,
+  .interviewPathReportAdvancedDetails > summary {
+    @apply cursor-pointer text-xs font-semibold text-muted;
+  }
+
+  .interviewAdvancedDetails[open] > summary,
+  .interviewPathReportAdvancedDetails[open] > summary {
+    @apply mb-2 text-fg;
+  }
+
   .interviewTimelineUtilityRow .interviewColsMenuWrap {
     margin-left: auto;
   }

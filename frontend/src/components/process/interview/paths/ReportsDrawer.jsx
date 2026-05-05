@@ -437,6 +437,7 @@ export default function ReportsDrawer({
       >
         <div className="interviewReportsDrawerHead">
           <strong>Отчёты</strong>
+          <span className="muted small">Результат анализа, не источник процесса</span>
           {reportVersionsLoading ? <span className="muted small">Загрузка версий...</span> : null}
           {reportLoading ? <span className="muted small">Генерация новой версии...</span> : null}
           <label className="muted small">
@@ -455,17 +456,17 @@ export default function ReportsDrawer({
             {reportErrorNotice}
 
             {showReportGenerationTrace ? (
-              <div className="interviewPathReportSection interviewPathReportTechlog">
-                <div className="interviewPathReportTechlogCompact">
-                  <span className="interviewPathReportSectionTitle">Техлог: {techlogSummary}</span>
-                  <button
-                    type="button"
-                    className="secondaryBtn tinyBtn"
-                    onClick={() => setTechlogExpanded((prev) => !prev)}
-                  >
-                    {techlogExpanded ? "Скрыть техлог" : "Показать техлог"}
-                  </button>
-                </div>
+              <details
+                className="interviewPathReportSection interviewPathReportTechlog"
+                open={techlogExpanded}
+                onToggle={(event) => setTechlogExpanded(event.currentTarget.open)}
+              >
+                <summary className="interviewPathReportTechlogCompact">
+                  <span className="interviewPathReportSectionTitle">Диагностика генерации: {techlogSummary}</span>
+                  <span className="secondaryBtn tinyBtn" aria-hidden="true">
+                    {techlogExpanded ? "Скрыть" : "Показать"}
+                  </span>
+                </summary>
                 {techlogExpanded ? (
                   traceItems.length ? (
                     <div className="interviewPathReportList">
@@ -508,7 +509,7 @@ export default function ReportsDrawer({
                     <div className="muted small">Событий пока нет.</div>
                   )
                 ) : null}
-              </div>
+              </details>
             ) : null}
 
             <div className="interviewPathReportVersions">
@@ -586,6 +587,13 @@ export default function ReportsDrawer({
                     <strong>v{Number(selected?.version || 0)}</strong>
                     <span className={`badge ${selectedIsOk ? "ok" : selectedIsError ? "danger" : "warn"}`}>{selectedStatus || "running"}</span>
                     <span className="muted small">{formatReportCreatedAt(selected?.created_at)}</span>
+                    <span className={`badge ${selected?.is_actual ? "ok" : "warn"}`}>{selected?.is_actual ? "актуален" : "устарел"}</span>
+                    {selectedId === toText(latestActualReportId) ? <span className="badge ok">последний актуальный</span> : null}
+                  </div>
+                </div>
+                <details className="interviewPathReportAdvancedDetails">
+                  <summary>Технические сведения версии</summary>
+                  <div className="interviewPathReportPanelHead">
                     <span className="badge muted">hash {shortHash(selected?.steps_hash)}</span>
                     {fullHash ? (
                       <button
@@ -601,15 +609,13 @@ export default function ReportsDrawer({
                           }
                         }}
                       >
-                        Copy hash
+                        Скопировать hash
                       </button>
                     ) : null}
                     {toText(selected?.prompt_template_version) ? <span className="badge muted">tpl {toText(selected?.prompt_template_version)}</span> : null}
                     {toText(selected?.model) ? <span className="badge muted">model {toText(selected?.model)}</span> : null}
-                    <span className={`badge ${selected?.is_actual ? "ok" : "warn"}`}>{selected?.is_actual ? "актуален" : "устарел"}</span>
-                    {selectedId === toText(latestActualReportId) ? <span className="badge ok">последний актуальный</span> : null}
                   </div>
-                </div>
+                </details>
 
                 {selectedId === toText(reportDetailsLoadingId) ? <div className="muted small">Загружаю детали версии...</div> : null}
 
@@ -696,13 +702,16 @@ export default function ReportsDrawer({
                       )}
                     </ReportAccordion>
 
-                    <ReportAccordion title="Сырые данные" badge={rawPayloadPreview ? "есть" : "нет"}>
-                      {rawPayloadPreview ? (
-                        <pre className="interviewPathReportRawData">{rawPayloadPreview}</pre>
-                      ) : (
-                        <div className="muted small">Сырые данные отсутствуют.</div>
-                      )}
-                    </ReportAccordion>
+                    <details className="interviewPathReportAdvancedDetails">
+                      <summary>Диагностика отчёта</summary>
+                      <ReportAccordion title="Сырые данные" badge={rawPayloadPreview ? "есть" : "нет"}>
+                        {rawPayloadPreview ? (
+                          <pre className="interviewPathReportRawData">{rawPayloadPreview}</pre>
+                        ) : (
+                          <div className="muted small">Сырые данные отсутствуют.</div>
+                        )}
+                      </ReportAccordion>
+                    </details>
 
                     <section className="interviewPathReportRecSection">
                       <div className="interviewPathReportSectionTitle">Рекомендации</div>
