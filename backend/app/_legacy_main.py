@@ -2,6 +2,7 @@ from __future__ import annotations
 
 
 import math
+import copy
 import hashlib
 import logging
 import os
@@ -1005,10 +1006,31 @@ def _set_report_versions_by_path(sess: Session, by_path: Dict[str, List[Dict[str
     sess.interview = interview
 
 
+def _merge_interview_analysis_namespace(existing_raw: Any, incoming_raw: Any) -> Optional[Dict[str, Any]]:
+    existing = existing_raw if isinstance(existing_raw, dict) else {}
+    incoming = incoming_raw if isinstance(incoming_raw, dict) else {}
+    existing_analysis = existing.get("analysis")
+    incoming_has_analysis = "analysis" in incoming
+    existing_obj = copy.deepcopy(existing_analysis) if isinstance(existing_analysis, dict) else None
+    if not incoming_has_analysis:
+        return existing_obj
+    incoming_analysis = incoming.get("analysis")
+    if not isinstance(incoming_analysis, dict):
+        return existing_obj
+    out: Dict[str, Any] = existing_obj or {}
+    out.update(copy.deepcopy(incoming_analysis))
+    return out
+
+
 def _merge_interview_with_server_fields(existing_raw: Any, incoming_raw: Any) -> Dict[str, Any]:
     existing = existing_raw if isinstance(existing_raw, dict) else {}
     incoming = _norm_interview(incoming_raw)
     out = dict(incoming)
+    analysis = _merge_interview_analysis_namespace(existing, incoming)
+    if analysis is not None:
+        out["analysis"] = analysis
+    else:
+        out.pop("analysis", None)
     for key in ("report_versions", "path_reports"):
         current_value = existing.get(key)
         incoming_value = incoming.get(key)
@@ -1026,6 +1048,31 @@ def _merge_interview_with_server_fields(existing_raw: Any, incoming_raw: Any) ->
         else:
             out.pop(key, None)
     return out
+
+
+def _preserve_current_interview_analysis_before_save(
+    st: Storage,
+    sess: Session,
+    *,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+) -> None:
+    sid = str(getattr(sess, "id", "") or "").strip()
+    if not sid:
+        return
+    current = st.load(sid, org_id=org_id, is_admin=is_admin)
+    if not current:
+        return
+    analysis = _merge_interview_analysis_namespace(
+        getattr(sess, "interview", {}),
+        getattr(current, "interview", {}),
+    )
+    interview = dict(getattr(sess, "interview", {}) or {})
+    if analysis is not None:
+        interview["analysis"] = analysis
+    else:
+        interview.pop("analysis", None)
+    sess.interview = interview
 
 
 def _next_report_version(by_path: Dict[str, List[Dict[str, Any]]], path_id: str) -> int:
@@ -1246,6 +1293,7 @@ def _patch_report_version_row(
         by_path[pid] = rows
         _set_report_versions_by_path(sess, by_path)
         _set_latest_path_report_pointer(sess, pid, target_row)
+        _preserve_current_interview_analysis_before_save(st, sess, org_id=org, is_admin=admin)
         st.save(sess, org_id=org, is_admin=admin)
         return target_row
 
@@ -1292,6 +1340,7 @@ def _delete_report_version_row(
             by_path.pop(pid, None)
         _set_report_versions_by_path(sess, by_path)
         _recompute_latest_path_report_pointer(sess, pid, rows)
+        _preserve_current_interview_analysis_before_save(st, sess, org_id=org, is_admin=admin)
         st.save(sess, org_id=org, is_admin=admin)
         return deleted_row
 
@@ -1612,6 +1661,7 @@ def _find_report_version_global(
         if not sess:
             continue
         if _mark_stale_running_reports(sess):
+            _preserve_current_interview_analysis_before_save(st, sess, org_id=org, is_admin=admin)
             st.save(sess, org_id=org, is_admin=admin)
         found = _find_report_version(sess, rid)
         if found:
@@ -4358,6 +4408,7 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
                 state["last_status"] = "processed"
                 state["updated_at"] = int(time.time())
                 s.ai_llm_state = state
+                _preserve_current_interview_analysis_before_save(st, s)
                 st.save(s)
                 out = _session_api_dump(s)
                 questions_for_step = sync.get("step_questions") if isinstance(sync, dict) else []
@@ -4399,6 +4450,7 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
             state["last_status"] = "completed"
             state["updated_at"] = int(time.time())
             s.ai_llm_state = state
+            _preserve_current_interview_analysis_before_save(st, s)
             st.save(s)
             out = _session_api_dump(s)
             out["llm_step"] = {
@@ -4468,6 +4520,7 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
             preferred_step_id=requested_step_id,
             keep_max=5,
         )
+        _preserve_current_interview_analysis_before_save(st, s)
         st.save(s)
         out = _session_api_dump(s)
         llm_questions_for_step = sync.get("step_questions") if isinstance(sync, dict) else []
@@ -4511,6 +4564,7 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
                 existing_ids.add(q.id)
 
     s = _recompute_session(s)
+    _preserve_current_interview_analysis_before_save(st, s)
     st.save(s)
     return s.model_dump()
 
@@ -4646,6 +4700,7 @@ def _create_path_report_version_core(
         by_path.setdefault(pid, []).append(running_row)
         _set_report_versions_by_path(s, by_path)
         _set_latest_path_report_pointer(s, pid, running_row)
+        _preserve_current_interview_analysis_before_save(st, s, org_id=org_scope, is_admin=admin)
         st.save(s, org_id=org_scope, is_admin=admin)
         _audit_log_safe(
             request,
@@ -4709,6 +4764,7 @@ def _list_path_report_versions_core(
     if not s:
         return []
     if _mark_stale_running_reports(s):
+        _preserve_current_interview_analysis_before_save(st, s, org_id=org_scope, is_admin=admin)
         st.save(s, org_id=org_scope, is_admin=admin)
     pid = str(path_id or "").strip()
     if not pid:
@@ -4738,6 +4794,7 @@ def _get_path_report_version_detail_core(
     if not sess:
         return {"error": "not found"}
     if _mark_stale_running_reports(sess):
+        _preserve_current_interview_analysis_before_save(st, sess, org_id=org_scope, is_admin=admin)
         st.save(sess, org_id=org_scope, is_admin=admin)
     pid = str(path_id or "").strip()
     rid = str(report_id or "").strip()
