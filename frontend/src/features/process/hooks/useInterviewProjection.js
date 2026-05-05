@@ -12,6 +12,44 @@ function pickHelpers(helpers = {}) {
   };
 }
 
+function isPlainObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function cloneSafePlainObject(value) {
+  if (!isPlainObject(value)) return null;
+  const out = {};
+  Object.keys(value).forEach((key) => {
+    if (key === "__proto__" || key === "prototype" || key === "constructor") return;
+    out[key] = value[key];
+  });
+  return out;
+}
+
+function mergeAnalysisNamespace(baseRaw, incomingRaw) {
+  const base = isPlainObject(baseRaw) ? baseRaw : {};
+  const incoming = isPlainObject(incomingRaw) ? incomingRaw : {};
+  const existingAnalysis = cloneSafePlainObject(base.analysis);
+  const hasIncomingAnalysis = Object.prototype.hasOwnProperty.call(incoming, "analysis");
+  if (!hasIncomingAnalysis) return existingAnalysis || undefined;
+  const incomingAnalysis = cloneSafePlainObject(incoming.analysis);
+  if (!incomingAnalysis) return existingAnalysis || undefined;
+  return {
+    ...(existingAnalysis || {}),
+    ...incomingAnalysis,
+  };
+}
+
+function withPreservedAnalysis(baseRaw, incomingRaw) {
+  const incoming = isPlainObject(incomingRaw) ? { ...incomingRaw } : {};
+  const analysis = mergeAnalysisNamespace(baseRaw, incomingRaw);
+  if (analysis) incoming.analysis = analysis;
+  else delete incoming.analysis;
+  return incoming;
+}
+
 export function projectParsedBpmnToInterview({
   parsed,
   draft,
@@ -42,7 +80,7 @@ export function projectParsedBpmnToInterview({
 
   const shouldUseImportedAsBase = replaceGraph || canAutofillInterview || !interviewHasContent(currentInterview);
   const mergedInterview = shouldUseImportedAsBase
-    ? importedInterview
+    ? withPreservedAnalysis(currentInterview, importedInterview)
     : mergeInterviewData(currentInterview, importedInterview, preferBpmn ? { preferBpmn: true } : undefined);
   if (forceTimelineFromBpmn) {
     mergedInterview.steps = asArray(importedInterview.steps).map((s) => ({ ...s }));

@@ -7,6 +7,36 @@ function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
 }
 
+function isPlainObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function cloneSafePlainObject(value) {
+  if (!isPlainObject(value)) return null;
+  const out = {};
+  Object.keys(value).forEach((key) => {
+    if (key === "__proto__" || key === "prototype" || key === "constructor") return;
+    out[key] = value[key];
+  });
+  return out;
+}
+
+function mergeInterviewAnalysisNamespace(baseRaw, incomingRaw) {
+  const base = isPlainObject(baseRaw) ? baseRaw : {};
+  const incoming = isPlainObject(incomingRaw) ? incomingRaw : {};
+  const existingAnalysis = cloneSafePlainObject(base.analysis);
+  const hasIncomingAnalysis = Object.prototype.hasOwnProperty.call(incoming, "analysis");
+  if (!hasIncomingAnalysis) return existingAnalysis || undefined;
+  const incomingAnalysis = cloneSafePlainObject(incoming.analysis);
+  if (!incomingAnalysis) return existingAnalysis || undefined;
+  return {
+    ...(existingAnalysis || {}),
+    ...incomingAnalysis,
+  };
+}
+
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map((x) => canonicalize(x));
   if (value && typeof value === "object") {
@@ -601,8 +631,9 @@ function mergeInterviewData(baseRaw, extraRaw, options = {}) {
     extra.order_mode || extra.orderMode || base.order_mode || base.orderMode || "bpmn",
   );
   const pathSpecRaw = extra.path_spec || extra.pathSpec || base.path_spec || base.pathSpec || { mode: "manual", steps: [] };
+  const analysis = mergeInterviewAnalysisNamespace(base, extra);
 
-  return {
+  const merged = {
     boundaries,
     steps,
     path_spec: pathSpecRaw,
@@ -613,6 +644,8 @@ function mergeInterviewData(baseRaw, extraRaw, options = {}) {
     transitions,
     order_mode: orderMode,
   };
+  if (analysis) merged.analysis = analysis;
+  return merged;
 }
 
 function toInt(v) {
@@ -1976,6 +2009,7 @@ export {
   interviewNodesFingerprint,
   interviewEdgesFingerprint,
   buildInterviewPatchPayload,
+  mergeInterviewAnalysisNamespace,
   normalizeLoose,
   sanitizeGraphNodes,
   interviewHasContent,

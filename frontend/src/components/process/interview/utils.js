@@ -72,6 +72,36 @@ export function toText(v) {
   return String(v || "").trim();
 }
 
+function isPlainObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function cloneSafePlainObject(value) {
+  if (!isPlainObject(value)) return null;
+  const out = {};
+  Object.keys(value).forEach((key) => {
+    if (key === "__proto__" || key === "prototype" || key === "constructor") return;
+    out[key] = value[key];
+  });
+  return out;
+}
+
+export function mergeInterviewAnalysisNamespace(baseRaw, incomingRaw) {
+  const base = isPlainObject(baseRaw) ? baseRaw : {};
+  const incoming = isPlainObject(incomingRaw) ? incomingRaw : {};
+  const existingAnalysis = cloneSafePlainObject(base.analysis);
+  const hasIncomingAnalysis = Object.prototype.hasOwnProperty.call(incoming, "analysis");
+  if (!hasIncomingAnalysis) return existingAnalysis || undefined;
+  const incomingAnalysis = cloneSafePlainObject(incoming.analysis);
+  if (!incomingAnalysis) return existingAnalysis || undefined;
+  return {
+    ...(existingAnalysis || {}),
+    ...incomingAnalysis,
+  };
+}
+
 const DISPLAY_NULLISH_TAIL_RE = /\s*(?:none|null|undefined)\s*$/i;
 const DISPLAY_NULLISH_EXACT_RE = /^(?:none|null|undefined)$/i;
 
@@ -831,7 +861,8 @@ export function normalizeInterview(raw) {
     });
   }
 
-  return {
+  const analysis = mergeInterviewAnalysisNamespace({}, src);
+  const normalized = {
     order_mode,
     order_mode_user_set,
     boundaries,
@@ -846,6 +877,8 @@ export function normalizeInterview(raw) {
     path_reports,
     report_versions,
   };
+  if (analysis) normalized.analysis = analysis;
+  return normalized;
 }
 
 export function computeTimeline(steps) {
