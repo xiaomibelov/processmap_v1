@@ -57,10 +57,10 @@ export default function useInterviewSessionState({ sid, interview, onChange }) {
   const [uiPrefsSavedAt, setUiPrefsSavedAt] = useState(0);
   const [uiPrefsDirty, setUiPrefsDirty] = useState(false);
   const [collapsed, setCollapsed] = useState({
-    boundaries: true,
+    boundaries: false,
     timeline: false,
     transitions: true,
-    summary: true,
+    summary: false,
     exceptions: true,
     ai: true,
     markdown: false,
@@ -97,10 +97,10 @@ export default function useInterviewSessionState({ sid, interview, onChange }) {
     setUiPrefsDirty(false);
     uiPrefsHydratedRef.current = false;
     setCollapsed({
-      boundaries: true,
+      boundaries: false,
       timeline: false,
       transitions: true,
-      summary: true,
+      summary: false,
       exceptions: true,
       ai: true,
       markdown: false,

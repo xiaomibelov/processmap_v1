@@ -1,17 +1,17 @@
 export const PROCESS_WORKBENCH_CONFIG = {
   tabs: [
-    { id: "interview", label: "Interview" },
-    { id: "diagram", label: "Diagram" },
+    { id: "interview", label: "Анализ" },
+    { id: "diagram", label: "BPMN" },
     { id: "xml", label: "XML" },
-    { id: "doc", label: "DOC" },
-    { id: "dod", label: "DoD" },
+    { id: "doc", label: "Документ" },
+    { id: "dod", label: "Проверки" },
   ],
   emptyGuide: {
     title: "Начало работы",
     steps: [
       "Выберите проект и откройте сессию в верхней панели.",
-      "Перейдите в `Diagram`: импортируйте BPMN или соберите схему вручную.",
-      "Откройте `Interview`: синхронно заполните шаги, лейны и `Text annotation (BPMN)`.",
+      "Перейдите в `BPMN`: импортируйте BPMN или соберите схему вручную.",
+      "Откройте `Анализ`: синхронно заполните шаги, лейны и `Text annotation (BPMN)`.",
       "Нажмите `Сгенерировать процесс`, затем проверьте результат и выгрузите `Export BPMN`.",
     ],
   },
@@ -31,7 +31,7 @@ export const PROCESS_WORKBENCH_CONFIG = {
     saveLocal: "Сохранить XML локально",
     saveBackend: "Сохранить текущее состояние сессии",
     importNoSession: "Сначала выберите сессию",
-    importInterview: "Импорт доступен в BPMN-режиме (Diagram/XML)",
+    importInterview: "Импорт доступен в BPMN-режиме (BPMN/XML)",
     importReady: "Загрузить BPMN/XML файл",
     export: "Экспорт BPMN в файл",
     seed: "Создать pool + lanes из акторов",
