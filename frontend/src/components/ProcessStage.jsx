@@ -6723,6 +6723,9 @@ export default function ProcessStage({
                   bpmnXml={draft?.bpmn_xml}
                   selectedDiagramElement={selectedBpmnElement}
                   onChange={handleInterviewChange}
+                  onSessionSync={onSessionSync}
+                  getBaseDiagramStateVersion={getBaseDiagramStateVersion}
+                  rememberDiagramStateVersion={rememberDiagramStateVersion}
                   stepTimeUnit={stepTimeUnit}
                   pathsUiIntent={diagramPathsIntent}
                 />
