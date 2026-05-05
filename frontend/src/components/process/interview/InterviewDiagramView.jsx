@@ -31,7 +31,7 @@ export default function InterviewDiagramView({
   return (
     <div className="interviewDiagramMode" data-testid="interview-diagram-mode">
       <div className="interviewDiagramModeHead">
-        <div className="interviewDiagramModeTitle">Diagram View</div>
+        <div className="interviewDiagramModeTitle">Граф анализа</div>
         <div className="muted small">
           BPMN nodes: {nodes.length} · link groups: {linkGroups.length}
         </div>
