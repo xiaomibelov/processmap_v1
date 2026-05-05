@@ -59,6 +59,7 @@ export default function TimelineControls({
   const FILTER_QUERY_DEBOUNCE_MS = 180;
   const [showMoreActions, setShowMoreActions] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [lanePickerOpen, setLanePickerOpen] = useState(false);
   const [quickInputOpen, setQuickInputOpen] = useState(() => !!toText(quickStepDraft));
   const [laneSearch, setLaneSearch] = useState("");
@@ -190,6 +191,9 @@ export default function TimelineControls({
   const orderHintText = orderMode === "bpmn"
     ? (toText(bpmnOrderHint) || "Порядок вычислен по графу диаграммы.")
     : "Creation order: порядок шага = order_index.";
+  const activeViewLabel = timelineViewMode === "paths"
+    ? "Сценарии и отчёты"
+    : (timelineViewMode === "diagram" ? "Граф анализа" : "Таблица шагов");
 
   function applyLaneSelection(nextList) {
     const cleaned = dedupList(nextList);
@@ -248,22 +252,39 @@ export default function TimelineControls({
           aria-label="Поиск шагов"
         />
 
-        <div className="interviewBranchViewToggle" role="group" aria-label="Режим отображения">
-          <button
-            type="button"
-            className={`secondaryBtn smallBtn interviewBranchViewBtn ${timelineViewMode === "diagram" ? "isActive" : ""}`}
-            data-testid="interview-view-mode-diagram-btn"
-            onClick={() => onSetTimelineViewMode?.("diagram")}
-          >
-            Diagram
-          </button>
+        <button
+          type="button"
+          className={`secondaryBtn smallBtn ${quickInputOpen ? "isActive" : ""}`}
+          data-testid="interview-quick-input-toggle"
+          onClick={() => setQuickInputOpen((prev) => !prev)}
+          aria-expanded={quickInputOpen}
+          title="Быстрый ввод шага"
+        >
+          Быстрый ввод {quickInputOpen ? "▴" : "▾"}
+        </button>
+
+        <button
+          type="button"
+          className={`secondaryBtn smallBtn ${advancedOpen ? "isActive" : ""}`}
+          data-testid="interview-advanced-toggle"
+          onClick={() => setAdvancedOpen((prev) => !prev)}
+          aria-expanded={advancedOpen}
+          title={`Текущий вид: ${activeViewLabel}`}
+        >
+          Дополнительно · {activeViewLabel} {advancedOpen ? "▴" : "▾"}
+        </button>
+      </div>
+
+      {advancedOpen ? (
+      <div className="interviewTimelineUtilityRow" data-testid="interview-advanced-controls">
+        <div className="interviewBranchViewToggle" role="group" aria-label="Режим отображения анализа">
           <button
             type="button"
             className={`secondaryBtn smallBtn interviewBranchViewBtn ${timelineViewMode === "matrix" ? "isActive" : ""}`}
             data-testid="interview-view-mode-matrix-btn"
             onClick={() => onSetTimelineViewMode?.("matrix")}
           >
-            Matrix
+            Таблица шагов
           </button>
           <button
             type="button"
@@ -271,24 +292,18 @@ export default function TimelineControls({
             data-testid="interview-view-mode-paths-btn"
             onClick={() => onSetTimelineViewMode?.("paths")}
           >
-            Paths
+            Сценарии и отчёты
+          </button>
+          <button
+            type="button"
+            className={`secondaryBtn smallBtn interviewBranchViewBtn ${timelineViewMode === "diagram" ? "isActive" : ""}`}
+            data-testid="interview-view-mode-diagram-btn"
+            onClick={() => onSetTimelineViewMode?.("diagram")}
+          >
+            Граф анализа
           </button>
         </div>
 
-        <select
-          className="select interviewSortSelect"
-          value={orderMode === "bpmn" ? "bpmn" : "interview"}
-          onChange={(e) => onSetOrderMode?.(e.target.value)}
-          aria-label="Сортировка шагов"
-          data-testid="interview-order-select"
-        >
-          <option value="bpmn">Сортировка: BPMN</option>
-          <option value="interview">Сортировка: Creation</option>
-          <option value="manual" disabled>Сортировка: Manual (скоро)</option>
-        </select>
-      </div>
-
-      <div className="interviewTimelineUtilityRow">
         <button
           type="button"
           className="secondaryBtn smallBtn"
@@ -304,19 +319,20 @@ export default function TimelineControls({
           data-testid="binding-assistant-open"
           onClick={() => onOpenBindingAssistant?.()}
         >
-          Привязки ({Number(bindingIssueCount || 0)})
+          Проверка привязок ({Number(bindingIssueCount || 0)})
         </button>
 
-        <button
-          type="button"
-          className={`secondaryBtn smallBtn ${quickInputOpen ? "isActive" : ""}`}
-          data-testid="interview-quick-input-toggle"
-          onClick={() => setQuickInputOpen((prev) => !prev)}
-          aria-expanded={quickInputOpen}
-          title="Быстрый ввод шага"
+        <select
+          className="select interviewSortSelect"
+          value={orderMode === "bpmn" ? "bpmn" : "interview"}
+          onChange={(e) => onSetOrderMode?.(e.target.value)}
+          aria-label="Сортировка шагов"
+          data-testid="interview-order-select"
         >
-          Quick input {quickInputOpen ? "▴" : "▾"}
-        </button>
+          <option value="bpmn">Порядок: BPMN</option>
+          <option value="interview">Порядок: по созданию</option>
+          <option value="manual" disabled>Ручной порядок (скоро)</option>
+        </select>
 
         {Number(selectedStepCount || 0) > 0 ? (
           <button
@@ -340,7 +356,7 @@ export default function TimelineControls({
         ) : null}
 
         <span className={`muted small ${bpmnOrderFallback ? "text-amber-700" : ""}`} title={orderHintText}>
-          {orderMode === "bpmn" ? "Порядок: BPMN" : "Порядок: Creation"}
+          {orderMode === "bpmn" ? "Порядок: BPMN" : "Порядок: по созданию"}
         </span>
 
         <div className="interviewColsMenuWrap">
@@ -350,12 +366,12 @@ export default function TimelineControls({
             data-testid="interview-step-more-btn"
             onClick={() => setShowMoreActions((v) => !v)}
           >
-            Действия ▾
+            Ещё ▾
           </button>
           {showMoreActions ? (
             <div className="interviewColsMenu" style={{ minWidth: 300 }}>
               <div className="interviewColsMenuHead">
-                <span>Действия</span>
+                <span>Дополнительные действия</span>
                 <button type="button" className="secondaryBtn smallBtn" onClick={() => setShowMoreActions(false)}>
                   Закрыть
                 </button>
@@ -442,7 +458,7 @@ export default function TimelineControls({
                 </button>
                 <div className="col-span-2 mt-1 flex flex-wrap items-center gap-2">
                   <span className={"badge " + (graphOrderLocked ? "ok" : "warn")} title={graphOrderLocked ? "Reorder заблокирован (порядок из BPMN)" : "Reorder доступен"}>
-                    {graphOrderLocked ? "🔒 Reorder lock" : "🔓 Reorder unlock"}
+                    {graphOrderLocked ? "Порядок BPMN зафиксирован" : "Порядок можно менять"}
                   </span>
                   <span className="badge">Шаги: {filteredTimelineCount}/{timelineCount}</span>
                   <span className="badge">AI: {Number(statusCounts?.withAi || 0)}</span>
@@ -456,7 +472,7 @@ export default function TimelineControls({
                       data-testid="interview-debug-toggle"
                       onClick={() => onToggleDebug?.()}
                     >
-                      Debug
+                      Диагностика
                     </button>
                   ) : null}
                 </div>
@@ -465,6 +481,7 @@ export default function TimelineControls({
           ) : null}
         </div>
       </div>
+      ) : null}
 
       {quickInputOpen ? (
         <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-panel/60 px-2.5 py-2">
