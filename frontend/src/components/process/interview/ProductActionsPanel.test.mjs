@@ -30,3 +30,16 @@ test("ProductActionsPanel uses explicit analysis persistence and does not call g
   assert.equal(source.includes("patchStep("), false);
   assert.equal(source.includes("onChange("), false);
 });
+
+test("ProductActionsPanel preserves draft during rerenders and blocks empty save", () => {
+  assert.equal(source.includes("lastDraftResetKeyRef"), true);
+  assert.equal(source.includes("draftResetKey"), true);
+  assert.match(
+    source,
+    /if \(lastDraftResetKeyRef\.current === draftResetKey\) return;/,
+    "draft reset must be guarded by stable step/action key",
+  );
+  assert.equal(source.includes("hasMeaningfulProductActionDraft"), true);
+  assert.equal(source.includes("disabled={saving || !canSaveDraft}"), true);
+  assert.equal(source.includes("Заполните хотя бы одно поле действия с продуктом."), true);
+});
