@@ -781,6 +781,11 @@ export default function InterviewStage({
         <>
         <div className="analysisStepWorkspace" data-testid="analysis-step-workspace">
           <div className="analysisStepMainColumn">
+            <details className="analysisBSection analysisBStepsSection" open data-testid="analysis-b-steps-section">
+              <summary>
+                <span>Шаги процесса</span>
+                <span>{filteredTimelineView.length}/{timelineView.length}</span>
+              </summary>
             <div className="analysisStepControlsCard">
               <TimelineControls
                 quickStepDraft={quickStepDraft}
@@ -906,9 +911,15 @@ export default function InterviewStage({
                 />
               </Profiler>
             </div>
+            </details>
           </div>
 
           <aside className="analysisStepCompanion" data-testid="analysis-step-companion">
+            <details className="analysisBSection analysisBContextSection" open data-testid="analysis-b-context-section">
+              <summary>
+                <span>Шаг и продукт</span>
+                <span>{selectedStepProductActionCount} действий</span>
+              </summary>
             <section className="analysisSelectedStepCard" data-testid="analysis-selected-step-card">
               <div className="analysisSelectedStepEyebrow">{selectedStep ? "Выбранный шаг" : "Текущий шаг"}</div>
               {analysisContextStep ? (
@@ -975,18 +986,16 @@ export default function InterviewStage({
               rememberDiagramStateVersion={rememberDiagramStateVersion}
               onSessionSync={onSessionSync}
             />
+            </details>
           </aside>
         </div>
 
         {timelineViewMode !== "matrix" ? (
-          <section className="analysisSecondaryPanel" data-testid="analysis-secondary-panel">
-            <div className="analysisSecondaryHead">
-              <div>
-                <div className="analysisSecondaryTitle">
-                  {timelineViewMode === "paths" ? "Дополнительно · Сценарии и отчёты" : "Дополнительно · Граф анализа"}
-                </div>
-              </div>
-            </div>
+          <details className="analysisBSection analysisSecondaryPanel" open data-testid="analysis-secondary-panel">
+            <summary>
+              <span>{timelineViewMode === "paths" ? "Дополнительно · Сценарии и отчёты" : "Дополнительно · Граф анализа"}</span>
+              <span>можно свернуть</span>
+            </summary>
             {timelineViewMode === "diagram" ? (
               <Profiler id="InterviewDiagramView" onRender={handleProfilerRender}>
                 <InterviewDiagramView
@@ -1019,7 +1028,7 @@ export default function InterviewStage({
                 </Suspense>
               </Profiler>
             ) : null}
-          </section>
+          </details>
         ) : null}
         </>
         ) : null}
