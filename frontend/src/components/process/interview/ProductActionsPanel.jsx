@@ -12,6 +12,7 @@ import {
   listProductActionsForStep,
   normalizeProductActionsList,
 } from "../../../features/process/analysis/productActionsModel.js";
+import ProductActionsRegistryPanel from "../analysis/ProductActionsRegistryPanel.jsx";
 import { toArray, toText } from "./utils";
 
 const FIELD_CONFIGS = [
@@ -135,6 +136,9 @@ function actionMatchesBinding(rowRaw, bindingRaw) {
 
 export default function ProductActionsPanel({
   sessionId = "",
+  sessionTitle = "",
+  projectId = "",
+  projectTitle = "",
   interviewData = null,
   timelineView = [],
   selectedStepIds = [],
@@ -166,6 +170,7 @@ export default function ProductActionsPanel({
   const lastDraftResetKeyRef = useRef(draftResetKey);
   const [editorOpen, setEditorOpen] = useState(false);
   const [actionsScope, setActionsScope] = useState("step");
+  const [registryOpen, setRegistryOpen] = useState(false);
   const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -272,20 +277,30 @@ export default function ProductActionsPanel({
             {actionCount ? `Сохранено: ${actionCount}` : "Нет сохранённых действий"}
           </div>
         </div>
-        <button
-          type="button"
-          className="secondaryBtn smallBtn"
-          disabled={!steps.length}
-          onClick={() => {
-            setEditingActionId("");
-            setDraft(createDraftForStep(selectedStep));
-            lastDraftResetKeyRef.current = `${toText(selectedStep?.id)}::`;
-            setEditorOpen(true);
-            setStatus(null);
-          }}
-        >
-          Добавить действие
-        </button>
+        <div className="productActionsHeaderActions">
+          <button
+            type="button"
+            className="secondaryBtn smallBtn"
+            onClick={() => setRegistryOpen(true)}
+            data-testid="product-actions-open-registry"
+          >
+            Реестр действий
+          </button>
+          <button
+            type="button"
+            className="secondaryBtn smallBtn"
+            disabled={!steps.length}
+            onClick={() => {
+              setEditingActionId("");
+              setDraft(createDraftForStep(selectedStep));
+              lastDraftResetKeyRef.current = `${toText(selectedStep?.id)}::`;
+              setEditorOpen(true);
+              setStatus(null);
+            }}
+          >
+            Добавить действие
+          </button>
+        </div>
       </div>
 
       {!steps.length ? (
@@ -513,6 +528,15 @@ export default function ProductActionsPanel({
       ) : null}
         </>
       ) : null}
+      <ProductActionsRegistryPanel
+        open={registryOpen}
+        onClose={() => setRegistryOpen(false)}
+        sessionId={sessionId}
+        sessionTitle={sessionTitle}
+        projectId={projectId}
+        projectTitle={projectTitle}
+        interviewData={interviewData}
+      />
     </section>
   );
 }

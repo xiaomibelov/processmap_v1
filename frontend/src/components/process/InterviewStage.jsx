@@ -996,6 +996,9 @@ export default function InterviewStage({
 
             <ProductActionsPanel
               sessionId={sid}
+              sessionTitle={processTitle}
+              projectId={sessionDraft?.project_id || sessionDraft?.projectId || ""}
+              projectTitle={sessionDraft?.project_title || sessionDraft?.projectTitle || ""}
               interviewData={data}
               timelineView={timelineView}
               selectedStepIds={analysisContextStepIds}
