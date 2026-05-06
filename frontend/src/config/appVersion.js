@@ -1,8 +1,14 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.114",
+  currentVersion: "v1.0.115",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.115",
+      changes: [
+        "Добавлен реестр действий с продуктом для предпросмотра данных.",
+      ],
+    },
     {
       version: "v1.0.114",
       changes: [
