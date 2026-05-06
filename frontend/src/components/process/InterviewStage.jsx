@@ -991,7 +991,7 @@ export default function InterviewStage({
         </div>
 
         {timelineViewMode !== "matrix" ? (
-          <details className="analysisBSection analysisSecondaryPanel" open data-testid="analysis-secondary-panel">
+          <details className="analysisBSection analysisSecondaryPanel" data-testid="analysis-secondary-panel">
             <summary>
               <span>{timelineViewMode === "paths" ? "Дополнительно · Сценарии и отчёты" : "Дополнительно · Граф анализа"}</span>
               <span>можно свернуть</span>
