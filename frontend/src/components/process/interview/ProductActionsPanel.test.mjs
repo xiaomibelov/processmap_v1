@@ -43,3 +43,10 @@ test("ProductActionsPanel preserves draft during rerenders and blocks empty save
   assert.equal(source.includes("disabled={saving || !canSaveDraft}"), true);
   assert.equal(source.includes("Заполните хотя бы одно поле действия с продуктом."), true);
 });
+
+test("ProductActionsPanel stays visible with a useful empty state when there are no steps", () => {
+  assert.equal(source.includes("return null"), false);
+  assert.equal(source.includes("product-actions-empty-state"), true);
+  assert.equal(source.includes("Добавьте шаг процесса, чтобы описать действия с продуктом."), true);
+  assert.equal(source.includes("disabled={!steps.length}"), true);
+});
