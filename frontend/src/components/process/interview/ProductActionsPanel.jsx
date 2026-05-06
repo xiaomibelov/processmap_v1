@@ -91,6 +91,8 @@ export default function ProductActionsPanel({
   interviewData = null,
   timelineView = [],
   selectedStepIds = [],
+  compact = false,
+  showStepContext = true,
   getBaseDiagramStateVersion = null,
   rememberDiagramStateVersion = null,
   onSessionSync = null,
@@ -209,12 +211,12 @@ export default function ProductActionsPanel({
   }
 
   return (
-    <section className="productActionsPanel" data-testid="product-actions-panel">
+    <section className={`productActionsPanel${compact ? " compact" : ""}`} data-testid="product-actions-panel">
       <div className="productActionsHeader">
         <div>
           <div className="productActionsTitle">Действия с продуктом</div>
           <div className="productActionsSub">
-            Сохранено: {actionCount}. Связаны с выбранным шагом таблицы и сохраняются в анализе процесса.
+            {actionCount ? `${actionCount} сохранено` : "Нет сохранённых действий"}
           </div>
         </div>
         <button
@@ -241,6 +243,7 @@ export default function ProductActionsPanel({
 
       {steps.length ? (
         <>
+          {showStepContext ? (
           <div className="productActionsStepRow">
             <label className="interviewField productActionsStepSelect">
               <span>Шаг процесса</span>
@@ -273,6 +276,7 @@ export default function ProductActionsPanel({
               </div>
             </div>
           </div>
+          ) : null}
 
       {actionsForStep.length ? (
         <div className="productActionsList" data-testid="product-actions-list">

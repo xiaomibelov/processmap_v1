@@ -581,6 +581,11 @@ export default function InterviewStage({
     if (!selected.size) return null;
     return (Array.isArray(timelineView) ? timelineView : []).find((step) => selected.has(toText(step?.id))) || null;
   }, [selectedTimelineStepIds, timelineView]);
+  const analysisContextStep = selectedStep || (Array.isArray(filteredTimelineView) ? filteredTimelineView[0] : null) || (Array.isArray(timelineView) ? timelineView[0] : null) || null;
+  const analysisContextStepIds = useMemo(() => {
+    const id = toText(analysisContextStep?.id);
+    return id ? [id] : [];
+  }, [analysisContextStep]);
 
   const selectedStepAiMeta = useMemo(() => {
     const stepId = toText(selectedStep?.id);
@@ -589,16 +594,16 @@ export default function InterviewStage({
   }, [selectedStep, aiQuestionMetaByStepId]);
 
   const selectedStepProductActionCount = useMemo(
-    () => countProductActionsForStep(data?.analysis, selectedStep),
-    [data?.analysis, selectedStep],
+    () => countProductActionsForStep(data?.analysis, analysisContextStep),
+    [data?.analysis, analysisContextStep],
   );
 
   const selectedStepContext = useMemo(() => ({
-    title: analysisStepTitle(selectedStep),
-    bpmnId: analysisStepBpmnId(selectedStep),
-    role: analysisStepRole(selectedStep),
-    timing: analysisStepTiming(selectedStep),
-  }), [selectedStep]);
+    title: analysisStepTitle(analysisContextStep),
+    bpmnId: analysisStepBpmnId(analysisContextStep),
+    role: analysisStepRole(analysisContextStep),
+    timing: analysisStepTiming(analysisContextStep),
+  }), [analysisContextStep]);
 
   const timelineStatusCounts = useMemo(() => {
     const snapshotCounts = dodSnapshot?.counts?.interview || {};
@@ -767,10 +772,8 @@ export default function InterviewStage({
       <div className="interviewBlock analysisStepBlock" data-testid="analysis-step-actions-section">
         <div className="interviewBlockHead analysisStepHeaderCard">
           <div>
-            <div className="interviewBlockTitle">B. Таблица шагов / действия процесса</div>
-            <div className="analysisStepSectionSub">
-              Основная рабочая зона анализа: выберите шаг, проверьте контекст и опишите действия с продуктом.
-            </div>
+            <div className="interviewBlockTitle">B. Действия процесса</div>
+            <div className="analysisStepSectionSub">Шаги, контекст и действия с продуктом.</div>
           </div>
         </div>
 
@@ -856,78 +859,68 @@ export default function InterviewStage({
             ) : null}
 
             <div className="analysisStepTableCard" data-testid="analysis-step-table-card">
-              {timelineViewMode === "matrix" ? (
-                <Profiler id="InterviewTimelineTable" onRender={handleProfilerRender}>
-                  <TimelineTable
-                    sessionId={sid}
-                    hiddenTimelineCols={hiddenTimelineCols}
-                    timelineLaneFilter={timelineFilters.lane}
-                    filteredTimelineView={filteredTimelineView}
-                    timelineView={timelineView}
-                    timelineColSpan={timelineColSpan}
-                    laneLinksByNode={laneLinksByNode}
-                    patchStep={patchStep}
-                    addTextAnnotation={handleAddTextAnnotation}
-                    annotationSyncByStepId={annotationSyncByStepId}
-                    xmlTextAnnotationsByStepId={xmlTextAnnotationsByStepId}
-                    nodeBindOptionsByStepId={nodeBindOptionsByStepId}
-                    addStepAfter={addStepAfter}
-                    aiCue={aiCue}
-                    setAiCue={setAiCue}
-                    aiBusyStepId={aiBusyStepId}
-                    aiQuestionMetaByStepId={aiQuestionMetaByStepId}
-                    addAiQuestions={addAiQuestions}
-                    toggleAiQuestionDiagram={toggleAiQuestionDiagram}
-                    deleteAiQuestion={deleteAiQuestion}
-                    addAiQuestionsNote={handleAddAiQuestionsNote}
-                    aiQuestionsDiagramSyncByStepId={aiQuestionsDiagramSyncByStepId}
-                    aiNoteStatus={aiNoteStatus}
-                    moveStep={moveStep}
-                    orderMode={orderMode}
-                    graphOrderLocked={graphOrderLocked}
-                    bpmnOrderFallback={bpmnOrderFallback}
-                    bpmnOrderHint={bpmnOrderHint}
-                    isTimelineFiltering={isTimelineFiltering}
-                    deleteStep={deleteStep}
-                    subprocessCatalog={subprocessCatalog}
-                    selectedStepIds={selectedTimelineStepIds}
-                    onToggleStepSelection={handleToggleStepSelection}
-                    onToggleAllStepSelection={handleToggleAllStepSelection}
-                    stepTimeUnit={stepTimeUnit}
-                    dodSnapshot={dodSnapshot}
-                    tierFilters={timelineFilters?.tiers}
-                    branchViewMode={branchViewMode}
-                    branchExpandByGateway={branchExpandByGateway}
-                    onPatchBranchExpand={handlePatchBranchExpand}
-                    onSetTimelineViewMode={handleSetTimelineViewMode}
-                    pathMetrics={pathMetrics}
-                  />
-                </Profiler>
-              ) : (
-                <div className="analysisStepModePlaceholder">
-                  <div className="analysisStepModeTitle">
-                    {timelineViewMode === "paths" ? "Сценарии и отчёты открыты ниже" : "Граф анализа открыт ниже"}
-                  </div>
-                  <div className="analysisStepSectionSub">
-                    Таблица шагов остаётся основой анализа. Режим таблицы доступен в дополнительных переключателях.
-                  </div>
-                </div>
-              )}
+              <Profiler id="InterviewTimelineTable" onRender={handleProfilerRender}>
+                <TimelineTable
+                  sessionId={sid}
+                  hiddenTimelineCols={hiddenTimelineCols}
+                  timelineLaneFilter={timelineFilters.lane}
+                  filteredTimelineView={filteredTimelineView}
+                  timelineView={timelineView}
+                  timelineColSpan={timelineColSpan}
+                  laneLinksByNode={laneLinksByNode}
+                  patchStep={patchStep}
+                  addTextAnnotation={handleAddTextAnnotation}
+                  annotationSyncByStepId={annotationSyncByStepId}
+                  xmlTextAnnotationsByStepId={xmlTextAnnotationsByStepId}
+                  nodeBindOptionsByStepId={nodeBindOptionsByStepId}
+                  addStepAfter={addStepAfter}
+                  aiCue={aiCue}
+                  setAiCue={setAiCue}
+                  aiBusyStepId={aiBusyStepId}
+                  aiQuestionMetaByStepId={aiQuestionMetaByStepId}
+                  addAiQuestions={addAiQuestions}
+                  toggleAiQuestionDiagram={toggleAiQuestionDiagram}
+                  deleteAiQuestion={deleteAiQuestion}
+                  addAiQuestionsNote={handleAddAiQuestionsNote}
+                  aiQuestionsDiagramSyncByStepId={aiQuestionsDiagramSyncByStepId}
+                  aiNoteStatus={aiNoteStatus}
+                  moveStep={moveStep}
+                  orderMode={orderMode}
+                  graphOrderLocked={graphOrderLocked}
+                  bpmnOrderFallback={bpmnOrderFallback}
+                  bpmnOrderHint={bpmnOrderHint}
+                  isTimelineFiltering={isTimelineFiltering}
+                  deleteStep={deleteStep}
+                  subprocessCatalog={subprocessCatalog}
+                  selectedStepIds={selectedTimelineStepIds}
+                  onToggleStepSelection={handleToggleStepSelection}
+                  onToggleAllStepSelection={handleToggleAllStepSelection}
+                  stepTimeUnit={stepTimeUnit}
+                  dodSnapshot={dodSnapshot}
+                  tierFilters={timelineFilters?.tiers}
+                  branchViewMode={branchViewMode}
+                  branchExpandByGateway={branchExpandByGateway}
+                  onPatchBranchExpand={handlePatchBranchExpand}
+                  onSetTimelineViewMode={handleSetTimelineViewMode}
+                  pathMetrics={pathMetrics}
+                />
+              </Profiler>
             </div>
           </div>
 
           <aside className="analysisStepCompanion" data-testid="analysis-step-companion">
             <section className="analysisSelectedStepCard" data-testid="analysis-selected-step-card">
-              <div className="analysisSelectedStepEyebrow">Выбранный шаг</div>
-              {selectedStep ? (
+              <div className="analysisSelectedStepEyebrow">{selectedStep ? "Выбранный шаг" : "Текущий шаг"}</div>
+              {analysisContextStep ? (
                 <>
                   <div className="analysisSelectedStepTitle">{selectedStepContext.title}</div>
                   <div className="analysisSelectedStepMeta">
-                    <span>Роль: {selectedStepContext.role || "не указана"}</span>
-                    <span>BPMN: {selectedStepContext.bpmnId || "нет привязки"}</span>
-                    <span>{selectedStepContext.timing}</span>
-                    <span>Действий с продуктом: {selectedStepProductActionCount}</span>
+                    <span><b>Роль</b>{selectedStepContext.role || "не указана"}</span>
+                    <span><b>BPMN</b>{selectedStepContext.bpmnId || "нет привязки"}</span>
+                    <span><b>Время</b>{selectedStepContext.timing}</span>
+                    <span><b>Действия</b>{selectedStepProductActionCount}</span>
                   </div>
+                  {selectedStep ? (
                   <div className="analysisSelectedStepActions" data-testid="interview-selection-actions">
                     <button
                       type="button"
@@ -962,10 +955,11 @@ export default function InterviewStage({
                       Удалить
                     </button>
                   </div>
+                  ) : null}
                 </>
               ) : (
                 <div className="analysisStepEmptyState">
-                  Выберите строку в таблице, чтобы увидеть контекст шага и действия с продуктом.
+                  Добавьте шаг процесса.
                 </div>
               )}
             </section>
@@ -974,7 +968,9 @@ export default function InterviewStage({
               sessionId={sid}
               interviewData={data}
               timelineView={timelineView}
-              selectedStepIds={selectedTimelineStepIds}
+              selectedStepIds={analysisContextStepIds}
+              compact
+              showStepContext={false}
               getBaseDiagramStateVersion={getBaseDiagramStateVersion}
               rememberDiagramStateVersion={rememberDiagramStateVersion}
               onSessionSync={onSessionSync}
@@ -988,9 +984,6 @@ export default function InterviewStage({
               <div>
                 <div className="analysisSecondaryTitle">
                   {timelineViewMode === "paths" ? "Дополнительно · Сценарии и отчёты" : "Дополнительно · Граф анализа"}
-                </div>
-                <div className="analysisStepSectionSub">
-                  Вторичный слой анализа: маршруты, отчёты и граф помогают проверить таблицу шагов, но не заменяют её.
                 </div>
               </div>
             </div>
