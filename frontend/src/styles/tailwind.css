@@ -5965,7 +5965,8 @@
   }
 
   .analysisStepListTable .analysisStepListRow.isSelected td,
-  .analysisStepListTable .analysisStepListRow.isActiveRow td {
+  .analysisStepListTable .analysisStepListRow.isActiveRow td,
+  .analysisStepListTable .analysisStepListRow.isAnalysisActive td {
     background: color-mix(in srgb, var(--lane-accent, hsl(var(--accent2))) 12%, var(--c-panel));
     border-color: color-mix(in srgb, var(--lane-accent, hsl(var(--accent2))) 42%, var(--c-border-strong));
     box-shadow:
