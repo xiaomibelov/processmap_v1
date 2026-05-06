@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   deleteProductActionForStep,
   saveProductActionForStep,
@@ -22,6 +22,17 @@ const FIELD_CONFIGS = [
   { key: "action_object", label: "Объект", type: "text", placeholder: "куриная грудка" },
   { key: "action_object_category", label: "Категория объекта", type: "select", options: ACTION_OBJECT_CATEGORIES },
   { key: "action_method", label: "Способ", type: "select", options: ACTION_METHODS },
+];
+
+const MEANINGFUL_PRODUCT_ACTION_FIELDS = [
+  "product_name",
+  "product_group",
+  "action_type",
+  "action_stage",
+  "action_object",
+  "action_object_category",
+  "action_method",
+  "role",
 ];
 
 function stepDisplayLabel(stepRaw) {
@@ -57,6 +68,11 @@ function statusText(status) {
   return status.text || "Не удалось сохранить действие с продуктом.";
 }
 
+function hasMeaningfulProductActionDraft(draftRaw) {
+  const draft = draftRaw && typeof draftRaw === "object" ? draftRaw : {};
+  return MEANINGFUL_PRODUCT_ACTION_FIELDS.some((key) => !!toText(draft[key]));
+}
+
 export default function ProductActionsPanel({
   sessionId = "",
   interviewData = null,
@@ -84,6 +100,8 @@ export default function ProductActionsPanel({
   const [editingActionId, setEditingActionId] = useState("");
   const editingAction = actionsForStep.find((row) => row.id === editingActionId) || null;
   const [draft, setDraft] = useState(() => createDraftForStep(selectedStep));
+  const draftResetKey = `${toText(selectedStep?.id)}::${toText(editingAction?.id)}`;
+  const lastDraftResetKeyRef = useRef(draftResetKey);
   const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -98,14 +116,17 @@ export default function ProductActionsPanel({
   }, [preferredStepId, selectedStepId, steps]);
 
   useEffect(() => {
+    if (lastDraftResetKeyRef.current === draftResetKey) return;
+    lastDraftResetKeyRef.current = draftResetKey;
     setDraft(createDraftForStep(selectedStep, editingAction));
-  }, [selectedStep, editingAction]);
+  }, [draftResetKey, selectedStep, editingAction]);
 
   if (!steps.length) return null;
 
   const selectedBinding = deriveProductActionBindingFromStep(selectedStep);
   const actionCount = productActions.length;
   const stepActionCount = actionsForStep.length;
+  const canSaveDraft = hasMeaningfulProductActionDraft(draft);
 
   function patchDraft(key, value) {
     setDraft((prev) => ({
@@ -116,6 +137,10 @@ export default function ProductActionsPanel({
 
   async function handleSave() {
     if (!selectedStep || saving) return;
+    if (!canSaveDraft) {
+      setStatus({ type: "error", text: "Заполните хотя бы одно поле действия с продуктом." });
+      return;
+    }
     setSaving(true);
     setStatus({ type: "saving" });
     const result = await saveProductActionForStep({
@@ -129,7 +154,9 @@ export default function ProductActionsPanel({
     });
     setSaving(false);
     if (result?.ok) {
-      setEditingActionId(toText(result?.productAction?.id));
+      const savedActionId = toText(result?.productAction?.id);
+      lastDraftResetKeyRef.current = `${toText(selectedStep?.id)}::${savedActionId}`;
+      setEditingActionId(savedActionId);
       setDraft(createDraftForStep(selectedStep, result?.productAction));
       setStatus({ type: "saved" });
       return;
@@ -157,6 +184,7 @@ export default function ProductActionsPanel({
     if (result?.ok) {
       setEditingActionId("");
       setDraft(createDraftForStep(selectedStep));
+      lastDraftResetKeyRef.current = `${toText(selectedStep?.id)}::`;
       setStatus({ type: "saved", text: "Действие с продуктом удалено." });
       return;
     }
@@ -181,6 +209,7 @@ export default function ProductActionsPanel({
           onClick={() => {
             setEditingActionId("");
             setDraft(createDraftForStep(selectedStep));
+            lastDraftResetKeyRef.current = `${toText(selectedStep?.id)}::`;
             setStatus(null);
           }}
         >
@@ -277,7 +306,7 @@ export default function ProductActionsPanel({
           type="button"
           className="primaryBtn smallBtn"
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || !canSaveDraft}
           data-testid="product-action-save"
         >
           {saving ? "Сохраняю…" : "Сохранить действие"}
