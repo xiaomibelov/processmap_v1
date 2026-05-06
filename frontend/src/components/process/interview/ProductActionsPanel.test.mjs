@@ -10,7 +10,9 @@ const source = fs.readFileSync(path.join(__dirname, "ProductActionsPanel.jsx"), 
 test("ProductActionsPanel exposes MVP product action fields in Analysis UI", () => {
   [
     "Действия с продуктом",
-    "сохранено",
+    "Сохранено:",
+    "По выбранному шагу",
+    "Все действия",
     "Товар",
     "Группа товара",
     "Тип действия",
@@ -51,6 +53,9 @@ test("ProductActionsPanel makes saved actions primary and keeps editor collapsed
   assert.equal(source.includes("productActionCard"), true);
   assert.equal(source.includes("productActionCardDetails"), true);
   assert.equal(source.includes("Поля действия"), true);
+  assert.equal(source.includes("productActionsScopeToggle"), true);
+  assert.equal(source.includes("visibleActions"), true);
+  assert.equal(source.includes("Действие другого шага"), true);
   assert.equal(source.includes("Неполное действие"), true);
   assert.equal(source.includes("Неполное"), true);
   assert.equal(source.includes("Редактировать"), true);
@@ -59,6 +64,25 @@ test("ProductActionsPanel makes saved actions primary and keeps editor collapsed
   assert.equal(source.includes('data-testid="product-actions-editor"'), true);
   assert.equal(source.includes("Новое действие с продуктом"), true);
   assert.equal(source.includes("Редактирование действия"), true);
+});
+
+test("ProductActionsPanel exposes all saved actions without rebinding other-step rows", () => {
+  assert.equal(source.includes('const [actionsScope, setActionsScope] = useState("step")'), true);
+  assert.equal(source.includes('actionsScope === "all" ? productActions : actionsForStep'), true);
+  assert.equal(source.includes("actionMatchesBinding(row, selectedBinding)"), true);
+  assert.match(source, /isCurrentStepAction \? \([\s\S]*Редактировать[\s\S]*\) : \(/);
+  assert.equal(source.includes("Действие другого шага"), true);
+});
+
+test("ProductActionsPanel editor is grouped and has one cancel action in the footer", () => {
+  assert.equal(source.includes("FIELD_GROUPS"), true);
+  assert.equal(source.includes("Продукт"), true);
+  assert.equal(source.includes("Классификация действия"), true);
+  assert.equal(source.includes("Контекст выполнения"), true);
+  assert.equal(source.includes("productActionsEditorGroup"), true);
+  assert.equal(source.includes("productActionsEditorContext"), true);
+  const cancelMatches = source.match(/>\s*Отменить\s*</g) || [];
+  assert.equal(cancelMatches.length, 1);
 });
 
 test("ProductActionsPanel shows selected step context and binding metadata", () => {
@@ -77,7 +101,7 @@ test("ProductActionsPanel can render embedded in the B-block companion column", 
 });
 
 test("ProductActionsPanel stays visible with a useful empty state when there are no steps", () => {
-  assert.equal(source.includes("return null"), false);
+  assert.doesNotMatch(source, /if \(!steps\.length\) return null/);
   assert.equal(source.includes("product-actions-empty-state"), true);
   assert.equal(source.includes("Добавьте шаг процесса, чтобы описать действия с продуктом."), true);
   assert.equal(source.includes("disabled={!steps.length}"), true);

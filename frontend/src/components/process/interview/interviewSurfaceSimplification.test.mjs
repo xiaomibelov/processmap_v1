@@ -71,9 +71,12 @@ test("analysis step block is structured as primary workspace plus secondary scen
   assert.match(source, /Дополнительно · Сценарии и отчёты/);
   assert.match(source, /<details className="analysisBSection analysisSecondaryPanel" data-testid="analysis-secondary-panel">/);
   assert.match(source, /ProductActionsPanel/);
+  const companionBlock = styles.match(/\.analysisStepCompanion\s*\{[\s\S]*?\n\}/)?.[0] || "";
   assert.match(styles, /\.analysisStepCompanion\s*\{[\s\S]*position: static;/);
   assert.match(styles, /\.analysisStepCompanion\s*\{[\s\S]*max-height: none;/);
   assert.match(styles, /\.analysisStepCompanion\s*\{[\s\S]*overflow: visible;/);
+  assert.doesNotMatch(companionBlock, /position: sticky;/);
+  assert.doesNotMatch(companionBlock, /overflow-y: auto;/);
   assert.match(timeline, /analysisStepListTable/);
   assert.match(timeline, /analysisStepListCell--step/);
   assert.match(timeline, /analysisStepListCell--node/);
@@ -88,8 +91,8 @@ test("analysis step block is structured as primary workspace plus secondary scen
 
 test("app version changelog records the UI surface simplification", () => {
   const source = read("src/config/appVersion.js");
-  assert.match(source, /currentVersion: "v1\.0\.113"/);
-  assert.match(source, /Улучшена читаемость строк действий процесса\./);
-  assert.match(source, /Уточнена работа блока действий процесса\./);
-  assert.match(source, /Улучшены строки таблицы шагов и панель “Шаг и продукт”\./);
+  assert.match(source, /currentVersion: "v1\.0\.114"/);
+  assert.match(source, /Улучшен блок действий процесса: шаги, выбранный шаг и действия с продуктом\./);
+  assert.doesNotMatch(source, /version: "v1\.0\.113"/);
+  assert.doesNotMatch(source, /version: "v1\.0\.106"/);
 });

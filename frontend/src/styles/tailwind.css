@@ -261,6 +261,45 @@
   gap: 8px;
 }
 
+.productActionsScopeToggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  border: 1px solid var(--analysis-border-soft);
+  border-radius: 10px;
+  background: hsl(var(--bg-soft) / 0.42);
+  padding: 3px;
+}
+
+.productActionsScopeToggle button {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--analysis-muted);
+  font-size: 11px;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.productActionsScopeToggle button.isActive {
+  background: var(--analysis-card-strong);
+  color: var(--analysis-text);
+  box-shadow: 0 1px 0 hsl(var(--bg-elevated) / 0.36);
+}
+
+.productActionsScopeToggle button span {
+  border: 1px solid var(--analysis-border-soft);
+  border-radius: 999px;
+  padding: 1px 6px;
+  color: var(--analysis-hint);
+  font-size: 10px;
+}
+
 .productActionsStepCard,
 .productActionCard,
 .productActionsEditorShell {
@@ -283,6 +322,11 @@
 .productActionCard.active {
   border-color: hsl(var(--accent2) / 0.62);
   background: hsl(var(--accent2) / 0.1);
+}
+
+.productActionCard.otherStep {
+  border-style: dashed;
+  background: hsl(var(--bg-soft) / 0.34);
 }
 
 .productActionCardTitle {
@@ -357,10 +401,94 @@
   font-size: 11px;
 }
 
+.productActionReadonlyHint {
+  border: 1px solid var(--analysis-border-soft);
+  border-radius: 999px;
+  background: hsl(var(--bg-soft) / 0.5);
+  padding: 4px 8px;
+  color: var(--analysis-muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.productActionsEditorShell {
+  gap: 12px;
+  background:
+    linear-gradient(180deg, hsl(var(--accent) / 0.06), transparent 78%),
+    hsl(var(--bg-soft) / 0.46);
+}
+
+.productActionsEditorHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--analysis-border-soft);
+  padding-bottom: 8px;
+}
+
+.productActionsEditorGroups {
+  display: grid;
+  gap: 10px;
+}
+
+.productActionsEditorGroup {
+  min-width: 0;
+  border: 1px solid var(--analysis-border-soft);
+  border-radius: 10px;
+  background: hsl(var(--panel) / 0.38);
+  padding: 8px;
+}
+
+.productActionsEditorGroup legend {
+  padding: 0 4px;
+  color: var(--analysis-text);
+  font-size: 11px;
+  font-weight: 850;
+}
+
 .productActionsEditor {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.productActionsEditor .interviewField {
+  gap: 4px;
+}
+
+.productActionsEditor .input,
+.productActionsEditor .select {
+  min-height: 34px;
+  font-size: 12px;
+}
+
+.productActionsEditorContext {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.productActionsEditorContext span {
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--analysis-border-soft);
+  border-radius: 8px;
+  background: hsl(var(--bg-soft) / 0.48);
+  padding: 6px 7px;
+  color: var(--analysis-muted);
+  font-size: 11px;
+}
+
+.productActionsEditorContext b {
+  color: var(--analysis-hint);
+  font-size: 10px;
+}
+
+.productActionsFooter {
+  justify-content: flex-end;
+  border-top: 1px solid var(--analysis-border-soft);
+  padding-top: 8px;
 }
 
 .productActionsStatus {
