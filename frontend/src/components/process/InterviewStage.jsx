@@ -838,6 +838,15 @@ export default function InterviewStage({
             onClose={() => setDebugOverlayOpen(false)}
           />
         ) : null}
+        <ProductActionsPanel
+          sessionId={sid}
+          interviewData={data}
+          timelineView={timelineView}
+          selectedStepIds={selectedTimelineStepIds}
+          getBaseDiagramStateVersion={getBaseDiagramStateVersion}
+          rememberDiagramStateVersion={rememberDiagramStateVersion}
+          onSessionSync={onSessionSync}
+        />
         {timelineViewMode === "diagram" ? (
           <Profiler id="InterviewDiagramView" onRender={handleProfilerRender}>
             <InterviewDiagramView
@@ -917,17 +926,6 @@ export default function InterviewStage({
               pathMetrics={pathMetrics}
             />
           </Profiler>
-        ) : null}
-        {timelineViewMode === "matrix" ? (
-          <ProductActionsPanel
-            sessionId={sid}
-            interviewData={data}
-            timelineView={timelineView}
-            selectedStepIds={selectedTimelineStepIds}
-            getBaseDiagramStateVersion={getBaseDiagramStateVersion}
-            rememberDiagramStateVersion={rememberDiagramStateVersion}
-            onSessionSync={onSessionSync}
-          />
         ) : null}
         </>
         ) : null}
