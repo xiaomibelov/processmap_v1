@@ -49,6 +49,8 @@ test("ProductActionsPanel makes saved actions primary and keeps editor collapsed
   assert.equal(source.includes('data-testid="product-actions-list"'), true);
   assert.equal(source.includes('data-testid="product-action-card"'), true);
   assert.equal(source.includes("productActionCard"), true);
+  assert.equal(source.includes("productActionCardDetails"), true);
+  assert.equal(source.includes("Поля действия"), true);
   assert.equal(source.includes("Неполное действие"), true);
   assert.equal(source.includes("Неполное"), true);
   assert.equal(source.includes("Редактировать"), true);
