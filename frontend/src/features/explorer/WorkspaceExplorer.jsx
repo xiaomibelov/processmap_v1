@@ -2461,7 +2461,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
         project_id: row?.project_id || projectId,
         workspace_id: row?.workspace_id || workspaceId,
         projectContext,
-      });
+      }, { openTab: "diagram", source: "workspace_explorer_session_list" });
     } finally {
       if (openingSessionIdRef.current === sid) {
         openingSessionIdRef.current = "";

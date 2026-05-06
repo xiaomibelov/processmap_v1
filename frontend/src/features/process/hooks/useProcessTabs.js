@@ -6,6 +6,12 @@ import { traceProcess } from "../lib/processDebugTrace";
 import { buildBpmnSaveFailureDiagnostics } from "../bpmn/save/saveBeforeSwitchDiagnostics.js";
 import { shortUserFacingError } from "../lib/userFacingErrorText";
 import { enqueueSessionPatchCasWrite } from "../stage/utils/sessionPatchCasCoordinator";
+import {
+  defaultProcessTabForSession,
+  isKnownProcessTab,
+  normalizeProcessTabId,
+  resolveSessionEntryTab,
+} from "./processTabSelection.js";
 
 function shortErr(x) {
   return shortUserFacingError(x, 160);
@@ -40,13 +46,6 @@ function buildTabSwitchSaveFailureUiPayload(raw = {}, context = {}) {
 function toNodeIdRaw(v) {
   const s = String(v || "").trim();
   return s || "";
-}
-
-function defaultTabForSession(draft) {
-  const hasXml = String(draft?.bpmn_xml || "").trim().length > 0;
-  if (hasXml) return "diagram";
-  // Never hard-fallback to Interview on empty XML; Diagram can seed itself.
-  return "diagram";
 }
 
 function shouldLogTabTrace() {
@@ -117,17 +116,6 @@ function logDraftState(tag, sid, phase, draftValue) {
   );
 }
 
-function normalizeTabId(tab) {
-  const v = String(tab || "").trim().toLowerCase();
-  if (v === "editor") return "diagram";
-  if (v === "review" || v === "llm") return "";
-  return v;
-}
-
-function isKnownTab(tab) {
-  return tab === "interview" || tab === "diagram" || tab === "xml" || tab === "doc" || tab === "dod";
-}
-
 export default function useProcessTabs({
   sid,
   draft,
@@ -146,13 +134,13 @@ export default function useProcessTabs({
   rememberDiagramStateVersion,
   onError,
 }) {
-  const [tab, setTabState] = useState(() => defaultTabForSession(draft));
+  const [tab, setTabState] = useState(() => defaultProcessTabForSession(draft));
   const [isSwitchingTab, setIsSwitchingTab] = useState(false);
   const [isFlushingTab, setIsFlushingTab] = useState(false);
   const [focusRequest, setFocusRequest] = useState(null);
   const draftRef = useRef(draft);
   const prevSidRef = useRef(String(sid || ""));
-  const currentTabRef = useRef(defaultTabForSession(draft));
+  const currentTabRef = useRef(defaultProcessTabForSession(draft));
   const switchTabRef = useRef(async () => {});
   const handledIntentKeyRef = useRef("");
   const handledIntentGlobalRef = useRef(new Set());
@@ -309,25 +297,26 @@ export default function useProcessTabs({
     sessionEpochRef.current += 1;
     const sidNow = String(sid || "").trim();
     const rememberedTabRaw = sidNow ? String(sessionTabMemoryRef.current?.[sidNow] || "").toLowerCase() : "";
-    const rememberedTab = isKnownTab(rememberedTabRaw) ? rememberedTabRaw : "";
     const intentObj = processTabIntentRef.current && typeof processTabIntentRef.current === "object"
       ? processTabIntentRef.current
       : null;
     const intentTab = intentObj && String(intentObj.sid || "").trim() === sidNow
-      ? normalizeTabId(intentObj.tab)
+      ? normalizeProcessTabId(intentObj.tab)
       : "";
-    const currentTab = normalizeTabId(currentTabRef.current);
-    const nextTab = rememberedTab
-      || (isKnownTab(intentTab) ? intentTab : "")
-      || (isKnownTab(currentTab) ? currentTab : "")
-      || defaultTabForSession(draft);
+    const currentTab = normalizeProcessTabId(currentTabRef.current);
+    const nextTab = resolveSessionEntryTab({
+      draft,
+      rememberedTabRaw,
+      intentTabRaw: intentTab,
+      currentTabRaw: currentTab,
+    });
     if (shouldLogTabTrace()) {
       // eslint-disable-next-line no-console
       console.debug(`[SESSION] activate sid=${String(sid || "-")} prevSid=${prevSid || "-"} tab=${String(tab || "-")}`);
     }
     setTabWithReason(nextTab, "session_change_default_tab", {
       allow: true,
-      intent: rememberedTab ? "remembered" : (isKnownTab(intentTab) ? "intent" : "default"),
+      intent: isKnownProcessTab(intentTab) ? "intent" : (isKnownProcessTab(rememberedTabRaw) ? "remembered" : "default"),
     });
     setFocusRequest(null);
     setIsFlushingTab(false);
@@ -407,11 +396,10 @@ export default function useProcessTabs({
     const intent = processTabIntent && typeof processTabIntent === "object" ? processTabIntent : null;
     if (!intent) return;
     const targetSid = String(intent.sid || "").trim();
-    const intentTab = String(intent.tab || "").trim().toLowerCase();
-    const targetTab = intentTab === "editor" ? "diagram" : intentTab;
+    const targetTab = normalizeProcessTabId(intent.tab);
     if (!targetSid || targetSid !== sid) return;
     // TODO(tech-debt): review/llm tabs are intentionally hidden for now.
-    if (!["interview", "diagram", "xml", "doc", "dod"].includes(targetTab)) return;
+    if (!isKnownProcessTab(targetTab)) return;
     const nonce = String(intent.nonce ?? "no_nonce");
     const intentKey = `${targetSid}:${targetTab}:${nonce}`;
     if (handledIntentGlobalRef.current.has(intentKey)) {
