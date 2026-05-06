@@ -73,6 +73,19 @@ function hasMeaningfulProductActionDraft(draftRaw) {
   return MEANINGFUL_PRODUCT_ACTION_FIELDS.some((key) => !!toText(draft[key]));
 }
 
+function displayValue(value, fallback = "Не заполнено") {
+  return toText(value) || fallback;
+}
+
+function isIncompleteAction(rowRaw) {
+  return !hasMeaningfulProductActionDraft(rowRaw);
+}
+
+function actionTitle(rowRaw) {
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  return toText(row.product_name) || toText(row.action_object) || toText(row.action_type) || "Неполное действие";
+}
+
 export default function ProductActionsPanel({
   sessionId = "",
   interviewData = null,
@@ -102,6 +115,7 @@ export default function ProductActionsPanel({
   const [draft, setDraft] = useState(() => createDraftForStep(selectedStep));
   const draftResetKey = `${toText(selectedStep?.id)}::${toText(editingAction?.id)}`;
   const lastDraftResetKeyRef = useRef(draftResetKey);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -156,6 +170,7 @@ export default function ProductActionsPanel({
       lastDraftResetKeyRef.current = `${toText(selectedStep?.id)}::${savedActionId}`;
       setEditingActionId(savedActionId);
       setDraft(createDraftForStep(selectedStep, result?.productAction));
+      setEditorOpen(false);
       setStatus({ type: "saved" });
       return;
     }
@@ -181,6 +196,7 @@ export default function ProductActionsPanel({
     setSaving(false);
     if (result?.ok) {
       setEditingActionId("");
+      setEditorOpen(false);
       setDraft(createDraftForStep(selectedStep));
       lastDraftResetKeyRef.current = `${toText(selectedStep?.id)}::`;
       setStatus({ type: "saved", text: "Действие с продуктом удалено." });
@@ -198,7 +214,7 @@ export default function ProductActionsPanel({
         <div>
           <div className="productActionsTitle">Действия с продуктом</div>
           <div className="productActionsSub">
-            Строк: {actionCount}.
+            Сохранено: {actionCount}. Связаны с выбранным шагом таблицы и сохраняются в анализе процесса.
           </div>
         </div>
         <button
@@ -209,6 +225,7 @@ export default function ProductActionsPanel({
             setEditingActionId("");
             setDraft(createDraftForStep(selectedStep));
             lastDraftResetKeyRef.current = `${toText(selectedStep?.id)}::`;
+            setEditorOpen(true);
             setStatus(null);
           }}
         >
@@ -233,6 +250,7 @@ export default function ProductActionsPanel({
                 onChange={(e) => {
                   setSelectedStepId(e.target.value);
                   setEditingActionId("");
+                  setEditorOpen(false);
                   setStatus(null);
                 }}
               >
@@ -243,36 +261,91 @@ export default function ProductActionsPanel({
                 ))}
               </select>
             </label>
-            <div className="productActionsBinding">
-              <span className="badge muted">Шаг: {selectedBinding.step_id || "—"}</span>
-              <span className={"badge " + (selectedBinding.bpmn_element_id ? "ok" : "muted")}>
-                Диаграмма: {selectedBinding.bpmn_element_id || "нет привязки"}
-              </span>
-              <span className="badge muted">строк по шагу: {stepActionCount}</span>
+            <div className="productActionsStepCard" data-testid="product-actions-step-context">
+              <div className="productActionsStepTitle">
+                Шаг: {stepDisplayLabel(selectedStep)}
+              </div>
+              <div className="productActionsMetaGrid">
+                <span>ID шага: {selectedBinding.step_id || "нет"}</span>
+                <span>BPMN: {selectedBinding.bpmn_element_id || "нет привязки"}</span>
+                <span>Роль: {selectedBinding.role || "не указана"}</span>
+                <span>Действий по шагу: {stepActionCount}</span>
+              </div>
             </div>
           </div>
 
       {actionsForStep.length ? (
-        <div className="productActionsList">
+        <div className="productActionsList" data-testid="product-actions-list">
           {actionsForStep.map((row) => (
-            <button
+            <article
               key={row.id}
-              type="button"
-              className={"productActionChip " + (row.id === editingActionId ? "active" : "")}
-              onClick={() => {
-                setEditingActionId(row.id);
-                setStatus(null);
-              }}
+              className={"productActionCard " + (row.id === editingActionId ? "active" : "")}
+              data-testid="product-action-card"
             >
-              {row.product_name || row.action_type || "Действие"}
-            </button>
+              <div className="productActionCardMain">
+                <div className="productActionCardTitle">
+                  {actionTitle(row)}
+                  {isIncompleteAction(row) ? <span className="productActionIncomplete">Неполное</span> : null}
+                </div>
+                <div className="productActionCardSub">
+                  {displayValue(row.product_group, "Группа не указана")}
+                </div>
+              </div>
+              <div className="productActionFacts">
+                <span><b>Тип</b>{displayValue(row.action_type)}</span>
+                <span><b>Этап</b>{displayValue(row.action_stage)}</span>
+                <span><b>Объект</b>{displayValue(row.action_object)}</span>
+                <span><b>Категория</b>{displayValue(row.action_object_category)}</span>
+                <span><b>Способ</b>{displayValue(row.action_method)}</span>
+                <span><b>Роль</b>{displayValue(row.role)}</span>
+              </div>
+              <div className="productActionCardFooter">
+                <div className="productActionBindingMeta">
+                  <span>{row.step_label || selectedBinding.step_label || "Шаг без названия"}</span>
+                  <span>BPMN: {row.bpmn_element_id || row.node_id || "нет привязки"}</span>
+                </div>
+                <button
+                  type="button"
+                  className="secondaryBtn tinyBtn"
+                  onClick={() => {
+                    setEditingActionId(row.id);
+                    setEditorOpen(true);
+                    setStatus(null);
+                  }}
+                >
+                  Редактировать
+                </button>
+              </div>
+            </article>
           ))}
         </div>
       ) : (
         <div className="productActionsEmpty">Для выбранного шага ещё нет действий с продуктом.</div>
       )}
 
-      <div className="productActionsEditor">
+      {!editorOpen ? null : (
+      <div className="productActionsEditorShell" data-testid="product-actions-editor">
+        <div className="productActionsEditorHead">
+          <div>
+            <div className="productActionsEditorTitle">
+              {editingAction ? "Редактирование действия" : "Новое действие с продуктом"}
+            </div>
+            <div className="productActionsSub">
+              Эти поля будут сохранены для выбранного шага.
+            </div>
+          </div>
+          <button
+            type="button"
+            className="secondaryBtn tinyBtn"
+            onClick={() => {
+              setEditorOpen(false);
+              setStatus(null);
+            }}
+          >
+            Отменить
+          </button>
+        </div>
+        <div className="productActionsEditor">
         {FIELD_CONFIGS.map((field) => (
           <label className="interviewField" key={field.key}>
             <span>{field.label}</span>
@@ -321,17 +394,31 @@ export default function ProductActionsPanel({
         <button
           type="button"
           className="secondaryBtn smallBtn"
-          onClick={handleDelete}
-          disabled={saving || !editingActionId}
+          onClick={() => {
+            setEditorOpen(false);
+            setStatus(null);
+          }}
         >
-          Удалить
+          Отменить
         </button>
-        {status ? (
-          <div className={`productActionsStatus ${status.type || "pending"}`} data-testid="product-action-status">
-            {statusText(status)}
-          </div>
+        {editingActionId ? (
+          <button
+            type="button"
+            className="secondaryBtn smallBtn"
+            onClick={handleDelete}
+            disabled={saving}
+          >
+            Удалить
+          </button>
         ) : null}
       </div>
+      </div>
+      )}
+      {status ? (
+        <div className={`productActionsStatus ${status.type || "pending"}`} data-testid="product-action-status">
+          {statusText(status)}
+        </div>
+      ) : null}
         </>
       ) : null}
     </section>
