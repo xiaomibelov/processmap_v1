@@ -955,10 +955,10 @@ export default function TimelineTable({
           <span className="muted small">{toText(bpmnOrderHint) || "Fallback order: creation order."}</span>
         </div>
       ) : null}
-      <table className="interviewTable interviewTableCompact">
+      <table className="interviewTable interviewTableCompact analysisStepListTable">
         <thead>
           <tr>
-            <th>
+            <th className="analysisStepListHead analysisStepListHead--select">
               <div className="interviewRowSelectHead">
                 <input
                   type="checkbox"
@@ -972,11 +972,11 @@ export default function TimelineTable({
                 <span>№</span>
               </div>
             </th>
-            <th>Лайн</th>
-            <th>Шаг</th>
-            {showNodeCol ? <th>Узел BPMN</th> : null}
-            <th>Статусы</th>
-            <th>Действия</th>
+            <th className="analysisStepListHead analysisStepListHead--lane">Лайн</th>
+            <th className="analysisStepListHead analysisStepListHead--step">Шаг</th>
+            {showNodeCol ? <th className="analysisStepListHead analysisStepListHead--node">Узел BPMN</th> : null}
+            <th className="analysisStepListHead analysisStepListHead--status">Статусы</th>
+            <th className="analysisStepListHead analysisStepListHead--actions">Действия</th>
           </tr>
         </thead>
         <tbody>
@@ -1157,7 +1157,7 @@ export default function TimelineTable({
                 <Fragment key={stepId}>
                   <tr
                     className={[
-                      "interviewStepRow interviewStepRowCompact",
+                      "interviewStepRow interviewStepRowCompact analysisStepListRow",
                       isSubprocessChild ? "isSubprocessChild" : "",
                       isParallelGateway ? "isParallelGatewayRow" : "",
                       aiCueActive ? "hasAiCue" : "",
@@ -1172,7 +1172,7 @@ export default function TimelineTable({
                     onMouseDown={() => setActiveInlineStepId(stepId)}
                     onFocusCapture={() => setActiveInlineStepId(stepId)}
                   >
-                    <td>
+                    <td className="analysisStepListCell analysisStepListCell--select">
                       <label className="interviewRowSelectCell">
                         <input
                           type="checkbox"
@@ -1183,7 +1183,7 @@ export default function TimelineTable({
                         <span>#{Number(step?._order_index || step?.order_index || absoluteIdx + 1)}</span>
                       </label>
                     </td>
-                    <td>
+                    <td className="analysisStepListCell analysisStepListCell--lane">
                       <div className="interviewLaneCell">
                         <span
                           className="interviewLaneBadge interviewLaneBadge--primary"
@@ -1219,7 +1219,8 @@ export default function TimelineTable({
                         ) : null}
                       </div>
                     </td>
-                    <td>
+                    <td className="analysisStepListCell analysisStepListCell--step">
+                      <div className="analysisStepPrimaryCell">
                       <div className="interviewStepTitleLine" style={{ "--step-depth": stepDepth }}>
                         {isSubprocessChild ? <span className="interviewSubprocessChildArrow">↳</span> : null}
                         <button
@@ -1297,9 +1298,10 @@ export default function TimelineTable({
                           </label>
                         </div>
                       ) : null}
+                      </div>
                     </td>
                     {showNodeCol ? (
-                      <td>
+                      <td className="analysisStepListCell analysisStepListCell--node">
                         {step.node_bound ? (
                           <div className="interviewNodeCompact">
                             <div className="interviewNodeMain">
@@ -1311,7 +1313,7 @@ export default function TimelineTable({
                               >
                                 {nodeIcon}
                               </span>
-                              <span className="badge ok">{toText(step.node_bind_title) || toText(step.node_bind_id)}</span>
+                              <span className="badge ok analysisStepNodeBadge">{toText(step.node_bind_title) || toText(step.node_bind_id)}</span>
                             </div>
                             <span className="muted small font-mono">{toText(step.node_bind_id)}</span>
                           </div>
@@ -1326,14 +1328,14 @@ export default function TimelineTable({
                               >
                                 {nodeIcon}
                               </span>
-                              <span className="badge warn">Не привязан</span>
+                              <span className="badge warn analysisStepNodeBadge">Не привязан</span>
                             </div>
                             <span className="muted small font-mono">{toText(step.node_bind_id) || "—"}</span>
                           </div>
                         )}
                       </td>
                     ) : null}
-                    <td>
+                    <td className="analysisStepListCell analysisStepListCell--status">
                       <div className="interviewRowStatus">
                         {stepOutgoingCount <= 1 ? (
                           <span className={`interviewGatewayPreviewTag tier tier-${stepTier.toLowerCase()}`} data-testid="interview-step-tier-chip">
@@ -1366,7 +1368,7 @@ export default function TimelineTable({
                         </button>
                       </div>
                     </td>
-                    <td>
+                    <td className="analysisStepListCell analysisStepListCell--actions">
                       <div className="interviewRowActions">
                         <button
                           type="button"
