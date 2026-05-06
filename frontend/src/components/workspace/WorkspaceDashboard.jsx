@@ -417,7 +417,7 @@ export default function WorkspaceDashboard({
     if (!actionId || !row) return;
     setActionsMenuSessionId("");
     if (actionId === "open") {
-      await onOpenSession?.(toText(row?.id));
+      await onOpenSession?.(toText(row?.id), { openTab: "diagram", source: "workspace_dashboard_session_action" });
       return;
     }
     if (actionId === "doc") {
@@ -803,7 +803,7 @@ export default function WorkspaceDashboard({
                   <button
                     type="button"
                     className="secondaryBtn h-7 px-2 text-xs"
-                    onClick={() => onOpenSession?.(toText(listRows[0]?.id))}
+                    onClick={() => onOpenSession?.(toText(listRows[0]?.id), { openTab: "diagram", source: "workspace_dashboard_latest_session" })}
                   >
                     Открыть последнюю
                   </button>
@@ -866,7 +866,7 @@ export default function WorkspaceDashboard({
                           <button
                             type="button"
                             className="primaryBtn h-8 shrink-0 px-3 text-xs"
-                            onClick={() => onOpenSession?.(toText(row?.id))}
+                            onClick={() => onOpenSession?.(toText(row?.id), { openTab: "diagram", source: "workspace_dashboard_session_card" })}
                             data-testid="workspace-open-session"
                           >
                             Открыть
@@ -960,7 +960,7 @@ export default function WorkspaceDashboard({
                               <button
                                 type="button"
                                 className="primaryBtn h-8 px-3 text-xs"
-                                onClick={() => onOpenSession?.(toText(row?.id))}
+                                onClick={() => onOpenSession?.(toText(row?.id), { openTab: "diagram", source: "workspace_dashboard_session_row" })}
                                 data-testid="workspace-open-session"
                               >
                                 Открыть
