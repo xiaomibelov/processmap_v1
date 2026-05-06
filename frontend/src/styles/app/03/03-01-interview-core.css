@@ -30,6 +30,152 @@
   color: rgba(255,255,255,.94);
 }
 
+.analysisStepBlock{
+  display: grid;
+  gap: 12px;
+  background: rgba(15,23,42,.62);
+  border-color: rgba(148,163,184,.24);
+}
+
+.analysisStepHeaderCard{
+  margin-bottom: 0;
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(148,163,184,.08), rgba(15,23,42,.18));
+  padding: 12px;
+}
+
+.analysisStepSectionSub{
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(203,213,225,.72);
+}
+
+.analysisStepWorkspace{
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(360px, .65fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.analysisStepMainColumn,
+.analysisStepCompanion{
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.analysisStepControlsCard,
+.analysisStepTableCard,
+.analysisSelectedStepCard,
+.analysisSecondaryPanel{
+  border: 1px solid rgba(148,163,184,.20);
+  border-radius: 12px;
+  background: rgba(15,23,42,.44);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+}
+
+.analysisStepControlsCard{
+  padding: 8px;
+}
+
+.analysisStepControlsCard .interviewTimelineToolbar{
+  margin-bottom: 0;
+  border-color: transparent;
+  background: transparent;
+  padding: 0;
+}
+
+.analysisStepTableCard{
+  padding: 8px;
+  overflow: hidden;
+}
+
+.analysisSelectedStepCard{
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.analysisSelectedStepEyebrow{
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  color: rgba(147,197,253,.86);
+}
+
+.analysisSelectedStepTitle{
+  font-size: 15px;
+  font-weight: 850;
+  line-height: 1.25;
+  color: rgba(248,250,252,.96);
+}
+
+.analysisSelectedStepMeta{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.analysisSelectedStepMeta span{
+  min-width: 0;
+  border: 1px solid rgba(148,163,184,.16);
+  border-radius: 8px;
+  background: rgba(2,6,23,.20);
+  padding: 6px 7px;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.3;
+  color: rgba(203,213,225,.78);
+}
+
+.analysisSelectedStepActions{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+
+.analysisStepEmptyState,
+.analysisStepModePlaceholder{
+  border: 1px dashed rgba(148,163,184,.30);
+  border-radius: 12px;
+  background: rgba(15,23,42,.28);
+  padding: 14px;
+  color: rgba(203,213,225,.74);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.analysisStepModeTitle{
+  margin-bottom: 3px;
+  font-weight: 800;
+  color: rgba(248,250,252,.92);
+}
+
+.analysisSecondaryPanel{
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  background: rgba(15,23,42,.36);
+}
+
+.analysisSecondaryHead{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.analysisSecondaryTitle{
+  font-size: 14px;
+  font-weight: 850;
+  color: rgba(248,250,252,.92);
+}
+
 .interviewBlockTools{
   display: flex;
   align-items: center;
@@ -307,10 +453,11 @@
 .productActionsPanel{
   display: grid;
   gap: 12px;
-  border: 1px solid rgba(255,255,255,.10);
+  border: 1px solid rgba(148,163,184,.20);
   border-radius: 12px;
-  background: rgba(255,255,255,.035);
+  background: rgba(15,23,42,.44);
   padding: 12px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
 }
 
 .productActionsHeader,
@@ -324,7 +471,7 @@
 }
 
 .productActionsTitle{
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 800;
   color: rgba(255,255,255,.94);
 }
@@ -332,6 +479,7 @@
 .productActionsSub,
 .productActionsEmpty{
   font-size: 12px;
+  line-height: 1.45;
   color: rgba(255,255,255,.62);
 }
 
@@ -351,9 +499,9 @@
 .productActionsStepCard{
   min-width: min(100%, 420px);
   flex: 1 1 420px;
-  border: 1px solid rgba(255,255,255,.10);
+  border: 1px solid rgba(148,163,184,.16);
   border-radius: 10px;
-  background: rgba(0,0,0,.16);
+  background: rgba(2,6,23,.20);
   padding: 10px;
 }
 
@@ -365,17 +513,18 @@
 
 .productActionsMetaGrid,
 .productActionBindingMeta{
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   margin-top: 6px;
   font-size: 11px;
+  line-height: 1.3;
   color: rgba(255,255,255,.56);
 }
 
 .productActionsList{
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   align-items: stretch;
   gap: 8px;
 }
@@ -383,11 +532,12 @@
 .productActionCard{
   display: grid;
   gap: 9px;
-  border: 1px solid rgba(255,255,255,.14);
+  border: 1px solid rgba(148,163,184,.18);
   border-radius: 10px;
-  background: rgba(255,255,255,.045);
+  background: rgba(2,6,23,.20);
   padding: 10px;
   color: rgba(255,255,255,.80);
+  transition: border-color .16s ease, background .16s ease;
 }
 
 .productActionCard.active{
@@ -405,8 +555,10 @@
   align-items: center;
   gap: 7px;
   min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 13px;
   font-weight: 850;
+  line-height: 1.25;
   color: rgba(255,255,255,.94);
 }
 
@@ -428,17 +580,19 @@
 
 .productActionFacts{
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 
 .productActionFacts span{
   min-width: 0;
-  border: 1px solid rgba(255,255,255,.08);
+  border: 1px solid rgba(148,163,184,.12);
   border-radius: 8px;
-  background: rgba(0,0,0,.12);
+  background: rgba(15,23,42,.36);
   padding: 6px 7px;
+  overflow-wrap: anywhere;
   font-size: 12px;
+  line-height: 1.3;
   color: rgba(255,255,255,.78);
 }
 

@@ -13,10 +13,10 @@ function read(relPath) {
 
 test("process workbench uses user-facing analysis/output tab labels", () => {
   const source = read("src/features/process/processWorkbench.config.js");
-  assert.match(source, /\{ id: "interview", label: "Анализ" \}/);
-  assert.match(source, /\{ id: "diagram", label: "BPMN" \}/);
-  assert.match(source, /\{ id: "doc", label: "Документ" \}/);
-  assert.match(source, /\{ id: "dod", label: "Проверки" \}/);
+  assert.match(source, /\{ id: "interview", label: "Анализ процессов" \}/);
+  assert.match(source, /\{ id: "diagram", label: "Diagram \(BPMN\)" \}/);
+  assert.match(source, /\{ id: "doc", label: "DOC" \}/);
+  assert.match(source, /\{ id: "dod", label: "DOD" \}/);
 });
 
 test("interview primary blocks open by default without changing saved model", () => {
@@ -50,8 +50,20 @@ test("summary and reports frame output and hide diagnostics behind details", () 
   assert.match(reports, /Диагностика отчёта/);
 });
 
+test("analysis step block is structured as primary workspace plus secondary scenarios", () => {
+  const source = read("src/components/process/InterviewStage.jsx");
+  assert.match(source, /data-testid="analysis-step-actions-section"/);
+  assert.match(source, /data-testid="analysis-step-workspace"/);
+  assert.match(source, /data-testid="analysis-step-companion"/);
+  assert.match(source, /data-testid="analysis-selected-step-card"/);
+  assert.match(source, /data-testid="analysis-secondary-panel"/);
+  assert.match(source, /Основная рабочая зона анализа/);
+  assert.match(source, /Дополнительно · Сценарии и отчёты/);
+  assert.match(source, /ProductActionsPanel/);
+});
+
 test("app version changelog records the UI surface simplification", () => {
   const source = read("src/config/appVersion.js");
-  assert.match(source, /currentVersion: "v1\.0\.98"/);
-  assert.match(source, /Поверхность анализа процесса стала чище: ввод, итоги и отчёты разделены\./);
+  assert.match(source, /currentVersion: "v1\.0\.107"/);
+  assert.match(source, /Блок действий процесса оформлен как рабочая секция анализа\./);
 });

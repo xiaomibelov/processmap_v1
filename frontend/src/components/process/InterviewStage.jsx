@@ -43,6 +43,51 @@ function quickHash(value) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
+function analysisStepTitle(stepRaw) {
+  const step = stepRaw && typeof stepRaw === "object" ? stepRaw : {};
+  const seq = Number(step.seq || step.order || 0);
+  const title = toText(step.action || step.label || step.title || step.id) || "Шаг не выбран";
+  return seq > 0 ? `${seq}. ${title}` : title;
+}
+
+function analysisStepBpmnId(stepRaw) {
+  const step = stepRaw && typeof stepRaw === "object" ? stepRaw : {};
+  return toText(step.bpmn_element_id || step.bpmnElementId || step.node_bind_id || step.node_id || step.bpmn_ref);
+}
+
+function analysisStepRole(stepRaw) {
+  const step = stepRaw && typeof stepRaw === "object" ? stepRaw : {};
+  return toText(step.role || step.lane_name || step.lane || step.area);
+}
+
+function formatStepMinutes(valueRaw) {
+  const value = Number(valueRaw);
+  if (!Number.isFinite(value) || value <= 0) return "";
+  return `${Math.round(value)} мин`;
+}
+
+function analysisStepTiming(stepRaw) {
+  const step = stepRaw && typeof stepRaw === "object" ? stepRaw : {};
+  const workMin = formatStepMinutes(step.duration ?? step.duration_min ?? step.durationMin);
+  const waitMin = formatStepMinutes(step.wait ?? step.wait_min ?? step.waitMin);
+  if (workMin && waitMin) return `работа ${workMin} · ожидание ${waitMin}`;
+  if (workMin) return `работа ${workMin}`;
+  if (waitMin) return `ожидание ${waitMin}`;
+  return "время не указано";
+}
+
+function countProductActionsForStep(analysisRaw, stepRaw) {
+  const step = stepRaw && typeof stepRaw === "object" ? stepRaw : {};
+  const rows = Array.isArray(analysisRaw?.product_actions) ? analysisRaw.product_actions : [];
+  const stepId = toText(step.id);
+  const nodeId = analysisStepBpmnId(step);
+  return rows.filter((rowRaw) => {
+    const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+    return (stepId && toText(row.step_id) === stepId)
+      || (nodeId && (toText(row.bpmn_element_id) === nodeId || toText(row.node_id) === nodeId));
+  }).length;
+}
+
 function recordReactProfile(id, phase, actualDuration, baseDuration) {
   if (!import.meta.env.DEV) return;
   if (typeof window === "undefined") return;
@@ -543,6 +588,18 @@ export default function InterviewStage({
     return aiQuestionMetaByStepId?.[stepId] || { count: 0, hasAi: false };
   }, [selectedStep, aiQuestionMetaByStepId]);
 
+  const selectedStepProductActionCount = useMemo(
+    () => countProductActionsForStep(data?.analysis, selectedStep),
+    [data?.analysis, selectedStep],
+  );
+
+  const selectedStepContext = useMemo(() => ({
+    title: analysisStepTitle(selectedStep),
+    bpmnId: analysisStepBpmnId(selectedStep),
+    role: analysisStepRole(selectedStep),
+    timing: analysisStepTiming(selectedStep),
+  }), [selectedStep]);
+
   const timelineStatusCounts = useMemo(() => {
     const snapshotCounts = dodSnapshot?.counts?.interview || {};
     const totalSteps = Number(snapshotCounts.stepsTotal || 0);
@@ -707,225 +764,269 @@ export default function InterviewStage({
         resetBoundaries={resetBoundaries}
       />
 
-      <div className="interviewBlock">
-        <div className="interviewBlockHead">
+      <div className="interviewBlock analysisStepBlock" data-testid="analysis-step-actions-section">
+        <div className="interviewBlockHead analysisStepHeaderCard">
           <div>
             <div className="interviewBlockTitle">B. Таблица шагов / действия процесса</div>
+            <div className="analysisStepSectionSub">
+              Основная рабочая зона анализа: выберите шаг, проверьте контекст и опишите действия с продуктом.
+            </div>
           </div>
         </div>
 
         {!collapsed.timeline ? (
         <>
-        <TimelineControls
-          quickStepDraft={quickStepDraft}
-          setQuickStepDraft={setQuickStepDraft}
-          addQuickStepFromInput={addQuickStepFromInput}
-          addStep={addStep}
-          subprocessDraft={subprocessDraft}
-          setSubprocessDraft={setSubprocessDraft}
-          addSubprocessLabel={addSubprocessLabel}
-          filteredTimelineCount={filteredTimelineView.length}
-          timelineCount={timelineView.length}
-          isTimelineFiltering={isTimelineFiltering}
-          resetTimelineFilters={resetTimelineFilters}
-          saveUiPrefs={saveUiPrefs}
-          uiPrefsSavedAt={uiPrefsSavedAt}
-          uiPrefsDirty={uiPrefsDirty}
-          showTimelineColsMenu={showTimelineColsMenu}
-          setShowTimelineColsMenu={setShowTimelineColsMenu}
-          resetTimelineColumns={resetTimelineColumns}
-          hiddenTimelineCols={hiddenTimelineCols}
-          toggleTimelineColumn={toggleTimelineColumn}
-          timelineFilters={timelineFilters}
-          patchTimelineFilter={patchTimelineFilter}
-          timelineLaneOptions={timelineLaneOptions}
-          timelineSubprocessOptions={timelineSubprocessOptions}
-          selectedStepCount={selectedTimelineStepIds.length}
-          onGroupSelectedSteps={handleGroupSelectedSteps}
-          orderMode={orderMode}
-          graphOrderLocked={graphOrderLocked}
-          bpmnOrderFallback={bpmnOrderFallback}
-          bpmnOrderHint={bpmnOrderHint}
-          onSetOrderMode={handleSetOrderMode}
-          onOpenBindingAssistant={() => {
-            setBindingAssistantOpen(true);
-            setBindingAssistantFeedback("");
-          }}
-          bindingIssueCount={bindingAssistant?.issueCount || 0}
-          statusCounts={timelineStatusCounts}
-          dodSnapshot={dodSnapshot}
-          timelineViewMode={timelineViewMode}
-          onSetTimelineViewMode={handleSetTimelineViewMode}
-          branchViewMode={branchViewMode}
-          onSetBranchViewMode={handleSetBranchViewMode}
-          onToggleCollapse={() => toggleBlock("timeline")}
-          devDebugEnabled={IS_DEV_BUILD}
-          onToggleDebug={() => setDebugOverlayOpen((prev) => !prev)}
-        />
-
-        {timelineOperationNotice ? (
-          <div className={`interviewAnnotationNotice ${timelineOperationNotice.type || "pending"}`}>
-            {timelineOperationNotice.text}
-          </div>
-        ) : null}
-        {isUiTransitionPending ? (
-          <div className="interviewAnnotationNotice pending">Обновляю представление…</div>
-        ) : null}
-        {IS_DEV_BUILD && Array.isArray(interviewVMWarnings) && interviewVMWarnings.length ? (
-          <div className="interviewAnnotationNotice warn" data-testid="interview-vm-warning">
-            Диагностика представления: {interviewVMWarnings[0]}
-          </div>
-        ) : null}
-        {selectedStep ? (
-          <div className="interviewSelectionActions" data-testid="interview-selection-actions">
-            <span className="interviewSelectionTitle">
-              Выбран шаг: {Number(selectedStep?.seq || 0) > 0 ? `${selectedStep.seq}. ` : ""}{toText(selectedStep?.action) || toText(selectedStep?.id)}
-            </span>
-            <span
-              className={"badge " + (selectedStepAiMeta?.hasAi ? "ok" : "muted")}
-              data-testid="interview-selected-ai-status"
-            >
-              AI-вопросы ({Number(selectedStepAiMeta?.count || 0)})
-            </span>
-            <span className="interviewSelectionMeta">
-              {selectedStepAiMeta?.hasAi ? "Есть вопросы" : "Нет вопросов"}
-            </span>
-            <button
-              type="button"
-              className="secondaryBtn smallBtn"
-              data-testid="interview-selected-open-ai"
-              onClick={() => addAiQuestions(selectedStep)}
-            >
-              Открыть AI
-            </button>
-            <button
-              type="button"
-              className="secondaryBtn smallBtn"
-              data-testid="interview-selected-generate-ai"
-              onClick={() => addAiQuestions(selectedStep, { forceRefresh: true })}
-            >
-              Сгенерировать AI
-            </button>
-            <button
-              type="button"
-              className="secondaryBtn smallBtn"
-              data-testid="interview-selected-open-binding"
-              onClick={() => setBindingAssistantOpen(true)}
-            >
-              Привязка BPMN
-            </button>
-            <button
-              type="button"
-              className="dangerBtn smallBtn"
-              data-testid="interview-selected-delete"
-              onClick={handleDeleteSelectedStep}
-            >
-              Удалить шаг
-            </button>
-          </div>
-        ) : null}
-        {annotationNotice ? (
-          <div className={`interviewAnnotationNotice ${annotationNotice.type || "pending"}`}>
-            {annotationNotice.text}
-          </div>
-        ) : null}
-        {IS_DEV_BUILD && debugOverlayOpen ? (
-          <InterviewDebugOverlay
-            debugData={interviewDebug}
-            sessionId={sid}
-            debugTab={debugOverlayTab}
-            onChangeTab={setDebugOverlayTab}
-            onClose={() => setDebugOverlayOpen(false)}
-          />
-        ) : null}
-        <ProductActionsPanel
-          sessionId={sid}
-          interviewData={data}
-          timelineView={timelineView}
-          selectedStepIds={selectedTimelineStepIds}
-          getBaseDiagramStateVersion={getBaseDiagramStateVersion}
-          rememberDiagramStateVersion={rememberDiagramStateVersion}
-          onSessionSync={onSessionSync}
-        />
-        {timelineViewMode === "diagram" ? (
-          <Profiler id="InterviewDiagramView" onRender={handleProfilerRender}>
-            <InterviewDiagramView
-              dodSnapshot={dodSnapshot}
-              selectedStepIds={selectedTimelineStepIds}
-              onSelectStep={handleSelectSingleStep}
-            />
-          </Profiler>
-        ) : null}
-        {timelineViewMode === "paths" ? (
-          <Profiler id="InterviewPathsView" onRender={handleProfilerRender}>
-            <Suspense fallback={<div className="interviewAnnotationNotice pending">Загружаю сценарии и отчёты…</div>}>
-              <LazyInterviewPathsView
-                active
-                sessionId={sid}
-                interviewData={data}
-                interviewVM={interviewVM}
-                interviewGraph={interviewGraph}
-                tierFilters={timelineFilters?.tiers}
-                selectedStepIds={selectedTimelineStepIds}
-                onSelectStep={handleSelectSingleStep}
-                onSetTimelineViewMode={handleSetTimelineViewMode}
+        <div className="analysisStepWorkspace" data-testid="analysis-step-workspace">
+          <div className="analysisStepMainColumn">
+            <div className="analysisStepControlsCard">
+              <TimelineControls
+                quickStepDraft={quickStepDraft}
+                setQuickStepDraft={setQuickStepDraft}
+                addQuickStepFromInput={addQuickStepFromInput}
+                addStep={addStep}
+                subprocessDraft={subprocessDraft}
+                setSubprocessDraft={setSubprocessDraft}
+                addSubprocessLabel={addSubprocessLabel}
+                filteredTimelineCount={filteredTimelineView.length}
+                timelineCount={timelineView.length}
+                isTimelineFiltering={isTimelineFiltering}
+                resetTimelineFilters={resetTimelineFilters}
+                saveUiPrefs={saveUiPrefs}
+                uiPrefsSavedAt={uiPrefsSavedAt}
+                uiPrefsDirty={uiPrefsDirty}
+                showTimelineColsMenu={showTimelineColsMenu}
+                setShowTimelineColsMenu={setShowTimelineColsMenu}
+                resetTimelineColumns={resetTimelineColumns}
+                hiddenTimelineCols={hiddenTimelineCols}
+                toggleTimelineColumn={toggleTimelineColumn}
+                timelineFilters={timelineFilters}
+                patchTimelineFilter={patchTimelineFilter}
+                timelineLaneOptions={timelineLaneOptions}
+                timelineSubprocessOptions={timelineSubprocessOptions}
+                selectedStepCount={selectedTimelineStepIds.length}
+                onGroupSelectedSteps={handleGroupSelectedSteps}
+                orderMode={orderMode}
+                graphOrderLocked={graphOrderLocked}
+                bpmnOrderFallback={bpmnOrderFallback}
+                bpmnOrderHint={bpmnOrderHint}
+                onSetOrderMode={handleSetOrderMode}
+                onOpenBindingAssistant={() => {
+                  setBindingAssistantOpen(true);
+                  setBindingAssistantFeedback("");
+                }}
+                bindingIssueCount={bindingAssistant?.issueCount || 0}
+                statusCounts={timelineStatusCounts}
                 dodSnapshot={dodSnapshot}
-                pathMetrics={pathMetrics}
-                patchStep={patchStep}
-                onReportBuildDebug={handleReportBuildDebug}
-                onPerfReady={handlePathsPerfReady}
-                externalIntent={pathsUiIntent}
+                timelineViewMode={timelineViewMode}
+                onSetTimelineViewMode={handleSetTimelineViewMode}
+                branchViewMode={branchViewMode}
+                onSetBranchViewMode={handleSetBranchViewMode}
+                onToggleCollapse={() => toggleBlock("timeline")}
+                devDebugEnabled={IS_DEV_BUILD}
+                onToggleDebug={() => setDebugOverlayOpen((prev) => !prev)}
               />
-            </Suspense>
-          </Profiler>
-        ) : null}
-        {timelineViewMode === "matrix" ? (
-          <Profiler id="InterviewTimelineTable" onRender={handleProfilerRender}>
-            <TimelineTable
+            </div>
+
+            {timelineOperationNotice ? (
+              <div className={`interviewAnnotationNotice ${timelineOperationNotice.type || "pending"}`}>
+                {timelineOperationNotice.text}
+              </div>
+            ) : null}
+            {isUiTransitionPending ? (
+              <div className="interviewAnnotationNotice pending">Обновляю представление…</div>
+            ) : null}
+            {IS_DEV_BUILD && Array.isArray(interviewVMWarnings) && interviewVMWarnings.length ? (
+              <div className="interviewAnnotationNotice warn" data-testid="interview-vm-warning">
+                Диагностика представления: {interviewVMWarnings[0]}
+              </div>
+            ) : null}
+            {annotationNotice ? (
+              <div className={`interviewAnnotationNotice ${annotationNotice.type || "pending"}`}>
+                {annotationNotice.text}
+              </div>
+            ) : null}
+            {IS_DEV_BUILD && debugOverlayOpen ? (
+              <InterviewDebugOverlay
+                debugData={interviewDebug}
+                sessionId={sid}
+                debugTab={debugOverlayTab}
+                onChangeTab={setDebugOverlayTab}
+                onClose={() => setDebugOverlayOpen(false)}
+              />
+            ) : null}
+
+            <div className="analysisStepTableCard" data-testid="analysis-step-table-card">
+              {timelineViewMode === "matrix" ? (
+                <Profiler id="InterviewTimelineTable" onRender={handleProfilerRender}>
+                  <TimelineTable
+                    sessionId={sid}
+                    hiddenTimelineCols={hiddenTimelineCols}
+                    timelineLaneFilter={timelineFilters.lane}
+                    filteredTimelineView={filteredTimelineView}
+                    timelineView={timelineView}
+                    timelineColSpan={timelineColSpan}
+                    laneLinksByNode={laneLinksByNode}
+                    patchStep={patchStep}
+                    addTextAnnotation={handleAddTextAnnotation}
+                    annotationSyncByStepId={annotationSyncByStepId}
+                    xmlTextAnnotationsByStepId={xmlTextAnnotationsByStepId}
+                    nodeBindOptionsByStepId={nodeBindOptionsByStepId}
+                    addStepAfter={addStepAfter}
+                    aiCue={aiCue}
+                    setAiCue={setAiCue}
+                    aiBusyStepId={aiBusyStepId}
+                    aiQuestionMetaByStepId={aiQuestionMetaByStepId}
+                    addAiQuestions={addAiQuestions}
+                    toggleAiQuestionDiagram={toggleAiQuestionDiagram}
+                    deleteAiQuestion={deleteAiQuestion}
+                    addAiQuestionsNote={handleAddAiQuestionsNote}
+                    aiQuestionsDiagramSyncByStepId={aiQuestionsDiagramSyncByStepId}
+                    aiNoteStatus={aiNoteStatus}
+                    moveStep={moveStep}
+                    orderMode={orderMode}
+                    graphOrderLocked={graphOrderLocked}
+                    bpmnOrderFallback={bpmnOrderFallback}
+                    bpmnOrderHint={bpmnOrderHint}
+                    isTimelineFiltering={isTimelineFiltering}
+                    deleteStep={deleteStep}
+                    subprocessCatalog={subprocessCatalog}
+                    selectedStepIds={selectedTimelineStepIds}
+                    onToggleStepSelection={handleToggleStepSelection}
+                    onToggleAllStepSelection={handleToggleAllStepSelection}
+                    stepTimeUnit={stepTimeUnit}
+                    dodSnapshot={dodSnapshot}
+                    tierFilters={timelineFilters?.tiers}
+                    branchViewMode={branchViewMode}
+                    branchExpandByGateway={branchExpandByGateway}
+                    onPatchBranchExpand={handlePatchBranchExpand}
+                    onSetTimelineViewMode={handleSetTimelineViewMode}
+                    pathMetrics={pathMetrics}
+                  />
+                </Profiler>
+              ) : (
+                <div className="analysisStepModePlaceholder">
+                  <div className="analysisStepModeTitle">
+                    {timelineViewMode === "paths" ? "Сценарии и отчёты открыты ниже" : "Граф анализа открыт ниже"}
+                  </div>
+                  <div className="analysisStepSectionSub">
+                    Таблица шагов остаётся основой анализа. Режим таблицы доступен в дополнительных переключателях.
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <aside className="analysisStepCompanion" data-testid="analysis-step-companion">
+            <section className="analysisSelectedStepCard" data-testid="analysis-selected-step-card">
+              <div className="analysisSelectedStepEyebrow">Выбранный шаг</div>
+              {selectedStep ? (
+                <>
+                  <div className="analysisSelectedStepTitle">{selectedStepContext.title}</div>
+                  <div className="analysisSelectedStepMeta">
+                    <span>Роль: {selectedStepContext.role || "не указана"}</span>
+                    <span>BPMN: {selectedStepContext.bpmnId || "нет привязки"}</span>
+                    <span>{selectedStepContext.timing}</span>
+                    <span>Действий с продуктом: {selectedStepProductActionCount}</span>
+                  </div>
+                  <div className="analysisSelectedStepActions" data-testid="interview-selection-actions">
+                    <button
+                      type="button"
+                      className="secondaryBtn tinyBtn"
+                      data-testid="interview-selected-open-ai"
+                      onClick={() => addAiQuestions(selectedStep)}
+                    >
+                      AI-вопросы ({Number(selectedStepAiMeta?.count || 0)})
+                    </button>
+                    <button
+                      type="button"
+                      className="secondaryBtn tinyBtn"
+                      data-testid="interview-selected-generate-ai"
+                      onClick={() => addAiQuestions(selectedStep, { forceRefresh: true })}
+                    >
+                      Сгенерировать AI
+                    </button>
+                    <button
+                      type="button"
+                      className="secondaryBtn tinyBtn"
+                      data-testid="interview-selected-open-binding"
+                      onClick={() => setBindingAssistantOpen(true)}
+                    >
+                      Привязка BPMN
+                    </button>
+                    <button
+                      type="button"
+                      className="dangerBtn tinyBtn"
+                      data-testid="interview-selected-delete"
+                      onClick={handleDeleteSelectedStep}
+                    >
+                      Удалить
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="analysisStepEmptyState">
+                  Выберите строку в таблице, чтобы увидеть контекст шага и действия с продуктом.
+                </div>
+              )}
+            </section>
+
+            <ProductActionsPanel
               sessionId={sid}
-              hiddenTimelineCols={hiddenTimelineCols}
-              timelineLaneFilter={timelineFilters.lane}
-              filteredTimelineView={filteredTimelineView}
+              interviewData={data}
               timelineView={timelineView}
-              timelineColSpan={timelineColSpan}
-              laneLinksByNode={laneLinksByNode}
-              patchStep={patchStep}
-              addTextAnnotation={handleAddTextAnnotation}
-              annotationSyncByStepId={annotationSyncByStepId}
-              xmlTextAnnotationsByStepId={xmlTextAnnotationsByStepId}
-              nodeBindOptionsByStepId={nodeBindOptionsByStepId}
-              addStepAfter={addStepAfter}
-              aiCue={aiCue}
-              setAiCue={setAiCue}
-              aiBusyStepId={aiBusyStepId}
-              aiQuestionMetaByStepId={aiQuestionMetaByStepId}
-              addAiQuestions={addAiQuestions}
-              toggleAiQuestionDiagram={toggleAiQuestionDiagram}
-              deleteAiQuestion={deleteAiQuestion}
-              addAiQuestionsNote={handleAddAiQuestionsNote}
-              aiQuestionsDiagramSyncByStepId={aiQuestionsDiagramSyncByStepId}
-              aiNoteStatus={aiNoteStatus}
-              moveStep={moveStep}
-              orderMode={orderMode}
-              graphOrderLocked={graphOrderLocked}
-              bpmnOrderFallback={bpmnOrderFallback}
-              bpmnOrderHint={bpmnOrderHint}
-              isTimelineFiltering={isTimelineFiltering}
-              deleteStep={deleteStep}
-              subprocessCatalog={subprocessCatalog}
               selectedStepIds={selectedTimelineStepIds}
-              onToggleStepSelection={handleToggleStepSelection}
-              onToggleAllStepSelection={handleToggleAllStepSelection}
-              stepTimeUnit={stepTimeUnit}
-              dodSnapshot={dodSnapshot}
-              tierFilters={timelineFilters?.tiers}
-              branchViewMode={branchViewMode}
-              branchExpandByGateway={branchExpandByGateway}
-              onPatchBranchExpand={handlePatchBranchExpand}
-              onSetTimelineViewMode={handleSetTimelineViewMode}
-              pathMetrics={pathMetrics}
+              getBaseDiagramStateVersion={getBaseDiagramStateVersion}
+              rememberDiagramStateVersion={rememberDiagramStateVersion}
+              onSessionSync={onSessionSync}
             />
-          </Profiler>
+          </aside>
+        </div>
+
+        {timelineViewMode !== "matrix" ? (
+          <section className="analysisSecondaryPanel" data-testid="analysis-secondary-panel">
+            <div className="analysisSecondaryHead">
+              <div>
+                <div className="analysisSecondaryTitle">
+                  {timelineViewMode === "paths" ? "Дополнительно · Сценарии и отчёты" : "Дополнительно · Граф анализа"}
+                </div>
+                <div className="analysisStepSectionSub">
+                  Вторичный слой анализа: маршруты, отчёты и граф помогают проверить таблицу шагов, но не заменяют её.
+                </div>
+              </div>
+            </div>
+            {timelineViewMode === "diagram" ? (
+              <Profiler id="InterviewDiagramView" onRender={handleProfilerRender}>
+                <InterviewDiagramView
+                  dodSnapshot={dodSnapshot}
+                  selectedStepIds={selectedTimelineStepIds}
+                  onSelectStep={handleSelectSingleStep}
+                />
+              </Profiler>
+            ) : null}
+            {timelineViewMode === "paths" ? (
+              <Profiler id="InterviewPathsView" onRender={handleProfilerRender}>
+                <Suspense fallback={<div className="interviewAnnotationNotice pending">Загружаю сценарии и отчёты…</div>}>
+                  <LazyInterviewPathsView
+                    active
+                    sessionId={sid}
+                    interviewData={data}
+                    interviewVM={interviewVM}
+                    interviewGraph={interviewGraph}
+                    tierFilters={timelineFilters?.tiers}
+                    selectedStepIds={selectedTimelineStepIds}
+                    onSelectStep={handleSelectSingleStep}
+                    onSetTimelineViewMode={handleSetTimelineViewMode}
+                    dodSnapshot={dodSnapshot}
+                    pathMetrics={pathMetrics}
+                    patchStep={patchStep}
+                    onReportBuildDebug={handleReportBuildDebug}
+                    onPerfReady={handlePathsPerfReady}
+                    externalIntent={pathsUiIntent}
+                  />
+                </Suspense>
+              </Profiler>
+            ) : null}
+          </section>
         ) : null}
         </>
         ) : null}
