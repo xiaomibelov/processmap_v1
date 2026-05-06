@@ -29,10 +29,9 @@ test("timeline rows notify InterviewStage before the companion panel can become 
   assert.match(timeline, /activeAnalysisStepId = ""/);
   assert.match(timeline, /onActivateStep/);
   assert.match(timeline, /const activeAnalysisRow = toText\(activeAnalysisStepId\) === stepId;/);
-  assert.match(timeline, /const activateStepRow = \(\) => \{[\s\S]*setActiveInlineStepId\(stepId\);[\s\S]*onActivateStep\?\.\(stepId\);[\s\S]*\};/);
+  assert.match(timeline, /const activateStepRow = \(\) => \{[\s\S]*onActivateStep\?\.\(stepId\);[\s\S]*\};/);
   assert.match(timeline, /onMouseDown=\{activateStepRow\}/);
   assert.match(timeline, /onFocusCapture=\{activateStepRow\}/);
   assert.match(timeline, /activeAnalysisRow \? "isAnalysisActive" : ""/);
   assert.match(styles, /\.analysisStepListTable \.analysisStepListRow\.isAnalysisActive td/);
 });
-
