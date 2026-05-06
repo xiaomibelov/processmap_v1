@@ -1,17 +1,17 @@
 export const PROCESS_WORKBENCH_CONFIG = {
   tabs: [
-    { id: "interview", label: "Анализ" },
-    { id: "diagram", label: "BPMN" },
+    { id: "interview", label: "Анализ процессов" },
+    { id: "diagram", label: "Diagram (BPMN)" },
     { id: "xml", label: "XML" },
-    { id: "doc", label: "Документ" },
-    { id: "dod", label: "Проверки" },
+    { id: "doc", label: "DOC" },
+    { id: "dod", label: "DOD" },
   ],
   emptyGuide: {
     title: "Начало работы",
     steps: [
       "Выберите проект и откройте сессию в верхней панели.",
-      "Перейдите в `BPMN`: импортируйте BPMN или соберите схему вручную.",
-      "Откройте `Анализ`: синхронно заполните шаги, лейны и `Text annotation (BPMN)`.",
+      "Перейдите в `Diagram (BPMN)`: импортируйте BPMN или соберите схему вручную.",
+      "Откройте `Анализ процессов`: синхронно заполните шаги, лейны и `Text annotation (BPMN)`.",
       "Нажмите `Сгенерировать процесс`, затем проверьте результат и выгрузите `Export BPMN`.",
     ],
   },
@@ -27,11 +27,11 @@ export const PROCESS_WORKBENCH_CONFIG = {
     ai: "✦ AI",
   },
   tooltips: {
-    saveDisabled: "Сохранение сессии доступно в Diagram/XML",
+    saveDisabled: "Сохранение сессии доступно в Diagram (BPMN)/XML",
     saveLocal: "Сохранить XML локально",
     saveBackend: "Сохранить текущее состояние сессии",
     importNoSession: "Сначала выберите сессию",
-    importInterview: "Импорт доступен в BPMN-режиме (BPMN/XML)",
+    importInterview: "Импорт доступен в Diagram (BPMN)/XML",
     importReady: "Загрузить BPMN/XML файл",
     export: "Экспорт BPMN в файл",
     seed: "Создать pool + lanes из акторов",
