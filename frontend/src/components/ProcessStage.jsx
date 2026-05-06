@@ -6369,7 +6369,7 @@ export default function ProcessStage({
             requestProjectId={activeProjectId}
             requestProjectWorkspaceId={activeProjectWorkspaceId}
             requestProjectContext={activeProjectRouteContext}
-            onOpenSession={(sessionLike) => onOpenWorkspaceSession?.(sessionLike)}
+            onOpenSession={(sessionLike, options) => onOpenWorkspaceSession?.(sessionLike, options)}
             onClearRequestedProject={onClearWorkspaceProject}
           />
         ) : tab === "doc" ? (

@@ -141,6 +141,13 @@ function ensureObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
 }
 
+function normalizeOpenProcessTab(tab) {
+  const value = String(tab || "").trim().toLowerCase();
+  if (value === "editor") return "diagram";
+  if (value === "diagram" || value === "interview" || value === "xml" || value === "doc" || value === "dod") return value;
+  return "";
+}
+
 function hasOwn(obj, key) {
   return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
 }
@@ -1137,6 +1144,7 @@ export default function App() {
     ) {
       return { ok: false, cancelled: true, error: "leave_guard_cancelled" };
     }
+    const openTab = normalizeOpenProcessTab(options?.openTab);
     const result = await openSession(targetSid, options);
     const source = String(options?.source || "manual_select").trim();
     const shouldPushHistory = options?.pushHistory !== false && source !== "url_restore";
@@ -1147,6 +1155,10 @@ export default function App() {
         projectContext: projectRouteContext,
       });
     }
+    const intentSid = String(result?.sessionId || targetSid || "").trim();
+    if (intentSid && openTab && result?.ok !== false) {
+      setProcessTabIntent({ sid: intentSid, tab: openTab, nonce: Date.now() });
+    }
     return result;
   }, [confirmLeaveIfUnsafe, draft?.session_id, openSession, projectId, projectRouteContext]);
 
@@ -1154,7 +1166,7 @@ export default function App() {
     const row = ensureObject(sessionLike);
     const sid = String(row?.id || row?.session_id || sessionLike || "").trim();
     const pid = String(row?.project_id || "").trim();
-    const openTab = String(options?.openTab || "").trim().toLowerCase();
+    const openTab = normalizeOpenProcessTab(options?.openTab);
     const source = String(options?.source || "workspace_dashboard").trim() || "workspace_dashboard";
     const activeSid = String(draft?.session_id || "").trim();
     const bypassLeaveGuard = options?.bypassLeaveGuard === true;
@@ -1177,8 +1189,9 @@ export default function App() {
         projectContext: nextProjectContext,
       });
     }
-    if (sid && (openTab === "diagram" || openTab === "interview" || openTab === "xml" || openTab === "doc" || openTab === "dod")) {
-      setProcessTabIntent({ sid, tab: openTab, nonce: Date.now() });
+    const intentSid = String(result?.sessionId || sid || "").trim();
+    if (intentSid && openTab && result?.ok !== false) {
+      setProcessTabIntent({ sid: intentSid, tab: openTab, nonce: Date.now() });
     }
     return result?.ok === false ? result : { ok: true };
   }, [confirmLeaveIfUnsafe, draft?.session_id, openWorkspaceSessionBase, projectId, rememberProjectRouteContext]);
