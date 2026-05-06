@@ -10,7 +10,7 @@ const source = fs.readFileSync(path.join(__dirname, "ProductActionsPanel.jsx"), 
 test("ProductActionsPanel exposes MVP product action fields in Analysis UI", () => {
   [
     "Действия с продуктом",
-    "Сохранено:",
+    "сохранено",
     "Товар",
     "Группа товара",
     "Тип действия",
@@ -60,11 +60,18 @@ test("ProductActionsPanel makes saved actions primary and keeps editor collapsed
 });
 
 test("ProductActionsPanel shows selected step context and binding metadata", () => {
+  assert.equal(source.includes("showStepContext = true"), true);
   assert.equal(source.includes('data-testid="product-actions-step-context"'), true);
   assert.equal(source.includes("Действий по шагу"), true);
   assert.equal(source.includes("BPMN:"), true);
   assert.equal(source.includes("Роль:"), true);
   assert.equal(source.includes("ID шага:"), true);
+});
+
+test("ProductActionsPanel can render embedded in the B-block companion column", () => {
+  assert.equal(source.includes("compact = false"), true);
+  assert.equal(source.includes('productActionsPanel${compact ? " compact" : ""}'), true);
+  assert.equal(source.includes("{showStepContext ? ("), true);
 });
 
 test("ProductActionsPanel stays visible with a useful empty state when there are no steps", () => {

@@ -54,16 +54,22 @@ test("analysis step block is structured as primary workspace plus secondary scen
   const source = read("src/components/process/InterviewStage.jsx");
   assert.match(source, /data-testid="analysis-step-actions-section"/);
   assert.match(source, /data-testid="analysis-step-workspace"/);
+  assert.match(source, /data-testid="analysis-step-table-card"/);
   assert.match(source, /data-testid="analysis-step-companion"/);
   assert.match(source, /data-testid="analysis-selected-step-card"/);
   assert.match(source, /data-testid="analysis-secondary-panel"/);
-  assert.match(source, /Основная рабочая зона анализа/);
+  assert.match(source, /B\. Действия процесса/);
+  assert.doesNotMatch(source, /Основная рабочая зона анализа/);
+  assert.doesNotMatch(source, /Сценарии и отчёты открыты ниже/);
+  assert.doesNotMatch(source, /Таблица шагов остаётся основой анализа/);
+  assert.match(source, /compact/);
+  assert.match(source, /showStepContext=\{false\}/);
   assert.match(source, /Дополнительно · Сценарии и отчёты/);
   assert.match(source, /ProductActionsPanel/);
 });
 
 test("app version changelog records the UI surface simplification", () => {
   const source = read("src/config/appVersion.js");
-  assert.match(source, /currentVersion: "v1\.0\.107"/);
-  assert.match(source, /Блок действий процесса оформлен как рабочая секция анализа\./);
+  assert.match(source, /currentVersion: "v1\.0\.108"/);
+  assert.match(source, /Переработана визуальная структура блока действий процесса\./);
 });
