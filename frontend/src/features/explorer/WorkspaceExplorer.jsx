@@ -1342,12 +1342,16 @@ function ProjectRow({
             <span className="inline-flex h-6 w-6 shrink-0 rounded-md border border-transparent" aria-hidden />
             <IcoProject className="shrink-0 text-accent" />
             <AppRouteLink
-              className="block min-w-0 flex-1 truncate text-left hover:underline"
+              className="block min-w-0 flex-1 text-left"
               href={projectHref}
               onNavigate={() => onClick(project)}
               title={project.name}
             >
-              {project.name}
+              <span className="block truncate hover:underline">{project.name}</span>
+              <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-normal text-muted transition-colors group-hover:text-accent">
+                <span>Открыть проект</span>
+                <IcoChevron right className="text-[10px]" />
+              </span>
             </AppRouteLink>
           </div>
         </td>
@@ -1371,14 +1375,23 @@ function ProjectRow({
         </td>
         <td className="px-2 py-2.5 text-xs text-fg/60 text-right">{ts(project.rollup_activity_at || project.updated_at) || "—"}</td>
         <LastActivityCell node={project} maxWidthClass="max-w-[180px]" quiet />
-        <td className="px-2 py-2.5 w-8 text-right relative" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => setMenuOpen((v) => !v)}
-            className="opacity-45 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
-            title="Действия с проектом"
-            aria-label="Действия с проектом"
-          >···</button>
-          {menuOpen && <ContextMenu items={menuItems} onClose={() => setMenuOpen(false)} />}
+        <td className="px-2 py-2.5 text-right relative" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-end gap-1.5">
+            <AppRouteLink
+              className="secondaryBtn h-7 min-h-0 px-3 text-xs whitespace-nowrap transition-colors hover:border-accent/40 hover:text-fg"
+              href={projectHref}
+              onNavigate={() => onClick(project)}
+            >
+              Открыть проект
+            </AppRouteLink>
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              className="opacity-55 group-hover:opacity-100 text-muted hover:text-fg px-1 py-0.5 rounded transition-all"
+              title="Действия с проектом"
+              aria-label="Действия с проектом"
+            >···</button>
+            {menuOpen && <ContextMenu items={menuItems} onClose={() => setMenuOpen(false)} />}
+          </div>
         </td>
       </tr>
       {renaming && canRename ? (
@@ -2196,20 +2209,18 @@ function SessionRow({
         <td className="px-2 py-2.5 text-sm font-medium text-fg">
           <div className="min-w-0">
             <AppRouteLink
-              className={`block min-w-0 truncate ${isOpening ? "cursor-progress text-muted" : "hover:underline"}`}
+              className={`block min-w-0 ${isOpening ? "cursor-progress text-muted" : ""}`}
               href={sessionHref}
               onNavigate={() => onOpen(session)}
               title={session.name}
               aria-busy={isOpening ? "true" : undefined}
             >
-              {session.name}
-            </AppRouteLink>
-            <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 text-[11px] font-normal text-accent/75">
+              <span className="block truncate hover:underline">{session.name}</span>
+              <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-normal text-accent/75 transition-colors hover:text-accent">
                 <span>{isOpening ? "Открываем сессию" : "Открыть сессию"}</span>
                 <IcoChevron right className="text-[10px]" />
               </span>
-            </div>
+            </AppRouteLink>
           </div>
         </td>
         <td className="px-2 py-2.5">
