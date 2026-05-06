@@ -121,8 +121,6 @@ export default function ProductActionsPanel({
     setDraft(createDraftForStep(selectedStep, editingAction));
   }, [draftResetKey, selectedStep, editingAction]);
 
-  if (!steps.length) return null;
-
   const selectedBinding = deriveProductActionBindingFromStep(selectedStep);
   const actionCount = productActions.length;
   const stepActionCount = actionsForStep.length;
@@ -206,6 +204,7 @@ export default function ProductActionsPanel({
         <button
           type="button"
           className="secondaryBtn smallBtn"
+          disabled={!steps.length}
           onClick={() => {
             setEditingActionId("");
             setDraft(createDraftForStep(selectedStep));
@@ -217,33 +216,41 @@ export default function ProductActionsPanel({
         </button>
       </div>
 
-      <div className="productActionsStepRow">
-        <label className="interviewField productActionsStepSelect">
-          <span>Шаг процесса</span>
-          <select
-            className="select"
-            value={toText(selectedStep?.id)}
-            onChange={(e) => {
-              setSelectedStepId(e.target.value);
-              setEditingActionId("");
-              setStatus(null);
-            }}
-          >
-            {steps.map((step) => (
-              <option key={toText(step?.id)} value={toText(step?.id)}>
-                {stepDisplayLabel(step)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="productActionsBinding">
-          <span className="badge muted">Шаг: {selectedBinding.step_id || "—"}</span>
-          <span className={"badge " + (selectedBinding.bpmn_element_id ? "ok" : "muted")}>
-            Диаграмма: {selectedBinding.bpmn_element_id || "нет привязки"}
-          </span>
-          <span className="badge muted">строк по шагу: {stepActionCount}</span>
+      {!steps.length ? (
+        <div className="productActionsEmpty" data-testid="product-actions-empty-state">
+          Добавьте шаг процесса, чтобы описать действия с продуктом.
         </div>
-      </div>
+      ) : null}
+
+      {steps.length ? (
+        <>
+          <div className="productActionsStepRow">
+            <label className="interviewField productActionsStepSelect">
+              <span>Шаг процесса</span>
+              <select
+                className="select"
+                value={toText(selectedStep?.id)}
+                onChange={(e) => {
+                  setSelectedStepId(e.target.value);
+                  setEditingActionId("");
+                  setStatus(null);
+                }}
+              >
+                {steps.map((step) => (
+                  <option key={toText(step?.id)} value={toText(step?.id)}>
+                    {stepDisplayLabel(step)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="productActionsBinding">
+              <span className="badge muted">Шаг: {selectedBinding.step_id || "—"}</span>
+              <span className={"badge " + (selectedBinding.bpmn_element_id ? "ok" : "muted")}>
+                Диаграмма: {selectedBinding.bpmn_element_id || "нет привязки"}
+              </span>
+              <span className="badge muted">строк по шагу: {stepActionCount}</span>
+            </div>
+          </div>
 
       {actionsForStep.length ? (
         <div className="productActionsList">
@@ -325,6 +332,8 @@ export default function ProductActionsPanel({
           </div>
         ) : null}
       </div>
+        </>
+      ) : null}
     </section>
   );
 }
