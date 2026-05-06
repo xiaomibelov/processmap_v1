@@ -52,6 +52,7 @@ test("summary and reports frame output and hide diagnostics behind details", () 
 
 test("analysis step block is structured as primary workspace plus secondary scenarios", () => {
   const source = read("src/components/process/InterviewStage.jsx");
+  const timeline = read("src/components/process/interview/TimelineTable.jsx");
   const styles = read("src/styles/tailwind.css");
   assert.match(source, /data-testid="analysis-step-actions-section"/);
   assert.match(source, /data-testid="analysis-step-workspace"/);
@@ -70,14 +71,23 @@ test("analysis step block is structured as primary workspace plus secondary scen
   assert.match(source, /Дополнительно · Сценарии и отчёты/);
   assert.match(source, /<details className="analysisBSection analysisSecondaryPanel" data-testid="analysis-secondary-panel">/);
   assert.match(source, /ProductActionsPanel/);
-  assert.match(styles, /\.analysisStepCompanion\s*\{[\s\S]*position: sticky;/);
-  assert.match(styles, /\.analysisStepCompanion\s*\{[\s\S]*max-height: min\(600px, calc\(100vh - 220px\)\);/);
+  assert.match(styles, /\.analysisStepCompanion\s*\{[\s\S]*position: static;/);
+  assert.match(styles, /\.analysisStepCompanion\s*\{[\s\S]*max-height: none;/);
+  assert.match(styles, /\.analysisStepCompanion\s*\{[\s\S]*overflow: visible;/);
+  assert.match(timeline, /analysisStepListTable/);
+  assert.match(timeline, /analysisStepListCell--step/);
+  assert.match(timeline, /analysisStepListCell--node/);
+  assert.match(styles, /\.analysisStepListTable\s*\{[\s\S]*min-width: 760px;/);
+  assert.match(styles, /\.analysisStepListTable\s*\{[\s\S]*table-layout: fixed;/);
+  assert.match(styles, /\.analysisStepListTable\s*\{[\s\S]*border-spacing: 0 8px;/);
+  assert.match(styles, /\.analysisStepListTable \.analysisStepListRow td:first-child\s*\{[\s\S]*border-radius: 12px 0 0 12px;/);
+  assert.match(styles, /\.analysisStepListTable \.interviewStepTitleBtn\s*\{[\s\S]*font-size: 14px;/);
   assert.match(styles, /--analysis-surface: hsl\(var\(--panel\) \/ 0\.9\);/);
   assert.doesNotMatch(styles, /\.analysisStepBlock\s*\{[\s\S]*background: rgba\(15, 23, 42, 0\.62\);/);
 });
 
 test("app version changelog records the UI surface simplification", () => {
   const source = read("src/config/appVersion.js");
-  assert.match(source, /currentVersion: "v1\.0\.110"/);
-  assert.match(source, /Улучшена рабочая зона действий процесса и светлая тема анализа\./);
+  assert.match(source, /currentVersion: "v1\.0\.111"/);
+  assert.match(source, /Улучшены строки таблицы шагов и панель “Шаг и продукт”\./);
 });
