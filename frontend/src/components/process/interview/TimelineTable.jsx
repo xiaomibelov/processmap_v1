@@ -206,7 +206,9 @@ export default function TimelineTable({
   isTimelineFiltering,
   deleteStep,
   subprocessCatalog,
+  activeAnalysisStepId = "",
   selectedStepIds,
+  onActivateStep,
   onToggleStepSelection,
   onToggleAllStepSelection,
   stepTimeUnit = "min",
@@ -851,6 +853,7 @@ export default function TimelineTable({
   function openStepDetails(stepId, select = true) {
     const key = toText(stepId);
     if (!key) return;
+    onActivateStep?.(key);
     setActiveInlineStepId(key);
     setDetailsStepId((prev) => (prev === key ? "" : key));
     if (select) onToggleStepSelection?.(key, true);
@@ -1035,7 +1038,12 @@ export default function TimelineTable({
               const menuOpen = rowMenuStepId === stepId;
               const detailsOpen = detailsStepId === stepId;
               const activeRow = activeInlineStepId === stepId;
+              const activeAnalysisRow = toText(activeAnalysisStepId) === stepId;
               const inlineEditorVisible = detailsOpen || activeRow;
+              const activateStepRow = () => {
+                setActiveInlineStepId(stepId);
+                onActivateStep?.(stepId);
+              };
               const incomingLaneLinks = mergeLaneLinks(
                 laneLinksByNode?.incomingByNode?.[toText(step?.node_bind_id)],
                 laneLinksByNode?.incomingByStep?.[stepId],
@@ -1164,13 +1172,14 @@ export default function TimelineTable({
                       isLaneActive ? "isLaneActive" : "",
                       selectedSet.has(stepId) ? "isSelected" : "",
                       activeRow ? "isActiveRow" : "",
+                      activeAnalysisRow ? "isAnalysisActive" : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
                     style={{ "--lane-accent": laneAccent }}
                     data-step-id={stepId}
-                    onMouseDown={() => setActiveInlineStepId(stepId)}
-                    onFocusCapture={() => setActiveInlineStepId(stepId)}
+                    onMouseDown={activateStepRow}
+                    onFocusCapture={activateStepRow}
                   >
                     <td className="analysisStepListCell analysisStepListCell--select">
                       <label className="interviewRowSelectCell">
@@ -1178,7 +1187,10 @@ export default function TimelineTable({
                           type="checkbox"
                           data-testid="interview-step-select"
                           checked={selectedSet.has(stepId)}
-                          onChange={(e) => onToggleStepSelection?.(step.id, !!e.target.checked)}
+                          onChange={(e) => {
+                            onActivateStep?.(step.id);
+                            onToggleStepSelection?.(step.id, !!e.target.checked);
+                          }}
                         />
                         <span>#{Number(step?._order_index || step?.order_index || absoluteIdx + 1)}</span>
                       </label>
@@ -1262,7 +1274,7 @@ export default function TimelineTable({
                           <button
                             type="button"
                             className="interviewInlineTimeEditBtn"
-                            onClick={() => setActiveInlineStepId(stepId)}
+                            onClick={activateStepRow}
                           >
                             Изменить
                           </button>

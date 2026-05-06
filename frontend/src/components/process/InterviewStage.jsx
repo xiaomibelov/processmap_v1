@@ -242,6 +242,7 @@ export default function InterviewStage({
   const [bindingAssistantOpen, setBindingAssistantOpen] = useState(false);
   const [bindingAssistantFeedback, setBindingAssistantFeedback] = useState("");
   const [selectedTimelineStepIds, setSelectedTimelineStepIds] = useState([]);
+  const [analysisActiveStepId, setAnalysisActiveStepId] = useState("");
   const [timelineOperationNotice, setTimelineOperationNotice] = useState(null);
   const [debugOverlayOpen, setDebugOverlayOpen] = useState(false);
   const [debugOverlayTab, setDebugOverlayTab] = useState("graph");
@@ -265,6 +266,7 @@ export default function InterviewStage({
     setBindingAssistantOpen(false);
     setBindingAssistantFeedback("");
     setSelectedTimelineStepIds([]);
+    setAnalysisActiveStepId("");
     setTimelineOperationNotice(null);
     setDebugOverlayOpen(false);
     setDebugOverlayTab("graph");
@@ -323,6 +325,7 @@ export default function InterviewStage({
       }
       return unchanged ? prev : next;
     });
+    setAnalysisActiveStepId((prev) => (prev && !knownIds.has(prev) ? "" : prev));
   }, [timelineView]);
 
   useEffect(() => {
@@ -529,6 +532,7 @@ export default function InterviewStage({
   function handleToggleStepSelection(stepId, checked) {
     const key = toText(stepId);
     if (!key) return;
+    if (checked) setAnalysisActiveStepId(key);
     setSelectedTimelineStepIds((prev) => {
       const set = new Set(prev);
       if (checked) set.add(key);
@@ -541,9 +545,17 @@ export default function InterviewStage({
     const key = toText(stepId);
     if (!key) {
       setSelectedTimelineStepIds([]);
+      setAnalysisActiveStepId("");
       return;
     }
     setSelectedTimelineStepIds([key]);
+    setAnalysisActiveStepId(key);
+  }
+
+  function handleActivateAnalysisStep(stepId) {
+    const key = toText(stepId);
+    if (!key) return;
+    setAnalysisActiveStepId(key);
   }
 
   function handleToggleAllStepSelection(checked) {
@@ -581,7 +593,12 @@ export default function InterviewStage({
     if (!selected.size) return null;
     return (Array.isArray(timelineView) ? timelineView : []).find((step) => selected.has(toText(step?.id))) || null;
   }, [selectedTimelineStepIds, timelineView]);
-  const analysisContextStep = selectedStep || (Array.isArray(filteredTimelineView) ? filteredTimelineView[0] : null) || (Array.isArray(timelineView) ? timelineView[0] : null) || null;
+  const analysisActiveStep = useMemo(() => {
+    const key = toText(analysisActiveStepId);
+    if (!key) return null;
+    return (Array.isArray(timelineView) ? timelineView : []).find((step) => toText(step?.id) === key) || null;
+  }, [analysisActiveStepId, timelineView]);
+  const analysisContextStep = analysisActiveStep || selectedStep || (Array.isArray(filteredTimelineView) ? filteredTimelineView[0] : null) || (Array.isArray(timelineView) ? timelineView[0] : null) || null;
   const analysisContextStepIds = useMemo(() => {
     const id = toText(analysisContextStep?.id);
     return id ? [id] : [];
@@ -897,7 +914,9 @@ export default function InterviewStage({
                   isTimelineFiltering={isTimelineFiltering}
                   deleteStep={deleteStep}
                   subprocessCatalog={subprocessCatalog}
+                  activeAnalysisStepId={analysisContextStepIds[0] || ""}
                   selectedStepIds={selectedTimelineStepIds}
+                  onActivateStep={handleActivateAnalysisStep}
                   onToggleStepSelection={handleToggleStepSelection}
                   onToggleAllStepSelection={handleToggleAllStepSelection}
                   stepTimeUnit={stepTimeUnit}
