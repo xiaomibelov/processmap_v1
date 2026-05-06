@@ -1041,7 +1041,6 @@ export default function TimelineTable({
               const activeAnalysisRow = toText(activeAnalysisStepId) === stepId;
               const inlineEditorVisible = detailsOpen || activeRow;
               const activateStepRow = () => {
-                setActiveInlineStepId(stepId);
                 onActivateStep?.(stepId);
               };
               const incomingLaneLinks = mergeLaneLinks(
@@ -1274,7 +1273,10 @@ export default function TimelineTable({
                           <button
                             type="button"
                             className="interviewInlineTimeEditBtn"
-                            onClick={activateStepRow}
+                            onClick={() => {
+                              setActiveInlineStepId(stepId);
+                              onActivateStep?.(stepId);
+                            }}
                           >
                             Изменить
                           </button>
