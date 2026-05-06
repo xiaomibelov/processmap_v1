@@ -24,6 +24,21 @@ const FIELD_CONFIGS = [
   { key: "action_method", label: "Способ", type: "select", options: ACTION_METHODS },
 ];
 
+const FIELD_GROUPS = [
+  {
+    title: "Продукт",
+    keys: ["product_name", "product_group"],
+  },
+  {
+    title: "Классификация действия",
+    keys: ["action_type", "action_stage", "action_object", "action_object_category", "action_method"],
+  },
+  {
+    title: "Контекст выполнения",
+    keys: ["role"],
+  },
+];
+
 const MEANINGFUL_PRODUCT_ACTION_FIELDS = [
   "product_name",
   "product_group",
@@ -104,6 +119,20 @@ function actionSummary(rowRaw) {
   ].filter(Boolean).join(" · ") || "Поля действия не заполнены";
 }
 
+function actionMatchesBinding(rowRaw, bindingRaw) {
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  const binding = bindingRaw && typeof bindingRaw === "object" ? bindingRaw : {};
+  const stepId = toText(binding.step_id || binding.stepId);
+  const nodeId = toText(binding.node_id || binding.nodeId || binding.bpmn_element_id || binding.bpmnElementId);
+  return !!(
+    (stepId && toText(row.step_id || row.stepId) === stepId)
+    || (nodeId && (
+      toText(row.bpmn_element_id || row.bpmnElementId) === nodeId
+      || toText(row.node_id || row.nodeId) === nodeId
+    ))
+  );
+}
+
 export default function ProductActionsPanel({
   sessionId = "",
   interviewData = null,
@@ -136,6 +165,7 @@ export default function ProductActionsPanel({
   const draftResetKey = `${toText(selectedStep?.id)}::${toText(editingAction?.id)}`;
   const lastDraftResetKeyRef = useRef(draftResetKey);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [actionsScope, setActionsScope] = useState("step");
   const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -158,7 +188,12 @@ export default function ProductActionsPanel({
   const selectedBinding = deriveProductActionBindingFromStep(selectedStep);
   const actionCount = productActions.length;
   const stepActionCount = actionsForStep.length;
+  const visibleActions = actionsScope === "all" ? productActions : actionsForStep;
   const canSaveDraft = hasMeaningfulProductActionDraft(draft);
+  const fieldConfigByKey = useMemo(() => {
+    const fields = [...FIELD_CONFIGS, { key: "role", label: "Роль", type: "text", placeholder: "Повар" }];
+    return Object.fromEntries(fields.map((field) => [field.key, field]));
+  }, []);
 
   function patchDraft(key, value) {
     setDraft((prev) => ({
@@ -234,7 +269,7 @@ export default function ProductActionsPanel({
         <div>
           <div className="productActionsTitle">Действия с продуктом</div>
           <div className="productActionsSub">
-            {actionCount ? `${actionCount} сохранено` : "Нет сохранённых действий"}
+            {actionCount ? `Сохранено: ${actionCount}` : "Нет сохранённых действий"}
           </div>
         </div>
         <button
@@ -261,6 +296,29 @@ export default function ProductActionsPanel({
 
       {steps.length ? (
         <>
+          <div className="productActionsScopeToggle" role="tablist" aria-label="Фильтр действий с продуктом">
+            <button
+              type="button"
+              className={actionsScope === "step" ? "isActive" : ""}
+              onClick={() => setActionsScope("step")}
+              role="tab"
+              aria-selected={actionsScope === "step"}
+            >
+              По выбранному шагу
+              <span>{stepActionCount}</span>
+            </button>
+            <button
+              type="button"
+              className={actionsScope === "all" ? "isActive" : ""}
+              onClick={() => setActionsScope("all")}
+              role="tab"
+              aria-selected={actionsScope === "all"}
+            >
+              Все действия
+              <span>{actionCount}</span>
+            </button>
+          </div>
+
           {showStepContext ? (
           <div className="productActionsStepRow">
             <label className="interviewField productActionsStepSelect">
@@ -296,12 +354,14 @@ export default function ProductActionsPanel({
           </div>
           ) : null}
 
-      {actionsForStep.length ? (
+      {visibleActions.length ? (
         <div className="productActionsList" data-testid="product-actions-list">
-          {actionsForStep.map((row) => (
+          {visibleActions.map((row) => {
+            const isCurrentStepAction = actionMatchesBinding(row, selectedBinding);
+            return (
             <article
               key={row.id}
-              className={"productActionCard " + (row.id === editingActionId ? "active" : "")}
+              className={"productActionCard " + (row.id === editingActionId ? "active" : "") + (!isCurrentStepAction ? " otherStep" : "")}
               data-testid="product-action-card"
             >
               <div className="productActionCardMain">
@@ -329,24 +389,34 @@ export default function ProductActionsPanel({
                 <div className="productActionBindingMeta">
                   <span><b>Шаг</b>{row.step_label || selectedBinding.step_label || "Шаг без названия"}</span>
                   <span><b>BPMN</b>{row.bpmn_element_id || row.node_id || "нет привязки"}</span>
+                  <span><b>Роль</b>{row.role || "не указана"}</span>
                 </div>
-                <button
-                  type="button"
-                  className="secondaryBtn tinyBtn"
-                  onClick={() => {
-                    setEditingActionId(row.id);
-                    setEditorOpen(true);
-                    setStatus(null);
-                  }}
-                >
-                  Редактировать
-                </button>
+                {isCurrentStepAction ? (
+                  <button
+                    type="button"
+                    className="secondaryBtn tinyBtn"
+                    onClick={() => {
+                      setEditingActionId(row.id);
+                      setEditorOpen(true);
+                      setStatus(null);
+                    }}
+                  >
+                    Редактировать
+                  </button>
+                ) : (
+                  <span className="productActionReadonlyHint">Действие другого шага</span>
+                )}
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
       ) : (
-        <div className="productActionsEmpty">Для выбранного шага ещё нет действий с продуктом.</div>
+        <div className="productActionsEmpty">
+          {actionsScope === "all"
+            ? "В анализе пока нет сохранённых действий с продуктом."
+            : "Для выбранного шага ещё нет действий с продуктом."}
+        </div>
       )}
 
       {!editorOpen ? null : (
@@ -360,63 +430,50 @@ export default function ProductActionsPanel({
               Эти поля будут сохранены для выбранного шага.
             </div>
           </div>
-          <button
-            type="button"
-            className="secondaryBtn tinyBtn"
-            onClick={() => {
-              setEditorOpen(false);
-              setStatus(null);
-            }}
-          >
-            Отменить
-          </button>
         </div>
-        <div className="productActionsEditor">
-        {FIELD_CONFIGS.map((field) => (
-          <label className="interviewField" key={field.key}>
-            <span>{field.label}</span>
-            {field.type === "select" ? (
-              <select
-                className="select"
-                value={toText(draft?.[field.key])}
-                onChange={(e) => patchDraft(field.key, e.target.value)}
-              >
-                <option value="">— не выбрано —</option>
-                {field.options.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
-            ) : (
-              <input
-                className="input"
-                value={toText(draft?.[field.key])}
-                onChange={(e) => patchDraft(field.key, e.target.value)}
-                placeholder={field.placeholder || ""}
-              />
-            )}
-          </label>
-        ))}
-        <label className="interviewField">
-          <span>Роль</span>
-          <input
-            className="input"
-            value={toText(draft?.role)}
-            onChange={(e) => patchDraft("role", e.target.value)}
-            placeholder="Повар"
-          />
-        </label>
-      </div>
+        <div className="productActionsEditorGroups">
+          {FIELD_GROUPS.map((group) => (
+            <fieldset className="productActionsEditorGroup" key={group.title}>
+              <legend>{group.title}</legend>
+              <div className="productActionsEditor">
+                {group.keys.map((key) => {
+                  const field = fieldConfigByKey[key];
+                  if (!field) return null;
+                  return (
+                    <label className="interviewField" key={field.key}>
+                      <span>{field.label}</span>
+                      {field.type === "select" ? (
+                        <select
+                          className="select"
+                          value={toText(draft?.[field.key])}
+                          onChange={(e) => patchDraft(field.key, e.target.value)}
+                        >
+                          <option value="">— не выбрано —</option>
+                          {field.options.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          className="input"
+                          value={toText(draft?.[field.key])}
+                          onChange={(e) => patchDraft(field.key, e.target.value)}
+                          placeholder={field.placeholder || ""}
+                        />
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+          ))}
+          <div className="productActionsEditorContext">
+            <span><b>Шаг</b>{selectedBinding.step_label || "Шаг без названия"}</span>
+            <span><b>BPMN</b>{selectedBinding.bpmn_element_id || selectedBinding.node_id || "нет привязки"}</span>
+          </div>
+        </div>
 
       <div className="productActionsFooter">
-        <button
-          type="button"
-          className="primaryBtn smallBtn"
-          onClick={handleSave}
-          disabled={saving || !canSaveDraft}
-          data-testid="product-action-save"
-        >
-          {saving ? "Сохраняю…" : "Сохранить действие"}
-        </button>
         <button
           type="button"
           className="secondaryBtn smallBtn"
@@ -426,6 +483,15 @@ export default function ProductActionsPanel({
           }}
         >
           Отменить
+        </button>
+        <button
+          type="button"
+          className="primaryBtn smallBtn"
+          onClick={handleSave}
+          disabled={saving || !canSaveDraft}
+          data-testid="product-action-save"
+        >
+          {saving ? "Сохраняю…" : "Сохранить действие"}
         </button>
         {editingActionId ? (
           <button
