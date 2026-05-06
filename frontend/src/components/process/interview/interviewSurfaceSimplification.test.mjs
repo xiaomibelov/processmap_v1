@@ -79,16 +79,17 @@ test("analysis step block is structured as primary workspace plus secondary scen
   assert.match(timeline, /analysisStepListCell--node/);
   assert.match(styles, /\.analysisStepListTable\s*\{[\s\S]*min-width: 760px;/);
   assert.match(styles, /\.analysisStepListTable\s*\{[\s\S]*table-layout: fixed;/);
-  assert.match(styles, /\.analysisStepListTable\s*\{[\s\S]*border-spacing: 0 8px;/);
+  assert.match(styles, /\.analysisStepListTable\s*\{[\s\S]*border-spacing: 0 5px;/);
   assert.match(styles, /\.analysisStepListTable \.analysisStepListRow td:first-child\s*\{[\s\S]*border-radius: 12px 0 0 12px;/);
-  assert.match(styles, /\.analysisStepListTable \.interviewStepTitleBtn\s*\{[\s\S]*font-size: 14px;/);
+  assert.match(styles, /\.analysisStepListTable \.interviewStepTitleBtn\s*\{[\s\S]*font-size: 14\.5px;/);
   assert.match(styles, /--analysis-surface: hsl\(var\(--panel\) \/ 0\.9\);/);
   assert.doesNotMatch(styles, /\.analysisStepBlock\s*\{[\s\S]*background: rgba\(15, 23, 42, 0\.62\);/);
 });
 
 test("app version changelog records the UI surface simplification", () => {
   const source = read("src/config/appVersion.js");
-  assert.match(source, /currentVersion: "v1\.0\.112"/);
+  assert.match(source, /currentVersion: "v1\.0\.113"/);
+  assert.match(source, /Улучшена читаемость строк действий процесса\./);
   assert.match(source, /Уточнена работа блока действий процесса\./);
   assert.match(source, /Улучшены строки таблицы шагов и панель “Шаг и продукт”\./);
 });
