@@ -35,6 +35,15 @@ const MEANINGFUL_PRODUCT_ACTION_FIELDS = [
   "role",
 ];
 
+const ACTION_CARD_FIELDS = [
+  ["Тип", "action_type"],
+  ["Этап", "action_stage"],
+  ["Объект", "action_object"],
+  ["Категория", "action_object_category"],
+  ["Способ", "action_method"],
+  ["Роль", "role"],
+];
+
 function stepDisplayLabel(stepRaw) {
   const step = stepRaw && typeof stepRaw === "object" ? stepRaw : {};
   const seq = Number(step.seq || step.order || 0);
@@ -84,6 +93,15 @@ function isIncompleteAction(rowRaw) {
 function actionTitle(rowRaw) {
   const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
   return toText(row.product_name) || toText(row.action_object) || toText(row.action_type) || "Неполное действие";
+}
+
+function actionSummary(rowRaw) {
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  return [
+    toText(row.action_type),
+    toText(row.action_stage),
+    toText(row.action_object),
+  ].filter(Boolean).join(" · ") || "Поля действия не заполнены";
 }
 
 export default function ProductActionsPanel({
@@ -294,19 +312,23 @@ export default function ProductActionsPanel({
                 <div className="productActionCardSub">
                   {displayValue(row.product_group, "Группа не указана")}
                 </div>
+                <div className="productActionCardSummaryLine">{actionSummary(row)}</div>
               </div>
-              <div className="productActionFacts">
-                <span><b>Тип</b>{displayValue(row.action_type)}</span>
-                <span><b>Этап</b>{displayValue(row.action_stage)}</span>
-                <span><b>Объект</b>{displayValue(row.action_object)}</span>
-                <span><b>Категория</b>{displayValue(row.action_object_category)}</span>
-                <span><b>Способ</b>{displayValue(row.action_method)}</span>
-                <span><b>Роль</b>{displayValue(row.role)}</span>
-              </div>
+              <details className="productActionCardDetails">
+                <summary>Поля действия</summary>
+                <div className="productActionFacts">
+                  {ACTION_CARD_FIELDS.map(([label, key]) => (
+                    <div className="productActionFact" key={key}>
+                      <span className="productActionFactLabel">{label}</span>
+                      <span className="productActionFactValue">{displayValue(row[key])}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
               <div className="productActionCardFooter">
                 <div className="productActionBindingMeta">
-                  <span>{row.step_label || selectedBinding.step_label || "Шаг без названия"}</span>
-                  <span>BPMN: {row.bpmn_element_id || row.node_id || "нет привязки"}</span>
+                  <span><b>Шаг</b>{row.step_label || selectedBinding.step_label || "Шаг без названия"}</span>
+                  <span><b>BPMN</b>{row.bpmn_element_id || row.node_id || "нет привязки"}</span>
                 </div>
                 <button
                   type="button"
