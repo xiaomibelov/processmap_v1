@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import csv
+import io
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
+from xml.sax.saxutils import escape as xml_escape
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from ..legacy.request_context import (
@@ -20,6 +26,30 @@ router = APIRouter(tags=["product-actions-registry"])
 
 _ALLOWED_SCOPES = {"workspace", "project", "session"}
 _REQUIRED_BUSINESS_FIELDS = ("product_name", "product_group", "action_type", "action_object")
+_EXPORT_COLUMNS = [
+    "workspace_title",
+    "project_title",
+    "project_id",
+    "session_title",
+    "session_id",
+    "product_group",
+    "product_name",
+    "action_type",
+    "action_stage",
+    "action_object_category",
+    "action_object",
+    "action_method",
+    "role",
+    "step_label",
+    "step_id",
+    "bpmn_element_id",
+    "work_duration_sec",
+    "wait_duration_sec",
+    "source",
+    "confidence",
+    "completeness",
+    "updated_at",
+]
 _FILTER_MAP = {
     "product_groups": "product_group",
     "products": "product_name",
@@ -169,6 +199,7 @@ def _registry_row(source: Dict[str, Any], action_raw: Any, index: int = 0) -> Di
         "registry_id": f"{session_id}::{action_id}",
         "org_id": _text(source.get("org_id")),
         "workspace_id": _text(source.get("workspace_id")),
+        "workspace_title": _text(source.get("workspace_title")),
         "project_id": _text(source.get("project_id")),
         "project_title": _text(source.get("project_title")),
         "session_id": session_id,
@@ -190,6 +221,7 @@ def _registry_row(source: Dict[str, Any], action_raw: Any, index: int = 0) -> Di
         "work_duration_sec": action.get("work_duration_sec"),
         "wait_duration_sec": action.get("wait_duration_sec"),
         "source": _text(action.get("source")) or "manual",
+        "confidence": action.get("confidence"),
         "updated_at": _text(action.get("updated_at")) or str(source.get("updated_at") or ""),
         "diagram_state_version": int(source.get("diagram_state_version") or 0),
     }
@@ -249,6 +281,7 @@ def _session_summary(source: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "org_id": _text(source.get("org_id")),
         "workspace_id": _text(source.get("workspace_id")),
+        "workspace_title": _text(source.get("workspace_title")),
         "project_id": _text(source.get("project_id")),
         "project_title": project_title,
         "folder_id": _text(source.get("folder_id")),
@@ -307,6 +340,7 @@ def _reconcile_session_summaries_with_rows(
         fallback_summary = {
             "org_id": _text(first.get("org_id")),
             "workspace_id": _text(first.get("workspace_id")),
+            "workspace_title": _text(first.get("workspace_title")),
             "project_id": _text(first.get("project_id")),
             "project_title": _text(first.get("project_title")),
             "folder_id": "",
@@ -327,8 +361,28 @@ def _reconcile_session_summaries_with_rows(
     return out
 
 
-@router.post("/api/analysis/product-actions/registry/query")
-def query_product_actions_registry(inp: ProductActionsRegistryQueryIn, request: Request) -> Dict[str, Any]:
+def _workspace_title(workspace_id: str, org_id: str) -> str:
+    record = get_workspace_record(workspace_id, org_id=org_id)
+    if not record:
+        return ""
+    return _text(record.get("name") or record.get("title"))
+
+
+def _with_workspace_titles(sources: List[Dict[str, Any]], org_id: str, fallback_workspace_id: str = "") -> List[Dict[str, Any]]:
+    titles: Dict[str, str] = {}
+    out: List[Dict[str, Any]] = []
+    for source_raw in sources:
+        source = dict(source_raw or {})
+        workspace_id = _text(source.get("workspace_id")) or fallback_workspace_id
+        if workspace_id and workspace_id not in titles:
+            titles[workspace_id] = _workspace_title(workspace_id, org_id)
+        source["workspace_id"] = workspace_id
+        source["workspace_title"] = titles.get(workspace_id, "")
+        out.append(source)
+    return out
+
+
+def _registry_payload(inp: ProductActionsRegistryQueryIn, request: Request, *, paginate: bool = True) -> Dict[str, Any]:
     require_authenticated_user(request)
     org_id = request_active_org_id(request)
     require_org_member_for_enterprise(request, org_id)
@@ -378,6 +432,7 @@ def query_product_actions_registry(inp: ProductActionsRegistryQueryIn, request: 
         limit_sessions=10000,
         is_admin=True,
     )
+    sources = _with_workspace_titles(sources, org_id, workspace_id)
     session_summaries = [_session_summary(source) for source in sources]
     rows: List[Dict[str, Any]] = []
     for source in sources:
@@ -390,7 +445,7 @@ def query_product_actions_registry(inp: ProductActionsRegistryQueryIn, request: 
     limit = _normalize_limit(inp.limit)
     offset = _normalize_offset(inp.offset)
     total = len(rows)
-    page_rows = rows[offset:offset + limit]
+    page_rows = rows[offset:offset + limit] if paginate else rows
     return {
         "ok": True,
         "scope": scope,
@@ -405,3 +460,120 @@ def query_product_actions_registry(inp: ProductActionsRegistryQueryIn, request: 
             "has_more": offset + limit < total,
         },
     }
+
+
+def _export_filename(scope: str, extension: str) -> str:
+    safe_scope = _normalize_scope(scope)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    return f"product-actions-{safe_scope}-{stamp}.{extension}"
+
+
+def _export_cell(row: Dict[str, Any], column: str) -> str:
+    value = row.get(column)
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        return f"{value:g}"
+    return str(value)
+
+
+def _csv_bytes(rows: List[Dict[str, Any]]) -> bytes:
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=";", quotechar='"', lineterminator="\r\n")
+    writer.writerow(_EXPORT_COLUMNS)
+    for row in rows:
+        writer.writerow([_export_cell(row, column) for column in _EXPORT_COLUMNS])
+    return ("\ufeff" + buffer.getvalue()).encode("utf-8")
+
+
+def _column_name(index: int) -> str:
+    name = ""
+    current = index
+    while current > 0:
+        current, remainder = divmod(current - 1, 26)
+        name = chr(65 + remainder) + name
+    return name
+
+
+def _xlsx_inline_cell(value: Any, row_index: int, column_index: int) -> str:
+    ref = f"{_column_name(column_index)}{row_index}"
+    text = xml_escape(str(value if value is not None else ""))
+    return f'<c r="{ref}" t="inlineStr"><is><t>{text}</t></is></c>'
+
+
+def _xlsx_bytes(rows: List[Dict[str, Any]]) -> bytes:
+    output = io.BytesIO()
+    sheet_rows = []
+    all_rows = [_EXPORT_COLUMNS] + [[_export_cell(row, column) for column in _EXPORT_COLUMNS] for row in rows]
+    for row_index, values in enumerate(all_rows, start=1):
+        cells = "".join(_xlsx_inline_cell(value, row_index, column_index) for column_index, value in enumerate(values, start=1))
+        sheet_rows.append(f'<row r="{row_index}">{cells}</row>')
+    widths = "".join(
+        f'<col min="{index}" max="{index}" width="{width}" customWidth="1"/>'
+        for index, width in enumerate([18, 22, 18, 24, 18, 18, 22, 18, 18, 22, 22, 18, 18, 24, 18, 18, 16, 16, 14, 12, 14, 22], start=1)
+    )
+    worksheet = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        f"<cols>{widths}</cols>"
+        f"<sheetData>{''.join(sheet_rows)}</sheetData>"
+        "</worksheet>"
+    )
+    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            "</Types>"
+        ))
+        archive.writestr("_rels/.rels", (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+            "</Relationships>"
+        ))
+        archive.writestr("xl/workbook.xml", (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            '<sheets><sheet name="Product actions" sheetId="1" r:id="rId1"/></sheets>'
+            "</workbook>"
+        ))
+        archive.writestr("xl/_rels/workbook.xml.rels", (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+            "</Relationships>"
+        ))
+        archive.writestr("xl/worksheets/sheet1.xml", worksheet)
+    return output.getvalue()
+
+
+@router.post("/api/analysis/product-actions/registry/query")
+def query_product_actions_registry(inp: ProductActionsRegistryQueryIn, request: Request) -> Dict[str, Any]:
+    return _registry_payload(inp, request, paginate=True)
+
+
+@router.post("/api/analysis/product-actions/registry/export.csv")
+def export_product_actions_registry_csv(inp: ProductActionsRegistryQueryIn, request: Request) -> Response:
+    payload = _registry_payload(inp, request, paginate=True)
+    filename = _export_filename(str(payload.get("scope") or inp.scope), "csv")
+    return Response(
+        content=_csv_bytes(payload.get("rows") or []),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/api/analysis/product-actions/registry/export.xlsx")
+def export_product_actions_registry_xlsx(inp: ProductActionsRegistryQueryIn, request: Request) -> Response:
+    payload = _registry_payload(inp, request, paginate=True)
+    filename = _export_filename(str(payload.get("scope") or inp.scope), "xlsx")
+    return Response(
+        content=_xlsx_bytes(payload.get("rows") or []),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

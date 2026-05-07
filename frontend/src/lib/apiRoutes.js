@@ -98,6 +98,8 @@ export const apiRoutes = {
   },
   analysis: {
     productActionsRegistryQuery: () => "/api/analysis/product-actions/registry/query",
+    productActionsRegistryExportCsv: () => "/api/analysis/product-actions/registry/export.csv",
+    productActionsRegistryExportXlsx: () => "/api/analysis/product-actions/registry/export.xlsx",
     productActionsBulkSuggest: () => "/api/analysis/product-actions/suggest-bulk",
   },
   sessions: {
