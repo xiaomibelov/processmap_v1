@@ -1232,6 +1232,37 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_session ON audit_log(session_id)")
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS ai_execution_log (
+                  execution_id TEXT PRIMARY KEY,
+                  module_id TEXT NOT NULL,
+                  actor_user_id TEXT NOT NULL DEFAULT '',
+                  org_id TEXT NOT NULL DEFAULT '',
+                  workspace_id TEXT NOT NULL DEFAULT '',
+                  project_id TEXT NOT NULL DEFAULT '',
+                  session_id TEXT NOT NULL DEFAULT '',
+                  provider TEXT NOT NULL DEFAULT '',
+                  model TEXT NOT NULL DEFAULT '',
+                  prompt_id TEXT NOT NULL DEFAULT '',
+                  prompt_version TEXT NOT NULL DEFAULT '',
+                  status TEXT NOT NULL DEFAULT 'queued',
+                  input_hash TEXT NOT NULL DEFAULT '',
+                  output_summary TEXT NOT NULL DEFAULT '',
+                  usage_json TEXT NOT NULL DEFAULT '{}',
+                  latency_ms INTEGER NOT NULL DEFAULT 0,
+                  error_code TEXT NOT NULL DEFAULT '',
+                  error_message TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  finished_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_ai_exec_org_created ON ai_execution_log(org_id, created_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_ai_exec_module ON ai_execution_log(module_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_ai_exec_status ON ai_execution_log(status)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_ai_exec_actor ON ai_execution_log(actor_user_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_ai_exec_scope ON ai_execution_log(workspace_id, project_id, session_id)")
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS error_events (
                   id TEXT PRIMARY KEY,
                   schema_version INTEGER NOT NULL DEFAULT 1,
@@ -4253,6 +4284,37 @@ def _audit_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     }
 
 
+def _ai_execution_log_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "execution_id": str(row["execution_id"] or ""),
+        "module_id": str(row["module_id"] or ""),
+        "actor_user_id": str(row["actor_user_id"] or ""),
+        "scope": {
+            "org_id": str(row["org_id"] or ""),
+            "workspace_id": str(row["workspace_id"] or ""),
+            "project_id": str(row["project_id"] or ""),
+            "session_id": str(row["session_id"] or ""),
+        },
+        "org_id": str(row["org_id"] or ""),
+        "workspace_id": str(row["workspace_id"] or ""),
+        "project_id": str(row["project_id"] or ""),
+        "session_id": str(row["session_id"] or ""),
+        "provider": str(row["provider"] or ""),
+        "model": str(row["model"] or ""),
+        "prompt_id": str(row["prompt_id"] or ""),
+        "prompt_version": str(row["prompt_version"] or ""),
+        "status": str(row["status"] or "queued"),
+        "input_hash": str(row["input_hash"] or ""),
+        "output_summary": str(row["output_summary"] or ""),
+        "usage": _json_loads(row["usage_json"], {}),
+        "latency_ms": int(row["latency_ms"] or 0),
+        "error_code": str(row["error_code"] or ""),
+        "error_message": str(row["error_message"] or ""),
+        "created_at": int(row["created_at"] or 0),
+        "finished_at": int(row["finished_at"] or 0),
+    }
+
+
 def _error_event_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     return {
         "id": str(row["id"] or ""),
@@ -6126,6 +6188,234 @@ def count_audit_log(
             """,
             params,
         ).fetchone()
+    if not row:
+        return 0
+    try:
+        return int(row[0] or 0)
+    except Exception:
+        return 0
+
+
+_AI_EXECUTION_STATUSES = {"queued", "running", "success", "error", "cancelled"}
+
+
+def _normalize_ai_execution_status(status: Any) -> str:
+    value = str(status or "").strip().lower()
+    return value if value in _AI_EXECUTION_STATUSES else "queued"
+
+
+def append_ai_execution_log(
+    *,
+    execution_id: Optional[str] = None,
+    module_id: str,
+    actor_user_id: str = "",
+    org_id: str = "",
+    workspace_id: str = "",
+    project_id: str = "",
+    session_id: str = "",
+    provider: str = "deepseek",
+    model: str = "deepseek-chat",
+    prompt_id: str = "",
+    prompt_version: str = "",
+    status: str = "queued",
+    input_hash: str = "",
+    output_summary: str = "",
+    usage: Optional[Dict[str, Any]] = None,
+    latency_ms: int = 0,
+    error_code: str = "",
+    error_message: str = "",
+    created_at: Optional[int] = None,
+    finished_at: Optional[int] = None,
+) -> Dict[str, Any]:
+    mid = str(module_id or "").strip()
+    if not mid:
+        raise ValueError("module_id is required")
+    eid = str(execution_id or "").strip() or f"ai_exec_{uuid.uuid4().hex[:16]}"
+    actor = str(actor_user_id or "").strip()
+    oid = str(org_id or "").strip()
+    created = int(created_at or 0) or _now_ts()
+    finished = int(finished_at or 0)
+    state = _normalize_ai_execution_status(status)
+    summary = str(output_summary or "").strip()[:500]
+    err_msg = str(error_message or "").strip()[:500]
+    usage_raw = usage if isinstance(usage, dict) else {}
+    usage_safe: Dict[str, Any] = {}
+    for key, value in usage_raw.items():
+        key_s = str(key or "").strip()
+        if not key_s:
+            continue
+        if isinstance(value, bool):
+            usage_safe[key_s] = bool(value)
+        elif isinstance(value, int):
+            usage_safe[key_s] = int(value)
+        elif isinstance(value, float):
+            usage_safe[key_s] = float(value)
+        elif isinstance(value, str) and len(value) <= 120 and "key" not in key_s.lower() and "secret" not in key_s.lower():
+            usage_safe[key_s] = value
+    payload = _json_dumps(usage_safe, {})
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            """
+            INSERT OR REPLACE INTO ai_execution_log (
+              execution_id, module_id, actor_user_id, org_id, workspace_id, project_id, session_id,
+              provider, model, prompt_id, prompt_version, status, input_hash, output_summary,
+              usage_json, latency_ms, error_code, error_message, created_at, finished_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                eid,
+                mid,
+                actor,
+                oid,
+                str(workspace_id or "").strip(),
+                str(project_id or "").strip(),
+                str(session_id or "").strip(),
+                str(provider or "").strip(),
+                str(model or "").strip(),
+                str(prompt_id or "").strip(),
+                str(prompt_version or "").strip(),
+                state,
+                str(input_hash or "").strip(),
+                summary,
+                payload,
+                max(0, int(latency_ms or 0)),
+                str(error_code or "").strip()[:120],
+                err_msg,
+                created,
+                max(0, finished),
+            ],
+        )
+        con.commit()
+        row = con.execute(
+            """
+            SELECT execution_id, module_id, actor_user_id, org_id, workspace_id, project_id, session_id,
+                   provider, model, prompt_id, prompt_version, status, input_hash, output_summary,
+                   usage_json, latency_ms, error_code, error_message, created_at, finished_at
+              FROM ai_execution_log
+             WHERE execution_id = ?
+             LIMIT 1
+            """,
+            [eid],
+        ).fetchone()
+    if not row:
+        return {"execution_id": eid, "module_id": mid, "status": state, "created_at": created}
+    return _ai_execution_log_row_to_dict(row)
+
+
+def _build_ai_execution_log_where(
+    *,
+    org_id: str = "",
+    module_id: Optional[str] = None,
+    status: Optional[str] = None,
+    actor_user_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    created_from: Optional[int] = None,
+    created_to: Optional[int] = None,
+) -> tuple[str, List[Any]]:
+    clauses: List[str] = []
+    params: List[Any] = []
+    oid = str(org_id or "").strip()
+    if oid:
+        clauses.append("org_id = ?")
+        params.append(oid)
+    filters = {
+        "module_id": module_id,
+        "status": _normalize_ai_execution_status(status) if status else "",
+        "actor_user_id": actor_user_id,
+        "workspace_id": workspace_id,
+        "project_id": project_id,
+        "session_id": session_id,
+    }
+    for column, raw in filters.items():
+        value = str(raw or "").strip()
+        if value:
+            clauses.append(f"{column} = ?")
+            params.append(value)
+    from_ts = int(created_from or 0)
+    if from_ts > 0:
+        clauses.append("created_at >= ?")
+        params.append(from_ts)
+    to_ts = int(created_to or 0)
+    if to_ts > 0:
+        clauses.append("created_at <= ?")
+        params.append(to_ts)
+    return (" AND ".join(clauses) if clauses else "1 = 1"), params
+
+
+def list_ai_execution_log(
+    *,
+    org_id: str = "",
+    module_id: Optional[str] = None,
+    status: Optional[str] = None,
+    actor_user_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    created_from: Optional[int] = None,
+    created_to: Optional[int] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
+    lim = max(1, min(int(limit or 50), 200))
+    off = max(0, int(offset or 0))
+    where, params = _build_ai_execution_log_where(
+        org_id=org_id,
+        module_id=module_id,
+        status=status,
+        actor_user_id=actor_user_id,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        session_id=session_id,
+        created_from=created_from,
+        created_to=created_to,
+    )
+    _ensure_schema()
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT execution_id, module_id, actor_user_id, org_id, workspace_id, project_id, session_id,
+                   provider, model, prompt_id, prompt_version, status, input_hash, output_summary,
+                   usage_json, latency_ms, error_code, error_message, created_at, finished_at
+              FROM ai_execution_log
+             WHERE {where}
+             ORDER BY created_at DESC, execution_id DESC
+             LIMIT ?
+            OFFSET ?
+            """,
+            [*params, lim, off],
+        ).fetchall()
+    return [_ai_execution_log_row_to_dict(row) for row in rows]
+
+
+def count_ai_execution_log(
+    *,
+    org_id: str = "",
+    module_id: Optional[str] = None,
+    status: Optional[str] = None,
+    actor_user_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    created_from: Optional[int] = None,
+    created_to: Optional[int] = None,
+) -> int:
+    where, params = _build_ai_execution_log_where(
+        org_id=org_id,
+        module_id=module_id,
+        status=status,
+        actor_user_id=actor_user_id,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        session_id=session_id,
+        created_from=created_from,
+        created_to=created_to,
+    )
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(f"SELECT COUNT(*) FROM ai_execution_log WHERE {where}", params).fetchone()
     if not row:
         return 0
     try:
