@@ -9,7 +9,7 @@ const source = fs.readFileSync(path.join(__dirname, "ProductActionsRegistryPanel
 const pageSource = fs.readFileSync(path.join(__dirname, "ProductActionsRegistryPage.jsx"), "utf8");
 const productPanelSource = fs.readFileSync(path.join(__dirname, "../interview/ProductActionsPanel.jsx"), "utf8");
 
-test("ProductActionsRegistryPanel exposes preview registry UI without export wording", () => {
+test("ProductActionsRegistryPanel exposes preview registry UI with export actions", () => {
   [
     "Реестр действий с продуктом",
     "Read-only preview",
@@ -26,8 +26,10 @@ test("ProductActionsRegistryPanel exposes preview registry UI without export wor
     "Принять выбранные",
     "Найдены действия, но не получен список сессий. Требуется обновить агрегацию.",
     "Фильтры применяются к загруженным строкам.",
-    "CSV — позже",
-    "XLSX — позже",
+    "Скачать CSV",
+    "Скачать XLSX",
+    "Экспорт:",
+    "Фильтры не выбраны.",
     "В выбранных процессах пока нет действий с продуктом.",
   ].forEach((label) => assert.equal(source.includes(label), true, `missing label: ${label}`));
 });
@@ -70,18 +72,25 @@ test("ProductActionsRegistryPanel exposes capped bulk AI review and safe accept 
   assert.equal(source.includes("acceptAiProductActions({"), true);
   assert.equal(source.includes("currentAnalysis: fullSession?.interview?.analysis"), true);
   assert.equal(source.includes("Выберите предложения для принятия."), true);
-  assert.equal(source.includes("CSV — позже"), true);
-  assert.equal(source.includes("XLSX — позже"), true);
+  assert.equal(source.includes("apiExportProductActionRegistryCsv"), true);
+  assert.equal(source.includes("apiExportProductActionRegistryXlsx"), true);
   assert.doesNotMatch(source, /apiPutBpmnXml|apiPatchSession|saveProductActionForStep/);
 });
 
-test("ProductActionsRegistryPanel provides filters, completeness and disabled export placeholders", () => {
+test("ProductActionsRegistryPanel provides filters, completeness and backend export controls", () => {
   assert.equal(source.includes("filterProductActionRegistryRows"), true);
   assert.equal(source.includes("summarizeProductActionRegistryRows"), true);
   assert.equal(source.includes("uniqueProductActionRegistryFilterOptions"), true);
   assert.equal(source.includes("productActionsRegistryCompleteness"), true);
-  assert.match(source, /disabled>\s*CSV — позже\s*<\/button>/);
-  assert.match(source, /disabled>\s*XLSX — позже\s*<\/button>/);
+  assert.match(source, /data-testid="product-actions-registry-export-csv"/);
+  assert.match(source, /data-testid="product-actions-registry-export-xlsx"/);
+  assert.match(source, /buildExportPayload/);
+  assert.match(source, /selectedVisibleSessionIds/);
+  assert.match(source, /product_groups: toText\(filters\.product_group\)/);
+  assert.match(source, /downloadExportBlob/);
+  assert.equal(source.includes("Нет строк для выгрузки."), true);
+  assert.equal(source.includes("CSV — позже"), false);
+  assert.equal(source.includes("XLSX — позже"), false);
 });
 
 test("ProductActionsRegistryPage renders content as page shell without dialog contract", () => {
