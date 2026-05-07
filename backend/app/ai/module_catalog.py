@@ -136,7 +136,7 @@ def ai_module_catalog() -> List[Dict[str, Any]]:
             enabled=True,
             status="legacy",
             scope=["session"],
-            prompt_source="code_seeded",
+            prompt_source="prompt_registry+code_fallback",
             writes_domain_state=False,
             review_apply_required=True,
             current_sources=[
@@ -146,10 +146,10 @@ def ai_module_catalog() -> List[Dict[str, Any]]:
             ],
             endpoints=["POST /api/llm/session-title/questions"],
             risks=[
-                "frontend can send prompt text",
-                "accepted questions enter session create flow without prompt version trace",
+                "accepted questions enter session create flow before session-scoped execution trace exists",
             ],
             migration_priority="P1",
+            has_prompt_registry=True,
         ),
         _module(
             module_id="ai.process.extract_from_notes",
@@ -158,7 +158,7 @@ def ai_module_catalog() -> List[Dict[str, Any]]:
             enabled=True,
             status="legacy",
             scope=["session"],
-            prompt_source="code_seeded",
+            prompt_source="prompt_registry_seeded+legacy_code_runtime",
             writes_domain_state=True,
             review_apply_required=True,
             current_sources=[
@@ -169,9 +169,10 @@ def ai_module_catalog() -> List[Dict[str, Any]]:
             endpoints=["POST /api/sessions/{session_id}/notes"],
             risks=[
                 "current path can auto-apply extracted/fallback graph",
-                "needs preview-first migration",
+                "prompt is seeded but legacy runtime migration is still pending",
             ],
             migration_priority="P2",
+            has_prompt_registry=True,
         ),
         _module(
             module_id="ai.path_report",

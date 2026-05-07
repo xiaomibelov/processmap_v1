@@ -75,7 +75,7 @@ from .storage import (
 )
 from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
 from .ai.execution_log import check_ai_rate_limit, hash_ai_input, record_ai_execution
-from .ai.prompt_registry import get_active_prompt
+from .ai.prompt_registry import get_active_prompt, seed_existing_ai_prompts
 from .redis_lock import acquire_session_lock
 from .redis_cache import (
     cache_get_json,
@@ -5299,15 +5299,36 @@ def llm_session_title_questions(inp: SessionTitleQuestionsIn) -> Dict[str, Any]:
     except Exception as e:
         return {"error": f"deepseek questions module not available: {e}"}
 
+    prompt_item: Dict[str, Any] = {}
     try:
-        return generate_session_title_questions(
+        seed_existing_ai_prompts()
+        prompt_item = _ai_questions_active_prompt(
+            "ai.questions.prep",
+            {
+                "org_id": get_default_org_id(),
+                "project_id": str(getattr(inp, "project_id", "") or "").strip(),
+            },
+        )
+    except Exception:
+        prompt_item = {}
+    prompt_template = str((prompt_item or {}).get("template") or "")
+
+    try:
+        result = generate_session_title_questions(
             title=title,
             api_key=api_key,
             base_url=base_url,
-            prompt_template=str(inp.prompt or ""),
+            prompt_template=prompt_template,
             min_questions=min_questions,
             max_questions=max_questions,
         )
+        if isinstance(result, dict):
+            result.setdefault("module_id", "ai.questions.prep")
+            result.setdefault("prompt_source", "registry" if prompt_template else "code_fallback")
+            if prompt_item:
+                result.setdefault("prompt_id", str(prompt_item.get("prompt_id") or ""))
+                result.setdefault("prompt_version", str(prompt_item.get("version") or ""))
+        return result
     except Exception as e:
         return {"error": f"deepseek failed: {e}"}
 
