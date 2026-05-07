@@ -25,10 +25,21 @@ class AiModuleCatalogApiTests(unittest.TestCase):
         os.environ.pop("DEEPSEEK_BASE_URL", None)
 
         from app.auth import create_user
-        from app.routers.admin import admin_ai_modules, router as admin_router
+        from app.routers.admin import (
+            AdminAiProviderSettingsBody,
+            admin_ai_modules,
+            admin_ai_provider_settings,
+            admin_save_ai_provider_settings,
+            admin_verify_ai_provider_settings,
+            router as admin_router,
+        )
         from app.storage import get_default_org_id, get_storage, list_user_org_memberships
 
         self.admin_ai_modules = admin_ai_modules
+        self.AdminAiProviderSettingsBody = AdminAiProviderSettingsBody
+        self.admin_ai_provider_settings = admin_ai_provider_settings
+        self.admin_save_ai_provider_settings = admin_save_ai_provider_settings
+        self.admin_verify_ai_provider_settings = admin_verify_ai_provider_settings
         self.admin_router = admin_router
         self.get_storage = get_storage
         self.org_id = get_default_org_id()
@@ -64,6 +75,8 @@ class AiModuleCatalogApiTests(unittest.TestCase):
     def test_endpoint_route_and_catalog_module_ids_match_spec(self):
         paths = {getattr(route, "path", "") for route in self.admin_router.routes}
         self.assertIn("/api/admin/ai/modules", paths)
+        self.assertIn("/api/admin/ai/provider-settings", paths)
+        self.assertIn("/api/admin/ai/provider-settings/verify", paths)
 
         response = self._catalog()
         modules = response.get("modules") or []
@@ -119,9 +132,37 @@ class AiModuleCatalogApiTests(unittest.TestCase):
         self.assertEqual(provider.get("base_url"), "https://deepseek.example")
         self.assertEqual(provider.get("source"), "settings_file")
         self.assertTrue(bool(provider.get("verify_supported")))
-        self.assertFalse(bool(provider.get("admin_managed")))
+        self.assertTrue(bool(provider.get("admin_managed")))
         self.assertNotIn("api_key", provider)
         self.assertNotIn("SECRET_SHOULD_NOT_LEAK", str(response))
+
+    def test_admin_provider_settings_save_and_verify_do_not_expose_api_key(self):
+        saved = self.admin_save_ai_provider_settings(
+            self.AdminAiProviderSettingsBody(api_key="SECRET_SHOULD_NOT_LEAK", base_url="https://deepseek.example/v1"),
+            self.request,
+        )
+        self.assertTrue(bool(saved.get("ok")))
+        provider = saved.get("provider_settings") or {}
+        self.assertTrue(bool(provider.get("has_api_key")))
+        self.assertEqual(provider.get("base_url"), "https://deepseek.example")
+        self.assertNotIn("api_key", provider)
+        self.assertNotIn("SECRET_SHOULD_NOT_LEAK", str(saved))
+
+        summary = self.admin_ai_provider_settings(self.request)
+        self.assertTrue(bool(summary.get("ok")))
+        self.assertNotIn("SECRET_SHOULD_NOT_LEAK", str(summary))
+        self.assertTrue(bool((summary.get("provider_settings") or {}).get("has_api_key")))
+
+    def test_admin_provider_verify_missing_key_returns_controlled_status(self):
+        os.environ.pop("DEEPSEEK_API_KEY", None)
+        result = self.admin_verify_ai_provider_settings(
+            self.AdminAiProviderSettingsBody(api_key="", base_url="https://deepseek.example"),
+            self.request,
+        )
+        self.assertTrue(bool(result.get("ok")))
+        verify = result.get("result") or {}
+        self.assertFalse(bool(verify.get("ok")))
+        self.assertEqual(verify.get("error"), "AI_PROVIDER_NOT_CONFIGURED")
 
     def test_future_modules_are_disabled_and_product_actions_is_active_review_apply(self):
         response = self._catalog()

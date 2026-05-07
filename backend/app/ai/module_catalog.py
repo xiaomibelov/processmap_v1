@@ -30,7 +30,7 @@ def ai_provider_settings_summary() -> Dict[str, Any]:
         "base_url": str(settings.get("base_url") or DEFAULT_DEEPSEEK_BASE_URL).strip().rstrip("/"),
         "source": _settings_source(),
         "verify_supported": True,
-        "admin_managed": False,
+        "admin_managed": True,
     }
 
 
@@ -269,6 +269,6 @@ def ai_module_catalog_payload() -> Dict[str, Any]:
             "prompt_registry_enabled": any(bool(item.get("has_prompt_registry")) for item in modules),
             "execution_log_enabled": any(bool(item.get("has_execution_log")) for item in modules),
             "rate_limits_enabled": any(bool(item.get("has_rate_limits")) for item in modules),
-            "admin_managed_provider_settings": False,
+            "admin_managed_provider_settings": True,
         },
     }

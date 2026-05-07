@@ -11,7 +11,7 @@ from starlette.responses import Response
 
 from .. import _legacy_main
 from ..ai.execution_log import list_ai_executions
-from ..ai.module_catalog import ai_module_catalog_payload
+from ..ai.module_catalog import ai_module_catalog_payload, ai_provider_settings_summary
 from ..ai.prompt_registry import (
     activate_prompt_version,
     archive_prompt_version,
@@ -25,6 +25,7 @@ from ..auto_pass_jobs import redis_queue_enabled
 from ..auth import AuthError, create_user, list_users as list_auth_users, update_user
 from ..error_events import redact_context_json
 from ..redis_client import get_client, runtime_status
+from ..settings import load_llm_settings, save_llm_settings, verify_llm_settings
 from ..storage import (
     count_audit_log,
     count_error_events,
@@ -91,6 +92,11 @@ class AdminAiPromptDraftBody(BaseModel):
     output_schema: Dict[str, Any] = Field(default_factory=dict)
     scope_level: str = "global"
     scope_id: str = ""
+
+
+class AdminAiProviderSettingsBody(BaseModel):
+    api_key: str = ""
+    base_url: str = ""
 
 
 def _now_iso() -> str:
@@ -773,6 +779,50 @@ def admin_ai_modules(request: Request) -> Any:
         return err
     seed_existing_ai_prompts()
     return ai_module_catalog_payload()
+
+
+@router.get("/api/admin/ai/provider-settings")
+def admin_ai_provider_settings(request: Request) -> Any:
+    _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    return {"ok": True, "provider_settings": ai_provider_settings_summary()}
+
+
+@router.post("/api/admin/ai/provider-settings")
+def admin_save_ai_provider_settings(body: AdminAiProviderSettingsBody, request: Request) -> Any:
+    _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    current = load_llm_settings()
+    api_key = _as_text(body.api_key) or _as_text(current.get("api_key"))
+    saved = save_llm_settings(api_key=api_key, base_url=body.base_url or _as_text(current.get("base_url")))
+    return {
+        "ok": True,
+        "provider_settings": {
+            "provider": "DeepSeek",
+            "provider_id": "deepseek",
+            "has_api_key": bool(saved.get("has_api_key")),
+            "base_url": _as_text(saved.get("base_url")),
+            "source": "settings_file",
+            "verify_supported": True,
+            "admin_managed": True,
+        },
+    }
+
+
+@router.post("/api/admin/ai/provider-settings/verify")
+def admin_verify_ai_provider_settings(body: AdminAiProviderSettingsBody, request: Request) -> Any:
+    _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    result = verify_llm_settings(api_key=body.api_key, base_url=body.base_url)
+    if not bool(result.get("ok")) and not bool(result.get("has_api_key")):
+        result = {**result, "error": "AI_PROVIDER_NOT_CONFIGURED"}
+    elif not bool(result.get("ok")):
+        result = {**result, "error_code": "AI_PROVIDER_VERIFY_FAILED"}
+    result.pop("api_key", None)
+    return {"ok": True, "result": result}
 
 
 @router.get("/api/admin/ai/executions")

@@ -217,6 +217,49 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         self.assertEqual(before.interview, after.interview)
         self.assertEqual(before.diagram_state_version, after.diagram_state_version)
 
+    def test_missing_provider_key_returns_controlled_error_without_provider_call(self):
+        os.environ.pop("DEEPSEEK_API_KEY", None)
+        before = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+        with patch("app.routers.product_actions_ai.suggest_product_actions_with_deepseek") as provider:
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        after = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_PROVIDER_NOT_CONFIGURED")
+        provider.assert_not_called()
+        self.assertEqual(before.interview, after.interview)
+        self.assertEqual(before.bpmn_xml, after.bpmn_xml)
+        logs = self._logs().get("items") or []
+        self.assertEqual(logs[0].get("error_code"), "AI_PROVIDER_NOT_CONFIGURED")
+
+    def test_missing_active_prompt_returns_controlled_error_without_provider_call(self):
+        before = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+        with patch("app.routers.product_actions_ai.seed_existing_ai_prompts", return_value={"ok": True}), patch(
+            "app.routers.product_actions_ai.get_active_prompt",
+            return_value=None,
+        ), patch("app.routers.product_actions_ai.suggest_product_actions_with_deepseek") as provider:
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        after = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_PROMPT_NOT_CONFIGURED")
+        provider.assert_not_called()
+        self.assertEqual(before.interview, after.interview)
+        self.assertEqual(before.bpmn_xml, after.bpmn_xml)
+        logs = self._logs().get("items") or []
+        self.assertEqual(logs[0].get("error_code"), "AI_PROMPT_NOT_CONFIGURED")
+
+    def test_provider_failure_returns_controlled_error_without_secret(self):
+        with patch(
+            "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
+            side_effect=RuntimeError("provider denied SECRET_TEST_KEY"),
+        ):
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_PROVIDER_ERROR")
+        self.assertNotIn("SECRET_TEST_KEY", str(out))
+        logs = self._logs().get("items") or []
+        self.assertEqual(logs[0].get("error_code"), "AI_PROVIDER_ERROR")
+        self.assertNotIn("SECRET_TEST_KEY", str(logs[0]))
+
     def test_active_prompt_seed_is_used_and_fallback_kept(self):
         with patch(
             "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
@@ -224,9 +267,10 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         ) as provider:
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         self.assertTrue(out.get("ok"))
-        self.assertEqual(out.get("prompt_id"), "seed_ai_product_actions_suggest_v1")
-        self.assertEqual(provider.call_args.kwargs.get("prompt_template"), provider.call_args.kwargs.get("prompt_template"))
-        self.assertTrue(str(provider.call_args.kwargs.get("prompt_template") or "").strip())
+        self.assertEqual(out.get("prompt_id"), "seed_ai_product_actions_suggest_v2")
+        prompt_template = str(provider.call_args.kwargs.get("prompt_template") or "")
+        self.assertIn("физические действия сотрудников", prompt_template)
+        self.assertIn("product_name", prompt_template)
 
 
 if __name__ == "__main__":

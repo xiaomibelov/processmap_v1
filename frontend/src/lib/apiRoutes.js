@@ -204,6 +204,8 @@ export const apiRoutes = {
     errorEvents: (params = {}) => withQuery("/api/admin/error-events", params),
     errorEvent: (eventId) => `/api/admin/error-events/${encode(eventId)}`,
     aiModules: () => "/api/admin/ai/modules",
+    aiProviderSettings: () => "/api/admin/ai/provider-settings",
+    aiProviderVerify: () => "/api/admin/ai/provider-settings/verify",
     aiExecutions: (params = {}) => withQuery("/api/admin/ai/executions", params),
     aiPrompts: (params = {}) => withQuery("/api/admin/ai/prompts", params),
     aiPromptActive: (params = {}) => withQuery("/api/admin/ai/prompts/active", params),

@@ -133,14 +133,14 @@ function installFetchMock() {
           {
             module_id: "ai.product_actions.suggest",
             name: "Предложения действий с продуктом",
-            enabled: false,
-            status: "future",
+            enabled: true,
+            status: "active",
             scope: ["session"],
             provider: "deepseek",
             model: "deepseek-chat",
-            prompt_source: "future_registry",
-            has_execution_log: false,
-            has_rate_limits: false,
+            prompt_source: "prompt_registry+code_fallback",
+            has_execution_log: true,
+            has_rate_limits: true,
             migration_priority: "P2",
           },
         ],
@@ -150,9 +150,36 @@ function installFetchMock() {
           base_url: "https://api.deepseek.com",
           source: "settings_file",
           verify_supported: true,
-          admin_managed: false,
+          admin_managed: true,
         },
-        summary: { modules_total: 2, legacy: 1, future: 1 },
+        summary: { modules_total: 2, legacy: 1, future: 0 },
+      });
+    }
+    if (url.startsWith("/api/admin/ai/provider-settings/verify") && method === "POST") {
+      return jsonResponse({
+        ok: true,
+        result: {
+          ok: true,
+          has_api_key: true,
+          base_url: "https://api.deepseek.com",
+          latency_ms: 12,
+          model: "deepseek-chat",
+          preview: "OK",
+        },
+      });
+    }
+    if (url.startsWith("/api/admin/ai/provider-settings") && method === "POST") {
+      return jsonResponse({
+        ok: true,
+        provider_settings: {
+          provider: "DeepSeek",
+          provider_id: "deepseek",
+          has_api_key: true,
+          base_url: "https://deepseek.changed",
+          source: "settings_file",
+          verify_supported: true,
+          admin_managed: true,
+        },
       });
     }
     if (url.startsWith("/api/admin/ai/prompts/prompt_session_v1/activate") && method === "POST") {
@@ -201,9 +228,17 @@ function installFetchMock() {
             scope_level: "global",
             updated_at: 100,
           },
+          {
+            prompt_id: "seed_ai_product_actions_suggest_v2",
+            module_id: "ai.product_actions.suggest",
+            version: "v2",
+            status: "active",
+            scope_level: "global",
+            updated_at: 101,
+          },
         ],
-        count: 1,
-        page: { limit: 200, offset: 0, total: 1, has_more: false },
+        count: 2,
+        page: { limit: 200, offset: 0, total: 2, has_more: false },
       });
     }
     if (url.startsWith("/api/admin/ai/executions") && method === "GET") {
@@ -254,6 +289,8 @@ test("AdminAiModulesPage: renders module catalog, prompts, provider summary and 
     assert.ok(text.includes("AI-вопросы по процессу"));
     assert.ok(text.includes("DeepSeek"));
     assert.ok(text.includes("https://api.deepseek.com"));
+    assert.ok(text.includes("API key сохранён"));
+    assert.ok(text.includes("seed_ai_product_actions_suggest_v2") || text.includes("ai.product_actions.suggest"));
     assert.ok(text.includes("prompt_session_v1") || text.includes("v1"));
     assert.ok(text.includes("exec_1"));
     assert.ok(text.includes("sha256:abc"));
@@ -261,6 +298,48 @@ test("AdminAiModulesPage: renders module catalog, prompts, provider summary and 
     assert.ok(mock.calls.some((call) => call.url.startsWith("/api/admin/ai/modules")));
     assert.ok(mock.calls.some((call) => call.url.startsWith("/api/admin/ai/prompts")));
     assert.ok(mock.calls.some((call) => call.url.startsWith("/api/admin/ai/executions")));
+  } finally {
+    await env.cleanup();
+    mock.restore();
+  }
+});
+
+test("AdminAiModulesPage: provider settings save clears key input and verify status renders without secret", async () => {
+  const mock = installFetchMock();
+  const env = await renderPage();
+  try {
+    const keyInput = env.container.querySelector('[data-testid="ai-provider-api-key"]');
+    const baseUrlInput = env.container.querySelector('[data-testid="ai-provider-base-url"]');
+    const form = env.container.querySelector('[data-testid="ai-provider-settings-form"]');
+    const verifyButton = env.container.querySelector('[data-testid="ai-provider-verify"]');
+    assert.ok(keyInput);
+    assert.ok(baseUrlInput);
+    assert.ok(form);
+    assert.ok(verifyButton);
+
+    await act(async () => {
+      setFieldValue(keyInput, "test-key-input", env.dom);
+      setFieldValue(baseUrlInput, "https://deepseek.changed", env.dom);
+    });
+    await flush();
+    await act(async () => {
+      form.dispatchEvent(new env.dom.window.Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flush(50);
+    assert.equal(keyInput.value, "");
+
+    await act(async () => {
+      verifyButton.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
+    });
+    await flush(50);
+
+    const text = env.container.textContent || "";
+    assert.ok(text.includes("проверка успешна"));
+    assert.equal(text.includes("test-key-input"), false);
+    const saveCall = mock.calls.find((call) => call.url === "/api/admin/ai/provider-settings" && call.method === "POST");
+    assert.ok(saveCall);
+    assert.equal(saveCall.url, "/api/admin/ai/provider-settings");
+    assert.ok(mock.calls.some((call) => call.url === "/api/admin/ai/provider-settings/verify" && call.method === "POST"));
   } finally {
     await env.cleanup();
     mock.restore();

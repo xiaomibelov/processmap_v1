@@ -82,6 +82,13 @@ class AiPromptRegistrySeedTests(unittest.TestCase):
             self.assertEqual(active.get("status"), "active")
             self.assertTrue(str(active.get("template") or "").strip())
 
+        product_actions_prompt = get_active_prompt(module_id="ai.product_actions.suggest")
+        template = str((product_actions_prompt or {}).get("template") or "")
+        self.assertIn("физические действия сотрудников", template)
+        self.assertIn("product_name", template)
+        self.assertIn("evidence_text", template)
+        self.assertIn("только suggestions для review", template)
+
         path_versions = list_prompt_versions(module_id="ai.path_report", limit=10).get("items") or []
         by_version = {str(item.get("version") or ""): item for item in path_versions}
         self.assertEqual(by_version["v1"].get("status"), "archived")
