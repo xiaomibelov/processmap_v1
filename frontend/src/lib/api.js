@@ -427,6 +427,21 @@ export async function apiPostNote(sessionId, payload) {
   return { ok: true, status: r.status, session, result: session };
 }
 
+export async function apiPreviewNotesExtraction(sessionId, payload) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  let body = payload;
+  if (typeof payload === "string") {
+    body = { notes: payload };
+  } else if (!isPlainObject(payload)) {
+    body = {};
+  }
+  const r = okOrError(await request(apiRoutes.sessions.notesExtractionPreview(sid), { method: "POST", body }));
+  if (!r.ok) return r;
+  const preview = isPlainObject(r.data) ? { ...r.data } : r.data;
+  return { ok: true, status: r.status, preview, result: preview };
+}
+
 export async function apiListNoteThreads(sessionId, filters = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
