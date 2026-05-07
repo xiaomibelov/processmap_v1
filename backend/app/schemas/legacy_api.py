@@ -248,6 +248,8 @@ class SessionTitleQuestionsIn(BaseModel):
     prompt: str = ""
     min_questions: int = 15
     max_questions: int = 20
+    project_id: str = ""
+    options: Optional[Dict[str, Any]] = None
 
 
 class BpmnXmlIn(BaseModel):

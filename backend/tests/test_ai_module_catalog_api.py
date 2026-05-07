@@ -82,10 +82,20 @@ class AiModuleCatalogApiTests(unittest.TestCase):
         )
         for module in modules:
             self.assertIn(str(module.get("status") or ""), {"active", "legacy", "future", "disabled"})
-            if module.get("module_id") in {"ai.questions.session", "ai.questions.element", "ai.path_report"}:
+            if module.get("module_id") in {
+                "ai.questions.session",
+                "ai.questions.element",
+                "ai.questions.prep",
+                "ai.process.extract_from_notes",
+                "ai.path_report",
+            }:
                 self.assertTrue(bool(module.get("has_prompt_registry")))
-                self.assertTrue(bool(module.get("has_execution_log")))
-                self.assertTrue(bool(module.get("has_rate_limits")))
+                if module.get("module_id") in {"ai.questions.session", "ai.questions.element", "ai.path_report"}:
+                    self.assertTrue(bool(module.get("has_execution_log")))
+                    self.assertTrue(bool(module.get("has_rate_limits")))
+                else:
+                    self.assertFalse(bool(module.get("has_execution_log")))
+                    self.assertFalse(bool(module.get("has_rate_limits")))
             else:
                 self.assertFalse(bool(module.get("has_prompt_registry")))
                 self.assertFalse(bool(module.get("has_execution_log")))
