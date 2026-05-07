@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ..ai.execution_log import check_ai_rate_limit, hash_ai_input, record_ai_execution
-from ..ai.product_actions_suggest import suggest_product_actions_with_deepseek
+from ..ai.product_actions_suggest import ProductActionsAiResponseParseError, suggest_product_actions_with_deepseek
 from ..ai.prompt_registry import get_active_prompt, seed_existing_ai_prompts
 from ..legacy.request_context import require_authenticated_user, request_active_org_id
 from ..models import Edge, Node, Session
@@ -27,6 +27,7 @@ _CONTROLLED_ERROR_MESSAGES = {
     "AI_PROVIDER_NOT_CONFIGURED": "AI_PROVIDER_NOT_CONFIGURED",
     "AI_PROMPT_NOT_CONFIGURED": "AI_PROMPT_NOT_CONFIGURED",
     "AI_PROVIDER_ERROR": "AI_PROVIDER_ERROR",
+    "AI_RESPONSE_PARSE_ERROR": "AI_RESPONSE_PARSE_ERROR",
     "AI_RATE_LIMIT_EXCEEDED": "AI_RATE_LIMIT_EXCEEDED",
 }
 
@@ -515,6 +516,15 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
                 "incomplete_count": incomplete_count,
                 "steps_count": len(context.get("steps") or []),
             },
+        )
+    except ProductActionsAiResponseParseError as exc:
+        message = _safe_error_message(exc, api_key=api_key, base_url=base_url)
+        return _finish(
+            _controlled_error("AI_RESPONSE_PARSE_ERROR", input_hash=input_hash),
+            status="error",
+            output_summary="product actions suggestion response parse failed",
+            error_code="AI_RESPONSE_PARSE_ERROR",
+            error_message=message or "AI_RESPONSE_PARSE_ERROR",
         )
     except Exception as exc:
         message = _safe_error_message(exc, api_key=api_key, base_url=base_url)

@@ -146,6 +146,9 @@ function aiSuggestErrorText(codeRaw, detailRaw = "") {
   const code = toText(codeRaw);
   if (code === "AI_PROVIDER_NOT_CONFIGURED") return "AI provider не настроен: сохраните DeepSeek API key в Admin → AI модули.";
   if (code === "AI_PROMPT_NOT_CONFIGURED") return "AI prompt для действий с продуктом не настроен в Admin → AI модули.";
+  if (code === "AI_RESPONSE_PARSE_ERROR") {
+    return "AI вернул ответ в некорректном формате. Попробуйте повторить или уточните prompt в Admin → AI модули.";
+  }
   if (code === "AI_PROVIDER_ERROR") {
     const detail = toText(detailRaw);
     return detail

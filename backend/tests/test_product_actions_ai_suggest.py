@@ -319,6 +319,39 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         self.assertEqual(logs[0].get("error_code"), "AI_PROVIDER_ERROR")
         self.assertNotIn("SECRET_TEST_KEY", str(logs[0]))
 
+    def test_malformed_provider_json_returns_parse_error_without_mutation(self):
+        before = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+        with patch(
+            "app.ai.deepseek_questions._deepseek_chat_request",
+            return_value={"choices": [{"message": {"content": '{"suggestions":[{"product_name":"Сэндвич"}'}}]},
+        ):
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        after = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_RESPONSE_PARSE_ERROR")
+        self.assertNotIn("Expecting", str(out))
+        self.assertEqual(before.interview, after.interview)
+        self.assertEqual(before.bpmn_xml, after.bpmn_xml)
+        logs = self._logs().get("items") or []
+        self.assertEqual(logs[0].get("error_code"), "AI_RESPONSE_PARSE_ERROR")
+        self.assertIn("line", str(logs[0].get("error_message") or ""))
+        self.assertNotIn("Сэндвич", str(logs[0]))
+
+    def test_markdown_wrapped_valid_json_is_parsed(self):
+        content = """```json
+{"suggestions":[{"step_id":"step_2","bpmn_element_id":"Task_2","product_name":"Сэндвич","product_group":"Готовые блюда","action_type":"упаковка","action_object":"сэндвич","confidence":0.8,"evidence_text":"Упаковать сэндвич"}],"warnings":[]}
+```"""
+        with patch(
+            "app.ai.deepseek_questions._deepseek_chat_request",
+            return_value={"choices": [{"message": {"content": content}}]},
+        ):
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+
+        self.assertTrue(out.get("ok"))
+        self.assertEqual(len(out.get("suggestions") or []), 1)
+        self.assertEqual((out.get("suggestions") or [{}])[0].get("product_name"), "Сэндвич")
+
     def test_active_prompt_seed_is_used_and_fallback_kept(self):
         with patch(
             "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
@@ -326,10 +359,11 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         ) as provider:
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         self.assertTrue(out.get("ok"))
-        self.assertEqual(out.get("prompt_id"), "seed_ai_product_actions_suggest_v2")
+        self.assertEqual(out.get("prompt_id"), "seed_ai_product_actions_suggest_v3")
         prompt_template = str(provider.call_args.kwargs.get("prompt_template") or "")
         self.assertIn("физические действия сотрудников", prompt_template)
         self.assertIn("product_name", prompt_template)
+        self.assertIn("No markdown, no comments, no trailing commas", prompt_template)
 
     def test_bulk_suggest_returns_per_session_results_without_mutation(self):
         second_session_id = self._seed_session()
