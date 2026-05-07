@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from starlette.responses import Response
 
 from .. import _legacy_main
+from ..ai.module_catalog import ai_module_catalog_payload
 from ..auto_pass_jobs import redis_queue_enabled
 from ..auth import AuthError, create_user, list_users as list_auth_users, update_user
 from ..error_events import redact_context_json
@@ -743,6 +744,14 @@ def admin_orgs(request: Request) -> Any:
         "items": items,
         "count": len(items),
     }
+
+
+@router.get("/api/admin/ai/modules")
+def admin_ai_modules(request: Request) -> Any:
+    _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    return ai_module_catalog_payload()
 
 
 @router.get("/api/admin/users")
