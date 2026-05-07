@@ -143,6 +143,14 @@ class NotesIn(BaseModel):
     rev: Optional[int] = None
 
 
+class NotesExtractionPreviewIn(BaseModel):
+    notes: str
+    base_diagram_state_version: Optional[int] = None
+    base_bpmn_xml_version: Optional[int] = None
+    rev: Optional[int] = None
+    options: Optional[Dict[str, Any]] = None
+
+
 class AnswerIn(BaseModel):
     question_id: str
     answer: str
