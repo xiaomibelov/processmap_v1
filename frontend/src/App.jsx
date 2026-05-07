@@ -33,12 +33,9 @@ import {
   apiPostNote,
   apiDeleteProject,
   apiDeleteSession,
-  apiGetLlmSettings,
   apiAcknowledgeNoteMention,
   apiListMyNoteMentions,
   apiListNoteNotifications,
-  apiPostLlmSettings,
-  apiVerifyLlmSettings,
   apiRecompute,
   apiPutBpmnXml,
   apiInferBpmnRtiers,
@@ -825,7 +822,6 @@ function mergeSessionDraft(prevDraft, sid, session, source = "session_sync") {
 export default function App() {
   const { user, orgs, activeOrgId, switchOrg, refreshOrgs } = useAuth();
   const SESSION_MODE = "quick_skeleton";
-  const [backendStatus, setBackendStatus] = useState("idle"); // idle|ok|fail
   const [backendHint, setBackendHint] = useState("");
 
   const [projects, setProjects] = useState([]);
@@ -884,14 +880,6 @@ export default function App() {
   const [noteNotificationsAvailable, setNoteNotificationsAvailable] = useState(false);
   const discussionLinkedElementFocusResolversRef = useRef(new Map());
   const notesPanelRef = useRef(null);
-  const [llmHasApiKey, setLlmHasApiKey] = useState(false);
-  const [llmBaseUrl, setLlmBaseUrl] = useState("https://api.deepseek.com");
-  const [llmSaving, setLlmSaving] = useState(false);
-  const [llmErr, setLlmErr] = useState("");
-  const [llmVerifyState, setLlmVerifyState] = useState("off"); // off|unknown|checking|ok|fail
-  const [llmVerifyMsg, setLlmVerifyMsg] = useState("Ключ не задан.");
-  const [llmVerifyAt, setLlmVerifyAt] = useState(0);
-  const [llmVerifyBusy, setLlmVerifyBusy] = useState(false);
   const activeOrgIdRef = useRef(String(activeOrgId || "").trim());
   const activeOrgRole = useMemo(() => {
     const oid = String(activeOrgId || "").trim();
@@ -976,12 +964,10 @@ export default function App() {
   }, [draftSessionId, markFail, markOk, onSessionSync, sessionMetaWriteGateway]);
 
   function markOk(hint) {
-    setBackendStatus("ok");
     setBackendHint(String(hint || ""));
   }
 
   function markFail(err) {
-    setBackendStatus("fail");
     setBackendHint(String(err || "API error"));
   }
 
@@ -1384,137 +1370,6 @@ export default function App() {
     shellSessionId,
     shellTransitionReason,
   ]);
-
-  async function refreshLlmSettings() {
-    const r = await apiGetLlmSettings();
-    if (!r.ok) {
-      setLlmErr(String(r.error || "Не удалось загрузить настройки AI"));
-      return r;
-    }
-    const settings = r.settings || {};
-    const hasKey = !!settings.has_api_key;
-    setLlmHasApiKey(hasKey);
-    setLlmBaseUrl(String(settings.base_url || "https://api.deepseek.com"));
-    setLlmErr("");
-    setLlmVerifyState(hasKey ? "unknown" : "off");
-    setLlmVerifyMsg(hasKey ? "Ключ сохранён." : "Ключ не задан.");
-    if (!hasKey) setLlmVerifyAt(0);
-    return { ok: true };
-  }
-
-  async function verifyLlmSettings(payload) {
-    const apiKey = String(payload?.api_key || "").trim();
-    const baseUrl = String(payload?.base_url || "").trim() || llmBaseUrl || "https://api.deepseek.com";
-
-    if (!apiKey && !llmHasApiKey) {
-      const error = "Сначала сохраните API key.";
-      setLlmVerifyState("off");
-      setLlmVerifyMsg(error);
-      return { ok: false, error };
-    }
-
-    setLlmVerifyBusy(true);
-    setLlmVerifyState("checking");
-    setLlmVerifyMsg("Проверяем подключение к DeepSeek...");
-    try {
-      const verifyPayload = { api_key: apiKey, base_url: baseUrl };
-      const verifyExec = await executeAi({
-        toolId: "llm_verify",
-        sessionId: String(draft?.session_id || ""),
-        projectId: String(projectId || ""),
-        inputHash: createAiInputHash({
-          base_url: baseUrl,
-          has_key: !!(apiKey || llmHasApiKey),
-        }),
-        payload: verifyPayload,
-        mode: "live",
-        run: () => apiVerifyLlmSettings(verifyPayload),
-      });
-      if (!verifyExec.ok) {
-        const error = String(verifyExec?.error?.message || "Проверка AI не выполнена");
-        const missingEndpoint = Number(verifyExec?.error?.status || 0) === 404;
-        setLlmVerifyState(missingEndpoint ? "unknown" : "fail");
-        setLlmVerifyMsg(error);
-        setLlmVerifyAt(Date.now());
-        return { ok: false, error, needs_backend_restart: missingEndpoint };
-      }
-      const r = verifyExec.result;
-      if (!r?.ok) {
-        const error = String(r?.error || "Проверка AI не выполнена");
-        const missingEndpoint = Number(r?.status) === 404 || !!r?.needs_backend_restart;
-        setLlmVerifyState(missingEndpoint ? "unknown" : "fail");
-        setLlmVerifyMsg(error);
-        setLlmVerifyAt(Date.now());
-        return { ok: false, error, needs_backend_restart: missingEndpoint };
-      }
-
-      const result = r.result || {};
-      if (!result.ok) {
-        const error = String(result.error || "DeepSeek не подтвердил запрос");
-        const latency = Number(result.latency_ms || 0);
-        setLlmVerifyState("fail");
-        setLlmVerifyMsg(latency > 0 ? `${error} (${latency} мс)` : error);
-        setLlmVerifyAt(Date.now());
-        return { ok: false, error };
-      }
-
-      const latency = Number(result.latency_ms || 0);
-      setLlmVerifyState("ok");
-      const cachedLabel = verifyExec.cached ? " · cached" : "";
-      setLlmVerifyMsg((latency > 0 ? `AI отвечает (${latency} мс)` : "AI отвечает") + cachedLabel);
-      setLlmVerifyAt(Date.now());
-      return { ok: true, result };
-    } catch (e) {
-      const error = String(e?.message || e);
-      setLlmVerifyState("fail");
-      setLlmVerifyMsg(error);
-      setLlmVerifyAt(Date.now());
-      return { ok: false, error };
-    } finally {
-      setLlmVerifyBusy(false);
-    }
-  }
-
-  async function saveLlmSettings(payload) {
-    const apiKey = String(payload?.api_key || "").trim();
-    const baseUrl = String(payload?.base_url || "").trim() || "https://api.deepseek.com";
-
-    if (!apiKey) {
-      const error = "Вставьте API key DeepSeek для сохранения.";
-      setLlmErr(error);
-      return { ok: false, error };
-    }
-
-    setLlmSaving(true);
-    setLlmErr("");
-    try {
-      const r = await apiPostLlmSettings({ api_key: apiKey, base_url: baseUrl });
-      if (!r.ok) {
-        setLlmErr(String(r.error || "Не удалось сохранить настройки AI"));
-        return r;
-      }
-      const settings = r.settings || {};
-      setLlmHasApiKey(!!settings.has_api_key);
-      setLlmBaseUrl(String(settings.base_url || baseUrl));
-      setLlmErr("");
-      const verifyRes = await verifyLlmSettings({ api_key: apiKey, base_url: String(settings.base_url || baseUrl) });
-      if (!verifyRes.ok) {
-        if (verifyRes.needs_backend_restart) {
-          setLlmErr("Ключ сохранён. Для live-проверки AI перезапустите backend.");
-        } else {
-          setLlmErr("Ключ сохранён, но проверка AI не прошла.");
-        }
-      }
-      return { ok: true, verify_ok: !!verifyRes.ok };
-    } catch (e) {
-      const error = String(e?.message || e);
-      setLlmErr(error);
-      return { ok: false, error };
-    } finally {
-      setLlmSaving(false);
-    }
-  }
-
 
   async function createBackendSession(preferredTitle = "", projectIdOverride = "", aiPrepQuestions = undefined) {
     const pid = String(projectIdOverride || projectId || "");
@@ -3269,7 +3124,6 @@ export default function App() {
 
   useEffect(() => {
     refreshProjects();
-    refreshLlmSettings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -3277,7 +3131,6 @@ export default function App() {
     const nextOrg = String(activeOrgId || "").trim();
     if (!nextOrg || nextOrg === activeOrgIdRef.current) return;
     activeOrgIdRef.current = nextOrg;
-    let canceled = false;
     setProjectId("");
     setProjectRouteContext(null);
     setSessions([]);
@@ -3286,12 +3139,7 @@ export default function App() {
     resetDraft(ensureDraftShape(null));
     void (async () => {
       await refreshProjects();
-      if (canceled) return;
-      await refreshLlmSettings();
     })();
-    return () => {
-      canceled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrgId]);
 
@@ -3475,8 +3323,6 @@ export default function App() {
         onProcessUiStateChange={handleProcessUiStateChange}
         stepTimeUnit={stepTimeUnit}
         reloadKey={reloadKey}
-        backendStatus={backendStatus}
-        backendHint={backendHint}
         orgs={orgs}
         activeOrgId={activeOrgId}
         canInviteWorkspaceUsers={canInviteWorkspaceUsers}
@@ -3528,21 +3374,10 @@ export default function App() {
         onRefresh={async () => {
           await refreshProjects();
           await refreshSessions(projectId);
-          await refreshLlmSettings();
           await refreshMentionNotifications();
         }}
         onNewProject={() => setWizardOpen(true)}
         onNewBackendSession={() => setSessionFlowOpen(true)}
-        llmHasApiKey={llmHasApiKey}
-        llmBaseUrl={llmBaseUrl}
-        llmSaving={llmSaving}
-        llmErr={llmErr}
-        llmVerifyState={llmVerifyState}
-        llmVerifyMsg={llmVerifyMsg}
-        llmVerifyAt={llmVerifyAt}
-        llmVerifyBusy={llmVerifyBusy}
-        onSaveLlmSettings={saveLlmSettings}
-        onVerifyLlmSettings={verifyLlmSettings}
         selectedBpmnElement={selectedBpmnElement}
         onBpmnElementSelect={handleBpmnElementSelect}
         onOpenElementNotes={focusElementNotes}
