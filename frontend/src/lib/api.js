@@ -442,6 +442,26 @@ export async function apiPreviewNotesExtraction(sessionId, payload) {
   return { ok: true, status: r.status, preview, result: preview };
 }
 
+export async function apiApplyNotesExtraction(sessionId, payload) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const body = isPlainObject(payload) ? payload : {};
+  const r = okOrError(await request(apiRoutes.sessions.notesExtractionApply(sid), { method: "POST", body }));
+  if (!r.ok) return r;
+  const result = isPlainObject(r.data) ? { ...r.data } : r.data;
+  const session = isPlainObject(result?.session)
+    ? { ...result.session }
+    : (isPlainObject(result?.result) ? { ...result.result } : result);
+  return {
+    ok: true,
+    status: r.status,
+    result,
+    session,
+    changed_keys: Array.isArray(result?.changed_keys) ? result.changed_keys : [],
+    diagram_state_version: Number(result?.diagram_state_version || 0) || 0,
+  };
+}
+
 export async function apiListNoteThreads(sessionId, filters = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };

@@ -948,6 +948,7 @@ export default function NotesPanel({
   elementNotesFocusKey,
   onAddNote,
   onPreviewNotesExtraction,
+  onApplyNotesExtraction,
   onAddElementNote,
   onSetElementStepTime,
   onSetElementNoteSummary,
@@ -1939,6 +1940,13 @@ export default function NotesPanel({
     } finally {
       setNotesPreviewBusy(false);
     }
+  }
+
+  async function applyGlobalNotesExtractionSelection(payload) {
+    if (disabled) return { ok: false, error: "Панель недоступна." };
+    const body = payload && typeof payload === "object" ? payload : {};
+    const r = onApplyNotesExtraction?.(body);
+    return r && typeof r.then === "function" ? await r : r;
   }
 
   async function sendElementNote() {
@@ -3124,6 +3132,7 @@ export default function NotesPanel({
                   globalBusy={!isElementMode ? busy : false}
                   globalErr={!isElementMode ? err : ""}
                   onPreviewNotesExtraction={previewGlobalNotesExtraction}
+                  onApplyNotesExtraction={applyGlobalNotesExtractionSelection}
                   previewBusy={!isElementMode ? notesPreviewBusy : false}
                   previewErr={!isElementMode ? notesPreviewErr : ""}
                   notesExtractionPreview={!isElementMode ? notesExtractionPreview : null}
