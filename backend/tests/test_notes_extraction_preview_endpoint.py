@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi import HTTPException
+
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
@@ -43,21 +45,25 @@ class NotesExtractionPreviewEndpointTests(unittest.TestCase):
 
         from app._legacy_main import (
             CreateSessionIn,
+            NotesExtractionApplyIn,
             NotesExtractionPreviewIn,
             NotesIn,
             get_storage,
             post_notes,
+            post_notes_extraction_apply,
             post_notes_extraction_preview,
             create_session,
         )
         from app.storage import get_default_org_id
 
         self.CreateSessionIn = CreateSessionIn
+        self.NotesExtractionApplyIn = NotesExtractionApplyIn
         self.NotesExtractionPreviewIn = NotesExtractionPreviewIn
         self.NotesIn = NotesIn
         self.create_session = create_session
         self.get_storage = get_storage
         self.post_notes = post_notes
+        self.post_notes_extraction_apply = post_notes_extraction_apply
         self.post_notes_extraction_preview = post_notes_extraction_preview
         self.org_id = get_default_org_id()
 
@@ -108,6 +114,7 @@ class NotesExtractionPreviewEndpointTests(unittest.TestCase):
             "edges": [e.model_dump() for e in (sess.edges or [])],
             "questions": [q.model_dump() for q in (sess.questions or [])],
             "diagram_state_version": int(sess.diagram_state_version or 0),
+            "bpmn_xml": str(sess.bpmn_xml or ""),
         }
 
     def _logs(self, *, session_id=""):
@@ -195,6 +202,157 @@ class NotesExtractionPreviewEndpointTests(unittest.TestCase):
         self.assertEqual(len(logs), 1)
         self.assertEqual(logs[0].get("status"), "error")
         self.assertEqual(logs[0].get("error_code"), "ai_rate_limit_exceeded")
+
+    @patch("app.ai.deepseek_client.extract_process_preview")
+    @patch("app.ai.deepseek_client.extract_process")
+    def test_apply_selected_nodes_edges_only_without_ai_call(self, mock_extract, mock_preview):
+        sid = self._create_session()
+        before = self._session_snapshot(sid)
+
+        out = self.post_notes_extraction_apply(
+            sid,
+            self.NotesExtractionApplyIn(
+                base_diagram_state_version=7,
+                notes="should not apply",
+                roles=["should_not_apply"],
+                nodes=[{"id": "n_new", "title": "Accepted node", "type": "step", "actor_role": "cook_1"}],
+                edges=[{"from_id": "n_existing", "to_id": "n_new"}],
+                apply_nodes_edges=True,
+            ),
+        )
+        after = self._session_snapshot(sid)
+
+        self.assertTrue(out.get("ok"))
+        self.assertEqual(out.get("status"), "applied")
+        self.assertIn("nodes", out.get("changed_keys") or [])
+        self.assertIn("edges", out.get("changed_keys") or [])
+        self.assertNotIn("notes", out.get("changed_keys") or [])
+        self.assertNotIn("roles", out.get("changed_keys") or [])
+        self.assertEqual(after["notes"], before["notes"])
+        self.assertEqual(after["roles"], before["roles"])
+        self.assertTrue(any(row.get("id") == "n_existing" for row in after["nodes"]))
+        self.assertTrue(any(row.get("id") == "n_new" for row in after["nodes"]))
+        self.assertTrue(any(row.get("from_id") == "n_existing" and row.get("to_id") == "n_end" for row in after["edges"]))
+        self.assertTrue(any(row.get("from_id") == "n_existing" and row.get("to_id") == "n_new" for row in after["edges"]))
+        self.assertEqual(after["diagram_state_version"], before["diagram_state_version"] + 1)
+        self.assertEqual(after["bpmn_xml"], before["bpmn_xml"])
+        mock_extract.assert_not_called()
+        mock_preview.assert_not_called()
+
+    @patch("app.ai.deepseek_client.extract_process_preview")
+    @patch("app.ai.deepseek_client.extract_process")
+    def test_apply_selected_roles_start_role_only(self, mock_extract, mock_preview):
+        sid = self._create_session()
+        before = self._session_snapshot(sid)
+
+        out = self.post_notes_extraction_apply(
+            sid,
+            self.NotesExtractionApplyIn(
+                base_diagram_state_version=7,
+                roles=["cook_1", "packer_1"],
+                start_role="packer_1",
+                apply_roles=True,
+            ),
+        )
+        after = self._session_snapshot(sid)
+
+        self.assertTrue(out.get("ok"))
+        self.assertIn("roles", out.get("changed_keys") or [])
+        self.assertIn("start_role", out.get("changed_keys") or [])
+        self.assertNotIn("nodes", out.get("changed_keys") or [])
+        self.assertNotIn("edges", out.get("changed_keys") or [])
+        self.assertEqual(after["roles"], ["cook_1", "packer_1"])
+        self.assertEqual(after["start_role"], "packer_1")
+        self.assertEqual(after["nodes"], before["nodes"])
+        self.assertEqual(after["edges"], before["edges"])
+        self.assertEqual(after["diagram_state_version"], before["diagram_state_version"] + 1)
+        mock_extract.assert_not_called()
+        mock_preview.assert_not_called()
+
+    def test_apply_selected_questions_only(self):
+        sid = self._create_session()
+        before = self._session_snapshot(sid)
+        selected_question = {
+            "id": "q_selected",
+            "node_id": "n_existing",
+            "issue_type": "MISSING",
+            "question": "Selected question?",
+        }
+
+        out = self.post_notes_extraction_apply(
+            sid,
+            self.NotesExtractionApplyIn(
+                base_diagram_state_version=7,
+                questions=[selected_question],
+                apply_questions=True,
+            ),
+        )
+        after = self._session_snapshot(sid)
+
+        self.assertTrue(out.get("ok"))
+        self.assertEqual(out.get("changed_keys"), ["questions"])
+        self.assertEqual([row.get("id") for row in after["questions"]], ["q_selected"])
+        self.assertEqual(after["notes"], before["notes"])
+        self.assertEqual(after["nodes"], before["nodes"])
+        self.assertEqual(after["edges"], before["edges"])
+        self.assertEqual(after["diagram_state_version"], before["diagram_state_version"] + 1)
+
+    def test_apply_notes_ignored_when_apply_notes_false(self):
+        sid = self._create_session()
+        before = self._session_snapshot(sid)
+
+        out = self.post_notes_extraction_apply(
+            sid,
+            self.NotesExtractionApplyIn(
+                base_diagram_state_version=7,
+                notes="new notes should not be saved",
+                roles=["cook_1", "packer_1"],
+                start_role="cook_1",
+                apply_notes=False,
+                apply_roles=True,
+            ),
+        )
+        after = self._session_snapshot(sid)
+
+        self.assertTrue(out.get("ok"))
+        self.assertEqual(after["notes"], before["notes"])
+        self.assertIn("roles", out.get("changed_keys") or [])
+        self.assertNotIn("notes", out.get("changed_keys") or [])
+
+    def test_apply_requires_base_diagram_state_version(self):
+        sid = self._create_session()
+        before = self._session_snapshot(sid)
+
+        with self.assertRaises(HTTPException) as ctx:
+            self.post_notes_extraction_apply(
+                sid,
+                self.NotesExtractionApplyIn(
+                    nodes=[{"id": "n_new", "title": "Accepted node", "type": "step"}],
+                    apply_nodes_edges=True,
+                ),
+            )
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertEqual((ctx.exception.detail or {}).get("code"), "DIAGRAM_STATE_BASE_VERSION_REQUIRED")
+        self.assertEqual(before, self._session_snapshot(sid))
+
+    def test_apply_rejects_stale_base_diagram_state_version(self):
+        sid = self._create_session()
+        before = self._session_snapshot(sid)
+
+        with self.assertRaises(HTTPException) as ctx:
+            self.post_notes_extraction_apply(
+                sid,
+                self.NotesExtractionApplyIn(
+                    base_diagram_state_version=6,
+                    nodes=[{"id": "n_new", "title": "Accepted node", "type": "step"}],
+                    apply_nodes_edges=True,
+                ),
+            )
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertEqual((ctx.exception.detail or {}).get("code"), "DIAGRAM_STATE_CONFLICT")
+        self.assertEqual(before, self._session_snapshot(sid))
 
     @patch(
         "app.ai.deepseek_client.extract_process",
