@@ -93,8 +93,6 @@ export default function AppShell({
   onProcessUiStateChange,
   stepTimeUnit,
   reloadKey,
-  backendStatus,
-  backendHint,
   orgs,
   activeOrgId,
   canInviteWorkspaceUsers,
@@ -119,16 +117,6 @@ export default function AppShell({
   onChangeSessionStatus,
   onNewProject,
   onNewBackendSession,
-  llmHasApiKey,
-  llmBaseUrl,
-  llmSaving,
-  llmErr,
-  llmVerifyState,
-  llmVerifyMsg,
-  llmVerifyAt,
-  llmVerifyBusy,
-  onSaveLlmSettings,
-  onVerifyLlmSettings,
   selectedBpmnElement,
   onBpmnElementSelect,
   onOpenElementNotes,
@@ -204,8 +192,6 @@ export default function AppShell({
   return (
     <div className={"appRoot graphite " + (hasActiveSession && effectiveLeftHidden ? "leftHidden" : "")}>
       <TopBar
-        backendStatus={backendStatus}
-        backendHint={backendHint}
         orgs={orgs}
         activeOrgId={activeOrgId}
         onOrgChange={onOrgChange}
@@ -225,16 +211,6 @@ export default function AppShell({
         onOpenDiscussionNotifications={onOpenDiscussionNotifications}
         onNewProject={onNewProject}
         onNewBackendSession={onNewBackendSession}
-        llmHasApiKey={llmHasApiKey}
-        llmBaseUrl={llmBaseUrl}
-        llmSaving={llmSaving}
-        llmErr={llmErr}
-        llmVerifyState={llmVerifyState}
-        llmVerifyMsg={llmVerifyMsg}
-        llmVerifyAt={llmVerifyAt}
-        llmVerifyBusy={llmVerifyBusy}
-        onSaveLlmSettings={onSaveLlmSettings}
-        onVerifyLlmSettings={onVerifyLlmSettings}
         draft={draft}
         mentionNotifications={mentionNotifications}
         noteNotifications={noteNotifications}

@@ -15,7 +15,14 @@ test("TopBar header meta keeps only project/session/org labels without created-b
   assert.match(source, /data-testid="topbar-account-button"/);
   assert.match(source, /data-testid="topbar-account-notification-count"/);
   assert.match(source, /data-testid="topbar-mentions-menu"/);
-  assert.match(source, /"topbar-mention-item"/);
+  assert.match(source, /mentionItems/);
   assert.match(source, /data-testid="topbar-theme-toggle"/);
   assert.match(source, /onOpenMentionNotification/);
+});
+
+test("TopBar no longer exposes the global AI entry", () => {
+  const source = fs.readFileSync(path.join(__dirname, "TopBar.jsx"), "utf8");
+  assert.equal(source.includes('data-testid="topbar-ai-button"'), false);
+  assert.equal(source.includes("AiToolsModal"), false);
+  assert.equal(source.includes("aiToolsOpen"), false);
 });
