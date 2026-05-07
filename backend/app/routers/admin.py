@@ -12,6 +12,14 @@ from starlette.responses import Response
 from .. import _legacy_main
 from ..ai.execution_log import list_ai_executions
 from ..ai.module_catalog import ai_module_catalog_payload
+from ..ai.prompt_registry import (
+    activate_prompt_version,
+    archive_prompt_version,
+    create_prompt_draft,
+    get_active_prompt,
+    get_prompt_detail,
+    list_prompt_versions,
+)
 from ..auto_pass_jobs import redis_queue_enabled
 from ..auth import AuthError, create_user, list_users as list_auth_users, update_user
 from ..error_events import redact_context_json
@@ -72,6 +80,16 @@ class AdminUserPatchBody(BaseModel):
     is_admin: Optional[bool] = None
     is_active: Optional[bool] = None
     memberships: Optional[List[AdminUserMembershipIn]] = None
+
+
+class AdminAiPromptDraftBody(BaseModel):
+    module_id: str
+    version: str
+    template: str
+    variables_schema: Dict[str, Any] = Field(default_factory=dict)
+    output_schema: Dict[str, Any] = Field(default_factory=dict)
+    scope_level: str = "global"
+    scope_id: str = ""
 
 
 def _now_iso() -> str:
@@ -788,6 +806,115 @@ def admin_ai_executions(
         limit=max(1, min(_as_int(limit, 50), 200)),
         offset=max(0, _as_int(offset, 0)),
     )
+
+
+@router.get("/api/admin/ai/prompts")
+def admin_ai_prompts(
+    request: Request,
+    module_id: str = Query(default=""),
+    status: str = Query(default=""),
+    scope_level: str = Query(default=""),
+    scope_id: str = Query(default=""),
+    limit: int = Query(default=50),
+    offset: int = Query(default=0),
+) -> Any:
+    _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    try:
+        return list_prompt_versions(
+            module_id=module_id,
+            status=status,
+            scope_level=scope_level,
+            scope_id=scope_id,
+            limit=max(1, min(_as_int(limit, 50), 200)),
+            offset=max(0, _as_int(offset, 0)),
+        )
+    except ValueError as exc:
+        return _legacy_main._enterprise_error(422, "validation_error", str(exc))
+
+
+@router.get("/api/admin/ai/prompts/active")
+def admin_ai_active_prompt(
+    request: Request,
+    module_id: str = Query(default=""),
+    scope_level: str = Query(default="global"),
+    scope_id: str = Query(default=""),
+) -> Any:
+    _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    try:
+        item = get_active_prompt(module_id=module_id, scope_level=scope_level, scope_id=scope_id)
+    except ValueError as exc:
+        return _legacy_main._enterprise_error(422, "validation_error", str(exc))
+    if not item:
+        return _legacy_main._enterprise_error(404, "not_found", "not_found")
+    return {"ok": True, "item": item}
+
+
+@router.get("/api/admin/ai/prompts/{prompt_id}")
+def admin_ai_prompt_detail(prompt_id: str, request: Request) -> Any:
+    _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    item = get_prompt_detail(prompt_id)
+    if not item:
+        return _legacy_main._enterprise_error(404, "not_found", "not_found")
+    return {"ok": True, "item": item}
+
+
+@router.post("/api/admin/ai/prompts", status_code=201)
+def admin_create_ai_prompt(body: AdminAiPromptDraftBody, request: Request) -> Any:
+    uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    try:
+        item = create_prompt_draft(
+            module_id=body.module_id,
+            version=body.version,
+            template=body.template,
+            variables_schema=body.variables_schema,
+            output_schema=body.output_schema,
+            created_by=uid or "",
+            scope_level=body.scope_level,
+            scope_id=body.scope_id,
+        )
+    except ValueError as exc:
+        return _legacy_main._enterprise_error(422, "validation_error", str(exc))
+    except Exception as exc:
+        return _legacy_main._enterprise_error(409, "conflict", str(exc))
+    return {"ok": True, "item": item}
+
+
+@router.post("/api/admin/ai/prompts/{prompt_id}/activate")
+def admin_activate_ai_prompt(prompt_id: str, request: Request) -> Any:
+    uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    try:
+        item = activate_prompt_version(prompt_id, actor_user_id=uid or "")
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 404 if "not found" in message else 422
+        code = "not_found" if status_code == 404 else "validation_error"
+        return _legacy_main._enterprise_error(status_code, code, message)
+    return {"ok": True, "item": item}
+
+
+@router.post("/api/admin/ai/prompts/{prompt_id}/archive")
+def admin_archive_ai_prompt(prompt_id: str, request: Request) -> Any:
+    uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    try:
+        item = archive_prompt_version(prompt_id, actor_user_id=uid or "")
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 404 if "not found" in message else 422
+        code = "not_found" if status_code == 404 else "validation_error"
+        return _legacy_main._enterprise_error(status_code, code, message)
+    return {"ok": True, "item": item}
 
 
 @router.get("/api/admin/users")

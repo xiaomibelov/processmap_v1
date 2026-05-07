@@ -1263,6 +1263,42 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_ai_exec_scope ON ai_execution_log(workspace_id, project_id, session_id)")
             con.execute(
                 """
+                CREATE TABLE IF NOT EXISTS ai_prompt_versions (
+                  prompt_id TEXT PRIMARY KEY,
+                  module_id TEXT NOT NULL,
+                  version TEXT NOT NULL,
+                  status TEXT NOT NULL DEFAULT 'draft',
+                  scope_level TEXT NOT NULL DEFAULT 'global',
+                  scope_id TEXT NOT NULL DEFAULT '',
+                  template TEXT NOT NULL DEFAULT '',
+                  variables_schema_json TEXT NOT NULL DEFAULT '{}',
+                  output_schema_json TEXT NOT NULL DEFAULT '{}',
+                  created_by TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_by TEXT NOT NULL DEFAULT '',
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  activated_at INTEGER NOT NULL DEFAULT 0,
+                  archived_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_prompt_module_scope_version
+                ON ai_prompt_versions(module_id, scope_level, scope_id, version)
+                """
+            )
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_prompt_one_active_per_scope
+                ON ai_prompt_versions(module_id, scope_level, scope_id)
+                WHERE status = 'active'
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_ai_prompt_module_scope ON ai_prompt_versions(module_id, scope_level, scope_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_ai_prompt_status ON ai_prompt_versions(status)")
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS error_events (
                   id TEXT PRIMARY KEY,
                   schema_version INTEGER NOT NULL DEFAULT 1,
@@ -4315,6 +4351,29 @@ def _ai_execution_log_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     }
 
 
+def _ai_prompt_version_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    scope_level = str(row["scope_level"] or "global")
+    scope_id = str(row["scope_id"] or "")
+    return {
+        "prompt_id": str(row["prompt_id"] or ""),
+        "module_id": str(row["module_id"] or ""),
+        "version": str(row["version"] or ""),
+        "status": str(row["status"] or "draft"),
+        "scope_level": scope_level,
+        "scope_id": scope_id,
+        "scope": {"level": scope_level, "id": scope_id},
+        "template": str(row["template"] or ""),
+        "variables_schema": _json_loads(row["variables_schema_json"], {}),
+        "output_schema": _json_loads(row["output_schema_json"], {}),
+        "created_by": str(row["created_by"] or ""),
+        "created_at": int(row["created_at"] or 0),
+        "updated_by": str(row["updated_by"] or ""),
+        "updated_at": int(row["updated_at"] or 0),
+        "activated_at": int(row["activated_at"] or 0),
+        "archived_at": int(row["archived_at"] or 0),
+    }
+
+
 def _error_event_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     return {
         "id": str(row["id"] or ""),
@@ -6422,6 +6481,290 @@ def count_ai_execution_log(
         return int(row[0] or 0)
     except Exception:
         return 0
+
+
+_AI_PROMPT_STATUSES = {"draft", "active", "archived"}
+_AI_PROMPT_SCOPE_LEVELS = {"global", "org", "workspace", "project", "session"}
+
+
+def _normalize_ai_prompt_status(status: Any, *, allow_empty: bool = False) -> str:
+    value = str(status or "").strip().lower()
+    if allow_empty and not value:
+        return ""
+    if value not in _AI_PROMPT_STATUSES:
+        raise ValueError("invalid prompt status; allowed: draft, active, archived")
+    return value
+
+
+def _normalize_ai_prompt_scope_level(scope_level: Any) -> str:
+    value = str(scope_level or "global").strip().lower() or "global"
+    if value not in _AI_PROMPT_SCOPE_LEVELS:
+        raise ValueError("invalid prompt scope_level; allowed: global, org, workspace, project, session")
+    return value
+
+
+def create_ai_prompt_draft(
+    *,
+    module_id: str,
+    version: str,
+    template: str,
+    variables_schema: Optional[Dict[str, Any]] = None,
+    output_schema: Optional[Dict[str, Any]] = None,
+    created_by: str = "",
+    scope_level: str = "global",
+    scope_id: str = "",
+    prompt_id: Optional[str] = None,
+    created_at: Optional[int] = None,
+) -> Dict[str, Any]:
+    mid = str(module_id or "").strip()
+    ver = str(version or "").strip()
+    body = str(template or "")
+    if not mid or not ver or not body.strip():
+        raise ValueError("module_id, version and template are required")
+    level = _normalize_ai_prompt_scope_level(scope_level)
+    sid = str(scope_id or "").strip()
+    if level == "global":
+        sid = ""
+    pid = str(prompt_id or "").strip() or f"ai_prompt_{uuid.uuid4().hex[:16]}"
+    now = int(created_at or 0) or _now_ts()
+    variables_payload = _json_dumps(variables_schema if isinstance(variables_schema, dict) else {}, {})
+    output_payload = _json_dumps(output_schema if isinstance(output_schema, dict) else {}, {})
+    actor = str(created_by or "").strip()
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            """
+            INSERT INTO ai_prompt_versions (
+              prompt_id, module_id, version, status, scope_level, scope_id, template,
+              variables_schema_json, output_schema_json, created_by, created_at, updated_by, updated_at,
+              activated_at, archived_at
+            ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+            """,
+            [pid, mid, ver, level, sid, body, variables_payload, output_payload, actor, now, actor, now],
+        )
+        con.commit()
+        row = con.execute(
+            """
+            SELECT prompt_id, module_id, version, status, scope_level, scope_id, template,
+                   variables_schema_json, output_schema_json, created_by, created_at, updated_by, updated_at,
+                   activated_at, archived_at
+              FROM ai_prompt_versions
+             WHERE prompt_id = ?
+             LIMIT 1
+            """,
+            [pid],
+        ).fetchone()
+    if not row:
+        return {"prompt_id": pid, "module_id": mid, "version": ver, "status": "draft"}
+    return _ai_prompt_version_row_to_dict(row)
+
+
+def get_ai_prompt_version(prompt_id: str) -> Optional[Dict[str, Any]]:
+    pid = str(prompt_id or "").strip()
+    if not pid:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT prompt_id, module_id, version, status, scope_level, scope_id, template,
+                   variables_schema_json, output_schema_json, created_by, created_at, updated_by, updated_at,
+                   activated_at, archived_at
+              FROM ai_prompt_versions
+             WHERE prompt_id = ?
+             LIMIT 1
+            """,
+            [pid],
+        ).fetchone()
+    return _ai_prompt_version_row_to_dict(row) if row else None
+
+
+def _build_ai_prompt_where(
+    *,
+    module_id: Optional[str] = None,
+    status: Optional[str] = None,
+    scope_level: Optional[str] = None,
+    scope_id: Optional[str] = None,
+) -> tuple[str, List[Any]]:
+    clauses: List[str] = []
+    params: List[Any] = []
+    mid = str(module_id or "").strip()
+    if mid:
+        clauses.append("module_id = ?")
+        params.append(mid)
+    state = _normalize_ai_prompt_status(status, allow_empty=True)
+    if state:
+        clauses.append("status = ?")
+        params.append(state)
+    level = str(scope_level or "").strip()
+    if level:
+        normalized_level = _normalize_ai_prompt_scope_level(level)
+        clauses.append("scope_level = ?")
+        params.append(normalized_level)
+    sid = str(scope_id or "").strip()
+    if sid:
+        clauses.append("scope_id = ?")
+        params.append(sid)
+    return (" AND ".join(clauses) if clauses else "1 = 1"), params
+
+
+def list_ai_prompt_versions(
+    *,
+    module_id: Optional[str] = None,
+    status: Optional[str] = None,
+    scope_level: Optional[str] = None,
+    scope_id: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
+    lim = max(1, min(int(limit or 50), 200))
+    off = max(0, int(offset or 0))
+    where, params = _build_ai_prompt_where(
+        module_id=module_id,
+        status=status,
+        scope_level=scope_level,
+        scope_id=scope_id,
+    )
+    _ensure_schema()
+    with _connect() as con:
+        rows = con.execute(
+            f"""
+            SELECT prompt_id, module_id, version, status, scope_level, scope_id, template,
+                   variables_schema_json, output_schema_json, created_by, created_at, updated_by, updated_at,
+                   activated_at, archived_at
+              FROM ai_prompt_versions
+             WHERE {where}
+             ORDER BY updated_at DESC, created_at DESC, prompt_id DESC
+             LIMIT ?
+            OFFSET ?
+            """,
+            [*params, lim, off],
+        ).fetchall()
+    return [_ai_prompt_version_row_to_dict(row) for row in rows]
+
+
+def count_ai_prompt_versions(
+    *,
+    module_id: Optional[str] = None,
+    status: Optional[str] = None,
+    scope_level: Optional[str] = None,
+    scope_id: Optional[str] = None,
+) -> int:
+    where, params = _build_ai_prompt_where(
+        module_id=module_id,
+        status=status,
+        scope_level=scope_level,
+        scope_id=scope_id,
+    )
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(f"SELECT COUNT(*) FROM ai_prompt_versions WHERE {where}", params).fetchone()
+    if not row:
+        return 0
+    try:
+        return int(row[0] or 0)
+    except Exception:
+        return 0
+
+
+def get_active_ai_prompt_version(
+    *,
+    module_id: str,
+    scope_level: str = "global",
+    scope_id: str = "",
+) -> Optional[Dict[str, Any]]:
+    mid = str(module_id or "").strip()
+    if not mid:
+        return None
+    level = _normalize_ai_prompt_scope_level(scope_level)
+    sid = "" if level == "global" else str(scope_id or "").strip()
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT prompt_id, module_id, version, status, scope_level, scope_id, template,
+                   variables_schema_json, output_schema_json, created_by, created_at, updated_by, updated_at,
+                   activated_at, archived_at
+              FROM ai_prompt_versions
+             WHERE module_id = ? AND scope_level = ? AND scope_id = ? AND status = 'active'
+             LIMIT 1
+            """,
+            [mid, level, sid],
+        ).fetchone()
+    return _ai_prompt_version_row_to_dict(row) if row else None
+
+
+def activate_ai_prompt_version(
+    prompt_id: str,
+    *,
+    actor_user_id: str = "",
+    activated_at: Optional[int] = None,
+) -> Dict[str, Any]:
+    current = get_ai_prompt_version(prompt_id)
+    if not current:
+        raise ValueError("prompt not found")
+    if str(current.get("status") or "") == "archived":
+        raise ValueError("archived prompt cannot be activated")
+    now = int(activated_at or 0) or _now_ts()
+    actor = str(actor_user_id or "").strip()
+    pid = str(current.get("prompt_id") or "")
+    mid = str(current.get("module_id") or "")
+    level = str(current.get("scope_level") or "global")
+    sid = str(current.get("scope_id") or "")
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            """
+            UPDATE ai_prompt_versions
+               SET status = 'archived', archived_at = ?, updated_by = ?, updated_at = ?
+             WHERE module_id = ? AND scope_level = ? AND scope_id = ? AND status = 'active' AND prompt_id <> ?
+            """,
+            [now, actor, now, mid, level, sid, pid],
+        )
+        con.execute(
+            """
+            UPDATE ai_prompt_versions
+               SET status = 'active', activated_at = CASE WHEN activated_at > 0 THEN activated_at ELSE ? END,
+                   archived_at = 0, updated_by = ?, updated_at = ?
+             WHERE prompt_id = ?
+            """,
+            [now, actor, now, pid],
+        )
+        con.commit()
+    updated = get_ai_prompt_version(pid)
+    if not updated:
+        raise ValueError("prompt not found")
+    return updated
+
+
+def archive_ai_prompt_version(
+    prompt_id: str,
+    *,
+    actor_user_id: str = "",
+    archived_at: Optional[int] = None,
+) -> Dict[str, Any]:
+    current = get_ai_prompt_version(prompt_id)
+    if not current:
+        raise ValueError("prompt not found")
+    now = int(archived_at or 0) or _now_ts()
+    actor = str(actor_user_id or "").strip()
+    pid = str(current.get("prompt_id") or "")
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(
+            """
+            UPDATE ai_prompt_versions
+               SET status = 'archived', archived_at = CASE WHEN archived_at > 0 THEN archived_at ELSE ? END,
+                   updated_by = ?, updated_at = ?
+             WHERE prompt_id = ?
+            """,
+            [now, actor, now, pid],
+        )
+        con.commit()
+    updated = get_ai_prompt_version(pid)
+    if not updated:
+        raise ValueError("prompt not found")
+    return updated
 
 
 def cleanup_audit_log(org_id: str, *, retention_days: int = 90, now_ts: Optional[int] = None) -> int:
