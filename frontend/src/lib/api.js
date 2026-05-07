@@ -486,6 +486,25 @@ export async function apiSuggestProductActions(sessionId, payload = {}) {
   };
 }
 
+export async function apiBulkSuggestProductActions(payload = {}) {
+  const body = isPlainObject(payload) ? payload : {};
+  const r = okOrError(await request(apiRoutes.analysis.productActionsBulkSuggest(), { method: "POST", body }));
+  if (!r.ok) {
+    return {
+      ...r,
+      result: isPlainObject(r.data) ? { ...r.data } : {},
+      results: Array.isArray(r.data?.results) ? r.data.results : [],
+    };
+  }
+  const result = isPlainObject(r.data) ? { ...r.data } : {};
+  return {
+    ok: true,
+    status: r.status,
+    result,
+    results: Array.isArray(result.results) ? result.results : [],
+  };
+}
+
 export async function apiListNoteThreads(sessionId, filters = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };

@@ -98,6 +98,7 @@ export const apiRoutes = {
   },
   analysis: {
     productActionsRegistryQuery: () => "/api/analysis/product-actions/registry/query",
+    productActionsBulkSuggest: () => "/api/analysis/product-actions/suggest-bulk",
   },
   sessions: {
     list: () => "/api/sessions",
