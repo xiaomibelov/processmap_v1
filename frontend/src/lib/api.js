@@ -179,9 +179,47 @@ export async function apiQueryProductActionRegistry(payload = {}) {
     status: r.status,
     scope: String(data.scope || body.scope || "").trim(),
     rows: Array.isArray(data.rows) ? data.rows : [],
+    sessions: Array.isArray(data.sessions) ? data.sessions : [],
+    session_summary: data.session_summary && typeof data.session_summary === "object" ? data.session_summary : {},
     summary: data.summary && typeof data.summary === "object" ? data.summary : {},
     page: data.page && typeof data.page === "object" ? data.page : {},
   };
+}
+
+function filenameFromContentDisposition(value, fallback) {
+  const text = String(value || "");
+  const match = text.match(/filename\*?=(?:UTF-8''|")?([^";]+)"?/i);
+  if (!match) return fallback;
+  try {
+    return decodeURIComponent(String(match[1] || "").trim()) || fallback;
+  } catch {
+    return String(match[1] || "").trim() || fallback;
+  }
+}
+
+async function exportProductActionsRegistry(endpoint, payload = {}, fallbackFilename = "product-actions-export") {
+  const body = payload && typeof payload === "object" ? payload : {};
+  const r = await request(endpoint, { method: "POST", body, responseType: "blob" });
+  if (!r.ok) return r;
+  const blob = r.data instanceof Blob ? r.data : new Blob([String(r.text || "")]);
+  const filename = filenameFromContentDisposition(r.response_headers?.get?.("content-disposition"), fallbackFilename);
+  return { ok: true, status: r.status, blob, filename };
+}
+
+export async function apiExportProductActionRegistryCsv(payload = {}) {
+  return exportProductActionsRegistry(
+    apiRoutes.analysis.productActionsRegistryExportCsv(),
+    payload,
+    "product-actions-export.csv",
+  );
+}
+
+export async function apiExportProductActionRegistryXlsx(payload = {}) {
+  return exportProductActionsRegistry(
+    apiRoutes.analysis.productActionsRegistryExportXlsx(),
+    payload,
+    "product-actions-export.xlsx",
+  );
 }
 
 // ------- Enterprise Project Members -------

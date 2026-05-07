@@ -16,6 +16,9 @@ test("apiRoutes: canonical report and session routes are stable", () => {
   assert.equal(apiRoutes.sessions.notesExtractionPreview("sess_1"), "/api/sessions/sess_1/notes/extraction-preview");
   assert.equal(apiRoutes.sessions.notesExtractionApply("sess_1"), "/api/sessions/sess_1/notes/extraction-apply");
   assert.equal(apiRoutes.sessions.productActionsSuggest("sess_1"), "/api/sessions/sess_1/analysis/product-actions/suggest");
+  assert.equal(apiRoutes.analysis.productActionsRegistryQuery(), "/api/analysis/product-actions/registry/query");
+  assert.equal(apiRoutes.analysis.productActionsRegistryExportCsv(), "/api/analysis/product-actions/registry/export.csv");
+  assert.equal(apiRoutes.analysis.productActionsRegistryExportXlsx(), "/api/analysis/product-actions/registry/export.xlsx");
   assert.equal(apiRoutes.analysis.productActionsBulkSuggest(), "/api/analysis/product-actions/suggest-bulk");
   assert.equal(apiRoutes.sessions.pathReports("sess_1", "main"), "/api/sessions/sess_1/paths/main/reports");
   assert.equal(apiRoutes.sessions.pathReport("sess_1", "main", "rpt_1"), "/api/sessions/sess_1/paths/main/reports/rpt_1");

@@ -33,6 +33,10 @@ test("workspace scope uses backend aggregation and does not scan all sessions on
   assert.match(panelSource, /PRODUCT_ACTIONS_BULK_AI_SESSION_CAP = 10/);
   assert.match(panelSource, /AI: предложить действия/);
   assert.match(panelSource, /Принять выбранные/);
+  assert.match(panelSource, /Скачать CSV/);
+  assert.match(panelSource, /Скачать XLSX/);
+  assert.match(panelSource, /apiExportProductActionRegistryCsv/);
+  assert.match(panelSource, /apiExportProductActionRegistryXlsx/);
   assert.doesNotMatch(panelSource, /apiListSessions|apiGetBpmnXml|apiPutBpmnXml|patchInterviewAnalysis|saveProductActionForStep/);
 });
 

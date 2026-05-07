@@ -1,7 +1,10 @@
 import os
+import csv
+import io
 import sqlite3
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -29,6 +32,9 @@ class ProductActionsRegistryApiTests(unittest.TestCase):
         from app.routers.product_actions_registry import (
             ProductActionsRegistryFilters,
             ProductActionsRegistryQueryIn,
+            _EXPORT_COLUMNS,
+            export_product_actions_registry_csv,
+            export_product_actions_registry_xlsx,
             query_product_actions_registry,
             router as product_actions_registry_router,
         )
@@ -42,6 +48,9 @@ class ProductActionsRegistryApiTests(unittest.TestCase):
 
         self.ProductActionsRegistryFilters = ProductActionsRegistryFilters
         self.ProductActionsRegistryQueryIn = ProductActionsRegistryQueryIn
+        self.EXPORT_COLUMNS = _EXPORT_COLUMNS
+        self.export_product_actions_registry_csv = export_product_actions_registry_csv
+        self.export_product_actions_registry_xlsx = export_product_actions_registry_xlsx
         self.query_product_actions_registry = query_product_actions_registry
         self.product_actions_registry_router = product_actions_registry_router
         self.get_storage = get_storage
@@ -200,6 +209,8 @@ class ProductActionsRegistryApiTests(unittest.TestCase):
     def test_canonical_endpoint_path_is_registered(self):
         paths = {getattr(route, "path", "") for route in self.product_actions_registry_router.routes}
         self.assertIn("/api/analysis/product-actions/registry/query", paths)
+        self.assertIn("/api/analysis/product-actions/registry/export.csv", paths)
+        self.assertIn("/api/analysis/product-actions/registry/export.xlsx", paths)
 
     def test_project_and_workspace_scope_aggregate_multiple_sessions(self):
         project_out = self._query(scope="project", project_id=self.project_a, limit=10)
@@ -262,6 +273,100 @@ class ProductActionsRegistryApiTests(unittest.TestCase):
         )
         self.assertEqual(visible.get("summary", {}).get("projects_total"), 1)
         self.assertEqual({row.get("project_id") for row in visible.get("rows") or []}, {self.project_a})
+
+    def test_csv_export_returns_bom_filename_and_stable_columns(self):
+        response = self.export_product_actions_registry_csv(
+            self.ProductActionsRegistryQueryIn(scope="workspace", workspace_id=self.workspace_id, limit=10),
+            self._req(self.admin),
+        )
+        self.assertEqual(response.media_type, "text/csv; charset=utf-8")
+        disposition = response.headers.get("content-disposition", "")
+        self.assertIn("product-actions-workspace-", disposition)
+        self.assertIn(".csv", disposition)
+        body = bytes(response.body)
+        self.assertTrue(body.startswith("\xef\xbb\xbf".encode("latin1")))
+        text = body.decode("utf-8-sig")
+        parsed = list(csv.reader(io.StringIO(text), delimiter=";"))
+        self.assertGreaterEqual(len(parsed), 2)
+        self.assertEqual(parsed[0], self.EXPORT_COLUMNS)
+        product_names = {row[self.EXPORT_COLUMNS.index("product_name")] for row in parsed[1:]}
+        self.assertIn("Клаб", product_names)
+        completeness = {row[self.EXPORT_COLUMNS.index("completeness")] for row in parsed[1:]}
+        self.assertIn("complete", completeness)
+        self.assertIn("incomplete", completeness)
+        self.assertNotIn("<bpmn:definitions>", text)
+        self.assertNotIn("heavy report", text)
+
+    def test_csv_export_escapes_semicolons_quotes_and_newlines(self):
+        storage = self.get_storage()
+        session = storage.load(self.session_a1, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(session)
+        session.interview["analysis"]["product_actions"][0]["product_name"] = 'Клаб "XL";\nновый'
+        storage.save(session, org_id=self.org_id, is_admin=True)
+
+        response = self.export_product_actions_registry_csv(
+            self.ProductActionsRegistryQueryIn(scope="session", session_id=self.session_a1, limit=10),
+            self._req(self.admin),
+        )
+        text = bytes(response.body).decode("utf-8-sig")
+        self.assertIn('"Клаб ""XL"";\nновый"', text)
+        parsed = list(csv.reader(io.StringIO(text), delimiter=";"))
+        self.assertEqual(parsed[1][self.EXPORT_COLUMNS.index("product_name")], 'Клаб "XL";\nновый')
+
+    def test_xlsx_export_returns_valid_workbook_with_expected_sheet_and_rows(self):
+        response = self.export_product_actions_registry_xlsx(
+            self.ProductActionsRegistryQueryIn(scope="project", project_id=self.project_a, limit=10),
+            self._req(self.admin),
+        )
+        self.assertEqual(response.media_type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        self.assertIn("product-actions-project-", response.headers.get("content-disposition", ""))
+        body = bytes(response.body)
+        with zipfile.ZipFile(io.BytesIO(body)) as workbook:
+            names = set(workbook.namelist())
+            self.assertIn("xl/workbook.xml", names)
+            self.assertIn("xl/worksheets/sheet1.xml", names)
+            workbook_xml = workbook.read("xl/workbook.xml").decode("utf-8")
+            sheet_xml = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        self.assertIn('name="Product actions"', workbook_xml)
+        self.assertIn("workspace_title", sheet_xml)
+        self.assertIn("Клаб", sheet_xml)
+        self.assertIn("Task_1", sheet_xml)
+        self.assertNotIn("<bpmn:definitions>", sheet_xml)
+        self.assertNotIn("heavy report", sheet_xml)
+
+    def test_export_filters_and_zero_rows_are_handled(self):
+        filtered = self.export_product_actions_registry_csv(
+            self.ProductActionsRegistryQueryIn(
+                scope="workspace",
+                workspace_id=self.workspace_id,
+                filters=self.ProductActionsRegistryFilters(product_groups=["Напитки"], completeness="complete"),
+                limit=10,
+            ),
+            self._req(self.admin),
+        )
+        parsed = list(csv.reader(io.StringIO(bytes(filtered.body).decode("utf-8-sig")), delimiter=";"))
+        self.assertEqual(len(parsed), 2)
+        self.assertEqual(parsed[1][self.EXPORT_COLUMNS.index("product_name")], "Лимонад")
+
+        empty = self.export_product_actions_registry_csv(
+            self.ProductActionsRegistryQueryIn(
+                scope="workspace",
+                workspace_id=self.workspace_id,
+                filters=self.ProductActionsRegistryFilters(products=["__missing__"]),
+                limit=10,
+            ),
+            self._req(self.admin),
+        )
+        parsed_empty = list(csv.reader(io.StringIO(bytes(empty.body).decode("utf-8-sig")), delimiter=";"))
+        self.assertEqual(parsed_empty, [self.EXPORT_COLUMNS])
+
+    def test_export_scope_guard_matches_registry_query(self):
+        with self.assertRaises(HTTPException) as ctx:
+            self.export_product_actions_registry_csv(
+                self.ProductActionsRegistryQueryIn(scope="project", project_id=self.project_b),
+                self._req(self.viewer),
+            )
+        self.assertEqual(ctx.exception.status_code, 404)
 
 
 if __name__ == "__main__":

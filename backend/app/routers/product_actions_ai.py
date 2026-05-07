@@ -23,6 +23,12 @@ _ENDPOINT = "POST /api/sessions/{session_id}/analysis/product-actions/suggest"
 _BULK_ENDPOINT = "POST /api/analysis/product-actions/suggest-bulk"
 _REQUIRED_FIELDS = ("product_name", "product_group", "action_type", "action_object")
 _BULK_SESSION_CAP = 10
+_CONTROLLED_ERROR_MESSAGES = {
+    "AI_PROVIDER_NOT_CONFIGURED": "AI_PROVIDER_NOT_CONFIGURED",
+    "AI_PROMPT_NOT_CONFIGURED": "AI_PROMPT_NOT_CONFIGURED",
+    "AI_PROVIDER_ERROR": "AI_PROVIDER_ERROR",
+    "AI_RATE_LIMIT_EXCEEDED": "AI_RATE_LIMIT_EXCEEDED",
+}
 
 
 class ProductActionsSuggestIn(BaseModel):
@@ -299,6 +305,18 @@ def _safe_error_message(exc: Any, *, api_key: str = "", base_url: str = "") -> s
     return text[:300]
 
 
+def _controlled_error(error_code: str, *, module_id: str = _MODULE_ID, input_hash: str = "", message: str = "") -> Dict[str, Any]:
+    code = _text(error_code) or "AI_PROVIDER_ERROR"
+    return {
+        "ok": False,
+        "error": code,
+        "message": _text(message) or _CONTROLLED_ERROR_MESSAGES.get(code, code),
+        "module_id": module_id,
+        "input_hash": _text(input_hash),
+        "warnings": [],
+    }
+
+
 @router.post("/api/sessions/{session_id}/analysis/product-actions/suggest")
 def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, request: Request) -> Dict[str, Any]:
     require_authenticated_user(request)
@@ -310,13 +328,14 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
     actor_user_id = _actor_user_id(request)
     scope = {"org_id": org_id, "workspace_id": workspace_id, "project_id": project_id, "session_id": _text(session_id)}
 
-    seed_existing_ai_prompts(actor_user_id="code_seeded")
-    active_prompt = get_active_prompt(module_id=_MODULE_ID)
-    prompt_template = _text((active_prompt or {}).get("template"))
-    prompt_id = _text((active_prompt or {}).get("prompt_id"))
-    prompt_version = _text((active_prompt or {}).get("version"))
+    try:
+        context = _build_context(session, org_id=org_id, workspace_id=workspace_id)
+    except Exception as exc:
+        context = {"session": {"id": _text(session_id), "project_id": project_id, "workspace_id": workspace_id}, "steps": [], "nodes": [], "edges": [], "existing_product_actions": []}
+        context_error = _safe_error_message(exc)
+    else:
+        context_error = ""
 
-    context = _build_context(session, org_id=org_id, workspace_id=workspace_id)
     max_suggestions = _max_suggestions(inp)
     input_hash = hash_ai_input({"module_id": _MODULE_ID, "session_id": session_id, "context": context})
     input_payload = {
@@ -330,7 +349,16 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
     }
     started_at = time.time()
     created_at = int(started_at)
-    llm = load_llm_settings()
+    prompt_template = ""
+    prompt_id = ""
+    prompt_version = ""
+    try:
+        llm = load_llm_settings()
+    except Exception as exc:
+        llm = {"api_key": "", "base_url": ""}
+        settings_error = _safe_error_message(exc)
+    else:
+        settings_error = ""
     api_key = _text(llm.get("api_key"))
     base_url = _text(llm.get("base_url"))
     model_name = _text(llm.get("model")) or "deepseek-chat"
@@ -346,26 +374,49 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
     ) -> Dict[str, Any]:
         finished_at = int(time.time())
         latency_ms = int(max(0.0, time.time() - started_at) * 1000)
-        record_ai_execution(
-            module_id=_MODULE_ID,
-            actor_user_id=actor_user_id,
-            scope=scope,
-            provider="deepseek",
-            model=model_name,
-            prompt_id=prompt_id,
-            prompt_version=prompt_version,
-            status=status,
-            input_payload=input_payload,
-            input_hash=input_hash,
-            output_summary=output_summary,
-            usage=usage if isinstance(usage, dict) else {},
-            latency_ms=latency_ms,
-            error_code=error_code,
-            error_message=_safe_error_message(error_message, api_key=api_key, base_url=base_url),
-            created_at=created_at,
-            finished_at=finished_at,
-        )
+        try:
+            record_ai_execution(
+                module_id=_MODULE_ID,
+                actor_user_id=actor_user_id,
+                scope=scope,
+                provider="deepseek",
+                model=model_name,
+                prompt_id=prompt_id,
+                prompt_version=prompt_version,
+                status=status,
+                input_payload=input_payload,
+                input_hash=input_hash,
+                output_summary=output_summary,
+                usage=usage if isinstance(usage, dict) else {},
+                latency_ms=latency_ms,
+                error_code=error_code,
+                error_message=_safe_error_message(error_message, api_key=api_key, base_url=base_url),
+                created_at=created_at,
+                finished_at=finished_at,
+            )
+        except Exception:
+            warnings = response.get("warnings")
+            if isinstance(warnings, list):
+                warnings.append({"code": "ai_execution_log_failed", "message": "AI execution log write failed."})
         return response
+
+    if context_error:
+        return _finish(
+            _controlled_error("AI_PROVIDER_ERROR", input_hash=input_hash, message="Не удалось собрать контекст сессии для AI."),
+            status="error",
+            output_summary="context assembly failed",
+            error_code="AI_PROVIDER_ERROR",
+            error_message=context_error,
+        )
+
+    if settings_error:
+        return _finish(
+            _controlled_error("AI_PROVIDER_ERROR", input_hash=input_hash, message="Не удалось прочитать настройки AI provider."),
+            status="error",
+            output_summary="provider settings read failed",
+            error_code="AI_PROVIDER_ERROR",
+            error_message=settings_error,
+        )
 
     try:
         rate = check_ai_rate_limit(module_id=_MODULE_ID, actor_user_id=actor_user_id, scope=scope)
@@ -393,16 +444,32 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
 
     if not api_key:
         return _finish(
-            {"ok": False, "error": "AI_PROVIDER_NOT_CONFIGURED", "module_id": _MODULE_ID, "input_hash": input_hash},
+            _controlled_error("AI_PROVIDER_NOT_CONFIGURED", input_hash=input_hash),
             status="error",
             output_summary="missing provider api key",
             error_code="AI_PROVIDER_NOT_CONFIGURED",
             error_message="AI_PROVIDER_NOT_CONFIGURED",
         )
 
+    try:
+        seed_existing_ai_prompts(actor_user_id="code_seeded")
+        active_prompt = get_active_prompt(module_id=_MODULE_ID)
+        prompt_template = _text((active_prompt or {}).get("template"))
+        prompt_id = _text((active_prompt or {}).get("prompt_id"))
+        prompt_version = _text((active_prompt or {}).get("version"))
+    except Exception as exc:
+        message = _safe_error_message(exc, api_key=api_key, base_url=base_url)
+        return _finish(
+            _controlled_error("AI_PROMPT_NOT_CONFIGURED", input_hash=input_hash),
+            status="error",
+            output_summary="prompt lookup failed",
+            error_code="AI_PROMPT_NOT_CONFIGURED",
+            error_message=message or "AI_PROMPT_NOT_CONFIGURED",
+        )
+
     if not prompt_template:
         return _finish(
-            {"ok": False, "error": "AI_PROMPT_NOT_CONFIGURED", "module_id": _MODULE_ID, "input_hash": input_hash},
+            _controlled_error("AI_PROMPT_NOT_CONFIGURED", input_hash=input_hash),
             status="error",
             output_summary="missing active prompt",
             error_code="AI_PROMPT_NOT_CONFIGURED",
@@ -452,7 +519,7 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
     except Exception as exc:
         message = _safe_error_message(exc, api_key=api_key, base_url=base_url)
         return _finish(
-            {"ok": False, "error": "AI_PROVIDER_ERROR", "message": message, "module_id": _MODULE_ID, "input_hash": input_hash},
+            _controlled_error("AI_PROVIDER_ERROR", input_hash=input_hash, message=message),
             status="error",
             output_summary="product actions suggestion failed",
             error_code="AI_PROVIDER_ERROR",
@@ -520,6 +587,21 @@ def suggest_product_actions_bulk(inp: ProductActionsBulkSuggestIn, request: Requ
                     "summary": {},
                     "error_code": "not_found" if exc.status_code == 404 else "http_error",
                     "error_message": _text(exc.detail) or "session_error",
+                }
+            )
+        except Exception as exc:
+            results.append(
+                {
+                    "session_id": session_id,
+                    "session_title": session_title or "Без названия",
+                    "project_id": project_id,
+                    "status": "error",
+                    "ok": False,
+                    "suggestions": [],
+                    "warnings": [],
+                    "summary": {},
+                    "error_code": "AI_PROVIDER_ERROR",
+                    "error_message": _safe_error_message(exc),
                 }
             )
 
