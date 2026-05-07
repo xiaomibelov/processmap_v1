@@ -5743,10 +5743,10 @@ def post_notes_extraction_apply(
     inp: NotesExtractionApplyIn,
     request: Request = None,
 ) -> Dict[str, Any]:
-    st = get_storage()
-    s = st.load(session_id)
+    s, _, _ = _legacy_load_session_scoped(session_id, request)
     if not s:
         return {"error": "not found"}
+    st = get_storage()
 
     _notes_apply_require_cas(sess=s, session_id=session_id, inp=inp, request=request)
     _, actor_user_id, actor_label = _resolve_actor_context(request)
