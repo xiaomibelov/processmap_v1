@@ -142,6 +142,14 @@ function warningText(warningRaw) {
   return "";
 }
 
+function aiSuggestErrorText(codeRaw) {
+  const code = toText(codeRaw);
+  if (code === "AI_PROVIDER_NOT_CONFIGURED") return "AI provider не настроен: сохраните DeepSeek API key в Admin → AI модули.";
+  if (code === "AI_PROMPT_NOT_CONFIGURED") return "AI prompt для действий с продуктом не настроен в Admin → AI модули.";
+  if (code === "AI_PROVIDER_ERROR") return "AI provider вернул ошибку. Проверьте доступность DeepSeek в Admin → AI модули.";
+  return code;
+}
+
 function suggestionId(rowRaw, index = 0) {
   const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
   return toText(row.id) || `ai_pa_${index + 1}`;
@@ -311,9 +319,10 @@ export default function ProductActionsPanel({
     });
     setAiLoading(false);
     if (!result?.ok || result?.draft?.ok === false) {
+      const errorCode = toText(result?.error || result?.draft?.error);
       setAiStatus({
         type: "error",
-        text: toText(result?.error || result?.draft?.error) || "Не удалось получить AI-предложения.",
+        text: aiSuggestErrorText(errorCode) || "Не удалось получить AI-предложения.",
       });
       return;
     }
