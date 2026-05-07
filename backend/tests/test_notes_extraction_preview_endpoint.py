@@ -239,6 +239,24 @@ class NotesExtractionPreviewEndpointTests(unittest.TestCase):
         mock_extract.assert_not_called()
         mock_preview.assert_not_called()
 
+    @patch("app._legacy_main._legacy_load_session_scoped", return_value=(None, "", None))
+    def test_apply_uses_scoped_session_loader(self, mock_scoped_load):
+        sid = self._create_session()
+        before = self._session_snapshot(sid)
+
+        out = self.post_notes_extraction_apply(
+            sid,
+            self.NotesExtractionApplyIn(
+                base_diagram_state_version=7,
+                nodes=[{"id": "n_new", "title": "Accepted node", "type": "step", "actor_role": "cook_1"}],
+                apply_nodes_edges=True,
+            ),
+        )
+
+        self.assertEqual(out.get("error"), "not found")
+        mock_scoped_load.assert_called_once()
+        self.assertEqual(before, self._session_snapshot(sid))
+
     @patch("app.ai.deepseek_client.extract_process_preview")
     @patch("app.ai.deepseek_client.extract_process")
     def test_apply_selected_roles_start_role_only(self, mock_extract, mock_preview):
