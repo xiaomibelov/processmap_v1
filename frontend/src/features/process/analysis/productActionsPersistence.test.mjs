@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  acceptAiProductActions,
   deleteProductActionForStep,
   saveProductActionForStep,
 } from "./productActionsPersistence.js";
@@ -93,4 +94,45 @@ test("deleteProductActionForStep patches remaining product actions", async () =>
   assert.equal(response.ok, true);
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0].patch.product_actions.map((row) => row.id), ["pa_keep"]);
+});
+
+test("acceptAiProductActions saves selected AI rows through interview analysis patch helper", async () => {
+  const calls = [];
+  const response = await acceptAiProductActions({
+    sessionId: "sid_1",
+    currentAnalysis: {
+      product_actions: [{ id: "manual_keep", product_name: "Рис" }],
+    },
+    selectedActions: [
+      {
+        id: "ai_1",
+        step_id: "step_2",
+        bpmn_element_id: "Task_2",
+        step_label: "Упаковать сэндвич",
+        product_name: "Сэндвич",
+        product_group: "Готовые блюда",
+        action_type: "упаковка",
+        action_object: "сэндвич",
+        role: "Упаковщик",
+        confidence: 0.8,
+      },
+      {
+        id: "ai_duplicate",
+        duplicate_of: "manual_keep",
+        product_name: "Рис",
+      },
+    ],
+    nowIso: "2026-05-07T12:00:00.000Z",
+    patchInterviewAnalysis: async (sid, patch, options) => {
+      calls.push({ sid, patch, options });
+      return { ok: true, status: 200 };
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].patch.product_actions.map((row) => row.id), ["manual_keep", "ai_1"]);
+  assert.equal(calls[0].patch.product_actions[1].source, "ai_suggested");
+  assert.equal(calls[0].patch.product_actions[1].manual_corrected, false);
+  assert.equal(response.acceptedProductActions.length, 1);
 });

@@ -88,9 +88,10 @@ class AiModuleCatalogApiTests(unittest.TestCase):
                 "ai.questions.prep",
                 "ai.process.extract_from_notes",
                 "ai.path_report",
+                "ai.product_actions.suggest",
             }:
                 self.assertTrue(bool(module.get("has_prompt_registry")))
-                if module.get("module_id") in {"ai.questions.session", "ai.questions.element", "ai.path_report"}:
+                if module.get("module_id") in {"ai.questions.session", "ai.questions.element", "ai.path_report", "ai.product_actions.suggest"}:
                     self.assertTrue(bool(module.get("has_execution_log")))
                     self.assertTrue(bool(module.get("has_rate_limits")))
                 else:
@@ -122,15 +123,20 @@ class AiModuleCatalogApiTests(unittest.TestCase):
         self.assertNotIn("api_key", provider)
         self.assertNotIn("SECRET_SHOULD_NOT_LEAK", str(response))
 
-    def test_future_modules_are_disabled_and_review_apply_required(self):
+    def test_future_modules_are_disabled_and_product_actions_is_active_review_apply(self):
         response = self._catalog()
         by_id = {str(item.get("module_id") or ""): item for item in response.get("modules") or []}
-        for module_id in ("ai.product_actions.suggest", "ai.doc.summarize"):
-            module = by_id[module_id]
-            self.assertEqual(module.get("status"), "future")
-            self.assertFalse(bool(module.get("enabled")))
-            self.assertEqual(module.get("prompt_source"), "future_registry")
-            self.assertTrue(bool(module.get("review_apply_required")))
+        product_actions = by_id["ai.product_actions.suggest"]
+        self.assertEqual(product_actions.get("status"), "active")
+        self.assertTrue(bool(product_actions.get("enabled")))
+        self.assertEqual(product_actions.get("prompt_source"), "prompt_registry+code_fallback")
+        self.assertTrue(bool(product_actions.get("review_apply_required")))
+        self.assertIn("POST /api/sessions/{session_id}/analysis/product-actions/suggest", product_actions.get("endpoints") or [])
+        module = by_id["ai.doc.summarize"]
+        self.assertEqual(module.get("status"), "future")
+        self.assertFalse(bool(module.get("enabled")))
+        self.assertEqual(module.get("prompt_source"), "future_registry")
+        self.assertTrue(bool(module.get("review_apply_required")))
         self.assertFalse(bool(by_id["ai.product_actions.suggest"].get("writes_domain_state")))
 
     def test_catalog_endpoint_is_read_only_for_session_domain_state(self):
