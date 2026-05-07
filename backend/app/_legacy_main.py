@@ -140,6 +140,7 @@ from .schemas.legacy_api import (
     LlmSettingsIn,
     LlmVerifyIn,
     NodePatchIn,
+    NotesExtractionApplyIn,
     NotesExtractionPreviewIn,
     NotesIn,
     OrgCreateIn,
@@ -5609,6 +5610,222 @@ def _notes_preview_response_from_extraction(
             "edges": _edge_diff(getattr(sess, "edges", []) or [], candidate_edges),
             "questions": _list_diff_by_id(getattr(sess, "questions", []) or [], candidate_questions),
         },
+    }
+
+
+def _notes_apply_flag(inp: NotesExtractionApplyIn, name: str) -> bool:
+    value = getattr(inp, name, None)
+    if value is not None:
+        return bool(value)
+    options = getattr(inp, "options", None)
+    if isinstance(options, dict) and name in options:
+        return bool(options.get(name))
+    return False
+
+
+def _notes_apply_require_cas(
+    *,
+    sess: Session,
+    session_id: str,
+    inp: NotesExtractionApplyIn,
+    request: Request = None,
+) -> None:
+    base_version = _resolve_base_diagram_state_version(
+        request=request,
+        payload=inp.model_dump(exclude_unset=True),
+    )
+    current_version = int(getattr(sess, "diagram_state_version", 0) or 0)
+    if base_version is None:
+        raise HTTPException(
+            status_code=409,
+            detail=_diagram_state_conflict_payload(
+                code="DIAGRAM_STATE_BASE_VERSION_REQUIRED",
+                session_id=str(getattr(sess, "id", "") or session_id),
+                client_base_version=None,
+                server_current_version=current_version,
+                sess=sess,
+            ),
+        )
+    if int(base_version) != current_version:
+        raise HTTPException(
+            status_code=409,
+            detail=_diagram_state_conflict_payload(
+                code="DIAGRAM_STATE_CONFLICT",
+                session_id=str(getattr(sess, "id", "") or session_id),
+                client_base_version=int(base_version),
+                server_current_version=current_version,
+                sess=sess,
+            ),
+        )
+
+
+def _edge_identity(edge: Edge) -> str:
+    return f"{str(edge.from_id or '').strip()}->{str(edge.to_id or '').strip()}::{str(edge.when or '').strip()}"
+
+
+def _merge_selected_edges(existing: Any, selected: Any) -> List[Edge]:
+    merged: Dict[str, Edge] = {}
+    for edge in list(existing or []):
+        parsed = edge if isinstance(edge, Edge) else Edge.model_validate(edge)
+        key = _edge_identity(parsed)
+        if key:
+            merged[key] = parsed
+    for edge in list(selected or []):
+        parsed = edge if isinstance(edge, Edge) else Edge.model_validate(edge)
+        key = _edge_identity(parsed)
+        if key:
+            merged[key] = parsed
+    return list(merged.values())
+
+
+def _merge_selected_nodes(existing: Any, selected: Any) -> List[Node]:
+    current = [item if isinstance(item, Node) else Node.model_validate(item) for item in list(existing or [])]
+    by_id = {str(node.id or "").strip(): node for node in current if str(node.id or "").strip()}
+    selected_nodes = [item if isinstance(item, Node) else Node.model_validate(item) for item in list(selected or [])]
+    appended: List[Node] = []
+    for node in selected_nodes:
+        node_id = str(node.id or "").strip()
+        if not node_id:
+            continue
+        old = by_id.get(node_id)
+        if old:
+            by_id[node_id] = _merge_nodes([old], [node])[0]
+        else:
+            by_id[node_id] = node
+            appended.append(node)
+    out: List[Node] = []
+    seen: Set[str] = set()
+    for node in current:
+        node_id = str(node.id or "").strip()
+        if node_id and node_id in by_id:
+            out.append(by_id[node_id])
+            seen.add(node_id)
+    for node in appended:
+        node_id = str(node.id or "").strip()
+        if node_id and node_id not in seen:
+            out.append(node)
+            seen.add(node_id)
+    return out
+
+
+def _entity_list_signature(values: Any) -> str:
+    dumped = _safe_model_dump_list(values)
+    try:
+        return json.dumps(dumped, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except Exception:
+        return str(dumped)
+
+
+@app.post("/api/sessions/{session_id}/notes/extraction-apply")
+def post_notes_extraction_apply(
+    session_id: str,
+    inp: NotesExtractionApplyIn,
+    request: Request = None,
+) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    _notes_apply_require_cas(sess=s, session_id=session_id, inp=inp, request=request)
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
+
+    before = {
+        "notes": str(getattr(s, "notes", "") or ""),
+        "roles": list(getattr(s, "roles", []) or []),
+        "start_role": str(getattr(s, "start_role", "") or ""),
+        "nodes": _entity_list_signature(getattr(s, "nodes", []) or []),
+        "edges": _entity_list_signature(getattr(s, "edges", []) or []),
+        "questions": _entity_list_signature(getattr(s, "questions", []) or []),
+        "bpmn_xml": str(getattr(s, "bpmn_xml", "") or ""),
+        "diagram_state_version": int(getattr(s, "diagram_state_version", 0) or 0),
+    }
+
+    changed_keys: Set[str] = set()
+    graph_changed = False
+
+    if _notes_apply_flag(inp, "apply_notes") and inp.notes is not None:
+        next_notes = str(inp.notes or "")
+        if next_notes != before["notes"]:
+            s.notes = next_notes
+            changed_keys.add("notes")
+
+    if _notes_apply_flag(inp, "apply_roles"):
+        next_roles = _norm_roles(inp.roles if inp.roles is not None else getattr(s, "roles", []))
+        next_start_role = inp.start_role
+        if next_start_role is None:
+            next_start = str(getattr(s, "start_role", "") or "").strip()
+        else:
+            next_start = str(next_start_role or "").strip()
+        if next_start and next_roles and next_start not in next_roles:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "start_role must be one of roles",
+                    "start_role": next_start,
+                    "roles": next_roles,
+                },
+            )
+        if list(getattr(s, "roles", []) or []) != next_roles:
+            s.roles = next_roles
+            changed_keys.add("roles")
+        current_start = str(getattr(s, "start_role", "") or "").strip()
+        if next_start != current_start:
+            s.start_role = next_start or None
+            changed_keys.add("start_role")
+
+    if _notes_apply_flag(inp, "apply_nodes_edges"):
+        selected_nodes = [Node.model_validate(item) for item in list(inp.nodes or [])]
+        selected_edges = [Edge.model_validate(item) for item in list(inp.edges or [])]
+        if selected_nodes:
+            s.nodes = _merge_selected_nodes(list(getattr(s, "nodes", []) or []), selected_nodes)
+        if selected_edges:
+            s.edges = _merge_selected_edges(list(getattr(s, "edges", []) or []), selected_edges)
+        if _entity_list_signature(getattr(s, "nodes", []) or []) != before["nodes"]:
+            changed_keys.add("nodes")
+            graph_changed = True
+        if _entity_list_signature(getattr(s, "edges", []) or []) != before["edges"]:
+            changed_keys.add("edges")
+            graph_changed = True
+
+    if graph_changed:
+        s = _recompute_session(s)
+
+    if _notes_apply_flag(inp, "apply_questions"):
+        selected_questions = [Question.model_validate(item) for item in list(inp.questions or [])]
+        s.questions = selected_questions
+
+    if _entity_list_signature(getattr(s, "questions", []) or []) != before["questions"]:
+        changed_keys.add("questions")
+
+    if not changed_keys:
+        return {
+            "ok": True,
+            "status": "noop",
+            "module_id": _NOTES_EXTRACTION_MODULE_ID,
+            "changed_keys": [],
+            "diagram_state_version": before["diagram_state_version"],
+            "session": s.model_dump(),
+            "result": s.model_dump(),
+        }
+
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=sorted(changed_keys),
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
+    st.save(s)
+    session_payload = s.model_dump()
+    return {
+        "ok": True,
+        "status": "applied",
+        "module_id": _NOTES_EXTRACTION_MODULE_ID,
+        "changed_keys": sorted(changed_keys),
+        "input_hash": str(inp.input_hash or "").strip(),
+        "diagram_state_version": int(getattr(s, "diagram_state_version", 0) or 0),
+        "session": session_payload,
+        "result": session_payload,
     }
 
 

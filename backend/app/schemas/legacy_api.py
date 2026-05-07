@@ -151,6 +151,26 @@ class NotesExtractionPreviewIn(BaseModel):
     options: Optional[Dict[str, Any]] = None
 
 
+class NotesExtractionApplyIn(BaseModel):
+    notes: Optional[str] = None
+    input_hash: Optional[str] = None
+    draft_id: Optional[str] = None
+    source: Optional[str] = None
+    roles: Optional[Any] = None
+    start_role: Optional[str] = None
+    nodes: Optional[Any] = None
+    edges: Optional[Any] = None
+    questions: Optional[Any] = None
+    apply_notes: Optional[bool] = False
+    apply_roles: Optional[bool] = False
+    apply_nodes_edges: Optional[bool] = False
+    apply_questions: Optional[bool] = False
+    base_diagram_state_version: Optional[int] = None
+    base_bpmn_xml_version: Optional[int] = None
+    rev: Optional[int] = None
+    options: Optional[Dict[str, Any]] = None
+
+
 class AnswerIn(BaseModel):
     question_id: str
     answer: str
