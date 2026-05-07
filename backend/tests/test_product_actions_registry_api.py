@@ -214,6 +214,10 @@ class ProductActionsRegistryApiTests(unittest.TestCase):
         self.assertEqual(workspace_out.get("summary", {}).get("actions_total"), 3)
         self.assertEqual(workspace_out.get("session_summary", {}).get("sessions_total"), 4)
         self.assertEqual(workspace_out.get("session_summary", {}).get("sessions_without_actions"), 1)
+        row_session_ids = {row.get("session_id") for row in workspace_out.get("rows") or [] if row.get("session_id")}
+        summary_session_ids = {item.get("session_id") for item in workspace_out.get("sessions") or [] if item.get("session_id")}
+        self.assertGreaterEqual(workspace_out.get("session_summary", {}).get("sessions_total"), len(row_session_ids))
+        self.assertTrue(row_session_ids.issubset(summary_session_ids))
         empty_summary = next(
             item for item in workspace_out.get("sessions") or []
             if item.get("session_id") == self.session_a3_empty

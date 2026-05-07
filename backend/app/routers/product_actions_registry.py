@@ -281,6 +281,52 @@ def _session_summary_totals(sessions: List[Dict[str, Any]]) -> Dict[str, int]:
     }
 
 
+def _reconcile_session_summaries_with_rows(
+    sessions: List[Dict[str, Any]],
+    rows: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Keep the response invariant: each action row belongs to a returned session summary."""
+    by_session_id: Dict[str, Dict[str, Any]] = {
+        _text(item.get("session_id")): item
+        for item in sessions
+        if _text(item.get("session_id"))
+    }
+    rows_by_session_id: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        session_id = _text(row.get("session_id"))
+        if not session_id:
+            continue
+        rows_by_session_id.setdefault(session_id, []).append(row)
+
+    out = list(sessions)
+    for session_id, session_rows in rows_by_session_id.items():
+        if session_id in by_session_id:
+            continue
+        complete = sum(1 for row in session_rows if row.get("completeness") == "complete")
+        first = session_rows[0]
+        fallback_summary = {
+            "org_id": _text(first.get("org_id")),
+            "workspace_id": _text(first.get("workspace_id")),
+            "project_id": _text(first.get("project_id")),
+            "project_title": _text(first.get("project_title")),
+            "folder_id": "",
+            "folder_title": "",
+            "path": _text(first.get("project_title")),
+            "session_id": session_id,
+            "session_title": _text(first.get("session_title")) or "Без названия",
+            "diagram_state_version": int(first.get("diagram_state_version") or 0),
+            "updated_at": 0,
+            "status": "",
+            "actions_total": len(session_rows),
+            "complete": complete,
+            "incomplete": len(session_rows) - complete,
+            "summary_source": "rows_fallback",
+        }
+        out.append(fallback_summary)
+        by_session_id[session_id] = fallback_summary
+    return out
+
+
 @router.post("/api/analysis/product-actions/registry/query")
 def query_product_actions_registry(inp: ProductActionsRegistryQueryIn, request: Request) -> Dict[str, Any]:
     require_authenticated_user(request)
@@ -337,6 +383,7 @@ def query_product_actions_registry(inp: ProductActionsRegistryQueryIn, request: 
     for source in sources:
         for index, action in enumerate(source.get("product_actions") or []):
             rows.append(_registry_row(source, action, index))
+    session_summaries = _reconcile_session_summaries_with_rows(session_summaries, rows)
     rows = [row for row in rows if _matches_filters(row, inp.filters)]
     rows.sort(key=_sort_key)
 

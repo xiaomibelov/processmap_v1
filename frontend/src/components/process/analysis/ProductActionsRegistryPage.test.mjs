@@ -20,10 +20,12 @@ test("registry page is a dedicated product surface, not a modal overlay", () => 
 
 test("workspace scope uses backend aggregation and does not scan all sessions on frontend", () => {
   assert.match(panelSource, /apiQueryProductActionRegistry/);
-  assert.match(panelSource, /Workspace-реестр использует backend-агрегацию/);
-  assert.match(panelSource, /не загружает все sessions workspace на frontend/);
+  assert.match(panelSource, /Сводка строится без загрузки полных данных всех сессий на frontend/);
+  assert.doesNotMatch(panelSource, /Workspace-реестр использует backend-агрегацию/);
   assert.match(panelSource, /data-testid="product-actions-registry-sessions"/);
   assert.match(panelSource, /result\.sessions/);
+  assert.match(panelSource, /summarizeRowsAsSessions/);
+  assert.match(panelSource, /Найдены действия, но не получен список сессий/);
   assert.match(panelSource, /apiListProjectSessions\(projectId,\s*""\,\s*\{ view: "summary" \}\)/);
   assert.match(panelSource, /apiGetSession\(sid\)/);
   assert.match(panelSource, /PRODUCT_ACTIONS_REGISTRY_SESSION_CAP/);
