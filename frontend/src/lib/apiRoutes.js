@@ -200,6 +200,13 @@ export const apiRoutes = {
     audit: (params = {}) => withQuery("/api/admin/audit", params),
     errorEvents: (params = {}) => withQuery("/api/admin/error-events", params),
     errorEvent: (eventId) => `/api/admin/error-events/${encode(eventId)}`,
+    aiModules: () => "/api/admin/ai/modules",
+    aiExecutions: (params = {}) => withQuery("/api/admin/ai/executions", params),
+    aiPrompts: (params = {}) => withQuery("/api/admin/ai/prompts", params),
+    aiPromptActive: (params = {}) => withQuery("/api/admin/ai/prompts/active", params),
+    aiPrompt: (promptId) => `/api/admin/ai/prompts/${encode(promptId)}`,
+    aiPromptActivate: (promptId) => `/api/admin/ai/prompts/${encode(promptId)}/activate`,
+    aiPromptArchive: (promptId) => `/api/admin/ai/prompts/${encode(promptId)}/archive`,
   },
   misc: {
     meta: () => "/api/meta",
