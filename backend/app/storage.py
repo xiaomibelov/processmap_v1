@@ -2991,11 +2991,18 @@ class Storage:
                   s.diagram_state_version AS diagram_state_version,
                   s.updated_at AS session_updated_at,
                   p.title AS project_title,
-                  p.workspace_id AS workspace_id
+                  p.workspace_id AS workspace_id,
+                  p.folder_id AS folder_id,
+                  wf.name AS folder_title
                 FROM sessions s
                 LEFT JOIN projects p
                   ON p.id = s.project_id
                  AND p.org_id = s.org_id
+                LEFT JOIN workspace_folders wf
+                  ON wf.id = p.folder_id
+                 AND wf.org_id = p.org_id
+                 AND wf.workspace_id = p.workspace_id
+                 AND wf.archived_at IS NULL
                 {where}
                 ORDER BY s.updated_at DESC
                 LIMIT ?
@@ -3019,6 +3026,8 @@ class Storage:
                 "workspace_id": str(_row_value(row, "workspace_id") or ""),
                 "project_id": str(_row_value(row, "project_id") or ""),
                 "project_title": str(_row_value(row, "project_title") or ""),
+                "folder_id": str(_row_value(row, "folder_id") or ""),
+                "folder_title": str(_row_value(row, "folder_title") or ""),
                 "session_id": str(_row_value(row, "session_id") or ""),
                 "session_title": str(_row_value(row, "session_title") or ""),
                 "diagram_state_version": int(_row_value(row, "diagram_state_version") or 0),

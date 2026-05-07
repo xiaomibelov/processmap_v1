@@ -9,6 +9,8 @@ export default function ProductActionsRegistryPage({
   sessionTitle = "",
   interviewData = null,
   onScopeChange = null,
+  onOpenProject = null,
+  onOpenSession = null,
   onClose = null,
 }) {
   return (
@@ -24,6 +26,8 @@ export default function ProductActionsRegistryPage({
         sessionTitle={sessionTitle}
         interviewData={interviewData}
         onScopeChange={onScopeChange}
+        onOpenProject={onOpenProject}
+        onOpenSession={onOpenSession}
         onClose={onClose}
       />
     </main>

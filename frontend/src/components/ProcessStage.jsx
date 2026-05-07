@@ -950,6 +950,40 @@ export default function ProcessStage({
     window.history.pushState({ ...(window.history.state || {}) }, "", nextUrl);
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
   }, [activeProjectId, activeProjectWorkspaceId, productActionsRegistryRoute.workspaceId, sid]);
+  const openProductActionsRegistryProject = useCallback((projectLike = {}) => {
+    const project_id = toText(projectLike?.projectId || projectLike?.project_id);
+    if (!project_id) return;
+    openProductActionsRegistry({
+      scope: "project",
+      workspaceId: projectLike?.workspaceId || projectLike?.workspace_id || productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId,
+      projectId: project_id,
+    });
+  }, [activeProjectWorkspaceId, openProductActionsRegistry, productActionsRegistryRoute.workspaceId]);
+  const openProductActionsRegistrySession = useCallback(async (sessionLike = {}, options = {}) => {
+    const session_id = toText(sessionLike?.session_id || sessionLike?.id);
+    if (!session_id || typeof onOpenWorkspaceSession !== "function") return;
+    const project_id = toText(sessionLike?.project_id || sessionLike?.projectId || activeProjectId);
+    const workspace_id = toText(sessionLike?.workspace_id || sessionLike?.workspaceId || productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId);
+    const result = await onOpenWorkspaceSession(sessionLike, {
+      ...options,
+      openTab: options?.openTab || "interview",
+      source: options?.source || "product_actions_registry",
+    });
+    if (result?.ok === false || typeof window === "undefined") return;
+    const nextProjectId = toText(result?.projectId || project_id);
+    const nextSessionId = toText(result?.sessionId || session_id);
+    const nextUrl = buildProductActionsRegistryCloseUrl({
+      workspaceId: workspace_id,
+      projectId: nextProjectId,
+      sessionId: nextSessionId,
+    }, {
+      pathname: window.location.pathname || "/app",
+      baseSearch: window.location.search || "",
+      hash: window.location.hash || "",
+    });
+    window.history.pushState({ ...(window.history.state || {}) }, "", nextUrl);
+    setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
+  }, [activeProjectId, activeProjectWorkspaceId, onOpenWorkspaceSession, productActionsRegistryRoute.workspaceId]);
   const saveAckToastTimerRef = useRef(0);
   const processStatusToastLastSignatureRef = useRef("");
   const saveLifecycleToastLastSignatureRef = useRef("");
@@ -6418,6 +6452,8 @@ export default function ProcessStage({
               sessionTitle=""
               interviewData={null}
               onScopeChange={(scope) => openProductActionsRegistry({ scope })}
+              onOpenProject={openProductActionsRegistryProject}
+              onOpenSession={openProductActionsRegistrySession}
               onClose={closeProductActionsRegistry}
             />
           ) : (
@@ -6441,6 +6477,8 @@ export default function ProcessStage({
             sessionTitle={toText(draft?.title)}
             interviewData={draft?.interview}
             onScopeChange={(scope) => openProductActionsRegistry({ scope })}
+            onOpenProject={openProductActionsRegistryProject}
+            onOpenSession={openProductActionsRegistrySession}
             onClose={closeProductActionsRegistry}
           />
         ) : tab === "doc" ? (

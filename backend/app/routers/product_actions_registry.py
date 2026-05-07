@@ -237,6 +237,50 @@ def _summary(rows: List[Dict[str, Any]]) -> Dict[str, int]:
     }
 
 
+def _session_summary(source: Dict[str, Any]) -> Dict[str, Any]:
+    actions: List[Dict[str, Any]] = []
+    for index, action in enumerate(source.get("product_actions") or []):
+        actions.append(_registry_row(source, action, index))
+    complete = sum(1 for row in actions if row.get("completeness") == "complete")
+    incomplete = len(actions) - complete
+    project_title = _text(source.get("project_title"))
+    folder_title = _text(source.get("folder_title"))
+    context_parts = [part for part in (folder_title, project_title) if part]
+    return {
+        "org_id": _text(source.get("org_id")),
+        "workspace_id": _text(source.get("workspace_id")),
+        "project_id": _text(source.get("project_id")),
+        "project_title": project_title,
+        "folder_id": _text(source.get("folder_id")),
+        "folder_title": folder_title,
+        "path": " / ".join(context_parts),
+        "session_id": _text(source.get("session_id")),
+        "session_title": _text(source.get("session_title")) or "Без названия",
+        "diagram_state_version": int(source.get("diagram_state_version") or 0),
+        "updated_at": int(source.get("updated_at") or 0),
+        "status": _text(source.get("status")) or "",
+        "actions_total": len(actions),
+        "complete": complete,
+        "incomplete": incomplete,
+    }
+
+
+def _session_summary_totals(sessions: List[Dict[str, Any]]) -> Dict[str, int]:
+    projects = {_text(item.get("project_id")) for item in sessions if _text(item.get("project_id"))}
+    actions_total = sum(int(item.get("actions_total") or 0) for item in sessions)
+    complete = sum(int(item.get("complete") or 0) for item in sessions)
+    incomplete = sum(int(item.get("incomplete") or 0) for item in sessions)
+    return {
+        "projects_total": len(projects),
+        "sessions_total": len(sessions),
+        "sessions_with_actions": sum(1 for item in sessions if int(item.get("actions_total") or 0) > 0),
+        "sessions_without_actions": sum(1 for item in sessions if int(item.get("actions_total") or 0) <= 0),
+        "actions_total": actions_total,
+        "complete": complete,
+        "incomplete": incomplete,
+    }
+
+
 @router.post("/api/analysis/product-actions/registry/query")
 def query_product_actions_registry(inp: ProductActionsRegistryQueryIn, request: Request) -> Dict[str, Any]:
     require_authenticated_user(request)
@@ -288,6 +332,7 @@ def query_product_actions_registry(inp: ProductActionsRegistryQueryIn, request: 
         limit_sessions=10000,
         is_admin=True,
     )
+    session_summaries = [_session_summary(source) for source in sources]
     rows: List[Dict[str, Any]] = []
     for source in sources:
         for index, action in enumerate(source.get("product_actions") or []):
@@ -304,6 +349,8 @@ def query_product_actions_registry(inp: ProductActionsRegistryQueryIn, request: 
         "scope": scope,
         "rows": page_rows,
         "summary": _summary(rows),
+        "sessions": session_summaries,
+        "session_summary": _session_summary_totals(session_summaries),
         "page": {
             "limit": limit,
             "offset": offset,

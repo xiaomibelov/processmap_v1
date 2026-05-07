@@ -17,6 +17,10 @@ test("ProductActionsRegistryPanel exposes preview registry UI without export wor
     "Проект",
     "Сессия",
     "Загрузить выбранные",
+    "Сессии workspace",
+    "Все процессы в выбранном scope, включая процессы без действий с продуктом.",
+    "Открыть проект",
+    "Открыть сессию",
     "Фильтры применяются к загруженным строкам.",
     "CSV — позже",
     "XLSX — позже",
@@ -26,6 +30,9 @@ test("ProductActionsRegistryPanel exposes preview registry UI without export wor
 
 test("ProductActionsRegistryPanel uses summary first and loads only selected full sessions", () => {
   assert.match(source, /apiQueryProductActionRegistry/);
+  assert.match(source, /normalizeBackendSessions/);
+  assert.match(source, /result\.sessions/);
+  assert.match(source, /backendSessionSummary/);
   assert.match(source, /apiListProjectSessions\(projectId,\s*""\,\s*\{ view: "summary" \}\)/);
   assert.match(source, /apiGetSession\(sid\)/);
   assert.equal(source.includes("не загружает все sessions workspace на frontend"), true);
@@ -33,6 +40,16 @@ test("ProductActionsRegistryPanel uses summary first and loads only selected ful
   assert.equal(source.includes("Full session loads are intentionally explicit and capped."), true);
   assert.equal(source.includes("PRODUCT_ACTIONS_REGISTRY_SESSION_CAP"), true);
   assert.doesNotMatch(source, /apiGetBpmnXml|apiPutBpmnXml|apiPatchSession|patchInterviewAnalysis|saveProductActionForStep/);
+});
+
+test("ProductActionsRegistryPanel exposes workspace session drilldown without workspace full-session scan", () => {
+  assert.equal(source.includes('data-testid="product-actions-registry-sessions"'), true);
+  assert.equal(source.includes("actions_total"), true);
+  assert.equal(source.includes("sessions_without_actions"), true);
+  assert.equal(source.includes("openProjectFromSummary"), true);
+  assert.equal(source.includes("openSessionFromSummary"), true);
+  assert.equal(source.includes('source: "product_actions_registry"'), true);
+  assert.doesNotMatch(source, /scope === "workspace"[\s\S]{0,1200}apiGetSession\(sid\)/);
 });
 
 test("ProductActionsRegistryPanel provides filters, completeness and disabled export placeholders", () => {

@@ -103,6 +103,12 @@ class ProductActionsRegistryApiTests(unittest.TestCase):
             ],
             diagram_state_version=3,
         )
+        self.session_a3_empty = self._seed_session(
+            self.project_a,
+            "Session A3 Empty",
+            [],
+            diagram_state_version=1,
+        )
         self.session_b1 = self._seed_session(
             self.project_b,
             "Session B1",
@@ -206,6 +212,19 @@ class ProductActionsRegistryApiTests(unittest.TestCase):
         self.assertEqual(workspace_out.get("summary", {}).get("projects_total"), 2)
         self.assertEqual(workspace_out.get("summary", {}).get("sessions_total"), 3)
         self.assertEqual(workspace_out.get("summary", {}).get("actions_total"), 3)
+        self.assertEqual(workspace_out.get("session_summary", {}).get("sessions_total"), 4)
+        self.assertEqual(workspace_out.get("session_summary", {}).get("sessions_without_actions"), 1)
+        empty_summary = next(
+            item for item in workspace_out.get("sessions") or []
+            if item.get("session_id") == self.session_a3_empty
+        )
+        self.assertEqual(empty_summary.get("session_title"), "Session A3 Empty")
+        self.assertEqual(empty_summary.get("actions_total"), 0)
+        self.assertEqual(empty_summary.get("complete"), 0)
+        self.assertEqual(empty_summary.get("incomplete"), 0)
+        self.assertEqual(empty_summary.get("project_id"), self.project_a)
+        for heavy_key in ("bpmn_xml", "interview", "interview_json", "bpmn_meta", "report_versions", "product_actions"):
+            self.assertNotIn(heavy_key, empty_summary)
 
     def test_filters_and_pagination_work_over_filtered_rows(self):
         filtered = self._query(
