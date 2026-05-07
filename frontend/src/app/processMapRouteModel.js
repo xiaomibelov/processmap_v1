@@ -1,5 +1,6 @@
 export const PROCESS_MAP_ROUTE_STATE_KEY = "processMapRoute";
 export const PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY = "processMapProjectContext";
+export const PRODUCT_ACTIONS_REGISTRY_SURFACE = "product-actions-registry";
 
 const DEFAULT_APP_PATHNAME = "/app";
 const VALID_SOURCES = new Set(["internal", "direct", "popstate"]);
@@ -11,6 +12,14 @@ function text(value) {
 function normalizeSource(value) {
   const source = text(value).toLowerCase();
   return VALID_SOURCES.has(source) ? source : "direct";
+}
+
+export function normalizeProductActionsRegistryScope(value) {
+  const scope = text(value).toLowerCase();
+  if (scope === "session" || scope === "current") return "session";
+  if (scope === "project") return "project";
+  if (scope === "workspace") return "workspace";
+  return "workspace";
 }
 
 function normalizeBreadcrumbBase(crumbsRaw) {
@@ -105,6 +114,103 @@ export function parseProcessMapRoute(locationLike = typeof window !== "undefined
   } catch {
     return normalizeProcessMapRoute({ source: options?.source || "direct" });
   }
+}
+
+export function readProductActionsRegistryRoute(locationLike = typeof window !== "undefined" ? window.location : undefined) {
+  try {
+    const url = asLocationUrl(locationLike);
+    const params = new URLSearchParams(url.search || "");
+    const surface = text(params.get("surface")).toLowerCase();
+    const projectId = text(params.get("project"));
+    const sessionId = projectId ? text(params.get("session")) : "";
+    const workspaceId = text(params.get("workspace"));
+    if (surface !== PRODUCT_ACTIONS_REGISTRY_SURFACE) {
+      return {
+        active: false,
+        scope: "workspace",
+        workspaceId,
+        projectId,
+        sessionId,
+      };
+    }
+    const explicitScope = text(params.get("registry_scope"));
+    const scope = explicitScope
+      ? normalizeProductActionsRegistryScope(explicitScope)
+      : sessionId
+        ? "session"
+        : projectId
+          ? "project"
+          : "workspace";
+    return {
+      active: true,
+      scope,
+      workspaceId,
+      projectId,
+      sessionId,
+    };
+  } catch {
+    return {
+      active: false,
+      scope: "workspace",
+      workspaceId: "",
+      projectId: "",
+      sessionId: "",
+    };
+  }
+}
+
+export function buildProductActionsRegistryUrl(routeRaw = {}, options = {}) {
+  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
+  const scope = normalizeProductActionsRegistryScope(route.scope ?? route.registry_scope);
+  const pathname = text(options?.pathname) || DEFAULT_APP_PATHNAME;
+  const hash = text(options?.hash);
+  const params = new URLSearchParams(text(options?.baseSearch));
+  const workspaceId = text(route.workspaceId ?? route.workspace_id);
+  const projectId = text(route.projectId ?? route.project_id);
+  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
+
+  params.set("surface", PRODUCT_ACTIONS_REGISTRY_SURFACE);
+  params.set("registry_scope", scope);
+  if (workspaceId) params.set("workspace", workspaceId);
+  else if (Object.prototype.hasOwnProperty.call(route, "workspaceId") || Object.prototype.hasOwnProperty.call(route, "workspace_id")) {
+    params.delete("workspace");
+  }
+
+  if (scope === "workspace") {
+    params.delete("project");
+    params.delete("session");
+  } else if (scope === "project") {
+    if (projectId) params.set("project", projectId);
+    else params.delete("project");
+    params.delete("session");
+  } else {
+    if (projectId) params.set("project", projectId);
+    else params.delete("project");
+    if (sessionId) params.set("session", sessionId);
+    else params.delete("session");
+  }
+
+  const search = params.toString();
+  return `${pathname}${search ? `?${search}` : ""}${hash}`;
+}
+
+export function buildProductActionsRegistryCloseUrl(routeRaw = {}, options = {}) {
+  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
+  const pathname = text(options?.pathname) || DEFAULT_APP_PATHNAME;
+  const hash = text(options?.hash);
+  const params = new URLSearchParams(text(options?.baseSearch));
+  params.delete("surface");
+  params.delete("registry_scope");
+  const workspaceId = text(route.workspaceId ?? route.workspace_id);
+  const projectId = text(route.projectId ?? route.project_id);
+  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
+  if (workspaceId) params.set("workspace", workspaceId);
+  if (projectId) params.set("project", projectId);
+  else params.delete("project");
+  if (sessionId) params.set("session", sessionId);
+  else params.delete("session");
+  const search = params.toString();
+  return `${pathname}${search ? `?${search}` : ""}${hash}`;
 }
 
 export function buildProcessMapUrl(routeRaw = {}, options = {}) {

@@ -1,7 +1,24 @@
-import { buildProcessMapUrl } from "../../app/processMapRouteModel.js";
+import {
+  buildProcessMapUrl,
+  buildProductActionsRegistryUrl,
+} from "../../app/processMapRouteModel.js";
 
 export function buildAppWorkspaceHref({ projectId = "", sessionId = "" } = {}) {
   return buildProcessMapUrl({ projectId, sessionId });
+}
+
+export function buildProductActionsRegistryHref({
+  scope = "workspace",
+  workspaceId = "",
+  projectId = "",
+  sessionId = "",
+} = {}) {
+  return buildProductActionsRegistryUrl({
+    scope,
+    workspaceId,
+    projectId,
+    sessionId,
+  });
 }
 
 export function shouldHandleClientNavigation(event, target = "") {

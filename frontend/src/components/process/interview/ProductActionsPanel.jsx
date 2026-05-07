@@ -12,7 +12,6 @@ import {
   listProductActionsForStep,
   normalizeProductActionsList,
 } from "../../../features/process/analysis/productActionsModel.js";
-import ProductActionsRegistryPanel from "../analysis/ProductActionsRegistryPanel.jsx";
 import { toArray, toText } from "./utils";
 
 const FIELD_CONFIGS = [
@@ -147,6 +146,7 @@ export default function ProductActionsPanel({
   getBaseDiagramStateVersion = null,
   rememberDiagramStateVersion = null,
   onSessionSync = null,
+  onOpenProductActionsRegistry = null,
 }) {
   const steps = useMemo(
     () => toArray(timelineView).filter((step) => toText(step?.id)),
@@ -170,7 +170,6 @@ export default function ProductActionsPanel({
   const lastDraftResetKeyRef = useRef(draftResetKey);
   const [editorOpen, setEditorOpen] = useState(false);
   const [actionsScope, setActionsScope] = useState("step");
-  const [registryOpen, setRegistryOpen] = useState(false);
   const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -281,7 +280,11 @@ export default function ProductActionsPanel({
           <button
             type="button"
             className="secondaryBtn smallBtn"
-            onClick={() => setRegistryOpen(true)}
+            onClick={() => onOpenProductActionsRegistry?.({
+              scope: "session",
+              projectId,
+              sessionId,
+            })}
             data-testid="product-actions-open-registry"
           >
             Реестр действий
@@ -528,15 +531,6 @@ export default function ProductActionsPanel({
       ) : null}
         </>
       ) : null}
-      <ProductActionsRegistryPanel
-        open={registryOpen}
-        onClose={() => setRegistryOpen(false)}
-        sessionId={sessionId}
-        sessionTitle={sessionTitle}
-        projectId={projectId}
-        projectTitle={projectTitle}
-        interviewData={interviewData}
-      />
     </section>
   );
 }
