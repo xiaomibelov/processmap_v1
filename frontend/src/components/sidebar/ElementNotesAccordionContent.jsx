@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -77,7 +79,36 @@ function warningText(item) {
   return code || message;
 }
 
-function PreviewCandidateList({ title, items, emptyText, fallbackPrefix, metaKeys = [] }) {
+function candidateKey(item, index, fallbackPrefix = "candidate") {
+  const row = asObject(item);
+  return String(
+    row.id
+    || row.node_id
+    || row.edge_id
+    || row.question_id
+    || row.title
+    || row.name
+    || row.label
+    || row.value
+    || `${fallbackPrefix}_${index}`,
+  );
+}
+
+function selectedCandidateItems(items, selectedMap, fallbackPrefix) {
+  const selected = asObject(selectedMap);
+  return asArray(items).filter((item, index) => selected[candidateKey(item, index, fallbackPrefix)] === true);
+}
+
+function PreviewCandidateList({
+  title,
+  items,
+  emptyText,
+  fallbackPrefix,
+  metaKeys = [],
+  selectable = false,
+  selectedMap = {},
+  onToggle,
+}) {
   const list = asArray(items);
   return (
     <div className="rounded-lg border border-border/70 bg-panel2/40 p-2">
@@ -87,16 +118,32 @@ function PreviewCandidateList({ title, items, emptyText, fallbackPrefix, metaKey
       </div>
       {list.length ? (
         <div className="space-y-1">
-          {list.slice(0, 6).map((item, index) => {
+          {(selectable ? list : list.slice(0, 6)).map((item, index) => {
             const meta = candidateMeta(item, metaKeys);
+            const key = candidateKey(item, index, fallbackPrefix);
+            const checked = asObject(selectedMap)[key] === true;
             return (
-              <div key={`${title}_${index}_${String(asObject(item).id || candidateTitle(item, fallbackPrefix, index))}`} className="rounded-md border border-border/60 bg-bg/50 px-2 py-1.5">
-                <div className="text-[11px] font-medium text-fg">{candidateTitle(item, fallbackPrefix, index)}</div>
-                {meta ? <div className="mt-0.5 text-[10px] text-muted">{meta}</div> : null}
-              </div>
+              <label
+                key={`${title}_${index}_${key}`}
+                className="flex items-start gap-2 rounded-md border border-border/60 bg-bg/50 px-2 py-1.5"
+              >
+                {selectable ? (
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={checked}
+                    onChange={(event) => onToggle?.(key, event.target.checked)}
+                    data-testid={`notes-extraction-select-${fallbackPrefix}-${index}`}
+                  />
+                ) : null}
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[11px] font-medium text-fg">{candidateTitle(item, fallbackPrefix, index)}</span>
+                  {meta ? <span className="mt-0.5 block text-[10px] text-muted">{meta}</span> : null}
+                </span>
+              </label>
             );
           })}
-          {list.length > 6 ? <div className="text-[10px] text-muted">Ещё {list.length - 6}</div> : null}
+          {!selectable && list.length > 6 ? <div className="text-[10px] text-muted">Ещё {list.length - 6}</div> : null}
         </div>
       ) : (
         <div className="text-[11px] text-muted">{emptyText}</div>
@@ -105,15 +152,126 @@ function PreviewCandidateList({ title, items, emptyText, fallbackPrefix, metaKey
   );
 }
 
-function NotesExtractionPreviewPanel({ preview }) {
+function NotesExtractionPreviewPanel({
+  preview,
+  notesText = "",
+  onApplyNotesExtraction,
+  disabled,
+}) {
   const data = asObject(preview);
+  const [selected, setSelected] = useState({
+    notes: false,
+    roles: {},
+    start_role: false,
+    nodes: {},
+    edges: {},
+    questions: {},
+  });
+  const [applyBusy, setApplyBusy] = useState(false);
+  const [applyErr, setApplyErr] = useState("");
+  const [applyInfo, setApplyInfo] = useState("");
+
+  const previewIdentity = [
+    data.input_hash || "",
+    data.current_diagram_state_version || "",
+    asArray(data.candidate_roles).length,
+    asArray(data.candidate_nodes).length,
+    asArray(data.candidate_edges).length,
+    asArray(data.candidate_questions).length,
+  ].join(":");
+
+  useEffect(() => {
+    setSelected({
+      notes: false,
+      roles: {},
+      start_role: false,
+      nodes: {},
+      edges: {},
+      questions: {},
+    });
+    setApplyErr("");
+    setApplyInfo("");
+  }, [previewIdentity]);
+
   if (!data || !Object.keys(data).length) return null;
   const source = String(data.source || "unknown").trim().toLowerCase();
   const warnings = asArray(data.warnings).map(warningText).filter(Boolean);
   const diff = asObject(data.diff);
+  const roleItems = asArray(data.candidate_roles).map((role) => ({ title: role, value: role }));
+  const nodeItems = asArray(data.candidate_nodes);
+  const edgeItems = asArray(data.candidate_edges).map((edge) => {
+    const row = asObject(edge);
+    return { ...row, title: `${row.from_id || row.from || "?"} → ${row.to_id || row.to || "?"}` };
+  });
+  const questionItems = asArray(data.candidate_questions);
+  const selectedRoles = selectedCandidateItems(roleItems, selected.roles, "role")
+    .map((item) => String(item.value || item.title || "").trim())
+    .filter(Boolean);
+  const selectedNodes = selectedCandidateItems(nodeItems, selected.nodes, "node");
+  const selectedEdges = selectedCandidateItems(edgeItems, selected.edges, "edge");
+  const selectedQuestions = selectedCandidateItems(questionItems, selected.questions, "question");
+  const selectedStartRole = selected.start_role && data.candidate_start_role
+    ? String(data.candidate_start_role || "").trim()
+    : "";
+  const applyRoles = selectedRoles.length > 0 || !!selectedStartRole;
+  const applyNodesEdges = selectedNodes.length > 0 || selectedEdges.length > 0;
+  const hasSelection = selected.notes || applyRoles || applyNodesEdges || selectedQuestions.length > 0;
+  const baseDiagramStateVersion = Number(data.current_diagram_state_version || data.diagram_state_version || 0) || 0;
   const sourceTone = source === "llm"
     ? "border-success/40 bg-success/10 text-success"
     : "border-warning/45 bg-warning/10 text-warning";
+  const toggleSelection = (bucket, key, checked) => {
+    setApplyErr("");
+    setApplyInfo("");
+    setSelected((prev) => ({
+      ...prev,
+      [bucket]: {
+        ...asObject(prev[bucket]),
+        [key]: checked === true,
+      },
+    }));
+  };
+  const submitApply = async () => {
+    if (!hasSelection || applyBusy || disabled) return;
+    const rolesPayload = applyRoles
+      ? (selectedRoles.length ? selectedRoles : asArray(data.candidate_roles))
+      : [];
+    const payload = {
+      base_diagram_state_version: baseDiagramStateVersion,
+      input_hash: String(data.input_hash || "").trim(),
+      source: source || "",
+      notes: selected.notes ? String(notesText || "") : undefined,
+      roles: applyRoles ? rolesPayload : undefined,
+      start_role: selectedStartRole || undefined,
+      nodes: applyNodesEdges ? selectedNodes : undefined,
+      edges: applyNodesEdges ? selectedEdges : undefined,
+      questions: selectedQuestions.length ? selectedQuestions : undefined,
+      apply_notes: selected.notes === true,
+      apply_roles: applyRoles,
+      apply_nodes_edges: applyNodesEdges,
+      apply_questions: selectedQuestions.length > 0,
+    };
+    setApplyBusy(true);
+    setApplyErr("");
+    setApplyInfo("");
+    try {
+      const r = onApplyNotesExtraction?.(payload);
+      const rr = r && typeof r.then === "function" ? await r : r;
+      if (rr && rr.ok === false) {
+        setApplyErr(String(
+          rr.conflict
+            ? "Версия диаграммы изменилась. Обновите предпросмотр и повторите применение."
+            : (rr.error || "Не удалось применить выбранный разбор."),
+        ));
+        return;
+      }
+      setApplyInfo("Изменения применены к процессу");
+    } catch (error) {
+      setApplyErr(String(error?.message || error || "Не удалось применить выбранный разбор."));
+    } finally {
+      setApplyBusy(false);
+    }
+  };
 
   return (
     <div className="rounded-xl border border-info/25 bg-info/5 p-3" data-testid="notes-extraction-preview-panel">
@@ -136,38 +294,57 @@ function NotesExtractionPreviewPanel({ preview }) {
       <div className="mt-3 grid gap-2">
         <PreviewCandidateList
           title="Роли"
-          items={asArray(data.candidate_roles).map((role) => ({ title: role }))}
+          items={roleItems}
           emptyText="Новых ролей нет."
           fallbackPrefix="Роль"
+          selectable
+          selectedMap={selected.roles}
+          onToggle={(key, checked) => toggleSelection("roles", key, checked)}
         />
         {data.candidate_start_role ? (
-          <div className="rounded-lg border border-border/70 bg-panel2/40 px-2 py-1.5 text-[11px] text-muted">
-            Стартовая роль: <span className="font-medium text-fg">{compactLabel(data.candidate_start_role)}</span>
-          </div>
+          <label className="flex items-center gap-2 rounded-lg border border-border/70 bg-panel2/40 px-2 py-1.5 text-[11px] text-muted">
+            <input
+              type="checkbox"
+              checked={selected.start_role === true}
+              onChange={(event) => {
+                setApplyErr("");
+                setApplyInfo("");
+                setSelected((prev) => ({ ...prev, start_role: event.target.checked }));
+              }}
+              data-testid="notes-extraction-select-start-role"
+            />
+            <span>Стартовая роль: <span className="font-medium text-fg">{compactLabel(data.candidate_start_role)}</span></span>
+          </label>
         ) : null}
         <PreviewCandidateList
           title="Узлы"
-          items={data.candidate_nodes}
+          items={nodeItems}
           emptyText="Кандидатов узлов нет."
           fallbackPrefix="Узел"
           metaKeys={["id", "type", "actor_role"]}
+          selectable
+          selectedMap={selected.nodes}
+          onToggle={(key, checked) => toggleSelection("nodes", key, checked)}
         />
         <PreviewCandidateList
           title="Связи"
-          items={asArray(data.candidate_edges).map((edge) => {
-            const row = asObject(edge);
-            return { ...row, title: `${row.from_id || row.from || "?"} → ${row.to_id || row.to || "?"}` };
-          })}
+          items={edgeItems}
           emptyText="Кандидатов связей нет."
           fallbackPrefix="Связь"
           metaKeys={["id", "type"]}
+          selectable
+          selectedMap={selected.edges}
+          onToggle={(key, checked) => toggleSelection("edges", key, checked)}
         />
         <PreviewCandidateList
           title="Вопросы"
-          items={data.candidate_questions}
+          items={questionItems}
           emptyText="Кандидатов вопросов нет."
           fallbackPrefix="Вопрос"
           metaKeys={["id", "node_id", "issue_type"]}
+          selectable
+          selectedMap={selected.questions}
+          onToggle={(key, checked) => toggleSelection("questions", key, checked)}
         />
       </div>
 
@@ -186,13 +363,40 @@ function NotesExtractionPreviewPanel({ preview }) {
         <div className="mt-2 break-all text-[10px] text-muted">input_hash: {String(data.input_hash)}</div>
       ) : null}
 
+      {diff?.notes?.changed ? (
+        <label className="mt-3 flex items-center gap-2 rounded-lg border border-border/70 bg-bg/40 px-2 py-1.5 text-[11px] text-muted">
+          <input
+            type="checkbox"
+            checked={selected.notes === true}
+            onChange={(event) => {
+              setApplyErr("");
+              setApplyInfo("");
+              setSelected((prev) => ({ ...prev, notes: event.target.checked }));
+            }}
+            data-testid="notes-extraction-select-notes"
+          />
+          <span>Применить текст заметки как process notes</span>
+        </label>
+      ) : null}
+
+      {applyErr ? <div className="selectedNodeFieldError mt-3">{applyErr}</div> : null}
+      {applyInfo ? <div className="mt-3 text-[11px] text-success">{applyInfo}</div> : null}
+
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-[11px] text-muted">Применение будет добавлено отдельным контуром.</div>
-        <button type="button" className="secondaryBtn h-8 px-2.5 text-[11px]" disabled>
-          Применить
+        <div className="text-[11px] text-muted">Truth меняется только после явного применения выбранных candidates.</div>
+        <button
+          type="button"
+          className="primaryBtn h-8 px-2.5 text-[11px]"
+          disabled={!!disabled || applyBusy || !hasSelection || !onApplyNotesExtraction}
+          onClick={() => {
+            void submitApply();
+          }}
+          data-testid="notes-extraction-apply-button"
+        >
+          {applyBusy ? "Применяю..." : "Применить выбранное"}
         </button>
       </div>
-      <div className="mt-1 text-[10px] text-muted">Применение будет доступно после apply-boundary контура.</div>
+      {!hasSelection ? <div className="mt-1 text-[10px] text-muted">Выберите хотя бы один candidate для применения.</div> : null}
     </div>
   );
 }
@@ -205,6 +409,7 @@ export default function ElementNotesAccordionContent({
   globalBusy,
   globalErr,
   onPreviewNotesExtraction,
+  onApplyNotesExtraction,
   previewBusy,
   previewErr,
   notesExtractionPreview,
@@ -279,7 +484,12 @@ export default function ElementNotesAccordionContent({
           </div>
         </div>
 
-        <NotesExtractionPreviewPanel preview={notesExtractionPreview} />
+        <NotesExtractionPreviewPanel
+          preview={notesExtractionPreview}
+          notesText={globalText}
+          onApplyNotesExtraction={onApplyNotesExtraction}
+          disabled={!!disabled}
+        />
       </div>
     );
   }
