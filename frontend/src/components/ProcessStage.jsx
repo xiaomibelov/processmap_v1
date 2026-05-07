@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DocStage from "./process/DocStage";
 import DodStage from "./process/DodStage";
 import InterviewStage from "./process/InterviewStage";
+import ProductActionsRegistryPage from "./process/analysis/ProductActionsRegistryPage.jsx";
 import WorkspaceExplorer from "../features/explorer/WorkspaceExplorer";
 import { useAuth } from "../features/auth/AuthProvider";
 import {
@@ -249,6 +250,11 @@ import {
   writeQualityProfile,
 } from "../features/process/stage/utils/processStageHelpers";
 import { pushDeleteTrace } from "../features/process/stage/utils/deleteTrace";
+import {
+  buildProductActionsRegistryCloseUrl,
+  buildProductActionsRegistryUrl,
+  readProductActionsRegistryRoute,
+} from "../app/processMapRouteModel.js";
 
 const DIAGRAM_UNDO_REDO_VISIBLE_POLL_MS = 2000;
 const BPMN_VERSION_HEADERS_LIMIT = 50;
@@ -906,6 +912,44 @@ export default function ProcessStage({
     sessionCompanionLocalFirstAdapterMode,
   ]);
   const hasSession = !!sid;
+  const [productActionsRegistryRoute, setProductActionsRegistryRoute] = useState(() => readProductActionsRegistryRoute());
+  const syncProductActionsRegistryRoute = useCallback(() => {
+    setProductActionsRegistryRoute(readProductActionsRegistryRoute());
+  }, []);
+  useEffect(() => {
+    window.addEventListener("popstate", syncProductActionsRegistryRoute);
+    return () => window.removeEventListener("popstate", syncProductActionsRegistryRoute);
+  }, [syncProductActionsRegistryRoute]);
+  const openProductActionsRegistry = useCallback((options = {}) => {
+    if (typeof window === "undefined") return;
+    const scope = toText(options?.scope) || (sid ? "session" : activeProjectId ? "project" : "workspace");
+    const nextUrl = buildProductActionsRegistryUrl({
+      scope,
+      workspaceId: options?.workspaceId || activeProjectWorkspaceId || productActionsRegistryRoute.workspaceId,
+      projectId: options?.projectId ?? activeProjectId,
+      sessionId: options?.sessionId ?? sid,
+    }, {
+      pathname: window.location.pathname || "/app",
+      baseSearch: window.location.search || "",
+      hash: window.location.hash || "",
+    });
+    window.history.pushState({ ...(window.history.state || {}), surface: "product-actions-registry" }, "", nextUrl);
+    setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
+  }, [activeProjectId, activeProjectWorkspaceId, productActionsRegistryRoute.workspaceId, sid]);
+  const closeProductActionsRegistry = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const nextUrl = buildProductActionsRegistryCloseUrl({
+      workspaceId: productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId,
+      projectId: activeProjectId,
+      sessionId: sid,
+    }, {
+      pathname: window.location.pathname || "/app",
+      baseSearch: window.location.search || "",
+      hash: window.location.hash || "",
+    });
+    window.history.pushState({ ...(window.history.state || {}) }, "", nextUrl);
+    setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
+  }, [activeProjectId, activeProjectWorkspaceId, productActionsRegistryRoute.workspaceId, sid]);
   const saveAckToastTimerRef = useRef(0);
   const processStatusToastLastSignatureRef = useRef("");
   const saveLifecycleToastLastSignatureRef = useRef("");
@@ -6364,13 +6408,40 @@ export default function ProcessStage({
         ref={processBodyRef}
       >
         {!hasSession ? (
-          <WorkspaceExplorer
-            activeOrgId={workspaceActiveOrgId}
-            requestProjectId={activeProjectId}
-            requestProjectWorkspaceId={activeProjectWorkspaceId}
-            requestProjectContext={activeProjectRouteContext}
-            onOpenSession={(sessionLike, options) => onOpenWorkspaceSession?.(sessionLike, options)}
-            onClearRequestedProject={onClearWorkspaceProject}
+          productActionsRegistryRoute.active ? (
+            <ProductActionsRegistryPage
+              scope={productActionsRegistryRoute.scope}
+              workspaceId={productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId}
+              projectId={productActionsRegistryRoute.projectId || activeProjectId}
+              projectTitle={toText(activeProjectRouteContext?.projectTitle)}
+              sessionId=""
+              sessionTitle=""
+              interviewData={null}
+              onScopeChange={(scope) => openProductActionsRegistry({ scope })}
+              onClose={closeProductActionsRegistry}
+            />
+          ) : (
+            <WorkspaceExplorer
+              activeOrgId={workspaceActiveOrgId}
+              requestProjectId={activeProjectId}
+              requestProjectWorkspaceId={activeProjectWorkspaceId}
+              requestProjectContext={activeProjectRouteContext}
+              onOpenSession={(sessionLike, options) => onOpenWorkspaceSession?.(sessionLike, options)}
+              onOpenProductActionsRegistry={openProductActionsRegistry}
+              onClearRequestedProject={onClearWorkspaceProject}
+            />
+          )
+        ) : productActionsRegistryRoute.active ? (
+          <ProductActionsRegistryPage
+            scope={productActionsRegistryRoute.scope}
+            workspaceId={productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId}
+            projectId={productActionsRegistryRoute.projectId || activeProjectId}
+            projectTitle={toText(activeProjectRouteContext?.projectTitle || draft?.project_title || draft?.projectTitle)}
+            sessionId={sid}
+            sessionTitle={toText(draft?.title)}
+            interviewData={draft?.interview}
+            onScopeChange={(scope) => openProductActionsRegistry({ scope })}
+            onClose={closeProductActionsRegistry}
           />
         ) : tab === "doc" ? (
           <DocStage
@@ -6728,6 +6799,7 @@ export default function ProcessStage({
                   rememberDiagramStateVersion={rememberDiagramStateVersion}
                   stepTimeUnit={stepTimeUnit}
                   pathsUiIntent={diagramPathsIntent}
+                  onOpenProductActionsRegistry={openProductActionsRegistry}
                 />
               </div>
             ) : null}
