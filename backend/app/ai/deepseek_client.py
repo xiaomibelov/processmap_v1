@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
+NOTES_EXTRACTION_SYSTEM_PROMPT = "Верни строго JSON с ключами nodes, edges, roles. nodes: {id,type,title,actor_role,recipient_role,equipment,duration_min,parameters,disposition,evidence,confidence}. Не выдумывай. Если нет данных — пустые массивы."
+
 
 ROLE_ALIASES = {
     "п1": "cook_1",
@@ -336,7 +338,7 @@ def _try_deepseek(notes: str, api_key_override: str = "", base_url_override: str
         "messages": [
             {
                 "role": "system",
-                "content": "Верни строго JSON с ключами nodes, edges, roles. nodes: {id,type,title,actor_role,recipient_role,equipment,duration_min,parameters,disposition,evidence,confidence}. Не выдумывай. Если нет данных — пустые массивы.",
+                "content": NOTES_EXTRACTION_SYSTEM_PROMPT,
             },
             {"role": "user", "content": notes},
         ],

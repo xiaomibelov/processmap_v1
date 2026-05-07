@@ -19,6 +19,7 @@ from ..ai.prompt_registry import (
     get_active_prompt,
     get_prompt_detail,
     list_prompt_versions,
+    seed_existing_ai_prompts,
 )
 from ..auto_pass_jobs import redis_queue_enabled
 from ..auth import AuthError, create_user, list_users as list_auth_users, update_user
@@ -770,6 +771,7 @@ def admin_ai_modules(request: Request) -> Any:
     _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
     if err is not None:
         return err
+    seed_existing_ai_prompts()
     return ai_module_catalog_payload()
 
 
@@ -821,6 +823,7 @@ def admin_ai_prompts(
     _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
     if err is not None:
         return err
+    seed_existing_ai_prompts()
     try:
         return list_prompt_versions(
             module_id=module_id,
@@ -844,6 +847,7 @@ def admin_ai_active_prompt(
     _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
     if err is not None:
         return err
+    seed_existing_ai_prompts()
     try:
         item = get_active_prompt(module_id=module_id, scope_level=scope_level, scope_id=scope_id)
     except ValueError as exc:
