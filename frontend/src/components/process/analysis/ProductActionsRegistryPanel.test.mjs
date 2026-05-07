@@ -72,6 +72,8 @@ test("ProductActionsRegistryPanel exposes capped bulk AI review and safe accept 
   assert.equal(source.includes("acceptAiProductActions({"), true);
   assert.equal(source.includes("currentAnalysis: fullSession?.interview?.analysis"), true);
   assert.equal(source.includes("Выберите предложения для принятия."), true);
+  assert.equal(source.includes("AI_RESPONSE_PARSE_ERROR"), true);
+  assert.equal(source.includes("AI вернул ответ в некорректном формате"), true);
   assert.equal(source.includes("apiExportProductActionRegistryCsv"), true);
   assert.equal(source.includes("apiExportProductActionRegistryXlsx"), true);
   assert.doesNotMatch(source, /apiPutBpmnXml|apiPatchSession|saveProductActionForStep/);
