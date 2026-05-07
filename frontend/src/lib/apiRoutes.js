@@ -108,6 +108,7 @@ export const apiRoutes = {
     node: (sessionId, nodeId) => `/api/sessions/${encode(sessionId)}/nodes/${encode(nodeId)}`,
     edges: (sessionId) => `/api/sessions/${encode(sessionId)}/edges`,
     notes: (sessionId) => `/api/sessions/${encode(sessionId)}/notes`,
+    notesExtractionPreview: (sessionId) => `/api/sessions/${encode(sessionId)}/notes/extraction-preview`,
     noteAggregate: (sessionId) => `/api/sessions/${encode(sessionId)}/note-aggregate`,
     mentionableUsers: (sessionId) => `/api/sessions/${encode(sessionId)}/mentionable-users`,
     noteThreads: (sessionId, filters = {}) => withQuery(`/api/sessions/${encode(sessionId)}/note-threads`, {
