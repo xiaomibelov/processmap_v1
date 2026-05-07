@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import AiToolsModal from "./AiToolsModal";
 import { useAuth } from "../features/auth/AuthProvider";
 import { getManualSessionStatusMeta, MANUAL_SESSION_STATUSES } from "../features/workspace/workspacePermissions";
 import {
@@ -39,15 +38,6 @@ function sessionTitleFrom(s) {
 
 function orgIdFrom(o) {
   return String((o && (o.org_id || o.id)) || "").trim();
-}
-
-function sanitizeAiStatusMessage(msg) {
-  const raw = String(msg || "").trim();
-  if (!raw) return "";
-  if (raw.includes("Нажмите «Проверить AI»")) return "";
-  if (raw.includes("Ключ сохранён")) return "";
-  if (raw.includes("Ключ не задан")) return "";
-  return raw;
 }
 
 function shortLabel(value, max = 34) {
@@ -106,8 +96,6 @@ function UserAvatarIcon({ className = "" }) {
 }
 
 export default function TopBar({
-  backendStatus,
-  backendHint,
   orgs,
   activeOrgId,
   onOrgChange,
@@ -126,16 +114,6 @@ export default function TopBar({
   onDeleteSession,
   onChangeSessionStatus,
   onNewProject,
-  llmHasApiKey,
-  llmBaseUrl,
-  llmSaving,
-  llmErr,
-  llmVerifyState,
-  llmVerifyMsg,
-  llmVerifyAt,
-  llmVerifyBusy,
-  onSaveLlmSettings,
-  onVerifyLlmSettings,
   onOpenDiscussionNotifications,
   draft,
   mentionNotifications = [],
@@ -148,7 +126,6 @@ export default function TopBar({
   const orgList = useMemo(() => asArray(orgs), [orgs]);
   const projList = useMemo(() => asArray(projects), [projects]);
   const sessList = useMemo(() => asArray(sessions), [sessions]);
-  const isApiOk = backendStatus === true || backendStatus === "ok";
   const openSessionHandler = onOpenSession || onOpen;
   const draftProjectId = toText(draft?.project_id || draft?.projectId);
   const draftSessionId = toText(draft?.session_id || draft?.id);
@@ -156,7 +133,6 @@ export default function TopBar({
   const effectiveSessionId = toText(sessionId || draftSessionId);
   const hasActiveSession = effectiveSessionId.length > 0;
   const [uiTheme, setUiTheme] = useState("dark");
-  const [aiToolsOpen, setAiToolsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState("unviewed");
@@ -300,26 +276,6 @@ export default function TopBar({
     }
   }
 
-  const verifyState = String(llmVerifyState || "off");
-  const aiOk = verifyState === "ok" || (isApiOk && llmHasApiKey);
-  const aiPillClass = aiOk
-    ? "border-success/45 bg-success/15 text-success"
-    : "border-warning/45 bg-warning/15 text-warning";
-  const safeVerifyMsg = sanitizeAiStatusMessage(llmVerifyMsg);
-  const topCenterHint = useMemo(() => {
-    const text = toText(safeVerifyMsg);
-    if (!text) return "";
-    if (text.toUpperCase() === "API OK") return "";
-    return text;
-  }, [safeVerifyMsg]);
-  const aiHasError = verifyState === "fail" || !!toText(llmErr);
-  const aiLoading = !!llmVerifyBusy || !!llmSaving;
-  const aiButtonLabel = aiLoading ? "AI …" : aiHasError ? "AI !" : "AI";
-  const aiButtonClass = aiLoading
-    ? "border-accent/45 bg-accentSoft/60 text-fg"
-    : aiHasError
-      ? "border-danger/50 bg-danger/15 text-danger"
-      : aiPillClass;
   const selectedProjectTitle = useMemo(() => {
     const id = effectiveProjectId;
     if (!id) return "";
@@ -701,13 +657,7 @@ export default function TopBar({
         ) : null}
       </div>
 
-      <div className="topCenter hidden min-w-[140px] justify-center md:flex">
-        {topCenterHint ? (
-          <span className="truncate text-[11px] text-muted" title={topCenterHint}>
-            {topCenterHint}
-          </span>
-        ) : null}
-      </div>
+      <div className="topCenter hidden min-w-[140px] justify-center md:flex" />
 
       <div className="topbarNavRight relative flex min-w-0 shrink-0 items-center justify-end gap-1.5 overflow-visible whitespace-nowrap">
         <div className="topGroup flex shrink-0 items-center gap-1.5">
@@ -745,19 +695,6 @@ export default function TopBar({
               Админ-панель
             </button>
           ) : null}
-          <button
-            type="button"
-            className={`inline-flex h-9 min-h-0 items-center rounded-full border px-2.5 py-0 text-sm font-semibold ${aiButtonClass}`}
-            onClick={() => setAiToolsOpen(true)}
-            title={safeVerifyMsg || backendHint || "AI инструменты"}
-            data-testid="topbar-ai-button"
-          >
-            <span
-              className={"mr-1 inline-block h-2 w-2 rounded-full " + (aiHasError ? "bg-danger" : aiLoading ? "bg-accent" : (aiOk ? "bg-success" : "bg-warning"))}
-              aria-hidden
-            />
-            {aiButtonLabel}
-          </button>
         </div>
 
         <div className="topGroup relative flex shrink-0 items-center gap-2">
@@ -922,21 +859,6 @@ export default function TopBar({
         onRowAction={(row, action) => void handleNotificationRowAction(row, action)}
         actionPendingKey={notificationActionPending}
         actionError={notificationActionError}
-      />
-
-      <AiToolsModal
-        open={aiToolsOpen}
-        onClose={() => setAiToolsOpen(false)}
-        llmHasApiKey={llmHasApiKey}
-        llmBaseUrl={llmBaseUrl}
-        llmSaving={llmSaving}
-        llmErr={llmErr}
-        llmVerifyState={llmVerifyState}
-        llmVerifyMsg={llmVerifyMsg}
-        llmVerifyAt={llmVerifyAt}
-        llmVerifyBusy={llmVerifyBusy}
-        onSaveLlmSettings={onSaveLlmSettings}
-        onVerifyLlmSettings={onVerifyLlmSettings}
       />
     </div>
   );
