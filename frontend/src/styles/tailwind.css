@@ -628,6 +628,7 @@
 .productActionsRegistryProjectPicker,
 .productActionsRegistryFilters,
 .productActionsRegistryPreview,
+.productActionsRegistrySessions,
 .productActionsRegistrySummary,
 .productActionsRegistryWarning,
 .productActionsRegistryWorkspaceNotice,
@@ -683,6 +684,7 @@
 }
 
 .productActionsRegistrySessionRow b,
+.productActionsRegistrySessionSummaryRow b,
 .productActionsRegistryRow b {
   display: block;
   overflow-wrap: anywhere;
@@ -691,6 +693,7 @@
 }
 
 .productActionsRegistrySessionRow small,
+.productActionsRegistrySessionSummaryRow small,
 .productActionsRegistryRow small {
   display: block;
   margin-top: 3px;
@@ -698,6 +701,50 @@
   color: var(--analysis-muted);
   font-size: 11px;
   line-height: 1.35;
+}
+
+.productActionsRegistrySessions {
+  display: grid;
+  gap: 10px;
+}
+
+.productActionsRegistrySessions .productActionsRegistryProjectHead small {
+  color: var(--analysis-muted);
+  font-size: 12px;
+}
+
+.productActionsRegistrySessionSummaryTable {
+  display: grid;
+  gap: 7px;
+}
+
+.productActionsRegistrySessionSummaryHead,
+.productActionsRegistrySessionSummaryRow {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.2fr) minmax(170px, 1fr) minmax(110px, 0.55fr) minmax(110px, 0.55fr) minmax(210px, 0.8fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.productActionsRegistrySessionSummaryHead {
+  color: var(--analysis-hint);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.productActionsRegistrySessionSummaryRow {
+  border: 1px solid var(--analysis-border-soft);
+  border-radius: 12px;
+  background: hsl(var(--bg-soft) / 0.42);
+  padding: 10px;
+}
+
+.productActionsRegistrySessionActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
 }
 
 .productActionsRegistryLoadRow {
@@ -780,7 +827,8 @@
 }
 
 .productActionsRegistryPanel--page .productActionsRegistryPreview,
-.productActionsRegistryPanel--page .productActionsRegistrySessionList {
+.productActionsRegistryPanel--page .productActionsRegistrySessionList,
+.productActionsRegistryPanel--page .productActionsRegistrySessionSummaryTable {
   max-height: none;
   overflow: visible;
 }
@@ -880,9 +928,15 @@
   .productActionsEditor,
   .productActionsRegistryFilters,
   .productActionsRegistrySessionList,
+  .productActionsRegistrySessionSummaryHead,
+  .productActionsRegistrySessionSummaryRow,
   .productActionsRegistryTableHead,
   .productActionsRegistryRow {
     grid-template-columns: 1fr;
+  }
+
+  .productActionsRegistrySessionActions {
+    justify-content: flex-start;
   }
 
   .analysisStepCompanion {

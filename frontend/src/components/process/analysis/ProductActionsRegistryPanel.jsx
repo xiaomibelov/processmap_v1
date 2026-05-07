@@ -44,6 +44,32 @@ function normalizeBackendRows(rowsRaw) {
   });
 }
 
+function normalizeBackendSessions(sessionsRaw) {
+  return toArray(sessionsRaw).map((sessionRaw) => {
+    const session = sessionRaw && typeof sessionRaw === "object" ? sessionRaw : {};
+    const sessionId = toText(session.session_id || session.id);
+    const projectTitle = toText(session.project_title || session.projectTitle);
+    const folderTitle = toText(session.folder_title || session.folderTitle);
+    const path = toText(session.path) || [folderTitle, projectTitle].filter(Boolean).join(" / ");
+    return {
+      ...session,
+      id: sessionId,
+      session_id: sessionId,
+      session_title: sessionTitleOf(session),
+      project_id: toText(session.project_id || session.projectId),
+      project_title: projectTitle,
+      folder_id: toText(session.folder_id || session.folderId),
+      folder_title: folderTitle,
+      path,
+      status: toText(session.status),
+      updated_at: session.updated_at || session.updatedAt || "",
+      actions_total: Number(session.actions_total || session.actionsTotal || 0),
+      complete: Number(session.complete || 0),
+      incomplete: Number(session.incomplete || 0),
+    };
+  });
+}
+
 function normalizeScope(value) {
   const scope = toText(value).toLowerCase();
   if (scope === "workspace") return "workspace";
@@ -63,6 +89,22 @@ const FILTERS = [
 
 function display(value, fallback = "—") {
   return toText(value) || fallback;
+}
+
+function formatUpdatedAt(value) {
+  const raw = Number(value || 0);
+  if (!Number.isFinite(raw) || raw <= 0) return "—";
+  try {
+    return new Date(raw * 1000).toLocaleString("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return String(value || "—");
+  }
 }
 
 function SummaryPill({ label, value }) {
@@ -86,12 +128,16 @@ export function ProductActionsRegistryContent({
   projectTitle = "",
   workspaceId = "",
   interviewData = null,
+  onOpenProject = null,
+  onOpenSession = null,
 }) {
   const [scope, setScope] = useState(() => normalizeScope(initialScope));
   const [projectSessions, setProjectSessions] = useState([]);
   const [selectedSessionIds, setSelectedSessionIds] = useState([]);
   const [loadedProjectRows, setLoadedProjectRows] = useState([]);
   const [backendRows, setBackendRows] = useState([]);
+  const [backendSessions, setBackendSessions] = useState([]);
+  const [backendSessionSummary, setBackendSessionSummary] = useState(null);
   const [backendScope, setBackendScope] = useState("");
   const [backendStatus, setBackendStatus] = useState("");
   const [backendLoading, setBackendLoading] = useState(false);
@@ -123,19 +169,28 @@ export function ProductActionsRegistryContent({
         offset: 0,
       };
       if (normalizedScope === "workspace" && !toText(workspaceId)) {
+        setBackendLoading(false);
         setBackendRows([]);
+        setBackendSessions([]);
+        setBackendSessionSummary(null);
         setBackendScope(normalizedScope);
         setBackendStatus("Workspace будет выбран текущим контекстом приложения.");
         return;
       }
       if (normalizedScope === "project" && !toText(projectId)) {
+        setBackendLoading(false);
         setBackendRows([]);
+        setBackendSessions([]);
+        setBackendSessionSummary(null);
         setBackendScope(normalizedScope);
         setBackendStatus("Выберите проект или откройте реестр из проекта.");
         return;
       }
       if (normalizedScope === "session" && !toText(sessionId)) {
+        setBackendLoading(false);
         setBackendRows([]);
+        setBackendSessions([]);
+        setBackendSessionSummary(null);
         setBackendScope(normalizedScope);
         setBackendStatus("Откройте сессию или выберите проект для preview.");
         return;
@@ -148,13 +203,20 @@ export function ProductActionsRegistryContent({
       setBackendScope(normalizedScope);
       if (!result?.ok) {
         setBackendRows([]);
+        setBackendSessions([]);
+        setBackendSessionSummary(null);
         setBackendScope(normalizedScope === "workspace" ? normalizedScope : "");
         setBackendStatus(toText(result?.error) || "Backend-агрегация пока недоступна.");
         return;
       }
       const nextRows = normalizeBackendRows(result.rows);
+      const nextSessions = normalizeBackendSessions(result.sessions);
       setBackendRows(nextRows);
-      setBackendStatus(nextRows.length ? `Backend-агрегация: строк ${nextRows.length}.` : "В выбранном scope пока нет действий с продуктом.");
+      setBackendSessions(nextSessions);
+      setBackendSessionSummary(result.session_summary && typeof result.session_summary === "object" ? result.session_summary : null);
+      setBackendStatus(nextRows.length || nextSessions.length
+        ? `Backend-агрегация: процессов ${nextSessions.length}, строк ${nextRows.length}.`
+        : "В выбранном scope пока нет процессов с действиями с продуктом.");
     }
     loadBackendRegistry();
     return () => {
@@ -169,6 +231,7 @@ export function ProductActionsRegistryContent({
       : scope === "session"
         ? currentRows
         : [];
+  const sessionRows = backendScope === scope ? backendSessions : [];
   const filterOptions = useMemo(() => uniqueProductActionRegistryFilterOptions(rows), [rows]);
   const filteredRows = useMemo(() => filterProductActionRegistryRows(rows, filters), [filters, rows]);
   const summary = useMemo(() => summarizeProductActionRegistryRows(rows), [rows]);
@@ -177,6 +240,9 @@ export function ProductActionsRegistryContent({
   const canLoadSelected = !!projectId && selectedSessionIds.length > 0 && capStatus.ok && !loadingSessions;
   const hasSessionContext = !!toText(sessionId);
   const hasProjectContext = !!toText(projectId);
+  const visibleSessionTotal = backendScope === scope
+    ? Number(backendSessionSummary?.sessions_total || sessionRows.length || 0)
+    : summary.sessions || (scope === "session" && hasSessionContext ? 1 : 0);
 
   async function loadProjectSessions() {
     if (!projectId) {
@@ -235,6 +301,29 @@ export function ProductActionsRegistryContent({
     setScope(nextScope);
     onScopeChange?.(nextScope);
     if (nextScope === "project" && !projectSessions.length) loadProjectSessions();
+  }
+
+  function openProjectFromSummary(sessionRaw) {
+    const project_id = toText(sessionRaw?.project_id);
+    if (!project_id) return;
+    onOpenProject?.({
+      projectId: project_id,
+      workspaceId: toText(sessionRaw?.workspace_id) || workspaceId,
+      projectTitle: toText(sessionRaw?.project_title),
+    });
+  }
+
+  function openSessionFromSummary(sessionRaw) {
+    const session_id = toText(sessionRaw?.session_id);
+    if (!session_id) return;
+    onOpenSession?.({
+      id: session_id,
+      session_id,
+      title: toText(sessionRaw?.session_title),
+      project_id: toText(sessionRaw?.project_id),
+      project_title: toText(sessionRaw?.project_title),
+      workspace_id: toText(sessionRaw?.workspace_id) || workspaceId,
+    }, { openTab: "interview", source: "product_actions_registry" });
   }
 
   function toggleSession(sessionRaw) {
@@ -361,8 +450,79 @@ export function ProductActionsRegistryContent({
         </section>
       ) : null}
 
+      {backendScope === scope && (scope === "workspace" || scope === "project") ? (
+        <section className="productActionsRegistrySessions" data-testid="product-actions-registry-sessions">
+          <div className="productActionsRegistryProjectHead">
+            <div>
+              <b>Сессии workspace</b>
+              <span>Все процессы в выбранном scope, включая процессы без действий с продуктом.</span>
+            </div>
+            <small>
+              {sessionRows.length
+                ? `Всего: ${sessionRows.length}, без действий: ${Number(backendSessionSummary?.sessions_without_actions || 0)}`
+                : backendLoading
+                  ? "Загрузка…"
+                  : "Сессии не найдены."}
+            </small>
+          </div>
+          {sessionRows.length ? (
+            <div className="productActionsRegistrySessionSummaryTable" role="table">
+              <div className="productActionsRegistrySessionSummaryHead" role="row">
+                <span>Процесс</span>
+                <span>Project / path</span>
+                <span>Действия</span>
+                <span>Статус</span>
+                <span>Открыть</span>
+              </div>
+              {sessionRows.map((item) => (
+                <article className="productActionsRegistrySessionSummaryRow" role="row" key={item.session_id}>
+                  <div>
+                    <b>{display(item.session_title, "Без названия")}</b>
+                    <small>{display(item.session_id)}</small>
+                  </div>
+                  <div>
+                    <b>{display(item.project_title, "Проект не указан")}</b>
+                    <small>{display(item.path || item.folder_title, "Workspace root")}</small>
+                  </div>
+                  <div>
+                    <b>{item.actions_total}</b>
+                    <small>{item.complete} полных · {item.incomplete} неполных</small>
+                  </div>
+                  <div>
+                    <b>{display(item.status, "draft")}</b>
+                    <small>{formatUpdatedAt(item.updated_at)}</small>
+                  </div>
+                  <div className="productActionsRegistrySessionActions">
+                    <button
+                      type="button"
+                      className="secondaryBtn smallBtn"
+                      onClick={() => openProjectFromSummary(item)}
+                      disabled={!toText(item.project_id)}
+                    >
+                      Открыть проект
+                    </button>
+                    <button
+                      type="button"
+                      className="primaryBtn smallBtn"
+                      onClick={() => openSessionFromSummary(item)}
+                      disabled={!toText(item.session_id)}
+                    >
+                      Открыть сессию
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="productActionsRegistryEmpty" data-testid="product-actions-registry-sessions-empty">
+              {backendLoading ? "Загружаю сессии workspace…" : "В выбранном scope пока нет доступных сессий."}
+            </div>
+          )}
+        </section>
+      ) : null}
+
       <section className="productActionsRegistrySummary" aria-label="Сводка реестра">
-        <SummaryPill label="Сессий" value={summary.sessions || (scope === "session" && hasSessionContext ? 1 : 0)} />
+        <SummaryPill label="Сессий" value={visibleSessionTotal} />
         <SummaryPill label="Строк" value={summary.rows} />
         <SummaryPill label="Полных" value={summary.complete} />
         <SummaryPill label="Неполных" value={summary.incomplete} />
@@ -458,6 +618,8 @@ export default function ProductActionsRegistryPanel({
   projectId = "",
   projectTitle = "",
   interviewData = null,
+  onOpenProject = null,
+  onOpenSession = null,
 }) {
   if (!open) return null;
 
@@ -471,6 +633,8 @@ export default function ProductActionsRegistryPanel({
         projectId={projectId}
         projectTitle={projectTitle}
         interviewData={interviewData}
+        onOpenProject={onOpenProject}
+        onOpenSession={onOpenSession}
       />
     </div>
   );
