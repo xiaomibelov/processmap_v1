@@ -276,6 +276,14 @@ def _normalize_admin_memberships(rows: List[AdminUserMembershipIn], *, allow_emp
     return out
 
 
+def _seed_admin_ai_prompts_error() -> Optional[Response]:
+    try:
+        seed_existing_ai_prompts()
+    except ValueError as exc:
+        return _legacy_main._enterprise_error(422, "validation_error", str(exc))
+    return None
+
+
 def _org_name_by_id() -> Dict[str, str]:
     return {
         str(row.get("id") or ""): _as_text(row.get("name") or row.get("id"))
@@ -777,7 +785,9 @@ def admin_ai_modules(request: Request) -> Any:
     _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
     if err is not None:
         return err
-    seed_existing_ai_prompts()
+    seed_err = _seed_admin_ai_prompts_error()
+    if seed_err is not None:
+        return seed_err
     return ai_module_catalog_payload()
 
 
@@ -873,7 +883,9 @@ def admin_ai_prompts(
     _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
     if err is not None:
         return err
-    seed_existing_ai_prompts()
+    seed_err = _seed_admin_ai_prompts_error()
+    if seed_err is not None:
+        return seed_err
     try:
         return list_prompt_versions(
             module_id=module_id,
@@ -897,7 +909,9 @@ def admin_ai_active_prompt(
     _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
     if err is not None:
         return err
-    seed_existing_ai_prompts()
+    seed_err = _seed_admin_ai_prompts_error()
+    if seed_err is not None:
+        return seed_err
     try:
         item = get_active_prompt(module_id=module_id, scope_level=scope_level, scope_id=scope_id)
     except ValueError as exc:

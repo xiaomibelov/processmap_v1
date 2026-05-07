@@ -1181,7 +1181,8 @@ export default function App() {
     if (intentSid && openTab && result?.ok !== false) {
       setProcessTabIntent({ sid: intentSid, tab: openTab, nonce: Date.now() });
     }
-    return result?.ok === false ? result : { ok: true };
+    const resultProjectId = String(result?.projectId || pid || projectId || "").trim();
+    return result?.ok === false ? result : { ok: true, ...ensureObject(result), projectId: resultProjectId, sessionId: intentSid || sid };
   }, [confirmLeaveIfUnsafe, draft?.session_id, openWorkspaceSessionBase, projectId, rememberProjectRouteContext]);
 
   const {

@@ -106,7 +106,7 @@ function jsonResponse(payload, status = 200) {
   });
 }
 
-function installFetchMock() {
+function installFetchMock(options = {}) {
   const previousFetch = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (input, init = {}) => {
@@ -186,6 +186,9 @@ function installFetchMock() {
       return jsonResponse({ ok: true, item: { prompt_id: "prompt_session_v1", module_id: "ai.questions.session", version: "v1", status: "active" } });
     }
     if (url.startsWith("/api/admin/ai/prompts/prompt_session_v1/archive") && method === "POST") {
+      if (options.archiveError) {
+        return jsonResponse({ ok: false, error: "internal_server_error" }, 500);
+      }
       return jsonResponse({ ok: true, item: { prompt_id: "prompt_session_v1", module_id: "ai.questions.session", version: "v1", status: "archived" } });
     }
     if (url.startsWith("/api/admin/ai/prompts/prompt_session_v1") && method === "GET") {
@@ -379,6 +382,25 @@ test("AdminAiModulesPage: create draft and activate/archive call prompt registry
     assert.ok(createCall);
     assert.equal(JSON.parse(createCall.body).module_id, "ai.questions.session");
     assert.ok(mock.calls.some((call) => call.url === "/api/admin/ai/prompts/prompt_session_v1/activate" && call.method === "POST"));
+    assert.ok(mock.calls.some((call) => call.url === "/api/admin/ai/prompts/prompt_session_v1/archive" && call.method === "POST"));
+  } finally {
+    await env.cleanup();
+    mock.restore();
+  }
+});
+
+test("AdminAiModulesPage: archive prompt error is controlled and not generic internal_server_error", async () => {
+  const mock = installFetchMock({ archiveError: true });
+  const env = await renderPage();
+  try {
+    await act(async () => {
+      env.container.querySelector('[data-testid="ai-prompt-archive-prompt_session_v1"]')?.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
+    });
+    await flush(50);
+
+    const text = env.container.textContent || "";
+    assert.ok(text.includes("Не удалось выполнить действие с prompt"));
+    assert.equal(text.includes("internal_server_error"), false);
     assert.ok(mock.calls.some((call) => call.url === "/api/admin/ai/prompts/prompt_session_v1/archive" && call.method === "POST"));
   } finally {
     await env.cleanup();
