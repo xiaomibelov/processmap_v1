@@ -6,14 +6,16 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(__dirname, "ProductActionsRegistryPanel.jsx"), "utf8");
+const pageSource = fs.readFileSync(path.join(__dirname, "ProductActionsRegistryPage.jsx"), "utf8");
 const productPanelSource = fs.readFileSync(path.join(__dirname, "../interview/ProductActionsPanel.jsx"), "utf8");
 
 test("ProductActionsRegistryPanel exposes preview registry UI without export wording", () => {
   [
     "Реестр действий с продуктом",
-    "Preview без выгрузки",
-    "Текущая сессия",
-    "Выбранные сессии проекта",
+    "Read-only preview",
+    "Workspace",
+    "Проект",
+    "Сессия",
     "Загрузить выбранные",
     "Фильтры применяются к загруженным строкам.",
     "CSV — позже",
@@ -40,10 +42,19 @@ test("ProductActionsRegistryPanel provides filters, completeness and disabled ex
   assert.match(source, /disabled>\s*XLSX — позже\s*<\/button>/);
 });
 
-test("ProductActionsPanel has a registry entry point without changing persistence", () => {
-  assert.equal(productPanelSource.includes("ProductActionsRegistryPanel"), true);
+test("ProductActionsRegistryPage renders content as page shell without dialog contract", () => {
+  assert.equal(pageSource.includes("productActionsRegistryPage"), true);
+  assert.equal(pageSource.includes("showWorkspaceScope"), true);
+  assert.equal(pageSource.includes("ProductActionsRegistryContent"), true);
+  assert.doesNotMatch(pageSource, /role="dialog"|aria-modal|productActionsRegistryOverlay/);
+});
+
+test("ProductActionsPanel navigates to registry surface without changing persistence", () => {
+  assert.equal(productPanelSource.includes("onOpenProductActionsRegistry"), true);
   assert.equal(productPanelSource.includes("Реестр действий"), true);
   assert.equal(productPanelSource.includes('data-testid="product-actions-open-registry"'), true);
+  assert.equal(productPanelSource.includes('scope: "session"'), true);
   assert.equal(productPanelSource.includes("saveProductActionForStep"), true);
   assert.equal(productPanelSource.includes("deleteProductActionForStep"), true);
+  assert.equal(productPanelSource.includes("ProductActionsRegistryPanel"), false);
 });

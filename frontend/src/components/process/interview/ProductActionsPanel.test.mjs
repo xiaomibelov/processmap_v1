@@ -74,6 +74,14 @@ test("ProductActionsPanel exposes all saved actions without rebinding other-step
   assert.equal(source.includes("Действие другого шага"), true);
 });
 
+test("ProductActionsPanel opens registry through page navigation callback, not modal state", () => {
+  assert.equal(source.includes("onOpenProductActionsRegistry = null"), true);
+  assert.equal(source.includes('data-testid="product-actions-open-registry"'), true);
+  assert.equal(source.includes('scope: "session"'), true);
+  assert.equal(source.includes("ProductActionsRegistryPanel"), false);
+  assert.equal(source.includes("registryOpen"), false);
+});
+
 test("ProductActionsPanel editor is grouped and has one cancel action in the footer", () => {
   assert.equal(source.includes("FIELD_GROUPS"), true);
   assert.equal(source.includes("Продукт"), true);
