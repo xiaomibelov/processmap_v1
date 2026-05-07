@@ -74,6 +74,8 @@ from .storage import (
     prune_stale_session_presence,
 )
 from .settings import load_llm_settings, llm_status, save_llm_settings, verify_llm_settings
+from .ai.execution_log import check_ai_rate_limit, record_ai_execution
+from .ai.prompt_registry import get_active_prompt
 from .redis_lock import acquire_session_lock
 from .redis_cache import (
     cache_get_json,
@@ -4326,8 +4328,67 @@ def _sync_interview_ai_questions_for_node(
     }
 
 
+_AI_QUESTIONS_ELEMENT_MODES = {"sequential", "node_step", "one_by_one"}
+
+
+def _ai_questions_module_id(mode: str, inp: AiQuestionsIn) -> str:
+    normalized_mode = str(mode or "").strip().lower()
+    if normalized_mode in _AI_QUESTIONS_ELEMENT_MODES:
+        return "ai.questions.element"
+    return "ai.questions.session"
+
+
+def _ai_questions_scope(s: Session) -> Dict[str, str]:
+    return {
+        "org_id": str(getattr(s, "org_id", "") or get_default_org_id()).strip(),
+        "workspace_id": "",
+        "project_id": str(getattr(s, "project_id", "") or "").strip(),
+        "session_id": str(getattr(s, "id", "") or "").strip(),
+    }
+
+
+def _ai_questions_actor_user_id(request: Request, s: Session) -> str:
+    try:
+        _user, actor_user_id, _actor_label = _resolve_actor_context(request)
+    except Exception:
+        actor_user_id = ""
+    return (
+        str(actor_user_id or "").strip()
+        or str(getattr(s, "updated_by", "") or "").strip()
+        or str(getattr(s, "created_by", "") or "").strip()
+        or str(getattr(s, "owner_user_id", "") or "").strip()
+    )
+
+
+def _ai_questions_active_prompt(module_id: str, scope: Dict[str, Any]) -> Dict[str, Any]:
+    candidates = [
+        ("session", str((scope or {}).get("session_id") or "").strip()),
+        ("project", str((scope or {}).get("project_id") or "").strip()),
+        ("workspace", str((scope or {}).get("workspace_id") or "").strip()),
+        ("org", str((scope or {}).get("org_id") or "").strip()),
+        ("global", ""),
+    ]
+    for scope_level, scope_id in candidates:
+        if scope_level != "global" and not scope_id:
+            continue
+        try:
+            item = get_active_prompt(module_id=module_id, scope_level=scope_level, scope_id=scope_id)
+        except Exception:
+            continue
+        if isinstance(item, dict) and str(item.get("template") or "").strip():
+            return item
+    return {}
+
+
+def _record_ai_questions_execution_safe(**kwargs: Any) -> None:
+    try:
+        record_ai_execution(**kwargs)
+    except Exception:
+        logging.getLogger(__name__).warning("failed to record ai questions execution", exc_info=True)
+
+
 @app.post("/api/sessions/{session_id}/ai/questions")
-def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
+def ai_questions(session_id: str, inp: AiQuestionsIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
     if not s:
@@ -4336,8 +4397,7 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
     llm = load_llm_settings()
     api_key = (llm.get("api_key") or "").strip()
     base_url = (llm.get("base_url") or "").strip()
-    if not api_key:
-        return {"error": "deepseek api_key is not set"}
+    model_name = str(llm.get("model") or "deepseek-chat").strip() or "deepseek-chat"
 
     limit = int(inp.limit or 10)
     if limit < 1:
@@ -4349,6 +4409,85 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
     if mode not in ("strict", "soft", "sequential", "node_step", "one_by_one"):
         mode = "strict"
 
+    module_id = _ai_questions_module_id(mode, inp)
+    scope = _ai_questions_scope(s)
+    actor_user_id = _ai_questions_actor_user_id(request, s)
+    input_payload = {
+        "endpoint": "POST /api/sessions/{session_id}/ai/questions",
+        "session_id": str(session_id or ""),
+        "mode": mode,
+        "limit": limit,
+        "reset": bool(getattr(inp, "reset", False)),
+        "node_id": str(getattr(inp, "node_id", "") or "").strip(),
+        "step_id": str(getattr(inp, "step_id", "") or "").strip(),
+    }
+    started_at = time.time()
+    created_at = int(started_at)
+    active_prompt = _ai_questions_active_prompt(module_id, scope)
+    system_prompt = str(active_prompt.get("template") or "").strip()
+    prompt_id = str(active_prompt.get("prompt_id") or "").strip()
+    prompt_version = str(active_prompt.get("version") or "").strip()
+
+    def _finish(
+        response: Dict[str, Any],
+        *,
+        status: str,
+        output_summary: str = "",
+        error_code: str = "",
+        error_message: str = "",
+        usage: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        finished_at = int(time.time())
+        latency_ms = int(max(0.0, time.time() - started_at) * 1000)
+        _record_ai_questions_execution_safe(
+            module_id=module_id,
+            actor_user_id=actor_user_id,
+            scope=scope,
+            provider="deepseek",
+            model=model_name,
+            prompt_id=prompt_id,
+            prompt_version=prompt_version,
+            status=status,
+            input_payload=input_payload,
+            output_summary=output_summary,
+            usage=usage if isinstance(usage, dict) else {},
+            latency_ms=latency_ms,
+            error_code=error_code,
+            error_message=error_message,
+            created_at=created_at,
+            finished_at=finished_at,
+        )
+        return response
+
+    if not api_key:
+        return _finish(
+            {"error": "deepseek api_key is not set"},
+            status="error",
+            output_summary="missing provider api key",
+            error_code="missing_api_key",
+            error_message="deepseek api_key is not set",
+        )
+
+    try:
+        rate = check_ai_rate_limit(module_id=module_id, actor_user_id=actor_user_id, scope=scope)
+    except Exception:
+        rate = {"allowed": True}
+    if not bool(rate.get("allowed", rate.get("ok", True))):
+        return _finish(
+            {
+                "error": "ai_rate_limit_exceeded",
+                "rate_limit": {
+                    "limit": int(rate.get("limit") or 0),
+                    "window_sec": int(rate.get("window_sec") or 0),
+                    "reset_at": int(rate.get("reset_at") or 0),
+                },
+            },
+            status="error",
+            output_summary="rate limit blocked",
+            error_code="ai_rate_limit_exceeded",
+            error_message="ai_rate_limit_exceeded",
+        )
+
     try:
         from .ai.deepseek_questions import (
             generate_llm_questions,
@@ -4357,7 +4496,13 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
             extract_node_xml_snippet,
         )
     except Exception as e:
-        return {"error": f"deepseek questions module not available: {e}"}
+        return _finish(
+            {"error": f"deepseek questions module not available: {e}"},
+            status="error",
+            output_summary="deepseek questions module unavailable",
+            error_code="module_unavailable",
+            error_message=str(e),
+        )
 
     if mode in ("sequential", "node_step", "one_by_one"):
         known = {str(getattr(n, "id", "") or "").strip() for n in (s.nodes or []) if str(getattr(n, "id", "") or "").strip()}
@@ -4389,7 +4534,13 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
         if requested_node_id:
             selected_node = next((n for n in (s.nodes or []) if str(getattr(n, "id", "") or "").strip() == requested_node_id), None)
             if selected_node is None:
-                return {"error": "node not found", "node_id": requested_node_id}
+                return _finish(
+                    {"error": "node not found", "node_id": requested_node_id},
+                    status="error",
+                    output_summary="node not found",
+                    error_code="node_not_found",
+                    error_message=requested_node_id,
+                )
             if requested_node_id not in ordered:
                 ordered.append(requested_node_id)
             existing_requested = _prune_node_llm_questions(s, requested_node_id, keep_max=5)
@@ -4431,7 +4582,11 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
                     "remaining": remaining,
                     "skipped_existing": skipped_existing,
                 }
-                return out
+                return _finish(
+                    out,
+                    status="success",
+                    output_summary=f"reused questions for node {requested_node_id}",
+                )
         else:
             for nid in ordered:
                 if nid in processed_set:
@@ -4460,7 +4615,11 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
                 "remaining": 0,
                 "skipped_existing": skipped_existing,
             }
-            return out
+            return _finish(
+                out,
+                status="success",
+                output_summary="sequential questions completed without provider call",
+            )
 
         node_xml = extract_node_xml_snippet(str(getattr(s, "bpmn_xml", "") or ""), str(getattr(selected_node, "id", "") or ""))
         existing_for_node_before = _collect_node_llm_questions(s, str(getattr(selected_node, "id", "") or ""))
@@ -4476,9 +4635,16 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
                     base_url=base_url,
                     limit=min(limit, remain_for_node, 5),
                     node_xml=node_xml,
+                    system_prompt=system_prompt,
                 )
             except Exception as e:
-                return {"error": f"deepseek failed: {e}"}
+                return _finish(
+                    {"error": f"deepseek failed: {e}"},
+                    status="error",
+                    output_summary="deepseek provider failed",
+                    error_code="provider_error",
+                    error_message=str(e),
+                )
         generated = 0
         added_questions: List[Dict[str, Any]] = []
         existing_ids = {q.id for q in (s.questions or []) if getattr(q, "id", None)}
@@ -4543,7 +4709,11 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
             "remaining": remaining,
             "skipped_existing": skipped_existing,
         }
-        return out
+        return _finish(
+            out,
+            status="success",
+            output_summary=f"generated={generated} node_id={nid}",
+        )
 
     try:
         new_qs = generate_llm_questions(
@@ -4552,9 +4722,16 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
             base_url=base_url,
             limit=limit,
             mode=mode,
+            system_prompt=system_prompt,
         )
     except Exception as e:
-        return {"error": f"deepseek failed: {e}"}
+        return _finish(
+            {"error": f"deepseek failed: {e}"},
+            status="error",
+            output_summary="deepseek provider failed",
+            error_code="provider_error",
+            error_message=str(e),
+        )
 
     if new_qs:
         existing_ids = {q.id for q in (s.questions or []) if getattr(q, "id", None)}
@@ -4566,7 +4743,11 @@ def ai_questions(session_id: str, inp: AiQuestionsIn) -> Dict[str, Any]:
     s = _recompute_session(s)
     _preserve_current_interview_analysis_before_save(st, s)
     st.save(s)
-    return s.model_dump()
+    return _finish(
+        s.model_dump(),
+        status="success",
+        output_summary=f"generated={len(new_qs or [])} mode={mode}",
+    )
 
 
 def _report_version_summary(row_raw: Any) -> Dict[str, Any]:
