@@ -111,3 +111,65 @@ export async function apiAdminGetErrorEvent(eventId) {
   const r = okOrError(await request(apiRoutes.admin.errorEvent(id), { method: "GET" }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
+
+export async function apiAdminGetAiModules() {
+  const r = okOrError(await request(apiRoutes.admin.aiModules(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminListAiExecutions(params = {}) {
+  const endpoint = apiRoutes.admin.aiExecutions(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminListAiPrompts(params = {}) {
+  const endpoint = apiRoutes.admin.aiPrompts(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminGetActiveAiPrompt(params = {}) {
+  const endpoint = apiRoutes.admin.aiPromptActive(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminGetAiPrompt(promptId) {
+  const id = String(promptId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing prompt_id" };
+  const r = okOrError(await request(apiRoutes.admin.aiPrompt(id), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminCreateAiPrompt(payload = {}) {
+  const body = {
+    module_id: String(payload?.module_id || payload?.moduleId || "").trim(),
+    version: String(payload?.version || "").trim(),
+    template: String(payload?.template || ""),
+    scope_level: String(payload?.scope_level || payload?.scopeLevel || "global").trim() || "global",
+    scope_id: String(payload?.scope_id || payload?.scopeId || "").trim(),
+    variables_schema: payload?.variables_schema && typeof payload.variables_schema === "object" && !Array.isArray(payload.variables_schema)
+      ? payload.variables_schema
+      : {},
+    output_schema: payload?.output_schema && typeof payload.output_schema === "object" && !Array.isArray(payload.output_schema)
+      ? payload.output_schema
+      : {},
+  };
+  const r = okOrError(await request(apiRoutes.admin.aiPrompts(), { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminActivateAiPrompt(promptId) {
+  const id = String(promptId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing prompt_id" };
+  const r = okOrError(await request(apiRoutes.admin.aiPromptActivate(id), { method: "POST" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminArchiveAiPrompt(promptId) {
+  const id = String(promptId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing prompt_id" };
+  const r = okOrError(await request(apiRoutes.admin.aiPromptArchive(id), { method: "POST" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}

@@ -10,6 +10,7 @@ export const adminRoutes = [
   { path: ADMIN_ROUTE_META.jobs.path, section: "jobs" },
   { path: ADMIN_ROUTE_META.audit.path, section: "audit" },
   { path: ADMIN_ROUTE_META.telemetry.path, section: "telemetry" },
+  { path: ADMIN_ROUTE_META["ai-modules"].path, section: "ai-modules" },
 ];
 
 export function resolveAdminRoute(pathname = "/admin/dashboard") {

@@ -15,6 +15,7 @@ import useAdminSessionDetailData from "./hooks/useAdminSessionDetailData";
 import useAdminSessionsData from "./hooks/useAdminSessionsData";
 import { useAdminTelemetryErrorEventDetailData, useAdminTelemetryErrorEventsData } from "./hooks/useAdminTelemetryData";
 import AdminAuditPage from "./pages/AdminAuditPage";
+import AdminAiModulesPage from "./pages/AdminAiModulesPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import AdminJobsPage from "./pages/AdminJobsPage";
 import AdminOrgsPage from "./pages/AdminOrgsPage";
@@ -165,6 +166,7 @@ export default function AdminApp({
     if (route.section === "jobs") return jobsQ;
     if (route.section === "audit") return auditQ;
     if (route.section === "telemetry") return telemetryQ;
+    if (route.section === "ai-modules") return { loading: false, error: "", data: null };
     return { loading: false, error: "", data: null };
   })();
 
@@ -351,6 +353,9 @@ export default function AdminApp({
           onCloseDetail={() => updateSearchState({ event_id: "" }, { replace: false })}
         />
       );
+    }
+    if (route.section === "ai-modules") {
+      return <AdminAiModulesPage />;
     }
     return <ErrorState title={ru.admin.runtime.unknownRouteTitle} message={pathname} />;
   }
