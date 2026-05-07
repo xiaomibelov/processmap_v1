@@ -369,3 +369,25 @@ def extract_process(notes: str, api_key: str = "", base_url: str = "") -> Dict[s
     except Exception:
         pass
     return _stub_extract_v2(notes)
+
+
+def extract_process_preview(notes: str, api_key: str = "", base_url: str = "") -> Dict[str, Any]:
+    warnings: List[Dict[str, str]] = []
+    try:
+        obj = _try_deepseek(notes, api_key_override=api_key, base_url_override=base_url)
+        if obj:
+            return {"source": "llm", "result": obj, "warnings": warnings}
+        warnings.append(
+            {
+                "code": "deepseek_unavailable",
+                "message": "DeepSeek extraction unavailable; fallback parser was used.",
+            }
+        )
+    except Exception as exc:
+        warnings.append(
+            {
+                "code": "deepseek_failed",
+                "message": str(exc or "DeepSeek extraction failed; fallback parser was used."),
+            }
+        )
+    return {"source": "fallback", "result": _stub_extract_v2(notes), "warnings": warnings}
