@@ -947,6 +947,7 @@ export default function NotesPanel({
   selectedElement,
   elementNotesFocusKey,
   onAddNote,
+  onPreviewNotesExtraction,
   onAddElementNote,
   onSetElementStepTime,
   onSetElementNoteSummary,
@@ -1008,6 +1009,9 @@ export default function NotesPanel({
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [notesPreviewBusy, setNotesPreviewBusy] = useState(false);
+  const [notesPreviewErr, setNotesPreviewErr] = useState("");
+  const [notesExtractionPreview, setNotesExtractionPreview] = useState(null);
   const [elementText, setElementText] = useState("");
   const [elementBusy, setElementBusy] = useState(false);
   const [elementSaveFailed, setElementSaveFailed] = useState(false);
@@ -1909,6 +1913,31 @@ export default function NotesPanel({
       setErr(String(e?.message || e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function previewGlobalNotesExtraction() {
+    const t = str(text);
+    if (!t) return;
+    if (disabled || notesPreviewBusy) return;
+
+    setNotesPreviewBusy(true);
+    setNotesPreviewErr("");
+    setNotesExtractionPreview(null);
+    try {
+      const r = onPreviewNotesExtraction?.(t);
+      const rr = r && typeof r.then === "function" ? await r : r;
+
+      if (rr && rr.ok === false) {
+        setNotesPreviewErr(String(rr.error || "Не удалось построить предпросмотр разбора."));
+        return;
+      }
+
+      setNotesExtractionPreview(rr?.preview || rr?.result || rr || null);
+    } catch (e) {
+      setNotesPreviewErr(String(e?.message || e || "Не удалось построить предпросмотр разбора."));
+    } finally {
+      setNotesPreviewBusy(false);
     }
   }
 
@@ -3084,6 +3113,20 @@ export default function NotesPanel({
               >
                 <NotesSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
+                  globalText={!isElementMode ? text : ""}
+                  onGlobalTextChange={(value) => {
+                    setText(value);
+                    setErr("");
+                    setNotesPreviewErr("");
+                    setNotesExtractionPreview(null);
+                  }}
+                  onSendGlobalNote={sendGlobalNote}
+                  globalBusy={!isElementMode ? busy : false}
+                  globalErr={!isElementMode ? err : ""}
+                  onPreviewNotesExtraction={previewGlobalNotesExtraction}
+                  previewBusy={!isElementMode ? notesPreviewBusy : false}
+                  previewErr={!isElementMode ? notesPreviewErr : ""}
+                  notesExtractionPreview={!isElementMode ? notesExtractionPreview : null}
                   selectedElementNotes={isElementMode ? selectedElementNotes : []}
                   noteCount={isElementMode ? selectedElementNotes.length : 0}
                   elementText={isElementMode ? elementText : ""}
