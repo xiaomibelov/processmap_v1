@@ -16,6 +16,8 @@ test("contextual AI actions remain in session create, analysis, timeline and rep
   const sessionCreate = readSource("src/components/SessionFlowModal.jsx");
   assert.match(sessionCreate, /apiSessionTitleQuestions/);
   assert.match(sessionCreate, /AI-вопросы для первого интервью/);
+  assert.doesNotMatch(sessionCreate, /SESSION_TITLE_AI_PROMPT/);
+  assert.doesNotMatch(sessionCreate, /prompt:\s*SESSION_TITLE_AI_PROMPT/);
 
   const interviewStage = readSource("src/components/process/InterviewStage.jsx");
   assert.match(interviewStage, /data-testid="interview-selected-open-ai"/);
