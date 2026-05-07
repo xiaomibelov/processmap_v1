@@ -45,6 +45,7 @@ class AiPromptRegistryFoundationTests(unittest.TestCase):
             AdminAiPromptDraftBody,
             admin_activate_ai_prompt,
             admin_ai_active_prompt,
+            admin_ai_modules,
             admin_ai_prompt_detail,
             admin_ai_prompts,
             admin_archive_ai_prompt,
@@ -55,6 +56,7 @@ class AiPromptRegistryFoundationTests(unittest.TestCase):
 
         self.AdminAiPromptDraftBody = AdminAiPromptDraftBody
         self.admin_ai_prompts = admin_ai_prompts
+        self.admin_ai_modules = admin_ai_modules
         self.admin_ai_active_prompt = admin_ai_active_prompt
         self.admin_ai_prompt_detail = admin_ai_prompt_detail
         self.admin_create_ai_prompt = admin_create_ai_prompt
@@ -226,6 +228,50 @@ class AiPromptRegistryFoundationTests(unittest.TestCase):
             offset=0,
         )
         self.assertEqual(getattr(denied, "status_code", 0), 403)
+
+    def test_admin_archive_seed_prompt_keeps_prompt_list_controlled(self):
+        seeded = self.admin_ai_prompts(
+            self.request,
+            module_id="ai.product_actions.suggest",
+            status="active",
+            scope_level="",
+            scope_id="",
+            limit=10,
+            offset=0,
+        )
+        prompt_id = str(((seeded.get("items") or [{}])[0]).get("prompt_id") or "")
+        self.assertEqual(prompt_id, "seed_ai_product_actions_suggest_v2")
+
+        archived = self.admin_archive_ai_prompt(prompt_id, self.request)
+        self.assertTrue(bool(archived.get("ok")))
+        self.assertEqual((archived.get("item") or {}).get("status"), "archived")
+
+        listed = self.admin_ai_prompts(
+            self.request,
+            module_id="ai.product_actions.suggest",
+            status="",
+            scope_level="",
+            scope_id="",
+            limit=10,
+            offset=0,
+        )
+        self.assertIsInstance(listed, dict)
+        self.assertTrue(bool(listed.get("ok")))
+        self.assertEqual(int((listed.get("page") or {}).get("total") or 0), 2)
+        modules = self.admin_ai_modules(self.request)
+        self.assertIsInstance(modules, dict)
+        self.assertTrue(bool(modules.get("ok")))
+        active = self.admin_ai_active_prompt(
+            self.request,
+            module_id="ai.product_actions.suggest",
+            scope_level="global",
+            scope_id="",
+        )
+        self.assertEqual(getattr(active, "status_code", 0), 404)
+
+    def test_admin_archive_unknown_prompt_returns_controlled_error(self):
+        archived = self.admin_archive_ai_prompt("missing_prompt", self.request)
+        self.assertEqual(getattr(archived, "status_code", 0), 404)
 
     def test_existing_ai_behavior_unchanged_without_api_key(self):
         from app._legacy_main import SessionTitleQuestionsIn, llm_session_title_questions

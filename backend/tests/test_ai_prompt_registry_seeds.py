@@ -102,6 +102,28 @@ class AiPromptRegistrySeedTests(unittest.TestCase):
             active_count = len(list_prompt_versions(module_id=module_id, status="active", limit=10).get("items") or [])
             self.assertEqual(active_count, 1, module_id)
 
+    def test_seed_does_not_reactivate_archived_seed_prompt(self):
+        from app.ai.prompt_registry import (
+            archive_prompt_version,
+            get_active_prompt,
+            get_prompt_detail,
+            seed_existing_ai_prompts,
+        )
+
+        seed_existing_ai_prompts()
+        active = get_active_prompt(module_id="ai.product_actions.suggest")
+        self.assertEqual((active or {}).get("prompt_id"), "seed_ai_product_actions_suggest_v2")
+
+        archived = archive_prompt_version("seed_ai_product_actions_suggest_v2", actor_user_id="admin")
+        self.assertEqual(archived.get("status"), "archived")
+        self.assertIsNone(get_active_prompt(module_id="ai.product_actions.suggest"))
+
+        second = seed_existing_ai_prompts()
+        self.assertTrue(second.get("ok"))
+        self.assertIn("seed_ai_product_actions_suggest_v2", second.get("skipped") or [])
+        self.assertIsNone(get_active_prompt(module_id="ai.product_actions.suggest"))
+        self.assertEqual((get_prompt_detail("seed_ai_product_actions_suggest_v2") or {}).get("status"), "archived")
+
 
 if __name__ == "__main__":
     unittest.main()
