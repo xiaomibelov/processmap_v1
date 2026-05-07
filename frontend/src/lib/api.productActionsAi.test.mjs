@@ -34,3 +34,30 @@ test("apiSuggestProductActions posts to product actions AI suggestion route", as
     globalThis.fetch = prevFetch;
   }
 });
+
+test("apiSuggestProductActions preserves controlled error payload", async () => {
+  const prevFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response(
+      JSON.stringify({
+        ok: false,
+        error: "AI_PROVIDER_ERROR",
+        message: "provider unavailable",
+        module_id: "ai.product_actions.suggest",
+        input_hash: "sha256:test",
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+
+    const out = await apiSuggestProductActions("sess_1", {});
+    assert.equal(out.ok, false);
+    assert.equal(out.error, "AI_PROVIDER_ERROR");
+    assert.equal(out.draft.message, "provider unavailable");
+    assert.equal(out.draft.input_hash, "sha256:test");
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});

@@ -467,7 +467,15 @@ export async function apiSuggestProductActions(sessionId, payload = {}) {
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
   const body = isPlainObject(payload) ? payload : {};
   const r = okOrError(await request(apiRoutes.sessions.productActionsSuggest(sid), { method: "POST", body }));
-  if (!r.ok) return r;
+  if (!r.ok) {
+    const draft = isPlainObject(r.data) ? { ...r.data } : {};
+    return {
+      ...r,
+      draft,
+      result: draft,
+      suggestions: Array.isArray(draft?.suggestions) ? draft.suggestions : [],
+    };
+  }
   const draft = isPlainObject(r.data) ? { ...r.data } : r.data;
   return {
     ok: true,

@@ -142,11 +142,17 @@ function warningText(warningRaw) {
   return "";
 }
 
-function aiSuggestErrorText(codeRaw) {
+function aiSuggestErrorText(codeRaw, detailRaw = "") {
   const code = toText(codeRaw);
   if (code === "AI_PROVIDER_NOT_CONFIGURED") return "AI provider не настроен: сохраните DeepSeek API key в Admin → AI модули.";
   if (code === "AI_PROMPT_NOT_CONFIGURED") return "AI prompt для действий с продуктом не настроен в Admin → AI модули.";
-  if (code === "AI_PROVIDER_ERROR") return "AI provider вернул ошибку. Проверьте доступность DeepSeek в Admin → AI модули.";
+  if (code === "AI_PROVIDER_ERROR") {
+    const detail = toText(detailRaw);
+    return detail
+      ? `AI provider вернул ошибку: ${detail}. Проверьте доступность DeepSeek в Admin → AI модули.`
+      : "AI provider вернул ошибку. Проверьте доступность DeepSeek в Admin → AI модули.";
+  }
+  if (code === "ai_rate_limit_exceeded") return "Слишком много AI-запросов. Подождите и повторите запуск позже.";
   return code;
 }
 
@@ -320,9 +326,10 @@ export default function ProductActionsPanel({
     setAiLoading(false);
     if (!result?.ok || result?.draft?.ok === false) {
       const errorCode = toText(result?.error || result?.draft?.error);
+      const errorDetail = toText(result?.draft?.message || result?.data?.message);
       setAiStatus({
         type: "error",
-        text: aiSuggestErrorText(errorCode) || "Не удалось получить AI-предложения.",
+        text: aiSuggestErrorText(errorCode, errorDetail) || "Не удалось получить AI-предложения.",
       });
       return;
     }
@@ -523,6 +530,7 @@ export default function ProductActionsPanel({
                   {aiRows.map((row, index) => {
                     const rowId = toText(row.id);
                     const duplicate = !!toText(row.duplicate_of);
+                    const missingFields = toArray(row.missing_fields).map(toText).filter(Boolean);
                     const rowWarnings = [
                       ...toArray(row.warnings).map(warningText),
                       toText(row.duplicate_reason),
@@ -546,6 +554,7 @@ export default function ProductActionsPanel({
                           <div className="productActionCardSub">
                             Уверенность: {Math.round(Number(row.confidence || 0) * 100)}%
                             {duplicate ? " · дубль не выбран" : ""}
+                            {missingFields.length ? ` · неполное: ${missingFields.length}` : ""}
                           </div>
                           {toText(row.evidence_text) ? (
                             <div className="productActionCardSummaryLine">Основание: {row.evidence_text}</div>
