@@ -1956,6 +1956,7 @@ def generate_llm_questions(
     base_url: str,
     limit: int = 10,
     mode: str = "strict",
+    system_prompt: str = "",
 ) -> List[Question]:
     lim = int(limit or 0)
     if lim <= 0:
@@ -1983,8 +1984,9 @@ def generate_llm_questions(
     else:
         user["parsed_bpmn_json"] = _build_parsed_bpmn_json(s)
 
+    system = str(system_prompt or "").strip() or _LLM_QUESTION_POLICY_PROMPT
     messages = [
-        {"role": "system", "content": _LLM_QUESTION_POLICY_PROMPT},
+        {"role": "system", "content": system},
         {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
     ]
     obj = _deepseek_chat_json(
@@ -2095,6 +2097,7 @@ def generate_llm_questions_for_node(
     base_url: str,
     limit: int = 5,
     node_xml: str = "",
+    system_prompt: str = "",
 ) -> List[Question]:
     lim = int(limit or 5)
     lim = min(max(lim, 1), 5)
@@ -2110,8 +2113,9 @@ def generate_llm_questions_for_node(
     stage_context = _node_stage_context(s, node)
     graph_neighbors = _node_neighborhood_context(s, str(getattr(node, "id", "") or ""), max_items=4)
     interview_hits = _node_interview_steps_context(s, node, max_items=3)
+    base_system = str(system_prompt or "").strip() or _LLM_QUESTION_POLICY_PROMPT
     system = (
-        _LLM_QUESTION_POLICY_PROMPT
+        base_system
         + "\n\nДополнительное правило для этого запроса:\n"
         + f"- Верни вопросы ТОЛЬКО по node_id=\"{node.id}\".\n"
         + f"- Верни не больше {lim} вопросов.\n"
