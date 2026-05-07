@@ -25,8 +25,10 @@ test("ProductActionsRegistryPanel exposes preview registry UI without export wor
 });
 
 test("ProductActionsRegistryPanel uses summary first and loads only selected full sessions", () => {
+  assert.match(source, /apiQueryProductActionRegistry/);
   assert.match(source, /apiListProjectSessions\(projectId,\s*""\,\s*\{ view: "summary" \}\)/);
   assert.match(source, /apiGetSession\(sid\)/);
+  assert.equal(source.includes("не загружает все sessions workspace на frontend"), true);
   assert.equal(source.includes("Загрузить выбранные"), true);
   assert.equal(source.includes("Full session loads are intentionally explicit and capped."), true);
   assert.equal(source.includes("PRODUCT_ACTIONS_REGISTRY_SESSION_CAP"), true);
