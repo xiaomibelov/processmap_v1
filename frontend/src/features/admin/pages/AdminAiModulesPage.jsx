@@ -8,6 +8,8 @@ import {
   apiAdminGetAiPrompt,
   apiAdminListAiExecutions,
   apiAdminListAiPrompts,
+  apiAdminSaveAiProviderSettings,
+  apiAdminVerifyAiProviderSettings,
 } from "../api/adminApi";
 import ErrorState from "../components/common/ErrorState";
 import LoadingBlock from "../components/common/LoadingBlock";
@@ -53,18 +55,30 @@ function providerLabel(provider = {}) {
   return `${toText(item.provider || "DeepSeek")} · ${source}`;
 }
 
-function AiProviderSummary({ provider = {}, summary = {} }) {
+function AiProviderSummary({ provider = {}, summary = {}, saving = false, verifying = false, verifyResult = null, actionError = "", onSave, onVerify }) {
   const settings = asObject(provider);
+  const [apiKeyDraft, setApiKeyDraft] = useState("");
+  const [baseUrlDraft, setBaseUrlDraft] = useState(toText(settings.base_url || "https://api.deepseek.com"));
+
+  useEffect(() => {
+    setBaseUrlDraft(toText(settings.base_url || "https://api.deepseek.com"));
+  }, [settings.base_url]);
+
+  const verify = asObject(verifyResult?.result || verifyResult);
+  const verifyOk = verifyResult ? Boolean(verify.ok) : null;
+  const verifyStatusText = verifyResult
+    ? (verifyOk ? "проверка успешна" : `ошибка проверки: ${toText(verify.error || verify.error_code || "AI_PROVIDER_VERIFY_FAILED")}`)
+    : "проверка ещё не выполнялась";
   const data = [
     ["Провайдер", toText(settings.provider || "DeepSeek")],
-    ["API key", settings.has_api_key ? "есть" : "нет"],
+    ["API key сохранён", settings.has_api_key ? "да" : "нет"],
     ["Base URL", toText(settings.base_url || "—")],
     ["Источник", toText(settings.source || "default")],
     ["Verify", settings.verify_supported ? "supported" : "not supported"],
     ["Admin managed", settings.admin_managed ? "yes" : "no"],
   ];
   return (
-    <SectionCard title="Provider/settings" subtitle={providerLabel(settings)}>
+    <SectionCard title="DeepSeek provider" subtitle={providerLabel(settings)}>
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" data-testid="ai-provider-summary">
         {data.map(([label, value]) => (
           <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -72,6 +86,64 @@ function AiProviderSummary({ provider = {}, summary = {} }) {
             <div className="mt-1 min-w-0 break-words text-sm font-semibold text-slate-900">{value}</div>
           </div>
         ))}
+      </div>
+      <form
+        className="mt-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+        data-testid="ai-provider-settings-form"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          await onSave?.({ api_key: apiKeyDraft, base_url: baseUrlDraft });
+          setApiKeyDraft("");
+        }}
+      >
+        <label className="text-xs font-semibold text-slate-700">
+          DeepSeek API key
+          <input
+            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            type="password"
+            autoComplete="new-password"
+            value={apiKeyDraft}
+            onChange={(event) => setApiKeyDraft(event.target.value)}
+            placeholder={settings.has_api_key ? "ключ сохранён, можно заменить" : "вставьте API key"}
+            data-testid="ai-provider-api-key"
+          />
+        </label>
+        <label className="text-xs font-semibold text-slate-700">
+          Base URL
+          <input
+            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            value={baseUrlDraft}
+            onChange={(event) => setBaseUrlDraft(event.target.value)}
+            placeholder="https://api.deepseek.com"
+            data-testid="ai-provider-base-url"
+          />
+        </label>
+        <div className="flex items-end gap-2">
+          <button
+            type="submit"
+            className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            disabled={saving}
+            data-testid="ai-provider-save"
+          >
+            {saving ? "Сохранение…" : "Сохранить"}
+          </button>
+          <button
+            type="button"
+            className="rounded-xl border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-700 disabled:opacity-50"
+            disabled={verifying}
+            onClick={() => onVerify?.({ api_key: apiKeyDraft, base_url: baseUrlDraft })}
+            data-testid="ai-provider-verify"
+          >
+            {verifying ? "Проверка…" : "Проверить доступность"}
+          </button>
+        </div>
+      </form>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs">
+        <span className={settings.has_api_key ? "font-semibold text-emerald-700" : "font-semibold text-rose-700"}>
+          {settings.has_api_key ? "API key сохранён" : "не настроен"}
+        </span>
+        <span className={verifyOk === true ? "text-emerald-700" : (verifyOk === false ? "text-rose-700" : "text-slate-500")}>{verifyStatusText}</span>
+        {actionError ? <span className="text-rose-700">{actionError}</span> : null}
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
         <span>modules: {Number(asObject(summary).modules_total || 0)}</span>
@@ -436,10 +508,14 @@ export default function AdminAiModulesPage() {
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [loadingPrompts, setLoadingPrompts] = useState(false);
   const [loadingExecutions, setLoadingExecutions] = useState(false);
+  const [savingProvider, setSavingProvider] = useState(false);
+  const [verifyingProvider, setVerifyingProvider] = useState(false);
   const [catalogError, setCatalogError] = useState("");
   const [promptError, setPromptError] = useState("");
   const [promptActionError, setPromptActionError] = useState("");
   const [executionError, setExecutionError] = useState("");
+  const [providerActionError, setProviderActionError] = useState("");
+  const [providerVerifyResult, setProviderVerifyResult] = useState(null);
   const [executionFilters, setExecutionFilters] = useState({ module_id: "", status: "" });
 
   const loadCatalog = useCallback(async () => {
@@ -549,12 +625,49 @@ export default function AdminAiModulesPage() {
     await loadPrompts();
   }
 
+  async function saveProviderSettings(payload) {
+    setSavingProvider(true);
+    setProviderActionError("");
+    const res = await apiAdminSaveAiProviderSettings(payload);
+    if (!res?.ok) {
+      setProviderActionError(toText(res?.error || "provider_save_failed"));
+    } else {
+      const data = asObject(res.data);
+      const providerSettings = asObject(data.provider_settings);
+      setCatalog((current) => ({ ...current, provider_settings: providerSettings }));
+      setProviderVerifyResult(null);
+    }
+    setSavingProvider(false);
+  }
+
+  async function verifyProviderSettings(payload) {
+    setVerifyingProvider(true);
+    setProviderActionError("");
+    const res = await apiAdminVerifyAiProviderSettings(payload);
+    if (!res?.ok) {
+      setProviderActionError(toText(res?.error || "provider_verify_failed"));
+      setProviderVerifyResult({ ok: false, error: toText(res?.error || "provider_verify_failed") });
+    } else {
+      setProviderVerifyResult(asObject(res.data).result || asObject(res.data));
+    }
+    setVerifyingProvider(false);
+  }
+
   if (loadingCatalog) return <LoadingBlock label="Загрузка AI modules…" />;
   if (catalogError) return <ErrorState title="Ошибка AI modules" message={catalogError} />;
 
   return (
     <div className="space-y-5" data-testid="admin-ai-modules-page">
-      <AiProviderSummary provider={catalog.provider_settings} summary={catalog.summary} />
+      <AiProviderSummary
+        provider={catalog.provider_settings}
+        summary={catalog.summary}
+        saving={savingProvider}
+        verifying={verifyingProvider}
+        verifyResult={providerVerifyResult}
+        actionError={providerActionError}
+        onSave={saveProviderSettings}
+        onVerify={verifyProviderSettings}
+      />
       <ModulesTable
         modules={modules}
         activeByModule={activeByModule}

@@ -40,6 +40,8 @@ test("apiRoutes: org property dictionary routes are canonical", () => {
 
 test("apiRoutes: admin AI routes are canonical", () => {
   assert.equal(apiRoutes.admin.aiModules(), "/api/admin/ai/modules");
+  assert.equal(apiRoutes.admin.aiProviderSettings(), "/api/admin/ai/provider-settings");
+  assert.equal(apiRoutes.admin.aiProviderVerify(), "/api/admin/ai/provider-settings/verify");
   assert.equal(apiRoutes.admin.aiExecutions({ module_id: "ai.questions.session", status: "success" }), "/api/admin/ai/executions?module_id=ai.questions.session&status=success");
   assert.equal(apiRoutes.admin.aiPrompts({ module_id: "ai.questions.session" }), "/api/admin/ai/prompts?module_id=ai.questions.session");
   assert.equal(apiRoutes.admin.aiPromptActive({ module_id: "ai.questions.session" }), "/api/admin/ai/prompts/active?module_id=ai.questions.session");
@@ -61,6 +63,8 @@ test("apiRoutes: generated sample URLs do not have trailing slash variants", () 
     apiRoutes.reports.item("r1"),
     apiRoutes.llm.settings(),
     apiRoutes.admin.aiModules(),
+    apiRoutes.admin.aiProviderSettings(),
+    apiRoutes.admin.aiProviderVerify(),
     apiRoutes.admin.aiPrompt("p1"),
   ];
   for (const url of samples) {
