@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  acceptAiProductActions,
   deleteProductActionForStep,
   saveProductActionForStep,
 } from "../../../features/process/analysis/productActionsPersistence.js";
@@ -12,6 +13,7 @@ import {
   listProductActionsForStep,
   normalizeProductActionsList,
 } from "../../../features/process/analysis/productActionsModel.js";
+import { apiSuggestProductActions } from "../../../lib/api.js";
 import { toArray, toText } from "./utils";
 
 const FIELD_CONFIGS = [
@@ -133,6 +135,25 @@ function actionMatchesBinding(rowRaw, bindingRaw) {
   );
 }
 
+function warningText(warningRaw) {
+  if (!warningRaw) return "";
+  if (typeof warningRaw === "string") return toText(warningRaw);
+  if (typeof warningRaw === "object") return toText(warningRaw.message || warningRaw.code);
+  return "";
+}
+
+function suggestionId(rowRaw, index = 0) {
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  return toText(row.id) || `ai_pa_${index + 1}`;
+}
+
+function normalizeSuggestionDraftRows(rowsRaw) {
+  return toArray(rowsRaw).map((row, index) => ({
+    ...(row && typeof row === "object" ? row : {}),
+    id: suggestionId(row, index),
+  }));
+}
+
 export default function ProductActionsPanel({
   sessionId = "",
   sessionTitle = "",
@@ -172,6 +193,12 @@ export default function ProductActionsPanel({
   const [actionsScope, setActionsScope] = useState("step");
   const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [aiDraft, setAiDraft] = useState(null);
+  const [aiRows, setAiRows] = useState([]);
+  const [selectedAiRowIds, setSelectedAiRowIds] = useState(() => new Set());
+  const [aiStatus, setAiStatus] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiApplying, setAiApplying] = useState(false);
 
   useEffect(() => {
     if (!steps.length) return;
@@ -194,6 +221,11 @@ export default function ProductActionsPanel({
   const stepActionCount = actionsForStep.length;
   const visibleActions = actionsScope === "all" ? productActions : actionsForStep;
   const canSaveDraft = hasMeaningfulProductActionDraft(draft);
+  const selectedAiRows = useMemo(
+    () => aiRows.filter((row) => selectedAiRowIds.has(toText(row.id)) && !toText(row.duplicate_of)),
+    [aiRows, selectedAiRowIds],
+  );
+  const canAcceptAiRows = selectedAiRows.length > 0 && !aiApplying;
   const fieldConfigByKey = useMemo(() => {
     const fields = [...FIELD_CONFIGS, { key: "role", label: "Роль", type: "text", placeholder: "Повар" }];
     return Object.fromEntries(fields.map((field) => [field.key, field]));
@@ -267,6 +299,76 @@ export default function ProductActionsPanel({
     });
   }
 
+  async function handleSuggestAiProductActions() {
+    if (!sessionId || aiLoading) return;
+    setAiLoading(true);
+    setAiStatus({ type: "saving", text: "Запрашиваю AI-предложения…" });
+    const result = await apiSuggestProductActions(sessionId, {
+      options: {
+        max_suggestions: 20,
+        ui_source: "product_actions_panel",
+      },
+    });
+    setAiLoading(false);
+    if (!result?.ok || result?.draft?.ok === false) {
+      setAiStatus({
+        type: "error",
+        text: toText(result?.error || result?.draft?.error) || "Не удалось получить AI-предложения.",
+      });
+      return;
+    }
+    const draftResult = result.draft || {};
+    const rows = normalizeSuggestionDraftRows(draftResult.suggestions);
+    setAiDraft(draftResult);
+    setAiRows(rows);
+    setSelectedAiRowIds(new Set(rows.filter((row) => !toText(row.duplicate_of)).map((row) => toText(row.id)).filter(Boolean)));
+    setAiStatus({
+      type: "saved",
+      text: rows.length ? "AI-предложения готовы к review." : "AI не нашёл действий с продуктом для этого процесса.",
+    });
+  }
+
+  function patchAiRow(rowId, key, value) {
+    setAiRows((prev) => prev.map((row) => (toText(row.id) === rowId ? { ...row, [key]: value } : row)));
+  }
+
+  function toggleAiRow(rowId, checked) {
+    const id = toText(rowId);
+    if (!id) return;
+    setSelectedAiRowIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  async function handleAcceptAiRows() {
+    if (!canAcceptAiRows) return;
+    setAiApplying(true);
+    setAiStatus({ type: "saving", text: "Применяю выбранные AI-действия…" });
+    const result = await acceptAiProductActions({
+      sessionId,
+      currentAnalysis: interviewData?.analysis,
+      selectedActions: selectedAiRows,
+      getBaseDiagramStateVersion,
+      rememberDiagramStateVersion,
+      onSessionSync,
+    });
+    setAiApplying(false);
+    if (result?.ok) {
+      setSelectedAiRowIds(new Set());
+      setAiStatus({ type: "saved", text: "Изменения применены к процессу" });
+      return;
+    }
+    setAiStatus({
+      type: Number(result?.status || 0) === 409 ? "conflict" : "error",
+      text: Number(result?.status || 0) === 409
+        ? "Конфликт версии. Обновите сессию и повторите применение."
+        : (toText(result?.error) || "Не удалось применить выбранные AI-действия."),
+    });
+  }
+
   return (
     <section className={`productActionsPanel${compact ? " compact" : ""}`} data-testid="product-actions-panel">
       <div className="productActionsHeader">
@@ -277,6 +379,15 @@ export default function ProductActionsPanel({
           </div>
         </div>
         <div className="productActionsHeaderActions">
+          <button
+            type="button"
+            className="secondaryBtn smallBtn"
+            disabled={!steps.length || aiLoading}
+            onClick={handleSuggestAiProductActions}
+            data-testid="product-actions-ai-suggest"
+          >
+            {aiLoading ? "AI думает…" : "Предложить действия через AI"}
+          </button>
           <button
             type="button"
             className="secondaryBtn smallBtn"
@@ -370,6 +481,148 @@ export default function ProductActionsPanel({
               </div>
             </div>
           </div>
+          ) : null}
+
+          {aiDraft ? (
+            <div className="productActionsAiReview" data-testid="product-actions-ai-review">
+              <div className="productActionsEditorHead">
+                <div>
+                  <div className="productActionsEditorTitle">AI-предложения действий</div>
+                  <div className="productActionsSub">
+                    AI предлагает черновик. В process truth попадут только выбранные строки после принятия.
+                  </div>
+                </div>
+                <span className={`badge ${aiDraft.source === "llm" ? "ok" : "warn"}`}>
+                  {aiDraft.source === "llm" ? "LLM" : displayValue(aiDraft.source, "AI")}
+                </span>
+              </div>
+              {toArray(aiDraft.warnings).length ? (
+                <div className="productActionsAiWarnings">
+                  {toArray(aiDraft.warnings).map((warning, index) => (
+                    <div key={`${warningText(warning)}_${index}`}>{warningText(warning)}</div>
+                  ))}
+                </div>
+              ) : null}
+              <div className="productActionsMetaGrid">
+                <span>Draft: {displayValue(aiDraft.draft_id, "нет")}</span>
+                <span>Input hash: {displayValue(aiDraft.input_hash, "нет")}</span>
+                <span>Предложений: {aiRows.length}</span>
+                <span>Выбрано: {selectedAiRows.length}</span>
+              </div>
+              {aiRows.length ? (
+                <div className="productActionsAiList">
+                  {aiRows.map((row, index) => {
+                    const rowId = toText(row.id);
+                    const duplicate = !!toText(row.duplicate_of);
+                    const rowWarnings = [
+                      ...toArray(row.warnings).map(warningText),
+                      toText(row.duplicate_reason),
+                    ].filter(Boolean);
+                    return (
+                      <article
+                        key={rowId || index}
+                        className={`productActionCard productActionsAiCard${duplicate ? " otherStep" : ""}`}
+                        data-testid="product-actions-ai-suggestion"
+                      >
+                        <div className="productActionCardMain">
+                          <label className="productActionsAiSelect">
+                            <input
+                              type="checkbox"
+                              checked={selectedAiRowIds.has(rowId)}
+                              disabled={duplicate}
+                              onChange={(e) => toggleAiRow(rowId, e.target.checked)}
+                            />
+                            <span>{actionTitle(row)}</span>
+                          </label>
+                          <div className="productActionCardSub">
+                            Уверенность: {Math.round(Number(row.confidence || 0) * 100)}%
+                            {duplicate ? " · дубль не выбран" : ""}
+                          </div>
+                          {toText(row.evidence_text) ? (
+                            <div className="productActionCardSummaryLine">Основание: {row.evidence_text}</div>
+                          ) : null}
+                          {rowWarnings.length ? (
+                            <div className="productActionsAiWarnings inline">
+                              {rowWarnings.map((warning, warningIndex) => (
+                                <div key={`${warning}_${warningIndex}`}>{warning}</div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="productActionsEditorGroups compactFields">
+                          {FIELD_GROUPS.map((group) => (
+                            <fieldset className="productActionsEditorGroup" key={`${rowId}_${group.title}`}>
+                              <legend>{group.title}</legend>
+                              <div className="productActionsEditor">
+                                {group.keys.map((key) => {
+                                  const field = fieldConfigByKey[key];
+                                  if (!field) return null;
+                                  return (
+                                    <label className="interviewField" key={`${rowId}_${field.key}`}>
+                                      <span>{field.label}</span>
+                                      {field.type === "select" ? (
+                                        <select
+                                          className="select"
+                                          value={toText(row?.[field.key])}
+                                          onChange={(e) => patchAiRow(rowId, field.key, e.target.value)}
+                                        >
+                                          <option value="">— не выбрано —</option>
+                                          {field.options.map((option) => (
+                                            <option key={option} value={option}>{option}</option>
+                                          ))}
+                                        </select>
+                                      ) : (
+                                        <input
+                                          className="input"
+                                          value={toText(row?.[field.key])}
+                                          onChange={(e) => patchAiRow(rowId, field.key, e.target.value)}
+                                          placeholder={field.placeholder || ""}
+                                        />
+                                      )}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </fieldset>
+                          ))}
+                        </div>
+                        <div className="productActionBindingMeta">
+                          <span><b>Шаг</b>{row.step_label || "Шаг без названия"}</span>
+                          <span><b>BPMN</b>{row.bpmn_element_id || row.node_id || "нет привязки"}</span>
+                          <span><b>Роль</b>{row.role || "не указана"}</span>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="productActionsEmpty">AI не вернул candidate rows.</div>
+              )}
+              <div className="productActionsFooter">
+                <button
+                  type="button"
+                  className="secondaryBtn smallBtn"
+                  onClick={() => {
+                    setAiDraft(null);
+                    setAiRows([]);
+                    setSelectedAiRowIds(new Set());
+                    setAiStatus(null);
+                  }}
+                  disabled={aiApplying}
+                >
+                  Скрыть предложения
+                </button>
+                <button
+                  type="button"
+                  className="primaryBtn smallBtn"
+                  onClick={handleAcceptAiRows}
+                  disabled={!canAcceptAiRows}
+                  data-testid="product-actions-ai-accept"
+                >
+                  {aiApplying ? "Применяю…" : "Принять выбранные"}
+                </button>
+              </div>
+            </div>
           ) : null}
 
       {visibleActions.length ? (
@@ -527,6 +780,11 @@ export default function ProductActionsPanel({
       {status ? (
         <div className={`productActionsStatus ${status.type || "pending"}`} data-testid="product-action-status">
           {statusText(status)}
+        </div>
+      ) : null}
+      {aiStatus ? (
+        <div className={`productActionsStatus ${aiStatus.type || "pending"}`} data-testid="product-actions-ai-status">
+          {statusText(aiStatus)}
         </div>
       ) : null}
         </>

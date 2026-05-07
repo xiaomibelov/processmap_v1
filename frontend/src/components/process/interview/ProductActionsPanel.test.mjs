@@ -82,6 +82,23 @@ test("ProductActionsPanel opens registry through page navigation callback, not m
   assert.equal(source.includes("registryOpen"), false);
 });
 
+test("ProductActionsPanel exposes AI suggestion review without legacy notes or generic autosave", () => {
+  assert.equal(source.includes("apiSuggestProductActions"), true);
+  assert.equal(source.includes("acceptAiProductActions"), true);
+  assert.equal(source.includes("Предложить действия через AI"), true);
+  assert.equal(source.includes("AI-предложения действий"), true);
+  assert.equal(source.includes("Принять выбранные"), true);
+  assert.equal(source.includes('data-testid="product-actions-ai-review"'), true);
+  assert.equal(source.includes('data-testid="product-actions-ai-suggestion"'), true);
+  assert.equal(source.includes('data-testid="product-actions-ai-accept"'), true);
+  assert.equal(source.includes("duplicate_of"), true);
+  assert.equal(source.includes("disabled={duplicate}"), true);
+  assert.equal(source.includes("apiPostNote"), false);
+  assert.equal(source.includes("apiApplyNotesExtraction"), false);
+  assert.equal(source.includes("useInterviewSyncLifecycle"), false);
+  assert.match(source, /disabled=\{!canAcceptAiRows\}/);
+});
+
 test("ProductActionsPanel editor is grouped and has one cancel action in the footer", () => {
   assert.equal(source.includes("FIELD_GROUPS"), true);
   assert.equal(source.includes("Продукт"), true);

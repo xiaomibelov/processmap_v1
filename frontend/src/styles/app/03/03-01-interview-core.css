@@ -744,6 +744,57 @@
   padding: 10px;
 }
 
+.productActionsAiReview{
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(34,197,94,.24);
+  border-radius: 10px;
+  background: rgba(34,197,94,.055);
+  padding: 10px;
+}
+
+.productActionsAiList{
+  display: grid;
+  gap: 8px;
+}
+
+.productActionsAiCard{
+  border-color: rgba(34,197,94,.22);
+}
+
+.productActionsAiSelect{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.productActionsAiSelect input{
+  flex: 0 0 auto;
+}
+
+.productActionsAiWarnings{
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(252,211,77,.24);
+  border-radius: 8px;
+  background: rgba(252,211,77,.07);
+  padding: 8px;
+  color: rgba(252,211,77,.95);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.productActionsAiWarnings.inline{
+  margin-top: 6px;
+  padding: 6px 8px;
+}
+
+.productActionsEditorGroups.compactFields{
+  gap: 8px;
+}
+
 .productActionsEditorTitle{
   font-size: 13px;
   font-weight: 850;
