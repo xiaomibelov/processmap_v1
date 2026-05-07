@@ -462,6 +462,22 @@ export async function apiApplyNotesExtraction(sessionId, payload) {
   };
 }
 
+export async function apiSuggestProductActions(sessionId, payload = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const body = isPlainObject(payload) ? payload : {};
+  const r = okOrError(await request(apiRoutes.sessions.productActionsSuggest(sid), { method: "POST", body }));
+  if (!r.ok) return r;
+  const draft = isPlainObject(r.data) ? { ...r.data } : r.data;
+  return {
+    ok: true,
+    status: r.status,
+    draft,
+    result: draft,
+    suggestions: Array.isArray(draft?.suggestions) ? draft.suggestions : [],
+  };
+}
+
 export async function apiListNoteThreads(sessionId, filters = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };

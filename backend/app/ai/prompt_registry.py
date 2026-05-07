@@ -123,6 +123,7 @@ def existing_ai_prompt_seeds() -> list[PromptSeed]:
         _PATH_REPORT_PROMPT_TEMPLATE_V2,
         _SESSION_TITLE_PROMPT_TEMPLATE,
     )
+    from .product_actions_suggest import PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE
 
     questions_input = _object_schema(
         {
@@ -161,6 +162,22 @@ def existing_ai_prompt_seeds() -> list[PromptSeed]:
     )
     notes_input = _object_schema({"notes": {"type": "string"}}, required=["notes"])
     notes_output = _object_schema({"nodes": {"type": "array"}, "edges": {"type": "array"}, "roles": {"type": "array"}})
+    product_actions_input = _object_schema(
+        {
+            "session": {"type": "object"},
+            "steps": {"type": "array"},
+            "nodes": {"type": "array"},
+            "edges": {"type": "array"},
+            "roles": {"type": "array"},
+            "existing_product_actions": {"type": "array"},
+        }
+    )
+    product_actions_output = _object_schema(
+        {
+            "suggestions": {"type": "array"},
+            "warnings": {"type": "array"},
+        }
+    )
 
     return [
         PromptSeed(
@@ -211,6 +228,14 @@ def existing_ai_prompt_seeds() -> list[PromptSeed]:
             template=NOTES_EXTRACTION_SYSTEM_PROMPT,
             variables_schema=notes_input,
             output_schema=notes_output,
+        ),
+        PromptSeed(
+            prompt_id="seed_ai_product_actions_suggest_v1",
+            module_id="ai.product_actions.suggest",
+            version="v1",
+            template=PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE,
+            variables_schema=product_actions_input,
+            output_schema=product_actions_output,
         ),
     ]
 
