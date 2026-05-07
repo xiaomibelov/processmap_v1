@@ -31,6 +31,7 @@ import {
   apiGetSession,
   apiPatchSession,
   apiPostNote,
+  apiPreviewNotesExtraction,
   apiDeleteProject,
   apiDeleteSession,
   apiAcknowledgeNoteMention,
@@ -1637,6 +1638,35 @@ export default function App() {
     return { ok: true };
   }
 
+  async function previewNotesExtraction(text) {
+    const sid = String(draft?.session_id || "");
+    const t = String(text || "").trim();
+    if (!sid || !t) return { ok: false, error: "Нет текста для предпросмотра." };
+
+    if (isLocalSessionId(sid)) {
+      return { ok: false, error: "Предпросмотр разбора доступен только для API-сессий." };
+    }
+
+    const baseDiagramStateVersion = Number(draft?.diagram_state_version || 0);
+    const payload = {
+      notes: t,
+      options: { ui_source: "notes_panel" },
+    };
+    if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion > 0) {
+      payload.base_diagram_state_version = baseDiagramStateVersion;
+    }
+
+    const r = await apiPreviewNotesExtraction(sid, payload);
+    if (!r?.ok) {
+      const error = String(r?.error || "Не удалось построить предпросмотр разбора.");
+      markFail(error);
+      return { ok: false, error };
+    }
+
+    markOk("API OK");
+    return r;
+  }
+
   function focusElementNotes(element, source = "diagram_click", options = {}) {
     const selectedIds = ensureArray(element?.selectedIds)
       .map((item) => String(item || "").trim())
@@ -3033,6 +3063,7 @@ export default function App() {
         selectedElement={selectedBpmnElement}
         elementNotesFocusKey={elementNotesFocusKey}
         onAddNote={addNote}
+        onPreviewNotesExtraction={previewNotesExtraction}
         onAddElementNote={addElementNote}
         onSetElementStepTime={setElementStepTime}
         onSetElementNoteSummary={setElementNoteSummary}
