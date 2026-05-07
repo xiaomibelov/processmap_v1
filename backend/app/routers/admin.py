@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from starlette.responses import Response
 
 from .. import _legacy_main
+from ..ai.execution_log import list_ai_executions
 from ..ai.module_catalog import ai_module_catalog_payload
 from ..auto_pass_jobs import redis_queue_enabled
 from ..auth import AuthError, create_user, list_users as list_auth_users, update_user
@@ -752,6 +753,41 @@ def admin_ai_modules(request: Request) -> Any:
     if err is not None:
         return err
     return ai_module_catalog_payload()
+
+
+@router.get("/api/admin/ai/executions")
+def admin_ai_executions(
+    request: Request,
+    module_id: str = Query(default=""),
+    status: str = Query(default=""),
+    actor_user_id: str = Query(default=""),
+    org_id: str = Query(default=""),
+    workspace_id: str = Query(default=""),
+    project_id: str = Query(default=""),
+    session_id: str = Query(default=""),
+    created_from: int = Query(default=0),
+    created_to: int = Query(default=0),
+    limit: int = Query(default=50),
+    offset: int = Query(default=0),
+) -> Any:
+    _uid, is_admin, active_org_id, _role, _scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    requested_org_id = _as_text(org_id)
+    effective_org_id = requested_org_id if bool(is_admin) and requested_org_id else _as_text(active_org_id)
+    return list_ai_executions(
+        org_id=effective_org_id,
+        module_id=module_id,
+        status=status,
+        actor_user_id=actor_user_id,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        session_id=session_id,
+        created_from=max(0, _as_int(created_from, 0)),
+        created_to=max(0, _as_int(created_to, 0)),
+        limit=max(1, min(_as_int(limit, 50), 200)),
+        offset=max(0, _as_int(offset, 0)),
+    )
 
 
 @router.get("/api/admin/users")
