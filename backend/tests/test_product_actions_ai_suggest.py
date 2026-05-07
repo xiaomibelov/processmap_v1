@@ -285,6 +285,27 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         logs = self._logs().get("items") or []
         self.assertEqual(logs[0].get("error_code"), "AI_PROMPT_NOT_CONFIGURED")
 
+    def test_prompt_lookup_exception_returns_controlled_error_without_provider_call(self):
+        with patch(
+            "app.routers.product_actions_ai.seed_existing_ai_prompts",
+            side_effect=RuntimeError("prompt table unavailable"),
+        ), patch("app.routers.product_actions_ai.suggest_product_actions_with_deepseek") as provider:
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_PROMPT_NOT_CONFIGURED")
+        provider.assert_not_called()
+        logs = self._logs().get("items") or []
+        self.assertEqual(logs[0].get("error_code"), "AI_PROMPT_NOT_CONFIGURED")
+
+    def test_execution_log_failure_does_not_turn_setup_error_into_500(self):
+        os.environ.pop("DEEPSEEK_API_KEY", None)
+        with patch("app.routers.product_actions_ai.record_ai_execution", side_effect=RuntimeError("log table unavailable")):
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_PROVIDER_NOT_CONFIGURED")
+        warnings = out.get("warnings") or []
+        self.assertTrue(any((item or {}).get("code") == "ai_execution_log_failed" for item in warnings))
+
     def test_provider_failure_returns_controlled_error_without_secret(self):
         with patch(
             "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
@@ -370,6 +391,20 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
             )
         self.assertEqual(ctx.exception.status_code, 422)
         self.assertEqual(ctx.exception.detail.get("error"), "bulk_session_cap_exceeded")
+
+    def test_bulk_suggest_returns_per_session_error_for_unexpected_session_failure(self):
+        with patch("app.routers.product_actions_ai.suggest_product_actions", side_effect=RuntimeError("session suggest exploded")):
+            out = self.suggest_product_actions_bulk(
+                self.ProductActionsBulkSuggestIn(session_ids=[self.session_id]),
+                self._req(),
+            )
+        self.assertTrue(out.get("ok"))
+        self.assertEqual(out.get("success_count"), 0)
+        self.assertEqual(out.get("error_count"), 1)
+        result = (out.get("results") or [])[0]
+        self.assertEqual(result.get("status"), "error")
+        self.assertEqual(result.get("error_code"), "AI_PROVIDER_ERROR")
+        self.assertIn("session suggest exploded", result.get("error_message", ""))
 
 
 if __name__ == "__main__":

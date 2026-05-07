@@ -497,7 +497,7 @@ export function ProductActionsRegistryContent({
     });
     setBulkAiResults(nextResults);
     setBulkSelectedRows(nextSelected);
-    setBulkAiStatus(`AI завершил: сессий ${nextResults.length}, предложений ${Number(result.result?.suggestions_count || 0)}.`);
+    setBulkAiStatus(`AI завершил: сессий ${nextResults.length}, предложений ${Number(result.suggestions_count || 0)}.`);
   }
 
   async function acceptSelectedBulkAiRows() {
