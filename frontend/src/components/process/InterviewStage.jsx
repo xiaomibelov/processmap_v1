@@ -144,6 +144,7 @@ export default function InterviewStage({
   selectedDiagramElement,
   stepTimeUnit = "min",
   pathsUiIntent = null,
+  onOpenProductActionsRegistry = null,
 }) {
   const sid = String(sessionId || "");
   const processTitle = toText(sessionTitle) || `Процесс ${sid || "—"}`;
@@ -1007,6 +1008,7 @@ export default function InterviewStage({
               getBaseDiagramStateVersion={getBaseDiagramStateVersion}
               rememberDiagramStateVersion={rememberDiagramStateVersion}
               onSessionSync={onSessionSync}
+              onOpenProductActionsRegistry={onOpenProductActionsRegistry}
             />
             </details>
           </aside>

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildAppWorkspaceHref, shouldHandleClientNavigation } from "./appLinkBehavior.js";
+import { buildAppWorkspaceHref, buildProductActionsRegistryHref, shouldHandleClientNavigation } from "./appLinkBehavior.js";
 
 function makeEvent(overrides = {}) {
   return {
@@ -22,6 +22,21 @@ test("buildAppWorkspaceHref builds /app without selection", () => {
 test("buildAppWorkspaceHref builds project/session selection route", () => {
   assert.equal(buildAppWorkspaceHref({ projectId: "p_1", sessionId: "s_2" }), "/app?project=p_1&session=s_2");
   assert.equal(buildAppWorkspaceHref({ projectId: "p_1" }), "/app?project=p_1");
+});
+
+test("buildProductActionsRegistryHref builds product registry surface routes", () => {
+  assert.equal(
+    buildProductActionsRegistryHref({ scope: "workspace", workspaceId: "ws_1" }),
+    "/app?surface=product-actions-registry&registry_scope=workspace&workspace=ws_1",
+  );
+  assert.equal(
+    buildProductActionsRegistryHref({ scope: "project", workspaceId: "ws_1", projectId: "p_1" }),
+    "/app?surface=product-actions-registry&registry_scope=project&workspace=ws_1&project=p_1",
+  );
+  assert.equal(
+    buildProductActionsRegistryHref({ scope: "session", projectId: "p_1", sessionId: "s_2" }),
+    "/app?surface=product-actions-registry&registry_scope=session&project=p_1&session=s_2",
+  );
 });
 
 test("shouldHandleClientNavigation accepts plain left click", () => {

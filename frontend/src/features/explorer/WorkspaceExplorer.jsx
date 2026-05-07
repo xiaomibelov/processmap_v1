@@ -1019,6 +1019,7 @@ function WorkspaceSidebar({
   activeWorkspaceId,
   onSelectWorkspace,
   onCreateWorkspace,
+  onOpenProductActionsRegistry,
   canCreateWorkspace = false,
   canRenameWorkspace = false,
   onWorkspaceRenamed,
@@ -1046,6 +1047,17 @@ function WorkspaceSidebar({
             <IcoPlus />
           </button>
         ) : null}
+      </div>
+      <div className="border-b border-border/60 px-2 py-2">
+        <button
+          type="button"
+          className="workspaceProductActionsRegistryNav"
+          onClick={() => onOpenProductActionsRegistry?.({ scope: "workspace", workspaceId: activeWorkspaceId })}
+          data-testid="workspace-product-actions-registry-nav"
+        >
+          <span>Реестр действий</span>
+          <small>Действия с продуктом</small>
+        </button>
       </div>
       <div className="flex-1 overflow-y-auto">
         {workspaces.length === 0 && (
@@ -2383,7 +2395,7 @@ function SessionRow({
 
 // ─── Project Pane (sessions list) ─────────────────────────────────────────────
 
-function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumbBase, permissions }) {
+function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, onOpenProductActionsRegistry, breadcrumbBase, permissions }) {
   const [page, setPage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -2556,8 +2568,16 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
         </div>
 
         {proj && (
-          <div className="mt-2 text-xs text-muted">
-            Сессии: {sessionCount}
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+            <span>Сессии: {sessionCount}</span>
+            <button
+              type="button"
+              className="secondaryBtn h-7 min-h-0 px-3 text-xs"
+              onClick={() => onOpenProductActionsRegistry?.({ scope: "project", workspaceId, projectId })}
+              data-testid="project-product-actions-registry"
+            >
+              Реестр действий
+            </button>
           </div>
         )}
       </div>
@@ -2696,6 +2716,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
 export default function WorkspaceExplorer({
   activeOrgId,
   onOpenSession,
+  onOpenProductActionsRegistry,
   requestProjectId,
   requestProjectWorkspaceId = "",
   requestProjectContext = null,
@@ -2756,6 +2777,7 @@ export default function WorkspaceExplorer({
           activeWorkspaceId={activeWorkspaceId}
           onSelectWorkspace={handleSelectWorkspace}
           onCreateWorkspace={handleCreateWorkspace}
+          onOpenProductActionsRegistry={onOpenProductActionsRegistry}
           canCreateWorkspace={permissions.canManageUsers}
           canRenameWorkspace={permissions.canRenameWorkspace}
           onWorkspaceRenamed={handleWorkspaceRenamed}
@@ -2800,6 +2822,7 @@ export default function WorkspaceExplorer({
                   projectId={currentProjectId}
                   onBack={handleBackFromProject}
                   onOpenSession={onOpenSession}
+                  onOpenProductActionsRegistry={onOpenProductActionsRegistry}
                   breadcrumbBase={breadcrumbBase}
                   permissions={permissions}
                 />
