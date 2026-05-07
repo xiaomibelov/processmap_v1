@@ -70,6 +70,35 @@ function normalizeBackendSessions(sessionsRaw) {
   });
 }
 
+function summarizeRowsAsSessions(rowsRaw) {
+  const bySessionId = new Map();
+  normalizeBackendRows(rowsRaw).forEach((row) => {
+    const sessionId = toText(row.session_id);
+    if (!sessionId) return;
+    const current = bySessionId.get(sessionId) || {
+      id: sessionId,
+      session_id: sessionId,
+      session_title: sessionTitleOf(row),
+      project_id: toText(row.project_id),
+      project_title: toText(row.project_title),
+      folder_id: "",
+      folder_title: "",
+      path: toText(row.project_title),
+      status: "",
+      updated_at: "",
+      actions_total: 0,
+      complete: 0,
+      incomplete: 0,
+      summary_source: "rows_fallback",
+    };
+    current.actions_total += 1;
+    if (row.completeness === "complete") current.complete += 1;
+    else current.incomplete += 1;
+    bySessionId.set(sessionId, current);
+  });
+  return Array.from(bySessionId.values());
+}
+
 function normalizeScope(value) {
   const scope = toText(value).toLowerCase();
   if (scope === "workspace") return "workspace";
@@ -140,6 +169,7 @@ export function ProductActionsRegistryContent({
   const [backendSessionSummary, setBackendSessionSummary] = useState(null);
   const [backendScope, setBackendScope] = useState("");
   const [backendStatus, setBackendStatus] = useState("");
+  const [sessionSummaryWarning, setSessionSummaryWarning] = useState("");
   const [backendLoading, setBackendLoading] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [projectStatus, setProjectStatus] = useState("");
@@ -173,6 +203,7 @@ export function ProductActionsRegistryContent({
         setBackendRows([]);
         setBackendSessions([]);
         setBackendSessionSummary(null);
+        setSessionSummaryWarning("");
         setBackendScope(normalizedScope);
         setBackendStatus("Workspace будет выбран текущим контекстом приложения.");
         return;
@@ -182,6 +213,7 @@ export function ProductActionsRegistryContent({
         setBackendRows([]);
         setBackendSessions([]);
         setBackendSessionSummary(null);
+        setSessionSummaryWarning("");
         setBackendScope(normalizedScope);
         setBackendStatus("Выберите проект или откройте реестр из проекта.");
         return;
@@ -191,6 +223,7 @@ export function ProductActionsRegistryContent({
         setBackendRows([]);
         setBackendSessions([]);
         setBackendSessionSummary(null);
+        setSessionSummaryWarning("");
         setBackendScope(normalizedScope);
         setBackendStatus("Откройте сессию или выберите проект для preview.");
         return;
@@ -205,18 +238,26 @@ export function ProductActionsRegistryContent({
         setBackendRows([]);
         setBackendSessions([]);
         setBackendSessionSummary(null);
+        setSessionSummaryWarning("");
         setBackendScope(normalizedScope === "workspace" ? normalizedScope : "");
         setBackendStatus(toText(result?.error) || "Backend-агрегация пока недоступна.");
         return;
       }
       const nextRows = normalizeBackendRows(result.rows);
-      const nextSessions = normalizeBackendSessions(result.sessions);
+      let nextSessions = normalizeBackendSessions(result.sessions);
+      const missingSessionSummary = nextRows.length > 0 && nextSessions.length === 0;
+      if (missingSessionSummary) {
+        nextSessions = summarizeRowsAsSessions(nextRows);
+      }
       setBackendRows(nextRows);
       setBackendSessions(nextSessions);
       setBackendSessionSummary(result.session_summary && typeof result.session_summary === "object" ? result.session_summary : null);
+      setSessionSummaryWarning(missingSessionSummary
+        ? "Найдены действия, но не получен список сессий. Требуется обновить агрегацию."
+        : "");
       setBackendStatus(nextRows.length || nextSessions.length
-        ? `Backend-агрегация: процессов ${nextSessions.length}, строк ${nextRows.length}.`
-        : "В выбранном scope пока нет процессов с действиями с продуктом.");
+        ? `Загружено: сессий ${nextSessions.length}, строк ${nextRows.length}.`
+        : "В выбранном scope пока нет сессий с действиями с продуктом.");
     }
     loadBackendRegistry();
     return () => {
@@ -243,31 +284,35 @@ export function ProductActionsRegistryContent({
   const visibleSessionTotal = backendScope === scope
     ? Number(backendSessionSummary?.sessions_total || sessionRows.length || 0)
     : summary.sessions || (scope === "session" && hasSessionContext ? 1 : 0);
+  const showSessionSummaryEmpty = backendScope === scope
+    && !backendLoading
+    && sessionRows.length === 0
+    && rows.length === 0;
 
   async function loadProjectSessions() {
     if (!projectId) {
       setProjectStatus("Выберите проект или откройте реестр из проекта.");
       return;
     }
-    setProjectStatus("Загружаю список процессов проекта…");
+    setProjectStatus("Загружаю список сессий проекта…");
     const result = await apiListProjectSessions(projectId, "", { view: "summary" });
     if (!result?.ok) {
-      setProjectStatus(toText(result?.error) || "Не удалось загрузить список процессов проекта.");
+      setProjectStatus(toText(result?.error) || "Не удалось загрузить список сессий проекта.");
       return;
     }
     const sessions = toArray(result.sessions);
     setProjectSessions(sessions);
-    setProjectStatus(sessions.length ? "Выберите процессы и нажмите «Загрузить выбранные»." : "В проекте нет сессий.");
+    setProjectStatus(sessions.length ? "Выберите сессии и нажмите «Загрузить выбранные»." : "В проекте нет сессий.");
   }
 
   async function loadSelectedSessions() {
     const cap = enforceProductActionRegistrySessionCap(selectedSessionIds);
     if (!cap.ok) {
-      setProjectStatus(`Выбрано больше ${cap.cap} процессов. Для большой выгрузки нужен backend-реестр.`);
+      setProjectStatus(`Выбрано больше ${cap.cap} сессий. Для большой выгрузки нужен реестр workspace.`);
       return;
     }
     setLoadingSessions(true);
-    setProjectStatus("Загружаю выбранные процессы…");
+    setProjectStatus("Загружаю выбранные сессии…");
     const nextRows = [];
     for (let i = 0; i < selectedSessionIds.length; i += 1) {
       const sid = selectedSessionIds[i];
@@ -342,7 +387,7 @@ export function ProductActionsRegistryContent({
         <div>
           <div className="productActionsRegistryEyebrow">Read-only preview</div>
           <h2>Реестр действий с продуктом</h2>
-          <p>Действия по продуктам, товарам, упаковке и ингредиентам из процессов workspace.</p>
+          <p>Действия по продуктам, товарам, упаковке и ингредиентам из сессий workspace.</p>
         </div>
         {onClose ? (
           <button type="button" className="secondaryBtn smallBtn" onClick={onClose}>
@@ -391,9 +436,9 @@ export function ProductActionsRegistryContent({
       {scope === "workspace" ? (
         <section className="productActionsRegistryWorkspaceNotice" data-testid="product-actions-registry-workspace-backend">
           <div>
-            <b>Workspace-реестр использует backend-агрегацию.</b>
+            <b>Workspace scope</b>
             <span>
-              Страница запрашивает read-only rows через API и не загружает все sessions workspace на frontend.
+              Сводка строится без загрузки полных данных всех сессий на frontend.
             </span>
           </div>
           <small>{backendLoading ? "Загрузка…" : backendStatus || (workspaceId ? `Workspace: ${workspaceId}` : "Workspace будет выбран текущим контекстом приложения.")}</small>
@@ -405,7 +450,7 @@ export function ProductActionsRegistryContent({
           <div className="productActionsRegistryProjectHead">
             <div>
               <b>{display(projectTitle, "Проект")}</b>
-              <span>Backend-агрегация показывает строки проекта сразу. Ручной выбор процессов оставлен как временный small-scope fallback.</span>
+              <span>Строки проекта загружаются сразу. Ручной выбор сессий оставлен как временный small-scope fallback.</span>
             </div>
             <button type="button" className="secondaryBtn smallBtn" onClick={loadProjectSessions}>
               Обновить список
@@ -455,16 +500,23 @@ export function ProductActionsRegistryContent({
           <div className="productActionsRegistryProjectHead">
             <div>
               <b>Сессии workspace</b>
-              <span>Все процессы в выбранном scope, включая процессы без действий с продуктом.</span>
+              <span>Все сессии в выбранном scope, включая сессии без действий с продуктом.</span>
             </div>
             <small>
               {sessionRows.length
                 ? `Всего: ${sessionRows.length}, без действий: ${Number(backendSessionSummary?.sessions_without_actions || 0)}`
                 : backendLoading
                   ? "Загрузка…"
-                  : "Сессии не найдены."}
+                  : showSessionSummaryEmpty
+                    ? "Сессии не найдены."
+                    : "Сессии временно недоступны."}
             </small>
           </div>
+          {sessionSummaryWarning ? (
+            <div className="productActionsRegistryWarning" data-testid="product-actions-registry-session-summary-warning">
+              {sessionSummaryWarning}
+            </div>
+          ) : null}
           {sessionRows.length ? (
             <div className="productActionsRegistrySessionSummaryTable" role="table">
               <div className="productActionsRegistrySessionSummaryHead" role="row">
@@ -515,7 +567,11 @@ export function ProductActionsRegistryContent({
             </div>
           ) : (
             <div className="productActionsRegistryEmpty" data-testid="product-actions-registry-sessions-empty">
-              {backendLoading ? "Загружаю сессии workspace…" : "В выбранном scope пока нет доступных сессий."}
+              {backendLoading
+                ? "Загружаю сессии workspace…"
+                : showSessionSummaryEmpty
+                  ? "В выбранном scope пока нет доступных сессий."
+                  : sessionSummaryWarning || "Список сессий временно недоступен."}
             </div>
           )}
         </section>
