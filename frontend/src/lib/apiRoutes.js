@@ -96,6 +96,9 @@ export const apiRoutes = {
       return withQuery(path, { mode: String(mode || "").trim(), view: String(view || "").trim() });
     },
   },
+  analysis: {
+    productActionsRegistryQuery: () => "/api/analysis/product-actions/registry/query",
+  },
   sessions: {
     list: () => "/api/sessions",
     create: () => "/api/sessions",

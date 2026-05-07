@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiGetSession, apiListProjectSessions } from "../../../lib/api.js";
+import { apiGetSession, apiListProjectSessions, apiQueryProductActionRegistry } from "../../../lib/api.js";
 import {
   PRODUCT_ACTIONS_REGISTRY_SESSION_CAP,
   buildProductActionRegistryRows,
@@ -28,6 +28,20 @@ function sessionTitleOf(sessionRaw) {
 function readSessionProductActions(sessionRaw) {
   const session = sessionRaw && typeof sessionRaw === "object" ? sessionRaw : {};
   return toArray(session?.interview?.analysis?.product_actions);
+}
+
+function normalizeBackendRows(rowsRaw) {
+  return toArray(rowsRaw).map((rowRaw) => {
+    const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+    const registryId = toText(row.registry_id || row.id) || `${toText(row.session_id) || "session"}::${toText(row.action_id) || "action"}`;
+    return {
+      ...row,
+      registry_id: registryId,
+      id: toText(row.id) || registryId,
+      completeness: row.completeness === "complete" ? "complete" : "incomplete",
+      missing_fields: toArray(row.missing_fields),
+    };
+  });
 }
 
 function normalizeScope(value) {
@@ -77,6 +91,10 @@ export function ProductActionsRegistryContent({
   const [projectSessions, setProjectSessions] = useState([]);
   const [selectedSessionIds, setSelectedSessionIds] = useState([]);
   const [loadedProjectRows, setLoadedProjectRows] = useState([]);
+  const [backendRows, setBackendRows] = useState([]);
+  const [backendScope, setBackendScope] = useState("");
+  const [backendStatus, setBackendStatus] = useState("");
+  const [backendLoading, setBackendLoading] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [projectStatus, setProjectStatus] = useState("");
   const [filters, setFilters] = useState({ completeness: "all" });
@@ -91,7 +109,66 @@ export function ProductActionsRegistryContent({
     project: { id: projectId, title: projectTitle },
   }), [interviewData?.analysis?.product_actions, projectId, projectTitle, sessionId, sessionTitle]);
 
-  const rows = scope === "project" ? loadedProjectRows : scope === "session" ? currentRows : [];
+  useEffect(() => {
+    let alive = true;
+    async function loadBackendRegistry() {
+      const normalizedScope = normalizeScope(scope);
+      const payload = {
+        scope: normalizedScope,
+        workspace_id: normalizedScope === "workspace" ? workspaceId : "",
+        project_id: normalizedScope === "project" ? projectId : "",
+        session_id: normalizedScope === "session" ? sessionId : "",
+        filters: { completeness: "all" },
+        limit: 1000,
+        offset: 0,
+      };
+      if (normalizedScope === "workspace" && !toText(workspaceId)) {
+        setBackendRows([]);
+        setBackendScope(normalizedScope);
+        setBackendStatus("Workspace будет выбран текущим контекстом приложения.");
+        return;
+      }
+      if (normalizedScope === "project" && !toText(projectId)) {
+        setBackendRows([]);
+        setBackendScope(normalizedScope);
+        setBackendStatus("Выберите проект или откройте реестр из проекта.");
+        return;
+      }
+      if (normalizedScope === "session" && !toText(sessionId)) {
+        setBackendRows([]);
+        setBackendScope(normalizedScope);
+        setBackendStatus("Откройте сессию или выберите проект для preview.");
+        return;
+      }
+      setBackendLoading(true);
+      setBackendStatus("Загружаю read-only реестр…");
+      const result = await apiQueryProductActionRegistry(payload);
+      if (!alive) return;
+      setBackendLoading(false);
+      setBackendScope(normalizedScope);
+      if (!result?.ok) {
+        setBackendRows([]);
+        setBackendScope(normalizedScope === "workspace" ? normalizedScope : "");
+        setBackendStatus(toText(result?.error) || "Backend-агрегация пока недоступна.");
+        return;
+      }
+      const nextRows = normalizeBackendRows(result.rows);
+      setBackendRows(nextRows);
+      setBackendStatus(nextRows.length ? `Backend-агрегация: строк ${nextRows.length}.` : "В выбранном scope пока нет действий с продуктом.");
+    }
+    loadBackendRegistry();
+    return () => {
+      alive = false;
+    };
+  }, [projectId, scope, sessionId, workspaceId]);
+
+  const rows = backendScope === scope
+    ? backendRows
+    : scope === "project"
+      ? loadedProjectRows
+      : scope === "session"
+        ? currentRows
+        : [];
   const filterOptions = useMemo(() => uniqueProductActionRegistryFilterOptions(rows), [rows]);
   const filteredRows = useMemo(() => filterProductActionRegistryRows(rows, filters), [filters, rows]);
   const summary = useMemo(() => summarizeProductActionRegistryRows(rows), [rows]);
@@ -223,14 +300,14 @@ export function ProductActionsRegistryContent({
       </div>
 
       {scope === "workspace" ? (
-        <section className="productActionsRegistryWorkspaceNotice" data-testid="product-actions-registry-workspace-placeholder">
+        <section className="productActionsRegistryWorkspaceNotice" data-testid="product-actions-registry-workspace-backend">
           <div>
-            <b>Workspace-реестр требует backend-агрегации.</b>
+            <b>Workspace-реестр использует backend-агрегацию.</b>
             <span>
-              Сейчас доступен read-only preview текущей сессии и явно выбранных сессий проекта. Эта страница не загружает все sessions workspace на frontend.
+              Страница запрашивает read-only rows через API и не загружает все sessions workspace на frontend.
             </span>
           </div>
-          <small>{workspaceId ? `Workspace: ${workspaceId}` : "Workspace будет выбран текущим контекстом приложения."}</small>
+          <small>{backendLoading ? "Загрузка…" : backendStatus || (workspaceId ? `Workspace: ${workspaceId}` : "Workspace будет выбран текущим контекстом приложения.")}</small>
         </section>
       ) : null}
 
@@ -239,7 +316,7 @@ export function ProductActionsRegistryContent({
           <div className="productActionsRegistryProjectHead">
             <div>
               <b>{display(projectTitle, "Проект")}</b>
-              <span>Выберите до {PRODUCT_ACTIONS_REGISTRY_SESSION_CAP} процессов. Полная загрузка сессий выполняется только после явного клика.</span>
+              <span>Backend-агрегация показывает строки проекта сразу. Ручной выбор процессов оставлен как временный small-scope fallback.</span>
             </div>
             <button type="button" className="secondaryBtn smallBtn" onClick={loadProjectSessions}>
               Обновить список
@@ -280,7 +357,7 @@ export function ProductActionsRegistryContent({
               Выбрано: {selectedSessionIds.length} / {PRODUCT_ACTIONS_REGISTRY_SESSION_CAP}
             </span>
           </div>
-          {projectStatus ? <div className="productActionsRegistryNotice">{projectStatus}</div> : null}
+          {projectStatus || backendStatus ? <div className="productActionsRegistryNotice">{projectStatus || backendStatus}</div> : null}
         </section>
       ) : null}
 
@@ -356,7 +433,7 @@ export function ProductActionsRegistryContent({
         ) : (
           <div className="productActionsRegistryEmpty" data-testid="product-actions-registry-empty">
             {scope === "workspace"
-              ? "Workspace-строки появятся после backend aggregation contour."
+              ? "В workspace пока нет действий с продуктом."
               : scope === "session" && !hasSessionContext
                 ? "Откройте сессию или выберите проект для preview."
                 : "В выбранных процессах пока нет действий с продуктом."}

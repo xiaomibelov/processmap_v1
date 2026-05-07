@@ -169,6 +169,21 @@ export async function apiCreateProjectSession(projectId, mode, title, roles, sta
   return { ok: true, status: r.status, session_id, session: r.data };
 }
 
+export async function apiQueryProductActionRegistry(payload = {}) {
+  const body = payload && typeof payload === "object" ? payload : {};
+  const r = okOrError(await request(apiRoutes.analysis.productActionsRegistryQuery(), { method: "POST", body }));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    scope: String(data.scope || body.scope || "").trim(),
+    rows: Array.isArray(data.rows) ? data.rows : [],
+    summary: data.summary && typeof data.summary === "object" ? data.summary : {},
+    page: data.page && typeof data.page === "object" ? data.page : {},
+  };
+}
+
 // ------- Enterprise Project Members -------
 export async function apiListOrgProjectMembers(orgId, projectId) {
   const oid = String(orgId || "").trim();
