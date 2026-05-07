@@ -49,6 +49,14 @@ function parseJsonObject(raw, fallback = {}) {
   return parsed;
 }
 
+function promptActionErrorMessage(error, fallback) {
+  const text = toText(error || fallback);
+  if (!text || text === "internal_server_error") {
+    return "Не удалось выполнить действие с prompt. Ошибка обработана, страница остаётся доступной.";
+  }
+  return text;
+}
+
 function providerLabel(provider = {}) {
   const item = asObject(provider);
   const source = toText(item.source || "default");
@@ -596,7 +604,7 @@ export default function AdminAiModulesPage() {
     setPromptActionError("");
     const res = await apiAdminCreateAiPrompt(payload);
     if (!res?.ok) {
-      setPromptActionError(toText(res?.error || "prompt_create_failed"));
+      setPromptActionError(promptActionErrorMessage(res?.error, "prompt_create_failed"));
       return;
     }
     setSelectedPrompt(asObject(res.data));
@@ -607,7 +615,7 @@ export default function AdminAiModulesPage() {
     setPromptActionError("");
     const res = await apiAdminActivateAiPrompt(promptId);
     if (!res?.ok) {
-      setPromptActionError(toText(res?.error || "prompt_activate_failed"));
+      setPromptActionError(promptActionErrorMessage(res?.error, "prompt_activate_failed"));
       return;
     }
     setSelectedPrompt(asObject(res.data));
@@ -618,7 +626,7 @@ export default function AdminAiModulesPage() {
     setPromptActionError("");
     const res = await apiAdminArchiveAiPrompt(promptId);
     if (!res?.ok) {
-      setPromptActionError(toText(res?.error || "prompt_archive_failed"));
+      setPromptActionError(promptActionErrorMessage(res?.error, "prompt_archive_failed"));
       return;
     }
     setSelectedPrompt(asObject(res.data));

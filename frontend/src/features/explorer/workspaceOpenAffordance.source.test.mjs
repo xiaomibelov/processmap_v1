@@ -22,12 +22,14 @@ test("project rows have explicit project-open affordances", () => {
 test("session row open hint is part of the session link", () => {
   const sessionRow = between("function SessionRow(", "// ─── Project Pane");
   assert.match(sessionRow, /<AppRouteLink[\s\S]*href=\{sessionHref\}[\s\S]*Открыть сессию[\s\S]*<\/AppRouteLink>/);
+  assert.match(sessionRow, /Открыть сессию/);
+  assert.doesNotMatch(sessionRow, /:\s*\(\s*"Открыть"\s*\)/);
   assert.match(sessionRow, /onClick=\{handleRowOpen\}/);
   assert.match(sessionRow, /if \(isOpening\) return;/);
 });
 
 test("app version records explorer open affordance update", () => {
   const versionSource = readFileSync(new URL("../../config/appVersion.js", import.meta.url), "utf8");
-  assert.match(versionSource, /currentVersion:\s*"v1\.0\.105"/);
+  assert.match(versionSource, /version:\s*"v1\.0\.105"/);
   assert.match(versionSource, /"В Explorer различены проекты и сессии при открытии\."/);
 });

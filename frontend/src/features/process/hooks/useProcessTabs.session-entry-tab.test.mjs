@@ -60,6 +60,8 @@ test("Explorer and workspace session list opens request Diagram entry", () => {
   const dashboardSource = readFrontend("components/workspace/WorkspaceDashboard.jsx");
   assert.match(dashboardSource, /openTab:\s*"diagram"[\s\S]*source:\s*"workspace_dashboard_session_action"/);
   assert.match(dashboardSource, /openTab:\s*"diagram"[\s\S]*source:\s*"workspace_dashboard_session_row"/);
+  assert.match(dashboardSource, /onOpenSession\?\.\(row,\s*\{ openTab:\s*"diagram", source:\s*"workspace_dashboard_session_row" \}\)/);
+  assert.doesNotMatch(dashboardSource, /onOpenSession\?\.\(toText\(row\?\.id\),\s*\{ openTab:\s*"diagram"/);
 });
 
 test("generic guarded session open honors explicit process tab intent", () => {
@@ -67,4 +69,5 @@ test("generic guarded session open honors explicit process tab intent", () => {
   assert.match(appSource, /function normalizeOpenProcessTab\(tab\)/);
   assert.match(appSource, /const openTab = normalizeOpenProcessTab\(options\?\.openTab\);[\s\S]*openSession\(targetSid, options\)/);
   assert.match(appSource, /setProcessTabIntent\(\{ sid: intentSid, tab: openTab, nonce: Date\.now\(\) \}\);/);
+  assert.match(appSource, /return result\?\.ok === false \? result : \{ ok: true,[\s\S]*sessionId: intentSid \|\| sid \};/);
 });

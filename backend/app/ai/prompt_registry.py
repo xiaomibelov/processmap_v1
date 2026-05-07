@@ -272,6 +272,9 @@ def seed_existing_ai_prompts(*, actor_user_id: str = "migrated_seed") -> Dict[st
         if seed.status == "active":
             active = get_active_prompt(module_id=seed.module_id)
             if not active:
+                if str(item.get("status") or "").strip().lower() == "archived":
+                    skipped.append(seed.prompt_id)
+                    continue
                 activate_prompt_version(seed.prompt_id, actor_user_id=actor_user_id)
                 activated.append(seed.prompt_id)
             else:
