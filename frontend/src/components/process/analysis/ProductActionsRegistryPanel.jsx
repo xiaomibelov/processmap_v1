@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiBulkSuggestProductActions, apiGetSession, apiListProjectSessions, apiQueryProductActionRegistry } from "../../../lib/api.js";
+import {
+  apiBulkSuggestProductActions,
+  apiExportProductActionRegistryCsv,
+  apiExportProductActionRegistryXlsx,
+  apiGetSession,
+  apiListProjectSessions,
+  apiQueryProductActionRegistry,
+} from "../../../lib/api.js";
 import { acceptAiProductActions } from "../../../features/process/analysis/productActionsPersistence.js";
 import {
   PRODUCT_ACTIONS_REGISTRY_SESSION_CAP,
@@ -196,6 +203,8 @@ export function ProductActionsRegistryContent({
   const [bulkAiStatus, setBulkAiStatus] = useState("");
   const [bulkAiResults, setBulkAiResults] = useState([]);
   const [bulkSelectedRows, setBulkSelectedRows] = useState({});
+  const [exportLoading, setExportLoading] = useState("");
+  const [exportStatus, setExportStatus] = useState("");
   const [filters, setFilters] = useState({ completeness: "all" });
 
   useEffect(() => {
@@ -320,6 +329,21 @@ export function ProductActionsRegistryContent({
     && !bulkAiLoading;
   const selectedBulkRowsCount = useMemo(() => Object.values(bulkSelectedRows).filter(Boolean).length, [bulkSelectedRows]);
   const canAcceptBulkAi = selectedBulkRowsCount > 0 && !bulkAiApplying;
+  const canExportRegistry = filteredRows.length > 0 && !backendLoading && !exportLoading;
+  const activeFilterLabels = useMemo(() => {
+    const labels = [];
+    FILTERS.forEach(([key, label]) => {
+      const value = toText(filters[key]);
+      if (value) labels.push(`${label}: ${value}`);
+    });
+    if (toText(filters.completeness || "all") !== "all") {
+      labels.push(filters.completeness === "complete" ? "Полнота: полные" : "Полнота: неполные");
+    }
+    if ((scope === "workspace" || scope === "project") && selectedVisibleSessionIds.length) {
+      labels.push(`Сессии: ${selectedVisibleSessionIds.length}`);
+    }
+    return labels;
+  }, [filters, scope, selectedVisibleSessionIds.length]);
 
   async function loadProjectSessions() {
     if (!projectId) {
@@ -550,6 +574,63 @@ export function ProductActionsRegistryContent({
 
   function patchFilter(key, value) {
     setFilters((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function buildExportPayload() {
+    const normalizedScope = normalizeScope(scope);
+    const payload = {
+      scope: normalizedScope,
+      workspace_id: normalizedScope === "workspace" ? workspaceId : "",
+      project_id: normalizedScope === "project" ? projectId : "",
+      session_id: normalizedScope === "session" ? sessionId : "",
+      session_ids: (normalizedScope === "workspace" || normalizedScope === "project") ? selectedVisibleSessionIds : [],
+      filters: {
+        product_groups: toText(filters.product_group) ? [toText(filters.product_group)] : [],
+        products: toText(filters.product_name) ? [toText(filters.product_name)] : [],
+        action_types: toText(filters.action_type) ? [toText(filters.action_type)] : [],
+        stages: toText(filters.action_stage) ? [toText(filters.action_stage)] : [],
+        object_categories: toText(filters.action_object_category) ? [toText(filters.action_object_category)] : [],
+        roles: toText(filters.role) ? [toText(filters.role)] : [],
+        completeness: toText(filters.completeness || "all") || "all",
+      },
+      limit: 1000,
+      offset: 0,
+    };
+    return payload;
+  }
+
+  function downloadExportBlob(blob, filename) {
+    if (typeof document === "undefined" || typeof URL === "undefined") return false;
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(href);
+    return true;
+  }
+
+  async function exportRegistry(format) {
+    const kind = toText(format).toLowerCase();
+    if (!canExportRegistry) {
+      setExportStatus(filteredRows.length ? "Экспорт уже выполняется." : "Нет строк для выгрузки.");
+      return;
+    }
+    setExportLoading(kind);
+    setExportStatus(kind === "xlsx" ? "Готовлю XLSX…" : "Готовлю CSV…");
+    const payload = buildExportPayload();
+    const result = kind === "xlsx"
+      ? await apiExportProductActionRegistryXlsx(payload)
+      : await apiExportProductActionRegistryCsv(payload);
+    setExportLoading("");
+    if (!result?.ok) {
+      setExportStatus(toText(result?.error) || "Не удалось скачать выгрузку.");
+      return;
+    }
+    const downloaded = downloadExportBlob(result.blob, result.filename);
+    setExportStatus(downloaded ? `Файл готов: ${result.filename}` : `Файл подготовлен: ${result.filename}`);
   }
 
   return (
@@ -945,9 +1026,30 @@ export function ProductActionsRegistryContent({
       </section>
 
       <footer className="productActionsRegistryFooter">
-        <span>CSV/XLSX будет добавлен отдельным контуром после backend/read-model решения.</span>
-        <button type="button" className="secondaryBtn smallBtn" disabled>CSV — позже</button>
-        <button type="button" className="secondaryBtn smallBtn" disabled>XLSX — позже</button>
+        <span>
+          Экспорт: {filteredSummary.rows} строк · полных {filteredSummary.complete} · неполных {filteredSummary.incomplete}.
+          {" "}
+          {activeFilterLabels.length ? `Фильтры: ${activeFilterLabels.join("; ")}.` : "Фильтры не выбраны."}
+        </span>
+        <button
+          type="button"
+          className="secondaryBtn smallBtn"
+          disabled={!canExportRegistry}
+          onClick={() => void exportRegistry("csv")}
+          data-testid="product-actions-registry-export-csv"
+        >
+          {exportLoading === "csv" ? "Готовлю CSV…" : "Скачать CSV"}
+        </button>
+        <button
+          type="button"
+          className="secondaryBtn smallBtn"
+          disabled={!canExportRegistry}
+          onClick={() => void exportRegistry("xlsx")}
+          data-testid="product-actions-registry-export-xlsx"
+        >
+          {exportLoading === "xlsx" ? "Готовлю XLSX…" : "Скачать XLSX"}
+        </button>
+        {exportStatus ? <small data-testid="product-actions-registry-export-status">{exportStatus}</small> : null}
       </footer>
     </div>
   );

@@ -93,6 +93,7 @@ export async function apiFetch({
   withOrgHeader = true,
   requestId = "",
   keepalive = false,
+  responseType = "",
 }) {
   const endpoint = String(path || "");
   const requestMethod = String(method || "GET").toUpperCase();
@@ -152,7 +153,8 @@ export async function apiFetch({
   let data = null;
   let text = "";
   try {
-    if (contentType.includes("application/json")) data = await response.json();
+    if (response.ok && String(responseType || "").toLowerCase() === "blob") data = await response.blob();
+    else if (contentType.includes("application/json")) data = await response.json();
     else text = await response.text();
   } catch {
     // ignore parse errors
@@ -169,6 +171,7 @@ export async function apiFetch({
       endpoint,
       url,
       response_text: text,
+      response_headers: response.headers,
       request_id: String(requestId || "").trim(),
     };
   }
@@ -181,6 +184,7 @@ export async function apiFetch({
     method: requestMethod,
     endpoint,
     url,
+    response_headers: response.headers,
     request_id: String(requestId || "").trim(),
   };
 }
