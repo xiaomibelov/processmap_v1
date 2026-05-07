@@ -20,10 +20,17 @@ router = APIRouter(tags=["product-actions-ai"])
 
 _MODULE_ID = "ai.product_actions.suggest"
 _ENDPOINT = "POST /api/sessions/{session_id}/analysis/product-actions/suggest"
+_BULK_ENDPOINT = "POST /api/analysis/product-actions/suggest-bulk"
 _REQUIRED_FIELDS = ("product_name", "product_group", "action_type", "action_object")
+_BULK_SESSION_CAP = 10
 
 
 class ProductActionsSuggestIn(BaseModel):
+    options: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+
+class ProductActionsBulkSuggestIn(BaseModel):
+    session_ids: List[str] = Field(default_factory=list)
     options: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
@@ -53,6 +60,20 @@ def _max_suggestions(inp: ProductActionsSuggestIn) -> int:
     except Exception:
         value = 20
     return max(1, min(value, 40))
+
+
+def _unique_session_ids(values: Any) -> List[str]:
+    out: List[str] = []
+    seen: Set[str] = set()
+    if not isinstance(values, list):
+        return out
+    for value in values:
+        text = _text(value)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return out
 
 
 def _project_workspace_id(project_id: str, org_id: str) -> str:
@@ -215,9 +236,11 @@ def _decorate_duplicates(suggestions: List[Dict[str, Any]], existing_actions: Li
     for index, raw in enumerate(suggestions):
         row = dict(raw or {})
         row["id"] = _text(row.get("id")) or f"ai_pa_{index + 1}"
+        row["duplicate_of"] = _text(row.get("duplicate_of"))
+        row["duplicate_reason"] = _text(row.get("duplicate_reason"))
         key = _suggestion_key(row)
-        duplicate_of = ""
-        duplicate_reason = ""
+        duplicate_of = row["duplicate_of"]
+        duplicate_reason = row["duplicate_reason"]
         if key.strip("|") and key in existing_by_key:
             duplicate_of = _text(existing_by_key[key].get("id"))
             duplicate_reason = "Похоже на уже сохранённое действие с продуктом."
@@ -229,6 +252,9 @@ def _decorate_duplicates(suggestions: List[Dict[str, Any]], existing_actions: Li
             row["duplicate_reason"] = duplicate_reason
         elif key.strip("|"):
             seen_suggestions[key] = row["id"]
+        else:
+            row["duplicate_of"] = ""
+            row["duplicate_reason"] = ""
         missing = [field for field in _REQUIRED_FIELDS if not _text(row.get(field))]
         row["missing_fields"] = missing
         warnings = list(_as_list(row.get("warnings")))
@@ -350,6 +376,7 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
             {
                 "ok": False,
                 "error": "ai_rate_limit_exceeded",
+                "message": "AI_RATE_LIMIT_EXCEEDED",
                 "module_id": _MODULE_ID,
                 "input_hash": input_hash,
                 "rate_limit": {
@@ -431,3 +458,81 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
             error_code="AI_PROVIDER_ERROR",
             error_message=message,
         )
+
+
+@router.post("/api/analysis/product-actions/suggest-bulk")
+def suggest_product_actions_bulk(inp: ProductActionsBulkSuggestIn, request: Request) -> Dict[str, Any]:
+    require_authenticated_user(request)
+    org_id = request_active_org_id(request)
+    require_org_member_for_enterprise(request, org_id)
+
+    session_ids = _unique_session_ids(inp.session_ids)
+    if not session_ids:
+        raise HTTPException(status_code=422, detail="session_ids required")
+    if len(session_ids) > _BULK_SESSION_CAP:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "bulk_session_cap_exceeded",
+                "cap": _BULK_SESSION_CAP,
+            },
+        )
+
+    results: List[Dict[str, Any]] = []
+    for session_id in session_ids:
+        session_title = ""
+        project_id = ""
+        try:
+            session = _load_session_for_request(request, session_id, org_id)
+            session_title = _text(getattr(session, "title", "")) or "Без названия"
+            project_id = _text(getattr(session, "project_id", ""))
+            draft = suggest_product_actions(session_id, ProductActionsSuggestIn(options=inp.options or {}), request)
+            ok = bool(draft.get("ok"))
+            results.append(
+                {
+                    "session_id": session_id,
+                    "session_title": session_title,
+                    "project_id": project_id,
+                    "status": "success" if ok else "error",
+                    "ok": ok,
+                    "draft_id": _text(draft.get("draft_id")),
+                    "input_hash": _text(draft.get("input_hash")),
+                    "source": _text(draft.get("source")),
+                    "prompt_id": _text(draft.get("prompt_id")),
+                    "prompt_version": _text(draft.get("prompt_version")),
+                    "suggestions": list(_as_list(draft.get("suggestions"))) if ok else [],
+                    "warnings": list(_as_list(draft.get("warnings"))),
+                    "summary": _as_dict(draft.get("summary")),
+                    "error_code": "" if ok else _text(draft.get("error")),
+                    "error_message": "" if ok else _text(draft.get("message") or draft.get("error")),
+                }
+            )
+        except HTTPException as exc:
+            results.append(
+                {
+                    "session_id": session_id,
+                    "session_title": session_title or "Без названия",
+                    "project_id": project_id,
+                    "status": "error",
+                    "ok": False,
+                    "suggestions": [],
+                    "warnings": [],
+                    "summary": {},
+                    "error_code": "not_found" if exc.status_code == 404 else "http_error",
+                    "error_message": _text(exc.detail) or "session_error",
+                }
+            )
+
+    success_count = sum(1 for item in results if item.get("ok"))
+    suggestions_count = sum(len(item.get("suggestions") or []) for item in results)
+    return {
+        "ok": True,
+        "module_id": _MODULE_ID,
+        "endpoint": _BULK_ENDPOINT,
+        "cap": _BULK_SESSION_CAP,
+        "requested_sessions": len(session_ids),
+        "success_count": success_count,
+        "error_count": len(results) - success_count,
+        "suggestions_count": suggestions_count,
+        "results": results,
+    }

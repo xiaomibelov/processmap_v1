@@ -721,7 +721,7 @@
 .productActionsRegistrySessionSummaryHead,
 .productActionsRegistrySessionSummaryRow {
   display: grid;
-  grid-template-columns: minmax(190px, 1.2fr) minmax(170px, 1fr) minmax(110px, 0.55fr) minmax(110px, 0.55fr) minmax(210px, 0.8fr);
+  grid-template-columns: 38px minmax(190px, 1.2fr) minmax(170px, 1fr) minmax(110px, 0.55fr) minmax(110px, 0.55fr) minmax(210px, 0.8fr);
   gap: 10px;
   align-items: start;
 }
@@ -858,6 +858,10 @@
   border-radius: 12px;
   background: hsl(var(--bg-soft) / 0.42);
   padding: 10px;
+}
+
+.productActionsRegistryRow--withSelect {
+  grid-template-columns: 38px minmax(140px, 0.9fr) minmax(180px, 1.05fr) minmax(220px, 1.2fr) minmax(130px, 0.55fr);
 }
 
 .productActionsRegistryCompleteness {

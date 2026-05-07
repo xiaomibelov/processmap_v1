@@ -6,6 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from fastapi import HTTPException
+
 
 class _DummyRequest:
     def __init__(self, user: dict, *, active_org_id: str):
@@ -28,14 +30,22 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
 
         from app.auth import create_user
         from app.models import Edge, Node
-        from app.routers.product_actions_ai import ProductActionsSuggestIn, router, suggest_product_actions
+        from app.routers.product_actions_ai import (
+            ProductActionsBulkSuggestIn,
+            ProductActionsSuggestIn,
+            router,
+            suggest_product_actions,
+            suggest_product_actions_bulk,
+        )
         from app.storage import get_default_org_id, get_project_storage, get_storage, upsert_project_membership
 
         self.Edge = Edge
         self.Node = Node
+        self.ProductActionsBulkSuggestIn = ProductActionsBulkSuggestIn
         self.ProductActionsSuggestIn = ProductActionsSuggestIn
         self.router = router
         self.suggest_product_actions = suggest_product_actions
+        self.suggest_product_actions_bulk = suggest_product_actions_bulk
         self.get_storage = get_storage
         self.get_project_storage = get_project_storage
         self.upsert_project_membership = upsert_project_membership
@@ -128,6 +138,7 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
     def test_endpoint_registered(self):
         paths = {getattr(route, "path", "") for route in self.router.routes}
         self.assertIn("/api/sessions/{session_id}/analysis/product-actions/suggest", paths)
+        self.assertIn("/api/analysis/product-actions/suggest-bulk", paths)
 
     def test_suggest_returns_candidates_without_mutation_and_logs_success(self):
         before = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
@@ -166,6 +177,29 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         self.assertEqual(out.get("module_id"), "ai.product_actions.suggest")
         self.assertEqual(out.get("source"), "llm")
         self.assertEqual(len(out.get("suggestions") or []), 1)
+        suggestion = (out.get("suggestions") or [])[0]
+        for key in (
+            "step_id",
+            "bpmn_element_id",
+            "step_label",
+            "product_name",
+            "product_group",
+            "action_type",
+            "action_stage",
+            "action_object",
+            "action_object_category",
+            "action_method",
+            "role",
+            "confidence",
+            "evidence_text",
+            "warnings",
+            "missing_fields",
+            "duplicate_of",
+            "duplicate_reason",
+        ):
+            self.assertIn(key, suggestion)
+        self.assertEqual(suggestion.get("duplicate_of"), "")
+        self.assertEqual(suggestion.get("duplicate_reason"), "")
         self.assertEqual(provider.call_args.kwargs.get("max_suggestions"), 5)
         self.assertEqual(before.interview, after.interview)
         self.assertEqual(before.nodes, after.nodes)
@@ -213,9 +247,13 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         after = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
         self.assertFalse(out.get("ok"))
         self.assertEqual(out.get("error"), "ai_rate_limit_exceeded")
+        self.assertEqual(out.get("message"), "AI_RATE_LIMIT_EXCEEDED")
         provider.assert_not_called()
         self.assertEqual(before.interview, after.interview)
+        self.assertEqual(before.bpmn_xml, after.bpmn_xml)
         self.assertEqual(before.diagram_state_version, after.diagram_state_version)
+        logs = self._logs().get("items") or []
+        self.assertEqual(logs[0].get("error_code"), "ai_rate_limit_exceeded")
 
     def test_missing_provider_key_returns_controlled_error_without_provider_call(self):
         os.environ.pop("DEEPSEEK_API_KEY", None)
@@ -271,6 +309,67 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         prompt_template = str(provider.call_args.kwargs.get("prompt_template") or "")
         self.assertIn("физические действия сотрудников", prompt_template)
         self.assertIn("product_name", prompt_template)
+
+    def test_bulk_suggest_returns_per_session_results_without_mutation(self):
+        second_session_id = self._seed_session()
+        before_first = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+        before_second = self.get_storage().load(second_session_id, org_id=self.org_id, is_admin=True)
+        with patch(
+            "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
+            return_value={
+                "suggestions": [
+                    {
+                        "id": "ai_bulk",
+                        "step_id": "step_2",
+                        "bpmn_element_id": "Task_2",
+                        "product_name": "Сэндвич",
+                        "product_group": "Готовые блюда",
+                        "action_type": "упаковка",
+                        "action_object": "сэндвич",
+                        "confidence": 0.8,
+                    }
+                ],
+                "warnings": [],
+            },
+        ) as provider:
+            out = self.suggest_product_actions_bulk(
+                self.ProductActionsBulkSuggestIn(
+                    session_ids=[self.session_id, second_session_id],
+                    options={"max_suggestions": 3},
+                ),
+                self._req(),
+            )
+        after_first = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+        after_second = self.get_storage().load(second_session_id, org_id=self.org_id, is_admin=True)
+
+        self.assertTrue(out.get("ok"))
+        self.assertEqual(out.get("requested_sessions"), 2)
+        self.assertEqual(out.get("success_count"), 2)
+        self.assertEqual(out.get("suggestions_count"), 2)
+        self.assertEqual(len(out.get("results") or []), 2)
+        self.assertEqual(provider.call_count, 2)
+        for item in out.get("results") or []:
+            self.assertEqual(item.get("status"), "success")
+            self.assertTrue(item.get("ok"))
+            self.assertEqual(len(item.get("suggestions") or []), 1)
+            self.assertIn("input_hash", item)
+        self.assertEqual(before_first.interview, after_first.interview)
+        self.assertEqual(before_first.bpmn_xml, after_first.bpmn_xml)
+        self.assertEqual(before_first.diagram_state_version, after_first.diagram_state_version)
+        self.assertEqual(before_second.interview, after_second.interview)
+        self.assertEqual(before_second.bpmn_xml, after_second.bpmn_xml)
+        self.assertEqual(before_second.diagram_state_version, after_second.diagram_state_version)
+        logs = self._logs().get("items") or []
+        self.assertEqual(len(logs), 2)
+
+    def test_bulk_suggest_respects_session_cap(self):
+        with self.assertRaises(HTTPException) as ctx:
+            self.suggest_product_actions_bulk(
+                self.ProductActionsBulkSuggestIn(session_ids=[f"s_{idx}" for idx in range(11)]),
+                self._req(),
+            )
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertEqual(ctx.exception.detail.get("error"), "bulk_session_cap_exceeded")
 
 
 if __name__ == "__main__":

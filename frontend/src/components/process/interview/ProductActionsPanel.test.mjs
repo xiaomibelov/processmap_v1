@@ -103,7 +103,20 @@ test("ProductActionsPanel maps controlled AI setup errors to admin-facing copy",
   assert.equal(source.includes("AI_PROVIDER_NOT_CONFIGURED"), true);
   assert.equal(source.includes("AI_PROMPT_NOT_CONFIGURED"), true);
   assert.equal(source.includes("AI_PROVIDER_ERROR"), true);
+  assert.equal(source.includes("ai_rate_limit_exceeded"), true);
+  assert.equal(source.includes("Слишком много AI-запросов"), true);
+  assert.equal(source.includes("result?.draft?.message"), true);
   assert.equal(source.includes("Admin → AI модули"), true);
+});
+
+test("ProductActionsPanel keeps AI accept on patchInterviewAnalysis path only", () => {
+  assert.equal(source.includes("handleAcceptAiRows"), true);
+  assert.equal(source.includes("acceptAiProductActions({"), true);
+  assert.equal(source.includes("currentAnalysis: interviewData?.analysis"), true);
+  assert.equal(source.includes("selectedActions: selectedAiRows"), true);
+  assert.equal(source.includes("disabled={!canAcceptAiRows}"), true);
+  assert.equal(source.includes("Изменения применены к процессу"), true);
+  assert.equal(source.includes("неполное:"), true);
 });
 
 test("ProductActionsPanel editor is grouped and has one cancel action in the footer", () => {
