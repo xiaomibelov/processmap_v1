@@ -2329,7 +2329,7 @@ function SessionRow({
                   Открывается...
                 </span>
               ) : (
-                "Открыть"
+                "Открыть сессию"
               )}
             </AppRouteLink>
             {(canRename || canDelete) ? (
