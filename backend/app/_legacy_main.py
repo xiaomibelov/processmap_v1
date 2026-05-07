@@ -1448,6 +1448,47 @@ def _emit_path_report_domain_anomaly(
     )
 
 
+def _path_report_scope(
+    *,
+    org_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> Dict[str, str]:
+    return {
+        "org_id": str(org_id or get_default_org_id()).strip(),
+        "workspace_id": "",
+        "project_id": str(project_id or "").strip(),
+        "session_id": str(session_id or "").strip(),
+    }
+
+
+def _path_report_active_prompt(module_id: str, scope: Dict[str, Any]) -> Dict[str, Any]:
+    candidates = [
+        ("session", str((scope or {}).get("session_id") or "").strip()),
+        ("project", str((scope or {}).get("project_id") or "").strip()),
+        ("workspace", str((scope or {}).get("workspace_id") or "").strip()),
+        ("org", str((scope or {}).get("org_id") or "").strip()),
+        ("global", ""),
+    ]
+    for scope_level, scope_id in candidates:
+        if scope_level != "global" and not scope_id:
+            continue
+        try:
+            item = get_active_prompt(module_id=module_id, scope_level=scope_level, scope_id=scope_id)
+        except Exception:
+            continue
+        if isinstance(item, dict) and str(item.get("template") or "").strip():
+            return item
+    return {}
+
+
+def _record_path_report_ai_execution_safe(**kwargs: Any) -> None:
+    try:
+        record_ai_execution(**kwargs)
+    except Exception:
+        logging.getLogger(__name__).warning("failed to record path report ai execution", exc_info=True)
+
+
 def _run_path_report_generation_async(
     session_id: str,
     path_id: str,
@@ -1471,6 +1512,54 @@ def _run_path_report_generation_async(
     if not sid or not pid or not rid:
         return
     _set_report_active(rid, True)
+    module_id = "ai.path_report"
+    scope = _path_report_scope(org_id=org_scope, project_id=project_id, session_id=sid)
+    actor_user_id = str(user_id or "").strip()
+    execution_id = f"ai_path_report_{rid}"
+    active_prompt = _path_report_active_prompt(module_id, scope)
+    system_prompt = str(active_prompt.get("template") or "").strip()
+    prompt_id = str(active_prompt.get("prompt_id") or "").strip()
+    prompt_version = str(active_prompt.get("version") or "").strip()
+    input_payload = {
+        "endpoint": str(route or f"/api/sessions/{sid}/paths/{pid}/reports"),
+        "session_id": sid,
+        "path_id": pid,
+        "report_id": rid,
+        "prompt_template_version": prompt_ver,
+        "steps_count": len(payload.get("steps") or []) if isinstance(payload.get("steps"), list) else 0,
+    }
+    started_at = time.time()
+    created_at = int(started_at)
+
+    def _record_runtime(
+        *,
+        status: str,
+        output_summary: str = "",
+        error_code: str = "",
+        error_message: str = "",
+        usage: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        finished_at = int(time.time()) if status in {"success", "error", "cancelled"} else 0
+        latency_ms = int(max(0.0, time.time() - started_at) * 1000)
+        _record_path_report_ai_execution_safe(
+            execution_id=execution_id,
+            module_id=module_id,
+            actor_user_id=actor_user_id,
+            scope=scope,
+            provider="deepseek",
+            model=fallback_model,
+            prompt_id=prompt_id,
+            prompt_version=prompt_version,
+            status=status,
+            input_payload=input_payload,
+            output_summary=output_summary,
+            usage=usage if isinstance(usage, dict) else {},
+            latency_ms=latency_ms,
+            error_code=error_code,
+            error_message=error_message,
+            created_at=created_at,
+            finished_at=finished_at,
+        )
 
     try:
         def _finish_error(message: str, *, error_code: str = "path_report_generation_failed", error_class: str = "") -> None:
@@ -1495,6 +1584,13 @@ def _run_path_report_generation_async(
                     error_code=error_code,
                     error_class=error_class,
                 )
+            _record_runtime(
+                status="error",
+                output_summary=f"path_id={pid} report_id={rid}",
+                error_code=error_code,
+                error_message=text,
+                usage={"path_id": pid, "report_id": rid},
+            )
 
         llm = load_llm_settings()
         api_key = str(llm.get("api_key") or "").strip()
@@ -1502,6 +1598,20 @@ def _run_path_report_generation_async(
         if not api_key:
             _finish_error("deepseek api_key is not set", error_code="missing_api_key")
             return
+
+        try:
+            rate = check_ai_rate_limit(module_id=module_id, actor_user_id=actor_user_id, scope=scope)
+        except Exception:
+            rate = {"allowed": True}
+        if not bool(rate.get("allowed", rate.get("ok", True))):
+            _finish_error("ai_rate_limit_exceeded", error_code="ai_rate_limit_exceeded")
+            return
+
+        _record_runtime(
+            status="running",
+            output_summary=f"path_id={pid} report_id={rid}",
+            usage={"path_id": pid, "report_id": rid},
+        )
 
         try:
             from .ai.deepseek_questions import generate_path_report
@@ -1519,6 +1629,7 @@ def _run_path_report_generation_async(
                 api_key=api_key,
                 base_url=base_url,
                 prompt_template_version=prompt_ver,
+                system_prompt=system_prompt,
             )
             used_compact_retry = False
         except Exception as first_error:
@@ -1532,6 +1643,7 @@ def _run_path_report_generation_async(
                         api_key=api_key,
                         base_url=base_url,
                         prompt_template_version=prompt_ver,
+                        system_prompt=system_prompt,
                     )
                     used_compact_retry = True
                 except Exception as second_error:
@@ -1574,6 +1686,15 @@ def _run_path_report_generation_async(
             row["raw_text"] = str(report_result.get("raw_text") or "")
 
         _patch_report_version_row(sid, pid, rid, _apply_success, org_id=org_scope, is_admin=True)
+        _record_runtime(
+            status="success",
+            output_summary=f"path_id={pid} report_id={rid} warnings={len(report_result.get('warnings') or [])}",
+            usage={
+                "path_id": pid,
+                "report_id": rid,
+                "used_compact_retry": bool(used_compact_retry),
+            },
+        )
     finally:
         _set_report_active(rid, False)
 
