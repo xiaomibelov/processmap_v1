@@ -22,6 +22,8 @@ test("workspace scope uses backend aggregation and does not scan all sessions on
   assert.match(panelSource, /apiQueryProductActionRegistry/);
   assert.match(panelSource, /Workspace-реестр использует backend-агрегацию/);
   assert.match(panelSource, /не загружает все sessions workspace на frontend/);
+  assert.match(panelSource, /data-testid="product-actions-registry-sessions"/);
+  assert.match(panelSource, /result\.sessions/);
   assert.match(panelSource, /apiListProjectSessions\(projectId,\s*""\,\s*\{ view: "summary" \}\)/);
   assert.match(panelSource, /apiGetSession\(sid\)/);
   assert.match(panelSource, /PRODUCT_ACTIONS_REGISTRY_SESSION_CAP/);
@@ -32,6 +34,9 @@ test("process and explorer expose product-level registry navigation", () => {
   assert.match(processStageSource, /ProductActionsRegistryPage/);
   assert.match(processStageSource, /buildProductActionsRegistryUrl/);
   assert.match(processStageSource, /onOpenProductActionsRegistry=\{openProductActionsRegistry\}/);
+  assert.match(processStageSource, /openProductActionsRegistryProject/);
+  assert.match(processStageSource, /openProductActionsRegistrySession/);
+  assert.match(processStageSource, /source: options\?\.source \|\| "product_actions_registry"/);
   assert.match(explorerSource, /workspace-product-actions-registry-nav/);
   assert.match(explorerSource, /project-product-actions-registry/);
 });
@@ -39,5 +44,5 @@ test("process and explorer expose product-level registry navigation", () => {
 test("page variant removes modal inner scroll behavior", () => {
   assert.match(cssSource, /\.productActionsRegistryPage/);
   assert.match(cssSource, /\.productActionsRegistryPanel--page/);
-  assert.match(cssSource, /\.productActionsRegistryPanel--page \.productActionsRegistryPreview,\n\.productActionsRegistryPanel--page \.productActionsRegistrySessionList \{[\s\S]*overflow: visible;/);
+  assert.match(cssSource, /\.productActionsRegistryPanel--page \.productActionsRegistryPreview,\n\.productActionsRegistryPanel--page \.productActionsRegistrySessionList,\n\.productActionsRegistryPanel--page \.productActionsRegistrySessionSummaryTable \{[\s\S]*overflow: visible;/);
 });
