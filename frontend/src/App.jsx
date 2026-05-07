@@ -32,6 +32,7 @@ import {
   apiPatchSession,
   apiPostNote,
   apiPreviewNotesExtraction,
+  apiApplyNotesExtraction,
   apiDeleteProject,
   apiDeleteSession,
   apiAcknowledgeNoteMention,
@@ -1667,6 +1668,36 @@ export default function App() {
     return r;
   }
 
+  async function applyNotesExtraction(payload = {}) {
+    const sid = String(draft?.session_id || "");
+    if (!sid) return { ok: false, error: "Нет активной сессии." };
+
+    if (isLocalSessionId(sid)) {
+      return { ok: false, error: "Применение разбора доступно только для API-сессий." };
+    }
+
+    const body = payload && typeof payload === "object" ? { ...payload } : {};
+    const r = await apiApplyNotesExtraction(sid, body);
+    if (!r?.ok) {
+      const conflict = Number(r?.status || 0) === 409;
+      const error = conflict
+        ? "Версия диаграммы изменилась. Обновите предпросмотр и повторите применение."
+        : String(r?.error || "Не удалось применить выбранный разбор.");
+      markFail(error);
+      return { ok: false, error, conflict, status: Number(r?.status || 0), detail: r?.data || null };
+    }
+
+    const sessionFromResp = r.session || r.result?.session || r.result?.result || {};
+    if (sessionFromResp && typeof sessionFromResp === "object") {
+      onSessionSync({
+        ...sessionFromResp,
+        _sync_source: "notes_extraction_apply",
+      });
+    }
+    markOk("API OK");
+    return { ok: true, result: r.result, session: sessionFromResp, changed_keys: r.changed_keys || [] };
+  }
+
   function focusElementNotes(element, source = "diagram_click", options = {}) {
     const selectedIds = ensureArray(element?.selectedIds)
       .map((item) => String(item || "").trim())
@@ -3064,6 +3095,7 @@ export default function App() {
         elementNotesFocusKey={elementNotesFocusKey}
         onAddNote={addNote}
         onPreviewNotesExtraction={previewNotesExtraction}
+        onApplyNotesExtraction={applyNotesExtraction}
         onAddElementNote={addElementNote}
         onSetElementStepTime={setElementStepTime}
         onSetElementNoteSummary={setElementNoteSummary}
