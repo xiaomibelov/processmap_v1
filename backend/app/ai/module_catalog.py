@@ -178,9 +178,9 @@ def ai_module_catalog() -> List[Dict[str, Any]]:
             name="AI-отчёт по маршруту",
             description="Генерация AI report artifacts по выбранному path/scenario.",
             enabled=True,
-            status="legacy",
+            status="active",
             scope=["session"],
-            prompt_source="code_seeded",
+            prompt_source="prompt_registry+code_fallback",
             writes_domain_state=True,
             review_apply_required=False,
             current_sources=[
@@ -194,10 +194,13 @@ def ai_module_catalog() -> List[Dict[str, Any]]:
                 "GET /api/reports/{report_id}",
             ],
             risks=[
-                "background job is outside unified AI execution log/rate limits",
                 "report artifacts live inside interview.report_versions/path_reports",
+                "prompt registry is optional and hardcoded path report prompt remains fallback",
             ],
             migration_priority="P1",
+            has_prompt_registry=True,
+            has_execution_log=True,
+            has_rate_limits=True,
         ),
         _module(
             module_id="ai.product_actions.suggest",
