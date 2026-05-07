@@ -2864,6 +2864,102 @@ class Storage:
             })
         return out
 
+    def list_product_action_registry_sources(
+        self,
+        *,
+        org_id: Optional[str] = None,
+        workspace_id: Optional[str] = None,
+        project_ids: Optional[List[str]] = None,
+        session_ids: Optional[List[str]] = None,
+        limit_sessions: int = 5000,
+        user_id: Optional[str] = None,
+        is_admin: Optional[bool] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return minimal metadata plus extracted analysis.product_actions rows.
+
+        The query intentionally does not select BPMN XML, BPMN meta, notes,
+        reports, resources, analytics or normalized payloads. It reads
+        interview_json only to reduce it to analysis.product_actions[].
+        """
+        owner = _scope_user_id(user_id)
+        admin = _scope_is_admin(is_admin)
+        org = _scope_org_id(org_id) or _default_org_id()
+        wid = str(workspace_id or "").strip()
+        pids = [str(item or "").strip() for item in (project_ids or []) if str(item or "").strip()]
+        sids = [str(item or "").strip() for item in (session_ids or []) if str(item or "").strip()]
+        try:
+            lim = int(limit_sessions)
+        except Exception:
+            lim = 5000
+        lim = min(max(lim, 1), 10000)
+
+        filters = ["s.org_id = ?"]
+        params: List[Any] = [org]
+        if not admin and owner:
+            filters.append("s.owner_user_id = ?")
+            params.append(owner)
+        if wid:
+            filters.append("COALESCE(p.workspace_id, '') = ?")
+            params.append(wid)
+        if pids:
+            placeholders = ", ".join("?" for _ in pids)
+            filters.append(f"COALESCE(s.project_id, '') IN ({placeholders})")
+            params.extend(pids)
+        if sids:
+            placeholders = ", ".join("?" for _ in sids)
+            filters.append(f"s.id IN ({placeholders})")
+            params.extend(sids)
+
+        where = f"WHERE {' AND '.join(filters)}"
+        _ensure_schema()
+        with _connect() as con:
+            rows = con.execute(
+                f"""
+                SELECT
+                  s.id AS session_id,
+                  s.title AS session_title,
+                  s.project_id AS project_id,
+                  s.org_id AS org_id,
+                  s.interview_json AS interview_json,
+                  s.diagram_state_version AS diagram_state_version,
+                  s.updated_at AS session_updated_at,
+                  p.title AS project_title,
+                  p.workspace_id AS workspace_id
+                FROM sessions s
+                LEFT JOIN projects p
+                  ON p.id = s.project_id
+                 AND p.org_id = s.org_id
+                {where}
+                ORDER BY s.updated_at DESC
+                LIMIT ?
+                """,
+                [*params, lim],
+            ).fetchall()
+
+        out: List[Dict[str, Any]] = []
+        for row in rows:
+            interview = _json_loads(_row_value(row, "interview_json"), {})
+            if not isinstance(interview, dict):
+                interview = {}
+            analysis = interview.get("analysis")
+            if not isinstance(analysis, dict):
+                analysis = {}
+            product_actions = analysis.get("product_actions")
+            if not isinstance(product_actions, list):
+                product_actions = []
+            out.append({
+                "org_id": str(_row_value(row, "org_id") or ""),
+                "workspace_id": str(_row_value(row, "workspace_id") or ""),
+                "project_id": str(_row_value(row, "project_id") or ""),
+                "project_title": str(_row_value(row, "project_title") or ""),
+                "session_id": str(_row_value(row, "session_id") or ""),
+                "session_title": str(_row_value(row, "session_title") or ""),
+                "diagram_state_version": int(_row_value(row, "diagram_state_version") or 0),
+                "updated_at": int(_row_value(row, "session_updated_at") or 0),
+                "product_actions": product_actions,
+            })
+        return out
+
     def create_bpmn_version_snapshot(
         self,
         session_id: str,

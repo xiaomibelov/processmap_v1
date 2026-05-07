@@ -18,8 +18,9 @@ test("registry page is a dedicated product surface, not a modal overlay", () => 
   assert.doesNotMatch(pageSource, /role="dialog"|aria-modal|productActionsRegistryOverlay/);
 });
 
-test("workspace scope is honest placeholder and does not scan all sessions", () => {
-  assert.match(panelSource, /Workspace-реестр требует backend-агрегации/);
+test("workspace scope uses backend aggregation and does not scan all sessions on frontend", () => {
+  assert.match(panelSource, /apiQueryProductActionRegistry/);
+  assert.match(panelSource, /Workspace-реестр использует backend-агрегацию/);
   assert.match(panelSource, /не загружает все sessions workspace на frontend/);
   assert.match(panelSource, /apiListProjectSessions\(projectId,\s*""\,\s*\{ view: "summary" \}\)/);
   assert.match(panelSource, /apiGetSession\(sid\)/);
