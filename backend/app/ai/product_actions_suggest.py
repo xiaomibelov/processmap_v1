@@ -6,6 +6,10 @@ from typing import Any, Dict, List, Optional
 from .deepseek_questions import _deepseek_chat_json
 
 
+class ProductActionsAiResponseParseError(ValueError):
+    """Raised when the provider returned text that cannot be parsed as suggestions JSON."""
+
+
 PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE = """Ты помогаешь заполнить реестр действий с продуктом для пищевого процесса.
 
 Верни только JSON без markdown. Формат:
@@ -41,6 +45,7 @@ PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE = """Ты помогаешь запол�
 - Если поле неизвестно, оставь пустую строку и снизь confidence.
 - Не повторяй уже сохранённые product_actions; если действие похоже на существующее, всё равно верни его только при явной новой детали.
 - Не меняй BPMN и не пиши финальные данные, это только suggestions для review.
+- Return only valid JSON object matching schema. No markdown, no comments, no trailing commas.
 """
 
 _SUGGESTION_FIELDS = (
@@ -130,14 +135,24 @@ def suggest_product_actions_with_deepseek(
 ) -> Dict[str, Any]:
     system_prompt = str(prompt_template or PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE)
     user_payload = json.dumps(context if isinstance(context, dict) else {}, ensure_ascii=False, sort_keys=True)
-    raw = _deepseek_chat_json(
-        api_key=api_key,
-        base_url=base_url,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_payload},
-        ],
-        timeout=45,
-        max_tokens=2400,
-    )
+    try:
+        raw = _deepseek_chat_json(
+            api_key=api_key,
+            base_url=base_url,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_payload},
+            ],
+            timeout=45,
+            max_tokens=2400,
+        )
+    except json.JSONDecodeError as exc:
+        raise ProductActionsAiResponseParseError(
+            f"invalid json response: {exc.msg} at line {exc.lineno} column {exc.colno}"
+        ) from exc
+    except ValueError as exc:
+        message = _text(exc)
+        if message == "no json in response":
+            raise ProductActionsAiResponseParseError("no valid json object in response") from exc
+        raise
     return normalize_product_action_suggestions_response(raw, max_suggestions=max_suggestions)

@@ -240,7 +240,7 @@ class AiPromptRegistryFoundationTests(unittest.TestCase):
             offset=0,
         )
         prompt_id = str(((seeded.get("items") or [{}])[0]).get("prompt_id") or "")
-        self.assertEqual(prompt_id, "seed_ai_product_actions_suggest_v2")
+        self.assertEqual(prompt_id, "seed_ai_product_actions_suggest_v3")
 
         archived = self.admin_archive_ai_prompt(prompt_id, self.request)
         self.assertTrue(bool(archived.get("ok")))
@@ -257,7 +257,7 @@ class AiPromptRegistryFoundationTests(unittest.TestCase):
         )
         self.assertIsInstance(listed, dict)
         self.assertTrue(bool(listed.get("ok")))
-        self.assertEqual(int((listed.get("page") or {}).get("total") or 0), 2)
+        self.assertEqual(int((listed.get("page") or {}).get("total") or 0), 3)
         modules = self.admin_ai_modules(self.request)
         self.assertIsInstance(modules, dict)
         self.assertTrue(bool(modules.get("ok")))

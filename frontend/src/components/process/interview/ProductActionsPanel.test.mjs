@@ -103,6 +103,8 @@ test("ProductActionsPanel maps controlled AI setup errors to admin-facing copy",
   assert.equal(source.includes("AI_PROVIDER_NOT_CONFIGURED"), true);
   assert.equal(source.includes("AI_PROMPT_NOT_CONFIGURED"), true);
   assert.equal(source.includes("AI_PROVIDER_ERROR"), true);
+  assert.equal(source.includes("AI_RESPONSE_PARSE_ERROR"), true);
+  assert.equal(source.includes("AI вернул ответ в некорректном формате"), true);
   assert.equal(source.includes("ai_rate_limit_exceeded"), true);
   assert.equal(source.includes("Слишком много AI-запросов"), true);
   assert.equal(source.includes("result?.draft?.message"), true);

@@ -140,6 +140,9 @@ function aiErrorText(codeRaw, messageRaw = "") {
   const message = toText(messageRaw);
   if (code === "AI_PROVIDER_NOT_CONFIGURED") return "Настройте DeepSeek в Admin → AI модули.";
   if (code === "AI_PROMPT_NOT_CONFIGURED") return "Для модуля нет активного prompt.";
+  if (code === "AI_RESPONSE_PARSE_ERROR") {
+    return "AI вернул ответ в некорректном формате. Попробуйте повторить или уточните prompt в Admin → AI модули.";
+  }
   if (code === "AI_PROVIDER_ERROR") return message || "Provider вернул ошибку.";
   if (code === "ai_rate_limit_exceeded") return "Слишком много AI-запросов. Подождите и повторите запуск позже.";
   return message || code || "Не удалось получить AI-предложения.";
