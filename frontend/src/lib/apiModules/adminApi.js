@@ -117,6 +117,29 @@ export async function apiAdminGetAiModules() {
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
 
+export async function apiAdminGetAiProviderSettings() {
+  const r = okOrError(await request(apiRoutes.admin.aiProviderSettings(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminSaveAiProviderSettings(payload = {}) {
+  const body = {
+    api_key: String(payload?.api_key || payload?.apiKey || ""),
+    base_url: String(payload?.base_url || payload?.baseUrl || "").trim(),
+  };
+  const r = okOrError(await request(apiRoutes.admin.aiProviderSettings(), { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminVerifyAiProviderSettings(payload = {}) {
+  const body = {
+    api_key: String(payload?.api_key || payload?.apiKey || ""),
+    base_url: String(payload?.base_url || payload?.baseUrl || "").trim(),
+  };
+  const r = okOrError(await request(apiRoutes.admin.aiProviderVerify(), { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
 export async function apiAdminListAiExecutions(params = {}) {
   const endpoint = apiRoutes.admin.aiExecutions(normalizeAdminParams(params));
   const r = okOrError(await request(endpoint, { method: "GET" }));

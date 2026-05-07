@@ -8,10 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ..ai.execution_log import check_ai_rate_limit, hash_ai_input, record_ai_execution
-from ..ai.product_actions_suggest import (
-    PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE,
-    suggest_product_actions_with_deepseek,
-)
+from ..ai.product_actions_suggest import suggest_product_actions_with_deepseek
 from ..ai.prompt_registry import get_active_prompt, seed_existing_ai_prompts
 from ..legacy.request_context import require_authenticated_user, request_active_org_id
 from ..models import Edge, Node, Session
@@ -289,7 +286,7 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
 
     seed_existing_ai_prompts(actor_user_id="code_seeded")
     active_prompt = get_active_prompt(module_id=_MODULE_ID)
-    prompt_template = _text((active_prompt or {}).get("template")) or PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE
+    prompt_template = _text((active_prompt or {}).get("template"))
     prompt_id = _text((active_prompt or {}).get("prompt_id"))
     prompt_version = _text((active_prompt or {}).get("version"))
 
@@ -369,11 +366,20 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
 
     if not api_key:
         return _finish(
-            {"ok": False, "error": "deepseek api_key is not set", "module_id": _MODULE_ID, "input_hash": input_hash},
+            {"ok": False, "error": "AI_PROVIDER_NOT_CONFIGURED", "module_id": _MODULE_ID, "input_hash": input_hash},
             status="error",
             output_summary="missing provider api key",
-            error_code="missing_api_key",
-            error_message="deepseek api_key is not set",
+            error_code="AI_PROVIDER_NOT_CONFIGURED",
+            error_message="AI_PROVIDER_NOT_CONFIGURED",
+        )
+
+    if not prompt_template:
+        return _finish(
+            {"ok": False, "error": "AI_PROMPT_NOT_CONFIGURED", "module_id": _MODULE_ID, "input_hash": input_hash},
+            status="error",
+            output_summary="missing active prompt",
+            error_code="AI_PROMPT_NOT_CONFIGURED",
+            error_message="AI_PROMPT_NOT_CONFIGURED",
         )
 
     try:
@@ -419,9 +425,9 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
     except Exception as exc:
         message = _safe_error_message(exc, api_key=api_key, base_url=base_url)
         return _finish(
-            {"ok": False, "error": f"product actions suggestion failed: {message}", "module_id": _MODULE_ID, "input_hash": input_hash},
+            {"ok": False, "error": "AI_PROVIDER_ERROR", "message": message, "module_id": _MODULE_ID, "input_hash": input_hash},
             status="error",
             output_summary="product actions suggestion failed",
-            error_code="suggestion_failed",
+            error_code="AI_PROVIDER_ERROR",
             error_message=message,
         )

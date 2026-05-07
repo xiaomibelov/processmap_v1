@@ -99,6 +99,13 @@ test("ProductActionsPanel exposes AI suggestion review without legacy notes or g
   assert.match(source, /disabled=\{!canAcceptAiRows\}/);
 });
 
+test("ProductActionsPanel maps controlled AI setup errors to admin-facing copy", () => {
+  assert.equal(source.includes("AI_PROVIDER_NOT_CONFIGURED"), true);
+  assert.equal(source.includes("AI_PROMPT_NOT_CONFIGURED"), true);
+  assert.equal(source.includes("AI_PROVIDER_ERROR"), true);
+  assert.equal(source.includes("Admin → AI модули"), true);
+});
+
 test("ProductActionsPanel editor is grouped and has one cancel action in the footer", () => {
   assert.equal(source.includes("FIELD_GROUPS"), true);
   assert.equal(source.includes("Продукт"), true);
