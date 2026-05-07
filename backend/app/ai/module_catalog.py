@@ -217,9 +217,13 @@ def ai_module_catalog() -> List[Dict[str, Any]]:
                 "backend/app/routers/product_actions_ai.py",
                 "backend/app/ai/product_actions_suggest.py",
                 "frontend/src/components/process/interview/ProductActionsPanel.jsx",
+                "frontend/src/components/process/analysis/ProductActionsRegistryPanel.jsx",
                 "PROCESSMAP/PROJECT ATLAS/21_Выгрузка действий с продуктом.md",
             ],
-            endpoints=["POST /api/sessions/{session_id}/analysis/product-actions/suggest"],
+            endpoints=[
+                "POST /api/sessions/{session_id}/analysis/product-actions/suggest",
+                "POST /api/analysis/product-actions/suggest-bulk",
+            ],
             risks=[
                 "must not auto-write interview.analysis.product_actions",
                 "must not mutate BPMN XML",

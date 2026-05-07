@@ -56,6 +56,8 @@ _SUGGESTION_FIELDS = (
     "action_method",
     "role",
     "evidence_text",
+    "duplicate_of",
+    "duplicate_reason",
 )
 
 

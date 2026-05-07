@@ -136,3 +136,20 @@ test("acceptAiProductActions saves selected AI rows through interview analysis p
   assert.equal(calls[0].patch.product_actions[1].manual_corrected, false);
   assert.equal(response.acceptedProductActions.length, 1);
 });
+
+test("acceptAiProductActions does not save when nothing selectable is accepted", async () => {
+  let called = false;
+  const response = await acceptAiProductActions({
+    sessionId: "sid_1",
+    currentAnalysis: { product_actions: [{ id: "manual_keep", product_name: "Рис" }] },
+    selectedActions: [{ id: "ai_duplicate", duplicate_of: "manual_keep", product_name: "Рис" }],
+    patchInterviewAnalysis: async () => {
+      called = true;
+      return { ok: true };
+    },
+  });
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error, "no_selected_product_actions");
+  assert.equal(called, false);
+});
