@@ -166,6 +166,29 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         self.assertEqual(out.get("module_id"), "ai.product_actions.suggest")
         self.assertEqual(out.get("source"), "llm")
         self.assertEqual(len(out.get("suggestions") or []), 1)
+        suggestion = (out.get("suggestions") or [])[0]
+        for key in (
+            "step_id",
+            "bpmn_element_id",
+            "step_label",
+            "product_name",
+            "product_group",
+            "action_type",
+            "action_stage",
+            "action_object",
+            "action_object_category",
+            "action_method",
+            "role",
+            "confidence",
+            "evidence_text",
+            "warnings",
+            "missing_fields",
+            "duplicate_of",
+            "duplicate_reason",
+        ):
+            self.assertIn(key, suggestion)
+        self.assertEqual(suggestion.get("duplicate_of"), "")
+        self.assertEqual(suggestion.get("duplicate_reason"), "")
         self.assertEqual(provider.call_args.kwargs.get("max_suggestions"), 5)
         self.assertEqual(before.interview, after.interview)
         self.assertEqual(before.nodes, after.nodes)
@@ -213,9 +236,13 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         after = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
         self.assertFalse(out.get("ok"))
         self.assertEqual(out.get("error"), "ai_rate_limit_exceeded")
+        self.assertEqual(out.get("message"), "AI_RATE_LIMIT_EXCEEDED")
         provider.assert_not_called()
         self.assertEqual(before.interview, after.interview)
+        self.assertEqual(before.bpmn_xml, after.bpmn_xml)
         self.assertEqual(before.diagram_state_version, after.diagram_state_version)
+        logs = self._logs().get("items") or []
+        self.assertEqual(logs[0].get("error_code"), "ai_rate_limit_exceeded")
 
     def test_missing_provider_key_returns_controlled_error_without_provider_call(self):
         os.environ.pop("DEEPSEEK_API_KEY", None)

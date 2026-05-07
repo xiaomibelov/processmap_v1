@@ -215,9 +215,11 @@ def _decorate_duplicates(suggestions: List[Dict[str, Any]], existing_actions: Li
     for index, raw in enumerate(suggestions):
         row = dict(raw or {})
         row["id"] = _text(row.get("id")) or f"ai_pa_{index + 1}"
+        row["duplicate_of"] = _text(row.get("duplicate_of"))
+        row["duplicate_reason"] = _text(row.get("duplicate_reason"))
         key = _suggestion_key(row)
-        duplicate_of = ""
-        duplicate_reason = ""
+        duplicate_of = row["duplicate_of"]
+        duplicate_reason = row["duplicate_reason"]
         if key.strip("|") and key in existing_by_key:
             duplicate_of = _text(existing_by_key[key].get("id"))
             duplicate_reason = "Похоже на уже сохранённое действие с продуктом."
@@ -229,6 +231,9 @@ def _decorate_duplicates(suggestions: List[Dict[str, Any]], existing_actions: Li
             row["duplicate_reason"] = duplicate_reason
         elif key.strip("|"):
             seen_suggestions[key] = row["id"]
+        else:
+            row["duplicate_of"] = ""
+            row["duplicate_reason"] = ""
         missing = [field for field in _REQUIRED_FIELDS if not _text(row.get(field))]
         row["missing_fields"] = missing
         warnings = list(_as_list(row.get("warnings")))
@@ -350,6 +355,7 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
             {
                 "ok": False,
                 "error": "ai_rate_limit_exceeded",
+                "message": "AI_RATE_LIMIT_EXCEEDED",
                 "module_id": _MODULE_ID,
                 "input_hash": input_hash,
                 "rate_limit": {
