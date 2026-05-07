@@ -125,6 +125,7 @@ export const ru = {
       jobs: "Задания",
       audit: "Аудит",
       telemetry: "Телеметрия",
+      aiModules: "AI модули",
       orgs: "Пользователи и доступ",
       projects: "Проекты",
     },
@@ -157,6 +158,10 @@ export const ru = {
         title: "Telemetry timeline",
         subtitle: "Поиск error_events по request/session/user/org/runtime без curl и DB shell",
       },
+      aiModules: {
+        title: "AI модули",
+        subtitle: "Каталог AI-модулей, prompt versions и execution log без запуска AI jobs",
+      },
     },
     sections: {
       admin: "Админ",
@@ -168,6 +173,7 @@ export const ru = {
       jobs: "Задания",
       audit: "Аудит",
       telemetry: "Телеметрия",
+      aiModules: "AI модули",
     },
     topbar: {
       org: "Организация",

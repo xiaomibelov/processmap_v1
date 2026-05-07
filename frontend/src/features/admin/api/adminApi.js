@@ -8,6 +8,14 @@ import {
   apiAdminListSessions,
   apiAdminListErrorEvents,
   apiAdminGetErrorEvent,
+  apiAdminGetAiModules,
+  apiAdminListAiExecutions,
+  apiAdminListAiPrompts,
+  apiAdminGetActiveAiPrompt,
+  apiAdminGetAiPrompt,
+  apiAdminCreateAiPrompt,
+  apiAdminActivateAiPrompt,
+  apiAdminArchiveAiPrompt,
 } from "../../../lib/api";
 
 export {
@@ -20,4 +28,12 @@ export {
   apiAdminListAudit,
   apiAdminListErrorEvents,
   apiAdminGetErrorEvent,
+  apiAdminGetAiModules,
+  apiAdminListAiExecutions,
+  apiAdminListAiPrompts,
+  apiAdminGetActiveAiPrompt,
+  apiAdminGetAiPrompt,
+  apiAdminCreateAiPrompt,
+  apiAdminActivateAiPrompt,
+  apiAdminArchiveAiPrompt,
 };
