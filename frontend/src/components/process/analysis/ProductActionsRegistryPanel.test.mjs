@@ -18,9 +18,10 @@ test("ProductActionsRegistryPanel exposes preview registry UI without export wor
     "Сессия",
     "Загрузить выбранные",
     "Сессии workspace",
-    "Все процессы в выбранном scope, включая процессы без действий с продуктом.",
+    "Все сессии в выбранном scope, включая сессии без действий с продуктом.",
     "Открыть проект",
     "Открыть сессию",
+    "Найдены действия, но не получен список сессий. Требуется обновить агрегацию.",
     "Фильтры применяются к загруженным строкам.",
     "CSV — позже",
     "XLSX — позже",
@@ -31,11 +32,13 @@ test("ProductActionsRegistryPanel exposes preview registry UI without export wor
 test("ProductActionsRegistryPanel uses summary first and loads only selected full sessions", () => {
   assert.match(source, /apiQueryProductActionRegistry/);
   assert.match(source, /normalizeBackendSessions/);
+  assert.match(source, /summarizeRowsAsSessions/);
   assert.match(source, /result\.sessions/);
   assert.match(source, /backendSessionSummary/);
   assert.match(source, /apiListProjectSessions\(projectId,\s*""\,\s*\{ view: "summary" \}\)/);
   assert.match(source, /apiGetSession\(sid\)/);
-  assert.equal(source.includes("не загружает все sessions workspace на frontend"), true);
+  assert.equal(source.includes("Сводка строится без загрузки полных данных всех сессий на frontend."), true);
+  assert.equal(source.includes("Workspace-реестр использует backend-агрегацию"), false);
   assert.equal(source.includes("Загрузить выбранные"), true);
   assert.equal(source.includes("Full session loads are intentionally explicit and capped."), true);
   assert.equal(source.includes("PRODUCT_ACTIONS_REGISTRY_SESSION_CAP"), true);
@@ -46,6 +49,8 @@ test("ProductActionsRegistryPanel exposes workspace session drilldown without wo
   assert.equal(source.includes('data-testid="product-actions-registry-sessions"'), true);
   assert.equal(source.includes("actions_total"), true);
   assert.equal(source.includes("sessions_without_actions"), true);
+  assert.equal(source.includes("missingSessionSummary"), true);
+  assert.equal(source.includes("showSessionSummaryEmpty"), true);
   assert.equal(source.includes("openProjectFromSummary"), true);
   assert.equal(source.includes("openSessionFromSummary"), true);
   assert.equal(source.includes('source: "product_actions_registry"'), true);
