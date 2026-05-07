@@ -21,6 +21,9 @@ test("ProductActionsRegistryPanel exposes preview registry UI without export wor
     "Все сессии в выбранном scope, включая сессии без действий с продуктом.",
     "Открыть проект",
     "Открыть сессию",
+    "AI: предложить действия",
+    "AI-предложения по выбранным сессиям",
+    "Принять выбранные",
     "Найдены действия, но не получен список сессий. Требуется обновить агрегацию.",
     "Фильтры применяются к загруженным строкам.",
     "CSV — позже",
@@ -55,6 +58,21 @@ test("ProductActionsRegistryPanel exposes workspace session drilldown without wo
   assert.equal(source.includes("openSessionFromSummary"), true);
   assert.equal(source.includes('source: "product_actions_registry"'), true);
   assert.doesNotMatch(source, /scope === "workspace"[\s\S]{0,1200}apiGetSession\(sid\)/);
+});
+
+test("ProductActionsRegistryPanel exposes capped bulk AI review and safe accept path", () => {
+  assert.equal(source.includes("apiBulkSuggestProductActions"), true);
+  assert.equal(source.includes("PRODUCT_ACTIONS_BULK_AI_SESSION_CAP = 10"), true);
+  assert.equal(source.includes('data-testid="product-actions-registry-bulk-ai-controls"'), true);
+  assert.equal(source.includes('data-testid="product-actions-registry-bulk-ai-review"'), true);
+  assert.equal(source.includes("selectedVisibleSessionIds"), true);
+  assert.equal(source.includes("acceptSelectedBulkAiRows"), true);
+  assert.equal(source.includes("acceptAiProductActions({"), true);
+  assert.equal(source.includes("currentAnalysis: fullSession?.interview?.analysis"), true);
+  assert.equal(source.includes("Выберите предложения для принятия."), true);
+  assert.equal(source.includes("CSV — позже"), true);
+  assert.equal(source.includes("XLSX — позже"), true);
+  assert.doesNotMatch(source, /apiPutBpmnXml|apiPatchSession|saveProductActionForStep/);
 });
 
 test("ProductActionsRegistryPanel provides filters, completeness and disabled export placeholders", () => {
