@@ -73,6 +73,7 @@ class AiPromptRegistrySeedTests(unittest.TestCase):
             "ai.questions.prep",
             "ai.path_report",
             "ai.process.extract_from_notes",
+            "ai.product_actions.suggest",
         ]
         for module_id in expected_active_modules:
             active = get_active_prompt(module_id=module_id)
