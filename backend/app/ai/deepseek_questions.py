@@ -1337,6 +1337,7 @@ def generate_path_report(
     api_key: str,
     base_url: str,
     prompt_template_version: str = "v2",
+    system_prompt: str = "",
 ) -> Dict[str, Any]:
     version = str(prompt_template_version or "v2").strip().lower() or "v2"
     warnings: List[str] = []
@@ -1344,10 +1345,12 @@ def generate_path_report(
         warnings.append("unsupported_prompt_template_version_fallback_v2")
         version = "v2"
 
-    system_prompt = _PATH_REPORT_PROMPT_TEMPLATE_V2 if version == "v2" else _PATH_REPORT_PROMPT_TEMPLATE_V1
+    selected_system_prompt = str(system_prompt or "").strip() or (
+        _PATH_REPORT_PROMPT_TEMPLATE_V2 if version == "v2" else _PATH_REPORT_PROMPT_TEMPLATE_V1
+    )
     user_payload = payload if isinstance(payload, dict) else {}
     messages = [
-        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": selected_system_prompt},
         {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
     ]
 
