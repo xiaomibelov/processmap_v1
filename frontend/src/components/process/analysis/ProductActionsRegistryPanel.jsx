@@ -640,15 +640,40 @@ export function ProductActionsRegistryContent({
     <div className={page ? "productActionsRegistryPanel productActionsRegistryPanel--page" : "productActionsRegistryPanel"} data-testid="product-actions-registry-panel">
       <header className="productActionsRegistryHeader">
         <div>
-          <div className="productActionsRegistryEyebrow">Read-only preview</div>
-          <h2>Реестр действий с продуктом</h2>
-          <p>Действия по продуктам, товарам, упаковке и ингредиентам из сессий workspace.</p>
+          <h2 className="productActionsRegistryTitle">Реестр действий с продуктом</h2>
+          <p className="productActionsRegistrySubcopy">Сводная таблица действий с продуктами из сессий. Просмотр и экспорт перед финальной выгрузкой.</p>
         </div>
-        {onClose ? (
-          <button type="button" className="secondaryBtn smallBtn" onClick={onClose}>
-            {page ? "Вернуться" : "Закрыть"}
-          </button>
-        ) : null}
+        <div className="productActionsRegistryHeaderRight">
+          <div className="productActionsRegistryExportBar">
+            <span className="productActionsRegistryExportMeta">
+              Экспорт: {filteredSummary.rows} строк · полных: {filteredSummary.complete} · неполных: {filteredSummary.incomplete}
+            </span>
+            <button
+              type="button"
+              className="secondaryBtn smallBtn"
+              disabled={!canExportRegistry}
+              onClick={() => void exportRegistry("csv")}
+              data-testid="product-actions-registry-export-csv"
+            >
+              {exportLoading === "csv" ? "Готовлю CSV…" : "CSV"}
+            </button>
+            <button
+              type="button"
+              className="secondaryBtn smallBtn"
+              disabled={!canExportRegistry}
+              onClick={() => void exportRegistry("xlsx")}
+              data-testid="product-actions-registry-export-xlsx"
+            >
+              {exportLoading === "xlsx" ? "Готовлю XLSX…" : "XLSX"}
+            </button>
+            {exportStatus ? <small className="productActionsRegistryExportStatus" data-testid="product-actions-registry-export-status">{exportStatus}</small> : null}
+          </div>
+          {onClose ? (
+            <button type="button" className="secondaryBtn smallBtn" onClick={onClose}>
+              {page ? "Вернуться" : "Закрыть"}
+            </button>
+          ) : null}
+        </div>
       </header>
 
       <div className="productActionsRegistryScope" role="tablist" aria-label="Источник строк реестра">
@@ -974,31 +999,40 @@ export function ProductActionsRegistryContent({
       </section>
 
       <section className="productActionsRegistryFilters" data-testid="product-actions-registry-filters">
-        <div className="productActionsRegistryFiltersHint">Фильтры применяются к загруженным строкам.</div>
-        {FILTERS.map(([key, label]) => (
-          <label key={key}>
-            <span>{label}</span>
-            <select value={toText(filters[key])} onChange={(event) => patchFilter(key, event.target.value)}>
-              <option value="">Все</option>
-              {toArray(filterOptions[key]).map((option) => (
-                <option key={option} value={option}>{option}</option>
-              ))}
+        <div className="productActionsRegistryFiltersToolbar">
+          {FILTERS.map(([key, label]) => (
+            <label key={key} className="productActionsRegistryFilterItem">
+              <span>{label}</span>
+              <select value={toText(filters[key])} onChange={(event) => patchFilter(key, event.target.value)}>
+                <option value="">Все</option>
+                {toArray(filterOptions[key]).map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </label>
+          ))}
+          <label className="productActionsRegistryFilterItem">
+            <span>Полнота</span>
+            <select value={filters.completeness || "all"} onChange={(event) => patchFilter("completeness", event.target.value)}>
+              <option value="all">Все</option>
+              <option value="complete">Полные</option>
+              <option value="incomplete">Неполные</option>
             </select>
           </label>
-        ))}
-        <label>
-          <span>Полнота</span>
-          <select value={filters.completeness || "all"} onChange={(event) => patchFilter("completeness", event.target.value)}>
-            <option value="all">Все</option>
-            <option value="complete">Полные</option>
-            <option value="incomplete">Неполные</option>
-          </select>
-        </label>
+          <button
+            type="button"
+            className="secondaryBtn smallBtn productActionsRegistryFilterReset"
+            onClick={() => setFilters({ completeness: "all" })}
+          >
+            Сбросить
+          </button>
+        </div>
       </section>
 
       {summary.incomplete ? (
-        <div className="productActionsRegistryWarning">
-          Есть неполные строки — их нужно открыть в исходной сессии и заполнить перед выгрузкой.
+        <div className="productActionsRegistryIncompleteBanner" data-testid="product-actions-registry-incomplete-banner">
+          <span className="productActionsRegistryIncompleteBannerIcon">⚠</span>
+          <span>Есть неполные строки — заполните их в исходной сессии перед финальной выгрузкой.</span>
         </div>
       ) : null}
 
@@ -1008,7 +1042,7 @@ export function ProductActionsRegistryContent({
             <div className="productActionsRegistryTableHead" role="row">
               <span>Продукт</span>
               <span>Действие</span>
-              <span>Контекст</span>
+              <span>Процесс / шаг</span>
               <span>Статус</span>
             </div>
             {filteredRows.map((row) => (
@@ -1018,12 +1052,20 @@ export function ProductActionsRegistryContent({
                   <small>{display(row.product_group, "Группа не указана")}</small>
                 </div>
                 <div>
-                  <b>{display(row.action_type, "Тип не указан")} · {display(row.action_stage, "этап не указан")}</b>
-                  <small>{display(row.action_object, "объект не указан")} · {display(row.action_object_category, "категория не указана")} · {display(row.action_method, "способ не указан")}</small>
+                  <b>{display(row.action_type, "—")}</b>
+                  <small className="productActionsRegistryRowChips">
+                    {display(row.action_stage, "")}
+                    {toText(row.action_object) ? <span>{row.action_object}</span> : null}
+                    {toText(row.action_object_category) ? <span>{row.action_object_category}</span> : null}
+                    {toText(row.action_method) ? <span>{row.action_method}</span> : null}
+                  </small>
                 </div>
                 <div>
                   <b>{display(row.session_title)}</b>
-                  <small>{display(row.step_label, "Шаг не указан")} · BPMN: {display(row.bpmn_element_id, "нет")}</small>
+                  <small>
+                    {display(row.step_label, "Шаг не указан")}
+                    {toText(row.bpmn_element_id) ? ` · BPMN: ${row.bpmn_element_id}` : ""}
+                  </small>
                 </div>
                 <div>
                   <span className={`productActionsRegistryCompleteness ${row.completeness}`}>
@@ -1036,40 +1078,24 @@ export function ProductActionsRegistryContent({
           </div>
         ) : (
           <div className="productActionsRegistryEmpty" data-testid="product-actions-registry-empty">
-            {scope === "workspace"
-              ? "В workspace пока нет действий с продуктом."
-              : scope === "session" && !hasSessionContext
-                ? "Откройте сессию или выберите проект для preview."
-                : "В выбранных процессах пока нет действий с продуктом."}
+            {backendLoading
+              ? "Загружаю данные…"
+              : activeFilterLabels.length
+                ? "Нет строк под выбранные фильтры."
+                : scope === "workspace"
+                  ? "В workspace пока нет действий с продуктом."
+                  : scope === "session" && !hasSessionContext
+                    ? "Откройте сессию или выберите проект для preview."
+                    : "В выбранных процессах пока нет действий с продуктом."}
           </div>
         )}
       </section>
 
       <footer className="productActionsRegistryFooter">
-        <span>
-          Экспорт: {filteredSummary.rows} строк · полных {filteredSummary.complete} · неполных {filteredSummary.incomplete}.
-          {" "}
-          {activeFilterLabels.length ? `Фильтры: ${activeFilterLabels.join("; ")}.` : "Фильтры не выбраны."}
+        <span className="productActionsRegistryFooterMeta">
+          После фильтров: {filteredSummary.rows} строк · полных: {filteredSummary.complete} · неполных: {filteredSummary.incomplete}
+          {activeFilterLabels.length ? ` · Фильтры: ${activeFilterLabels.join("; ")}` : ""}
         </span>
-        <button
-          type="button"
-          className="secondaryBtn smallBtn"
-          disabled={!canExportRegistry}
-          onClick={() => void exportRegistry("csv")}
-          data-testid="product-actions-registry-export-csv"
-        >
-          {exportLoading === "csv" ? "Готовлю CSV…" : "Скачать CSV"}
-        </button>
-        <button
-          type="button"
-          className="secondaryBtn smallBtn"
-          disabled={!canExportRegistry}
-          onClick={() => void exportRegistry("xlsx")}
-          data-testid="product-actions-registry-export-xlsx"
-        >
-          {exportLoading === "xlsx" ? "Готовлю XLSX…" : "Скачать XLSX"}
-        </button>
-        {exportStatus ? <small data-testid="product-actions-registry-export-status">{exportStatus}</small> : null}
       </footer>
     </div>
   );
