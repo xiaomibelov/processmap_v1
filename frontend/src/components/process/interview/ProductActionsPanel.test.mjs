@@ -201,3 +201,21 @@ test("ProductActionsPanel stays visible with a useful empty state when there are
   assert.equal(source.includes("Добавьте шаг процесса, чтобы описать действия с продуктом."), true);
   assert.equal(source.includes("disabled={!steps.length}"), true);
 });
+
+test("ProductActionsPanel renders collapsible technical details block for AI_RESPONSE_PARSE_ERROR", () => {
+  assert.equal(source.includes('data-testid="product-actions-ai-diagnostics"'), true);
+  assert.equal(source.includes("Технические детали"), true);
+  assert.equal(source.includes("aiDiagnostics"), true);
+  assert.equal(source.includes("execution_id"), true);
+  assert.equal(source.includes("parse_error"), true);
+  assert.equal(source.includes("response_excerpt"), true);
+  assert.equal(source.includes('aiProgress.errorCode === "AI_RESPONSE_PARSE_ERROR"'), true);
+  assert.equal(source.includes("productActionsAiDiagnostics"), true);
+  assert.equal(source.includes("productActionsAiDiagnosticsBody"), true);
+});
+
+test("ProductActionsPanel aiDiagnostics state is initialized to null and reset on hide", () => {
+  assert.equal(source.includes("const [aiDiagnostics, setAiDiagnostics] = useState(null)"), true);
+  assert.equal(source.includes("setAiDiagnostics(null)"), true);
+  assert.equal(source.includes("setAiDiagnostics(result?.draft?.diagnostics || null)"), true);
+});

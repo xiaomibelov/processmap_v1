@@ -266,6 +266,7 @@ export default function ProductActionsPanel({
   const [aiLoading, setAiLoading] = useState(false);
   const [aiApplying, setAiApplying] = useState(false);
   const [aiProgress, setAiProgress] = useState(null);
+  const [aiDiagnostics, setAiDiagnostics] = useState(null);
 
   useEffect(() => {
     if (!steps.length) return;
@@ -400,6 +401,7 @@ export default function ProductActionsPanel({
       const errorDetail = toText(result?.draft?.message || result?.data?.message);
       const errorStage = aiProgressErrorStage(errorCode);
       const errorText = aiSuggestErrorText(errorCode, errorDetail) || "Не удалось получить AI-предложения.";
+      setAiDiagnostics(result?.draft?.diagnostics || null);
       setAiProgress(aiProgressStep(errorStage.id, errorText, "error", {
         stage: errorStage,
         errorCode,
@@ -713,6 +715,7 @@ export default function ProductActionsPanel({
                     setSelectedAiRowIds(new Set());
                     setAiStatus(null);
                     setAiProgress(null);
+                    setAiDiagnostics(null);
                   }}
                   disabled={aiApplying}
                 >
@@ -768,6 +771,16 @@ export default function ProductActionsPanel({
                 <div className="productActionsAiProgressError" data-testid="product-actions-ai-progress-error">
                   Ошибка на этапе: {aiProgress.stageLabel}
                 </div>
+              ) : null}
+              {aiProgress.status === "error" && aiProgress.errorCode === "AI_RESPONSE_PARSE_ERROR" && aiDiagnostics ? (
+                <details className="productActionsAiDiagnostics" data-testid="product-actions-ai-diagnostics">
+                  <summary>Технические детали</summary>
+                  <div className="productActionsAiDiagnosticsBody">
+                    {aiDiagnostics.execution_id ? <div><b>execution_id:</b> {aiDiagnostics.execution_id}</div> : null}
+                    {aiDiagnostics.parse_error ? <div><b>parse_error:</b> {aiDiagnostics.parse_error}</div> : null}
+                    {aiDiagnostics.response_excerpt ? <div><b>response_excerpt:</b> <code>{aiDiagnostics.response_excerpt}</code></div> : null}
+                  </div>
+                </details>
               ) : null}
             </div>
           ) : null}

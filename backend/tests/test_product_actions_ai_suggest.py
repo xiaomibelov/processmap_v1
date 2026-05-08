@@ -330,7 +330,8 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
 
         self.assertFalse(out.get("ok"))
         self.assertEqual(out.get("error"), "AI_RESPONSE_PARSE_ERROR")
-        self.assertNotIn("Expecting", str(out))
+        self.assertNotIn("Expecting", str(out.get("message") or ""))
+        self.assertNotIn("Expecting", str(out.get("error") or ""))
         self.assertEqual(before.interview, after.interview)
         self.assertEqual(before.bpmn_xml, after.bpmn_xml)
         logs = self._logs().get("items") or []
@@ -439,6 +440,58 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         self.assertEqual(result.get("status"), "error")
         self.assertEqual(result.get("error_code"), "AI_PROVIDER_ERROR")
         self.assertIn("session suggest exploded", result.get("error_message", ""))
+
+    def test_parse_error_response_includes_diagnostics_block(self):
+        with patch(
+            "app.ai.deepseek_questions._deepseek_chat_request",
+            return_value={"choices": [{"message": {"content": '{"suggestions":[{"product_name":"X"}'}}]},
+        ):
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_RESPONSE_PARSE_ERROR")
+        diagnostics = out.get("diagnostics")
+        self.assertIsNotNone(diagnostics, "diagnostics block must be present on parse error")
+        for key in ("execution_id", "parse_error", "response_excerpt", "provider", "model", "request_payload"):
+            self.assertIn(key, diagnostics, f"diagnostics missing key: {key}")
+        self.assertTrue(str(diagnostics.get("execution_id") or "").startswith("exec_"))
+        self.assertEqual(diagnostics.get("provider"), "deepseek")
+        self.assertIsInstance(diagnostics.get("request_payload"), dict)
+        self.assertIn("steps_count", diagnostics.get("request_payload", {}))
+
+    def test_parse_error_diagnostics_response_excerpt_sanitized(self):
+        poisoned_content = f'{{"suggestions":[{{"product_name":"X"}}, SECRET_TEST_KEY_IN_BODY'
+        with patch(
+            "app.ai.deepseek_questions._deepseek_chat_request",
+            return_value={"choices": [{"message": {"content": poisoned_content}}]},
+        ):
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        self.assertFalse(out.get("ok"))
+        diagnostics = out.get("diagnostics") or {}
+        self.assertNotIn("SECRET_TEST_KEY", str(diagnostics.get("response_excerpt") or ""))
+        self.assertNotIn("SECRET_TEST_KEY", str(diagnostics.get("parse_error") or ""))
+
+    def test_success_response_has_no_diagnostics_block(self):
+        with patch(
+            "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
+            return_value={
+                "suggestions": [
+                    {
+                        "id": "ai_ok",
+                        "step_id": "step_2",
+                        "bpmn_element_id": "Task_2",
+                        "product_name": "Сэндвич",
+                        "product_group": "Готовые блюда",
+                        "action_type": "упаковка",
+                        "action_object": "сэндвич",
+                        "confidence": 0.9,
+                    }
+                ],
+                "warnings": [],
+            },
+        ):
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        self.assertTrue(out.get("ok"))
+        self.assertNotIn("diagnostics", out)
 
 
 if __name__ == "__main__":
