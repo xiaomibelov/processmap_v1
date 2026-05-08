@@ -441,12 +441,17 @@ export default function WorkspaceDashboard({
     }
   }
 
+  function openWorkspaceDashboardSession(row, source = "workspace_dashboard_session_row") {
+    if (!row) return;
+    void onOpenSession?.(row, { openTab: "diagram", source });
+  }
+
   function renderSessionActionsMenu(row) {
     const rowId = toText(row?.id);
     if (!rowId) return null;
     const enabledActions = availableSessionActions.filter((item) => enabledSessionActionSet.has(item.id));
     return (
-      <div className="relative" ref={actionsMenuRef}>
+      <div className="relative" ref={actionsMenuRef} onClick={(event) => event.stopPropagation()}>
         <button
           type="button"
           className="iconBtn h-8 w-8 min-w-8"
@@ -856,7 +861,18 @@ export default function WorkspaceDashboard({
                   const dodLabel = dodPercent == null ? "—" : `${dodPercent}%`;
                   const dodTooltip = formatDodBreakdownTooltip(dod);
                   return (
-                    <div key={row.id} className="rounded-xl border border-border bg-panel px-3 py-3">
+                    <div
+                      key={row.id}
+                      className="rounded-xl border border-border bg-panel px-3 py-3 cursor-pointer"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openWorkspaceDashboardSession(row, "workspace_dashboard_session_card")}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        event.preventDefault();
+                        openWorkspaceDashboardSession(row, "workspace_dashboard_session_card");
+                      }}
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="truncate text-sm font-semibold text-fg" title={row.name}>{row.name}</div>
@@ -866,7 +882,10 @@ export default function WorkspaceDashboard({
                           <button
                             type="button"
                             className="primaryBtn h-8 shrink-0 px-3 text-xs"
-                            onClick={() => onOpenSession?.(row, { openTab: "diagram", source: "workspace_dashboard_session_card" })}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openWorkspaceDashboardSession(row, "workspace_dashboard_session_card_cta");
+                            }}
                             data-testid="workspace-open-session"
                           >
                             Открыть сессию
@@ -918,11 +937,23 @@ export default function WorkspaceDashboard({
                       const dodLabel = dodPercent == null ? "—" : `${dodPercent}%`;
                       const dodTooltip = formatDodBreakdownTooltip(dod);
                       return (
-                        <tr key={row.id} className="bg-panel">
+                        <tr
+                          key={row.id}
+                          className="bg-panel cursor-pointer"
+                          onClick={() => openWorkspaceDashboardSession(row, "workspace_dashboard_session_row")}
+                        >
                           <td className="rounded-l-xl px-3 py-2.5 align-top">
-                            <div className="max-w-[220px] truncate font-medium text-fg" title={row.name}>
+                            <button
+                              type="button"
+                              className="max-w-[220px] truncate text-left font-medium text-fg hover:underline"
+                              title={row.name}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openWorkspaceDashboardSession(row, "workspace_dashboard_session_title");
+                              }}
+                            >
                               {row.name}
-                            </div>
+                            </button>
                           </td>
                           <td className="px-3 py-2.5 align-top text-muted">
                             <div className="max-w-[180px] truncate" title={projectTitle}>
@@ -960,7 +991,10 @@ export default function WorkspaceDashboard({
                               <button
                                 type="button"
                                 className="primaryBtn h-8 px-3 text-xs"
-                                onClick={() => onOpenSession?.(row, { openTab: "diagram", source: "workspace_dashboard_session_row" })}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openWorkspaceDashboardSession(row, "workspace_dashboard_session_cta");
+                                }}
                                 data-testid="workspace-open-session"
                               >
                                 Открыть сессию
