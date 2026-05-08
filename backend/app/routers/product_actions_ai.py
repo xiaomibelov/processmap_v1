@@ -63,9 +63,9 @@ def _actor_user_id(request: Request) -> str:
 def _max_suggestions(inp: ProductActionsSuggestIn) -> int:
     options = _as_dict(getattr(inp, "options", None))
     try:
-        value = int(options.get("max_suggestions") or 20)
+        value = int(options.get("max_suggestions") or 3)
     except Exception:
-        value = 20
+        value = 3
     return max(1, min(value, 40))
 
 
@@ -490,7 +490,7 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
             max_suggestions=max_suggestions,
         )
         existing_actions = list(context.get("existing_product_actions") or [])
-        suggestions = _decorate_duplicates(list(raw.get("suggestions") or []), existing_actions)
+        suggestions = _decorate_duplicates(list(raw.get("suggestions") or []), existing_actions)[:max_suggestions]
         warnings = list(raw.get("warnings") or [])
         duplicate_count = sum(1 for row in suggestions if _text(row.get("duplicate_of")))
         incomplete_count = sum(1 for row in suggestions if row.get("missing_fields"))
