@@ -590,112 +590,119 @@ export default function ProductActionsPanel({
 
           {aiDraft ? (
             <div className="productActionsAiReview" data-testid="product-actions-ai-review">
-              <div className="productActionsEditorHead">
+              <div className="productActionsAiReviewHead">
                 <div>
                   <div className="productActionsEditorTitle">AI-предложения действий</div>
                   <div className="productActionsSub">
                     AI предлагает черновик. В process truth попадут только выбранные строки после принятия.
                   </div>
                 </div>
-                <span className={`badge ${aiDraft.source === "llm" ? "ok" : "warn"}`}>
-                  {aiDraft.source === "llm" ? "LLM" : displayValue(aiDraft.source, "AI")}
-                </span>
+                <div className="productActionsAiReviewMeta">
+                  <span className="productActionsAiCounter"><b>Предложений:</b> {aiRows.length}</span>
+                  <span className="productActionsAiCounter"><b>Выбрано:</b> {selectedAiRows.length}</span>
+                </div>
               </div>
               {toArray(aiDraft.warnings).filter((w) => w && typeof w === "object" && w.code).length ? (
-                <div className="productActionsAiWarnings">
-                  {toArray(aiDraft.warnings).filter((w) => w && typeof w === "object" && w.code).map((warning, index) => (
-                    <div key={`${warningText(warning)}_${index}`}>{warningText(warning)}</div>
-                  ))}
+                <div className="productActionsAiWarningNote">
+                  <span className="productActionsAiWarningNoteIcon">ℹ</span>
+                  <span>
+                    {toArray(aiDraft.warnings).filter((w) => w && typeof w === "object" && w.code).map(warningText).join(" · ")}
+                  </span>
                 </div>
               ) : null}
-              <div className="productActionsMetaGrid">
-                <span>Предложений: {aiRows.length}</span>
-                <span>Выбрано: {selectedAiRows.length}</span>
-              </div>
               {aiRows.length ? (
-                <div className="productActionsAiList">
+                <div className="productActionsAiList" data-testid="product-actions-ai-list">
                   {aiRows.map((row, index) => {
                     const rowId = toText(row.id);
                     const duplicate = !!toText(row.duplicate_of);
                     const missingFields = toArray(row.missing_fields).map(toText).filter(Boolean);
-                    const rowWarnings = [
-                      ...toArray(row.warnings).map(warningText),
-                      toText(row.duplicate_reason),
-                    ].filter(Boolean);
+                    const confidencePct = Math.round(Number(row.confidence || 0) * 100);
+                    const confidenceLevel = confidencePct >= 70 ? "high" : confidencePct >= 40 ? "medium" : "low";
+                    const reasonText = toText(row.reason || row.evidence_text);
                     return (
                       <article
                         key={rowId || index}
-                        className={`productActionCard productActionsAiCard${duplicate ? " otherStep" : ""}`}
+                        className={`productActionsAiCard${duplicate ? " duplicate" : ""}${missingFields.length && !duplicate ? " incomplete" : ""}`}
                         data-testid="product-actions-ai-suggestion"
                       >
-                        <div className="productActionCardMain">
-                          <label className="productActionsAiSelect">
+                        <div className="productActionsAiCardTop">
+                          <label className="productActionsAiCardCheck">
                             <input
                               type="checkbox"
                               checked={selectedAiRowIds.has(rowId)}
                               disabled={duplicate}
                               onChange={(e) => toggleAiRow(rowId, e.target.checked)}
                             />
-                            <span>{actionTitle(row)}</span>
                           </label>
-                          <div className="productActionCardSub">
-                            Уверенность: {Math.round(Number(row.confidence || 0) * 100)}%
-                            {duplicate ? " · дубль не выбран" : ""}
-                            {missingFields.length ? ` · неполное: ${missingFields.length}` : ""}
-                          </div>
-                          {toText(row.evidence_text) ? (
-                            <div className="productActionCardSummaryLine">Основание: {row.evidence_text}</div>
-                          ) : null}
-                          {rowWarnings.length ? (
-                            <div className="productActionsAiWarnings inline">
-                              {rowWarnings.map((warning, warningIndex) => (
-                                <div key={`${warning}_${warningIndex}`}>{warning}</div>
-                              ))}
+                          <div className="productActionsAiCardMain">
+                            <div className="productActionsAiCardTitle">
+                              {toText(row.product_name) || toText(row.action_type) || "Неполное действие"}
+                              {duplicate ? (
+                                <span className="productActionsAiBadge duplicate">Дубль</span>
+                              ) : missingFields.length ? (
+                                <span className="productActionsAiBadge incomplete">Неполное</span>
+                              ) : null}
                             </div>
-                          ) : null}
+                            <div className="productActionsAiCardChips">
+                              {toText(row.product_group) ? <span className="productActionsAiChip">{row.product_group}</span> : null}
+                              {toText(row.action_type) ? <span className="productActionsAiChip">{row.action_type}</span> : null}
+                              {toText(row.action_stage) ? <span className="productActionsAiChip">{row.action_stage}</span> : null}
+                              {toText(row.action_object_category) ? <span className="productActionsAiChip secondary">{row.action_object_category}</span> : null}
+                              {toText(row.action_method) ? <span className="productActionsAiChip secondary">{row.action_method}</span> : null}
+                              {toText(row.role) ? <span className="productActionsAiChip role">{row.role}</span> : null}
+                            </div>
+                            {reasonText ? (
+                              <div className="productActionsAiCardReason">{reasonText}</div>
+                            ) : null}
+                            <div className="productActionsAiCardMeta">
+                              <span className={`productActionsAiConfidence ${confidenceLevel}`}>{confidencePct}%</span>
+                              {toText(row.step_label) ? <span className="productActionsAiCardMetaItem">{row.step_label}</span> : null}
+                              {toText(row.bpmn_element_id || row.node_id) ? (
+                                <span className="productActionsAiCardMetaItem muted">BPMN: {row.bpmn_element_id || row.node_id}</span>
+                              ) : null}
+                            </div>
+                          </div>
                         </div>
-                        <div className="productActionsEditorGroups compactFields">
-                          {FIELD_GROUPS.map((group) => (
-                            <fieldset className="productActionsEditorGroup" key={`${rowId}_${group.title}`}>
-                              <legend>{group.title}</legend>
-                              <div className="productActionsEditor">
-                                {group.keys.map((key) => {
-                                  const field = fieldConfigByKey[key];
-                                  if (!field) return null;
-                                  return (
-                                    <label className="interviewField" key={`${rowId}_${field.key}`}>
-                                      <span>{field.label}</span>
-                                      {field.type === "select" ? (
-                                        <select
-                                          className="select"
-                                          value={toText(row?.[field.key])}
-                                          onChange={(e) => patchAiRow(rowId, field.key, e.target.value)}
-                                        >
-                                          <option value="">— не выбрано —</option>
-                                          {field.options.map((option) => (
-                                            <option key={option} value={option}>{option}</option>
-                                          ))}
-                                        </select>
-                                      ) : (
-                                        <input
-                                          className="input"
-                                          value={toText(row?.[field.key])}
-                                          onChange={(e) => patchAiRow(rowId, field.key, e.target.value)}
-                                          placeholder={field.placeholder || ""}
-                                        />
-                                      )}
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                            </fieldset>
-                          ))}
-                        </div>
-                        <div className="productActionBindingMeta">
-                          <span><b>Шаг</b>{row.step_label || "Шаг без названия"}</span>
-                          <span><b>BPMN</b>{row.bpmn_element_id || row.node_id || "нет привязки"}</span>
-                          <span><b>Роль</b>{row.role || "не указана"}</span>
-                        </div>
+                        <details className="productActionsAiCardEdit">
+                          <summary>Редактировать поля</summary>
+                          <div className="productActionsEditorGroups compactFields">
+                            {FIELD_GROUPS.map((group) => (
+                              <fieldset className="productActionsEditorGroup" key={`${rowId}_${group.title}`}>
+                                <legend>{group.title}</legend>
+                                <div className="productActionsEditor">
+                                  {group.keys.map((key) => {
+                                    const field = fieldConfigByKey[key];
+                                    if (!field) return null;
+                                    return (
+                                      <label className="interviewField" key={`${rowId}_${field.key}`}>
+                                        <span>{field.label}</span>
+                                        {field.type === "select" ? (
+                                          <select
+                                            className="select"
+                                            value={toText(row?.[field.key])}
+                                            onChange={(e) => patchAiRow(rowId, field.key, e.target.value)}
+                                          >
+                                            <option value="">— не выбрано —</option>
+                                            {field.options.map((option) => (
+                                              <option key={option} value={option}>{option}</option>
+                                            ))}
+                                          </select>
+                                        ) : (
+                                          <input
+                                            className="input"
+                                            value={toText(row?.[field.key])}
+                                            onChange={(e) => patchAiRow(rowId, field.key, e.target.value)}
+                                            placeholder={field.placeholder || ""}
+                                          />
+                                        )}
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </fieldset>
+                            ))}
+                          </div>
+                        </details>
                       </article>
                     );
                   })}
@@ -705,22 +712,34 @@ export default function ProductActionsPanel({
                   AI не нашёл действий с продуктом для выбранного шага. Попробуйте другой шаг или заполните действия вручную.
                 </div>
               )}
-              <div className="productActionsFooter">
-                <button
-                  type="button"
-                  className="secondaryBtn smallBtn"
-                  onClick={() => {
-                    setAiDraft(null);
-                    setAiRows([]);
-                    setSelectedAiRowIds(new Set());
-                    setAiStatus(null);
-                    setAiProgress(null);
-                    setAiDiagnostics(null);
-                  }}
-                  disabled={aiApplying}
-                >
-                  Скрыть предложения
-                </button>
+              <div className="productActionsAiStickyFooter">
+                <div className="productActionsAiFooterLeft">
+                  <button
+                    type="button"
+                    className="secondaryBtn smallBtn"
+                    onClick={() => {
+                      setAiDraft(null);
+                      setAiRows([]);
+                      setSelectedAiRowIds(new Set());
+                      setAiStatus(null);
+                      setAiProgress(null);
+                      setAiDiagnostics(null);
+                    }}
+                    disabled={aiApplying}
+                  >
+                    Закрыть AI-предложения
+                  </button>
+                  {aiRows.length > 0 ? (
+                    <button
+                      type="button"
+                      className="secondaryBtn smallBtn"
+                      onClick={() => setSelectedAiRowIds(new Set())}
+                      disabled={aiApplying || selectedAiRows.length === 0}
+                    >
+                      Снять выбор
+                    </button>
+                  ) : null}
+                </div>
                 <button
                   type="button"
                   className="primaryBtn smallBtn"
