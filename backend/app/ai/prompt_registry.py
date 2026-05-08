@@ -123,7 +123,7 @@ def existing_ai_prompt_seeds() -> list[PromptSeed]:
         _PATH_REPORT_PROMPT_TEMPLATE_V2,
         _SESSION_TITLE_PROMPT_TEMPLATE,
     )
-    from .product_actions_suggest import PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE
+    from .product_actions_suggest import PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE, PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE_V4
 
     questions_input = _object_schema(
         {
@@ -252,6 +252,15 @@ def existing_ai_prompt_seeds() -> list[PromptSeed]:
             module_id="ai.product_actions.suggest",
             version="v3",
             template=PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE,
+            status="archived",
+            variables_schema=product_actions_input,
+            output_schema=product_actions_output,
+        ),
+        PromptSeed(
+            prompt_id="seed_ai_product_actions_suggest_v4",
+            module_id="ai.product_actions.suggest",
+            version="v4",
+            template=PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE_V4,
             variables_schema=product_actions_input,
             output_schema=product_actions_output,
         ),

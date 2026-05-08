@@ -86,7 +86,9 @@ class AiPromptRegistrySeedTests(unittest.TestCase):
         template = str((product_actions_prompt or {}).get("template") or "")
         self.assertIn("физические действия сотрудников", template)
         self.assertIn("product_name", template)
-        self.assertIn("evidence_text", template)
+        self.assertIn("reason", template)
+        self.assertIn("low|medium|high", template)
+        self.assertIn("не более 3 предложений", template)
         self.assertIn("только suggestions для review", template)
         self.assertIn("No markdown, no comments, no trailing commas", template)
 
@@ -113,18 +115,18 @@ class AiPromptRegistrySeedTests(unittest.TestCase):
 
         seed_existing_ai_prompts()
         active = get_active_prompt(module_id="ai.product_actions.suggest")
-        self.assertEqual((active or {}).get("prompt_id"), "seed_ai_product_actions_suggest_v3")
+        self.assertEqual((active or {}).get("prompt_id"), "seed_ai_product_actions_suggest_v4")
 
-        archived = archive_prompt_version("seed_ai_product_actions_suggest_v3", actor_user_id="admin")
+        archived = archive_prompt_version("seed_ai_product_actions_suggest_v4", actor_user_id="admin")
         self.assertEqual(archived.get("status"), "archived")
         self.assertIsNone(get_active_prompt(module_id="ai.product_actions.suggest"))
 
         second = seed_existing_ai_prompts()
         self.assertTrue(second.get("ok"))
-        self.assertIn("seed_ai_product_actions_suggest_v3", second.get("skipped") or [])
+        self.assertIn("seed_ai_product_actions_suggest_v4", second.get("skipped") or [])
         self.assertIsNone(get_active_prompt(module_id="ai.product_actions.suggest"))
-        self.assertEqual((get_prompt_detail("seed_ai_product_actions_suggest_v2") or {}).get("status"), "archived")
         self.assertEqual((get_prompt_detail("seed_ai_product_actions_suggest_v3") or {}).get("status"), "archived")
+        self.assertEqual((get_prompt_detail("seed_ai_product_actions_suggest_v4") or {}).get("status"), "archived")
 
 
 if __name__ == "__main__":
