@@ -964,9 +964,15 @@ export default function ProcessStage({
     if (!session_id || typeof onOpenWorkspaceSession !== "function") return;
     const project_id = toText(sessionLike?.project_id || sessionLike?.projectId || activeProjectId);
     const workspace_id = toText(sessionLike?.workspace_id || sessionLike?.workspaceId || productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId);
-    const result = await onOpenWorkspaceSession(sessionLike, {
+    const result = await onOpenWorkspaceSession({
+      ...sessionLike,
+      id: session_id,
+      session_id,
+      project_id,
+      workspace_id,
+    }, {
       ...options,
-      openTab: options?.openTab || "interview",
+      openTab: options?.openTab || "diagram",
       source: options?.source || "product_actions_registry",
     });
     if (result?.ok === false || typeof window === "undefined") return;

@@ -52,15 +52,23 @@ test("editor tab aliases to diagram for old internal callers", () => {
 
 test("Explorer and workspace session list opens request Diagram entry", () => {
   const explorerSource = readFrontend("features/explorer/WorkspaceExplorer.jsx");
-  assert.match(explorerSource, /openTab:\s*"diagram"[\s\S]*source:\s*"workspace_explorer_session_list"/);
+  assert.match(explorerSource, /openTab:\s*options\?\.openTab\s*\|\|\s*"diagram"[\s\S]*source:\s*options\?\.source\s*\|\|\s*"workspace_explorer_session_list"/);
+  assert.match(explorerSource, /openTab:\s*"diagram"[\s\S]*source:\s*"workspace_explorer_search_session"/);
+  assert.match(explorerSource, /source:\s*"workspace_explorer_session_title"/);
+  assert.match(explorerSource, /source:\s*"workspace_explorer_session_cta"/);
+  assert.match(explorerSource, /onOpen=\{\(sess,\s*options\) => handleOpenSessionRequest\(/);
 
   const processStageSource = readFrontend("components/ProcessStage.jsx");
   assert.match(processStageSource, /onOpenSession=\{\(sessionLike,\s*options\) => onOpenWorkspaceSession\?\.\(sessionLike,\s*options\)\}/);
+  assert.match(processStageSource, /openTab:\s*options\?\.openTab\s*\|\|\s*"diagram"/);
 
   const dashboardSource = readFrontend("components/workspace/WorkspaceDashboard.jsx");
   assert.match(dashboardSource, /openTab:\s*"diagram"[\s\S]*source:\s*"workspace_dashboard_session_action"/);
-  assert.match(dashboardSource, /openTab:\s*"diagram"[\s\S]*source:\s*"workspace_dashboard_session_row"/);
-  assert.match(dashboardSource, /onOpenSession\?\.\(row,\s*\{ openTab:\s*"diagram", source:\s*"workspace_dashboard_session_row" \}\)/);
+  assert.match(dashboardSource, /function openWorkspaceDashboardSession\(row,\s*source = "workspace_dashboard_session_row"\)/);
+  assert.match(dashboardSource, /onOpenSession\?\.\(row,\s*\{ openTab:\s*"diagram", source \}\)/);
+  assert.match(dashboardSource, /openWorkspaceDashboardSession\(row,\s*"workspace_dashboard_session_row"\)/);
+  assert.match(dashboardSource, /openWorkspaceDashboardSession\(row,\s*"workspace_dashboard_session_title"\)/);
+  assert.match(dashboardSource, /openWorkspaceDashboardSession\(row,\s*"workspace_dashboard_session_cta"\)/);
   assert.doesNotMatch(dashboardSource, /onOpenSession\?\.\(toText\(row\?\.id\),\s*\{ openTab:\s*"diagram"/);
 });
 

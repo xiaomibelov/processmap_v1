@@ -1860,7 +1860,7 @@ function ExplorerPane({
           breadcrumbBase: targetBreadcrumbBase,
           projectTitle: target.session.project_name || target.session.project_title || "",
         },
-      });
+      }, { openTab: "diagram", source: "workspace_explorer_search_session" });
     }
   }, [onNavigateToFolder, onNavigateToProject, onOpenSession, page?.breadcrumbs, workspaceId]);
 
@@ -2190,6 +2190,15 @@ function SessionRow({
     setPendingStatus(String(session.status || "draft"));
   }, [session.status]);
 
+  function openSession(options = {}) {
+    if (isOpening) return;
+    onOpen(session, {
+      openTab: "diagram",
+      source: "workspace_explorer_session_row",
+      ...(options || {}),
+    });
+  }
+
   function handleRowOpen(event) {
     if (isOpening) return;
     const target = event?.target;
@@ -2197,7 +2206,7 @@ function SessionRow({
       return;
     }
     if (!shouldHandleClientNavigation(event)) return;
-    onOpen(session);
+    openSession({ source: "workspace_explorer_session_row" });
   }
   const sessionHref = buildAppWorkspaceHref({
     projectId: session?.project_id,
@@ -2223,7 +2232,7 @@ function SessionRow({
             <AppRouteLink
               className={`block min-w-0 ${isOpening ? "cursor-progress text-muted" : ""}`}
               href={sessionHref}
-              onNavigate={() => onOpen(session)}
+              onNavigate={() => openSession({ source: "workspace_explorer_session_title" })}
               title={session.name}
               aria-busy={isOpening ? "true" : undefined}
             >
@@ -2320,7 +2329,7 @@ function SessionRow({
             <AppRouteLink
               className={`secondaryBtn h-7 min-h-0 px-3 text-xs whitespace-nowrap transition-colors ${isOpening ? "cursor-progress" : "hover:border-accent/40 hover:text-fg"}`}
               href={sessionHref}
-              onNavigate={() => onOpen(session)}
+              onNavigate={() => openSession({ source: "workspace_explorer_session_cta" })}
               aria-busy={isOpening ? "true" : undefined}
             >
               {isOpening ? (
@@ -2471,7 +2480,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, onOpenProd
     breadcrumbBase: backCrumbs,
     projectTitle: proj?.name || proj?.title || "",
   };
-  const handleOpenSessionRequest = useCallback(async (sessionLike) => {
+  const handleOpenSessionRequest = useCallback(async (sessionLike, options = {}) => {
     const row = sessionLike && typeof sessionLike === "object" ? sessionLike : {};
     const sid = String(row?.id || row?.session_id || "").trim();
     if (!sid) return;
@@ -2484,7 +2493,11 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, onOpenProd
         project_id: row?.project_id || projectId,
         workspace_id: row?.workspace_id || workspaceId,
         projectContext,
-      }, { openTab: "diagram", source: "workspace_explorer_session_list" });
+      }, {
+        ...options,
+        openTab: options?.openTab || "diagram",
+        source: options?.source || "workspace_explorer_session_list",
+      });
     } finally {
       if (openingSessionIdRef.current === sid) {
         openingSessionIdRef.current = "";
@@ -2676,11 +2689,11 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, onOpenProd
                   session={s}
                   notesAggregate={noteAggregatesBySessionId.get(String(s?.id || s?.session_id || "").trim()) || null}
                   isOpening={openingSessionId === String(s.id || s.session_id || "").trim()}
-                  onOpen={(sess) => handleOpenSessionRequest({
-                    ...sess,
-                    project_id: projectId,
-                    workspace_id: workspaceId,
-                  })}
+                      onOpen={(sess, options) => handleOpenSessionRequest({
+                        ...sess,
+                        project_id: projectId,
+                        workspace_id: workspaceId,
+                      }, options)}
                   onReload={load}
                   onSessionPatched={handleSessionPatched}
                   canRename={!!permissions?.canRenameSession}

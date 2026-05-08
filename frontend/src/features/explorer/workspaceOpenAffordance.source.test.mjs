@@ -26,6 +26,10 @@ test("session row open hint is part of the session link", () => {
   assert.doesNotMatch(sessionRow, /:\s*\(\s*"Открыть"\s*\)/);
   assert.match(sessionRow, /onClick=\{handleRowOpen\}/);
   assert.match(sessionRow, /if \(isOpening\) return;/);
+  assert.match(sessionRow, /source:\s*"workspace_explorer_session_row"/);
+  assert.match(sessionRow, /source:\s*"workspace_explorer_session_title"/);
+  assert.match(sessionRow, /source:\s*"workspace_explorer_session_cta"/);
+  assert.match(sessionRow, /openTab:\s*"diagram"/);
 });
 
 test("app version records explorer open affordance update", () => {
