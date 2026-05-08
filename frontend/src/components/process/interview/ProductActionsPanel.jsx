@@ -61,6 +61,20 @@ const ACTION_CARD_FIELDS = [
   ["Роль", "role"],
 ];
 
+const AI_PROGRESS_STAGES = [
+  { id: "prepare", label: "Подготавливаем процесс", percent: 10 },
+  { id: "settings", label: "Проверяем настройки AI", percent: 20 },
+  { id: "request", label: "Отправляем запрос в AI", percent: 40 },
+  { id: "receive", label: "Получаем ответ", percent: 60 },
+  { id: "parse", label: "Разбираем ответ", percent: 80 },
+  { id: "format", label: "Формируем предложения", percent: 90 },
+  { id: "ready", label: "Готово к проверке", percent: 100 },
+];
+
+const AI_PROGRESS_BY_ID = Object.fromEntries(AI_PROGRESS_STAGES.map((stage) => [stage.id, stage]));
+const AI_PROMPT_PROGRESS_STAGE = { id: "prompt", label: "Проверяем prompt", percent: 30 };
+const AI_PROVIDER_REQUEST_STAGE = { id: "provider", label: "Запрос к AI", percent: 40 };
+
 function stepDisplayLabel(stepRaw) {
   const step = stepRaw && typeof stepRaw === "object" ? stepRaw : {};
   const seq = Number(step.seq || step.order || 0);
@@ -159,6 +173,29 @@ function aiSuggestErrorText(codeRaw, detailRaw = "") {
   return code;
 }
 
+function aiProgressStep(stageId, message = "", status = "running", overrides = {}) {
+  const stage = AI_PROGRESS_BY_ID[stageId] || overrides.stage || AI_PROGRESS_BY_ID.prepare;
+  return {
+    active: true,
+    status,
+    stageId: stage.id,
+    stageLabel: stage.label,
+    percent: Number(overrides.percent ?? stage.percent ?? 0),
+    message: toText(message),
+    errorCode: toText(overrides.errorCode),
+  };
+}
+
+function aiProgressErrorStage(codeRaw) {
+  const code = toText(codeRaw);
+  if (code === "AI_PROVIDER_NOT_CONFIGURED") return AI_PROGRESS_BY_ID.settings;
+  if (code === "AI_PROMPT_NOT_CONFIGURED") return AI_PROMPT_PROGRESS_STAGE;
+  if (code === "AI_PROVIDER_ERROR") return AI_PROVIDER_REQUEST_STAGE;
+  if (code === "AI_RESPONSE_PARSE_ERROR") return AI_PROGRESS_BY_ID.parse;
+  if (code === "ai_rate_limit_exceeded") return AI_PROGRESS_BY_ID.settings;
+  return AI_PROGRESS_BY_ID.receive;
+}
+
 function suggestionId(rowRaw, index = 0) {
   const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
   return toText(row.id) || `ai_pa_${index + 1}`;
@@ -216,6 +253,7 @@ export default function ProductActionsPanel({
   const [aiStatus, setAiStatus] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiApplying, setAiApplying] = useState(false);
+  const [aiProgress, setAiProgress] = useState(null);
 
   useEffect(() => {
     if (!steps.length) return;
@@ -319,28 +357,62 @@ export default function ProductActionsPanel({
   async function handleSuggestAiProductActions() {
     if (!sessionId || aiLoading) return;
     setAiLoading(true);
+    setAiDraft(null);
+    setAiRows([]);
+    setSelectedAiRowIds(new Set());
     setAiStatus({ type: "saving", text: "Запрашиваю AI-предложения…" });
-    const result = await apiSuggestProductActions(sessionId, {
-      options: {
-        max_suggestions: 20,
-        ui_source: "product_actions_panel",
-      },
-    });
+    setAiProgress(aiProgressStep("prepare", "Готовим BPMN/Interview context для AI."));
+    await Promise.resolve();
+    setAiProgress(aiProgressStep("settings", "Проверяем provider, prompt и лимиты перед запуском."));
+    await Promise.resolve();
+    setAiProgress(aiProgressStep("request", "Запрос отправлен. Обычно это занимает несколько секунд."));
+    let result = null;
+    try {
+      result = await apiSuggestProductActions(sessionId, {
+        options: {
+          max_suggestions: 20,
+          ui_source: "product_actions_panel",
+        },
+      });
+    } catch (error) {
+      result = {
+        ok: false,
+        error: "AI_PROVIDER_ERROR",
+        draft: { message: toText(error?.message) || "network error" },
+      };
+    }
     setAiLoading(false);
+    setAiProgress(aiProgressStep("receive", "Ответ AI получен, проверяем результат."));
     if (!result?.ok || result?.draft?.ok === false) {
       const errorCode = toText(result?.error || result?.draft?.error);
       const errorDetail = toText(result?.draft?.message || result?.data?.message);
+      const errorStage = aiProgressErrorStage(errorCode);
+      const errorText = aiSuggestErrorText(errorCode, errorDetail) || "Не удалось получить AI-предложения.";
+      setAiProgress(aiProgressStep(errorStage.id, errorText, "error", {
+        stage: errorStage,
+        errorCode,
+        percent: errorStage.percent,
+      }));
       setAiStatus({
         type: "error",
-        text: aiSuggestErrorText(errorCode, errorDetail) || "Не удалось получить AI-предложения.",
+        text: errorText,
       });
       return;
     }
+    setAiProgress(aiProgressStep("parse", "Разбираем AI-ответ и проверяем поля suggestions."));
     const draftResult = result.draft || {};
     const rows = normalizeSuggestionDraftRows(draftResult.suggestions);
+    setAiProgress(aiProgressStep("format", "Формируем список предложений для review."));
     setAiDraft(draftResult);
     setAiRows(rows);
     setSelectedAiRowIds(new Set(rows.filter((row) => !toText(row.duplicate_of)).map((row) => toText(row.id)).filter(Boolean)));
+    setAiProgress(aiProgressStep(
+      "ready",
+      rows.length
+        ? `Найдено ${rows.length} предложений. Проверьте и примите нужные.`
+        : "AI не нашёл действий с продуктом для этого процесса.",
+      "success",
+    ));
     setAiStatus({
       type: "saved",
       text: rows.length ? "AI-предложения готовы к review." : "AI не нашёл действий с продуктом для этого процесса.",
@@ -628,6 +700,7 @@ export default function ProductActionsPanel({
                     setAiRows([]);
                     setSelectedAiRowIds(new Set());
                     setAiStatus(null);
+                    setAiProgress(null);
                   }}
                   disabled={aiApplying}
                 >
@@ -643,6 +716,47 @@ export default function ProductActionsPanel({
                   {aiApplying ? "Применяю…" : "Принять выбранные"}
                 </button>
               </div>
+            </div>
+          ) : null}
+          {aiProgress?.active ? (
+            <div
+              className={`productActionsAiProgress ${aiProgress.status || "running"}`}
+              data-testid="product-actions-ai-progress"
+              aria-live="polite"
+            >
+              <div className="productActionsAiProgressHead">
+                <div>
+                  <div className="productActionsEditorTitle">AI-запуск</div>
+                  <div className="productActionsSub" data-testid="product-actions-ai-progress-message">
+                    {aiProgress.message || "Выполняем AI-подготовку."}
+                  </div>
+                </div>
+                <div className="productActionsAiProgressPercent" data-testid="product-actions-ai-progress-percent">
+                  {Math.max(0, Math.min(100, Number(aiProgress.percent || 0)))}%
+                </div>
+              </div>
+              <div className="productActionsAiProgressBar" aria-hidden="true">
+                <span style={{ width: `${Math.max(0, Math.min(100, Number(aiProgress.percent || 0)))}%` }} />
+              </div>
+              <div className="productActionsAiProgressCurrent" data-testid="product-actions-ai-progress-current">
+                Текущий этап: {aiProgress.stageLabel || "Подготавливаем процесс"}
+              </div>
+              <ol className="productActionsAiProgressSteps" data-testid="product-actions-ai-progress-steps">
+                {AI_PROGRESS_STAGES.map((stage) => {
+                  const done = Number(stage.percent || 0) < Number(aiProgress.percent || 0);
+                  const active = stage.id === aiProgress.stageId || stage.label === aiProgress.stageLabel;
+                  return (
+                    <li key={stage.id} className={active ? "active" : done ? "done" : ""}>
+                      <span>{stage.label}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+              {aiProgress.status === "error" ? (
+                <div className="productActionsAiProgressError" data-testid="product-actions-ai-progress-error">
+                  Ошибка на этапе: {aiProgress.stageLabel}
+                </div>
+              ) : null}
             </div>
           ) : null}
 

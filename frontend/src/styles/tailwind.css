@@ -492,6 +492,117 @@
   padding-top: 8px;
 }
 
+.productActionsAiProgress {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--analysis-border-soft);
+  border-radius: 10px;
+  background: hsl(var(--bg-soft) / 0.48);
+  padding: 10px;
+}
+
+.productActionsAiProgress.success {
+  border-color: color-mix(in srgb, var(--c-success) 42%, var(--analysis-border-soft));
+}
+
+.productActionsAiProgress.error {
+  border-color: color-mix(in srgb, var(--c-danger) 42%, var(--analysis-border-soft));
+}
+
+.productActionsAiProgressHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.productActionsAiProgressPercent {
+  flex: 0 0 auto;
+  min-width: 48px;
+  border: 1px solid var(--analysis-border-soft);
+  border-radius: 999px;
+  background: hsl(var(--panel) / 0.72);
+  padding: 4px 8px;
+  color: var(--analysis-text);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.productActionsAiProgressBar {
+  height: 7px;
+  overflow: hidden;
+  border: 1px solid var(--analysis-border-soft);
+  border-radius: 999px;
+  background: hsl(var(--panel) / 0.62);
+}
+
+.productActionsAiProgressBar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: hsl(var(--accent) / 0.72);
+  transition: width 0.18s ease;
+}
+
+.productActionsAiProgressCurrent {
+  color: var(--analysis-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.productActionsAiProgressSteps {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.productActionsAiProgressSteps li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--analysis-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.productActionsAiProgressSteps li::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border: 1px solid var(--analysis-border-soft);
+  border-radius: 999px;
+  background: hsl(var(--panel) / 0.72);
+}
+
+.productActionsAiProgressSteps li.done {
+  color: var(--analysis-hint);
+}
+
+.productActionsAiProgressSteps li.done::before {
+  border-color: hsl(var(--accent2) / 0.54);
+  background: hsl(var(--accent2) / 0.48);
+}
+
+.productActionsAiProgressSteps li.active {
+  color: var(--analysis-text);
+  font-weight: 800;
+}
+
+.productActionsAiProgressSteps li.active::before {
+  border-color: hsl(var(--accent) / 0.72);
+  background: hsl(var(--accent) / 0.72);
+}
+
+.productActionsAiProgressError {
+  color: var(--c-danger);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .productActionsStatus {
   min-height: 28px;
   display: inline-flex;
