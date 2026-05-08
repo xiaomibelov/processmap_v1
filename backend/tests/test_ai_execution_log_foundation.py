@@ -234,6 +234,34 @@ class AiExecutionLogFoundationTests(unittest.TestCase):
         self.assertEqual(int(getattr(after, "diagram_state_version", 0) or 0), 7)
         self.assertEqual(getattr(after, "interview", {}) or {}, getattr(before, "interview", {}) or {})
 
+    def test_insert_or_replace_upsert_overwrites_existing_execution(self):
+        from app.ai.execution_log import record_ai_execution, list_ai_executions
+
+        actor = str(self.admin.get("id") or "")
+        fixed_eid = "ai_exec_upsert_test_001"
+        record_ai_execution(
+            module_id="ai.product_actions.suggest",
+            actor_user_id=actor,
+            scope={"org_id": self.org_id},
+            status="running",
+            execution_id=fixed_eid,
+            output_summary="first write",
+        )
+        record_ai_execution(
+            module_id="ai.product_actions.suggest",
+            actor_user_id=actor,
+            scope={"org_id": self.org_id},
+            status="success",
+            execution_id=fixed_eid,
+            output_summary="second write overwrites",
+        )
+        listed = list_ai_executions(org_id=self.org_id, module_id="ai.product_actions.suggest", limit=10, offset=0)
+        items = listed.get("items") or []
+        matched = [item for item in items if item.get("execution_id") == fixed_eid]
+        self.assertEqual(len(matched), 1)
+        self.assertEqual(matched[0].get("status"), "success")
+        self.assertEqual(matched[0].get("output_summary"), "second write overwrites")
+
     def test_existing_legacy_ai_routes_remain_registered(self):
         from app import _legacy_main
 
