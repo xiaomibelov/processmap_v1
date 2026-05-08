@@ -360,7 +360,7 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         ) as provider:
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         self.assertTrue(out.get("ok"))
-        self.assertEqual(out.get("prompt_id"), "seed_ai_product_actions_suggest_v3")
+        self.assertEqual(out.get("prompt_id"), "seed_ai_product_actions_suggest_v4")
         prompt_template = str(provider.call_args.kwargs.get("prompt_template") or "")
         self.assertIn("физические действия сотрудников", prompt_template)
         self.assertIn("product_name", prompt_template)
@@ -492,6 +492,58 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
             out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
         self.assertTrue(out.get("ok"))
         self.assertNotIn("diagnostics", out)
+
+    def test_confidence_normalizer_accepts_string_enum(self):
+        from app.ai.product_actions_suggest import _confidence
+
+        self.assertEqual(_confidence("high"), 1.0)
+        self.assertEqual(_confidence("medium"), 0.6)
+        self.assertEqual(_confidence("low"), 0.3)
+        self.assertEqual(_confidence("unknown"), 0.0)
+        self.assertAlmostEqual(_confidence(0.8), 0.8)
+        self.assertEqual(_confidence("HIGH"), 1.0)
+        self.assertEqual(_confidence("  Medium  "), 0.6)
+
+    def test_max_suggestions_cap_limits_output(self):
+        ten_suggestions = [
+            {
+                "id": f"ai_{i}",
+                "step_id": f"step_{i}",
+                "bpmn_element_id": f"Task_{i}",
+                "product_name": f"Продукт{i}",
+                "confidence": "medium",
+            }
+            for i in range(10)
+        ]
+        with patch(
+            "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
+            return_value={"suggestions": ten_suggestions, "warnings": []},
+        ):
+            out = self.suggest_product_actions(
+                self.session_id,
+                self.ProductActionsSuggestIn(options={"max_suggestions": 3}),
+                self._req(),
+            )
+        self.assertTrue(out.get("ok"))
+        self.assertEqual(len(out.get("suggestions") or []), 3)
+
+    def test_normalize_includes_reason_field(self):
+        from app.ai.product_actions_suggest import normalize_product_action_suggestion
+
+        result = normalize_product_action_suggestion(
+            {"reason": "кратко", "evidence_text": "тест", "product_name": "X"},
+            index=0,
+        )
+        self.assertEqual(result.get("reason"), "кратко")
+        self.assertEqual(result.get("evidence_text"), "тест")
+
+    def test_success_result_has_empty_suggestions_list_not_none(self):
+        from app.ai.product_actions_suggest import normalize_product_action_suggestions_response
+
+        result = normalize_product_action_suggestions_response({"suggestions": [], "warnings": []})
+        self.assertIn("suggestions", result)
+        self.assertIsNotNone(result["suggestions"])
+        self.assertEqual(result["suggestions"], [])
 
 
 if __name__ == "__main__":
