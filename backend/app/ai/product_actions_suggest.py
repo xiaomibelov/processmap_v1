@@ -86,6 +86,18 @@ def _as_list(value: Any) -> List[Any]:
     return value if isinstance(value, list) else []
 
 
+def _validate_response_payload(raw: Any) -> Dict[str, Any]:
+    if not isinstance(raw, dict):
+        raise ProductActionsAiResponseParseError("invalid response shape: root must be object")
+    if "suggestions" not in raw:
+        raise ProductActionsAiResponseParseError("invalid response shape: missing suggestions")
+    if not isinstance(raw.get("suggestions"), list):
+        raise ProductActionsAiResponseParseError("invalid response shape: suggestions must be array")
+    if "warnings" in raw and raw.get("warnings") is not None and not isinstance(raw.get("warnings"), list):
+        raise ProductActionsAiResponseParseError("invalid response shape: warnings must be array")
+    return raw
+
+
 def normalize_product_action_suggestion(raw: Any, *, index: int = 0) -> Dict[str, Any]:
     item = raw if isinstance(raw, dict) else {}
     out: Dict[str, Any] = {"id": _text(item.get("id")) or f"ai_pa_{index + 1}"}
@@ -109,10 +121,8 @@ def normalize_product_action_suggestion(raw: Any, *, index: int = 0) -> Dict[str
 
 
 def normalize_product_action_suggestions_response(raw: Any, *, max_suggestions: int = 20) -> Dict[str, Any]:
-    payload = raw if isinstance(raw, dict) else {}
+    payload = _validate_response_payload(raw)
     raw_suggestions = payload.get("suggestions")
-    if raw_suggestions is None and isinstance(raw, list):
-        raw_suggestions = raw
     suggestions = [
         normalize_product_action_suggestion(item, index=index)
         for index, item in enumerate(_as_list(raw_suggestions)[: max(1, int(max_suggestions or 20))])
@@ -144,7 +154,8 @@ def suggest_product_actions_with_deepseek(
                 {"role": "user", "content": user_payload},
             ],
             timeout=45,
-            max_tokens=2400,
+            max_tokens=4096,
+            response_format={"type": "json_object"},
         )
     except json.JSONDecodeError as exc:
         raise ProductActionsAiResponseParseError(

@@ -352,6 +352,36 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         self.assertEqual(len(out.get("suggestions") or []), 1)
         self.assertEqual((out.get("suggestions") or [{}])[0].get("product_name"), "Сэндвич")
 
+    def test_valid_json_request_uses_deepseek_json_mode(self):
+        content = '{"suggestions":[{"step_id":"step_2","bpmn_element_id":"Task_2","product_name":"Сэндвич","product_group":"Готовые блюда","action_type":"упаковка","action_object":"сэндвич","confidence":0.8,"evidence_text":"Упаковать сэндвич"}],"warnings":[]}'
+        with patch(
+            "app.ai.deepseek_questions._deepseek_chat_request",
+            return_value={"choices": [{"message": {"content": content}}]},
+        ) as request:
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+
+        self.assertTrue(out.get("ok"))
+        self.assertEqual(request.call_args.kwargs.get("response_format"), {"type": "json_object"})
+        self.assertGreaterEqual(int(request.call_args.kwargs.get("max_tokens") or 0), 4096)
+
+    def test_invalid_provider_shape_returns_parse_error_without_mutation(self):
+        before = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+        with patch(
+            "app.ai.deepseek_questions._deepseek_chat_request",
+            return_value={"choices": [{"message": {"content": '{"items":[]}'}}]},
+        ):
+            out = self.suggest_product_actions(self.session_id, self.ProductActionsSuggestIn(), self._req())
+        after = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+
+        self.assertFalse(out.get("ok"))
+        self.assertEqual(out.get("error"), "AI_RESPONSE_PARSE_ERROR")
+        self.assertEqual(before.interview, after.interview)
+        self.assertEqual(before.bpmn_xml, after.bpmn_xml)
+        self.assertEqual(before.diagram_state_version, after.diagram_state_version)
+        logs = self._logs().get("items") or []
+        self.assertEqual(logs[0].get("error_code"), "AI_RESPONSE_PARSE_ERROR")
+        self.assertIn("invalid response shape", str(logs[0].get("error_message") or ""))
+
     def test_active_prompt_seed_is_used_and_fallback_kept(self):
         with patch(
             "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
