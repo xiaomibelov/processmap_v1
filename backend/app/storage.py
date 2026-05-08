@@ -268,6 +268,23 @@ def _translate_sql_for_postgres(query: str, params: Any) -> Tuple[str, Any]:
                 stripped = stripped[:-1]
             sql = f"{stripped} ON CONFLICT DO NOTHING"
 
+    had_insert_replace = bool(re.search(r"\bINSERT\s+OR\s+REPLACE\s+INTO\b", sql, flags=re.IGNORECASE))
+    if had_insert_replace:
+        m = re.search(r"\bINSERT\s+OR\s+REPLACE\s+INTO\s+(\w+)\s*\(([^)]+)\)", sql, flags=re.IGNORECASE)
+        if m and "ON CONFLICT" not in sql.upper():
+            cols_raw = [c.strip() for c in m.group(2).split(",")]
+            pk = cols_raw[0] if cols_raw else "id"
+            update_cols = cols_raw[1:]
+            sql = re.sub(r"\bINSERT\s+OR\s+REPLACE\s+INTO\b", "INSERT INTO", sql, flags=re.IGNORECASE)
+            stripped = sql.rstrip()
+            if stripped.endswith(";"):
+                stripped = stripped[:-1]
+            if update_cols:
+                set_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+                sql = f"{stripped} ON CONFLICT ({pk}) DO UPDATE SET {set_clause}"
+            else:
+                sql = f"{stripped} ON CONFLICT ({pk}) DO NOTHING"
+
     if isinstance(params, Mapping):
         return _named_to_pyformat(sql), dict(params)
     return _qmark_to_pyformat(sql), (list(params) if params is not None else [])
