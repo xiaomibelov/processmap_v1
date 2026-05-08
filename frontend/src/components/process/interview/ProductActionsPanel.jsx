@@ -161,7 +161,7 @@ function aiSuggestErrorText(codeRaw, detailRaw = "") {
   if (code === "AI_PROVIDER_NOT_CONFIGURED") return "AI provider не настроен: сохраните DeepSeek API key в Admin → AI модули.";
   if (code === "AI_PROMPT_NOT_CONFIGURED") return "AI prompt для действий с продуктом не настроен в Admin → AI модули.";
   if (code === "AI_RESPONSE_PARSE_ERROR") {
-    return "AI вернул ответ в некорректном формате. Попробуйте повторить или уточните prompt в Admin → AI модули.";
+    return "AI вернул некорректный формат ответа. Повторите запрос или проверьте prompt модуля в Admin → AI модули.";
   }
   if (code === "AI_PROVIDER_ERROR") {
     const detail = toText(detailRaw);
@@ -194,6 +194,18 @@ function aiProgressErrorStage(codeRaw) {
   if (code === "AI_RESPONSE_PARSE_ERROR") return AI_PROGRESS_BY_ID.parse;
   if (code === "ai_rate_limit_exceeded") return AI_PROGRESS_BY_ID.settings;
   return AI_PROGRESS_BY_ID.receive;
+}
+
+function aiProgressPercent(progressRaw) {
+  return Math.max(0, Math.min(100, Number(progressRaw?.percent || 0)));
+}
+
+function aiProgressBadge(progressRaw) {
+  return progressRaw?.status === "error" ? "Ошибка" : `${aiProgressPercent(progressRaw)}%`;
+}
+
+function aiProgressBarPercent(progressRaw) {
+  return progressRaw?.status === "error" ? 100 : aiProgressPercent(progressRaw);
 }
 
 function suggestionId(rowRaw, index = 0) {
@@ -732,11 +744,11 @@ export default function ProductActionsPanel({
                   </div>
                 </div>
                 <div className="productActionsAiProgressPercent" data-testid="product-actions-ai-progress-percent">
-                  {Math.max(0, Math.min(100, Number(aiProgress.percent || 0)))}%
+                  {aiProgressBadge(aiProgress)}
                 </div>
               </div>
               <div className="productActionsAiProgressBar" aria-hidden="true">
-                <span style={{ width: `${Math.max(0, Math.min(100, Number(aiProgress.percent || 0)))}%` }} />
+                <span style={{ width: `${aiProgressBarPercent(aiProgress)}%` }} />
               </div>
               <div className="productActionsAiProgressCurrent" data-testid="product-actions-ai-progress-current">
                 Текущий этап: {aiProgress.stageLabel || "Подготавливаем процесс"}
@@ -817,7 +829,7 @@ export default function ProductActionsPanel({
             );
           })}
         </div>
-      ) : (
+      ) : aiProgress?.active ? null : (
         <div className="productActionsEmpty">
           {actionsScope === "all"
             ? "В анализе пока нет сохранённых действий с продуктом."
@@ -917,7 +929,7 @@ export default function ProductActionsPanel({
           {statusText(status)}
         </div>
       ) : null}
-      {aiStatus ? (
+      {aiStatus && aiProgress?.status !== "error" ? (
         <div className={`productActionsStatus ${aiStatus.type || "pending"}`} data-testid="product-actions-ai-status">
           {statusText(aiStatus)}
         </div>

@@ -104,7 +104,10 @@ test("ProductActionsPanel maps controlled AI setup errors to admin-facing copy",
   assert.equal(source.includes("AI_PROMPT_NOT_CONFIGURED"), true);
   assert.equal(source.includes("AI_PROVIDER_ERROR"), true);
   assert.equal(source.includes("AI_RESPONSE_PARSE_ERROR"), true);
-  assert.equal(source.includes("AI вернул ответ в некорректном формате"), true);
+  assert.equal(
+    source.includes("AI вернул некорректный формат ответа. Повторите запрос или проверьте prompt модуля в Admin → AI модули."),
+    true,
+  );
   assert.equal(source.includes("ai_rate_limit_exceeded"), true);
   assert.equal(source.includes("Слишком много AI-запросов"), true);
   assert.equal(source.includes("result?.draft?.message"), true);
@@ -133,6 +136,16 @@ test("ProductActionsPanel renders step-based AI progress with success and error 
   assert.equal(source.includes('data-testid="product-actions-ai-progress-error"'), true);
   assert.equal(source.includes("Найдено ${rows.length} предложений. Проверьте и примите нужные."), true);
   assert.equal(source.includes("setAiProgress(null)"), true);
+});
+
+test("ProductActionsPanel keeps AI error state in the progress panel only", () => {
+  const parseErrorCopy = "AI вернул некорректный формат ответа. Повторите запрос или проверьте prompt модуля в Admin → AI модули.";
+  assert.equal(source.split(parseErrorCopy).length - 1, 1);
+  assert.equal(source.includes("aiProgressBadge"), true);
+  assert.equal(source.includes('progressRaw?.status === "error" ? "Ошибка"'), true);
+  assert.equal(source.includes("aiProgressBarPercent"), true);
+  assert.equal(source.includes('aiStatus && aiProgress?.status !== "error"'), true);
+  assert.equal(source.includes(") : aiProgress?.active ? null : ("), true);
 });
 
 test("ProductActionsPanel maps AI progress failures to the stage where they happened", () => {
