@@ -601,16 +601,14 @@ export default function ProductActionsPanel({
                   {aiDraft.source === "llm" ? "LLM" : displayValue(aiDraft.source, "AI")}
                 </span>
               </div>
-              {toArray(aiDraft.warnings).length ? (
+              {toArray(aiDraft.warnings).filter((w) => w && typeof w === "object" && w.code).length ? (
                 <div className="productActionsAiWarnings">
-                  {toArray(aiDraft.warnings).map((warning, index) => (
+                  {toArray(aiDraft.warnings).filter((w) => w && typeof w === "object" && w.code).map((warning, index) => (
                     <div key={`${warningText(warning)}_${index}`}>{warningText(warning)}</div>
                   ))}
                 </div>
               ) : null}
               <div className="productActionsMetaGrid">
-                <span>Draft: {displayValue(aiDraft.draft_id, "нет")}</span>
-                <span>Input hash: {displayValue(aiDraft.input_hash, "нет")}</span>
                 <span>Предложений: {aiRows.length}</span>
                 <span>Выбрано: {selectedAiRows.length}</span>
               </div>
