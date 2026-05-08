@@ -427,7 +427,7 @@ export function ProductActionsRegistryContent({
       project_id: toText(sessionRaw?.project_id),
       project_title: toText(sessionRaw?.project_title),
       workspace_id: toText(sessionRaw?.workspace_id) || workspaceId,
-    }, { openTab: "interview", source: "product_actions_registry" });
+    }, { openTab: "diagram", source: "product_actions_registry" });
   }
 
   function toggleSession(sessionRaw) {
@@ -810,8 +810,19 @@ export function ProductActionsRegistryContent({
               {sessionRows.map((item) => {
                 const checked = selectedSessionIds.includes(toText(item.session_id));
                 return (
-                <article className="productActionsRegistrySessionSummaryRow" role="row" key={item.session_id}>
-                  <label>
+                <article
+                  className="productActionsRegistrySessionSummaryRow"
+                  role="row"
+                  key={item.session_id}
+                  tabIndex={toText(item.session_id) ? 0 : -1}
+                  onClick={() => openSessionFromSummary(item)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    openSessionFromSummary(item);
+                  }}
+                >
+                  <label onClick={(event) => event.stopPropagation()}>
                     <input
                       type="checkbox"
                       checked={checked}
@@ -839,7 +850,10 @@ export function ProductActionsRegistryContent({
                     <button
                       type="button"
                       className="secondaryBtn smallBtn"
-                      onClick={() => openProjectFromSummary(item)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openProjectFromSummary(item);
+                      }}
                       disabled={!toText(item.project_id)}
                     >
                       Открыть проект
@@ -847,7 +861,10 @@ export function ProductActionsRegistryContent({
                     <button
                       type="button"
                       className="primaryBtn smallBtn"
-                      onClick={() => openSessionFromSummary(item)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openSessionFromSummary(item);
+                      }}
                       disabled={!toText(item.session_id)}
                     >
                       Открыть сессию

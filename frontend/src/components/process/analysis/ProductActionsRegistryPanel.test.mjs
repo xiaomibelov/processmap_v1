@@ -58,6 +58,10 @@ test("ProductActionsRegistryPanel exposes workspace session drilldown without wo
   assert.equal(source.includes("showSessionSummaryEmpty"), true);
   assert.equal(source.includes("openProjectFromSummary"), true);
   assert.equal(source.includes("openSessionFromSummary"), true);
+  assert.equal(source.includes('openTab: "diagram"'), true);
+  assert.equal(source.includes('source: "product_actions_registry"'), true);
+  assert.match(source, /className="productActionsRegistrySessionSummaryRow"[\s\S]*onClick=\{\(\) => openSessionFromSummary\(item\)\}/);
+  assert.match(source, /onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
   assert.equal(source.includes('source: "product_actions_registry"'), true);
   assert.doesNotMatch(source, /scope === "workspace"[\s\S]{0,1200}apiGetSession\(sid\)/);
 });
