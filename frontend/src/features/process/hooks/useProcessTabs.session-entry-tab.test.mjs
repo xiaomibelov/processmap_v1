@@ -75,7 +75,14 @@ test("Explorer and workspace session list opens request Diagram entry", () => {
 test("generic guarded session open honors explicit process tab intent", () => {
   const appSource = readFrontend("App.jsx");
   assert.match(appSource, /function normalizeOpenProcessTab\(tab\)/);
+  assert.match(appSource, /const row = ensureObject\(sessionIdRaw\);/);
+  assert.match(appSource, /row\?\.session_id \|\| row\?\.sessionId \|\| row\?\.id \|\| sessionIdRaw/);
   assert.match(appSource, /const openTab = normalizeOpenProcessTab\(options\?\.openTab\);[\s\S]*openSession\(targetSid, options\)/);
   assert.match(appSource, /setProcessTabIntent\(\{ sid: intentSid, tab: openTab, nonce: Date\.now\(\) \}\);/);
   assert.match(appSource, /return result\?\.ok === false \? result : \{ ok: true,[\s\S]*sessionId: intentSid \|\| sid \};/);
+});
+
+test("workspace session activation forwards options into base openSession", () => {
+  const orchestrationSource = readFrontend("app/useSessionActivationOrchestration.js");
+  assert.match(orchestrationSource, /return openSession\(sid,\s*\{\s*\.\.\.options,\s*source\s*\}\);/);
 });

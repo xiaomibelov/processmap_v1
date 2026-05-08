@@ -534,7 +534,7 @@ export default function useSessionActivationOrchestration({
     if (pid && pid !== String(projectId || "").trim()) {
       setProjectId(pid);
     }
-    return openSession(sid, { source });
+    return openSession(sid, { ...options, source });
   }, [ensureObject, openSession, projectId, projectWorkspaceHintsRef, setProjectId]);
 
   const createLocalSession = useCallback(() => {

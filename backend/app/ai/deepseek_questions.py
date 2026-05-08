@@ -701,6 +701,7 @@ def _deepseek_chat_json(
     messages: List[Dict[str, str]],
     timeout: int = 30,
     max_tokens: Optional[int] = None,
+    response_format: Optional[Dict[str, Any]] = None,
 ) -> Any:
     api_key = (api_key or "").strip()
     if not api_key:
@@ -714,6 +715,7 @@ def _deepseek_chat_json(
         temperature=0.0,
         timeout=timeout,
         max_tokens=max_tokens,
+        response_format=response_format,
     )
     content = data["choices"][0]["message"]["content"]
 
@@ -778,6 +780,7 @@ def _deepseek_chat_request(
     temperature: float,
     timeout: int,
     max_tokens: Optional[int] = None,
+    response_format: Optional[Dict[str, Any]] = None,
     max_attempts: int = 3,
     retry_backoff_sec: float = 0.8,
 ) -> Dict[str, Any]:
@@ -789,6 +792,8 @@ def _deepseek_chat_request(
     mt = int(max_tokens or 0)
     if mt > 0:
         payload["max_tokens"] = mt
+    if isinstance(response_format, dict) and response_format:
+        payload["response_format"] = response_format
     url = f"{base_url}/v1/chat/completions"
     attempts = max(1, int(max_attempts or 1))
     backoff = max(0.0, float(retry_backoff_sec or 0.0))

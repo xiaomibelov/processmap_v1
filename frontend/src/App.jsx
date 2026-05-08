@@ -1120,7 +1120,9 @@ export default function App() {
   }, [leaveNavigationRisk]);
 
   const openSessionWithLeaveGuard = useCallback(async (sessionIdRaw, options = {}) => {
-    const targetSid = String(sessionIdRaw || "").trim();
+    const row = ensureObject(sessionIdRaw);
+    const targetSid = String(row?.session_id || row?.sessionId || row?.id || sessionIdRaw || "").trim();
+    const targetProjectId = String(row?.project_id || row?.projectId || "").trim();
     const activeSid = String(draft?.session_id || "").trim();
     const bypassLeaveGuard = options?.bypassLeaveGuard === true;
     if (
@@ -1138,7 +1140,7 @@ export default function App() {
     const shouldPushHistory = options?.pushHistory !== false && source !== "url_restore";
     if (shouldPushHistory && targetSid && result?.ok !== false) {
       pushSessionSelectionToUrl({
-        projectId: result?.projectId || projectId,
+        projectId: result?.projectId || targetProjectId || projectId,
         sessionId: result?.sessionId || targetSid,
         projectContext: projectRouteContext,
       });
@@ -1148,7 +1150,7 @@ export default function App() {
       setProcessTabIntent({ sid: intentSid, tab: openTab, nonce: Date.now() });
     }
     return result;
-  }, [confirmLeaveIfUnsafe, draft?.session_id, openSession, projectId, projectRouteContext]);
+  }, [confirmLeaveIfUnsafe, draft?.session_id, ensureObject, openSession, projectId, projectRouteContext]);
 
   const openWorkspaceSession = useCallback(async (sessionLike, options = {}) => {
     const row = ensureObject(sessionLike);
