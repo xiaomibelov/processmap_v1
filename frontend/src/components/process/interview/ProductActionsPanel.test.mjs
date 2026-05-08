@@ -111,6 +111,41 @@ test("ProductActionsPanel maps controlled AI setup errors to admin-facing copy",
   assert.equal(source.includes("Admin → AI модули"), true);
 });
 
+test("ProductActionsPanel renders step-based AI progress with success and error stages", () => {
+  [
+    "Подготавливаем процесс",
+    "Проверяем настройки AI",
+    "Отправляем запрос в AI",
+    "Получаем ответ",
+    "Разбираем ответ",
+    "Формируем предложения",
+    "Готово к проверке",
+  ].forEach((label) => {
+    assert.equal(source.includes(label), true, `missing progress stage: ${label}`);
+  });
+  assert.equal(source.includes("AI_PROGRESS_STAGES"), true);
+  assert.equal(source.includes("aiProgressStep"), true);
+  assert.equal(source.includes("aiProgressErrorStage"), true);
+  assert.equal(source.includes('data-testid="product-actions-ai-progress"'), true);
+  assert.equal(source.includes('data-testid="product-actions-ai-progress-percent"'), true);
+  assert.equal(source.includes('data-testid="product-actions-ai-progress-current"'), true);
+  assert.equal(source.includes('data-testid="product-actions-ai-progress-steps"'), true);
+  assert.equal(source.includes('data-testid="product-actions-ai-progress-error"'), true);
+  assert.equal(source.includes("Найдено ${rows.length} предложений. Проверьте и примите нужные."), true);
+  assert.equal(source.includes("setAiProgress(null)"), true);
+});
+
+test("ProductActionsPanel maps AI progress failures to the stage where they happened", () => {
+  assert.match(source, /AI_PROVIDER_NOT_CONFIGURED[\s\S]*AI_PROGRESS_BY_ID\.settings/);
+  assert.match(source, /AI_PROMPT_NOT_CONFIGURED[\s\S]*AI_PROMPT_PROGRESS_STAGE/);
+  assert.match(source, /AI_PROVIDER_ERROR[\s\S]*AI_PROVIDER_REQUEST_STAGE/);
+  assert.match(source, /AI_RESPONSE_PARSE_ERROR[\s\S]*AI_PROGRESS_BY_ID\.parse/);
+  assert.match(source, /ai_rate_limit_exceeded[\s\S]*AI_PROGRESS_BY_ID\.settings/);
+  assert.equal(source.includes('label: "Проверяем prompt"'), true);
+  assert.equal(source.includes('label: "Запрос к AI"'), true);
+  assert.equal(source.includes("Ошибка на этапе"), true);
+});
+
 test("ProductActionsPanel keeps AI accept on patchInterviewAnalysis path only", () => {
   assert.equal(source.includes("handleAcceptAiRows"), true);
   assert.equal(source.includes("acceptAiProductActions({"), true);
