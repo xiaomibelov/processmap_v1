@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
-from .deepseek_questions import _deepseek_chat_json
+from . import deepseek_questions as _dq
 
 
 class ProductActionsAiResponseParseError(ValueError):
@@ -135,24 +135,30 @@ def suggest_product_actions_with_deepseek(
 ) -> Dict[str, Any]:
     system_prompt = str(prompt_template or PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE)
     user_payload = json.dumps(context if isinstance(context, dict) else {}, ensure_ascii=False, sort_keys=True)
+    base = (base_url or "https://api.deepseek.com").strip().rstrip("/")
+    data = _dq._deepseek_chat_request(
+        api_key=api_key,
+        base_url=base,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_payload},
+        ],
+        temperature=0.0,
+        timeout=45,
+        max_tokens=2400,
+    )
+    content = data["choices"][0]["message"]["content"]
+    cand = _dq._extract_json_candidate(content)
+    if not cand:
+        parse_exc = ProductActionsAiResponseParseError("no valid json object in response")
+        parse_exc.raw_content = str(content or "")[:500]
+        raise parse_exc
     try:
-        raw = _deepseek_chat_json(
-            api_key=api_key,
-            base_url=base_url,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_payload},
-            ],
-            timeout=45,
-            max_tokens=2400,
-        )
+        raw = json.loads(cand)
     except json.JSONDecodeError as exc:
-        raise ProductActionsAiResponseParseError(
+        parse_exc = ProductActionsAiResponseParseError(
             f"invalid json response: {exc.msg} at line {exc.lineno} column {exc.colno}"
-        ) from exc
-    except ValueError as exc:
-        message = _text(exc)
-        if message == "no json in response":
-            raise ProductActionsAiResponseParseError("no valid json object in response") from exc
-        raise
+        )
+        parse_exc.raw_content = str(cand or "")[:500]
+        raise parse_exc from exc
     return normalize_product_action_suggestions_response(raw, max_suggestions=max_suggestions)
