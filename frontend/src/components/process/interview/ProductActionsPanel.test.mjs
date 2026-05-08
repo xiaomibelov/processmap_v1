@@ -166,7 +166,7 @@ test("ProductActionsPanel keeps AI accept on patchInterviewAnalysis path only", 
   assert.equal(source.includes("selectedActions: selectedAiRows"), true);
   assert.equal(source.includes("disabled={!canAcceptAiRows}"), true);
   assert.equal(source.includes("Изменения применены к процессу"), true);
-  assert.equal(source.includes("неполное:"), true);
+  assert.equal(source.includes("Неполное"), true);
 });
 
 test("ProductActionsPanel editor is grouped and has one cancel action in the footer", () => {
@@ -224,5 +224,37 @@ test("ProductActionsPanel shows friendly message when AI returns zero suggestion
   assert.equal(source.includes('data-testid="product-actions-ai-empty"'), true);
   assert.equal(source.includes("AI не нашёл действий с продуктом"), true);
   assert.equal(source.includes("productActionsAiEmpty"), true);
+});
+
+test("ProductActionsPanel AI review uses compact card design with chips and confidence badge", () => {
+  assert.equal(source.includes("productActionsAiCard"), true);
+  assert.equal(source.includes("productActionsAiCardChips"), true);
+  assert.equal(source.includes("productActionsAiCardTitle"), true);
+  assert.equal(source.includes("productActionsAiConfidence"), true);
+  assert.equal(source.includes("productActionsAiBadge"), true);
+  assert.equal(source.includes("productActionsAiCardMeta"), true);
+  assert.equal(source.includes("productActionsAiCardEdit"), true);
+  assert.equal(source.includes("Редактировать поля"), true);
+  assert.equal(source.includes("productActionsAiChip"), true);
+  assert.equal(source.includes("confidenceLevel"), true);
+  assert.equal(source.includes("confidencePct"), true);
+  assert.equal(source.includes('data-testid="product-actions-ai-list"'), true);
+  assert.equal(source.includes("productActionsAiReviewHead"), true);
+  assert.equal(source.includes("productActionsAiReviewMeta"), true);
+});
+
+test("ProductActionsPanel AI review footer is sticky and has close and deselect actions", () => {
+  assert.equal(source.includes("productActionsAiStickyFooter"), true);
+  assert.equal(source.includes("productActionsAiFooterLeft"), true);
+  assert.equal(source.includes("Закрыть AI-предложения"), true);
+  assert.equal(source.includes("Снять выбор"), true);
+  assert.equal(source.includes("Принять выбранные"), true);
+});
+
+test("ProductActionsPanel AI warning renders as muted note not plain div", () => {
+  assert.equal(source.includes("productActionsAiWarningNote"), true);
+  assert.equal(source.includes("productActionsAiWarningNoteIcon"), true);
+  assert.equal(source.includes("w.code"), true);
+  assert.equal(source.includes("warningText").valueOf(), true);
 });
 
