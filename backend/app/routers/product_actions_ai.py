@@ -306,9 +306,9 @@ def _safe_error_message(exc: Any, *, api_key: str = "", base_url: str = "") -> s
     return text[:300]
 
 
-def _controlled_error(error_code: str, *, module_id: str = _MODULE_ID, input_hash: str = "", message: str = "") -> Dict[str, Any]:
+def _controlled_error(error_code: str, *, module_id: str = _MODULE_ID, input_hash: str = "", message: str = "", diagnostics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     code = _text(error_code) or "AI_PROVIDER_ERROR"
-    return {
+    out: Dict[str, Any] = {
         "ok": False,
         "error": code,
         "message": _text(message) or _CONTROLLED_ERROR_MESSAGES.get(code, code),
@@ -316,6 +316,9 @@ def _controlled_error(error_code: str, *, module_id: str = _MODULE_ID, input_has
         "input_hash": _text(input_hash),
         "warnings": [],
     }
+    if diagnostics:
+        out["diagnostics"] = diagnostics
+    return out
 
 
 @router.post("/api/sessions/{session_id}/analysis/product-actions/suggest")
@@ -350,6 +353,7 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
     }
     started_at = time.time()
     created_at = int(started_at)
+    execution_id = f"exec_{uuid.uuid4().hex[:16]}"
     prompt_template = ""
     prompt_id = ""
     prompt_version = ""
@@ -519,8 +523,23 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
         )
     except ProductActionsAiResponseParseError as exc:
         message = _safe_error_message(exc, api_key=api_key, base_url=base_url)
+        raw_content = getattr(exc, "raw_content", "")
+        safe_excerpt = _safe_error_message(raw_content, api_key=api_key, base_url=base_url)[:300]
+        diagnostics = {
+            "module_id": _MODULE_ID,
+            "execution_id": execution_id,
+            "provider": "deepseek",
+            "model": model_name,
+            "parse_error": message,
+            "response_excerpt": safe_excerpt,
+            "request_payload": {
+                "scope": "selected_step",
+                "steps_count": len(context.get("steps") or []),
+                "session_id": _text(session_id),
+            },
+        }
         return _finish(
-            _controlled_error("AI_RESPONSE_PARSE_ERROR", input_hash=input_hash),
+            _controlled_error("AI_RESPONSE_PARSE_ERROR", input_hash=input_hash, diagnostics=diagnostics),
             status="error",
             output_summary="product actions suggestion response parse failed",
             error_code="AI_RESPONSE_PARSE_ERROR",
