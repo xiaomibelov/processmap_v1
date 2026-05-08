@@ -703,7 +703,9 @@ export default function ProductActionsPanel({
                   })}
                 </div>
               ) : (
-                <div className="productActionsEmpty">AI не вернул candidate rows.</div>
+                <div className="productActionsAiEmpty" data-testid="product-actions-ai-empty">
+                  AI не нашёл действий с продуктом для выбранного шага. Попробуйте другой шаг или заполните действия вручную.
+                </div>
               )}
               <div className="productActionsFooter">
                 <button

@@ -219,3 +219,10 @@ test("ProductActionsPanel aiDiagnostics state is initialized to null and reset o
   assert.equal(source.includes("setAiDiagnostics(null)"), true);
   assert.equal(source.includes("setAiDiagnostics(result?.draft?.diagnostics || null)"), true);
 });
+
+test("ProductActionsPanel shows friendly message when AI returns zero suggestions", () => {
+  assert.equal(source.includes('data-testid="product-actions-ai-empty"'), true);
+  assert.equal(source.includes("AI не нашёл действий с продуктом"), true);
+  assert.equal(source.includes("productActionsAiEmpty"), true);
+});
+
