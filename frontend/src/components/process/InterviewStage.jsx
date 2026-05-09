@@ -7,6 +7,7 @@ import BoundariesBlock from "./interview/BoundariesBlock";
 import TimelineControls from "./interview/TimelineControls";
 import TimelineTable from "./interview/TimelineTable";
 import ProductActionsPanel from "./interview/ProductActionsPanel";
+import RagSearchPanel from "./interview/RagSearchPanel";
 import InterviewDiagramView from "./interview/InterviewDiagramView";
 import TransitionsBlock from "./interview/TransitionsBlock";
 import SummaryBlock from "./interview/SummaryBlock";
@@ -1010,6 +1011,12 @@ export default function InterviewStage({
               onSessionSync={onSessionSync}
               onOpenProductActionsRegistry={onOpenProductActionsRegistry}
             />
+            </details>
+            <details className="analysisBSection ragSearchSection" data-testid="rag-search-section">
+              <summary>
+                <span>Поиск по знаниям</span>
+              </summary>
+              <RagSearchPanel sessionId={sid} />
             </details>
           </aside>
         </div>
