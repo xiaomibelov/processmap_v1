@@ -170,11 +170,63 @@ test("CSS: interviewStepMetaStatusBtn.warn has warn color variant", () => {
   );
 });
 
-test("CSS NO-LAYOUT-SHIFT: interviewInlineTimeSummary uses visibility (not max-height)", () => {
+test("CSS NO-LAYOUT-SHIFT: interviewStepTimingMeta uses visibility (not max-height)", () => {
+  const block = extractBlock(".analysisStepListTable .interviewStepTimingMeta");
+  assert.ok(block, "interviewStepTimingMeta block must exist");
+  assert.ok(block.includes("visibility: hidden"), "interviewStepTimingMeta must use visibility:hidden (not max-height)");
+  assert.ok(!block.includes("max-height"), "interviewStepTimingMeta must NOT use max-height");
+});
+
+test("CSS NO-LAYOUT-SHIFT: interviewInlineTimeSummary does NOT use visibility/max-height (delegated to parent)", () => {
   const block = extractBlock(".analysisStepListTable .interviewInlineTimeSummary");
-  assert.ok(block, "interviewInlineTimeSummary block must exist");
-  assert.ok(block.includes("visibility: hidden"), "interviewInlineTimeSummary must use visibility:hidden");
+  assert.ok(block, "interviewInlineTimeSummary scoped block must exist");
   assert.ok(!block.includes("max-height"), "interviewInlineTimeSummary must NOT use max-height");
+  assert.ok(!block.includes("visibility: hidden"), "visibility:hidden must be on parent interviewStepTimingMeta, not interviewInlineTimeSummary");
+});
+
+// --- Work/Wait/Edit placement contract ---
+
+test("JSX: interviewInlineTimeSummary is NOT inside analysisStepPrimaryCell", () => {
+  const primaryCellRe = /className="analysisStepPrimaryCell"([\s\S]*?)(?=<\/div>\s*<\/div>\s*<div className="interviewStepTimingMeta"|<\/div>\s*<div className="interviewStepTimingMeta")/;
+  const m = tableJsx.match(primaryCellRe);
+  if (m) {
+    assert.ok(
+      !m[1].includes("interviewInlineTimeSummary"),
+      "interviewInlineTimeSummary must NOT be inside analysisStepPrimaryCell",
+    );
+  }
+  assert.ok(
+    tableJsx.includes('className="interviewStepTimingMeta"'),
+    "interviewStepTimingMeta wrapper must exist in JSX",
+  );
+});
+
+test("JSX: interviewInlineTimeSummary is inside interviewStepTimingMeta", () => {
+  const timingMetaRe = /className="interviewStepTimingMeta"[\s\S]*?interviewInlineTimeSummary/;
+  assert.ok(
+    timingMetaRe.test(tableJsx),
+    "interviewInlineTimeSummary must be a descendant of interviewStepTimingMeta",
+  );
+});
+
+test("JSX: analysisStepStepCell wraps both primary cell and timing meta", () => {
+  assert.ok(
+    tableJsx.includes('className="analysisStepStepCell"'),
+    "analysisStepStepCell outer wrapper must exist in JSX",
+  );
+});
+
+test("JSX: data-testid interview-step-timing-meta is set", () => {
+  assert.ok(
+    tableJsx.includes('data-testid="interview-step-timing-meta"'),
+    "timing meta container must have data-testid for test targeting",
+  );
+});
+
+test("CSS: analysisStepStepCell is defined as flex column container", () => {
+  const block = extractBlock(".analysisStepStepCell");
+  assert.ok(block, "analysisStepStepCell CSS block must exist");
+  assert.ok(block.includes("flex-direction: column") || block.includes("display"), "analysisStepStepCell must be a flex/grid container");
 });
 
 // --- appVersion contract ---

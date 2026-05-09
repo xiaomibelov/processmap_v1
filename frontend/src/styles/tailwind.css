@@ -7040,10 +7040,35 @@
     width: 88px;
   }
 
+  .analysisStepStepCell {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 0;
+  }
+
   .analysisStepPrimaryCell {
     display: grid;
     min-width: 0;
     gap: 3px;
+  }
+
+  .analysisStepListTable .interviewStepTimingMeta {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    height: 18px;
+    overflow: hidden;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 140ms ease;
+  }
+
+  .analysisStepListTable .analysisStepListRow:hover .interviewStepTimingMeta,
+  .analysisStepListTable .analysisStepListRow.isActiveRow .interviewStepTimingMeta,
+  .analysisStepListTable .analysisStepListRow.isAnalysisActive .interviewStepTimingMeta {
+    visibility: visible;
+    opacity: 1;
   }
 
   .analysisStepListTable .interviewRowSelectCell {
@@ -7142,20 +7167,9 @@
   }
 
   .analysisStepListTable .interviewInlineTimeSummary {
-    margin-top: 1px;
     gap: 4px;
-    height: 20px;
-    overflow: hidden;
-    visibility: hidden;
-    opacity: 0;
-    transition: opacity 140ms ease;
-  }
-
-  .analysisStepListTable .analysisStepListRow:hover .interviewInlineTimeSummary,
-  .analysisStepListTable .analysisStepListRow.isActiveRow .interviewInlineTimeSummary,
-  .analysisStepListTable .analysisStepListRow.isAnalysisActive .interviewInlineTimeSummary {
-    visibility: visible;
-    opacity: 1;
+    align-items: center;
+    flex-wrap: nowrap;
   }
 
   .analysisStepListTable .interviewInlineTimeEditBtn,
