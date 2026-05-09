@@ -2367,10 +2367,11 @@
 }
 
 .ragReadOnlyNotice{
-  margin: 0;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 5px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(148,163,184,.55);
+  padding: 0 2px 2px;
+  letter-spacing: .2px;
 }
 
 .ragSearchForm{
@@ -2379,12 +2380,13 @@
 }
 
 .ragSearchInput{
-  flex: 1 1 100%;
+  width: 100%;
+  box-sizing: border-box;
   min-width: 0;
-  height: 26px;
-  border: 1px solid rgba(148,163,184,.28);
+  height: 28px;
+  border: 1px solid rgba(148,163,184,.32);
   border-radius: 6px;
-  background: rgba(2,6,23,.42);
+  background: rgba(2,6,23,.55);
   color: rgba(248,250,252,.92);
   font-size: 12px;
   padding: 0 8px;
@@ -2396,8 +2398,8 @@
 }
 
 .ragSourceTypeSelect{
-  flex: 0 0 auto;
-  height: 26px;
+  flex: 1 1 auto;
+  height: 28px;
   border: 1px solid rgba(148,163,184,.24);
   border-radius: 6px;
   background: rgba(2,6,23,.42);
@@ -2406,6 +2408,7 @@
   padding: 0 6px;
   outline: none;
   cursor: pointer;
+  min-width: 0;
 }
 
 .ragIndexRow{
@@ -2416,8 +2419,14 @@
 }
 
 .ragIndexStatus{
-  font-size: 11px;
-  color: rgba(148,163,184,.82);
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  opacity: .85;
 }
 
 .ragSearchError{
@@ -2453,12 +2462,6 @@
   flex-wrap: wrap;
 }
 
-.ragResultScore{
-  font-size: 10px;
-  font-weight: 800;
-  color: rgba(125,211,252,.88);
-  font-variant-numeric: tabular-nums;
-}
 
 .ragResultTag{
   font-size: 10px;
@@ -2497,8 +2500,10 @@
 .ragCopyBtn:hover{ color: rgba(226,232,240,.88); background: rgba(51,65,85,.44); }
 .ragSearchingIndicator{ font-size: 11px; color: rgba(148,163,184,.66); padding: 8px 0; text-align: center; }
 .ragResultsTotal{ font-size: 10px; color: rgba(148,163,184,.58); padding: 2px 0; }
-.ragSearchInputRow{ display: flex; width: 100%; }
+.ragSearchInputRow{ display: block; }
 .ragFiltersRow{ display: flex; align-items: center; gap: 6px; }
+.ragFiltersRow .secondaryBtn{ flex: 0 0 auto; height: 28px; min-height: 28px; padding: 0 10px; font-size: 11px; border-radius: 6px; white-space: nowrap; }
+.ragResultsArea{ border-top: 1px solid rgba(148,163,184,.10); padding-top: 6px; margin-top: 2px; }
 .ragScorePill{ display: inline-flex; align-items: center; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 999px; font-variant-numeric: tabular-nums; }
 .ragScorePill.ragScoreHigh{ background: rgba(74,222,128,.14); color: rgba(74,222,128,.92); }
 .ragScorePill.ragScoreMed{ background: rgba(250,204,21,.12); color: rgba(250,204,21,.88); }
