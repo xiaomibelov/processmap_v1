@@ -1628,6 +1628,85 @@ def _ensure_schema() -> None:
             _ensure_enterprise_bootstrap(con)
             _ensure_org_workspaces_bootstrap(con)
             _ensure_workspace_folder_backfill(con)
+            # ── RAG tables ───────────────────────────────────────────────────────────
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS rag_documents (
+                    doc_id          TEXT PRIMARY KEY,
+                    org_id          TEXT NOT NULL,
+                    source_type     TEXT NOT NULL,
+                    source_id       TEXT NOT NULL,
+                    source_version  INTEGER,
+                    content_hash    TEXT NOT NULL,
+                    content_text    TEXT NOT NULL,
+                    metadata_json   TEXT NOT NULL DEFAULT '{}',
+                    created_at      INTEGER NOT NULL,
+                    updated_at      INTEGER NOT NULL,
+                    is_active       INTEGER NOT NULL DEFAULT 1
+                )
+            """)
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS rag_chunks (
+                    chunk_id        TEXT PRIMARY KEY,
+                    doc_id          TEXT NOT NULL,
+                    org_id          TEXT NOT NULL,
+                    chunk_index     INTEGER NOT NULL,
+                    chunk_text      TEXT NOT NULL,
+                    token_count     INTEGER,
+                    metadata_json   TEXT NOT NULL DEFAULT '{}',
+                    created_at      INTEGER NOT NULL
+                )
+            """)
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS rag_embeddings (
+                    embedding_id    TEXT PRIMARY KEY,
+                    chunk_id        TEXT NOT NULL,
+                    org_id          TEXT NOT NULL,
+                    model_id        TEXT NOT NULL,
+                    vector_data     BLOB,
+                    created_at      INTEGER NOT NULL
+                )
+            """)
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS rag_sources (
+                    source_id       TEXT PRIMARY KEY,
+                    org_id          TEXT NOT NULL,
+                    source_type     TEXT NOT NULL,
+                    display_name    TEXT NOT NULL,
+                    is_enabled      INTEGER NOT NULL DEFAULT 1,
+                    last_indexed_at INTEGER,
+                    index_error     TEXT,
+                    config_json     TEXT NOT NULL DEFAULT '{}'
+                )
+            """)
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS rag_feedback (
+                    feedback_id     TEXT PRIMARY KEY,
+                    org_id          TEXT NOT NULL,
+                    query_id        TEXT NOT NULL,
+                    chunk_id        TEXT NOT NULL,
+                    rating          INTEGER NOT NULL,
+                    actor_user_id   TEXT NOT NULL,
+                    created_at      INTEGER NOT NULL
+                )
+            """)
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS rag_eval_cases (
+                    eval_id                 TEXT PRIMARY KEY,
+                    org_id                  TEXT NOT NULL,
+                    query_text              TEXT NOT NULL,
+                    expected_chunk_ids_json TEXT NOT NULL DEFAULT '[]',
+                    tags_json               TEXT NOT NULL DEFAULT '[]',
+                    created_at              INTEGER NOT NULL
+                )
+            """)
+            con.execute("CREATE INDEX IF NOT EXISTS idx_rag_docs_org_source ON rag_documents(org_id, source_type, source_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_rag_docs_hash ON rag_documents(content_hash)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_rag_docs_active ON rag_documents(org_id, is_active)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_rag_chunks_doc ON rag_chunks(doc_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_rag_chunks_org ON rag_chunks(org_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_rag_embed_chunk ON rag_embeddings(chunk_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_rag_embed_org_model ON rag_embeddings(org_id, model_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_rag_sources_org ON rag_sources(org_id, source_type)")
             con.commit()
         _SCHEMA_READY = True
         _SCHEMA_DB_FILE = db_file
