@@ -716,7 +716,27 @@ export function laneLabel(name, idx) {
 export function laneLabelShort(name, idx) {
   const laneIdx = Number(idx);
   if (Number.isFinite(laneIdx) && laneIdx > 0) return `L${laneIdx}`;
-  return toText(name) || "?";
+  return toText(name) || "L?";
+}
+
+export function laneCellDisplay(stepLaneIdx, stepLaneName, transitionLaneLinks) {
+  const selfShort = laneLabelShort(stepLaneName, stepLaneIdx);
+  const selfFull = laneLabel(stepLaneName, stepLaneIdx);
+  if (!transitionLaneLinks || !transitionLaneLinks.length) {
+    return { text: selfShort, tooltip: selfFull };
+  }
+  const outgoing = transitionLaneLinks.find((t) => t.direction === "out");
+  const incoming = transitionLaneLinks.find((t) => t.direction === "in");
+  const transition = outgoing || incoming;
+  if (!transition) {
+    return { text: selfShort, tooltip: selfFull };
+  }
+  const otherShort = laneLabelShort(transition.laneName, transition.laneIdx);
+  const otherFull = laneLabel(transition.laneName, transition.laneIdx);
+  if (transition.direction === "out") {
+    return { text: `${selfShort} → ${otherShort}`, tooltip: `${selfFull} → ${otherFull}` };
+  }
+  return { text: `${otherShort} → ${selfShort}`, tooltip: `${otherFull} → ${selfFull}` };
 }
 
 const BPMN_KIND_SHORT = {
