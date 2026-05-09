@@ -713,6 +713,12 @@ export function laneLabel(name, idx) {
   return laneName;
 }
 
+export function laneLabelShort(name, idx) {
+  const laneIdx = Number(idx);
+  if (Number.isFinite(laneIdx) && laneIdx > 0) return `L${laneIdx}`;
+  return toText(name) || "?";
+}
+
 export function dedupNames(list) {
   const out = [];
   const seen = new Set();

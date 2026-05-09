@@ -7252,6 +7252,18 @@
     color: color-mix(in srgb, var(--c-info) 88%, var(--c-text));
   }
 
+  .analysisStepListTable .interviewStepMetaStatusBtn.ok {
+    border-color: color-mix(in srgb, var(--c-ok, hsl(142 50% 45%)) 28%, var(--c-border));
+    background: color-mix(in srgb, var(--c-ok, hsl(142 50% 45%)) 8%, transparent);
+    color: color-mix(in srgb, var(--c-ok, hsl(142 50% 45%)) 80%, var(--c-text));
+  }
+
+  .analysisStepListTable .interviewStepMetaStatusBtn.warn {
+    border-color: color-mix(in srgb, var(--c-warn, hsl(38 90% 52%)) 34%, var(--c-border));
+    background: color-mix(in srgb, var(--c-warn, hsl(38 90% 52%)) 10%, transparent);
+    color: color-mix(in srgb, var(--c-warn, hsl(38 90% 52%)) 82%, var(--c-text));
+  }
+
   .analysisStepListTable .interviewGatewayPreviewTag.tier.tier-none {
     border-color: transparent;
     background: transparent;
