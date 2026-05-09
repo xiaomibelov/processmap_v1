@@ -1041,7 +1041,7 @@ export default function TimelineTable({
               const detailsOpen = detailsStepId === stepId;
               const activeRow = activeInlineStepId === stepId;
               const activeAnalysisRow = toText(activeAnalysisStepId) === stepId;
-              const inlineEditorVisible = detailsOpen || activeRow;
+              const inlineEditorVisible = detailsOpen;
               const activateStepRow = () => {
                 onActivateStep?.(stepId);
               };
@@ -1506,8 +1506,8 @@ export default function TimelineTable({
                     </td>
                   </tr>
                   {detailsOpen ? (
-                    <tr className="interviewStepDetailsRow">
-                      <td colSpan={compactColSpan}>
+                    <tr className="interviewStepDetailsRow" data-details-panel="true" data-step-id={stepId}>
+                      <td colSpan={compactColSpan} className="interviewStepDetailsTd">
                         <div className="interviewStepDetailsPanel">
                           <div className="interviewStepDetailsGrid">
                             <label className="interviewField">
