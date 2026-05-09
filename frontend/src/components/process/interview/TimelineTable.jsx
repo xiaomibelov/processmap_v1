@@ -1233,6 +1233,7 @@ export default function TimelineTable({
                       </div>
                     </td>
                     <td className="analysisStepListCell analysisStepListCell--step">
+                      <div className="analysisStepStepCell">
                       <div className="analysisStepPrimaryCell">
                       <div className="interviewStepTitleLine" style={{ "--step-depth": stepDepth }}>
                         {isSubprocessChild ? <span className="interviewSubprocessChildArrow">↳</span> : null}
@@ -1268,6 +1269,8 @@ export default function TimelineTable({
                           ? <span>· Σ {cumulativeMainlineLabel}{totalMainlineLabel && totalMainlineLabel !== "—" ? ` / ${totalMainlineLabel}` : ""}</span>
                           : null}
                       </div>
+                      </div>
+                      <div className="interviewStepTimingMeta" data-testid="interview-step-timing-meta">
                       <div className="interviewInlineTimeSummary">
                         <span className="interviewInlineTimeSummaryItem">Work: {formatTimelineDuration(stepDurationSeconds)}</span>
                         <span className="interviewInlineTimeSummaryItem">Wait: {formatTimelineDuration(stepWaitSeconds)}</span>
@@ -1314,6 +1317,7 @@ export default function TimelineTable({
                           </label>
                         </div>
                       ) : null}
+                      </div>
                       </div>
                     </td>
                     {showNodeCol ? (
