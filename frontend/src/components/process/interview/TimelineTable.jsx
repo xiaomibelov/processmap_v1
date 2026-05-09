@@ -11,6 +11,7 @@ import {
   laneColor,
   laneLabel,
   laneLabelShort,
+  bpmnNodeKindShort,
   typeLabel,
   durationClass,
   durationLabel,
@@ -1333,7 +1334,7 @@ export default function TimelineTable({
                               >
                                 {nodeIcon}
                               </span>
-                              <span className="badge ok analysisStepNodeBadge" data-testid="interview-node-type-label">{nodeKind || "node"}</span>
+                              <span className="badge ok analysisStepNodeBadge" data-testid="interview-node-type-label">{bpmnNodeKindShort(nodeKind) || nodeKind || "node"}</span>
                             </div>
                             <span className="muted small font-mono" data-testid="interview-node-bind-id">{toText(step.node_bind_id)}</span>
                           </div>
@@ -1358,9 +1359,11 @@ export default function TimelineTable({
                     <td className="analysisStepListCell analysisStepListCell--status">
                       <div className="interviewRowStatus">
                         {stepOutgoingCount <= 1 ? (
-                          <span className={`interviewGatewayPreviewTag tier tier-${stepTier.toLowerCase()}`} data-testid="interview-step-tier-chip">
-                            {stepTier}
-                          </span>
+                          stepTier !== "None" ? (
+                            <span className={`interviewGatewayPreviewTag tier tier-${stepTier.toLowerCase()}`} data-testid="interview-step-tier-chip">
+                              {stepTier}
+                            </span>
+                          ) : null
                         ) : (
                           <span className="interviewGatewayPreviewTag muted" data-testid="interview-step-branches-summary">
                             Branches: {betweenTierSummary || "P0/P1/P2/None"}

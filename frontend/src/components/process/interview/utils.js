@@ -719,6 +719,34 @@ export function laneLabelShort(name, idx) {
   return toText(name) || "?";
 }
 
+const BPMN_KIND_SHORT = {
+  startevent: "Старт",
+  endevent: "Конец",
+  usertask: "Задача",
+  manualtask: "Ручная",
+  servicetask: "Сервис",
+  scripttask: "Скрипт",
+  businessruletask: "Правило",
+  sendtask: "Отправка",
+  receivetask: "Получение",
+  callactivity: "Вызов",
+  subprocess: "Подпроцесс",
+  adhocsubprocess: "Ad-hoc",
+  intermediatecatchevent: "Событие",
+  intermediatethrowevent: "Событие",
+  boundaryevent: "Граница",
+  exclusivegateway: "Шлюз",
+  inclusivegateway: "Шлюз",
+  parallelgateway: "Параллельно",
+  eventbasedgateway: "Шлюз",
+  task: "Задача",
+};
+
+export function bpmnNodeKindShort(nodeKind) {
+  const key = String(nodeKind || "").toLowerCase();
+  return BPMN_KIND_SHORT[key] || null;
+}
+
 export function dedupNames(list) {
   const out = [];
   const seen = new Set();
