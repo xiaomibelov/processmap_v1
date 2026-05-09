@@ -8016,12 +8016,37 @@
     @apply text-xs text-muted;
   }
 
-  .interviewStepDetailsRow td {
-    background: color-mix(in srgb, var(--c-panel2) 86%, transparent);
+  .interviewStepDetailsRow {
+    height: 0;
+    overflow: visible;
+  }
+
+  .interviewStepDetailsRow td,
+  .interviewStepDetailsTd {
+    height: 0;
+    padding: 0;
+    border: none;
+    overflow: visible;
+    position: relative;
+  }
+
+  .interviewStepDetailsTd > .interviewStepDetailsPanel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    z-index: 120;
+    max-height: 60vh;
+    overflow-y: auto;
+    background: color-mix(in srgb, var(--c-panel) 97%, transparent);
+    border: 1px solid var(--c-border-strong);
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.22);
+    margin: 0 4px;
   }
 
   .interviewStepDetailsPanel {
-    @apply grid gap-3 rounded-lg border border-border bg-panel/55 p-3;
+    @apply grid gap-3 p-3;
   }
 
   .interviewStepDetailsGrid {
