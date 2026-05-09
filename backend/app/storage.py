@@ -1662,7 +1662,7 @@ def _ensure_schema() -> None:
                     chunk_id        TEXT NOT NULL,
                     org_id          TEXT NOT NULL,
                     model_id        TEXT NOT NULL,
-                    vector_data     BLOB,
+                    vector_data     BYTEA,
                     created_at      INTEGER NOT NULL
                 )
             """)
