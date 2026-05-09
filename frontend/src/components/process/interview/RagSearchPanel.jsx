@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { apiRagSearch, apiRagIndex } from "../../../lib/api.js";
+import { SOURCE_TYPE_LABELS, scoreClass, formatElementContext } from "./RagSearchPanel.helpers.js";
 
 const SOURCE_TYPE_OPTIONS = [
   { value: "", label: "Все типы" },
@@ -7,18 +8,29 @@ const SOURCE_TYPE_OPTIONS = [
   { value: "product_action", label: "Продуктовые действия" },
 ];
 
+function handleCopy(text) {
+  navigator.clipboard?.writeText(text).catch(() => {});
+}
+
 function RagResultItem({ item }) {
-  const score = typeof item?.score === "number" ? item.score.toFixed(3) : "—";
+  const rawScore = item?.score;
+  const score = typeof rawScore === "number" ? rawScore.toFixed(3) : "—";
   const sourceType = String(item?.source_type || item?.metadata?.source_type || "");
   const sourceId = String(item?.source_id || item?.metadata?.source_id || "");
   const text = String(item?.chunk_text || "");
+  const meta = item?.metadata || {};
+  const sessionTitle = String(meta.session_title || "");
+  const elementCtx = formatElementContext(meta);
 
   return (
     <div className="ragResultItem" data-testid="rag-result-item">
       <div className="ragResultMeta">
-        <span className="ragResultScore">{score}</span>
-        {sourceType ? <span className="ragResultTag">{sourceType}</span> : null}
+        <span className={`ragResultScore ${typeof rawScore === "number" ? scoreClass(rawScore) : ""}`}>{score}</span>
+        {sourceType ? <span className="ragResultTag">{SOURCE_TYPE_LABELS[sourceType] || sourceType}</span> : null}
         {sourceId ? <span className="ragResultSrc">{sourceId.slice(0, 12)}…</span> : null}
+        {sessionTitle ? <span className="ragResultSource" title={sessionTitle}>{sessionTitle}</span> : null}
+        {elementCtx ? <span className="ragResultContext">{elementCtx}</span> : null}
+        <button type="button" className="ragCopyBtn" onClick={() => handleCopy(text)} title="Копировать текст" data-testid="rag-copy-btn">⎘</button>
       </div>
       <div className="ragResultText">{text}</div>
     </div>
@@ -150,6 +162,10 @@ export default function RagSearchPanel({ sessionId }) {
         </div>
       ) : null}
 
+      {searching ? (
+        <div className="ragSearchingIndicator" data-testid="rag-searching-indicator">Поиск…</div>
+      ) : null}
+
       {searchError ? (
         <div className="interviewAnnotationNotice err ragSearchError" data-testid="rag-search-error">
           {searchError}
@@ -162,11 +178,14 @@ export default function RagSearchPanel({ sessionId }) {
             Ничего не найдено
           </div>
         ) : (
-          <div className="ragResultsList" data-testid="rag-results-list">
-            {results.map((item, i) => (
-              <RagResultItem key={String(item?.chunk_id || i)} item={item} />
-            ))}
-          </div>
+          <>
+            <div className="ragResultsTotal" data-testid="rag-results-total">Найдено: {results.length}</div>
+            <div className="ragResultsList" data-testid="rag-results-list">
+              {results.map((item, i) => (
+                <RagResultItem key={String(item?.chunk_id || i)} item={item} />
+              ))}
+            </div>
+          </>
         )
       ) : null}
     </div>
