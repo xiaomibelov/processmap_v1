@@ -216,6 +216,16 @@ export const apiRoutes = {
     aiPromptActivate: (promptId) => `/api/admin/ai/prompts/${encode(promptId)}/activate`,
     aiPromptArchive: (promptId) => `/api/admin/ai/prompts/${encode(promptId)}/archive`,
   },
+  rag: {
+    search: (params = {}) => withQuery("/api/rag/search", {
+      q: String(params?.q || "").trim(),
+      top_k: params?.top_k ? String(params.top_k) : "",
+      source_type: String(params?.source_type || "").trim(),
+      session_id: String(params?.session_id || "").trim(),
+      min_score: params?.min_score != null ? String(params.min_score) : "",
+    }),
+    index: () => "/api/rag/index",
+  },
   misc: {
     meta: () => "/api/meta",
     glossaryAdd: () => "/api/glossary/add",

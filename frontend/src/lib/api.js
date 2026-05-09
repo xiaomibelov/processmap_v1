@@ -1398,6 +1398,41 @@ export async function apiVerifyLlmSettings(payload) {
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
+
+// ------- RAG -------
+export async function apiRagSearch({ q, top_k = 10, source_type = "", session_id = "", min_score = 0 } = {}) {
+  const query = String(q || "").trim();
+  if (!query) return { ok: false, status: 0, error: "missing q" };
+  const r = okOrError(await request(apiRoutes.rag.search({ q: query, top_k, source_type, session_id, min_score })));
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    status: r.status,
+    query: String(r.data?.query || query),
+    total: Number(r.data?.total || 0),
+    results: Array.isArray(r.data?.results) ? r.data.results : [],
+  };
+}
+
+export async function apiRagIndex({ source_type, session_id, force = false } = {}) {
+  const st = String(source_type || "").trim();
+  const sid = String(session_id || "").trim();
+  if (!st) return { ok: false, status: 0, error: "missing source_type" };
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.rag.index(), {
+    method: "POST",
+    body: { source_type: st, session_id: sid, force: Boolean(force) },
+  }));
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    status: r.status,
+    doc_id: String(r.data?.doc_id || ""),
+    chunks_created: Number(r.data?.chunks_created || 0),
+    was_updated: Boolean(r.data?.was_updated),
+  };
+}
+
 // ------- DEV helpers -------
 export async function apiWipeDevAll() {
   const lp = await apiListProjects();
