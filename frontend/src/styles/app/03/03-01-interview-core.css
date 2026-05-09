@@ -2489,3 +2489,12 @@
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
 }
+.ragScoreHigh{ color: rgba(74,222,128,.92); }
+.ragScoreMed{ color: rgba(250,204,21,.88); }
+.ragScoreLow{ color: rgba(148,163,184,.62); }
+.ragResultContext{ font-size: 10px; color: rgba(148,163,184,.68); font-style: italic; }
+.ragResultSource{ font-size: 10px; color: rgba(125,211,252,.62); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ragCopyBtn{ all: unset; cursor: pointer; font-size: 10px; color: rgba(148,163,184,.55); padding: 1px 4px; border-radius: 4px; }
+.ragCopyBtn:hover{ color: rgba(226,232,240,.88); background: rgba(51,65,85,.44); }
+.ragSearchingIndicator{ font-size: 11px; color: rgba(148,163,184,.66); padding: 8px 0; text-align: center; }
+.ragResultsTotal{ font-size: 10px; color: rgba(148,163,184,.58); padding: 2px 0; }
