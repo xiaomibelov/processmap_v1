@@ -10,6 +10,7 @@ import {
   nodeKindIcon,
   laneColor,
   laneLabel,
+  laneLabelShort,
   typeLabel,
   durationClass,
   durationLabel,
@@ -1200,9 +1201,10 @@ export default function TimelineTable({
                           className="interviewLaneBadge interviewLaneBadge--primary"
                           data-testid="interview-lane-pill-primary"
                           style={{ "--lane-accent": laneAccent }}
+                          title={laneLabel(step.lane_name, step.lane_idx)}
                         >
                           <span className="interviewLaneDot" />
-                          {laneLabel(step.lane_name, step.lane_idx)}
+                          {laneLabelShort(step.lane_name, step.lane_idx)}
                         </span>
                         {transitionLaneLinks.length ? (
                           <div className="interviewLaneFlow">
@@ -1212,9 +1214,9 @@ export default function TimelineTable({
                                 className={`interviewLaneFlowBadge secondary ${x.direction}`}
                                 data-testid="interview-lane-pill-secondary"
                                 style={{ "--lane-accent": x.laneColor }}
-                                title={x.direction === "in" ? "В этот шаг есть вход из другого лайна" : "Из этого шага есть выход в другой лайн"}
+                                title={`${x.direction === "in" ? "Вход из" : "Выход в"}: ${laneLabel(x.laneName, x.laneIdx)}`}
                               >
-                                [{x.direction === "in" ? "←" : "→"} {laneLabel(x.laneName, x.laneIdx)}]
+                                [{x.direction === "in" ? "←" : "→"} {laneLabelShort(x.laneName, x.laneIdx)}]
                               </span>
                             ))}
                             {hiddenTransitionsCount > 0 ? (
@@ -1323,13 +1325,13 @@ export default function TimelineTable({
                                 className="interviewNodeTypeIcon"
                                 data-testid="interview-node-type-icon"
                                 data-node-kind={nodeKind || "unknown"}
-                                title={`BPMN type: ${nodeKind || "unknown"}`}
+                                title={`BPMN type: ${nodeKind || "unknown"}${toText(step.node_bind_title) ? ` · ${toText(step.node_bind_title)}` : ""}`}
                               >
                                 {nodeIcon}
                               </span>
-                              <span className="badge ok analysisStepNodeBadge">{toText(step.node_bind_title) || toText(step.node_bind_id)}</span>
+                              <span className="badge ok analysisStepNodeBadge" data-testid="interview-node-type-label">{nodeKind || "node"}</span>
                             </div>
-                            <span className="muted small font-mono">{toText(step.node_bind_id)}</span>
+                            <span className="muted small font-mono" data-testid="interview-node-bind-id">{toText(step.node_bind_id)}</span>
                           </div>
                         ) : (
                           <div className="interviewNodeCompact">
@@ -1360,26 +1362,41 @@ export default function TimelineTable({
                             Branches: {betweenTierSummary || "P0/P1/P2/None"}
                           </span>
                         )}
-                        <button
-                          type="button"
-                          className={`interviewStepAiBadge ${hasAi ? "on" : "off"}`}
-                          data-testid="interview-step-ai-badge"
-                          onClick={() => {
-                            openStepDetails(step.id);
-                            addAiQuestions(step);
-                          }}
-                          title={hasAi ? "Открыть AI-вопросы шага" : "Сгенерировать AI-вопросы"}
-                        >
-                          AI: {aiCount}
-                        </button>
-                        <button
-                          type="button"
-                          className="interviewStepMetaStatusBtn"
-                          onClick={() => openStepDetails(step.id)}
-                          title="Открыть детали BPMN/аннотаций"
-                        >
-                          A:{stepAnnotations.length} · {step.node_bound ? "BPMN ok" : "Нет узла"}
-                        </button>
+                        {hasAi ? (
+                          <button
+                            type="button"
+                            className="interviewStepAiBadge on"
+                            data-testid="interview-step-ai-badge"
+                            onClick={() => {
+                              openStepDetails(step.id);
+                              addAiQuestions(step);
+                            }}
+                            title="Открыть AI-вопросы шага"
+                          >
+                            AI: {aiCount}
+                          </button>
+                        ) : null}
+                        {step.node_bound ? (
+                          <button
+                            type="button"
+                            className="interviewStepMetaStatusBtn ok"
+                            onClick={() => openStepDetails(step.id)}
+                            title={`Аннотации: ${stepAnnotations.length} · BPMN привязан`}
+                            data-testid="interview-step-bpmn-status"
+                          >
+                            {stepAnnotations.length > 0 ? `A:${stepAnnotations.length}` : "BPMN"}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="interviewStepMetaStatusBtn warn"
+                            onClick={() => openStepDetails(step.id)}
+                            title="BPMN-узел не привязан"
+                            data-testid="interview-step-bpmn-status"
+                          >
+                            !BPMN
+                          </button>
+                        )}
                       </div>
                     </td>
                     <td className="analysisStepListCell analysisStepListCell--actions">
