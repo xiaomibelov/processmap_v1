@@ -6963,7 +6963,7 @@
     width: 100%;
     min-width: 760px;
     border-collapse: separate;
-    border-spacing: 0 5px;
+    border-spacing: 0 3px;
     font-size: 13px;
     table-layout: fixed;
   }
@@ -6982,9 +6982,8 @@
   .analysisStepListTable tbody td {
     border-bottom: 0;
     background: color-mix(in srgb, var(--c-panel) 84%, var(--c-panel-2));
-    padding: 6px 8px;
+    padding: 5px 8px;
     vertical-align: middle;
-    min-height: 44px;
   }
 
   .analysisStepListTable .analysisStepListRow td:first-child {
@@ -7023,22 +7022,22 @@
 
   .analysisStepListHead--lane,
   .analysisStepListCell--lane {
-    width: 112px;
+    width: 108px;
   }
 
   .analysisStepListHead--node,
   .analysisStepListCell--node {
-    width: 132px;
+    width: 128px;
   }
 
   .analysisStepListHead--status,
   .analysisStepListCell--status {
-    width: 106px;
+    width: 124px;
   }
 
   .analysisStepListHead--actions,
   .analysisStepListCell--actions {
-    width: 74px;
+    width: 88px;
   }
 
   .analysisStepPrimaryCell {
@@ -7058,7 +7057,14 @@
 
   .analysisStepListTable .interviewLaneCell {
     min-width: 0;
-    gap: 4px;
+    max-width: 100%;
+    gap: 2px;
+    flex-wrap: nowrap;
+  }
+
+  /* Override global .interviewLaneCell min-w-[200px] inside table */
+  .analysisStepListTable .analysisStepListCell--lane .interviewLaneCell {
+    min-width: 0 !important;
   }
 
   .analysisStepListTable .interviewLaneBadge {
@@ -7081,16 +7087,17 @@
 
   .analysisStepListTable .interviewLaneFlow {
     gap: 3px;
-    max-height: 0;
+    height: 16px;
     overflow: hidden;
+    visibility: hidden;
     opacity: 0;
-    transition: max-height 120ms ease, opacity 120ms ease;
+    transition: opacity 140ms ease;
   }
 
   .analysisStepListTable .analysisStepListRow:hover .interviewLaneFlow,
   .analysisStepListTable .analysisStepListRow.isActiveRow .interviewLaneFlow,
   .analysisStepListTable .analysisStepListRow.isAnalysisActive .interviewLaneFlow {
-    max-height: 60px;
+    visibility: visible;
     opacity: 1;
   }
 
@@ -7137,30 +7144,34 @@
   .analysisStepListTable .interviewInlineTimeSummary {
     margin-top: 1px;
     gap: 4px;
-    max-height: 0;
+    height: 20px;
     overflow: hidden;
+    visibility: hidden;
     opacity: 0;
-    transition: max-height 120ms ease, opacity 120ms ease;
+    transition: opacity 140ms ease;
   }
 
   .analysisStepListTable .analysisStepListRow:hover .interviewInlineTimeSummary,
   .analysisStepListTable .analysisStepListRow.isActiveRow .interviewInlineTimeSummary,
   .analysisStepListTable .analysisStepListRow.isAnalysisActive .interviewInlineTimeSummary {
-    max-height: 28px;
+    visibility: visible;
     opacity: 1;
   }
 
   .analysisStepListTable .interviewInlineTimeEditBtn,
   .analysisStepListTable .secondaryBtn.smallBtn,
   .analysisStepListTable .interviewRowMenuBtn {
-    height: 28px;
+    height: 26px;
+    min-width: 26px;
+    flex-shrink: 0;
     border-radius: 7px;
     border-color: color-mix(in srgb, var(--c-border) 78%, transparent);
     background: color-mix(in srgb, var(--c-panel-2) 62%, transparent);
-    padding: 0 7px;
+    padding: 0 6px;
     color: color-mix(in srgb, var(--c-text) 84%, var(--c-muted));
-    font-size: 10.5px;
+    font-size: 10px;
     font-weight: 680;
+    white-space: nowrap;
   }
 
   .analysisStepListTable .interviewNodeCompact {
@@ -7189,28 +7200,33 @@
   .analysisStepListTable .interviewNodeCompact .font-mono {
     color: color-mix(in srgb, var(--c-muted) 76%, var(--c-text));
     font-size: 9px;
-    opacity: 0;
-    max-height: 0;
+    height: 14px;
     overflow: hidden;
-    transition: opacity 120ms ease, max-height 120ms ease;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 140ms ease;
   }
 
   .analysisStepListTable .analysisStepListCell--node:hover .font-mono,
   .analysisStepListTable .analysisStepListRow.isActiveRow .font-mono,
   .analysisStepListTable .analysisStepListRow.isAnalysisActive .font-mono {
+    visibility: visible;
     opacity: 1;
-    max-height: 20px;
   }
 
   .analysisStepListTable .interviewRowStatus {
     justify-content: flex-start;
-    gap: 4px;
+    align-items: center;
+    gap: 3px;
+    flex-wrap: nowrap;
+    overflow: hidden;
   }
 
   .analysisStepListTable .interviewGatewayPreviewTag,
   .analysisStepListTable .interviewStepAiBadge,
   .analysisStepListTable .interviewStepMetaStatusBtn {
     min-height: 20px;
+    flex-shrink: 0;
     border-radius: 999px;
     border-color: color-mix(in srgb, var(--c-border) 60%, transparent);
     background: color-mix(in srgb, var(--c-panel-2) 40%, transparent);
@@ -7218,6 +7234,10 @@
     color: color-mix(in srgb, var(--c-muted) 90%, var(--c-text));
     font-size: 9px;
     font-weight: 680;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 80px;
   }
 
   .analysisStepListTable .interviewStepAiBadge.off {
@@ -7241,9 +7261,11 @@
 
   .analysisStepListTable .interviewRowActions {
     justify-content: flex-end;
+    align-items: center;
     gap: 3px;
+    flex-wrap: nowrap;
     opacity: 0.62;
-    transition: opacity 120ms ease;
+    transition: opacity 140ms ease;
   }
 
   .analysisStepListTable .analysisStepListRow:hover .interviewRowActions,
