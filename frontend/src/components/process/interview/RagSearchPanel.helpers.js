@@ -12,3 +12,10 @@ export function formatElementContext(metadata) {
   if (!tag) return "";
   return idx != null ? `${tag} #${idx}` : tag;
 }
+
+export function indexStatusClass(statusText) {
+  if (!statusText) return "";
+  if (statusText.startsWith("Ошибка")) return "ragIndexBadgeErr";
+  if (statusText.includes("Без изменений")) return "ragIndexBadgeNoop";
+  return "ragIndexBadgeOk";
+}

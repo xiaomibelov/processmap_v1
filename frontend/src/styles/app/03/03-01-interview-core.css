@@ -2362,7 +2362,7 @@
 /* ------- RAG Search Panel ------- */
 .ragSearchPanel{
   display: grid;
-  gap: 8px;
+  gap: 6px;
   padding: 4px 2px 2px;
 }
 
@@ -2374,14 +2374,12 @@
 }
 
 .ragSearchForm{
-  display: flex;
-  align-items: center;
+  display: grid;
   gap: 6px;
-  flex-wrap: wrap;
 }
 
 .ragSearchInput{
-  flex: 1 1 140px;
+  flex: 1 1 100%;
   min-width: 0;
   height: 26px;
   border: 1px solid rgba(148,163,184,.28);
@@ -2440,6 +2438,7 @@
 
 .ragResultItem{
   border: 1px solid rgba(148,163,184,.16);
+  border-left: 2px solid rgba(96,165,250,.22);
   border-radius: 8px;
   background: rgba(2,6,23,.28);
   padding: 7px 9px;
@@ -2483,10 +2482,10 @@
   color: rgba(226,232,240,.82);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 80px;
+  max-height: 100px;
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
 }
 .ragScoreHigh{ color: rgba(74,222,128,.92); }
@@ -2494,7 +2493,18 @@
 .ragScoreLow{ color: rgba(148,163,184,.62); }
 .ragResultContext{ font-size: 10px; color: rgba(148,163,184,.68); font-style: italic; }
 .ragResultSource{ font-size: 10px; color: rgba(125,211,252,.62); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ragCopyBtn{ all: unset; cursor: pointer; font-size: 10px; color: rgba(148,163,184,.55); padding: 1px 4px; border-radius: 4px; }
+.ragCopyBtn{ all: unset; cursor: pointer; font-size: 10px; color: rgba(148,163,184,.55); padding: 1px 4px; border-radius: 4px; margin-left: auto; }
 .ragCopyBtn:hover{ color: rgba(226,232,240,.88); background: rgba(51,65,85,.44); }
 .ragSearchingIndicator{ font-size: 11px; color: rgba(148,163,184,.66); padding: 8px 0; text-align: center; }
 .ragResultsTotal{ font-size: 10px; color: rgba(148,163,184,.58); padding: 2px 0; }
+.ragSearchInputRow{ display: flex; width: 100%; }
+.ragFiltersRow{ display: flex; align-items: center; gap: 6px; }
+.ragScorePill{ display: inline-flex; align-items: center; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 999px; font-variant-numeric: tabular-nums; }
+.ragScorePill.ragScoreHigh{ background: rgba(74,222,128,.14); color: rgba(74,222,128,.92); }
+.ragScorePill.ragScoreMed{ background: rgba(250,204,21,.12); color: rgba(250,204,21,.88); }
+.ragScorePill.ragScoreLow{ background: rgba(148,163,184,.10); color: rgba(148,163,184,.62); }
+.ragResultFooter{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 10px; color: rgba(148,163,184,.55); }
+.ragInitialHint{ font-size: 11px; color: rgba(148,163,184,.52); padding: 12px 4px; text-align: center; font-style: italic; }
+.ragIndexBadgeOk{ color: rgba(74,222,128,.82); }
+.ragIndexBadgeErr{ color: rgba(248,113,113,.82); }
+.ragIndexBadgeNoop{ color: rgba(250,204,21,.72); }

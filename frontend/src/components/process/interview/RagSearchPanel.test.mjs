@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { scoreClass, formatElementContext, SOURCE_TYPE_LABELS } from "./RagSearchPanel.helpers.js";
+import { scoreClass, formatElementContext, SOURCE_TYPE_LABELS, indexStatusClass } from "./RagSearchPanel.helpers.js";
 
 // -------- scoreClass --------
 
@@ -49,4 +49,25 @@ test("SOURCE_TYPE_LABELS maps bpmn_xml", () => {
 
 test("SOURCE_TYPE_LABELS maps product_action", () => {
   assert.equal(SOURCE_TYPE_LABELS.product_action, "Продуктовое действие");
+});
+
+// -------- indexStatusClass --------
+
+test("indexStatusClass returns empty string for falsy input", () => {
+  assert.equal(indexStatusClass(""), "");
+  assert.equal(indexStatusClass(null), "");
+  assert.equal(indexStatusClass(undefined), "");
+});
+
+test("indexStatusClass returns ragIndexBadgeErr for error text", () => {
+  assert.equal(indexStatusClass("Ошибка: unknown"), "ragIndexBadgeErr");
+  assert.equal(indexStatusClass("Ошибка: timeout"), "ragIndexBadgeErr");
+});
+
+test("indexStatusClass returns ragIndexBadgeNoop for no-change text", () => {
+  assert.equal(indexStatusClass("Без изменений (хэш совпадает)"), "ragIndexBadgeNoop");
+});
+
+test("indexStatusClass returns ragIndexBadgeOk for success text", () => {
+  assert.equal(indexStatusClass("Проиндексировано: 5 чанков"), "ragIndexBadgeOk");
 });

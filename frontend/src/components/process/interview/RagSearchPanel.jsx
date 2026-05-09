@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { apiRagSearch, apiRagIndex } from "../../../lib/api.js";
-import { SOURCE_TYPE_LABELS, scoreClass, formatElementContext } from "./RagSearchPanel.helpers.js";
+import { SOURCE_TYPE_LABELS, scoreClass, formatElementContext, indexStatusClass } from "./RagSearchPanel.helpers.js";
 
 const SOURCE_TYPE_OPTIONS = [
   { value: "", label: "Все типы" },
@@ -21,18 +21,23 @@ function RagResultItem({ item }) {
   const meta = item?.metadata || {};
   const sessionTitle = String(meta.session_title || "");
   const elementCtx = formatElementContext(meta);
+  const hasFooter = sessionTitle || sourceId || elementCtx;
 
   return (
     <div className="ragResultItem" data-testid="rag-result-item">
       <div className="ragResultMeta">
-        <span className={`ragResultScore ${typeof rawScore === "number" ? scoreClass(rawScore) : ""}`}>{score}</span>
+        <span className={`ragScorePill ${typeof rawScore === "number" ? scoreClass(rawScore) : ""}`}>{score}</span>
         {sourceType ? <span className="ragResultTag">{SOURCE_TYPE_LABELS[sourceType] || sourceType}</span> : null}
-        {sourceId ? <span className="ragResultSrc">{sourceId.slice(0, 12)}…</span> : null}
-        {sessionTitle ? <span className="ragResultSource" title={sessionTitle}>{sessionTitle}</span> : null}
-        {elementCtx ? <span className="ragResultContext">{elementCtx}</span> : null}
         <button type="button" className="ragCopyBtn" onClick={() => handleCopy(text)} title="Копировать текст" data-testid="rag-copy-btn">⎘</button>
       </div>
       <div className="ragResultText">{text}</div>
+      {hasFooter ? (
+        <div className="ragResultFooter">
+          {sessionTitle ? <span className="ragResultSource" title={sessionTitle}>{sessionTitle}</span> : null}
+          {sourceId ? <span className="ragResultSrc">{sourceId.slice(0, 12)}…</span> : null}
+          {elementCtx ? <span className="ragResultContext">{elementCtx}</span> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -107,6 +112,7 @@ export default function RagSearchPanel({ sessionId }) {
   }, [sid]);
 
   const hasResults = Array.isArray(results);
+  const showInitialHint = results === null && !searching && !searchError;
 
   return (
     <div className="ragSearchPanel" data-testid="rag-search-panel">
@@ -115,34 +121,38 @@ export default function RagSearchPanel({ sessionId }) {
       </div>
 
       <form className="ragSearchForm" onSubmit={handleSearch} data-testid="rag-search-form">
-        <input
-          className="ragSearchInput"
-          type="text"
-          placeholder="Поиск по базе знаний…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          data-testid="rag-search-input"
-          disabled={searching}
-        />
-        <select
-          className="ragSourceTypeSelect"
-          value={sourceType}
-          onChange={(e) => setSourceType(e.target.value)}
-          data-testid="rag-source-type-select"
-          disabled={searching}
-        >
-          {SOURCE_TYPE_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-        <button
-          type="submit"
-          className="secondaryBtn tinyBtn"
-          disabled={searching || !query.trim()}
-          data-testid="rag-search-btn"
-        >
-          {searching ? "Поиск…" : "Найти"}
-        </button>
+        <div className="ragSearchInputRow">
+          <input
+            className="ragSearchInput"
+            type="text"
+            placeholder="Поиск по базе знаний…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            data-testid="rag-search-input"
+            disabled={searching}
+          />
+        </div>
+        <div className="ragFiltersRow">
+          <select
+            className="ragSourceTypeSelect"
+            value={sourceType}
+            onChange={(e) => setSourceType(e.target.value)}
+            data-testid="rag-source-type-select"
+            disabled={searching}
+          >
+            {SOURCE_TYPE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            className="secondaryBtn tinyBtn"
+            disabled={searching || !query.trim()}
+            data-testid="rag-search-btn"
+          >
+            {searching ? "Поиск…" : "Найти"}
+          </button>
+        </div>
       </form>
 
       {sid ? (
@@ -157,7 +167,7 @@ export default function RagSearchPanel({ sessionId }) {
             {indexing ? "Индексирование…" : "Индексировать сессию"}
           </button>
           {indexStatus ? (
-            <span className="ragIndexStatus" data-testid="rag-index-status">{indexStatus}</span>
+            <span className={`ragIndexStatus ${indexStatusClass(indexStatus)}`} data-testid="rag-index-status">{indexStatus}</span>
           ) : null}
         </div>
       ) : null}
@@ -169,6 +179,12 @@ export default function RagSearchPanel({ sessionId }) {
       {searchError ? (
         <div className="interviewAnnotationNotice err ragSearchError" data-testid="rag-search-error">
           {searchError}
+        </div>
+      ) : null}
+
+      {showInitialHint ? (
+        <div className="ragInitialHint" data-testid="rag-initial-hint">
+          Введите запрос для поиска по базе знаний
         </div>
       ) : null}
 
