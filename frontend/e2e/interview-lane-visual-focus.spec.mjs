@@ -109,7 +109,7 @@ async function createFixture(request, runId, token) {
 
   const putRes = await request.put(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/bpmn`, {
     headers,
-    data: { xml: laneFocusXml(`E2E lane focus ${runId}`) },
+    data: { xml: laneFocusXml(`E2E lane focus ${runId}`), base_diagram_state_version: 0 },
   });
   await apiJson(putRes, "put bpmn");
   return { projectId, sessionId };
@@ -131,7 +131,7 @@ async function openFixture(page, fixture) {
   await page.selectOption(".topbar .topSelect--session", fixture.sessionId);
 }
 
-test("Interview timeline shows lane focus: primary lane pill is visually stronger than transition pills", async ({ page, request }) => {
+test("Interview timeline shows lane focus: primary lane pill shows compact L-notation with transition arrow", async ({ page, request }) => {
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const { accessToken } = await apiLogin(request);
   const fixture = await createFixture(request, runId, accessToken);
@@ -141,24 +141,30 @@ test("Interview timeline shows lane focus: primary lane pill is visually stronge
   await switchTab(page, "Interview");
   await expect(page.locator(".interviewStage")).toBeVisible();
 
-  const row = page.locator(".interviewStepRow", { hasText: "Операция A" }).first();
-  await expect(row).toBeVisible();
-  const primary = row.getByTestId("interview-lane-pill-primary").first();
-  const secondary = row.getByTestId("interview-lane-pill-secondary").first();
-  await expect(primary).toBeVisible();
-  await expect(secondary).toBeVisible();
-  await expect(row.getByTestId("interview-lane-cross-indicator")).toBeVisible();
+  const lanePattern = /^L\d+(\s*→\s*L\d+)?$/;
 
-  const [primaryOpacity, secondaryOpacity] = await Promise.all([
-    primary.evaluate((el) => Number(window.getComputedStyle(el).opacity || 1)),
-    secondary.evaluate((el) => Number(window.getComputedStyle(el).opacity || 1)),
-  ]);
-  expect(primaryOpacity).toBeGreaterThanOrEqual(secondaryOpacity);
-  expect(secondaryOpacity).toBeLessThan(1);
+  const sameRow = page.locator(".interviewStepRow", { hasText: "Старт" }).first();
+  await expect(sameRow).toBeVisible();
+  const samePill = sameRow.getByTestId("interview-lane-pill-primary").first();
+  await expect(samePill).toBeVisible();
+  const sameText = (await samePill.textContent()).trim();
+  expect(sameText).toMatch(lanePattern);
+  expect(sameText).toMatch(/^L\d+$/);
+
+  const crossRow = page.locator(".interviewStepRow", { hasText: "Операция A" }).first();
+  await expect(crossRow).toBeVisible();
+  const crossPill = crossRow.getByTestId("interview-lane-pill-primary").first();
+  await expect(crossPill).toBeVisible();
+  const crossText = (await crossPill.textContent()).trim();
+  expect(crossText).toMatch(lanePattern);
+
+  await expect(crossRow.getByTestId("interview-lane-pill-secondary")).toHaveCount(0);
+
+  const rowHeight = await crossRow.evaluate((el) => el.getBoundingClientRect().height);
+  expect(rowHeight).toBeLessThan(200);
 
   await switchTab(page, "Diagram");
   await switchTab(page, "Interview");
-  await expect(row.getByTestId("interview-lane-pill-primary").first()).toBeVisible();
-  await expect(row.getByTestId("interview-lane-pill-secondary").first()).toBeVisible();
+  await expect(crossRow.getByTestId("interview-lane-pill-primary").first()).toBeVisible();
 });
 

@@ -7288,7 +7288,7 @@
   }
 
   .interviewLaneCell {
-    @apply flex min-w-[200px] flex-col gap-1.5;
+    @apply flex items-center;
   }
 
   .interviewLaneBadge {
