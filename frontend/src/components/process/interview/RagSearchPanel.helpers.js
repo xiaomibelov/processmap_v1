@@ -31,8 +31,10 @@ export function extractBpmnId(chunkText) {
 }
 
 export function makeBpmnResultTitle(metadata, chunkText) {
-  const name = extractBpmnName(chunkText);
-  if (name) return name;
+  const serverName = metadata?.element_name;
+  if (serverName) return serverName;
+  const regexName = extractBpmnName(chunkText);
+  if (regexName) return regexName;
   const tag = metadata?.element_tag || "";
   if (tag) return tag;
   return "BPMN фрагмент";

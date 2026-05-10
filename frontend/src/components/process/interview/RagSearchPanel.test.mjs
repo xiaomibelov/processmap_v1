@@ -118,6 +118,26 @@ test("makeBpmnResultTitle returns BPMN фрагмент when neither name nor ta
   assert.equal(makeBpmnResultTitle({}, "some plain text without xml"), "BPMN фрагмент");
 });
 
+test("makeBpmnResultTitle prefers metadata.element_name over regex", () => {
+  const meta = { element_name: "Сервер-имя", element_tag: "exclusiveGateway" };
+  assert.equal(makeBpmnResultTitle(meta, '<bpmn:exclusiveGateway id="g1" name="Regex-имя">'), "Сервер-имя");
+});
+
+test("makeBpmnResultTitle falls back to regex when element_name absent", () => {
+  const meta = { element_tag: "exclusiveGateway", element_index: 0 };
+  assert.equal(makeBpmnResultTitle(meta, '<bpmn:exclusiveGateway id="g1" name="Regex-имя">'), "Regex-имя");
+});
+
+test("makeBpmnResultTitle falls back to element_name even when regex also matches — server wins", () => {
+  const meta = { element_name: "Серверное название", element_tag: "task" };
+  assert.equal(makeBpmnResultTitle(meta, '<bpmn:task id="t1" name="Другое">'), "Серверное название");
+});
+
+test("makeBpmnResultTitle with element_name=null falls back to regex", () => {
+  const meta = { element_name: null, element_tag: "task" };
+  assert.equal(makeBpmnResultTitle(meta, '<bpmn:task id="t1" name="Нарезка">'), "Нарезка");
+});
+
 // -------- formatScore --------
 
 test("formatScore rounds to 2 decimal places", () => {

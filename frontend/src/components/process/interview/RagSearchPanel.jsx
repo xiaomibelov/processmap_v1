@@ -30,7 +30,7 @@ function RagResultItem({ item }) {
   const scoreLabel = formatScore(rawScore);
   const scoreClsName = typeof rawScore === "number" ? scoreClass(rawScore) : "";
 
-  const hasExtractedName = isBpmn && !!extractBpmnName(chunkText);
+  const hasExtractedName = isBpmn && !!(meta.element_name || extractBpmnName(chunkText));
   const showExcerpt = !isBpmn || !hasExtractedName;
   const showRaw = isBpmn;
 
