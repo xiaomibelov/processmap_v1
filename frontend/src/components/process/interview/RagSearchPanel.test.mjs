@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { scoreClass, formatElementContext, SOURCE_TYPE_LABELS, indexStatusClass } from "./RagSearchPanel.helpers.js";
+import { scoreClass, formatElementContext, SOURCE_TYPE_LABELS, indexStatusClass, extractBpmnName, extractBpmnId, makeBpmnResultTitle, formatScore, getSourceTypeLabel } from "./RagSearchPanel.helpers.js";
 
 // -------- scoreClass --------
 
@@ -70,4 +70,83 @@ test("indexStatusClass returns ragIndexBadgeNoop for no-change text", () => {
 
 test("indexStatusClass returns ragIndexBadgeOk for success text", () => {
   assert.equal(indexStatusClass("Проиндексировано: 5 чанков"), "ragIndexBadgeOk");
+});
+
+// -------- extractBpmnName --------
+
+test("extractBpmnName extracts name with double quotes", () => {
+  assert.equal(extractBpmnName('<bpmn:exclusiveGateway id="Gateway_1" name="Вид топпинга">'), "Вид топпинга");
+});
+
+test("extractBpmnName extracts name with single quotes", () => {
+  assert.equal(extractBpmnName("<bpmn:task id='t1' name='Нарезка'>"), "Нарезка");
+});
+
+test("extractBpmnName returns empty for XML without name", () => {
+  assert.equal(extractBpmnName('<bpmn:sequenceFlow id="f1" sourceRef="t1" targetRef="t2"/>'), "");
+});
+
+test("extractBpmnName returns empty for empty/null input", () => {
+  assert.equal(extractBpmnName(""), "");
+  assert.equal(extractBpmnName(null), "");
+  assert.equal(extractBpmnName(undefined), "");
+});
+
+// -------- extractBpmnId --------
+
+test("extractBpmnId extracts id attribute", () => {
+  assert.equal(extractBpmnId('<bpmn:exclusiveGateway id="Gateway_0558786" name="Вид">'), "Gateway_0558786");
+});
+
+test("extractBpmnId returns empty for no id", () => {
+  assert.equal(extractBpmnId("no id here"), "");
+});
+
+// -------- makeBpmnResultTitle --------
+
+test("makeBpmnResultTitle returns name when present in chunk_text", () => {
+  const meta = { element_tag: "exclusiveGateway", element_index: 5 };
+  assert.equal(makeBpmnResultTitle(meta, '<bpmn:exclusiveGateway id="g1" name="Вид топпинга">'), "Вид топпинга");
+});
+
+test("makeBpmnResultTitle returns element_tag when no name in chunk_text", () => {
+  const meta = { element_tag: "sequenceFlow", element_index: 2 };
+  assert.equal(makeBpmnResultTitle(meta, '<bpmn:sequenceFlow id="f1" sourceRef="t1" targetRef="t2"/>'), "sequenceFlow");
+});
+
+test("makeBpmnResultTitle returns BPMN фрагмент when neither name nor tag", () => {
+  assert.equal(makeBpmnResultTitle({}, "some plain text without xml"), "BPMN фрагмент");
+});
+
+// -------- formatScore --------
+
+test("formatScore rounds to 2 decimal places", () => {
+  assert.equal(formatScore(4.808), "4.81");
+  assert.equal(formatScore(5), "5.00");
+  assert.equal(formatScore(2.1), "2.10");
+});
+
+test("formatScore returns — for non-number", () => {
+  assert.equal(formatScore(null), "—");
+  assert.equal(formatScore(undefined), "—");
+  assert.equal(formatScore("text"), "—");
+});
+
+// -------- getSourceTypeLabel --------
+
+test("getSourceTypeLabel returns BPMN XML for bpmn_xml", () => {
+  assert.equal(getSourceTypeLabel("bpmn_xml"), "BPMN XML");
+});
+
+test("getSourceTypeLabel returns Продуктовое действие for product_action", () => {
+  assert.equal(getSourceTypeLabel("product_action"), "Продуктовое действие");
+});
+
+test("getSourceTypeLabel passes through unknown type", () => {
+  assert.equal(getSourceTypeLabel("unknown_type"), "unknown_type");
+});
+
+test("getSourceTypeLabel returns Источник for empty/null", () => {
+  assert.equal(getSourceTypeLabel(""), "Источник");
+  assert.equal(getSourceTypeLabel(null), "Источник");
 });
