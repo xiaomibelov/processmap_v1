@@ -8096,6 +8096,39 @@
     @apply grid gap-2 p-2;
   }
 
+  /* Density overrides: compact all form elements inside the expanded step panel */
+  .interviewStepDetailsPanel .interviewField {
+    @apply gap-0.5;
+  }
+
+  .interviewStepDetailsPanel .interviewField label {
+    @apply text-[10px] leading-tight;
+  }
+
+  .interviewStepDetailsPanel .input,
+  .interviewStepDetailsPanel .select,
+  .interviewStepDetailsPanel input[type="text"],
+  .interviewStepDetailsPanel input[type="number"],
+  .interviewStepDetailsPanel select,
+  .interviewStepDetailsPanel textarea {
+    @apply h-7 min-h-0 py-0.5 px-2 text-xs;
+    font-size: 12px;
+  }
+
+  .interviewStepDetailsPanel textarea {
+    @apply h-auto min-h-[52px] py-1;
+  }
+
+  .interviewStepDetailsPanel .secondaryBtn,
+  .interviewStepDetailsPanel .ghostBtn,
+  .interviewStepDetailsPanel button.smallBtn {
+    @apply h-6 min-h-0 px-2 py-0 text-xs leading-none;
+  }
+
+  .interviewStepDetailsPanel .interviewAnnotationAddBtn {
+    @apply h-6 min-w-[24px] px-1 text-sm;
+  }
+
   .interviewStepDetailsPanel {
     @apply grid;
   }
