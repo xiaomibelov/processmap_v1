@@ -340,8 +340,18 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
     else:
         context_error = ""
 
+    options = _as_dict(getattr(inp, "options", None))
+    selected_step_id = _text(options.get("selected_step_id"))
+    selected_step_label = _text(options.get("selected_step_label"))
+    selected_step_bpmn_id = _text(options.get("selected_step_bpmn_id"))
+    if selected_step_id or selected_step_bpmn_id:
+        context["selected_step"] = {
+            "step_id": selected_step_id,
+            "label": selected_step_label,
+            "bpmn_element_id": selected_step_bpmn_id,
+        }
+
     max_suggestions = _max_suggestions(inp)
-    input_hash = hash_ai_input({"module_id": _MODULE_ID, "session_id": session_id, "context": context})
     input_payload = {
         "endpoint": _ENDPOINT,
         "session_id": _text(session_id),
