@@ -287,8 +287,11 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
     actor_user_id = _actor_user_id(request)
     scope = {"org_id": org_id, "workspace_id": workspace_id, "project_id": project_id, "session_id": _text(session_id)}
 
-    seed_existing_ai_prompts(actor_user_id="code_seeded")
-    active_prompt = get_active_prompt(module_id=_MODULE_ID)
+    try:
+        seed_existing_ai_prompts(actor_user_id="code_seeded")
+        active_prompt = get_active_prompt(module_id=_MODULE_ID)
+    except Exception:
+        active_prompt = None
     prompt_template = _text((active_prompt or {}).get("template")) or PRODUCT_ACTIONS_SUGGEST_PROMPT_TEMPLATE
     prompt_id = _text((active_prompt or {}).get("prompt_id"))
     prompt_version = _text((active_prompt or {}).get("version"))
