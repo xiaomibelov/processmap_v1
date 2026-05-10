@@ -9,8 +9,7 @@ import {
   annotationTitleFromText,
   nodeKindIcon,
   laneColor,
-  laneLabel,
-  laneLabelShort,
+  laneCellDisplay,
   bpmnNodeKindShort,
   typeLabel,
   durationClass,
@@ -223,7 +222,6 @@ export default function TimelineTable({
 }) {
   const DEBOUNCE_MS = 180;
   const [expandedLongAnnotationById, setExpandedLongAnnotationById] = useState({});
-  const [expandedLaneTransitionsByStepId, setExpandedLaneTransitionsByStepId] = useState({});
   const [collapsedSubprocessByStepId, setCollapsedSubprocessByStepId] = useState({});
   const [expandedGatewayById, setExpandedGatewayById] = useState({});
   const [selectedBranchByGatewayId, setSelectedBranchByGatewayId] = useState({});
@@ -634,7 +632,6 @@ export default function TimelineTable({
 
   useEffect(() => {
     setExpandedLongAnnotationById({});
-    setExpandedLaneTransitionsByStepId({});
     setCollapsedSubprocessByStepId({});
     setRowMenuStepId("");
     setDetailsStepId("");
@@ -669,15 +666,6 @@ export default function TimelineTable({
     const key = toText(annotationId);
     if (!key) return;
     setExpandedLongAnnotationById((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-  }, []);
-
-  const toggleLaneTransitions = useCallback((stepId) => {
-    const key = toText(stepId);
-    if (!key) return;
-    setExpandedLaneTransitionsByStepId((prev) => ({
       ...prev,
       [key]: !prev[key],
     }));
@@ -1057,9 +1045,7 @@ export default function TimelineTable({
                 ...incomingLaneLinks.map((laneInfo) => ({ ...laneInfo, direction: "in" })),
                 ...outgoingLaneLinks.map((laneInfo) => ({ ...laneInfo, direction: "out" })),
               ];
-              const transitionsExpanded = !!expandedLaneTransitionsByStepId[stepId];
-              const visibleTransitionLaneLinks = transitionsExpanded ? transitionLaneLinks : transitionLaneLinks.slice(0, 1);
-              const hiddenTransitionsCount = Math.max(0, transitionLaneLinks.length - visibleTransitionLaneLinks.length);
+              const laneDisplay = laneCellDisplay(step.lane_idx, step.lane_name, transitionLaneLinks);
               const nodeKind = toText(step?.node_bind_kind || step?.node_kind);
               const nodeIcon = nodeKindIcon(nodeKind);
               const stepSnapshot = snapshotStepMaps.byStepId[stepId] || snapshotStepMaps.byNodeId[toText(step?.node_bind_id || step?.node_id)] || null;
@@ -1202,35 +1188,11 @@ export default function TimelineTable({
                           className="interviewLaneBadge interviewLaneBadge--primary"
                           data-testid="interview-lane-pill-primary"
                           style={{ "--lane-accent": laneAccent }}
-                          title={laneLabel(step.lane_name, step.lane_idx)}
+                          title={laneDisplay.tooltip}
                         >
                           <span className="interviewLaneDot" />
-                          {laneLabelShort(step.lane_name, step.lane_idx)}
+                          {laneDisplay.text}
                         </span>
-                        {transitionLaneLinks.length ? (
-                          <div className="interviewLaneFlow">
-                            {visibleTransitionLaneLinks.map((x) => (
-                              <span
-                                key={`${x.direction}_${step.id}_${x.laneKey}`}
-                                className={`interviewLaneFlowBadge secondary ${x.direction}`}
-                                data-testid="interview-lane-pill-secondary"
-                                style={{ "--lane-accent": x.laneColor }}
-                                title={`${x.direction === "in" ? "Вход из" : "Выход в"}: ${laneLabel(x.laneName, x.laneIdx)}`}
-                              >
-                                [{x.direction === "in" ? "←" : "→"} {laneLabelShort(x.laneName, x.laneIdx)}]
-                              </span>
-                            ))}
-                            {hiddenTransitionsCount > 0 ? (
-                              <button
-                                type="button"
-                                className="interviewLaneFlowMore"
-                                onClick={() => toggleLaneTransitions(stepId)}
-                              >
-                                {transitionsExpanded ? "Свернуть переходы" : `+${hiddenTransitionsCount} перехода`}
-                              </button>
-                            ) : null}
-                          </div>
-                        ) : null}
                       </div>
                     </td>
                     <td className="analysisStepListCell analysisStepListCell--step">
