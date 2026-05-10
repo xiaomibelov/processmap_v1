@@ -73,7 +73,7 @@
 
 .analysisStepWorkspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.38fr) minmax(330px, 0.62fr);
+  grid-template-columns: minmax(0, 1.52fr) minmax(270px, 0.48fr);
   gap: 12px;
   align-items: start;
 }
