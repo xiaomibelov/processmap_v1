@@ -260,6 +260,7 @@ export default function ProductActionsPanel({
   const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
   const [aiDraft, setAiDraft] = useState(null);
+  const [aiDraftStepId, setAiDraftStepId] = useState("");
   const [aiRows, setAiRows] = useState([]);
   const [selectedAiRowIds, setSelectedAiRowIds] = useState(() => new Set());
   const [aiStatus, setAiStatus] = useState(null);
@@ -283,6 +284,20 @@ export default function ProductActionsPanel({
     lastDraftResetKeyRef.current = draftResetKey;
     setDraft(createDraftForStep(selectedStep, editingAction));
   }, [draftResetKey, selectedStep, editingAction]);
+
+  useEffect(() => {
+    const currentStepId = toText(selectedStep?.id);
+    if (!aiDraftStepId || !currentStepId) return;
+    if (aiDraftStepId !== currentStepId) {
+      setAiDraft(null);
+      setAiDraftStepId("");
+      setAiRows([]);
+      setSelectedAiRowIds(new Set());
+      setAiStatus(null);
+      setAiProgress(null);
+      setAiDiagnostics(null);
+    }
+  }, [selectedStep, aiDraftStepId]);
 
   const selectedBinding = deriveProductActionBindingFromStep(selectedStep);
   const actionCount = productActions.length;
@@ -385,6 +400,9 @@ export default function ProductActionsPanel({
         options: {
           max_suggestions: 20,
           ui_source: "product_actions_panel",
+          selected_step_id: toText(selectedStep?.id),
+          selected_step_label: toText(selectedStep?.action || selectedStep?.label || selectedStep?.title),
+          selected_step_bpmn_id: toText(selectedStep?.node_id || selectedStep?.nodeId || selectedStep?.bpmn_ref),
         },
       });
     } catch (error) {
@@ -416,20 +434,29 @@ export default function ProductActionsPanel({
     setAiProgress(aiProgressStep("parse", "Разбираем AI-ответ и проверяем поля suggestions."));
     const draftResult = result.draft || {};
     const rows = normalizeSuggestionDraftRows(draftResult.suggestions);
+    const nonDuplicateRows = rows.filter((row) => !toText(row.duplicate_of));
+    const allDuplicates = rows.length > 0 && nonDuplicateRows.length === 0;
     setAiProgress(aiProgressStep("format", "Формируем список предложений для review."));
     setAiDraft(draftResult);
+    setAiDraftStepId(toText(selectedStep?.id));
     setAiRows(rows);
-    setSelectedAiRowIds(new Set(rows.filter((row) => !toText(row.duplicate_of)).map((row) => toText(row.id)).filter(Boolean)));
+    setSelectedAiRowIds(new Set(nonDuplicateRows.map((row) => toText(row.id)).filter(Boolean)));
     setAiProgress(aiProgressStep(
       "ready",
       rows.length
-        ? `Найдено ${rows.length} предложений. Проверьте и примите нужные.`
+        ? allDuplicates
+          ? `Все ${rows.length} предложений уже сохранены как дубли. Новых действий не найдено.`
+          : `Найдено ${rows.length} предложений. Проверьте и примите нужные.`
         : "AI не нашёл действий с продуктом для этого процесса.",
       "success",
     ));
     setAiStatus({
-      type: "saved",
-      text: rows.length ? "AI-предложения готовы к review." : "AI не нашёл действий с продуктом для этого процесса.",
+      type: allDuplicates ? "info" : "saved",
+      text: rows.length
+        ? allDuplicates
+          ? "AI не нашёл новых действий: все предложения уже существуют как дубли."
+          : "AI-предложения готовы к review."
+        : "AI не нашёл действий с продуктом для этого процесса.",
     });
   }
 
@@ -602,6 +629,12 @@ export default function ProductActionsPanel({
                   <span className="productActionsAiCounter"><b>Выбрано:</b> {selectedAiRows.length}</span>
                 </div>
               </div>
+              {aiRows.length > 0 && selectedAiRows.length === 0 ? (
+                <div className="productActionsAiWarningNote" data-testid="product-actions-ai-all-duplicates">
+                  <span className="productActionsAiWarningNoteIcon">ℹ</span>
+                  <span>AI не нашёл новых действий для этого шага — все предложения уже существуют в процессе как дубли. Новых строк для принятия нет.</span>
+                </div>
+              ) : null}
               {toArray(aiDraft.warnings).filter((w) => w && typeof w === "object" && w.code).length ? (
                 <div className="productActionsAiWarningNote">
                   <span className="productActionsAiWarningNoteIcon">ℹ</span>
@@ -719,6 +752,7 @@ export default function ProductActionsPanel({
                     className="secondaryBtn smallBtn"
                     onClick={() => {
                       setAiDraft(null);
+                      setAiDraftStepId("");
                       setAiRows([]);
                       setSelectedAiRowIds(new Set());
                       setAiStatus(null);
