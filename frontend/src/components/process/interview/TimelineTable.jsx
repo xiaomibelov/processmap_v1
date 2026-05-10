@@ -1233,54 +1233,6 @@ export default function TimelineTable({
                           : null}
                       </div>
                       </div>
-                      <div className="interviewStepTimingMeta" data-testid="interview-step-timing-meta">
-                      <div className="interviewInlineTimeSummary">
-                        <span className="interviewInlineTimeSummaryItem">Work: {formatTimelineDuration(stepDurationSeconds)}</span>
-                        <span className="interviewInlineTimeSummaryItem">Wait: {formatTimelineDuration(stepWaitSeconds)}</span>
-                        {!inlineEditorVisible ? (
-                          <button
-                            type="button"
-                            className="interviewInlineTimeEditBtn"
-                            onClick={() => {
-                              setActiveInlineStepId(stepId);
-                              onActivateStep?.(stepId);
-                            }}
-                          >
-                            Изменить
-                          </button>
-                        ) : (
-                          <span className="interviewInlineTimeSummaryItem active">Редактирование</span>
-                        )}
-                      </div>
-                      {inlineEditorVisible ? (
-                        <div className="interviewInlineTimeEditor">
-                          <label className="interviewInlineTimeField">
-                            <span>Work</span>
-                            <input
-                              className="input"
-                              type="number"
-                              min="0"
-                              step="0.5"
-                              value={stepTimeValue}
-                              onChange={(e) => queuePatchStepTime(step.id, e.target.value, normalizedStepTimeUnit)}
-                              onBlur={() => flushPatchStepTime(step.id, normalizedStepTimeUnit, stepDurationInput)}
-                            />
-                          </label>
-                          <label className="interviewInlineTimeField">
-                            <span>Wait</span>
-                            <input
-                              className="input"
-                              type="number"
-                              min="0"
-                              step="0.5"
-                              value={stepWaitValue}
-                              onChange={(e) => queuePatchWaitTime(step.id, e.target.value)}
-                              onBlur={() => flushPatchWaitTime(step.id, stepWaitInput)}
-                            />
-                          </label>
-                        </div>
-                      ) : null}
-                      </div>
                       </div>
                     </td>
                     {showNodeCol ? (

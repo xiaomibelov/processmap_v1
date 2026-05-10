@@ -7141,24 +7141,6 @@
     color: color-mix(in srgb, var(--c-muted) 84%, var(--c-text));
   }
 
-  .analysisStepListTable .interviewInlineTimeSummary {
-    margin-top: 1px;
-    gap: 4px;
-    height: 0;
-    overflow: hidden;
-    visibility: hidden;
-    opacity: 0;
-    transition: opacity 140ms ease;
-  }
-
-  .analysisStepListTable .analysisStepListRow:hover .interviewInlineTimeSummary,
-  .analysisStepListTable .analysisStepListRow.isActiveRow .interviewInlineTimeSummary,
-  .analysisStepListTable .analysisStepListRow.isAnalysisActive .interviewInlineTimeSummary {
-    height: 20px;
-    visibility: visible;
-    opacity: 1;
-  }
-
   .analysisStepListTable .interviewInlineTimeEditBtn,
   .analysisStepListTable .secondaryBtn.smallBtn,
   .analysisStepListTable .interviewRowMenuBtn {
