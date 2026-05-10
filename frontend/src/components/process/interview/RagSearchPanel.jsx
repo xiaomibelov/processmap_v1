@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { apiRagSearch, apiRagIndex } from "../../../lib/api.js";
-import { SOURCE_TYPE_LABELS, scoreClass, formatElementContext, indexStatusClass } from "./RagSearchPanel.helpers.js";
+import { scoreClass, formatElementContext, indexStatusClass, extractBpmnName, makeBpmnResultTitle, formatScore, getSourceTypeLabel } from "./RagSearchPanel.helpers.js";
 
 const SOURCE_TYPE_OPTIONS = [
   { value: "", label: "Все типы" },
@@ -14,30 +14,49 @@ function handleCopy(text) {
 
 function RagResultItem({ item }) {
   const rawScore = item?.score;
-  const score = typeof rawScore === "number" ? rawScore.toFixed(3) : "—";
   const sourceType = String(item?.source_type || item?.metadata?.source_type || "");
-  const sourceId = String(item?.source_id || item?.metadata?.source_id || "");
-  const text = String(item?.chunk_text || "");
+  const chunkText = String(item?.chunk_text || "");
   const meta = item?.metadata || {};
+  const isBpmn = sourceType === "bpmn_xml";
+  const isProductAction = sourceType === "product_action";
+
+  const title = isBpmn
+    ? makeBpmnResultTitle(meta, chunkText)
+    : isProductAction
+      ? String(meta.product_name || meta.action_type || "Продуктовое действие")
+      : getSourceTypeLabel(sourceType) || "Фрагмент";
+
+  const sourceBadge = isBpmn ? "BPMN" : isProductAction ? "Действие" : getSourceTypeLabel(sourceType);
+  const scoreLabel = formatScore(rawScore);
+  const scoreClsName = typeof rawScore === "number" ? scoreClass(rawScore) : "";
+
+  const hasExtractedName = isBpmn && !!extractBpmnName(chunkText);
+  const showExcerpt = !isBpmn || !hasExtractedName;
+  const showRaw = isBpmn;
+
   const sessionTitle = String(meta.session_title || "");
   const elementCtx = formatElementContext(meta);
-  const hasFooter = sessionTitle || sourceId || elementCtx;
 
   return (
     <div className="ragResultItem" data-testid="rag-result-item">
-      <div className="ragResultMeta">
-        <span className={`ragScorePill ${typeof rawScore === "number" ? scoreClass(rawScore) : ""}`}>{score}</span>
-        {sourceType ? <span className="ragResultTag">{SOURCE_TYPE_LABELS[sourceType] || sourceType}</span> : null}
-        <button type="button" className="ragCopyBtn" onClick={() => handleCopy(text)} title="Копировать текст" data-testid="rag-copy-btn">⎘</button>
-      </div>
-      <div className="ragResultText">{text}</div>
-      {hasFooter ? (
-        <div className="ragResultFooter">
-          {sessionTitle ? <span className="ragResultSource" title={sessionTitle}>{sessionTitle}</span> : null}
-          {sourceId ? <span className="ragResultSrc">{sourceId.slice(0, 12)}…</span> : null}
-          {elementCtx ? <span className="ragResultContext">{elementCtx}</span> : null}
+      <div className="ragResultHeader">
+        <span className="ragResultTitle" data-testid="rag-result-title">{title}</span>
+        <div className="ragResultBadges">
+          <span className="ragResultTag">{sourceBadge}</span>
+          <span className={`ragScorePill ${scoreClsName}`} data-testid="rag-result-score">{scoreLabel}</span>
         </div>
+      </div>
+      {showExcerpt ? (
+        <div className="ragResultExcerpt" data-testid="rag-result-excerpt">{chunkText}</div>
       ) : null}
+      {showRaw ? (
+        <div className="ragResultRaw" data-testid="rag-result-raw">{chunkText}</div>
+      ) : null}
+      <div className="ragResultFooter">
+        {sessionTitle ? <span className="ragResultSource" title={sessionTitle}>{sessionTitle}</span> : null}
+        {elementCtx ? <span className="ragResultContext">{elementCtx}</span> : null}
+        <button type="button" className="ragCopyBtn" onClick={() => handleCopy(chunkText)} title="Копировать" data-testid="rag-copy-btn">⎘</button>
+      </div>
     </div>
   );
 }
