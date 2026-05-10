@@ -632,7 +632,6 @@ export default function TimelineTable({
 
   useEffect(() => {
     setExpandedLongAnnotationById({});
-    setExpandedLaneTransitionsByStepId({});
     setCollapsedSubprocessByStepId({});
     setRowMenuStepId("");
     setDetailsStepId("");
