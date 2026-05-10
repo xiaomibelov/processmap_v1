@@ -1726,6 +1726,41 @@ def _ensure_schema() -> None:
         _SCHEMA_DB_FILE = db_file
 
 
+def get_rag_settings(org_id: str) -> dict:
+    _defaults = {
+        "enabled": True,
+        "indexing_enabled": True,
+        "default_top_k": 10,
+        "max_top_k": 50,
+        "default_min_score": None,
+        "allowed_source_types": ["bpmn_xml", "product_action"],
+        "show_technical_fragments": False,
+    }
+    try:
+        with _connect() as con:
+            row = con.execute(
+                "SELECT * FROM rag_settings WHERE org_id=? LIMIT 1", [str(org_id or "")]
+            ).fetchone()
+    except Exception:
+        return dict(_defaults)
+    if not row:
+        return dict(_defaults)
+    d = dict(row)
+    try:
+        source_types = json.loads(d.get("allowed_source_types") or '["bpmn_xml","product_action"]')
+    except Exception:
+        source_types = list(_defaults["allowed_source_types"])
+    return {
+        "enabled": bool(d.get("enabled", 1)),
+        "indexing_enabled": bool(d.get("indexing_enabled", 1)),
+        "default_top_k": int(d.get("default_top_k", 10)),
+        "max_top_k": int(d.get("max_top_k", 50)),
+        "default_min_score": d.get("default_min_score"),
+        "allowed_source_types": source_types,
+        "show_technical_fragments": bool(d.get("show_technical_fragments", 0)),
+    }
+
+
 def _meta_get(con: sqlite3.Connection, key: str) -> str:
     row = con.execute("SELECT value FROM storage_meta WHERE key = ? LIMIT 1", [str(key or "")]).fetchone()
     if not row:
