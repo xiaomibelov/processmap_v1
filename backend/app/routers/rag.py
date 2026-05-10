@@ -10,7 +10,7 @@ from ..rag.indexer import delete_document, index_document
 from ..rag.search import BM25Index
 from ..rag.storage_rag import list_rag_chunks
 from ..services.org_workspace import require_org_member_for_enterprise
-from ..storage import get_storage
+from ..storage import get_storage, get_rag_settings
 
 router = APIRouter(tags=["rag"])
 
@@ -35,20 +35,32 @@ def _as_list(v: Any) -> List[Any]:
 def rag_search(
     request: Request,
     q: str = Query(..., min_length=1, description="Search query"),
-    top_k: int = Query(default=10, ge=1, le=_MAX_TOP_K),
+    top_k: Optional[int] = Query(default=None, ge=1, le=_MAX_TOP_K),
     source_type: Optional[str] = Query(default=None),
     session_id: Optional[str] = Query(default=None),
-    min_score: float = Query(default=0.0, ge=0.0),
+    min_score: Optional[float] = Query(default=None, ge=0.0),
 ) -> Dict[str, Any]:
     require_authenticated_user(request)
     org_id = request_active_org_id(request)
     require_org_member_for_enterprise(request, org_id)
 
+    settings = get_rag_settings(org_id)
+
+    if not settings["enabled"]:
+        return {"ok": False, "error": "rag_disabled", "results": []}
+
+    raw_top_k = top_k if isinstance(top_k, int) else None
+    effective_top_k = raw_top_k if raw_top_k is not None else int(settings["default_top_k"])
+    effective_top_k = max(1, min(effective_top_k, int(settings["max_top_k"])))
+
+    raw_min_score = min_score if isinstance(min_score, (int, float)) else None
+    effective_min_score = float(raw_min_score) if raw_min_score is not None else float(settings["default_min_score"] or 0.0)
+
     chunks = list_rag_chunks(org_id, limit=_MAX_CHUNKS_LOAD)
 
     idx = BM25Index()
     idx.add_documents(chunks)
-    raw_results = idx.search(q, org_id=org_id, top_k=_MAX_TOP_K, min_score=min_score)
+    raw_results = idx.search(q, org_id=org_id, top_k=_MAX_TOP_K, min_score=effective_min_score)
 
     results = []
     for r in raw_results:
@@ -65,7 +77,7 @@ def rag_search(
             "source_id": _text(meta.get("source_id")),
             "metadata": meta,
         })
-        if len(results) >= top_k:
+        if len(results) >= effective_top_k:
             break
 
     return {
