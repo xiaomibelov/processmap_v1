@@ -196,3 +196,17 @@ export async function apiAdminArchiveAiPrompt(promptId) {
   const r = okOrError(await request(apiRoutes.admin.aiPromptArchive(id), { method: "POST" }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
+
+export async function apiAdminRagGetSettings() {
+  const r = okOrError(await request(apiRoutes.admin.ragSettings(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminRagPatchSettings(payload = {}) {
+  const r = okOrError(await request(apiRoutes.admin.ragPatchSettings(), {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+    headers: { "Content-Type": "application/json" },
+  }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}

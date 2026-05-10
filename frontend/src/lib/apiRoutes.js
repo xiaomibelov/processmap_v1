@@ -215,6 +215,8 @@ export const apiRoutes = {
     aiPrompt: (promptId) => `/api/admin/ai/prompts/${encode(promptId)}`,
     aiPromptActivate: (promptId) => `/api/admin/ai/prompts/${encode(promptId)}/activate`,
     aiPromptArchive: (promptId) => `/api/admin/ai/prompts/${encode(promptId)}/archive`,
+    ragSettings: () => "/api/admin/rag/settings",
+    ragPatchSettings: () => "/api/admin/rag/settings",
   },
   rag: {
     search: (params = {}) => withQuery("/api/rag/search", {
