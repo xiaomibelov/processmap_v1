@@ -3296,7 +3296,7 @@
   }
 
   .docIssueColumns {
-    @apply grid gap-2;
+    @apply grid gap-1.5;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -4411,7 +4411,7 @@
   }
 
   .sidebarControlBlock {
-    @apply grid gap-2;
+    @apply grid gap-1.5;
   }
 
   .sidebarControlRow {
@@ -5440,7 +5440,7 @@
   }
 
   .orgDictionaryEditorStack {
-    @apply grid gap-2;
+    @apply grid gap-1.5;
   }
 
   .orgDictionaryEditorCard {
@@ -6577,7 +6577,7 @@
   }
 
   .interviewTimelineFilters {
-    @apply grid gap-2;
+    @apply grid gap-1.5;
     grid-template-columns: minmax(220px, 2fr) repeat(6, minmax(150px, 1fr));
   }
 
@@ -7664,7 +7664,7 @@
   }
 
   .interviewGatewayCompareList {
-    @apply grid gap-2;
+    @apply grid gap-1.5;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -7807,7 +7807,7 @@
   }
 
   .interviewBoundaryLanePicker {
-    @apply grid gap-2;
+    @apply grid gap-1.5;
   }
 
   .interviewBoundaryLaneList {
@@ -7959,7 +7959,7 @@
   }
 
   .interviewTimeCell {
-    @apply flex min-w-[148px] items-center gap-2;
+    @apply flex min-w-[140px] items-center gap-1;
   }
 
   .interviewBadge {
@@ -8068,16 +8068,16 @@
   }
 
   .interviewStepDetailsPanel {
-    @apply grid gap-3 p-3;
+    @apply grid gap-2 p-2;
   }
 
   .interviewStepDetailsGrid {
-    @apply grid gap-2;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    @apply grid gap-1.5;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .interviewStepDetailsNodeField {
-    @apply col-span-2;
+    @apply col-span-3;
   }
 
   .interviewRowsMoreWrap {
@@ -8117,15 +8117,15 @@
   }
 
   .interviewAnnotationCell {
-    @apply grid min-w-[260px] gap-1.5;
+    @apply grid min-w-[220px] gap-1;
   }
 
   .interviewAnnotationMain {
-    @apply grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5;
+    @apply grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1;
   }
 
   .interviewAnnotationAddBtn {
-    @apply h-[34px] min-w-[34px] px-2 text-lg font-black leading-none;
+    @apply h-7 min-w-[28px] px-1.5 text-base font-black leading-none;
   }
 
   .interviewAnnotationState {
@@ -8158,7 +8158,7 @@
   }
 
   .interviewAnnotationSummary {
-    @apply mt-1 flex items-center justify-between gap-2;
+    @apply flex items-center justify-between gap-2;
   }
 
   .interviewAnnotationToggleBtn {
@@ -8748,7 +8748,7 @@
   }
 
   .aiDockList {
-    @apply grid gap-2;
+    @apply grid gap-1.5;
   }
 
   .aiDockItem {
@@ -8987,7 +8987,7 @@
   }
 
   .interviewPathsMainColumn {
-    @apply grid gap-2;
+    @apply grid gap-1.5;
     min-height: 0;
   }
 
@@ -9444,7 +9444,7 @@
   }
 
   .interviewRouteParallelBranches {
-    @apply grid gap-2;
+    @apply grid gap-1.5;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -9805,7 +9805,7 @@
   }
 
   .interviewPathReportRecGroups {
-    @apply grid gap-2;
+    @apply grid gap-1.5;
   }
 
   .interviewPathReportRecGroup {
@@ -9927,7 +9927,7 @@
   }
 
   .interviewDiagramNodeList {
-    @apply grid gap-2;
+    @apply grid gap-1.5;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   }
 
@@ -9954,7 +9954,7 @@
   }
 
   .interviewPathsItems {
-    @apply grid gap-2;
+    @apply grid gap-1.5;
   }
 
   .interviewPathsStep {
