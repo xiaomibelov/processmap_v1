@@ -8058,17 +8058,46 @@
     right: 0;
     top: 0;
     z-index: 120;
-    max-height: 60vh;
+    max-height: 70vh;
     overflow-y: auto;
-    background: color-mix(in srgb, var(--c-panel) 97%, transparent);
+    background: var(--c-panel);
     border: 1px solid var(--c-border-strong);
+    border-top: 2px solid color-mix(in srgb, var(--lane-accent, hsl(var(--accent2))) 72%, var(--c-border-strong));
     border-radius: 10px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.22);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.28);
     margin: 0 4px;
   }
 
-  .interviewStepDetailsPanel {
+  .interviewStepDetailsHeader {
+    @apply flex items-center justify-between gap-2 px-3 py-2;
+    border-bottom: 1px solid var(--c-border);
+    background: color-mix(in srgb, var(--lane-accent, hsl(var(--accent2))) 10%, var(--c-panel2));
+    border-radius: 9px 9px 0 0;
+    min-height: 36px;
+  }
+
+  .interviewStepDetailsHeaderTitle {
+    @apply flex items-center gap-2 min-w-0;
+  }
+
+  .interviewStepDetailsHeaderSeq {
+    @apply shrink-0 text-[11px] font-bold text-muted;
+  }
+
+  .interviewStepDetailsHeaderName {
+    @apply truncate text-xs font-semibold text-fg;
+  }
+
+  .interviewStepDetailsCollapseBtn {
+    @apply shrink-0;
+  }
+
+  .interviewStepDetailsBody {
     @apply grid gap-2 p-2;
+  }
+
+  .interviewStepDetailsPanel {
+    @apply grid;
   }
 
   .interviewStepDetailsGrid {
