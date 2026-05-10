@@ -301,6 +301,9 @@ export default function ProductActionsPanel({
 
   async function handleSuggestAiProductActions() {
     if (!sessionId || aiLoading) return;
+    setAiDraft(null);
+    setAiRows([]);
+    setSelectedAiRowIds(new Set());
     setAiLoading(true);
     setAiStatus({ type: "saving", text: "Запрашиваю AI-предложения…" });
     const result = await apiSuggestProductActions(sessionId, {
