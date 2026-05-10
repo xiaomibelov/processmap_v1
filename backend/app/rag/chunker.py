@@ -34,6 +34,28 @@ def _split_by_max_chars(text: str, max_chars: int = MAX_CHARS, overlap: int = OV
     return [c for c in chunks if c.strip()]
 
 
+def _extract_bpmn_element_attrs(element_text: str, tag: str) -> dict:
+    def _attr(name: str):
+        m = re.search(rf'\b{re.escape(name)}=["\']([^"\']*)["\']', element_text)
+        if not m:
+            return None
+        val = m.group(1).strip()
+        return val if val else None
+
+    result = {
+        "element_id": _attr("id"),
+        "element_name": _attr("name"),
+        "element_type": tag,
+    }
+    sr = _attr("sourceRef")
+    tr = _attr("targetRef")
+    if sr is not None:
+        result["source_ref"] = sr
+    if tr is not None:
+        result["target_ref"] = tr
+    return result
+
+
 def chunk_bpmn_xml(xml: str, metadata: dict | None = None) -> list[dict]:
     metadata = metadata or {}
     chunks = []
@@ -46,7 +68,19 @@ def chunk_bpmn_xml(xml: str, metadata: dict | None = None) -> list[dict]:
                 continue
             tag_match = re.match(r"<(?:bpmn:|semantic:)?(\w+)", element_text)
             tag = tag_match.group(1) if tag_match else "element"
-            chunk_meta = {**metadata, "element_tag": tag, "element_index": i}
+            attrs = _extract_bpmn_element_attrs(element_text, tag)
+            chunk_meta = {
+                **metadata,
+                "element_tag": tag,
+                "element_index": i,
+                "element_id": attrs.get("element_id"),
+                "element_name": attrs.get("element_name"),
+                "element_type": attrs.get("element_type"),
+            }
+            if "source_ref" in attrs:
+                chunk_meta["source_ref"] = attrs["source_ref"]
+            if "target_ref" in attrs:
+                chunk_meta["target_ref"] = attrs["target_ref"]
             for j, part in enumerate(_split_by_max_chars(element_text)):
                 if not part.strip():
                     continue
