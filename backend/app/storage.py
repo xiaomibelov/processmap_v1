@@ -1707,6 +1707,20 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_rag_embed_chunk ON rag_embeddings(chunk_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_rag_embed_org_model ON rag_embeddings(org_id, model_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_rag_sources_org ON rag_sources(org_id, source_type)")
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS rag_settings (
+                    org_id                  TEXT PRIMARY KEY,
+                    enabled                 INTEGER NOT NULL DEFAULT 1,
+                    indexing_enabled        INTEGER NOT NULL DEFAULT 1,
+                    default_top_k           INTEGER NOT NULL DEFAULT 10,
+                    max_top_k               INTEGER NOT NULL DEFAULT 50,
+                    default_min_score       REAL,
+                    allowed_source_types    TEXT NOT NULL DEFAULT '["bpmn_xml","product_action"]',
+                    show_technical_fragments INTEGER NOT NULL DEFAULT 0,
+                    updated_at              INTEGER NOT NULL DEFAULT 0,
+                    updated_by              TEXT NOT NULL DEFAULT ''
+                )
+            """)
             con.commit()
         _SCHEMA_READY = True
         _SCHEMA_DB_FILE = db_file

@@ -16,6 +16,8 @@ import useAdminSessionsData from "./hooks/useAdminSessionsData";
 import { useAdminTelemetryErrorEventDetailData, useAdminTelemetryErrorEventsData } from "./hooks/useAdminTelemetryData";
 import AdminAuditPage from "./pages/AdminAuditPage";
 import AdminAiModulesPage from "./pages/AdminAiModulesPage";
+import AdminRagPage from "./pages/AdminRagPage";
+import useAdminRagData from "./hooks/useAdminRagData";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import AdminJobsPage from "./pages/AdminJobsPage";
 import AdminOrgsPage from "./pages/AdminOrgsPage";
@@ -144,6 +146,7 @@ export default function AdminApp({
     enabled: route.section === "telemetry" && Boolean(toText(telemetryFilters.event_id)),
     eventId: telemetryFilters.event_id,
   });
+  const ragQ = useAdminRagData({ enabled: route.section === "rag" });
 
   useEffect(() => {
     if (route.isRoot) onNavigate?.("/admin/dashboard", { replace: true });
@@ -167,6 +170,7 @@ export default function AdminApp({
     if (route.section === "audit") return auditQ;
     if (route.section === "telemetry") return telemetryQ;
     if (route.section === "ai-modules") return { loading: false, error: "", data: null };
+    if (route.section === "rag") return { loading: false, error: "", data: null };
     return { loading: false, error: "", data: null };
   })();
 
@@ -356,6 +360,9 @@ export default function AdminApp({
     }
     if (route.section === "ai-modules") {
       return <AdminAiModulesPage />;
+    }
+    if (route.section === "rag") {
+      return <AdminRagPage payload={ragQ} />;
     }
     return <ErrorState title={ru.admin.runtime.unknownRouteTitle} message={pathname} />;
   }

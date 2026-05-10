@@ -41,6 +41,7 @@ from ..storage import (
     list_templates,
     list_user_org_memberships,
     upsert_org_membership,
+    _connect,
 )
 
 router = APIRouter()
@@ -1565,4 +1566,233 @@ def admin_audit(
         "items": rows,
         "count": int(total),
         "page": {"limit": lim, "offset": off, "total": int(total)},
+    }
+
+
+# ── RAG admin settings ────────────────────────────────────────────────────────
+
+_SAFE_RAG_FIELDS = {
+    "enabled", "indexing_enabled", "default_top_k", "max_top_k",
+    "default_min_score", "allowed_source_types", "show_technical_fragments",
+}
+_INVARIANT_RAG_FIELDS = {
+    "read_only_mode", "auto_apply_enabled", "embeddings_enabled", "vector_search_enabled",
+}
+_KNOWN_RAG_SOURCE_TYPES = {"bpmn_xml", "product_action", "note_thread"}
+
+
+def _rag_settings_defaults(org_id: str) -> Dict[str, Any]:
+    return {
+        "org_id": org_id,
+        "enabled": True,
+        "indexing_enabled": True,
+        "default_top_k": 10,
+        "max_top_k": 50,
+        "default_min_score": None,
+        "allowed_source_types": ["bpmn_xml", "product_action"],
+        "show_technical_fragments": False,
+        "updated_at": None,
+        "updated_by": None,
+    }
+
+
+def _rag_settings_load(con: Any, org_id: str) -> Dict[str, Any]:
+    row = con.execute(
+        "SELECT * FROM rag_settings WHERE org_id=? LIMIT 1", [org_id]
+    ).fetchone()
+    if not row:
+        return _rag_settings_defaults(org_id)
+    d = dict(row)
+    try:
+        source_types = json.loads(d.get("allowed_source_types") or '["bpmn_xml","product_action"]')
+    except Exception:
+        source_types = ["bpmn_xml", "product_action"]
+    return {
+        "org_id": d["org_id"],
+        "enabled": bool(d.get("enabled", 1)),
+        "indexing_enabled": bool(d.get("indexing_enabled", 1)),
+        "default_top_k": int(d.get("default_top_k", 10)),
+        "max_top_k": int(d.get("max_top_k", 50)),
+        "default_min_score": d.get("default_min_score"),
+        "allowed_source_types": source_types,
+        "show_technical_fragments": bool(d.get("show_technical_fragments", 0)),
+        "updated_at": d.get("updated_at") or None,
+        "updated_by": d.get("updated_by") or None,
+    }
+
+
+def _rag_status_counts(con: Any, org_id: str) -> Dict[str, int]:
+    def _cnt(sql: str, params: list) -> int:
+        row = con.execute(sql, params).fetchone()
+        return int(row[0]) if row else 0
+
+    sources = _cnt("SELECT COUNT(*) FROM rag_sources WHERE org_id=?", [org_id])
+    documents = _cnt("SELECT COUNT(*) FROM rag_documents WHERE org_id=?", [org_id])
+    active_docs = _cnt("SELECT COUNT(*) FROM rag_documents WHERE org_id=? AND is_active=1", [org_id])
+    chunks = _cnt("SELECT COUNT(*) FROM rag_chunks WHERE org_id=?", [org_id])
+    try:
+        feedback = _cnt("SELECT COUNT(*) FROM rag_feedback WHERE org_id=?", [org_id])
+    except Exception:
+        feedback = 0
+    try:
+        eval_cases = _cnt("SELECT COUNT(*) FROM rag_eval_cases WHERE org_id=?", [org_id])
+    except Exception:
+        eval_cases = 0
+    return {
+        "sources_count": sources,
+        "documents_count": documents,
+        "active_documents_count": active_docs,
+        "chunks_count": chunks,
+        "feedback_count": feedback,
+        "eval_cases_count": eval_cases,
+    }
+
+
+@router.get("/api/admin/rag/settings")
+def admin_rag_get_settings(request: Request) -> Any:
+    uid, is_admin, oid, role, scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    org_id = _as_text(oid)
+    with _connect() as con:
+        settings = _rag_settings_load(con, org_id)
+        status = _rag_status_counts(con, org_id)
+    return {
+        "ok": True,
+        "settings": {
+            **settings,
+            "read_only_mode": True,
+            "auto_apply_enabled": False,
+            "embeddings_enabled": False,
+            "vector_search_enabled": False,
+        },
+        "status": status,
+    }
+
+
+@router.patch("/api/admin/rag/settings")
+async def admin_rag_patch_settings(request: Request) -> Any:
+    uid, is_admin, oid, role, scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    org_id = _as_text(oid)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+
+    for field in _INVARIANT_RAG_FIELDS:
+        if field in body:
+            return _legacy_main._enterprise_error(
+                400, "invalid_field", f"field '{field}' is invariant and cannot be changed"
+            )
+
+    unknown = set(body.keys()) - _SAFE_RAG_FIELDS
+    if unknown:
+        return _legacy_main._enterprise_error(
+            400, "unknown_field", f"unknown fields: {sorted(unknown)}"
+        )
+
+    patch: Dict[str, Any] = {}
+
+    if "enabled" in body:
+        patch["enabled"] = 1 if body["enabled"] else 0
+    if "indexing_enabled" in body:
+        patch["indexing_enabled"] = 1 if body["indexing_enabled"] else 0
+    if "show_technical_fragments" in body:
+        patch["show_technical_fragments"] = 1 if body["show_technical_fragments"] else 0
+
+    if "default_top_k" in body:
+        try:
+            v = int(body["default_top_k"])
+        except (TypeError, ValueError):
+            return _legacy_main._enterprise_error(400, "invalid_value", "default_top_k must be an integer")
+        if v < 1:
+            return _legacy_main._enterprise_error(400, "invalid_value", "default_top_k must be >= 1")
+        patch["default_top_k"] = v
+
+    if "max_top_k" in body:
+        try:
+            v = int(body["max_top_k"])
+        except (TypeError, ValueError):
+            return _legacy_main._enterprise_error(400, "invalid_value", "max_top_k must be an integer")
+        if v > 100:
+            return _legacy_main._enterprise_error(400, "invalid_value", "max_top_k must be <= 100")
+        patch["max_top_k"] = v
+
+    if "default_min_score" in body:
+        val = body["default_min_score"]
+        if val is not None:
+            try:
+                val = float(val)
+            except (TypeError, ValueError):
+                return _legacy_main._enterprise_error(400, "invalid_value", "default_min_score must be a number or null")
+            if val < 0:
+                return _legacy_main._enterprise_error(400, "invalid_value", "default_min_score must be >= 0")
+        patch["default_min_score"] = val
+
+    if "allowed_source_types" in body:
+        types = body["allowed_source_types"]
+        if not isinstance(types, list) or not all(isinstance(t, str) and t in _KNOWN_RAG_SOURCE_TYPES for t in types):
+            return _legacy_main._enterprise_error(
+                400, "invalid_value",
+                f"allowed_source_types must be a list of known types: {sorted(_KNOWN_RAG_SOURCE_TYPES)}"
+            )
+        patch["allowed_source_types"] = json.dumps(types)
+
+    if not patch:
+        return {"ok": True, "updated": False}
+
+    import time as _time
+    now = int(_time.time())
+    patch["updated_at"] = now
+    patch["updated_by"] = _as_text(uid)
+
+    with _connect() as con:
+        current = _rag_settings_load(con, org_id)
+        dtk = patch.get("default_top_k", current["default_top_k"])
+        mtk = patch.get("max_top_k", current["max_top_k"])
+        if mtk < dtk:
+            return _legacy_main._enterprise_error(
+                400, "invalid_value", "max_top_k must be >= default_top_k"
+            )
+
+        cols = ", ".join(f"{k}=?" for k in patch)
+        vals = list(patch.values()) + [org_id]
+        updated = con.execute(f"UPDATE rag_settings SET {cols} WHERE org_id=?", vals).rowcount
+        if updated == 0:
+            con.execute(
+                """INSERT INTO rag_settings
+                   (org_id, enabled, indexing_enabled, default_top_k, max_top_k,
+                    default_min_score, allowed_source_types, show_technical_fragments,
+                    updated_at, updated_by)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                [
+                    org_id,
+                    patch.get("enabled", 1),
+                    patch.get("indexing_enabled", 1),
+                    patch.get("default_top_k", 10),
+                    patch.get("max_top_k", 50),
+                    patch.get("default_min_score"),
+                    patch.get("allowed_source_types", '["bpmn_xml","product_action"]'),
+                    patch.get("show_technical_fragments", 0),
+                    now,
+                    _as_text(uid),
+                ],
+            )
+        con.commit()
+        settings = _rag_settings_load(con, org_id)
+
+    return {
+        "ok": True,
+        "updated": True,
+        "settings": {
+            **settings,
+            "read_only_mode": True,
+            "auto_apply_enabled": False,
+            "embeddings_enabled": False,
+            "vector_search_enabled": False,
+        },
     }
