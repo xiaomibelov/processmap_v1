@@ -1422,7 +1422,21 @@ export default function TimelineTable({
                   {detailsOpen ? (
                     <tr className="interviewStepDetailsRow" data-details-panel="true" data-step-id={stepId}>
                       <td colSpan={compactColSpan} className="interviewStepDetailsTd">
-                        <div className="interviewStepDetailsPanel">
+                        <div className="interviewStepDetailsPanel" data-testid="analysis-step-expanded-panel">
+                          <div className="interviewStepDetailsHeader" data-testid="analysis-step-expanded-header">
+                            <div className="interviewStepDetailsHeaderTitle">
+                              <span className="interviewStepDetailsHeaderSeq">#{absoluteIdx + 1}</span>
+                              <span className="interviewStepDetailsHeaderName">{toText(step.action) || "—"}</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="secondaryBtn smallBtn interviewStepDetailsCollapseBtn"
+                              onClick={() => openStepDetails(step.id)}
+                            >
+                              Свернуть ↑
+                            </button>
+                          </div>
+                          <div className="interviewStepDetailsBody" data-testid="analysis-step-expanded-body">
                           <div className="interviewStepDetailsGrid">
                             <label className="interviewField">
                               <span>Название шага</span>
@@ -1611,6 +1625,7 @@ export default function TimelineTable({
                             ) : (
                               <div className="muted small">Аннотаций пока нет.</div>
                             )}
+                          </div>
                           </div>
                         </div>
                       </td>
