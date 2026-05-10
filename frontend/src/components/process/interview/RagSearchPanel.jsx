@@ -116,7 +116,7 @@ export default function RagSearchPanel({ sessionId }) {
 
   return (
     <div className="ragSearchPanel" data-testid="rag-search-panel">
-      <div className="interviewAnnotationNotice ragReadOnlyNotice" data-testid="rag-readonly-notice">
+      <div className="ragReadOnlyNotice" data-testid="rag-readonly-notice">
         Только чтение — результаты не применяются автоматически
       </div>
 
@@ -172,38 +172,40 @@ export default function RagSearchPanel({ sessionId }) {
         </div>
       ) : null}
 
-      {searching ? (
-        <div className="ragSearchingIndicator" data-testid="rag-searching-indicator">Поиск…</div>
-      ) : null}
+      <div className="ragResultsArea">
+        {searching ? (
+          <div className="ragSearchingIndicator" data-testid="rag-searching-indicator">Поиск…</div>
+        ) : null}
 
-      {searchError ? (
-        <div className="interviewAnnotationNotice err ragSearchError" data-testid="rag-search-error">
-          {searchError}
-        </div>
-      ) : null}
-
-      {showInitialHint ? (
-        <div className="ragInitialHint" data-testid="rag-initial-hint">
-          Введите запрос для поиска по базе знаний
-        </div>
-      ) : null}
-
-      {hasResults ? (
-        results.length === 0 ? (
-          <div className="ragResultsEmpty" data-testid="rag-results-empty">
-            Ничего не найдено
+        {searchError ? (
+          <div className="interviewAnnotationNotice err ragSearchError" data-testid="rag-search-error">
+            {searchError}
           </div>
-        ) : (
-          <>
-            <div className="ragResultsTotal" data-testid="rag-results-total">Найдено: {results.length}</div>
-            <div className="ragResultsList" data-testid="rag-results-list">
-              {results.map((item, i) => (
-                <RagResultItem key={String(item?.chunk_id || i)} item={item} />
-              ))}
+        ) : null}
+
+        {showInitialHint ? (
+          <div className="ragInitialHint" data-testid="rag-initial-hint">
+            Введите запрос для поиска по базе знаний
+          </div>
+        ) : null}
+
+        {hasResults ? (
+          results.length === 0 ? (
+            <div className="ragResultsEmpty" data-testid="rag-results-empty">
+              Ничего не найдено
             </div>
-          </>
-        )
-      ) : null}
+          ) : (
+            <>
+              <div className="ragResultsTotal" data-testid="rag-results-total">Найдено: {results.length}</div>
+              <div className="ragResultsList" data-testid="rag-results-list">
+                {results.map((item, i) => (
+                  <RagResultItem key={String(item?.chunk_id || i)} item={item} />
+                ))}
+              </div>
+            </>
+          )
+        ) : null}
+      </div>
     </div>
   );
 }
