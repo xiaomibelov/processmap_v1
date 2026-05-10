@@ -90,7 +90,6 @@ export default function RagSearchPanel({ sessionId }) {
     try {
       const r = await apiRagSearch({
         q,
-        top_k: 10,
         source_type: sourceType,
         session_id: sid,
       });
