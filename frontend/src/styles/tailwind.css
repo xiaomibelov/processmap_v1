@@ -7527,12 +7527,36 @@
   }
 
   .interviewGatewayGroupRow {
-    @apply grid gap-2 rounded-lg border border-border/80 bg-panel/70 p-2.5;
+    @apply grid gap-0 overflow-hidden rounded-lg border border-border/80 bg-panel/70;
+  }
+
+  .interviewGatewayGroupRow.isExpanded {
+    border-color: color-mix(in srgb, var(--c-accent) 38%, var(--c-border));
   }
 
   .interviewGatewayHeaderRow {
-    @apply grid gap-2;
+    @apply grid cursor-pointer select-none gap-2 px-2.5 py-2;
     grid-template-columns: minmax(220px, 1fr) minmax(420px, auto);
+    background: color-mix(in srgb, var(--c-panel2) 72%, var(--c-panel));
+    border-bottom: 1px solid transparent;
+    transition: background 120ms ease;
+  }
+
+  .interviewGatewayHeaderRow:hover {
+    background: color-mix(in srgb, var(--c-panel2) 92%, var(--c-accent-soft));
+  }
+
+  .interviewGatewayGroupRow.isExpanded > .interviewGatewayHeaderRow {
+    background: color-mix(in srgb, var(--c-accent-soft) 52%, var(--c-panel2));
+    border-bottom-color: color-mix(in srgb, var(--c-accent) 28%, var(--c-border));
+  }
+
+  .interviewGatewayGroupRow.isExpanded > .interviewGatewayHeaderRow:hover {
+    background: color-mix(in srgb, var(--c-accent-soft) 70%, var(--c-panel2));
+  }
+
+  .interviewGatewayBodyWrap {
+    @apply p-2.5 pt-2;
   }
 
   .interviewGatewayHeaderMain {
@@ -7540,7 +7564,13 @@
   }
 
   .interviewGatewayIcon {
-    @apply inline-flex h-6 w-6 items-center justify-center rounded-md border border-border bg-panel2 text-sm text-fg;
+    @apply inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border border-border bg-panel2 text-sm text-fg;
+    transition: background 120ms ease, border-color 120ms ease;
+  }
+
+  .interviewGatewayGroupRow.isExpanded .interviewGatewayIcon {
+    border-color: color-mix(in srgb, var(--c-accent) 52%, var(--c-border));
+    background: color-mix(in srgb, var(--c-accent-soft) 65%, var(--c-panel2));
   }
 
   .interviewGatewayLabel {
@@ -7549,6 +7579,16 @@
 
   .interviewGatewayHeaderMeta {
     @apply flex flex-wrap items-center justify-end gap-1.5;
+  }
+
+  .interviewGatewayExpandChevron {
+    @apply inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-muted;
+    transition: transform 160ms ease;
+  }
+
+  .interviewGatewayGroupRow.isExpanded .interviewGatewayExpandChevron {
+    transform: rotate(90deg);
+    color: color-mix(in srgb, var(--c-accent) 78%, var(--c-fg));
   }
 
   .interviewGatewayBranchesTable {

@@ -35,8 +35,16 @@ export default function GatewayGroupRow({
 
   return (
     <div className={`interviewGatewayGroupRow ${expanded ? "isExpanded" : ""}`}>
-      <div className="interviewGatewayHeaderRow">
+      <div
+        className="interviewGatewayHeaderRow"
+        role="button"
+        tabIndex={0}
+        onClick={() => onToggleExpanded?.(gatewayId)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggleExpanded?.(gatewayId); } }}
+        aria-expanded={expanded}
+      >
         <div className="interviewGatewayHeaderMain">
+          <span className="interviewGatewayExpandChevron" aria-hidden="true">›</span>
           <span className="interviewGatewayIcon" aria-hidden="true">◇</span>
           <span className="interviewGatewayLabel">{toText(gatewayLabel) || "Gateway decision"}</span>
           {toText(gatewaySubtitle) ? <span className="muted small">{gatewaySubtitle}</span> : null}
@@ -52,10 +60,11 @@ export default function GatewayGroupRow({
           <span className="badge muted">
             steps: {Number(primaryMetrics?.stepsCount || 0)} • total: {formatHHMMFromSeconds(primaryMetrics?.totalSec || 0)}
           </span>
-          <button type="button" className="secondaryBtn tinyBtn" onClick={() => onToggleExpanded?.(gatewayId)}>
-            {expanded ? "Свернуть" : "Развернуть"}
-          </button>
-          <button type="button" className="secondaryBtn tinyBtn" onClick={() => setCompareOpen((prev) => !prev)}>
+          <button
+            type="button"
+            className="secondaryBtn tinyBtn"
+            onClick={(e) => { e.stopPropagation(); setCompareOpen((prev) => !prev); }}
+          >
             ⋯
           </button>
         </div>
@@ -71,21 +80,23 @@ export default function GatewayGroupRow({
       ) : null}
 
       {expanded ? (
-        <GatewayBranchesTable
-          gatewayId={gatewayId}
-          branches={branches}
-          metricsByBranchKey={metricsByBranchKey}
-          selectedBranchKey={selectedBranchKey}
-          showIds={showIds}
-          onToggleShowIds={onToggleShowIds}
-          onSelectBranch={onSelectBranch}
-          onOpenBranchSteps={onOpenBranchSteps}
-          onSetPrimaryBranch={onSetPrimaryBranch}
-          onCollapseAll={onCollapseAllBranches}
-          onExpandAll={onExpandAllBranches}
-          onCopySummary={onCopySummary}
-          onOpenCompare={() => setCompareOpen(true)}
-        />
+        <div className="interviewGatewayBodyWrap">
+          <GatewayBranchesTable
+            gatewayId={gatewayId}
+            branches={branches}
+            metricsByBranchKey={metricsByBranchKey}
+            selectedBranchKey={selectedBranchKey}
+            showIds={showIds}
+            onToggleShowIds={onToggleShowIds}
+            onSelectBranch={onSelectBranch}
+            onOpenBranchSteps={onOpenBranchSteps}
+            onSetPrimaryBranch={onSetPrimaryBranch}
+            onCollapseAll={onCollapseAllBranches}
+            onExpandAll={onExpandAllBranches}
+            onCopySummary={onCopySummary}
+            onOpenCompare={() => setCompareOpen(true)}
+          />
+        </div>
       ) : null}
     </div>
   );

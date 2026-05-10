@@ -1129,8 +1129,10 @@
 }
 
 .interviewBetweenBranchesRow td{
-  background: rgba(30,41,59,.22);
+  background: rgba(30,41,59,.38);
+  border-top: 1px solid rgba(148,163,184,.22);
   border-bottom: 1px dashed rgba(148,163,184,.35);
+  padding: 0 !important;
 }
 
 .interviewBetweenBranchesWrap{
