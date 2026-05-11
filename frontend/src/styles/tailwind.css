@@ -543,6 +543,64 @@
   border-color: color-mix(in srgb, var(--c-danger) 42%, var(--analysis-border-soft));
 }
 
+.productActionsBatchProgress {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--analysis-border-soft);
+  border-radius: 10px;
+  background: hsl(var(--bg-soft) / 0.48);
+  padding: 10px;
+}
+
+.productActionsBatchReview {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--analysis-border-soft);
+  border-radius: 10px;
+  background: hsl(var(--bg-soft) / 0.48);
+  padding: 10px;
+}
+
+.productActionsBatchStepGroup {
+  border: 1px solid var(--analysis-border-soft);
+  border-radius: 8px;
+  background: hsl(var(--panel) / 0.42);
+  overflow: hidden;
+}
+
+.productActionsBatchStepSummary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--analysis-text);
+  font-size: 12px;
+  font-weight: 800;
+  list-style: none;
+}
+
+.productActionsBatchStepSummary::-webkit-details-marker {
+  display: none;
+}
+
+.productActionsBatchStepGroup[open] > .productActionsBatchStepSummary {
+  border-bottom: 1px solid var(--analysis-border-soft);
+}
+
+.productActionsBatchStepGroup > .productActionsAiList,
+.productActionsBatchStepGroup > .productActionsAiWarningNote,
+.productActionsBatchStepGroup > .productActionsAiEmpty,
+.productActionsBatchStepGroup > .productActionsAiStickyFooter {
+  padding: 8px 10px;
+}
+
+.productActionsAiBadge.error {
+  border: 1px solid hsl(var(--c-danger) / 0.3);
+  background: hsl(var(--c-danger) / 0.1);
+  color: var(--c-danger);
+}
+
 .productActionsAiProgressHead {
   display: flex;
   align-items: flex-start;
