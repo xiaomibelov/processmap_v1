@@ -361,6 +361,7 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
         "existing_product_actions_count": len(context.get("existing_product_actions") or []),
         "max_suggestions": max_suggestions,
     }
+    input_hash = hash_ai_input({"module_id": _MODULE_ID, "session_id": session_id, "context": context})
     started_at = time.time()
     created_at = int(started_at)
     execution_id = f"exec_{uuid.uuid4().hex[:16]}"
