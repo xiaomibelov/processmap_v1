@@ -30,6 +30,20 @@ Read:
 
 Do not read all Obsidian history. Obsidian is archive context, not the control plane.
 
+## Reviewer runtime proof shortcut
+
+Use:
+
+```bash
+node tools/stage-open-session-proof.mjs analysis
+node tools/stage-open-session-proof.mjs diagram
+```
+
+Use proof JSON fields in `REVIEW_REPORT.md`:
+`loaded`, `url`, `hasErrorBoundary`, `activeTabMarkers`, `tabProof`, `consoleErrorCount`.
+
+Do not spend review context rediscovering login, organization, workspace, project, session, or tab paths unless direct session proof fails or `PLAN.md` explicitly asks for navigation coverage.
+
 ## Checks
 
 1. The implementation matches `PLAN.md`.
