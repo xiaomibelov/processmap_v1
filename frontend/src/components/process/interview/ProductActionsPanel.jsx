@@ -281,7 +281,7 @@ export default function ProductActionsPanel({
   const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
   const [aiDraft, setAiDraft] = useState(null);
-  const [aiDraftStepId, setAiDraftStepId] = useState("");
+  const aiDraftStepIdRef = useRef("");
   const [aiRows, setAiRows] = useState([]);
   const [selectedAiRowIds, setSelectedAiRowIds] = useState(() => new Set());
   const [aiStatus, setAiStatus] = useState(null);
@@ -313,9 +313,9 @@ export default function ProductActionsPanel({
   useEffect(() => {
     const currentStepId = toText(selectedStep?.id);
     if (!currentStepId) return;
-    if (aiDraftStepId !== currentStepId) {
+    if (aiDraftStepIdRef.current !== currentStepId) {
       setAiDraft(null);
-      setAiDraftStepId("");
+      aiDraftStepIdRef.current = "";
       setAiRows([]);
       setSelectedAiRowIds(new Set());
       setAiStatus(null);
@@ -327,7 +327,7 @@ export default function ProductActionsPanel({
       setBatchStatus(null);
       setBatchRunning(false);
     }
-  }, [selectedStep, aiDraftStepId]);
+  }, [selectedStep]);
 
   const selectedBinding = deriveProductActionBindingFromStep(selectedStep);
   const actionCount = productActions.length;
@@ -630,7 +630,7 @@ export default function ProductActionsPanel({
     const allDuplicates = rows.length > 0 && nonDuplicateRows.length === 0;
     setAiProgress(aiProgressStep("format", "Формируем список предложений для review."));
     setAiDraft(draftResult);
-    setAiDraftStepId(toText(selectedStep?.id));
+    aiDraftStepIdRef.current = toText(selectedStep?.id);
     setAiRows(rows);
     setSelectedAiRowIds(new Set(nonDuplicateRows.map((row) => toText(row.id)).filter(Boolean)));
     setAiProgress(aiProgressStep(
@@ -1090,7 +1090,7 @@ export default function ProductActionsPanel({
                     className="secondaryBtn smallBtn"
                     onClick={() => {
                       setAiDraft(null);
-                      setAiDraftStepId("");
+                      aiDraftStepIdRef.current = "";
                       setAiRows([]);
                       setSelectedAiRowIds(new Set());
                       setAiStatus(null);
