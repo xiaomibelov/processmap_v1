@@ -156,7 +156,16 @@ function warningText(warningRaw) {
   return "";
 }
 
-function aiSuggestErrorText(codeRaw, detailRaw = "") {
+function formatRateLimitReset(resetAtSec) {
+  if (!resetAtSec) return null;
+  try {
+    return new Date(Number(resetAtSec) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return null;
+  }
+}
+
+function aiSuggestErrorText(codeRaw, detailOrRateLimitRaw = "") {
   const code = toText(codeRaw);
   if (code === "AI_PROVIDER_NOT_CONFIGURED") return "AI provider не настроен: сохраните DeepSeek API key в Admin → AI модули.";
   if (code === "AI_PROMPT_NOT_CONFIGURED") return "AI prompt для действий с продуктом не настроен в Admin → AI модули.";
@@ -164,12 +173,23 @@ function aiSuggestErrorText(codeRaw, detailRaw = "") {
     return "AI вернул некорректный формат ответа. Повторите запрос или проверьте prompt модуля в Admin → AI модули.";
   }
   if (code === "AI_PROVIDER_ERROR") {
-    const detail = toText(detailRaw);
+    const detail = typeof detailOrRateLimitRaw === "string" ? toText(detailOrRateLimitRaw) : "";
     return detail
       ? `AI provider вернул ошибку: ${detail}. Проверьте доступность DeepSeek в Admin → AI модули.`
       : "AI provider вернул ошибку. Проверьте доступность DeepSeek в Admin → AI модули.";
   }
-  if (code === "ai_rate_limit_exceeded") return "Слишком много AI-запросов. Подождите и повторите запуск позже.";
+  if (code === "ai_rate_limit_exceeded") {
+    const rl = detailOrRateLimitRaw && typeof detailOrRateLimitRaw === "object" ? detailOrRateLimitRaw : null;
+    if (rl?.reset_at) {
+      const resetTime = formatRateLimitReset(rl.reset_at);
+      const windowHours = rl.window_sec ? Math.round(rl.window_sec / 3600) : null;
+      const limitStr = rl.limit ? `${rl.limit} запр.` : "";
+      const windowStr = windowHours ? ` / ${windowHours} ч.` : "";
+      const resetStr = resetTime ? ` Повторите после ${resetTime}.` : "";
+      return `Лимит AI исчерпан${limitStr ? `: ${limitStr}${windowStr}` : ""}.${resetStr}`;
+    }
+    return "Слишком много AI-запросов. Подождите и повторите запуск позже.";
+  }
   return code;
 }
 
@@ -255,6 +275,7 @@ export default function ProductActionsPanel({
   const [draft, setDraft] = useState(() => createDraftForStep(selectedStep));
   const draftResetKey = `${toText(selectedStep?.id)}::${toText(editingAction?.id)}`;
   const lastDraftResetKeyRef = useRef(draftResetKey);
+  const aiRequestStepIdRef = useRef("");
   const [editorOpen, setEditorOpen] = useState(false);
   const [actionsScope, setActionsScope] = useState("step");
   const [status, setStatus] = useState(null);
@@ -343,6 +364,7 @@ export default function ProductActionsPanel({
     setBatchStatus({ type: "saving", text: "Запускаем AI по шагам…" });
     setBatchProgress({ current: 0, total: targetSteps.length, currentStepName: "" });
     const results = {};
+    let rateLimitHit = null;
     for (let i = 0; i < targetSteps.length; i++) {
       const step = targetSteps[i];
       const stepId = toText(step?.id);
@@ -368,13 +390,36 @@ export default function ProductActionsPanel({
       }
       const draftResult = result?.ok && result?.draft?.ok !== false ? result.draft || {} : null;
       const rows = draftResult ? normalizeSuggestionDraftRows(draftResult.suggestions) : [];
+      const errorCode = draftResult ? null : toText(result?.error || result?.draft?.error);
+      const isRateLimit = errorCode === "ai_rate_limit_exceeded";
+      const rateLimitObj = result?.rate_limit || result?.draft?.rate_limit || null;
+      const entryStatus = isRateLimit ? "rate_limited" : errorCode ? "failed" : rows.length > 0 ? "success" : "success";
       results[stepId] = {
         step,
         stepName,
         rows,
-        errorCode: draftResult ? null : toText(result?.error || result?.draft?.error),
+        errorCode,
+        status: entryStatus,
+        rateLimitObj: isRateLimit ? rateLimitObj : null,
         selectedIds: new Set(rows.filter((r) => !toText(r.duplicate_of)).map((r) => toText(r.id)).filter(Boolean)),
       };
+      if (isRateLimit) {
+        rateLimitHit = rateLimitObj;
+        for (let j = i + 1; j < targetSteps.length; j++) {
+          const s = targetSteps[j];
+          const sid = toText(s?.id);
+          results[sid] = {
+            step: s,
+            stepName: stepDisplayLabel(s),
+            rows: [],
+            errorCode: null,
+            status: "not_processed",
+            rateLimitObj: null,
+            selectedIds: new Set(),
+          };
+        }
+        break;
+      }
     }
     setBatchRunning(false);
     setBatchProgress(null);
@@ -385,20 +430,33 @@ export default function ProductActionsPanel({
         stepName: stepDisplayLabel(step),
         rows: [],
         skipped: true,
+        status: "skipped_existing_action",
         errorCode: null,
+        rateLimitObj: null,
         selectedIds: new Set(),
       };
     }
     setBatchDraft(results);
-    const totalRows = Object.values(results).reduce((sum, s) => sum + s.rows.length, 0);
-    const errorCount = Object.values(results).filter((s) => s.errorCode).length;
+    const allEntries = Object.values(results);
+    const successCount = allEntries.filter((s) => s.status === "success").length;
+    const failedCount = allEntries.filter((s) => s.status === "failed").length;
+    const rateLimitedCount = allEntries.filter((s) => s.status === "rate_limited").length;
+    const notProcessedCount = allEntries.filter((s) => s.status === "not_processed").length;
     const skippedCount = skippedSteps.length;
-    setBatchStatus({
-      type: errorCount > 0 ? "error" : "saved",
-      text: errorCount > 0
-        ? `Завершено с ошибками: ${errorCount} из ${targetSteps.length} шагов не обработаны.`
-        : `Batch AI: ${totalRows} предложений для ${targetSteps.length} шагов.${skippedCount ? ` Пропущено (уже есть действия): ${skippedCount}.` : ""} Проверьте и примите нужные.`,
-    });
+    const totalRows = allEntries.reduce((sum, s) => sum + s.rows.length, 0);
+    const hasError = failedCount > 0 || rateLimitedCount > 0;
+    let statusText = `Batch AI: ${successCount} шагов выполнено`;
+    if (skippedCount) statusText += `, ${skippedCount} пропущено`;
+    if (failedCount) statusText += `, ${failedCount} ошибок`;
+    if (rateLimitedCount) statusText += `, ${rateLimitedCount} ост. лимитом`;
+    if (notProcessedCount) statusText += `, ${notProcessedCount} не выполнено`;
+    statusText += `.`;
+    if (rateLimitHit) {
+      const resetTime = formatRateLimitReset(rateLimitHit.reset_at);
+      if (resetTime) statusText += ` Повторите после ${resetTime}.`;
+    }
+    if (!hasError) statusText += ` Итого предложений: ${totalRows}. Проверьте и примите нужные.`;
+    setBatchStatus({ type: hasError ? "error" : "saved", text: statusText });
   }
 
   function toggleBatchRow(stepId, rowId, checked) {
@@ -514,6 +572,8 @@ export default function ProductActionsPanel({
       setAiStatus({ type: "error", text: "Выберите шаг процесса перед запуском AI." });
       return;
     }
+    const requestedStepId = toText(selectedStep?.id);
+    aiRequestStepIdRef.current = requestedStepId;
     setAiLoading(true);
     setAiDraft(null);
     setAiRows([]);
@@ -542,11 +602,13 @@ export default function ProductActionsPanel({
         draft: { message: toText(error?.message) || "network error" },
       };
     }
+    if (aiRequestStepIdRef.current !== requestedStepId) return;
     setAiLoading(false);
     setAiProgress(aiProgressStep("receive", "Ответ AI получен, проверяем результат."));
     if (!result?.ok || result?.draft?.ok === false) {
       const errorCode = toText(result?.error || result?.draft?.error);
-      const errorDetail = toText(result?.draft?.message || result?.data?.message);
+      const rateLimitObj = result?.rate_limit || result?.draft?.rate_limit || null;
+      const errorDetail = rateLimitObj || toText(result?.draft?.message || result?.data?.message);
       const errorStage = aiProgressErrorStage(errorCode);
       const errorText = aiSuggestErrorText(errorCode, errorDetail) || "Не удалось получить AI-предложения.";
       setAiDiagnostics(result?.draft?.diagnostics || null);
@@ -788,22 +850,38 @@ export default function ProductActionsPanel({
                 <details key={stepId} className="productActionsBatchStepGroup" data-testid="product-actions-batch-step">
                   <summary className="productActionsBatchStepSummary">
                     <span>{entry.stepName}</span>
-                    {entry.skipped ? (
+                    {entry.skipped || entry.status === "skipped_existing_action" ? (
                       <span className="productActionsAiBadge skipped">Пропущен</span>
+                    ) : entry.status === "rate_limited" ? (
+                      <span className="productActionsAiBadge rateLimited">Лимит AI</span>
+                    ) : entry.status === "not_processed" ? (
+                      <span className="productActionsAiBadge notProcessed">Не выполнен</span>
+                    ) : entry.status === "failed" ? (
+                      <span className="productActionsAiBadge error">Ошибка</span>
+                    ) : entry.rows.length > 0 ? (
+                      <span className="productActionsAiBadge success">Готово: {entry.rows.length}</span>
                     ) : (
                       <span className="productActionsAiCounter">{entry.rows.length} предложений</span>
                     )}
-                    {entry.errorCode ? (
-                      <span className="productActionsAiBadge error">Ошибка</span>
-                    ) : null}
                   </summary>
-                  {entry.skipped ? (
+                  {entry.skipped || entry.status === "skipped_existing_action" ? (
                     <div className="productActionsAiWarningNote" data-testid="product-actions-batch-skipped">
                       <span className="productActionsAiWarningNoteIcon">ℹ</span>
                       <span>Шаг пропущен: уже есть сохранённые действия с продуктом.</span>
                     </div>
                   ) : null}
-                  {entry.errorCode ? (
+                  {entry.status === "not_processed" ? (
+                    <div className="productActionsAiWarningNote">
+                      <span className="productActionsAiWarningNoteIcon">⏸</span>
+                      <span>Шаг не выполнен: AI-запуск остановлен из-за лимита на предыдущем шаге.</span>
+                    </div>
+                  ) : null}
+                  {entry.status === "rate_limited" ? (
+                    <div className="productActionsAiWarningNote">
+                      <span className="productActionsAiWarningNoteIcon">⚠</span>
+                      <span>{aiSuggestErrorText("ai_rate_limit_exceeded", entry.rateLimitObj)}</span>
+                    </div>
+                  ) : entry.errorCode ? (
                     <div className="productActionsAiWarningNote">
                       <span className="productActionsAiWarningNoteIcon">⚠</span>
                       <span>{aiSuggestErrorText(entry.errorCode)}</span>
@@ -1082,7 +1160,15 @@ export default function ProductActionsPanel({
               </ol>
               {aiProgress.status === "error" ? (
                 <div className="productActionsAiProgressError" data-testid="product-actions-ai-progress-error">
-                  Ошибка на этапе: {aiProgress.stageLabel}
+                  <span>Ошибка на этапе: {aiProgress.stageLabel}</span>
+                  <button
+                    type="button"
+                    className="productActionsToolbarBtn"
+                    onClick={() => { setAiProgress(null); setAiStatus(null); setAiDiagnostics(null); }}
+                    data-testid="product-actions-ai-progress-dismiss"
+                  >
+                    Закрыть
+                  </button>
                 </div>
               ) : null}
               {aiProgress.status === "error" && aiProgress.errorCode === "AI_RESPONSE_PARSE_ERROR" && aiDiagnostics ? (
@@ -1255,7 +1341,7 @@ export default function ProductActionsPanel({
           {statusText(status)}
         </div>
       ) : null}
-      {aiStatus && aiProgress?.status !== "error" ? (
+      {aiStatus ? (
         <div className={`productActionsStatus ${aiStatus.type || "pending"}`} data-testid="product-actions-ai-status">
           {statusText(aiStatus)}
         </div>
