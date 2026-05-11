@@ -148,6 +148,19 @@ test("ProductActionsPanel keeps AI error state in the progress panel only", () =
   assert.equal(source.includes(") : aiProgress?.active ? null : ("), true);
 });
 
+test("ProductActionsPanel aiProgressStep sets active:false on success so review panel is not hidden (Fix 4)", () => {
+  // active must be false when status === "success" so progress panel unmounts and AI review is visible
+  assert.match(
+    source,
+    /active: status !== "success"/,
+    "aiProgressStep must set active: status !== 'success' to hide progress panel on success",
+  );
+  // Confirm the progress panel render gate uses aiProgress?.active
+  assert.equal(source.includes("{aiProgress?.active ? ("), true);
+  // Confirm the AI review gate uses aiDraft
+  assert.equal(source.includes("{aiDraft ? ("), true);
+});
+
 test("ProductActionsPanel maps AI progress failures to the stage where they happened", () => {
   assert.match(source, /AI_PROVIDER_NOT_CONFIGURED[\s\S]*AI_PROGRESS_BY_ID\.settings/);
   assert.match(source, /AI_PROMPT_NOT_CONFIGURED[\s\S]*AI_PROMPT_PROGRESS_STAGE/);
