@@ -41,8 +41,8 @@ function RagResultItem({ item }) {
     <div className="ragResultItem" data-testid="rag-result-item">
       <div className="ragResultHeader">
         <div className="ragResultTitleBlock">
-          <span className="ragResultTitle" data-testid="rag-result-title">{title}</span>
-          {elementCtx ? <span className="ragResultSubtitle">{elementCtx}</span> : null}
+          <div className="ragResultTitle" data-testid="rag-result-title">{title}</div>
+          {elementCtx ? <div className="ragResultSubtitle">{elementCtx}</div> : null}
         </div>
         <div className="ragResultBadges">
           <span className="ragResultTag">{sourceBadge}</span>
