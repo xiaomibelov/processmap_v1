@@ -268,6 +268,10 @@ export default function ProductActionsPanel({
   const [aiApplying, setAiApplying] = useState(false);
   const [aiProgress, setAiProgress] = useState(null);
   const [aiDiagnostics, setAiDiagnostics] = useState(null);
+  const [batchDraft, setBatchDraft] = useState(null);
+  const [batchProgress, setBatchProgress] = useState(null);
+  const [batchStatus, setBatchStatus] = useState(null);
+  const [batchRunning, setBatchRunning] = useState(false);
 
   useEffect(() => {
     if (!steps.length) return;
@@ -313,6 +317,105 @@ export default function ProductActionsPanel({
     const fields = [...FIELD_CONFIGS, { key: "role", label: "Роль", type: "text", placeholder: "Повар" }];
     return Object.fromEntries(fields.map((field) => [field.key, field]));
   }, []);
+
+  async function handleBatchSuggestAiProductActions(scope = "without_actions") {
+    if (!sessionId || batchRunning) return;
+    const targetSteps = scope === "without_actions"
+      ? steps.filter((step) => {
+          const stepId = toText(step?.id);
+          return !productActions.some((pa) => toText(pa.step_id || pa.stepId) === stepId);
+        })
+      : steps;
+    if (!targetSteps.length) return;
+    setBatchRunning(true);
+    setBatchDraft(null);
+    setBatchStatus({ type: "saving", text: "Запускаем AI по шагам…" });
+    setBatchProgress({ current: 0, total: targetSteps.length, currentStepName: "" });
+    const results = {};
+    for (let i = 0; i < targetSteps.length; i++) {
+      const step = targetSteps[i];
+      const stepId = toText(step?.id);
+      const stepName = stepDisplayLabel(step);
+      setBatchProgress({ current: i + 1, total: targetSteps.length, currentStepName: stepName });
+      let result = null;
+      try {
+        result = await apiSuggestProductActions(sessionId, {
+          options: {
+            max_suggestions: 20,
+            ui_source: "product_actions_panel_batch",
+            selected_step_id: stepId,
+            selected_step_label: toText(step?.action || step?.label || step?.title),
+            selected_step_bpmn_id: toText(step?.node_id || step?.nodeId || step?.bpmn_ref),
+          },
+        });
+      } catch (error) {
+        result = {
+          ok: false,
+          error: "AI_PROVIDER_ERROR",
+          draft: { message: toText(error?.message) || "network error" },
+        };
+      }
+      const draftResult = result?.ok && result?.draft?.ok !== false ? result.draft || {} : null;
+      const rows = draftResult ? normalizeSuggestionDraftRows(draftResult.suggestions) : [];
+      results[stepId] = {
+        step,
+        stepName,
+        rows,
+        errorCode: draftResult ? null : toText(result?.error || result?.draft?.error),
+        selectedIds: new Set(rows.filter((r) => !toText(r.duplicate_of)).map((r) => toText(r.id)).filter(Boolean)),
+      };
+    }
+    setBatchRunning(false);
+    setBatchProgress(null);
+    setBatchDraft(results);
+    const totalRows = Object.values(results).reduce((sum, s) => sum + s.rows.length, 0);
+    const errorCount = Object.values(results).filter((s) => s.errorCode).length;
+    setBatchStatus({
+      type: errorCount > 0 ? "error" : "saved",
+      text: errorCount > 0
+        ? `Завершено с ошибками: ${errorCount} из ${targetSteps.length} шагов не обработаны.`
+        : `Batch AI: ${totalRows} предложений для ${targetSteps.length} шагов. Проверьте и примите нужные.`,
+    });
+  }
+
+  function toggleBatchRow(stepId, rowId, checked) {
+    const sid = toText(stepId);
+    const rid = toText(rowId);
+    if (!sid || !rid || !batchDraft?.[sid]) return;
+    setBatchDraft((prev) => {
+      const stepEntry = prev[sid];
+      const next = new Set(stepEntry.selectedIds);
+      if (checked) next.add(rid);
+      else next.delete(rid);
+      return { ...prev, [sid]: { ...stepEntry, selectedIds: next } };
+    });
+  }
+
+  async function handleAcceptBatchRows(stepId) {
+    const sid = toText(stepId);
+    const entry = batchDraft?.[sid];
+    if (!entry) return;
+    const selectedRows = entry.rows.filter((r) => entry.selectedIds.has(toText(r.id)) && !toText(r.duplicate_of));
+    if (!selectedRows.length) return;
+    setBatchStatus({ type: "saving", text: `Применяю действия для: ${entry.stepName}…` });
+    const result = await acceptAiProductActions({
+      sessionId,
+      currentAnalysis: interviewData?.analysis,
+      selectedActions: selectedRows,
+      getBaseDiagramStateVersion,
+      rememberDiagramStateVersion,
+      onSessionSync,
+    });
+    if (result?.ok) {
+      setBatchDraft((prev) => ({ ...prev, [sid]: { ...prev[sid], selectedIds: new Set() } }));
+      setBatchStatus({ type: "saved", text: `Действия для шага «${entry.stepName}» применены.` });
+    } else {
+      setBatchStatus({
+        type: "error",
+        text: toText(result?.error) || `Не удалось применить действия для шага «${entry.stepName}».`,
+      });
+    }
+  }
 
   function patchDraft(key, value) {
     setDraft((prev) => ({
@@ -523,11 +626,11 @@ export default function ProductActionsPanel({
           <button
             type="button"
             className="productActionsToolbarBtn"
-            disabled
-            title="Batch AI suggest — скоро"
+            disabled={!steps.length || batchRunning || aiLoading}
+            onClick={() => handleBatchSuggestAiProductActions("without_actions")}
             data-testid="product-actions-ai-batch"
           >
-            AI по шагам ▾
+            {batchRunning ? "AI работает…" : "AI по шагам ▾"}
           </button>
           <button
             type="button"
@@ -625,6 +728,113 @@ export default function ProductActionsPanel({
           </div>
           ) : null}
 
+          {batchRunning && batchProgress ? (
+            <div className="productActionsBatchProgress" data-testid="product-actions-batch-progress">
+              <div className="productActionsEditorTitle">AI по шагам</div>
+              <div className="productActionsSub">
+                Шаг {batchProgress.current} из {batchProgress.total}: {batchProgress.currentStepName}
+              </div>
+              <div className="productActionsAiProgressBar" aria-hidden="true">
+                <span style={{ width: `${Math.round((batchProgress.current / batchProgress.total) * 100)}%` }} />
+              </div>
+            </div>
+          ) : null}
+          {batchDraft && !batchRunning ? (
+            <div className="productActionsBatchReview" data-testid="product-actions-batch-review">
+              <div className="productActionsAiReviewHead">
+                <div>
+                  <div className="productActionsEditorTitle">AI по шагам — предложения</div>
+                  <div className="productActionsSub">
+                    Черновик. В process truth попадут только выбранные строки после принятия.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="productActionsToolbarBtn"
+                  onClick={() => { setBatchDraft(null); setBatchStatus(null); }}
+                  data-testid="product-actions-batch-close"
+                >
+                  Закрыть
+                </button>
+              </div>
+              {Object.entries(batchDraft).map(([stepId, entry]) => (
+                <details key={stepId} className="productActionsBatchStepGroup" data-testid="product-actions-batch-step">
+                  <summary className="productActionsBatchStepSummary">
+                    <span>{entry.stepName}</span>
+                    <span className="productActionsAiCounter">{entry.rows.length} предложений</span>
+                    {entry.errorCode ? (
+                      <span className="productActionsAiBadge error">Ошибка</span>
+                    ) : null}
+                  </summary>
+                  {entry.errorCode ? (
+                    <div className="productActionsAiWarningNote">
+                      <span className="productActionsAiWarningNoteIcon">⚠</span>
+                      <span>{aiSuggestErrorText(entry.errorCode)}</span>
+                    </div>
+                  ) : null}
+                  {entry.rows.length ? (
+                    <>
+                      <div className="productActionsAiList">
+                        {entry.rows.map((row, index) => {
+                          const rowId = toText(row.id) || `batch_${stepId}_${index}`;
+                          const duplicate = !!toText(row.duplicate_of);
+                          return (
+                            <article
+                              key={rowId}
+                              className={`productActionsAiCard${duplicate ? " duplicate" : ""}`}
+                            >
+                              <div className="productActionsAiCardTop">
+                                <label className="productActionsAiCardCheck">
+                                  <input
+                                    type="checkbox"
+                                    checked={entry.selectedIds.has(rowId)}
+                                    disabled={duplicate}
+                                    onChange={(e) => toggleBatchRow(stepId, rowId, e.target.checked)}
+                                  />
+                                </label>
+                                <div className="productActionsAiCardMain">
+                                  <div className="productActionsAiCardTitle">
+                                    {toText(row.product_name) || toText(row.action_type) || "Неполное действие"}
+                                    {duplicate ? <span className="productActionsAiBadge duplicate">Дубль</span> : null}
+                                  </div>
+                                  <div className="productActionsAiCardChips">
+                                    {toText(row.action_type) ? <span className="productActionsAiChip">{row.action_type}</span> : null}
+                                    {toText(row.action_stage) ? <span className="productActionsAiChip">{row.action_stage}</span> : null}
+                                    {toText(row.role) ? <span className="productActionsAiChip role">{row.role}</span> : null}
+                                  </div>
+                                  {duplicate && toText(row.duplicate_reason) ? (
+                                    <div className="productActionsAiCardDuplicateReason">{toText(row.duplicate_reason)}</div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                      <div className="productActionsAiStickyFooter">
+                        <span className="productActionsAiCounter">
+                          Выбрано: {entry.selectedIds.size}
+                        </span>
+                        <button
+                          type="button"
+                          className="primaryBtn smallBtn"
+                          disabled={entry.selectedIds.size === 0}
+                          onClick={() => handleAcceptBatchRows(stepId)}
+                          data-testid="product-actions-batch-accept"
+                        >
+                          Принять выбранные
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="productActionsAiEmpty">
+                      AI не нашёл действий для этого шага.
+                    </div>
+                  )}
+                </details>
+              ))}
+            </div>
+          ) : null}
           {aiDraft ? (
             <div className="productActionsAiReview" data-testid="product-actions-ai-review">
               <div className="productActionsAiReviewHead">
