@@ -85,7 +85,7 @@ test("ProductActionsPanel opens registry through page navigation callback, not m
 test("ProductActionsPanel exposes AI suggestion review without legacy notes or generic autosave", () => {
   assert.equal(source.includes("apiSuggestProductActions"), true);
   assert.equal(source.includes("acceptAiProductActions"), true);
-  assert.equal(source.includes("Предложить действия через AI"), true);
+  assert.equal(source.includes("AI для шага"), true);
   assert.equal(source.includes("AI-предложения действий"), true);
   assert.equal(source.includes("Принять выбранные"), true);
   assert.equal(source.includes('data-testid="product-actions-ai-review"'), true);
