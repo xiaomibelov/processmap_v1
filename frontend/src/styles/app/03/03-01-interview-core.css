@@ -2360,20 +2360,19 @@
 }
 
 /* ------- RAG Search Panel ------- */
-/* ── RAG Search Panel (light theme) ──────────────── */
-.ragSearchPanel{ display: grid; gap: 8px; padding: 6px 0 2px; }
+/* ── RAG Search Panel (dark context: inside .analysisBSection) ── */
+.ragSearchPanel{ display: grid; gap: 8px; padding: 2px 0; }
 
-/* одна строка: [select] [input··········] [Найти] */
 .ragSearchForm{ display: grid; }
 .ragSearchRow{ display: flex; gap: 6px; align-items: center; }
 .ragSourceTypeSelect{
   flex: 0 0 auto;
   width: 96px;
-  height: 30px;
-  border: 1px solid rgba(16,24,40,.18);
+  height: 28px;
+  border: 1px solid rgba(148,163,184,.22);
   border-radius: 7px;
-  background: #f8fafc;
-  color: #475569;
+  background: rgba(2,6,23,.45);
+  color: rgba(203,213,225,.82);
   font-size: 11px;
   padding: 0 6px;
   outline: none;
@@ -2382,91 +2381,93 @@
 .ragSearchInput{
   flex: 1 1 0;
   min-width: 0;
-  height: 30px;
-  border: 1px solid rgba(16,24,40,.20);
+  height: 28px;
+  border: 1px solid rgba(148,163,184,.26);
   border-radius: 7px;
-  background: #fff;
-  color: #1e293b;
+  background: rgba(2,6,23,.50);
+  color: rgba(248,250,252,.92);
   font-size: 12px;
   padding: 0 10px;
   outline: none;
-  transition: border-color .15s, box-shadow .15s;
+  transition: border-color .15s;
 }
-.ragSearchInput:focus{ border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.12); }
+.ragSearchInput::placeholder{ color: rgba(148,163,184,.50); }
+.ragSearchInput:focus{ border-color: rgba(96,165,250,.60); }
 .ragSearchBtn{
   flex: 0 0 auto;
-  height: 30px;
-  padding: 0 14px;
-  border: 1px solid rgba(59,130,246,.55);
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid rgba(96,165,250,.40);
   border-radius: 7px;
-  background: #3b82f6;
-  color: #fff;
-  font-size: 12px;
+  background: rgba(96,165,250,.18);
+  color: rgba(147,197,253,.95);
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
   transition: background .15s;
 }
-.ragSearchBtn:hover:not(:disabled){ background: #2563eb; }
-.ragSearchBtn:disabled{ opacity: .4; cursor: default; }
+.ragSearchBtn:hover:not(:disabled){ background: rgba(96,165,250,.28); }
+.ragSearchBtn:disabled{ opacity: .35; cursor: default; }
 
-/* индексирование — второстепенная строка */
 .ragIndexRow{ display: flex; align-items: center; gap: 8px; }
 .ragIndexBtn{
   all: unset;
   cursor: pointer;
   font-size: 10px;
   font-weight: 600;
-  color: #64748b;
-  border: 1px solid rgba(16,24,40,.16);
+  color: rgba(148,163,184,.60);
+  border: 1px solid rgba(148,163,184,.16);
   border-radius: 5px;
-  padding: 2px 9px;
-  background: #f1f5f9;
+  padding: 2px 8px;
   white-space: nowrap;
-  transition: background .15s, color .15s;
+  transition: color .15s, border-color .15s;
 }
-.ragIndexBtn:hover:not(:disabled){ background: #e2e8f0; color: #334155; }
-.ragIndexBtn:disabled{ opacity: .45; cursor: default; }
+.ragIndexBtn:hover:not(:disabled){ color: rgba(203,213,225,.88); border-color: rgba(148,163,184,.32); }
+.ragIndexBtn:disabled{ opacity: .35; cursor: default; }
 .ragIndexStatus{
   font-size: 10px;
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid currentColor;
-  opacity: .9;
+  opacity: .85;
 }
+.ragIndexBadgeOk{ color: rgba(74,222,128,.85); }
+.ragIndexBadgeErr{ color: rgba(248,113,113,.85); }
+.ragIndexBadgeNoop{ color: rgba(250,204,21,.75); }
 
-/* область результатов */
-.ragResultsArea{ display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid rgba(16,24,40,.08); }
+.ragResultsArea{ display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid rgba(148,163,184,.10); }
 .ragSearchError{ margin: 0; font-size: 11px; }
-.ragSearchingIndicator{ font-size: 11px; color: #94a3b8; padding: 10px 0; text-align: center; }
-.ragInitialHint{ font-size: 11px; color: #94a3b8; padding: 14px 4px; text-align: center; font-style: italic; }
-.ragResultsEmpty{ font-size: 12px; color: #64748b; padding: 6px 2px; }
-.ragResultsTotal{ font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: .4px; text-transform: uppercase; padding: 0 1px; }
-.ragResultsList{ display: grid; gap: 5px; }
+.ragSearchingIndicator{ font-size: 11px; color: rgba(148,163,184,.60); padding: 10px 0; text-align: center; }
+.ragInitialHint{ font-size: 11px; color: rgba(148,163,184,.45); padding: 14px 4px; text-align: center; font-style: italic; }
+.ragResultsEmpty{ font-size: 12px; color: rgba(148,163,184,.65); padding: 4px 2px; }
+.ragResultsTotal{ font-size: 10px; font-weight: 700; color: rgba(148,163,184,.48); letter-spacing: .4px; text-transform: uppercase; }
+.ragResultsList{ display: grid; gap: 6px; }
 
-/* карточка результата */
+/* ── карточка вариант B ─────────────────────────── */
 .ragResultItem{
   display: grid;
   gap: 0;
-  border: 1px solid rgba(16,24,40,.10);
-  border-left: 3px solid #3b82f6;
+  border: 1px solid rgba(148,163,184,.16);
+  border-left: 3px solid rgba(96,165,250,.55);
   border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(16,24,40,.06);
+  background: rgba(2,6,23,.38);
   overflow: hidden;
 }
+
+/* строка 1: заголовок + бейджи */
 .ragResultHeader{
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 10px 7px;
+  padding: 7px 10px 6px;
 }
 .ragResultTitle{
   font-size: 12px;
   font-weight: 700;
-  color: #1e293b;
+  color: rgba(248,250,252,.92);
   line-height: 1.3;
   flex: 1 1 0;
   min-width: 0;
@@ -2478,60 +2479,73 @@
 .ragResultTag{
   font-size: 10px;
   font-weight: 600;
-  color: #2563eb;
-  border: 1px solid rgba(59,130,246,.30);
+  color: rgba(147,197,253,.80);
+  border: 1px solid rgba(96,165,250,.25);
   border-radius: 999px;
   padding: 1px 7px;
-  background: rgba(59,130,246,.07);
+  background: rgba(96,165,250,.10);
 }
 .ragScorePill{ display: inline-flex; align-items: center; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 999px; font-variant-numeric: tabular-nums; }
-.ragScorePill.ragScoreHigh{ background: rgba(22,163,74,.10); color: #16a34a; }
-.ragScorePill.ragScoreMed{ background: rgba(202,138,4,.10); color: #b45309; }
-.ragScorePill.ragScoreLow{ background: rgba(100,116,139,.10); color: #64748b; }
-.ragScoreHigh{ color: #16a34a; }
-.ragScoreMed{ color: #b45309; }
-.ragScoreLow{ color: #64748b; }
+.ragScorePill.ragScoreHigh{ background: rgba(74,222,128,.12); color: rgba(74,222,128,.92); }
+.ragScorePill.ragScoreMed{ background: rgba(250,204,21,.11); color: rgba(250,204,21,.88); }
+.ragScorePill.ragScoreLow{ background: rgba(148,163,184,.10); color: rgba(148,163,184,.65); }
+.ragScoreHigh{ color: rgba(74,222,128,.92); }
+.ragScoreMed{ color: rgba(250,204,21,.88); }
+.ragScoreLow{ color: rgba(148,163,184,.65); }
 
-/* секция метаданных — под разделителем */
+/* строка 2: метаданные под разделителем */
 .ragResultMeta{
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
   padding: 5px 10px 6px;
-  border-top: 1px solid rgba(16,24,40,.07);
-  background: #f8fafc;
+  border-top: 1px solid rgba(148,163,184,.10);
+  background: rgba(2,6,23,.22);
 }
 .ragResultMetaItem{
   display: flex;
   align-items: baseline;
-  gap: 4px;
+  gap: 5px;
   font-size: 11px;
-  color: #475569;
+  color: rgba(203,213,225,.78);
   min-width: 0;
+  overflow: hidden;
 }
 .ragResultMetaLabel{
-  font-size: 10px;
-  font-weight: 600;
-  color: #94a3b8;
+  font-size: 9px;
+  font-weight: 700;
+  color: rgba(148,163,184,.55);
   text-transform: uppercase;
-  letter-spacing: .3px;
+  letter-spacing: .4px;
   white-space: nowrap;
   flex: 0 0 auto;
 }
 .ragResultMetaRaw{
   font-family: monospace;
   font-size: 10px;
-  color: #94a3b8;
+  color: rgba(148,163,184,.50);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 160px;
+  max-width: 180px;
 }
+.ragResultSource{
+  font-size: 11px;
+  color: rgba(203,213,225,.78);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ragCopyBtn{ all: unset; cursor: pointer; font-size: 12px; color: rgba(148,163,184,.35); padding: 1px 5px; border-radius: 4px; margin-left: auto; transition: color .12s, background .12s; }
+.ragCopyBtn:hover{ color: rgba(226,232,240,.85); background: rgba(51,65,85,.44); }
+
+/* строка 3: excerpt (только для product_action) */
 .ragResultExcerpt{
   font-size: 11px;
   line-height: 1.5;
-  color: #475569;
+  color: rgba(203,213,225,.72);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 66px;
@@ -2540,14 +2554,7 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   padding: 6px 10px;
-  border-top: 1px solid rgba(16,24,40,.07);
+  border-top: 1px solid rgba(148,163,184,.10);
 }
-.ragResultFooter{ display: flex; align-items: center; gap: 6px; }
-.ragResultSource{ font-size: 11px; color: #334155; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ragResultContext{ font-size: 10px; color: #94a3b8; font-style: italic; }
-.ragCopyBtn{ all: unset; cursor: pointer; font-size: 12px; color: #cbd5e1; padding: 1px 5px; border-radius: 4px; margin-left: auto; transition: color .12s, background .12s; }
-.ragCopyBtn:hover{ color: #475569; background: #e2e8f0; }
 
-.ragIndexBadgeOk{ color: #16a34a; }
-.ragIndexBadgeErr{ color: #dc2626; }
-.ragIndexBadgeNoop{ color: #b45309; }
+.ragResultContext{ font-size: 10px; color: rgba(148,163,184,.55); font-style: italic; }
