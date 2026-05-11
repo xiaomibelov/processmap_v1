@@ -1,0 +1,78 @@
+# ProcessMap Stage Runtime Navigation
+
+Use this file as the compact navigation pack for Executor and Reviewer agents.
+Copy to `.local/processmap/stage-runtime-navigation.md` if local details differ.
+
+## Direct Stage Session URL
+
+Stage URL: `https://stage.processmap.ru`
+
+Direct stage session URL:
+
+```text
+https://stage.processmap.ru/app?workspace=ws_8b89c83ea810_main&project=e41791f9f7&session=1a5bd431d8
+```
+
+Equivalent env value:
+
+```text
+PROCESSMAP_STAGE_SESSION_URL="https://stage.processmap.ru/app?workspace=ws_8b89c83ea810_main&project=e41791f9f7&session=1a5bd431d8"
+```
+
+## Organization
+
+`Роботизация производств`
+
+If stage prompts for organization/workspace selection, enter this organization first.
+Do not search default workspace unless the contour explicitly asks for it.
+
+## Tabs
+
+- `Diagram (BPMN)` — BPMN diagram/canvas.
+- `Анализ процессов` — process analysis and Product Actions surfaces.
+- `XML` — raw XML view.
+- `DOC` — generated/process documentation surface.
+- `DOD` — Definition of Done / checklist surface.
+
+## Product Actions Path
+
+1. Open `PROCESSMAP_STAGE_SESSION_URL` directly.
+2. Select organization `Роботизация производств` if prompted.
+3. Open tab `Анализ процессов`.
+4. Use `Шаг и продукт` / `Действия с продуктом`.
+5. Common buttons:
+   - `Предложить действия через AI`
+   - `Реестр действий`
+   - `Добавить действие`
+6. For registry checks, use the workspace/project/session registry entrypoints supplied by the contour; do not infer registry truth from BPMN XML.
+
+## BPMN Sidebar/Canvas Notes
+
+- `Diagram (BPMN)` is the BPMN canvas entrypoint.
+- Canvas interactions can be sensitive to selection/focus and zoom/pan state.
+- Sidebar contains BPMN properties and overlays relevant to selected elements.
+- Use direct session URL and saved storage state before testing canvas behavior.
+- Avoid mutating BPMN XML for read-only runtime proof.
+
+## Current Focus Areas
+
+- Product Actions AI suggestions and review/apply boundary.
+- Product Actions registry navigation and session/project drilldown.
+- Lane display L1 / L1 → L2 in analysis step tables.
+- BPMN overlays and selection/focus visibility.
+- Diagram performance around session open, tab switches, overlays, and analysis rendering.
+
+## Agent Instruction
+
+Executor and Reviewer agents must not search the path through Explorer unless the contour is explicitly about Explorer. Start from the direct session URL and saved storage state.
+
+## Commands
+
+```bash
+node tools/stage-auth-save-storage-state.mjs
+node tools/stage-open-session-proof.mjs analysis
+node tools/stage-open-session-proof.mjs diagram
+node tools/stage-open-session-proof.mjs xml
+node tools/stage-open-session-proof.mjs doc
+node tools/stage-open-session-proof.mjs dod
+```
