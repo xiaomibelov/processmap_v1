@@ -2360,67 +2360,77 @@
 }
 
 /* ------- RAG Search Panel ------- */
-.ragSearchPanel{
-  display: grid;
-  gap: 6px;
-  padding: 4px 2px 2px;
-}
+/* ── RAG Search Panel ─────────────────────────────── */
+.ragSearchPanel{ display: grid; gap: 8px; padding: 6px 0 2px; }
 
-.ragReadOnlyNotice{
-  font-size: 10px;
-  font-weight: 600;
-  color: rgba(148,163,184,.55);
-  padding: 0 2px 2px;
-  letter-spacing: .2px;
-}
-
-.ragSearchForm{
-  display: grid;
-  gap: 6px;
-}
-
-.ragSearchInput{
-  width: 100%;
-  box-sizing: border-box;
-  min-width: 0;
-  height: 28px;
-  border: 1px solid rgba(148,163,184,.32);
-  border-radius: 6px;
-  background: rgba(2,6,23,.55);
-  color: rgba(248,250,252,.92);
-  font-size: 12px;
-  padding: 0 8px;
-  outline: none;
-}
-
-.ragSearchInput:focus{
-  border-color: rgba(96,165,250,.52);
-}
-
+/* одна строка: [select] [input··········] [Найти] */
+.ragSearchForm{ display: grid; }
+.ragSearchRow{ display: flex; gap: 6px; align-items: center; }
 .ragSourceTypeSelect{
-  flex: 1 1 auto;
-  height: 28px;
-  border: 1px solid rgba(148,163,184,.24);
-  border-radius: 6px;
-  background: rgba(2,6,23,.42);
-  color: rgba(203,213,225,.88);
+  flex: 0 0 auto;
+  width: 100px;
+  height: 30px;
+  border: 1px solid rgba(148,163,184,.22);
+  border-radius: 7px;
+  background: rgba(15,23,42,.55);
+  color: rgba(203,213,225,.82);
   font-size: 11px;
   padding: 0 6px;
   outline: none;
   cursor: pointer;
-  min-width: 0;
 }
+.ragSearchInput{
+  flex: 1 1 0;
+  min-width: 0;
+  height: 30px;
+  border: 1px solid rgba(148,163,184,.28);
+  border-radius: 7px;
+  background: rgba(2,6,23,.52);
+  color: rgba(248,250,252,.92);
+  font-size: 12px;
+  padding: 0 10px;
+  outline: none;
+  transition: border-color .15s;
+}
+.ragSearchInput:focus{ border-color: rgba(96,165,250,.55); }
+.ragSearchBtn{
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid rgba(96,165,250,.35);
+  border-radius: 7px;
+  background: rgba(96,165,250,.12);
+  color: rgba(147,197,253,.92);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s;
+}
+.ragSearchBtn:hover:not(:disabled){ background: rgba(96,165,250,.22); }
+.ragSearchBtn:disabled{ opacity: .45; cursor: default; }
 
+/* индексирование — тонкая строка */
 .ragIndexRow{
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
 }
-
+.ragIndexBtn{
+  all: unset;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(148,163,184,.65);
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: 5px;
+  padding: 2px 8px;
+  white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.ragIndexBtn:hover:not(:disabled){ color: rgba(203,213,225,.9); border-color: rgba(148,163,184,.38); }
+.ragIndexBtn:disabled{ opacity: .4; cursor: default; }
 .ragIndexStatus{
-  display: inline-flex;
-  align-items: center;
   font-size: 10px;
   font-weight: 700;
   padding: 2px 8px;
@@ -2429,94 +2439,92 @@
   opacity: .85;
 }
 
-.ragSearchError{
-  margin: 0;
-  font-size: 11px;
-}
+/* область результатов */
+.ragResultsArea{ display: grid; gap: 6px; padding-top: 4px; border-top: 1px solid rgba(148,163,184,.09); }
+.ragSearchError{ margin: 0; font-size: 11px; }
+.ragSearchingIndicator{ font-size: 11px; color: rgba(148,163,184,.6); padding: 10px 0; text-align: center; }
+.ragInitialHint{ font-size: 11px; color: rgba(148,163,184,.48); padding: 14px 4px; text-align: center; font-style: italic; }
+.ragResultsEmpty{ font-size: 12px; color: rgba(148,163,184,.65); padding: 6px 2px; }
+.ragResultsTotal{ font-size: 10px; font-weight: 700; color: rgba(148,163,184,.5); letter-spacing: .3px; text-transform: uppercase; }
+.ragResultsList{ display: grid; gap: 5px; }
 
-.ragResultsList{
-  display: grid;
-  gap: 6px;
-}
-
-.ragResultsEmpty{
-  font-size: 12px;
-  color: rgba(148,163,184,.72);
-  padding: 4px 2px;
-}
-
+/* карточка результата */
 .ragResultItem{
-  border: 1px solid rgba(148,163,184,.16);
-  border-left: 2px solid rgba(96,165,250,.22);
-  border-radius: 8px;
-  background: rgba(2,6,23,.28);
-  padding: 7px 9px;
   display: grid;
-  gap: 4px;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid rgba(148,163,184,.14);
+  border-left: 2px solid rgba(96,165,250,.30);
+  border-radius: 8px;
+  background: rgba(2,6,23,.30);
 }
-
-.ragResultMeta{
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+.ragResultHeader{ display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.ragResultTitleBlock{ display: flex; flex-direction: column; gap: 2px; flex: 1 1 0; min-width: 0; }
+.ragResultTitle{
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(226,232,240,.92);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
-
+.ragResultSubtitle{
+  font-size: 10px;
+  color: rgba(148,163,184,.55);
+  font-variant-numeric: tabular-nums;
+}
+.ragResultBadges{ display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
 .ragResultTag{
   font-size: 10px;
-  font-weight: 750;
-  color: rgba(203,213,225,.72);
-  border: 1px solid rgba(148,163,184,.20);
+  font-weight: 650;
+  color: rgba(147,197,253,.72);
+  border: 1px solid rgba(96,165,250,.22);
   border-radius: 999px;
-  padding: 1px 6px;
-  background: rgba(30,41,59,.44);
+  padding: 1px 7px;
+  background: rgba(30,41,59,.50);
 }
-
-.ragResultSrc{
-  font-size: 10px;
-  color: rgba(148,163,184,.58);
-  font-family: monospace;
-}
-
-.ragResultText{
-  font-size: 11px;
-  line-height: 1.45;
-  color: rgba(226,232,240,.82);
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 100px;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 5;
-  -webkit-box-orient: vertical;
-}
-.ragScoreHigh{ color: rgba(74,222,128,.92); }
-.ragScoreMed{ color: rgba(250,204,21,.88); }
-.ragScoreLow{ color: rgba(148,163,184,.62); }
-.ragResultContext{ font-size: 10px; color: rgba(148,163,184,.68); font-style: italic; }
-.ragResultSource{ font-size: 10px; color: rgba(125,211,252,.62); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ragCopyBtn{ all: unset; cursor: pointer; font-size: 10px; color: rgba(148,163,184,.55); padding: 1px 4px; border-radius: 4px; margin-left: auto; }
-.ragCopyBtn:hover{ color: rgba(226,232,240,.88); background: rgba(51,65,85,.44); }
-.ragSearchingIndicator{ font-size: 11px; color: rgba(148,163,184,.66); padding: 8px 0; text-align: center; }
-.ragResultsTotal{ font-size: 10px; color: rgba(148,163,184,.58); padding: 2px 0; }
-.ragSearchInputRow{ display: block; }
-.ragFiltersRow{ display: flex; align-items: center; gap: 6px; }
-.ragFiltersRow .secondaryBtn{ flex: 0 0 auto; height: 28px; min-height: 28px; padding: 0 10px; font-size: 11px; border-radius: 6px; white-space: nowrap; }
-.ragResultsArea{ border-top: 1px solid rgba(148,163,184,.10); padding-top: 6px; margin-top: 2px; }
 .ragScorePill{ display: inline-flex; align-items: center; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 999px; font-variant-numeric: tabular-nums; }
 .ragScorePill.ragScoreHigh{ background: rgba(74,222,128,.14); color: rgba(74,222,128,.92); }
 .ragScorePill.ragScoreMed{ background: rgba(250,204,21,.12); color: rgba(250,204,21,.88); }
 .ragScorePill.ragScoreLow{ background: rgba(148,163,184,.10); color: rgba(148,163,184,.62); }
-.ragResultFooter{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 10px; color: rgba(148,163,184,.55); }
-.ragInitialHint{ font-size: 11px; color: rgba(148,163,184,.52); padding: 12px 4px; text-align: center; font-style: italic; }
+.ragScoreHigh{ color: rgba(74,222,128,.92); }
+.ragScoreMed{ color: rgba(250,204,21,.88); }
+.ragScoreLow{ color: rgba(148,163,184,.62); }
+
+.ragResultExcerpt{
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(203,213,225,.75);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 68px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.ragResultRaw{
+  font-size: 10px;
+  line-height: 1.35;
+  color: rgba(148,163,184,.38);
+  font-family: monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 26px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  border-top: 1px solid rgba(148,163,184,.08);
+  padding-top: 3px;
+}
+.ragResultFooter{ display: flex; align-items: center; gap: 6px; }
+.ragResultSource{ font-size: 10px; color: rgba(125,211,252,.55); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ragResultContext{ font-size: 10px; color: rgba(148,163,184,.55); font-style: italic; }
+.ragCopyBtn{ all: unset; cursor: pointer; font-size: 11px; color: rgba(148,163,184,.40); padding: 1px 4px; border-radius: 4px; margin-left: auto; }
+.ragCopyBtn:hover{ color: rgba(226,232,240,.85); background: rgba(51,65,85,.44); }
+
 .ragIndexBadgeOk{ color: rgba(74,222,128,.82); }
 .ragIndexBadgeErr{ color: rgba(248,113,113,.82); }
 .ragIndexBadgeNoop{ color: rgba(250,204,21,.72); }
-.ragResultHeader{ display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
-.ragResultTitleBlock{ display: flex; flex-direction: column; gap: 1px; flex: 1 1 0; min-width: 0; }
-.ragResultTitle{ font-size: 12px; font-weight: 700; color: rgba(226,232,240,.92); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ragResultSubtitle{ font-size: 10px; color: rgba(148,163,184,.58); font-variant-numeric: tabular-nums; }
-.ragResultBadges{ display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
-.ragResultExcerpt{ font-size: 11px; line-height: 1.45; color: rgba(226,232,240,.72); white-space: pre-wrap; word-break: break-word; max-height: 72px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
-.ragResultRaw{ font-size: 10px; line-height: 1.35; color: rgba(148,163,184,.38); font-family: monospace; white-space: pre-wrap; word-break: break-all; max-height: 28px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; border-top: 1px solid rgba(148,163,184,.08); padding-top: 3px; }

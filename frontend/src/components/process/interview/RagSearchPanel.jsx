@@ -136,23 +136,9 @@ export default function RagSearchPanel({ sessionId }) {
 
   return (
     <div className="ragSearchPanel" data-testid="rag-search-panel">
-      <div className="ragReadOnlyNotice" data-testid="rag-readonly-notice">
-        Только чтение — результаты не применяются автоматически
-      </div>
 
       <form className="ragSearchForm" onSubmit={handleSearch} data-testid="rag-search-form">
-        <div className="ragSearchInputRow">
-          <input
-            className="ragSearchInput"
-            type="text"
-            placeholder="Поиск по базе знаний…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            data-testid="rag-search-input"
-            disabled={searching}
-          />
-        </div>
-        <div className="ragFiltersRow">
+        <div className="ragSearchRow">
           <select
             className="ragSourceTypeSelect"
             value={sourceType}
@@ -164,13 +150,22 @@ export default function RagSearchPanel({ sessionId }) {
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
+          <input
+            className="ragSearchInput"
+            type="text"
+            placeholder="Запрос…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            data-testid="rag-search-input"
+            disabled={searching}
+          />
           <button
             type="submit"
-            className="secondaryBtn tinyBtn"
+            className="ragSearchBtn"
             disabled={searching || !query.trim()}
             data-testid="rag-search-btn"
           >
-            {searching ? "Поиск…" : "Найти"}
+            {searching ? "…" : "Найти"}
           </button>
         </div>
       </form>
@@ -179,12 +174,12 @@ export default function RagSearchPanel({ sessionId }) {
         <div className="ragIndexRow">
           <button
             type="button"
-            className="secondaryBtn tinyBtn"
+            className="ragIndexBtn"
             onClick={handleIndex}
             disabled={indexing}
             data-testid="rag-index-btn"
           >
-            {indexing ? "Индексирование…" : "Индексировать сессию"}
+            {indexing ? "Индексирование…" : "Обновить индекс"}
           </button>
           {indexStatus ? (
             <span className={`ragIndexStatus ${indexStatusClass(indexStatus)}`} data-testid="rag-index-status">{indexStatus}</span>
@@ -216,7 +211,7 @@ export default function RagSearchPanel({ sessionId }) {
             </div>
           ) : (
             <>
-              <div className="ragResultsTotal" data-testid="rag-results-total">Найдено: {results.length}</div>
+              <div className="ragResultsTotal" data-testid="rag-results-total">{results.length} результатов</div>
               <div className="ragResultsList" data-testid="rag-results-list">
                 {results.map((item, i) => (
                   <RagResultItem key={String(item?.chunk_id || i)} item={item} />
