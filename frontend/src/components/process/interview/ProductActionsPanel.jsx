@@ -287,7 +287,7 @@ export default function ProductActionsPanel({
 
   useEffect(() => {
     const currentStepId = toText(selectedStep?.id);
-    if (!aiDraftStepId || !currentStepId) return;
+    if (!currentStepId) return;
     if (aiDraftStepId !== currentStepId) {
       setAiDraft(null);
       setAiDraftStepId("");
@@ -684,6 +684,9 @@ export default function ProductActionsPanel({
                               {toText(row.action_method) ? <span className="productActionsAiChip secondary">{row.action_method}</span> : null}
                               {toText(row.role) ? <span className="productActionsAiChip role">{row.role}</span> : null}
                             </div>
+                            {duplicate && toText(row.duplicate_reason) ? (
+                              <div className="productActionsAiCardDuplicateReason">{toText(row.duplicate_reason)}</div>
+                            ) : null}
                             {reasonText ? (
                               <div className="productActionsAiCardReason">{reasonText}</div>
                             ) : null}
