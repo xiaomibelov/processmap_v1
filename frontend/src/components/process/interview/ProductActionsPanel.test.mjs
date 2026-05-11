@@ -258,3 +258,44 @@ test("ProductActionsPanel AI warning renders as muted note not plain div", () =>
   assert.equal(source.includes("warningText").valueOf(), true);
 });
 
+test("ProductActionsPanel step-switch useEffect clears AI state when aiDraftStepId is empty (Fix 2)", () => {
+  // Guard must not include !aiDraftStepId — only !currentStepId is allowed as early return
+  assert.doesNotMatch(
+    source,
+    /if \(!aiDraftStepId \|\| !currentStepId\) return/,
+    "useEffect must not early-return when aiDraftStepId is empty (stale error state after step switch)",
+  );
+  assert.match(
+    source,
+    /if \(!currentStepId\) return;/,
+    "useEffect must guard only on missing currentStepId",
+  );
+  // All seven state setters must be present in the cleanup branch
+  assert.equal(source.includes("setAiDraft(null)"), true);
+  assert.equal(source.includes('setAiDraftStepId("")'), true);
+  assert.equal(source.includes("setAiRows([])"), true);
+  assert.equal(source.includes("setSelectedAiRowIds(new Set())"), true);
+  assert.equal(source.includes("setAiStatus(null)"), true);
+  assert.equal(source.includes("setAiProgress(null)"), true);
+  assert.equal(source.includes("setAiDiagnostics(null)"), true);
+});
+
+test("ProductActionsPanel renders duplicate_reason text in duplicate AI suggestion cards (Fix 3)", () => {
+  assert.equal(
+    source.includes("duplicate_reason"),
+    true,
+    "duplicate_reason field must be accessed in JSX",
+  );
+  assert.equal(
+    source.includes("productActionsAiCardDuplicateReason"),
+    true,
+    "productActionsAiCardDuplicateReason CSS class must be applied to duplicate reason element",
+  );
+  // The render must be guarded by both duplicate flag and non-empty duplicate_reason
+  assert.match(
+    source,
+    /duplicate && toText\(row\.duplicate_reason\)/,
+    "duplicate_reason must only render when duplicate=true and value is non-empty",
+  );
+});
+
