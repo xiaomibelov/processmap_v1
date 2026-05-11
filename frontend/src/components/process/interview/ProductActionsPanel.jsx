@@ -510,31 +510,28 @@ export default function ProductActionsPanel({
             {actionCount ? `Сохранено: ${actionCount}` : "Нет сохранённых действий"}
           </div>
         </div>
-        <div className="productActionsHeaderActions">
+        <div className="productActionsToolbar">
           <button
             type="button"
-            className="secondaryBtn smallBtn"
+            className="productActionsToolbarBtn"
             disabled={!steps.length || aiLoading}
             onClick={handleSuggestAiProductActions}
             data-testid="product-actions-ai-suggest"
           >
-            {aiLoading ? "AI думает…" : "Предложить действия через AI"}
+            {aiLoading ? "AI думает…" : "AI для шага"}
           </button>
           <button
             type="button"
-            className="secondaryBtn smallBtn"
-            onClick={() => onOpenProductActionsRegistry?.({
-              scope: "session",
-              projectId,
-              sessionId,
-            })}
-            data-testid="product-actions-open-registry"
+            className="productActionsToolbarBtn"
+            disabled
+            title="Batch AI suggest — скоро"
+            data-testid="product-actions-ai-batch"
           >
-            Реестр действий
+            AI по шагам ▾
           </button>
           <button
             type="button"
-            className="secondaryBtn smallBtn"
+            className="productActionsToolbarBtn"
             disabled={!steps.length}
             onClick={() => {
               setEditingActionId("");
@@ -543,8 +540,21 @@ export default function ProductActionsPanel({
               setEditorOpen(true);
               setStatus(null);
             }}
+            data-testid="product-actions-add"
           >
-            Добавить действие
+            + Добавить
+          </button>
+          <button
+            type="button"
+            className="productActionsToolbarBtn"
+            onClick={() => onOpenProductActionsRegistry?.({
+              scope: "session",
+              projectId,
+              sessionId,
+            })}
+            data-testid="product-actions-open-registry"
+          >
+            Реестр
           </button>
         </div>
       </div>
