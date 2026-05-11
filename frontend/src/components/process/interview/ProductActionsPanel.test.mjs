@@ -144,7 +144,9 @@ test("ProductActionsPanel keeps AI error state in the progress panel only", () =
   assert.equal(source.includes("aiProgressBadge"), true);
   assert.equal(source.includes('progressRaw?.status === "error" ? "Ошибка"'), true);
   assert.equal(source.includes("aiProgressBarPercent"), true);
-  assert.equal(source.includes('aiStatus && aiProgress?.status !== "error"'), true);
+  // P0 fix: aiStatus is now always shown when set (no longer suppressed when aiProgress.status === "error")
+  assert.equal(source.includes('aiStatus && aiProgress?.status !== "error"'), false);
+  assert.equal(source.includes("{aiStatus ? ("), true);
   assert.equal(source.includes(") : aiProgress?.active ? null : ("), true);
 });
 

@@ -10458,3 +10458,26 @@
   background: rgba(148,163,184,.10);
   color: rgba(148,163,184,.82);
 }
+
+/* ── P1: batch per-step status badges ────────────────────────────────────── */
+.productActionsAiBadge.rateLimited {
+  border: 1px solid rgba(251,191,36,.36);
+  background: rgba(251,191,36,.10);
+  color: rgba(251,191,36,.92);
+}
+.productActionsAiBadge.notProcessed {
+  border: 1px solid rgba(148,163,184,.24);
+  background: rgba(148,163,184,.08);
+  color: rgba(148,163,184,.65);
+}
+.productActionsAiBadge.success {
+  border: 1px solid rgba(74,222,128,.30);
+  background: rgba(74,222,128,.08);
+  color: rgba(74,222,128,.88);
+}
+.productActionsAiProgressError {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
