@@ -176,7 +176,7 @@ function aiSuggestErrorText(codeRaw, detailRaw = "") {
 function aiProgressStep(stageId, message = "", status = "running", overrides = {}) {
   const stage = AI_PROGRESS_BY_ID[stageId] || overrides.stage || AI_PROGRESS_BY_ID.prepare;
   return {
-    active: true,
+    active: status !== "success",
     status,
     stageId: stage.id,
     stageLabel: stage.label,
