@@ -31,8 +31,8 @@ function RagResultItem({ item }) {
   const scoreClsName = typeof rawScore === "number" ? scoreClass(rawScore) : "";
 
   const hasExtractedName = isBpmn && !!(meta.element_name || extractBpmnName(chunkText));
-  const showExcerpt = !isBpmn || !hasExtractedName;
-  const showRaw = isBpmn;
+  const showExcerpt = !isBpmn;
+  const showRaw = isBpmn && !hasExtractedName;
 
   const sessionTitle = String(meta.session_title || "");
   const elementCtx = formatElementContext(meta);
@@ -40,7 +40,10 @@ function RagResultItem({ item }) {
   return (
     <div className="ragResultItem" data-testid="rag-result-item">
       <div className="ragResultHeader">
-        <span className="ragResultTitle" data-testid="rag-result-title">{title}</span>
+        <div className="ragResultTitleBlock">
+          <span className="ragResultTitle" data-testid="rag-result-title">{title}</span>
+          {elementCtx ? <span className="ragResultSubtitle">{elementCtx}</span> : null}
+        </div>
         <div className="ragResultBadges">
           <span className="ragResultTag">{sourceBadge}</span>
           <span className={`ragScorePill ${scoreClsName}`} data-testid="rag-result-score">{scoreLabel}</span>
@@ -54,7 +57,6 @@ function RagResultItem({ item }) {
       ) : null}
       <div className="ragResultFooter">
         {sessionTitle ? <span className="ragResultSource" title={sessionTitle}>{sessionTitle}</span> : null}
-        {elementCtx ? <span className="ragResultContext">{elementCtx}</span> : null}
         <button type="button" className="ragCopyBtn" onClick={() => handleCopy(chunkText)} title="Копировать" data-testid="rag-copy-btn">⎘</button>
       </div>
     </div>
