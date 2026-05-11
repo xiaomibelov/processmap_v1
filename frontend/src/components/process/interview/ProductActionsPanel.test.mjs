@@ -285,14 +285,37 @@ test("ProductActionsPanel step-switch useEffect clears AI state when aiDraftStep
     /if \(!currentStepId\) return;/,
     "useEffect must guard only on missing currentStepId",
   );
-  // All seven state setters must be present in the cleanup branch
+  // aiDraftStepId is now a ref — no useState setter
+  assert.equal(source.includes('setAiDraftStepId("")'), false, "aiDraftStepId must not be useState (race condition fix)");
+  assert.equal(source.includes("aiDraftStepIdRef"), true, "aiDraftStepId must be a useRef");
+  assert.equal(source.includes('aiDraftStepIdRef.current = ""'), true);
+  // Other state setters must be present in the cleanup branch
   assert.equal(source.includes("setAiDraft(null)"), true);
-  assert.equal(source.includes('setAiDraftStepId("")'), true);
   assert.equal(source.includes("setAiRows([])"), true);
   assert.equal(source.includes("setSelectedAiRowIds(new Set())"), true);
   assert.equal(source.includes("setAiStatus(null)"), true);
   assert.equal(source.includes("setAiProgress(null)"), true);
   assert.equal(source.includes("setAiDiagnostics(null)"), true);
+  // Effect must depend only on selectedStep — not on aiDraftStepId
+  assert.match(
+    source,
+    /\}, \[selectedStep\]\);/,
+    "step-switch useEffect must depend only on [selectedStep] to avoid re-triggering on aiDraftStepId write",
+  );
+});
+
+test("ProductActionsPanel aiDraftStepIdRef is written on success and not a state variable (Fix draft-not-displayed)", () => {
+  // Root cause fix: aiDraftStepId was useState, effect re-ran with stale "" on success → reset aiDraft
+  // Fix: use useRef so writing aiDraftStepIdRef.current never triggers effect re-run
+  assert.equal(source.includes("const [aiDraftStepId,"), false, "aiDraftStepId must not be useState");
+  assert.equal(source.includes("aiDraftStepIdRef = useRef"), true, "aiDraftStepIdRef must be declared as useRef");
+  assert.match(
+    source,
+    /aiDraftStepIdRef\.current = toText\(selectedStep\?\.id\)/,
+    "aiDraftStepIdRef.current must be written with requestedStepId after successful suggest",
+  );
+  // Confirm the review panel render gate uses aiDraft (not aiDraftStepId)
+  assert.equal(source.includes("{aiDraft ? ("), true, "aiDraft review panel must gate on aiDraft state");
 });
 
 test("ProductActionsPanel renders duplicate_reason text in duplicate AI suggestion cards (Fix 3)", () => {
