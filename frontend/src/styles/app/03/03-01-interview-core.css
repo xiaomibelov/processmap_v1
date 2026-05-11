@@ -2360,7 +2360,7 @@
 }
 
 /* ------- RAG Search Panel ------- */
-/* ── RAG Search Panel ─────────────────────────────── */
+/* ── RAG Search Panel (light theme) ──────────────── */
 .ragSearchPanel{ display: grid; gap: 8px; padding: 6px 0 2px; }
 
 /* одна строка: [select] [input··········] [Найти] */
@@ -2368,12 +2368,12 @@
 .ragSearchRow{ display: flex; gap: 6px; align-items: center; }
 .ragSourceTypeSelect{
   flex: 0 0 auto;
-  width: 100px;
+  width: 96px;
   height: 30px;
-  border: 1px solid rgba(148,163,184,.22);
+  border: 1px solid rgba(16,24,40,.18);
   border-radius: 7px;
-  background: rgba(15,23,42,.55);
-  color: rgba(203,213,225,.82);
+  background: #f8fafc;
+  color: #475569;
   font-size: 11px;
   padding: 0 6px;
   outline: none;
@@ -2383,69 +2383,66 @@
   flex: 1 1 0;
   min-width: 0;
   height: 30px;
-  border: 1px solid rgba(148,163,184,.28);
+  border: 1px solid rgba(16,24,40,.20);
   border-radius: 7px;
-  background: rgba(2,6,23,.52);
-  color: rgba(248,250,252,.92);
+  background: #fff;
+  color: #1e293b;
   font-size: 12px;
   padding: 0 10px;
   outline: none;
-  transition: border-color .15s;
+  transition: border-color .15s, box-shadow .15s;
 }
-.ragSearchInput:focus{ border-color: rgba(96,165,250,.55); }
+.ragSearchInput:focus{ border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.12); }
 .ragSearchBtn{
   flex: 0 0 auto;
   height: 30px;
   padding: 0 14px;
-  border: 1px solid rgba(96,165,250,.35);
+  border: 1px solid rgba(59,130,246,.55);
   border-radius: 7px;
-  background: rgba(96,165,250,.12);
-  color: rgba(147,197,253,.92);
+  background: #3b82f6;
+  color: #fff;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
   transition: background .15s;
 }
-.ragSearchBtn:hover:not(:disabled){ background: rgba(96,165,250,.22); }
-.ragSearchBtn:disabled{ opacity: .45; cursor: default; }
+.ragSearchBtn:hover:not(:disabled){ background: #2563eb; }
+.ragSearchBtn:disabled{ opacity: .4; cursor: default; }
 
-/* индексирование — тонкая строка */
-.ragIndexRow{
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+/* индексирование — второстепенная строка */
+.ragIndexRow{ display: flex; align-items: center; gap: 8px; }
 .ragIndexBtn{
   all: unset;
   cursor: pointer;
   font-size: 10px;
   font-weight: 600;
-  color: rgba(148,163,184,.65);
-  border: 1px solid rgba(148,163,184,.18);
+  color: #64748b;
+  border: 1px solid rgba(16,24,40,.16);
   border-radius: 5px;
-  padding: 2px 8px;
+  padding: 2px 9px;
+  background: #f1f5f9;
   white-space: nowrap;
-  transition: color .15s, border-color .15s;
+  transition: background .15s, color .15s;
 }
-.ragIndexBtn:hover:not(:disabled){ color: rgba(203,213,225,.9); border-color: rgba(148,163,184,.38); }
-.ragIndexBtn:disabled{ opacity: .4; cursor: default; }
+.ragIndexBtn:hover:not(:disabled){ background: #e2e8f0; color: #334155; }
+.ragIndexBtn:disabled{ opacity: .45; cursor: default; }
 .ragIndexStatus{
   font-size: 10px;
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid currentColor;
-  opacity: .85;
+  opacity: .9;
 }
 
 /* область результатов */
-.ragResultsArea{ display: grid; gap: 6px; padding-top: 4px; border-top: 1px solid rgba(148,163,184,.09); }
+.ragResultsArea{ display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid rgba(16,24,40,.08); }
 .ragSearchError{ margin: 0; font-size: 11px; }
-.ragSearchingIndicator{ font-size: 11px; color: rgba(148,163,184,.6); padding: 10px 0; text-align: center; }
-.ragInitialHint{ font-size: 11px; color: rgba(148,163,184,.48); padding: 14px 4px; text-align: center; font-style: italic; }
-.ragResultsEmpty{ font-size: 12px; color: rgba(148,163,184,.65); padding: 6px 2px; }
-.ragResultsTotal{ font-size: 10px; font-weight: 700; color: rgba(148,163,184,.5); letter-spacing: .3px; text-transform: uppercase; }
+.ragSearchingIndicator{ font-size: 11px; color: #94a3b8; padding: 10px 0; text-align: center; }
+.ragInitialHint{ font-size: 11px; color: #94a3b8; padding: 14px 4px; text-align: center; font-style: italic; }
+.ragResultsEmpty{ font-size: 12px; color: #64748b; padding: 6px 2px; }
+.ragResultsTotal{ font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: .4px; text-transform: uppercase; padding: 0 1px; }
 .ragResultsList{ display: grid; gap: 5px; }
 
 /* карточка результата */
@@ -2453,17 +2450,18 @@
   display: grid;
   gap: 5px;
   padding: 8px 10px;
-  border: 1px solid rgba(148,163,184,.14);
-  border-left: 2px solid rgba(96,165,250,.30);
+  border: 1px solid rgba(16,24,40,.10);
+  border-left: 3px solid #3b82f6;
   border-radius: 8px;
-  background: rgba(2,6,23,.30);
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(16,24,40,.06);
 }
 .ragResultHeader{ display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .ragResultTitleBlock{ display: flex; flex-direction: column; gap: 2px; flex: 1 1 0; min-width: 0; }
 .ragResultTitle{
   font-size: 12px;
   font-weight: 700;
-  color: rgba(226,232,240,.92);
+  color: #1e293b;
   line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2471,34 +2469,34 @@
 }
 .ragResultSubtitle{
   font-size: 10px;
-  color: rgba(148,163,184,.55);
+  color: #94a3b8;
   font-variant-numeric: tabular-nums;
 }
 .ragResultBadges{ display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
 .ragResultTag{
   font-size: 10px;
-  font-weight: 650;
-  color: rgba(147,197,253,.72);
-  border: 1px solid rgba(96,165,250,.22);
+  font-weight: 600;
+  color: #2563eb;
+  border: 1px solid rgba(59,130,246,.30);
   border-radius: 999px;
   padding: 1px 7px;
-  background: rgba(30,41,59,.50);
+  background: rgba(59,130,246,.07);
 }
 .ragScorePill{ display: inline-flex; align-items: center; font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 999px; font-variant-numeric: tabular-nums; }
-.ragScorePill.ragScoreHigh{ background: rgba(74,222,128,.14); color: rgba(74,222,128,.92); }
-.ragScorePill.ragScoreMed{ background: rgba(250,204,21,.12); color: rgba(250,204,21,.88); }
-.ragScorePill.ragScoreLow{ background: rgba(148,163,184,.10); color: rgba(148,163,184,.62); }
-.ragScoreHigh{ color: rgba(74,222,128,.92); }
-.ragScoreMed{ color: rgba(250,204,21,.88); }
-.ragScoreLow{ color: rgba(148,163,184,.62); }
+.ragScorePill.ragScoreHigh{ background: rgba(22,163,74,.10); color: #16a34a; }
+.ragScorePill.ragScoreMed{ background: rgba(202,138,4,.10); color: #b45309; }
+.ragScorePill.ragScoreLow{ background: rgba(100,116,139,.10); color: #64748b; }
+.ragScoreHigh{ color: #16a34a; }
+.ragScoreMed{ color: #b45309; }
+.ragScoreLow{ color: #64748b; }
 
 .ragResultExcerpt{
   font-size: 11px;
   line-height: 1.5;
-  color: rgba(203,213,225,.75);
+  color: #475569;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 68px;
+  max-height: 66px;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -2507,7 +2505,7 @@
 .ragResultRaw{
   font-size: 10px;
   line-height: 1.35;
-  color: rgba(148,163,184,.38);
+  color: #94a3b8;
   font-family: monospace;
   white-space: pre-wrap;
   word-break: break-all;
@@ -2516,15 +2514,15 @@
   display: -webkit-box;
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
-  border-top: 1px solid rgba(148,163,184,.08);
+  border-top: 1px solid rgba(16,24,40,.07);
   padding-top: 3px;
 }
 .ragResultFooter{ display: flex; align-items: center; gap: 6px; }
-.ragResultSource{ font-size: 10px; color: rgba(125,211,252,.55); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ragResultContext{ font-size: 10px; color: rgba(148,163,184,.55); font-style: italic; }
-.ragCopyBtn{ all: unset; cursor: pointer; font-size: 11px; color: rgba(148,163,184,.40); padding: 1px 4px; border-radius: 4px; margin-left: auto; }
-.ragCopyBtn:hover{ color: rgba(226,232,240,.85); background: rgba(51,65,85,.44); }
+.ragResultSource{ font-size: 10px; color: #3b82f6; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ragResultContext{ font-size: 10px; color: #94a3b8; font-style: italic; }
+.ragCopyBtn{ all: unset; cursor: pointer; font-size: 12px; color: #cbd5e1; padding: 1px 5px; border-radius: 4px; margin-left: auto; transition: color .12s, background .12s; }
+.ragCopyBtn:hover{ color: #475569; background: #f1f5f9; }
 
-.ragIndexBadgeOk{ color: rgba(74,222,128,.82); }
-.ragIndexBadgeErr{ color: rgba(248,113,113,.82); }
-.ragIndexBadgeNoop{ color: rgba(250,204,21,.72); }
+.ragIndexBadgeOk{ color: #16a34a; }
+.ragIndexBadgeErr{ color: #dc2626; }
+.ragIndexBadgeNoop{ color: #b45309; }
