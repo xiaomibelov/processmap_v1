@@ -10430,3 +10430,31 @@
     width: min(680px, 100vw);
   }
 }
+
+/* ── P2: RAG section visual distinction ───────────────────────────────────── */
+.ragSearchSection {
+  border-color: rgba(96,165,250,.28);
+  background: rgba(2,6,23,.42);
+}
+
+.ragSearchSection > summary {
+  color: rgba(147,197,253,.96);
+}
+
+.ragSearchSection > summary::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(96,165,250,.72);
+  margin-right: 6px;
+  flex: 0 0 auto;
+}
+
+/* ── P4: batch skipped badge ──────────────────────────────────────────────── */
+.productActionsAiBadge.skipped {
+  border: 1px solid rgba(148,163,184,.30);
+  background: rgba(148,163,184,.10);
+  color: rgba(148,163,184,.82);
+}
