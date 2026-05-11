@@ -50,6 +50,19 @@ Run the focused commands from `PLAN.md`. Always run `git diff --check` unless th
 
 Collect only the proof requested by `PLAN.md`. Avoid broad audits.
 
+## Runtime navigation pack
+
+Use local runtime pack before exploring the UI manually:
+
+- `.local/processmap/stage.env`
+- `.local/processmap/playwright/stage-admin-storage-state.json`
+- `.local/processmap/stage-runtime-navigation.md`
+
+Open direct `PROCESSMAP_STAGE_SESSION_URL`.
+Do not search Explorer/workspaces unless this contour explicitly requires Explorer.
+
+If storage state is missing, run `node tools/stage-auth-save-storage-state.mjs`. For compact proof, run `node tools/stage-open-session-proof.mjs analysis|diagram|xml|doc|dod`.
+
 ## Obsidian Update
 
 Update only the archive/handoff note requested by `PLAN.md`. Do not use Obsidian as an execution trigger.
