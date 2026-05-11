@@ -298,8 +298,13 @@ export default function ProductActionsPanel({
       setAiRows([]);
       setSelectedAiRowIds(new Set());
       setAiStatus(null);
+      setAiLoading(false);
       setAiProgress(null);
       setAiDiagnostics(null);
+      setBatchDraft(null);
+      setBatchProgress(null);
+      setBatchStatus(null);
+      setBatchRunning(false);
     }
   }, [selectedStep, aiDraftStepId]);
 
@@ -320,13 +325,19 @@ export default function ProductActionsPanel({
 
   async function handleBatchSuggestAiProductActions(scope = "without_actions") {
     if (!sessionId || batchRunning) return;
+    const skippedSteps = scope === "without_actions"
+      ? steps.filter((step) => {
+          const stepId = toText(step?.id);
+          return productActions.some((pa) => toText(pa.step_id || pa.stepId) === stepId);
+        })
+      : [];
     const targetSteps = scope === "without_actions"
       ? steps.filter((step) => {
           const stepId = toText(step?.id);
           return !productActions.some((pa) => toText(pa.step_id || pa.stepId) === stepId);
         })
       : steps;
-    if (!targetSteps.length) return;
+    if (!targetSteps.length && !skippedSteps.length) return;
     setBatchRunning(true);
     setBatchDraft(null);
     setBatchStatus({ type: "saving", text: "Запускаем AI по шагам…" });
@@ -367,14 +378,26 @@ export default function ProductActionsPanel({
     }
     setBatchRunning(false);
     setBatchProgress(null);
+    for (const step of skippedSteps) {
+      const stepId = toText(step?.id);
+      results[stepId] = {
+        step,
+        stepName: stepDisplayLabel(step),
+        rows: [],
+        skipped: true,
+        errorCode: null,
+        selectedIds: new Set(),
+      };
+    }
     setBatchDraft(results);
     const totalRows = Object.values(results).reduce((sum, s) => sum + s.rows.length, 0);
     const errorCount = Object.values(results).filter((s) => s.errorCode).length;
+    const skippedCount = skippedSteps.length;
     setBatchStatus({
       type: errorCount > 0 ? "error" : "saved",
       text: errorCount > 0
         ? `Завершено с ошибками: ${errorCount} из ${targetSteps.length} шагов не обработаны.`
-        : `Batch AI: ${totalRows} предложений для ${targetSteps.length} шагов. Проверьте и примите нужные.`,
+        : `Batch AI: ${totalRows} предложений для ${targetSteps.length} шагов.${skippedCount ? ` Пропущено (уже есть действия): ${skippedCount}.` : ""} Проверьте и примите нужные.`,
     });
   }
 
@@ -487,6 +510,10 @@ export default function ProductActionsPanel({
 
   async function handleSuggestAiProductActions() {
     if (!sessionId || aiLoading) return;
+    if (!selectedStep) {
+      setAiStatus({ type: "error", text: "Выберите шаг процесса перед запуском AI." });
+      return;
+    }
     setAiLoading(true);
     setAiDraft(null);
     setAiRows([]);
@@ -761,11 +788,21 @@ export default function ProductActionsPanel({
                 <details key={stepId} className="productActionsBatchStepGroup" data-testid="product-actions-batch-step">
                   <summary className="productActionsBatchStepSummary">
                     <span>{entry.stepName}</span>
-                    <span className="productActionsAiCounter">{entry.rows.length} предложений</span>
+                    {entry.skipped ? (
+                      <span className="productActionsAiBadge skipped">Пропущен</span>
+                    ) : (
+                      <span className="productActionsAiCounter">{entry.rows.length} предложений</span>
+                    )}
                     {entry.errorCode ? (
                       <span className="productActionsAiBadge error">Ошибка</span>
                     ) : null}
                   </summary>
+                  {entry.skipped ? (
+                    <div className="productActionsAiWarningNote" data-testid="product-actions-batch-skipped">
+                      <span className="productActionsAiWarningNoteIcon">ℹ</span>
+                      <span>Шаг пропущен: уже есть сохранённые действия с продуктом.</span>
+                    </div>
+                  ) : null}
                   {entry.errorCode ? (
                     <div className="productActionsAiWarningNote">
                       <span className="productActionsAiWarningNoteIcon">⚠</span>

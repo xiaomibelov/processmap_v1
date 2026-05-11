@@ -956,7 +956,7 @@ export default function InterviewStage({
                   <div className="analysisSelectedStepActions" data-testid="interview-selection-actions">
                     <button
                       type="button"
-                      className="secondaryBtn tinyBtn"
+                      className="productActionsToolbarBtn"
                       data-testid="interview-selected-open-ai"
                       onClick={() => addAiQuestions(selectedStep)}
                     >
@@ -964,7 +964,7 @@ export default function InterviewStage({
                     </button>
                     <button
                       type="button"
-                      className="secondaryBtn tinyBtn"
+                      className="productActionsToolbarBtn"
                       data-testid="interview-selected-generate-ai"
                       onClick={() => addAiQuestions(selectedStep, { forceRefresh: true })}
                     >
@@ -972,7 +972,7 @@ export default function InterviewStage({
                     </button>
                     <button
                       type="button"
-                      className="secondaryBtn tinyBtn"
+                      className="productActionsToolbarBtn"
                       data-testid="interview-selected-open-binding"
                       onClick={() => setBindingAssistantOpen(true)}
                     >
@@ -980,7 +980,8 @@ export default function InterviewStage({
                     </button>
                     <button
                       type="button"
-                      className="dangerBtn tinyBtn"
+                      className="productActionsToolbarBtn"
+                      style={{ color: "rgba(248,113,113,.92)", borderColor: "rgba(248,113,113,.32)" }}
                       data-testid="interview-selected-delete"
                       onClick={handleDeleteSelectedStep}
                     >
@@ -1014,7 +1015,7 @@ export default function InterviewStage({
             </details>
             <details className="analysisBSection ragSearchSection" data-testid="rag-search-section">
               <summary>
-                <span>Поиск по знаниям</span>
+                <span>RAG-агент</span>
               </summary>
               <RagSearchPanel sessionId={sid} />
             </details>
