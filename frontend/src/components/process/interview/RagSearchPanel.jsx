@@ -40,25 +40,21 @@ function RagResultItem({ item }) {
   return (
     <div className="ragResultItem" data-testid="rag-result-item">
       <div className="ragResultHeader">
-        <div className="ragResultTitleBlock">
-          <div className="ragResultTitle" data-testid="rag-result-title">{title}</div>
-          {elementCtx ? <div className="ragResultSubtitle">{elementCtx}</div> : null}
-        </div>
+        <div className="ragResultTitle" data-testid="rag-result-title">{title}</div>
         <div className="ragResultBadges">
           <span className="ragResultTag">{sourceBadge}</span>
           <span className={`ragScorePill ${scoreClsName}`} data-testid="rag-result-score">{scoreLabel}</span>
         </div>
       </div>
+      <div className="ragResultMeta">
+        {elementCtx ? <span className="ragResultMetaItem"><span className="ragResultMetaLabel">Тип</span>{elementCtx}</span> : null}
+        {sessionTitle ? <span className="ragResultMetaItem"><span className="ragResultMetaLabel">Сессия</span>{sessionTitle}</span> : null}
+        {showRaw ? <span className="ragResultMetaItem ragResultMetaRaw">{chunkText}</span> : null}
+        <button type="button" className="ragCopyBtn" onClick={() => handleCopy(chunkText)} title="Копировать" data-testid="rag-copy-btn">⎘</button>
+      </div>
       {showExcerpt ? (
         <div className="ragResultExcerpt" data-testid="rag-result-excerpt">{chunkText}</div>
       ) : null}
-      {showRaw ? (
-        <div className="ragResultRaw" data-testid="rag-result-raw">{chunkText}</div>
-      ) : null}
-      <div className="ragResultFooter">
-        {sessionTitle ? <span className="ragResultSource" title={sessionTitle}>{sessionTitle}</span> : null}
-        <button type="button" className="ragCopyBtn" onClick={() => handleCopy(chunkText)} title="Копировать" data-testid="rag-copy-btn">⎘</button>
-      </div>
     </div>
   );
 }
