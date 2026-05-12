@@ -366,6 +366,7 @@ export default function ProductActionsPanel({
   const [batchProgress, setBatchProgress] = useState(null);
   const [batchStatus, setBatchStatus] = useState(null);
   const [batchRunning, setBatchRunning] = useState(false);
+  const [batchReviewVisible, setBatchReviewVisible] = useState(true);
 
   useEffect(() => {
     if (!steps.length) return;
@@ -600,6 +601,7 @@ export default function ProductActionsPanel({
     }
     if (!hasError) statusText += ` Итого предложений: ${totalRows}. Проверьте и примите нужные.`;
     setBatchStatus({ type: hasError ? "error" : "saved", text: statusText });
+    setBatchReviewVisible(true);
   }
 
   function toggleBatchRow(stepId, rowId, checked) {
@@ -640,6 +642,50 @@ export default function ProductActionsPanel({
       setBatchStatus({
         type: "error",
         text: toText(result?.error) || `Не удалось применить действия для шага «${entry.stepName}».`,
+      });
+    }
+  }
+
+  async function handleAcceptAllReadyRows() {
+    if (!batchDraft || typeof batchDraft !== 'object') return;
+    const allEntries = Object.entries(batchDraft);
+    const readyEntries = allEntries.filter(([_, entry]) => entry.status === "ready" && entry.rows.length > 0);
+    if (!readyEntries.length) return;
+
+    const allReadyRows = [];
+    for (const [stepId, entry] of readyEntries) {
+      const nonDuplicateRows = entry.rows.filter((r) => !toText(r.duplicate_of));
+      allReadyRows.push(...nonDuplicateRows);
+    }
+
+    if (!allReadyRows.length) return;
+
+    setBatchStatus({ type: "saving", text: `Применяю все готовые действия (${allReadyRows.length} шт.)…` });
+    const result = await acceptAiProductActions({
+      sessionId,
+      currentAnalysis: interviewData?.analysis,
+      selectedActions: allReadyRows,
+      getBaseDiagramStateVersion,
+      rememberDiagramStateVersion,
+      onSessionSync,
+    });
+
+    if (result?.ok) {
+      // Clear selectedIds for all ready entries
+      setBatchDraft((prev) => {
+        const next = { ...prev };
+        for (const [stepId] of readyEntries) {
+          if (next[stepId]) {
+            next[stepId] = { ...next[stepId], selectedIds: new Set() };
+          }
+        }
+        return next;
+      });
+      setBatchStatus({ type: "saved", text: `Все готовые действия применены (${allReadyRows.length} шт.).` });
+    } else {
+      setBatchStatus({
+        type: "error",
+        text: toText(result?.error) || `Не удалось применить все готовые действия.`,
       });
     }
   }
@@ -1033,6 +1079,32 @@ export default function ProductActionsPanel({
           </div>
           ) : null}
 
+          {batchDraft && !batchRunning && !batchReviewVisible ? (
+            <div className="productActionsBatchResume" data-testid="product-actions-batch-hidden">
+              <div className="productActionsEditorTitle">AI по шагам — черновик сохранён</div>
+              <div className="productActionsSub">
+                Обработано: {getProcessedCount(batchDraft)} из {getTotalSteps(batchDraft)} шагов
+              </div>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                <button
+                  type="button"
+                  className="productActionsToolbarBtn"
+                  onClick={() => setBatchReviewVisible(true)}
+                  data-testid="product-actions-batch-show-btn"
+                >
+                  Показать предложения
+                </button>
+                <button
+                  type="button"
+                  className="productActionsToolbarBtn"
+                  onClick={handleResetBatchDraft}
+                  data-testid="product-actions-batch-reset-btn"
+                >
+                  Сбросить черновик
+                </button>
+              </div>
+            </div>
+          ) : null}
           {batchDraft && !batchRunning && hasPendingSteps(batchDraft) ? (
             <div className="productActionsBatchResume" data-testid="product-actions-batch-resume">
               <div className="productActionsEditorTitle">AI по шагам — прогресс</div>
@@ -1071,7 +1143,7 @@ export default function ProductActionsPanel({
               </div>
             </div>
           ) : null}
-          {batchDraft && !batchRunning ? (
+          {batchDraft && !batchRunning && batchReviewVisible ? (
             <div className="productActionsBatchReview" data-testid="product-actions-batch-review">
               <div className="productActionsAiReviewHead">
                 <div>
@@ -1080,14 +1152,25 @@ export default function ProductActionsPanel({
                     Черновик. В process truth попадут только выбранные строки после принятия.
                   </div>
                 </div>
-                <button
-                  type="button"
-                  className="productActionsToolbarBtn"
-                  onClick={() => { setBatchDraft(null); setBatchStatus(null); }}
-                  data-testid="product-actions-batch-close"
-                >
-                  Закрыть
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    className="productActionsToolbarBtn"
+                    onClick={handleAcceptAllReadyRows}
+                    disabled={!Object.values(batchDraft).some(e => e.status === "ready" && e.rows.length > 0)}
+                    data-testid="product-actions-batch-accept-all"
+                  >
+                    Принять все готовые
+                  </button>
+                  <button
+                    type="button"
+                    className="productActionsToolbarBtn"
+                    onClick={() => { setBatchReviewVisible(false); setBatchStatus(null); }}
+                    data-testid="product-actions-batch-close"
+                  >
+                    Закрыть
+                  </button>
+                </div>
               </div>
               {Object.entries(batchDraft).map(([stepId, entry]) => (
                 <details key={stepId} className="productActionsBatchStepGroup" data-testid="product-actions-batch-step">
