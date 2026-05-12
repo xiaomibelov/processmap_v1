@@ -297,6 +297,95 @@ def _build_context(session: Session, *, org_id: str, workspace_id: str) -> Dict[
     }
 
 
+def _selected_step_binding(options: Dict[str, Any]) -> Dict[str, str]:
+    return {
+        "step_id": _text(options.get("selected_step_id")),
+        "label": _text(options.get("selected_step_label")),
+        "bpmn_element_id": _text(options.get("selected_step_bpmn_id")),
+    }
+
+
+def _step_matches_binding(step: Dict[str, Any], binding: Dict[str, str]) -> bool:
+    step_id = _text(binding.get("step_id"))
+    bpmn_id = _text(binding.get("bpmn_element_id"))
+    label = _text(binding.get("label")).lower()
+    if step_id and _text(step.get("id") or step.get("step_id")) == step_id:
+        return True
+    if bpmn_id and (
+        _text(step.get("bpmn_element_id")) == bpmn_id
+        or _text(step.get("node_id")) == bpmn_id
+    ):
+        return True
+    return bool(label and _text(step.get("label")).lower() == label)
+
+
+def _row_matches_binding(row: Dict[str, Any], binding: Dict[str, str]) -> bool:
+    step_id = _text(binding.get("step_id"))
+    bpmn_id = _text(binding.get("bpmn_element_id"))
+    row_step_id = _text(row.get("step_id") or row.get("stepId"))
+    row_bpmn_id = _text(row.get("bpmn_element_id") or row.get("node_id") or row.get("bpmnElementId"))
+    if row_step_id and step_id and row_step_id != step_id:
+        return False
+    if row_bpmn_id and bpmn_id and row_bpmn_id != bpmn_id:
+        return False
+    if step_id and row_step_id == step_id:
+        return True
+    if bpmn_id and row_bpmn_id == bpmn_id:
+        return True
+    return bool((step_id or bpmn_id) and not row_step_id and not row_bpmn_id)
+
+
+def _filter_context_to_selected_step(context: Dict[str, Any], binding: Dict[str, str]) -> bool:
+    if not _text(binding.get("step_id") or binding.get("bpmn_element_id") or binding.get("label")):
+        return True
+    steps = [step for step in _as_list(context.get("steps")) if _step_matches_binding(_as_dict(step), binding)]
+    if not steps:
+        context["steps"] = []
+        context["nodes"] = []
+        context["edges"] = []
+        return False
+    selected_step = _as_dict(steps[0])
+    context["steps"] = [selected_step]
+    bpmn_id = _text(binding.get("bpmn_element_id")) or _text(selected_step.get("bpmn_element_id") or selected_step.get("node_id"))
+    if bpmn_id:
+        context["nodes"] = [
+            node for node in _as_list(context.get("nodes"))
+            if _text(_as_dict(node).get("id")) == bpmn_id
+        ]
+        context["edges"] = [
+            edge for edge in _as_list(context.get("edges"))
+            if _text(_as_dict(edge).get("source")) == bpmn_id or _text(_as_dict(edge).get("target")) == bpmn_id
+        ]
+        binding["bpmn_element_id"] = bpmn_id
+    if not _text(binding.get("step_id")):
+        binding["step_id"] = _text(selected_step.get("step_id") or selected_step.get("id"))
+    if not _text(binding.get("label")):
+        binding["label"] = _text(selected_step.get("label"))
+    context["selected_step"] = dict(binding)
+    return True
+
+
+def _filter_suggestions_to_selected_step(suggestions: List[Dict[str, Any]], binding: Dict[str, str]) -> List[Dict[str, Any]]:
+    if not _text(binding.get("step_id") or binding.get("bpmn_element_id")):
+        return suggestions
+    out: List[Dict[str, Any]] = []
+    for row_raw in suggestions:
+        row = dict(row_raw or {})
+        if not _row_matches_binding(row, binding):
+            continue
+        if binding.get("step_id") and not _text(row.get("step_id")):
+            row["step_id"] = binding["step_id"]
+        if binding.get("bpmn_element_id"):
+            if not _text(row.get("bpmn_element_id")):
+                row["bpmn_element_id"] = binding["bpmn_element_id"]
+            if not _text(row.get("node_id")):
+                row["node_id"] = binding["bpmn_element_id"]
+        if binding.get("label") and not _text(row.get("step_label")):
+            row["step_label"] = binding["label"]
+        out.append(row)
+    return out
+
+
 def _safe_error_message(exc: Any, *, api_key: str = "", base_url: str = "") -> str:
     text = str(exc or "").strip() or "ai_suggestion_failed"
     for secret in (api_key, base_url):
@@ -341,15 +430,9 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
         context_error = ""
 
     options = _as_dict(getattr(inp, "options", None))
-    selected_step_id = _text(options.get("selected_step_id"))
-    selected_step_label = _text(options.get("selected_step_label"))
-    selected_step_bpmn_id = _text(options.get("selected_step_bpmn_id"))
-    if selected_step_id or selected_step_bpmn_id:
-        context["selected_step"] = {
-            "step_id": selected_step_id,
-            "label": selected_step_label,
-            "bpmn_element_id": selected_step_bpmn_id,
-        }
+    selected_binding = _selected_step_binding(options)
+    selected_step_requested = bool(_text(selected_binding.get("step_id") or selected_binding.get("bpmn_element_id") or selected_binding.get("label")))
+    selected_step_found = _filter_context_to_selected_step(context, selected_binding)
 
     max_suggestions = _max_suggestions(inp)
     input_payload = {
@@ -360,6 +443,7 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
         "edges_count": len(context.get("edges") or []),
         "existing_product_actions_count": len(context.get("existing_product_actions") or []),
         "max_suggestions": max_suggestions,
+        "selected_step": dict(selected_binding) if selected_step_requested else {},
     }
     input_hash = hash_ai_input({"module_id": _MODULE_ID, "session_id": session_id, "context": context})
     started_at = time.time()
@@ -423,6 +507,25 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
             output_summary="context assembly failed",
             error_code="AI_PROVIDER_ERROR",
             error_message=context_error,
+        )
+
+    if selected_step_requested and not selected_step_found:
+        return _finish(
+            {
+                "ok": True,
+                "module_id": _MODULE_ID,
+                "draft_id": f"draft_{uuid.uuid4().hex[:16]}",
+                "source": "selected_step_filter",
+                "prompt_id": "",
+                "prompt_version": "",
+                "input_hash": input_hash,
+                "suggestions": [],
+                "warnings": [{"code": "selected_step_not_found", "message": "Выбранный шаг не найден в контексте AI."}],
+                "summary": {"suggestions_count": 0, "duplicate_count": 0, "incomplete_count": 0},
+            },
+            status="success",
+            output_summary="selected step not found; no suggestions",
+            usage={"suggestions_count": 0, "steps_count": 0},
         )
 
     if settings_error:
@@ -501,8 +604,17 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
             max_suggestions=max_suggestions,
         )
         existing_actions = list(context.get("existing_product_actions") or [])
-        suggestions = _decorate_duplicates(list(raw.get("suggestions") or []), existing_actions)[:max_suggestions]
+        raw_suggestions = list(raw.get("suggestions") or [])
+        selected_suggestions = _filter_suggestions_to_selected_step(raw_suggestions, selected_binding)
+        suggestions = _decorate_duplicates(selected_suggestions, existing_actions)[:max_suggestions]
         warnings = list(raw.get("warnings") or [])
+        if selected_step_requested and len(selected_suggestions) < len(raw_suggestions):
+            warnings.append(
+                {
+                    "code": "selected_step_filter_removed_unrelated",
+                    "message": "Часть AI-предложений скрыта, потому что она относится к другим шагам процесса.",
+                }
+            )
         duplicate_count = sum(1 for row in suggestions if _text(row.get("duplicate_of")))
         incomplete_count = sum(1 for row in suggestions if row.get("missing_fields"))
         response = {

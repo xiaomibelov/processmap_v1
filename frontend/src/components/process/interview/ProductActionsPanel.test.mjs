@@ -99,6 +99,21 @@ test("ProductActionsPanel exposes AI suggestion review without legacy notes or g
   assert.match(source, /disabled=\{!canAcceptAiRows\}/);
 });
 
+test("ProductActionsPanel filters single-step AI rows and drops stale responses before apply", () => {
+  assert.equal(source.includes("filterSuggestionDraftRowsForStep"), true);
+  assert.equal(source.includes("suggestionMatchesSelectedStep"), true);
+  assert.equal(source.includes("selectedStepIdRef.current !== requestStepId"), true);
+  assert.equal(source.includes("selected_step_id: requestStepId"), true);
+  assert.equal(source.includes("selected_step_bpmn_id: requestStepBpmnId"), true);
+  assert.equal(source.includes("filterSuggestionDraftRowsForStep(draftResult.suggestions, requestStep)"), true);
+  assert.equal(source.includes("filterSuggestionDraftRowsForStep(draftResult.suggestions, step)"), true);
+  const suggestBlock = source.slice(
+    source.indexOf("async function handleSuggestAiProductActions"),
+    source.indexOf("function patchAiRow"),
+  );
+  assert.equal(/acceptAiProductActions|saveProductActionForStep|deleteProductActionForStep|patchInterviewAnalysis/.test(suggestBlock), false);
+});
+
 test("ProductActionsPanel maps controlled AI setup errors to admin-facing copy", () => {
   assert.equal(source.includes("AI_PROVIDER_NOT_CONFIGURED"), true);
   assert.equal(source.includes("AI_PROMPT_NOT_CONFIGURED"), true);
@@ -336,4 +351,3 @@ test("ProductActionsPanel renders duplicate_reason text in duplicate AI suggesti
     "duplicate_reason must only render when duplicate=true and value is non-empty",
   );
 });
-

@@ -37,6 +37,20 @@ function mergeInterviewAnalysisNamespace(baseRaw, incomingRaw) {
   };
 }
 
+function omitProductActionsFromGenericInterviewPatch(interviewRaw) {
+  const interview = cloneSafePlainObject(interviewRaw);
+  if (!interview) return interviewRaw;
+  if (!isPlainObject(interview.analysis)) return interview;
+  const analysis = cloneSafePlainObject(interview.analysis) || {};
+  if (!Object.prototype.hasOwnProperty.call(analysis, "product_actions")) {
+    return interview;
+  }
+  delete analysis.product_actions;
+  if (Object.keys(analysis).length) interview.analysis = analysis;
+  else delete interview.analysis;
+  return interview;
+}
+
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map((x) => canonicalize(x));
   if (value && typeof value === "object") {
@@ -116,7 +130,7 @@ function buildInterviewPatchPayload(nextInterview, nextNodes, baseNodes, nextEdg
   const nextEdgesHash = interviewEdgesFingerprint(nextEdges);
   const baseEdgesHash = interviewEdgesFingerprint(baseEdges);
   const edgesChanged = nextEdgesHash !== baseEdgesHash;
-  const patch = { interview: nextInterview };
+  const patch = { interview: omitProductActionsFromGenericInterviewPatch(nextInterview) };
   if (nodesChanged) patch.nodes = nextNodes;
   if (edgesChanged) patch.edges = nextEdges;
   return { patch, nodesChanged, edgesChanged, nextNodesHash, nextEdgesHash };
