@@ -161,6 +161,13 @@ function actionProductName(rowRaw) {
   return toText(row.product_name);
 }
 
+function getBatchRowId(row, stepId, index) {
+  const rowId = toText(row?.id);
+  if (rowId) return rowId;
+  const sid = toText(stepId);
+  return sid ? `batch_${sid}_${index}` : `batch_row_${index}`;
+}
+
 function actionSummary(rowRaw) {
   const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
   return [
@@ -423,39 +430,55 @@ export default function ProductActionsPanel({
   async function handleBatchSuggestAiProductActions(scope = "without_actions", resume = false) {
     if (!sessionId || batchRunning || batchInFlightRef.current) return;
 
-    // Load existing results if resume
-    let results = resume && batchDraft && typeof batchDraft === 'object' ? { ...batchDraft } : {};
+    // Load existing results (preserve ready drafts even on fresh run)
+    let results = batchDraft && typeof batchDraft === 'object' ? { ...batchDraft } : {};
 
-    // Filter out already processed steps
+    // Filter out already processed steps (durable actions + ready drafts)
     const processedStepIds = new Set(
       Object.keys(results).filter(sid =>
         results[sid]?.status === "ready" ||
-        results[sid]?.status === "skipped_existing_action"
+        results[sid]?.status === "skipped_existing_action" ||
+        results[sid]?.status === "skipped_existing_suggestion"
       )
     );
 
+    // Steps with durable product actions
+    const stepsWithActions = steps.filter((step) => {
+      const stepId = toText(step?.id);
+      return productActions.some((pa) => toText(pa.step_id || pa.stepId) === stepId);
+    });
+
+    // Steps with ready draft suggestions (not yet applied)
+    const stepsWithReadyDrafts = steps.filter((step) => {
+      const stepId = toText(step?.id);
+      const entry = results[stepId];
+      return entry?.status === "ready" && entry.rows.length > 0;
+    });
+
     const skippedSteps = scope === "without_actions"
-      ? steps.filter((step) => {
-          const stepId = toText(step?.id);
-          if (resume && processedStepIds.has(stepId)) return false; // Skip already processed
-          return productActions.some((pa) => toText(pa.step_id || pa.stepId) === stepId);
-        })
+      ? stepsWithActions.filter(step => !processedStepIds.has(toText(step?.id)))
       : [];
+
+    const skippedDraftSteps = stepsWithReadyDrafts.filter(step => !processedStepIds.has(toText(step?.id)));
+
     const targetSteps = scope === "without_actions"
       ? steps.filter((step) => {
           const stepId = toText(step?.id);
-          if (resume && processedStepIds.has(stepId)) return false; // Skip already processed
-          return !productActions.some((pa) => toText(pa.step_id || pa.stepId) === stepId);
+          if (processedStepIds.has(stepId)) return false;
+          const hasAction = productActions.some((pa) => toText(pa.step_id || pa.stepId) === stepId);
+          const hasReadyDraft = results[stepId]?.status === "ready" && results[stepId].rows.length > 0;
+          return !hasAction && !hasReadyDraft;
         })
-      : steps.filter(step => !processedStepIds.has(toText(step?.id)));
+      : steps.filter(step => {
+          const stepId = toText(step?.id);
+          if (processedStepIds.has(stepId)) return false;
+          const hasReadyDraft = results[stepId]?.status === "ready" && results[stepId].rows.length > 0;
+          return !hasReadyDraft;
+        });
 
-    if (!targetSteps.length && !skippedSteps.length) return;
+    if (!targetSteps.length && !skippedSteps.length && !skippedDraftSteps.length) return;
     batchInFlightRef.current = true;
     setBatchRunning(true);
-    if (!resume) {
-      setBatchDraft(null);
-      results = {};
-    }
     setBatchStatus({ type: "saving", text: resume ? "Продолжаем AI по шагам…" : "Запускаем AI по шагам…" });
     setBatchProgress({ current: 0, total: targetSteps.length, currentStepName: "" });
     let rateLimitHit = null;
@@ -495,7 +518,11 @@ export default function ProductActionsPanel({
         errorCode,
         status: entryStatus,
         rateLimitObj: isRateLimit ? rateLimitObj : null,
-        selectedIds: new Set(rows.filter((r) => !toText(r.duplicate_of)).map((r) => toText(r.id)).filter(Boolean)),
+        selectedIds: new Set(
+          rows
+            .filter((r) => !toText(r.duplicate_of))
+            .map((r, idx) => getBatchRowId(r, stepId, idx))
+        ),
       };
 
       // Save batch draft after each step
@@ -540,17 +567,29 @@ export default function ProductActionsPanel({
         selectedIds: new Set(),
       };
     }
+    for (const step of skippedDraftSteps) {
+      const stepId = toText(step?.id);
+      // Preserve existing ready draft entry, just mark as skipped
+      if (results[stepId]?.status === "ready") {
+        results[stepId] = {
+          ...results[stepId],
+          status: "skipped_existing_suggestion",
+        };
+      }
+    }
     setBatchDraft(results);
     const allEntries = Object.values(results);
     const readyCount = allEntries.filter((s) => s.status === "ready").length;
     const failedCount = allEntries.filter((s) => s.status === "failed").length;
     const rateLimitedCount = allEntries.filter((s) => s.status === "rate_limited").length;
     const notProcessedCount = allEntries.filter((s) => s.status === "not_processed").length;
-    const skippedCount = skippedSteps.length;
+    const skippedActionCount = allEntries.filter((s) => s.status === "skipped_existing_action").length;
+    const skippedSuggestionCount = allEntries.filter((s) => s.status === "skipped_existing_suggestion").length;
+    const totalSkippedCount = skippedActionCount + skippedSuggestionCount;
     const totalRows = allEntries.reduce((sum, s) => sum + s.rows.length, 0);
     const hasError = failedCount > 0 || rateLimitedCount > 0;
     let statusText = `Batch AI: ${readyCount} шагов выполнено`;
-    if (skippedCount) statusText += `, ${skippedCount} пропущено`;
+    if (totalSkippedCount) statusText += `, ${totalSkippedCount} пропущено`;
     if (failedCount) statusText += `, ${failedCount} ошибок`;
     if (rateLimitedCount) statusText += `, ${rateLimitedCount} ост. лимитом`;
     if (notProcessedCount) statusText += `, ${notProcessedCount} не выполнено`;
@@ -580,7 +619,10 @@ export default function ProductActionsPanel({
     const sid = toText(stepId);
     const entry = batchDraft?.[sid];
     if (!entry) return;
-    const selectedRows = entry.rows.filter((r) => entry.selectedIds.has(toText(r.id)) && !toText(r.duplicate_of));
+    const selectedRows = entry.rows.filter((r, index) => {
+      const rowId = getBatchRowId(r, sid, index);
+      return entry.selectedIds.has(rowId) && !toText(r.duplicate_of);
+    });
     if (!selectedRows.length) return;
     setBatchStatus({ type: "saving", text: `Применяю действия для: ${entry.stepName}…` });
     const result = await acceptAiProductActions({
@@ -610,7 +652,11 @@ export default function ProductActionsPanel({
 
   function getProcessedCount(draft) {
     if (!draft || typeof draft !== 'object') return 0;
-    return Object.values(draft).filter(e => e.status === "ready" || e.status === "skipped_existing_action").length;
+    return Object.values(draft).filter(e =>
+      e.status === "ready" ||
+      e.status === "skipped_existing_action" ||
+      e.status === "skipped_existing_suggestion"
+    ).length;
   }
 
   function getTotalSteps(draft) {
@@ -1048,7 +1094,9 @@ export default function ProductActionsPanel({
                   <summary className="productActionsBatchStepSummary">
                     <span>{entry.stepName}</span>
                     {entry.skipped || entry.status === "skipped_existing_action" ? (
-                      <span className="productActionsAiBadge skipped">Пропущен</span>
+                      <span className="productActionsAiBadge skipped">Пропущен: есть действие</span>
+                    ) : entry.status === "skipped_existing_suggestion" ? (
+                      <span className="productActionsAiBadge skipped">Пропущен: есть черновик</span>
                     ) : entry.status === "rate_limited" ? (
                       <span className="productActionsAiBadge rateLimited">Лимит AI</span>
                     ) : entry.status === "not_processed" ? (
@@ -1067,6 +1115,12 @@ export default function ProductActionsPanel({
                     <div className="productActionsAiWarningNote" data-testid="product-actions-batch-skipped">
                       <span className="productActionsAiWarningNoteIcon">ℹ</span>
                       <span>Шаг пропущен: уже есть сохранённые действия с продуктом.</span>
+                    </div>
+                  ) : null}
+                  {entry.status === "skipped_existing_suggestion" ? (
+                    <div className="productActionsAiWarningNote" data-testid="product-actions-batch-skipped-suggestion">
+                      <span className="productActionsAiWarningNoteIcon">ℹ</span>
+                      <span>Шаг пропущен: уже есть готовый черновик предложений. Примите или сбросьте черновик перед повторным запуском.</span>
                     </div>
                   ) : null}
                   {entry.status === "not_processed" ? (
@@ -1090,7 +1144,7 @@ export default function ProductActionsPanel({
                     <>
                       <div className="productActionsAiList">
                         {entry.rows.map((row, index) => {
-                          const rowId = toText(row.id) || `batch_${stepId}_${index}`;
+                          const rowId = getBatchRowId(row, stepId, index);
                           const duplicate = !!toText(row.duplicate_of);
                           return (
                             <article
