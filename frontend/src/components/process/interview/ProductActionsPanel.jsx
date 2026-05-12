@@ -362,7 +362,7 @@ export default function ProductActionsPanel({
     if (!sessionId) return;
     apiLoadBatchDraft(sessionId).then(result => {
       if (result?.ok && result?.draft && typeof result.draft === 'object') {
-        setBatchDraft(result.draft);
+        setBatchDraft(deserializeBatchDraftFromBackend(result.draft));
       }
     }).catch(() => {
       // Ignore load errors
@@ -463,7 +463,7 @@ export default function ProductActionsPanel({
 
       // Save batch draft after each step
       try {
-        await apiSaveBatchDraft(sessionId, results);
+        await apiSaveBatchDraft(sessionId, serializeBatchDraftForBackend(results));
       } catch (saveError) {
         // Continue even if save fails
         console.warn('Failed to save batch draft:', saveError);
@@ -578,6 +578,30 @@ export default function ProductActionsPanel({
   function getTotalSteps(draft) {
     if (!draft || typeof draft !== 'object') return 0;
     return Object.keys(draft).length;
+  }
+
+  function serializeBatchDraftForBackend(draft) {
+    if (!draft || typeof draft !== 'object') return null;
+    const serialized = {};
+    for (const [stepId, entry] of Object.entries(draft)) {
+      serialized[stepId] = {
+        ...entry,
+        selectedIds: entry.selectedIds instanceof Set ? Array.from(entry.selectedIds) : entry.selectedIds,
+      };
+    }
+    return serialized;
+  }
+
+  function deserializeBatchDraftFromBackend(draft) {
+    if (!draft || typeof draft !== 'object') return null;
+    const deserialized = {};
+    for (const [stepId, entry] of Object.entries(draft)) {
+      deserialized[stepId] = {
+        ...entry,
+        selectedIds: Array.isArray(entry.selectedIds) ? new Set(entry.selectedIds) : new Set(),
+      };
+    }
+    return deserialized;
   }
 
   async function handleResetBatchDraft() {
