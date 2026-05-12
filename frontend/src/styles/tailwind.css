@@ -863,6 +863,13 @@
   font-weight: 600;
 }
 
+.productActionsSectionDivider {
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--analysis-border-soft) 20%, var(--analysis-border-soft) 80%, transparent);
+  margin: 24px 0;
+  opacity: 0.6;
+}
+
 .productActionsAiCardReason {
   color: var(--analysis-muted);
   font-size: 11px;

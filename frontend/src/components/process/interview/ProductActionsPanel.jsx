@@ -1525,6 +1525,8 @@ export default function ProductActionsPanel({
             </div>
           ) : null}
 
+      <div className="productActionsSectionDivider" data-testid="product-actions-section-divider"></div>
+
       {visibleActions.length ? (
         <div className="productActionsList" data-testid="product-actions-list">
           {visibleActions.map((row) => {
@@ -1563,17 +1565,46 @@ export default function ProductActionsPanel({
                   <span><b>Роль</b>{row.role || "не указана"}</span>
                 </div>
                 {isCurrentStepAction ? (
-                  <button
-                    type="button"
-                    className="secondaryBtn tinyBtn"
-                    onClick={() => {
-                      setEditingActionId(row.id);
-                      setEditorOpen(true);
-                      setStatus(null);
-                    }}
-                  >
-                    Редактировать
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="secondaryBtn tinyBtn"
+                      onClick={() => {
+                        setEditingActionId(row.id);
+                        setEditorOpen(true);
+                        setStatus(null);
+                      }}
+                    >
+                      Редактировать
+                    </button>
+                    <button
+                      type="button"
+                      className="secondaryBtn tinyBtn"
+                      onClick={async () => {
+                        if (!window.confirm(`Удалить действие "${actionTitle(row)}"?`)) return;
+                        setStatus({ type: "saving", text: "Удаляю действие…" });
+                        const result = await deleteProductActionForStep({
+                          sessionId,
+                          currentAnalysis: interviewData?.analysis,
+                          actionId: row.id,
+                          getBaseDiagramStateVersion,
+                          rememberDiagramStateVersion,
+                          onSessionSync,
+                        });
+                        if (result?.ok) {
+                          setStatus({ type: "saved", text: "Действие удалено." });
+                        } else {
+                          setStatus({
+                            type: Number(result?.status || 0) === 409 ? "conflict" : "error",
+                            text: toText(result?.error) || "Не удалось удалить действие с продуктом.",
+                          });
+                        }
+                      }}
+                      data-testid="product-action-delete-btn"
+                    >
+                      Удалить
+                    </button>
+                  </div>
                 ) : (
                   <span className="productActionReadonlyHint">Действие другого шага</span>
                 )}
