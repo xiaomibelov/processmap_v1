@@ -213,6 +213,62 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         self.assertEqual(logs[0].get("module_id"), "ai.product_actions.suggest")
         self.assertNotIn("SECRET_TEST_KEY", str(logs[0]))
 
+    def test_selected_step_suggest_filters_context_and_unrelated_rows_without_mutation(self):
+        before = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+        with patch(
+            "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",
+            return_value={
+                "suggestions": [
+                    {
+                        "id": "ai_wrong",
+                        "step_id": "step_1",
+                        "bpmn_element_id": "Task_1",
+                        "product_name": "Курица",
+                        "product_group": "Птица",
+                        "action_type": "нарезка",
+                        "action_object": "курица",
+                        "confidence": 0.8,
+                    },
+                    {
+                        "id": "ai_right",
+                        "step_id": "step_2",
+                        "bpmn_element_id": "Task_2",
+                        "product_name": "Сэндвич",
+                        "product_group": "Готовые блюда",
+                        "action_type": "упаковка",
+                        "action_object": "сэндвич",
+                        "confidence": 0.9,
+                    },
+                ],
+                "warnings": [],
+            },
+        ) as provider:
+            out = self.suggest_product_actions(
+                self.session_id,
+                self.ProductActionsSuggestIn(
+                    options={
+                        "max_suggestions": 5,
+                        "selected_step_id": "step_2",
+                        "selected_step_label": "Упаковать сэндвич",
+                        "selected_step_bpmn_id": "Task_2",
+                    }
+                ),
+                self._req(),
+            )
+
+        after = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+        provider_context = provider.call_args.kwargs.get("context")
+        self.assertEqual([step.get("step_id") for step in provider_context.get("steps")], ["step_2"])
+        self.assertEqual(provider_context.get("selected_step", {}).get("bpmn_element_id"), "Task_2")
+        suggestions = out.get("suggestions") or []
+        self.assertEqual([row.get("id") for row in suggestions], ["ai_right"])
+        self.assertEqual(suggestions[0].get("step_id"), "step_2")
+        self.assertEqual(suggestions[0].get("bpmn_element_id"), "Task_2")
+        self.assertTrue(any(w.get("code") == "selected_step_filter_removed_unrelated" for w in out.get("warnings") or []))
+        self.assertEqual(before.interview, after.interview)
+        self.assertEqual(before.bpmn_xml, after.bpmn_xml)
+        self.assertEqual(before.diagram_state_version, after.diagram_state_version)
+
     def test_existing_product_actions_mark_duplicate_candidates(self):
         with patch(
             "app.routers.product_actions_ai.suggest_product_actions_with_deepseek",

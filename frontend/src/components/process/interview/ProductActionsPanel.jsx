@@ -240,6 +240,33 @@ function normalizeSuggestionDraftRows(rowsRaw) {
   }));
 }
 
+function suggestionMatchesSelectedStep(rowRaw, bindingRaw) {
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  const binding = bindingRaw && typeof bindingRaw === "object" ? bindingRaw : {};
+  const stepId = toText(binding.step_id || binding.stepId);
+  const bpmnId = toText(binding.bpmn_element_id || binding.node_id || binding.nodeId || binding.bpmnElementId);
+  const rowStepId = toText(row.step_id || row.stepId);
+  const rowBpmnId = toText(row.bpmn_element_id || row.bpmnElementId || row.node_id || row.nodeId);
+  if (rowStepId && stepId && rowStepId !== stepId) return false;
+  if (rowBpmnId && bpmnId && rowBpmnId !== bpmnId) return false;
+  if (rowStepId || rowBpmnId) return true;
+  return !!(stepId || bpmnId);
+}
+
+function filterSuggestionDraftRowsForStep(rowsRaw, stepRaw) {
+  const binding = deriveProductActionBindingFromStep(stepRaw);
+  const rows = normalizeSuggestionDraftRows(rowsRaw);
+  if (!toText(binding.step_id || binding.bpmn_element_id)) return rows;
+  return rows.filter((row) => suggestionMatchesSelectedStep(row, binding)).map((row) => ({
+    ...row,
+    step_id: toText(row.step_id) || binding.step_id,
+    bpmn_element_id: toText(row.bpmn_element_id) || binding.bpmn_element_id,
+    node_id: toText(row.node_id) || binding.node_id || binding.bpmn_element_id,
+    step_label: toText(row.step_label) || binding.step_label,
+    role: toText(row.role) || binding.role,
+  }));
+}
+
 export default function ProductActionsPanel({
   sessionId = "",
   sessionTitle = "",
@@ -266,6 +293,8 @@ export default function ProductActionsPanel({
   const preferredStepId = toArray(selectedStepIds).map(toText).find((id) => steps.some((step) => toText(step?.id) === id)) || "";
   const [selectedStepId, setSelectedStepId] = useState(preferredStepId || toText(steps[0]?.id));
   const selectedStep = steps.find((step) => toText(step?.id) === selectedStepId) || steps[0] || null;
+  const selectedStepIdRef = useRef("");
+  selectedStepIdRef.current = toText(selectedStep?.id);
   const actionsForStep = useMemo(
     () => listProductActionsForStep(productActions, selectedStep),
     [productActions, selectedStep],
@@ -389,7 +418,7 @@ export default function ProductActionsPanel({
         };
       }
       const draftResult = result?.ok && result?.draft?.ok !== false ? result.draft || {} : null;
-      const rows = draftResult ? normalizeSuggestionDraftRows(draftResult.suggestions) : [];
+      const rows = draftResult ? filterSuggestionDraftRowsForStep(draftResult.suggestions, step) : [];
       const errorCode = draftResult ? null : toText(result?.error || result?.draft?.error);
       const isRateLimit = errorCode === "ai_rate_limit_exceeded";
       const rateLimitObj = result?.rate_limit || result?.draft?.rate_limit || null;
@@ -572,8 +601,10 @@ export default function ProductActionsPanel({
       setAiStatus({ type: "error", text: "Выберите шаг процесса перед запуском AI." });
       return;
     }
-    const requestedStepId = toText(selectedStep?.id);
-    aiRequestStepIdRef.current = requestedStepId;
+    const requestStep = selectedStep;
+    const requestStepId = toText(requestStep?.id);
+    const requestStepBpmnId = toText(requestStep?.node_id || requestStep?.nodeId || requestStep?.bpmn_ref);
+    aiRequestStepIdRef.current = requestStepId;
     setAiLoading(true);
     setAiDraft(null);
     setAiRows([]);
@@ -590,9 +621,9 @@ export default function ProductActionsPanel({
         options: {
           max_suggestions: 20,
           ui_source: "product_actions_panel",
-          selected_step_id: toText(selectedStep?.id),
-          selected_step_label: toText(selectedStep?.action || selectedStep?.label || selectedStep?.title),
-          selected_step_bpmn_id: toText(selectedStep?.node_id || selectedStep?.nodeId || selectedStep?.bpmn_ref),
+          selected_step_id: requestStepId,
+          selected_step_label: toText(requestStep?.action || requestStep?.label || requestStep?.title),
+          selected_step_bpmn_id: requestStepBpmnId,
         },
       });
     } catch (error) {
@@ -602,7 +633,17 @@ export default function ProductActionsPanel({
         draft: { message: toText(error?.message) || "network error" },
       };
     }
-    if (aiRequestStepIdRef.current !== requestedStepId) return;
+    if (aiRequestStepIdRef.current !== requestStepId || selectedStepIdRef.current !== requestStepId) {
+      setAiLoading(false);
+      setAiDraft(null);
+      aiDraftStepIdRef.current = "";
+      setAiRows([]);
+      setSelectedAiRowIds(new Set());
+      setAiStatus(null);
+      setAiProgress(null);
+      setAiDiagnostics(null);
+      return;
+    }
     setAiLoading(false);
     setAiProgress(aiProgressStep("receive", "Ответ AI получен, проверяем результат."));
     if (!result?.ok || result?.draft?.ok === false) {
@@ -625,7 +666,7 @@ export default function ProductActionsPanel({
     }
     setAiProgress(aiProgressStep("parse", "Разбираем AI-ответ и проверяем поля suggestions."));
     const draftResult = result.draft || {};
-    const rows = normalizeSuggestionDraftRows(draftResult.suggestions);
+    const rows = filterSuggestionDraftRowsForStep(draftResult.suggestions, requestStep);
     const nonDuplicateRows = rows.filter((row) => !toText(row.duplicate_of));
     const allDuplicates = rows.length > 0 && nonDuplicateRows.length === 0;
     setAiProgress(aiProgressStep("format", "Формируем список предложений для review."));
