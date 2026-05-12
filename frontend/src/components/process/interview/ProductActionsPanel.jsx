@@ -528,10 +528,30 @@ export default function ProductActionsPanel({
 
       // Save batch draft after each step
       try {
-        await apiSaveBatchDraft(sessionId, serializeBatchDraftForBackend(results));
+        const saveResult = await apiSaveBatchDraft(sessionId, serializeBatchDraftForBackend(results));
+        if (!saveResult?.ok) {
+          console.error('Failed to save batch draft:', saveResult);
+          // Stop batch processing on persistent save failure
+          setBatchStatus({
+            type: "error",
+            text: `Не удалось сохранить черновик AI по шагам. Обработка остановлена на шаге ${i + 1} из ${targetSteps.length}. Ошибка: ${toText(saveResult?.error) || "unknown"}`,
+          });
+          batchInFlightRef.current = false;
+          setBatchRunning(false);
+          setBatchProgress(null);
+          return;
+        }
       } catch (saveError) {
-        // Continue even if save fails
-        console.warn('Failed to save batch draft:', saveError);
+        console.error('Failed to save batch draft:', saveError);
+        // Stop batch processing on save exception
+        setBatchStatus({
+          type: "error",
+          text: `Не удалось сохранить черновик AI по шагам. Обработка остановлена на шаге ${i + 1} из ${targetSteps.length}. Ошибка: ${toText(saveError?.message) || "network error"}`,
+        });
+        batchInFlightRef.current = false;
+        setBatchRunning(false);
+        setBatchProgress(null);
+        return;
       }
 
       if (isRateLimit) {
@@ -715,8 +735,15 @@ export default function ProductActionsPanel({
     const serialized = {};
     for (const [stepId, entry] of Object.entries(draft)) {
       serialized[stepId] = {
-        ...entry,
-        selectedIds: entry.selectedIds instanceof Set ? Array.from(entry.selectedIds) : entry.selectedIds,
+        // Only include serializable fields that backend can store
+        stepName: entry.stepName,
+        rows: entry.rows,
+        status: entry.status,
+        errorCode: entry.errorCode || null,
+        rateLimitObj: entry.rateLimitObj || null,
+        skipped: entry.skipped || false,
+        selectedIds: entry.selectedIds instanceof Set ? Array.from(entry.selectedIds) : (entry.selectedIds || []),
+        // Omit 'step' object - it's too large and not needed for persistence
       };
     }
     return serialized;
@@ -726,8 +753,11 @@ export default function ProductActionsPanel({
     if (!draft || typeof draft !== 'object') return null;
     const deserialized = {};
     for (const [stepId, entry] of Object.entries(draft)) {
+      // Reconstruct step object from stepId if needed
+      const step = steps.find(s => toText(s?.id) === stepId) || null;
       deserialized[stepId] = {
         ...entry,
+        step: step, // Restore step object from current steps
         selectedIds: Array.isArray(entry.selectedIds) ? new Set(entry.selectedIds) : new Set(),
       };
     }
