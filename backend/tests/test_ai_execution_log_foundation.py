@@ -174,6 +174,20 @@ class AiExecutionLogFoundationTests(unittest.TestCase):
         self.assertFalse(bool(blocked.get("allowed")))
         self.assertEqual(blocked.get("reason"), "ai_rate_limit_exceeded")
 
+    def test_product_actions_default_rate_limit_is_batch_friendly(self):
+        from app.ai.execution_log import check_ai_rate_limit
+
+        actor = str(self.admin.get("id") or "")
+        scope = {"org_id": self.org_id, "session_id": "sess_product_actions_batch"}
+        rate = check_ai_rate_limit(
+            module_id="ai.product_actions.suggest",
+            actor_user_id=actor,
+            scope=scope,
+            now_ts=1000,
+        )
+        self.assertTrue(bool(rate.get("allowed")))
+        self.assertGreaterEqual(int(rate.get("limit") or 0), 240)
+
     def test_admin_endpoint_is_permission_guarded(self):
         response = self.admin_ai_executions(
             self.viewer_request,
