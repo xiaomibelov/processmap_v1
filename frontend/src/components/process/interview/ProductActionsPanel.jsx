@@ -576,7 +576,7 @@ export default function ProductActionsPanel({
 
   function getTotalSteps(draft) {
     if (!draft || typeof draft !== 'object') return 0;
-   turn Object.keys(draft).length;
+    return Object.keys(draft).length;
   }
 
   async function handleResetBatchDraft() {
