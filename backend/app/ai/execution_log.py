@@ -13,7 +13,7 @@ AI_EXECUTION_STATUSES = {"queued", "running", "success", "error", "cancelled"}
 DEFAULT_AI_RATE_LIMITS: Dict[str, Dict[str, int]] = {
     "default": {"window_sec": 3600, "max_executions": 60},
     "ai.path_report": {"window_sec": 3600, "max_executions": 20},
-    "ai.product_actions.suggest": {"window_sec": 3600, "max_executions": 240},
+    "ai.product_actions.suggest": {"window_sec": 3600, "max_executions": 3000},
 }
 
 

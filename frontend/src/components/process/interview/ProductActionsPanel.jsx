@@ -13,7 +13,7 @@ import {
   listProductActionsForStep,
   normalizeProductActionsList,
 } from "../../../features/process/analysis/productActionsModel.js";
-import { apiSuggestProductActions } from "../../../lib/api.js";
+import { apiSuggestProductActions, apiLoadBatchDraft, apiSaveBatchDraft } from "../../../lib/api.js";
 import { toArray, toText } from "./utils";
 
 const FIELD_CONFIGS = [
@@ -349,14 +349,24 @@ export default function ProductActionsPanel({
       setSelectedAiRowIds(new Set());
       setAiStatus(null);
       setAiLoading(false);
-      setAiProgress(null);
-      setAiDiagnostics(null);
+    agnostics
       setBatchDraft(null);
       setBatchProgress(null);
       setBatchStatus(null);
       setBatchRunning(false);
     }
   }, [selectedStep]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    apiLoadBatchDraft(sessionId).then(result => {
+      if (result?.ok && result?.draft && typeof result.draft === 'object') {
+        setBatchDraft(result.draft);
+      }
+    }).catch(() => {
+      // Ignore load errors
+    });
+  }, [sessionId]);
 
   const selectedBinding = deriveProductActionBindingFromStep(selectedStep);
   const actionCount = productActions.length;
@@ -373,26 +383,43 @@ export default function ProductActionsPanel({
     return Object.fromEntries(fields.map((field) => [field.key, field]));
   }, []);
 
-  async function handleBatchSuggestAiProductActions(scope = "without_actions") {
+  async function handleBatchSuggestAiProductActions(scope = "without_actions", resume = false) {
     if (!sessionId || batchRunning) return;
+
+    // Load existing results if resume
+    let results = resume && batchDraft && typeof batchDraft === 'object' ? { ...batchDraft } : {};
+
+    // Filter out already processed steps
+    const processedStepIds = new Set(
+      Object.keys(results).filter(sid =>
+        results[sid]?.status === "success" ||
+        results[sid]?.status ped_existing_action"
+      )
+    );
+
     const skippedSteps = scope === "without_actions"
       ? steps.filter((step) => {
           const stepId = toText(step?.id);
+          if (resume && processedStepIds.has(stepId)) return false; // Skip already processed
           return productActions.some((pa) => toText(pa.step_id || pa.stepId) === stepId);
         })
       : [];
     const targetSteps = scope === "without_actions"
       ? steps.filter((step) => {
           const stepId = toText(step?.id);
+          if (resume && processedStepIds.has(stepId)) return false; // Skip already processed
           return !productActions.some((pa) => toText(pa.step_id || pa.stepId) === stepId);
         })
-      : steps;
+      : steps.filter(step => !processedStepIds.has(toText(step?.id)));
+
     if (!targetSteps.length && !skippedSteps.length) return;
     setBatchRunning(true);
-    setBatchDraft(null);
-    setBatchStatus({ type: "saving", text: "Запускаем AI по шагам…" });
+    if (!resume) {
+      setBatchDraft(null);
+      results = {};
+    }
+    setBatchStatus({ type: "saving", text: resume ? "Продолжаем AI по шагам…" : "Запускаем AI по шагам…" });
     setBatchProgress({ current: 0, total: targetSteps.length, currentStepName: "" });
-    const results = {};
     let rateLimitHit = null;
     for (let i = 0; i < targetSteps.length; i++) {
       const step = targetSteps[i];
@@ -432,6 +459,15 @@ export default function ProductActionsPanel({
         rateLimitObj: isRateLimit ? rateLimitObj : null,
         selectedIds: new Set(rows.filter((r) => !toText(r.duplicate_of)).map((r) => toText(r.id)).filter(Boolean)),
       };
+
+      // Save batch draft after each step
+      try {
+        await apiSaveBatchDraft(sessionId, results);
+      } catch (saveError) {
+        // Continue even if save fails
+        console.warn('Failed to save batch draft:', saveError);
+      }
+
       if (isRateLimit) {
         rateLimitHit = rateLimitObj;
         for (let j = i + 1; j < targetSteps.length; j++) {
@@ -524,6 +560,33 @@ export default function ProductActionsPanel({
         type: "error",
         text: toText(result?.error) || `Не удалось применить действия для шага «${entry.stepName}».`,
       });
+    }
+  }
+
+  function hasPendingSteps(draft) {
+    if (!draft || typeof draft !== 'object') return false;
+    const entries = Object.values(draft);
+    return entries.some(e => e.status === "not_processed" || e.status === "rate_limited");
+  }
+
+  function getProcessedCount(draft) {
+    if (!draft || typeof draft !== 'object') return 0;
+    return Object.values(draft).filter(e => e.status === "success").length;
+  }
+
+  function getTotalSteps(draft) {
+    if (!draft || typeof draft !== 'object') return 0;
+   turn Object.keys(draft).length;
+  }
+
+  async function handleResetBatchDraft() {
+    setBatchDraft(null);
+    setBatchStatus(null);
+    setBatchProgress(null);
+    try {
+      await apiSaveBatchDraft(sessionId, null);
+    } catch (error) {
+      console.warn('Failed to clear batch draft:', error);
     }
   }
 
@@ -856,6 +919,33 @@ export default function ProductActionsPanel({
               </div>
             </div>
           </div>
+          ) : null}
+
+          {batchDraft && !batchRunning && hasPendingSteps(batchDraft) ? (
+            <div className="productActionsBatchResume" data-testid="product-actions-batch-resume">
+              <div className="productActionsEditorTitle">AI по шагам — прогресс</div>
+              <div className="productActionsSub">
+                Обработано: {getProcessedCount(batchDraft)} из {getTotalSteps(batchDraft)} шагов
+              </div>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                <button
+                  type="button"
+                  className="productActionsToolbarBtn"
+                  onClick={() => handleBatchSuggestAiProductActions("without_actions", true)}
+                  data-testid="product-actions-batch-resume-btn"
+                >
+                  Продолжить
+                </button>
+                <button
+                  type="button"
+                  className="productActionsToolbarBtn"
+                  onClick={handleResetBatchDraft}
+                  data-testid="product-actions-batch-reset-btn"
+                >
+                  Сбросить прогресс
+                </button>
+              </div>
+            </div>
           ) : null}
 
           {batchRunning && batchProgress ? (
