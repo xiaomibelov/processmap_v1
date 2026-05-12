@@ -114,6 +114,7 @@ export const apiRoutes = {
     notesExtractionPreview: (sessionId) => `/api/sessions/${encode(sessionId)}/notes/extraction-preview`,
     notesExtractionApply: (sessionId) => `/api/sessions/${encode(sessionId)}/notes/extraction-apply`,
     productActionsSuggest: (sessionId) => `/api/sessions/${encode(sessionId)}/analysis/product-actions/suggest`,
+    productActionsBatchDraft: (sessionId) => `/api/sessions/${encode(sessionId)}/analysis/product-actions/batch-draft`,
     noteAggregate: (sessionId) => `/api/sessions/${encode(sessionId)}/note-aggregate`,
     mentionableUsers: (sessionId) => `/api/sessions/${encode(sessionId)}/mentionable-users`,
     noteThreads: (sessionId, filters = {}) => withQuery(`/api/sessions/${encode(sessionId)}/note-threads`, {

@@ -543,6 +543,32 @@ export async function apiBulkSuggestProductActions(payload = {}) {
   };
 }
 
+export async function apiLoadBatchDraft(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.productActionsBatchDraft(sid), { method: "GET" }));
+  if (!r.ok) {
+    return { ...r, draft: null };
+  }
+  return {
+    ok: true,
+    status: r.status,
+    draft: isPlainObject(r.data?.draft) ? r.data.draft : null,
+  };
+}
+
+export async function apiSaveBatchDraft(sessionId, draft) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const body = { draft: draft || null };
+  const r = okOrError(await request(apiRoutes.sessions.productActionsBatchDraft(sid), { method: "PUT", body }));
+  return {
+    ok: r.ok,
+    status: r.status,
+    saved: r.ok && r.data?.saved === true,
+  };
+}
+
 export async function apiListNoteThreads(sessionId, filters = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
