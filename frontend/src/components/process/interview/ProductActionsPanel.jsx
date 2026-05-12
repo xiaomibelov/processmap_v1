@@ -426,10 +426,10 @@ export default function ProductActionsPanel({
     // Load existing results if resume
     let results = resume && batchDraft && typeof batchDraft === 'object' ? { ...batchDraft } : {};
 
-    // Filter out already procesd steps
+    // Filter out already processed steps
     const processedStepIds = new Set(
       Object.keys(results).filter(sid =>
-        results[sid]?.status === "success" ||
+        results[sid]?.status === "ready" ||
         results[sid]?.status === "skipped_existing_action"
       )
     );
@@ -610,7 +610,7 @@ export default function ProductActionsPanel({
 
   function getProcessedCount(draft) {
     if (!draft || typeof draft !== 'object') return 0;
-    return Object.values(draft).filter(e => e.status === "success").length;
+    return Object.values(draft).filter(e => e.status === "ready" || e.status === "skipped_existing_action").length;
   }
 
   function getTotalSteps(draft) {
