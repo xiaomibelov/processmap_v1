@@ -41,6 +41,10 @@ class ProductActionsBulkSuggestIn(BaseModel):
     options: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
+class BatchDraftIn(BaseModel):
+    draft: Optional[Dict[str, Any]] = None
+
+
 def _text(value: Any) -> str:
     return str(value or "").strip()
 
@@ -769,4 +773,53 @@ def suggest_product_actions_bulk(inp: ProductActionsBulkSuggestIn, request: Requ
         "error_count": len(results) - success_count,
         "suggestions_count": suggestions_count,
         "results": results,
+    }
+
+
+@router.get("/api/sessions/{session_id}/analysis/product-actions/batch-draft")
+def get_batch_draft(session_id: str, request: Request) -> Dict[str, Any]:
+    """Load batct from session analysis state."""
+    require_authenticated_user(request)
+    org_id = request_active_org_id(request)
+    require_org_member_for_enterprise(request, org_id)
+    session = _load_session_for_request(request, session_id, org_id)
+
+    analysis = _as_dict(getattr(session, "analysis", None))
+    batch_draft = _as_dict(analysis.get("product_actions_batch_draft"))
+
+    return {
+        "ok": True,
+        "draft": batch_draft if batch_draft else None,
+    }
+
+
+@router.put("/api/sessions/{session_id}/analysis/product-actions/batch-draft")
+def save_batch_draft(session_id: str, inp: BatchDraftIn, request: Request) -> Dict[str, Any]:
+    """Save batch AI draft to session analysis state."""
+    require_authenticated_user(request)
+    org_id = request_active_org_id(request)
+    require_org_member_for_enterprise(request, org_id)
+    session = _load_session_for_request(request, session_id, org_id)
+
+    project_id = _text(getattr(session, "project_id", ""))
+    storage = get_project_storage(project_id, org_id)
+
+    # Load current analysis
+    analysis = _as_dict(getattr(session, "analysis", None))
+
+    # Update batch draft
+    if inp.draft is None:
+        # Clear batch draft
+        analysis.pop("product_actions_batch_draft", None)
+    else:
+        # Save batch draft
+        analysis["product_actions_batch_draft"] = inp.draft
+
+    # Save back to session
+    session.analysis = analysis
+    storage.save_session(session)
+
+    return {
+        "ok": True,
+        "saved": inp.draft is not None,
     }
