@@ -349,7 +349,8 @@ export default function ProductActionsPanel({
       setSelectedAiRowIds(new Set());
       setAiStatus(null);
       setAiLoading(false);
-    agnostics
+      setAiProgress(null);
+      setAiDiagnostics(null);
       setBatchDraft(null);
       setBatchProgress(null);
       setBatchStatus(null);
