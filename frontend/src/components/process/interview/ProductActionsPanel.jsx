@@ -121,9 +121,44 @@ function isIncompleteAction(rowRaw) {
   return !hasMeaningfulProductActionDraft(rowRaw);
 }
 
-function actionTitle(rowRaw) {
+function actionTitle(rowRaw, stepContext = null) {
   const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
-  return toText(row.product_name) || toText(row.action_object) || toText(row.action_type) || "Неполное действие";
+
+  // Prefer explicit action_title or action_label if available
+  const explicitTitle = toText(row.action_title) || toText(row.action_label);
+  if (explicitTitle) return explicitTitle;
+
+  // Build action-based title from action verb/type/method + object/product
+  const actionVerb = toText(row.action_type);
+  const actionMethod = toText(row.action_method);
+  const actionObject = toText(row.action_object) || toText(row.product_name);
+
+  if (actionVerb && actionObject) {
+    return `${actionVerb} ${actionObject}`;
+  }
+
+  if (actionMethod && actionObject) {
+    return `${actionMethod} ${actionObject}`;
+  }
+
+  // Fallback: derive from step context + action type + object
+  if (stepContext) {
+    const stepTitle = toText(stepContext.action || stepContext.label || stepContext.title);
+    if (stepTitle && actionObject) {
+      return `${stepTitle}: ${actionObject}`;
+    }
+  }
+
+  // Last resort fallbacks
+  if (actionVerb) return actionVerb;
+  if (actionObject) return `Действие с ${actionObject}`;
+
+  return "Неполное действие";
+}
+
+function actionProductName(rowRaw) {
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  return toText(row.product_name);
 }
 
 function actionSummary(rowRaw) {
@@ -305,6 +340,8 @@ export default function ProductActionsPanel({
   const draftResetKey = `${toText(selectedStep?.id)}::${toText(editingAction?.id)}`;
   const lastDraftResetKeyRef = useRef(draftResetKey);
   const aiRequestStepIdRef = useRef("");
+  const aiInFlightRef = useRef(false);
+  const batchInFlightRef = useRef(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [actionsScope, setActionsScope] = useState("step");
   const [status, setStatus] = useState(null);
@@ -343,6 +380,7 @@ export default function ProductActionsPanel({
     const currentStepId = toText(selectedStep?.id);
     if (!currentStepId) return;
     if (aiDraftStepIdRef.current !== currentStepId) {
+      aiInFlightRef.current = false;
       setAiDraft(null);
       aiDraftStepIdRef.current = "";
       setAiRows([]);
@@ -351,10 +389,8 @@ export default function ProductActionsPanel({
       setAiLoading(false);
       setAiProgress(null);
       setAiDiagnostics(null);
-      setBatchDraft(null);
-      setBatchProgress(null);
-      setBatchStatus(null);
-      setBatchRunning(false);
+      // Do NOT clear batchDraft/batchProgress/batchStatus/batchRunning here
+      // Batch draft contains results for multiple steps and should persist across step changes
     }
   }, [selectedStep]);
 
@@ -385,15 +421,15 @@ export default function ProductActionsPanel({
   }, []);
 
   async function handleBatchSuggestAiProductActions(scope = "without_actions", resume = false) {
-    if (!sessionId || batchRunning) return;
+    if (!sessionId || batchRunning || batchInFlightRef.current) return;
 
     // Load existing results if resume
     let results = resume && batchDraft && typeof batchDraft === 'object' ? { ...batchDraft } : {};
 
-    // Filter out already procesd steps
+    // Filter out already processed steps
     const processedStepIds = new Set(
       Object.keys(results).filter(sid =>
-        results[sid]?.status === "success" ||
+        results[sid]?.status === "ready" ||
         results[sid]?.status === "skipped_existing_action"
       )
     );
@@ -414,6 +450,7 @@ export default function ProductActionsPanel({
       : steps.filter(step => !processedStepIds.has(toText(step?.id)));
 
     if (!targetSteps.length && !skippedSteps.length) return;
+    batchInFlightRef.current = true;
     setBatchRunning(true);
     if (!resume) {
       setBatchDraft(null);
@@ -450,7 +487,7 @@ export default function ProductActionsPanel({
       const errorCode = draftResult ? null : toText(result?.error || result?.draft?.error);
       const isRateLimit = errorCode === "ai_rate_limit_exceeded";
       const rateLimitObj = result?.rate_limit || result?.draft?.rate_limit || null;
-      const entryStatus = isRateLimit ? "rate_limited" : errorCode ? "failed" : rows.length > 0 ? "success" : "success";
+      const entryStatus = isRateLimit ? "rate_limited" : errorCode ? "failed" : "ready";
       results[stepId] = {
         step,
         stepName,
@@ -487,6 +524,7 @@ export default function ProductActionsPanel({
         break;
       }
     }
+    batchInFlightRef.current = false;
     setBatchRunning(false);
     setBatchProgress(null);
     for (const step of skippedSteps) {
@@ -504,14 +542,14 @@ export default function ProductActionsPanel({
     }
     setBatchDraft(results);
     const allEntries = Object.values(results);
-    const successCount = allEntries.filter((s) => s.status === "success").length;
+    const readyCount = allEntries.filter((s) => s.status === "ready").length;
     const failedCount = allEntries.filter((s) => s.status === "failed").length;
     const rateLimitedCount = allEntries.filter((s) => s.status === "rate_limited").length;
     const notProcessedCount = allEntries.filter((s) => s.status === "not_processed").length;
     const skippedCount = skippedSteps.length;
     const totalRows = allEntries.reduce((sum, s) => sum + s.rows.length, 0);
     const hasError = failedCount > 0 || rateLimitedCount > 0;
-    let statusText = `Batch AI: ${successCount} шагов выполнено`;
+    let statusText = `Batch AI: ${readyCount} шагов выполнено`;
     if (skippedCount) statusText += `, ${skippedCount} пропущено`;
     if (failedCount) statusText += `, ${failedCount} ошибок`;
     if (rateLimitedCount) statusText += `, ${rateLimitedCount} ост. лимитом`;
@@ -572,7 +610,7 @@ export default function ProductActionsPanel({
 
   function getProcessedCount(draft) {
     if (!draft || typeof draft !== 'object') return 0;
-    return Object.values(draft).filter(e => e.status === "success").length;
+    return Object.values(draft).filter(e => e.status === "ready" || e.status === "skipped_existing_action").length;
   }
 
   function getTotalSteps(draft) {
@@ -684,7 +722,7 @@ export default function ProductActionsPanel({
   }
 
   async function handleSuggestAiProductActions() {
-    if (!sessionId || aiLoading) return;
+    if (!sessionId || aiLoading || aiInFlightRef.current) return;
     if (!selectedStep) {
       setAiStatus({ type: "error", text: "Выберите шаг процесса перед запуском AI." });
       return;
@@ -693,6 +731,7 @@ export default function ProductActionsPanel({
     const requestStepId = toText(requestStep?.id);
     const requestStepBpmnId = toText(requestStep?.node_id || requestStep?.nodeId || requestStep?.bpmn_ref);
     aiRequestStepIdRef.current = requestStepId;
+    aiInFlightRef.current = true;
     setAiLoading(true);
     setAiDraft(null);
     setAiRows([]);
@@ -722,6 +761,7 @@ export default function ProductActionsPanel({
       };
     }
     if (aiRequestStepIdRef.current !== requestStepId || selectedStepIdRef.current !== requestStepId) {
+      aiInFlightRef.current = false;
       setAiLoading(false);
       setAiDraft(null);
       aiDraftStepIdRef.current = "";
@@ -732,6 +772,7 @@ export default function ProductActionsPanel({
       setAiDiagnostics(null);
       return;
     }
+    aiInFlightRef.current = false;
     setAiLoading(false);
     setAiProgress(aiProgressStep("receive", "Ответ AI получен, проверяем результат."));
     if (!result?.ok || result?.draft?.ok === false) {
@@ -1014,8 +1055,10 @@ export default function ProductActionsPanel({
                       <span className="productActionsAiBadge notProcessed">Не выполнен</span>
                     ) : entry.status === "failed" ? (
                       <span className="productActionsAiBadge error">Ошибка</span>
-                    ) : entry.rows.length > 0 ? (
-                      <span className="productActionsAiBadge success">Готово: {entry.rows.length}</span>
+                    ) : entry.status === "ready" ? (
+                      <span className="productActionsAiBadge success">
+                        {entry.rows.length > 0 ? `Готово: ${entry.rows.length}` : "Готово: нет предложений"}
+                      </span>
                     ) : (
                       <span className="productActionsAiCounter">{entry.rows.length} предложений</span>
                     )}
@@ -1065,12 +1108,16 @@ export default function ProductActionsPanel({
                                 </label>
                                 <div className="productActionsAiCardMain">
                                   <div className="productActionsAiCardTitle">
-                                    {toText(row.product_name) || toText(row.action_type) || "Неполное действие"}
+                                    {actionTitle(row, entry.step)}
                                     {duplicate ? <span className="productActionsAiBadge duplicate">Дубль</span> : null}
                                   </div>
                                   <div className="productActionsAiCardChips">
+                                    {actionProductName(row) ? <span className="productActionsAiChip product">{actionProductName(row)}</span> : null}
+                                    {toText(row.product_group) ? <span className="productActionsAiChip">{row.product_group}</span> : null}
                                     {toText(row.action_type) ? <span className="productActionsAiChip">{row.action_type}</span> : null}
                                     {toText(row.action_stage) ? <span className="productActionsAiChip">{row.action_stage}</span> : null}
+                                    {toText(row.action_object_category) ? <span className="productActionsAiChip">{row.action_object_category}</span> : null}
+                                    {toText(row.action_method) ? <span className="productActionsAiChip">{row.action_method}</span> : null}
                                     {toText(row.role) ? <span className="productActionsAiChip role">{row.role}</span> : null}
                                   </div>
                                   {duplicate && toText(row.duplicate_reason) ? (
@@ -1160,7 +1207,7 @@ export default function ProductActionsPanel({
                           </label>
                           <div className="productActionsAiCardMain">
                             <div className="productActionsAiCardTitle">
-                              {toText(row.product_name) || toText(row.action_type) || "Неполное действие"}
+                              {actionTitle(row, selectedStep)}
                               {duplicate ? (
                                 <span className="productActionsAiBadge duplicate">Дубль</span>
                               ) : missingFields.length ? (
@@ -1168,6 +1215,7 @@ export default function ProductActionsPanel({
                               ) : null}
                             </div>
                             <div className="productActionsAiCardChips">
+                              {actionProductName(row) ? <span className="productActionsAiChip product">{actionProductName(row)}</span> : null}
                               {toText(row.product_group) ? <span className="productActionsAiChip">{row.product_group}</span> : null}
                               {toText(row.action_type) ? <span className="productActionsAiChip">{row.action_type}</span> : null}
                               {toText(row.action_stage) ? <span className="productActionsAiChip">{row.action_stage}</span> : null}

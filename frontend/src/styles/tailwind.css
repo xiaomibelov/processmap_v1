@@ -856,6 +856,13 @@
   color: hsl(var(--accent2) / 0.9);
 }
 
+.productActionsAiChip.product {
+  border-color: rgba(168,85,247,.30);
+  background: rgba(168,85,247,.12);
+  color: rgba(192,132,252,.92);
+  font-weight: 600;
+}
+
 .productActionsAiCardReason {
   color: var(--analysis-muted);
   font-size: 11px;
@@ -10450,6 +10457,442 @@
   background: rgba(96,165,250,.72);
   margin-right: 6px;
   flex: 0 0 auto;
+}
+
+/* ── P4: RAG Panel UI improvements ────────────────────────────────────────── */
+.ragSearchPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 12px;
+}
+
+.ragSearchForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ragSearchRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.ragSourceTypeSelect {
+  flex: 0 0 auto;
+  min-width: 140px;
+  padding: 8px 12px;
+  border: 1px solid rgba(148,163,184,.25);
+  border-radius: 6px;
+  background: rgba(15,23,42,.60);
+  color: rgba(226,232,240,.92);
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.ragSourceTypeSelect:hover:not(:disabled) {
+  border-color: rgba(148,163,184,.40);
+}
+
+.ragSourceTypeSelect:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ragSearchInput {
+  flex: 1 1 auto;
+  padding: 8px 12px;
+  border: 1px solid rgba(148,163,184,.25);
+  border-radius: 6px;
+  background: rgba(15,23,42,.60);
+  color: rgba(226,232,240,.92);
+  font-size: 14px;
+  transition: border-color 0.15s ease;
+}
+
+.ragSearchInput:focus {
+  outline: none;
+  border-color: rgba(96,165,250,.50);
+}
+
+.ragSearchInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ragSearchBtn {
+  flex: 0 0 auto;
+  padding: 8px 20px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(59,130,246,.85);
+  color: rgba(255,255,255,.96);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.ragSearchBtn:hover:not(:disabled) {
+  background: rgba(59,130,246,1);
+}
+
+.ragSearchBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ragIndexRow {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding-top: 4px;
+  border-top: 1px solid rgba(148,163,184,.12);
+}
+
+.ragIndexBtn {
+  flex: 0 0 auto;
+  padding: 6px 16px;
+  border: 1px solid rgba(148,163,184,.25);
+  border-radius: 6px;
+  background: rgba(15,23,42,.40);
+  color: rgba(203,213,225,.88);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ragIndexBtn:hover:not(:disabled) {
+  border-color: rgba(148,163,184,.40);
+  background: rgba(15,23,42,.60);
+}
+
+.ragIndexBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ragIndexStatus {
+  flex: 1 1 auto;
+  font-size: 13px;
+  color: rgba(148,163,184,.82);
+}
+
+.ragIndexStatus.success {
+  color: rgba(34,197,94,.88);
+}
+
+.ragIndexStatus.error {
+  color: rgba(248,113,113,.88);
+}
+
+.ragResultsArea {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 120px;
+}
+
+.ragSearchingIndicator {
+  padding: 24px;
+  text-align: center;
+  color: rgba(148,163,184,.72);
+  font-size: 14px;
+}
+
+.ragSearchError {
+  padding: 12px;
+  border-radius: 6px;
+  background: rgba(239,68,68,.12);
+  border: 1px solid rgba(239,68,68,.25);
+  color: rgba(248,113,113,.92);
+  font-size: 14px;
+}
+
+.ragInitialHint {
+  padding: 24px;
+  text-align: center;
+  color: rgba(148,163,184,.62);
+  font-size: 14px;
+}
+
+.ragResultsEmpty {
+  padding: 24px;
+  text-align: center;
+  color: rgba(148,163,184,.72);
+  font-size: 14px;
+}
+
+.ragResultsTotal {
+  font-size: 13px;
+  color: rgba(148,163,184,.82);
+  font-weight: 500;
+}
+
+.ragResultsList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ragResultItem {
+  padding: 12px;
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: 8px;
+  background: rgba(15,23,42,.35);
+  transition: border-color 0.15s ease;
+}
+
+.ragResultItem:hover {
+  border-color: rgba(148,163,184,.30);
+}
+
+.ragResultHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.ragResultTitle {
+  flex: 1 1 auto;
+  font-size: 15px;
+  font-weight: 500;
+  color: rgba(226,232,240,.94);
+  line-height: 1.4;
+}
+
+.ragResultBadges {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ragResultTag {
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(59,130,246,.18);
+  color: rgba(147,197,253,.92);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ragScorePill {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ragScorePill.high {
+  background: rgba(34,197,94,.18);
+  color: rgba(74,222,128,.92);
+}
+
+.ragScorePill.medium {
+  background: rgba(234,179,8,.18);
+  color: rgba(250,204,21,.92);
+}
+
+.ragScorePill.low {
+  background: rgba(148,163,184,.18);
+  color: rgba(203,213,225,.82);
+}
+
+.ragResultMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: rgba(148,163,184,.82);
+}
+
+.ragResultMetaItem {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ragResultMetaLabel {
+  font-weight: 500;
+  color: rgba(148,163,184,.92);
+}
+
+.ragResultMetaRaw {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: rgba(148,163,184,.72);
+  word-break: break-all;
+}
+
+.ragCopyBtn {
+  padding: 4px 8px;
+  border: 1px solid rgba(148,163,184,.20);
+  border-radius: 4px;
+  background: rgba(15,23,42,.40);
+  color: rgba(203,213,225,.82);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ragCopyBtn:hover {
+  border-color: rgba(148,163,184,.35);
+  background: rgba(15,23,42,.60);
+  color: rgba(226,232,240,.92);
+}
+
+.ragResultExcerpt {
+  padding: 10px;
+  border-radius: 6px;
+  background: rgba(15,23,42,.50);
+  color: rgba(203,213,225,.88);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Light theme overrides for RAG panel */
+@media (prefers-color-scheme: light) {
+  .ragSearchSection {
+    border-color: rgba(59,130,246,.22);
+    background: rgba(239,246,255,.65);
+  }
+
+  .ragSearchSection > summary {
+    color: rgba(29,78,216,.92);
+  }
+
+  .ragSearchSection > summary::before {
+    background: rgba(59,130,246,.72);
+  }
+
+  .ragSourceTypeSelect,
+  .ragSearchInput {
+    background: rgba(255,255,255,.85);
+    color: rgba(15,23,42,.92);
+    border-color: rgba(203,213,225,.50);
+  }
+
+  .ragSourceTypeSelect:hover:not(:disabled) {
+    border-color: rgba(148,163,184,.65);
+  }
+
+  .ragSearchInput:focus {
+    border-color: rgba(59,130,246,.60);
+  }
+
+  .ragIndexRow {
+    border-top-color: rgba(203,213,225,.30);
+  }
+
+  .ragIndexBtn {
+    background: rgba(248,250,252,.70);
+    color: rgba(51,65,85,.88);
+    border-color: rgba(203,213,225,.50);
+  }
+
+  .ragIndexBtn:hover:not(:disabled) {
+    background: rgba(241,245,249,.85);
+    border-color: rgba(148,163,184,.65);
+  }
+
+  .ragIndexStatus {
+    color: rgba(71,85,105,.82);
+  }
+
+  .ragIndexStatus.success {
+    color: rgba(22,163,74,.88);
+  }
+
+  .ragIndexStatus.error {
+    color: rgba(220,38,38,.88);
+  }
+
+  .ragSearchingIndicator,
+  .ragInitialHint,
+  .ragResultsEmpty {
+    color: rgba(100,116,139,.72);
+  }
+
+  .ragSearchError {
+    background: rgba(254,226,226,.65);
+    border-color: rgba(239,68,68,.35);
+    color: rgba(185,28,28,.92);
+  }
+
+  .ragResultsTotal {
+    color: rgba(71,85,105,.88);
+  }
+
+  .ragResultItem {
+    background: rgba(255,255,255,.60);
+    border-color: rgba(203,213,225,.40);
+  }
+
+  .ragResultItem:hover {
+    border-color: rgba(148,163,184,.55);
+  }
+
+  .ragResultTitle {
+    color: rgba(15,23,42,.94);
+  }
+
+  .ragResultTag {
+    background: rgba(59,130,246,.15);
+    color: rgba(29,78,216,.92);
+  }
+
+  .ragScorePill.high {
+    background: rgba(34,197,94,.15);
+    color: rgba(22,101,52,.92);
+  }
+
+  .ragScorePill.medium {
+    background: rgba(234,179,8,.15);
+    color: rgba(133,77,14,.92);
+  }
+
+  .ragScorePill.low {
+    background: rgba(148,163,184,.15);
+    color: rgba(71,85,105,.88);
+  }
+
+  .ragResultMeta {
+    color: rgba(100,116,139,.82);
+  }
+
+  .ragResultMetaLabel {
+    color: rgba(71,85,105,.92);
+  }
+
+  .ragResultMetaRaw {
+    color: rgba(100,116,139,.72);
+  }
+
+  .ragCopyBtn {
+    background: rgba(248,250,252,.70);
+    color: rgba(71,85,105,.82);
+    border-color: rgba(203,213,225,.45);
+  }
+
+  .ragCopyBtn:hover {
+    background: rgba(241,245,249,.85);
+    color: rgba(51,65,85,.92);
+    border-color: rgba(148,163,184,.60);
+  }
+
+  .ragResultExcerpt {
+    background: rgba(248,250,252,.70);
+    color: rgba(51,65,85,.88);
+  }
 }
 
 /* ── P4: batch skipped badge ──────────────────────────────────────────────── */
