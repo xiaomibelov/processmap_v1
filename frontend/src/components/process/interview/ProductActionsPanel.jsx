@@ -389,11 +389,11 @@ export default function ProductActionsPanel({
     // Load existing results if resume
     let results = resume && batchDraft && typeof batchDraft === 'object' ? { ...batchDraft } : {};
 
-    // Filter out already processed steps
+    // Filter out already procesd steps
     const processedStepIds = new Set(
       Object.keys(results).filter(sid =>
         results[sid]?.status === "success" ||
-        results[sid]?.status ped_existing_action"
+        results[sid]?.status === "skipped_existing_action"
       )
     );
 
