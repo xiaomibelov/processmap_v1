@@ -67,22 +67,22 @@ test("UTILS: laneLabel still returns full label with name", () => {
 
 test("JSX: laneLabelShort is imported in TimelineTable.jsx", () => {
   assert.ok(
-    tableJsx.includes("laneLabelShort"),
-    "laneLabelShort must be imported and used in TimelineTable.jsx",
+    tableJsx.includes("laneCellDisplay"),
+    "laneCellDisplay must be imported and used in TimelineTable.jsx",
   );
 });
 
 test("JSX: lane badge renders laneLabelShort (not laneLabel) as visible text", () => {
   assert.ok(
-    tableJsx.includes("laneLabelShort(step.lane_name, step.lane_idx)"),
-    "Lane badge visible text must use laneLabelShort, not laneLabel",
+    tableJsx.includes("{laneDisplay.text}"),
+    "Lane badge visible text must use compact laneCellDisplay text",
   );
 });
 
 test("JSX: lane badge has title attribute with full laneLabel for tooltip", () => {
   assert.ok(
-    tableJsx.includes("title={laneLabel(step.lane_name, step.lane_idx)}"),
-    "Lane badge must have title= with full laneLabel for tooltip",
+    tableJsx.includes("title={laneDisplay.tooltip}"),
+    "Lane badge must have title= with full lane tooltip",
   );
 });
 
@@ -179,14 +179,14 @@ test("CSS NO-LAYOUT-SHIFT: interviewInlineTimeSummary uses visibility (not max-h
 
 // --- appVersion contract ---
 
-test("appVersion: currentVersion bumped to v1.0.123", () => {
+test("appVersion: currentVersion bumped to v1.0.126", () => {
   assert.ok(
-    appVersionSrc.includes('"v1.0.123"'),
-    "appVersion should be bumped to v1.0.123",
+    appVersionSrc.includes('"v1.0.126"'),
+    "appVersion should be bumped to v1.0.126",
   );
   assert.ok(
-    appVersionSrc.includes('currentVersion: "v1.0.123"'),
-    "currentVersion field should be v1.0.123",
+    appVersionSrc.includes('currentVersion: "v1.0.126"'),
+    "currentVersion field should be v1.0.126",
   );
 });
 

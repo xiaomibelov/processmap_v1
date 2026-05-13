@@ -49,7 +49,7 @@ test("CSS: analysisStepListTable isSelected background uses lane-accent <= 10% m
   }
 });
 
-test("CSS: interviewLaneFlow in analysisStepListTable hidden by default (max-height: 0)", () => {
+test("CSS: interviewLaneFlow in analysisStepListTable hidden by default without geometry reveal", () => {
   assert.ok(
     css.includes(".analysisStepListTable .interviewLaneFlow"),
     "Lane flow rule should exist in analysisStepListTable context",
@@ -59,9 +59,10 @@ test("CSS: interviewLaneFlow in analysisStepListTable hidden by default (max-hei
   );
   assert.ok(laneFlowBlock, "Lane flow block should exist");
   assert.ok(
-    laneFlowBlock[0].includes("max-height: 0"),
-    "Lane flow should be hidden by default (max-height: 0)",
+    laneFlowBlock[0].includes("visibility: hidden"),
+    "Lane flow should be hidden by default with visibility",
   );
+  assert.ok(!laneFlowBlock[0].includes("max-height"), "Lane flow must not use max-height");
   assert.ok(
     laneFlowBlock[0].includes("opacity: 0"),
     "Lane flow should be transparent by default",
@@ -93,9 +94,10 @@ test("CSS: BPMN font-mono id hidden by default (opacity: 0)", () => {
     "BPMN technical id should be hidden by default",
   );
   assert.ok(
-    fontMonoBlock[0].includes("max-height: 0"),
-    "BPMN technical id should have max-height: 0 by default",
+    fontMonoBlock[0].includes("visibility: hidden"),
+    "BPMN technical id should use visibility:hidden by default",
   );
+  assert.ok(!fontMonoBlock[0].includes("max-height"), "BPMN technical id must not use max-height");
 });
 
 test("CSS: BPMN font-mono id shown on node cell hover", () => {
@@ -111,9 +113,10 @@ test("CSS: interviewInlineTimeSummary hidden by default", () => {
   );
   assert.ok(timeSummaryBlock, "Inline time summary rule should exist");
   assert.ok(
-    timeSummaryBlock[0].includes("max-height: 0"),
+    timeSummaryBlock[0].includes("visibility: hidden"),
     "Inline time summary should be hidden by default",
   );
+  assert.ok(!timeSummaryBlock[0].includes("max-height"), "Inline time summary must not use max-height");
   assert.ok(
     timeSummaryBlock[0].includes("opacity: 0"),
     "Inline time summary should be transparent by default",
@@ -199,14 +202,14 @@ test("CSS: analysisStepPrimaryCell gap is compact (<=4px)", () => {
   }
 });
 
-test("appVersion: currentVersion bumped to v1.0.121", () => {
+test("appVersion: currentVersion bumped to v1.0.126", () => {
   assert.ok(
-    appVersionSrc.includes('"v1.0.121"'),
-    "appVersion should be bumped to v1.0.121",
+    appVersionSrc.includes('"v1.0.126"'),
+    "appVersion should be bumped to v1.0.126",
   );
   assert.ok(
-    appVersionSrc.includes("currentVersion: \"v1.0.121\""),
-    "currentVersion field should be v1.0.121",
+    appVersionSrc.includes("currentVersion: \"v1.0.126\""),
+    "currentVersion field should be v1.0.126",
   );
 });
 
