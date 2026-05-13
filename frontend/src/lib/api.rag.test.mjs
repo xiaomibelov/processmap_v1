@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { apiRagSearch, apiRagIndex } from "./api.js";
+import { apiRagSearch, apiRagIndex, apiRagIndexProductActions } from "./api.js";
 
 // -------- apiRagSearch --------
 
@@ -182,6 +182,61 @@ test("apiRagIndex propagates HTTP 400 error", async () => {
   }
 });
 
+// -------- apiRagIndexProductActions --------
+
+test("apiRagIndexProductActions returns error when session_id is missing", async () => {
+  const r = await apiRagIndexProductActions({ action_ids: ["pa1"] });
+  assert.equal(r.ok, false);
+  assert.equal(r.error, "missing session_id");
+});
+
+test("apiRagIndexProductActions POSTs selected ids to product-actions index endpoint", async () => {
+  const prevFetch = globalThis.fetch;
+  const calls = [];
+  try {
+    globalThis.fetch = async (input, init) => {
+      calls.push({ url: String(input || ""), init });
+      return new Response(
+        JSON.stringify({ ok: true, requested: 2, indexed: 2, unchanged: 0, skipped: 0, failed: 0, chunks_created: 2, results: [] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+
+    const r = await apiRagIndexProductActions({ session_id: "sess_1", action_ids: ["pa1", "pa2"] });
+    assert.equal(r.ok, true);
+    assert.equal(r.indexed, 2);
+    assert.match(String(calls[0]?.url || ""), /\/api\/rag\/product-actions\/index$/);
+    const body = JSON.parse(String(calls[0]?.init?.body || "{}"));
+    assert.equal(body.session_id, "sess_1");
+    assert.deepEqual(body.action_ids, ["pa1", "pa2"]);
+    assert.equal(body.force, false);
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
+test("apiRagIndexProductActions can request all durable actions with an empty id list", async () => {
+  const prevFetch = globalThis.fetch;
+  const calls = [];
+  try {
+    globalThis.fetch = async (input, init) => {
+      calls.push({ url: String(input || ""), init });
+      return new Response(
+        JSON.stringify({ ok: true, requested: 3, indexed: 1, unchanged: 2, skipped: 0, failed: 0, chunks_created: 1, results: [] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+
+    const r = await apiRagIndexProductActions({ session_id: "sess_2" });
+    assert.equal(r.ok, true);
+    assert.equal(r.unchanged, 2);
+    const body = JSON.parse(String(calls[0]?.init?.body || "{}"));
+    assert.deepEqual(body.action_ids, []);
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
 // -------- apiRoutes.rag namespace --------
 
 test("apiRoutes.rag.search builds URL with q param", async () => {
@@ -201,4 +256,9 @@ test("apiRoutes.rag.search omits empty params", async () => {
 test("apiRoutes.rag.index returns static path", async () => {
   const { apiRoutes } = await import("./apiRoutes.js");
   assert.equal(apiRoutes.rag.index(), "/api/rag/index");
+});
+
+test("apiRoutes.rag.productActionsIndex returns static path", async () => {
+  const { apiRoutes } = await import("./apiRoutes.js");
+  assert.equal(apiRoutes.rag.productActionsIndex(), "/api/rag/product-actions/index");
 });

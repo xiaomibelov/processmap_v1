@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -95,6 +97,27 @@ class RagIndexIn(BaseModel):
     force: bool = Field(default=False)
 
 
+class ProductActionsRagIndexIn(BaseModel):
+    session_id: str = Field(..., description="Session containing accepted product actions")
+    action_ids: List[str] = Field(default_factory=list, description="Optional accepted product action ids to index")
+    force: bool = Field(default=False)
+
+
+def _stable_json_hash(value: Any) -> str:
+    raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _product_action_id(action: Any) -> str:
+    return _text(_as_dict(action).get("id"))
+
+
+def _load_session_product_actions(session: Any) -> List[Dict[str, Any]]:
+    interview = _as_dict(getattr(session, "interview", {}))
+    analysis = _as_dict(interview.get("analysis"))
+    return [_as_dict(row) for row in _as_list(analysis.get("product_actions")) if _as_dict(row)]
+
+
 @router.post("/api/rag/index")
 def rag_index(inp: RagIndexIn, request: Request) -> Dict[str, Any]:
     require_authenticated_user(request)
@@ -159,4 +182,101 @@ def rag_index(inp: RagIndexIn, request: Request) -> Dict[str, Any]:
         "doc_id": result["doc_id"],
         "chunks_created": result["chunks_created"],
         "was_updated": result["was_updated"],
+    }
+
+
+@router.post("/api/rag/product-actions/index")
+def rag_index_product_actions(inp: ProductActionsRagIndexIn, request: Request) -> Dict[str, Any]:
+    require_authenticated_user(request)
+    org_id = request_active_org_id(request)
+    require_org_member_for_enterprise(request, org_id)
+
+    session_id = _text(inp.session_id)
+    if not session_id:
+        raise HTTPException(status_code=422, detail="session_id required")
+
+    session = get_storage().load(session_id, org_id=org_id, is_admin=True)
+    if session is None:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    actions = _load_session_product_actions(session)
+    actions_by_id = {_product_action_id(row): row for row in actions if _product_action_id(row)}
+    requested_ids = [_text(action_id) for action_id in _as_list(inp.action_ids) if _text(action_id)]
+    target_ids = requested_ids or list(actions_by_id.keys())
+
+    results: List[Dict[str, Any]] = []
+    indexed = 0
+    unchanged = 0
+    skipped = 0
+    failed = 0
+    chunks_created = 0
+
+    for action_id in target_ids:
+        action = actions_by_id.get(action_id)
+        if not action:
+            skipped += 1
+            results.append({"action_id": action_id, "status": "skipped", "reason": "not_found"})
+            continue
+
+        action_hash = _stable_json_hash(action)
+        rag_source_id = f"{session_id}:{action_id}"
+        metadata = {
+            "source_type": "product_action",
+            "source_id": session_id,
+            "session_id": session_id,
+            "session_title": _text(getattr(session, "title", "")),
+            "action_id": action_id,
+            "action_content_hash": action_hash,
+        }
+
+        if inp.force:
+            from ..rag.storage_rag import get_rag_document_by_source
+            existing = get_rag_document_by_source(org_id, "product_action", rag_source_id)
+            if existing:
+                delete_document(org_id, existing["doc_id"])
+
+        try:
+            result = index_document(
+                org_id=org_id,
+                source_type="product_action",
+                source_id=rag_source_id,
+                content=[action],
+                metadata=metadata,
+                source_version=None,
+            )
+        except Exception as exc:
+            failed += 1
+            results.append({"action_id": action_id, "status": "failed", "error": _text(exc) or "index_failed"})
+            continue
+
+        created = int(result.get("chunks_created") or 0)
+        was_updated = bool(result.get("was_updated"))
+        chunks_created += created
+        if was_updated:
+            indexed += 1
+            status = "indexed"
+        else:
+            unchanged += 1
+            status = "unchanged"
+        results.append({
+            "action_id": action_id,
+            "status": status,
+            "doc_id": _text(result.get("doc_id")),
+            "chunks_created": created,
+            "was_updated": was_updated,
+            "content_hash": action_hash,
+        })
+
+    return {
+        "ok": True,
+        "org_id": org_id,
+        "source_type": "product_action",
+        "session_id": session_id,
+        "requested": len(target_ids),
+        "indexed": indexed,
+        "unchanged": unchanged,
+        "skipped": skipped,
+        "failed": failed,
+        "chunks_created": chunks_created,
+        "results": results,
     }
