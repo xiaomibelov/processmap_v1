@@ -20,9 +20,14 @@ router = APIRouter(tags=["product-actions-ai"])
 
 _MODULE_ID = "ai.product_actions.suggest"
 _ENDPOINT = "POST /api/sessions/{session_id}/analysis/product-actions/suggest"
+_BATCH_ENDPOINT = "POST /api/sessions/{session_id}/analysis/product-actions/batch-suggest"
 _BULK_ENDPOINT = "POST /api/analysis/product-actions/suggest-bulk"
 _REQUIRED_FIELDS = ("product_name", "product_group", "action_type", "action_object")
 _BULK_SESSION_CAP = 10
+_BATCH_DEFAULT_STEPS_PER_CHUNK = 10
+_BATCH_MAX_STEPS_PER_CHUNK = 20
+_BATCH_MAX_INPUT_CHARS = 18000
+_BATCH_IN_FLIGHT: Set[str] = set()
 _CONTROLLED_ERROR_MESSAGES = {
     "AI_PROVIDER_NOT_CONFIGURED": "AI_PROVIDER_NOT_CONFIGURED",
     "AI_PROMPT_NOT_CONFIGURED": "AI_PROMPT_NOT_CONFIGURED",
@@ -45,6 +50,12 @@ class BatchDraftIn(BaseModel):
     draft: Optional[Dict[str, Any]] = None
 
 
+class ProductActionsBatchSuggestIn(BaseModel):
+    scope: str = "without_actions"
+    step_ids: List[str] = Field(default_factory=list)
+    options: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+
 def _text(value: Any) -> str:
     return str(value or "").strip()
 
@@ -55,6 +66,13 @@ def _as_dict(value: Any) -> Dict[str, Any]:
 
 def _as_list(value: Any) -> List[Any]:
     return value if isinstance(value, list) else []
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
 
 
 def _actor_user_id(request: Request) -> str:
@@ -390,6 +408,134 @@ def _filter_suggestions_to_selected_step(suggestions: List[Dict[str, Any]], bind
     return out
 
 
+def _step_key(step: Dict[str, Any]) -> str:
+    return _text(step.get("step_id") or step.get("id") or step.get("bpmn_element_id") or step.get("node_id"))
+
+
+def _step_bpmn_key(step: Dict[str, Any]) -> str:
+    return _text(step.get("bpmn_element_id") or step.get("node_id"))
+
+
+def _action_matches_step(action: Dict[str, Any], step: Dict[str, Any]) -> bool:
+    step_id = _step_key(step)
+    bpmn_id = _step_bpmn_key(step)
+    action_step_id = _text(action.get("step_id") or action.get("stepId"))
+    action_bpmn_id = _text(action.get("bpmn_element_id") or action.get("node_id") or action.get("bpmnElementId"))
+    return bool((step_id and action_step_id == step_id) or (bpmn_id and action_bpmn_id == bpmn_id))
+
+
+def _draft_entry_has_ready_rows(entry_raw: Any) -> bool:
+    entry = _as_dict(entry_raw)
+    if _text(entry.get("status")) not in {"ready", "skipped_existing_suggestion"}:
+        return False
+    return len(_as_list(entry.get("rows"))) > 0
+
+
+def _draft_entry_for_step(draft_raw: Dict[str, Any], step: Dict[str, Any]) -> Dict[str, Any]:
+    step_id = _step_key(step)
+    bpmn_id = _step_bpmn_key(step)
+    for key in (step_id, bpmn_id):
+        if key and _as_dict(draft_raw.get(key)):
+            return _as_dict(draft_raw.get(key))
+    for entry_raw in draft_raw.values():
+        entry = _as_dict(entry_raw)
+        rows = _as_list(entry.get("rows"))
+        if any(_row_matches_binding(_as_dict(row), {"step_id": step_id, "bpmn_element_id": bpmn_id}) for row in rows):
+            return entry
+    return {}
+
+
+def _batch_row_id(row_raw: Dict[str, Any], step_id: str, index: int) -> str:
+    row = _as_dict(row_raw)
+    return _text(row.get("id")) or f"{step_id}__ai_pa_{index + 1}"
+
+
+def _batch_entry(
+    step: Dict[str, Any],
+    *,
+    rows: Optional[List[Dict[str, Any]]] = None,
+    status: str = "ready",
+    error_code: str = "",
+    rate_limit: Optional[Dict[str, Any]] = None,
+    skipped: bool = False,
+) -> Dict[str, Any]:
+    step_id = _step_key(step)
+    row_list = list(rows or [])
+    return {
+        "stepName": _text(step.get("label")) or step_id,
+        "rows": row_list,
+        "status": status,
+        "errorCode": _text(error_code) or None,
+        "rateLimitObj": rate_limit if isinstance(rate_limit, dict) else None,
+        "skipped": bool(skipped),
+        "selectedIds": [
+            _batch_row_id(row, step_id, index)
+            for index, row in enumerate(row_list)
+            if not _text(_as_dict(row).get("duplicate_of"))
+        ],
+    }
+
+
+def _batch_summary(draft: Dict[str, Any], *, total: int = 0, candidates: int = 0, processed: int = 0) -> Dict[str, int]:
+    entries = [_as_dict(item) for item in _as_dict(draft).values()]
+    count = lambda status: sum(1 for item in entries if _text(item.get("status")) == status)
+    return {
+        "total": int(total or len(entries)),
+        "candidates": int(candidates),
+        "processed": int(processed),
+        "ready": count("ready"),
+        "skipped_existing_action": count("skipped_existing_action"),
+        "skipped_existing_draft": count("skipped_existing_suggestion"),
+        "skipped_in_flight": count("skipped_in_flight"),
+        "failed": count("failed"),
+        "rate_limited": count("rate_limited"),
+        "not_processed": count("not_processed"),
+    }
+
+
+def _batch_items_from_draft(draft: Dict[str, Any]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for step_id, entry_raw in _as_dict(draft).items():
+        entry = _as_dict(entry_raw)
+        out.append(
+            {
+                "step_id": _text(step_id),
+                "status": _text(entry.get("status")) or "ready",
+                "suggestions": _as_list(entry.get("rows")),
+                "error": _text(entry.get("errorCode")),
+                "rate_limit": _as_dict(entry.get("rateLimitObj")),
+            }
+        )
+    return out
+
+
+def _chunk_steps(steps: List[Dict[str, Any]], max_steps_per_chunk: int) -> List[List[Dict[str, Any]]]:
+    limit = max(1, min(_BATCH_MAX_STEPS_PER_CHUNK, int(max_steps_per_chunk or _BATCH_DEFAULT_STEPS_PER_CHUNK)))
+    chunks: List[List[Dict[str, Any]]] = []
+    current: List[Dict[str, Any]] = []
+    current_chars = 0
+    for step in steps:
+        text_len = len(str(step))
+        if current and (len(current) >= limit or current_chars + text_len > _BATCH_MAX_INPUT_CHARS):
+            chunks.append(current)
+            current = []
+            current_chars = 0
+        current.append(step)
+        current_chars += text_len
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _save_batch_draft_to_session(session: Session, draft: Dict[str, Any], *, request: Request, org_id: str) -> None:
+    interview = _as_dict(getattr(session, "interview", None))
+    analysis = _as_dict(interview.get("analysis"))
+    analysis["product_actions_batch_draft"] = draft
+    interview["analysis"] = analysis
+    session.interview = interview
+    get_storage().save(session, user_id=_actor_user_id(request), org_id=org_id, is_admin=True)
+
+
 def _safe_error_message(exc: Any, *, api_key: str = "", base_url: str = "") -> str:
     text = str(exc or "").strip() or "ai_suggestion_failed"
     for secret in (api_key, base_url):
@@ -681,6 +827,259 @@ def suggest_product_actions(session_id: str, inp: ProductActionsSuggestIn, reque
             error_code="AI_PROVIDER_ERROR",
             error_message=message,
         )
+
+
+@router.post("/api/sessions/{session_id}/analysis/product-actions/batch-suggest")
+def batch_suggest_product_actions(session_id: str, inp: ProductActionsBatchSuggestIn, request: Request) -> Dict[str, Any]:
+    require_authenticated_user(request)
+    org_id = request_active_org_id(request)
+    require_org_member_for_enterprise(request, org_id)
+    session = _load_session_for_request(request, session_id, org_id)
+    project_id = _text(getattr(session, "project_id", ""))
+    workspace_id = _project_workspace_id(project_id, org_id)
+    actor_user_id = _actor_user_id(request)
+    scope = {"org_id": org_id, "workspace_id": workspace_id, "project_id": project_id, "session_id": _text(session_id)}
+    batch_id = f"batch_{uuid.uuid4().hex[:16]}"
+    started_at = time.time()
+    created_at = int(started_at)
+    options = _as_dict(getattr(inp, "options", None))
+    skip_existing_actions = bool(options.get("skip_existing_actions", True))
+    skip_existing_drafts = bool(options.get("skip_existing_drafts", True))
+    max_steps_per_chunk = max(
+        1,
+        min(_BATCH_MAX_STEPS_PER_CHUNK, _as_int(options.get("max_steps_per_chunk"), _BATCH_DEFAULT_STEPS_PER_CHUNK)),
+    )
+    scope_name = _text(getattr(inp, "scope", "")) or "without_actions"
+
+    context = _build_context(session, org_id=org_id, workspace_id=workspace_id)
+    all_steps = [_as_dict(step) for step in _as_list(context.get("steps")) if _step_key(_as_dict(step))]
+    requested_ids = {_text(item) for item in _as_list(getattr(inp, "step_ids", [])) if _text(item)}
+    if requested_ids:
+        all_steps = [
+            step for step in all_steps
+            if _step_key(step) in requested_ids or _step_bpmn_key(step) in requested_ids
+        ]
+    analysis = _as_dict(_as_dict(getattr(session, "interview", None)).get("analysis"))
+    existing_draft = _as_dict(analysis.get("product_actions_batch_draft"))
+    existing_actions = [_as_dict(action) for action in _as_list(context.get("existing_product_actions"))]
+    draft: Dict[str, Any] = {}
+    candidates: List[Dict[str, Any]] = []
+
+    for step in all_steps:
+        step_id = _step_key(step)
+        previous_draft = _draft_entry_for_step(existing_draft, step)
+        if scope_name == "without_actions" and skip_existing_actions and any(_action_matches_step(action, step) for action in existing_actions):
+            draft[step_id] = _batch_entry(step, status="skipped_existing_action", skipped=True)
+            continue
+        if skip_existing_drafts and _draft_entry_has_ready_rows(previous_draft):
+            preserved = dict(previous_draft)
+            preserved["status"] = "skipped_existing_suggestion"
+            preserved.setdefault("stepName", _text(step.get("label")) or step_id)
+            preserved.setdefault("rows", _as_list(previous_draft.get("rows")))
+            preserved.setdefault("selectedIds", [])
+            draft[step_id] = preserved
+            continue
+        candidates.append(step)
+
+    input_hash = hash_ai_input(
+        {
+            "module_id": _MODULE_ID,
+            "endpoint": _BATCH_ENDPOINT,
+            "session_id": session_id,
+            "scope": scope_name,
+            "step_ids": [_step_key(step) for step in all_steps],
+            "draft_keys": sorted(existing_draft.keys()),
+        }
+    )
+    in_flight_key = f"{org_id}:{session_id}:{scope_name}:{input_hash}"
+    if in_flight_key in _BATCH_IN_FLIGHT:
+        for step in candidates:
+            draft[_step_key(step)] = _batch_entry(step, status="skipped_in_flight", skipped=True)
+        summary = _batch_summary(draft, total=len(all_steps), candidates=len(candidates), processed=0)
+        return {
+            "ok": True,
+            "batch_id": batch_id,
+            "status": "running",
+            "module_id": _MODULE_ID,
+            "input_hash": input_hash,
+            "summary": summary,
+            "items": _batch_items_from_draft(draft),
+            "draft": draft,
+        }
+
+    _BATCH_IN_FLIGHT.add(in_flight_key)
+    prompt_id = ""
+    prompt_version = ""
+    model_name = "deepseek-chat"
+    processed_count = 0
+    try:
+        try:
+            llm = load_llm_settings()
+        except Exception as exc:
+            llm = {"api_key": "", "base_url": ""}
+            settings_error = _safe_error_message(exc)
+        else:
+            settings_error = ""
+        api_key = _text(llm.get("api_key"))
+        base_url = _text(llm.get("base_url"))
+        model_name = _text(llm.get("model")) or model_name
+
+        def finish(status: str, error_code: str = "", error_message: str = "") -> Dict[str, Any]:
+            summary = _batch_summary(draft, total=len(all_steps), candidates=len(candidates), processed=processed_count)
+            response = {
+                "ok": status != "error" or bool(draft),
+                "batch_id": batch_id,
+                "status": status,
+                "module_id": _MODULE_ID,
+                "input_hash": input_hash,
+                "summary": summary,
+                "items": _batch_items_from_draft(draft),
+                "draft": draft,
+            }
+            if error_code:
+                response["error"] = error_code
+                response["message"] = error_message or error_code
+            try:
+                record_ai_execution(
+                    module_id=_MODULE_ID,
+                    actor_user_id=actor_user_id,
+                    scope=scope,
+                    provider="deepseek",
+                    model=model_name,
+                    prompt_id=prompt_id,
+                    prompt_version=prompt_version,
+                    status="error" if status == "error" else "success",
+                    input_payload={
+                        "endpoint": _BATCH_ENDPOINT,
+                        "session_id": _text(session_id),
+                        "total": len(all_steps),
+                        "candidates": len(candidates),
+                        "max_steps_per_chunk": max_steps_per_chunk,
+                    },
+                    input_hash=input_hash,
+                    output_summary=str(summary),
+                    usage={"steps_count": len(all_steps), "processed": processed_count},
+                    latency_ms=int(max(0.0, time.time() - started_at) * 1000),
+                    error_code=error_code,
+                    error_message=_safe_error_message(error_message, api_key=api_key, base_url=base_url),
+                    created_at=created_at,
+                    finished_at=int(time.time()),
+                )
+            except Exception:
+                response.setdefault("warnings", []).append({"code": "ai_execution_log_failed", "message": "AI execution log write failed."})
+            return response
+
+        if settings_error or not api_key:
+            code = "AI_PROVIDER_ERROR" if settings_error else "AI_PROVIDER_NOT_CONFIGURED"
+            message = settings_error or code
+            for step in candidates:
+                draft[_step_key(step)] = _batch_entry(step, status="failed", error_code=code)
+            _save_batch_draft_to_session(session, draft, request=request, org_id=org_id)
+            return finish("error", code, message)
+
+        try:
+            seed_existing_ai_prompts(actor_user_id="code_seeded")
+            active_prompt = get_active_prompt(module_id=_MODULE_ID)
+            prompt_template = _text((active_prompt or {}).get("template"))
+            prompt_id = _text((active_prompt or {}).get("prompt_id"))
+            prompt_version = _text((active_prompt or {}).get("version"))
+        except Exception as exc:
+            prompt_template = ""
+            prompt_error = _safe_error_message(exc, api_key=api_key, base_url=base_url)
+        else:
+            prompt_error = ""
+        if not prompt_template:
+            code = "AI_PROMPT_NOT_CONFIGURED"
+            for step in candidates:
+                draft[_step_key(step)] = _batch_entry(step, status="failed", error_code=code)
+            _save_batch_draft_to_session(session, draft, request=request, org_id=org_id)
+            return finish("error", code, prompt_error or code)
+
+        chunks = _chunk_steps(candidates, max_steps_per_chunk)
+        for chunk_index, chunk in enumerate(chunks):
+            try:
+                rate = check_ai_rate_limit(module_id=_MODULE_ID, actor_user_id=actor_user_id, scope=scope)
+            except Exception:
+                rate = {"allowed": True}
+            if not bool(rate.get("allowed", rate.get("ok", True))):
+                rate_limit = {
+                    "limit": int(rate.get("limit") or 0),
+                    "window_sec": int(rate.get("window_sec") or 0),
+                    "reset_at": int(rate.get("reset_at") or 0),
+                }
+                for step in [item for rest in chunks[chunk_index:] for item in rest]:
+                    draft[_step_key(step)] = _batch_entry(step, status="rate_limited", error_code="ai_rate_limit_exceeded", rate_limit=rate_limit)
+                _save_batch_draft_to_session(session, draft, request=request, org_id=org_id)
+                return finish("rate_limited", "ai_rate_limit_exceeded", "ai_rate_limit_exceeded")
+
+            chunk_step_ids = {_step_key(step) for step in chunk}
+            chunk_bpmn_ids = {_step_bpmn_key(step) for step in chunk if _step_bpmn_key(step)}
+            chunk_context = {
+                **context,
+                "steps": chunk,
+                "nodes": [
+                    node for node in _as_list(context.get("nodes"))
+                    if _text(_as_dict(node).get("id")) in chunk_bpmn_ids
+                ],
+                "edges": [
+                    edge for edge in _as_list(context.get("edges"))
+                    if _text(_as_dict(edge).get("source")) in chunk_bpmn_ids
+                    or _text(_as_dict(edge).get("target")) in chunk_bpmn_ids
+                ],
+                "batch": {
+                    "batch_id": batch_id,
+                    "chunk_index": chunk_index,
+                    "chunk_count": len(chunks),
+                    "step_ids": sorted(chunk_step_ids),
+                    "use_rag_context": False,
+                },
+            }
+            try:
+                raw = suggest_product_actions_with_deepseek(
+                    context=chunk_context,
+                    api_key=api_key,
+                    base_url=base_url,
+                    prompt_template=prompt_template,
+                    max_suggestions=max(1, min(40, len(chunk) * 3)),
+                )
+                suggestions = _decorate_duplicates(list(raw.get("suggestions") or []), existing_actions)
+            except ProductActionsAiResponseParseError:
+                for step in chunk:
+                    draft[_step_key(step)] = _batch_entry(step, status="failed", error_code="AI_RESPONSE_PARSE_ERROR")
+                processed_count += len(chunk)
+                continue
+            except Exception as exc:
+                message = _safe_error_message(exc, api_key=api_key, base_url=base_url)
+                for step in chunk:
+                    draft[_step_key(step)] = _batch_entry(step, status="failed", error_code=message or "AI_PROVIDER_ERROR")
+                processed_count += len(chunk)
+                continue
+
+            for step in chunk:
+                step_id = _step_key(step)
+                binding = {"step_id": step_id, "bpmn_element_id": _step_bpmn_key(step), "label": _text(step.get("label"))}
+                rows = []
+                for row in _filter_suggestions_to_selected_step(suggestions, binding):
+                    next_row = dict(row)
+                    next_row["batch_id"] = batch_id
+                    next_row["input_hash"] = input_hash
+                    next_row["step_id"] = _text(next_row.get("step_id")) or step_id
+                    next_row["step_label"] = _text(next_row.get("step_label")) or _text(step.get("label"))
+                    next_row["status"] = _text(next_row.get("status")) or "ready"
+                    next_row["source"] = _text(next_row.get("source")) or "ai_suggested"
+                    next_row["created_at"] = int(time.time())
+                    if not _text(next_row.get("action_title")):
+                        obj = _text(next_row.get("action_object") or next_row.get("product_name"))
+                        action_type = _text(next_row.get("action_type"))
+                        next_row["action_title"] = " ".join(part for part in (action_type, obj) if part) or _text(step.get("label"))
+                    rows.append(next_row)
+                draft[step_id] = _batch_entry(step, rows=rows, status="ready")
+            processed_count += len(chunk)
+
+        _save_batch_draft_to_session(session, draft, request=request, org_id=org_id)
+        return finish("completed")
+    finally:
+        _BATCH_IN_FLIGHT.discard(in_flight_key)
 
 
 @router.post("/api/analysis/product-actions/suggest-bulk")
