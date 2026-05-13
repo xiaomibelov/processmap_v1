@@ -34,6 +34,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "../../../../");
 
 const css = readFileSync(path.join(ROOT, "src/styles/tailwind.css"), "utf-8");
+const timelineTableSrc = readFileSync(path.join(ROOT, "src/components/process/interview/TimelineTable.jsx"), "utf-8");
 const appVersionSrc = readFileSync(path.join(ROOT, "src/config/appVersion.js"), "utf-8");
 
 // Helper: extract the first CSS block matching a selector pattern
@@ -169,6 +170,21 @@ test("CSS DENSITY: row padding compact (<= 6px vertical)", () => {
     const val = parseInt(padMatch[1], 10);
     assert.ok(val <= 6, `Row padding must be <= 6px, got ${val}px`);
   }
+});
+
+test("VIRTUALIZATION: row height estimate covers strict table rows", () => {
+  const heightMatch = timelineTableSrc.match(/const VIRTUAL_ROW_HEIGHT = (\d+);/);
+  assert.ok(heightMatch, "TimelineTable must define VIRTUAL_ROW_HEIGHT");
+  const estimate = parseInt(heightMatch[1], 10);
+
+  const tdBlock = extractBlock(".analysisStepListTable tbody td");
+  assert.ok(tdBlock, "tbody td block must exist");
+  assert.ok(tdBlock.includes("height: 42px"), "strict row CSS should keep an explicit base cell height");
+  assert.ok(tdBlock.includes("padding: 5px 8px"), "strict row CSS should keep compact vertical padding");
+  assert.ok(
+    estimate >= 72,
+    `Virtual row height must cover browser-measured strict rows (~54px normal, ~69px long), got ${estimate}px`,
+  );
 });
 
 test("appVersion: currentVersion bumped to v1.0.126", () => {
