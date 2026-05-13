@@ -184,6 +184,7 @@
 .analysisSelectedStepCard,
 .productActionsPanel {
   display: grid;
+  min-width: 0;
   gap: 10px;
   padding: 10px;
 }
@@ -286,9 +287,11 @@
 
 .productActionsSub,
 .productActionsEmpty {
+  min-width: 0;
   font-size: 12px;
   line-height: 1.4;
   color: var(--analysis-muted);
+  overflow-wrap: anywhere;
 }
 
 .productActionsStepRow {
@@ -554,16 +557,48 @@
 
 .productActionsBatchReview {
   display: grid;
+  min-width: 0;
+  max-width: 100%;
   gap: 10px;
   border: 1px solid var(--analysis-border-soft);
   border-radius: 10px;
   background: hsl(var(--bg-soft) / 0.48);
   padding: 10px;
-  max-height: 600px;
-  overflow-y: auto;
+  overflow: visible;
+}
+
+.productActionsBatchReview .productActionsAiReviewHead {
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.productActionsBatchReview .productActionsAiReviewHead > :first-child {
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.productActionsEditorTitle {
+  min-width: 0;
+  color: var(--analysis-text);
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.productActionsBatchReviewActions {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .productActionsBatchStepGroup {
+  min-width: 0;
   border: 1px solid var(--analysis-border-soft);
   border-radius: 8px;
   background: hsl(var(--panel) / 0.42);
@@ -572,6 +607,8 @@
 
 .productActionsBatchStepSummary {
   display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
@@ -580,6 +617,19 @@
   font-size: 12px;
   font-weight: 800;
   list-style: none;
+}
+
+.productActionsBatchStepName {
+  min-width: 0;
+  flex: 1 1 160px;
+  overflow-wrap: anywhere;
+}
+
+.productActionsBatchStepSummary .productActionsAiBadge,
+.productActionsBatchStepSummary .productActionsAiCounter {
+  flex: 0 1 auto;
+  max-width: 100%;
+  white-space: normal;
 }
 
 .productActionsBatchStepSummary::-webkit-details-marker {
@@ -708,6 +758,7 @@
 
 .productActionsAiReviewHead {
   display: flex;
+  min-width: 0;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
@@ -756,11 +807,14 @@
 
 .productActionsAiList {
   display: grid;
+  min-width: 0;
   gap: 8px;
 }
 
 .productActionsAiCard {
   display: grid;
+  min-width: 0;
+  max-width: 100%;
   gap: 0;
   border: 1px solid var(--analysis-border-soft);
   border-radius: 10px;
@@ -780,6 +834,7 @@
 
 .productActionsAiCardTop {
   display: flex;
+  min-width: 0;
   align-items: flex-start;
   gap: 8px;
   padding: 10px;
@@ -831,12 +886,15 @@
 
 .productActionsAiCardChips {
   display: flex;
+  min-width: 0;
   flex-wrap: wrap;
   gap: 4px;
 }
 
 .productActionsAiChip {
   display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid var(--analysis-border-soft);
   border-radius: 999px;
   background: hsl(var(--panel) / 0.54);
@@ -844,6 +902,7 @@
   color: var(--analysis-text);
   font-size: 11px;
   font-weight: 750;
+  overflow-wrap: anywhere;
 }
 
 .productActionsAiChip.secondary {
@@ -948,6 +1007,8 @@
 
 .productActionsAiStickyFooter {
   display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;

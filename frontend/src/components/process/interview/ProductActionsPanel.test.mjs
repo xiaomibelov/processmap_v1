@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(__dirname, "ProductActionsPanel.jsx"), "utf8");
+const styles = fs.readFileSync(path.join(__dirname, "../../../styles/tailwind.css"), "utf8");
 
 test("ProductActionsPanel exposes MVP product action fields in Analysis UI", () => {
   [
@@ -111,6 +112,21 @@ test("ProductActionsPanel batch AI uses one backend batch request instead of per
   assert.equal(batchBlock.includes("skip_existing_actions"), true);
   assert.equal(batchBlock.includes("skip_existing_drafts: true"), true);
   assert.equal(batchBlock.includes("setBatchReviewVisible(true)"), true);
+});
+
+test("ProductActionsPanel batch review layout avoids narrow-panel scroll and header collapse", () => {
+  const batchReviewCss = styles.match(/\.productActionsBatchReview\s*\{[\s\S]*?\n\}/)?.[0] || "";
+  assert.equal(source.includes("productActionsBatchReviewActions"), true);
+  assert.equal(source.includes("productActionsBatchStepName"), true);
+  assert.match(batchReviewCss, /min-width: 0;/);
+  assert.match(batchReviewCss, /max-width: 100%;/);
+  assert.match(batchReviewCss, /overflow: visible;/);
+  assert.doesNotMatch(batchReviewCss, /overflow-y: auto;/);
+  assert.match(styles, /\.productActionsBatchReview \.productActionsAiReviewHead\s*\{[\s\S]*flex-wrap: wrap;/);
+  assert.match(styles, /\.productActionsBatchReviewActions\s*\{[\s\S]*flex-wrap: wrap;/);
+  assert.match(styles, /\.productActionsBatchStepSummary\s*\{[\s\S]*flex-wrap: wrap;/);
+  assert.match(styles, /\.productActionsAiCard\s*\{[\s\S]*max-width: 100%;/);
+  assert.match(styles, /\.productActionsAiChip\s*\{[\s\S]*overflow-wrap: anywhere;/);
 });
 
 test("ProductActionsPanel filters single-step AI rows and drops stale responses before apply", () => {
