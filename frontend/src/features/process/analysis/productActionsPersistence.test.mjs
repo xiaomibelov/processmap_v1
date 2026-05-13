@@ -131,10 +131,74 @@ test("acceptAiProductActions saves selected AI rows through interview analysis p
 
   assert.equal(response.ok, true);
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].patch.product_actions.map((row) => row.id), ["manual_keep", "ai_1"]);
+  assert.equal(calls[0].patch.product_actions.length, 2);
+  assert.equal(calls[0].patch.product_actions[0].id, "manual_keep");
+  assert.match(calls[0].patch.product_actions[1].id, /^pa_ai_20260507T120000000Z_1$/);
+  assert.equal(calls[0].patch.product_actions[1].ai_suggestion_id, "ai_1");
   assert.equal(calls[0].patch.product_actions[1].source, "ai_suggested");
   assert.equal(calls[0].patch.product_actions[1].manual_corrected, false);
   assert.equal(response.acceptedProductActions.length, 1);
+});
+
+test("acceptAiProductActions creates distinct saved ids when batch AI rows reuse suggestion ids", async () => {
+  const calls = [];
+  const response = await acceptAiProductActions({
+    sessionId: "sid_1",
+    currentAnalysis: {
+      product_actions: [{ id: "manual_keep", product_name: "Рис" }],
+    },
+    selectedActions: [
+      {
+        id: "ai_pa_1",
+        step_id: "step_1",
+        bpmn_element_id: "Task_1",
+        step_label: "Взять суп",
+        product_name: "Суп",
+        action_type: "взятие",
+        action_object: "суп",
+      },
+      {
+        id: "ai_pa_1",
+        step_id: "step_2",
+        bpmn_element_id: "Task_2",
+        step_label: "Поставить суп",
+        product_name: "Суп",
+        action_type: "перекладывание",
+        action_object: "суп",
+      },
+      {
+        id: "ai_pa_2",
+        step_id: "step_3",
+        bpmn_element_id: "Task_3",
+        step_label: "Подать суп",
+        product_name: "Суп",
+        action_type: "другое",
+        action_object: "суп",
+      },
+    ],
+    nowIso: "2026-05-07T12:00:00.000Z",
+    patchInterviewAnalysis: async (sid, patch) => {
+      calls.push({ sid, patch });
+      return { ok: true, status: 200 };
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].patch.product_actions.length, 4);
+  assert.deepEqual(calls[0].patch.product_actions.map((row) => row.id), [
+    "manual_keep",
+    "pa_ai_20260507T120000000Z_1",
+    "pa_ai_20260507T120000000Z_2",
+    "pa_ai_20260507T120000000Z_3",
+  ]);
+  assert.deepEqual(calls[0].patch.product_actions.slice(1).map((row) => row.ai_suggestion_id), [
+    "ai_pa_1",
+    "ai_pa_1",
+    "ai_pa_2",
+  ]);
+  assert.equal(response.productActions.length, 4);
+  assert.equal(response.acceptedProductActions.length, 3);
 });
 
 test("acceptAiProductActions does not save when nothing selectable is accepted", async () => {

@@ -18,6 +18,18 @@ function readProductActions(currentAnalysisRaw) {
   return normalizeProductActionsList(asObject(currentAnalysisRaw).product_actions);
 }
 
+function makeAcceptedAiProductActionId({ timestamp, index, usedIds } = {}) {
+  const compactTimestamp = toText(timestamp).replace(/[^0-9a-z]/gi, "").slice(0, 20) || Date.now().toString(36);
+  const base = `pa_ai_${compactTimestamp}_${Number(index || 0) + 1}`;
+  let candidate = base;
+  let suffix = 2;
+  while (usedIds?.has(candidate)) {
+    candidate = `${base}_${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
 export async function saveProductActionForStep({
   sessionId,
   currentAnalysis,
@@ -92,14 +104,18 @@ export async function acceptAiProductActions({
   if (!accepted.length) return { ok: false, status: 0, error: "no_selected_product_actions" };
   const timestamp = toText(nowIso) || new Date().toISOString();
   let nextProductActions = readProductActions(currentAnalysis);
+  const usedIds = new Set(nextProductActions.map((row) => toText(row.id)).filter(Boolean));
   const savedRows = [];
   accepted.forEach((rowRaw, index) => {
     if (!rowRaw || typeof rowRaw !== "object" || toText(rowRaw.duplicate_of)) return;
+    const sourceAiId = toText(rowRaw.id);
+    const savedId = makeAcceptedAiProductActionId({ timestamp, index, usedIds });
     const nextRow = buildProductActionForStep(
       rowRaw,
       {
         ...rowRaw,
-        id: toText(rowRaw.id) || `pa_ai_${Date.now().toString(36)}_${index + 1}`,
+        id: savedId,
+        ai_suggestion_id: sourceAiId,
         source: "ai_suggested",
         manual_corrected: false,
         updated_at: timestamp,
@@ -107,10 +123,11 @@ export async function acceptAiProductActions({
       {
         sessionId: sid,
         nowIso: timestamp,
-        idFactory: () => toText(rowRaw.id) || `pa_ai_${Date.now().toString(36)}_${index + 1}`,
+        idFactory: () => savedId,
       },
     );
     if (!nextRow?.id) return;
+    usedIds.add(nextRow.id);
     savedRows.push(nextRow);
     nextProductActions = upsertProductAction(nextProductActions, nextRow, { sessionId: sid });
   });
