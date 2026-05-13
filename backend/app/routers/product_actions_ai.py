@@ -778,13 +778,14 @@ def suggest_product_actions_bulk(inp: ProductActionsBulkSuggestIn, request: Requ
 
 @router.get("/api/sessions/{session_id}/analysis/product-actions/batch-draft")
 def get_batch_draft(session_id: str, request: Request) -> Dict[str, Any]:
-    """Load batct from session analysis state."""
+    """Load batch draft from session analysis state."""
     require_authenticated_user(request)
     org_id = request_active_org_id(request)
     require_org_member_for_enterprise(request, org_id)
     session = _load_session_for_request(request, session_id, org_id)
 
-    analysis = _as_dict(getattr(session, "analysis", None))
+    interview = _as_dict(getattr(session, "interview", None))
+    analysis = _as_dict(interview.get("analysis"))
     batch_draft = _as_dict(analysis.get("product_actions_batch_draft"))
 
     return {
@@ -804,8 +805,9 @@ def save_batch_draft(session_id: str, inp: BatchDraftIn, request: Request) -> Di
     project_id = _text(getattr(session, "project_id", ""))
     storage = get_project_storage(project_id, org_id)
 
-    # Load current analysis
-    analysis = _as_dict(getattr(session, "analysis", None))
+    # Load current interview and analysis
+    interview = _as_dict(getattr(session, "interview", None))
+    analysis = _as_dict(interview.get("analysis"))
 
     # Update batch draft
     if inp.draft is None:
@@ -815,8 +817,9 @@ def save_batch_draft(session_id: str, inp: BatchDraftIn, request: Request) -> Di
         # Save batch draft
         analysis["product_actions_batch_draft"] = inp.draft
 
-    # Save back to session
-    session.analysis = analysis
+    # Save back to session.interview.analysis
+    interview["analysis"] = analysis
+    session.interview = interview
     storage.save_session(session)
 
     return {
