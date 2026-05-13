@@ -13,7 +13,7 @@ import {
   listProductActionsForStep,
   normalizeProductActionsList,
 } from "../../../features/process/analysis/productActionsModel.js";
-import { apiSuggestProductActions, apiLoadBatchDraft, apiSaveBatchDraft } from "../../../lib/api.js";
+import { apiBatchSuggestProductActions, apiSuggestProductActions, apiLoadBatchDraft, apiSaveBatchDraft } from "../../../lib/api.js";
 import { toArray, toText } from "./utils";
 
 const FIELD_CONFIGS = [
@@ -430,198 +430,60 @@ export default function ProductActionsPanel({
 
   async function handleBatchSuggestAiProductActions(scope = "without_actions", resume = false) {
     if (!sessionId || batchRunning || batchInFlightRef.current) return;
-
-    // Load existing results (preserve ready drafts even on fresh run)
-    let results = batchDraft && typeof batchDraft === 'object' ? { ...batchDraft } : {};
-
-    // Filter out already processed steps (durable actions + ready drafts)
-    const processedStepIds = new Set(
-      Object.keys(results).filter(sid =>
-        results[sid]?.status === "ready" ||
-        results[sid]?.status === "skipped_existing_action" ||
-        results[sid]?.status === "skipped_existing_suggestion"
-      )
-    );
-
-    // Steps with durable product actions
-    const stepsWithActions = steps.filter((step) => {
-      const stepId = toText(step?.id);
-      return productActions.some((pa) => toText(pa.step_id || pa.stepId) === stepId);
-    });
-
-    // Steps with ready draft suggestions (not yet applied)
-    const stepsWithReadyDrafts = steps.filter((step) => {
-      const stepId = toText(step?.id);
-      const entry = results[stepId];
-      return entry?.status === "ready" && entry.rows.length > 0;
-    });
-
-    const skippedSteps = scope === "without_actions"
-      ? stepsWithActions.filter(step => !processedStepIds.has(toText(step?.id)))
-      : [];
-
-    const skippedDraftSteps = stepsWithReadyDrafts.filter(step => !processedStepIds.has(toText(step?.id)));
-
-    const targetSteps = scope === "without_actions"
-      ? steps.filter((step) => {
-          const stepId = toText(step?.id);
-          if (processedStepIds.has(stepId)) return false;
-          const hasAction = productActions.some((pa) => toText(pa.step_id || pa.stepId) === stepId);
-          const hasReadyDraft = results[stepId]?.status === "ready" && results[stepId].rows.length > 0;
-          return !hasAction && !hasReadyDraft;
-        })
-      : steps.filter(step => {
-          const stepId = toText(step?.id);
-          if (processedStepIds.has(stepId)) return false;
-          const hasReadyDraft = results[stepId]?.status === "ready" && results[stepId].rows.length > 0;
-          return !hasReadyDraft;
-        });
-
-    if (!targetSteps.length && !skippedSteps.length && !skippedDraftSteps.length) return;
     batchInFlightRef.current = true;
     setBatchRunning(true);
     setBatchStatus({ type: "saving", text: resume ? "Продолжаем AI по шагам…" : "Запускаем AI по шагам…" });
-    setBatchProgress({ current: 0, total: targetSteps.length, currentStepName: "" });
-    let rateLimitHit = null;
-    for (let i = 0; i < targetSteps.length; i++) {
-      const step = targetSteps[i];
-      const stepId = toText(step?.id);
-      const stepName = stepDisplayLabel(step);
-      setBatchProgress({ current: i + 1, total: targetSteps.length, currentStepName: stepName });
-      let result = null;
-      try {
-        result = await apiSuggestProductActions(sessionId, {
-          options: {
-            max_suggestions: 20,
-            ui_source: "product_actions_panel_batch",
-            selected_step_id: stepId,
-            selected_step_label: toText(step?.action || step?.label || step?.title),
-            selected_step_bpmn_id: toText(step?.node_id || step?.nodeId || step?.bpmn_ref),
-          },
-        });
-      } catch (error) {
-        result = {
-          ok: false,
-          error: "AI_PROVIDER_ERROR",
-          draft: { message: toText(error?.message) || "network error" },
-        };
-      }
-      const draftResult = result?.ok && result?.draft?.ok !== false ? result.draft || {} : null;
-      const rows = draftResult ? filterSuggestionDraftRowsForStep(draftResult.suggestions, step) : [];
-      const errorCode = draftResult ? null : toText(result?.error || result?.draft?.error);
-      const isRateLimit = errorCode === "ai_rate_limit_exceeded";
-      const rateLimitObj = result?.rate_limit || result?.draft?.rate_limit || null;
-      const entryStatus = isRateLimit ? "rate_limited" : errorCode ? "failed" : "ready";
-      results[stepId] = {
-        step,
-        stepName,
-        rows,
-        errorCode,
-        status: entryStatus,
-        rateLimitObj: isRateLimit ? rateLimitObj : null,
-        selectedIds: new Set(
-          rows
-            .filter((r) => !toText(r.duplicate_of))
-            .map((r, idx) => getBatchRowId(r, stepId, idx))
-        ),
-      };
-
-      // Save batch draft after each step
-      try {
-        const saveResult = await apiSaveBatchDraft(sessionId, serializeBatchDraftForBackend(results));
-        if (!saveResult?.ok) {
-          console.error('Failed to save batch draft:', saveResult);
-          // Stop batch processing on persistent save failure
-          setBatchStatus({
-            type: "error",
-            text: `Не удалось сохранить черновик AI по шагам. Обработка остановлена на шаге ${i + 1} из ${targetSteps.length}. Ошибка: ${toText(saveResult?.error) || "unknown"}`,
-          });
-          batchInFlightRef.current = false;
-          setBatchRunning(false);
-          setBatchProgress(null);
-          return;
-        }
-      } catch (saveError) {
-        console.error('Failed to save batch draft:', saveError);
-        // Stop batch processing on save exception
+    setBatchProgress({ current: 0, total: steps.length, currentStepName: "Backend batch" });
+    try {
+      const result = await apiBatchSuggestProductActions(sessionId, {
+        scope,
+        step_ids: steps.map((step) => toText(step?.id)).filter(Boolean),
+        options: {
+          skip_existing_actions: scope === "without_actions",
+          skip_existing_drafts: true,
+          max_steps_per_chunk: 10,
+          use_rag_context: false,
+          ui_source: "product_actions_panel_batch",
+        },
+      });
+      if (!result?.ok) {
         setBatchStatus({
           type: "error",
-          text: `Не удалось сохранить черновик AI по шагам. Обработка остановлена на шаге ${i + 1} из ${targetSteps.length}. Ошибка: ${toText(saveError?.message) || "network error"}`,
+          text: `Не удалось выполнить AI по шагам. Ошибка: ${toText(result?.error || result?.result?.error) || "unknown"}`,
         });
-        batchInFlightRef.current = false;
-        setBatchRunning(false);
-        setBatchProgress(null);
         return;
       }
-
-      if (isRateLimit) {
-        rateLimitHit = rateLimitObj;
-        for (let j = i + 1; j < targetSteps.length; j++) {
-          const s = targetSteps[j];
-          const sid = toText(s?.id);
-          results[sid] = {
-            step: s,
-            stepName: stepDisplayLabel(s),
-            rows: [],
-            errorCode: null,
-            status: "not_processed",
-            rateLimitObj: null,
-            selectedIds: new Set(),
-          };
-        }
-        break;
-      }
+      const nextDraft = deserializeBatchDraftFromBackend(result.draft || {});
+      setBatchDraft(nextDraft);
+      const summary = result.summary || {};
+      const readyCount = Number(summary.ready || 0);
+      const failedCount = Number(summary.failed || 0);
+      const rateLimitedCount = Number(summary.rate_limited || 0);
+      const notProcessedCount = Number(summary.not_processed || 0);
+      const skippedActionCount = Number(summary.skipped_existing_action || 0);
+      const skippedSuggestionCount = Number(summary.skipped_existing_draft || 0);
+      const totalSkippedCount = skippedActionCount + skippedSuggestionCount;
+      const totalRows = Object.values(nextDraft || {}).reduce((sum, entry) => sum + toArray(entry?.rows).length, 0);
+      const hasError = failedCount > 0 || rateLimitedCount > 0 || result.batch_status === "rate_limited";
+      let statusText = `Batch AI: ${readyCount} шагов выполнено`;
+      if (totalSkippedCount) statusText += `, ${totalSkippedCount} пропущено`;
+      if (failedCount) statusText += `, ${failedCount} ошибок`;
+      if (rateLimitedCount) statusText += `, ${rateLimitedCount} ост. лимитом`;
+      if (notProcessedCount) statusText += `, ${notProcessedCount} не выполнено`;
+      statusText += `.`;
+      if (!hasError) statusText += ` Итого предложений: ${totalRows}. Проверьте и примите нужные.`;
+      setBatchStatus({ type: hasError ? "error" : "saved", text: statusText });
+      setBatchReviewVisible(true);
+    } catch (error) {
+      setBatchStatus({
+        type: "error",
+        text: `Не удалось выполнить AI по шагам. Ошибка: ${toText(error?.message) || "network error"}`,
+      });
+    } finally {
+      batchInFlightRef.current = false;
+      setBatchRunning(false);
+      setBatchProgress(null);
     }
-    batchInFlightRef.current = false;
-    setBatchRunning(false);
-    setBatchProgress(null);
-    for (const step of skippedSteps) {
-      const stepId = toText(step?.id);
-      results[stepId] = {
-        step,
-        stepName: stepDisplayLabel(step),
-        rows: [],
-        skipped: true,
-        status: "skipped_existing_action",
-        errorCode: null,
-        rateLimitObj: null,
-        selectedIds: new Set(),
-      };
-    }
-    for (const step of skippedDraftSteps) {
-      const stepId = toText(step?.id);
-      // Preserve existing ready draft entry, just mark as skipped
-      if (results[stepId]?.status === "ready") {
-        results[stepId] = {
-          ...results[stepId],
-          status: "skipped_existing_suggestion",
-        };
-      }
-    }
-    setBatchDraft(results);
-    const allEntries = Object.values(results);
-    const readyCount = allEntries.filter((s) => s.status === "ready").length;
-    const failedCount = allEntries.filter((s) => s.status === "failed").length;
-    const rateLimitedCount = allEntries.filter((s) => s.status === "rate_limited").length;
-    const notProcessedCount = allEntries.filter((s) => s.status === "not_processed").length;
-    const skippedActionCount = allEntries.filter((s) => s.status === "skipped_existing_action").length;
-    const skippedSuggestionCount = allEntries.filter((s) => s.status === "skipped_existing_suggestion").length;
-    const totalSkippedCount = skippedActionCount + skippedSuggestionCount;
-    const totalRows = allEntries.reduce((sum, s) => sum + s.rows.length, 0);
-    const hasError = failedCount > 0 || rateLimitedCount > 0;
-    let statusText = `Batch AI: ${readyCount} шагов выполнено`;
-    if (totalSkippedCount) statusText += `, ${totalSkippedCount} пропущено`;
-    if (failedCount) statusText += `, ${failedCount} ошибок`;
-    if (rateLimitedCount) statusText += `, ${rateLimitedCount} ост. лимитом`;
-    if (notProcessedCount) statusText += `, ${notProcessedCount} не выполнено`;
-    statusText += `.`;
-    if (rateLimitHit) {
-      const resetTime = formatRateLimitReset(rateLimitHit.reset_at);
-      if (resetTime) statusText += ` Повторите после ${resetTime}.`;
-    }
-    if (!hasError) statusText += ` Итого предложений: ${totalRows}. Проверьте и примите нужные.`;
-    setBatchStatus({ type: hasError ? "error" : "saved", text: statusText });
-    setBatchReviewVisible(true);
   }
 
   function toggleBatchRow(stepId, rowId, checked) {

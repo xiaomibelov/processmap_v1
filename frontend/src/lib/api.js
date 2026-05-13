@@ -543,6 +543,33 @@ export async function apiBulkSuggestProductActions(payload = {}) {
   };
 }
 
+export async function apiBatchSuggestProductActions(sessionId, payload = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const body = isPlainObject(payload) ? payload : {};
+  const r = okOrError(await request(apiRoutes.sessions.productActionsBatchSuggest(sid), { method: "POST", body }));
+  const result = isPlainObject(r.data) ? { ...r.data } : {};
+  if (!r.ok) {
+    return {
+      ...r,
+      result,
+      summary: isPlainObject(result.summary) ? result.summary : {},
+      items: Array.isArray(result.items) ? result.items : [],
+      draft: isPlainObject(result.draft) ? result.draft : null,
+    };
+  }
+  return {
+    ok: true,
+    status: r.status,
+    result,
+    batch_id: String(result.batch_id || ""),
+    batch_status: String(result.status || ""),
+    summary: isPlainObject(result.summary) ? result.summary : {},
+    items: Array.isArray(result.items) ? result.items : [],
+    draft: isPlainObject(result.draft) ? result.draft : null,
+  };
+}
+
 export async function apiLoadBatchDraft(sessionId) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
