@@ -58,10 +58,12 @@ class RagApiTests(unittest.TestCase):
         )
         self.session_id = self._seed_session()
 
-        from app.routers.rag import RagIndexIn, rag_index, rag_search
+        from app.routers.rag import ProductActionsRagIndexIn, RagIndexIn, rag_index, rag_index_product_actions, rag_search
         self.rag_search = rag_search
         self.rag_index = rag_index
+        self.rag_index_product_actions = rag_index_product_actions
         self.RagIndexIn = RagIndexIn
+        self.ProductActionsRagIndexIn = ProductActionsRagIndexIn
 
     def tearDown(self):
         if self.old_db_path is None:
@@ -149,6 +151,14 @@ class RagApiTests(unittest.TestCase):
     def _index(self, source_type: str, session_id: str = None, force: bool = False, org_id: str = None):
         inp = self.RagIndexIn(source_type=source_type, session_id=session_id or self.session_id, force=force)
         return self.rag_index(inp, self._req(org_id))
+
+    def _index_product_actions(self, action_ids=None, force: bool = False, session_id: str = None):
+        inp = self.ProductActionsRagIndexIn(
+            session_id=session_id or self.session_id,
+            action_ids=list(action_ids or []),
+            force=force,
+        )
+        return self.rag_index_product_actions(inp, self._req())
 
     def _search(self, q: str, **kwargs):
         from fastapi import Query as Q
@@ -278,6 +288,35 @@ class RagApiTests(unittest.TestCase):
         self.assertGreater(result["chunks_created"], 0)
         self.assertEqual(result["source_type"], "product_action")
 
+    def test_index_selected_product_actions_creates_per_action_rag_documents(self):
+        result = self._index_product_actions(["pa1"])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["requested"], 1)
+        self.assertEqual(result["indexed"], 1)
+        self.assertEqual(result["skipped"], 0)
+        self.assertGreater(result["chunks_created"], 0)
+        self.assertEqual(result["results"][0]["action_id"], "pa1")
+        self.assertEqual(result["results"][0]["status"], "indexed")
+
+        search = self._search("куриная грудка", source_type="product_action", session_id=self.session_id)
+        self.assertGreater(search["total"], 0)
+        self.assertTrue(any(r["metadata"].get("action_id") == "pa1" for r in search["results"]))
+
+    def test_index_selected_product_actions_is_idempotent_by_action_hash(self):
+        r1 = self._index_product_actions(["pa1"])
+        r2 = self._index_product_actions(["pa1"])
+        self.assertEqual(r1["indexed"], 1)
+        self.assertEqual(r2["indexed"], 0)
+        self.assertEqual(r2["unchanged"], 1)
+        self.assertEqual(r2["chunks_created"], 0)
+
+    def test_index_selected_product_actions_skips_unknown_ids(self):
+        result = self._index_product_actions(["pa_missing"])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["indexed"], 0)
+        self.assertEqual(result["skipped"], 1)
+        self.assertEqual(result["results"][0]["reason"], "not_found")
+
     def test_index_dedup_unchanged_content(self):
         r1 = self._index("bpmn_xml")
         r2 = self._index("bpmn_xml")
@@ -338,6 +377,23 @@ class RagApiTests(unittest.TestCase):
         )
 
         self._index("product_action")
+
+        session_after = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+        interview_after = json.dumps(
+            (getattr(session_after, "interview", {}) or {}).get("analysis", {}).get("product_actions", []),
+            sort_keys=True,
+        )
+        self.assertEqual(interview_before, interview_after)
+
+    def test_selected_product_actions_index_does_not_mutate_product_actions(self):
+        import json
+        session_before = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+        interview_before = json.dumps(
+            (getattr(session_before, "interview", {}) or {}).get("analysis", {}).get("product_actions", []),
+            sort_keys=True,
+        )
+
+        self._index_product_actions(["pa1", "pa2"])
 
         session_after = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
         interview_after = json.dumps(

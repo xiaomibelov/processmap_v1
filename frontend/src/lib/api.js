@@ -1491,6 +1491,32 @@ export async function apiRagIndex({ source_type, session_id, force = false } = {
   };
 }
 
+export async function apiRagIndexProductActions({ session_id, action_ids = [], force = false } = {}) {
+  const sid = String(session_id || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const ids = Array.isArray(action_ids)
+    ? action_ids.map((id) => String(id || "").trim()).filter(Boolean)
+    : [];
+  const r = okOrError(await request(apiRoutes.rag.productActionsIndex(), {
+    method: "POST",
+    body: { session_id: sid, action_ids: ids, force: Boolean(force) },
+  }));
+  if (!r.ok) return r;
+  return {
+    ok: Boolean(r.data?.ok),
+    status: r.status,
+    source_type: String(r.data?.source_type || "product_action"),
+    session_id: String(r.data?.session_id || sid),
+    requested: Number(r.data?.requested || 0),
+    indexed: Number(r.data?.indexed || 0),
+    unchanged: Number(r.data?.unchanged || 0),
+    skipped: Number(r.data?.skipped || 0),
+    failed: Number(r.data?.failed || 0),
+    chunks_created: Number(r.data?.chunks_created || 0),
+    results: Array.isArray(r.data?.results) ? r.data.results : [],
+  };
+}
+
 // ------- DEV helpers -------
 export async function apiWipeDevAll() {
   const lp = await apiListProjects();

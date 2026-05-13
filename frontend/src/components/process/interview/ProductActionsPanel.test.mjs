@@ -258,6 +258,21 @@ test("ProductActionsPanel refreshes all-actions list optimistically after AI acc
   assert.equal(acceptAllBlock.includes("syncProductActionsFromResult(result);"), true);
 });
 
+test("ProductActionsPanel indexes only saved all-actions rows into RAG by explicit user action", () => {
+  assert.equal(source.includes("apiRagIndexProductActions"), true);
+  assert.equal(source.includes("selectedRagActionIds"), true);
+  assert.equal(source.includes('data-testid="product-actions-rag-index-bar"'), true);
+  assert.equal(source.includes('data-testid="product-actions-rag-index-selected"'), true);
+  assert.equal(source.includes('data-testid="product-actions-rag-index-all"'), true);
+  assert.equal(source.includes('data-testid="product-action-rag-select"'), true);
+  assert.equal(source.includes("Индексировать выбранные в RAG"), true);
+  assert.equal(source.includes("Индексировать все в RAG"), true);
+  assert.match(source, /const actionIds = scope === "all" \? allProductActionIds : \[\.\.\.selectedRagActionIds\];/);
+  assert.match(source, /action_ids: scope === "all" \? \[\] : actionIds/);
+  assert.match(source, /actionsScope === "all" \? \([\s\S]*product-actions-rag-index-bar/);
+  assert.equal(source.includes("Индексируем действия в RAG"), true);
+});
+
 test("ProductActionsPanel editor is grouped and has one cancel action in the footer", () => {
   assert.equal(source.includes("FIELD_GROUPS"), true);
   assert.equal(source.includes("Продукт"), true);

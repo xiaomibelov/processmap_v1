@@ -229,6 +229,7 @@ export const apiRoutes = {
       min_score: params?.min_score != null ? String(params.min_score) : "",
     }),
     index: () => "/api/rag/index",
+    productActionsIndex: () => "/api/rag/product-actions/index",
   },
   misc: {
     meta: () => "/api/meta",

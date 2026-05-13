@@ -338,6 +338,27 @@
   font-size: 10px;
 }
 
+.productActionsRagBar {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--analysis-border-soft);
+  border-radius: 10px;
+  background: hsl(var(--bg-soft) / 0.34);
+  padding: 8px;
+}
+
+.productActionsRagBarText {
+  color: var(--analysis-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.productActionsRagBarActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .productActionsStepCard,
 .productActionCard,
 .productActionsEditorShell {
@@ -378,6 +399,28 @@
   font-weight: 850;
   line-height: 1.25;
   color: var(--analysis-text);
+}
+
+.productActionRagSelect {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--analysis-border-soft);
+  border-radius: 999px;
+  background: hsl(var(--bg-elevated) / 0.42);
+  padding: 2px 7px;
+  color: var(--analysis-muted);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.productActionRagSelect input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: hsl(var(--accent));
 }
 
 .productActionCardSub,
