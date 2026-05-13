@@ -7,7 +7,7 @@
  * 4. CSS: interviewStepDetailsRow has height:0 (no layout push).
  * 5. CSS: interviewStepDetailsTd overlay is absolute positioned.
  * 6. CSS: interviewInlineTimeSummary still uses height:0 default.
- * 7. CSS: interviewInlineTimeSummary gets height:20px on active rows.
+ * 7. CSS: interviewInlineTimeSummary hover/active reveal does not change geometry.
  * 8. Details button "Детали"/"Свернуть" still present in JSX.
  * 9. More button still present in JSX.
  * 10. appVersion bumped to v1.0.125.
@@ -140,23 +140,24 @@ test("CSS: interviewInlineTimeSummary default height is 0", () => {
   );
 });
 
-test("CSS: interviewInlineTimeSummary gets height:20px on hover/active rows", () => {
-  assert.ok(
-    /analysisStepListRow[^{]*hover[^{]*interviewInlineTimeSummary[\s\S]*?height: 20px/.test(css),
-    "interviewInlineTimeSummary must get height:20px on hover/active rows",
-  );
+test("CSS: interviewInlineTimeSummary hover/active reveal does not change geometry", () => {
+  const m = css.match(/analysisStepListRow[^{]*hover[^{]*interviewInlineTimeSummary[\s\S]*?\{([^}]*)\}/);
+  assert.ok(m, "interviewInlineTimeSummary hover/active rule must exist");
+  assert.ok(!m[1].includes("height:"), "hover/active rule must not change height");
+  assert.ok(!m[1].includes("max-height"), "hover/active rule must not change max-height");
+  assert.ok(m[1].includes("visibility: visible") || m[1].includes("opacity: 1"), "hover/active rule must use paint-only visibility/opacity");
 });
 
 // --- appVersion ---
 
-test("appVersion: currentVersion bumped to v1.0.125", () => {
+test("appVersion: currentVersion bumped to v1.0.126", () => {
   assert.ok(
-    appVersionSrc.includes('"v1.0.125"'),
-    "appVersion must be v1.0.125",
+    appVersionSrc.includes('"v1.0.126"'),
+    "appVersion must be v1.0.126",
   );
   assert.ok(
-    appVersionSrc.includes('currentVersion: "v1.0.125"'),
-    "currentVersion field must be v1.0.125",
+    appVersionSrc.includes('currentVersion: "v1.0.126"'),
+    "currentVersion field must be v1.0.126",
   );
 });
 

@@ -25,7 +25,7 @@ import {
 const INITIAL_VISIBLE_ROWS = 80;
 const VISIBLE_ROWS_INCREMENT = 80;
 const VIRTUALIZE_ROWS_THRESHOLD = 200;
-const VIRTUAL_ROW_HEIGHT = 64;
+const VIRTUAL_ROW_HEIGHT = 72;
 const VIRTUAL_OVERSCAN = 8;
 const GATEWAY_UI_STORAGE_VERSION = 1;
 
@@ -1296,7 +1296,7 @@ export default function TimelineTable({
                               }}
                               title={`Действия с продуктом: ${productActionCount}`}
                             >
-                              Действия: {productActionCount}
+                              ПА {productActionCount}
                             </button>
                           ) : null;
                         })()}
