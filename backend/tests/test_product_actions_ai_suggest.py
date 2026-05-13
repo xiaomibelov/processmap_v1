@@ -31,19 +31,25 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         from app.auth import create_user
         from app.models import Edge, Node
         from app.routers.product_actions_ai import (
+            BatchDraftIn,
             ProductActionsBulkSuggestIn,
             ProductActionsSuggestIn,
+            get_batch_draft,
             router,
+            save_batch_draft,
             suggest_product_actions,
             suggest_product_actions_bulk,
         )
         from app.storage import get_default_org_id, get_project_storage, get_storage, upsert_project_membership
 
+        self.BatchDraftIn = BatchDraftIn
         self.Edge = Edge
         self.Node = Node
         self.ProductActionsBulkSuggestIn = ProductActionsBulkSuggestIn
         self.ProductActionsSuggestIn = ProductActionsSuggestIn
+        self.get_batch_draft = get_batch_draft
         self.router = router
+        self.save_batch_draft = save_batch_draft
         self.suggest_product_actions = suggest_product_actions
         self.suggest_product_actions_bulk = suggest_product_actions_bulk
         self.get_storage = get_storage
@@ -139,6 +145,59 @@ class ProductActionsAiSuggestTests(unittest.TestCase):
         paths = {getattr(route, "path", "") for route in self.router.routes}
         self.assertIn("/api/sessions/{session_id}/analysis/product-actions/suggest", paths)
         self.assertIn("/api/analysis/product-actions/suggest-bulk", paths)
+        self.assertIn("/api/sessions/{session_id}/analysis/product-actions/batch-draft", paths)
+
+    def test_batch_draft_save_persists_analysis_draft_without_bpmn_or_accepted_action_mutation(self):
+        before = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(before)
+        before_actions = list(before.interview.get("analysis", {}).get("product_actions") or [])
+        before_bpmn = before.bpmn_xml
+        before_diagram_state_version = before.diagram_state_version
+        draft = {
+            "step_2": {
+                "stepName": "Упаковать сэндвич",
+                "status": "ready",
+                "rows": [
+                    {
+                        "id": "ai_2",
+                        "step_id": "step_2",
+                        "bpmn_element_id": "Task_2",
+                        "product_name": "Сэндвич",
+                        "action_type": "упаковка",
+                        "action_object": "сэндвич",
+                    }
+                ],
+                "selectedIds": ["ai_2"],
+            }
+        }
+
+        out = self.save_batch_draft(
+            self.session_id,
+            self.BatchDraftIn(draft=draft),
+            self._req(),
+        )
+        loaded = self.get_batch_draft(self.session_id, self._req())
+        after = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+
+        self.assertEqual(out, {"ok": True, "saved": True})
+        self.assertTrue(loaded.get("ok"))
+        self.assertEqual(loaded.get("draft"), draft)
+        self.assertEqual(after.interview.get("analysis", {}).get("product_actions"), before_actions)
+        self.assertEqual(after.interview.get("analysis", {}).get("product_actions_batch_draft"), draft)
+        self.assertEqual(after.bpmn_xml, before_bpmn)
+        self.assertEqual(after.diagram_state_version, before_diagram_state_version)
+
+        cleared = self.save_batch_draft(
+            self.session_id,
+            self.BatchDraftIn(draft=None),
+            self._req(),
+        )
+        after_clear = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)
+
+        self.assertEqual(cleared, {"ok": True, "saved": False})
+        self.assertNotIn("product_actions_batch_draft", after_clear.interview.get("analysis", {}))
+        self.assertEqual(after_clear.interview.get("analysis", {}).get("product_actions"), before_actions)
+        self.assertEqual(after_clear.bpmn_xml, before_bpmn)
 
     def test_suggest_returns_candidates_without_mutation_and_logs_success(self):
         before = self.get_storage().load(self.session_id, org_id=self.org_id, is_admin=True)

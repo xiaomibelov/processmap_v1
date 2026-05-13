@@ -566,6 +566,11 @@ export async function apiSaveBatchDraft(sessionId, draft) {
     ok: r.ok,
     status: r.status,
     saved: r.ok && r.data?.saved === true,
+    error: r.ok
+      ? ""
+      : (r.error || r.data?.error || r.data?.detail || r.response_text || r.text || "batch_draft_save_failed"),
+    data: r.data || null,
+    response_text: r.response_text || r.text || "",
   };
 }
 
