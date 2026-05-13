@@ -69,7 +69,7 @@ test("ProductActionsPanel makes saved actions primary and keeps editor collapsed
 
 test("ProductActionsPanel exposes all saved actions without rebinding other-step rows", () => {
   assert.equal(source.includes('const [actionsScope, setActionsScope] = useState("step")'), true);
-  assert.equal(source.includes('actionsScope === "all" ? productActions : actionsForStep'), true);
+  assert.equal(source.includes('actionsScope === "all" ? visibleProductActions : actionsForStep'), true);
   assert.equal(source.includes("actionMatchesBinding(row, selectedBinding)"), true);
   assert.match(source, /isCurrentStepAction \? \([\s\S]*Редактировать[\s\S]*\) : \(/);
   assert.equal(source.includes("Действие другого шага"), true);
@@ -236,11 +236,26 @@ test("ProductActionsPanel maps AI progress failures to the stage where they happ
 test("ProductActionsPanel keeps AI accept on patchInterviewAnalysis path only", () => {
   assert.equal(source.includes("handleAcceptAiRows"), true);
   assert.equal(source.includes("acceptAiProductActions({"), true);
-  assert.equal(source.includes("currentAnalysis: interviewData?.analysis"), true);
+  assert.equal(source.includes("currentAnalysis: currentAnalysisForPersistence"), true);
   assert.equal(source.includes("selectedActions: selectedAiRows"), true);
   assert.equal(source.includes("disabled={!canAcceptAiRows}"), true);
   assert.equal(source.includes("Изменения применены к процессу"), true);
   assert.equal(source.includes("Неполное"), true);
+});
+
+test("ProductActionsPanel refreshes all-actions list optimistically after AI accept/apply results", () => {
+  assert.equal(source.includes("optimisticProductActions"), true);
+  assert.equal(source.includes("visibleProductActions"), true);
+  assert.equal(source.includes("currentAnalysisForPersistence"), true);
+  assert.equal(source.includes("function syncProductActionsFromResult"), true);
+  assert.match(source, /if \(Array\.isArray\(result\?\.productActions\)\) \{[\s\S]*setOptimisticProductActions\(result\.productActions\);/);
+  assert.match(source, /const visibleActions = actionsScope === "all" \? visibleProductActions : actionsForStep;/);
+  assert.match(source, /const actionCount = visibleProductActions\.length;/);
+  const acceptAllBlock = source.slice(
+    source.indexOf("async function handleAcceptAllReadyRows"),
+    source.indexOf("function hasPendingSteps"),
+  );
+  assert.equal(acceptAllBlock.includes("syncProductActionsFromResult(result);"), true);
 });
 
 test("ProductActionsPanel editor is grouped and has one cancel action in the footer", () => {
