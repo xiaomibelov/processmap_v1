@@ -171,14 +171,14 @@ test("CSS DENSITY: row padding compact (<= 6px vertical)", () => {
   }
 });
 
-test("appVersion: currentVersion bumped to v1.0.122", () => {
+test("appVersion: currentVersion bumped to v1.0.126", () => {
   assert.ok(
-    appVersionSrc.includes('"v1.0.122"'),
-    "appVersion should be bumped to v1.0.122",
+    appVersionSrc.includes('"v1.0.126"'),
+    "appVersion should be bumped to v1.0.126",
   );
   assert.ok(
-    appVersionSrc.includes("currentVersion: \"v1.0.122\""),
-    "currentVersion field should be v1.0.122",
+    appVersionSrc.includes("currentVersion: \"v1.0.126\""),
+    "currentVersion field should be v1.0.126",
   );
 });
 
