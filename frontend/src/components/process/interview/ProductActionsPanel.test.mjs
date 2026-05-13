@@ -99,6 +99,20 @@ test("ProductActionsPanel exposes AI suggestion review without legacy notes or g
   assert.match(source, /disabled=\{!canAcceptAiRows\}/);
 });
 
+test("ProductActionsPanel batch AI uses one backend batch request instead of per-step suggest loop", () => {
+  const batchBlock = source.slice(
+    source.indexOf("async function handleBatchSuggestAiProductActions"),
+    source.indexOf("function toggleBatchRow"),
+  );
+  assert.equal(batchBlock.includes("apiBatchSuggestProductActions"), true);
+  assert.equal(batchBlock.includes("apiSuggestProductActions("), false);
+  assert.equal(batchBlock.includes("apiSaveBatchDraft("), false);
+  assert.equal(batchBlock.includes("max_steps_per_chunk: 10"), true);
+  assert.equal(batchBlock.includes("skip_existing_actions"), true);
+  assert.equal(batchBlock.includes("skip_existing_drafts: true"), true);
+  assert.equal(batchBlock.includes("setBatchReviewVisible(true)"), true);
+});
+
 test("ProductActionsPanel filters single-step AI rows and drops stale responses before apply", () => {
   assert.equal(source.includes("filterSuggestionDraftRowsForStep"), true);
   assert.equal(source.includes("suggestionMatchesSelectedStep"), true);
@@ -106,7 +120,6 @@ test("ProductActionsPanel filters single-step AI rows and drops stale responses 
   assert.equal(source.includes("selected_step_id: requestStepId"), true);
   assert.equal(source.includes("selected_step_bpmn_id: requestStepBpmnId"), true);
   assert.equal(source.includes("filterSuggestionDraftRowsForStep(draftResult.suggestions, requestStep)"), true);
-  assert.equal(source.includes("filterSuggestionDraftRowsForStep(draftResult.suggestions, step)"), true);
   const suggestBlock = source.slice(
     source.indexOf("async function handleSuggestAiProductActions"),
     source.indexOf("function patchAiRow"),
