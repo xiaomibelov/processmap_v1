@@ -559,6 +559,8 @@
   border-radius: 10px;
   background: hsl(var(--bg-soft) / 0.48);
   padding: 10px;
+  max-height: 600px;
+  overflow-y: auto;
 }
 
 .productActionsBatchStepGroup {
@@ -864,10 +866,11 @@
 }
 
 .productActionsSectionDivider {
-  height: 1px;
-  background: linear-gradient(to right, transparent, var(--analysis-border-soft) 20%, var(--analysis-border-soft) 80%, transparent);
-  margin: 24px 0;
-  opacity: 0.6;
+  height: 2px;
+  background: linear-gradient(to right, transparent, var(--analysis-border) 15%, var(--analysis-border) 85%, transparent);
+  margin: 16px 0;
+  opacity: 0.8;
+  box-shadow: 0 1px 0 hsl(var(--bg-elevated) / 0.24);
 }
 
 .productActionsAiCardReason {
@@ -7095,7 +7098,7 @@
   .analysisStepListTable tbody td {
     border-bottom: 0;
     background: color-mix(in srgb, var(--c-panel) 84%, var(--c-panel-2));
-    padding: 5px 8px;
+    padding: 4px 8px;
     vertical-align: middle;
   }
 
@@ -7244,7 +7247,7 @@
     margin-top: 0;
     gap: 4px;
     color: color-mix(in srgb, var(--c-muted) 86%, var(--c-text));
-    font-size: 10.5px;
+    font-size: 9.5px;
   }
 
   .analysisStepListTable .interviewSubprocessTagInline,
@@ -7320,6 +7323,7 @@
 
   .analysisStepListTable .interviewGatewayPreviewTag,
   .analysisStepListTable .interviewStepAiBadge,
+  .analysisStepListTable .interviewStepProductActionsBadge,
   .analysisStepListTable .interviewStepMetaStatusBtn {
     min-height: 20px;
     flex-shrink: 0;
@@ -7346,6 +7350,19 @@
     border-color: color-mix(in srgb, var(--c-info) 34%, var(--c-border));
     background: color-mix(in srgb, var(--c-info) 10%, transparent);
     color: color-mix(in srgb, var(--c-info) 88%, var(--c-text));
+  }
+
+  .analysisStepListTable .interviewStepProductActionsBadge {
+    border-color: color-mix(in srgb, var(--c-accent2) 34%, var(--c-border));
+    background: color-mix(in srgb, var(--c-accent2) 10%, transparent);
+    color: color-mix(in srgb, var(--c-accent2) 88%, var(--c-text));
+    cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease;
+  }
+
+  .analysisStepListTable .interviewStepProductActionsBadge:hover {
+    border-color: color-mix(in srgb, var(--c-accent2) 48%, var(--c-border));
+    background: color-mix(in srgb, var(--c-accent2) 16%, transparent);
   }
 
   .analysisStepListTable .interviewStepMetaStatusBtn.ok {
