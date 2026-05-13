@@ -13,7 +13,13 @@ import {
   listProductActionsForStep,
   normalizeProductActionsList,
 } from "../../../features/process/analysis/productActionsModel.js";
-import { apiBatchSuggestProductActions, apiSuggestProductActions, apiLoadBatchDraft, apiSaveBatchDraft } from "../../../lib/api.js";
+import {
+  apiBatchSuggestProductActions,
+  apiLoadBatchDraft,
+  apiRagIndexProductActions,
+  apiSaveBatchDraft,
+  apiSuggestProductActions,
+} from "../../../lib/api.js";
 import { toArray, toText } from "./utils";
 
 const FIELD_CONFIGS = [
@@ -437,6 +443,13 @@ export default function ProductActionsPanel({
   const [batchStatus, setBatchStatus] = useState(null);
   const [batchRunning, setBatchRunning] = useState(false);
   const [batchReviewVisible, setBatchReviewVisible] = useState(true);
+  const [selectedRagActionIds, setSelectedRagActionIds] = useState(() => new Set());
+  const [ragIndexStatus, setRagIndexStatus] = useState(null);
+  const [ragIndexing, setRagIndexing] = useState(false);
+  const allProductActionIds = useMemo(
+    () => visibleProductActions.map((row) => toText(row?.id)).filter(Boolean),
+    [visibleProductActions],
+  );
 
   useEffect(() => {
     if (!steps.length) return;
@@ -453,6 +466,14 @@ export default function ProductActionsPanel({
     lastDraftResetKeyRef.current = draftResetKey;
     setDraft(createDraftForStep(selectedStep, editingAction));
   }, [draftResetKey, selectedStep, editingAction]);
+
+  useEffect(() => {
+    const allowed = new Set(allProductActionIds);
+    setSelectedRagActionIds((prev) => {
+      const next = new Set([...prev].filter((id) => allowed.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [allProductActionIds]);
 
   useEffect(() => {
     const currentStepId = toText(selectedStep?.id);
@@ -487,6 +508,7 @@ export default function ProductActionsPanel({
   const actionCount = visibleProductActions.length;
   const stepActionCount = actionsForStep.length;
   const visibleActions = actionsScope === "all" ? visibleProductActions : actionsForStep;
+  const selectedRagActionCount = selectedRagActionIds.size;
   const canSaveDraft = hasMeaningfulProductActionDraft(draft);
   const selectedAiRows = useMemo(
     () => aiRows.filter((row) => selectedAiRowIds.has(toText(row.id)) && !toText(row.duplicate_of)),
@@ -501,6 +523,72 @@ export default function ProductActionsPanel({
   function syncProductActionsFromResult(result) {
     if (Array.isArray(result?.productActions)) {
       setOptimisticProductActions(result.productActions);
+    }
+  }
+
+  function toggleRagActionSelection(actionId, checked) {
+    const id = toText(actionId);
+    if (!id) return;
+    setSelectedRagActionIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+    setRagIndexStatus(null);
+  }
+
+  function formatRagIndexSummary(result) {
+    const indexed = Number(result?.indexed || 0);
+    const unchanged = Number(result?.unchanged || 0);
+    const skipped = Number(result?.skipped || 0);
+    const failed = Number(result?.failed || 0);
+    const parts = [
+      `Индексировано: ${indexed}`,
+      `без изменений: ${unchanged}`,
+    ];
+    if (skipped) parts.push(`пропущено: ${skipped}`);
+    if (failed) parts.push(`ошибок: ${failed}`);
+    return parts.join(" · ");
+  }
+
+  async function handleIndexProductActionsInRag(scope = "selected") {
+    if (!sessionId || ragIndexing) return;
+    const actionIds = scope === "all" ? allProductActionIds : [...selectedRagActionIds];
+    if (scope !== "all" && !actionIds.length) {
+      setRagIndexStatus({ type: "error", text: "Выберите действия для индексации в RAG." });
+      return;
+    }
+    if (scope === "all" && !allProductActionIds.length) {
+      setRagIndexStatus({ type: "error", text: "Нет сохранённых действий для индексации в RAG." });
+      return;
+    }
+
+    setRagIndexing(true);
+    setRagIndexStatus({ type: "saving", text: "Индексируем действия в RAG…" });
+    try {
+      const result = await apiRagIndexProductActions({
+        session_id: sessionId,
+        action_ids: scope === "all" ? [] : actionIds,
+      });
+      if (!result?.ok) {
+        setRagIndexStatus({
+          type: "error",
+          text: `Не удалось индексировать в RAG. Ошибка: ${toText(result?.error) || "unknown"}`,
+        });
+        return;
+      }
+      setRagIndexStatus({
+        type: result.failed ? "error" : "saved",
+        text: formatRagIndexSummary(result),
+      });
+    } catch (err) {
+      setRagIndexStatus({
+        type: "error",
+        text: `Не удалось индексировать в RAG. Ошибка: ${toText(err?.message) || "unknown"}`,
+      });
+    } finally {
+      setRagIndexing(false);
     }
   }
 
@@ -1017,6 +1105,42 @@ export default function ProductActionsPanel({
             </button>
           </div>
 
+          {actionsScope === "all" ? (
+            <div className="productActionsRagBar" data-testid="product-actions-rag-index-bar">
+              <div className="productActionsRagBarText">
+                Выбрано для RAG: {selectedRagActionCount} из {actionCount}
+              </div>
+              <div className="productActionsRagBarActions">
+                <button
+                  type="button"
+                  className="productActionsToolbarBtn"
+                  disabled={ragIndexing || selectedRagActionCount < 1}
+                  onClick={() => handleIndexProductActionsInRag("selected")}
+                  data-testid="product-actions-rag-index-selected"
+                >
+                  Индексировать выбранные в RAG
+                </button>
+                <button
+                  type="button"
+                  className="productActionsToolbarBtn"
+                  disabled={ragIndexing || actionCount < 1}
+                  onClick={() => handleIndexProductActionsInRag("all")}
+                  data-testid="product-actions-rag-index-all"
+                >
+                  Индексировать все в RAG
+                </button>
+              </div>
+              {ragIndexStatus ? (
+                <div
+                  className={`productActionsStatus ${ragIndexStatus.type || ""}`}
+                  data-testid="product-actions-rag-index-status"
+                >
+                  {ragIndexStatus.text}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           {showStepContext ? (
           <div className="productActionsStepRow">
             <label className="interviewField productActionsStepSelect">
@@ -1506,6 +1630,17 @@ export default function ProductActionsPanel({
             >
               <div className="productActionCardMain">
                 <div className="productActionCardTitle">
+                  {actionsScope === "all" ? (
+                    <label className="productActionRagSelect">
+                      <input
+                        type="checkbox"
+                        checked={selectedRagActionIds.has(toText(row.id))}
+                        onChange={(e) => toggleRagActionSelection(row.id, e.target.checked)}
+                        data-testid="product-action-rag-select"
+                      />
+                      <span>RAG</span>
+                    </label>
+                  ) : null}
                   {actionTitle(row)}
                   {isIncompleteAction(row) ? <span className="productActionIncomplete">Неполное</span> : null}
                 </div>
