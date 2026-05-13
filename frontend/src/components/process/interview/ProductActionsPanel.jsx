@@ -390,14 +390,26 @@ export default function ProductActionsPanel({
     () => normalizeProductActionsList(interviewData?.analysis?.product_actions),
     [interviewData?.analysis?.product_actions],
   );
+  const [optimisticProductActions, setOptimisticProductActions] = useState(null);
+  useEffect(() => {
+    setOptimisticProductActions(null);
+  }, [interviewData?.analysis?.product_actions]);
+  const visibleProductActions = useMemo(
+    () => normalizeProductActionsList(optimisticProductActions || productActions),
+    [optimisticProductActions, productActions],
+  );
+  const currentAnalysisForPersistence = useMemo(() => ({
+    ...(interviewData?.analysis && typeof interviewData.analysis === "object" ? interviewData.analysis : {}),
+    product_actions: visibleProductActions,
+  }), [interviewData?.analysis, visibleProductActions]);
   const preferredStepId = toArray(selectedStepIds).map(toText).find((id) => steps.some((step) => toText(step?.id) === id)) || "";
   const [selectedStepId, setSelectedStepId] = useState(preferredStepId || toText(steps[0]?.id));
   const selectedStep = steps.find((step) => toText(step?.id) === selectedStepId) || steps[0] || null;
   const selectedStepIdRef = useRef("");
   selectedStepIdRef.current = toText(selectedStep?.id);
   const actionsForStep = useMemo(
-    () => listProductActionsForStep(productActions, selectedStep),
-    [productActions, selectedStep],
+    () => listProductActionsForStep(visibleProductActions, selectedStep),
+    [visibleProductActions, selectedStep],
   );
   const [editingActionId, setEditingActionId] = useState("");
   const editingAction = actionsForStep.find((row) => row.id === editingActionId) || null;
@@ -472,9 +484,9 @@ export default function ProductActionsPanel({
   }, [sessionId]);
 
   const selectedBinding = deriveProductActionBindingFromStep(selectedStep);
-  const actionCount = productActions.length;
+  const actionCount = visibleProductActions.length;
   const stepActionCount = actionsForStep.length;
-  const visibleActions = actionsScope === "all" ? productActions : actionsForStep;
+  const visibleActions = actionsScope === "all" ? visibleProductActions : actionsForStep;
   const canSaveDraft = hasMeaningfulProductActionDraft(draft);
   const selectedAiRows = useMemo(
     () => aiRows.filter((row) => selectedAiRowIds.has(toText(row.id)) && !toText(row.duplicate_of)),
@@ -485,6 +497,12 @@ export default function ProductActionsPanel({
     const fields = [...FIELD_CONFIGS, { key: "role", label: "Роль", type: "text", placeholder: "Повар" }];
     return Object.fromEntries(fields.map((field) => [field.key, field]));
   }, []);
+
+  function syncProductActionsFromResult(result) {
+    if (Array.isArray(result?.productActions)) {
+      setOptimisticProductActions(result.productActions);
+    }
+  }
 
   async function handleBatchSuggestAiProductActions(scope = "without_actions", resume = false) {
     if (!sessionId || batchRunning || batchInFlightRef.current) return;
@@ -569,13 +587,14 @@ export default function ProductActionsPanel({
     setBatchStatus({ type: "saving", text: `Применяю действия для: ${entry.stepName}…` });
     const result = await acceptAiProductActions({
       sessionId,
-      currentAnalysis: interviewData?.analysis,
+      currentAnalysis: currentAnalysisForPersistence,
       selectedActions: selectedRows,
       getBaseDiagramStateVersion,
       rememberDiagramStateVersion,
       onSessionSync,
     });
     if (result?.ok) {
+      syncProductActionsFromResult(result);
       setBatchDraft((prev) => ({ ...prev, [sid]: { ...prev[sid], selectedIds: new Set() } }));
       setBatchStatus({ type: "saved", text: `Действия для шага «${entry.stepName}» применены.` });
     } else {
@@ -603,7 +622,7 @@ export default function ProductActionsPanel({
     setBatchStatus({ type: "saving", text: `Применяю все готовые действия (${allReadyRows.length} шт.)…` });
     const result = await acceptAiProductActions({
       sessionId,
-      currentAnalysis: interviewData?.analysis,
+      currentAnalysis: currentAnalysisForPersistence,
       selectedActions: allReadyRows,
       getBaseDiagramStateVersion,
       rememberDiagramStateVersion,
@@ -611,6 +630,7 @@ export default function ProductActionsPanel({
     });
 
     if (result?.ok) {
+      syncProductActionsFromResult(result);
       // Clear selectedIds for all ready entries
       setBatchDraft((prev) => {
         const next = { ...prev };
@@ -712,7 +732,7 @@ export default function ProductActionsPanel({
     setStatus({ type: "saving" });
     const result = await saveProductActionForStep({
       sessionId,
-      currentAnalysis: interviewData?.analysis,
+      currentAnalysis: currentAnalysisForPersistence,
       step: selectedStep,
       draft,
       getBaseDiagramStateVersion,
@@ -721,6 +741,7 @@ export default function ProductActionsPanel({
     });
     setSaving(false);
     if (result?.ok) {
+      syncProductActionsFromResult(result);
       const savedActionId = toText(result?.productAction?.id);
       lastDraftResetKeyRef.current = `${toText(selectedStep?.id)}::${savedActionId}`;
       setEditingActionId(savedActionId);
@@ -742,7 +763,7 @@ export default function ProductActionsPanel({
     setStatus({ type: "saving", text: "Удаляю действие с продуктом…" });
     const result = await deleteProductActionForStep({
       sessionId,
-      currentAnalysis: interviewData?.analysis,
+      currentAnalysis: currentAnalysisForPersistence,
       actionId,
       getBaseDiagramStateVersion,
       rememberDiagramStateVersion,
@@ -750,6 +771,7 @@ export default function ProductActionsPanel({
     });
     setSaving(false);
     if (result?.ok) {
+      syncProductActionsFromResult(result);
       setEditingActionId("");
       setEditorOpen(false);
       setDraft(createDraftForStep(selectedStep));
@@ -885,7 +907,7 @@ export default function ProductActionsPanel({
     setAiStatus({ type: "saving", text: "Применяю выбранные AI-действия…" });
     const result = await acceptAiProductActions({
       sessionId,
-      currentAnalysis: interviewData?.analysis,
+      currentAnalysis: currentAnalysisForPersistence,
       selectedActions: selectedAiRows,
       getBaseDiagramStateVersion,
       rememberDiagramStateVersion,
@@ -893,6 +915,7 @@ export default function ProductActionsPanel({
     });
     setAiApplying(false);
     if (result?.ok) {
+      syncProductActionsFromResult(result);
       setSelectedAiRowIds(new Set());
       setAiStatus({ type: "saved", text: "Изменения применены к процессу" });
       return;
@@ -1529,13 +1552,14 @@ export default function ProductActionsPanel({
                         setStatus({ type: "saving", text: "Удаляю действие…" });
                         const result = await deleteProductActionForStep({
                           sessionId,
-                          currentAnalysis: interviewData?.analysis,
+                          currentAnalysis: currentAnalysisForPersistence,
                           actionId: row.id,
                           getBaseDiagramStateVersion,
                           rememberDiagramStateVersion,
                           onSessionSync,
                         });
                         if (result?.ok) {
+                          syncProductActionsFromResult(result);
                           setStatus({ type: "saved", text: "Действие удалено." });
                         } else {
                           setStatus({
