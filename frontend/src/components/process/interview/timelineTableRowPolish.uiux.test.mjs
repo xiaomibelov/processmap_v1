@@ -5,7 +5,7 @@
  * 2. BPMN badge does NOT show raw technical kind as primary label.
  * 3. Tier chip with "None" is not rendered.
  * 4. CSS: interviewInlineTimeSummary default height is 0 (no layout allocation when hidden).
- * 5. CSS: interviewInlineTimeSummary on active/hover rows gets height: 20px.
+ * 5. CSS: interviewInlineTimeSummary hover/active reveal does not change geometry.
  * 6. appVersion bumped to v1.0.124.
  * 7. Changelog mentions row polish / readable BPMN types / timing hidden.
  */
@@ -125,25 +125,25 @@ test("CSS: interviewInlineTimeSummary default height is 0 (no layout allocation)
   );
 });
 
-test("CSS: interviewInlineTimeSummary on active/hover rows gets height: 20px", () => {
+test("CSS: interviewInlineTimeSummary hover/active reveal does not change geometry", () => {
   const activeRe = /\.analysisStepListRow(?:\.isActiveRow|\.isAnalysisActive|:hover)[^{]*\.interviewInlineTimeSummary\s*,?\s*[^{]*\{([^}]*)\}/s;
-  const hoverBlockRe = /analysisStepListRow[^{]*hover[^{]*interviewInlineTimeSummary[\s\S]*?height: 20px/;
-  assert.ok(
-    hoverBlockRe.test(css),
-    "interviewInlineTimeSummary must get height: 20px on hover/active rows",
-  );
+  const m = css.match(activeRe);
+  assert.ok(m, "interviewInlineTimeSummary hover/active rule must exist");
+  assert.ok(!m[1].includes("height:"), "hover/active rule must not change height");
+  assert.ok(!m[1].includes("max-height"), "hover/active rule must not change max-height");
+  assert.ok(m[1].includes("visibility: visible") || m[1].includes("opacity: 1"), "hover/active rule must use paint-only visibility/opacity");
 });
 
 // --- appVersion contract ---
 
-test("appVersion: currentVersion bumped to v1.0.124", () => {
+test("appVersion: currentVersion bumped to v1.0.126", () => {
   assert.ok(
-    appVersionSrc.includes('"v1.0.124"'),
-    "appVersion should be bumped to v1.0.124",
+    appVersionSrc.includes('"v1.0.126"'),
+    "appVersion should be bumped to v1.0.126",
   );
   assert.ok(
-    appVersionSrc.includes('currentVersion: "v1.0.124"'),
-    "currentVersion field should be v1.0.124",
+    appVersionSrc.includes('currentVersion: "v1.0.126"'),
+    "currentVersion field should be v1.0.126",
   );
 });
 

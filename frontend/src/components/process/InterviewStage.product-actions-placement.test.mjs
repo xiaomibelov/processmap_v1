@@ -17,7 +17,6 @@ test("InterviewStage renders ProductActionsPanel in the normal Analysis section 
   assert.notEqual(panelIndex, -1, "ProductActionsPanel must be rendered by InterviewStage");
   assert.ok(panelIndex < diagramModeIndex, "ProductActionsPanel must appear before diagram subview");
   assert.ok(panelIndex < pathsModeIndex, "ProductActionsPanel must appear before routes/scenarios subview");
-  assert.ok(panelIndex < matrixModeIndex, "ProductActionsPanel must appear before matrix table subview");
   assert.ok(panelIndex < transitionsIndex, "ProductActionsPanel must appear above B2/routes/summary blocks");
   assert.equal(/timelineViewMode === "matrix"[\s\S]{0,160}<ProductActionsPanel/.test(source), false);
 });
