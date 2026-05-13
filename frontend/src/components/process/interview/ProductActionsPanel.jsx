@@ -168,6 +168,64 @@ function getBatchRowId(row, stepId, index) {
   return sid ? `batch_${sid}_${index}` : `batch_row_${index}`;
 }
 
+function batchReviewStatusLabel(entryRaw) {
+  const entry = entryRaw && typeof entryRaw === "object" ? entryRaw : {};
+  const rowCount = toArray(entry.rows).length;
+  if (entry.skipped || entry.status === "skipped_existing_action") return "Уже есть действие";
+  if (entry.status === "skipped_existing_suggestion") return "Уже есть предложения";
+  if (entry.status === "rate_limited") return "Лимит AI";
+  if (entry.status === "not_processed") return "Не выполнен";
+  if (entry.status === "failed") return "Ошибка";
+  if (entry.status === "ready") return rowCount > 0 ? `Готово: ${rowCount}` : "Нет предложений";
+  return rowCount > 0 ? `${rowCount} предложений` : "Нет предложений";
+}
+
+function batchReviewStatusClass(entryRaw) {
+  const entry = entryRaw && typeof entryRaw === "object" ? entryRaw : {};
+  if (entry.skipped || entry.status === "skipped_existing_action" || entry.status === "skipped_existing_suggestion") return "skipped";
+  if (entry.status === "rate_limited") return "rateLimited";
+  if (entry.status === "not_processed") return "notProcessed";
+  if (entry.status === "failed") return "error";
+  if (entry.status === "ready" && toArray(entry.rows).length > 0) return "success";
+  return "empty";
+}
+
+function actionPreviewChipCount(rowRaw) {
+  const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
+  const values = [
+    actionProductName(row),
+    toText(row.product_group),
+    toText(row.action_type),
+    toText(row.action_stage),
+    toText(row.action_object_category),
+    toText(row.action_method),
+    toText(row.role),
+    ...toArray(row.tags).map(toText),
+  ].filter(Boolean);
+  return new Set(values).size;
+}
+
+function batchReviewMetaText(entryRaw) {
+  const entry = entryRaw && typeof entryRaw === "object" ? entryRaw : {};
+  const rows = toArray(entry.rows);
+  if (rows.length) {
+    const row = rows.find((item) => !toText(item?.duplicate_of)) || rows[0];
+    const objectText = toText(row.action_object) || actionProductName(row);
+    const chipCount = actionPreviewChipCount(row);
+    return [
+      actionTitle(row, entry.step),
+      objectText ? `объект: ${objectText}` : "",
+      chipCount > 0 ? `${chipCount} тегов` : "",
+    ].filter(Boolean).join(" · ");
+  }
+  if (entry.skipped || entry.status === "skipped_existing_action") return "AI-запрос не запускался: по шагу уже есть сохранённое действие.";
+  if (entry.status === "skipped_existing_suggestion") return "AI-запрос не запускался: уже есть готовые предложения.";
+  if (entry.status === "rate_limited") return "Batch остановлен из-за лимита AI.";
+  if (entry.status === "not_processed") return "Шаг не обработан после остановки batch.";
+  if (entry.status === "failed") return "Не удалось получить предложения для этого шага.";
+  return "AI не нашёл действий для этого шага.";
+}
+
 function actionSummary(rowRaw) {
   const row = rowRaw && typeof rowRaw === "object" ? rowRaw : {};
   return [
@@ -1064,28 +1122,21 @@ export default function ProductActionsPanel({
                   </button>
                 </div>
               </div>
-              {Object.entries(batchDraft).map(([stepId, entry]) => (
-                <details key={stepId} className="productActionsBatchStepGroup" data-testid="product-actions-batch-step">
-                  <summary className="productActionsBatchStepSummary">
-                    <span className="productActionsBatchStepName">{entry.stepName}</span>
-                    {entry.skipped || entry.status === "skipped_existing_action" ? (
-                      <span className="productActionsAiBadge skipped">Пропущен: есть действие</span>
-                    ) : entry.status === "skipped_existing_suggestion" ? (
-                      <span className="productActionsAiBadge skipped">Пропущен: есть черновик</span>
-                    ) : entry.status === "rate_limited" ? (
-                      <span className="productActionsAiBadge rateLimited">Лимит AI</span>
-                    ) : entry.status === "not_processed" ? (
-                      <span className="productActionsAiBadge notProcessed">Не выполнен</span>
-                    ) : entry.status === "failed" ? (
-                      <span className="productActionsAiBadge error">Ошибка</span>
-                    ) : entry.status === "ready" ? (
-                      <span className="productActionsAiBadge success">
-                        {entry.rows.length > 0 ? `Готово: ${entry.rows.length}` : "Готово: нет предложений"}
+              {Object.entries(batchDraft).map(([stepId, entry], batchIndex) => (
+                <details key={stepId} className="productActionsBatchStepGroup batchReviewRow" data-testid="product-actions-batch-step">
+                  <summary className="productActionsBatchStepSummary batchReviewRowMain">
+                    <span className="batchReviewRowIndex" aria-hidden="true">{batchIndex + 1}</span>
+                    <span className="batchReviewRowBody">
+                      <span className="batchReviewRowHead">
+                        <span className="productActionsBatchStepName batchReviewRowTitle">{entry.stepName}</span>
+                        <span className={`productActionsAiBadge batchReviewRowStatus ${batchReviewStatusClass(entry)}`}>
+                          {batchReviewStatusLabel(entry)}
+                        </span>
                       </span>
-                    ) : (
-                      <span className="productActionsAiCounter">{entry.rows.length} предложений</span>
-                    )}
+                      <span className="batchReviewRowMeta">{batchReviewMetaText(entry)}</span>
+                    </span>
                   </summary>
+                  <div className="batchReviewRowExpanded">
                   {entry.skipped || entry.status === "skipped_existing_action" ? (
                     <div className="productActionsAiWarningNote" data-testid="product-actions-batch-skipped">
                       <span className="productActionsAiWarningNoteIcon">ℹ</span>
@@ -1178,6 +1229,7 @@ export default function ProductActionsPanel({
                       AI не нашёл действий для этого шага.
                     </div>
                   )}
+                  </div>
                 </details>
               ))}
             </div>

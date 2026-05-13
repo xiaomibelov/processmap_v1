@@ -124,9 +124,24 @@ test("ProductActionsPanel batch review layout avoids narrow-panel scroll and hea
   assert.doesNotMatch(batchReviewCss, /overflow-y: auto;/);
   assert.match(styles, /\.productActionsBatchReview \.productActionsAiReviewHead\s*\{[\s\S]*flex-wrap: wrap;/);
   assert.match(styles, /\.productActionsBatchReviewActions\s*\{[\s\S]*flex-wrap: wrap;/);
-  assert.match(styles, /\.productActionsBatchStepSummary\s*\{[\s\S]*flex-wrap: wrap;/);
+  assert.match(styles, /\.productActionsBatchStepSummary\s*\{[\s\S]*grid-template-columns: auto minmax\(0, 1fr\);/);
   assert.match(styles, /\.productActionsAiCard\s*\{[\s\S]*max-width: 100%;/);
   assert.match(styles, /\.productActionsAiChip\s*\{[\s\S]*overflow-wrap: anywhere;/);
+});
+
+test("ProductActionsPanel batch review rows use compact summary labels and preview text", () => {
+  assert.equal(source.includes("function batchReviewStatusLabel"), true);
+  assert.equal(source.includes('return rowCount > 0 ? `Готово: ${rowCount}` : "Нет предложений";'), true);
+  assert.equal(source.includes("batchReviewRowIndex"), true);
+  assert.equal(source.includes("batchReviewRowTitle"), true);
+  assert.equal(source.includes("batchReviewRowStatus"), true);
+  assert.equal(source.includes("batchReviewRowMeta"), true);
+  assert.equal(source.includes("batchReviewRowExpanded"), true);
+  assert.match(styles, /\.batchReviewRowHead\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto;/);
+  assert.match(styles, /\.batchReviewRowStatus\s*\{[\s\S]*white-space: nowrap;/);
+  assert.match(styles, /\.batchReviewRowMeta\s*\{[\s\S]*text-overflow: ellipsis;/);
+  assert.match(styles, /\.productActionsBatchStepName\s*\{[\s\S]*-webkit-line-clamp: 2;/);
+  assert.match(styles, /\.productActionsBatchStepGroup \.productActionsAiCardTop\s*\{[\s\S]*padding: 7px 8px;/);
 });
 
 test("ProductActionsPanel filters single-step AI rows and drops stale responses before apply", () => {
