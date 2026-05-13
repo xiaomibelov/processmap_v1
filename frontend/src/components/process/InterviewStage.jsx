@@ -617,6 +617,17 @@ export default function InterviewStage({
     [data?.analysis, analysisContextStep],
   );
 
+  const productActionCountByStepId = useMemo(() => {
+    const map = {};
+    const steps = Array.isArray(timelineView) ? timelineView : [];
+    steps.forEach((step) => {
+      const stepId = toText(step?.id);
+      if (!stepId) return;
+      map[stepId] = countProductActionsForStep(data?.analysis, step);
+    });
+    return map;
+  }, [data?.analysis, timelineView]);
+
   const selectedStepContext = useMemo(() => ({
     title: analysisStepTitle(analysisContextStep),
     bpmnId: analysisStepBpmnId(analysisContextStep),
@@ -929,6 +940,7 @@ export default function InterviewStage({
                   onPatchBranchExpand={handlePatchBranchExpand}
                   onSetTimelineViewMode={handleSetTimelineViewMode}
                   pathMetrics={pathMetrics}
+                  productActionCountByStepId={productActionCountByStepId}
                 />
               </Profiler>
             </div>

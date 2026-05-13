@@ -219,6 +219,7 @@ export default function TimelineTable({
   branchExpandByGateway = {},
   onPatchBranchExpand,
   onSetTimelineViewMode,
+  productActionCountByStepId = {},
 }) {
   const DEBOUNCE_MS = 180;
   const [expandedLongAnnotationById, setExpandedLongAnnotationById] = useState({});
@@ -1283,6 +1284,22 @@ export default function TimelineTable({
                             Branches: {betweenTierSummary || "P0/P1/P2/None"}
                           </span>
                         )}
+                        {(() => {
+                          const productActionCount = Number(productActionCountByStepId?.[stepId] || 0);
+                          return productActionCount > 0 ? (
+                            <button
+                              type="button"
+                              className="interviewStepProductActionsBadge"
+                              data-testid="interview-step-product-actions-badge"
+                              onClick={() => {
+                                onActivateStep?.(stepId);
+                              }}
+                              title={`Действия с продуктом: ${productActionCount}`}
+                            >
+                              Действия: {productActionCount}
+                            </button>
+                          ) : null;
+                        })()}
                         {hasAi ? (
                           <button
                             type="button"
