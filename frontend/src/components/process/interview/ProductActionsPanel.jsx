@@ -1044,7 +1044,7 @@ export default function ProductActionsPanel({
                     Черновик. В process truth попадут только выбранные строки после принятия.
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div className="productActionsBatchReviewActions">
                   <button
                     type="button"
                     className="productActionsToolbarBtn"
@@ -1067,7 +1067,7 @@ export default function ProductActionsPanel({
               {Object.entries(batchDraft).map(([stepId, entry]) => (
                 <details key={stepId} className="productActionsBatchStepGroup" data-testid="product-actions-batch-step">
                   <summary className="productActionsBatchStepSummary">
-                    <span>{entry.stepName}</span>
+                    <span className="productActionsBatchStepName">{entry.stepName}</span>
                     {entry.skipped || entry.status === "skipped_existing_action" ? (
                       <span className="productActionsAiBadge skipped">Пропущен: есть действие</span>
                     ) : entry.status === "skipped_existing_suggestion" ? (
