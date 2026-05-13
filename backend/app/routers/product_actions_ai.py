@@ -802,8 +802,7 @@ def save_batch_draft(session_id: str, inp: BatchDraftIn, request: Request) -> Di
     require_org_member_for_enterprise(request, org_id)
     session = _load_session_for_request(request, session_id, org_id)
 
-    project_id = _text(getattr(session, "project_id", ""))
-    storage = get_project_storage(project_id, org_id)
+    storage = get_storage()
 
     # Load current interview and analysis
     interview = _as_dict(getattr(session, "interview", None))
@@ -820,7 +819,7 @@ def save_batch_draft(session_id: str, inp: BatchDraftIn, request: Request) -> Di
     # Save back to session.interview.analysis
     interview["analysis"] = analysis
     session.interview = interview
-    storage.save_session(session)
+    storage.save(session, user_id=_actor_user_id(request), org_id=org_id, is_admin=True)
 
     return {
         "ok": True,
