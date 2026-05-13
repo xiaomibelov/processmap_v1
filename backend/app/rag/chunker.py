@@ -109,7 +109,20 @@ def chunk_product_actions(actions: list[dict], metadata: dict | None = None) -> 
     chunks = []
     for i, action in enumerate(actions):
         parts = []
-        for field in ("action_type", "product_name", "product_group", "stage", "step", "method", "role"):
+        for field in (
+            "action_type",
+            "product_name",
+            "product_group",
+            "action_stage",
+            "stage",
+            "step_label",
+            "step",
+            "action_method",
+            "method",
+            "action_object",
+            "action_object_category",
+            "role",
+        ):
             val = action.get(field)
             if val:
                 parts.append(f"{field}: {val}")
@@ -118,6 +131,7 @@ def chunk_product_actions(actions: list[dict], metadata: dict | None = None) -> 
             continue
         chunk_meta = {
             **metadata,
+            "action_id": action.get("id", metadata.get("action_id", "")),
             "step_id": action.get("step_id", ""),
             "action_type": action.get("action_type", ""),
             "product_name": action.get("product_name", ""),
