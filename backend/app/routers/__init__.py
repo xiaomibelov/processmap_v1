@@ -9,6 +9,7 @@ from .org_members import router as org_members_router
 from .notes import router as notes_router
 from .org_property_dictionary import router as org_property_dictionary_router
 from .product_actions_registry import router as product_actions_registry_router
+from .process_properties_registry import router as process_properties_registry_router
 from .product_actions_ai import router as product_actions_ai_router
 from .rag import router as rag_router
 from .org import router as org_router
@@ -27,6 +28,7 @@ ROUTERS = (
     sessions_router,
     product_actions_ai_router,
     product_actions_registry_router,
+    process_properties_registry_router,
     rag_router,
     notes_router,
     clipboard_router,

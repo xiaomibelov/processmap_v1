@@ -100,6 +100,9 @@ export const apiRoutes = {
     productActionsRegistryQuery: () => "/api/analysis/product-actions/registry/query",
     productActionsRegistryExportCsv: () => "/api/analysis/product-actions/registry/export.csv",
     productActionsRegistryExportXlsx: () => "/api/analysis/product-actions/registry/export.xlsx",
+    processPropertiesRegistryQuery: () => "/api/analysis/properties/registry/query",
+    processPropertiesRegistryExportCsv: () => "/api/analysis/properties/registry/export.csv",
+    processPropertiesRegistryExportXlsx: () => "/api/analysis/properties/registry/export.xlsx",
     productActionsBulkSuggest: () => "/api/analysis/product-actions/suggest-bulk",
   },
   sessions: {
