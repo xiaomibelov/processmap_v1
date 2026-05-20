@@ -222,6 +222,39 @@ export async function apiExportProductActionRegistryXlsx(payload = {}) {
   );
 }
 
+export async function apiQueryProcessPropertiesRegistry(payload = {}) {
+  const body = payload && typeof payload === "object" ? payload : {};
+  const r = okOrError(await request(apiRoutes.analysis.processPropertiesRegistryQuery(), { method: "POST", body }));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    scope: String(data.scope || body.scope || "").trim(),
+    rows: Array.isArray(data.rows) ? data.rows : [],
+    sessions: Array.isArray(data.sessions) ? data.sessions : [],
+    session_summary: data.session_summary && typeof data.session_summary === "object" ? data.session_summary : {},
+    summary: data.summary && typeof data.summary === "object" ? data.summary : {},
+    page: data.page && typeof data.page === "object" ? data.page : {},
+  };
+}
+
+export async function apiExportProcessPropertiesRegistryCsv(payload = {}) {
+  return exportProductActionsRegistry(
+    apiRoutes.analysis.processPropertiesRegistryExportCsv(),
+    payload,
+    "process-properties-export.csv",
+  );
+}
+
+export async function apiExportProcessPropertiesRegistryXlsx(payload = {}) {
+  return exportProductActionsRegistry(
+    apiRoutes.analysis.processPropertiesRegistryExportXlsx(),
+    payload,
+    "process-properties-export.xlsx",
+  );
+}
+
 // ------- Enterprise Project Members -------
 export async function apiListOrgProjectMembers(orgId, projectId) {
   const oid = String(orgId || "").trim();
