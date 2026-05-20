@@ -4,6 +4,7 @@ import csv
 import io
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
+import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape as xml_escape
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -49,6 +50,7 @@ _FILTER_MAP = {
     "groups": "property_group",
     "sources": "source",
     "processes": "source",
+    "element_types": "element_type",
 }
 
 
@@ -57,6 +59,7 @@ class ProcessPropertiesRegistryFilters(BaseModel):
     groups: List[str] = Field(default_factory=list)
     sources: List[str] = Field(default_factory=list)
     processes: List[str] = Field(default_factory=list)
+    element_types: List[str] = Field(default_factory=list)
     completeness: str = "all"
 
 
@@ -198,6 +201,26 @@ def _extract_camunda_rows(source: Dict[str, Any]) -> List[Dict[str, Any]]:
     updated_at = int(source.get("updated_at") or 0)
     diagram_state_version = int(source.get("diagram_state_version") or 0)
 
+    # Build element_id -> {type, title} lookup from BPMN XML when needed
+    bpmn_xml = _text(source.get("bpmn_xml"))
+    element_lookup: Dict[str, Dict[str, str]] = {}
+    if camunda_map and bpmn_xml:
+        try:
+            root = ET.fromstring(bpmn_xml)
+            for elem in root.iter():
+                eid = _text(elem.get("id"))
+                if not eid:
+                    continue
+                tag = elem.tag
+                if tag.startswith("{"):
+                    tag = tag.split("}", 1)[1]
+                element_lookup[eid] = {
+                    "type": tag,
+                    "title": _text(elem.get("name")),
+                }
+        except Exception:
+            pass
+
     for element_id_raw, element_state_raw in camunda_map.items():
         element_id = _text(element_id_raw)
         if not element_id:
@@ -226,6 +249,10 @@ def _extract_camunda_rows(source: Dict[str, Any]) -> List[Dict[str, Any]]:
         if not isinstance(extension_listeners, list):
             extension_listeners = []
 
+        elem_info = element_lookup.get(element_id) or {}
+        element_title = _text(elem_info.get("title"))
+        element_type = _text(elem_info.get("type"))
+
         for prop in extension_properties:
             if not isinstance(prop, dict):
                 continue
@@ -244,8 +271,8 @@ def _extract_camunda_rows(source: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "session_id": session_id,
                 "session_title": session_title,
                 "element_id": element_id,
-                "element_title": "",
-                "element_type": "",
+                "element_title": element_title,
+                "element_type": element_type,
                 "property_name": prop_name,
                 "property_value": prop_value,
                 "property_type": "Camunda property",
@@ -279,8 +306,8 @@ def _extract_camunda_rows(source: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "session_id": session_id,
                 "session_title": session_title,
                 "element_id": element_id,
-                "element_title": "",
-                "element_type": "",
+                "element_title": element_title,
+                "element_type": element_type,
                 "property_name": listener_name,
                 "property_value": lvalue,
                 "property_type": "Camunda listener",
@@ -340,6 +367,7 @@ def _filter_options(rows: List[Dict[str, Any]]) -> Dict[str, List[str]]:
         "groups": set(),
         "sources": set(),
         "processes": set(),
+        "element_types": set(),
         "completeness": {"all", "complete", "incomplete"},
     }
     for row in rows:
@@ -350,6 +378,8 @@ def _filter_options(rows: List[Dict[str, Any]]) -> Dict[str, List[str]]:
         if _text(row.get("source")):
             options["sources"].add(_text(row.get("source")))
             options["processes"].add(_text(row.get("source")))
+        if _text(row.get("element_type")):
+            options["element_types"].add(_text(row.get("element_type")))
     return {k: sorted(v) for k, v in options.items()}
 
 
@@ -362,6 +392,7 @@ def _applied_filters(filters: ProcessPropertiesRegistryFilters) -> Dict[str, Any
         "groups": _texts(filters.groups),
         "sources": _texts(filters.sources),
         "processes": _texts(filters.processes),
+        "element_types": _texts(filters.element_types),
         "completeness": completeness,
     }
 
@@ -407,7 +438,7 @@ def _empty_state(
 ) -> Dict[str, Any]:
     has_filters = any(
         applied_filters.get(k)
-        for k in ("property_types", "groups", "sources", "processes")
+        for k in ("property_types", "groups", "sources", "processes", "element_types")
     ) or applied_filters.get("completeness") not in (None, "", "all")
     if not session_summaries:
         return {"kind": "no_sessions", "scope": scope, "message_key": "registry.empty.no_sessions"}

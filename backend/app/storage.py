@@ -3192,11 +3192,12 @@ class Storage:
         user_id: Optional[str] = None,
         is_admin: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
-        """Return minimal metadata plus bpmn_meta for process properties extraction.
+        """Return minimal metadata plus bpmn_meta and bpmn_xml for process properties extraction.
 
-        The query intentionally does not select BPMN XML, interview_json, notes,
-        reports, resources, analytics or normalized payloads. It reads
-        bpmn_meta_json only to reduce it to camunda_extensions_by_element_id.
+        The query intentionally does not select interview_json, notes, reports,
+        resources, analytics or normalized payloads. It reads bpmn_meta_json to
+        reduce it to camunda_extensions_by_element_id, and bpmn_xml to enrich
+        element_type and element_title from BPMN tags.
         """
         owner = _scope_user_id(user_id)
         admin = _scope_is_admin(is_admin)
@@ -3238,6 +3239,7 @@ class Storage:
                   s.project_id AS project_id,
                   s.org_id AS org_id,
                   s.bpmn_meta_json AS bpmn_meta_json,
+                  s.bpmn_xml AS bpmn_xml,
                   s.diagram_state_version AS diagram_state_version,
                   s.updated_at AS session_updated_at,
                   p.title AS project_title,
@@ -3277,6 +3279,7 @@ class Storage:
                 "diagram_state_version": int(_row_value(row, "diagram_state_version") or 0),
                 "updated_at": int(_row_value(row, "session_updated_at") or 0),
                 "bpmn_meta": bpmn_meta,
+                "bpmn_xml": str(_row_value(row, "bpmn_xml") or ""),
             })
         return out
 
