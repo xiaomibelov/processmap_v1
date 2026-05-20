@@ -56,6 +56,7 @@ function normalizeBackendRow(backendRow) {
     type: toText(r.property_type) || "Camunda property",
     group: toText(r.property_group) || "extensionProperties",
     status: toText(r.status) || (value !== "—" ? "Полная" : "Неполная"),
+    elementType: toText(r.element_type) || "",
   };
 }
 
@@ -110,6 +111,7 @@ export default function ProcessPropertiesRegistryPage({
   const [groupFilter, setGroupFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [processFilter, setProcessFilter] = useState("");
+  const [elementTypeFilter, setElementTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [backendRows, setBackendRows] = useState([]);
   const [backendLoading, setBackendLoading] = useState(false);
@@ -197,14 +199,16 @@ export default function ProcessPropertiesRegistryPage({
     && (!groupFilter || row.group === groupFilter)
     && (!sourceFilter || row.sourceKind === sourceFilter)
     && (!processFilter || row.source === processFilter)
+    && (!elementTypeFilter || row.elementType === elementTypeFilter)
     && (!statusFilter || row.status === statusFilter)
-  )), [groupFilter, processFilter, propertyTypeFilter, rows, sourceFilter, statusFilter]);
+  )), [elementTypeFilter, groupFilter, processFilter, propertyTypeFilter, rows, sourceFilter, statusFilter]);
   const options = {
     types: [...new Set(rows.map((row) => row.type))],
     groups: [...new Set(rows.map((row) => row.group))],
     sources: [...new Set(rows.map((row) => row.sourceKind))],
     processes: [...new Set(rows.map((row) => row.source))],
     statuses: [...new Set(rows.map((row) => row.status))],
+    elementTypes: [...new Set(rows.map((row) => row.elementType).filter(Boolean))],
   };
   const metricValue = (value) => (filtersEnabled ? value : "—");
 
@@ -217,6 +221,7 @@ export default function ProcessPropertiesRegistryPage({
     setGroupFilter("");
     setSourceFilter("");
     setProcessFilter("");
+    setElementTypeFilter("");
     setStatusFilter("");
   }
 
@@ -275,6 +280,7 @@ export default function ProcessPropertiesRegistryPage({
                   <label className="productActionsRegistryFilterItem"><span>Группа свойства</span><select value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}><option value="">Все</option>{options.groups.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
                   <label className="productActionsRegistryFilterItem"><span>Источник</span><select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}><option value="">Все</option>{options.sources.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
                   <label className="productActionsRegistryFilterItem"><span>Процесс / сессия</span><select value={processFilter} onChange={(event) => setProcessFilter(event.target.value)}><option value="">Все</option>{options.processes.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
+                  <label className="productActionsRegistryFilterItem"><span>Тип объекта</span><select value={elementTypeFilter} onChange={(event) => setElementTypeFilter(event.target.value)}><option value="">Все</option>{options.elementTypes.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
                   <label className="productActionsRegistryFilterItem"><span>Полнота</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">Все</option>{options.statuses.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
                   <button type="button" className="productActionsRegistryFilterReset" onClick={resetFilters}>Сбросить фильтры</button>
                 </div>

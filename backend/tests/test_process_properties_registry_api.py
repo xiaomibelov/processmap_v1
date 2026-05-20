@@ -89,6 +89,7 @@ class ProcessPropertiesRegistryApiTests(unittest.TestCase):
                 }
             },
             diagram_state_version=7,
+            bpmn_xml='<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"><bpmn:process id="Process_1" name="Process One"><bpmn:task id="Task_1" name="Task One" /></bpmn:process></bpmn:definitions>',
         )
         self.session_a2 = self._seed_session(
             self.project_a,
@@ -105,6 +106,7 @@ class ProcessPropertiesRegistryApiTests(unittest.TestCase):
                 }
             },
             diagram_state_version=3,
+            bpmn_xml='<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"><bpmn:process id="Process_2" name="Process Two"><bpmn:task id="Task_2" name="Task Two" /></bpmn:process></bpmn:definitions>',
         )
         self.session_a3_empty = self._seed_session(
             self.project_a,
@@ -127,6 +129,7 @@ class ProcessPropertiesRegistryApiTests(unittest.TestCase):
                 }
             },
             diagram_state_version=5,
+            bpmn_xml='<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"><bpmn:process id="Process_3" name="Process Three"><bpmn:serviceTask id="ServiceTask_1" name="Service Task One" /></bpmn:process></bpmn:definitions>',
         )
 
     def tearDown(self):
@@ -162,13 +165,13 @@ class ProcessPropertiesRegistryApiTests(unittest.TestCase):
     def _req(self, user: dict):
         return _DummyRequest(user, active_org_id=self.org_id)
 
-    def _seed_session(self, project_id: str, title: str, bpmn_meta: dict, *, diagram_state_version: int):
+    def _seed_session(self, project_id: str, title: str, bpmn_meta: dict, *, diagram_state_version: int, bpmn_xml: str = ""):
         storage = self.get_storage()
         sid = storage.create(title, roles=["role"], project_id=project_id, org_id=self.org_id, is_admin=True)
         session = storage.load(sid, org_id=self.org_id, is_admin=True)
         self.assertIsNotNone(session)
         session.bpmn_meta = bpmn_meta
-        session.bpmn_xml = "<bpmn:definitions>" + ("x" * 2000) + "</bpmn:definitions>"
+        session.bpmn_xml = bpmn_xml or ("<bpmn:definitions>" + ("x" * 2000) + "</bpmn:definitions>")
         session.interview = {"report_versions": {"Path_1": [{"report_markdown": "heavy report" * 1000}]}}
         session.diagram_state_version = diagram_state_version
         storage.save(session, org_id=self.org_id, is_admin=True)
@@ -413,6 +416,46 @@ class ProcessPropertiesRegistryApiTests(unittest.TestCase):
         self.assertIn("Camunda listener", filter_options.get("property_types", []))
         self.assertIn("extensionProperties", filter_options.get("groups", []))
         self.assertIn("extensionListeners", filter_options.get("groups", []))
+        self.assertIn("task", filter_options.get("element_types", []))
+        self.assertIn("serviceTask", filter_options.get("element_types", []))
+
+    def test_element_type_and_title_populated_from_bpmn_xml(self):
+        out = self._query(scope="session", session_id=self.session_a1, limit=10)
+        self.assertTrue(out.get("ok"))
+        rows = out.get("rows", [])
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            self.assertEqual(row.get("element_id"), "Task_1")
+            self.assertEqual(row.get("element_type"), "task")
+            self.assertEqual(row.get("element_title"), "Task One")
+
+    def test_element_type_filter_returns_matching_rows(self):
+        out = self._query(
+            scope="workspace",
+            workspace_id=self.workspace_id,
+            filters=self.ProcessPropertiesRegistryFilters(element_types=["task"]),
+            limit=10,
+        )
+        self.assertTrue(out.get("ok"))
+        for row in out.get("rows", []):
+            self.assertEqual(row.get("element_type"), "task")
+        self.assertEqual(out.get("summary", {}).get("actions_total"), 3)
+
+    def test_element_type_filter_non_matching_returns_empty(self):
+        out = self._query(
+            scope="workspace",
+            workspace_id=self.workspace_id,
+            filters=self.ProcessPropertiesRegistryFilters(element_types=["nonexistent"]),
+            limit=10,
+        )
+        self.assertTrue(out.get("ok"))
+        self.assertEqual(len(out.get("rows", [])), 0)
+        self.assertEqual(out.get("summary", {}).get("actions_total"), 0)
+
+    def test_graceful_degradation_when_bpmn_xml_missing(self):
+        out = self._query(scope="session", session_id=self.session_a3_empty, limit=10)
+        self.assertTrue(out.get("ok"))
+        self.assertEqual(len(out.get("rows", [])), 0)
 
 
 if __name__ == "__main__":
