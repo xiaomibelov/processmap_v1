@@ -603,6 +603,40 @@ export async function apiBatchSuggestProductActions(sessionId, payload = {}) {
   };
 }
 
+export async function apiGetSessionAnalysisViewModel(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.analysisViewModel(sid)));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  const analysis = data.analysis && typeof data.analysis === "object" ? data.analysis : {};
+  const productActions = analysis.product_actions && typeof analysis.product_actions === "object" ? analysis.product_actions : {};
+  return {
+    ok: true,
+    status: r.status,
+    session_id: String(data.session_id || sid),
+    session_title: String(data.session_title || ""),
+    project_id: String(data.project_id || ""),
+    project_title: String(data.project_title || ""),
+    workspace_id: String(data.workspace_id || ""),
+    analysis: {
+      product_actions: {
+        rows: Array.isArray(productActions.rows) ? productActions.rows : [],
+        summary: productActions.summary && typeof productActions.summary === "object" ? productActions.summary : {},
+        filter_options: productActions.filter_options && typeof productActions.filter_options === "object" ? productActions.filter_options : {},
+        applied_filters: productActions.applied_filters && typeof productActions.applied_filters === "object" ? productActions.applied_filters : {},
+        metrics: productActions.metrics && typeof productActions.metrics === "object" ? productActions.metrics : {},
+        empty_state: productActions.empty_state && typeof productActions.empty_state === "object" ? productActions.empty_state : {},
+        source_state: productActions.source_state && typeof productActions.source_state === "object" ? productActions.source_state : {},
+      },
+      derived: {
+        step_action_counts: analysis.derived && typeof analysis.derived === "object" && analysis.derived.step_action_counts && typeof analysis.derived.step_action_counts === "object" ? analysis.derived.step_action_counts : {},
+      },
+    },
+    interview_state: data.interview_state && typeof data.interview_state === "object" ? data.interview_state : {},
+  };
+}
+
 export async function apiLoadBatchDraft(sessionId) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
