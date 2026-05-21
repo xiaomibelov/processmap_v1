@@ -75,10 +75,10 @@ test("ProcessStage wires analytics hub route and component", () => {
   assert.match(processStageSource, /onOpenAnalyticsHub/);
 });
 
-test("WorkspaceExplorer does not yet expose analytics hub navigation", () => {
-  assert.equal(explorerSource.includes("onOpenAnalyticsHub"), false);
-  assert.equal(explorerSource.includes('data-testid="workspace-analytics-hub-nav"'), false);
-  assert.equal(explorerSource.includes('data-testid="project-analytics-hub"'), false);
+test("WorkspaceExplorer exposes analytics hub navigation", () => {
+  assert.equal(explorerSource.includes("onOpenAnalyticsHub"), true);
+  assert.equal(explorerSource.includes('data-testid="workspace-analytics-hub-nav"'), true);
+  assert.equal(explorerSource.includes('data-testid="project-analytics-hub"'), true);
 });
 
 test("AppShell does not yet detect analytics surface", () => {
@@ -100,7 +100,7 @@ test("CSS does not yet define analytics hub scoped classes", () => {
 });
 
 test("version changelog keeps analytics hub entry and current marker", () => {
-  assert.match(versionSource, /currentVersion: "v1\.0\.140"/);
-  assert.match(versionSource, /version: "v1\.0\.140"/);
-  assert.match(versionSource, /Консолидация дерева: исправлены тесты, подготовлена сборка v1\./);
+  assert.match(versionSource, /currentVersion: "v1\.0\.141"/);
+  assert.match(versionSource, /version: "v1\.0\.141"/);
+  assert.match(versionSource, /Добавлена навигация в Аналитику из Workspace Explorer\./);
 });
