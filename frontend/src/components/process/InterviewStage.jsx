@@ -15,6 +15,7 @@ import ExceptionsBlock from "./interview/ExceptionsBlock";
 import AiQuestionsBlock from "./interview/AiQuestionsBlock";
 import BindingAssistantModal from "./interview/BindingAssistantModal";
 import InterviewDebugOverlay from "./interview/InterviewDebugOverlay";
+import { apiGetSessionAnalysisViewModel } from "../../lib/api.js";
 import { buildBindingAssistantModel } from "./interview/bindingAssistant";
 import { markInterviewPerf, measureInterviewSpan } from "./interview/perf";
 
@@ -249,6 +250,7 @@ export default function InterviewStage({
   const [debugOverlayOpen, setDebugOverlayOpen] = useState(false);
   const [debugOverlayTab, setDebugOverlayTab] = useState("graph");
   const [isUiTransitionPending, startUiTransition] = useTransition();
+  const [sessionAnalysisViewModel, setSessionAnalysisViewModel] = useState(null);
   const renderCountRef = useRef(0);
   const renderWindowRef = useRef({ ts: 0, count: 0 });
   const firstMeaningfulMarkedRef = useRef(false);
@@ -612,21 +614,31 @@ export default function InterviewStage({
     return aiQuestionMetaByStepId?.[stepId] || { count: 0, hasAi: false };
   }, [selectedStep, aiQuestionMetaByStepId]);
 
-  const selectedStepProductActionCount = useMemo(
-    () => countProductActionsForStep(data?.analysis, analysisContextStep),
-    [data?.analysis, analysisContextStep],
-  );
+  const selectedStepProductActionCount = useMemo(() => {
+    const stepId = toText(analysisContextStep?.id);
+    const vmCount = stepId ? (sessionAnalysisViewModel?.analysis?.derived?.step_action_counts?.[stepId] || 0) : 0;
+    if (vmCount || sessionAnalysisViewModel) {
+      return vmCount;
+    }
+    return countProductActionsForStep(data?.analysis, analysisContextStep);
+  }, [data?.analysis, analysisContextStep, sessionAnalysisViewModel]);
 
   const productActionCountByStepId = useMemo(() => {
     const map = {};
     const steps = Array.isArray(timelineView) ? timelineView : [];
+    const vmCounts = sessionAnalysisViewModel?.analysis?.derived?.step_action_counts;
+    const hasVm = sessionAnalysisViewModel && vmCounts && typeof vmCounts === "object";
     steps.forEach((step) => {
       const stepId = toText(step?.id);
       if (!stepId) return;
-      map[stepId] = countProductActionsForStep(data?.analysis, step);
+      if (hasVm) {
+        map[stepId] = vmCounts[stepId] || 0;
+      } else {
+        map[stepId] = countProductActionsForStep(data?.analysis, step);
+      }
     });
     return map;
-  }, [data?.analysis, timelineView]);
+  }, [data?.analysis, timelineView, sessionAnalysisViewModel]);
 
   const selectedStepContext = useMemo(() => ({
     title: analysisStepTitle(analysisContextStep),
@@ -778,6 +790,24 @@ export default function InterviewStage({
       }
     };
   }, [sid, timelineViewMode, branchViewMode, branchExpandByGateway, saveUiPrefs]);
+
+  useEffect(() => {
+    let alive = true;
+    async function load() {
+      if (!sid) return;
+      const result = await apiGetSessionAnalysisViewModel(sid);
+      if (!alive) return;
+      if (result?.ok) {
+        setSessionAnalysisViewModel(result);
+      } else {
+        setSessionAnalysisViewModel(null);
+      }
+    }
+    load();
+    return () => {
+      alive = false;
+    };
+  }, [sid]);
 
   return (
     <div className="interviewStage">

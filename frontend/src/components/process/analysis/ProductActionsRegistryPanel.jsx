@@ -4,6 +4,7 @@ import {
   apiExportProductActionRegistryCsv,
   apiExportProductActionRegistryXlsx,
   apiGetSession,
+  apiGetSessionAnalysisViewModel,
   apiListProjectSessions,
   apiQueryProductActionRegistry,
 } from "../../../lib/api.js";
@@ -209,6 +210,7 @@ export function ProductActionsRegistryContent({
   const [exportLoading, setExportLoading] = useState("");
   const [exportStatus, setExportStatus] = useState("");
   const [filters, setFilters] = useState({ completeness: "all" });
+  const [sessionViewModel, setSessionViewModel] = useState(null);
 
   useEffect(() => {
     setScope(normalizeScope(initialScope));
@@ -261,10 +263,55 @@ export function ProductActionsRegistryContent({
         setSessionSummaryWarning("");
         setBackendScope(normalizedScope);
         setBackendStatus("Откройте сессию или выберите проект для preview.");
+        setSessionViewModel(null);
         return;
       }
       setBackendLoading(true);
       setBackendStatus("Загружаю read-only реестр…");
+
+      if (normalizedScope === "session" && toText(sessionId)) {
+        const vmResult = await apiGetSessionAnalysisViewModel(sessionId);
+        if (!alive) return;
+        setBackendLoading(false);
+        setBackendScope(normalizedScope);
+        if (!vmResult?.ok) {
+          setBackendRows([]);
+          setBackendSessions([]);
+          setBackendSessionSummary(null);
+          setSessionSummaryWarning("");
+          setSessionViewModel(null);
+          setBackendStatus(toText(vmResult?.error) || "Backend view-model пока недоступен.");
+          return;
+        }
+        setSessionViewModel(vmResult);
+        const vmRows = normalizeBackendRows(vmResult?.analysis?.product_actions?.rows);
+        const vmSummary = vmResult?.analysis?.product_actions?.summary;
+        const vmMetrics = vmResult?.analysis?.product_actions?.metrics;
+        const syntheticSession = {
+          id: sessionId,
+          session_id: sessionId,
+          session_title: vmResult.session_title || sessionTitle || "Без названия",
+          project_id: vmResult.project_id || projectId,
+          project_title: vmResult.project_title || projectTitle,
+          folder_id: "",
+          folder_title: "",
+          path: vmResult.project_title || projectTitle,
+          status: vmResult.interview_state?.status || "",
+          updated_at: vmResult.interview_state?.updated_at || "",
+          actions_total: vmMetrics?.total_rows || vmSummary?.total || vmRows.length,
+          complete: vmMetrics?.complete || vmSummary?.complete || 0,
+          incomplete: vmMetrics?.incomplete || vmSummary?.incomplete || 0,
+        };
+        setBackendRows(vmRows);
+        setBackendSessions(vmRows.length ? [syntheticSession] : []);
+        setBackendSessionSummary(null);
+        setSessionSummaryWarning("");
+        setBackendStatus(vmRows.length
+          ? `Загружено: строк ${vmRows.length}.`
+          : "В выбранной сессии пока нет действий с продуктом.");
+        return;
+      }
+
       const result = await apiQueryProductActionRegistry(payload);
       if (!alive) return;
       setBackendLoading(false);
@@ -300,17 +347,43 @@ export function ProductActionsRegistryContent({
     };
   }, [projectId, scope, sessionId, workspaceId]);
 
+  const viewModelRows = sessionViewModel?.analysis?.product_actions?.rows;
   const rows = backendScope === scope
     ? backendRows
     : scope === "project"
       ? loadedProjectRows
       : scope === "session"
-        ? currentRows
+        ? (Array.isArray(viewModelRows) ? normalizeBackendRows(viewModelRows) : currentRows)
         : [];
   const sessionRows = backendScope === scope ? backendSessions : [];
-  const filterOptions = useMemo(() => uniqueProductActionRegistryFilterOptions(rows), [rows]);
+  const filterOptions = useMemo(() => {
+    const vmFilterOptions = sessionViewModel?.analysis?.product_actions?.filter_options;
+    if (scope === "session" && vmFilterOptions && typeof vmFilterOptions === "object") {
+      return {
+        product_group: Array.isArray(vmFilterOptions.product_groups) ? vmFilterOptions.product_groups : [],
+        product_name: Array.isArray(vmFilterOptions.products) ? vmFilterOptions.products : [],
+        action_type: Array.isArray(vmFilterOptions.action_types) ? vmFilterOptions.action_types : [],
+        action_stage: Array.isArray(vmFilterOptions.stages) ? vmFilterOptions.stages : [],
+        action_object_category: Array.isArray(vmFilterOptions.object_categories) ? vmFilterOptions.object_categories : [],
+        role: Array.isArray(vmFilterOptions.roles) ? vmFilterOptions.roles : [],
+      };
+    }
+    return uniqueProductActionRegistryFilterOptions(rows);
+  }, [rows, scope, sessionViewModel]);
   const filteredRows = useMemo(() => filterProductActionRegistryRows(rows, filters), [filters, rows]);
-  const summary = useMemo(() => summarizeProductActionRegistryRows(rows), [rows]);
+  const summary = useMemo(() => {
+    const vmSummary = sessionViewModel?.analysis?.product_actions?.summary;
+    const vmMetrics = sessionViewModel?.analysis?.product_actions?.metrics;
+    if (scope === "session" && (vmSummary || vmMetrics)) {
+      return {
+        sessions: 1,
+        rows: vmSummary?.total ?? vmMetrics?.total_rows ?? 0,
+        complete: vmSummary?.complete ?? vmMetrics?.complete ?? 0,
+        incomplete: vmSummary?.incomplete ?? vmMetrics?.incomplete ?? 0,
+      };
+    }
+    return summarizeProductActionRegistryRows(rows);
+  }, [rows, scope, sessionViewModel]);
   const filteredSummary = useMemo(() => summarizeProductActionRegistryRows(filteredRows), [filteredRows]);
   const capStatus = enforceProductActionRegistrySessionCap(selectedSessionIds);
   const canLoadSelected = !!projectId && selectedSessionIds.length > 0 && capStatus.ok && !loadingSessions;

@@ -99,6 +99,22 @@ test("ProductActionsRegistryPanel provides filters, completeness and backend exp
   assert.equal(source.includes("XLSX — позже"), false);
 });
 
+test("ProductActionsRegistryPanel session scope calls apiGetSessionAnalysisViewModel and uses backend fields", () => {
+  assert.match(source, /apiGetSessionAnalysisViewModel/);
+  assert.match(source, /sessionViewModel/);
+  assert.match(source, /normalizedScope === "session"/);
+  assert.match(source, /vmResult\?\.analysis\?\.product_actions\?\.rows/);
+  assert.match(source, /vmFilterOptions/);
+  assert.match(source, /vmSummary/);
+  assert.match(source, /vmMetrics/);
+});
+
+test("ProductActionsRegistryPanel preserves fallback when backend fields are absent", () => {
+  assert.match(source, /Array\.isArray\(viewModelRows\) \? normalizeBackendRows\(viewModelRows\) : currentRows/);
+  assert.match(source, /uniqueProductActionRegistryFilterOptions\(rows\)/);
+  assert.match(source, /summarizeProductActionRegistryRows\(rows\)/);
+});
+
 test("ProductActionsRegistryPage renders content as page shell without dialog contract", () => {
   assert.equal(pageSource.includes("productActionsRegistryPage"), true);
   assert.equal(pageSource.includes("showWorkspaceScope"), true);

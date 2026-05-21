@@ -119,6 +119,7 @@ export const apiRoutes = {
     productActionsSuggest: (sessionId) => `/api/sessions/${encode(sessionId)}/analysis/product-actions/suggest`,
     productActionsBatchSuggest: (sessionId) => `/api/sessions/${encode(sessionId)}/analysis/product-actions/batch-suggest`,
     productActionsBatchDraft: (sessionId) => `/api/sessions/${encode(sessionId)}/analysis/product-actions/batch-draft`,
+    analysisViewModel: (sessionId) => `/api/sessions/${encode(sessionId)}/analysis/view-model`,
     noteAggregate: (sessionId) => `/api/sessions/${encode(sessionId)}/note-aggregate`,
     mentionableUsers: (sessionId) => `/api/sessions/${encode(sessionId)}/mentionable-users`,
     noteThreads: (sessionId, filters = {}) => withQuery(`/api/sessions/${encode(sessionId)}/note-threads`, {

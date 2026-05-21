@@ -552,6 +552,167 @@ def _xlsx_bytes(rows: List[Dict[str, Any]]) -> bytes:
     return output.getvalue()
 
 
+def _session_filter_options(rows: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+    options: Dict[str, Set[str]] = {
+        "product_groups": set(),
+        "products": set(),
+        "action_types": set(),
+        "stages": set(),
+        "object_categories": set(),
+        "roles": set(),
+    }
+    for row in rows:
+        if _text(row.get("product_group")):
+            options["product_groups"].add(_text(row.get("product_group")))
+        if _text(row.get("product_name")):
+            options["products"].add(_text(row.get("product_name")))
+        if _text(row.get("action_type")):
+            options["action_types"].add(_text(row.get("action_type")))
+        if _text(row.get("action_stage")):
+            options["stages"].add(_text(row.get("action_stage")))
+        if _text(row.get("action_object_category")):
+            options["object_categories"].add(_text(row.get("action_object_category")))
+        if _text(row.get("role")):
+            options["roles"].add(_text(row.get("role")))
+    return {k: sorted(v) for k, v in options.items()}
+
+
+def _session_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    complete = sum(1 for row in rows if row.get("completeness") == "complete")
+    incomplete = len(rows) - complete
+    return {
+        "total_rows": len(rows),
+        "complete": complete,
+        "incomplete": incomplete,
+    }
+
+
+def _session_empty_state(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not rows:
+        return {"kind": "no_actions", "scope": "session", "message_key": "registry.empty.no_actions"}
+    return {"kind": "not_empty", "scope": "session", "message_key": "registry.empty.not_empty"}
+
+
+def _session_source_state(session: Any, rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    bpmn_xml = _text(getattr(session, "bpmn_xml", ""))
+    bpmn_elements_count = 0
+    if bpmn_xml:
+        import xml.etree.ElementTree as ET
+        try:
+            root = ET.fromstring(bpmn_xml)
+            bpmn_elements_count = sum(1 for _ in root.iter())
+        except Exception:
+            pass
+    return {
+        "source": "process_analysis_session_view_model",
+        "namespace": "/api/sessions/{session_id}/analysis/view-model",
+        "heavy_payload_excluded": True,
+        "mutation_allowed": False,
+        "interview_loaded": bool(getattr(session, "interview", {})),
+        "bpmn_meta_loaded": bool(getattr(session, "bpmn_meta", {})),
+        "bpmn_elements_count": bpmn_elements_count,
+        "source_contract_version": "v1",
+    }
+
+
+def _step_action_counts(rows: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for row in rows:
+        step_id = _text(row.get("step_id"))
+        if step_id:
+            counts[step_id] = counts.get(step_id, 0) + 1
+    return counts
+
+
+@router.get("/api/sessions/{session_id}/analysis/view-model")
+def get_session_analysis_view_model(session_id: str, request: Request) -> Dict[str, Any]:
+    require_authenticated_user(request)
+    org_id = request_active_org_id(request)
+    require_org_member_for_enterprise(request, org_id)
+
+    storage = get_storage()
+    session = storage.load(session_id, org_id=org_id, is_admin=True)
+    if session is None:
+        raise HTTPException(status_code=404, detail="not_found")
+
+    project_id = _text(getattr(session, "project_id", ""))
+    if project_id and not project_access_allowed(request, org_id, project_id):
+        raise HTTPException(status_code=404, detail="not_found")
+
+    project_title = ""
+    workspace_id = ""
+    if project_id:
+        project = get_project_storage().load(project_id, org_id=org_id, is_admin=True)
+        if project is not None:
+            project_title = _text(getattr(project, "title", ""))
+            workspace_id = _text(getattr(project, "workspace_id", ""))
+
+    interview = getattr(session, "interview", {}) or {}
+    analysis = interview.get("analysis") if isinstance(interview, dict) else {}
+    if not isinstance(analysis, dict):
+        analysis = {}
+    product_actions_raw = analysis.get("product_actions") if isinstance(analysis, dict) else []
+    if not isinstance(product_actions_raw, list):
+        product_actions_raw = []
+
+    source = {
+        "session_id": session_id,
+        "session_title": _text(getattr(session, "title", "")) or "Без названия",
+        "project_id": project_id,
+        "project_title": project_title,
+        "workspace_id": workspace_id,
+        "org_id": org_id,
+        "updated_at": getattr(session, "updated_at", 0),
+        "diagram_state_version": getattr(session, "diagram_state_version", 0),
+    }
+
+    rows: List[Dict[str, Any]] = []
+    for index, action in enumerate(product_actions_raw):
+        rows.append(_registry_row(source, action, index))
+
+    summary = {
+        "total": len(rows),
+        "complete": sum(1 for row in rows if row.get("completeness") == "complete"),
+        "incomplete": sum(1 for row in rows if row.get("completeness") == "incomplete"),
+    }
+
+    filter_options = _session_filter_options(rows)
+    metrics = _session_metrics(rows)
+    empty_state = _session_empty_state(rows)
+    source_state = _session_source_state(session, rows)
+    step_counts = _step_action_counts(rows)
+
+    interview_state = {
+        "status": _text(interview.get("status")) or "draft",
+        "stage": _text(interview.get("stage")) or "",
+        "updated_at": int(getattr(session, "updated_at", 0) or 0),
+    }
+
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "session_title": source["session_title"],
+        "project_id": project_id,
+        "project_title": project_title,
+        "workspace_id": workspace_id,
+        "analysis": {
+            "product_actions": {
+                "rows": rows,
+                "summary": summary,
+                "filter_options": filter_options,
+                "applied_filters": {},
+                "metrics": metrics,
+                "empty_state": empty_state,
+                "source_state": source_state,
+            },
+            "derived": {
+                "step_action_counts": step_counts,
+            },
+        },
+        "interview_state": interview_state,
+    }
+
+
 @router.post("/api/analysis/product-actions/registry/query")
 def query_product_actions_registry(inp: ProductActionsRegistryQueryIn, request: Request) -> Dict[str, Any]:
     return _registry_payload(inp, request, paginate=True)

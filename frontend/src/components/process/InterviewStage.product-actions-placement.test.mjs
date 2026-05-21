@@ -20,3 +20,19 @@ test("InterviewStage renders ProductActionsPanel in the normal Analysis section 
   assert.ok(panelIndex < transitionsIndex, "ProductActionsPanel must appear above B2/routes/summary blocks");
   assert.equal(/timelineViewMode === "matrix"[\s\S]{0,160}<ProductActionsPanel/.test(source), false);
 });
+
+test("InterviewStage loads session analysis view model and uses step_action_counts", () => {
+  assert.match(source, /apiGetSessionAnalysisViewModel/);
+  assert.match(source, /sessionAnalysisViewModel/);
+  assert.match(source, /sessionAnalysisViewModel\?\.analysis\?\.derived\?\.step_action_counts/);
+  assert.match(source, /productActionCountByStepId/);
+  assert.equal(/useMemo\(\s*\(\) => countProductActionsForStep\(data\?\.analysis, analysisContextStep\)/.test(source), false);
+  assert.equal(/useMemo\(\s*\(\) => \{\s*const map = \{\};\s*const steps = Array\.isArray\(timelineView\) \? timelineView : \[\];\s*steps\.forEach\(\(step\) => \{\s*const stepId = toText\(step\?\.id\);\s*if \(!stepId\) return;\s*map\[stepId\] = countProductActionsForStep\(data\?\.analysis, step\);/.test(source), false);
+});
+
+test("InterviewStage preserves fallback to client-side count when view model is absent", () => {
+  assert.match(source, /countProductActionsForStep\(data\?\.analysis, analysisContextStep\)/);
+  assert.match(source, /countProductActionsForStep\(data\?\.analysis, step\)/);
+  assert.match(source, /sessionAnalysisViewModel\?\.analysis\?\.derived\?\.step_action_counts/);
+  assert.match(source, /const hasVm = sessionAnalysisViewModel && vmCounts && typeof vmCounts === "object"/);
+});
