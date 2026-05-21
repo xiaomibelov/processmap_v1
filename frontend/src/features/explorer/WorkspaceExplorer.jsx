@@ -1058,6 +1058,15 @@ function WorkspaceSidebar({
           <span>Реестр действий</span>
           <small>Действия с продуктом</small>
         </button>
+        <button
+          type="button"
+          className="workspaceAnalyticsHubNav"
+          onClick={() => onOpenAnalyticsHub?.({ workspaceId: activeWorkspaceId })}
+          data-testid="workspace-analytics-hub-nav"
+        >
+          <span>Аналитика</span>
+          <small>Реестры и дашборды</small>
+        </button>
       </div>
       <div className="flex-1 overflow-y-auto">
         {workspaces.length === 0 && (
@@ -2404,7 +2413,7 @@ function SessionRow({
 
 // ─── Project Pane (sessions list) ─────────────────────────────────────────────
 
-function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, onOpenProductActionsRegistry, breadcrumbBase, permissions }) {
+function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, onOpenProductActionsRegistry, onOpenAnalyticsHub, breadcrumbBase, permissions }) {
   const [page, setPage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -2591,6 +2600,14 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, onOpenProd
             >
               Реестр действий
             </button>
+            <button
+              type="button"
+              className="secondaryBtn h-7 min-h-0 px-3 text-xs"
+              onClick={() => onOpenAnalyticsHub?.({ workspaceId, projectId })}
+              data-testid="project-analytics-hub"
+            >
+              Аналитика
+            </button>
           </div>
         )}
       </div>
@@ -2730,6 +2747,7 @@ export default function WorkspaceExplorer({
   activeOrgId,
   onOpenSession,
   onOpenProductActionsRegistry,
+  onOpenAnalyticsHub,
   requestProjectId,
   requestProjectWorkspaceId = "",
   requestProjectContext = null,
@@ -2836,6 +2854,7 @@ export default function WorkspaceExplorer({
                   onBack={handleBackFromProject}
                   onOpenSession={onOpenSession}
                   onOpenProductActionsRegistry={onOpenProductActionsRegistry}
+                  onOpenAnalyticsHub={onOpenAnalyticsHub}
                   breadcrumbBase={breadcrumbBase}
                   permissions={permissions}
                 />
