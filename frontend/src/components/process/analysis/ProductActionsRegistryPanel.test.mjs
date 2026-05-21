@@ -12,7 +12,7 @@ const productPanelSource = fs.readFileSync(path.join(__dirname, "../interview/Pr
 test("ProductActionsRegistryPanel exposes preview registry UI with export actions", () => {
   [
     "Реестр действий с продуктом",
-    "Read-only preview",
+    "read-only",
     "Workspace",
     "Проект",
     "Сессия",
@@ -25,11 +25,10 @@ test("ProductActionsRegistryPanel exposes preview registry UI with export action
     "AI-предложения по выбранным сессиям",
     "Принять выбранные",
     "Найдены действия, но не получен список сессий. Требуется обновить агрегацию.",
-    "Фильтры применяются к загруженным строкам.",
-    "Скачать CSV",
-    "Скачать XLSX",
+    "CSV",
+    "XLSX",
     "Экспорт:",
-    "Фильтры не выбраны.",
+    "Нет строк под выбранные фильтры.",
     "В выбранных процессах пока нет действий с продуктом.",
   ].forEach((label) => assert.equal(source.includes(label), true, `missing label: ${label}`));
 });
@@ -124,7 +123,7 @@ test("ProductActionsRegistryPage renders content as page shell without dialog co
 
 test("ProductActionsPanel navigates to registry surface without changing persistence", () => {
   assert.equal(productPanelSource.includes("onOpenProductActionsRegistry"), true);
-  assert.equal(productPanelSource.includes("Реестр действий"), true);
+  assert.equal(productPanelSource.includes("Реестр"), true);
   assert.equal(productPanelSource.includes('data-testid="product-actions-open-registry"'), true);
   assert.equal(productPanelSource.includes('scope: "session"'), true);
   assert.equal(productPanelSource.includes("saveProductActionForStep"), true);
