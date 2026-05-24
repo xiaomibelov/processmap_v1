@@ -1,0 +1,750 @@
+{
+  "startTime": "2026-05-15T17:04:10.766Z",
+  "scenarios": {
+    "A": {
+      "start": 1778864653313,
+      "ready": 1778864659853,
+      "end": 1778864662900,
+      "timeToReady": 6540,
+      "timeToStable": 9587,
+      "counts": {
+        "dom": 8025,
+        "svg": 2392,
+        "fpcPropertyOverlay": 0,
+        "djsOverlay": 17,
+        "fpcFocusDim": 0,
+        "fpcAnalyticsSelected": 0,
+        "djsBendpoint": 0,
+        "djsSegmentDragger": 0,
+        "diagramReady": true,
+        "bpmnLayerEditor": "block",
+        "bpmnLayerDiagram": "none"
+      }
+    },
+    "B": {
+      "timings": [
+        {
+          "cycle": 1,
+          "toAnalysis": 6428,
+          "toDiagram": 3955
+        },
+        {
+          "cycle": 2,
+          "toAnalysis": 4759,
+          "toDiagram": 4088
+        },
+        {
+          "cycle": 3,
+          "toAnalysis": 4596,
+          "toDiagram": 3920
+        },
+        {
+          "cycle": 4,
+          "toXml": 4094,
+          "toDiagram": 4695
+        },
+        {
+          "cycle": 5,
+          "toXml": 4263,
+          "toDiagram": 4862
+        },
+        {
+          "cycle": 6,
+          "toXml": 4294,
+          "toDiagram": 4573
+        }
+      ],
+      "counts": {
+        "dom": 8025,
+        "svg": 2392,
+        "fpcPropertyOverlay": 0,
+        "djsOverlay": 17,
+        "fpcFocusDim": 0,
+        "fpcAnalyticsSelected": 0,
+        "djsBendpoint": 0,
+        "djsSegmentDragger": 0,
+        "diagramReady": true,
+        "bpmnLayerEditor": "block",
+        "bpmnLayerDiagram": "none"
+      }
+    },
+    "C": {
+      "before": {
+        "dom": 8025,
+        "svg": 2392,
+        "fpcPropertyOverlay": 0,
+        "djsOverlay": 17,
+        "fpcFocusDim": 0,
+        "fpcAnalyticsSelected": 0,
+        "djsBendpoint": 0,
+        "djsSegmentDragger": 0,
+        "diagramReady": true,
+        "bpmnLayerEditor": "block",
+        "bpmnLayerDiagram": "none"
+      },
+      "after": {
+        "dom": 8025,
+        "svg": 2392,
+        "fpcPropertyOverlay": 0,
+        "djsOverlay": 17,
+        "fpcFocusDim": 0,
+        "fpcAnalyticsSelected": 0,
+        "djsBendpoint": 0,
+        "djsSegmentDragger": 0,
+        "diagramReady": true,
+        "bpmnLayerEditor": "block",
+        "bpmnLayerDiagram": "none"
+      },
+      "delta": {
+        "dom": 0,
+        "svg": 0,
+        "fpcAnalyticsSelected": 0,
+        "fpcFocusDim": 0,
+        "djsBendpoint": 0,
+        "djsSegmentDragger": 0
+      },
+      "timings": [
+        {
+          "cycle": 1,
+          "latency": 1417
+        },
+        {
+          "cycle": 2,
+          "latency": 1505
+        },
+        {
+          "cycle": 3,
+          "latency": 1452
+        },
+        {
+          "cycle": 4,
+          "latency": 1431
+        },
+        {
+          "cycle": 5,
+          "latency": 1463
+        },
+        {
+          "cycle": 6,
+          "latency": 1463
+        },
+        {
+          "cycle": 7,
+          "latency": 1472
+        },
+        {
+          "cycle": 8,
+          "latency": 1375
+        },
+        {
+          "cycle": 9,
+          "latency": 1439
+        },
+        {
+          "cycle": 10,
+          "latency": 1536
+        }
+      ]
+    },
+    "D": {
+      "timings": [
+        {
+          "cycle": 1,
+          "latency": 471
+        },
+        {
+          "cycle": 2,
+          "latency": 458
+        },
+        {
+          "cycle": 3,
+          "latency": 471
+        },
+        {
+          "cycle": 4,
+          "latency": 469
+        },
+        {
+          "cycle": 5,
+          "latency": 449
+        },
+        {
+          "cycle": 6,
+          "latency": 485
+        },
+        {
+          "cycle": 7,
+          "latency": 443
+        },
+        {
+          "cycle": 8,
+          "latency": 467
+        },
+        {
+          "cycle": 9,
+          "latency": 543
+        },
+        {
+          "cycle": 10,
+          "latency": 462
+        }
+      ],
+      "counts": {
+        "dom": 8025,
+        "svg": 2392,
+        "fpcPropertyOverlay": 0,
+        "djsOverlay": 17,
+        "fpcFocusDim": 0,
+        "fpcAnalyticsSelected": 0,
+        "djsBendpoint": 0,
+        "djsSegmentDragger": 0,
+        "diagramReady": true,
+        "bpmnLayerEditor": "block",
+        "bpmnLayerDiagram": "none"
+      }
+    },
+    "E": {
+      "before": {
+        "dom": 8025,
+        "svg": 2392,
+        "fpcPropertyOverlay": 0,
+        "djsOverlay": 17,
+        "fpcFocusDim": 0,
+        "fpcAnalyticsSelected": 0,
+        "djsBendpoint": 0,
+        "djsSegmentDragger": 0,
+        "diagramReady": true,
+        "bpmnLayerEditor": "block",
+        "bpmnLayerDiagram": "none"
+      },
+      "after": {
+        "dom": 11242,
+        "svg": 5606,
+        "fpcPropertyOverlay": 0,
+        "djsOverlay": 17,
+        "fpcFocusDim": 0,
+        "fpcAnalyticsSelected": 0,
+        "djsBendpoint": 664,
+        "djsSegmentDragger": 254,
+        "diagramReady": true,
+        "bpmnLayerEditor": "block",
+        "bpmnLayerDiagram": "none"
+      },
+      "delta": {
+        "dom": 3217,
+        "svg": 3214,
+        "djsOverlay": 0,
+        "fpcPropertyOverlay": 0
+      }
+    },
+    "F": {
+      "counts": null,
+      "overlaysOn": false
+    },
+    "G": {
+      "counts": null
+    },
+    "H": {
+      "timings": [
+        {
+          "cycle": 1,
+          "panelOpenLatency": 774
+        },
+        {
+          "cycle": 2,
+          "panelOpenLatency": 748
+        },
+        {
+          "cycle": 3,
+          "panelOpenLatency": 798
+        },
+        {
+          "cycle": 4,
+          "panelOpenLatency": 885
+        },
+        {
+          "cycle": 5,
+          "panelOpenLatency": 789
+        }
+      ],
+      "counts": {
+        "dom": 11242,
+        "svg": 5606,
+        "fpcPropertyOverlay": 0,
+        "djsOverlay": 17,
+        "fpcFocusDim": 0,
+        "fpcAnalyticsSelected": 0,
+        "djsBendpoint": 664,
+        "djsSegmentDragger": 254,
+        "diagramReady": true,
+        "bpmnLayerEditor": "block",
+        "bpmnLayerDiagram": "none"
+      }
+    },
+    "I": {
+      "editModeEntered": false,
+      "before": null,
+      "after": null
+    },
+    "J": {
+      "note": "Only one well-known test session (wewe) available. Small/large comparison not feasible in this run."
+    }
+  },
+  "network": [
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/app",
+      "method": "GET",
+      "time": 1778864651102
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/app",
+      "status": 200,
+      "time": 1778864651129
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/assets/index-C5IJAn8r.js",
+      "method": "GET",
+      "time": 1778864651140
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/assets/index-BsU6P_We.css",
+      "method": "GET",
+      "time": 1778864651141
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/assets/index-BsU6P_We.css",
+      "status": 200,
+      "time": 1778864651144
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/assets/index-C5IJAn8r.js",
+      "status": 200,
+      "time": 1778864651274
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/auth/refresh",
+      "method": "POST",
+      "time": 1778864651329
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/auth/refresh",
+      "status": 401,
+      "time": 1778864651342
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/app?project=b1c8a56b6e&session=4c515d1c6e&tab=diagram",
+      "method": "GET",
+      "time": 1778864653322
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/app?project=b1c8a56b6e&session=4c515d1c6e&tab=diagram",
+      "status": 200,
+      "time": 1778864653322
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/assets/index-C5IJAn8r.js",
+      "method": "GET",
+      "time": 1778864653330
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/assets/index-C5IJAn8r.js",
+      "status": 200,
+      "time": 1778864653332
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/assets/index-BsU6P_We.css",
+      "method": "GET",
+      "time": 1778864653332
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/assets/index-BsU6P_We.css",
+      "status": 200,
+      "time": 1778864653332
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/auth/me",
+      "method": "GET",
+      "time": 1778864653388
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/auth/me",
+      "status": 200,
+      "time": 1778864653412
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/workspaces",
+      "method": "GET",
+      "time": 1778864653533
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/meta",
+      "method": "GET",
+      "time": 1778864653538
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/note-mentions?limit=20",
+      "method": "GET",
+      "time": 1778864653540
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/note-notifications?limit=20&include_read=1",
+      "method": "GET",
+      "time": 1778864653540
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/meta",
+      "method": "GET",
+      "time": 1778864653540
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/workspaces",
+      "status": 200,
+      "time": 1778864653582
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/meta",
+      "status": 200,
+      "time": 1778864653587
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/note-mentions?limit=20",
+      "status": 200,
+      "time": 1778864653605
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/meta",
+      "status": 200,
+      "time": 1778864653606
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/note-notifications?limit=20&include_read=1",
+      "status": 200,
+      "time": 1778864653631
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/explorer?workspace_id=ws_org_default_main",
+      "method": "GET",
+      "time": 1778864653646
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/projects",
+      "method": "GET",
+      "time": 1778864653656
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/projects",
+      "status": 200,
+      "time": 1778864653700
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/explorer?workspace_id=ws_org_default_main",
+      "status": 200,
+      "time": 1778864653704
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/projects/b1c8a56b6e/sessions?view=summary",
+      "method": "GET",
+      "time": 1778864653725
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/projects/b1c8a56b6e/explorer?workspace_id=ws_org_default_main",
+      "method": "GET",
+      "time": 1778864653743
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/projects/b1c8a56b6e/sessions?view=summary",
+      "status": 200,
+      "time": 1778864653779
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e",
+      "method": "GET",
+      "time": 1778864653793
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/projects/b1c8a56b6e/explorer?workspace_id=ws_org_default_main",
+      "status": 200,
+      "time": 1778864653824
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/sessions/note-aggregates",
+      "method": "POST",
+      "time": 1778864653855
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e",
+      "status": 200,
+      "time": 1778864653939
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/sessions/note-aggregates",
+      "status": 200,
+      "time": 1778864653986
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/bpmn?raw=1&include_overlay=0&_ts=1778864655225",
+      "method": "GET",
+      "time": 1778864655299
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/analysis/product-actions/batch-draft",
+      "method": "GET",
+      "time": 1778864655302
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/presence",
+      "method": "POST",
+      "time": 1778864655302
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/bpmn/versions?limit=1",
+      "method": "GET",
+      "time": 1778864655303
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/auto-pass/precheck",
+      "method": "GET",
+      "time": 1778864655303
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/assets/Modeler-X-yuAGEr.js",
+      "method": "GET",
+      "time": 1778864655346
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/assets/NavigatedViewer-CgWdJh9O.js",
+      "method": "GET",
+      "time": 1778864655346
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/bpmn?raw=1&include_overlay=0&_ts=1778864655225",
+      "status": 200,
+      "time": 1778864655347
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/assets/NavigatedViewer-CgWdJh9O.js",
+      "status": 200,
+      "time": 1778864656085
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/assets/Modeler-X-yuAGEr.js",
+      "status": 200,
+      "time": 1778864656088
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/analysis/product-actions/batch-draft",
+      "status": 200,
+      "time": 1778864656089
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/auto-pass/precheck",
+      "status": 200,
+      "time": 1778864656090
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/presence",
+      "status": 200,
+      "time": 1778864656090
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/bpmn/versions?limit=1",
+      "status": 200,
+      "time": 1778864656090
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/bpmn/versions?limit=1",
+      "method": "GET",
+      "time": 1778864686247
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/bpmn/versions?limit=1",
+      "status": 200,
+      "time": 1778864686431
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/presence",
+      "method": "POST",
+      "time": 1778864700469
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/presence",
+      "status": 200,
+      "time": 1778864700600
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/bpmn/versions?limit=1",
+      "method": "GET",
+      "time": 1778864725278
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/bpmn/versions?limit=1",
+      "status": 200,
+      "time": 1778864725563
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/presence",
+      "method": "POST",
+      "time": 1778864745446
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/presence",
+      "status": 200,
+      "time": 1778864745601
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/orgs/org_default/property-dictionary/operations",
+      "method": "GET",
+      "time": 1778864760509
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/orgs/org_default/property-dictionary/operations",
+      "status": 200,
+      "time": 1778864760705
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/bpmn/versions?limit=1",
+      "method": "GET",
+      "time": 1778864761192
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/bpmn/versions?limit=1",
+      "status": 200,
+      "time": 1778864761340
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/meta",
+      "method": "GET",
+      "time": 1778864773665
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/meta",
+      "status": 200,
+      "time": 1778864773968
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/presence",
+      "method": "POST",
+      "time": 1778864790481
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/presence",
+      "status": 200,
+      "time": 1778864790634
+    },
+    {
+      "type": "request",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/bpmn/versions?limit=1",
+      "method": "GET",
+      "time": 1778864797156
+    },
+    {
+      "type": "response",
+      "url": "http://clearvestnic.ru:5180/api/sessions/4c515d1c6e/bpmn/versions?limit=1",
+      "status": 200,
+      "time": 1778864797327
+    }
+  ],
+  "console": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "time": 1778864651345
+    },
+    {
+      "type": "debug",
+      "text": "[LINT] run sid=- profile=mvp issues=0 errors=0 warns=0",
+      "time": 1778864653534
+    },
+    {
+      "type": "debug",
+      "text": "[UI] sidebar.render collapsed=1 class=workspace workspace--leftHidden",
+      "time": 1778864653538
+    },
+    {
+      "type": "debug",
+      "text": "[LINT] run sid=4c515d1c6e profile=mvp issues=61 errors=55 warns=6",
+      "time": 1778864655303
+    }
+  ],
+  "finalCounts": {
+    "dom": 11242,
+    "svg": 5606,
+    "fpcPropertyOverlay": 0,
+    "djsOverlay": 17,
+    "fpcFocusDim": 0,
+    "fpcAnalyticsSelected": 0,
+    "djsBendpoint": 664,
+    "djsSegmentDragger": 254,
+    "diagramReady": true,
+    "bpmnLayerEditor": "block",
+    "bpmnLayerDiagram": "none"
+  }
+}

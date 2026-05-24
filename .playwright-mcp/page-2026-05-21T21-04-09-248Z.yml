@@ -1,0 +1,82 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e7]: ProcessMap
+      - button "← Проекты" [ref=e8] [cursor=pointer]
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - generic [ref=e12]: Org
+          - generic "Default" [ref=e13]
+        - button "Админ-панель" [ref=e14] [cursor=pointer]
+      - button "Профиль" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+  - generic [ref=e19]:
+    - generic [ref=e21]:
+      - button "Открыть панель" [disabled] [ref=e22]:
+        - img [ref=e24]
+      - generic [ref=e26]:
+        - button "Узел не выбран" [disabled] [ref=e27]:
+          - img [ref=e29]
+        - button "AI-вопросы" [disabled] [ref=e32]:
+          - img [ref=e34]
+        - button "Акторы" [disabled] [ref=e36]:
+          - img [ref=e38]
+        - button "Шаблоны" [disabled] [ref=e42]:
+          - img [ref=e44]
+    - generic [ref=e48]:
+      - generic [ref=e49]:
+        - button "Сохранить сессию" [disabled] [ref=e52]
+        - tablist "Process tabs" [ref=e54]:
+          - tab "Анализ процессов" [disabled] [ref=e55]
+          - tab "Diagram (BPMN)" [disabled] [ref=e56]
+          - tab "XML" [disabled] [ref=e57]
+          - tab "DOC" [disabled] [ref=e58]
+          - tab "DOD" [disabled] [ref=e59]
+        - button "Открыть меню действий" [ref=e62] [cursor=pointer]: ⋯
+      - main [ref=e91]:
+        - generic [ref=e92]:
+          - generic [ref=e93]:
+            - generic [ref=e95]:
+              - heading "Реестр свойств" [level=1] [ref=e96]
+              - paragraph [ref=e97]: Сводный список свойств BPMN-элементов и процессных объектов.
+              - generic [ref=e98]: "Foundation mode: backend недоступен (workspace_id required)."
+            - button "Вернуться" [ref=e99] [cursor=pointer]
+          - tablist "Источник строк реестра свойств" [ref=e100]:
+            - tab "Workspace" [selected] [ref=e101] [cursor=pointer]
+            - tab "Проект" [disabled] [ref=e102]
+            - tab "Сессия" [disabled] [ref=e103]
+          - generic [ref=e104]:
+            - generic [ref=e106]:
+              - generic [ref=e107]:
+                - generic [ref=e108]: —
+                - generic [ref=e109]: Источников
+              - generic [ref=e110]:
+                - generic [ref=e111]: —
+                - generic [ref=e112]: Элементов
+              - generic [ref=e113]:
+                - generic [ref=e114]: —
+                - generic [ref=e115]: Свойств
+              - generic [ref=e116]:
+                - generic [ref=e117]: —
+                - generic [ref=e118]: Типов свойств
+              - generic [ref=e119]:
+                - generic [ref=e120]: —
+                - generic [ref=e121]: Неполных
+              - generic [ref=e122]:
+                - generic [ref=e123]: —
+                - generic [ref=e124]: После фильтров
+            - table [ref=e126]:
+              - row "Объект Свойство Значение Статус" [ref=e127]:
+                - generic [ref=e128]: Объект
+                - generic [ref=e129]: Свойство
+                - generic [ref=e130]: Значение
+                - generic [ref=e131]: Статус
+              - generic [ref=e132]:
+                - paragraph [ref=e133]: Свойства ещё не собраны в реестр. Нужно подключить подтверждённые источники свойств BPMN/оверлеев.
+                - generic [ref=e134]: "Workspace: — · Project: — · Session: —"
+            - generic [ref=e136]: "После фильтров: — строк · полных: — · неполных: —"
+  - generic [ref=e88]:
+    - link "Версия v1.0.143" [ref=e89] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e90]: · Исправлена навигация в Аналитику из боковой панели (ReferenceError onOpenAnalyticsHub).

@@ -1,0 +1,21 @@
+{
+  "contour": "feature/process-properties-registry-backend-source-truth-v1",
+  "run_id": "20260520T193813Z-39871",
+  "role": "planner",
+  "status": "planning",
+  "execution_mode": "single-lane",
+  "execution_mode_label": "TOKEN_ECONOMY_SINGLE_EXECUTOR",
+  "agent2_scope": "backend implementation and tests",
+  "agent3_scope": "shell-only merge / no-LLM handoff",
+  "upstream_contour": "feature/process-properties-registry-foundation-v1",
+  "upstream_status": "frontend foundation done; backend deferred",
+  "baseline_branch": "origin/main",
+  "baseline_head": "d805e1c64c1107b9e3fe6854e031694bf741b187",
+  "current_branch_at_plan_time": "feature/product-actions-registry-backend-contract-fields-v1",
+  "current_head_at_plan_time": "dfe7d2ba6d89d5a1ba6e09306dad49c88d694cdc",
+  "branch_hygiene": "new branch required from origin/main",
+  "languages": {
+    "plan_and_reports": "ru",
+    "executor_prompts": "en"
+  }
+}

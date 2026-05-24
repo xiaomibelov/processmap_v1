@@ -1,0 +1,149 @@
+- generic [ref=e5]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e9]: ProcessMap
+      - button "← Проекты" [ref=e10] [cursor=pointer]
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - generic [ref=e14]: Org
+          - generic "Default" [ref=e15]
+        - button "Админ-панель" [ref=e16] [cursor=pointer]
+      - button "Профиль" [ref=e18] [cursor=pointer]:
+        - img [ref=e19]
+  - generic [ref=e21]:
+    - generic [ref=e23]:
+      - button "Открыть панель" [disabled] [ref=e24]:
+        - img [ref=e26]
+      - generic [ref=e28]:
+        - button "Узел не выбран" [disabled] [ref=e29]:
+          - img [ref=e31]
+        - button "AI-вопросы" [disabled] [ref=e34]:
+          - img [ref=e36]
+        - button "Акторы" [disabled] [ref=e38]:
+          - img [ref=e40]
+        - button "Шаблоны" [disabled] [ref=e44]:
+          - img [ref=e46]
+    - generic [ref=e50]:
+      - generic [ref=e51]:
+        - button "Сохранить сессию" [disabled] [ref=e54]
+        - tablist "Process tabs" [ref=e56]:
+          - tab "Анализ процессов" [disabled] [ref=e57]
+          - tab "Diagram (BPMN)" [disabled] [ref=e58]
+          - tab "XML" [disabled] [ref=e59]
+          - tab "DOC" [disabled] [ref=e60]
+          - tab "DOD" [disabled] [ref=e61]
+        - button "Открыть меню действий" [ref=e64] [cursor=pointer]: ⋯
+      - generic [ref=e358]:
+        - generic [ref=e360]:
+          - generic [ref=e362]:
+            - generic [ref=e363]: Organization
+            - generic "Default" [ref=e364]
+          - generic [ref=e365]:
+            - generic [ref=e366]: Workspaces
+            - button "Новый workspace" [ref=e367] [cursor=pointer]:
+              - img [ref=e368]
+          - button "Реестр действий Действия с продуктом" [ref=e371] [cursor=pointer]:
+            - generic [ref=e372]: Реестр действий
+            - generic [ref=e373]: Действия с продуктом
+          - generic [ref=e375]:
+            - button "Main Workspace" [ref=e376] [cursor=pointer]:
+              - img [ref=e377]
+              - generic [ref=e383]: Main Workspace
+            - generic [ref=e384]: editor
+            - button "Переименовать workspace" [ref=e385] [cursor=pointer]:
+              - img [ref=e386]
+        - generic [ref=e388]:
+          - option "—" [selected]
+          - option "AS IS"
+          - option "TO BE"
+          - generic [ref=e390]:
+            - generic [ref=e391]:
+              - generic [ref=e392]:
+                - button "← Назад к разделу" [ref=e393] [cursor=pointer]
+                - generic [ref=e394]:
+                  - generic [ref=e395]: Навигация
+                  - button "Main Workspace" [ref=e396] [cursor=pointer]:
+                    - generic [ref=e397]: Main Workspace
+                  - img [ref=e398]
+                  - generic [ref=e401]: Описание процессов Долгопрудный
+              - generic [ref=e402]:
+                - generic [ref=e403]: "Сессии: 1"
+                - button "Реестр действий" [ref=e404] [cursor=pointer]
+            - generic [ref=e405]:
+              - generic [ref=e406]: Сессии
+              - generic [ref=e407]:
+                - generic [ref=e408]: ⌕
+                - generic [ref=e409]: Поиск по workspace
+                - searchbox "Поиск по workspace" [ref=e410]
+              - button "Новая сессия" [ref=e411] [cursor=pointer]:
+                - img [ref=e412]
+                - text: Новая сессия
+            - table [ref=e415]:
+              - rowgroup [ref=e428]:
+                - row "Сортировать Название по возрастанию Сортировать Статус по возрастанию Сортировать Стадия по возрастанию Сортировать Owner по возрастанию DoD Колонка открытых обсуждений Колонка Требует внимания Колонка отчётов Сортировать Обновлена по возрастанию" [ref=e429]:
+                  - columnheader [ref=e430]
+                  - columnheader "Сортировать Название по возрастанию" [ref=e431]:
+                    - button "Сортировать Название по возрастанию" [ref=e432] [cursor=pointer]:
+                      - generic [ref=e433]: Название
+                      - generic [ref=e434]: ↑
+                  - columnheader "Сортировать Статус по возрастанию" [ref=e435]:
+                    - button "Сортировать Статус по возрастанию" [ref=e436] [cursor=pointer]:
+                      - generic [ref=e437]: Статус
+                      - generic [ref=e438]: ↑
+                  - columnheader "Сортировать Стадия по возрастанию" [ref=e439]:
+                    - button "Сортировать Стадия по возрастанию" [ref=e440] [cursor=pointer]:
+                      - generic [ref=e441]: Стадия
+                      - generic [ref=e442]: ↑
+                  - columnheader "Сортировать Owner по возрастанию" [ref=e443]:
+                    - button "Сортировать Owner по возрастанию" [ref=e444] [cursor=pointer]:
+                      - generic [ref=e445]: Owner
+                      - generic [ref=e446]: ↑
+                  - columnheader "DoD" [ref=e447]
+                  - columnheader "Колонка открытых обсуждений" [ref=e448]: Обс.
+                  - columnheader "Колонка Требует внимания" [ref=e449]:
+                    - generic [ref=e450]:
+                      - generic [ref=e451]: ⚠
+                      - generic [ref=e452]: Вним.
+                  - columnheader "Колонка отчётов" [ref=e453]: 📋
+                  - columnheader "Сортировать Обновлена по возрастанию" [ref=e454]:
+                    - button "Сортировать Обновлена по возрастанию" [ref=e455] [cursor=pointer]:
+                      - generic [ref=e456]: Обновлена
+                      - generic [ref=e457]: ↑
+                  - columnheader [ref=e458]
+              - rowgroup [ref=e459]:
+                - 'row "wewe Открыть сессию Черновик — admin@local 0% Требует внимания из обсуждений: 0 1 ч назад Открыть сессию Действия сессии" [ref=e460] [cursor=pointer]':
+                  - cell [ref=e461]:
+                    - img [ref=e462]
+                  - cell "wewe Открыть сессию" [ref=e465]:
+                    - link "wewe Открыть сессию" [ref=e467]:
+                      - /url: /app?project=b1c8a56b6e&session=4c515d1c6e
+                      - generic [ref=e468]: wewe
+                      - generic [ref=e469]:
+                        - generic [ref=e470]: Открыть сессию
+                        - img [ref=e471]
+                  - cell "Черновик" [ref=e473]:
+                    - combobox [active] [ref=e474]:
+                      - option "Черновик" [selected]
+                      - option "В работе"
+                      - option "На проверке"
+                      - option "Готово"
+                      - option "Архив"
+                  - cell "—" [ref=e475]
+                  - cell "admin@local" [ref=e476]:
+                    - generic "admin@local" [ref=e477]
+                  - cell "0%" [ref=e478]:
+                    - generic [ref=e481]: 0%
+                  - cell "Открытые обсуждения" [ref=e482]
+                  - 'cell "Требует внимания из обсуждений: 0" [ref=e483]': —
+                  - cell "Отчёты" [ref=e484]
+                  - cell "1 ч назад" [ref=e485]
+                  - cell "Открыть сессию Действия сессии" [ref=e486]:
+                    - generic [ref=e487]:
+                      - link "Открыть сессию" [ref=e488]:
+                        - /url: /app?project=b1c8a56b6e&session=4c515d1c6e
+                      - button "Действия сессии" [ref=e490]: ···
+  - generic [ref=e171]:
+    - link "Версия v1.0.126" [ref=e172] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e173]: "· Таблица шагов анализа стала строгой: убраны карточные строки, тяжёлые hover-эффекты и агрессивные цветные заливки."

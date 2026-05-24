@@ -1,0 +1,16 @@
+{
+  "contour": "uiux/registry-ui-spec-implementation-v1",
+  "run_id": "20260522T072413Z-agent1-plan",
+  "agent": "agent1-planner",
+  "status": "READY_FOR_EXECUTION",
+  "execution_mode": "PARALLEL_REQUIRED",
+  "part_1_scope": "frontend",
+  "part_2_scope": "backend",
+  "spec_file": ".planning/contours/uiux/registry-ui-spec-implementation-v1/UI_SPEC.md",
+  "plan_file": ".planning/contours/uiux/registry-ui-spec-implementation-v1/PLAN.md",
+  "part_1_prompt": ".planning/contours/uiux/registry-ui-spec-implementation-v1/EXECUTOR_PART_1_PROMPT.md",
+  "part_2_prompt": ".planning/contours/uiux/registry-ui-spec-implementation-v1/EXECUTOR_PART_2_PROMPT.md",
+  "reviewer_prompt": ".planning/contours/uiux/registry-ui-spec-implementation-v1/REVIEWER_PROMPT.md",
+  "branch": "uiux/registry-ui-spec-implementation-v1",
+  "head": "5affb5ff0abce2735df1c34fe369a39fe9c354e3"
+}

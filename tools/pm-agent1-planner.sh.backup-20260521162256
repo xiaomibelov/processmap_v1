@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/opt/processmap-test"
+CID="${1:?Usage: pm-agent1-planner.sh <contour-id>}"
+
+validate_cid() {
+  local value="$1"
+  if [[ ! "$value" =~ ^[A-Za-z0-9_./-]+$ ]]; then
+    echo "ERROR: invalid contour id: $value" >&2
+    echo "Allowed characters: A-Z a-z 0-9 _ - / ." >&2
+    exit 2
+  fi
+}
+
+validate_cid "$CID"
+
+DIR="$ROOT/.planning/contours/$CID"
+PROMPT="$ROOT/.agents/agent1-planner/prompts/${CID//\//__}-planner-start.md"
+
+mkdir -p "$DIR"
+mkdir -p "$(dirname "$PROMPT")"
+
+export PATH="$ROOT/bin:/root/.local/bin:/root/.kimi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PROCESSMAP_GSD_BIN="$ROOT/bin/gsd"
+export PROCESSMAP_CODEX_GSD_TOOLS="/root/.codex/get-shit-done/bin/gsd-tools.cjs"
+export PROCESSMAP_GSD_SKILLS_DIR="/root/.codex/skills"
+export PROCESSMAP_GSD_AGENTS_DIR="/root/.codex/agents"
+
+cat > "$PROMPT" <<PROMPT_EOF
+Ты Agent 1 / Planner для ProcessMap.
+
+Рабочая директория:
+cd /opt/processmap-test
+
+Contour id:
+$CID
+
+Роль:
+Подготовить GSD-план и handoff для Agent 2.
+
+GSD runner binding:
+- GSD command: $PROCESSMAP_GSD_BIN
+- Codex-local GSD tools: $PROCESSMAP_CODEX_GSD_TOOLS
+- GSD skills directory: $PROCESSMAP_GSD_SKILLS_DIR
+- GSD agents directory: $PROCESSMAP_GSD_AGENTS_DIR
+
+Перед fallback обязательно проверить:
+- command -v gsd
+- gsd без аргументов для usage/status
+- test -f "$PROCESSMAP_CODEX_GSD_TOOLS"
+- find "$PROCESSMAP_GSD_SKILLS_DIR" -maxdepth 1 -type d -name "gsd-*" | head
+
+Перед планированием обязательно выполнить RAG preflight, если доступен:
+node tools/rag/pm-rag-agent-preflight.mjs \
+  --role planner \
+  --contour "$CID" \
+  --area "ProcessMap planning context" \
+  --format md \
+  --top-k 10
+
+
+Обязательная модель:
+1. GSD всегда:
+   source/runtime truth → source map → bounded plan → executor handoff.
+2. Использовать Project Atlas как knowledge source:
+   /srv/obsidian/project-atlas/ProcessMap
+3. Если RAG server ещё не поднят — использовать filesystem search по Project Atlas.
+4. Не писать product code как Planner.
+5. Не делать merge/deploy/PR.
+6. Не печатать secrets.
+7. Создать contour artifacts.
+
+Создать в:
+.planning/contours/$CID/
+
+Минимум:
+- PLAN.md
+- EXECUTOR_PROMPT.md
+- REVIEWER_PROMPT.md
+- STATE.json
+- READY_FOR_EXECUTION
+
+Если используется 4-agent workflow, также создать:
+- WORKER_2_PROMPT.md
+- WORKER_3_PROMPT.md
+
+Obsidian mirror/export:
+- После записи/обновления artifacts выполнить:
+  ./tools/pm-agent-mirror-report.sh "$CID" planner
+- Mirror path:
+  /srv/obsidian/project-atlas/ProcessMap/AgentReports/$CID/
+
+Если UI/runtime задача:
+- RUNTIME_NAVIGATION.md
+- RUNTIME_PROOF_CHECKLIST.md
+
+STATE.json:
+{
+  "contour_id": "$CID",
+  "phase": "ready_for_execution",
+  "planner_status": "complete",
+  "executor_status": "pending",
+  "reviewer_status": "pending"
+}
+
+Финальный ответ:
+1. Verdict
+2. GSD status
+3. Source/runtime truth
+4. Files created
+5. READY_FOR_EXECUTION status
+6. Exact marker Agent 2 waits for
+PROMPT_EOF
+
+cd "$ROOT"
+
+clear || true
+echo "=== Agent 1 / Planner ==="
+echo "Contour: $CID"
+echo "Prompt file: $PROMPT"
+echo "GSD: $(command -v gsd || echo MISSING)"
+echo "GSD wrapper: $PROCESSMAP_GSD_BIN"
+echo "GSD tools: $PROCESSMAP_CODEX_GSD_TOOLS"
+echo "GSD skills: $PROCESSMAP_GSD_SKILLS_DIR/gsd-*"
+echo "GSD agents: $PROCESSMAP_GSD_AGENTS_DIR/gsd-*"
+echo
+if [ -x "$ROOT/tools/pm-gsd-status.sh" ]; then
+  "$ROOT/tools/pm-gsd-status.sh" | sed -n "1,80p"
+  echo
+fi
+
+echo "Kimi будет запущен интерактивно."
+echo "Внутри Kimi вставь короткую команду:"
+echo
+echo "Прочитай и выполни prompt file:"
+echo "$PROMPT"
+echo
+
+kimi
+
+if [ -x "$ROOT/tools/pm-agent-mirror-report.sh" ]; then
+  "$ROOT/tools/pm-agent-mirror-report.sh" "$CID" planner || true
+fi

@@ -1,0 +1,64 @@
+- generic [ref=e5]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e9]: ProcessMap
+      - button "← Проекты" [ref=e10] [cursor=pointer]
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - generic [ref=e14]: Org
+          - generic "Default" [ref=e15]
+        - button "Админ-панель" [ref=e16] [cursor=pointer]
+      - button "Профиль" [ref=e18] [cursor=pointer]:
+        - img [ref=e19]
+  - generic [ref=e21]:
+    - generic [ref=e23]:
+      - button "Открыть панель" [disabled] [ref=e24]:
+        - img [ref=e26]
+      - generic [ref=e28]:
+        - button "Узел не выбран" [disabled] [ref=e29]:
+          - img [ref=e31]
+        - button "AI-вопросы" [disabled] [ref=e34]:
+          - img [ref=e36]
+        - button "Акторы" [disabled] [ref=e38]:
+          - img [ref=e40]
+        - button "Шаблоны" [disabled] [ref=e44]:
+          - img [ref=e46]
+    - generic [ref=e50]:
+      - generic [ref=e51]:
+        - button "Сохранить сессию" [disabled] [ref=e54]
+        - tablist "Process tabs" [ref=e56]:
+          - tab "Анализ процессов" [disabled] [ref=e57]
+          - tab "Diagram (BPMN)" [disabled] [ref=e58]
+          - tab "XML" [disabled] [ref=e59]
+          - tab "DOC" [disabled] [ref=e60]
+          - tab "DOD" [disabled] [ref=e61]
+        - button "Открыть меню действий" [ref=e64] [cursor=pointer]: ⋯
+      - main [ref=e14029]:
+        - generic [ref=e14030]:
+          - generic [ref=e14031]:
+            - generic [ref=e14032]:
+              - heading "Аналитика" [level=1] [ref=e14033]
+              - paragraph [ref=e14034]: Единая точка входа для реестров и будущих аналитических панелей.
+              - generic [ref=e14035]: "Scope: workspace"
+            - button "Вернуться" [ref=e14036] [cursor=pointer]
+          - generic "Модули аналитики" [ref=e14037]:
+            - article [ref=e14038]:
+              - generic [ref=e14039]:
+                - heading "Реестр действий" [level=2] [ref=e14040]
+                - paragraph [ref=e14041]: Действия с продуктом из сессий и проектов.
+              - button "Открыть" [ref=e14042] [cursor=pointer]
+            - article [ref=e14043]:
+              - generic [ref=e14044]:
+                - heading "Реестр свойств" [level=2] [ref=e14045]
+                - paragraph [ref=e14046]: Свойства BPMN-элементов и процессных объектов.
+              - button "Открыть" [ref=e14047] [cursor=pointer]
+            - article [ref=e14048]:
+              - generic [ref=e14049]:
+                - heading "Дашборды" [level=2] [ref=e14050]
+                - paragraph [ref=e14051]: Сводные аналитические панели будут подключены отдельным контуром.
+              - generic [ref=e14052]: Будет позже
+  - generic [ref=e172]:
+    - link "Версия v1.0.143" [ref=e173] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e174]: · Исправлена навигация в Аналитику из боковой панели (ReferenceError onOpenAnalyticsHub).

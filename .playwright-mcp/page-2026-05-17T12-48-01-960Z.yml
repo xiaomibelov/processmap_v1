@@ -1,0 +1,79 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e7]: ProcessMap
+      - generic [ref=e8]: Аналитика
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - generic [ref=e12]: Org
+          - generic "Default" [ref=e13]
+        - button "Админ-панель" [ref=e14] [cursor=pointer]
+      - button "Профиль" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+  - generic [ref=e19]:
+    - generic [ref=e21]:
+      - button "Открыть панель" [disabled] [ref=e22]:
+        - img [ref=e24]
+      - generic [ref=e26]:
+        - button "Узел не выбран" [disabled] [ref=e27]:
+          - img [ref=e29]
+        - button "AI-вопросы" [disabled] [ref=e32]:
+          - img [ref=e34]
+        - button "Акторы" [disabled] [ref=e36]:
+          - img [ref=e38]
+        - button "Шаблоны" [disabled] [ref=e42]:
+          - img [ref=e44]
+    - generic [ref=e48]:
+      - generic [ref=e49]:
+        - button "Сохранить сессию" [disabled] [ref=e52]
+        - tablist "Process tabs" [ref=e54]:
+          - tab "Анализ процессов" [disabled] [ref=e55]
+          - tab "Diagram (BPMN)" [disabled] [ref=e56]
+          - tab "XML" [disabled] [ref=e57]
+          - tab "DOC" [disabled] [ref=e58]
+          - tab "DOD" [disabled] [ref=e59]
+        - button "Открыть меню действий" [ref=e62] [cursor=pointer]: ⋯
+      - main [ref=e64]:
+        - generic [ref=e66]:
+          - generic [ref=e67]:
+            - heading "Аналитика" [level=1] [ref=e68]
+            - paragraph [ref=e69]: Сводная аналитика по процессам, действиям, свойствам и источникам данных.
+          - button "Закрыть" [ref=e70] [cursor=pointer]
+        - generic [ref=e71]:
+          - generic [ref=e72]:
+            - generic [ref=e73]: Действия
+            - generic [ref=e74]: —
+          - generic [ref=e75]:
+            - generic [ref=e76]: Свойства
+            - generic [ref=e77]: —
+          - generic [ref=e78]:
+            - generic [ref=e79]: Процессы
+            - generic [ref=e80]: —
+          - generic [ref=e81]:
+            - generic [ref=e82]: Неполные данные
+            - generic [ref=e83]: —
+        - generic [ref=e84]:
+          - generic [ref=e85]:
+            - heading "Реестр действий" [level=3] [ref=e87]
+            - paragraph [ref=e88]: Действия с продуктом по процессам, товарам и этапам.
+            - button "Открыть" [ref=e90] [cursor=pointer]
+          - generic [ref=e91]:
+            - generic [ref=e92]:
+              - heading "Реестр свойств" [level=3] [ref=e93]
+              - generic [ref=e94]: Скоро
+            - paragraph [ref=e95]: Свойства BPMN-элементов и процессных объектов.
+          - generic [ref=e96]:
+            - generic [ref=e97]:
+              - heading "Дашборды" [level=3] [ref=e98]
+              - generic [ref=e99]: Скоро
+            - paragraph [ref=e100]: Сводки по заполненности, качеству и источникам данных.
+          - generic [ref=e101]:
+            - generic [ref=e102]:
+              - heading "Экспорт" [level=3] [ref=e103]
+              - generic [ref=e104]: В разработке
+            - paragraph [ref=e105]: Выгрузки CSV/XLSX по выбранным процессам и разделам.
+  - generic [ref=e106]:
+    - link "Версия v1.0.136" [ref=e107] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e108]: "· Безопасный UI-редизайн страницы Реестра действий: исправлена визуальная иерархия, фильтры горизонтальны, метрики подняты, таблица доминирует, блок источника вторичен."

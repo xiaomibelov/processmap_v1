@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/opt/processmap-test"
+CID="${1:?Usage: pm-agent2-executor-watch.sh <contour-id>}"
+
+validate_cid() {
+  local value="$1"
+  if [[ ! "$value" =~ ^[A-Za-z0-9_./-]+$ ]]; then
+    echo "ERROR: invalid contour id: $value" >&2
+    echo "Allowed characters: A-Z a-z 0-9 _ - / ." >&2
+    exit 2
+  fi
+}
+
+validate_cid "$CID"
+
+DIR="$ROOT/.planning/contours/$CID"
+PROMPT="$ROOT/.agents/agent2-executor/prompts/${CID//\//__}-executor-start.md"
+LOG="$ROOT/.agents/agent2-executor/logs/${CID//\//__}-watch.log"
+
+mkdir -p "$(dirname "$PROMPT")" "$(dirname "$LOG")"
+
+export PATH="$ROOT/bin:/root/.local/bin:/root/.kimi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+
+echo "=== Agent 2 / Executor watcher ===" | tee -a "$LOG"
+echo "Started: $(date -Iseconds)" | tee -a "$LOG"
+echo "Contour: $CID" | tee -a "$LOG"
+echo "Waiting for READY_FOR_EXECUTION..." | tee -a "$LOG"
+
+while true; do
+  if [ -f "$DIR/READY_FOR_EXECUTION" ] \
+     && [ -f "$DIR/EXECUTOR_PROMPT.md" ] \
+     && [ ! -f "$DIR/READY_FOR_REVIEW" ] \
+     && [ ! -f "$DIR/EXEC_BLOCKED.md" ]; then
+
+    if [ -f "$DIR/EXECUTION_STARTED" ]; then
+      echo "Execution already started; waiting..." | tee -a "$LOG"
+      sleep 10
+      continue
+    fi
+
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > "$DIR/EXECUTION_STARTED"
+
+    cat > "$PROMPT" <<PROMPT_EOF
+Ты Agent 2 / Executor для ProcessMap.
+
+Рабочая директория:
+cd /opt/processmap-test
+
+Contour id:
+$CID
+
+Выполни инструкции из:
+.planning/contours/$CID/EXECUTOR_PROMPT.md
+
+Перед выполнением обязательно выполнить RAG preflight, если доступен:
+node tools/rag/pm-rag-agent-preflight.mjs \
+  --role executor \
+  --contour "$CID" \
+  --area "executor context" \
+  --format md \
+  --top-k 10
+
+Правила:
+- Использовать GSD execution discipline.
+- Не делать merge/deploy/PR, если это явно не разрешено.
+- Не печатать secrets.
+- Не выходить за scope.
+- Если задача UI/runtime — собрать evidence для Agent 3.
+- После выполнения создать:
+  .planning/contours/$CID/EXEC_REPORT.md
+  .planning/contours/$CID/READY_FOR_REVIEW
+- После записи/обновления execution artifacts выполнить:
+  ./tools/pm-agent-mirror-report.sh "$CID" executor
+- Mirror path:
+  /srv/obsidian/project-atlas/ProcessMap/AgentReports/$CID/
+
+Если заблокировано:
+- создать EXEC_BLOCKED.md с точной причиной.
+PROMPT_EOF
+
+    clear || true
+    echo "=== Agent 2 / Executor ==="
+    echo "READY_FOR_EXECUTION detected"
+    echo "Contour: $CID"
+    echo "Start prompt: $PROMPT"
+    echo
+    echo "Kimi будет запущен интерактивно."
+    echo "Внутри Kimi вставь короткую команду:"
+    echo
+    echo "Прочитай и выполни prompt file:"
+    echo "$PROMPT"
+    echo
+
+    cd "$ROOT"
+    kimi
+
+    if [ -x "$ROOT/tools/pm-agent-mirror-report.sh" ]; then
+      "$ROOT/tools/pm-agent-mirror-report.sh" "$CID" executor || true
+    fi
+
+    echo "Kimi exited: $(date -Iseconds)" | tee -a "$LOG"
+    exit 0
+  fi
+
+  sleep 5
+done

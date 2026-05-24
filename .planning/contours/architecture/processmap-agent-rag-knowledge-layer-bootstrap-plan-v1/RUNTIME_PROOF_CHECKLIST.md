@@ -1,0 +1,23 @@
+# RUNTIME_PROOF_CHECKLIST — architecture/processmap-agent-rag-knowledge-layer-bootstrap-plan-v1
+
+- [x] Agent 1 GSD discipline recorded
+- [x] source/runtime truth captured
+- [x] Project Atlas inventory planned
+- [x] contour reports inventory planned
+- [x] docs inventory planned
+- [x] code source inventory planned
+- [x] exclusions/secrets policy defined
+- [x] read-only RAG boundary defined
+- [x] chunking/metadata strategy defined
+- [x] Agent 1 integration defined
+- [x] Agent 2 integration defined
+- [x] Agent 3 integration defined
+- [x] validation queries defined
+- [x] Project Atlas RAG notes planned
+- [x] implementation contour proposal defined
+- [x] no product code changes
+- [x] no package install
+- [x] no indexing service start
+- [x] no BPMN XML mutation
+- [x] no secrets read/output
+- [x] Agent 3 review required

@@ -1,0 +1,41 @@
+- generic [ref=e17]:
+  - generic [ref=e18]:
+    - generic [ref=e19]:
+      - generic [ref=e21]: ProcessMap
+      - button "← Проекты" [ref=e22] [cursor=pointer]
+    - generic [ref=e23]:
+      - generic [ref=e24]:
+        - generic [ref=e25]:
+          - generic [ref=e26]: Org
+          - generic "Default" [ref=e27]
+        - button "Админ-панель" [ref=e28] [cursor=pointer]
+      - button "Профиль" [ref=e30] [cursor=pointer]:
+        - img [ref=e31]
+  - generic [ref=e33]:
+    - generic [ref=e35]:
+      - button "Открыть панель" [disabled] [ref=e36]:
+        - img [ref=e38]
+      - generic [ref=e40]:
+        - button "Узел не выбран" [disabled] [ref=e41]:
+          - img [ref=e43]
+        - button "AI-вопросы" [disabled] [ref=e46]:
+          - img [ref=e48]
+        - button "Акторы" [disabled] [ref=e50]:
+          - img [ref=e52]
+        - button "Шаблоны" [disabled] [ref=e56]:
+          - img [ref=e58]
+    - generic [ref=e844]:
+      - generic [ref=e845]:
+        - button "Сохранить сессию" [disabled] [ref=e848]
+        - tablist "Process tabs" [ref=e850]:
+          - tab "Анализ процессов" [disabled] [ref=e851]
+          - tab "Diagram (BPMN)" [disabled] [ref=e852]
+          - tab "XML" [disabled] [ref=e853]
+          - tab "DOC" [disabled] [ref=e854]
+          - tab "DOD" [disabled] [ref=e855]
+        - button "Открыть меню действий" [ref=e858] [cursor=pointer]: ⋯
+      - generic [ref=e861]: Загрузка workspaces…
+  - generic [ref=e183]:
+    - link "Версия v1.0.132" [active] [ref=e184] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e185]: "· CSS interaction-mode: filter снят и will-change: transform добавлен во время pan/drag — снижена paint cost."

@@ -1,0 +1,27 @@
+# RUNTIME_PROOF_CHECKLIST — perf/diagram-human-perceived-pan-and-drag-smoothness-v1
+
+- [x] Agent 1 GSD discipline recorded
+- [x] Agent 1 RAG preflight completed
+- [x] User manual validation captured
+- [x] Previous v1.0.131 formal pass / user-visible not solved captured
+- [x] Source/runtime truth captured
+- [x] Fresh 5180 version proof planned
+- [x] Version/update row increment planned (v1.0.131 → v1.0.132)
+- [x] Marker not on canvas
+- [x] Large no-overlays Diagram selected (wewe / «Описание процессов Долгопрудный»)
+- [x] Human-perceived smoothness baseline planned
+- [x] Pointer-follow latency measurement planned
+- [x] Frame pacing measurement planned
+- [x] Dense region pan/drag planned
+- [x] Empty region pan/drag planned
+- [x] Slow controlled drag planned
+- [x] Quick natural drag planned
+- [x] Element drag planned
+- [x] SVG/DOM counts planned
+- [x] No PUT/PATCH from view interactions required
+- [x] No backend changes
+- [x] No BPMN XML mutation from view interactions
+- [x] No Product Actions / RAG runtime / AG-UI changes
+- [x] Build/tests required
+- [x] Agent 3 human smoothness review required
+- [x] Material perceived improvement required for REVIEW_PASS

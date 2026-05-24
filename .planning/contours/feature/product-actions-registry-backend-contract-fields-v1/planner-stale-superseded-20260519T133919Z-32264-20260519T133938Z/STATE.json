@@ -1,0 +1,35 @@
+{
+  "contour": "feature/product-actions-registry-backend-contract-fields-v1",
+  "run_id": "20260519T123355Z-63290",
+  "status": "READY_FOR_EXECUTION",
+  "execution_mode": "parallel",
+  "parallel_workers": true,
+  "force_parallel_reason": "Agent 2 implements backend fields while Agent 3 independently prepares contract/test readiness.",
+  "current_endpoint_namespace": "/api/analysis/product-actions/registry/*",
+  "future_endpoint_namespace": "/api/analytics/*",
+  "required_additive_fields": [
+    "filter_options",
+    "applied_filters",
+    "metrics",
+    "empty_state",
+    "source_state"
+  ],
+  "strict_non_goals": [
+    "endpoint rename",
+    "/api/analytics implementation",
+    "Properties Registry",
+    "Diagram overlays",
+    "RAG runtime",
+    "frontend redesign",
+    "schema migration",
+    "BPMN XML mutation",
+    "Product Actions durable truth mutation",
+    "AI auto-write",
+    "fake data"
+  ],
+  "allowed_block_markers": [
+    "EXEC_PART_1_BLOCKED.md",
+    "EXEC_PART_2_BLOCKED.md"
+  ]
+}
+

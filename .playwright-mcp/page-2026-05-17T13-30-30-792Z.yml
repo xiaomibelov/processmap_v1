@@ -1,0 +1,120 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e7]: ProcessMap
+      - button "← Проекты" [ref=e8] [cursor=pointer]
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - generic [ref=e12]: Org
+          - generic "Default" [ref=e13]
+        - button "Админ-панель" [ref=e14] [cursor=pointer]
+      - button "Профиль" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+  - generic [ref=e19]:
+    - generic [ref=e21]:
+      - button "Открыть панель" [disabled] [ref=e22]:
+        - img [ref=e24]
+      - generic [ref=e26]:
+        - button "Узел не выбран" [disabled] [ref=e27]:
+          - img [ref=e29]
+        - button "AI-вопросы" [disabled] [ref=e32]:
+          - img [ref=e34]
+        - button "Акторы" [disabled] [ref=e36]:
+          - img [ref=e38]
+        - button "Шаблоны" [disabled] [ref=e42]:
+          - img [ref=e44]
+    - generic [ref=e48]:
+      - generic [ref=e49]:
+        - button "Сохранить сессию" [disabled] [ref=e52]
+        - tablist "Process tabs" [ref=e54]:
+          - tab "Анализ процессов" [disabled] [ref=e55]
+          - tab "Diagram (BPMN)" [disabled] [ref=e56]
+          - tab "XML" [disabled] [ref=e57]
+          - tab "DOC" [disabled] [ref=e58]
+          - tab "DOD" [disabled] [ref=e59]
+        - button "Открыть меню действий" [ref=e62] [cursor=pointer]: ⋯
+      - main [ref=e64]:
+        - generic [ref=e65]:
+          - generic [ref=e66]:
+            - generic [ref=e67]:
+              - heading "Реестр действий с продуктом" [level=2] [ref=e68]
+              - paragraph [ref=e69]: Сводная таблица действий с продуктами из сессий. Просмотр и экспорт перед финальной выгрузкой.
+            - generic [ref=e70]:
+              - generic [ref=e71]:
+                - generic [ref=e72]: "Экспорт: 0 строк · полных: 0 · неполных: 0"
+                - button "CSV" [disabled] [ref=e73]
+                - button "XLSX" [disabled] [ref=e74]
+              - button "Вернуться" [ref=e75] [cursor=pointer]
+          - tablist "Источник строк реестра" [ref=e76]:
+            - tab "Workspace" [selected] [ref=e77] [cursor=pointer]
+            - tab "Проект" [disabled] [ref=e78]
+            - tab "Сессия" [disabled] [ref=e79]
+          - region "Сводка реестра" [ref=e80]:
+            - article [ref=e81]:
+              - generic [ref=e82]: Сессий
+              - generic [ref=e83]: "0"
+            - article [ref=e84]:
+              - generic [ref=e85]: Строк
+              - generic [ref=e86]: "0"
+            - article [ref=e87]:
+              - generic [ref=e88]: Полных
+              - generic [ref=e89]: "0"
+            - article [ref=e90]:
+              - generic [ref=e91]: Неполных
+              - generic [ref=e92]: "0"
+            - article [ref=e93]:
+              - generic [ref=e94]: После фильтров
+              - generic [ref=e95]: "0"
+              - generic [ref=e96]: "полных: 0 · неполных: 0"
+          - generic [ref=e98]:
+            - generic [ref=e99]:
+              - generic [ref=e100]: Группа
+              - combobox "Группа" [ref=e101]:
+                - option "Все" [selected]
+            - generic [ref=e102]:
+              - generic [ref=e103]: Товар
+              - combobox "Товар" [ref=e104]:
+                - option "Все" [selected]
+            - generic [ref=e105]:
+              - generic [ref=e106]: Тип
+              - combobox "Тип" [ref=e107]:
+                - option "Все" [selected]
+            - generic [ref=e108]:
+              - generic [ref=e109]: Этап
+              - combobox "Этап" [ref=e110]:
+                - option "Все" [selected]
+            - generic [ref=e111]:
+              - generic [ref=e112]: Категория
+              - combobox "Категория" [ref=e113]:
+                - option "Все" [selected]
+            - generic [ref=e114]:
+              - generic [ref=e115]: Роль
+              - combobox "Роль" [ref=e116]:
+                - option "Все" [selected]
+            - generic [ref=e117]:
+              - generic [ref=e118]: Полнота
+              - combobox "Полнота" [ref=e119]:
+                - option "Все" [selected]
+                - option "Полные"
+                - option "Неполные"
+            - button "Сбросить фильтры" [ref=e120] [cursor=pointer]
+          - generic [ref=e122]: В выбранном источнике пока нет действий с продуктом.
+          - generic [ref=e123]:
+            - generic [ref=e124]: Показано 0-0 из 0
+            - generic [ref=e125]:
+              - generic [ref=e126]:
+                - generic [ref=e127]: Размер
+                - combobox "Размер" [ref=e128]:
+                  - option "25" [selected]
+                  - option "50"
+              - button "Назад" [disabled] [ref=e129]
+              - button "1" [ref=e131] [cursor=pointer]
+              - button "Вперёд" [disabled] [ref=e132]
+          - group [ref=e133]:
+            - generic "▸ Источники данных" [ref=e134] [cursor=pointer]
+          - generic [ref=e136]: "После фильтров: 0 строк · полных: 0 · неполных: 0"
+  - generic [ref=e137]:
+    - link "Версия v1.0.136" [ref=e138] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e139]: "· Безопасный UI-редизайн страницы Реестра действий: исправлена визуальная иерархия, фильтры горизонтальны, метрики подняты, таблица доминирует, блок источника вторичен."

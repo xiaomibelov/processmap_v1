@@ -1,0 +1,27 @@
+# RUNTIME_PROOF_CHECKLIST — feature/processmap-agent-rag-structured-facts-registry-v1
+
+- [x] Agent 1 GSD discipline recorded
+- [x] Previous RAG contours reviewed
+- [x] RAG coverage hardening 7/7 documented
+- [x] Source/runtime truth captured
+- [x] Structured facts scope defined
+- [x] Facts schema planned
+- [x] Runtime facts planned
+- [x] Agent rules planned
+- [x] Contour facts planned
+- [x] User rejection facts planned
+- [x] Decision facts planned
+- [x] Validation facts planned
+- [x] Bottleneck facts planned
+- [x] Facts validator planned
+- [x] Facts lookup/search planned
+- [x] Facts-to-RAG bridge planned
+- [x] source_refs required
+- [x] User rejection overrides formal pass
+- [x] Secrets scanner reuse required
+- [x] No product runtime changes
+- [x] No package install
+- [x] No embeddings/vector DB
+- [x] No auto-mutation
+- [x] Project Atlas RAG docs planned
+- [x] Agent 3 GSD review required

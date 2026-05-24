@@ -1,0 +1,25 @@
+# RUNTIME_PROOF_CHECKLIST — fix/diagram-non-edit-put-bpmn-guard-v1
+
+- [ ] GSD discipline recorded
+- [ ] Previous audit/review read
+- [ ] Source/runtime truth captured
+- [ ] Baseline non-edit mutation evidence captured or non-repro documented
+- [ ] PUT /bpmn callers mapped
+- [ ] PATCH /sessions callers mapped if relevant
+- [ ] Dirty state source mapped
+- [ ] commandStack/import init guard checked
+- [ ] same-XML hash guard checked
+- [ ] Diagram idle no mutation
+- [ ] pan/zoom no mutation
+- [ ] hover/selection no mutation
+- [ ] overlay visibility no mutation
+- [ ] tab switch no mutation
+- [ ] XML ↔ Diagram no mutation
+- [ ] property sidebar no-change path no mutation
+- [ ] explicit save/edit path preserved
+- [ ] versions head-check dedupe not regressed
+- [ ] overlay culling not regressed
+- [ ] no backend changes
+- [ ] no BPMN XML mutation from non-edit
+- [ ] no Product Actions/RAG/AG-UI changes
+- [ ] Agent 3 Playwright review required

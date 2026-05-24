@@ -1,0 +1,16 @@
+{
+  "contour_id": "tooling/project-atlas-sync-and-rag-bootstrap-v1",
+  "display_name": "Project Atlas sync + RAG bootstrap",
+  "phase": "ready_for_execution",
+  "planner_status": "complete",
+  "executor_status": "pending",
+  "reviewer_status": "pending",
+  "paused_contour": "tooling/mcp-servers-inventory-and-repair-v1",
+  "local_vault_target": "~/Documents/Obsidian/ProjectAtlas",
+  "server_vault_target": "/srv/obsidian/project-atlas",
+  "sync_strategy": "syncthing_primary",
+  "rag_strategy": "read_only_project_atlas_index",
+  "no_secrets": true,
+  "no_product_code_changes": true,
+  "created_at": "2026-05-14T10:56:14+00:00"
+}

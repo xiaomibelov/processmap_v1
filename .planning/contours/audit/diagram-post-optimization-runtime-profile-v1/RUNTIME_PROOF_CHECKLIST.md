@@ -1,0 +1,27 @@
+# Runtime Proof Checklist
+
+- [ ] GSD discipline recorded
+- [ ] Previous Diagram performance contours reviewed
+- [ ] Source/runtime truth captured
+- [ ] Initial Diagram open profiled
+- [ ] Tab switch profiled
+- [ ] Analytics selection profiled
+- [ ] Hover profiled
+- [ ] Pan/zoom profiled
+- [ ] Overlays ON profiled if feasible
+- [ ] Overlays OFF profiled
+- [ ] Property panel profiled
+- [ ] Edit mode profiled if feasible
+- [ ] Small vs large diagram comparison attempted or limitation documented
+- [ ] DOM/SVG/overlay counts captured
+- [ ] Network/mutation counts captured
+- [ ] Console errors captured
+- [ ] Performance trace summary attempted or fallback documented
+- [ ] Source map created
+- [ ] Residual bottlenecks ranked
+- [ ] Next contour decision matrix created
+- [ ] Project Atlas note created
+- [ ] No product code changed
+- [ ] No BPMN XML mutation
+- [ ] No commit/push/PR/deploy
+- [ ] Agent 3 review required

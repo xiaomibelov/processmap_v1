@@ -1,0 +1,134 @@
+- generic [ref=e5]:
+  - generic [ref=e6]:
+    - generic [ref=e9]: ProcessMap
+    - generic [ref=e10]:
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - generic [ref=e13]: Org
+          - generic "Default" [ref=e14]
+        - button "Админ-панель" [ref=e15] [cursor=pointer]
+      - generic [ref=e16]:
+        - button "Профиль" [expanded] [active] [ref=e17] [cursor=pointer]:
+          - img [ref=e18]
+        - generic [ref=e139]:
+          - generic [ref=e140]:
+            - generic "admin@local" [ref=e141]
+            - generic [ref=e142]: Аккаунт
+          - generic [ref=e143]:
+            - generic [ref=e145]:
+              - generic [ref=e146]: Уведомления
+              - generic [ref=e147]: Нет уведомлений
+            - generic [ref=e148]: Нет уведомлений
+            - button "Открыть центр уведомлений" [ref=e149] [cursor=pointer]
+          - generic [ref=e150]:
+            - button "Профиль скоро" [ref=e151] [cursor=pointer]:
+              - generic [ref=e152]: Профиль
+              - generic [ref=e153]: скоро
+            - switch "Тема Тёмная" [ref=e154] [cursor=pointer]:
+              - generic [ref=e155]: Тема
+              - generic [ref=e156]: Тёмная
+            - button "Выйти" [ref=e159] [cursor=pointer]:
+              - generic [ref=e160]: Выйти
+  - generic [ref=e20]:
+    - generic [ref=e22]:
+      - button "Открыть панель" [disabled] [ref=e23]:
+        - img [ref=e25]
+      - generic [ref=e27]:
+        - button "Узел не выбран" [disabled] [ref=e28]:
+          - img [ref=e30]
+        - button "AI-вопросы" [disabled] [ref=e33]:
+          - img [ref=e35]
+        - button "Акторы" [disabled] [ref=e37]:
+          - img [ref=e39]
+        - button "Шаблоны" [disabled] [ref=e43]:
+          - img [ref=e45]
+    - generic [ref=e49]:
+      - generic [ref=e50]:
+        - button "Сохранить сессию" [disabled] [ref=e53]
+        - tablist "Process tabs" [ref=e55]:
+          - tab "Анализ процессов" [disabled] [ref=e56]
+          - tab "Diagram (BPMN)" [disabled] [ref=e57]
+          - tab "XML" [disabled] [ref=e58]
+          - tab "DOC" [disabled] [ref=e59]
+          - tab "DOD" [disabled] [ref=e60]
+        - button "Открыть меню действий" [ref=e63] [cursor=pointer]: ⋯
+      - main [ref=e65]:
+        - generic [ref=e66]:
+          - generic [ref=e67]:
+            - generic [ref=e68]:
+              - heading "Реестр действий с продуктом" [level=2] [ref=e69]
+              - paragraph [ref=e70]: Аналитика действий с продуктом по всем процессам и диаграммам рабочего пространства.
+            - generic [ref=e71]:
+              - generic [ref=e72]:
+                - generic [ref=e73]: "Экспорт: 0 строк · полных: 0 · неполных: 0"
+                - button "CSV" [disabled] [ref=e74]
+                - button "XLSX" [disabled] [ref=e75]
+              - button "Вернуться" [ref=e76] [cursor=pointer]
+          - tablist "Источник строк реестра" [ref=e77]:
+            - tab "Рабочее пространство" [selected] [ref=e78] [cursor=pointer]
+            - tab "Проект" [disabled] [ref=e79]
+            - tab "Сессия" [disabled] [ref=e80]
+          - generic [ref=e81]:
+            - generic [ref=e82]: Сводка строится без загрузки полных данных всех сессий на frontend.
+            - generic [ref=e83]: Workspace будет выбран текущим контекстом приложения.
+          - generic [ref=e85]:
+            - generic [ref=e86]:
+              - generic [ref=e87]: Сессии workspace
+              - text: Все сессии в выбранном scope, включая сессии без действий с продуктом.
+            - generic [ref=e88]: Сессии не найдены.
+          - region "Сводка реестра" [ref=e89]:
+            - generic [ref=e90]:
+              - generic [ref=e91]: "0"
+              - generic [ref=e92]: Сессии
+            - generic [ref=e93]:
+              - generic [ref=e94]: "0"
+              - generic [ref=e95]: Строк
+            - generic [ref=e96]:
+              - generic [ref=e97]: "0"
+              - generic [ref=e98]: Полных
+            - generic [ref=e99]:
+              - generic [ref=e100]: "0"
+              - generic [ref=e101]: Неполных
+            - generic [ref=e102]:
+              - generic [ref=e103]: "0"
+              - generic [ref=e104]: После фильтров
+          - generic [ref=e106]:
+            - generic [ref=e107]:
+              - generic [ref=e108]: Группа
+              - combobox "Группа" [ref=e109]:
+                - option "Все" [selected]
+            - generic [ref=e110]:
+              - generic [ref=e111]: Товар
+              - combobox "Товар" [ref=e112]:
+                - option "Все" [selected]
+            - generic [ref=e113]:
+              - generic [ref=e114]: Тип
+              - combobox "Тип" [ref=e115]:
+                - option "Все" [selected]
+            - generic [ref=e116]:
+              - generic [ref=e117]: Этап
+              - combobox "Этап" [ref=e118]:
+                - option "Все" [selected]
+            - generic [ref=e119]:
+              - generic [ref=e120]: Категория
+              - combobox "Категория" [ref=e121]:
+                - option "Все" [selected]
+            - generic [ref=e122]:
+              - generic [ref=e123]: Роль
+              - combobox "Роль" [ref=e124]:
+                - option "Все" [selected]
+            - generic [ref=e125]:
+              - generic [ref=e126]: Полнота
+              - combobox "Полнота" [ref=e127]:
+                - option "Все" [selected]
+                - option "Полные"
+                - option "Неполные"
+            - button "Сбросить" [ref=e128] [cursor=pointer]
+          - generic [ref=e131]:
+            - generic [ref=e132]: В рабочем пространстве пока нет данных
+            - generic [ref=e133]: В рабочем пространстве пока нет процессов с действиями с продуктом. Данные появятся после создания сессий и заполнения анализа.
+          - generic [ref=e135]: "После фильтров: 0 строк · полных: 0 · неполных: 0"
+  - generic [ref=e136]:
+    - link "Версия v1.0.126" [ref=e137] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e138]: "· Таблица шагов анализа стала строгой: убраны карточные строки, тяжёлые hover-эффекты и агрессивные цветные заливки."

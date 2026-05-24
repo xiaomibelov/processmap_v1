@@ -1,0 +1,51 @@
+{
+  "contour": "architecture/process-analysis-and-registries-backend-view-model-master-plan-v1",
+  "run_id": "20260520T221413Z-51872",
+  "status": "READY_FOR_EXECUTION",
+  "execution_mode": "single-lane",
+  "single_executor_note": "TOKEN_ECONOMY_SINGLE_EXECUTOR: Agent 2 does all substantive work. Agent 3 performs shell-only merge. Agent 4 reviews.",
+  "agents": {
+    "agent1_planner": "COMPLETE",
+    "agent2_executor_part1": "PENDING",
+    "agent3_executor_part2": "PENDING_SHELL_MERGE",
+    "agent4_reviewer": "PENDING"
+  },
+  "deliverables": [
+    "PLAN.md",
+    "EXECUTOR_PART_1_PROMPT.md",
+    "EXECUTOR_PART_2_PROMPT.md",
+    "REVIEWER_PROMPT.md",
+    "RAG_PREFLIGHT_PLANNER.md",
+    "OBSIDIAN_CONTEXT_USED.md",
+    "GSD_CONTEXT_USED.md",
+    "STATE.json",
+    "AGENT_RUN_ID",
+    "READY_FOR_EXECUTION"
+  ],
+  "expected_worker_outputs": [
+    "WORKER_2_REPORT.md",
+    "CURRENT_BACKEND_SOURCE_TRUTH.md",
+    "REGISTRY_DIVERGENCE_MATRIX.md",
+    "SHARED_INFRASTRUCTURE_CANDIDATES.md",
+    "WORKER_2_DONE"
+  ],
+  "expected_reviewer_outputs": [
+    "REVIEW_REPORT.md",
+    "REVIEW_PASS or CHANGES_REQUESTED"
+  ],
+  "source_truth_at_plan_time": {
+    "workspace": "/opt/processmap-test",
+    "branch": "feature/process-properties-registry-backend-contract-v1",
+    "head": "a2359d8ce732ab89f8911ec0479500ecd660a764",
+    "origin_main": "d805e1c64c1107b9e3fe6854e031694bf741b187",
+    "dirty": true
+  },
+ "non_goals": [
+    "no_product_code_changes",
+    "no_ui_redesign",
+    "no_backend_implementation",
+    "no_schema_migration",
+    "no_bpmn_xml_mutation",
+    "no_pr_merge_deploy"
+  ]
+}

@@ -1,0 +1,23 @@
+# Runtime Proof Checklist — perf/diagram-property-overlays-viewport-culling-v1
+
+- [ ] GSD discipline recorded
+- [ ] Previous audit REVIEW_PASS reviewed
+- [ ] Source/runtime truth captured
+- [ ] Baseline DOM count captured
+- [ ] Baseline `.djs-overlay` count captured
+- [ ] Baseline `.fpcPropertyOverlay` count captured
+- [ ] Source map captured
+- [ ] Viewport-culling strategy defined
+- [ ] Non-goals locked
+- [ ] Agent 2 baseline-before-code required
+- [ ] Agent 2 before/after metrics required
+- [ ] Agent 3 Playwright review required
+- [ ] Pan/zoom tested
+- [ ] Tab switch tested
+- [ ] No duplicate overlays
+- [ ] No unbounded DOM growth
+- [ ] No network mutation side effects
+- [ ] No backend changes
+- [ ] No BPMN XML mutation
+- [ ] No Product Actions/RAG/AG-UI changes
+- [ ] No commit/push/PR/deploy

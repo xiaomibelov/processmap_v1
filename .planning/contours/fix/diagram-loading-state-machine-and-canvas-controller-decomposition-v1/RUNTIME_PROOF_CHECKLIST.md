@@ -1,0 +1,35 @@
+# Runtime Proof Checklist
+
+- [ ] GSD discipline recorded
+- [ ] source/runtime truth captured
+- [ ] user screenshot regression documented
+- [ ] current visible marker location documented
+- [ ] visible marker moved/confirmed top/header
+- [ ] build-info.json verified
+- [ ] window.__PROCESSMAP_BUILD_INFO__ verified
+- [ ] stuck loading baseline reproduced or explicitly not reproduced
+- [ ] "Загрузка диаграммы…" timeout checked
+- [ ] loading flags source-mapped
+- [ ] viewer/modeler readiness source-mapped
+- [ ] importXML success/error path source-mapped
+- [ ] BpmnStage/ProcessStage decomposition risk mapped
+- [ ] loading state machine extracted
+- [ ] canvas lifecycle/import controller extracted if needed
+- [ ] timeout/error state implemented
+- [ ] no endless loading
+- [ ] warm Diagram renders or errors within 10 sec
+- [ ] cold Diagram renders or errors within 20 sec
+- [ ] skeleton does not flap
+- [ ] canvas stable after ready
+- [ ] pan/zoom works
+- [ ] selection-lite works
+- [ ] property panel works
+- [ ] overlays-off scenario works
+- [ ] no PUT/PATCH
+- [ ] no versions spam regression
+- [ ] no backend changes
+- [ ] no BPMN XML mutation
+- [ ] no Product Actions/RAG/AG-UI changes
+- [ ] build/tests run
+- [ ] Agent 3 fresh-browser review required
+- [ ] screenshot-state failure blocks REVIEW_PASS

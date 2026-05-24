@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/opt/processmap-test"
+CID="${1:?Usage: pm-agent-reset-stale.sh <contour-id>}"
+DIR="$ROOT/.planning/contours/$CID"
+
+cd "$ROOT"
+
+if [ ! -d "$DIR" ]; then
+  echo "BLOCKED: contour dir missing: $DIR"
+  exit 2
+fi
+
+echo "=== Reset stale markers ==="
+echo "Contour: $CID"
+echo "Dir: $DIR"
+echo
+
+echo "=== Before ==="
+"$ROOT/tools/pm-agent-status.sh" "$CID" || true
+
+echo
+echo "=== Kimi processes ==="
+ps aux | grep "[k]imi" || true
+
+# Safe rule:
+# Remove EXECUTION_STARTED only if execution has no outputs.
+if [ -f "$DIR/EXECUTION_STARTED" ] \
+   && [ ! -f "$DIR/EXEC_REPORT.md" ] \
+   && [ ! -f "$DIR/READY_FOR_REVIEW" ] \
+   && [ ! -f "$DIR/EXEC_BLOCKED.md" ]; then
+  echo "Removing stale EXECUTION_STARTED"
+  rm -f "$DIR/EXECUTION_STARTED"
+else
+  echo "EXECUTION_STARTED not stale or no removal needed"
+fi
+
+# Safe rule:
+# Remove REVIEW_STARTED only if review has no outputs.
+if [ -f "$DIR/REVIEW_STARTED" ] \
+   && [ ! -f "$DIR/REVIEW_REPORT.md" ] \
+   && [ ! -f "$DIR/REVIEW_PASS" ] \
+   && [ ! -f "$DIR/CHANGES_REQUESTED" ] \
+   && [ ! -f "$DIR/REVIEW_BLOCKED.md" ]; then
+  echo "Removing stale REVIEW_STARTED"
+  rm -f "$DIR/REVIEW_STARTED"
+else
+  echo "REVIEW_STARTED not stale or no removal needed"
+fi
+
+echo
+echo "=== After ==="
+"$ROOT/tools/pm-agent-status.sh" "$CID" || true

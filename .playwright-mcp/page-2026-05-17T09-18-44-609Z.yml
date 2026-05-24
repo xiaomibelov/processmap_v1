@@ -1,0 +1,13 @@
+- generic [ref=e7]:
+  - heading "Вход в PROCESSMAP" [level=2] [ref=e9]
+  - generic [ref=e10]:
+    - generic [ref=e11]: Email
+    - textbox "Email" [active] [ref=e12]:
+      - /placeholder: admin@local
+  - generic [ref=e13]:
+    - generic [ref=e14]: Пароль
+    - textbox "Пароль" [ref=e15]:
+      - /placeholder: Введите пароль
+  - generic [ref=e16]:
+    - button "Войти" [ref=e17] [cursor=pointer]
+    - button "Доступ по инвайту" [ref=e18] [cursor=pointer]

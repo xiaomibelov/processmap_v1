@@ -1,0 +1,43 @@
+version: "3.8"
+
+services:
+  processmap-agents:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: processmap-agents:latest
+    container_name: processmap-agents
+    hostname: processmap-agents
+    restart: "no"
+    user: "deploy"
+    working_dir: /opt/processmap-test
+    volumes:
+      - /opt/processmap-test:/opt/processmap-test:rw
+      # Mount deploy user home for credentials (kimi config, ssh keys, etc.)
+      - /home/deploy:/home/deploy:rw
+      # Runtime state directory
+      - /opt/processmap-test/.agents/run-state:/opt/processmap-test/.agents/run-state:rw
+    environment:
+      - PROCESSMAP_AGENT_LLM=${PROCESSMAP_AGENT_LLM:-kimi}
+      - PROCESSMAP_AGENT1_TASK=${PROCESSMAP_AGENT1_TASK:-}
+      - PROCESSMAP_AGENT_DRY_RUN=${PROCESSMAP_AGENT_DRY_RUN:-0}
+      - PROCESSMAP_NO_TMUX=1
+      - TERM=xterm-256color
+      - HOME=/home/deploy
+      - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/deploy/.local/bin
+    # Pass contour id as command argument
+    command: ["${CONTOUR_ID:?CONTOUR_ID is required}"]
+    # Keep stdin open for interactive LLM sessions if needed
+    stdin_open: true
+    tty: true
+    networks:
+      - processmap
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+networks:
+  processmap:
+    driver: bridge

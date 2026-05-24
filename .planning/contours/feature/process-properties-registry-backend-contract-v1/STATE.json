@@ -1,0 +1,22 @@
+{
+  "contour": "feature/process-properties-registry-backend-contract-v1",
+  "run_id": "20260520T203825Z-44497",
+  "role": "planner",
+  "status": "ready_for_execution",
+  "execution_mode": "single-lane",
+  "execution_mode_label": "TOKEN_ECONOMY_SINGLE_EXECUTOR",
+  "agent2_scope": "backend contract hardening (element_type XML parsing, element_types filter, tests) + minimal frontend filter wiring",
+  "agent3_scope": "shell-only merge / no-LLM handoff",
+  "upstream_contour": "feature/process-properties-registry-backend-source-truth-v1",
+  "upstream_status": "REVIEW_PASS; element_type left empty by design in v1",
+  "blocked_by": "feature/process-properties-registry-foundation-v1 CHANGES_REQUESTED (Тип объекта filter semantics)",
+  "baseline_branch": "origin/main",
+  "baseline_head": "d805e1c64c1107b9e3fe6854e031694bf741b187",
+  "current_branch_at_plan_time": "feature/process-properties-registry-backend-source-truth-v1",
+  "current_head_at_plan_time": "75c53c5808339ab8ff1c1134b6d0139d5b8045b6",
+  "branch_hygiene": "new branch from source-truth base or origin/main + cherry-pick",
+  "languages": {
+    "plan_and_reports": "ru",
+    "executor_prompts": "en"
+  }
+}

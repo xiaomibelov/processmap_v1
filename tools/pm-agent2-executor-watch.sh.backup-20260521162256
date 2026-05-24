@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/opt/processmap-test"
+CID="${1:?Usage: pm-agent2-executor-watch.sh <contour-id>}"
+
+validate_cid() {
+  local value="$1"
+  if [[ ! "$value" =~ ^[A-Za-z0-9_./-]+$ ]]; then
+    echo "ERROR: invalid contour id: $value" >&2
+    echo "Allowed characters: A-Z a-z 0-9 _ - / ." >&2
+    exit 2
+  fi
+}
+
+validate_cid "$CID"
+
+DIR="$ROOT/.planning/contours/$CID"
+PROMPT="$ROOT/.agents/agent2-executor/prompts/${CID//\//__}-executor-start.md"
+LOG="$ROOT/.agents/agent2-executor/logs/${CID//\//__}-watch.log"
+
+mkdir -p "$(dirname "$PROMPT")" "$(dirname "$LOG")"
+
+export PATH="$ROOT/bin:/root/.local/bin:/root/.kimi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+
+echo "=== Agent 2 / Executor watcher ===" | tee -a "$LOG"
+echo "Started: $(date -Iseconds)" | tee -a "$LOG"
+echo "Contour: $CID" | tee -a "$LOG"
+echo "Waiting for READY_FOR_EXECUTION..." | tee -a "$LOG"
+
+while true; do
+  # Support both legacy EXECUTOR_PROMPT.md and split-executor prompts
+  PROMPT_FILE=""
+  for candidate in "$DIR/EXECUTOR_PART_1_PROMPT.md" "$DIR/WORKER_2_PROMPT.md" "$DIR/EXECUTOR_PROMPT.md"; do
+    if [ -f "$candidate" ]; then
+      PROMPT_FILE="$candidate"
+      break
+    fi
+  done
+
+  if [ -f "$DIR/READY_FOR_EXECUTION" ] \
+     && [ -n "$PROMPT_FILE" ] \
+     && [ ! -f "$DIR/WORKER_2_DONE" ] \
+     && [ ! -f "$DIR/EXEC_BLOCKED.md" ]; then
+
+    if [ -f "$DIR/EXECUTION_STARTED" ]; then
+      echo "Execution already started; waiting..." | tee -a "$LOG"
+      sleep 10
+      continue
+    fi
+
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > "$DIR/EXECUTION_STARTED"
+
+    cat > "$PROMPT" <<PROMPT_EOF
+You are Agent 2 / Worker for ProcessMap.
+
+Working directory:
+cd /opt/processmap-test
+
+Contour id:
+$CID
+
+Execute instructions from:
+$PROMPT_FILE
+
+Before execution, run RAG preflight if available:
+node tools/rag/pm-rag-agent-preflight.mjs \
+  --role executor \
+  --contour "$CID" \
+  --area "executor context" \
+  --format md \
+  --top-k 10
+
+Rules:
+- Use GSD execution discipline.
+- Do not merge/deploy/PR unless explicitly allowed.
+- Do not print secrets.
+- Stay within scope.
+- If UI/runtime task — collect evidence for Agent 3.
+- After completion create:
+  .planning/contours/$CID/EXEC_REPORT.md
+  .planning/contours/$CID/READY_FOR_REVIEW
+- After writing execution artifacts run:
+  ./tools/pm-agent-mirror-report.sh "$CID" executor
+- Mirror path:
+  /srv/obsidian/project-atlas/ProcessMap/AgentReports/$CID/
+
+If blocked:
+- create EXEC_BLOCKED.md with exact reason.
+PROMPT_EOF
+
+    clear || true
+    echo "=== Agent 2 / Executor ==="
+    echo "READY_FOR_EXECUTION detected"
+    echo "Contour: $CID"
+    echo "Start prompt: $PROMPT"
+    echo
+    echo "Kimi будет запущен интерактивно."
+    echo "Внутри Kimi вставь короткую команду:"
+    echo
+    echo "Прочитай и выполни prompt file:"
+    echo "$PROMPT"
+    echo
+
+    cd "$ROOT"
+    kimi
+
+    if [ -x "$ROOT/tools/pm-agent-mirror-report.sh" ]; then
+      "$ROOT/tools/pm-agent-mirror-report.sh" "$CID" executor || true
+    fi
+
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > "$DIR/WORKER_2_DONE"
+    echo "Worker 2 done: $(date -Iseconds)" | tee -a "$LOG"
+    exit 0
+  fi
+
+  sleep 5
+done

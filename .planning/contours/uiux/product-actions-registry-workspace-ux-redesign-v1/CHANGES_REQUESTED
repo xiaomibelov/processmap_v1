@@ -1,0 +1,10 @@
+CHANGES_REQUESTED
+
+Contour: uiux/product-actions-registry-workspace-ux-redesign-v1
+Agent: Agent 3 / Reviewer
+Date: 2026-05-14
+
+UX structure of the product actions registry screen does not match the contour goal.
+9 findings require rework.
+
+Agent 2 must read REVIEW_REPORT.md and REWORK_REQUEST.md, fix all listed items, update EXEC_REPORT.md with "Rework Round 1", and recreate READY_FOR_REVIEW.

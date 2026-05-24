@@ -1,0 +1,26 @@
+# RUNTIME_PROOF_CHECKLIST.md
+
+- [ ] GSD discipline recorded
+- [ ] Previous Diagram performance contours reviewed
+- [ ] Source/runtime truth captured
+- [ ] God-file/decomposition risk identified
+- [ ] Heavy derived maps source-mapped
+- [ ] Baseline selection/hover/pan/zoom captured
+- [ ] Decomposition-first plan defined
+- [ ] Derived model extracted if needed
+- [ ] Stable primitive source keys used
+- [ ] Full derived model does not rebuild on pan/zoom/hover/selection if source unchanged
+- [ ] Selected element details use narrow selector
+- [ ] selection-lite remains working
+- [ ] property/details panel remains working
+- [ ] overlay culling preserved
+- [ ] versions dedupe preserved
+- [ ] non-edit PUT guard preserved
+- [ ] decor-off guard preserved
+- [ ] no PUT/PATCH from view interactions
+- [ ] no backend changes
+- [ ] no BPMN XML mutation
+- [ ] no Product Actions/RAG/AG-UI changes
+- [ ] build/tests run
+- [ ] Agent 3 Playwright review required
+- [ ] before/after performance proof required

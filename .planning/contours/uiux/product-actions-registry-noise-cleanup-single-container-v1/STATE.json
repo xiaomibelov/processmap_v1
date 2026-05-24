@@ -1,0 +1,76 @@
+{
+  "contour_id": "uiux/product-actions-registry-noise-cleanup-single-container-v1",
+  "run_id": "20260518T164643Z-83747",
+  "agent": "planner",
+  "status": "READY_FOR_EXECUTION",
+  "created_at": "2026-05-18T16:48:00Z",
+  "workflow": "4-agent (Planner + Worker2 + Worker3 + Reviewer)",
+  "parallel_split": {
+    "executor_part_1": "EXECUTOR_PART_1_PROMPT.md (= WORKER_2_PROMPT.md)",
+    "executor_part_2": "EXECUTOR_PART_2_PROMPT.md (= WORKER_3_PROMPT.md)",
+    "independent": true,
+    "part_2_waits_for_part_1": false
+  },
+  "context_proofs": {
+    "rag": "RAG_PREFLIGHT_PLANNER.md",
+    "obsidian": "OBSIDIAN_CONTEXT_USED.md",
+    "gsd": "GSD_CONTEXT_USED.md"
+  },
+  "artifacts": [
+    "PLAN.md",
+    "EXECUTOR_PART_1_PROMPT.md",
+    "EXECUTOR_PART_2_PROMPT.md",
+    "WORKER_2_PROMPT.md",
+    "WORKER_3_PROMPT.md",
+    "REVIEWER_PROMPT.md",
+    "RAG_PREFLIGHT_PLANNER.md",
+    "RAG_PREFLIGHT_REVIEWER.md",
+    "OBSIDIAN_CONTEXT_USED.md",
+    "GSD_CONTEXT_USED.md",
+    "UX_SPEC_IMPLEMENTATION_MAP.md",
+    "VISUAL_NOISE_REDUCTION_CHECKLIST.md",
+    "COMPONENT_MAPPING_REQUIREMENTS.md",
+    "RUNTIME_PROOF_CHECKLIST.md",
+    "BRANCH_SCOPE_CHECKLIST.md",
+    "STATE.json",
+    "AGENT_RUN_ID",
+    "READY_FOR_EXECUTION"
+  ],
+  "scope": {
+    "page": "Реестр действий с продуктом (inner page внутри Аналитики)",
+    "preserve": ["Analytics Hub", "Реестр свойств", "Дашборды", "Global shell/header/sidebar"],
+    "do_not_touch": [
+      "AppShell.jsx", "TopBar.jsx", "ProcessStage.jsx", "BpmnStage.jsx", "InterviewStage.jsx",
+      "ProcessAnalyticsHub.jsx", "WorkspaceExplorer.jsx",
+      "backend/**", "schema/**", "*.bpmn", "tools/rag/**"
+    ],
+    "target_files": [
+      "frontend/src/components/process/analysis/ProductActionsRegistryPage.jsx",
+      "frontend/src/components/process/analysis/ProductActionsRegistryPanel.jsx",
+      "frontend/src/components/process/analysis/registry/ProductActionsRegistryHeader.jsx",
+      "frontend/src/components/process/analysis/registry/ProductActionsRegistryFilters.jsx",
+      "frontend/src/components/process/analysis/registry/ProductActionsRegistryMetrics.jsx",
+      "frontend/src/components/process/analysis/registry/ProductActionsRegistryTable.jsx",
+      "frontend/src/components/process/analysis/registry/ProductActionsRegistryPagination.jsx",
+      "frontend/src/components/process/analysis/registry/index.js",
+      "frontend/src/config/appVersion.js"
+    ]
+  },
+  "design_formula": "One container. One separator. Typography over decoration.",
+  "forbidden_patterns": [
+    "gradients", "dotted/dashed borders", "inner shadows", "colored metric backgrounds",
+    "card-in-card", "border-left/right color stripes", "fake data",
+    "stagger row animation", "duplicate CSV/XLSX buttons",
+    "yellow warning banner", "AI block gradient/background"
+  ],
+  "agent4_gates": [
+    "WORKER_2_DONE & WORKER_3_DONE present",
+    "Fresh runtime proof on :5180 with no-cache",
+    "Analytics Hub preserved",
+    "Version bumped and visible in build-info",
+    "Full RUNTIME_PROOF_CHECKLIST.md C-H passed",
+    "No black-list files touched"
+  ],
+  "blockers": "none",
+  "next": "Agent 2 and Agent 3 start automatically in parallel from EXECUTOR_PART_1_PROMPT.md and EXECUTOR_PART_2_PROMPT.md."
+}

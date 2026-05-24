@@ -1,0 +1,520 @@
+- generic [ref=e2]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - generic [ref=e9]: ProcessMap
+        - button "← К проекту" [ref=e10] [cursor=pointer]
+      - generic:
+        - generic "Описание процессов Долгопрудный" [ref=e11]:
+          - generic [ref=e12]: ПРОЕКТ
+          - generic [ref=e13]: Описание процессов Долгопрудный
+          - button "Действия проекта" [ref=e14] [cursor=pointer]: ▾
+        - generic "wewe" [ref=e15]:
+          - generic [ref=e16]: СЕССИЯ
+          - generic [ref=e17]: wewe
+          - button "Действия сессии" [ref=e18] [cursor=pointer]: ▾
+        - button "Черновик" [ref=e20] [cursor=pointer]:
+          - text: Черновик
+          - img [ref=e21]
+      - generic [ref=e23]:
+        - generic [ref=e24]:
+          - generic [ref=e25]:
+            - generic [ref=e26]: Org
+            - generic "Default" [ref=e27]
+          - button "Админ-панель" [ref=e28] [cursor=pointer]
+        - button "Профиль" [ref=e30] [cursor=pointer]:
+          - img [ref=e31]
+    - generic [ref=e33]:
+      - generic [ref=e35]:
+        - button "Открыть панель" [ref=e36] [cursor=pointer]:
+          - img [ref=e38]
+        - generic [ref=e40]:
+          - button "Узел не выбран" [disabled] [ref=e5044]:
+            - img [ref=e43]
+          - button "AI-вопросы" [ref=e46] [cursor=pointer]:
+            - img [ref=e48]
+          - button "Акторы" [ref=e50] [cursor=pointer]:
+            - img [ref=e52]
+            - generic [ref=e56]: "5"
+          - button "Шаблоны" [ref=e57] [cursor=pointer]:
+            - img [ref=e59]
+      - generic [ref=e63]:
+        - generic [ref=e64]:
+          - generic [ref=e66]:
+            - 'generic "Текущая версия: 1" [ref=e1059]': V. 1
+            - button "Создать версию BPMN" [ref=e1065] [cursor=pointer]
+            - button "Сохранить сессию" [ref=e70] [cursor=pointer]
+          - tablist "Process tabs" [ref=e72]:
+            - tab "Анализ процессов" [ref=e73] [cursor=pointer]
+            - tab "Diagram (BPMN)" [selected] [ref=e74] [cursor=pointer]
+            - tab "XML" [ref=e75] [cursor=pointer]
+            - tab "DOC" [ref=e76] [cursor=pointer]
+            - tab "DOD" [ref=e77] [cursor=pointer]
+          - generic [ref=e79]:
+            - button "Шаг назад" [disabled] [ref=e80]:
+              - generic [ref=e81]: ↶
+            - button "Повторить отменённое действие" [disabled] [ref=e82]:
+              - generic [ref=e83]: ↷
+            - button "Открыть меню действий" [ref=e84] [cursor=pointer]: ⋯
+        - generic [ref=e88]:
+          - generic [ref=e5045]:
+            - generic [ref=e5046]:
+              - button "Слои OFF" [ref=e5047] [cursor=pointer]:
+                - generic [ref=e5048]: Слои
+                - generic "OFF" [ref=e5049]
+              - button "Шаблоны" [ref=e5051] [cursor=pointer]
+              - button "Отчёты" [ref=e5052] [cursor=pointer]
+              - button "Обсуждения" [ref=e5053] [cursor=pointer]:
+                - generic [ref=e5054]: ✎
+                - generic [ref=e5055]: Обсуждения
+            - generic [ref=e5056]:
+              - button "Поиск" [ref=e5057] [cursor=pointer]:
+                - img [ref=e5058]
+                - text: Поиск
+              - button "Фокус" [ref=e5061] [cursor=pointer]
+              - button "Полный экран" [ref=e5062] [cursor=pointer]
+              - button "Открыть дополнительные действия Diagram" [ref=e5063] [cursor=pointer]: ⋯
+            - generic [ref=e5064]:
+              - button "–" [ref=e5065] [cursor=pointer]
+              - button "↔" [ref=e5066] [cursor=pointer]
+              - button "+" [ref=e5067] [cursor=pointer]
+          - generic [ref=e5068]:
+            - generic [ref=e5069]:
+              - generic:
+                - button "Open Добавить ингредиент" [ref=e5070] [cursor=pointer]:
+                  - img [ref=e5071]
+                - button "Open Добавить ингредиент" [ref=e5073] [cursor=pointer]:
+                  - img [ref=e5074]
+                - button "Open Добавить ингредиент" [ref=e5076] [cursor=pointer]:
+                  - img [ref=e5077]
+                - button "Open Добавить ингредиент" [ref=e5079] [cursor=pointer]:
+                  - img [ref=e5080]
+                - button "Open Добавить ингредиент" [ref=e5082] [cursor=pointer]:
+                  - img [ref=e5083]
+                - button "Open Добавить ингредиент" [ref=e5085] [cursor=pointer]:
+                  - img [ref=e5086]
+                - button "Open Приготовить полуфабриакт" [ref=e5088] [cursor=pointer]:
+                  - img [ref=e5089]
+                - button "Open Добавить ингредиент" [ref=e5091] [cursor=pointer]:
+                  - img [ref=e5092]
+                - button "Open Добавить ингредиент" [ref=e5094] [cursor=pointer]:
+                  - img [ref=e5095]
+                - button "Open Добавить ингредиент" [ref=e5097] [cursor=pointer]:
+                  - img [ref=e5098]
+                - button "Open Добавить ингредиент" [ref=e5100] [cursor=pointer]:
+                  - img [ref=e5101]
+                - button "Open Добавить ингредиент" [ref=e5103] [cursor=pointer]:
+                  - img [ref=e5104]
+                - button "Open Отсадить полуфабрикат в кольца" [ref=e5106] [cursor=pointer]:
+                  - img [ref=e5107]
+                - button "Open Достать из колец" [ref=e5109] [cursor=pointer]:
+                  - img [ref=e5110]
+                - button "Open Добавить ингредиент" [ref=e5112] [cursor=pointer]:
+                  - img [ref=e5113]
+                - button "Open Хранение в Холодильной камере" [ref=e5115] [cursor=pointer]:
+                  - img [ref=e5116]
+                - button "Open Добавить ингредиент" [ref=e5118] [cursor=pointer]:
+                  - img [ref=e5119]
+              - img [ref=e5121]:
+                - generic [ref=e5123]:
+                  - generic [ref=e5124]:
+                    - generic [ref=e5125]:
+                      - generic:
+                        - generic: Бенто Бенто «с днем рождения»
+                    - generic [ref=e5129]:
+                      - generic [ref=e5131]:
+                        - generic:
+                          - generic: Сборка
+                      - generic [ref=e5136]:
+                        - generic:
+                          - generic: Бисквит (торт Бенто) Декор
+                      - generic [ref=e5141]:
+                        - generic:
+                          - generic: Бисквит (приготовление бисквитного теста)
+                      - generic [ref=e5146]:
+                        - generic:
+                          - generic: Крем
+                      - generic [ref=e5151]:
+                        - generic:
+                          - generic: Начинка
+                      - generic [ref=e5159]:
+                        - generic:
+                          - generic: Получить задание
+                      - generic [ref=e5162]:
+                        - generic:
+                          - generic: Взбить смесь
+                      - generic [ref=e5168]:
+                        - generic:
+                          - generic: Проверить консистенцию?
+                      - generic [ref=e5171]:
+                        - generic:
+                          - generic: Поместить ингредиент в емкость
+                      - generic [ref=e5174]:
+                        - generic:
+                          - generic: Взбить
+                      - generic [ref=e5180]:
+                        - generic:
+                          - generic: Крем готов?
+                      - generic [ref=e5183]:
+                        - generic:
+                          - generic: Поместить ингредиент в емкость
+                      - generic [ref=e5186]:
+                        - generic:
+                          - generic: Выгрузить в бункер крем
+                      - generic [ref=e5195]:
+                        - generic:
+                          - generic: Вишня
+                      - generic [ref=e5198]:
+                        - generic:
+                          - generic: Выгрузить в гастроемкость
+                      - generic [ref=e5201]:
+                        - generic:
+                          - generic: Измельчить
+                      - generic [ref=e5204]:
+                        - generic:
+                          - generic: Изменить режим котла на охлаждение
+                      - generic [ref=e5210]:
+                        - generic:
+                          - generic: Лимонное пюре
+                      - generic [ref=e5213]:
+                        - generic:
+                          - generic: Накрыть пищевой плёнкой
+                      - generic [ref=e5216]:
+                        - generic:
+                          - generic: Отварить
+                      - generic [ref=e5219]:
+                        - generic:
+                          - generic: Отварить
+                      - generic [ref=e5222]:
+                        - generic:
+                          - generic: Охладить
+                      - generic [ref=e5228]:
+                        - generic:
+                          - generic: Пектин+сахар
+                      - generic [ref=e5234]:
+                        - generic:
+                          - generic: Передать полуфабрикат начинка
+                      - generic [ref=e5237]:
+                        - generic:
+                          - generic: Переместить вХолодильную камеру
+                      - generic [ref=e5243]:
+                        - generic:
+                          - generic: Получить задание
+                      - generic [ref=e5249]:
+                        - generic:
+                          - generic: Температура достигла 35°C?
+                      - generic [ref=e5255]:
+                        - generic:
+                          - generic: Температура достигла 50°C?
+                      - generic [ref=e5261]:
+                        - generic:
+                          - generic: Температура достигла 92-94°C?
+                      - generic [ref=e5267]:
+                        - generic:
+                          - generic: Получить задание
+                      - generic [ref=e5270]:
+                        - generic:
+                          - generic: Взбить
+                      - generic [ref=e5276]:
+                        - generic:
+                          - generic: Пышная масса?
+                      - generic [ref=e5279]:
+                        - generic:
+                          - generic: Изменить режим работы оборудования
+                      - generic [ref=e5282]:
+                        - generic:
+                          - generic: Взбить
+                      - generic [ref=e5288]:
+                        - generic:
+                          - generic: Однородная масса?
+                      - generic [ref=e5291]:
+                        - generic:
+                          - generic: Взбить
+                      - generic [ref=e5297]:
+                        - generic:
+                          - generic: Однородная масса?
+                      - generic [ref=e5300]:
+                        - generic:
+                          - generic: Выгрузить в бункер
+                      - generic [ref=e5306]:
+                        - generic:
+                          - generic: Выпекать
+                      - generic [ref=e5309]:
+                        - generic:
+                          - generic: Проверка температуры Бисквита
+                      - generic [ref=e5315]:
+                        - generic:
+                          - generic: Температура готового полуфабриката внорме?
+                      - generic [ref=e5318]:
+                        - generic:
+                          - generic: Достать из колец
+                      - generic [ref=e5321]:
+                        - generic:
+                          - generic: Нарезать на бисквиторезке
+                      - generic [ref=e5324]:
+                        - generic:
+                          - generic: Изменить режим работы оборудования
+                      - generic [ref=e5330]:
+                        - generic:
+                          - generic: Передать полуфабрикат бисквитное тесто
+                      - generic [ref=e5336]:
+                        - generic:
+                          - generic: Передать крем для торта Бенто
+                      - generic [ref=e5342]:
+                        - generic:
+                          - generic: Получить бисквитные заготовки
+                      - generic [ref=e5348]:
+                        - generic:
+                          - generic: Получить крем
+                      - generic [ref=e5354]:
+                        - generic:
+                          - generic: Получить начинку
+                      - generic [ref=e5360]:
+                        - generic:
+                          - generic: Решение 1
+                      - generic [ref=e5363]:
+                        - generic:
+                          - generic: Настроить линию сборки
+                      - generic [ref=e5372]:
+                        - generic:
+                          - generic: Выставить на линию бисквитнарезанный
+                      - generic [ref=e5375]:
+                        - generic:
+                          - generic: Отсадить крем
+                      - generic [ref=e5381]:
+                        - generic:
+                          - generic: Все заготовки заполнены?
+                      - generic [ref=e5384]:
+                        - generic:
+                          - generic: Сборка в кольце
+                      - generic [ref=e5387]:
+                        - generic:
+                          - generic: Отсадить начинку
+                      - generic [ref=e5393]:
+                        - generic:
+                          - generic: Передать собранные бисквиты для декора
+                      - generic [ref=e5396]:
+                        - generic:
+                          - generic: Переместить болванку в коробку
+                      - generic [ref=e5399]:
+                        - generic:
+                          - generic: Положить лист
+                      - generic [ref=e5405]:
+                        - generic:
+                          - generic: Получить собранные бисквиты
+                      - generic [ref=e5408]:
+                        - generic:
+                          - generic: Поместить на тару
+                      - generic [ref=e5411]:
+                        - generic:
+                          - generic: Упаковать продукт в первичную упаковку
+                      - generic [ref=e5420]:
+                        - generic:
+                          - generic: Крем
+                      - generic [ref=e5426]:
+                        - generic:
+                          - generic: Воздушный рис
+                      - generic [ref=e5432]:
+                        - generic:
+                          - generic: Меланж
+                      - generic [ref=e5438]:
+                        - generic:
+                          - generic: Сахар
+                      - generic [ref=e5444]:
+                        - generic:
+                          - generic: Сода гашеная
+                      - generic [ref=e5450]:
+                        - generic:
+                          - generic: Молоко
+                      - generic [ref=e5456]:
+                        - generic:
+                          - generic: Мука
+                      - generic [ref=e5462]:
+                        - generic:
+                          - generic: Сахар
+                      - generic [ref=e5468]:
+                        - generic:
+                          - generic: Охлажденные сливки
+                      - generic [ref=e5474]:
+                        - generic:
+                          - generic: Сметана
+                      - generic [ref=e5477]:
+                        - generic:
+                          - generic: Ожидание охлаждения
+                      - generic [ref=e5480]:
+                        - generic:
+                          - generic: Переместить вшоковую камеру
+                      - generic [ref=e5483]:
+                        - generic:
+                          - generic: Передать на вторичную упаковку
+                      - generic [ref=e5486]:
+                        - generic:
+                          - generic: Переместить в Холодильную камеру
+                      - generic [ref=e5489]:
+                        - generic:
+                          - generic: Нанести декорна обсыпанные болванки
+                      - generic [ref=e5492]:
+                        - generic:
+                          - generic: Добавить ингредиент
+                      - generic [ref=e5495]:
+                        - generic:
+                          - generic: Добавить ингредиент
+                      - generic [ref=e5498]:
+                        - generic:
+                          - generic: Добавить ингредиент
+                      - generic [ref=e5501]:
+                        - generic:
+                          - generic: Добавить ингредиент
+                      - generic [ref=e5504]:
+                        - generic:
+                          - generic: Добавить ингредиент
+                      - generic [ref=e5507]:
+                        - generic:
+                          - generic: Добавить ингредиент
+                      - generic [ref=e5510]:
+                        - generic:
+                          - generic: Приготовить полуфабриакт
+                      - generic [ref=e5513]:
+                        - generic:
+                          - generic: Добавить ингредиент
+                      - generic [ref=e5516]:
+                        - generic:
+                          - generic: Добавить ингредиент
+                      - generic [ref=e5519]:
+                        - generic:
+                          - generic: Добавить ингредиент
+                      - generic [ref=e5522]:
+                        - generic:
+                          - generic: Добавить ингредиент
+                      - generic [ref=e5525]:
+                        - generic:
+                          - generic: Добавить ингредиент
+                      - generic [ref=e5528]:
+                        - generic:
+                          - generic: Отсадить полуфабрикат в кольца
+                      - generic [ref=e5531]:
+                        - generic:
+                          - generic: Достать из колец
+                      - generic [ref=e5534]:
+                        - generic:
+                          - generic: Добавить ингредиент
+                      - generic [ref=e5537]:
+                        - generic:
+                          - generic: Хранение в Холодильной камере
+                      - generic [ref=e5540]:
+                        - generic:
+                          - generic: Добавить ингредиент
+                      - generic [ref=e5543]:
+                        - generic:
+                          - generic: Переместить из Холодильной камеры на Упаковочную линию
+                      - generic [ref=e5546]:
+                        - generic:
+                          - generic: Передать ящикна СГП
+                      - generic [ref=e5552]:
+                        - generic:
+                          - generic: Загрузить ингредиенткрем в бункер дозатора
+                      - generic [ref=e5555]:
+                        - generic:
+                          - generic: Загрузить ингредиентначинка п/ф в бункердозатора
+                      - generic [ref=e5561]:
+                        - generic:
+                          - generic: Нет
+                      - generic [ref=e5564]:
+                        - generic:
+                          - generic: Да
+                      - generic [ref=e5570]:
+                        - generic:
+                          - generic: Нет
+                      - generic [ref=e5573]:
+                        - generic:
+                          - generic: Да
+                      - generic [ref=e5576]:
+                        - generic:
+                          - generic: Да
+                      - generic [ref=e5579]:
+                        - generic:
+                          - generic: Да
+                      - generic [ref=e5585]:
+                        - generic:
+                          - generic: Нет
+                      - generic [ref=e5591]:
+                        - generic:
+                          - generic: Нет
+                      - generic [ref=e5597]:
+                        - generic:
+                          - generic: Нет
+                      - generic [ref=e5603]:
+                        - generic:
+                          - generic: Да
+                      - generic [ref=e5609]:
+                        - generic:
+                          - generic: Нет
+                      - generic [ref=e5612]:
+                        - generic:
+                          - generic: Да
+                      - generic [ref=e5618]:
+                        - generic:
+                          - generic: Нет
+                      - generic [ref=e5621]:
+                        - generic:
+                          - generic: Да
+                      - generic [ref=e5627]:
+                        - generic:
+                          - generic: Нет
+                      - generic [ref=e5630]:
+                        - generic:
+                          - generic: Да
+                      - generic [ref=e5633]:
+                        - generic:
+                          - generic: Да
+                      - generic [ref=e5666]:
+                        - generic:
+                          - generic: Нет
+                      - generic [ref=e5669]:
+                        - generic:
+                          - generic: Да
+                  - generic [ref=e5723]:
+                    - generic:
+                      - generic: пополнение колец по потребности
+                  - generic [ref=e5726]:
+                    - generic:
+                      - generic: пополнение емкости по потребности
+                  - generic [ref=e5729]:
+                    - generic:
+                      - generic: пополнение пищевой пленки по потребности
+                  - generic [ref=e5732]:
+                    - generic:
+                      - generic: пополнение тары по потребности
+              - generic [ref=e5747]:
+                - generic [ref=e5748]:
+                  - generic "Activate hand tool" [ref=e5749]: 
+                  - generic "Activate lasso tool" [ref=e5750]: 
+                  - generic "Activate create/remove space tool" [ref=e5751]: 
+                  - generic "Activate global connect tool" [ref=e5752]: 
+                  - separator [ref=e5753]
+                - generic:
+                  - generic "Create start event" [ref=e5754]: 
+                  - generic "Create intermediate/boundary event" [ref=e5755]: 
+                  - generic "Create end event" [ref=e5756]: 
+                - generic "Create gateway" [ref=e5757]: 
+                - generic:
+                  - generic "Create task" [ref=e5758]: 
+                  - generic "Create expanded sub-process" [ref=e5759]: 
+                - generic "Create data object reference" [ref=e5760]: 
+                - generic "Create data store reference" [ref=e5761]: 
+                - generic "Create pool/participant" [ref=e5762]: 
+                - generic "Create group" [ref=e5763]: 
+            - link "Powered by bpmn.io" [ref=e5764] [cursor=pointer]:
+              - /url: http://bpmn.io
+              - img [ref=e5765]
+          - generic:
+            - 'status "Скрыто автоматически: горизонтальная навигация сейчас не нужна"':
+              - generic: i
+              - generic: Scrubber auto-collapsed
+    - generic [ref=e816]:
+      - link "Версия v1.0.131" [ref=e817] [cursor=pointer]:
+        - /url: "#updates"
+      - generic [ref=e818]: "· Стабилизация draft-ссылок: useStableDraft предотвращает лишние re-render при идентичном содержимом."
+  - button "Обсуждения" [ref=e820] [cursor=pointer]:
+    - generic [ref=e821]: ✎
+    - generic [ref=e822]: Обсуждения

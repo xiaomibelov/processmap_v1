@@ -1,0 +1,92 @@
+- generic [ref=e2]:
+  - generic [ref=e17]:
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e21]: ProcessMap
+        - button "← К проекту" [ref=e350] [cursor=pointer]
+      - generic:
+        - generic "Описание процессов Долгопрудный" [ref=e351]:
+          - generic [ref=e352]: ПРОЕКТ
+          - generic [ref=e353]: Описание процессов Долгопрудный
+          - button "Действия проекта" [ref=e354] [cursor=pointer]: ▾
+        - generic "wewe" [ref=e355]:
+          - generic [ref=e356]: СЕССИЯ
+          - generic [ref=e357]: wewe
+          - button "Действия сессии" [ref=e358] [cursor=pointer]: ▾
+        - button "Черновик" [ref=e360] [cursor=pointer]:
+          - text: Черновик
+          - img [ref=e361]
+      - generic [ref=e23]:
+        - generic [ref=e24]:
+          - generic [ref=e25]:
+            - generic [ref=e26]: Org
+            - generic "Default" [ref=e27]
+          - button "Админ-панель" [ref=e28] [cursor=pointer]
+        - button "Профиль" [ref=e30] [cursor=pointer]:
+          - img [ref=e31]
+    - generic [ref=e33]:
+      - generic [ref=e35]:
+        - button "Открыть панель" [ref=e36] [cursor=pointer]:
+          - img [ref=e38]
+        - generic [ref=e40]:
+          - button "Узел не выбран" [disabled] [ref=e41]:
+            - img [ref=e43]
+          - button "AI-вопросы" [ref=e46] [cursor=pointer]:
+            - img [ref=e48]
+          - button "Акторы" [ref=e50] [cursor=pointer]:
+            - img [ref=e52]
+            - generic [ref=e363]: "5"
+          - button "Шаблоны" [ref=e56] [cursor=pointer]:
+            - img [ref=e58]
+      - generic [ref=e62]:
+        - generic [ref=e63]:
+          - generic [ref=e65]:
+            - generic "Опубликованных версий нет" [ref=e364]: V. —
+            - button "Создать версию BPMN" [ref=e366] [cursor=pointer]
+            - button "Сохранить сессию" [ref=e66] [cursor=pointer]
+          - tablist "Process tabs" [ref=e68]:
+            - tab "Анализ процессов" [ref=e69] [cursor=pointer]
+            - tab "Diagram (BPMN)" [selected] [ref=e70] [cursor=pointer]
+            - tab "XML" [ref=e71] [cursor=pointer]
+            - tab "DOC" [ref=e72] [cursor=pointer]
+            - tab "DOD" [ref=e73] [cursor=pointer]
+          - generic [ref=e75]:
+            - button "Шаг назад" [disabled] [ref=e367]:
+              - generic [ref=e368]: ↶
+            - button "Повторить отменённое действие" [disabled] [ref=e369]:
+              - generic [ref=e370]: ↷
+            - button "Открыть меню действий" [ref=e76] [cursor=pointer]: ⋯
+        - generic [ref=e373]:
+          - generic [ref=e374]:
+            - generic [ref=e375]:
+              - button "Слои OFF" [ref=e376] [cursor=pointer]:
+                - generic [ref=e377]: Слои
+                - generic "OFF" [ref=e378]
+              - button "Шаблоны" [ref=e380] [cursor=pointer]
+              - button "Отчёты" [ref=e381] [cursor=pointer]
+              - button "Обсуждения" [ref=e382] [cursor=pointer]:
+                - generic [ref=e383]: ✎
+                - generic [ref=e384]: Обсуждения
+            - generic [ref=e385]:
+              - button "Поиск" [ref=e386] [cursor=pointer]:
+                - img [ref=e387]
+                - text: Поиск
+              - button "Фокус" [ref=e390] [cursor=pointer]
+              - button "Полный экран" [ref=e391] [cursor=pointer]
+              - button "Открыть дополнительные действия Diagram" [ref=e392] [cursor=pointer]: ⋯
+            - generic [ref=e393]:
+              - button "–" [ref=e394] [cursor=pointer]
+              - button "↔" [ref=e395] [cursor=pointer]
+              - button "+" [ref=e396] [cursor=pointer]
+          - generic [ref=e398]: "Failed to fetch dynamically imported module: http://clearvestnic.ru:5180/assets/Modeler-osGeTQUI.js"
+          - generic:
+            - 'status "Скрыто автоматически: горизонтальная навигация сейчас не нужна"':
+              - generic: i
+              - generic: Scrubber auto-collapsed
+    - generic [ref=e183]:
+      - link "Версия v1.0.131" [ref=e184] [cursor=pointer]:
+        - /url: "#updates"
+      - generic [ref=e185]: "· Стабилизация draft-ссылок: useStableDraft предотвращает лишние re-render при идентичном содержимом."
+  - button "Обсуждения" [ref=e403] [cursor=pointer]:
+    - generic [ref=e404]: ✎
+    - generic [ref=e405]: Обсуждения

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Peer review the contour using `PLAN.md`, `EXEC_REPORT.md`, `git diff`, and runtime proof.
+Peer review the contour using `PLAN.md`, `WORKER_REPORT.md`, `git diff`, and runtime proof.
 
 ## Source Truth Commands
 
@@ -23,10 +23,10 @@ git diff --check
 Read:
 
 - `PLAN.md`
-- `EXEC_REPORT.md`
+- `WORKER_REPORT.md`
 - This `REVIEWER_PROMPT.md`
 - The changed files from `git diff`
-- Runtime proof referenced in `EXEC_REPORT.md`
+- Runtime proof referenced in `WORKER_REPORT.md`
 
 Do not read all Obsidian history. Obsidian is archive context, not the control plane.
 
@@ -51,7 +51,7 @@ Do not spend review context rediscovering login, organization, workspace, projec
 3. Product code, schema, BPMN XML, AI/RAG, export, deploy, merge, and PR state are unchanged unless explicitly allowed.
 4. Validation commands were run and are sufficient for the blast radius.
 5. Runtime proof is present or correctly marked not applicable.
-6. `EXEC_REPORT.md` is short, factual, and reusable by the next agent.
+6. `WORKER_REPORT.md` is short, factual, and reusable by the next agent.
 
 ## Output
 

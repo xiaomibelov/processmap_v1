@@ -1,0 +1,88 @@
+- generic [ref=e17]:
+  - generic [ref=e18]:
+    - generic [ref=e19]:
+      - generic [ref=e21]: ProcessMap
+      - button "← Проекты" [ref=e22] [cursor=pointer]
+    - generic [ref=e23]:
+      - generic [ref=e24]:
+        - generic [ref=e25]:
+          - generic [ref=e26]: Org
+          - generic "Default" [ref=e27]
+        - button "Админ-панель" [ref=e28] [cursor=pointer]
+      - button "Профиль" [ref=e30] [cursor=pointer]:
+        - img [ref=e31]
+  - generic [ref=e33]:
+    - generic [ref=e35]:
+      - button "Открыть панель" [disabled] [ref=e36]:
+        - img [ref=e38]
+      - generic [ref=e40]:
+        - button "Узел не выбран" [disabled] [ref=e41]:
+          - img [ref=e43]
+        - button "AI-вопросы" [disabled] [ref=e46]:
+          - img [ref=e48]
+        - button "Акторы" [disabled] [ref=e50]:
+          - img [ref=e52]
+        - button "Шаблоны" [disabled] [ref=e56]:
+          - img [ref=e58]
+    - generic [ref=e62]:
+      - generic [ref=e63]:
+        - button "Сохранить сессию" [disabled] [ref=e66]
+        - tablist "Process tabs" [ref=e68]:
+          - tab "Анализ процессов" [disabled] [ref=e69]
+          - tab "Diagram (BPMN)" [disabled] [ref=e70]
+          - tab "XML" [disabled] [ref=e71]
+          - tab "DOC" [disabled] [ref=e72]
+          - tab "DOD" [disabled] [ref=e73]
+        - button "Открыть меню действий" [ref=e76] [cursor=pointer]: ⋯
+      - generic [ref=e78]:
+        - generic [ref=e80]:
+          - generic [ref=e82]:
+            - generic [ref=e83]: Organization
+            - generic "Default" [ref=e84]
+          - generic [ref=e85]:
+            - generic [ref=e86]: Workspaces
+            - button "Новый workspace" [ref=e87] [cursor=pointer]:
+              - img [ref=e88]
+          - button "Реестр действий Действия с продуктом" [ref=e91] [cursor=pointer]:
+            - generic [ref=e92]: Реестр действий
+            - generic [ref=e93]: Действия с продуктом
+          - generic [ref=e95]:
+            - button "Main Workspace" [ref=e96] [cursor=pointer]:
+              - img [ref=e97]
+              - generic [ref=e103]: Main Workspace
+            - generic [ref=e104]: editor
+            - button "Переименовать workspace" [ref=e105] [cursor=pointer]:
+              - img [ref=e106]
+        - generic [ref=e110]:
+          - generic [ref=e111]:
+            - navigation [ref=e112]:
+              - button "Main Workspace"
+            - generic [ref=e113]:
+              - generic [ref=e114]:
+                - generic [ref=e115]: ⌕
+                - generic [ref=e116]: Поиск по workspace
+                - searchbox "Поиск по workspace" [active] [ref=e117]: wewe
+                - button "Очистить поиск" [ref=e187] [cursor=pointer]: ×
+              - button "Создать раздел" [ref=e118] [cursor=pointer]:
+                - img [ref=e119]
+                - text: Создать раздел
+              - generic "Войдите в папку, чтобы создать проект" [ref=e121]:
+                - img [ref=e122]
+                - text: Проект
+          - generic [ref=e188]:
+            - generic [ref=e190]:
+              - generic [ref=e191]: "Найдено: 1"
+              - generic [ref=e192]: Ищет разделы, папки, проекты и сессии во всей рабочей области.
+            - generic [ref=e194]:
+              - generic [ref=e195]: Сессии
+              - button "Сессия wewe Main Workspace / Импортировано / Описание процессов Долгопрудный · draft" [ref=e197] [cursor=pointer]:
+                - generic [ref=e198]:
+                  - generic [ref=e199]: Сессия
+                  - generic [ref=e200]: wewe
+                - generic [ref=e201]: Main Workspace / Импортировано / Описание процессов Долгопрудный · draft
+  - generic [ref=e183]:
+    - link "Версия v1.0.126" [ref=e184] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e185]: · a9a9d9c · 15.05.2026, 20:50
+    - generic [ref=e186]: "· Таблица шагов анализа стала строгой: убраны карточные строки, тяжёлые hover-эффекты и агрессивные цветные заливки."
+  - generic: a9a9d9c | 2026-05-15T20:50:31.083Z

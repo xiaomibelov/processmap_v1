@@ -1,0 +1,36 @@
+# RUNTIME_PROOF_CHECKLIST
+
+- [ ] GSD discipline recorded
+- [ ] source/runtime truth captured
+- [ ] dirty tree and suspect files listed
+- [ ] 5180 served assets captured before changes
+- [ ] build marker implemented
+- [ ] build marker contains SHA/timestamp/contour id
+- [ ] frontend build completed
+- [ ] correct test runtime service rebuilt/restarted if required
+- [ ] served 5180 build marker verified by curl
+- [ ] served 5180 build marker verified in fresh browser
+- [ ] browser cache-busting proof captured
+- [ ] cold open baseline captured
+- [ ] tab switch baseline captured
+- [ ] pan/zoom baseline captured
+- [ ] BpmnStage mount/render count captured if feasible
+- [ ] modeler/init/importXML count captured if feasible
+- [ ] skeleton show/hide count captured if relevant
+- [ ] useProcessTabs investigated
+- [ ] root cause identified
+- [ ] culprit fixed or reverted
+- [ ] before/after timings captured
+- [ ] no repeated skeleton/canvas reload cycles
+- [ ] pan/zoom usable
+- [ ] selection-lite preserved
+- [ ] property panel preserved
+- [ ] no PUT/PATCH
+- [ ] no versions spam regression
+- [ ] no backend changes
+- [ ] no BPMN XML mutation
+- [ ] no Product Actions/RAG/AG-UI changes
+- [ ] build/tests run
+- [ ] Agent 3 fresh-browser Playwright review required
+- [ ] material improvement required for REVIEW_PASS
+- [ ] runtime version proof required for REVIEW_PASS

@@ -39,7 +39,7 @@ Describe the single bounded result this contour must deliver.
 2. Make only scoped edits.
 3. Run focused validation.
 4. Update Obsidian archive/handoff if required.
-5. Write `EXEC_REPORT.md`.
+5. Write `WORKER_REPORT.md`.
 
 ## Validation
 
@@ -54,6 +54,6 @@ Record commands, outputs, screenshots, or network evidence required for this con
 ## Review Inputs
 
 - `PLAN.md`
-- `EXEC_REPORT.md`
+- `WORKER_REPORT.md`
 - `git diff`
 - Runtime proof listed above

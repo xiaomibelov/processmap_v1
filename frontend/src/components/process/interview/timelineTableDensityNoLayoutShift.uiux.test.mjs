@@ -187,14 +187,14 @@ test("VIRTUALIZATION: row height estimate covers strict table rows", () => {
   );
 });
 
-test("appVersion: currentVersion bumped to v1.0.126", () => {
+test("appVersion: currentVersion bumped to v1.0.141", () => {
   assert.ok(
-    appVersionSrc.includes('"v1.0.126"'),
-    "appVersion should be bumped to v1.0.126",
+    appVersionSrc.includes('"v1.0.141"'),
+    "appVersion should be bumped to v1.0.141",
   );
   assert.ok(
-    appVersionSrc.includes("currentVersion: \"v1.0.126\""),
-    "currentVersion field should be v1.0.126",
+    appVersionSrc.includes("currentVersion: \"v1.0.141\""),
+    "currentVersion field should be v1.0.141",
   );
 });
 

@@ -1,0 +1,130 @@
+- generic [ref=e17]:
+  - generic [ref=e18]:
+    - generic [ref=e19]:
+      - generic [ref=e21]: ProcessMap
+      - button "← Проекты" [ref=e22] [cursor=pointer]
+    - generic [ref=e23]:
+      - generic [ref=e24]:
+        - generic [ref=e25]:
+          - generic [ref=e26]: Org
+          - generic "Default" [ref=e27]
+        - button "Админ-панель" [ref=e28] [cursor=pointer]
+      - button "Профиль" [ref=e30] [cursor=pointer]:
+        - img [ref=e31]
+  - generic [ref=e33]:
+    - generic [ref=e35]:
+      - button "Открыть панель" [disabled] [ref=e36]:
+        - img [ref=e38]
+      - generic [ref=e40]:
+        - button "Узел не выбран" [disabled] [ref=e41]:
+          - img [ref=e43]
+        - button "AI-вопросы" [disabled] [ref=e46]:
+          - img [ref=e48]
+        - button "Акторы" [disabled] [ref=e50]:
+          - img [ref=e52]
+        - button "Шаблоны" [disabled] [ref=e56]:
+          - img [ref=e58]
+    - generic [ref=e62]:
+      - generic [ref=e63]:
+        - button "Сохранить сессию" [disabled] [ref=e66]
+        - tablist "Process tabs" [ref=e68]:
+          - tab "Анализ процессов" [disabled] [ref=e69]
+          - tab "Diagram (BPMN)" [disabled] [ref=e70]
+          - tab "XML" [disabled] [ref=e71]
+          - tab "DOC" [disabled] [ref=e72]
+          - tab "DOD" [disabled] [ref=e73]
+        - button "Открыть меню действий" [ref=e76] [cursor=pointer]: ⋯
+      - generic [ref=e78]:
+        - generic [ref=e80]:
+          - generic [ref=e82]:
+            - generic [ref=e83]: Organization
+            - generic "Default" [ref=e84]
+          - generic [ref=e85]:
+            - generic [ref=e86]: Workspaces
+            - button "Новый workspace" [ref=e87] [cursor=pointer]:
+              - img [ref=e88]
+          - button "Реестр действий Действия с продуктом" [ref=e91] [cursor=pointer]:
+            - generic [ref=e92]: Реестр действий
+            - generic [ref=e93]: Действия с продуктом
+          - generic [ref=e95]:
+            - button "Main Workspace" [ref=e96] [cursor=pointer]:
+              - img [ref=e97]
+              - generic [ref=e103]: Main Workspace
+            - generic [ref=e104]: editor
+            - button "Переименовать workspace" [ref=e105] [cursor=pointer]:
+              - img [ref=e106]
+        - generic [ref=e110]:
+          - generic [ref=e111]:
+            - navigation [ref=e112]:
+              - button "Main Workspace"
+            - generic [ref=e113]:
+              - generic [ref=e114]:
+                - generic [ref=e115]: ⌕
+                - generic [ref=e116]: Поиск по workspace
+                - searchbox "Поиск по workspace" [ref=e117]
+              - button "Создать раздел" [ref=e118] [cursor=pointer]:
+                - img [ref=e119]
+                - text: Создать раздел
+              - generic "Войдите в папку, чтобы создать проект" [ref=e121]:
+                - img [ref=e122]
+                - text: Проект
+          - table [ref=e125]:
+            - rowgroup [ref=e136]:
+              - row "Сортировать Название по возрастанию Сортировать Тип по возрастанию Разделы / Сессии Контекст Сортировать Ответственный / Исполнитель по возрастанию DoD Сортировать Статус по возрастанию Сортировать Обновлён по возрастанию Последнее изменение" [ref=e137]:
+                - columnheader "Сортировать Название по возрастанию":
+                  - button "Сортировать Название по возрастанию":
+                    - generic: Название
+                    - generic [ref=e138] [cursor=pointer]: ↑
+                - columnheader "Сортировать Тип по возрастанию" [ref=e139]:
+                  - button "Сортировать Тип по возрастанию" [ref=e140] [cursor=pointer]:
+                    - generic [ref=e141]: Тип
+                    - generic [ref=e142]: ↑
+                - columnheader "Разделы / Сессии" [ref=e143]
+                - columnheader "Контекст" [ref=e144]
+                - columnheader "Сортировать Ответственный / Исполнитель по возрастанию" [ref=e145]:
+                  - button "Сортировать Ответственный / Исполнитель по возрастанию" [ref=e146] [cursor=pointer]:
+                    - generic [ref=e147]: Ответственный / Исполнитель
+                    - generic [ref=e148]: ↑
+                - columnheader "DoD" [ref=e149]
+                - columnheader "Сортировать Статус по возрастанию" [ref=e150]:
+                  - button "Сортировать Статус по возрастанию" [ref=e151] [cursor=pointer]:
+                    - generic [ref=e152]: Статус
+                    - generic [ref=e153]: ↑
+                - columnheader "Сортировать Обновлён по возрастанию" [ref=e154]:
+                  - button "Сортировать Обновлён по возрастанию" [ref=e155] [cursor=pointer]:
+                    - generic [ref=e156]: Обновлён
+                    - generic [ref=e157]: ↑
+                - columnheader "Последнее изменение" [ref=e158]
+                - columnheader [ref=e159]
+            - rowgroup [ref=e160]:
+              - 'row "Показать вложенные элементы раздела Импортировано Импортировано Раздел 0 / 2 Проектов: 2 — — — только что Сессия «wewe» Действия с разделом" [ref=e161]':
+                - cell "Показать вложенные элементы раздела Импортировано Импортировано":
+                  - generic [ref=e162]:
+                    - button "Показать вложенные элементы раздела Импортировано" [ref=e163] [cursor=pointer]:
+                      - img [ref=e164]
+                    - img [ref=e166]
+                    - button "Импортировано"
+                - cell "Раздел" [ref=e168]:
+                  - generic [ref=e169]: Раздел
+                - cell "0 / 2" [ref=e170]
+                - 'cell "Проектов: 2" [ref=e171]':
+                  - generic [ref=e172]: "Проектов: 2"
+                - cell "—" [ref=e173]:
+                  - generic "Не назначен" [ref=e174]: —
+                - cell "—" [ref=e175]
+                - cell "—" [ref=e176]:
+                  - combobox "Статус контекста" [ref=e177]:
+                    - option "—" [selected]
+                    - option "AS IS"
+                    - option "TO BE"
+                - cell "только что" [ref=e178]
+                - cell "Сессия «wewe»" [ref=e179]:
+                  - generic "Сессия «wewe»" [ref=e180]
+                - cell "Действия с разделом" [ref=e181]:
+                  - button "Действия с разделом" [ref=e182] [cursor=pointer]: ···
+  - generic [ref=e183]:
+    - link "Версия v1.0.126" [ref=e184] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e185]: · a9a9d9c · 15.05.2026, 20:50
+    - generic [ref=e186]: "· Таблица шагов анализа стала строгой: убраны карточные строки, тяжёлые hover-эффекты и агрессивные цветные заливки."
+  - generic: a9a9d9c | 2026-05-15T20:50:31.083Z

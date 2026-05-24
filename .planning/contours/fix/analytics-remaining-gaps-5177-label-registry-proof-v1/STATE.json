@@ -1,0 +1,24 @@
+{
+  "contour": "fix/analytics-remaining-gaps-5177-label-registry-proof-v1",
+  "run_id": "20260521T220729Z-45324",
+  "execution_mode": "single-lane",
+  "execution_mode_flag": "TOKEN_ECONOMY_SINGLE_EXECUTOR",
+  "planner": "Agent 1",
+  "created_at": "2026-05-21T22:08Z",
+  "branch_from": "fix/analytics-runtime-navigation-registry-ui-hard-restore-v1",
+  "head_at_plan": "7fb0353",
+  "scope": "test-only fix for stale assertions after v1.0.143 bump",
+  "files_expected_to_change": [
+    "frontend/src/components/process/analysis/ProcessPropertiesRegistryPage.test.mjs",
+    "frontend/src/components/process/analysis/ProductActionsRegistryPage.test.mjs"
+  ],
+  "acceptance_criteria": [
+    "ProcessPropertiesRegistryPage.test.mjs 5/5 pass",
+    "ProductActionsRegistryPage.test.mjs 4/4 pass",
+    "Full analytics suite 32/32 pass",
+    "npm run build 0 errors",
+    "5177 bundle contains v1.0.143",
+    "Only 2 test files modified"
+  ],
+  "blockers": []
+}

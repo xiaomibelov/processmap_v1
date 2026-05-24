@@ -1,0 +1,20 @@
+{
+  "contour_id": "uiux/product-actions-registry-ia-layout-rework-v2",
+  "status": "READY_FOR_EXECUTION",
+  "role": "Agent 1 / Planner",
+  "scope": "frontend UI/UX information architecture rework for Product Actions Registry screen",
+  "gsd_required": true,
+  "gsd_mode": "GSD_PROCESSMAP_WRAPPER_PLANNING",
+  "agent1_product_code_changes_allowed": false,
+  "agent2_frontend_ui_changes_allowed": true,
+  "backend_changes_allowed": false,
+  "bpmn_xml_mutation_allowed": false,
+  "durable_truth_mutation_allowed": false,
+  "ag_ui_integration_allowed": false,
+  "rag_changes_allowed": false,
+  "mcp_repair_allowed": false,
+  "commit_push_pr_allowed": false,
+  "deploy_allowed": false,
+  "requires_agent3_playwright_review": true,
+  "requires_rework_loop_until_review_pass": true
+}

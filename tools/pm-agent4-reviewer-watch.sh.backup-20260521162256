@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/opt/processmap-test"
+CID="${1:?Usage: pm-agent4-reviewer-watch.sh <contour-id>}"
+
+validate_cid() {
+  local value="$1"
+  if [[ ! "$value" =~ ^[A-Za-z0-9_./-]+$ ]]; then
+    echo "ERROR: invalid contour id: $value" >&2
+    echo "Allowed characters: A-Z a-z 0-9 _ - / ." >&2
+    exit 2
+  fi
+}
+
+validate_cid "$CID"
+
+DIR="$ROOT/.planning/contours/$CID"
+PROMPT="$ROOT/.agents/agent4-reviewer/prompts/${CID//\//__}-reviewer-start.md"
+LOG="$ROOT/.agents/agent4-reviewer/logs/${CID//\//__}-watch.log"
+
+mkdir -p "$(dirname "$PROMPT")" "$(dirname "$LOG")"
+
+export PATH="$ROOT/bin:/root/.local/bin:/root/.kimi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PROCESSMAP_GSD_BIN="$ROOT/bin/gsd"
+export PROCESSMAP_CODEX_GSD_TOOLS="/root/.codex/get-shit-done/bin/gsd-tools.cjs"
+export PROCESSMAP_GSD_SKILLS_DIR="/root/.codex/skills"
+export PROCESSMAP_GSD_AGENTS_DIR="/root/.codex/agents"
+
+echo "=== Agent 4 / Reviewer watcher ===" | tee -a "$LOG"
+echo "Started: $(date -Iseconds)" | tee -a "$LOG"
+echo "Contour: $CID" | tee -a "$LOG"
+echo "Waiting for WORKER_2_DONE + WORKER_3_DONE + reports..." | tee -a "$LOG"
+
+read_marker() {
+  local file="$1"
+  tr -d '\r\n' < "$file" 2>/dev/null || true
+}
+
+current_run_id() {
+  read_marker "$DIR/AGENT_RUN_ID"
+}
+
+marker_equals_run() {
+  local file="$1"
+  local run_id="$2"
+  [ -f "$file" ] && [ "$(read_marker "$file")" = "$run_id" ]
+}
+
+review_verdict_current() {
+  local run_id="$1"
+  marker_equals_run "$DIR/REVIEW_RUN_ID" "$run_id" || return 1
+  [ -f "$DIR/REVIEW_PASS" ] || \
+    [ -f "$DIR/CHANGES_REQUESTED" ] || \
+    [ -f "$DIR/REVIEW_BLOCKED.md" ]
+}
+
+supersede_stale_review_markers() {
+  local run_id="$1"
+  local review_run
+  local has_stale=0
+  local marker
+  local archive_dir
+
+  review_run="$(read_marker "$DIR/REVIEW_RUN_ID")"
+  if [ -n "$review_run" ] && [ "$review_run" = "$run_id" ]; then
+    return 0
+  fi
+
+  for marker in REVIEW_STARTED REVIEW_RUN_ID REVIEW_REPORT.md REVIEW_PASS CHANGES_REQUESTED REWORK_REQUEST.md REVIEW_BLOCKED.md; do
+    if [ -e "$DIR/$marker" ]; then
+      has_stale=1
+      break
+    fi
+  done
+
+  [ "$has_stale" = "1" ] || return 0
+
+  archive_dir="$DIR/review-stale-superseded-$run_id-$(date -u +%Y%m%dT%H%M%SZ)"
+  mkdir -p "$archive_dir"
+  for marker in REVIEW_STARTED REVIEW_RUN_ID REVIEW_REPORT.md REVIEW_PASS CHANGES_REQUESTED REWORK_REQUEST.md REVIEW_BLOCKED.md; do
+    if [ -e "$DIR/$marker" ]; then
+      mv "$DIR/$marker" "$archive_dir/$marker"
+    fi
+  done
+
+  cat > "$DIR/STALE_REVIEW_MARKERS_SUPERSEDED.md" <<EOF
+# Stale Review Markers Superseded
+
+Run ID: $run_id
+Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+Reason: pm-agent4-reviewer-watch current-run startup
+Archived to: $archive_dir
+Previous REVIEW_RUN_ID: ${review_run:-<missing>}
+EOF
+  echo "Superseded stale review markers into $archive_dir" | tee -a "$LOG"
+}
+
+current_handoff_ready() {
+  local run_id="$1"
+  [ -f "$DIR/READY_FOR_REVIEW" ] || return 1
+  [ -f "$DIR/EXEC_REPORT.md" ] || return 1
+  marker_equals_run "$DIR/EXECUTION_RUN_ID" "$run_id"
+}
+
+legacy_worker_handoff_ready() {
+  local run_id="$1"
+  [ -f "$DIR/WORKER_2_DONE" ] || return 1
+  [ -f "$DIR/WORKER_3_DONE" ] || return 1
+  [ -f "$DIR/WORKER_2_REPORT.md" ] || return 1
+  [ -f "$DIR/WORKER_3_REPORT.md" ] || return 1
+  if [ -f "$DIR/EXECUTION_PART_1_RUN_ID" ]; then
+    marker_equals_run "$DIR/EXECUTION_PART_1_RUN_ID" "$run_id" || return 1
+  fi
+  if [ -f "$DIR/EXECUTION_PART_2_RUN_ID" ]; then
+    marker_equals_run "$DIR/EXECUTION_PART_2_RUN_ID" "$run_id" || return 1
+  fi
+}
+
+while true; do
+  RUN_ID="$(current_run_id)"
+  if [ -z "$RUN_ID" ]; then
+    sleep 5
+    continue
+  fi
+
+  supersede_stale_review_markers "$RUN_ID"
+
+  if ! review_verdict_current "$RUN_ID" && \
+     { current_handoff_ready "$RUN_ID" || legacy_worker_handoff_ready "$RUN_ID"; }; then
+
+    if [ -f "$DIR/REVIEW_STARTED" ] && marker_equals_run "$DIR/REVIEW_RUN_ID" "$RUN_ID"; then
+      echo "Review already started; waiting..." | tee -a "$LOG"
+      sleep 10
+      continue
+    fi
+
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > "$DIR/REVIEW_STARTED"
+    printf '%s\n' "$RUN_ID" > "$DIR/REVIEW_RUN_ID"
+
+    cat > "$PROMPT" <<PROMPT_EOF
+## Reviewer GSD Discipline — Mandatory
+Before any verdict, run:
+- GSD availability check
+- Source/runtime truth capture
+- Exact user scenario reproduction
+- Before/after evidence
+Record all in REVIEW_REPORT.md under "Reviewer GSD Discipline".
+REVIEW_PASS is FORBIDDEN if user-visible scenario still materially fails.
+
+You are Agent 4 / Reviewer for ProcessMap.
+
+Working directory:
+cd /opt/processmap-test
+
+Contour id:
+$CID
+
+Run ID:
+$RUN_ID
+
+Role:
+Review the outputs of both Worker 2 and Worker 3 after they have completed.
+
+Inputs to read:
+1. .planning/contours/$CID/PLAN.md
+2. .planning/contours/$CID/REVIEWER_PROMPT.md
+3. .planning/contours/$CID/WORKER_2_REPORT.md
+4. .planning/contours/$CID/WORKER_3_REPORT.md
+5. .planning/contours/$CID/RUNTIME_PROOF_CHECKLIST.md (if present)
+6. All changed tooling scripts under tools/
+
+Before review, run RAG preflight if available:
+node tools/rag/pm-rag-agent-preflight.mjs \\
+  --role reviewer \\
+  --contour "$CID" \\
+  --query "review rules for this contour" \\
+  --format md \\
+  --top-k 10
+
+Validation checklist:
+- [ ] bash -n passes for all changed/local/remote scripts.
+- [ ] Dry-run confirms 4-agent command construction.
+- [ ] CID propagation is verified (same CID to Agent 1/2/3/4).
+- [ ] Marker model supports WORKER_2_DONE + WORKER_3_DONE.
+- [ ] pm-agent-status.sh shows 4-agent state correctly.
+- [ ] No product runtime changes (frontend/src/, backend/app/).
+- [ ] No secrets printed in reports.
+- [ ] Backups exist before edits.
+- [ ] Agent 4 reviewer script/path exists.
+- [ ] tmux kill remains opt-in.
+
+Rules:
+- Do not write product code.
+- Do not merge/deploy/PR.
+- Independently inspect changed files; do not trust reports alone.
+- If PASS:
+    create REVIEW_REPORT.md and REVIEW_PASS.
+- If FAIL:
+    create REVIEW_REPORT.md, CHANGES_REQUESTED, and REWORK_REQUEST.md.
+- If BLOCKED:
+    create REVIEW_BLOCKED.md.
+- After writing review artifacts, run:
+    ./tools/pm-agent-mirror-report.sh "$CID" reviewer
+- Mirror path:
+    /srv/obsidian/project-atlas/ProcessMap/AgentReports/$CID/
+
+Final output:
+- REVIEW_REPORT.md (in Russian, except code/paths)
+- REVIEW_PASS or CHANGES_REQUESTED
+PROMPT_EOF
+
+    clear || true
+    echo "=== Agent 4 / Reviewer ==="
+    echo "WORKER_2_DONE + WORKER_3_DONE detected"
+    echo "Contour: $CID"
+    echo "Start prompt: $PROMPT"
+    echo
+    echo "Kimi will be launched interactively."
+    echo "Prompt will be executed automatically."
+    echo
+
+    cd "$ROOT"
+    if command -v kimi >/dev/null 2>&1; then
+      kimi --yolo -p "Read and execute prompt file: $PROMPT"
+    else
+      echo "ERROR: kimi is not available on PATH" | tee -a "$LOG"
+      exit 127
+    fi
+
+    if [ -x "$ROOT/tools/pm-agent-mirror-report.sh" ]; then
+      "$ROOT/tools/pm-agent-mirror-report.sh" "$CID" reviewer || true
+    fi
+
+    echo "Kimi exited: $(date -Iseconds)" | tee -a "$LOG"
+    exit 0
+  fi
+
+  sleep 5
+done

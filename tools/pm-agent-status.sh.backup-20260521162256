@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/opt/processmap-test"
+CID="${1:-}"
+
+cd "$ROOT"
+
+echo "=== PROCESSMAP TEST RUNTIME ==="
+hostname
+whoami
+date
+echo
+
+echo "=== GIT ==="
+git branch --show-current 2>/dev/null || true
+git rev-parse --short HEAD 2>/dev/null || true
+git status -sb 2>/dev/null || true
+echo
+
+echo "=== DOCKER ==="
+docker compose -p processmap_test ps 2>/dev/null || true
+echo
+
+if [ -n "$CID" ]; then
+  DIR="$ROOT/.planning/contours/$CID"
+
+  echo "=== CONTOUR ==="
+  echo "$CID"
+  echo "$DIR"
+  echo
+
+  if [ ! -d "$DIR" ]; then
+    echo "Contour dir missing"
+    exit 0
+  fi
+
+  for f in \
+    PLAN.md \
+    WORKER_2_PROMPT.md \
+    WORKER_3_PROMPT.md \
+    REVIEWER_PROMPT.md \
+    RUNTIME_PROOF_CHECKLIST.md \
+    STATE.json \
+    AGENT_RUN_ID \
+    READY_FOR_EXECUTION \
+    EXECUTION_STARTED \
+    EXECUTION_RUN_ID \
+    EXEC_REPORT.md \
+    READY_FOR_REVIEW \
+    AGENT3_WAITING_FOR_REVIEW \
+    WORKER_2_STARTED \
+    WORKER_2_REPORT.md \
+    WORKER_2_DONE \
+    WORKER_3_STARTED \
+    WORKER_3_REPORT.md \
+    WORKER_3_DONE \
+    REVIEW_STARTED \
+    REVIEW_RUN_ID \
+    REVIEW_REPORT.md \
+    REVIEW_PASS \
+    CHANGES_REQUESTED \
+    REWORK_REQUEST.md \
+    EXEC_BLOCKED.md \
+    REVIEW_BLOCKED.md \
+    RAG_PREFLIGHT_PLANNER.md \
+    RAG_PREFLIGHT_EXECUTOR.md \
+    RAG_PREFLIGHT_REVIEWER.md \
+    RAG_PREFLIGHT_WORKER_3.md
+  do
+    if [ -e "$DIR/$f" ]; then
+      printf "✅ %s\n" "$f"
+    else
+      printf "·  %s\n" "$f"
+    fi
+  done
+
+  echo
+  echo "=== 4-AGENT WORKFLOW STATUS ==="
+  if [ -f "$DIR/READY_FOR_EXECUTION" ]; then
+    echo "Agent 1 (Planner):   READY ✅"
+  else
+    echo "Agent 1 (Planner):   pending ·"
+  fi
+  if [ -f "$DIR/WORKER_2_DONE" ]; then
+    echo "Worker 2:            DONE ✅"
+  elif [ -f "$DIR/WORKER_2_STARTED" ]; then
+    echo "Worker 2:            started ⏳"
+  else
+    echo "Worker 2:            pending ·"
+  fi
+  if [ -f "$DIR/AGENT3_WAITING_FOR_REVIEW" ]; then
+    echo "Worker 3:            waiting for Agent 4 shell"
+  elif [ -f "$DIR/WORKER_3_DONE" ]; then
+    echo "Worker 3:            DONE ✅"
+  elif [ -f "$DIR/WORKER_3_STARTED" ]; then
+    echo "Worker 3:            started ⏳"
+  else
+    echo "Worker 3:            pending ·"
+  fi
+  if [ -f "$DIR/REVIEW_PASS" ]; then
+    echo "Agent 4 (Reviewer):  PASS ✅"
+  elif [ -f "$DIR/CHANGES_REQUESTED" ]; then
+    echo "Agent 4 (Reviewer):  CHANGES_REQUESTED ⚠️"
+  elif [ -f "$DIR/REVIEW_STARTED" ]; then
+    echo "Agent 4 (Reviewer):  started ⏳"
+  else
+    echo "Agent 4 (Reviewer):  pending ·"
+  fi
+
+  echo
+  echo "=== RECENT CONTOUR FILES ==="
+  find "$DIR" -maxdepth 1 -type f -printf "%TY-%Tm-%Td %TH:%TM %f\n" 2>/dev/null | sort | tail -30
+else
+  echo "=== ACTIVE CONTOUR MARKERS ==="
+  find "$ROOT/.planning/contours" -maxdepth 4 -type f \
+    \( -name READY_FOR_EXECUTION -o -name READY_FOR_REVIEW -o -name AGENT3_WAITING_FOR_REVIEW -o -name WORKER_2_DONE -o -name WORKER_3_DONE -o -name REVIEW_PASS -o -name CHANGES_REQUESTED -o -name EXEC_BLOCKED.md -o -name REVIEW_BLOCKED.md \) \
+    -print 2>/dev/null | sort
+fi
+
+
+echo
+echo "=== GSD ==="
+export PATH="$ROOT/bin:$PATH"
+echo "gsd: $(command -v gsd || echo MISSING)"
+if [ -x "$ROOT/tools/pm-gsd-status.sh" ]; then
+  "$ROOT/tools/pm-gsd-status.sh" | sed -n '1,35p' || true
+else
+  echo "pm-gsd-status.sh missing"
+fi

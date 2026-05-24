@@ -1,0 +1,33 @@
+{
+  "contour": "uiux/product-actions-registry-inner-page-safe-redesign-v1",
+  "run_id": "20260517T144447Z-92350",
+  "status": "READY_FOR_EXECUTION",
+  "current_verdict": "CHANGES_REQUESTED",
+  "planner_completed": true,
+  "product_code_changed_by_planner": false,
+  "required_outputs": [
+    "PLAN.md",
+    "EXECUTOR_PART_1_PROMPT.md",
+    "EXECUTOR_PART_2_PROMPT.md",
+    "REVIEWER_PROMPT.md",
+    "UI_EMPTY_SCOPE_AND_AI_CONTROLS_REWORK_PLAN.md",
+    "UI_EMPTY_SCOPE_AND_AI_CONTROLS_REWORK_REASON.md",
+    "WORKER_2_REWORK_PROMPT.md",
+    "WORKER_3_REWORK_PROMPT.md",
+    "REVIEWER_REWORK_PROMPT.md",
+    "EMPTY_SCOPE_ACCEPTANCE_CHECKLIST.md",
+    "AI_CONTROLS_PLACEMENT_CHECKLIST.md",
+    "BRANCH_HYGIENE_CHECKLIST.md",
+    "REWORK_STATE.json",
+    "CHANGES_REQUESTED",
+    "AGENT_RUN_ID",
+    "READY_FOR_EXECUTION"
+  ],
+  "parallel_split": {
+    "part_1": "UI implementation",
+    "part_2": "UX/spec and hygiene lane",
+    "part_1_blocked_marker": "EXEC_PART_1_BLOCKED.md",
+    "part_2_blocked_marker": "EXEC_PART_2_BLOCKED.md"
+  },
+  "review_gate": "Agent 4 final runtime validation only"
+}

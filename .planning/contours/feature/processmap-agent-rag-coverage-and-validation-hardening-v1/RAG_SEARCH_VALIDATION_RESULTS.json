@@ -1,0 +1,481 @@
+{
+  "version": "1.1.0",
+  "generated": "2026-05-20T22:41:03.961Z",
+  "top_k": 8,
+  "index": ".planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/RAG_SEARCH_INDEX_BALANCED.json",
+  "total_queries": 7,
+  "summary": {
+    "pass_count": 7,
+    "fail_count": 0,
+    "pass_rate": 1
+  },
+  "evaluations": [
+    {
+      "query_id": "q1-diagram-review-pass-rules",
+      "query": "gsd reviewer discipline real drag version proof source pass REVIEWER_PROMPT",
+      "query_type": "contour_lookup",
+      "top_k": 8,
+      "results_returned": 8,
+      "terms_found": [
+        "gsd",
+        "reviewer",
+        "discipline",
+        "real",
+        "drag",
+        "version",
+        "proof",
+        "source",
+        "pass"
+      ],
+      "terms_expected": [
+        "gsd",
+        "reviewer",
+        "discipline",
+        "real",
+        "drag",
+        "version",
+        "proof",
+        "source",
+        "pass"
+      ],
+      "term_ratio": 1,
+      "paths_matched": [
+        "*REVIEWER_PROMPT*",
+        "*PLAN*",
+        "*RUNTIME_PROOF*",
+        "*diagram*"
+      ],
+      "paths_expected": [
+        "*REVIEWER_PROMPT*",
+        "*PLAN*",
+        "*RUNTIME_PROOF*",
+        "*diagram*"
+      ],
+      "path_ratio": 1,
+      "pass": true,
+      "pass_criteria": "At least 3 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "failure_explanation": "",
+      "sample_results": [
+        {
+          "rank": 1,
+          "score": 40.2459619314563,
+          "path": "/opt/processmap-test/.planning/contours/perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1/PLAN.md",
+          "title": "Reviewer/Test GSD Discipline",
+          "snippet_preview": "[contour: diagram-modeler-*drag*-hot-path-and-pointermove-suppression-v1] ## *Reviewer*/Test *GSD* *Discipline*\nAgent 3 "
+        },
+        {
+          "rank": 2,
+          "score": 37.2459619314563,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1/PLAN.md",
+          "title": "Reviewer/Test GSD Discipline",
+          "snippet_preview": "## *Reviewer*/Test *GSD* *Discipline*\nAgent 3 is **mandated** to: 1. Run *GSD* availability checks before review. 2. Doc"
+        },
+        {
+          "rank": 3,
+          "score": 35.2035393226634,
+          "path": "/opt/processmap-test/.planning/contours/perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1/REVIEWER_PROMPT.md",
+          "title": "6. Strict Reminders",
+          "snippet_preview": "[contour: diagram-modeler-*drag*-hot-path-and-pointermove-suppression-v1] - REVIEW_*PASS* forbidden if user-visible *dra"
+        }
+      ]
+    },
+    {
+      "query_id": "q2-perf-drag-hot-path",
+      "query": "metrics react bundle bpmn perf baseline diagram modeler drag EXEC_REPORT",
+      "query_type": "contour_lookup",
+      "top_k": 8,
+      "results_returned": 8,
+      "terms_found": [
+        "react",
+        "bundle",
+        "bpmn",
+        "perf",
+        "baseline",
+        "drag",
+        "modeler",
+        "hot"
+      ],
+      "terms_expected": [
+        "metrics",
+        "react",
+        "bundle",
+        "bpmn",
+        "perf",
+        "baseline",
+        "drag",
+        "modeler",
+        "hot"
+      ],
+      "term_ratio": 0.8888888888888888,
+      "paths_matched": [
+        "*diagram*",
+        "*drag*",
+        "*perf*"
+      ],
+      "paths_expected": [
+        "*EXEC_REPORT*",
+        "*diagram*",
+        "*drag*",
+        "*perf*"
+      ],
+      "path_ratio": 0.75,
+      "pass": true,
+      "pass_criteria": "At least 3 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "failure_explanation": "",
+      "sample_results": [
+        {
+          "rank": 1,
+          "score": 39.79116725411753,
+          "path": "/opt/processmap-test/.planning/contours/perf/process-stage-baseline-jank-v1/PLAN.md",
+          "title": "perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1",
+          "snippet_preview": "[contour: process-stage-*baseline*-jank-v1] ## *perf*/*diagram*-*modeler*-*drag*-hot-path-and-pointermove-suppression-v1"
+        },
+        {
+          "rank": 2,
+          "score": 38.71159498725878,
+          "path": "/opt/processmap-test/.planning/contours/perf/diagram-human-perceived-pan-and-drag-smoothness-v1/PLAN.md",
+          "title": "perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1",
+          "snippet_preview": "[contour: *diagram*-human-perceived-pan-and-*drag*-smoothness-v1] ## *perf*/*diagram*-*modeler*-*drag*-hot-path-and-poin"
+        },
+        {
+          "rank": 3,
+          "score": 36.79116725411753,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/perf/process-stage-baseline-jank-v1/PLAN.md",
+          "title": "perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1",
+          "snippet_preview": "## *perf*/*diagram*-*modeler*-*drag*-hot-path-and-pointermove-suppression-v1\n- **Формальный вердикт:** REVIEW_PASS. - **"
+        }
+      ]
+    },
+    {
+      "query_id": "q3-current-diagram-lag",
+      "query": "react baseline jank processstage drag unresolved bpmn diagram bottlenecks",
+      "query_type": "current_bottleneck",
+      "top_k": 8,
+      "results_returned": 8,
+      "terms_found": [
+        "react",
+        "baseline",
+        "jank",
+        "drag"
+      ],
+      "terms_expected": [
+        "react",
+        "baseline",
+        "jank",
+        "processstage",
+        "drag",
+        "unresolved",
+        "bpmn"
+      ],
+      "term_ratio": 0.5714285714285714,
+      "paths_matched": [
+        "*PLAN*",
+        "*diagram*"
+      ],
+      "paths_expected": [
+        "*RUNTIME_PROOF*",
+        "*PLAN*",
+        "*EXEC_REPORT*",
+        "*diagram*"
+      ],
+      "path_ratio": 0.5,
+      "pass": true,
+      "pass_criteria": "At least 3 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "failure_explanation": "",
+      "sample_results": [
+        {
+          "rank": 1,
+          "score": 44.648622429783735,
+          "path": "/opt/processmap-test/.planning/contours/perf/process-stage-baseline-jank-v1/RAG_PREFLIGHT_EXECUTOR.md",
+          "title": "#4 — Query 3: Current Diagram Lag Bottlenecks",
+          "snippet_preview": "[contour: process-stage-*baseline*-*jank*-v1] ## #4 — Query 3: Current *Diagram* Lag *Bottlenecks*\n- **score**: 32.775 -"
+        },
+        {
+          "rank": 2,
+          "score": 44.648622429783735,
+          "path": "/opt/processmap-test/.planning/contours/perf/process-stage-baseline-jank-v1/RAG_PREFLIGHT_PLANNER.md",
+          "title": "#1 — Query 3: Current Diagram Lag Bottlenecks",
+          "snippet_preview": "[contour: process-stage-*baseline*-*jank*-v1] ## #1 — Query 3: Current *Diagram* Lag *Bottlenecks*\n- **score**: 52.696 -"
+        },
+        {
+          "rank": 3,
+          "score": 37.26774528523546,
+          "path": "/opt/processmap-test/.planning/contours/perf/process-stage-baseline-jank-v1/RAG_PREFLIGHT_PLANNER.md",
+          "title": "#5 — Validation Query Plan",
+          "snippet_preview": "[contour: process-stage-*baseline*-*jank*-v1] - **score**: 39.156 - **path**: `/srv/obsidian/project-atlas/ProcessMap/Ag"
+        }
+      ]
+    },
+    {
+      "query_id": "q4-rag-forbidden-actions",
+      "query": "RAG forbidden secrets auto mutation bpmn xml product actions drafts truth INDEXING_POLICY",
+      "query_type": "policy_lookup",
+      "top_k": 8,
+      "results_returned": 8,
+      "terms_found": [
+        "secrets",
+        "auto",
+        "mutation",
+        "bpmn",
+        "xml",
+        "product",
+        "actions",
+        "drafts",
+        "truth"
+      ],
+      "terms_expected": [
+        "secrets",
+        "auto",
+        "mutation",
+        "bpmn",
+        "xml",
+        "product",
+        "actions",
+        "drafts",
+        "truth"
+      ],
+      "term_ratio": 1,
+      "paths_matched": [
+        "*INDEXING_POLICY*",
+        "*RAG*",
+        "*REVIEWER_PROMPT*"
+      ],
+      "paths_expected": [
+        "*INDEXING_POLICY*",
+        "*AGENTS*",
+        "*RAG*",
+        "*REVIEWER_PROMPT*"
+      ],
+      "path_ratio": 0.75,
+      "pass": true,
+      "pass_criteria": "At least 4 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "failure_explanation": "",
+      "sample_results": [
+        {
+          "rank": 1,
+          "score": 49.7688503478374,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/feature/processmap-agent-rag-agent-preflight-integration-v1/REVIEW_REPORT.md",
+          "title": "2.6 Preflight CLI — Policy Query",
+          "snippet_preview": "## 2.6 Preflight CLI — *Policy* Query\n```bash node tools/*rag*/pm-*rag*-agent-preflight.mjs \\ --role executor \\ --query "
+        },
+        {
+          "rank": 2,
+          "score": 47.00548887840726,
+          "path": "/opt/processmap-test/docs/rag/PROCESSMAP_RAG_INDEXING_POLICY.md",
+          "title": "Forbidden (RAG/RAK must NOT do)",
+          "snippet_preview": "## *Forbidden* (*RAG*/RAK must NOT do)\n| Action | Allowed? | |--------|----------| | *Auto*-mutate code | **No** | | *Au"
+        },
+        {
+          "rank": 3,
+          "score": 47.00548887840726,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/RAG/INDEXING_POLICY.md",
+          "title": "Forbidden (RAG/RAK must NOT do)",
+          "snippet_preview": "## *Forbidden* (*RAG*/RAK must NOT do)\n| Action | Allowed? | |--------|----------| | *Auto*-mutate code | **No** | | *Au"
+        }
+      ]
+    },
+    {
+      "query_id": "q5-indexed-source-paths",
+      "query": "indexed source paths project atlas planning contours docs handoff frontend backend exclusions SOURCE_REGISTRY",
+      "query_type": "policy_lookup",
+      "top_k": 8,
+      "results_returned": 8,
+      "terms_found": [
+        "project",
+        "atlas",
+        "planning",
+        "contours",
+        "docs",
+        "handoff",
+        "frontend",
+        "backend"
+      ],
+      "terms_expected": [
+        "project",
+        "atlas",
+        "planning",
+        "contours",
+        "docs",
+        "handoff",
+        "frontend",
+        "backend",
+        "exclusions"
+      ],
+      "term_ratio": 0.8888888888888888,
+      "paths_matched": [
+        "*INDEX_SOURCES*",
+        "*IMPORT_RULES*",
+        "*RAG*",
+        "*PLAN*"
+      ],
+      "paths_expected": [
+        "*INDEX_SOURCES*",
+        "*IMPORT_RULES*",
+        "*RAG*",
+        "*PLAN*"
+      ],
+      "path_ratio": 1,
+      "pass": true,
+      "pass_criteria": "At least 4 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "failure_explanation": "",
+      "sample_results": [
+        {
+          "rank": 1,
+          "score": 42.55541323311249,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/RAG/Validation Queries.md",
+          "title": "Q1 — Source Registry Completeness",
+          "snippet_preview": "## Q1 — *Source* *Registry* Completeness\n**Question:** Does the *registry* include all 8 required *source* roots? **Expe"
+        },
+        {
+          "rank": 2,
+          "score": 41.607739564969755,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/RAG/Agent Knowledge Layer Bootstrap Plan.md",
+          "title": "Source Inventory Summary",
+          "snippet_preview": "## *Source* Inventory Summary\n| *Source* | Files | *Indexed* Est. | |--------|-------|--------------| | *Project* *Atlas"
+        },
+        {
+          "rank": 3,
+          "score": 41.005050473687305,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/RAG/INDEX_SOURCES.md",
+          "title": "Source Roots (8)",
+          "snippet_preview": "## *Source* Roots (8)\n| ID | Path | Category | Truth Level | Priority | Owner | |----|------|----------|-------------|--"
+        }
+      ]
+    },
+    {
+      "query_id": "q6-test-runtime",
+      "query": "clearvestnic opt processmap test 5180 8088 runtime RUNTIME_NAVIGATION RUNTIME_PROOF",
+      "query_type": "runtime_lookup",
+      "top_k": 8,
+      "results_returned": 8,
+      "terms_found": [
+        "clearvestnic",
+        "opt",
+        "processmap",
+        "test",
+        "5180",
+        "8088",
+        "runtime",
+        "proof"
+      ],
+      "terms_expected": [
+        "clearvestnic",
+        "opt",
+        "processmap",
+        "test",
+        "5180",
+        "8088",
+        "runtime",
+        "proof"
+      ],
+      "term_ratio": 1,
+      "paths_matched": [
+        "*RUNTIME_NAVIGATION*",
+        "*RAG_PREFLIGHT*",
+        "*EXEC_REPORT*"
+      ],
+      "paths_expected": [
+        "*RUNTIME_NAVIGATION*",
+        "*RUNTIME_PROOF*",
+        "*RAG_PREFLIGHT*",
+        "*EXEC_REPORT*"
+      ],
+      "path_ratio": 0.75,
+      "pass": true,
+      "pass_criteria": "At least 3 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "failure_explanation": "",
+      "sample_results": [
+        {
+          "rank": 1,
+          "score": 33.59183595131415,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/feature/product-actions-registry-backend-view-model-hardening-v1/RAG_PREFLIGHT_PLANNER.md",
+          "title": "Runtime Facts",
+          "snippet_preview": "## *Runtime* Facts\n- **server_host**: *clearvestnic*.ru (*test*, high) - **repo_root**: /*opt*/*processmap*-*test* (*tes"
+        },
+        {
+          "rank": 2,
+          "score": 32.038869144541266,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/feature/process-properties-registry-foundation-v1/RAG_PREFLIGHT_REVIEWER.md",
+          "title": "ProcessMap Agent RAG Preflight",
+          "snippet_preview": "## *ProcessMap* Agent RAG Preflight\nInput: - role: reviewer - contour: feature/process-properties-registry-foundation-v1"
+        },
+        {
+          "rank": 3,
+          "score": 31.390063137610976,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/feature/process-properties-registry-foundation-v1/EXEC_REPORT.md",
+          "title": "Env/compose plane",
+          "snippet_preview": "*Runtime* services before ready marker: ```text gateway: *processmap*_*test*-gateway-1, 0.0.0.0:*5180* -> nginx:80 api: "
+        }
+      ]
+    },
+    {
+      "query_id": "q7-agent3-diagram-review",
+      "query": "Agent 3 review diagram performance gsd reviewer discipline fresh 5180 proof real user scenario metrics EXEC_REPORT",
+      "query_type": "review_rules",
+      "top_k": 8,
+      "results_returned": 8,
+      "terms_found": [
+        "gsd",
+        "reviewer",
+        "discipline",
+        "fresh",
+        "5180",
+        "proof",
+        "real",
+        "user",
+        "scenario"
+      ],
+      "terms_expected": [
+        "gsd",
+        "reviewer",
+        "discipline",
+        "fresh",
+        "5180",
+        "proof",
+        "real",
+        "user",
+        "scenario",
+        "metrics"
+      ],
+      "term_ratio": 0.9,
+      "paths_matched": [
+        "*RAG_PREFLIGHT*",
+        "*REVIEW_REPORT*",
+        "*diagram*"
+      ],
+      "paths_expected": [
+        "*RAG_PREFLIGHT*",
+        "*REVIEW_REPORT*",
+        "*RUNTIME_PROOF*",
+        "*diagram*"
+      ],
+      "path_ratio": 0.75,
+      "pass": true,
+      "pass_criteria": "At least 4 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "failure_explanation": "",
+      "sample_results": [
+        {
+          "rank": 1,
+          "score": 51.220343597150325,
+          "path": "/opt/processmap-test/.planning/contours/perf/diagram-human-perceived-pan-and-drag-smoothness-v1/RAG_PREFLIGHT_REVIEWER.md",
+          "title": "Key Rules Retrieved",
+          "snippet_preview": "[contour: *diagram*-human-perceived-pan-and-drag-smoothness-v1] - [critical] *Diagram* *performance* *review* must test "
+        },
+        {
+          "rank": 2,
+          "score": 47.78938392221521,
+          "path": "/opt/processmap-test/.planning/contours/perf/diagram-human-perceived-pan-and-drag-smoothness-v1/RAG_PREFLIGHT_REVIEWER.md",
+          "title": "Required Gates",
+          "snippet_preview": "[contour: *diagram*-human-perceived-pan-and-drag-smoothness-v1] - [ ] *Review*er *GSD* *discipline* section present in *"
+        },
+        {
+          "rank": 3,
+          "score": 46.41224161588203,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/RAG/Preflight Output Examples.md",
+          "title": "Example 2 — Reviewer (Diagram Performance Review Rules)",
+          "snippet_preview": "## Example 2 — *Review*er (*Diagram* *Performance* *Review* Rules)\n**Command:** ```bash node tools/rag/pm-rag-*agent*-pr"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/opt/processmap-test"
+CID="${1:?Usage: pm-agent4-reviewer-watch.sh <contour-id>}"
+
+validate_cid() {
+  local value="$1"
+  if [[ ! "$value" =~ ^[A-Za-z0-9_./-]+$ ]]; then
+    echo "ERROR: invalid contour id: $value" >&2
+    echo "Allowed characters: A-Z a-z 0-9 _ - / ." >&2
+    exit 2
+  fi
+}
+
+validate_cid "$CID"
+
+DIR="$ROOT/.planning/contours/$CID"
+PROMPT="$ROOT/.agents/agent4-reviewer/prompts/${CID//\//__}-reviewer-start.md"
+LOG="$ROOT/.agents/agent4-reviewer/logs/${CID//\//__}-watch.log"
+
+mkdir -p "$(dirname "$PROMPT")" "$(dirname "$LOG")"
+
+export PATH="$ROOT/bin:/root/.local/bin:/root/.kimi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PROCESSMAP_GSD_BIN="$ROOT/bin/gsd"
+export PROCESSMAP_CODEX_GSD_TOOLS="/root/.codex/get-shit-done/bin/gsd-tools.cjs"
+export PROCESSMAP_GSD_SKILLS_DIR="/root/.codex/skills"
+export PROCESSMAP_GSD_AGENTS_DIR="/root/.codex/agents"
+
+echo "=== Agent 4 / Reviewer watcher ===" | tee -a "$LOG"
+echo "Started: $(date -Iseconds)" | tee -a "$LOG"
+echo "Contour: $CID" | tee -a "$LOG"
+echo "Waiting for WORKER_2_DONE + WORKER_3_DONE + reports..." | tee -a "$LOG"
+
+while true; do
+  if [ -f "$DIR/WORKER_2_DONE" ] \
+     && [ -f "$DIR/WORKER_3_DONE" ] \
+     && [ -f "$DIR/WORKER_2_REPORT.md" ] \
+     && [ -f "$DIR/WORKER_3_REPORT.md" ] \
+     && [ ! -f "$DIR/REVIEW_PASS" ] \
+     && [ ! -f "$DIR/CHANGES_REQUESTED" ] \
+     && [ ! -f "$DIR/REVIEW_BLOCKED.md" ]; then
+
+    if [ -f "$DIR/REVIEW_STARTED" ]; then
+      echo "Review already started; waiting..." | tee -a "$LOG"
+      sleep 10
+      continue
+    fi
+
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > "$DIR/REVIEW_STARTED"
+
+    cat > "$PROMPT" <<PROMPT_EOF
+## Reviewer GSD Discipline — Mandatory
+Before any verdict, run:
+- GSD availability check
+- Source/runtime truth capture
+- Exact user scenario reproduction
+- Before/after evidence
+Record all in REVIEW_REPORT.md under "Reviewer GSD Discipline".
+REVIEW_PASS is FORBIDDEN if user-visible scenario still materially fails.
+
+You are Agent 4 / Reviewer for ProcessMap.
+
+Working directory:
+cd /opt/processmap-test
+
+Contour id:
+$CID
+
+Run ID:
+$(cat "$DIR/AGENT_RUN_ID" 2>/dev/null || echo "UNKNOWN")
+
+Role:
+Review the outputs of both Worker 2 and Worker 3 after they have completed.
+
+Inputs to read:
+1. .planning/contours/$CID/PLAN.md
+2. .planning/contours/$CID/REVIEWER_PROMPT.md
+3. .planning/contours/$CID/WORKER_2_REPORT.md
+4. .planning/contours/$CID/WORKER_3_REPORT.md
+5. .planning/contours/$CID/RUNTIME_PROOF_CHECKLIST.md (if present)
+6. All changed tooling scripts under tools/
+
+Before review, run RAG preflight if available:
+node tools/rag/pm-rag-agent-preflight.mjs \\
+  --role reviewer \\
+  --contour "$CID" \\
+  --query "review rules for this contour" \\
+  --format md \\
+  --top-k 10
+
+Validation checklist:
+- [ ] bash -n passes for all changed/local/remote scripts.
+- [ ] Dry-run confirms 4-agent command construction.
+- [ ] CID propagation is verified (same CID to Agent 1/2/3/4).
+- [ ] Marker model supports WORKER_2_DONE + WORKER_3_DONE.
+- [ ] pm-agent-status.sh shows 4-agent state correctly.
+- [ ] No product runtime changes (frontend/src/, backend/app/).
+- [ ] No secrets printed in reports.
+- [ ] Backups exist before edits.
+- [ ] Agent 4 reviewer script/path exists.
+- [ ] tmux kill remains opt-in.
+
+Rules:
+- Do not write product code.
+- Do not merge/deploy/PR.
+- Independently inspect changed files; do not trust reports alone.
+- If PASS:
+    create REVIEW_REPORT.md and REVIEW_PASS.
+- If FAIL:
+    create REVIEW_REPORT.md, CHANGES_REQUESTED, and REWORK_REQUEST.md.
+- If BLOCKED:
+    create REVIEW_BLOCKED.md.
+- After writing review artifacts, run:
+    ./tools/pm-agent-mirror-report.sh "$CID" reviewer
+- Mirror path:
+    /srv/obsidian/project-atlas/ProcessMap/AgentReports/$CID/
+
+Final output:
+- REVIEW_REPORT.md (in Russian, except code/paths)
+- REVIEW_PASS or CHANGES_REQUESTED
+PROMPT_EOF
+
+    clear || true
+    echo "=== Agent 4 / Reviewer ==="
+    echo "WORKER_2_DONE + WORKER_3_DONE detected"
+    echo "Contour: $CID"
+    echo "Start prompt: $PROMPT"
+    echo
+    echo "Kimi will be launched interactively."
+    echo "Inside Kimi paste the short command:"
+    echo
+    echo "Read and execute prompt file:"
+    echo "$PROMPT"
+    echo
+
+    cd "$ROOT"
+    kimi
+
+    if [ -x "$ROOT/tools/pm-agent-mirror-report.sh" ]; then
+      "$ROOT/tools/pm-agent-mirror-report.sh" "$CID" reviewer || true
+    fi
+
+    echo "Kimi exited: $(date -Iseconds)" | tee -a "$LOG"
+    exit 0
+  fi
+
+  sleep 5
+done

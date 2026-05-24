@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "gsd-skill-runner": {
+      "type": "stdio",
+      "command": "/root/.claude/mcp-servers/gsd-skill-runner.py",
+      "args": [],
+      "env": {
+        "GSD_SKILLS_DIR": "/root/.codex/skills"
+      }
+    }
+  }
+}

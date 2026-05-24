@@ -1,0 +1,19 @@
+- generic [ref=e5]:
+  - generic [ref=e6]:
+    - paragraph [ref=e7]: Secure access
+    - heading "Вход в рабочую зону" [level=1] [ref=e8]
+    - paragraph [ref=e9]: "После входа откроется рабочая зона `/app`: проект, сессия, диаграмма, интервью и экспорт."
+    - button "На главную" [ref=e10] [cursor=pointer]
+  - generic [ref=e12]:
+    - generic [ref=e13]:
+      - heading "Вход в PROCESSMAP" [level=2] [ref=e14]
+      - paragraph [ref=e15]: Используйте рабочий аккаунт, чтобы открыть рабочую область.
+    - generic [ref=e16]:
+      - generic [ref=e17]: Email
+      - textbox "Email" [active] [ref=e18]:
+        - /placeholder: admin@local
+    - generic [ref=e19]:
+      - generic [ref=e20]: Пароль
+      - textbox "Пароль" [ref=e21]:
+        - /placeholder: Введите пароль
+    - button "Войти в систему" [ref=e23] [cursor=pointer]

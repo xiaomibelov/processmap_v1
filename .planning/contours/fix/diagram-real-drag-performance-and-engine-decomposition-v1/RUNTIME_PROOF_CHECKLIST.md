@@ -1,0 +1,34 @@
+# RUNTIME_PROOF_CHECKLIST.md
+
+- [ ] GSD discipline recorded
+- [ ] source/runtime truth captured
+- [ ] user screenshot/marker placement issue documented
+- [ ] version marker removed from canvas overlay
+- [ ] version marker visible in bottom/app shell
+- [ ] build-info.json verified
+- [ ] window.__PROCESSMAP_BUILD_INFO__ verified
+- [ ] large no-overlays Diagram selected
+- [ ] .fpcPropertyOverlay = 0 confirmed
+- [ ] real mouse canvas drag baseline captured
+- [ ] real mouse element drag/edit behavior baseline captured
+- [ ] pointer/drag source map captured
+- [ ] state updates during pointermove investigated
+- [ ] decor/selection/panel updates during drag investigated
+- [ ] viewer/modeler interaction mode mapped
+- [ ] decomposition-first applied if needed
+- [ ] drag lag root cause identified
+- [ ] bounded drag performance fix implemented
+- [ ] before/after real drag proof captured
+- [ ] pan/drag materially improved or engine limit documented
+- [ ] selection-lite preserved
+- [ ] property panel preserved
+- [ ] no stuck loading
+- [ ] no PUT/PATCH from view interactions
+- [ ] no versions spam regression
+- [ ] ENGINE_EVALUATION.md created
+- [ ] no backend changes
+- [ ] no BPMN XML mutation from view interactions
+- [ ] no Product Actions/RAG/AG-UI changes
+- [ ] build/tests run
+- [ ] Agent 3 fresh-browser real-drag review required
+- [ ] material improvement required for REVIEW_PASS

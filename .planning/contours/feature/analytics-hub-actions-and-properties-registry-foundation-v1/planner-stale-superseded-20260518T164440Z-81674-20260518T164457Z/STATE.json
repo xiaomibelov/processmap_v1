@@ -1,0 +1,63 @@
+{
+  "contour": "feature/analytics-hub-actions-and-properties-registry-foundation-v1",
+  "run_id": "20260518T150609Z-73248",
+  "role": "Agent 1 / Planner",
+  "status": "READY_FOR_EXECUTION",
+  "created_at": "2026-05-18T15:06:09Z",
+  "updated_at": "2026-05-18T15:09:00Z",
+  "supersedes_run_id": "20260518T141959Z-67555",
+  "correction_reason": "Restore Analytics as the parent surface; Product Actions Registry is an inner module, not a replacement.",
+  "required_ia": [
+    "Аналитика",
+    "Аналитика/Реестр действий",
+    "Аналитика/Реестр свойств",
+    "Аналитика/Дашборды"
+  ],
+  "decisions": {
+    "analytics_restored": true,
+    "actions_registry_inner_module": true,
+    "properties_registry_foundation_only": true,
+    "dashboards_placeholder_only": true,
+    "separate_export_card": false,
+    "rag_backlog_only": true,
+    "planner_product_code_changes_allowed": false
+  },
+  "source_truth": {
+    "pwd": "/opt/processmap-test",
+    "branch": "fix/lockfile-sync-test",
+    "head": "5b20bc2d1292f419647238eaf37dac55f9315942",
+    "origin_main": "d805e1c64c1107b9e3fe6854e031694bf741b187",
+    "dirty_tree": true,
+    "cached_diff_empty": true
+  },
+  "branch_hygiene": {
+    "worker_2_must_use_clean_origin_main_or_document_safety": true,
+    "do_not_silently_add_to_dirty_branch": true
+  },
+  "preflight": {
+    "rag_planner": "RAG_PREFLIGHT_PLANNER.md",
+    "rag_reviewer": "RAG_PREFLIGHT_REVIEWER.md",
+    "obsidian": "OBSIDIAN_CONTEXT_USED.md",
+    "gsd": "GSD_CONTEXT_USED.md"
+  },
+  "workers": {
+    "agent_2": {
+      "prompt": "WORKER_2_PROMPT.md",
+      "blocked_marker": "EXEC_PART_1_BLOCKED.md",
+      "done_marker": "WORKER_2_DONE"
+    },
+    "agent_3": {
+      "prompt": "WORKER_3_PROMPT.md",
+      "blocked_marker": "EXEC_PART_2_BLOCKED.md",
+      "done_marker": "WORKER_3_DONE"
+    },
+    "agent_4": {
+      "prompt": "REVIEWER_PROMPT.md",
+      "waits_for": [
+        "WORKER_2_DONE",
+        "WORKER_3_DONE"
+      ]
+    }
+  },
+  "ready_for_execution": true
+}

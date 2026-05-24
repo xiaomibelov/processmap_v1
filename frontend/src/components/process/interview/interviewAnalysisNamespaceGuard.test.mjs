@@ -133,7 +133,7 @@ test("BPMN projection preserves analysis during merge and imported-base hydratio
   assert.deepEqual(importedBase.nextInterview.analysis, analysisFixture);
 });
 
-test("buildInterviewPatchPayload keeps analysis on interview autosave payload", () => {
+test("buildInterviewPatchPayload strips product_actions from analysis on interview autosave payload", () => {
   const nextInterview = {
     steps: [{ id: "s1", action: "Нарезать", node_id: "Activity_Test" }],
     analysis: analysisFixture,
@@ -141,5 +141,7 @@ test("buildInterviewPatchPayload keeps analysis on interview autosave payload", 
 
   const plan = buildInterviewPatchPayload(nextInterview, [], [], [], []);
 
-  assert.deepEqual(plan.patch.interview.analysis, analysisFixture);
+  assert.equal(plan.patch.interview.analysis?.product_actions, undefined);
+  assert.equal(plan.patch.interview.analysis?.custom_marker, "preserve-me");
+  assert.equal(plan.patch.interview.steps.length, 1);
 });

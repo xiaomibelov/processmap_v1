@@ -1,0 +1,57 @@
+{
+  "contour": "uiux/product-actions-registry-inner-page-safe-redesign-v1",
+  "run_id": "20260517T144447Z-92350",
+  "status": "CHANGES_REQUESTED",
+  "planner_role": "Agent 1 / Planner",
+  "created_at": "2026-05-17T14:44:47Z",
+  "runtime_review_evidence": {
+    "served_port": 5180,
+    "served_version": "v1.0.136",
+    "served_sha": "5b20bc2",
+    "exports_filters_pagination_project_context": "passed",
+    "console": "clean",
+    "unsafe_mutations": "not_observed"
+  },
+  "blocking_findings": [
+    {
+      "severity": "high",
+      "finding": "Analytics -> Реестр действий can land in empty workspace scope without visible table headers, AI controls, or clear primary content."
+    },
+    {
+      "severity": "medium",
+      "finding": "AI controls are below table/pagination inside the secondary sources section in populated project scope."
+    },
+    {
+      "severity": "medium",
+      "finding": "Merge/release remains blocked until dirty workspace and non-canonical checkout hygiene are classified."
+    }
+  ],
+  "workers": {
+    "worker_2": {
+      "prompt": "WORKER_2_REWORK_PROMPT.md",
+      "scope": "UI implementation",
+      "blocked_marker": "EXEC_PART_1_BLOCKED.md",
+      "done_marker": "WORKER_2_DONE"
+    },
+    "worker_3": {
+      "prompt": "WORKER_3_REWORK_PROMPT.md",
+      "scope": "UX/spec and hygiene lane",
+      "blocked_marker": "EXEC_PART_2_BLOCKED.md",
+      "done_marker": "WORKER_3_DONE"
+    }
+  },
+  "reviewer": {
+    "prompt": "REVIEWER_REWORK_PROMPT.md",
+    "may_wait_for": [
+      "WORKER_2_DONE",
+      "WORKER_3_DONE"
+    ],
+    "pass_requires": [
+      "empty workspace runtime path passes",
+      "populated project runtime path passes",
+      "AI controls placement passes",
+      "source section separation passes",
+      "branch hygiene classified"
+    ]
+  }
+}

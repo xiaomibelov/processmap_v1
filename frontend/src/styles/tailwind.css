@@ -1,5 +1,15 @@
 @import "./tokens.css";
 
+:root,
+.light {
+  --registry-bg-canvas: #ffffff;
+  --registry-bg-surface: #f8fafc;
+  --registry-text-primary: #0f172a;
+  --registry-purple-primary: #7c3aed;
+  --registry-green-complete: #10b981;
+  --registry-orange-partial: #f59e0b;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -11169,4 +11179,9 @@
 
 .productActionsRegistryBackBtn {
   flex-shrink: 0;
+}
+
+.registryLayout {
+  background-color: var(--registry-bg-canvas);
+  color: var(--registry-text-primary);
 }

@@ -18,6 +18,8 @@ import AdminAuditPage from "./pages/AdminAuditPage";
 import AdminAiModulesPage from "./pages/AdminAiModulesPage";
 import AdminRagPage from "./pages/AdminRagPage";
 import useAdminRagData from "./hooks/useAdminRagData";
+import useAdminAgentRunsData from "./api/adminAgentRunsApi";
+import AdminAgentRunsPage from "./pages/AdminAgentRunsPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import AdminJobsPage from "./pages/AdminJobsPage";
 import AdminOrgsPage from "./pages/AdminOrgsPage";
@@ -147,6 +149,7 @@ export default function AdminApp({
     eventId: telemetryFilters.event_id,
   });
   const ragQ = useAdminRagData({ enabled: route.section === "rag" });
+  const agentRunsQ = useAdminAgentRunsData({ enabled: route.section === "agent-runs" });
 
   useEffect(() => {
     if (route.isRoot) onNavigate?.("/admin/dashboard", { replace: true });
@@ -171,6 +174,7 @@ export default function AdminApp({
     if (route.section === "telemetry") return telemetryQ;
     if (route.section === "ai-modules") return { loading: false, error: "", data: null };
     if (route.section === "rag") return { loading: false, error: "", data: null };
+    if (route.section === "agent-runs") return agentRunsQ;
     return { loading: false, error: "", data: null };
   })();
 
@@ -363,6 +367,9 @@ export default function AdminApp({
     }
     if (route.section === "rag") {
       return <AdminRagPage payload={ragQ} />;
+    }
+    if (route.section === "agent-runs") {
+      return <AdminAgentRunsPage payload={agentRunsQ.data || {}} loading={agentRunsQ.loading} />;
     }
     return <ErrorState title={ru.admin.runtime.unknownRouteTitle} message={pathname} />;
   }

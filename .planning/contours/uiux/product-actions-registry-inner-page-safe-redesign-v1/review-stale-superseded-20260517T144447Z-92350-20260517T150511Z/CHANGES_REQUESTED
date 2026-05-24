@@ -1,0 +1,8 @@
+20260517T144447Z-92350
+
+Current verdict: CHANGES_REQUESTED.
+
+Reason:
+- empty workspace scope can render unclear/broken primary registry content;
+- AI controls are misplaced in secondary sources section in populated project scope;
+- dirty workspace and non-canonical checkout hygiene must be classified before final pass.
