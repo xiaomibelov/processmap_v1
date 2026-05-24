@@ -1,0 +1,381 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/opt/processmap-test"
+TOOLS="$ROOT/tools"
+
+mkdir -p "$TOOLS"
+mkdir -p "$ROOT/.agents/agent1-planner/prompts" "$ROOT/.agents/agent1-planner/logs"
+mkdir -p "$ROOT/.agents/agent2-executor/prompts" "$ROOT/.agents/agent2-executor/logs"
+mkdir -p "$ROOT/.agents/agent3-reviewer/prompts" "$ROOT/.agents/agent3-reviewer/logs"
+mkdir -p "$ROOT/.planning/contours"
+mkdir -p "$ROOT/.planning/agent-logs"
+
+backup_if_exists() {
+  local f="$1"
+  if [ -f "$f" ]; then
+    cp "$f" "$f.bak.$(date +%Y%m%d_%H%M%S)"
+  fi
+}
+
+backup_if_exists "$TOOLS/pm-agent-status.sh"
+cat > "$TOOLS/pm-agent-status.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/opt/processmap-test"
+CID="${1:-}"
+
+cd "$ROOT"
+
+echo "=== PROCESSMAP TEST RUNTIME ==="
+hostname
+whoami
+date
+echo
+
+echo "=== GIT ==="
+git branch --show-current 2>/dev/null || true
+git rev-parse --short HEAD 2>/dev/null || true
+git status -sb 2>/dev/null || true
+echo
+
+echo "=== DOCKER ==="
+docker compose -p processmap_test ps 2>/dev/null || true
+echo
+
+if [ -n "$CID" ]; then
+  DIR="$ROOT/.planning/contours/$CID"
+
+  echo "=== CONTOUR ==="
+  echo "$CID"
+  echo "$DIR"
+  echo
+
+  if [ ! -d "$DIR" ]; then
+    echo "Contour dir missing"
+    exit 0
+  fi
+
+  for f in \
+    PLAN.md \
+    EXECUTOR_PROMPT.md \
+    REVIEWER_PROMPT.md \
+    RUNTIME_PROOF_CHECKLIST.md \
+    STATE.json \
+    READY_FOR_EXECUTION \
+    EXECUTION_STARTED \
+    EXEC_REPORT.md \
+    READY_FOR_REVIEW \
+    REVIEW_STARTED \
+    REVIEW_REPORT.md \
+    REVIEW_PASS \
+    CHANGES_REQUESTED \
+    REWORK_REQUEST.md \
+    EXEC_BLOCKED.md \
+    REVIEW_BLOCKED.md
+  do
+    if [ -e "$DIR/$f" ]; then
+      printf "✅ %s\n" "$f"
+    else
+      printf "·  %s\n" "$f"
+    fi
+  done
+
+  echo
+  echo "=== RECENT CONTOUR FILES ==="
+  find "$DIR" -maxdepth 1 -type f -printf "%TY-%Tm-%Td %TH:%TM %f\n" 2>/dev/null | sort | tail -30
+else
+  echo "=== ACTIVE CONTOUR MARKERS ==="
+  find "$ROOT/.planning/contours" -maxdepth 4 -type f \
+    \( -name READY_FOR_EXECUTION -o -name READY_FOR_REVIEW -o -name REVIEW_PASS -o -name CHANGES_REQUESTED -o -name EXEC_BLOCKED.md -o -name REVIEW_BLOCKED.md \) \
+    -print 2>/dev/null | sort
+fi
+EOF
+
+backup_if_exists "$TOOLS/pm-agent1-planner.sh"
+cat > "$TOOLS/pm-agent1-planner.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/opt/processmap-test"
+CID="${1:?Usage: pm-agent1-planner.sh <contour-id>}"
+
+DIR="$ROOT/.planning/contours/$CID"
+PROMPT="$ROOT/.agents/agent1-planner/prompts/${CID//\//__}-planner-start.md"
+
+mkdir -p "$DIR"
+mkdir -p "$(dirname "$PROMPT")"
+
+cat > "$PROMPT" <<PROMPT_EOF
+Ты Agent 1 / Planner для ProcessMap.
+
+Рабочая директория:
+cd /opt/processmap-test
+
+Contour id:
+$CID
+
+Роль:
+Подготовить GSD-план и handoff для Agent 2.
+
+Обязательная модель:
+1. GSD всегда:
+   source/runtime truth → source map → bounded plan → executor handoff.
+2. Использовать Project Atlas как knowledge source:
+   /srv/obsidian/project-atlas/ProcessMap
+3. Если RAG server ещё не поднят — использовать filesystem search по Project Atlas.
+4. Не писать product code как Planner.
+5. Не делать merge/deploy/PR.
+6. Не печатать secrets.
+7. Создать contour artifacts.
+
+Создать в:
+.planning/contours/$CID/
+
+Минимум:
+- PLAN.md
+- EXECUTOR_PROMPT.md
+- REVIEWER_PROMPT.md
+- STATE.json
+- READY_FOR_EXECUTION
+
+Если UI/runtime задача:
+- RUNTIME_NAVIGATION.md
+- RUNTIME_PROOF_CHECKLIST.md
+
+STATE.json:
+{
+  "contour_id": "$CID",
+  "phase": "ready_for_execution",
+  "planner_status": "complete",
+  "executor_status": "pending",
+  "reviewer_status": "pending"
+}
+
+Финальный ответ:
+1. Verdict
+2. GSD status
+3. Source/runtime truth
+4. Files created
+5. READY_FOR_EXECUTION status
+6. Exact marker Agent 2 waits for
+PROMPT_EOF
+
+cd "$ROOT"
+
+clear || true
+echo "=== Agent 1 / Planner ==="
+echo "Contour: $CID"
+echo "Prompt file: $PROMPT"
+echo
+echo "Kimi будет запущен интерактивно."
+echo "Внутри Kimi вставь короткую команду:"
+echo
+echo "Прочитай и выполни prompt file:"
+echo "$PROMPT"
+echo
+
+kimi
+EOF
+
+backup_if_exists "$TOOLS/pm-agent2-executor-watch.sh"
+cat > "$TOOLS/pm-agent2-executor-watch.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/opt/processmap-test"
+CID="${1:?Usage: pm-agent2-executor-watch.sh <contour-id>}"
+
+DIR="$ROOT/.planning/contours/$CID"
+PROMPT="$ROOT/.agents/agent2-executor/prompts/${CID//\//__}-executor-start.md"
+LOG="$ROOT/.agents/agent2-executor/logs/${CID//\//__}-watch.log"
+
+mkdir -p "$(dirname "$PROMPT")" "$(dirname "$LOG")"
+
+echo "=== Agent 2 / Executor watcher ===" | tee -a "$LOG"
+echo "Started: $(date -Iseconds)" | tee -a "$LOG"
+echo "Contour: $CID" | tee -a "$LOG"
+echo "Waiting for READY_FOR_EXECUTION..." | tee -a "$LOG"
+
+while true; do
+  if [ -f "$DIR/READY_FOR_EXECUTION" ] \
+     && [ -f "$DIR/EXECUTOR_PROMPT.md" ] \
+     && [ ! -f "$DIR/READY_FOR_REVIEW" ] \
+     && [ ! -f "$DIR/EXEC_BLOCKED.md" ]; then
+
+    if [ -f "$DIR/EXECUTION_STARTED" ]; then
+      echo "Execution already started; waiting..." | tee -a "$LOG"
+      sleep 10
+      continue
+    fi
+
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > "$DIR/EXECUTION_STARTED"
+
+    cat > "$PROMPT" <<PROMPT_EOF
+Ты Agent 2 / Executor для ProcessMap.
+
+Рабочая директория:
+cd /opt/processmap-test
+
+Contour id:
+$CID
+
+Выполни инструкции из:
+.planning/contours/$CID/EXECUTOR_PROMPT.md
+
+Правила:
+- Использовать GSD execution discipline.
+- Не делать merge/deploy/PR, если это явно не разрешено.
+- Не печатать secrets.
+- Не выходить за scope.
+- Если задача UI/runtime — собрать evidence для Agent 3.
+- После выполнения создать:
+  .planning/contours/$CID/EXEC_REPORT.md
+  .planning/contours/$CID/READY_FOR_REVIEW
+
+Если заблокировано:
+- создать EXEC_BLOCKED.md с точной причиной.
+PROMPT_EOF
+
+    clear || true
+    echo "=== Agent 2 / Executor ==="
+    echo "READY_FOR_EXECUTION detected"
+    echo "Contour: $CID"
+    echo "Start prompt: $PROMPT"
+    echo
+    echo "Kimi будет запущен интерактивно."
+    echo "Внутри Kimi вставь короткую команду:"
+    echo
+    echo "Прочитай и выполни prompt file:"
+    echo "$PROMPT"
+    echo
+
+    cd "$ROOT"
+    kimi
+
+    echo "Kimi exited: $(date -Iseconds)" | tee -a "$LOG"
+    exit 0
+  fi
+
+  sleep 5
+done
+EOF
+
+backup_if_exists "$TOOLS/pm-agent3-reviewer-watch.sh"
+cat > "$TOOLS/pm-agent3-reviewer-watch.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/opt/processmap-test"
+CID="${1:?Usage: pm-agent3-reviewer-watch.sh <contour-id>}"
+
+DIR="$ROOT/.planning/contours/$CID"
+PROMPT="$ROOT/.agents/agent3-reviewer/prompts/${CID//\//__}-reviewer-start.md"
+LOG="$ROOT/.agents/agent3-reviewer/logs/${CID//\//__}-watch.log"
+
+mkdir -p "$(dirname "$PROMPT")" "$(dirname "$LOG")"
+
+echo "=== Agent 3 / Reviewer watcher ===" | tee -a "$LOG"
+echo "Started: $(date -Iseconds)" | tee -a "$LOG"
+echo "Contour: $CID" | tee -a "$LOG"
+echo "Waiting for READY_FOR_REVIEW + EXEC_REPORT.md..." | tee -a "$LOG"
+
+while true; do
+  if [ -f "$DIR/READY_FOR_REVIEW" ] \
+     && [ -f "$DIR/EXEC_REPORT.md" ] \
+     && [ ! -f "$DIR/REVIEW_PASS" ] \
+     && [ ! -f "$DIR/CHANGES_REQUESTED" ] \
+     && [ ! -f "$DIR/REVIEW_BLOCKED.md" ]; then
+
+    if [ -f "$DIR/REVIEW_STARTED" ]; then
+      echo "Review already started; waiting..." | tee -a "$LOG"
+      sleep 10
+      continue
+    fi
+
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > "$DIR/REVIEW_STARTED"
+
+    cat > "$PROMPT" <<PROMPT_EOF
+Ты Agent 3 / Reviewer для ProcessMap.
+
+Рабочая директория:
+cd /opt/processmap-test
+
+Contour id:
+$CID
+
+Выполни review по:
+.planning/contours/$CID/REVIEWER_PROMPT.md
+
+Также прочитай:
+.planning/contours/$CID/PLAN.md
+.planning/contours/$CID/EXEC_REPORT.md
+
+Если есть:
+.planning/contours/$CID/RUNTIME_PROOF_CHECKLIST.md
+
+Правила:
+- Не писать product code.
+- Не делать merge/deploy/PR.
+- Проверить фактический результат, а не только отчёт.
+- Для UI/runtime задач обязательно Playwright/browser review.
+- Если PASS:
+  создать REVIEW_REPORT.md и REVIEW_PASS.
+- Если FAIL:
+  создать REVIEW_REPORT.md, CHANGES_REQUESTED и REWORK_REQUEST.md.
+- Если BLOCKED:
+  создать REVIEW_BLOCKED.md.
+PROMPT_EOF
+
+    clear || true
+    echo "=== Agent 3 / Reviewer ==="
+    echo "READY_FOR_REVIEW detected"
+    echo "Contour: $CID"
+    echo "Start prompt: $PROMPT"
+    echo
+    echo "Kimi будет запущен интерактивно."
+    echo "Внутри Kimi вставь короткую команду:"
+    echo
+    echo "Прочитай и выполни prompt file:"
+    echo "$PROMPT"
+    echo
+
+    cd "$ROOT"
+    kimi
+
+    echo "Kimi exited: $(date -Iseconds)" | tee -a "$LOG"
+    exit 0
+  fi
+
+  sleep 5
+done
+EOF
+
+chmod +x \
+  "$TOOLS/pm-agent-status.sh" \
+  "$TOOLS/pm-agent1-planner.sh" \
+  "$TOOLS/pm-agent2-executor-watch.sh" \
+  "$TOOLS/pm-agent3-reviewer-watch.sh"
+
+cat > "$ROOT/.planning/agent-logs/AGENT_SCRIPTS_INSTALLED.md" <<EOF
+# Agent scripts installed
+
+Created: $(date -Iseconds)
+Host: $(hostname)
+
+Scripts:
+- tools/pm-agent1-planner.sh
+- tools/pm-agent2-executor-watch.sh
+- tools/pm-agent3-reviewer-watch.sh
+- tools/pm-agent-status.sh
+
+Model:
+- Agent 1 runs Planner interactively.
+- Agent 2 waits for READY_FOR_EXECUTION, then launches Kimi.
+- Agent 3 waits for READY_FOR_REVIEW + EXEC_REPORT.md, then launches Kimi.
+EOF
+
+echo "AGENT_SERVER_SCRIPTS_READY"
+echo
+ls -la "$TOOLS"/pm-agent*.sh

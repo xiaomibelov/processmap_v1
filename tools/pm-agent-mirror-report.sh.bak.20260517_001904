@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/opt/processmap-test"
+VAULT="/srv/obsidian/project-atlas"
+CID="${1:?Usage: pm-agent-mirror-report.sh <contour-id> [stage]}"
+STAGE="${2:-manual}"
+SRC="$ROOT/.planning/contours/$CID"
+DEST="$VAULT/ProcessMap/AgentReports/$CID"
+
+cd "$ROOT"
+
+if [ ! -d "$SRC" ]; then
+  echo "MIRROR_SKIPPED: contour dir missing: $SRC"
+  exit 0
+fi
+
+if [ ! -d "$VAULT" ]; then
+  echo "MIRROR_SKIPPED: Obsidian vault missing: $VAULT"
+  exit 0
+fi
+
+mkdir -p "$DEST"
+
+copied=0
+copy_if_exists() {
+  local name="$1"
+  if [ -f "$SRC/$name" ]; then
+    cp -p "$SRC/$name" "$DEST/$name"
+    copied=$((copied + 1))
+  fi
+}
+
+# Explicit allowlist: no hidden files, no .env, no private keys, no arbitrary logs.
+for f in \
+  PLAN.md \
+  EXECUTOR_PROMPT.md \
+  REVIEWER_PROMPT.md \
+  RUNTIME_NAVIGATION.md \
+  RUNTIME_PROOF_CHECKLIST.md \
+  EXEC_REPORT.md \
+  REVIEW_REPORT.md \
+  REWORK_REQUEST.md \
+  EXEC_BLOCKED.md \
+  REVIEW_BLOCKED.md \
+  DIAGNOSTIC_PLAN.md \
+  GSD_ROOT_CAUSE_REPORT.md \
+  COMMAND_OUTPUTS_SANITIZED.md \
+  REPAIR_OPTIONS.md \
+  STATE.json \
+  READY_FOR_EXECUTION \
+  READY_FOR_REVIEW \
+  REVIEW_PASS \
+  CHANGES_REQUESTED \
+  DIAGNOSTIC_COMPLETE \
+  AGENT_RUN_ID \
+  EXECUTION_RUN_ID \
+  REVIEW_RUN_ID \
+  EXECUTION_STARTED \
+  REVIEW_STARTED
+ do
+  copy_if_exists "$f"
+done
+
+{
+  echo "# ProcessMap Agent Report Mirror"
+  echo
+  echo "Updated: $(date -Iseconds)"
+  echo "Stage: $STAGE"
+  echo "Contour: $CID"
+  echo
+  echo "## Source"
+  echo
+  echo "\`\`\`text"
+  echo "$SRC"
+  echo "\`\`\`"
+  echo
+  echo "## Mirror"
+  echo
+  echo "\`\`\`text"
+  echo "$DEST"
+  echo "\`\`\`"
+  echo
+  echo "## Files"
+  echo
+  find "$DEST" -maxdepth 1 -type f -printf "- %f\n" | sort
+} > "$DEST/INDEX.md"
+
+# Stable marker for sync/debug.
+date -Iseconds > "$DEST/MIRROR_UPDATED_AT"
+
+echo "MIRROR_OK: copied=$copied dest=$DEST"

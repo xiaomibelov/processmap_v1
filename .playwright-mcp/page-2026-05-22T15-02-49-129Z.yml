@@ -1,0 +1,102 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e7]: ProcessMap
+      - button "← Проекты" [ref=e8] [cursor=pointer]
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - generic [ref=e12]: Org
+          - generic "Default" [ref=e13]
+        - button "Админ-панель" [ref=e14] [cursor=pointer]
+      - button "Профиль" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+  - generic [ref=e19]:
+    - generic [ref=e21]:
+      - button "Открыть панель" [disabled] [ref=e22]:
+        - img [ref=e24]
+      - generic [ref=e26]:
+        - button "Узел не выбран" [disabled] [ref=e27]:
+          - img [ref=e29]
+        - button "AI-вопросы" [disabled] [ref=e32]:
+          - img [ref=e34]
+        - button "Акторы" [disabled] [ref=e36]:
+          - img [ref=e38]
+        - button "Шаблоны" [disabled] [ref=e42]:
+          - img [ref=e44]
+    - generic [ref=e48]:
+      - generic [ref=e49]:
+        - button "Сохранить сессию" [disabled] [ref=e52]
+        - tablist "Process tabs" [ref=e54]:
+          - tab "Анализ процессов" [disabled] [ref=e55]
+          - tab "Diagram (BPMN)" [disabled] [ref=e56]
+          - tab "XML" [disabled] [ref=e57]
+          - tab "DOC" [disabled] [ref=e58]
+          - tab "DOD" [disabled] [ref=e59]
+        - button "Открыть меню действий" [ref=e62] [cursor=pointer]: ⋯
+      - main [ref=e162]:
+        - generic [ref=e164]:
+          - generic [ref=e165]:
+            - generic [ref=e166]:
+              - heading "Реестр действий" [level=2] [ref=e167]
+              - paragraph [ref=e168]: Действия с продуктами из сессий и проектов
+            - generic [ref=e169]:
+              - button "Справка" [ref=e171] [cursor=pointer]: "?"
+              - button "Реестр свойств" [ref=e172] [cursor=pointer]
+              - button "Export" [ref=e174] [cursor=pointer]:
+                - generic [ref=e175]: ⬇
+                - text: Export
+              - button "Вернуться" [ref=e176] [cursor=pointer]
+          - tablist "Источник строк реестра" [ref=e177]:
+            - tab "Workspace" [selected] [ref=e178] [cursor=pointer]
+            - tab "Проект" [ref=e179] [cursor=pointer]
+            - tab "Сессия" [ref=e180] [cursor=pointer]
+          - generic [ref=e181]:
+            - generic [ref=e182]:
+              - generic [ref=e183]: "0"
+              - generic [ref=e184]: Всего
+            - generic [ref=e185]:
+              - generic [ref=e186]: "0"
+              - generic [ref=e187]: С продуктом
+            - generic [ref=e188]:
+              - generic [ref=e189]: "0"
+              - generic [ref=e190]: Без продукта
+            - generic [ref=e191]:
+              - generic [ref=e192]: —
+              - generic [ref=e193]: Заполненность
+          - generic [ref=e195]:
+            - generic [ref=e196]:
+              - generic [ref=e197]: Группа
+              - combobox [ref=e198]:
+                - option "Все" [selected]
+            - generic [ref=e199]:
+              - generic [ref=e200]: Товар
+              - combobox [ref=e201]:
+                - option "Все" [selected]
+            - generic [ref=e202]:
+              - generic [ref=e203]: Тип
+              - combobox [ref=e204]:
+                - option "Все" [selected]
+            - generic [ref=e205]:
+              - generic [ref=e206]: Этап
+              - combobox [ref=e207]:
+                - option "Все" [selected]
+            - generic [ref=e208]:
+              - generic [ref=e209]: Категория
+              - combobox [ref=e210]:
+                - option "Все" [selected]
+            - generic [ref=e211]:
+              - generic [ref=e212]: Роль
+              - combobox [ref=e213]:
+                - option "Все" [selected]
+          - generic [ref=e214]:
+            - img [ref=e216]
+            - generic [ref=e219]: Нет действий с продуктами
+            - generic [ref=e220]: В выбранном workspace пока нет действий с продуктом. Данные будут собраны из BPMN диаграмм и сессий анализа по мере их создания.
+          - generic [ref=e221]:
+            - generic [ref=e222]: Источники данных
+            - list
+  - generic [ref=e125]:
+    - link "Версия v1.0.142" [ref=e126] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e127]: · Добавлено прямое переключение между Реестром действий и Реестром свойств.

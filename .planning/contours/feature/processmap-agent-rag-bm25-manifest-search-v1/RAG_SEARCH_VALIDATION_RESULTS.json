@@ -1,0 +1,429 @@
+{
+  "version": "1.0.0",
+  "generated": "2026-05-16T15:24:07.431Z",
+  "top_k": 8,
+  "total_queries": 7,
+  "passed": 3,
+  "failed": 4,
+  "evaluations": [
+    {
+      "query_id": "q1-diagram-review-pass-rules",
+      "query": "What are the latest rules for Diagram REVIEW_PASS?",
+      "top_k": 8,
+      "results_returned": 8,
+      "terms_found": [
+        "gsd",
+        "discipline",
+        "real",
+        "drag",
+        "version",
+        "proof",
+        "source",
+        "pass"
+      ],
+      "terms_expected": [
+        "gsd",
+        "reviewer",
+        "discipline",
+        "real",
+        "drag",
+        "version",
+        "proof",
+        "source",
+        "pass"
+      ],
+      "term_ratio": 0.8888888888888888,
+      "paths_matched": [
+        "*diagram*",
+        "*.planning/contours/*"
+      ],
+      "paths_expected": [
+        "*REVIEW_PASS*",
+        "*diagram*",
+        "*AGENTS.md",
+        "*.planning/contours/*"
+      ],
+      "path_ratio": 0.5,
+      "pass": true,
+      "pass_criteria": "At least 3 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "sample_results": [
+        {
+          "rank": 1,
+          "score": 25.948199335670452,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/feature/processmap-agent-rag-bm25-manifest-search-v1/REVIEWER_PROMPT.md",
+          "title": "4. Search: Diagram REVIEW_PASS rules",
+          "snippet_preview": "node tools/rag/pm-rag-search.mjs \"*latest* *rules* for *Diagram* *REVIEW*_*PASS*\" --top-k 8"
+        },
+        {
+          "rank": 2,
+          "score": 19.955805694267454,
+          "path": "/opt/processmap-test/.planning/contours/tooling/processmap-agent3-ui-review-skill-binding-v1/REVIEWER_PROMPT.md",
+          "title": "Rules",
+          "snippet_preview": "- You cannot *pass* a UI contour from source *review* alone. - If Playwright MCP is unavailable, verdict is `*REVIEW*_BL"
+        },
+        {
+          "rank": 3,
+          "score": 18.160230857839498,
+          "path": "/opt/processmap-test/.planning/contours/perf/diagram-property-overlays-viewport-culling-v1/REVIEWER_PROMPT.md",
+          "title": "Verdict Rules",
+          "snippet_preview": "- If **any** checklist item fails — even minor — the verdict is: - `CHANGES_REQUESTED` - Create `REWORK_REQUEST.md` with"
+        }
+      ]
+    },
+    {
+      "query_id": "q2-perf-drag-hot-path",
+      "query": "What happened in perf diagram modeler drag hot path pointermove suppression?",
+      "top_k": 8,
+      "results_returned": 8,
+      "terms_found": [
+        "perf"
+      ],
+      "terms_expected": [
+        "metrics",
+        "did",
+        "not",
+        "improve",
+        "react",
+        "bundle",
+        "bpmn",
+        "perf",
+        "baseline"
+      ],
+      "term_ratio": 0.1111111111111111,
+      "paths_matched": [
+        "*EXEC_REPORT*",
+        "*DRAG_HOT_PATH*",
+        "*perf*"
+      ],
+      "paths_expected": [
+        "*EXEC_REPORT*",
+        "*DRAG_HOT_PATH*",
+        "*REWORK_REQUEST*",
+        "*perf*"
+      ],
+      "path_ratio": 0.75,
+      "pass": false,
+      "pass_criteria": "At least 3 expected terms appear in top-10 snippets AND at least 2 expected path patterns match top-10 results.",
+      "sample_results": [
+        {
+          "rank": 1,
+          "score": 48.1095066566055,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/feature/processmap-agent-rag-bm25-manifest-search-v1/REVIEWER_PROMPT.md",
+          "title": "5. Search: Drag hot path history",
+          "snippet_preview": "node tools/rag/pm-rag-search.mjs \"*What* *happened* in *perf*/*diagram*-*modeler*-*drag*-*hot*-*path*-and-*pointermove*-"
+        },
+        {
+          "rank": 2,
+          "score": 42.40254895195007,
+          "path": "/opt/processmap-test/.planning/contours/perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1/EXEC_REPORT.md",
+          "title": "Execution Report — perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1",
+          "snippet_preview": "**Executor**: Agent 2 **Run ID**: `20260516T080003Z-79254` **Branch**: `fix/lockfile-sync-test` **HEAD**: `a9a9d9c5f468d"
+        },
+        {
+          "rank": 3,
+          "score": 41.639387949075385,
+          "path": "/opt/processmap-test/.planning/contours/perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1/RUNTIME_BEFORE_AFTER.md",
+          "title": "Contour",
+          "snippet_preview": "`*perf*/*diagram*-*modeler*-*drag*-*hot*-*path*-and-*pointermove*-*suppression*-v1` ---"
+        }
+      ]
+    },
+    {
+      "query_id": "q3-current-diagram-lag",
+      "query": "What are current Diagram lag bottlenecks?",
+      "top_k": 8,
+      "results_returned": 8,
+      "terms_found": [
+        "react",
+        "baseline",
+        "drag",
+        "bpmn"
+      ],
+      "terms_expected": [
+        "react",
+        "baseline",
+        "jank",
+        "processstage",
+        "drag",
+        "unresolved",
+        "bpmn"
+      ],
+      "term_ratio": 0.5714285714285714,
+      "paths_matched": [
+        "*PROFILE*",
+        "*diagram*"
+      ],
+      "paths_expected": [
+        "*BASELINE*",
+        "*PROFILE*",
+        "*PROFILER_EVIDENCE*",
+        "*diagram*"
+      ],
+      "path_ratio": 0.5,
+      "pass": true,
+      "pass_criteria": "At least 3 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "sample_results": [
+        {
+          "rank": 1,
+          "score": 16.27229795824184,
+          "path": "/opt/processmap-test/.planning/contours/fix/diagram-drag-lag-gsd-review-version-ledger-rework-v1/ENGINE_EVALUATION_UPDATE.md",
+          "title": "Decision",
+          "snippet_preview": "**Continue bpmn-js optimization.** This contour addressed the main React-side drag *bottlenecks*. If user still perceive"
+        },
+        {
+          "rank": 2,
+          "score": 16.093495823074257,
+          "path": "/opt/processmap-test/.planning/contours/fix/diagram-canvas-reload-loop-and-lag-regression-v1/PLAN.md",
+          "title": "`audit/diagram-post-optimization-runtime-profile-v1`",
+          "snippet_preview": "- **Status**: REVIEW_PASS - Confirmed H1 (initial load 6.5s) and H6 (tab switch 4–6s) as top residual *bottlenecks*."
+        },
+        {
+          "rank": 3,
+          "score": 15.835587823342799,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/architecture/processmap-agent-rag-knowledge-layer-bootstrap-plan-v1/PLAN.md",
+          "title": "Validation Query Plan",
+          "snippet_preview": "Agent 2 must prepare test queries and expected answers. Minimum set: 1. **\"*What* are the latest rules for *Diagram* REV"
+        }
+      ]
+    },
+    {
+      "query_id": "q4-rag-forbidden-actions",
+      "query": "What is forbidden for RAG?",
+      "top_k": 8,
+      "results_returned": 8,
+      "terms_found": [
+        "no",
+        "bpmn",
+        "xml",
+        "product",
+        "actions",
+        "truth"
+      ],
+      "terms_expected": [
+        "no",
+        "secrets",
+        "auto",
+        "mutation",
+        "bpmn",
+        "xml",
+        "product",
+        "actions",
+        "drafts",
+        "truth"
+      ],
+      "term_ratio": 0.6,
+      "paths_matched": [
+        "*PLAN.md"
+      ],
+      "paths_expected": [
+        "*INDEXING_POLICY*",
+        "*AGENTS.md",
+        "*PLAN.md",
+        "*PROCESSMAP_RAG*"
+      ],
+      "path_ratio": 0.25,
+      "pass": false,
+      "pass_criteria": "At least 4 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "sample_results": [
+        {
+          "rank": 1,
+          "score": 20.886838737929175,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/feature/processmap-agent-rag-bm25-manifest-search-v1/REVIEWER_PROMPT.md",
+          "title": "6. Search: RAG forbidden actions",
+          "snippet_preview": "node tools/*rag*/pm-*rag*-search.mjs \"*What* is *forbidden* for *RAG*\" --top-k 8"
+        },
+        {
+          "rank": 2,
+          "score": 13.83744383971811,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/architecture/processmap-agent-rag-knowledge-layer-bootstrap-plan-v1/PLAN.md",
+          "title": "RAG Context Used",
+          "snippet_preview": "- sources: <list> - how used: <which decisions were influenced> - limitations: <*what* *RAG* did not cover> ```"
+        },
+        {
+          "rank": 3,
+          "score": 13.544736313844222,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/architecture/processmap-agent-rag-knowledge-layer-bootstrap-plan-v1/PLAN.md",
+          "title": "RAG Preflight",
+          "snippet_preview": "- query terms: <terms used> - retrieved sources: <list> - accepted context: <*what* influenced the plan> - rejected/depr"
+        }
+      ]
+    },
+    {
+      "query_id": "q5-indexed-source-paths",
+      "query": "Which paths should be indexed?",
+      "top_k": 8,
+      "results_returned": 8,
+      "terms_found": [
+        "project",
+        "atlas",
+        "contours",
+        "docs",
+        "handoff"
+      ],
+      "terms_expected": [
+        "project",
+        "atlas",
+        "planning",
+        "contours",
+        "docs",
+        "handoff",
+        "frontend",
+        "backend",
+        "exclusions"
+      ],
+      "term_ratio": 0.5555555555555556,
+      "paths_matched": [
+        "*INDEXING_POLICY*"
+      ],
+      "paths_expected": [
+        "*SOURCE_INVENTORY*",
+        "*INDEXING_POLICY*",
+        "*processmap-rag-sources*"
+      ],
+      "path_ratio": 0.3333333333333333,
+      "pass": false,
+      "pass_criteria": "At least 4 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "sample_results": [
+        {
+          "rank": 1,
+          "score": 23.92147868942774,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/feature/processmap-agent-rag-bm25-manifest-search-v1/REVIEWER_PROMPT.md",
+          "title": "7. Search: Indexed paths",
+          "snippet_preview": "node tools/rag/pm-rag-search.mjs \"*Which* *paths* should be *indexed*\" --top-k 8"
+        },
+        {
+          "rank": 2,
+          "score": 12.400990861650094,
+          "path": "/opt/processmap-test/.planning/contours/research/product-actions-ai-ag-ui-protocol-fit-v1/PLAN.md",
+          "title": "F. Security / Safety",
+          "snippet_preview": "- Can AG-UI event stream leak secrets? - How to filter prompt/user data from events? - *Which* event payloads must NOT b"
+        },
+        {
+          "rank": 3,
+          "score": 12.006168710049069,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/architecture/processmap-agent-rag-knowledge-layer-bootstrap-plan-v1/REVIEW_REPORT.md",
+          "title": "Source Inventory — PASS",
+          "snippet_preview": "- [x] Concrete file *paths* listed (not generics like \"docs/\") - [x] Project Atlas files enumerated by category (727 fil"
+        }
+      ]
+    },
+    {
+      "query_id": "q6-test-runtime",
+      "query": "What is current ProcessMap test runtime?",
+      "top_k": 8,
+      "results_returned": 8,
+      "terms_found": [
+        "opt",
+        "processmap",
+        "test",
+        "version",
+        "proof"
+      ],
+      "terms_expected": [
+        "clearvestnic",
+        "opt",
+        "processmap",
+        "test",
+        "5180",
+        "8088",
+        "version",
+        "proof"
+      ],
+      "term_ratio": 0.625,
+      "paths_matched": [],
+      "paths_expected": [
+        "*RUNTIME_NAVIGATION*",
+        "*RUNTIME_VERSION_PROOF*",
+        "*RUNTIME*"
+      ],
+      "path_ratio": 0,
+      "pass": false,
+      "pass_criteria": "At least 3 expected terms appear in top-5 snippets AND at least 2 expected path patterns match top-5 results.",
+      "sample_results": [
+        {
+          "rank": 1,
+          "score": 16.782212351381503,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/feature/processmap-agent-rag-bm25-manifest-search-v1/REVIEWER_PROMPT.md",
+          "title": "8. Search: Test runtime",
+          "snippet_preview": "node tools/rag/pm-rag-search.mjs \"*current* *ProcessMap* *test* *runtime*\" --top-k 8"
+        },
+        {
+          "rank": 2,
+          "score": 15.994013190267673,
+          "path": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/architecture/processmap-agent-rag-knowledge-layer-bootstrap-plan-v1/PLAN.md",
+          "title": "Validation Query Plan",
+          "snippet_preview": "Agent 2 must prepare *test* queries and expected answers. Minimum set: 1. **\"*What* are the la*test* rules for Diagram R"
+        },
+        {
+          "rank": 3,
+          "score": 15.488824122885774,
+          "path": "/opt/processmap-test/.planning/contours/tooling/processmap-agent3-ui-review-skill-binding-v1/REVIEWER_PROMPT.md",
+          "title": "What you must do",
+          "snippet_preview": "1. Open the actual *ProcessMap* *runtime* through Playwright MCP. 2. Navigate to the target surface described in the con"
+        }
+      ]
+    },
+    {
+      "query_id": "q7-agent3-diagram-review",
+      "query": "How should Agent 3 review Diagram performance contours?",
+      "top_k": 8,
+      "results_returned": 8,
+      "terms_found": [
+        "gsd",
+        "discipline",
+        "5180",
+        "proof",
+        "real",
+        "user"
+      ],
+      "terms_expected": [
+        "gsd",
+        "reviewer",
+        "discipline",
+        "fresh",
+        "5180",
+        "proof",
+        "real",
+        "user",
+        "scenario",
+        "metrics"
+      ],
+      "term_ratio": 0.6,
+      "paths_matched": [
+        "*REVIEW_REPORT*",
+        "*RUNTIME_PROOF_CHECKLIST*"
+      ],
+      "paths_expected": [
+        "*REVIEW_REPORT*",
+        "*RUNTIME_PROOF_CHECKLIST*",
+        "*REVIEWER_PROMPT*"
+      ],
+      "path_ratio": 0.6666666666666666,
+      "pass": true,
+      "pass_criteria": "At least 4 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "sample_results": [
+        {
+          "rank": 1,
+          "score": 19.372640358186178,
+          "path": "/opt/processmap-test/.planning/contours/perf/diagram-svg-css-repaint-reduction-v1/RUNTIME_PROOF_CHECKLIST.md",
+          "title": "Pre-execution (Agent 1)",
+          "snippet_preview": "- [x] GSD discipline recorded - [x] Previous *Diagram* *performance* *contours* *review*ed - [x] Source/runtime truth ca"
+        },
+        {
+          "rank": 2,
+          "score": 18.990540521859362,
+          "path": "/opt/processmap-test/.planning/contours/tooling/processmap-agent3-ui-review-skill-binding-v1/EXEC_REPORT.md",
+          "title": "6. How future UI contours should use this",
+          "snippet_preview": "1. *Agent* 2 completes implementation and writes `EXEC_REPORT.md`. 2. *Agent* 3 reads the skill + binding, then opens th"
+        },
+        {
+          "rank": 3,
+          "score": 18.756232033559023,
+          "path": "/opt/processmap-test/.planning/contours/fix/diagram-drag-lag-gsd-review-version-ledger-rework-v1/EXECUTOR_PROMPT.md",
+          "title": "Pre-flight",
+          "snippet_preview": "1. Read `PLAN.md`, `RUNTIME_NAVIGATION.md`, `RUNTIME_PROOF_CHECKLIST.md`, `STATE.json`. 2. Read latest contour reports: "
+        }
+      ]
+    }
+  ]
+}

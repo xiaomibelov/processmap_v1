@@ -1,0 +1,24 @@
+READY_FOR_REVIEW
+
+Contour: audit/diagram-baseline-no-overlays-canvas-profile-v1
+Run ID: 20260515T112356Z-18129
+Executor: Agent 2
+Date: 2026-05-15
+
+Deliverables:
+- EXEC_REPORT.md
+- BASELINE_PROFILE_REPORT.md
+- SOURCE_MAP.md
+- RUNTIME_EVIDENCE.md
+- HYPOTHESES_RANKING.md
+- NEXT_CONTOUR_RECOMMENDATION.md
+- EXECUTION_RUN_ID
+- evidence/counts-before-after.md
+- evidence/network-summary.md
+- evidence/console-summary.md
+- evidence/interaction-timings.md
+- evidence/decor-off-comparison.md
+- evidence/performance-trace-summary.md
+
+No product code changed.
+No secrets printed.

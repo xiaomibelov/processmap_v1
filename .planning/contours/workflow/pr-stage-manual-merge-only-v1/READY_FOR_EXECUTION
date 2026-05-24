@@ -1,0 +1,7 @@
+READY
+run_id=20260522T084703Z-81419
+contour=workflow/pr-stage-manual-merge-only-v1
+mode=single-lane
+agent2_prompt=EXECUTOR_PART_1_PROMPT.md
+agent3_prompt=EXECUTOR_PART_2_PROMPT.md
+agent4_prompt=REVIEWER_PROMPT.md

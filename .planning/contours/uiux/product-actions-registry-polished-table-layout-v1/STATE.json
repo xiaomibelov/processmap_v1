@@ -1,0 +1,32 @@
+{
+  "contour_id": "uiux/product-actions-registry-polished-table-layout-v1",
+  "run_id": "20260518T101901Z-54062",
+  "role": "Agent 1 / Planner",
+  "status": "READY_FOR_EXECUTION",
+  "created_at_utc": "2026-05-18T10:21:06Z",
+  "gsd_available": true,
+  "gsd_command": "/opt/processmap-test/bin/gsd",
+  "gsd_usage_command_supported": false,
+  "rag_preflight_planner": "completed",
+  "rag_preflight_reviewer": "completed",
+  "product_code_changes_by_agent1": false,
+  "worker_2_scope": "bounded Product Actions Registry frontend UI implementation",
+  "worker_3_scope": "independent UX/spec/runtime acceptance checklist",
+  "agent4_final_validation_only": true,
+  "dirty_tree_guard": true,
+  "requires_clean_worker2_branch_or_documented_safety": true,
+  "backend_changes_allowed": false,
+  "schema_changes_allowed": false,
+  "bpmn_xml_mutation_allowed": false,
+  "rag_runtime_changes_allowed": false,
+  "package_install_allowed": false,
+  "typescript_migration_allowed": false,
+  "shadcn_install_allowed": false,
+  "merge_pr_deploy_allowed": false,
+  "required_worker_2_marker": "WORKER_2_DONE",
+  "required_worker_3_marker": "WORKER_3_DONE",
+  "blocked_markers": [
+    "EXEC_PART_1_BLOCKED.md",
+    "EXEC_PART_2_BLOCKED.md"
+  ]
+}

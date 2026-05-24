@@ -1,0 +1,71 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e7]: ProcessMap
+      - button "← Проекты" [ref=e8] [cursor=pointer]
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - generic [ref=e12]: Org
+          - generic "Default" [ref=e13]
+        - button "Админ-панель" [ref=e14] [cursor=pointer]
+      - button "Профиль" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+  - generic [ref=e19]:
+    - generic [ref=e21]:
+      - button "Открыть панель" [disabled] [ref=e22]:
+        - img [ref=e24]
+      - generic [ref=e26]:
+        - button "Узел не выбран" [disabled] [ref=e27]:
+          - img [ref=e29]
+        - button "AI-вопросы" [disabled] [ref=e32]:
+          - img [ref=e34]
+        - button "Акторы" [disabled] [ref=e36]:
+          - img [ref=e38]
+        - button "Шаблоны" [disabled] [ref=e42]:
+          - img [ref=e44]
+    - generic [ref=e48]:
+      - generic [ref=e49]:
+        - button "Сохранить сессию" [disabled] [ref=e52]
+        - tablist "Process tabs" [ref=e54]:
+          - tab "Анализ процессов" [disabled] [ref=e55]
+          - tab "Diagram (BPMN)" [disabled] [ref=e56]
+          - tab "XML" [disabled] [ref=e57]
+          - tab "DOC" [disabled] [ref=e58]
+          - tab "DOD" [disabled] [ref=e59]
+        - button "Открыть меню действий" [ref=e62] [cursor=pointer]: ⋯
+      - main [ref=e128]:
+        - generic [ref=e129]:
+          - generic [ref=e130]:
+            - generic [ref=e132]:
+              - heading "Реестр свойств" [level=1] [ref=e133]
+              - paragraph [ref=e134]: Сводный список свойств BPMN-элементов и процессных объектов.
+              - text: "Foundation mode: backend недоступен (workspace_id required)."
+            - button "Реестр действий" [ref=e135] [cursor=pointer]
+            - button "Вернуться" [ref=e136] [cursor=pointer]
+          - tablist "Источник строк реестра свойств" [ref=e137]:
+            - tab "Workspace" [selected] [ref=e138] [cursor=pointer]
+            - tab "Проект" [disabled] [ref=e139]
+            - tab "Сессия" [disabled] [ref=e140]
+          - generic [ref=e141]:
+            - generic [ref=e143]:
+              - generic [ref=e144]: —Источников
+              - generic [ref=e145]: —Элементов
+              - generic [ref=e146]: —Свойств
+              - generic [ref=e147]: —Типов свойств
+              - generic [ref=e148]: —Неполных
+              - generic [ref=e149]: —После фильтров
+            - table [ref=e151]:
+              - row "Объект Свойство Значение Статус" [ref=e152]:
+                - generic [ref=e153]: Объект
+                - generic [ref=e154]: Свойство
+                - generic [ref=e155]: Значение
+                - generic [ref=e156]: Статус
+              - generic [ref=e157]:
+                - paragraph [ref=e158]: Свойства ещё не собраны в реестр. Нужно подключить подтверждённые источники свойств BPMN/оверлеев.
+                - generic [ref=e159]: "Workspace: — · Project: — · Session: —"
+            - generic [ref=e161]: "После фильтров: — строк · полных: — · неполных: —"
+  - generic [ref=e125]:
+    - link "Версия v1.0.142" [ref=e126] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e127]: · Добавлено прямое переключение между Реестром действий и Реестром свойств.

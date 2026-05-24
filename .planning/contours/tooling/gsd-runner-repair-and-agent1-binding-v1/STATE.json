@@ -1,0 +1,16 @@
+{
+  "contour_id": "tooling/gsd-runner-repair-and-agent1-binding-v1",
+  "status": "READY_FOR_REVIEW",
+  "bootstrap_mode": "GSD_BOOTSTRAP_REPAIR_EXCEPTION",
+  "scope": "repair ProcessMap Agent 1 GSD runner visibility using existing Codex-local GSD",
+  "product_code_changes_allowed": false,
+  "package_install_allowed": false,
+  "mcp_repair_allowed": false,
+  "rag_bootstrap_allowed": false,
+  "commit_push_pr_allowed": false,
+  "deploy_allowed": false,
+  "expected_gsd_wrapper": "/opt/processmap-test/bin/gsd",
+  "codex_gsd_tools": "/root/.codex/get-shit-done/bin/gsd-tools.cjs",
+  "codex_gsd_skills": "/root/.codex/skills",
+  "codex_gsd_agents": "/root/.codex/agents"
+}

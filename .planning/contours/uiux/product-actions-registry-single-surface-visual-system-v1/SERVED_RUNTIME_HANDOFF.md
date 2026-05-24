@@ -1,0 +1,24 @@
+# Served Runtime Handoff
+
+Contour: `uiux/product-actions-registry-single-surface-visual-system-v1`
+Run ID: `20260518T110633Z-57765`
+Date: `2026-05-18T11:30:59Z`
+Prepared by: manual Agent 3 merge finalizer
+
+## Source
+
+- Worktree: `/opt/processmap-product-actions-single-surface-part1`
+- Frontend: `/opt/processmap-product-actions-single-surface-part1/frontend`
+- Branch: `uiux/product-actions-registry-single-surface-visual-system-v1-part1`
+- SHA: `ceb7e527ba18176108d214b866673eed118e0c77`
+- Dirty: `false`
+
+## Served Runtime
+
+- Served dist: `/opt/processmap-test/frontend/dist`
+- Backup: `/opt/processmap-test/frontend/dist.backup-manual-single-surface-merge-20260518T113059Z`
+- Verified: `http://127.0.0.1:5180/build-info.json`
+
+```json
+{"branch":"uiux/product-actions-registry-single-surface-visual-system-v1-part1","sha":"ceb7e527ba18176108d214b866673eed118e0c77","shaShort":"ceb7e52","timestamp":"2026-05-18T11:30:59Z","contourId":"uiux/product-actions-registry-single-surface-visual-system-v1","dirty":false,"host":"clearvestnic.ru","sourceWorktree":"/opt/processmap-product-actions-single-surface-part1","preparedBy":"manual-agent3-merge-finalizer","runId":"20260518T110633Z-57765"}
+```

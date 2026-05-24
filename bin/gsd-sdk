@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cat >&2 <<'MSG'
+WARNING: global gsd-sdk/get-shit-done-cc npm package is not installed on this server.
+ProcessMap uses the Codex-local GSD wrapper instead:
+  /opt/processmap-test/bin/gsd
+which calls:
+  /root/.codex/get-shit-done/bin/gsd-tools.cjs
+
+This wrapper is intentionally not pretending to be the historical gsd-sdk CLI.
+Use `gsd` for the ProcessMap Agent 1 binding on this server.
+MSG
+exit 2

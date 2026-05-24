@@ -150,4 +150,12 @@
   --quality-panel-border: 222 30% 34%;
   --menu-bg-elevated: 223 41% 14%;
   --menu-border-elevated: 222 30% 36%;
+
+  /* registry design tokens */
+  --registry-bg-canvas: #ffffff;
+  --registry-bg-surface: #f8fafc;
+  --registry-text-primary: #0f172a;
+  --registry-purple-primary: #7c3aed;
+  --registry-green-complete: #10b981;
+  --registry-orange-partial: #f59e0b;
 }

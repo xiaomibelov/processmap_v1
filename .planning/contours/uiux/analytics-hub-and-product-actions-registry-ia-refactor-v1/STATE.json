@@ -1,0 +1,43 @@
+{
+  "contour": "uiux/analytics-hub-and-product-actions-registry-ia-refactor-v1",
+  "run_id": "20260517T202836Z-17191",
+  "role": "agent1_planner",
+  "status": "READY_FOR_EXECUTION",
+  "created_at": "2026-05-17T20:28:36Z",
+  "planner_outputs": [
+    "PLAN.md",
+    "WORKER_2_PROMPT.md",
+    "WORKER_3_PROMPT.md",
+    "EXECUTOR_PART_1_PROMPT.md",
+    "EXECUTOR_PART_2_PROMPT.md",
+    "REVIEWER_PROMPT.md",
+    "RAG_PREFLIGHT_PLANNER.md",
+    "RAG_PREFLIGHT_REVIEWER.md",
+    "UX_ACCEPTANCE_CHECKLIST.md",
+    "RUNTIME_PROOF_CHECKLIST.md",
+    "BRANCH_SCOPE_CHECKLIST.md",
+    "AGENT_RUN_ID",
+    "READY_FOR_EXECUTION"
+  ],
+  "worker_split": {
+    "agent2": "bounded frontend implementation lane",
+    "agent3": "independent UX/spec/runtime checklist lane",
+    "agent4": "runtime reviewer after both worker markers"
+  },
+  "non_goals": [
+    "backend changes",
+    "schema changes",
+    "BPMN XML mutation",
+    "Product Actions durable truth changes",
+    "RAG runtime changes",
+    "AI auto-write",
+    "full Properties Registry implementation",
+    "global shell/header/sidebar redesign",
+    "package install",
+    "fake data"
+  ],
+  "branch_hygiene": {
+    "current_checkout_dirty": true,
+    "implementation_requires_clean_origin_main_or_documented_safety": true
+  }
+}

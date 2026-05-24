@@ -1,0 +1,130 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e7]: ProcessMap
+      - button "← Проекты" [ref=e8] [cursor=pointer]
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - generic [ref=e12]: Org
+          - generic "Default" [ref=e13]
+        - button "Админ-панель" [ref=e14] [cursor=pointer]
+      - button "Профиль" [ref=e16] [cursor=pointer]:
+        - img [ref=e17]
+  - generic [ref=e19]:
+    - generic [ref=e21]:
+      - button "Открыть панель" [disabled] [ref=e22]:
+        - img [ref=e24]
+      - generic [ref=e26]:
+        - button "Узел не выбран" [disabled] [ref=e27]:
+          - img [ref=e29]
+        - button "AI-вопросы" [disabled] [ref=e32]:
+          - img [ref=e34]
+        - button "Акторы" [disabled] [ref=e36]:
+          - img [ref=e38]
+        - button "Шаблоны" [disabled] [ref=e42]:
+          - img [ref=e44]
+    - generic [ref=e48]:
+      - generic [ref=e49]:
+        - button "Сохранить сессию" [disabled] [ref=e52]
+        - tablist "Process tabs" [ref=e54]:
+          - tab "Анализ процессов" [disabled] [ref=e55]
+          - tab "Diagram (BPMN)" [disabled] [ref=e56]
+          - tab "XML" [disabled] [ref=e57]
+          - tab "DOC" [disabled] [ref=e58]
+          - tab "DOD" [disabled] [ref=e59]
+        - button "Открыть меню действий" [ref=e62] [cursor=pointer]: ⋯
+      - generic [ref=e64]:
+        - generic [ref=e70]:
+          - generic [ref=e72]:
+            - generic [ref=e73]: Organization
+            - generic "Default" [ref=e74]
+          - generic [ref=e75]:
+            - generic [ref=e76]: Workspaces
+            - button "Новый workspace" [ref=e77] [cursor=pointer]:
+              - img [ref=e78]
+          - button "Реестр действий Действия с продуктом" [ref=e81] [cursor=pointer]:
+            - generic [ref=e82]: Реестр действий
+            - generic [ref=e83]: Действия с продуктом
+          - generic [ref=e85]:
+            - button "Main Workspace" [ref=e86] [cursor=pointer]:
+              - img [ref=e87]
+              - generic [ref=e93]: Main Workspace
+            - generic [ref=e94]: editor
+            - button "Переименовать workspace" [ref=e95] [cursor=pointer]:
+              - img [ref=e96]
+        - generic [ref=e100]:
+          - generic [ref=e101]:
+            - navigation [ref=e102]:
+              - button "Main Workspace"
+            - generic [ref=e103]:
+              - generic [ref=e104]:
+                - generic [ref=e105]: ⌕
+                - generic [ref=e106]: Поиск по workspace
+                - searchbox "Поиск по workspace" [ref=e107]
+              - button "Создать раздел" [ref=e108] [cursor=pointer]:
+                - img [ref=e109]
+                - text: Создать раздел
+              - generic "Войдите в папку, чтобы создать проект" [ref=e111]:
+                - img [ref=e112]
+                - text: Проект
+          - table [ref=e115]:
+            - rowgroup [ref=e126]:
+              - row "Сортировать Название по возрастанию Сортировать Тип по возрастанию Разделы / Сессии Контекст Сортировать Ответственный / Исполнитель по возрастанию DoD Сортировать Статус по возрастанию Сортировать Обновлён по возрастанию Последнее изменение" [ref=e127]:
+                - columnheader "Сортировать Название по возрастанию":
+                  - button "Сортировать Название по возрастанию":
+                    - generic: Название
+                    - generic [ref=e128] [cursor=pointer]: ↑
+                - columnheader "Сортировать Тип по возрастанию" [ref=e129]:
+                  - button "Сортировать Тип по возрастанию" [ref=e130] [cursor=pointer]:
+                    - generic [ref=e131]: Тип
+                    - generic [ref=e132]: ↑
+                - columnheader "Разделы / Сессии" [ref=e133]
+                - columnheader "Контекст" [ref=e134]
+                - columnheader "Сортировать Ответственный / Исполнитель по возрастанию" [ref=e135]:
+                  - button "Сортировать Ответственный / Исполнитель по возрастанию" [ref=e136] [cursor=pointer]:
+                    - generic [ref=e137]: Ответственный / Исполнитель
+                    - generic [ref=e138]: ↑
+                - columnheader "DoD" [ref=e139]
+                - columnheader "Сортировать Статус по возрастанию" [ref=e140]:
+                  - button "Сортировать Статус по возрастанию" [ref=e141] [cursor=pointer]:
+                    - generic [ref=e142]: Статус
+                    - generic [ref=e143]: ↑
+                - columnheader "Сортировать Обновлён по возрастанию" [ref=e144]:
+                  - button "Сортировать Обновлён по возрастанию" [ref=e145] [cursor=pointer]:
+                    - generic [ref=e146]: Обновлён
+                    - generic [ref=e147]: ↑
+                - columnheader "Последнее изменение" [ref=e148]
+                - columnheader [ref=e149]
+            - rowgroup [ref=e150]:
+              - 'row "Показать вложенные элементы раздела Импортировано Импортировано Раздел 0 / 2 Проектов: 2 — — — 27 мин назад Сессия «wewe» Действия с разделом" [ref=e151]':
+                - cell "Показать вложенные элементы раздела Импортировано Импортировано":
+                  - generic [ref=e152]:
+                    - button "Показать вложенные элементы раздела Импортировано" [ref=e153] [cursor=pointer]:
+                      - img [ref=e154]
+                    - img [ref=e156]
+                    - button "Импортировано"
+                - cell "Раздел" [ref=e158]:
+                  - generic [ref=e159]: Раздел
+                - cell "0 / 2" [ref=e160]
+                - 'cell "Проектов: 2" [ref=e161]':
+                  - generic [ref=e162]: "Проектов: 2"
+                - cell "—" [ref=e163]:
+                  - generic "Не назначен" [ref=e164]: —
+                - cell "—" [ref=e165]
+                - cell "—" [ref=e166]:
+                  - combobox "Статус контекста" [ref=e167]:
+                    - option "—" [selected]
+                    - option "AS IS"
+                    - option "TO BE"
+                - cell "27 мин назад" [ref=e168]
+                - cell "Сессия «wewe»" [ref=e169]:
+                  - generic "Сессия «wewe»" [ref=e170]
+                - cell "Действия с разделом" [ref=e171]:
+                  - button "Действия с разделом" [ref=e172] [cursor=pointer]: ···
+  - generic [ref=e66]:
+    - link "Версия v1.0.128" [ref=e67] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e68]: · a9a9d9c · 16.05.2026, 08:13 · perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1
+    - generic [ref=e69]: "· Оптимизирован hot path drag диаграммы: side effects подавлены во время pointermove."
+  - generic: a9a9d9c | 2026-05-16T08:13:20.955Z

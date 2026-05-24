@@ -1,0 +1,19 @@
+- generic [ref=e5]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e9]: ProcessMap
+      - generic [ref=e10]: Аналитика
+    - generic [ref=e11]:
+      - generic [ref=e12]
+      - button "Профиль" [ref=e18] [cursor=pointer]
+  - generic [ref=e21]:
+    - generic [ref=e23]:
+      - button "Открыть панель" [disabled] [ref=e24]
+      - generic [ref=e28]
+    - generic [ref=e50]:
+      - generic [ref=e51]
+      - main [ref=e66]
+  - generic [ref=e108]:
+    - link "Версия v1.0.134" [ref=e109] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e110]: · Создан верхнеуровневый раздел Аналитика (Analytics Hub).

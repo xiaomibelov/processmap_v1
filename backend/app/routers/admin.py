@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -1425,6 +1427,90 @@ def admin_jobs(request: Request) -> Any:
         },
         "items": items,
         "count": len(items),
+    }
+
+
+@router.get("/api/admin/agent-runs")
+def admin_agent_runs(request: Request) -> Any:
+    _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    root = _as_text(os.environ.get("PROCESSMAP_REPO_ROOT")) or "/opt/processmap-test"
+    run_state_dir = os.path.join(root, ".agents", "run-state")
+    runs: List[Dict[str, Any]] = []
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    if os.path.isdir(run_state_dir):
+        for entry in os.listdir(run_state_dir):
+            run_path = os.path.join(run_state_dir, entry)
+            if not os.path.isdir(run_path):
+                continue
+            run_id = entry
+            cid_path = os.path.join(run_path, "CID")
+            contour_id = ""
+            try:
+                with open(cid_path, "r", encoding="utf-8") as f:
+                    contour_id = _as_text(f.read())
+            except Exception:
+                contour_id = ""
+            stop_requested = os.path.exists(os.path.join(run_path, "STOP_REQUESTED"))
+            agents: List[Dict[str, Any]] = []
+            last_activity_at = 0
+            scripts_dir = os.path.join(run_path, "scripts")
+            if os.path.isdir(scripts_dir):
+                for script_name in os.listdir(scripts_dir):
+                    m = re.match(r"agent-(\d+)-(\d+)\.sh$", script_name)
+                    if m:
+                        agents.append({"agent": m.group(1), "pid": m.group(2), "highlight": False})
+            for log_name in os.listdir(run_path):
+                m = re.match(r"kimi-agent-(\d+)-(\d+)\.log$", log_name)
+                if m:
+                    log_path = os.path.join(run_path, log_name)
+                    try:
+                        mtime = int(os.path.getmtime(log_path))
+                    except Exception:
+                        mtime = 0
+                    if mtime > last_activity_at:
+                        last_activity_at = mtime
+                    agent_num = m.group(1)
+                    for a in agents:
+                        if a["agent"] == agent_num:
+                            break
+                    else:
+                        agents.append({"agent": agent_num, "pid": "", "highlight": False})
+            for token_name in os.listdir(run_path):
+                m = re.match(r"highlight-agent-(\d+)\.token$", token_name)
+                if m:
+                    agent_num = m.group(1)
+                    for a in agents:
+                        if a["agent"] == agent_num:
+                            a["highlight"] = True
+                            break
+                    else:
+                        agents.append({"agent": agent_num, "pid": "", "highlight": True})
+            agents.sort(key=lambda a: _as_int(a.get("agent"), 0))
+            if stop_requested:
+                status = "stopping"
+            elif last_activity_at > 0 and (now_ts - last_activity_at) <= 300:
+                status = "active"
+            else:
+                status = "completed"
+            runs.append(
+                {
+                    "run_id": run_id,
+                    "contour_id": contour_id,
+                    "status": status,
+                    "stop_requested": stop_requested,
+                    "started_at": last_activity_at,
+                    "last_activity_at": last_activity_at,
+                    "agents": agents,
+                }
+            )
+    runs.sort(key=lambda r: (-_as_int(r.get("last_activity_at"), 0), _as_text(r.get("run_id"))))
+    return {
+        "ok": True,
+        "generated_at": _now_iso(),
+        "runs": runs,
+        "count": len(runs),
     }
 
 

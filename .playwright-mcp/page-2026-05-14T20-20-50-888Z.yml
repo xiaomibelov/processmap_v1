@@ -1,0 +1,123 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e7]: ProcessMap
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]:
+          - generic [ref=e11]: Org
+          - generic "Default" [ref=e12]
+        - button "Админ-панель" [ref=e13] [cursor=pointer]
+      - button "Профиль" [ref=e15] [cursor=pointer]:
+        - img [ref=e16]
+  - generic [ref=e18]:
+    - generic [ref=e20]:
+      - button "Открыть панель" [disabled] [ref=e21]:
+        - img [ref=e23]
+      - generic [ref=e25]:
+        - button "Узел не выбран" [disabled] [ref=e26]:
+          - img [ref=e28]
+        - button "AI-вопросы" [disabled] [ref=e31]:
+          - img [ref=e33]
+        - button "Акторы" [disabled] [ref=e35]:
+          - img [ref=e37]
+        - button "Шаблоны" [disabled] [ref=e41]:
+          - img [ref=e43]
+    - generic [ref=e47]:
+      - generic [ref=e48]:
+        - button "Сохранить сессию" [disabled] [ref=e51]
+        - tablist "Process tabs" [ref=e53]:
+          - tab "Анализ процессов" [disabled] [ref=e54]
+          - tab "Diagram (BPMN)" [disabled] [ref=e55]
+          - tab "XML" [disabled] [ref=e56]
+          - tab "DOC" [disabled] [ref=e57]
+          - tab "DOD" [disabled] [ref=e58]
+        - button "Открыть меню действий" [ref=e62] [cursor=pointer]: ⋯
+      - main [ref=e64]:
+        - generic [ref=e65]:
+          - generic [ref=e67]:
+            - heading "Реестр действий с продуктом" [level=2] [ref=e68]
+            - paragraph [ref=e69]: Аналитика действий с продуктом по всем процессам и диаграммам рабочего пространства.
+          - tablist "Источник строк реестра" [ref=e70]:
+            - tab "Рабочее пространство" [selected] [ref=e71] [cursor=pointer]
+            - tab "Проект" [disabled] [ref=e72]
+            - tab "Сессия" [disabled] [ref=e73]
+          - region "Сводка реестра" [ref=e74]:
+            - generic [ref=e75]:
+              - generic [ref=e76]: "1"
+              - generic [ref=e77]: Сессии
+            - generic [ref=e78]:
+              - generic [ref=e79]: "0"
+              - generic [ref=e80]: Строк
+            - generic [ref=e81]:
+              - generic [ref=e82]: "0"
+              - generic [ref=e83]: Полных
+            - generic [ref=e84]:
+              - generic [ref=e85]: "0"
+              - generic [ref=e86]: Неполных
+            - generic [ref=e87]:
+              - generic [ref=e88]: "0"
+              - generic [ref=e89]: После фильтров
+          - generic [ref=e90]:
+            - generic [ref=e91]:
+              - generic [ref=e92]:
+                - generic [ref=e93]: Группа
+                - combobox "Группа" [ref=e94]:
+                  - option "Все" [selected]
+              - generic [ref=e95]:
+                - generic [ref=e96]: Товар
+                - combobox "Товар" [ref=e97]:
+                  - option "Все" [selected]
+              - generic [ref=e98]:
+                - generic [ref=e99]: Тип
+                - combobox "Тип" [ref=e100]:
+                  - option "Все" [selected]
+              - generic [ref=e101]:
+                - generic [ref=e102]: Этап
+                - combobox "Этап" [ref=e103]:
+                  - option "Все" [selected]
+              - generic [ref=e104]:
+                - generic [ref=e105]: Категория
+                - combobox "Категория" [ref=e106]:
+                  - option "Все" [selected]
+              - generic [ref=e107]:
+                - generic [ref=e108]: Роль
+                - combobox "Роль" [ref=e109]:
+                  - option "Все" [selected]
+              - generic [ref=e110]:
+                - generic [ref=e111]: Полнота
+                - combobox "Полнота" [ref=e112]:
+                  - option "Все" [selected]
+                  - option "Полные"
+                  - option "Неполные"
+              - button "Сбросить" [ref=e113] [cursor=pointer]
+            - generic [ref=e114]:
+              - generic [ref=e115]: "Выбрано для AI: 0 / 10"
+              - 'button "AI: предложить действия" [disabled] [ref=e116]'
+              - button "CSV" [disabled] [ref=e117]
+              - button "XLSX" [disabled] [ref=e118]
+          - generic [ref=e129]:
+            - generic [ref=e130]: Действий с продуктом пока нет
+            - generic [ref=e131]: Найдена 1 сессия, но действия с продуктом ещё не заполнены. Откройте сессию или запустите AI-предложение действий.
+          - group [ref=e132]:
+            - 'generic "Источники данных (1) · без действий: 1" [ref=e133] [cursor=pointer]'
+            - generic [ref=e134]:
+              - text: Сессии, из которых собраны действия с продуктом.
+              - generic [ref=e135]:
+                - generic [ref=e136]: Данные агрегируются на сервере — сессии не загружаются целиком.
+                - generic [ref=e137]: "Загружено: сессий 1, строк 0."
+              - generic [ref=e138]:
+                - button "Выбрать все видимые" [ref=e139] [cursor=pointer]
+                - button "Только без действий" [ref=e140] [cursor=pointer]
+                - button "Только неполные" [ref=e141] [cursor=pointer]
+              - table [ref=e142]:
+                - row "Выбрать wewe для AI wewe 0 действий · 14.05.26, 18:35 Открыть" [ref=e143] [cursor=pointer]:
+                  - checkbox "Выбрать wewe для AI" [ref=e145]
+                  - generic [ref=e146]:
+                    - generic [ref=e147]: wewe
+                    - generic [ref=e148]: 0 действий · 14.05.26, 18:35
+                  - button "Открыть" [ref=e150]
+          - generic [ref=e125]: "После фильтров: 0 строк · полных: 0 · неполных: 0"
+  - generic [ref=e126]:
+    - link "Версия v1.0.126" [ref=e127] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e128]: "· Таблица шагов анализа стала строгой: убраны карточные строки, тяжёлые hover-эффекты и агрессивные цветные заливки."

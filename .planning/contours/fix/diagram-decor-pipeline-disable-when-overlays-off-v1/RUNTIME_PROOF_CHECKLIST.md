@@ -1,0 +1,21 @@
+# RUNTIME_PROOF_CHECKLIST — fix/diagram-decor-pipeline-disable-when-overlays-off-v1
+
+- [ ] GSD discipline recorded
+- [ ] Previous baseline audit reviewed
+- [ ] Source/runtime truth captured
+- [ ] Overlays-off baseline documented
+- [ ] Decor/fanout source map captured
+- [ ] Early guard strategy defined
+- [ ] Overlays-off skips property overlay decor path
+- [ ] Overlays-on still renders property overlays
+- [ ] Viewport-culling preserved
+- [ ] Pan/zoom stable
+- [ ] Tab switch stable
+- [ ] No duplicate overlays
+- [ ] No PUT/PATCH
+- [ ] No versions spam regression
+- [ ] No backend changes
+- [ ] No BPMN XML mutation
+- [ ] No Product Actions/RAG/AG-UI changes
+- [ ] Selection bottleneck explicitly left for next contour
+- [ ] Agent 3 Playwright review required

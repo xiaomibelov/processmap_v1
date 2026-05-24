@@ -1,0 +1,33 @@
+{
+  "contour": "release/processmap-consolidate-dirty-tree-fix-tests-and-stage-v1",
+  "run_id": "20260521T090400Z-76203",
+  "execution_mode": "single-lane",
+  "mode_reason": "Sequential contour: tree cleanup → test fixes → version bump → build. Not large enough to justify parallel agent cost.",
+  "agents": {
+    "agent1_planner": "completed",
+    "agent2_executor": "pending — reads EXECUTOR_PART_1_PROMPT.md",
+    "agent3_merger": "shell-only — reads EXECUTOR_PART_2_PROMPT.md, no LLM",
+    "agent4_reviewer": "pending — reads REVIEWER_PROMPT.md"
+  },
+  "artifacts": {
+    "plan": "PLAN.md",
+    "executor_part_1": "EXECUTOR_PART_1_PROMPT.md",
+    "executor_part_2": "EXECUTOR_PART_2_PROMPT.md",
+    "reviewer_prompt": "REVIEWER_PROMPT.md",
+    "state": "STATE.json"
+  },
+  "context_proofs": {
+    "rag_preflight": "RAG_PREFLIGHT_PLANNER.md",
+    "obsidian": "OBSIDIAN_CONTEXT_USED.md",
+    "gsd": "GSD_CONTEXT_USED.md"
+  },
+  "version_target": "v1.0.140",
+  "version_source": "v1.0.139",
+  "known_test_failures": {
+    "frontend": {
+      "ProductActionsRegistryPanel.test.mjs": 2,
+      "ProcessAnalyticsHub.test.mjs": 10
+    },
+    "backend": 0
+  }
+}

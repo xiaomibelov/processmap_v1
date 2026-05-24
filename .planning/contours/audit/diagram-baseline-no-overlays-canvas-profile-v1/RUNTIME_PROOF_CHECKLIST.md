@@ -1,0 +1,25 @@
+# RUNTIME_PROOF_CHECKLIST — audit/diagram-baseline-no-overlays-canvas-profile-v1
+
+- [ ] GSD discipline recorded
+- [ ] Previous performance contours reviewed
+- [ ] Source/runtime truth captured
+- [ ] Normal current Diagram profiled
+- [ ] Overlays visually off mode profiled if feasible
+- [ ] Decor pipeline isolation checked if feasible
+- [ ] Pure-ish bpmn-js baseline estimated/profiled if feasible
+- [ ] DOM count captured
+- [ ] SVG node count captured
+- [ ] .djs-overlay count captured
+- [ ] .fpcPropertyOverlay count captured
+- [ ] Network/mutation silence verified
+- [ ] Pan/zoom latency profiled
+- [ ] Selection/hover latency profiled
+- [ ] React/render churn source map created
+- [ ] Derived map/decor pipeline source map created
+- [ ] Hypotheses ranked with evidence
+- [ ] Next contour recommendation created
+- [ ] Project Atlas note created
+- [ ] No product code changed
+- [ ] No BPMN XML mutation
+- [ ] No commit/push/PR/deploy
+- [ ] Agent 3 review required

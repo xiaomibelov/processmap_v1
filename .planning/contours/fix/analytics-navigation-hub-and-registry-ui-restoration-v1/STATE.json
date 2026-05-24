@@ -1,0 +1,32 @@
+{
+  "contour": "fix/analytics-navigation-hub-and-registry-ui-restoration-v1",
+  "run_id": "20260521T120234Z-94291",
+  "agent_role": "planner",
+  "execution_mode": "single-lane",
+  "execution_mode_reason": "All frontend changes are interdependent (CSS + routing + component wiring). Not suitable for parallel split.",
+  "base_commit": "5affb5ff0abce2735df1c34fe369a39fe9c354e3",
+  "branch": "fix/analytics-navigation-hub-and-registry-ui-restoration-v1",
+  "scope": "frontend-only",
+  "files_expected_to_change": [
+    "frontend/src/styles/tailwind.css",
+    "frontend/src/app/processMapRouteModel.js",
+    "frontend/src/components/ProcessStage.jsx",
+    "frontend/src/components/process/analysis/ProcessAnalyticsHub.test.mjs",
+    "frontend/src/components/process/analysis/ProcessPropertiesRegistryPage.test.mjs",
+    "frontend/src/config/appVersion.js"
+  ],
+  "gates": {
+    "gsd_discipline_recorded": true,
+    "source_runtime_truth_captured": true,
+    "bounded_scope_defined": true,
+    "acceptance_criteria_defined": true,
+    "user_rejection_facts_reviewed": false,
+    "no_product_code_written_by_agent1": true,
+    "no_merge_deploy_pr_without_approval": true
+  },
+  "agent2_prompt_file": "EXECUTOR_PART_1_PROMPT.md",
+  "agent3_prompt_file": "EXECUTOR_PART_2_PROMPT.md",
+  "agent3_mode": "shell_only",
+  "agent4_prompt_file": "REVIEWER_PROMPT.md",
+  "status": "READY_FOR_EXECUTION"
+}

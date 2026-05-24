@@ -1,0 +1,118 @@
+- generic [ref=e5]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e9]: ProcessMap
+      - button "← Проекты" [ref=e111] [cursor=pointer]
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - generic [ref=e14]: Org
+          - generic "Default" [ref=e15]
+        - button "Админ-панель" [ref=e16] [cursor=pointer]
+      - button "Профиль" [ref=e18] [cursor=pointer]:
+        - img [ref=e19]
+  - generic [ref=e21]:
+    - generic [ref=e23]:
+      - button "Открыть панель" [disabled] [ref=e24]:
+        - img [ref=e26]
+      - generic [ref=e28]:
+        - button "Узел не выбран" [disabled] [ref=e29]:
+          - img [ref=e31]
+        - button "AI-вопросы" [disabled] [ref=e34]:
+          - img [ref=e36]
+        - button "Акторы" [disabled] [ref=e38]:
+          - img [ref=e40]
+        - button "Шаблоны" [disabled] [ref=e44]:
+          - img [ref=e46]
+    - generic [ref=e50]:
+      - generic [ref=e51]:
+        - button "Сохранить сессию" [disabled] [ref=e54]
+        - tablist "Process tabs" [ref=e56]:
+          - tab "Анализ процессов" [disabled] [ref=e57]
+          - tab "Diagram (BPMN)" [disabled] [ref=e58]
+          - tab "XML" [disabled] [ref=e59]
+          - tab "DOC" [disabled] [ref=e60]
+          - tab "DOD" [disabled] [ref=e61]
+        - button "Открыть меню действий" [ref=e64] [cursor=pointer]: ⋯
+      - main [ref=e112]:
+        - generic [ref=e113]:
+          - generic [ref=e114]:
+            - generic [ref=e115]:
+              - heading "Реестр действий с продуктом" [level=2] [ref=e116]
+              - paragraph [ref=e117]: Сводная таблица действий с продуктами из сессий. Просмотр и экспорт перед финальной выгрузкой.
+            - generic [ref=e118]:
+              - generic [ref=e119]:
+                - generic [ref=e120]: "Экспорт: 0 строк · полных: 0 · неполных: 0"
+                - button "CSV" [disabled] [ref=e121]
+                - button "XLSX" [disabled] [ref=e122]
+              - button "Вернуться" [ref=e123] [cursor=pointer]
+          - tablist "Источник строк реестра" [ref=e124]:
+            - tab "Workspace" [selected] [ref=e125] [cursor=pointer]
+            - tab "Проект" [disabled] [ref=e126]
+            - tab "Сессия" [disabled] [ref=e127]
+          - generic [ref=e128]:
+            - generic [ref=e129]:
+              - generic [ref=e130]: Workspace scope
+              - generic [ref=e131]: Сводка строится без загрузки полных данных всех сессий на frontend.
+            - generic [ref=e132]: Workspace будет выбран текущим контекстом приложения.
+          - generic [ref=e133]:
+            - generic [ref=e134]:
+              - generic [ref=e135]:
+                - generic [ref=e136]: Сессии workspace
+                - text: Все сессии в выбранном scope, включая сессии без действий с продуктом.
+              - generic [ref=e137]: Сессии не найдены.
+            - generic [ref=e138]: В выбранном scope пока нет доступных сессий.
+          - region "Сводка реестра" [ref=e139]:
+            - generic [ref=e140]:
+              - generic [ref=e141]: Сессий
+              - text: "0"
+            - generic [ref=e142]:
+              - generic [ref=e143]: Строк
+              - text: "0"
+            - generic [ref=e144]:
+              - generic [ref=e145]: Полных
+              - text: "0"
+            - generic [ref=e146]:
+              - generic [ref=e147]: Неполных
+              - text: "0"
+            - generic [ref=e148]:
+              - generic [ref=e149]: После фильтров
+              - text: "0"
+          - generic [ref=e151]:
+            - generic [ref=e152]:
+              - generic [ref=e153]: Группа
+              - combobox "Группа" [ref=e154]:
+                - option "Все" [selected]
+            - generic [ref=e155]:
+              - generic [ref=e156]: Товар
+              - combobox "Товар" [ref=e157]:
+                - option "Все" [selected]
+            - generic [ref=e158]:
+              - generic [ref=e159]: Тип
+              - combobox "Тип" [ref=e160]:
+                - option "Все" [selected]
+            - generic [ref=e161]:
+              - generic [ref=e162]: Этап
+              - combobox "Этап" [ref=e163]:
+                - option "Все" [selected]
+            - generic [ref=e164]:
+              - generic [ref=e165]: Категория
+              - combobox "Категория" [ref=e166]:
+                - option "Все" [selected]
+            - generic [ref=e167]:
+              - generic [ref=e168]: Роль
+              - combobox "Роль" [ref=e169]:
+                - option "Все" [selected]
+            - generic [ref=e170]:
+              - generic [ref=e171]: Полнота
+              - combobox "Полнота" [ref=e172]:
+                - option "Все" [selected]
+                - option "Полные"
+                - option "Неполные"
+            - button "Сбросить" [ref=e173] [cursor=pointer]
+          - generic [ref=e175]: В workspace пока нет действий с продуктом.
+          - generic [ref=e177]: "После фильтров: 0 строк · полных: 0 · неполных: 0"
+  - generic [ref=e108]:
+    - link "Версия v1.0.134" [ref=e109] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e110]: · Создан верхнеуровневый раздел Аналитика (Analytics Hub).

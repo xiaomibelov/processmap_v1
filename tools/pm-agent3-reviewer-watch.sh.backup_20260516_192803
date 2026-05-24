@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/opt/processmap-test"
+CID="${1:?Usage: pm-agent3-reviewer-watch.sh <contour-id>}"
+
+DIR="$ROOT/.planning/contours/$CID"
+PROMPT="$ROOT/.agents/agent3-reviewer/prompts/${CID//\//__}-reviewer-start.md"
+LOG="$ROOT/.agents/agent3-reviewer/logs/${CID//\//__}-watch.log"
+
+mkdir -p "$(dirname "$PROMPT")" "$(dirname "$LOG")"
+
+export PATH="$ROOT/bin:/root/.local/bin:/root/.kimi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+
+echo "=== Agent 3 / Reviewer watcher ===" | tee -a "$LOG"
+echo "Started: $(date -Iseconds)" | tee -a "$LOG"
+echo "Contour: $CID" | tee -a "$LOG"
+echo "Waiting for READY_FOR_REVIEW + EXEC_REPORT.md..." | tee -a "$LOG"
+
+while true; do
+  if [ -f "$DIR/READY_FOR_REVIEW" ] \
+     && [ -f "$DIR/EXEC_REPORT.md" ] \
+     && [ ! -f "$DIR/REVIEW_PASS" ] \
+     && [ ! -f "$DIR/CHANGES_REQUESTED" ] \
+     && [ ! -f "$DIR/REVIEW_BLOCKED.md" ]; then
+
+    if [ -f "$DIR/REVIEW_STARTED" ]; then
+      echo "Review already started; waiting..." | tee -a "$LOG"
+      sleep 10
+      continue
+    fi
+
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > "$DIR/REVIEW_STARTED"
+
+    cat > "$PROMPT" <<PROMPT_EOF
+## Reviewer GSD Discipline — Mandatory
+Before any verdict, run:
+- GSD availability check
+- Source/runtime truth capture
+- Exact user scenario reproduction
+- Before/after evidence
+Record all in REVIEW_REPORT.md under "Reviewer GSD Discipline".
+REVIEW_PASS is FORBIDDEN if user-visible scenario still materially fails.
+
+Ты Agent 3 / Reviewer для ProcessMap.
+
+Рабочая директория:
+cd /opt/processmap-test
+
+Contour id:
+$CID
+
+Выполни review по:
+.planning/contours/$CID/REVIEWER_PROMPT.md
+
+Также прочитай:
+.planning/contours/$CID/PLAN.md
+.planning/contours/$CID/EXEC_REPORT.md
+
+Если есть:
+.planning/contours/$CID/RUNTIME_PROOF_CHECKLIST.md
+
+Правила:
+- Не писать product code.
+- Не делать merge/deploy/PR.
+- Проверить фактический результат, а не только отчёт.
+- Для UI/runtime задач обязательно Playwright/browser review.
+- Если PASS:
+  создать REVIEW_REPORT.md и REVIEW_PASS.
+- Если FAIL:
+  создать REVIEW_REPORT.md, CHANGES_REQUESTED и REWORK_REQUEST.md.
+- Если BLOCKED:
+  создать REVIEW_BLOCKED.md.
+- После записи/обновления review artifacts выполнить:
+  ./tools/pm-agent-mirror-report.sh "$CID" reviewer
+- Mirror path:
+  /srv/obsidian/project-atlas/ProcessMap/AgentReports/$CID/
+PROMPT_EOF
+
+    clear || true
+    echo "=== Agent 3 / Reviewer ==="
+    echo "READY_FOR_REVIEW detected"
+    echo "Contour: $CID"
+    echo "Start prompt: $PROMPT"
+    echo
+    echo "Kimi будет запущен интерактивно."
+    echo "Внутри Kimi вставь короткую команду:"
+    echo
+    echo "Прочитай и выполни prompt file:"
+    echo "$PROMPT"
+    echo
+
+    cd "$ROOT"
+    kimi
+
+    if [ -x "$ROOT/tools/pm-agent-mirror-report.sh" ]; then
+      "$ROOT/tools/pm-agent-mirror-report.sh" "$CID" reviewer || true
+    fi
+
+    echo "Kimi exited: $(date -Iseconds)" | tee -a "$LOG"
+    exit 0
+  fi
+
+  sleep 5
+done

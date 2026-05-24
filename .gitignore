@@ -46,3 +46,4 @@ archive/
 backups/
 zip/
 deploy/logs/
+.agents/

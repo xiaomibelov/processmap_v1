@@ -1,0 +1,12 @@
+{
+  "contour": "cleanup/analytics-single-source-of-truth-v1",
+  "run_id": "20260522T205346Z-85330",
+  "status": "READY_FOR_EXECUTION",
+  "execution_mode": "single-lane",
+  "parallel_required": false,
+  "token_economy_single_executor": true,
+  "agent2_scope": "substantive",
+  "agent3_scope": "shell-merge-only",
+  "planned_at": "2026-05-22T20:54:28Z",
+  "planner": "agent1"
+}

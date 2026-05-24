@@ -1,0 +1,18 @@
+{
+  "contour": "feature/product-actions-registry-frontend-thin-client-switch-v1",
+  "run_id": "20260519T144354Z-91101",
+  "status": "READY_FOR_REVIEW",
+  "execution_mode": "parallel",
+  "worker_2": "DONE",
+  "worker_3": "DONE_AFTER_RUNTIME_RESTART",
+  "runtime_contract_recheck": "PASS",
+  "current_endpoint_namespace": "/api/analysis/product-actions/registry/*",
+  "required_backend_fields": [
+    "filter_options",
+    "applied_filters",
+    "metrics",
+    "empty_state",
+    "source_state"
+  ],
+  "ready_for_review": true
+}

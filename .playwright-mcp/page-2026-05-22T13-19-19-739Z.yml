@@ -1,0 +1,175 @@
+- generic [ref=e5]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e9]: ProcessMap
+      - button "← Проекты" [ref=e10] [cursor=pointer]
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - generic [ref=e14]: Org
+          - generic "Default" [ref=e15]
+        - button "Админ-панель" [ref=e16] [cursor=pointer]
+      - button "Профиль" [ref=e18] [cursor=pointer]:
+        - img [ref=e19]
+  - generic [ref=e21]:
+    - generic [ref=e23]:
+      - button "Открыть панель" [disabled] [ref=e24]:
+        - img [ref=e26]
+      - generic [ref=e28]:
+        - button "Узел не выбран" [disabled] [ref=e29]:
+          - img [ref=e31]
+        - button "AI-вопросы" [disabled] [ref=e34]:
+          - img [ref=e36]
+        - button "Акторы" [disabled] [ref=e38]:
+          - img [ref=e40]
+        - button "Шаблоны" [disabled] [ref=e44]:
+          - img [ref=e46]
+    - generic [ref=e50]:
+      - generic [ref=e51]:
+        - button "Сохранить сессию" [disabled] [ref=e54]
+        - tablist "Process tabs" [ref=e56]:
+          - tab "Анализ процессов" [disabled] [ref=e57]
+          - tab "Diagram (BPMN)" [disabled] [ref=e58]
+          - tab "XML" [disabled] [ref=e59]
+          - tab "DOC" [disabled] [ref=e60]
+          - tab "DOD" [disabled] [ref=e61]
+        - button "Открыть меню действий" [ref=e65] [cursor=pointer]: ⋯
+      - main [ref=e67]:
+        - generic [ref=e69]:
+          - generic [ref=e70]:
+            - generic [ref=e71]:
+              - heading "Реестр действий" [level=2] [ref=e72]
+              - paragraph [ref=e73]: Действия с продуктами из сессий и проектов
+            - generic [ref=e74]:
+              - button "Справка" [ref=e76] [cursor=pointer]: "?"
+              - button "Export" [ref=e78] [cursor=pointer]:
+                - generic [ref=e79]: ⬇
+                - text: Export
+              - button "Вернуться" [ref=e80] [cursor=pointer]
+          - tablist "Источник строк реестра" [ref=e81]:
+            - tab "Workspace" [selected] [ref=e82] [cursor=pointer]
+            - tab "Проект" [active] [ref=e83] [cursor=pointer]
+            - tab "Сессия" [ref=e84] [cursor=pointer]
+          - generic [ref=e85]:
+            - generic [ref=e86]:
+              - generic [ref=e87]: "152"
+              - generic [ref=e88]: Всего
+            - generic [ref=e89]:
+              - generic [ref=e90]: "149"
+              - generic [ref=e91]: С продуктом
+            - generic [ref=e92]:
+              - generic [ref=e93]: "3"
+              - generic [ref=e94]: Без продукта
+            - generic [ref=e95]:
+              - generic [ref=e96]: 98%
+              - generic [ref=e97]: Заполненность
+          - generic [ref=e99]:
+            - generic [ref=e100]:
+              - generic [ref=e101]: Группа
+              - combobox [ref=e102]:
+                - option "Все" [selected]
+                - option "Бисквит"
+                - option "бисквитное тесто"
+                - option "ингредиент"
+                - option "ингредиенты"
+                - option "крем"
+                - option "полуфабрикат"
+            - generic [ref=e103]:
+              - generic [ref=e104]: Товар
+              - combobox [ref=e105]:
+                - option "Все" [selected]
+                - option "Бисквит сырой"
+                - option "бисквит"
+                - option "бисквит нарезанный"
+                - option "бисквитная заготовка"
+                - option "бисквитное тесто"
+                - option "болванка"
+                - option "ингредиент"
+                - option "крем"
+                - option "начинка"
+                - option "полуфабрикат"
+                - option "смесь"
+                - option "торт Бенто"
+            - generic [ref=e106]:
+              - generic [ref=e107]: Тип
+              - combobox [ref=e108]:
+                - option "Все" [selected]
+                - option "взбивание"
+                - option "взвесить"
+                - option "взвешивание"
+                - option "взятие"
+                - option "взять"
+                - option "выгрузка"
+                - option "декорирование"
+                - option "добавление"
+                - option "загрузка"
+                - option "извлечение"
+                - option "измерение"
+                - option "нарезка"
+                - option "обработка"
+                - option "обтяжка"
+                - option "ожидание"
+                - option "отсадить"
+                - option "отсадка"
+                - option "передача"
+                - option "перемещение"
+                - option "положить"
+                - option "получение"
+                - option "сборка"
+                - option "термообработка"
+                - option "укладка"
+                - option "упаковка"
+                - option "установка"
+                - option "хранение"
+            - generic [ref=e109]:
+              - generic [ref=e110]: Этап
+              - combobox [ref=e111]:
+                - option "Все" [selected]
+                - option "выпечка"
+                - option "декор"
+                - option "декорирование"
+                - option "контроль"
+                - option "охлаждение"
+                - option "передача"
+                - option "подготовка"
+                - option "после выпечки"
+                - option "приготовление"
+                - option "сборка"
+                - option "смешивание"
+                - option "упаковка"
+                - option "формование"
+            - generic [ref=e112]:
+              - generic [ref=e113]: Категория
+              - combobox [ref=e114]:
+                - option "Все" [selected]
+                - option "готовое блюдо"
+                - option "ингредиент"
+                - option "полуфабрикат"
+                - option "продукт"
+                - option "сырье"
+                - option "тесто"
+            - generic [ref=e115]:
+              - generic [ref=e116]: Роль
+              - combobox [ref=e117]:
+                - option "Все" [selected]
+                - option "Бисквит (приготовление бисквитного теста)"
+                - option "Бисквит (торт Бенто) Декор"
+                - option "Крем"
+                - option "Сборка"
+          - generic [ref=e161]:
+            - generic [ref=e162]: Источники данных
+            - list [ref=e163]:
+              - listitem [ref=e164]:
+                - generic "Активен" [ref=e165]
+                - generic [ref=e166]: wewe
+                - generic [ref=e167]: 152 записей
+                - button "Просмотреть" [ref=e168] [cursor=pointer]
+              - listitem [ref=e169]:
+                - generic "Неактивен" [ref=e170]
+                - generic [ref=e171]: adadad
+                - generic [ref=e172]: 0 записей
+                - button "Настроить" [ref=e173] [cursor=pointer]
+  - generic [ref=e174]:
+    - link "Версия v1.0.141" [ref=e175] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e176]: · Добавлена навигация в Аналитику из Workspace Explorer.

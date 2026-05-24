@@ -51,7 +51,7 @@ test("manual save keeps companion sync failure as secondary warning surface", ()
     true,
   );
   assert.equal(
-    source.includes("saveInfo = revisionInfo.skipped === true"),
+    source.includes("saveInfo = saved?.skipped === true"),
     true,
   );
   assert.equal(

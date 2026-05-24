@@ -1,0 +1,180 @@
+{
+  "version": "1.1.0",
+  "project": "ProcessMap",
+  "generated": "2026-05-16T16:03:32.252Z",
+  "manifest_version": "1.0.0",
+  "total_sources": 8,
+  "total_files": 1783,
+  "total_chunks": 38691,
+  "avg_chunk_tokens": 70,
+  "sources": [
+    {
+      "source_id": "project-atlas",
+      "source_category": "project_atlas",
+      "files_total": 260,
+      "files_included": 260,
+      "files_skipped": 0,
+      "files_sensitive": 0,
+      "chunks": 3336,
+      "avg_chunk_tokens": 56,
+      "top_contour_ids": [],
+      "latest_contours": [],
+      "class_distribution": {
+        "draft": 110,
+        "evidence": 79,
+        "code_map": 2,
+        "prompt_template": 52,
+        "source_truth": 11,
+        "audit": 5,
+        "decision": 1
+      }
+    },
+    {
+      "source_id": "planning-contours",
+      "source_category": "contour",
+      "files_total": 399,
+      "files_included": 399,
+      "files_skipped": 0,
+      "files_sensitive": 0,
+      "chunks": 4299,
+      "avg_chunk_tokens": 337,
+      "top_contour_ids": [
+        "diagram-post-optimization-runtime-profile-v1",
+        "processmap-agent-rag-bm25-manifest-search-v1",
+        "diagram-baseline-no-overlays-canvas-profile-v1",
+        "diagram-property-overlays-performance-gsd-v1",
+        "diagram-modeler-drag-hot-path-and-pointermove-suppression-v1"
+      ],
+      "latest_contours": [
+        "processmap-agent-rag-bm25-manifest-search-v1",
+        "processmap-agent-rag-coverage-and-validation-hardening-v1",
+        "processmap-agent-rag-source-registry-and-index-policy-v1",
+        "processmap-agent-rag-knowledge-layer-bootstrap-plan-v1",
+        "process-stage-baseline-jank-v1"
+      ],
+      "class_distribution": {
+        "prompt_template": 59,
+        "draft": 184,
+        "evidence": 132,
+        "decision": 1,
+        "code_map": 1,
+        "audit": 8,
+        "source_truth": 14
+      }
+    },
+    {
+      "source_id": "docs-curated",
+      "source_category": "docs",
+      "files_total": 124,
+      "files_included": 124,
+      "files_skipped": 0,
+      "files_sensitive": 0,
+      "chunks": 981,
+      "avg_chunk_tokens": 67,
+      "top_contour_ids": [],
+      "latest_contours": [],
+      "class_distribution": {
+        "raw_log": 2,
+        "evidence": 19,
+        "audit": 8,
+        "draft": 65,
+        "source_truth": 15,
+        "code_map": 1,
+        "backlog": 8,
+        "prompt_template": 6
+      }
+    },
+    {
+      "source_id": "handoff-notes",
+      "source_category": "docs",
+      "files_total": 11,
+      "files_included": 11,
+      "files_skipped": 0,
+      "files_sensitive": 0,
+      "chunks": 130,
+      "avg_chunk_tokens": 52,
+      "top_contour_ids": [],
+      "latest_contours": [],
+      "class_distribution": {
+        "prompt_template": 1,
+        "draft": 9,
+        "decision": 1
+      }
+    },
+    {
+      "source_id": "frontend-src",
+      "source_category": "code",
+      "files_total": 713,
+      "files_included": 713,
+      "files_skipped": 0,
+      "files_sensitive": 0,
+      "chunks": 26382,
+      "avg_chunk_tokens": 24,
+      "top_contour_ids": [],
+      "latest_contours": [],
+      "class_distribution": {
+        "code_map": 175,
+        "draft": 466,
+        "evidence": 47,
+        "raw_log": 4,
+        "source_truth": 9,
+        "deprecated": 3,
+        "audit": 9
+      }
+    },
+    {
+      "source_id": "backend-src",
+      "source_category": "code",
+      "files_total": 173,
+      "files_included": 173,
+      "files_skipped": 0,
+      "files_sensitive": 0,
+      "chunks": 2321,
+      "avg_chunk_tokens": 129,
+      "top_contour_ids": [],
+      "latest_contours": [],
+      "class_distribution": {
+        "code_map": 73,
+        "draft": 84,
+        "prompt_template": 3,
+        "evidence": 6,
+        "audit": 2,
+        "deprecated": 4,
+        "raw_log": 1
+      }
+    },
+    {
+      "source_id": "tools-src",
+      "source_category": "code",
+      "files_total": 23,
+      "files_included": 23,
+      "files_skipped": 0,
+      "files_sensitive": 0,
+      "chunks": 483,
+      "avg_chunk_tokens": 31,
+      "top_contour_ids": [],
+      "latest_contours": [],
+      "class_distribution": {
+        "draft": 15,
+        "code_map": 7,
+        "evidence": 1
+      }
+    },
+    {
+      "source_id": "scripts-src",
+      "source_category": "code",
+      "files_total": 80,
+      "files_included": 80,
+      "files_skipped": 0,
+      "files_sensitive": 0,
+      "chunks": 759,
+      "avg_chunk_tokens": 49,
+      "top_contour_ids": [],
+      "latest_contours": [],
+      "class_distribution": {
+        "draft": 70,
+        "code_map": 10
+      }
+    }
+  ]
+}

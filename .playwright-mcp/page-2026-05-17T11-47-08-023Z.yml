@@ -1,0 +1,707 @@
+- generic [ref=e5]:
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e9]: ProcessMap
+      - button "← Проекты" [ref=e217] [cursor=pointer]
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - generic [ref=e14]: Org
+          - generic "Default" [ref=e15]
+        - button "Админ-панель" [ref=e16] [cursor=pointer]
+      - button "Профиль" [ref=e18] [cursor=pointer]:
+        - img [ref=e19]
+  - generic [ref=e21]:
+    - generic [ref=e23]:
+      - button "Открыть панель" [disabled] [ref=e24]:
+        - img [ref=e26]
+      - generic [ref=e28]:
+        - button "Узел не выбран" [disabled] [ref=e29]:
+          - img [ref=e31]
+        - button "AI-вопросы" [disabled] [ref=e34]:
+          - img [ref=e36]
+        - button "Акторы" [disabled] [ref=e38]:
+          - img [ref=e40]
+        - button "Шаблоны" [disabled] [ref=e44]:
+          - img [ref=e46]
+    - generic [ref=e50]:
+      - generic [ref=e51]:
+        - button "Сохранить сессию" [disabled] [ref=e54]
+        - tablist "Process tabs" [ref=e56]:
+          - tab "Анализ процессов" [disabled] [ref=e57]
+          - tab "Diagram (BPMN)" [disabled] [ref=e58]
+          - tab "XML" [disabled] [ref=e59]
+          - tab "DOC" [disabled] [ref=e60]
+          - tab "DOD" [disabled] [ref=e61]
+        - button "Открыть меню действий" [ref=e64] [cursor=pointer]: ⋯
+      - main [ref=e218]:
+        - generic [ref=e219]:
+          - generic [ref=e220]:
+            - generic [ref=e221]:
+              - heading "Реестр действий с продуктом" [level=2] [ref=e222]
+              - paragraph [ref=e223]: Сводная таблица действий с продуктами из сессий. Просмотр и экспорт перед финальной выгрузкой.
+            - generic [ref=e224]:
+              - generic [ref=e225]:
+                - generic [ref=e226]: "Экспорт: 152 строк · полных: 149 · неполных: 3"
+                - button "CSV" [ref=e227] [cursor=pointer]
+                - button "XLSX" [ref=e228] [cursor=pointer]
+              - button "Вернуться" [ref=e229] [cursor=pointer]
+          - tablist "Источник строк реестра" [ref=e230]:
+            - tab "Workspace" [selected] [ref=e231] [cursor=pointer]
+            - tab "Проект" [disabled] [ref=e232]
+            - tab "Сессия" [disabled] [ref=e233]
+          - generic [ref=e234]:
+            - generic [ref=e235]:
+              - generic [ref=e236]: Workspace scope
+              - generic [ref=e237]: Сводка строится без загрузки полных данных всех сессий на frontend.
+            - generic [ref=e238]: "Загружено: сессий 2, строк 152."
+          - generic [ref=e239]:
+            - generic [ref=e240]:
+              - generic [ref=e241]:
+                - generic [ref=e242]: Сессии workspace
+                - text: Все сессии в выбранном scope, включая сессии без действий с продуктом.
+              - generic [ref=e243]: "Всего: 2, без действий: 1"
+            - generic [ref=e244]:
+              - button "Выбрать все видимые" [ref=e245] [cursor=pointer]
+              - button "Только без действий" [ref=e246] [cursor=pointer]
+              - button "Только неполные" [ref=e247] [cursor=pointer]
+              - 'button "AI: предложить действия" [disabled] [ref=e248]'
+              - generic [ref=e249]: "Выбрано для AI: 0 / 10"
+            - table [ref=e250]:
+              - row "AI Процесс Project / path Действия Статус Открыть" [ref=e251]:
+                - generic [ref=e252]: AI
+                - generic [ref=e253]: Процесс
+                - generic [ref=e254]: Project / path
+                - generic [ref=e255]: Действия
+                - generic [ref=e256]: Статус
+                - generic [ref=e257]: Открыть
+              - row "Выбрать wewe для AI wewe 4c515d1c6e Описание процессов Долгопрудный Импортировано / Описание процессов Долгопрудный 152 149 полных · 3 неполных draft 16.05.26, 23:59 Открыть проект Открыть сессию" [ref=e258]:
+                - checkbox "Выбрать wewe для AI" [ref=e260]
+                - generic [ref=e261]:
+                  - generic [ref=e262]: wewe
+                  - generic [ref=e263]: 4c515d1c6e
+                - generic [ref=e264]:
+                  - generic [ref=e265]: Описание процессов Долгопрудный
+                  - generic [ref=e266]: Импортировано / Описание процессов Долгопрудный
+                - generic [ref=e267]:
+                  - generic [ref=e268]: "152"
+                  - generic [ref=e269]: 149 полных · 3 неполных
+                - generic [ref=e270]:
+                  - generic [ref=e271]: draft
+                  - generic [ref=e272]: 16.05.26, 23:59
+                - generic [ref=e273]:
+                  - button "Открыть проект" [ref=e274] [cursor=pointer]
+                  - button "Открыть сессию" [ref=e275] [cursor=pointer]
+              - row "Выбрать adadad для AI adadad 27ee21d53d Проект 14.02.2026, 01:56:54 Импортировано / Проект 14.02.2026, 01:56:54 0 0 полных · 0 неполных draft 15.05.26, 20:38 Открыть проект Открыть сессию" [ref=e276]:
+                - checkbox "Выбрать adadad для AI" [ref=e278]
+                - generic [ref=e279]:
+                  - generic [ref=e280]: adadad
+                  - generic [ref=e281]: 27ee21d53d
+                - generic [ref=e282]:
+                  - generic [ref=e283]: Проект 14.02.2026, 01:56:54
+                  - generic [ref=e284]: Импортировано / Проект 14.02.2026, 01:56:54
+                - generic [ref=e285]:
+                  - generic [ref=e286]: "0"
+                  - generic [ref=e287]: 0 полных · 0 неполных
+                - generic [ref=e288]:
+                  - generic [ref=e289]: draft
+                  - generic [ref=e290]: 15.05.26, 20:38
+                - generic [ref=e291]:
+                  - button "Открыть проект" [ref=e292] [cursor=pointer]
+                  - button "Открыть сессию" [ref=e293] [cursor=pointer]
+          - region "Сводка реестра" [ref=e294]:
+            - article [ref=e295]:
+              - generic [ref=e296]: Сессий
+              - generic [ref=e297]: "2"
+            - article [ref=e298]:
+              - generic [ref=e299]: Строк
+              - generic [ref=e300]: "152"
+            - article [ref=e301]:
+              - generic [ref=e302]: Полных
+              - generic [ref=e303]: "149"
+            - article [ref=e304]:
+              - generic [ref=e305]: Неполных
+              - generic [ref=e306]: "3"
+            - article [ref=e307]:
+              - generic [ref=e308]: После фильтров
+              - generic [ref=e309]: "152"
+              - generic [ref=e310]: "полных: 149 · неполных: 3"
+          - generic [ref=e312]:
+            - generic [ref=e313]:
+              - generic [ref=e314]: Группа
+              - combobox "Группа" [ref=e315]:
+                - option "Все" [selected]
+                - option "Бисквит"
+                - option "бисквитное тесто"
+                - option "ингредиент"
+                - option "ингредиенты"
+                - option "крем"
+                - option "полуфабрикат"
+                - option "тара"
+                - option "упаковка"
+            - generic [ref=e316]:
+              - generic [ref=e317]: Товар
+              - combobox "Товар" [ref=e318]:
+                - option "Все" [selected]
+                - option "бисквит"
+                - option "бисквит нарезанный"
+                - option "Бисквит сырой"
+                - option "бисквитная заготовка"
+                - option "бисквитное тесто"
+                - option "болванка"
+                - option "емкость"
+                - option "ингредиент"
+                - option "крем"
+                - option "лист"
+                - option "лист с кольцами"
+                - option "начинка"
+                - option "начинка п/ф"
+                - option "пергамент"
+                - option "полуфабрикат"
+                - option "смесь"
+                - option "собранные бисквиты"
+                - option "торт Бенто"
+                - option "шпилька с болванкой"
+                - option "ящик"
+            - generic [ref=e319]:
+              - generic [ref=e320]: Тип
+              - combobox "Тип" [ref=e321]:
+                - option "Все" [selected]
+                - option "варка"
+                - option "взбивание"
+                - option "взвесить"
+                - option "взвешивание"
+                - option "взятие"
+                - option "взять"
+                - option "выгрузка"
+                - option "декорирование"
+                - option "добавление"
+                - option "загрузка"
+                - option "извлечение"
+                - option "измельчение"
+                - option "измерение"
+                - option "нарезка"
+                - option "обработка"
+                - option "обтяжка"
+                - option "ожидание"
+                - option "отсадить"
+                - option "отсадка"
+                - option "охлаждение"
+                - option "передача"
+                - option "переместить"
+                - option "перемещение"
+                - option "подготовка"
+                - option "положить"
+                - option "получение"
+                - option "размещение"
+                - option "сборка"
+                - option "термообработка"
+                - option "укладка"
+                - option "упаковка"
+                - option "установка"
+                - option "хранение"
+            - generic [ref=e322]:
+              - generic [ref=e323]: Этап
+              - combobox "Этап" [ref=e324]:
+                - option "Все" [selected]
+                - option "выпечка"
+                - option "декор"
+                - option "декорирование"
+                - option "контроль"
+                - option "охлаждение"
+                - option "передача"
+                - option "подготовка"
+                - option "после выпечки"
+                - option "приготовление"
+                - option "сборка"
+                - option "складирование"
+                - option "смешивание"
+                - option "транспортировка"
+                - option "упаковка"
+                - option "формование"
+                - option "хранение"
+            - generic [ref=e325]:
+              - generic [ref=e326]: Категория
+              - combobox "Категория" [ref=e327]:
+                - option "Все" [selected]
+                - option "готовое блюдо"
+                - option "ингредиент"
+                - option "полуфабрикат"
+                - option "продукт"
+                - option "сырье"
+                - option "тара"
+                - option "тесто"
+                - option "упаковка"
+            - generic [ref=e328]:
+              - generic [ref=e329]: Роль
+              - combobox "Роль" [ref=e330]:
+                - option "Все" [selected]
+                - option "Бисквит (приготовление бисквитного теста)"
+                - option "Бисквит (торт Бенто) Декор"
+                - option "Крем"
+                - option "Начинка"
+                - option "Сборка"
+            - generic [ref=e331]:
+              - generic [ref=e332]: Полнота
+              - combobox "Полнота" [ref=e333]:
+                - option "Все" [selected]
+                - option "Полные"
+                - option "Неполные"
+            - button "Сбросить фильтры" [ref=e334] [cursor=pointer]
+          - generic [ref=e335]:
+            - generic [ref=e336]: ⚠
+            - generic [ref=e337]: Есть неполные строки — заполните их в исходной сессии перед финальной выгрузкой.
+          - table [ref=e339]:
+            - row "Продукт Действие Процесс / шаг Статус" [ref=e340]:
+              - generic [ref=e341]: Продукт
+              - generic [ref=e342]: Действие
+              - generic [ref=e343]: Процесс / шаг
+              - generic [ref=e344]: Статус
+            - 'row "ингредиент Группа не указана взвесить подготовка ингредиент ингредиент весы wewe Взвесить ингредиент · BPMN: Activity_1dyfva4 Неполная Бисквит (торт Бенто) Декор" [ref=e345]':
+              - generic [ref=e346]:
+                - generic [ref=e347]: ингредиент
+                - generic [ref=e348]: Группа не указана
+              - generic [ref=e349]:
+                - generic [ref=e350]: взвесить
+                - generic [ref=e351]:
+                  - generic [ref=e352]: подготовка
+                  - generic [ref=e353]: ингредиент
+                  - generic [ref=e354]: ингредиент
+                  - generic [ref=e355]: весы
+              - generic [ref=e356]:
+                - generic [ref=e357]: wewe
+                - generic [ref=e358]: "Взвесить ингредиент · BPMN: Activity_1dyfva4"
+              - generic [ref=e359]:
+                - generic [ref=e360]: Неполная
+                - generic [ref=e361]: Бисквит (торт Бенто) Декор
+            - 'row "ингредиент Группа не указана взять подготовка ингредиент ингредиент руками wewe Взять ингредиент · BPMN: Activity_0x03rja Неполная Бисквит (торт Бенто) Декор" [ref=e362]':
+              - generic [ref=e363]:
+                - generic [ref=e364]: ингредиент
+                - generic [ref=e365]: Группа не указана
+              - generic [ref=e366]:
+                - generic [ref=e367]: взять
+                - generic [ref=e368]:
+                  - generic [ref=e369]: подготовка
+                  - generic [ref=e370]: ингредиент
+                  - generic [ref=e371]: ингредиент
+                  - generic [ref=e372]: руками
+              - generic [ref=e373]:
+                - generic [ref=e374]: wewe
+                - generic [ref=e375]: "Взять ингредиент · BPMN: Activity_0x03rja"
+              - generic [ref=e376]:
+                - generic [ref=e377]: Неполная
+                - generic [ref=e378]: Бисквит (торт Бенто) Декор
+            - 'row "ингредиент Группа не указана положить подготовка ингредиент ингредиент руками wewe Положить ингредиент · BPMN: Activity_00fgw9t Неполная Бисквит (торт Бенто) Декор" [ref=e379]':
+              - generic [ref=e380]:
+                - generic [ref=e381]: ингредиент
+                - generic [ref=e382]: Группа не указана
+              - generic [ref=e383]:
+                - generic [ref=e384]: положить
+                - generic [ref=e385]:
+                  - generic [ref=e386]: подготовка
+                  - generic [ref=e387]: ингредиент
+                  - generic [ref=e388]: ингредиент
+                  - generic [ref=e389]: руками
+              - generic [ref=e390]:
+                - generic [ref=e391]: wewe
+                - generic [ref=e392]: "Положить ингредиент · BPMN: Activity_00fgw9t"
+              - generic [ref=e393]:
+                - generic [ref=e394]: Неполная
+                - generic [ref=e395]: Бисквит (торт Бенто) Декор
+            - 'row "торт Бенто Бисквит передача упаковка продукт готовое блюдо вторичная упаковка wewe Передать на вторичную упаковку · BPMN: Activity_13fbosr Полная Бисквит (торт Бенто) Декор" [ref=e396]':
+              - generic [ref=e397]:
+                - generic [ref=e398]: торт Бенто
+                - generic [ref=e399]: Бисквит
+              - generic [ref=e400]:
+                - generic [ref=e401]: передача
+                - generic [ref=e402]:
+                  - generic [ref=e403]: упаковка
+                  - generic [ref=e404]: продукт
+                  - generic [ref=e405]: готовое блюдо
+                  - generic [ref=e406]: вторичная упаковка
+              - generic [ref=e407]:
+                - generic [ref=e408]: wewe
+                - generic [ref=e409]: "Передать на вторичную упаковку · BPMN: Activity_13fbosr"
+              - generic [ref=e410]:
+                - generic [ref=e411]: Полная
+                - generic [ref=e412]: Бисквит (торт Бенто) Декор
+            - 'row "торт Бенто Бисквит упаковка упаковка продукт готовое блюдо первичная упаковка wewe Упаковать продукт в первичную упаковку · BPMN: Activity_0foalpa Полная Бисквит (торт Бенто) Декор" [ref=e413]':
+              - generic [ref=e414]:
+                - generic [ref=e415]: торт Бенто
+                - generic [ref=e416]: Бисквит
+              - generic [ref=e417]:
+                - generic [ref=e418]: упаковка
+                - generic [ref=e419]:
+                  - generic [ref=e420]: упаковка
+                  - generic [ref=e421]: продукт
+                  - generic [ref=e422]: готовое блюдо
+                  - generic [ref=e423]: первичная упаковка
+              - generic [ref=e424]:
+                - generic [ref=e425]: wewe
+                - generic [ref=e426]: "Упаковать продукт в первичную упаковку · BPMN: Activity_0foalpa"
+              - generic [ref=e427]:
+                - generic [ref=e428]: Полная
+                - generic [ref=e429]: Бисквит (торт Бенто) Декор
+            - 'row "полуфабрикат бисквитное тесто отсадка формование полуфабрикат тесто отсадить в кольца wewe Отсадить полуфабрикат в кольца · BPMN: Activity_1ba8lob Полная Бисквит (приготовление бисквитного теста)" [ref=e430]':
+              - generic [ref=e431]:
+                - generic [ref=e432]: полуфабрикат
+                - generic [ref=e433]: бисквитное тесто
+              - generic [ref=e434]:
+                - generic [ref=e435]: отсадка
+                - generic [ref=e436]:
+                  - generic [ref=e437]: формование
+                  - generic [ref=e438]: полуфабрикат
+                  - generic [ref=e439]: тесто
+                  - generic [ref=e440]: отсадить в кольца
+              - generic [ref=e441]:
+                - generic [ref=e442]: wewe
+                - generic [ref=e443]: "Отсадить полуфабрикат в кольца · BPMN: Activity_1ba8lob"
+              - generic [ref=e444]:
+                - generic [ref=e445]: Полная
+                - generic [ref=e446]: Бисквит (приготовление бисквитного теста)
+            - 'row "ингредиент ингредиент взвешивание подготовка ингредиент ингредиент взвесить wewe Взвесить ингредиент · BPMN: Activity_1cvbpjy Полная Бисквит (торт Бенто) Декор" [ref=e447]':
+              - generic [ref=e448]:
+                - generic [ref=e449]: ингредиент
+                - generic [ref=e450]: ингредиент
+              - generic [ref=e451]:
+                - generic [ref=e452]: взвешивание
+                - generic [ref=e453]:
+                  - generic [ref=e454]: подготовка
+                  - generic [ref=e455]: ингредиент
+                  - generic [ref=e456]: ингредиент
+                  - generic [ref=e457]: взвесить
+              - generic [ref=e458]:
+                - generic [ref=e459]: wewe
+                - generic [ref=e460]: "Взвесить ингредиент · BPMN: Activity_1cvbpjy"
+              - generic [ref=e461]:
+                - generic [ref=e462]: Полная
+                - generic [ref=e463]: Бисквит (торт Бенто) Декор
+            - 'row "ингредиент ингредиент взятие подготовка ингредиент ингредиент взять wewe Взять ингредиент · BPMN: Activity_1c2rl6f Полная Бисквит (торт Бенто) Декор" [ref=e464]':
+              - generic [ref=e465]:
+                - generic [ref=e466]: ингредиент
+                - generic [ref=e467]: ингредиент
+              - generic [ref=e468]:
+                - generic [ref=e469]: взятие
+                - generic [ref=e470]:
+                  - generic [ref=e471]: подготовка
+                  - generic [ref=e472]: ингредиент
+                  - generic [ref=e473]: ингредиент
+                  - generic [ref=e474]: взять
+              - generic [ref=e475]:
+                - generic [ref=e476]: wewe
+                - generic [ref=e477]: "Взять ингредиент · BPMN: Activity_1c2rl6f"
+              - generic [ref=e478]:
+                - generic [ref=e479]: Полная
+                - generic [ref=e480]: Бисквит (торт Бенто) Декор
+            - 'row "ингредиент ингредиент добавление смешивание ингредиент ингредиент добавить wewe Добавить ингредиент · BPMN: Activity_0dy2zps Полная Крем" [ref=e481]':
+              - generic [ref=e482]:
+                - generic [ref=e483]: ингредиент
+                - generic [ref=e484]: ингредиент
+              - generic [ref=e485]:
+                - generic [ref=e486]: добавление
+                - generic [ref=e487]:
+                  - generic [ref=e488]: смешивание
+                  - generic [ref=e489]: ингредиент
+                  - generic [ref=e490]: ингредиент
+                  - generic [ref=e491]: добавить
+              - generic [ref=e492]:
+                - generic [ref=e493]: wewe
+                - generic [ref=e494]: "Добавить ингредиент · BPMN: Activity_0dy2zps"
+              - generic [ref=e495]:
+                - generic [ref=e496]: Полная
+                - generic [ref=e497]: Крем
+            - 'row "ингредиент ингредиент укладка декорирование ингредиент ингредиент положить на лист wewe Положить ингредиент на лист · BPMN: Activity_0ihc0py Полная Бисквит (торт Бенто) Декор" [ref=e498]':
+              - generic [ref=e499]:
+                - generic [ref=e500]: ингредиент
+                - generic [ref=e501]: ингредиент
+              - generic [ref=e502]:
+                - generic [ref=e503]: укладка
+                - generic [ref=e504]:
+                  - generic [ref=e505]: декорирование
+                  - generic [ref=e506]: ингредиент
+                  - generic [ref=e507]: ингредиент
+                  - generic [ref=e508]: положить на лист
+              - generic [ref=e509]:
+                - generic [ref=e510]: wewe
+                - generic [ref=e511]: "Положить ингредиент на лист · BPMN: Activity_0ihc0py"
+              - generic [ref=e512]:
+                - generic [ref=e513]: Полная
+                - generic [ref=e514]: Бисквит (торт Бенто) Декор
+            - 'row "ингредиент ингредиент перемещение подготовка ингредиент ингредиент руками wewe Поместить ингредиент в емкость · BPMN: Activity_0fo9c9n Полная Крем" [ref=e515]':
+              - generic [ref=e516]:
+                - generic [ref=e517]: ингредиент
+                - generic [ref=e518]: ингредиент
+              - generic [ref=e519]:
+                - generic [ref=e520]: перемещение
+                - generic [ref=e521]:
+                  - generic [ref=e522]: подготовка
+                  - generic [ref=e523]: ингредиент
+                  - generic [ref=e524]: ингредиент
+                  - generic [ref=e525]: руками
+              - generic [ref=e526]:
+                - generic [ref=e527]: wewe
+                - generic [ref=e528]: "Поместить ингредиент в емкость · BPMN: Activity_0fo9c9n"
+              - generic [ref=e529]:
+                - generic [ref=e530]: Полная
+                - generic [ref=e531]: Крем
+            - 'row "ингредиент ингредиент перемещение подготовка ингредиент ингредиент руками wewe Поместить ингредиент в емкость · BPMN: Activity_0fo9c9n Полная Крем" [ref=e532]':
+              - generic [ref=e533]:
+                - generic [ref=e534]: ингредиент
+                - generic [ref=e535]: ингредиент
+              - generic [ref=e536]:
+                - generic [ref=e537]: перемещение
+                - generic [ref=e538]:
+                  - generic [ref=e539]: подготовка
+                  - generic [ref=e540]: ингредиент
+                  - generic [ref=e541]: ингредиент
+                  - generic [ref=e542]: руками
+              - generic [ref=e543]:
+                - generic [ref=e544]: wewe
+                - generic [ref=e545]: "Поместить ингредиент в емкость · BPMN: Activity_0fo9c9n"
+              - generic [ref=e546]:
+                - generic [ref=e547]: Полная
+                - generic [ref=e548]: Крем
+            - 'row "ингредиент ингредиент перемещение подготовка ингредиент ингредиент руками wewe Поместить ингредиент в емкость · BPMN: Activity_0fo9c9n Полная Крем" [ref=e549]':
+              - generic [ref=e550]:
+                - generic [ref=e551]: ингредиент
+                - generic [ref=e552]: ингредиент
+              - generic [ref=e553]:
+                - generic [ref=e554]: перемещение
+                - generic [ref=e555]:
+                  - generic [ref=e556]: подготовка
+                  - generic [ref=e557]: ингредиент
+                  - generic [ref=e558]: ингредиент
+                  - generic [ref=e559]: руками
+              - generic [ref=e560]:
+                - generic [ref=e561]: wewe
+                - generic [ref=e562]: "Поместить ингредиент в емкость · BPMN: Activity_0fo9c9n"
+              - generic [ref=e563]:
+                - generic [ref=e564]: Полная
+                - generic [ref=e565]: Крем
+            - 'row "крем ингредиент выгрузка приготовление крем ингредиент выгрузить wewe Выгрузить в бункер крем · BPMN: Activity_16ju22m Полная Крем" [ref=e566]':
+              - generic [ref=e567]:
+                - generic [ref=e568]: крем
+                - generic [ref=e569]: ингредиент
+              - generic [ref=e570]:
+                - generic [ref=e571]: выгрузка
+                - generic [ref=e572]:
+                  - generic [ref=e573]: приготовление
+                  - generic [ref=e574]: крем
+                  - generic [ref=e575]: ингредиент
+                  - generic [ref=e576]: выгрузить
+              - generic [ref=e577]:
+                - generic [ref=e578]: wewe
+                - generic [ref=e579]: "Выгрузить в бункер крем · BPMN: Activity_16ju22m"
+              - generic [ref=e580]:
+                - generic [ref=e581]: Полная
+                - generic [ref=e582]: Крем
+            - 'row "крем ингредиент выгрузка приготовление крем ингредиент выгрузить wewe Выгрузить в бункер крем · BPMN: Activity_16ju22m Полная Крем" [ref=e583]':
+              - generic [ref=e584]:
+                - generic [ref=e585]: крем
+                - generic [ref=e586]: ингредиент
+              - generic [ref=e587]:
+                - generic [ref=e588]: выгрузка
+                - generic [ref=e589]:
+                  - generic [ref=e590]: приготовление
+                  - generic [ref=e591]: крем
+                  - generic [ref=e592]: ингредиент
+                  - generic [ref=e593]: выгрузить
+              - generic [ref=e594]:
+                - generic [ref=e595]: wewe
+                - generic [ref=e596]: "Выгрузить в бункер крем · BPMN: Activity_16ju22m"
+              - generic [ref=e597]:
+                - generic [ref=e598]: Полная
+                - generic [ref=e599]: Крем
+            - 'row "крем ингредиент выгрузка приготовление крем ингредиент выгрузить wewe Выгрузить в бункер крем · BPMN: Activity_16ju22m Полная Крем" [ref=e600]':
+              - generic [ref=e601]:
+                - generic [ref=e602]: крем
+                - generic [ref=e603]: ингредиент
+              - generic [ref=e604]:
+                - generic [ref=e605]: выгрузка
+                - generic [ref=e606]:
+                  - generic [ref=e607]: приготовление
+                  - generic [ref=e608]: крем
+                  - generic [ref=e609]: ингредиент
+                  - generic [ref=e610]: выгрузить
+              - generic [ref=e611]:
+                - generic [ref=e612]: wewe
+                - generic [ref=e613]: "Выгрузить в бункер крем · BPMN: Activity_16ju22m"
+              - generic [ref=e614]:
+                - generic [ref=e615]: Полная
+                - generic [ref=e616]: Крем
+            - 'row "крем ингредиент загрузка сборка крем ингредиент загрузить в бункер дозатора wewe Загрузить ингредиент крем в бункер дозатора · BPMN: Activity_0kd0krc Полная Сборка" [ref=e617]':
+              - generic [ref=e618]:
+                - generic [ref=e619]: крем
+                - generic [ref=e620]: ингредиент
+              - generic [ref=e621]:
+                - generic [ref=e622]: загрузка
+                - generic [ref=e623]:
+                  - generic [ref=e624]: сборка
+                  - generic [ref=e625]: крем
+                  - generic [ref=e626]: ингредиент
+                  - generic [ref=e627]: загрузить в бункер дозатора
+              - generic [ref=e628]:
+                - generic [ref=e629]: wewe
+                - generic [ref=e630]: "Загрузить ингредиент крем в бункер дозатора · BPMN: Activity_0kd0krc"
+              - generic [ref=e631]:
+                - generic [ref=e632]: Полная
+                - generic [ref=e633]: Сборка
+            - 'row "крем ингредиент отсадить сборка крем ингредиент отсадить wewe Отсадить крем · BPMN: Activity_0p2kb72 Полная Сборка" [ref=e634]':
+              - generic [ref=e635]:
+                - generic [ref=e636]: крем
+                - generic [ref=e637]: ингредиент
+              - generic [ref=e638]:
+                - generic [ref=e639]: отсадить
+                - generic [ref=e640]:
+                  - generic [ref=e641]: сборка
+                  - generic [ref=e642]: крем
+                  - generic [ref=e643]: ингредиент
+                  - generic [ref=e644]: отсадить
+              - generic [ref=e645]:
+                - generic [ref=e646]: wewe
+                - generic [ref=e647]: "Отсадить крем · BPMN: Activity_0p2kb72"
+              - generic [ref=e648]:
+                - generic [ref=e649]: Полная
+                - generic [ref=e650]: Сборка
+            - 'row "крем ингредиент передача передача крем ингредиент руками wewe Передать крем для торта Бенто · BPMN: Event_1qytbsb Полная Крем" [ref=e651]':
+              - generic [ref=e652]:
+                - generic [ref=e653]: крем
+                - generic [ref=e654]: ингредиент
+              - generic [ref=e655]:
+                - generic [ref=e656]: передача
+                - generic [ref=e657]:
+                  - generic [ref=e658]: передача
+                  - generic [ref=e659]: крем
+                  - generic [ref=e660]: ингредиент
+                  - generic [ref=e661]: руками
+              - generic [ref=e662]:
+                - generic [ref=e663]: wewe
+                - generic [ref=e664]: "Передать крем для торта Бенто · BPMN: Event_1qytbsb"
+              - generic [ref=e665]:
+                - generic [ref=e666]: Полная
+                - generic [ref=e667]: Крем
+            - 'row "крем ингредиент передача передача крем ингредиент руками wewe Передать крем для торта Бенто · BPMN: Event_1qytbsb Полная Крем" [ref=e668]':
+              - generic [ref=e669]:
+                - generic [ref=e670]: крем
+                - generic [ref=e671]: ингредиент
+              - generic [ref=e672]:
+                - generic [ref=e673]: передача
+                - generic [ref=e674]:
+                  - generic [ref=e675]: передача
+                  - generic [ref=e676]: крем
+                  - generic [ref=e677]: ингредиент
+                  - generic [ref=e678]: руками
+              - generic [ref=e679]:
+                - generic [ref=e680]: wewe
+                - generic [ref=e681]: "Передать крем для торта Бенто · BPMN: Event_1qytbsb"
+              - generic [ref=e682]:
+                - generic [ref=e683]: Полная
+                - generic [ref=e684]: Крем
+            - 'row "крем ингредиент передача передача крем ингредиент руками wewe Передать крем для торта Бенто · BPMN: Event_1qytbsb Полная Крем" [ref=e685]':
+              - generic [ref=e686]:
+                - generic [ref=e687]: крем
+                - generic [ref=e688]: ингредиент
+              - generic [ref=e689]:
+                - generic [ref=e690]: передача
+                - generic [ref=e691]:
+                  - generic [ref=e692]: передача
+                  - generic [ref=e693]: крем
+                  - generic [ref=e694]: ингредиент
+                  - generic [ref=e695]: руками
+              - generic [ref=e696]:
+                - generic [ref=e697]: wewe
+                - generic [ref=e698]: "Передать крем для торта Бенто · BPMN: Event_1qytbsb"
+              - generic [ref=e699]:
+                - generic [ref=e700]: Полная
+                - generic [ref=e701]: Крем
+            - 'row "начинка ингредиент отсадить сборка начинка ингредиент отсадить wewe Отсадить начинку · BPMN: Activity_03n8vvt Полная Сборка" [ref=e702]':
+              - generic [ref=e703]:
+                - generic [ref=e704]: начинка
+                - generic [ref=e705]: ингредиент
+              - generic [ref=e706]:
+                - generic [ref=e707]: отсадить
+                - generic [ref=e708]:
+                  - generic [ref=e709]: сборка
+                  - generic [ref=e710]: начинка
+                  - generic [ref=e711]: ингредиент
+                  - generic [ref=e712]: отсадить
+              - generic [ref=e713]:
+                - generic [ref=e714]: wewe
+                - generic [ref=e715]: "Отсадить начинку · BPMN: Activity_03n8vvt"
+              - generic [ref=e716]:
+                - generic [ref=e717]: Полная
+                - generic [ref=e718]: Сборка
+            - 'row "ингредиент ингредиенты взбивание приготовление ингредиент ингредиент взбивание wewe Взбить · BPMN: Activity_0enmvp5 Полная Бисквит (приготовление бисквитного теста)" [ref=e719]':
+              - generic [ref=e720]:
+                - generic [ref=e721]: ингредиент
+                - generic [ref=e722]: ингредиенты
+              - generic [ref=e723]:
+                - generic [ref=e724]: взбивание
+                - generic [ref=e725]:
+                  - generic [ref=e726]: приготовление
+                  - generic [ref=e727]: ингредиент
+                  - generic [ref=e728]: ингредиент
+                  - generic [ref=e729]: взбивание
+              - generic [ref=e730]:
+                - generic [ref=e731]: wewe
+                - generic [ref=e732]: "Взбить · BPMN: Activity_0enmvp5"
+              - generic [ref=e733]:
+                - generic [ref=e734]: Полная
+                - generic [ref=e735]: Бисквит (приготовление бисквитного теста)
+            - 'row "ингредиент ингредиенты взбивание приготовление ингредиент ингредиент взбивание wewe Взбить · BPMN: Activity_10n0e5w Полная Бисквит (приготовление бисквитного теста)" [ref=e736]':
+              - generic [ref=e737]:
+                - generic [ref=e738]: ингредиент
+                - generic [ref=e739]: ингредиенты
+              - generic [ref=e740]:
+                - generic [ref=e741]: взбивание
+                - generic [ref=e742]:
+                  - generic [ref=e743]: приготовление
+                  - generic [ref=e744]: ингредиент
+                  - generic [ref=e745]: ингредиент
+                  - generic [ref=e746]: взбивание
+              - generic [ref=e747]:
+                - generic [ref=e748]: wewe
+                - generic [ref=e749]: "Взбить · BPMN: Activity_10n0e5w"
+              - generic [ref=e750]:
+                - generic [ref=e751]: Полная
+                - generic [ref=e752]: Бисквит (приготовление бисквитного теста)
+            - 'row "ингредиент ингредиенты взбивание приготовление ингредиент ингредиент взбивание wewe Взбить · BPMN: Activity_0enmvp5 Полная Бисквит (приготовление бисквитного теста)" [ref=e753]':
+              - generic [ref=e754]:
+                - generic [ref=e755]: ингредиент
+                - generic [ref=e756]: ингредиенты
+              - generic [ref=e757]:
+                - generic [ref=e758]: взбивание
+                - generic [ref=e759]:
+                  - generic [ref=e760]: приготовление
+                  - generic [ref=e761]: ингредиент
+                  - generic [ref=e762]: ингредиент
+                  - generic [ref=e763]: взбивание
+              - generic [ref=e764]:
+                - generic [ref=e765]: wewe
+                - generic [ref=e766]: "Взбить · BPMN: Activity_0enmvp5"
+              - generic [ref=e767]:
+                - generic [ref=e768]: Полная
+                - generic [ref=e769]: Бисквит (приготовление бисквитного теста)
+          - generic [ref=e770]:
+            - generic [ref=e771]: Показано 1-25 из 152
+            - generic [ref=e772]:
+              - generic [ref=e773]:
+                - generic [ref=e774]: Размер
+                - combobox "Размер" [ref=e775]:
+                  - option "25" [selected]
+                  - option "50"
+              - button "Назад" [disabled] [ref=e776]
+              - generic [ref=e777]:
+                - button "1" [ref=e778] [cursor=pointer]
+                - button "2" [ref=e779] [cursor=pointer]
+                - button "3" [ref=e780] [cursor=pointer]
+                - button "4" [ref=e781] [cursor=pointer]
+                - button "5" [ref=e782] [cursor=pointer]
+                - button "6" [ref=e783] [cursor=pointer]
+                - button "7" [ref=e784] [cursor=pointer]
+              - button "Вперёд" [ref=e785] [cursor=pointer]
+          - generic [ref=e787]: "После фильтров: 152 строк · полных: 149 · неполных: 3"
+  - generic [ref=e171]:
+    - link "Версия v1.0.135" [ref=e172] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e173]: "· Редизайн внутренней страницы Реестра действий с продуктом: декомпозиция на изолированные компоненты, карточки метрик, пагинация 25/50, улучшенная сетка фильтров."

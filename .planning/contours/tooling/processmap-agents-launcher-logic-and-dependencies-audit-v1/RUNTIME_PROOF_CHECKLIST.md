@@ -1,0 +1,21 @@
+# Runtime Proof Checklist
+
+- [ ] Agent 1 GSD discipline recorded
+- [ ] Agent 1 RAG preflight completed
+- [ ] local launcher files inspected or partial scope declared
+- [ ] server scripts inspected
+- [ ] dependency map planned
+- [ ] CID propagation planned
+- [ ] split mode [1] supported
+- [ ] fallback mode [2] supported
+- [ ] stale default contour risk assessed
+- [ ] tmux kill/stale reset safety assessed
+- [ ] RAG workflow compatibility planned
+- [ ] bounded fix policy defined
+- [ ] backups required before edits
+- [ ] bash -n validation planned
+- [ ] no product runtime changes
+- [ ] no frontend/backend changes
+- [ ] no secrets
+- [ ] no deploy/PR/merge
+- [ ] Agent 3 review required

@@ -1,0 +1,11 @@
+{
+  "contour_id": "tooling/gsd-availability-root-cause-diagnostic-v1",
+  "status": "DIAGNOSTIC_COMPLETE",
+  "scope": "read-only GSD availability root cause diagnostic",
+  "product_code_changes_allowed": false,
+  "package_install_allowed": false,
+  "mcp_repair_allowed": false,
+  "secrets_read_allowed": false,
+  "commit_push_pr_allowed": false,
+  "deploy_allowed": false
+}

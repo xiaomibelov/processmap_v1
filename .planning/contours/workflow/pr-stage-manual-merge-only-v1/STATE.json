@@ -1,0 +1,17 @@
+{
+  "contour": "workflow/pr-stage-manual-merge-only-v1",
+  "run_id": "20260522T084703Z-81419",
+  "status": "READY_FOR_EXECUTION",
+  "execution_mode": "single-lane",
+  "planner": "agent1",
+  "executor_part_1": "agent2",
+  "executor_part_2": "agent3-shell-merge-only",
+  "reviewer": "agent4",
+  "scope": "github-actions-workflow",
+  "product_code_changes": false,
+  "files_expected_to_change": [
+    ".github/workflows/deploy-stage.yml",
+    "AGENTS.md"
+  ],
+  "created_at": "2026-05-22T08:47:41Z"
+}

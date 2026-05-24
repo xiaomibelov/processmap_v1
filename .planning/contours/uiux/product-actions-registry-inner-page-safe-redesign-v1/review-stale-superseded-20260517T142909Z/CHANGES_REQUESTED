@@ -1,0 +1,20 @@
+CHANGES_REQUESTED
+
+Контур: uiux/product-actions-registry-inner-page-safe-redesign-v1
+Run ID: 20260517T134855Z
+Дата: 2026-05-17
+
+Причина: последний runtime-скриншот и пользовательский фидбек показывают, что страница «Реестр действий с продуктом» всё ещё визуально хаотична.
+
+Требуется rework:
+- компактные метрики под scope selector;
+- «После фильтров» без oversized/dominant treatment;
+- «Вернуться» яснее как navigation action;
+- CSV/XLSX как компактные utility actions;
+- Workspace / Проект / Сессия ближе к Explorer-like semantic markers;
+- явное разделение основной таблицы и «Источники данных»;
+- таблица остаётся primary content;
+- sources block видимый, но secondary.
+
+Исполнение: Worker 2 + Worker 3 параллельно, Agent 4 ждёт WORKER_2_DONE и WORKER_3_DONE.
+

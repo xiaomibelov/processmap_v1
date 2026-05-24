@@ -1,0 +1,21 @@
+READY_FOR_EXECUTION
+
+Contour: perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1
+Agent: Agent 1 / Planner
+Run ID: 20260516T080003Z-79254
+Date: 2026-05-16T08:00:13+00:00
+Status: All 12 gates satisfied
+
+Gates:
+1. Agent 1 GSD discipline completed — GSD_PROCESSMAP_WRAPPER_PLANNING
+2. Source/runtime truth captured — fix/lockfile-sync-test @ a9a9d9c
+3. Previous drag-lag partial improvement documented — v1.0.127, ~30% quick-drag improvement, stepped drag still heavy
+4. Current v1.0.127 / version ledger truth captured — build-info.json verified, footer visible
+5. Real drag baseline plan defined — scenarios A-E
+6. Pointermove hot path source map targets defined — 7 candidate areas
+7. Drag-time side effects hypotheses defined — H1-H8
+8. Decomposition-first plan defined — extract/coalesce modules, no god-file bloat
+9. Material improvement criteria defined — quick drag target ≤8 long tasks, ≤1,000ms total
+10. Agent 2 executor prompt ready — EXECUTOR_PROMPT.md
+11. Agent 3 reviewer prompt with GSD ready — REVIEWER_PROMPT.md
+12. READY_FOR_EXECUTION marker created — this file

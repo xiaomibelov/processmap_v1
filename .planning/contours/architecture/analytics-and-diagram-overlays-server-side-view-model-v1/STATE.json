@@ -1,0 +1,47 @@
+{
+  "contour": "architecture/analytics-and-diagram-overlays-server-side-view-model-v1",
+  "run_id": "20260519T090224Z-17699",
+  "role": "agent1_planner",
+  "status": "ready_for_execution",
+  "created_outputs": [
+    "PLAN.md",
+    "WORKER_2_PROMPT.md",
+    "WORKER_3_PROMPT.md",
+    "EXECUTOR_PART_1_PROMPT.md",
+    "EXECUTOR_PART_2_PROMPT.md",
+    "REVIEWER_PROMPT.md",
+    "RAG_PREFLIGHT_PLANNER.md",
+    "RAG_PREFLIGHT_REVIEWER.md",
+    "OBSIDIAN_CONTEXT_USED.md",
+    "GSD_CONTEXT_USED.md",
+    "FRONTEND_BACKEND_SPLIT_CHECKLIST.md",
+    "OVERLAY_COMPUTATION_AND_RENDERING_CHECKLIST.md",
+    "API_CONTRACT_DRAFT_REQUIREMENTS.md",
+    "PHASED_MIGRATION_REQUIREMENTS.md",
+    "READY_FOR_EXECUTION",
+    "AGENT_RUN_ID"
+  ],
+  "product_code_changed_by_planner": false,
+  "non_goals_enforced": [
+    "no backend code changes",
+    "no frontend code changes",
+    "no schema migration",
+    "no cache implementation",
+    "no RAG auto-indexer implementation",
+    "no AI auto-write",
+    "no package install",
+    "no PR",
+    "no merge",
+    "no deploy"
+  ],
+  "worker_split": {
+    "worker_2": "current source map lane",
+    "worker_3": "architecture API roadmap lane",
+    "agent_4": "review gate"
+  },
+  "risk": {
+    "workspace": "/opt/processmap-test is not the canonical repo root declared in AGENTS.md",
+    "branch": "fix/lockfile-sync-test differs from origin/main",
+    "dirty_tree": "pre-existing product file modifications and many untracked files; planner only wrote current contour artifacts"
+  }
+}

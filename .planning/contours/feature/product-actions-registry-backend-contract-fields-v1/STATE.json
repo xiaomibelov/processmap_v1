@@ -1,0 +1,23 @@
+{
+  "contour": "feature/product-actions-registry-backend-contract-fields-v1",
+  "run_id": "20260520T191945Z-37206",
+  "execution_mode": "single-lane",
+  "agent2_prompt": "EXECUTOR_PART_1_PROMPT.md",
+  "agent3_prompt": "EXECUTOR_PART_2_PROMPT.md",
+  "agent4_prompt": "REVIEWER_PROMPT.md",
+  "status": "ready_for_execution",
+  "scope": "backend-only",
+  "baseline": "origin/main",
+  "baseline_sha": "d805e1c64c1107b9e3fe6854e031694bf741b187",
+  "acceptance_criteria": [
+    "filter_options presence and shape",
+    "applied_filters normalization",
+    "metrics breakdown",
+    "empty_state kinds",
+    "source_state flags",
+    "query/export parity",
+    "no-mutation boundary",
+    "all tests pass",
+    "clean branch isolation"
+  ]
+}

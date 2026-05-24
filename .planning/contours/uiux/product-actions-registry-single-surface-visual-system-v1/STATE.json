@@ -1,0 +1,64 @@
+{
+  "contour": "uiux/product-actions-registry-single-surface-visual-system-v1",
+  "run_id": "20260518T110633Z-57765",
+  "role": "Agent 1 / Planner",
+  "status": "ready_for_execution",
+  "created_at": "2026-05-18T11:10:00Z",
+  "product_direction": "Analytics removed; active surface is only Product Actions Registry.",
+  "non_goals": [
+    "Analytics Hub",
+    "Properties Registry",
+    "dashboards",
+    "backend changes",
+    "schema changes",
+    "BPMN XML changes",
+    "Product Actions durable truth changes",
+    "RAG runtime changes",
+    "AI behavior changes",
+    "package install",
+    "TypeScript migration",
+    "shadcn installation",
+    "fake metrics/data",
+    "global shell/header/sidebar redesign",
+    "merge/PR/deploy"
+  ],
+  "workers": {
+    "agent_2": {
+      "lane": "implementation",
+      "prompt": "WORKER_2_PROMPT.md",
+      "compat_prompt": "EXECUTOR_PART_1_PROMPT.md",
+      "success_marker": "WORKER_2_DONE",
+      "blocked_marker": "EXEC_PART_1_BLOCKED.md"
+    },
+    "agent_3": {
+      "lane": "ux_spec_checklist",
+      "prompt": "WORKER_3_PROMPT.md",
+      "compat_prompt": "EXECUTOR_PART_2_PROMPT.md",
+      "success_marker": "WORKER_3_DONE",
+      "blocked_marker": "EXEC_PART_2_BLOCKED.md"
+    },
+    "agent_4": {
+      "lane": "final_review",
+      "prompt": "REVIEWER_PROMPT.md",
+      "start_gate": [
+        "WORKER_2_DONE",
+        "WORKER_3_DONE"
+      ]
+    }
+  },
+  "planner_truth": {
+    "pwd": "/opt/processmap-test",
+    "branch": "fix/lockfile-sync-test",
+    "head": "5b20bc2d1292f419647238eaf37dac55f9315942",
+    "origin_main": "d805e1c64c1107b9e3fe6854e031694bf741b187",
+    "dirty_tree": true,
+    "staged_changes": false,
+    "remote_url_redacted": true
+  },
+  "rag": {
+    "planner_preflight": "RAG_PREFLIGHT_PLANNER.md",
+    "reviewer_preflight": "RAG_PREFLIGHT_REVIEWER.md",
+    "read_only": true
+  },
+  "ready_for_execution": true
+}

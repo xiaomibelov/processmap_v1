@@ -11,26 +11,26 @@
         "STATE.json",
         "SOURCE_TRUTH.md",
         "PLAN.md",
-        "EXECUTOR_PROMPT.md",
+        "WORKER_PROMPT.md",
         "REVIEWER_PROMPT.md",
         "READY_FOR_EXECUTION"
       ]
     },
-    "executor": {
+    "worker": {
       "reads": [
         "PLAN.md",
-        "EXECUTOR_PROMPT.md"
+        "WORKER_PROMPT.md"
       ],
       "writes": [
-        "EXECUTION_STARTED",
-        "EXEC_REPORT.md",
-        "READY_FOR_REVIEW"
+        "WORKER_STARTED",
+        "WORKER_REPORT.md",
+        "WORKER_DONE"
       ]
     },
     "reviewer": {
       "reads": [
         "PLAN.md",
-        "EXEC_REPORT.md",
+        "WORKER_REPORT.md",
         "REVIEWER_PROMPT.md",
         "git diff",
         "runtime proof"
@@ -43,8 +43,8 @@
   },
   "markers": {
     "ready_for_execution": true,
-    "execution_started": false,
-    "ready_for_review": false,
+    "worker_started": false,
+    "worker_done": false,
     "review_pass": false,
     "changes_requested": false,
     "closed": false

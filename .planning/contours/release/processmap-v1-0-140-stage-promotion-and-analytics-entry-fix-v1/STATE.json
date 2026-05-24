@@ -1,0 +1,18 @@
+{
+  "contour": "release/processmap-v1-0-140-stage-promotion-and-analytics-entry-fix-v1",
+  "run_id": "20260521T111303Z-90132",
+  "mode": "SINGLE_EXECUTOR_MODE",
+  "execution_mode": "single-lane",
+  "planner": "Agent 1",
+  "created_at": "2026-05-21T11:13Z",
+  "scope": "stage promotion: merge to main, deploy to stage, runtime verification",
+  "previous_run_id": "20260521T101201Z-83263",
+  "previous_status": "REVIEW_PASS",
+  "user_gated": true,
+  "product_code_changes": false,
+  "expected_agents": {
+    "agent2": "EXECUTOR_PART_1_PROMPT.md",
+    "agent3": "TOKEN_ECONOMY_SINGLE_EXECUTOR (no-op)",
+    "agent4": "REVIEWER_PROMPT.md"
+  }
+}

@@ -1,0 +1,525 @@
+- generic [ref=e17]:
+  - generic [ref=e18]:
+    - generic [ref=e19]:
+      - generic [ref=e21]: ProcessMap
+      - button "← Проекты" [ref=e22] [cursor=pointer]
+    - generic [ref=e23]:
+      - generic [ref=e24]:
+        - generic [ref=e25]:
+          - generic [ref=e26]: Org
+          - generic "Default" [ref=e27]
+        - button "Админ-панель" [ref=e28] [cursor=pointer]
+      - button "Профиль" [ref=e30] [cursor=pointer]:
+        - img [ref=e31]
+  - generic [ref=e33]:
+    - generic [ref=e35]:
+      - button "Открыть панель" [disabled] [ref=e36]:
+        - img [ref=e38]
+      - generic [ref=e40]:
+        - button "Узел не выбран" [disabled] [ref=e41]:
+          - img [ref=e43]
+        - button "AI-вопросы" [disabled] [ref=e46]:
+          - img [ref=e48]
+        - button "Акторы" [disabled] [ref=e50]:
+          - img [ref=e52]
+        - button "Шаблоны" [disabled] [ref=e56]:
+          - img [ref=e58]
+    - generic [ref=e202]:
+      - generic [ref=e204]:
+        - generic [ref=e205]:
+          - generic [ref=e206]: Версия приложения
+          - heading "Обновления ProcessMap" [level=1] [ref=e207]
+          - paragraph [ref=e208]: Краткая история изменений интерфейса и рабочих сценариев. У записи может быть ссылка на задачу, PR или документ с подробностями.
+        - button "Закрыть" [ref=e209] [cursor=pointer]
+      - generic [ref=e211]:
+        - generic [ref=e212]:
+          - heading "v1.0.126" [level=2] [ref=e214]
+          - list [ref=e215]:
+            - listitem [ref=e216]: "Таблица шагов анализа стала строгой: убраны карточные строки, тяжёлые hover-эффекты и агрессивные цветные заливки."
+        - generic [ref=e217]:
+          - heading "v1.0.125" [level=2] [ref=e219]
+          - list [ref=e220]:
+            - listitem [ref=e221]: Детали и тайминг шага вынесены из строки таблицы, строки больше не раскрываются в большой редактор.
+        - generic [ref=e222]:
+          - heading "v1.0.124" [level=2] [ref=e224]
+          - list [ref=e225]:
+            - listitem [ref=e226]: "Упрощена таблица шагов: тайминг скрыт из обычной строки, BPMN-типы стали человекочитаемыми, пустые статусы убраны."
+        - generic [ref=e227]:
+          - heading "v1.0.123" [level=2] [ref=e229]
+          - list [ref=e230]:
+            - listitem [ref=e231]: "Уплотнена таблица шагов: метаданные вынесены из основного текста, BPMN-узлы больше не дублируют названия."
+        - generic [ref=e232]:
+          - heading "v1.0.122" [level=2] [ref=e234]
+          - list [ref=e235]:
+            - listitem [ref=e236]: "Уплотнена таблица шагов анализа: действия и статусы больше не раздвигают строки."
+        - generic [ref=e237]:
+          - heading "v1.0.121" [level=2] [ref=e239]
+          - list [ref=e240]:
+            - listitem [ref=e241]: Упрощена таблица шагов анализа процесса.
+        - generic [ref=e242]:
+          - heading "v1.0.120" [level=2] [ref=e244]
+          - list [ref=e245]:
+            - listitem [ref=e246]: Улучшен интерфейс AI-предложений и реестра действий с продуктом.
+        - generic [ref=e247]:
+          - heading "v1.0.119" [level=2] [ref=e249]
+          - list [ref=e250]:
+            - listitem [ref=e251]: "Стабилизирован JSON-контракт AI-предложений: новый prompt v4, лимит 3 предложения, строгий формат."
+        - generic [ref=e252]:
+          - heading "v1.0.118" [level=2] [ref=e254]
+          - list [ref=e255]:
+            - listitem [ref=e256]: "Уточнена диагностика AI-предложений действий с продуктом: ошибки разбора ответа теперь содержат технические детали для отладки."
+        - generic [ref=e257]:
+          - heading "v1.0.117" [level=2] [ref=e259]
+          - list [ref=e260]:
+            - listitem [ref=e261]: Реестр действий с продуктом получил backend-агрегацию для workspace/project.
+        - generic [ref=e262]:
+          - heading "v1.0.116" [level=2] [ref=e264]
+          - list [ref=e265]:
+            - listitem [ref=e266]: Реестр действий с продуктом вынесен в отдельную поверхность.
+        - generic [ref=e267]:
+          - heading "v1.0.115" [level=2] [ref=e269]
+          - list [ref=e270]:
+            - listitem [ref=e271]: Добавлен реестр действий с продуктом для предпросмотра данных.
+        - generic [ref=e272]:
+          - heading "v1.0.114" [level=2] [ref=e274]
+          - list [ref=e275]:
+            - listitem [ref=e276]: "Улучшен блок действий процесса: шаги, выбранный шаг и действия с продуктом."
+        - generic [ref=e277]:
+          - heading "v1.0.105" [level=2] [ref=e279]
+          - list [ref=e280]:
+            - listitem [ref=e281]: В Explorer различены проекты и сессии при открытии.
+        - generic [ref=e282]:
+          - heading "v1.0.104" [level=2] [ref=e284]
+          - list [ref=e285]:
+            - listitem [ref=e286]: Открытие сессии теперь начинается с Diagram (BPMN).
+        - generic [ref=e287]:
+          - heading "v1.0.103" [level=2] [ref=e289]
+          - list [ref=e290]:
+            - listitem [ref=e291]: Панель действий с продуктом показана рядом с таблицей шагов.
+            - listitem [ref=e292]: "Уточнены рабочие разделы: Diagram (BPMN), Анализ процессов, DOC и DOD."
+        - generic [ref=e293]:
+          - heading "v1.0.102" [level=2] [ref=e295]
+          - list [ref=e296]:
+            - listitem [ref=e297]: Исправлено сохранение заполненных действий с продуктом.
+        - generic [ref=e298]:
+          - heading "v1.0.101" [level=2] [ref=e300]
+          - list [ref=e301]:
+            - listitem [ref=e302]: В анализе процесса добавлены сохраняемые действия с продуктом.
+        - generic [ref=e303]:
+          - heading "v1.0.100" [level=2] [ref=e305]
+          - list [ref=e306]:
+            - listitem [ref=e307]: Добавлен безопасный механизм сохранения данных анализа Interview.
+        - generic [ref=e308]:
+          - heading "v1.0.99" [level=2] [ref=e310]
+          - list [ref=e311]:
+            - listitem [ref=e312]: Сохранение Interview теперь защищает будущие данные анализа от потери.
+        - generic [ref=e313]:
+          - heading "v1.0.98" [level=2] [ref=e315]
+          - list [ref=e316]:
+            - listitem [ref=e317]: "Поверхность анализа процесса стала чище: ввод, итоги и отчёты разделены."
+        - generic [ref=e318]:
+          - heading "v1.0.97" [level=2] [ref=e320]
+          - list [ref=e321]:
+            - listitem [ref=e322]: Стабилизирована синхронизация изменений сессии без ложных CAS-конфликтов.
+        - generic [ref=e323]:
+          - heading "v1.0.96" [level=2] [ref=e325]
+          - list [ref=e326]:
+            - listitem [ref=e327]: "История BPMN-версий загружается легче: список без XML, XML — по выбранной версии."
+        - generic [ref=e328]:
+          - heading "v1.0.95" [level=2] [ref=e330]
+          - list [ref=e331]:
+            - listitem [ref=e332]: Фоновая проверка обновлений сессии переведена на лёгкий режим.
+        - generic [ref=e333]:
+          - heading "v1.0.94" [level=2] [ref=e335]
+          - list [ref=e336]:
+            - listitem [ref=e337]: Сокращён объём загрузки списка сессий проекта.
+        - generic [ref=e338]:
+          - heading "v1.0.93" [level=2] [ref=e340]
+          - list [ref=e341]:
+            - listitem [ref=e342]: Стабилизировано сохранение BPMN-свойств после вставки шаблонов.
+        - generic [ref=e343]:
+          - heading "v1.0.92" [level=2] [ref=e345]
+          - list [ref=e346]:
+            - listitem [ref=e347]: Обновлены оверлеи свойств и синхронизация после вставки BPMN-шаблонов.
+        - generic [ref=e348]:
+          - heading "v1.0.91" [level=2] [ref=e350]
+          - list [ref=e351]:
+            - listitem [ref=e352]: Стабилизирована повторная вставка BPMN-шаблонов и перенос свойств.
+        - generic [ref=e353]:
+          - heading "v1.0.90" [level=2] [ref=e355]
+          - list [ref=e356]:
+            - listitem [ref=e357]: Стабилизировано сохранение после применения BPMN-шаблонов.
+        - generic [ref=e358]:
+          - heading "v1.0.89" [level=2] [ref=e360]
+          - list [ref=e361]:
+            - listitem [ref=e362]: Уточнён статус сохранения BPMN-свойств.
+        - generic [ref=e363]:
+          - heading "v1.0.88" [level=2] [ref=e365]
+          - list [ref=e366]:
+            - listitem [ref=e367]: Исправлено сохранение пути последовательности при конфликте версии.
+        - generic [ref=e368]:
+          - heading "v1.0.87" [level=2] [ref=e370]
+          - list [ref=e371]:
+            - listitem [ref=e372]: Пути последовательности поддерживают несколько идеальных и альтернативных веток.
+        - generic [ref=e373]:
+          - heading "v1.0.86" [level=2] [ref=e375]
+          - list [ref=e376]:
+            - listitem [ref=e377]: Обновлён визуальный стиль панели обсуждений.
+        - generic [ref=e378]:
+          - heading "v1.0.85" [level=2] [ref=e380]
+          - list [ref=e381]:
+            - listitem [ref=e382]: Улучшен вид панели центра уведомлений.
+        - generic [ref=e383]:
+          - heading "v1.0.84" [level=2] [ref=e385]
+          - list [ref=e386]:
+            - listitem [ref=e387]: Улучшено разделение preview-уведомлений в меню аккаунта.
+        - generic [ref=e388]:
+          - heading "v1.0.83" [level=2] [ref=e390]
+          - list [ref=e391]:
+            - listitem [ref=e392]: Исправлено отображение панели центра уведомлений.
+        - generic [ref=e393]:
+          - heading "v1.0.82" [level=2] [ref=e395]
+          - list [ref=e396]:
+            - listitem [ref=e397]: Центр уведомлений вынесен в отдельную панель.
+        - generic [ref=e398]:
+          - heading "v1.0.81" [level=2] [ref=e400]
+          - list [ref=e401]:
+            - listitem [ref=e402]: Улучшен вид и структура центра уведомлений в меню аккаунта.
+        - generic [ref=e403]:
+          - heading "v1.0.80" [level=2] [ref=e405]
+          - list [ref=e406]:
+            - listitem [ref=e407]: Исправлен сбой прокрутки BPMN viewer после пересоздания диаграммы.
+        - generic [ref=e408]:
+          - heading "v1.0.79" [level=2] [ref=e410]
+          - list [ref=e411]:
+            - listitem [ref=e412]: "Улучшен центр уведомлений: фильтры, просмотренные события и визуальная структура."
+        - generic [ref=e413]:
+          - heading "v1.0.78" [level=2] [ref=e415]
+          - list [ref=e416]:
+            - listitem [ref=e417]: Добавлены действия и фильтры в центр уведомлений обсуждений.
+        - generic [ref=e418]:
+          - heading "v1.0.77" [level=2] [ref=e420]
+          - list [ref=e421]:
+            - listitem [ref=e422]: Добавлена лента уведомлений по обсуждениям во всех сессиях.
+        - generic [ref=e423]:
+          - heading "v1.0.76" [level=2] [ref=e425]
+          - list [ref=e426]:
+            - listitem [ref=e427]: Улучшен вид центра уведомлений в меню аккаунта.
+        - generic [ref=e428]:
+          - heading "v1.0.75" [level=2] [ref=e430]
+          - list [ref=e431]:
+            - listitem [ref=e432]: Добавлен центр уведомлений по обсуждениям в меню аккаунта.
+        - generic [ref=e433]:
+          - heading "v1.0.74" [level=2] [ref=e435]
+          - list [ref=e436]:
+            - listitem [ref=e437]: Сохранён путь проекта при возврате из сессии через Back.
+        - generic [ref=e438]:
+          - heading "v1.0.73" [level=2] [ref=e440]
+          - list [ref=e441]:
+            - listitem [ref=e442]: Back из диаграммы закрывает сессию и показывает список сессий проекта.
+        - generic [ref=e443]:
+          - heading "v1.0.72" [level=2] [ref=e445]
+          - list [ref=e446]:
+            - listitem [ref=e447]: Back из сессии возвращает к списку сессий проекта.
+        - generic [ref=e448]:
+          - heading "v1.0.71" [level=2] [ref=e450]
+          - list [ref=e451]:
+            - listitem [ref=e452]: Исправлен возврат из сессии к списку сессий через Back.
+        - generic [ref=e453]:
+          - heading "v1.0.70" [level=2] [ref=e455]
+          - list [ref=e456]:
+            - listitem [ref=e457]: Добавлена модель внутренней истории навигации приложения.
+        - generic [ref=e458]:
+          - heading "v1.0.69" [level=2] [ref=e460]
+          - list [ref=e461]:
+            - listitem [ref=e462]: Уточнено кеширование frontend для обновления приложения.
+        - generic [ref=e463]:
+          - heading "v1.0.68" [level=2] [ref=e465]
+          - list [ref=e466]:
+            - listitem [ref=e467]: Добавлено безопасное сохранение перед обновлением приложения.
+        - generic [ref=e468]:
+          - heading "v1.0.67" [level=2] [ref=e470]
+          - list [ref=e471]:
+            - listitem [ref=e472]: Добавлено уведомление о новой версии приложения.
+        - generic [ref=e473]:
+          - heading "v1.0.66" [level=2] [ref=e475]
+          - list [ref=e476]:
+            - listitem [ref=e477]: Добавлена runtime-информация о версии приложения.
+        - generic [ref=e478]:
+          - heading "v1.0.65" [level=2] [ref=e480]
+          - list [ref=e481]:
+            - listitem [ref=e482]: Уточнена область видимости пользователей в админке.
+        - generic [ref=e483]:
+          - heading "v1.0.64" [level=2] [ref=e485]
+          - list [ref=e486]:
+            - listitem [ref=e487]: Администраторы платформы добавлены в список назначаемых пользователей.
+        - generic [ref=e488]:
+          - heading "v1.0.63" [level=2] [ref=e490]
+          - list [ref=e491]:
+            - listitem [ref=e492]: Исправлено назначение администратора платформы ответственным и исполнителем.
+        - generic [ref=e493]:
+          - heading "v1.0.62" [level=2] [ref=e495]
+          - list [ref=e496]:
+            - listitem [ref=e497]: Исправлены активные пользователи сессии и лишние уведомления при выходе.
+        - generic [ref=e498]:
+          - heading "v1.0.61" [level=2] [ref=e500]
+          - list [ref=e501]:
+            - listitem [ref=e502]: Добавлен центр уведомлений обсуждений.
+        - generic [ref=e503]:
+          - heading "v1.0.60" [level=2] [ref=e505]
+          - list [ref=e506]:
+            - listitem [ref=e507]: Исправлено назначение себя ответственным в Explorer.
+        - generic [ref=e508]:
+          - heading "v1.0.59" [level=2] [ref=e510]
+          - list [ref=e511]:
+            - listitem [ref=e512]: Исправлено зависание загрузки пользователей в picker Explorer.
+        - generic [ref=e513]:
+          - heading "v1.0.58" [level=2] [ref=e515]
+          - list [ref=e516]:
+            - listitem [ref=e517]: Исправлено назначение пользователей через picker Explorer.
+        - generic [ref=e518]:
+          - heading "v1.0.57" [level=2] [ref=e520]
+          - list [ref=e521]:
+            - listitem [ref=e522]: Добавлен поиск по всей структуре Workspace Explorer.
+        - generic [ref=e523]:
+          - heading "v1.0.56" [level=2] [ref=e525]
+          - list [ref=e526]:
+            - listitem [ref=e527]: Исправлено назначение исполнителя проекта в Explorer.
+        - generic [ref=e528]:
+          - heading "v1.0.55" [level=2] [ref=e530]
+          - list [ref=e531]:
+            - listitem [ref=e532]: Технический владелец заменён на ответственного и исполнителя в Explorer.
+        - generic [ref=e533]:
+          - heading "v1.0.54" [level=2] [ref=e535]
+          - list [ref=e536]:
+            - listitem [ref=e537]: Добавлено управление статусом AS IS / TO BE для разделов и папок.
+        - generic [ref=e538]:
+          - heading "v1.0.53" [level=2] [ref=e540]
+          - list [ref=e541]:
+            - listitem [ref=e542]: Добавлено назначение ответственных и исполнителей в Explorer.
+        - generic [ref=e543]:
+          - heading "v1.0.52" [level=2] [ref=e545]
+          - list [ref=e546]:
+            - listitem [ref=e547]: Добавлена серверная модель ответственных и исполнителей Explorer.
+        - generic [ref=e548]:
+          - heading "v1.0.51" [level=2] [ref=e550]
+          - list [ref=e551]:
+            - listitem [ref=e552]: Добавлена модель присутствия пользователей в сессии.
+        - generic [ref=e553]:
+          - heading "v1.0.50" [level=2] [ref=e555]
+          - list [ref=e556]:
+            - listitem [ref=e557]: Перенесены уведомления об обновлении сессии во всплывающие сообщения.
+        - generic [ref=e558]:
+          - heading "v1.0.49" [level=2] [ref=e560]
+          - list [ref=e561]:
+            - listitem [ref=e562]: Добавлена сортировка по колонкам в Workspace Explorer.
+        - generic [ref=e563]:
+          - heading "v1.0.48" [level=2] [ref=e565]
+          - list [ref=e566]:
+            - listitem [ref=e567]: Добавлен поиск по текущей структуре Explorer.
+        - generic [ref=e568]:
+          - heading "v1.0.47" [level=2] [ref=e570]
+          - list [ref=e571]:
+            - listitem [ref=e572]: Добавлено перемещение проектов между разделами и папками.
+        - generic [ref=e573]:
+          - heading "v1.0.46" [level=2] [ref=e575]
+          - list [ref=e576]:
+            - listitem [ref=e577]: Добавлено перемещение разделов и папок в Explorer.
+        - generic [ref=e578]:
+          - heading "v1.0.45" [level=2] [ref=e580]
+          - list [ref=e581]:
+            - listitem [ref=e582]: Уточнены разделы workspace и очищен заголовок проекта.
+        - generic [ref=e583]:
+          - heading "v1.0.44" [level=2] [ref=e585]
+          - list [ref=e586]:
+            - listitem [ref=e587]: Добавлена навигация назад из проекта в структуре workspace.
+        - generic [ref=e588]:
+          - heading "v1.0.43" [level=2] [ref=e590]
+          - list [ref=e591]:
+            - listitem [ref=e592]: Упрощено управление пользователями и инвайтами в админке.
+        - generic [ref=e593]:
+          - heading "v1.0.42" [level=2] [ref=e595]
+          - list [ref=e596]:
+            - listitem [ref=e597]: Упорядочена страница пользователей, доступов и организаций.
+        - generic [ref=e598]:
+          - heading "v1.0.41" [level=2] [ref=e600]
+          - list [ref=e601]:
+            - listitem [ref=e602]: Улучшен переход к результатам поиска в subprocess.
+        - generic [ref=e603]:
+          - heading "v1.0.40" [level=2] [ref=e605]
+          - list [ref=e606]:
+            - listitem [ref=e607]: Сгруппированы результаты поиска по основному процессу и subprocess.
+        - generic [ref=e608]:
+          - heading "v1.0.39" [level=2] [ref=e610]
+          - list [ref=e611]:
+            - listitem [ref=e612]: Исправлен ввод пробелов в поиске по диаграмме.
+        - generic [ref=e613]:
+          - heading "v1.0.38" [level=2] [ref=e615]
+          - list [ref=e616]:
+            - listitem [ref=e617]: Улучшена плотность и читаемость обсуждений.
+        - generic [ref=e618]:
+          - heading "v1.0.37" [level=2] [ref=e620]
+          - list [ref=e621]:
+            - listitem [ref=e622]: Добавлены базовые инструменты Markdown в редактор обсуждений.
+        - generic [ref=e623]:
+          - heading "v1.0.36" [level=2] [ref=e625]
+          - list [ref=e626]:
+            - listitem [ref=e627]: Добавлены ответы и редактирование сообщений в обсуждениях.
+        - generic [ref=e628]:
+          - heading "v1.0.35" [level=2] [ref=e630]
+          - list [ref=e631]:
+            - listitem [ref=e632]: Добавлена поддержка Markdown в обсуждениях.
+        - generic [ref=e633]:
+          - heading "v1.0.34" [level=2] [ref=e635]
+          - list [ref=e636]:
+            - listitem [ref=e637]: Добавлен inline-ввод @упоминаний в обсуждениях.
+        - generic [ref=e638]:
+          - heading "v1.0.33" [level=2] [ref=e640]
+          - list [ref=e641]:
+            - listitem [ref=e642]: Добавлены счётчики новых сообщений в обсуждениях.
+        - generic [ref=e643]:
+          - heading "v1.0.32" [level=2] [ref=e645]
+          - list [ref=e646]:
+            - listitem [ref=e647]: Добавлен фильтр обсуждений с участием пользователя.
+        - generic [ref=e648]:
+          - heading "v1.0.31" [level=2] [ref=e650]
+          - list [ref=e651]:
+            - listitem [ref=e652]: Исправлено отображение технических BPMN-id вместо названий элементов схемы.
+        - generic [ref=e653]:
+          - heading "v1.0.30" [level=2] [ref=e655]
+          - list [ref=e656]:
+            - listitem [ref=e657]: Исправлена передача перехода из обсуждения в рабочую область схемы.
+        - generic [ref=e658]:
+          - heading "v1.0.29" [level=2] [ref=e660]
+          - list [ref=e661]:
+            - listitem [ref=e662]: Исправлено центрирование и подсветка элемента при переходе из обсуждения.
+        - generic [ref=e663]:
+          - heading "v1.0.28" [level=2] [ref=e665]
+          - list [ref=e666]:
+            - listitem [ref=e667]: Исправлено подтверждение перехода от обсуждения к элементу схемы.
+        - generic [ref=e668]:
+          - heading "v1.0.27" [level=2] [ref=e670]
+          - list [ref=e671]:
+            - listitem [ref=e672]: Исправлен переход от обсуждения к связанному элементу схемы.
+        - generic [ref=e673]:
+          - heading "v1.0.26" [level=2] [ref=e675]
+          - list [ref=e676]:
+            - listitem [ref=e677]: Добавлен переход от обсуждения к связанному элементу схемы.
+        - generic [ref=e678]:
+          - heading "v1.0.25" [level=2] [ref=e680]
+          - list [ref=e681]:
+            - listitem [ref=e682]: Исправлен конфликт при восстановлении BPMN-версии.
+        - generic [ref=e683]:
+          - heading "v1.0.24" [level=2] [ref=e685]
+          - list [ref=e686]:
+            - listitem [ref=e687]: Исправлена нумерация истории версий BPMN при скрытых технических сохранениях.
+        - generic [ref=e688]:
+          - generic [ref=e689]:
+            - heading "v1.0.23" [level=2] [ref=e690]
+            - link "Коммит" [ref=e691] [cursor=pointer]:
+              - /url: https://github.com/xiaomibelov/processmap_v1/commit/222b4c1
+          - list [ref=e692]:
+            - listitem [ref=e693]: Удалён блок контекста процесса с рабочих вкладок.
+            - listitem [ref=e694]: Добавлена страница обновлений по ссылке версии приложения.
+        - generic [ref=e695]:
+          - heading "v1.0.22" [level=2] [ref=e697]
+          - list [ref=e698]:
+            - listitem [ref=e699]: Перенесены статусные сообщения процесса во всплывающие уведомления.
+        - generic [ref=e700]:
+          - heading "v1.0.21" [level=2] [ref=e702]
+          - list [ref=e703]:
+            - listitem [ref=e704]: Версии BPMN создаются по изменениям состояния сессии и истории из DB.
+        - generic [ref=e705]:
+          - heading "v1.0.20" [level=2] [ref=e707]
+          - list [ref=e708]:
+            - listitem [ref=e709]: Уточнена область действия создания версии BPMN.
+        - generic [ref=e710]:
+          - heading "v1.0.19" [level=2] [ref=e712]
+          - list [ref=e713]:
+            - listitem [ref=e714]: Исправлена видимость свойств и overlay-текста в тёмной теме.
+        - generic [ref=e715]:
+          - heading "v1.0.18" [level=2] [ref=e717]
+          - list [ref=e718]:
+            - listitem [ref=e719]: Исправлены контраст и видимость элементов в тёмной теме.
+        - generic [ref=e720]:
+          - heading "v1.0.17" [level=2] [ref=e722]
+          - list [ref=e723]:
+            - listitem [ref=e724]: Исправлено отображение имени пользователя вместо технического идентификатора.
+        - generic [ref=e725]:
+          - heading "v1.0.16" [level=2] [ref=e727]
+          - list [ref=e728]:
+            - listitem [ref=e729]: Добавлены имя и должность в таблицу пользователей админ-панели.
+        - generic [ref=e730]:
+          - heading "v1.0.15" [level=2] [ref=e732]
+          - list [ref=e733]:
+            - listitem [ref=e734]: Улучшена читаемость карточек обсуждений и отображение авторства.
+        - generic [ref=e735]:
+          - heading "v1.0.14" [level=2] [ref=e737]
+          - list [ref=e738]:
+            - listitem [ref=e739]: Исправлено отображение сигнала "Требует внимания" из обсуждений.
+        - generic [ref=e740]:
+          - heading "v1.0.13" [level=2] [ref=e742]
+          - list [ref=e743]:
+            - listitem [ref=e744]: Уточнено отображение внимания в списке сессий.
+        - generic [ref=e745]:
+          - heading "v1.0.12" [level=2] [ref=e747]
+          - list [ref=e748]:
+            - listitem [ref=e749]: Уточнено отображение обсуждений в списке сессий.
+        - generic [ref=e750]:
+          - heading "v1.0.11" [level=2] [ref=e752]
+          - list [ref=e753]:
+            - listitem [ref=e754]: Улучшено отображение меню профиля и уведомлений.
+        - generic [ref=e755]:
+          - heading "v1.0.10" [level=2] [ref=e757]
+          - list [ref=e758]:
+            - listitem [ref=e759]: Снижено число запросов агрегатов обсуждений.
+        - generic [ref=e760]:
+          - heading "v1.0.9" [level=2] [ref=e762]
+          - list [ref=e763]:
+            - listitem [ref=e764]: Сохранены черновики свойств при переключении элементов.
+        - generic [ref=e765]:
+          - heading "v1.0.8" [level=2] [ref=e767]
+          - list [ref=e768]:
+            - listitem [ref=e769]: Создание обсуждения стало понятной формой с сутью вопроса и описанием.
+            - listitem [ref=e770]: В форме создания видны контекст, приоритет, внимание и упоминание.
+        - generic [ref=e771]:
+          - heading "v1.0.7" [level=2] [ref=e773]
+          - list [ref=e774]:
+            - listitem [ref=e775]: Персональный сигнал обсуждений больше не загорается от чужих новых тем.
+            - listitem [ref=e776]: Бейдж сессии показывает открытые обсуждения без старого текста про заметки.
+        - generic [ref=e777]:
+          - heading "v1.0.6" [level=2] [ref=e779]
+          - list [ref=e780]:
+            - listitem [ref=e781]: Добавлен bounded inbox/history для уведомлений обсуждений.
+        - generic [ref=e782]:
+          - heading "v1.0.5" [level=2] [ref=e784]
+          - list [ref=e785]:
+            - listitem [ref=e786]: В обсуждениях появились персональные упоминания.
+            - listitem [ref=e787]: Упоминания показываются в верхней панели.
+        - generic [ref=e788]:
+          - heading "v1.0.4" [level=2] [ref=e790]
+          - list [ref=e791]:
+            - listitem [ref=e792]: Внимание в обсуждениях можно подтвердить как обработанное.
+        - generic [ref=e793]:
+          - heading "v1.0.3" [level=2] [ref=e795]
+          - list [ref=e796]:
+            - listitem [ref=e797]: Внимание из обсуждений видно в навигации.
+        - generic [ref=e798]:
+          - heading "v1.0.2" [level=2] [ref=e800]
+          - list [ref=e801]:
+            - listitem [ref=e802]: Обсуждения показывают приоритет и внимание.
+        - generic [ref=e803]:
+          - heading "v1.0.1" [level=2] [ref=e805]
+          - list [ref=e806]:
+            - listitem [ref=e807]: Уплотнена область сообщений в обсуждениях.
+        - generic [ref=e808]:
+          - heading "v1.0.0" [level=2] [ref=e810]
+          - list [ref=e811]:
+            - listitem [ref=e812]: Версия приложения показана в интерфейсе.
+            - listitem [ref=e813]: Краткий журнал изменений хранится в одном источнике.
+  - generic [ref=e183]:
+    - link "Версия v1.0.126" [active] [ref=e184] [cursor=pointer]:
+      - /url: "#updates"
+    - generic [ref=e185]: · a9a9d9c · 15.05.2026, 20:50
+    - generic [ref=e186]: "· Таблица шагов анализа стала строгой: убраны карточные строки, тяжёлые hover-эффекты и агрессивные цветные заливки."
+  - generic: a9a9d9c | 2026-05-15T20:50:31.083Z

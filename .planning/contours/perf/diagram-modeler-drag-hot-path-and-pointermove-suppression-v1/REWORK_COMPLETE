@@ -1,0 +1,17 @@
+REWORK_COMPLETE
+
+Executor: Agent 2
+Date: 2026-05-16T11:00+00:00
+
+Rework items completed:
+1. Chrome DevTools Profiler evidence captured via CDP — shows bpmn-js engine is NOT the bottleneck.
+   - 140,512 samples during drag; top 25 functions are ALL from minified React bundle.
+   - SVG getCTM (only engine-related call) = 0.5% of CPU.
+   - Full data in PROFILER_EVIDENCE.md.
+
+2. Additional app-side hot path found and fixed:
+   - MoveCanvas panning bypassed all drag guards (no drag.start/drag.cleanup events).
+   - Added isCanvasPanningActive(inst) guard to onViewboxChanged in both viewer and modeler paths.
+   - Suppresses getCanvasSnapshot, logViewAction, emitViewboxChanged, overlay RAF during pan.
+
+Status: READY_FOR_RE_REVIEW

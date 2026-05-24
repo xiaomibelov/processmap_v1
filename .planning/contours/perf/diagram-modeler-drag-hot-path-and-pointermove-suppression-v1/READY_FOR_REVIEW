@@ -1,0 +1,10 @@
+READY_FOR_RE_REVIEW
+
+Date: 2026-05-16T11:00+00:00
+Version: v1.0.129
+
+Rework completed per CHANGES_REQUESTED:
+- Profiler evidence: bpmn-js engine ruled out as bottleneck (PROFILER_EVIDENCE.md)
+- Additional app-side fix: isCanvasPanningActive guard for MoveCanvas panning bypass
+
+Please re-test drag performance and review ENGINE_LIMIT_NOTE.md + PROFILER_EVIDENCE.md.

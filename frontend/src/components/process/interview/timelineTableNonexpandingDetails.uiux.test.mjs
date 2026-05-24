@@ -150,14 +150,14 @@ test("CSS: interviewInlineTimeSummary hover/active reveal does not change geomet
 
 // --- appVersion ---
 
-test("appVersion: currentVersion bumped to v1.0.126", () => {
+test("appVersion: currentVersion bumped to v1.0.141", () => {
   assert.ok(
-    appVersionSrc.includes('"v1.0.126"'),
-    "appVersion must be v1.0.126",
+    appVersionSrc.includes('"v1.0.141"'),
+    "appVersion must be v1.0.141",
   );
   assert.ok(
-    appVersionSrc.includes('currentVersion: "v1.0.126"'),
-    "currentVersion field must be v1.0.126",
+    appVersionSrc.includes('currentVersion: "v1.0.141"'),
+    "currentVersion field must be v1.0.141",
   );
 });
 

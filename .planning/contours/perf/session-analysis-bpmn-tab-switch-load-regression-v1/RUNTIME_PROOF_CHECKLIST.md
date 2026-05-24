@@ -1,0 +1,17 @@
+- [x] GSD discipline recorded
+- [x] Source/runtime truth captured
+- [x] Session URL/id documented
+- [x] Analysis → BPMN → Analysis tab cycle documented
+- [x] Baseline network requests captured
+- [x] Duplicate version/limit notification evidence captured or absence documented
+- [x] Source map captured
+- [x] Root cause hypotheses ranked
+- [x] No code changed by Agent 1
+- [x] Agent 2 frontend-first fix scoped
+- [x] No BPMN XML mutation allowed
+- [x] No durable truth mutation allowed
+- [x] No Product Actions/RAG/AG-UI changes
+- [x] Agent 3 Playwright review required
+- [x] Network before/after comparison required
+- [x] No mutation requests on tab switch required
+- [x] Duplicate toast dedupe required

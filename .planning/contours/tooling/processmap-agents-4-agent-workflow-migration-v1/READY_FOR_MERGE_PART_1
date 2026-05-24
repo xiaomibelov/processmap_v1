@@ -1,0 +1,5 @@
+READY_FOR_MERGE_PART_1
+contour=tooling/processmap-agents-4-agent-workflow-migration-v1
+run_id=20260517T000255Z-41876
+completed_at=2026-05-17T00:20:00+00:00
+notes=Local Mac launcher migration documented but not directly applied due to server environment. Awaiting Agent 3 (Part 2) and Agent 4 (Reviewer) before merge.

@@ -126,6 +126,7 @@ export const ru = {
       audit: "Аудит",
       telemetry: "Телеметрия",
       aiModules: "AI модули",
+      agentRuns: "Запуски агентов",
       rag: "RAG / База знаний",
       orgs: "Пользователи и доступ",
       projects: "Проекты",
@@ -163,6 +164,10 @@ export const ru = {
         title: "AI модули",
         subtitle: "Каталог AI-модулей, prompt versions и execution log без запуска AI jobs",
       },
+      agentRuns: {
+        title: "Запуски агентов",
+        subtitle: "Мониторинг активных запусков агентов и их статусов",
+      },
       rag: {
         title: "RAG / База знаний",
         subtitle: "Настройки и статус RAG-слоя поиска по знаниям",
@@ -179,6 +184,7 @@ export const ru = {
       audit: "Аудит",
       telemetry: "Телеметрия",
       aiModules: "AI модули",
+      agentRuns: "Запуски агентов",
     },
     topbar: {
       org: "Организация",
@@ -474,6 +480,23 @@ export const ru = {
         correlationValuePrefix: "timeline filter: ",
         noCorrelation: "correlation_id отсутствует; pivot недоступен.",
         context: "safe/redacted context_json",
+      },
+    },
+    agentRunsPage: {
+      emptyState: {
+        title: "Нет активных запусков агентов",
+        description: "В текущем контуре не обнаружено запусков агентов.",
+      },
+      table: {
+        title: "Запуски агентов",
+        subtitle: "Активные и завершённые запуски агентов с контуром и статусом",
+        runId: "Run ID",
+        contour: "Контур",
+        status: "Статус",
+        agents: "Агенты",
+        started: "Запущен",
+        lastActivity: "Последняя активность",
+        stopRequested: "Остановка запрошена",
       },
     },
     ragPage: {

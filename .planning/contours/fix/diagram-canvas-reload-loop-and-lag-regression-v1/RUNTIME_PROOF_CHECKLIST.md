@@ -1,0 +1,29 @@
+# RUNTIME_PROOF_CHECKLIST.md
+
+- [ ] GSD discipline recorded
+- [ ] source/runtime truth captured
+- [ ] user regression documented
+- [ ] dirty tree and suspect files listed
+- [ ] cold open multi-load baseline captured
+- [ ] tab switch baseline captured
+- [ ] pan/zoom baseline captured
+- [ ] BpmnStage mount/render count captured if feasible
+- [ ] modeler/init/importXML count captured if feasible
+- [ ] skeleton show/hide count captured if relevant
+- [ ] useProcessTabs investigated
+- [ ] BpmnStage key/prop stability checked
+- [ ] root cause identified
+- [ ] culprit change reverted or fixed
+- [ ] before/after timings captured
+- [ ] no repeated skeleton/canvas reload cycles
+- [ ] pan/zoom usable
+- [ ] selection-lite preserved
+- [ ] property panel preserved
+- [ ] no PUT/PATCH from view interactions
+- [ ] no versions spam regression
+- [ ] no backend changes
+- [ ] no BPMN XML mutation
+- [ ] no Product Actions/RAG/AG-UI changes
+- [ ] build/tests run
+- [ ] Agent 3 Playwright review required
+- [ ] material improvement required for REVIEW_PASS

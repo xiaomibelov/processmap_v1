@@ -1,0 +1,22 @@
+{
+  "contour_id": "research/product-actions-ai-ag-ui-protocol-fit-v1",
+  "status": "READY_FOR_EXECUTION",
+  "role": "Agent 1 / Planner",
+  "scope": "research and architecture fit for AG-UI protocol in ProcessMap Product Actions AI and RAG-agent workflows",
+  "gsd_required": true,
+  "gsd_mode": "GSD_FALLBACK_MANUAL_PLANNING_ONLY",
+  "product_code_changes_allowed_for_agent1": false,
+  "product_code_changes_allowed_for_agent2": false,
+  "backend_changes_allowed": false,
+  "frontend_changes_allowed": false,
+  "package_install_allowed": false,
+  "bpmn_xml_mutation_allowed": false,
+  "durable_truth_mutation_allowed": false,
+  "rag_bootstrap_allowed": false,
+  "mcp_repair_allowed": false,
+  "commit_push_pr_allowed": false,
+  "deploy_allowed": false,
+  "requires_agent3_review": true,
+  "requires_rework_loop_until_review_pass": true,
+  "ready_for_execution_requires_plan_gates": true
+}

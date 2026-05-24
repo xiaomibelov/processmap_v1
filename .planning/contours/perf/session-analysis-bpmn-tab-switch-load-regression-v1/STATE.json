@@ -1,0 +1,22 @@
+{
+  "contour_id": "perf/session-analysis-bpmn-tab-switch-load-regression-v1",
+  "status": "READY_FOR_EXECUTION",
+  "role": "Agent 1 / Planner",
+  "scope": "performance fix planning for slow Analysis/BPMN tab switching and duplicate version/limit notifications",
+  "gsd_required": true,
+  "gsd_mode": "GSD_PROCESSMAP_WRAPPER_PLANNING",
+  "agent1_product_code_changes_allowed": false,
+  "agent2_frontend_changes_allowed": true,
+  "backend_changes_allowed": "only_if_source_proof_requires_and_explicitly_documented",
+  "bpmn_xml_mutation_allowed": false,
+  "durable_truth_mutation_allowed": false,
+  "ag_ui_changes_allowed": false,
+  "rag_changes_allowed": false,
+  "product_actions_changes_allowed": false,
+  "mcp_repair_allowed": false,
+  "commit_push_pr_allowed": false,
+  "deploy_allowed": false,
+  "requires_agent3_playwright_review": true,
+  "requires_network_before_after_proof": true,
+  "requires_rework_loop_until_review_pass": true
+}

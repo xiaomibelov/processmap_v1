@@ -1,0 +1,21 @@
+{
+  "contour": "feature/process-analysis-session-frontend-thin-client-switch-v1",
+  "run_id": "20260520T225839Z-57944",
+  "status": "READY_FOR_EXECUTION",
+  "execution_mode": "single-lane",
+  "mode": "TOKEN_ECONOMY_SINGLE_EXECUTOR",
+  "agent2_scope": "backend endpoint + frontend switch implementation",
+  "agent3_scope": "shell-only merge",
+  "agent4_scope": "review",
+  "backend_endpoint": "GET /api/sessions/{session_id}/analysis/view-model",
+  "frontend_targets": [
+    "frontend/src/lib/api.js",
+    "frontend/src/components/process/InterviewStage.jsx",
+    "frontend/src/components/process/analysis/ProductActionsRegistryPanel.jsx"
+  ],
+  "bounded_to_product_actions_only": true,
+  "process_properties_deferred": true,
+  "fallback_required": true,
+  "reviewer_runtime_check": ":5180",
+  "plan_written_at": "2026-05-20T23:05:00Z"
+}
