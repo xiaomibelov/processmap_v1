@@ -39,7 +39,7 @@ test("drawio overlay pointer ownership: svg hit surface stays interactive in edi
     createPlacementActive: false,
     hasRenderable: true,
     effectiveMode: "edit",
-  }), "auto");
+  }), "none");
   assert.equal(resolveDrawioOverlaySvgPointerEvents({
     createPlacementActive: false,
     hasRenderable: true,

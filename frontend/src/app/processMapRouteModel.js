@@ -2,6 +2,8 @@ export const PROCESS_MAP_ROUTE_STATE_KEY = "processMapRoute";
 export const PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY = "processMapProjectContext";
 export const PRODUCT_ACTIONS_REGISTRY_SURFACE = "product-actions-registry";
 export const ANALYTICS_HUB_SURFACE = "analytics";
+export const PROPERTIES_REGISTRY_SURFACE = "process-properties-registry";
+export const DASHBOARDS_SURFACE = "dashboards";
 
 const DEFAULT_APP_PATHNAME = "/app";
 const VALID_SOURCES = new Set(["internal", "direct", "popstate"]);
@@ -373,6 +375,154 @@ export function buildAnalyticsHubCloseUrl(routeRaw = {}, options = {}) {
   const search = params.toString();
   return `${pathname}${search ? `?${search}` : ""}${hash}`;
 }
+export function readPropertiesRegistryRoute(locationLike = typeof window !== "undefined" ? window.location : undefined) {
+  try {
+    const url = asLocationUrl(locationLike);
+    const params = new URLSearchParams(url.search || "");
+    const surface = text(params.get("surface")).toLowerCase();
+    const projectId = text(params.get("project"));
+    const sessionId = projectId ? text(params.get("session")) : "";
+    const workspaceId = text(params.get("workspace"));
+    if (surface !== PROPERTIES_REGISTRY_SURFACE) {
+      return {
+        active: false,
+        workspaceId,
+        projectId,
+        sessionId,
+      };
+    }
+    return {
+      active: true,
+      workspaceId,
+      projectId,
+      sessionId,
+    };
+  } catch {
+    return {
+      active: false,
+      workspaceId: "",
+      projectId: "",
+      sessionId: "",
+    };
+  }
+}
+
+export function buildPropertiesRegistryUrl(routeRaw = {}, options = {}) {
+  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
+  const pathname = text(options?.pathname) || DEFAULT_APP_PATHNAME;
+  const hash = text(options?.hash);
+  const params = new URLSearchParams(text(options?.baseSearch));
+  const workspaceId = text(route.workspaceId ?? route.workspace_id);
+  const projectId = text(route.projectId ?? route.project_id);
+  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
+
+  params.set("surface", PROPERTIES_REGISTRY_SURFACE);
+  if (workspaceId) params.set("workspace", workspaceId);
+  else if (Object.prototype.hasOwnProperty.call(route, "workspaceId") || Object.prototype.hasOwnProperty.call(route, "workspace_id")) {
+    params.delete("workspace");
+  }
+  if (projectId) params.set("project", projectId);
+  else params.delete("project");
+  if (sessionId) params.set("session", sessionId);
+  else params.delete("session");
+
+  const search = params.toString();
+  return `${pathname}${search ? `?${search}` : ""}${hash}`;
+}
+
+export function buildPropertiesRegistryCloseUrl(routeRaw = {}, options = {}) {
+  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
+  const pathname = text(options?.pathname) || DEFAULT_APP_PATHNAME;
+  const hash = text(options?.hash);
+  const params = new URLSearchParams(text(options?.baseSearch));
+  params.delete("surface");
+  params.delete("registry_scope");
+  const workspaceId = text(route.workspaceId ?? route.workspace_id);
+  const projectId = text(route.projectId ?? route.project_id);
+  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
+  if (workspaceId) params.set("workspace", workspaceId);
+  if (projectId) params.set("project", projectId);
+  else params.delete("project");
+  if (sessionId) params.set("session", sessionId);
+  else params.delete("session");
+  const search = params.toString();
+  return `${pathname}${search ? `?${search}` : ""}${hash}`;
+}
+
+export function readDashboardsRoute(locationLike = typeof window !== "undefined" ? window.location : undefined) {
+  try {
+    const url = asLocationUrl(locationLike);
+    const params = new URLSearchParams(url.search || "");
+    const surface = text(params.get("surface")).toLowerCase();
+    const projectId = text(params.get("project"));
+    const sessionId = projectId ? text(params.get("session")) : "";
+    const workspaceId = text(params.get("workspace"));
+    if (surface !== DASHBOARDS_SURFACE) {
+      return {
+        active: false,
+        workspaceId,
+        projectId,
+        sessionId,
+      };
+    }
+    return {
+      active: true,
+      workspaceId,
+      projectId,
+      sessionId,
+    };
+  } catch {
+    return {
+      active: false,
+      workspaceId: "",
+      projectId: "",
+      sessionId: "",
+    };
+  }
+}
+
+export function buildDashboardsUrl(routeRaw = {}, options = {}) {
+  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
+  const pathname = text(options?.pathname) || DEFAULT_APP_PATHNAME;
+  const hash = text(options?.hash);
+  const params = new URLSearchParams(text(options?.baseSearch));
+  const workspaceId = text(route.workspaceId ?? route.workspace_id);
+  const projectId = text(route.projectId ?? route.project_id);
+  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
+
+  params.set("surface", DASHBOARDS_SURFACE);
+  if (workspaceId) params.set("workspace", workspaceId);
+  else if (Object.prototype.hasOwnProperty.call(route, "workspaceId") || Object.prototype.hasOwnProperty.call(route, "workspace_id")) {
+    params.delete("workspace");
+  }
+  if (projectId) params.set("project", projectId);
+  else params.delete("project");
+  if (sessionId) params.set("session", sessionId);
+  else params.delete("session");
+
+  const search = params.toString();
+  return `${pathname}${search ? `?${search}` : ""}${hash}`;
+}
+
+export function buildDashboardsCloseUrl(routeRaw = {}, options = {}) {
+  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
+  const pathname = text(options?.pathname) || DEFAULT_APP_PATHNAME;
+  const hash = text(options?.hash);
+  const params = new URLSearchParams(text(options?.baseSearch));
+  params.delete("surface");
+  params.delete("registry_scope");
+  const workspaceId = text(route.workspaceId ?? route.workspace_id);
+  const projectId = text(route.projectId ?? route.project_id);
+  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
+  if (workspaceId) params.set("workspace", workspaceId);
+  if (projectId) params.set("project", projectId);
+  else params.delete("project");
+  if (sessionId) params.set("session", sessionId);
+  else params.delete("session");
+  const search = params.toString();
+  return `${pathname}${search ? `?${search}` : ""}${hash}`;
+}
+
 export function pushProcessMapHistory(routeRaw, options = {}) {
   return writeProcessMapHistory(routeRaw, {
     ...options,

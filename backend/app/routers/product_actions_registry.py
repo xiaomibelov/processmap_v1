@@ -269,6 +269,128 @@ def _summary(rows: List[Dict[str, Any]]) -> Dict[str, int]:
     }
 
 
+def _filter_options(rows: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+    options: Dict[str, Set[str]] = {
+        "product_groups": set(),
+        "products": set(),
+        "action_types": set(),
+        "stages": set(),
+        "object_categories": set(),
+        "roles": set(),
+        "completeness": {"all", "complete", "incomplete"},
+    }
+    for row in rows:
+        if _text(row.get("product_group")):
+            options["product_groups"].add(_text(row.get("product_group")))
+        if _text(row.get("product_name")):
+            options["products"].add(_text(row.get("product_name")))
+        if _text(row.get("action_type")):
+            options["action_types"].add(_text(row.get("action_type")))
+        if _text(row.get("action_stage")):
+            options["stages"].add(_text(row.get("action_stage")))
+        if _text(row.get("action_object_category")):
+            options["object_categories"].add(_text(row.get("action_object_category")))
+        if _text(row.get("role")):
+            options["roles"].add(_text(row.get("role")))
+    return {k: sorted(v) for k, v in options.items()}
+
+
+def _applied_filters(filters: ProductActionsRegistryFilters) -> Dict[str, Any]:
+    completeness = _text(filters.completeness or "all").lower() or "all"
+    if completeness not in {"all", "complete", "incomplete"}:
+        raise HTTPException(status_code=422, detail="invalid completeness filter")
+    return {
+        "product_groups": _texts(filters.product_groups),
+        "products": _texts(filters.products),
+        "action_types": _texts(filters.action_types),
+        "stages": _texts(filters.stages),
+        "object_categories": _texts(filters.object_categories),
+        "roles": _texts(filters.roles),
+        "completeness": completeness,
+    }
+
+
+def _metrics(
+    all_rows: List[Dict[str, Any]],
+    filtered_rows: List[Dict[str, Any]],
+    page_rows: List[Dict[str, Any]],
+    limit: int,
+    offset: int,
+    session_summaries: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    projects_all = {_text(row.get("project_id")) for row in all_rows if _text(row.get("project_id"))}
+    sessions_all = {_text(row.get("session_id")) for row in all_rows if _text(row.get("session_id"))}
+    complete_filtered = sum(1 for row in filtered_rows if row.get("completeness") == "complete")
+    incomplete_filtered = len(filtered_rows) - complete_filtered
+    total_complete = sum(1 for row in all_rows if row.get("completeness") == "complete")
+    total_incomplete = len(all_rows) - total_complete
+    return {
+        "total_rows": len(all_rows),
+        "filtered_rows": len(filtered_rows),
+        "page_rows": len(page_rows),
+        "projects_total": len(projects_all),
+        "sessions_total": len(sessions_all),
+        "sessions_with_actions": sum(1 for item in session_summaries if int(item.get("actions_total") or 0) > 0),
+        "sessions_without_actions": sum(1 for item in session_summaries if int(item.get("actions_total") or 0) <= 0),
+        "complete": complete_filtered,
+        "incomplete": incomplete_filtered,
+        "total_complete": total_complete,
+        "total_incomplete": total_incomplete,
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + limit < len(filtered_rows),
+    }
+
+
+def _empty_state(
+    scope: str,
+    all_rows: List[Dict[str, Any]],
+    filtered_rows: List[Dict[str, Any]],
+    session_summaries: List[Dict[str, Any]],
+    applied_filters: Dict[str, Any],
+) -> Dict[str, Any]:
+    has_filters = any(
+        applied_filters.get(k)
+        for k in ("product_groups", "products", "action_types", "stages", "object_categories", "roles")
+    ) or applied_filters.get("completeness") not in (None, "", "all")
+    if not session_summaries:
+        return {"kind": "no_sessions", "scope": scope, "message_key": "registry.empty.no_sessions"}
+    if all_rows and not filtered_rows and has_filters:
+        return {"kind": "no_filtered_rows", "scope": scope, "message_key": "registry.empty.no_filtered_rows"}
+    if not all_rows:
+        return {"kind": "no_actions", "scope": scope, "message_key": "registry.empty.no_actions"}
+    return {"kind": "not_empty", "scope": scope, "message_key": "registry.empty.not_empty"}
+
+
+def _source_state(
+    session_summaries: List[Dict[str, Any]],
+    all_rows: List[Dict[str, Any]],
+    sources: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    sessions_scanned = len(sources)
+    actions_scanned = len(all_rows)
+    summary_sources: Set[str] = set()
+    for s in session_summaries:
+        src = s.get("summary_source")
+        if src:
+            summary_sources.add(str(src))
+    if "rows_fallback" in summary_sources and "storage" in summary_sources:
+        session_summary_source = "mixed"
+    elif "rows_fallback" in summary_sources:
+        session_summary_source = "rows_fallback"
+    else:
+        session_summary_source = "storage"
+    return {
+        "source": "product_actions_registry_backend",
+        "namespace": "/api/analysis/product-actions/registry",
+        "heavy_payload_excluded": True,
+        "mutation_allowed": False,
+        "session_summary_source": session_summary_source,
+        "sessions_scanned": sessions_scanned,
+        "actions_scanned": actions_scanned,
+    }
+
+
 def _session_summary(source: Dict[str, Any]) -> Dict[str, Any]:
     actions: List[Dict[str, Any]] = []
     for index, action in enumerate(source.get("product_actions") or []):
@@ -434,23 +556,32 @@ def _registry_payload(inp: ProductActionsRegistryQueryIn, request: Request, *, p
     )
     sources = _with_workspace_titles(sources, org_id, workspace_id)
     session_summaries = [_session_summary(source) for source in sources]
-    rows: List[Dict[str, Any]] = []
+    all_rows: List[Dict[str, Any]] = []
     for source in sources:
         for index, action in enumerate(source.get("product_actions") or []):
-            rows.append(_registry_row(source, action, index))
-    session_summaries = _reconcile_session_summaries_with_rows(session_summaries, rows)
-    rows = [row for row in rows if _matches_filters(row, inp.filters)]
-    rows.sort(key=_sort_key)
+            all_rows.append(_registry_row(source, action, index))
+    session_summaries = _reconcile_session_summaries_with_rows(session_summaries, all_rows)
+
+    applied_filters = _applied_filters(inp.filters)
+    filter_options = _filter_options(all_rows)
+
+    filtered_rows = [row for row in all_rows if _matches_filters(row, inp.filters)]
+    filtered_rows.sort(key=_sort_key)
 
     limit = _normalize_limit(inp.limit)
     offset = _normalize_offset(inp.offset)
-    total = len(rows)
-    page_rows = rows[offset:offset + limit] if paginate else rows
+    total = len(filtered_rows)
+    page_rows = filtered_rows[offset:offset + limit] if paginate else filtered_rows
+
+    metrics = _metrics(all_rows, filtered_rows, page_rows, limit, offset, session_summaries)
+    empty_state = _empty_state(scope, all_rows, filtered_rows, session_summaries, applied_filters)
+    source_state = _source_state(session_summaries, all_rows, sources)
+
     return {
         "ok": True,
         "scope": scope,
         "rows": page_rows,
-        "summary": _summary(rows),
+        "summary": _summary(filtered_rows),
         "sessions": session_summaries,
         "session_summary": _session_summary_totals(session_summaries),
         "page": {
@@ -459,6 +590,11 @@ def _registry_payload(inp: ProductActionsRegistryQueryIn, request: Request, *, p
             "total": total,
             "has_more": offset + limit < total,
         },
+        "filter_options": filter_options,
+        "applied_filters": applied_filters,
+        "metrics": metrics,
+        "empty_state": empty_state,
+        "source_state": source_state,
     }
 
 

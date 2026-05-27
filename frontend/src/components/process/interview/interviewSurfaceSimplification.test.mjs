@@ -91,7 +91,7 @@ test("analysis step block is structured as primary workspace plus secondary scen
 
 test("app version changelog records the UI surface simplification", () => {
   const source = read("src/config/appVersion.js");
-  assert.match(source, /currentVersion: "v1\.0\.126"/);
+  assert.match(source, /currentVersion: "v1.0.141"/);
   assert.match(source, /Таблица шагов анализа стала строгой/);
   assert.match(source, /Добавлен реестр действий с продуктом для предпросмотра данных\./);
   assert.match(source, /Улучшен блок действий процесса: шаги, выбранный шаг и действия с продуктом\./);

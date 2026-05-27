@@ -183,6 +183,11 @@ export async function apiQueryProductActionRegistry(payload = {}) {
     session_summary: data.session_summary && typeof data.session_summary === "object" ? data.session_summary : {},
     summary: data.summary && typeof data.summary === "object" ? data.summary : {},
     page: data.page && typeof data.page === "object" ? data.page : {},
+    filter_options: data.filter_options && typeof data.filter_options === "object" ? data.filter_options : null,
+    applied_filters: data.applied_filters && typeof data.applied_filters === "object" ? data.applied_filters : null,
+    metrics: data.metrics && typeof data.metrics === "object" ? data.metrics : null,
+    empty_state: data.empty_state && typeof data.empty_state === "object" ? data.empty_state : null,
+    source_state: data.source_state && typeof data.source_state === "object" ? data.source_state : null,
   };
 }
 
@@ -236,6 +241,11 @@ export async function apiQueryProcessPropertiesRegistry(payload = {}) {
     session_summary: data.session_summary && typeof data.session_summary === "object" ? data.session_summary : {},
     summary: data.summary && typeof data.summary === "object" ? data.summary : {},
     page: data.page && typeof data.page === "object" ? data.page : {},
+    filter_options: data.filter_options && typeof data.filter_options === "object" ? data.filter_options : null,
+    applied_filters: data.applied_filters && typeof data.applied_filters === "object" ? data.applied_filters : null,
+    metrics: data.metrics && typeof data.metrics === "object" ? data.metrics : null,
+    empty_state: data.empty_state && typeof data.empty_state === "object" ? data.empty_state : null,
+    source_state: data.source_state && typeof data.source_state === "object" ? data.source_state : null,
   };
 }
 

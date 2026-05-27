@@ -1,0 +1,130 @@
+[
+  {
+    "id": "val-q1-diagram-review-pass-rules",
+    "type": "validation_fact",
+    "query": "What are the latest rules for Diagram REVIEW_PASS?",
+    "expected_terms": ["diagram", "review", "pass", "rules", "agent3", "GSD", "fresh", "runtime", "real", "drag"],
+    "expected_sources": ["planning-contours", "project-atlas"],
+    "current_result": "7/7 PASS on full manifest with improved ranking",
+    "pass_fail": "PASS",
+    "last_run": "2026-05-16T16:09:00+00:00",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md",
+      "/opt/processmap-test/tools/rag/processmap-rag-validation-queries.json"
+    ],
+    "status": "active",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "val-q2-perf-drag-hot-path",
+    "type": "validation_fact",
+    "query": "What happened in perf diagram modeler drag hot path pointermove suppression?",
+    "expected_terms": ["perf", "diagram", "modeler", "drag", "hot", "path", "pointermove", "suppression"],
+    "expected_sources": ["planning-contours"],
+    "current_result": "7/7 PASS on full manifest with improved ranking",
+    "pass_fail": "PASS",
+    "last_run": "2026-05-16T16:09:00+00:00",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md",
+      "/opt/processmap-test/tools/rag/processmap-rag-validation-queries.json"
+    ],
+    "status": "active",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "val-q3-current-diagram-lag",
+    "type": "validation_fact",
+    "query": "What are current Diagram lag bottlenecks?",
+    "expected_terms": ["diagram", "lag", "bottlenecks", "react", "baseline", "jank"],
+    "expected_sources": ["planning-contours", "project-atlas"],
+    "current_result": "7/7 PASS on full manifest with improved ranking",
+    "pass_fail": "PASS",
+    "last_run": "2026-05-16T16:09:00+00:00",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md",
+      "/opt/processmap-test/tools/rag/processmap-rag-validation-queries.json"
+    ],
+    "status": "active",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "val-q4-rag-forbidden-actions",
+    "type": "validation_fact",
+    "query": "What is forbidden for RAG?",
+    "expected_terms": ["forbidden", "RAG", "auto-mutate", "BPMN", "secrets", "read-only"],
+    "expected_sources": ["project-atlas", "docs-curated"],
+    "current_result": "7/7 PASS on full manifest with improved ranking",
+    "pass_fail": "PASS",
+    "last_run": "2026-05-16T16:09:00+00:00",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md",
+      "/opt/processmap-test/tools/rag/processmap-rag-validation-queries.json"
+    ],
+    "status": "active",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "val-q5-indexed-source-paths",
+    "type": "validation_fact",
+    "query": "Which paths should be indexed?",
+    "expected_terms": ["paths", "indexed", "project-atlas", "planning-contours", "frontend-src", "backend-src"],
+    "expected_sources": ["project-atlas", "docs-curated"],
+    "current_result": "7/7 PASS on full manifest with improved ranking",
+    "pass_fail": "PASS",
+    "last_run": "2026-05-16T16:09:00+00:00",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md",
+      "/opt/processmap-test/tools/rag/processmap-rag-validation-queries.json"
+    ],
+    "status": "active",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "val-q6-test-runtime",
+    "type": "validation_fact",
+    "query": "What is current ProcessMap test runtime?",
+    "expected_terms": ["clearvestnic", "5180", "8088", "runtime", "test"],
+    "expected_sources": ["planning-contours"],
+    "current_result": "7/7 PASS on full manifest with improved ranking",
+    "pass_fail": "PASS",
+    "last_run": "2026-05-16T16:09:00+00:00",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md",
+      "/opt/processmap-test/tools/rag/processmap-rag-validation-queries.json"
+    ],
+    "status": "active",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "val-q7-agent3-diagram-review",
+    "type": "validation_fact",
+    "query": "How should Agent 3 review Diagram performance contours?",
+    "expected_terms": ["agent3", "diagram", "performance", "review", "GSD", "fresh", "runtime", "real", "drag"],
+    "expected_sources": ["planning-contours"],
+    "current_result": "7/7 PASS on full manifest with improved ranking",
+    "pass_fail": "PASS",
+    "last_run": "2026-05-16T16:09:00+00:00",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md",
+      "/opt/processmap-test/tools/rag/processmap-rag-validation-queries.json"
+    ],
+    "status": "active",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "val-coverage-hardening-summary",
+    "type": "validation_fact",
+    "query": "RAG coverage hardening summary",
+    "expected_terms": ["1803", "files", "8", "sources", "7/7", "PASS", "full", "manifest"],
+    "expected_sources": ["planning-contours"],
+    "current_result": "1,803 files indexed across 8 sources; 7/7 validation queries PASS; previous state was 3/7 on 500-file sample",
+    "pass_fail": "PASS",
+    "last_run": "2026-05-16T16:09:00+00:00",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/COVERAGE_HARDENING_REPORT.md",
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/VALIDATION_QUERY_RESULTS.md"
+    ],
+    "status": "active",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  }
+]

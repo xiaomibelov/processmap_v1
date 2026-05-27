@@ -6,14 +6,14 @@ const notesPanelSource = fs.readFileSync(new URL("../NotesPanel.jsx", import.met
 const controlsSource = fs.readFileSync(new URL("./ElementSettingsControls.jsx", import.meta.url), "utf8");
 
 test("step time block exposes calm Russian status copy for saved/local/syncing/error", () => {
-  assert.match(controlsSource, /label: "Сохранено"/);
+  assert.match(controlsSource, /label: "Локально сохранено"/);
   assert.match(controlsSource, /label: "Есть локальные изменения"/);
   assert.match(controlsSource, /label: "Синхронизация…"/);
   assert.match(controlsSource, /label: "Ошибка"/);
-  assert.match(controlsSource, /helper: "Время шага сохранено\."/);
-  assert.match(controlsSource, /helper: "Значение времени изменено локально\."/);
-  assert.match(controlsSource, /helper: "Время шага сохраняется\."/);
-  assert.match(controlsSource, /helper: "Не удалось сохранить время шага\. Значение осталось в поле\."/);
+  assert.match(controlsSource, /helper: "Все изменения синхронизированы\."/);
+  assert.match(controlsSource, /helper: "Есть локальные изменения\."/);
+  assert.match(controlsSource, /helper: "Изменения отправляются\."/);
+  assert.match(controlsSource, /helper: "Не удалось синхронизировать изменения\. Локальная версия сохранена\."/);
 });
 
 test("step time block keeps CTA discipline: only error state exposes retry", () => {

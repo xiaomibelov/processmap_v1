@@ -46,3 +46,7 @@ archive/
 backups/
 zip/
 deploy/logs/
+.agents/
+
+# Playwright MCP artifacts
+.playwright-mcp/

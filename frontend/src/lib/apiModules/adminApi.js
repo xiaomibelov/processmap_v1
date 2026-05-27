@@ -197,6 +197,18 @@ export async function apiAdminArchiveAiPrompt(promptId) {
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
 
+export async function apiAdminListAgentRuns() {
+  const r = okOrError(await request(apiRoutes.admin.agentRuns(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminGetAgentRun(runId) {
+  const id = String(runId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing run_id" };
+  const r = okOrError(await request(apiRoutes.admin.agentRun(id), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
 export async function apiAdminRagGetSettings() {
   const r = okOrError(await request(apiRoutes.admin.ragSettings(), { method: "GET" }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
