@@ -5,6 +5,7 @@ import {
   robotMetaMissingFields,
   stableSortValue,
 } from "./robotMeta.js";
+import crypto from "crypto";
 
 export const EXECUTION_PLAN_VERSION = "v1";
 const DEFAULT_CREATED_AT = "1970-01-01T00:00:00.000Z";
@@ -107,14 +108,14 @@ export function appendExecutionPlanVersionEntry(versionsRaw, planRaw) {
 async function sha256HexFromText(source) {
   const text = String(source || "");
   const subtle = globalThis?.crypto?.subtle;
-  if (!subtle || typeof subtle.digest !== "function") {
-    throw new Error("sha256_unavailable");
+  if (subtle && typeof subtle.digest === "function") {
+    const bytes = new TextEncoder().encode(text);
+    const digest = await subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
   }
-  const bytes = new TextEncoder().encode(text);
-  const digest = await subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  return crypto.createHash("sha256").update(text, "utf8").digest("hex");
 }
 
 function buildEvents(stepRaw) {

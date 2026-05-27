@@ -3386,7 +3386,9 @@ def auth_login(inp: AuthLoginIn, request: Request):
         raise HTTPException(status_code=429, detail="too_many_requests")
     try:
         user = authenticate_user(inp.email, inp.password)
-    except AuthError:
+    except AuthError as _e:
+        import logging
+        logging.getLogger("auth_debug").warning(f"auth_login failed: email={inp.email} error={_e}")
         raise HTTPException(status_code=401, detail="invalid_credentials")
 
     issued = issue_login_tokens(

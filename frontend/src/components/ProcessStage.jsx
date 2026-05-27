@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import DocStage from "./process/DocStage";
 import DodStage from "./process/DodStage";
 import InterviewStage from "./process/InterviewStage";
-import ProductActionsRegistryPage from "./process/analysis/ProductActionsRegistryPage.jsx";
-import ProcessAnalyticsHub from "./process/analysis/ProcessAnalyticsHub.jsx";
+import ProductActionsRegistry from "../features/analytics/ProductActionsRegistry.jsx";
+import PropertiesRegistry from "../features/analytics/PropertiesRegistry.jsx";
+import DashboardsPlaceholder from "../features/analytics/DashboardsPlaceholder.jsx";
+import AnalyticsSectionTabs from "../features/analytics/AnalyticsSectionTabs.jsx";
+import AnalyticsHub from "../features/analytics/AnalyticsHub.jsx";
 import WorkspaceExplorer from "../features/explorer/WorkspaceExplorer";
 import { useAuth } from "../features/auth/AuthProvider";
 import {
@@ -252,13 +255,12 @@ import {
 } from "../features/process/stage/utils/processStageHelpers";
 import { pushDeleteTrace } from "../features/process/stage/utils/deleteTrace";
 import {
-  buildAnalyticsHubCloseUrl,
-  buildAnalyticsHubUrl,
   buildProductActionsRegistryCloseUrl,
-  buildProductActionsRegistryUrl,
-  readAnalyticsHubRoute,
   readProductActionsRegistryRoute,
+  readPropertiesRegistryRoute,
+  readDashboardsRoute,
 } from "../app/processMapRouteModel.js";
+import { useAnalyticsRouteState } from "../features/analytics/useAnalyticsRouteState";
 
 const DIAGRAM_UNDO_REDO_VISIBLE_POLL_MS = 5000;
 const BPMN_VERSION_HEADERS_LIMIT = 50;
@@ -916,105 +918,28 @@ function ProcessStage({
     sessionCompanionLocalFirstAdapterMode,
   ]);
   const hasSession = !!sid;
-  const [productActionsRegistryRoute, setProductActionsRegistryRoute] = useState(() => readProductActionsRegistryRoute());
-  const syncProductActionsRegistryRoute = useCallback(() => {
-    setProductActionsRegistryRoute(readProductActionsRegistryRoute());
-  }, []);
-  useEffect(() => {
-    window.addEventListener("popstate", syncProductActionsRegistryRoute);
-    return () => window.removeEventListener("popstate", syncProductActionsRegistryRoute);
-  }, [syncProductActionsRegistryRoute]);
-  const [analyticsHubRoute, setAnalyticsHubRoute] = useState(() => readAnalyticsHubRoute());
-  const syncAnalyticsHubRoute = useCallback(() => {
-    setAnalyticsHubRoute(readAnalyticsHubRoute());
-  }, []);
-  useEffect(() => {
-    window.addEventListener("popstate", syncAnalyticsHubRoute);
-    return () => window.removeEventListener("popstate", syncAnalyticsHubRoute);
-  }, [syncAnalyticsHubRoute]);
-  const openAnalyticsHub = useCallback((options = {}) => {
-    if (typeof window === "undefined") return;
-    const nextUrl = buildAnalyticsHubUrl({
-      workspaceId: options?.workspaceId || activeProjectWorkspaceId || analyticsHubRoute.workspaceId,
-      projectId: options?.projectId ?? activeProjectId,
-      sessionId: options?.sessionId ?? sid,
-    }, {
-      pathname: window.location.pathname || "/app",
-      baseSearch: window.location.search || "",
-      hash: window.location.hash || "",
-    });
-    window.history.pushState({ ...(window.history.state || {}), surface: "analytics" }, "", nextUrl);
-    setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
-    setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
-  }, [activeProjectId, activeProjectWorkspaceId, analyticsHubRoute.workspaceId, sid]);
-  const closeAnalyticsHub = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const nextUrl = buildAnalyticsHubCloseUrl({
-      workspaceId: analyticsHubRoute.workspaceId || activeProjectWorkspaceId,
-      projectId: activeProjectId,
-      sessionId: sid,
-    }, {
-      pathname: window.location.pathname || "/app",
-      baseSearch: window.location.search || "",
-      hash: window.location.hash || "",
-    });
-    window.history.pushState({ ...(window.history.state || {}) }, "", nextUrl);
-    setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
-    setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
-  }, [activeProjectId, activeProjectWorkspaceId, analyticsHubRoute.workspaceId, sid]);
-  const openProductActionsRegistry = useCallback((options = {}) => {
-    if (typeof window === "undefined") return;
-    const scope = toText(options?.scope) || (sid ? "session" : activeProjectId ? "project" : "workspace");
-    const currentUrl = new URL(window.location.href);
-    const fromAnalytics = analyticsHubRoute.active || currentUrl.searchParams.get("surface") === "analytics";
-    if (fromAnalytics) {
-      currentUrl.searchParams.set("return_to", "analytics");
-    }
-    const nextUrl = buildProductActionsRegistryUrl({
-      scope,
-      workspaceId: options?.workspaceId || activeProjectWorkspaceId || productActionsRegistryRoute.workspaceId,
-      projectId: options?.projectId ?? activeProjectId,
-      sessionId: options?.sessionId ?? sid,
-    }, {
-      pathname: window.location.pathname || "/app",
-      baseSearch: currentUrl.searchParams.toString(),
-      hash: window.location.hash || "",
-    });
-    window.history.pushState({ ...(window.history.state || {}), surface: "product-actions-registry" }, "", nextUrl);
-    setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
-    setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
-  }, [activeProjectId, activeProjectWorkspaceId, analyticsHubRoute.active, productActionsRegistryRoute.workspaceId, sid]);
-  const closeProductActionsRegistry = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const url = new URL(window.location.href);
-    const returnTo = url.searchParams.get("return_to");
-    let nextUrl;
-    if (returnTo === "analytics") {
-      url.searchParams.delete("return_to");
-      nextUrl = buildAnalyticsHubUrl({
-        workspaceId: productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId,
-        projectId: activeProjectId,
-        sessionId: sid,
-      }, {
-        pathname: window.location.pathname || "/app",
-        baseSearch: url.searchParams.toString(),
-        hash: window.location.hash || "",
-      });
-    } else {
-      nextUrl = buildProductActionsRegistryCloseUrl({
-        workspaceId: productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId,
-        projectId: activeProjectId,
-        sessionId: sid,
-      }, {
-        pathname: window.location.pathname || "/app",
-        baseSearch: window.location.search || "",
-        hash: window.location.hash || "",
-      });
-    }
-    window.history.pushState({ ...(window.history.state || {}) }, "", nextUrl);
-    setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
-    setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
-  }, [activeProjectId, activeProjectWorkspaceId, productActionsRegistryRoute.workspaceId, sid]);
+  const {
+    analyticsHubRoute,
+    productActionsRegistryRoute,
+    propertiesRegistryRoute,
+    dashboardsRoute,
+    setAnalyticsHubRoute,
+    setProductActionsRegistryRoute,
+    setPropertiesRegistryRoute,
+    setDashboardsRoute,
+    openAnalyticsHub,
+    closeAnalyticsHub,
+    openProductActionsRegistry,
+    closeProductActionsRegistry,
+    openPropertiesRegistry,
+    closePropertiesRegistry,
+    openDashboards,
+    closeDashboards,
+  } = useAnalyticsRouteState({
+    sessionId: sid,
+    projectId: activeProjectId,
+    workspaceId: activeProjectWorkspaceId,
+  });
   const openProductActionsRegistryProject = useCallback((projectLike = {}) => {
     const project_id = toText(projectLike?.projectId || projectLike?.project_id);
     if (!project_id) return;
@@ -6513,30 +6438,59 @@ function ProcessStage({
         ref={processBodyRef}
       >
         {!hasSession ? (
-          analyticsHubRoute.active ? (
-            <ProcessAnalyticsHub
-              workspaceId={analyticsHubRoute.workspaceId || activeProjectWorkspaceId}
-              projectId={analyticsHubRoute.projectId || activeProjectId}
-              projectTitle={toText(activeProjectRouteContext?.projectTitle)}
-              sessionId=""
-              sessionTitle=""
-              onOpenProductActionsRegistry={openProductActionsRegistry}
-              onClose={closeAnalyticsHub}
-            />
-          ) : productActionsRegistryRoute.active ? (
-            <ProductActionsRegistryPage
-              scope={productActionsRegistryRoute.scope}
-              workspaceId={productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId}
-              projectId={productActionsRegistryRoute.projectId || activeProjectId}
-              projectTitle={toText(activeProjectRouteContext?.projectTitle)}
-              sessionId=""
-              sessionTitle=""
-              interviewData={null}
-              onScopeChange={(scope) => openProductActionsRegistry({ scope })}
-              onOpenProject={openProductActionsRegistryProject}
-              onOpenSession={openProductActionsRegistrySession}
-              onClose={closeProductActionsRegistry}
-            />
+          analyticsHubRoute.active || productActionsRegistryRoute.active || propertiesRegistryRoute.active || dashboardsRoute.active ? (
+            <div className="analyticsSurfaceLayout">
+              <AnalyticsSectionTabs
+                activeTab={analyticsHubRoute.active ? "overview" : productActionsRegistryRoute.active ? "actions" : propertiesRegistryRoute.active ? "properties" : "dashboards"}
+                onChange={(key) => {
+                  if (key === "overview") openAnalyticsHub();
+                  else if (key === "actions") openProductActionsRegistry();
+                  else if (key === "properties") openPropertiesRegistry();
+                  else if (key === "dashboards") openDashboards();
+                }}
+              />
+              {analyticsHubRoute.active ? (
+                <AnalyticsHub
+                  workspaceId={analyticsHubRoute.workspaceId || activeProjectWorkspaceId}
+                  projectId={analyticsHubRoute.projectId || activeProjectId}
+                  projectTitle={toText(activeProjectRouteContext?.projectTitle)}
+                  sessionId=""
+                  sessionTitle=""
+                  onOpenProductActionsRegistry={openProductActionsRegistry}
+                  onOpenPropertiesRegistry={openPropertiesRegistry}
+                  onClose={closeAnalyticsHub}
+                />
+              ) : productActionsRegistryRoute.active ? (
+                <ProductActionsRegistry
+                  scope={productActionsRegistryRoute.scope}
+                  workspaceId={productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId}
+                  projectId={productActionsRegistryRoute.projectId || activeProjectId}
+                  projectTitle={toText(activeProjectRouteContext?.projectTitle)}
+                  sessionId=""
+                  sessionTitle=""
+                  onScopeChange={(scope) => openProductActionsRegistry({ scope })}
+                  onOpenProject={openProductActionsRegistryProject}
+                  onOpenSession={openProductActionsRegistrySession}
+                  onClose={closeProductActionsRegistry}
+                />
+              ) : propertiesRegistryRoute.active ? (
+                <PropertiesRegistry
+                  workspaceId={propertiesRegistryRoute.workspaceId || activeProjectWorkspaceId}
+                  projectId={propertiesRegistryRoute.projectId || activeProjectId}
+                  sessionId=""
+                  onClose={closePropertiesRegistry}
+                />
+              ) : (
+                <DashboardsPlaceholder
+                  workspaceId={dashboardsRoute.workspaceId || activeProjectWorkspaceId}
+                  projectId={dashboardsRoute.projectId || activeProjectId}
+                  sessionId=""
+                  onClose={closeDashboards}
+                  onOpenProductActionsRegistry={openProductActionsRegistry}
+                  onOpenPropertiesRegistry={openPropertiesRegistry}
+                />
+              )}
+            </div>
           ) : (
             <WorkspaceExplorer
               activeOrgId={workspaceActiveOrgId}
@@ -6544,35 +6498,62 @@ function ProcessStage({
               requestProjectWorkspaceId={activeProjectWorkspaceId}
               requestProjectContext={activeProjectRouteContext}
               onOpenSession={(sessionLike, options) => onOpenWorkspaceSession?.(sessionLike, options)}
-              onOpenProductActionsRegistry={openProductActionsRegistry}
-              onOpenAnalyticsHub={openAnalyticsHub}
               onClearRequestedProject={onClearWorkspaceProject}
             />
           )
-        ) : analyticsHubRoute.active ? (
-          <ProcessAnalyticsHub
-            workspaceId={analyticsHubRoute.workspaceId || activeProjectWorkspaceId}
-            projectId={analyticsHubRoute.projectId || activeProjectId}
-            projectTitle={toText(activeProjectRouteContext?.projectTitle || draft?.project_title || draft?.projectTitle)}
-            sessionId={sid}
-            sessionTitle={toText(draft?.title)}
-            onOpenProductActionsRegistry={openProductActionsRegistry}
-            onClose={closeAnalyticsHub}
-          />
-        ) : productActionsRegistryRoute.active ? (
-          <ProductActionsRegistryPage
-            scope={productActionsRegistryRoute.scope}
-            workspaceId={productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId}
-            projectId={productActionsRegistryRoute.projectId || activeProjectId}
-            projectTitle={toText(activeProjectRouteContext?.projectTitle || draft?.project_title || draft?.projectTitle)}
-            sessionId={sid}
-            sessionTitle={toText(draft?.title)}
-            interviewData={draft?.interview}
-            onScopeChange={(scope) => openProductActionsRegistry({ scope })}
-            onOpenProject={openProductActionsRegistryProject}
-            onOpenSession={openProductActionsRegistrySession}
-            onClose={closeProductActionsRegistry}
-          />
+        ) : analyticsHubRoute.active || productActionsRegistryRoute.active || propertiesRegistryRoute.active || dashboardsRoute.active ? (
+          <div className="analyticsSurfaceLayout">
+            <AnalyticsSectionTabs
+              activeTab={analyticsHubRoute.active ? "overview" : productActionsRegistryRoute.active ? "actions" : propertiesRegistryRoute.active ? "properties" : "dashboards"}
+              onChange={(key) => {
+                if (key === "overview") openAnalyticsHub();
+                else if (key === "actions") openProductActionsRegistry();
+                else if (key === "properties") openPropertiesRegistry();
+                else if (key === "dashboards") openDashboards();
+              }}
+            />
+            {analyticsHubRoute.active ? (
+              <AnalyticsHub
+                workspaceId={analyticsHubRoute.workspaceId || activeProjectWorkspaceId}
+                projectId={analyticsHubRoute.projectId || activeProjectId}
+                projectTitle={toText(activeProjectRouteContext?.projectTitle || draft?.project_title || draft?.projectTitle)}
+                sessionId={sid}
+                sessionTitle={toText(draft?.title)}
+                onOpenProductActionsRegistry={openProductActionsRegistry}
+                onOpenPropertiesRegistry={openPropertiesRegistry}
+                onClose={closeAnalyticsHub}
+              />
+            ) : productActionsRegistryRoute.active ? (
+              <ProductActionsRegistry
+                scope={productActionsRegistryRoute.scope}
+                workspaceId={productActionsRegistryRoute.workspaceId || activeProjectWorkspaceId}
+                projectId={productActionsRegistryRoute.projectId || activeProjectId}
+                projectTitle={toText(activeProjectRouteContext?.projectTitle || draft?.project_title || draft?.projectTitle)}
+                sessionId={sid}
+                sessionTitle={toText(draft?.title)}
+                onScopeChange={(scope) => openProductActionsRegistry({ scope })}
+                onOpenProject={openProductActionsRegistryProject}
+                onOpenSession={openProductActionsRegistrySession}
+                onClose={closeProductActionsRegistry}
+              />
+            ) : propertiesRegistryRoute.active ? (
+              <PropertiesRegistry
+                workspaceId={propertiesRegistryRoute.workspaceId || activeProjectWorkspaceId}
+                projectId={propertiesRegistryRoute.projectId || activeProjectId}
+                sessionId={sid}
+                onClose={closePropertiesRegistry}
+              />
+            ) : (
+              <DashboardsPlaceholder
+                workspaceId={dashboardsRoute.workspaceId || activeProjectWorkspaceId}
+                projectId={dashboardsRoute.projectId || activeProjectId}
+                sessionId={sid}
+                onClose={closeDashboards}
+                onOpenProductActionsRegistry={openProductActionsRegistry}
+                onOpenPropertiesRegistry={openPropertiesRegistry}
+              />
+            )}
+          </div>
         ) : tab === "doc" ? (
           <DocStage
             sessionId={sid}

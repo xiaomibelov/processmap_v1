@@ -29,13 +29,13 @@ test("dark theme topbar and discussions use semantic colors instead of white sta
   assert.match(workspacePermissionsSource, /draft:[\s\S]*dark:border-borderStrong dark:bg-panel2 dark:text-fg/);
   assert.match(topBarSource, /statusComboPill/);
   assert.match(topBarSource, /border-danger\/55 bg-danger\/15 text-danger/);
-  assert.match(topBarSource, /hover:border-info\/55 hover:bg-panel2\/85/);
+  assert.match(topBarSource, /hover:border-info\/35 hover:bg-panel2\/55/);
   assert.doesNotMatch(topBarSource, /bg-rose-50 text-rose-900/);
   assert.match(notesPanelSource, /bg-info\/10/);
   assert.match(notesPanelSource, /text-info/);
   assert.match(notesPanelSource, /border-danger\/50 bg-danger\/10 text-danger/);
   assert.doesNotMatch(notesPanelSource, /hover:bg-white/);
   assert.doesNotMatch(notesPanelSource, /bg-white\/85/);
-  assert.match(versionSource, /currentVersion: "v1\.0\.73"/);
+  assert.match(versionSource, /currentVersion: "v1.0.141"/);
   assert.match(versionSource, /Back из диаграммы закрывает сессию и показывает список сессий проекта\./);
 });

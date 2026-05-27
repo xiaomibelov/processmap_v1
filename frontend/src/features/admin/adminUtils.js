@@ -55,6 +55,7 @@ export function parseAdminRoute(pathnameRaw) {
   const parts = tail.split("/").filter(Boolean);
   const section = toLower(parts[0]) || "dashboard";
   const sessionId = section === "sessions" ? toText(parts[1]) : "";
+  const runId = section === "agent-runs" ? toText(parts[1]) : "";
   const labels = {
     dashboard: ru.admin.sections.dashboard,
     orgs: ru.admin.sections.orgs,
@@ -69,6 +70,7 @@ export function parseAdminRoute(pathnameRaw) {
     section,
     sectionLabel: labels[section] || section,
     sessionId,
+    runId,
     isRoot: false,
   };
 }
@@ -88,6 +90,13 @@ export function buildAdminBreadcrumbs(route, activeOrgName = "") {
       id: "session_detail",
       label: `SID ${toText(route?.sessionId)}`,
       href: `/admin/sessions/${toText(route?.sessionId)}`,
+    });
+  }
+  if (section === "agent-runs" && toText(route?.runId)) {
+    crumbs.push({
+      id: "agent_run_detail",
+      label: toText(route?.runId),
+      href: `/admin/agent-runs/${toText(route?.runId)}`,
     });
   }
   if (toText(activeOrgName)) {

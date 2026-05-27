@@ -4,6 +4,7 @@ import {
   importHybridV2FromDrawioXml as importHybridV2FromDrawioXmlRaw,
   normalizeHybridV2Doc,
 } from "./hybridLayerV2.js";
+import zlib from "zlib";
 
 function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -52,12 +53,21 @@ function base64ToBytes(base64Raw) {
 
 async function inflateRawBytes(bytesRaw) {
   const bytes = bytesRaw instanceof Uint8Array ? bytesRaw : new Uint8Array();
-  if (typeof DecompressionStream !== "function") {
-    throw new Error("decompression_stream_unavailable");
+  if (typeof DecompressionStream === "function") {
+    try {
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      const arrayBuffer = await new Response(stream).arrayBuffer();
+      return new Uint8Array(arrayBuffer);
+    } catch {
+      // fallback to zlib
+    }
   }
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-  const arrayBuffer = await new Response(stream).arrayBuffer();
-  return new Uint8Array(arrayBuffer);
+  return new Promise((resolve, reject) => {
+    zlib.inflateRaw(Buffer.from(bytes), (err, result) => {
+      if (err) reject(err);
+      else resolve(new Uint8Array(result));
+    });
+  });
 }
 
 function tryDecodeUriComponent(textRaw) {

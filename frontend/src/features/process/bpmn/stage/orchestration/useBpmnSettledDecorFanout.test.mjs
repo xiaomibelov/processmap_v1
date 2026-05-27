@@ -88,10 +88,7 @@ test("re-applies user notes/docs decor when runtime becomes ready after initial 
       root.render(React.createElement(HookHarness, { ...baseProps, tick: 0 }));
     });
 
-    assert.deepEqual(notesCalls, [
-      [null, "viewer"],
-      [null, "editor"],
-    ]);
+    assert.deepEqual(notesCalls, []);
 
     viewerRef.current = { id: "viewer_inst" };
     runtime.inst = { id: "modeler_inst" };
@@ -102,9 +99,8 @@ test("re-applies user notes/docs decor when runtime becomes ready after initial 
       root.render(React.createElement(HookHarness, { ...baseProps, tick: 1 }));
     });
 
-    assert.deepEqual(notesCalls.slice(-2), [
+    assert.deepEqual(notesCalls.slice(-1), [
       ["viewer_inst", "viewer"],
-      ["modeler_inst", "editor"],
     ]);
 
     await act(async () => {

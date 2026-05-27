@@ -20,7 +20,7 @@ test("Discussions surface uses unified discussions labeling and hides the floati
   assert.match(badgeSource, /compactNumericOnly \? "pointer-events-none shrink-0" : ""/);
   assert.match(badgeSource, /\{compact && compactNumericOnly \? null : <span>\{chipLabel\}<\/span>\}/);
   assert.match(notesMvpPanelSource, /NotesAggregateBadge aggregate=\{aggregate\} compact compactNumericOnly label="Обсуждения"/);
-  assert.match(notesMvpPanelSource, /NotesAggregateBadge aggregate=\{aggregate\} compact compactNumericOnly label="Обсуждения" className="bg-white\/85"/);
+  assert.ok(notesMvpPanelSource.includes("NotesAggregateBadge aggregate={aggregate} compact compactNumericOnly label=\"Обсуждения\" className=\"border-border bg-panel2/85 px-1.5 py-0 text-[10px]\""));
   assert.match(notesMvpPanelSource, /data-testid="notes-panel-floating-trigger"/);
   assert.match(notesMvpPanelSource, /className="fixed bottom-5 right-5 z-\[86\] hidden[\s\S]*max-lg:flex lg:hidden"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-summary-line"/);

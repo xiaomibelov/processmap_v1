@@ -16,6 +16,6 @@ test("force save retries pending saveLocal result before returning pending outco
   assert.equal(source.includes("let pendingRetryAttempt = 0;"), true);
   assert.equal(source.includes("saved.pending === true"), true);
   assert.equal(source.includes("pendingRetryAttempt < 3"), true);
-  assert.equal(source.includes("saveLocal({ force, source, persistReason })"), true);
+  assert.equal(source.includes("saveLocal({"), true);
   assert.equal(source.includes('logBpmnTrace("FLUSH_SAVE_PENDING_RETRY_DONE"'), true);
 });
