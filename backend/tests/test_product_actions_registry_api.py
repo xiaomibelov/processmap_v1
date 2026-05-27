@@ -22,11 +22,27 @@ class ProductActionsRegistryApiTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.old_storage_dir = os.environ.get("PROCESS_STORAGE_DIR")
         self.old_db_path = os.environ.get("PROCESS_DB_PATH")
+        self.old_db_backend = os.environ.get("FPC_DB_BACKEND")
+        self.old_database_url = os.environ.get("DATABASE_URL")
         os.environ["PROCESS_STORAGE_DIR"] = self.tmp.name
-        os.environ.pop("PROCESS_DB_PATH", None)
+        os.environ["PROCESS_DB_PATH"] = str(Path(self.tmp.name) / "processmap.sqlite3")
+        os.environ["FPC_DB_BACKEND"] = "sqlite"
+        os.environ.pop("DATABASE_URL", None)
         os.environ.setdefault("JWT_SECRET", "test-secret")
         os.environ.setdefault("JWT_ISSUER", "test-issuer")
         os.environ.setdefault("JWT_AUDIENCE", "test-audience")
+
+        from app.db.config import get_db_runtime_config
+
+        get_db_runtime_config.cache_clear()
+        try:
+            import app.storage as storage_module
+
+            storage_module._SCHEMA_READY = False
+            storage_module._SCHEMA_DB_FILE = ""
+            storage_module._PG_POOL = None
+        except Exception:
+            pass
 
         from app.auth import create_user
         from app.routers.product_actions_registry import (
@@ -143,6 +159,25 @@ class ProductActionsRegistryApiTests(unittest.TestCase):
             os.environ.pop("PROCESS_DB_PATH", None)
         else:
             os.environ["PROCESS_DB_PATH"] = self.old_db_path
+        if self.old_db_backend is None:
+            os.environ.pop("FPC_DB_BACKEND", None)
+        else:
+            os.environ["FPC_DB_BACKEND"] = self.old_db_backend
+        if self.old_database_url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = self.old_database_url
+        try:
+            from app.db.config import get_db_runtime_config
+
+            get_db_runtime_config.cache_clear()
+            import app.storage as storage_module
+
+            storage_module._SCHEMA_READY = False
+            storage_module._SCHEMA_DB_FILE = ""
+            storage_module._PG_POOL = None
+        except Exception:
+            pass
         self.tmp.cleanup()
 
     def _db_path(self) -> Path:
@@ -196,6 +231,16 @@ class ProductActionsRegistryApiTests(unittest.TestCase):
         self.assertTrue(out.get("ok"))
         self.assertEqual(out.get("scope"), "session")
         self.assertEqual(out.get("summary", {}).get("actions_total"), 1)
+        self.assertEqual(out.get("applied_filters", {}).get("completeness"), "all")
+        self.assertEqual(out.get("metrics", {}).get("total_rows"), 1)
+        self.assertEqual(out.get("metrics", {}).get("filtered_rows"), 1)
+        self.assertEqual(out.get("metrics", {}).get("page_rows"), 1)
+        self.assertEqual(out.get("empty_state", {}).get("kind"), "not_empty")
+        self.assertEqual(out.get("source_state", {}).get("namespace"), "/api/analysis/product-actions/registry")
+        self.assertIs(out.get("source_state", {}).get("heavy_payload_excluded"), True)
+        self.assertIs(out.get("source_state", {}).get("mutation_allowed"), False)
+        self.assertIn("Клаб", out.get("filter_options", {}).get("products") or [])
+        self.assertEqual(out.get("filter_options", {}).get("completeness"), ["all", "complete", "incomplete"])
         row = out["rows"][0]
         self.assertEqual(row.get("product_name"), "Клаб")
         self.assertEqual(row.get("completeness"), "complete")
@@ -252,12 +297,58 @@ class ProductActionsRegistryApiTests(unittest.TestCase):
         self.assertEqual(filtered.get("summary", {}).get("actions_total"), 1)
         self.assertEqual(filtered.get("page", {}).get("total"), 1)
         self.assertFalse(filtered.get("page", {}).get("has_more"))
+        self.assertEqual(filtered.get("applied_filters", {}).get("product_groups"), ["Сэндвичи"])
+        self.assertEqual(filtered.get("applied_filters", {}).get("completeness"), "complete")
+        self.assertEqual(filtered.get("metrics", {}).get("total_rows"), 3)
+        self.assertEqual(filtered.get("metrics", {}).get("filtered_rows"), 1)
+        self.assertEqual(filtered.get("metrics", {}).get("page_rows"), 1)
+        self.assertEqual(filtered.get("metrics", {}).get("complete"), 1)
+        self.assertEqual(filtered.get("metrics", {}).get("incomplete"), 0)
+        self.assertEqual(filtered.get("metrics", {}).get("total_complete"), 2)
+        self.assertEqual(filtered.get("metrics", {}).get("total_incomplete"), 1)
+        self.assertFalse(filtered.get("metrics", {}).get("has_more"))
+        self.assertIn("Лимонад", filtered.get("filter_options", {}).get("products") or [])
+        self.assertEqual(filtered.get("empty_state", {}).get("kind"), "not_empty")
         self.assertEqual(filtered["rows"][0].get("action_type"), "нарезка")
 
         paged = self._query(scope="workspace", workspace_id=self.workspace_id, limit=1, offset=1)
         self.assertEqual(len(paged.get("rows") or []), 1)
         self.assertEqual(paged.get("page", {}).get("total"), 3)
         self.assertTrue(paged.get("page", {}).get("has_more"))
+        self.assertTrue(paged.get("metrics", {}).get("has_more"))
+
+    def test_query_empty_state_and_filter_universe_are_stable_for_no_matches(self):
+        out = self._query(
+            scope="workspace",
+            workspace_id=self.workspace_id,
+            filters=self.ProductActionsRegistryFilters(products=["__missing__"]),
+            limit=10,
+        )
+        self.assertEqual(out.get("rows"), [])
+        self.assertEqual(out.get("summary", {}).get("actions_total"), 0)
+        self.assertEqual(out.get("page", {}).get("total"), 0)
+        self.assertEqual(out.get("metrics", {}).get("total_rows"), 3)
+        self.assertEqual(out.get("metrics", {}).get("filtered_rows"), 0)
+        self.assertEqual(out.get("metrics", {}).get("page_rows"), 0)
+        self.assertEqual(out.get("empty_state", {}).get("kind"), "no_filtered_rows")
+        self.assertEqual(out.get("applied_filters", {}).get("products"), ["__missing__"])
+        self.assertIn("Клаб", out.get("filter_options", {}).get("products") or [])
+        self.assertIn("Лимонад", out.get("filter_options", {}).get("products") or [])
+
+    def test_project_with_sessions_but_no_actions_has_no_actions_empty_state(self):
+        storage = self.get_storage()
+        project_id = self.get_project_storage().create("Empty Registry Project", {}, user_id=self.admin_id, org_id=self.org_id, is_admin=True)
+        storage.create("Empty Registry Session", roles=["role"], project_id=project_id, org_id=self.org_id, is_admin=True)
+
+        out = self._query(scope="project", project_id=project_id, limit=10)
+
+        self.assertEqual(out.get("rows"), [])
+        self.assertEqual(out.get("summary", {}).get("actions_total"), 0)
+        self.assertEqual(out.get("session_summary", {}).get("sessions_total"), 1)
+        self.assertEqual(out.get("session_summary", {}).get("sessions_without_actions"), 1)
+        self.assertEqual(out.get("empty_state", {}).get("kind"), "no_actions")
+        self.assertEqual(out.get("metrics", {}).get("total_rows"), 0)
+        self.assertEqual(out.get("source_state", {}).get("actions_scanned"), 0)
 
     def test_project_scope_denies_inaccessible_project(self):
         with self.assertRaises(HTTPException) as ctx:
@@ -335,6 +426,12 @@ class ProductActionsRegistryApiTests(unittest.TestCase):
         self.assertNotIn("heavy report", sheet_xml)
 
     def test_export_filters_and_zero_rows_are_handled(self):
+        query = self._query(
+            scope="workspace",
+            workspace_id=self.workspace_id,
+            filters=self.ProductActionsRegistryFilters(product_groups=["Напитки"], completeness="complete"),
+            limit=10,
+        )
         filtered = self.export_product_actions_registry_csv(
             self.ProductActionsRegistryQueryIn(
                 scope="workspace",
@@ -347,6 +444,11 @@ class ProductActionsRegistryApiTests(unittest.TestCase):
         parsed = list(csv.reader(io.StringIO(bytes(filtered.body).decode("utf-8-sig")), delimiter=";"))
         self.assertEqual(len(parsed), 2)
         self.assertEqual(parsed[1][self.EXPORT_COLUMNS.index("product_name")], "Лимонад")
+        self.assertEqual([row.get("product_name") for row in query.get("rows") or []], ["Лимонад"])
+        self.assertEqual(
+            [row[self.EXPORT_COLUMNS.index("product_name")] for row in parsed[1:]],
+            [row.get("product_name") for row in query.get("rows") or []],
+        )
 
         empty = self.export_product_actions_registry_csv(
             self.ProductActionsRegistryQueryIn(

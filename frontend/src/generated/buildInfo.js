@@ -1,10 +1,10 @@
 export const PROCESSMAP_BUILD_INFO = {
-  "branch": "main",
-  "sha": "f01dd66588f2b896b4c212bb49c797ac7617e6f2",
-  "shaShort": "f01dd66",
-  "timestamp": "2026-05-21T11:46:33.169Z",
-  "contourId": "release/processmap-v1-0-140-stage-promotion-and-analytics-entry-fix-v1",
-  "dirty": false,
+  "branch": "feat/active-runs-monitor-v1",
+  "sha": "5affb5ff0abce2735df1c34fe369a39fe9c354e3",
+  "shaShort": "5affb5f",
+  "timestamp": "2026-05-22T16:32:53.888Z",
+  "contourId": "cleanup/analytics-single-source-of-truth-v1",
+  "dirty": true,
   "host": "clearvestnic.ru"
 };
 export default PROCESSMAP_BUILD_INFO;

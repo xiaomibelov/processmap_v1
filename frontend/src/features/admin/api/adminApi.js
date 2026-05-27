@@ -18,6 +18,8 @@ import {
   apiAdminCreateAiPrompt,
   apiAdminActivateAiPrompt,
   apiAdminArchiveAiPrompt,
+  apiAdminListAgentRuns,
+  apiAdminGetAgentRun,
 } from "../../../lib/api";
 
 export {
@@ -40,4 +42,6 @@ export {
   apiAdminCreateAiPrompt,
   apiAdminActivateAiPrompt,
   apiAdminArchiveAiPrompt,
+  apiAdminListAgentRuns,
+  apiAdminGetAgentRun,
 };

@@ -1,0 +1,155 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProcessMap RAG Metadata Schema",
+  "description": "Per-chunk metadata schema for ProcessMap Agent RAG knowledge layer.",
+  "version": "1.0.0",
+  "type": "object",
+  "required": [
+    "chunk_id",
+    "path",
+    "title",
+    "project",
+    "category",
+    "date",
+    "mtime",
+    "source_type",
+    "truth_level",
+    "tags",
+    "excluded_sensitive",
+    "excluded_sensitive_proof"
+  ],
+  "properties": {
+    "chunk_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier per chunk"
+    },
+    "path": {
+      "type": "string",
+      "description": "Source file path (absolute or repo-relative)"
+    },
+    "title": {
+      "type": "string",
+      "description": "Document title or inferred heading"
+    },
+    "contour_id": {
+      "type": "string",
+      "description": "Contour identifier, e.g. fix/diagram-canvas-reload-loop-v1"
+    },
+    "project": {
+      "type": "string",
+      "enum": ["ProcessMap"],
+      "description": "Always ProcessMap"
+    },
+    "category": {
+      "type": "string",
+      "enum": ["project_atlas", "contour", "docs", "code", "runtime_evidence"],
+      "description": "Source category"
+    },
+    "date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Document creation or capture date (ISO 8601)"
+    },
+    "mtime": {
+      "type": "string",
+      "format": "date-time",
+      "description": "File modification time (ISO 8601)"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["REVIEW_PASS", "CHANGES_REQUESTED", "REVIEW_BLOCKED"],
+      "description": "Contour review verdict, if applicable"
+    },
+    "source_type": {
+      "type": "string",
+      "enum": ["markdown", "python", "javascript", "json", "yaml", "shell", "text"],
+      "description": "Source file type"
+    },
+    "truth_level": {
+      "type": "string",
+      "enum": ["canonical", "evidence", "draft", "deprecated"],
+      "description": "Truth level of the document"
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Tags for retrieval boosting, e.g. [diagram, perf, save]"
+    },
+    "excluded_sensitive": {
+      "type": "boolean",
+      "enum": [false],
+      "description": "Must be false — sensitive content is excluded, never indexed"
+    },
+    "excluded_sensitive_proof": {
+      "type": "object",
+      "required": ["scanner_version", "scan_timestamp", "scanner_rules_applied"],
+      "properties": {
+        "scanner_version": {
+          "type": "string",
+          "description": "Scanner version identifier"
+        },
+        "scan_timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the scan was performed"
+        },
+        "scanner_rules_applied": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of scanner rules that were applied"
+        },
+        "manual_review_required": {
+          "type": "boolean",
+          "description": "If true, file is blocked from indexing until human confirms"
+        },
+        "reviewer": {
+          "type": "string",
+          "description": "Identifier of reviewer or scanner agent"
+        }
+      }
+    },
+    "language": {
+      "type": "string",
+      "enum": ["python", "javascript", "jsx", "typescript", "tsx", "shell"],
+      "description": "Programming language, if source_type is code"
+    },
+    "module": {
+      "type": "string",
+      "description": "Module path, e.g. backend.app.rag.search"
+    },
+    "risk_area": {
+      "type": "string",
+      "enum": ["diagram", "save", "session", "bpmn_xml", "load", "memory", "perf", "drag", "rbac", "ai_integration", "org_isolation"],
+      "description": "Risk area tag for code sources"
+    },
+    "lines_start": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Start line in source file, if code"
+    },
+    "lines_end": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "End line in source file, if code"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "category": { "const": "code" } }
+      },
+      "then": {
+        "required": ["language", "module"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "category": { "const": "contour" } }
+      },
+      "then": {
+        "required": ["contour_id", "verdict"]
+      }
+    }
+  ]
+}

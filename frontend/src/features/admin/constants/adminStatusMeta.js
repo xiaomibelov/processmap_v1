@@ -24,5 +24,6 @@ export const ADMIN_STATUS_META = {
   fail: { tone: "danger", label: "Ошибка" },
   error: { tone: "danger", label: "Ошибка" },
   idle: { tone: "default", label: "Простой" },
+  stopping: { tone: "warn", label: "Останавливается" },
   unknown: { tone: "default", label: "Неизвестно" },
 };

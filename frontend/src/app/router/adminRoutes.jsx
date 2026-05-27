@@ -11,6 +11,8 @@ export const adminRoutes = [
   { path: ADMIN_ROUTE_META.audit.path, section: "audit" },
   { path: ADMIN_ROUTE_META.telemetry.path, section: "telemetry" },
   { path: ADMIN_ROUTE_META["ai-modules"].path, section: "ai-modules" },
+  { path: ADMIN_ROUTE_META["agent-runs"].path, section: "agent-runs" },
+  { path: "/admin/agent-runs/:runId", section: "agent-runs" },
 ];
 
 export function resolveAdminRoute(pathname = "/admin/dashboard") {
