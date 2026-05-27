@@ -1,5 +1,15 @@
 @import "./tokens.css";
 
+:root,
+.light {
+  --registry-bg-canvas: #ffffff;
+  --registry-bg-surface: #f8fafc;
+  --registry-text-primary: #0f172a;
+  --registry-purple-primary: #7c3aed;
+  --registry-green-complete: #10b981;
+  --registry-orange-partial: #f59e0b;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -1327,6 +1337,459 @@
     linear-gradient(180deg, hsl(var(--panel) / 0.98), hsl(var(--bg-soft) / 0.96)),
     hsl(var(--panel) / 0.98);
   padding: 18px;
+}
+
+.analyticsSurfaceLayout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.analyticsSurfaceLayout > .productActionsRegistryPage,
+.analyticsSurfaceLayout > .analyticsHubPage,
+.analyticsSurfaceLayout > .propertiesRegistryPage,
+.analyticsSurfaceLayout > .dashboardsPlaceholderPage {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+}
+
+.analyticsSectionTabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 18px 0;
+  background: hsl(var(--panel) / 0.98);
+  border-bottom: 1px solid var(--analysis-border);
+  flex-shrink: 0;
+}
+
+.analyticsSectionTab {
+  position: relative;
+  padding: 8px 12px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--analysis-muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.analyticsSectionTab:hover {
+  color: var(--analysis-text);
+  background: hsl(var(--bg-soft) / 0.5);
+}
+
+.analyticsSectionTab.isActive {
+  color: var(--analysis-text);
+  font-weight: 700;
+}
+
+.analyticsSectionTab.isActive::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 2px;
+  background: hsl(var(--accent));
+  border-radius: 2px 2px 0 0;
+}
+
+.analyticsHubPage {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  background: hsl(var(--panel) / 0.98);
+  padding: 18px;
+}
+
+.analyticsHubSurface {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.analyticsHubHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.analyticsHubHeader h1 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--analysis-text);
+  margin: 0;
+}
+
+.analyticsHubHeader p {
+  font-size: 14px;
+  color: var(--analysis-muted);
+  margin: 4px 0 0;
+}
+
+.analyticsHubHeader small {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: hsl(var(--accent2) / 0.9);
+  margin-top: 6px;
+}
+
+.analyticsHubModules {
+  display: grid;
+  gap: 12px;
+}
+
+.analyticsHubModule {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  background: #FFFFFF;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.analyticsHubModule h2 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--analysis-text);
+  margin: 0;
+}
+
+.analyticsHubModule p {
+  font-size: 13px;
+  color: var(--analysis-muted);
+  margin: 4px 0 0;
+}
+
+.analyticsHubPlaceholder {
+  font-size: 13px;
+  color: var(--analysis-muted);
+  padding: 6px 12px;
+  background: hsl(var(--bg-soft) / 0.5);
+  border-radius: 6px;
+}
+
+.propertiesRegistryPage {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  background: hsl(var(--panel) / 0.98);
+  padding: 18px;
+}
+
+.propertiesRegistrySurface {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.propertiesRegistryHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.propertiesRegistryHeader h1 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--analysis-text);
+  margin: 0;
+}
+
+.propertiesRegistryHeader p {
+  font-size: 12px;
+  color: var(--analysis-muted);
+  margin: 4px 0 0;
+}
+
+.propertiesRegistryToolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.propertiesRegistryToolbar .input {
+  flex: 1 1 280px;
+  min-width: 200px;
+}
+
+.propertiesRegistryTypePills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.propertiesRegistryEmpty {
+  padding: 48px 24px;
+  text-align: center;
+  background: #FFFFFF;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.propertiesRegistryEmpty p {
+  font-size: 14px;
+  color: var(--analysis-muted);
+  margin: 0;
+}
+
+.propertiesRegistryEmpty small {
+  display: block;
+  font-size: 12px;
+  color: var(--analysis-muted);
+  margin-top: 6px;
+}
+
+.propertiesRegistryEmptyIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9CA3AF;
+  margin-bottom: 16px;
+}
+
+.propertiesRegistryEmptyTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 8px;
+}
+
+.propertiesRegistryEmptyDesc {
+  font-size: 14px;
+  font-weight: 400;
+  color: #6B7280;
+  max-width: 480px;
+  margin: 0 auto 16px;
+  line-height: 1.5;
+}
+
+.propertiesRegistryEmptyBreakdown {
+  margin-top: 8px;
+  text-align: left;
+  display: inline-block;
+}
+
+.propertiesRegistryEmptyBreakdownLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 4px;
+}
+
+.propertiesRegistryEmptyBreakdownItem {
+  font-size: 13px;
+  color: #6B7280;
+  line-height: 1.5;
+}
+
+.propertiesRegistryEmptyBreakdownHint {
+  font-size: 13px;
+  color: #6B7280;
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.propertiesRegistryTableWrap {
+  background: #FFFFFF;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.propertiesRegistryTable {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.propertiesRegistryTableHead {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  background: #FAFAFB;
+  border-bottom: 1px solid #E5E7EB;
+  padding: 0 16px;
+}
+
+.propertiesRegistryTableHeadCell {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #6B7280;
+  letter-spacing: 0.02em;
+  padding: 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.propertiesRegistryTableRow {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  border-bottom: 1px solid #E5E7EB;
+  padding: 0 16px;
+  transition: background 120ms ease;
+}
+
+.propertiesRegistryTableRow:hover {
+  background: #FAFAFB;
+}
+
+.propertiesRegistryTableRow--expandable {
+  cursor: pointer;
+}
+
+.propertiesRegistryTableCell {
+  font-size: 14px;
+  color: #111827;
+  padding: 12px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+.propertiesRegistryTypePill {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: #F3F4F6;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #6B7280;
+  white-space: nowrap;
+}
+
+.propertiesRegistryStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: #111827;
+}
+
+.propertiesRegistryStatusDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.propertiesRegistryDetail {
+  padding: 16px 24px;
+  background: #FAFAFB;
+  border-bottom: 1px solid #E5E7EB;
+}
+
+.propertiesRegistryDetailGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 24px;
+}
+
+.propertiesRegistryDetailItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.propertiesRegistryDetailLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #9CA3AF;
+  letter-spacing: 0.02em;
+}
+
+.propertiesRegistryDetailValue {
+  font-size: 14px;
+  color: #111827;
+  word-break: break-word;
+}
+
+.dashboardsPlaceholderPage {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  background: hsl(var(--panel) / 0.98);
+  padding: 18px;
+}
+
+.dashboardsPlaceholderSurface {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.dashboardsPlaceholderHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.dashboardsPlaceholderHeader h1 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--analysis-text);
+  margin: 0;
+}
+
+.dashboardsPlaceholderHeader p {
+  font-size: 12px;
+  color: var(--analysis-muted);
+  margin: 4px 0 0;
+}
+
+.dashboardsPlaceholderBody {
+  padding: 48px 24px;
+  text-align: center;
+  background: #FFFFFF;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.dashboardsPlaceholderTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--analysis-text);
+  margin: 0;
+}
+
+.dashboardsPlaceholderHint {
+  font-size: 14px;
+  color: var(--analysis-muted);
+  margin: 8px 0 0;
+}
+
+.dashboardsPlaceholderLinks {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 24px;
+  flex-wrap: wrap;
 }
 
 .productActionsRegistryPanel--page {
@@ -11169,4 +11632,316 @@
 
 .productActionsRegistryBackBtn {
   flex-shrink: 0;
+}
+
+.registryLayout {
+  background-color: var(--registry-bg-canvas);
+  color: var(--registry-text-primary);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Emergency fix — contour: fix/product-actions-registry-ui-emergency-v1
+   Clean horizontal metrics, horizontal filters, visible table, single container.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Single white container ─────────────────────────────────────────────── */
+.productActionsRegistryPage {
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  border-radius: 12px;
+  padding: 24px;
+}
+
+/* ── Remove nested card chaos from inner sections ──────────────────────── */
+.productActionsRegistrySummary,
+.productActionsRegistryFilters,
+.productActionsRegistryPreview,
+.productActionsRegistrySessions,
+.productActionsRegistryProjectPicker,
+.productActionsRegistryFooter,
+.productActionsRegistryWarning,
+.productActionsRegistryWorkspaceNotice,
+.productActionsRegistryIncompleteBanner {
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+/* ── Metrics: clean horizontal text, NO cards ──────────────────────────── */
+.productActionsRegistrySummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 32px;
+  padding: 16px 0;
+  border-bottom: 1px solid #E5E7EB !important;
+}
+
+.productActionsRegistrySummaryPill {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 80px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: #1A1A1A;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.productActionsRegistrySummaryPill b {
+  order: 1;
+  color: #6B7280;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: none;
+}
+
+.productActionsRegistrySummaryPill[data-accent="incomplete"] {
+  color: #F59E0B;
+}
+
+/* ── Filters: single horizontal row ─────────────────────────────────────── */
+.productActionsRegistryFilters {
+  display: block !important;
+  padding: 12px 0 !important;
+  border-bottom: 1px solid #E5E7EB !important;
+}
+
+.productActionsRegistryFiltersToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.productActionsRegistryFilterItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 120px;
+  flex: 0 1 auto;
+}
+
+.productActionsRegistryFilterItem span {
+  display: block;
+  color: #6B7280;
+  font-size: 11px;
+  font-weight: 500;
+  margin-bottom: 3px;
+  text-transform: none;
+}
+
+.productActionsRegistryFilterItem select {
+  height: 36px;
+  border: 1px solid #E5E7EB;
+  border-radius: 6px;
+  background: #FFFFFF;
+  padding: 0 8px;
+  font-size: 13px;
+  color: #1A1A1A;
+}
+
+.productActionsRegistryFilterReset {
+  height: 36px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #7C3AED;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ── Table: visible, clean rows with separators ─────────────────────────── */
+.productActionsRegistryPreview {
+  min-height: 0;
+  overflow: visible;
+  margin-top: 16px;
+}
+
+.productActionsRegistryTable {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid #E5E7EB;
+}
+
+.productActionsRegistryTableHead {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.9fr) minmax(220px, 1.2fr) minmax(220px, 1.2fr) minmax(116px, 0.5fr);
+  gap: 10px;
+  align-items: center;
+  height: 48px;
+  padding: 0 10px;
+  color: #6B7280;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #E5E7EB;
+}
+
+.productActionsRegistryRow {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.9fr) minmax(220px, 1.2fr) minmax(220px, 1.2fr) minmax(116px, 0.5fr);
+  gap: 10px;
+  align-items: center;
+  height: 48px;
+  padding: 0 10px;
+  border-bottom: 1px solid #E5E7EB;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.productActionsRegistryRow:hover {
+  background: #FAFAFB !important;
+}
+
+/* ── Status: colored 8px dot + text, NO background fills ────────────────── */
+.productActionsRegistryCompleteness {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1A1A1A;
+}
+
+.productActionsRegistryCompleteness::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.productActionsRegistryCompleteness.complete::before {
+  background: #10B981;
+}
+
+.productActionsRegistryCompleteness.incomplete::before {
+  background: #F59E0B;
+}
+
+/* ── Session summary rows (workspace/project scope) ────────────────────── */
+.productActionsRegistrySessionSummaryRow {
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  border-bottom: 1px solid #E5E7EB;
+  padding: 10px;
+}
+
+.productActionsRegistrySessionSummaryHead {
+  border-bottom: 1px solid #E5E7EB;
+  padding: 0 10px;
+  height: 48px;
+  align-items: center;
+}
+
+/* ── Warning / AI rows: soft text, NO banner/card/background ────────────── */
+.productActionsRegistryWarning,
+.productActionsRegistryIncompleteBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  color: #F59E0B;
+  font-size: 13px;
+}
+
+.productActionsRegistryAiRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #E5E7EB;
+  color: #7C3AED;
+  font-size: 13px;
+}
+
+/* ── Sources section ────────────────────────────────────────────────────── */
+.productActionsRegistrySources {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #E5E7EB;
+}
+
+.productActionsRegistrySourcesTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1A1A1A;
+  margin-bottom: 12px;
+}
+
+.productActionsRegistrySourceItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  font-size: 13px;
+  color: #374151;
+}
+
+.productActionsRegistrySourceDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6B7280;
+  flex-shrink: 0;
+}
+
+/* ── Footer ─────────────────────────────────────────────────────────────── */
+.productActionsRegistryFooter {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #E5E7EB !important;
+  justify-content: flex-start;
+}
+
+/* ── Empty state ────────────────────────────────────────────────────────── */
+.productActionsRegistryEmpty {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  color: #6B7280;
+  font-size: 14px;
+}
+
+/* ── Session list items: remove card styling ───────────────────────────── */
+.productActionsRegistrySessionRow {
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  border-bottom: 1px solid #E5E7EB;
+  padding: 8px 0;
+}
+
+/* ── Mobile: filters may wrap, table stacks ─────────────────────────────── */
+@media (max-width: 768px) {
+  .productActionsRegistryFiltersToolbar {
+    flex-wrap: wrap;
+  }
+
+  .productActionsRegistryTableHead,
+  .productActionsRegistryRow {
+    grid-template-columns: 1fr;
+    height: auto;
+    padding: 10px;
+  }
+
+  .productActionsRegistrySummary {
+    gap: 16px;
+  }
 }

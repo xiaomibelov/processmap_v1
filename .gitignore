@@ -46,3 +46,18 @@ archive/
 backups/
 zip/
 deploy/logs/
+.agents/
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Agent artifacts — prevent large auto-generated files from entering git history
+.planning/contours/**/evidence/
+.planning/contours/**/*.png
+.planning/contours/**/RAG_SEARCH_INDEX_*.json
+.planning/contours/**/RAG_MANIFEST_*.json
+graphify-out/
+tools/agent-ui/
+workspace/_bak_*/
+*.agent.bak
+*.bak.[0-9]*

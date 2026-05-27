@@ -1,0 +1,127 @@
+[
+  {
+    "id": "rule-agent1-gsd",
+    "type": "agent_rule",
+    "role": "agent1",
+    "rule": "Agent 1 Planner must use GSD discipline",
+    "condition": "When planning any contour",
+    "required_action": "Run GSD checks, create PLAN.md, define acceptance criteria, write STATE.json",
+    "forbidden_action": "Skip planning documentation or proceed without bounded scope",
+    "severity": "critical",
+    "source_refs": [
+      "/opt/processmap-test/AGENTS.md",
+      "/opt/processmap-test/.planning/contours/architecture/processmap-agent-rag-knowledge-layer-bootstrap-plan-v1/RAG_ARCHITECTURE.md"
+    ],
+    "status": "active",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "rule-agent3-gsd",
+    "type": "agent_rule",
+    "role": "agent3",
+    "rule": "Agent 3 Reviewer must use GSD discipline",
+    "condition": "When reviewing any contour",
+    "required_action": "Run GSD checks, verify source/runtime truth, run independent validation",
+    "forbidden_action": "Approve without independent validation or skip runtime proof",
+    "severity": "critical",
+    "source_refs": [
+      "/opt/processmap-test/AGENTS.md",
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/REVIEW_REPORT.md"
+    ],
+    "status": "active",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "rule-agent3-fresh-runtime",
+    "type": "agent_rule",
+    "role": "agent3",
+    "rule": "Agent 3 must verify fresh :5180 runtime for UI/runtime work",
+    "condition": "When reviewing frontend or runtime contours",
+    "required_action": "curl -I http://clearvestnic.ru:5180 and confirm HTTP 200 with no-cache headers",
+    "forbidden_action": "Review UI/runtime contour without verifying the runtime is actually serving",
+    "severity": "critical",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/REVIEW_REPORT.md"
+    ],
+    "status": "active",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "rule-agent3-exact-scenario",
+    "type": "agent_rule",
+    "role": "agent3",
+    "rule": "Agent 3 must test the exact user scenario",
+    "condition": "When reviewing bug fix or feature contour",
+    "required_action": "Reproduce the exact steps described in the contour PLAN.md acceptance criteria",
+    "forbidden_action": "Substitute a different scenario or skip the exact reproduction steps",
+    "severity": "high",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/REVIEW_REPORT.md"
+    ],
+    "status": "active",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "rule-agent3-real-drag",
+    "type": "agent_rule",
+    "role": "agent3",
+    "rule": "Diagram performance review must test real mouse drag, not only programmatic zoom/click",
+    "condition": "When reviewing diagram performance contours",
+    "required_action": "Perform actual pointer drag on the BPMN canvas and observe jank/frame drops",
+    "forbidden_action": "Approve based only on synthetic zoom, click, or programmatic tests without real drag",
+    "severity": "critical",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/perf/diagram-modeler-drag-hot-path-and-pointermove-suppression-v1/REVIEW_REPORT.md",
+      "/opt/processmap-test/.planning/contours/fix/diagram-real-drag-performance-and-engine-decomposition-v1/REVIEW_REPORT.md"
+    ],
+    "status": "active",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "rule-no-pr-without-command",
+    "type": "agent_rule",
+    "role": "all",
+    "rule": "No PR, merge, or deploy without explicit user command",
+    "condition": "At any time",
+    "required_action": "Wait for explicit user approval before git push, PR creation, or deploy",
+    "forbidden_action": "Create PR, merge, push, or deploy without explicit user request",
+    "severity": "critical",
+    "source_refs": [
+      "/opt/processmap-test/AGENTS.md"
+    ],
+    "status": "active",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "rule-no-product-changes-in-rag",
+    "type": "agent_rule",
+    "role": "all",
+    "rule": "No product runtime code changes in RAG tooling contours",
+    "condition": "When working on RAG contours",
+    "required_action": "Keep changes under tools/rag/, docs/rag/, .planning/contours/ only",
+    "forbidden_action": "Modify frontend/src/, backend/app/, or any product runtime file during RAG work",
+    "severity": "high",
+    "source_refs": [
+      "/opt/processmap-test/AGENTS.md",
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-source-registry-and-index-policy-v1/REVIEW_REPORT.md"
+    ],
+    "status": "active",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "rule-rag-read-only",
+    "type": "agent_rule",
+    "role": "all",
+    "rule": "RAG is read-only suggestion/context layer",
+    "condition": "When using RAG output",
+    "required_action": "Treat RAG results as suggestions, warnings, and references only",
+    "forbidden_action": "Auto-mutate code, auto-save files, write BPMN XML, or apply Product Actions automatically based on RAG output",
+    "severity": "critical",
+    "source_refs": [
+      "/opt/processmap-test/AGENTS.md",
+      "/opt/processmap-test/.planning/contours/architecture/processmap-agent-rag-knowledge-layer-bootstrap-plan-v1/RAG_ARCHITECTURE.md"
+    ],
+    "status": "active",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  }
+]

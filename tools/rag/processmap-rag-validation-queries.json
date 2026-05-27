@@ -1,0 +1,77 @@
+{
+  "version": "1.1.2",
+  "project": "ProcessMap",
+  "description": "Validation queries for BM25 search index. Rewritten for term-density matching with realistic path patterns.",
+  "queries": [
+    {
+      "id": "q1-diagram-review-pass-rules",
+      "query": "gsd reviewer discipline real drag version proof source pass REVIEWER_PROMPT",
+      "query_type": "contour_lookup",
+      "expected_terms": ["gsd", "reviewer", "discipline", "real", "drag", "version", "proof", "source", "pass"],
+      "expected_path_patterns": ["*REVIEWER_PROMPT*", "*PLAN*", "*RUNTIME_PROOF*", "*diagram*"],
+      "expected_answer_summary": "GSD reviewer discipline rules for Diagram contours: real drag testing, version proof, no source-only passes.",
+      "pass_criteria": "At least 3 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "failure_explanation": ""
+    },
+    {
+      "id": "q2-perf-drag-hot-path",
+      "query": "metrics react bundle bpmn perf baseline diagram modeler drag EXEC_REPORT",
+      "query_type": "contour_lookup",
+      "expected_terms": ["metrics", "react", "bundle", "bpmn", "perf", "baseline", "drag", "modeler", "hot"],
+      "expected_path_patterns": ["*EXEC_REPORT*", "*diagram*", "*drag*", "*perf*"],
+      "expected_answer_summary": "Performance contour history for diagram drag: baseline metrics, React bundle dominance, unresolved drag issues.",
+      "pass_criteria": "At least 3 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "failure_explanation": ""
+    },
+    {
+      "id": "q3-current-diagram-lag",
+      "query": "react baseline jank processstage drag unresolved bpmn diagram bottlenecks",
+      "query_type": "current_bottleneck",
+      "expected_terms": ["react", "baseline", "jank", "processstage", "drag", "unresolved", "bpmn"],
+      "expected_path_patterns": ["*RUNTIME_PROOF*", "*PLAN*", "*EXEC_REPORT*", "*diagram*"],
+      "expected_answer_summary": "Current diagram performance bottlenecks: React baseline jank, ProcessStage/App shell, unresolved drag issues.",
+      "pass_criteria": "At least 3 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "failure_explanation": ""
+    },
+    {
+      "id": "q4-rag-forbidden-actions",
+      "query": "RAG forbidden secrets auto mutation bpmn xml product actions drafts truth INDEXING_POLICY",
+      "query_type": "policy_lookup",
+      "expected_terms": ["secrets", "auto", "mutation", "bpmn", "xml", "product", "actions", "drafts", "truth"],
+      "expected_path_patterns": ["*INDEXING_POLICY*", "*AGENTS*", "*RAG*", "*REVIEWER_PROMPT*"],
+      "expected_answer_summary": "RAG forbidden actions: no secrets indexing, no auto-mutation, no BPMN XML writes, no Product Actions auto-apply, no AI drafts as truth.",
+      "pass_criteria": "At least 4 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "failure_explanation": ""
+    },
+    {
+      "id": "q5-indexed-source-paths",
+      "query": "indexed source paths project atlas planning contours docs handoff frontend backend exclusions SOURCE_REGISTRY",
+      "query_type": "policy_lookup",
+      "expected_terms": ["project", "atlas", "planning", "contours", "docs", "handoff", "frontend", "backend", "exclusions"],
+      "expected_path_patterns": ["*INDEX_SOURCES*", "*IMPORT_RULES*", "*RAG*", "*PLAN*"],
+      "expected_answer_summary": "Indexed source paths: Project Atlas, .planning/contours, docs/, PROCESSMAP/HANDOFF, frontend/src, backend/, tools/, scripts/.",
+      "pass_criteria": "At least 4 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "failure_explanation": ""
+    },
+    {
+      "id": "q6-test-runtime",
+      "query": "clearvestnic opt processmap test 5180 8088 runtime RUNTIME_NAVIGATION RUNTIME_PROOF",
+      "query_type": "runtime_lookup",
+      "expected_terms": ["clearvestnic", "opt", "processmap", "test", "5180", "8088", "runtime", "proof"],
+      "expected_path_patterns": ["*RUNTIME_NAVIGATION*", "*RUNTIME_PROOF*", "*RAG_PREFLIGHT*", "*EXEC_REPORT*"],
+      "expected_answer_summary": "Test runtime: clearvestnic.ru, /opt/processmap-test, frontend :5180, backend :8088.",
+      "pass_criteria": "At least 3 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "failure_explanation": ""
+    },
+    {
+      "id": "q7-agent3-diagram-review",
+      "query": "Agent 3 review diagram performance gsd reviewer discipline fresh 5180 proof real user scenario metrics EXEC_REPORT",
+      "query_type": "review_rules",
+      "expected_terms": ["gsd", "reviewer", "discipline", "fresh", "5180", "proof", "real", "user", "scenario", "metrics"],
+      "expected_path_patterns": ["*RAG_PREFLIGHT*", "*REVIEW_REPORT*", "*RUNTIME_PROOF*", "*diagram*"],
+      "expected_answer_summary": "Agent 3 review criteria: GSD reviewer discipline, fresh 5180 proof, real user scenario, before/after metrics, CHANGES_REQUESTED if fail.",
+      "pass_criteria": "At least 4 expected terms appear in top-8 snippets AND at least 2 expected path patterns match top-8 results.",
+      "failure_explanation": ""
+    }
+  ]
+}

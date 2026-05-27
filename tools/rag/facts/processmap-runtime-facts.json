@@ -1,0 +1,140 @@
+[
+  {
+    "id": "rt-server-host",
+    "type": "runtime_fact",
+    "project": "ProcessMap",
+    "key": "server_host",
+    "value": "clearvestnic.ru",
+    "environment": "test",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md"
+    ],
+    "valid_from": "2026-05-16T16:22:46+00:00",
+    "status": "active",
+    "confidence": "high",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "rt-repo-root",
+    "type": "runtime_fact",
+    "project": "ProcessMap",
+    "key": "repo_root",
+    "value": "/opt/processmap-test",
+    "environment": "test",
+    "source_refs": [
+      "/opt/processmap-test/AGENTS.md",
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md"
+    ],
+    "valid_from": "2026-05-16T16:22:46+00:00",
+    "status": "active",
+    "confidence": "high",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "rt-frontend-url",
+    "type": "runtime_fact",
+    "project": "ProcessMap",
+    "key": "frontend_url",
+    "value": "http://clearvestnic.ru:5180",
+    "environment": "test",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md",
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/RUNTIME_NAVIGATION.md"
+    ],
+    "valid_from": "2026-05-16T16:22:46+00:00",
+    "status": "active",
+    "confidence": "high",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "rt-api-health-url",
+    "type": "runtime_fact",
+    "project": "ProcessMap",
+    "key": "api_health_url",
+    "value": "http://clearvestnic.ru:8088/health",
+    "environment": "test",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md",
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-coverage-and-validation-hardening-v1/RUNTIME_NAVIGATION.md"
+    ],
+    "valid_from": "2026-05-16T16:22:46+00:00",
+    "status": "active",
+    "confidence": "high",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "rt-project-atlas-server",
+    "type": "runtime_fact",
+    "project": "ProcessMap",
+    "key": "project_atlas_server_path",
+    "value": "/srv/obsidian/project-atlas",
+    "environment": "test",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md"
+    ],
+    "valid_from": "2026-05-16T16:22:46+00:00",
+    "status": "active",
+    "confidence": "high",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "rt-project-atlas-local",
+    "type": "runtime_fact",
+    "project": "ProcessMap",
+    "key": "project_atlas_local_path",
+    "value": "/Users/mac/Documents/Obsidian/ProjectAtlas",
+    "environment": "local",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md"
+    ],
+    "valid_from": "2026-05-16T16:22:46+00:00",
+    "status": "active",
+    "confidence": "medium",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "rt-contour-root",
+    "type": "runtime_fact",
+    "project": "ProcessMap",
+    "key": "active_contour_root",
+    "value": "/opt/processmap-test/.planning/contours/<CID>",
+    "environment": "test",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/RUNTIME_NAVIGATION.md"
+    ],
+    "valid_from": "2026-05-16T16:22:46+00:00",
+    "status": "active",
+    "confidence": "high",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "rt-git-branch",
+    "type": "runtime_fact",
+    "project": "ProcessMap",
+    "key": "current_git_branch",
+    "value": "fix/lockfile-sync-test",
+    "environment": "test",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/PLAN.md"
+    ],
+    "valid_from": "2026-05-16T16:22:46+00:00",
+    "status": "active",
+    "confidence": "high",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  },
+  {
+    "id": "rt-origin-main",
+    "type": "runtime_fact",
+    "project": "ProcessMap",
+    "key": "origin_main_head",
+    "value": "d805e1c64c1107b9e3fe6854e031694bf741b187",
+    "environment": "test",
+    "source_refs": [
+      "/opt/processmap-test/.planning/contours/feature/processmap-agent-rag-structured-facts-registry-v1/PLAN.md"
+    ],
+    "valid_from": "2026-05-16T16:22:46+00:00",
+    "status": "active",
+    "confidence": "high",
+    "updated_at": "2026-05-16T16:22:46+00:00"
+  }
+]
