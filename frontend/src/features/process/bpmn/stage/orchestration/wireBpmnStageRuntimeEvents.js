@@ -244,6 +244,7 @@ export function bindViewerStageEvents({
   onDiagramContextMenuEvent,
   onDiagramContextMenuDismiss,
   contextMenuInteractionRef,
+  viewportCuller,
 }) {
   bindContextMenuRuntimeEvents({
     eventBus,
@@ -308,6 +309,9 @@ export function bindViewerStageEvents({
       snapshot: snap,
     });
     applyPropertiesOverlayDecorForZoomChange(inst, "viewer");
+    if (viewportCuller) {
+      viewportCuller.scheduleCull();
+    }
   });
 }
 
@@ -345,6 +349,7 @@ export function bindModelerStageEvents({
   applyRobotMetaDecor,
   captureShapeReplacePre,
   applyShapeReplacePost,
+  viewportCuller,
 }) {
   bindContextMenuRuntimeEvents({
     eventBus,
@@ -354,6 +359,26 @@ export function bindModelerStageEvents({
     onDiagramContextMenuDismiss,
     contextMenuInteractionRef,
   });
+
+  // Restore culled elements before any modeling operation to avoid
+  // bpmn-js DOM errors (e.g. insertBefore on detached nodes).
+  if (viewportCuller?.restoreAll) {
+    eventBus.on("shape.move.start", 5000, () => {
+      viewportCuller.restoreAll();
+    });
+    eventBus.on("create.start", 5000, () => {
+      viewportCuller.restoreAll();
+    });
+    eventBus.on("connect.start", 5000, () => {
+      viewportCuller.restoreAll();
+    });
+    eventBus.on("resize.start", 5000, () => {
+      viewportCuller.restoreAll();
+    });
+    eventBus.on("replace.start", 5000, () => {
+      viewportCuller.restoreAll();
+    });
+  }
 
   eventBus.on("commandStack.shape.replace.preExecute", 2200, (ev) => {
     captureShapeReplacePre(ev, "commandStack.shape.replace.preExecute");
@@ -424,5 +449,8 @@ export function bindModelerStageEvents({
       snapshot: snap,
     });
     applyPropertiesOverlayDecorForZoomChange(inst, "editor");
+    if (viewportCuller) {
+      viewportCuller.scheduleCull();
+    }
   });
 }
