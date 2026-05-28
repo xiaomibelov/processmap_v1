@@ -1,5 +1,54 @@
 import { resolveBpmnContextMenuRuntimeResolution } from "../../context-menu/resolveBpmnContextMenuTarget.js";
 
+// ── Overlay pan debounce ──
+// During canvas pan bpmn-js fires canvas.viewbox.changing/changed on every
+// frame. The Overlays module hides on .changing and shows on .changed,
+// forcing layout/paint for 180+ heavy DOM nodes each frame.
+// We suppress the overlay root visibility during active pan so overlays stay
+// hidden until the viewbox settles (150 ms trailing debounce).
+
+const OVERLAY_PAN_DEBOUNCE_MS = 150;
+
+function debounce(fn, ms) {
+  let timer = 0;
+  return function (...args) {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = 0;
+      fn.apply(this, args);
+    }, ms);
+  };
+}
+
+function bindOverlayPanDebouncer({ eventBus, inst }) {
+  if (!eventBus || !inst) return;
+  let overlayRoot = null;
+  try {
+    overlayRoot = inst.get("overlays")?._overlayRoot || null;
+  } catch {
+    return;
+  }
+  if (!(overlayRoot instanceof Element)) return;
+
+  const restoreVisibility = () => {
+    if (overlayRoot instanceof Element) {
+      overlayRoot.style.visibility = "";
+    }
+  };
+  const scheduleRestore = debounce(restoreVisibility, OVERLAY_PAN_DEBOUNCE_MS);
+
+  eventBus.on("canvas.viewbox.changing", 1300, () => {
+    if (overlayRoot instanceof Element) {
+      overlayRoot.style.visibility = "hidden";
+    }
+    scheduleRestore();
+  });
+
+  eventBus.on("canvas.viewbox.changed", 1300, () => {
+    scheduleRestore();
+  });
+}
+
 function setInteractionFlag(ref, key, active) {
   if (!ref || !ref.current || typeof ref.current !== "object") return;
   ref.current[key] = active === true;
@@ -255,6 +304,13 @@ export function bindViewerStageEvents({
     contextMenuInteractionRef,
   });
 
+  bindOverlayPanDebouncer({ eventBus, inst });
+
+  const applyPropertiesOverlayDecorForZoomChangeDebounced = debounce(
+    applyPropertiesOverlayDecorForZoomChange,
+    OVERLAY_PAN_DEBOUNCE_MS,
+  );
+
   eventBus.on("selection.changed", 2000, (ev) => {
     const suppressDismiss = consumeContextMenuSelectionDismissGuard(contextMenuInteractionRef);
     if (!suppressDismiss && typeof onDiagramContextMenuDismiss === "function") {
@@ -308,7 +364,7 @@ export function bindViewerStageEvents({
       suppressed,
       snapshot: snap,
     });
-    applyPropertiesOverlayDecorForZoomChange(inst, "viewer");
+    applyPropertiesOverlayDecorForZoomChangeDebounced(inst, "viewer");
     if (viewportCuller) {
       viewportCuller.scheduleCull();
     }
@@ -359,6 +415,13 @@ export function bindModelerStageEvents({
     onDiagramContextMenuDismiss,
     contextMenuInteractionRef,
   });
+
+  bindOverlayPanDebouncer({ eventBus, inst });
+
+  const applyPropertiesOverlayDecorForZoomChangeDebounced = debounce(
+    applyPropertiesOverlayDecorForZoomChange,
+    OVERLAY_PAN_DEBOUNCE_MS,
+  );
 
   // Restore culled elements before any modeling operation to avoid
   // bpmn-js DOM errors (e.g. insertBefore on detached nodes).
@@ -448,7 +511,7 @@ export function bindModelerStageEvents({
       suppressed,
       snapshot: snap,
     });
-    applyPropertiesOverlayDecorForZoomChange(inst, "editor");
+    applyPropertiesOverlayDecorForZoomChangeDebounced(inst, "editor");
     if (viewportCuller) {
       viewportCuller.scheduleCull();
     }
