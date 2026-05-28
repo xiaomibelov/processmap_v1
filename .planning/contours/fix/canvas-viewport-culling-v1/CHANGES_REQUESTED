@@ -1,8 +1,0 @@
-CHANGES_REQUESTED
-
-Reviewer cannot independently verify performance metrics (A1-A4) and functionality (B1-B6)
-due to inability to load BPMN diagram through Workspace Explorer UI navigation.
-
-Code review passes. Build passes. Runtime serving passes.
-
-Blocked on: runtime performance evidence from Worker.
