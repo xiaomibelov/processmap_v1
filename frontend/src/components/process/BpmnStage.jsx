@@ -9,7 +9,7 @@ import {
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
 import * as viewportRecovery from "../../features/process/bpmn/stage/viewport/viewportRecovery";
-import { createViewportCuller, isGfxInDom } from "../../features/process/bpmn/stage/viewport/cullBpmnViewport";
+import { isGfxInDom } from "../../features/process/bpmn/stage/viewport/cullBpmnViewport";
 import { createPlaybackOverlayAdapter } from "../../features/process/bpmn/stage/playbackAdapter";
 import { createTemplatePackAdapter } from "../../features/process/bpmn/stage/template/templatePackAdapter";
 import { createCommandOpsAdapter } from "../../features/process/bpmn/stage/ops/commandOpsAdapter";
@@ -4496,14 +4496,9 @@ const BpmnStage = forwardRef(function BpmnStage({
           viewerCullerRef.current.dispose();
           viewerCullerRef.current = null;
         }
-        viewerCullerRef.current = createViewportCuller(v, {
-          onCull: (stats) => {
-            if (shouldLogBpmnTrace()) {
-              // eslint-disable-next-line no-console
-              console.debug(`[CULL] viewer detached=${stats.detachedCount} attached=${stats.attachedCount} total=${stats.detachedTotal} scale=${stats.scale}`);
-            }
-          },
-        });
+        // CULLING DISABLED — emergency fix for viewport-culling-regression-v1
+        // viewport culling caused shapes to disappear permanently on pan.
+        // viewerCullerRef.current = createViewportCuller(v, { ... });
         bindViewerStageEvents({
           eventBus,
           inst: v,
@@ -4595,14 +4590,9 @@ const BpmnStage = forwardRef(function BpmnStage({
               modelerCullerRef.current.dispose();
               modelerCullerRef.current = null;
             }
-            modelerCullerRef.current = createViewportCuller(m, {
-              onCull: (stats) => {
-                if (shouldLogBpmnTrace()) {
-                  // eslint-disable-next-line no-console
-                  console.debug(`[CULL] modeler detached=${stats.detachedCount} attached=${stats.attachedCount} total=${stats.detachedTotal} scale=${stats.scale}`);
-                }
-              },
-            });
+            // CULLING DISABLED — emergency fix for viewport-culling-regression-v1
+            // viewport culling caused shapes to disappear permanently on pan.
+            // modelerCullerRef.current = createViewportCuller(m, { ... });
           bindModelerStageEvents({
             eventBus,
             inst: m,
