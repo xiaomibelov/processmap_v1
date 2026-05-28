@@ -1,5 +1,6 @@
 import { overlayPropertyColorByKey, normalizeOverlayPropertyKey } from "./overlayColorModel.js";
 import { buildOverlayGeometry, readOverlayCanvasZoom } from "./overlayLayoutModel.js";
+import { isGfxInDom } from "../viewport/cullBpmnViewport.js";
 
 function runMeasure(ctx, name, run, payload) {
   const measureInterviewPerf = ctx?.callbacks?.measureInterviewPerf;
@@ -650,6 +651,8 @@ export function applyInterviewDecor(ctx, options = {}) {
           const title = toText(noteMeta?.title || aiMeta?.title || dodMeta?.title || nodeId);
           const el = getters.findShapeByNodeId(registry, nodeId) || getters.findShapeForHint(registry, { nodeId, title });
           if (!el) return;
+          // Skip overlays for off-screen elements (viewport culling may have detached gfx)
+          if (!isGfxInDom(inst, el)) return;
 
           // Lightweight sequence flow path: skip heavy interview badges on connections.
           // Connections rarely have meaningful AI/DoD/Notes data, and badges on thin
@@ -1005,6 +1008,7 @@ export function applyUserNotesDecor(ctx) {
       if (count <= 0 && (!docsCount || !docsText)) return;
       const el = getters.findShapeByNodeId(registry, nodeId) || getters.findShapeForHint(registry, { nodeId, title: nodeId });
       if (!el) return;
+      if (!isGfxInDom(inst, el)) return;
       const elementId = toText(el?.id);
       if (!elementId) return;
       const markerClass = count > 0 ? "fpcHasUserNote" : "";
@@ -1177,6 +1181,7 @@ export function applyStepTimeDecor(ctx) {
           if (!nodeId || !Number.isFinite(minutes) || minutes < 0) return;
           const el = getters.findShapeByNodeId(registry, nodeId) || getters.findShapeForHint(registry, { nodeId, title: nodeId });
           if (!el) return;
+          if (!isGfxInDom(inst, el)) return;
           const value = unit === "sec"
             ? (Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds) : Math.round(minutes * 60))
             : Math.round(minutes);
@@ -1276,6 +1281,7 @@ export function applyRobotMetaDecor(ctx) {
       const nodeId = toText(item?.elementId);
       const el = getters.findShapeByNodeId(registry, nodeId) || getters.findShapeForHint(registry, { nodeId, title: nodeId });
       if (!el) return;
+      if (!isGfxInDom(inst, el)) return;
       // Lightweight sequence flow path: skip robot meta badges on connections.
       const isConn = typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el);
       if (isConn) return;

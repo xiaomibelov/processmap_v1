@@ -9,6 +9,7 @@ import {
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
 import * as viewportRecovery from "../../features/process/bpmn/stage/viewport/viewportRecovery";
+import { isGfxInDom } from "../../features/process/bpmn/stage/viewport/cullBpmnViewport";
 import { createPlaybackOverlayAdapter } from "../../features/process/bpmn/stage/playbackAdapter";
 import { createTemplatePackAdapter } from "../../features/process/bpmn/stage/template/templatePackAdapter";
 import { createCommandOpsAdapter } from "../../features/process/bpmn/stage/ops/commandOpsAdapter";
@@ -1255,6 +1256,8 @@ const BpmnStage = forwardRef(function BpmnStage({
   const bpmnPersistenceRef = useRef(null);
   const bpmnStoreUnsubRef = useRef(null);
   const viewboxListenersRef = useRef(new Set());
+  const viewerCullerRef = useRef(null);
+  const modelerCullerRef = useRef(null);
   const activeSessionRef = useRef("");
   const prevSessionRef = useRef("");
   const loadTokenRef = useRef(0);
@@ -2123,6 +2126,11 @@ const BpmnStage = forwardRef(function BpmnStage({
       const registry = inst.get("elementRegistry");
       const el = registry.get(eid);
       if (!isSelectableElement(el)) return;
+      // Skip selection decor for off-screen elements (gfx detached by viewport culling)
+      if (!isGfxInDom(inst, el)) {
+        selectedMarkerStateRef.current[kind] = eid;
+        return;
+      }
       const canvas = inst.get("canvas");
       canvas.addMarker(eid, "fpcElementSelected");
       applySelectionFocusDecor(inst, kind, el);
@@ -4281,6 +4289,16 @@ const BpmnStage = forwardRef(function BpmnStage({
     clearPlaybackDecor(modelerRef.current, "editor");
     clearFlashDecor(viewerRef.current, "viewer");
     clearFlashDecor(modelerRef.current, "editor");
+    try {
+      viewerCullerRef.current?.dispose?.();
+    } catch {
+    }
+    viewerCullerRef.current = null;
+    try {
+      modelerCullerRef.current?.dispose?.();
+    } catch {
+    }
+    modelerCullerRef.current = null;
     disableBpmnZoomScroll(viewerRef.current);
     disableBpmnZoomScroll(modelerRef.current);
     try {
@@ -4474,6 +4492,13 @@ const BpmnStage = forwardRef(function BpmnStage({
       viewerReadyRef.current = false;
       try {
         const eventBus = v.get("eventBus");
+        if (viewerCullerRef.current) {
+          viewerCullerRef.current.dispose();
+          viewerCullerRef.current = null;
+        }
+        // CULLING DISABLED — emergency fix for viewport-culling-regression-v1
+        // viewport culling caused shapes to disappear permanently on pan.
+        // viewerCullerRef.current = createViewportCuller(v, { ... });
         bindViewerStageEvents({
           eventBus,
           inst: v,
@@ -4500,6 +4525,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           onDiagramContextMenuEvent: handleDiagramContextMenuEvent,
           onDiagramContextMenuDismiss: emitDiagramContextMenuDismiss,
           contextMenuInteractionRef,
+          viewportCuller: viewerCullerRef.current,
         });
         } catch {
         }
@@ -4560,6 +4586,13 @@ const BpmnStage = forwardRef(function BpmnStage({
       try {
           if (m && modelerDecorBoundInstanceRef.current !== m) {
             const eventBus = m.get("eventBus");
+            if (modelerCullerRef.current) {
+              modelerCullerRef.current.dispose();
+              modelerCullerRef.current = null;
+            }
+            // CULLING DISABLED — emergency fix for viewport-culling-regression-v1
+            // viewport culling caused shapes to disappear permanently on pan.
+            // modelerCullerRef.current = createViewportCuller(m, { ... });
           bindModelerStageEvents({
             eventBus,
             inst: m,
@@ -4594,6 +4627,7 @@ const BpmnStage = forwardRef(function BpmnStage({
             applyRobotMetaDecor,
             captureShapeReplacePre,
             applyShapeReplacePost,
+            viewportCuller: modelerCullerRef.current,
           });
           modelerDecorBoundInstanceRef.current = m;
         }
