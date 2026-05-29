@@ -248,6 +248,7 @@ export function createBpmnWiring(ctxBase, deps = {}) {
         return {
           additionalModules,
           moddleExtensions,
+          deferUpdate: true,
         };
       },
     });
