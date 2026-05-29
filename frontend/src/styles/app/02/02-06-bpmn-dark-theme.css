@@ -56,11 +56,16 @@
   fill: rgba(255,255,255,0.86) !important;
 }
 
-.bpmnStage .djs-visual path,
-.bpmnStage .djs-visual circle,
-.bpmnStage .djs-visual polygon,
-.bpmnStage .djs-visual rect {
-  shape-rendering: geometricPrecision;
+.bpmnStage .djs-container svg {
+  shape-rendering: optimizeSpeed;
+}
+
+.bpmnStage .djs-container svg .djs-connection {
+  vector-effect: non-scaling-stroke;
+}
+
+.bpmnStage .djs-container svg .djs-shape {
+  shape-rendering: crispEdges;
 }
 
 
