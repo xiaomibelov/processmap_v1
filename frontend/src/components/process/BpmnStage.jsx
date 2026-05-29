@@ -4476,6 +4476,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       const v = new Viewer({
         container: viewerEl.current,
         moddleExtensions: { pm: pmModdleDescriptor, camunda: camundaModdleDescriptor },
+        deferUpdate: true,
       });
       runtimeInstanceSeq += 1;
       viewerInstanceMetaRef.current = {
