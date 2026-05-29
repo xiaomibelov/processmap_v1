@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/opt/processmap-test"
+GSD_TOOLS="${PROCESSMAP_CODEX_GSD_TOOLS:-/home/deploy/.codex/get-shit-done/bin/gsd-tools.cjs}"
+
+cd "$ROOT"
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "ERROR: node is required for Codex-local GSD tooling." >&2
+  exit 127
+fi
+
+if [ ! -f "$GSD_TOOLS" ]; then
+  echo "ERROR: Codex-local GSD tool missing: $GSD_TOOLS" >&2
+  exit 127
+fi
+
+exec node "$GSD_TOOLS" "$@"

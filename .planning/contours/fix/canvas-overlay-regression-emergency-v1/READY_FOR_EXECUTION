@@ -1,0 +1,18 @@
+READY_FOR_EXECUTION
+
+Contour: fix/canvas-overlay-regression-emergency-v1
+Run ID: 20260528T224900Z-21407
+Planner: Agent 1
+Created: 2026-05-28T22:50:00Z
+
+Required artifacts:
+- [x] PLAN.md
+- [x] WORKER_PROMPT.md
+- [x] REVIEWER_PROMPT.md
+- [x] STATE.json
+- [x] RAG_PREFLIGHT_PLANNER.md
+- [x] OBSIDIAN_CONTEXT_USED.md
+- [x] GSD_CONTEXT_USED.md
+- [x] AGENT_RUN_ID
+
+Agent 2 may start.

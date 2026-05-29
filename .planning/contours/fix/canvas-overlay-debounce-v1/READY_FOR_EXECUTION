@@ -1,0 +1,10 @@
+fix/canvas-overlay-debounce-v1
+run=20260528T190318Z-4670
+agent=agent2-worker
+planned_by=agent1-planner
+timestamp=2026-05-28T19:06:00Z
+
+All proof files exist and are non-empty.
+All planning artifacts written.
+FPS target defined: ≥38 on large diagram.
+Worker prompt explicitly forbids viewport culling reintroduction.
