@@ -1,0 +1,25 @@
+{
+  "contour": "fix/canvas-gpu-compositing-zoom-simplification-v1",
+  "run_id": "20260528T210002Z-13339",
+  "role": "planner",
+  "status": "READY_FOR_EXECUTION",
+  "created_at": "2026-05-28T21:01:03Z",
+  "outputs": [
+    "PLAN.md",
+    "WORKER_PROMPT.md",
+    "REVIEWER_PROMPT.md",
+    "RAG_PREFLIGHT_PLANNER.md",
+    "RAG_PREFLIGHT_REVIEWER.md",
+    "GPU_COMPOSITING_SPEC.md",
+    "ZOOM_SIMPLIFICATION_SPEC.md",
+    "LAYERS_PANEL_VERIFICATION.md",
+    "PERFORMANCE_TARGETS.md",
+    "NON_GOALS.md",
+    "AGENT3_ACCEPTANCE_CRITERIA.md",
+    "STATE.json",
+    "READY_FOR_EXECUTION",
+    "AGENT_RUN_ID"
+  ],
+  "next_agent": "agent2-worker",
+  "next_marker": "WORKER_DONE"
+}
