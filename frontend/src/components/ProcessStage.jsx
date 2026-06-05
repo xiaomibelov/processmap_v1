@@ -4,7 +4,7 @@ import DodStage from "./process/DodStage";
 import InterviewStage from "./process/InterviewStage";
 import ProductActionsRegistry from "../features/analytics/ProductActionsRegistry.jsx";
 import PropertiesRegistry from "../features/analytics/PropertiesRegistry.jsx";
-import DashboardsPlaceholder from "../features/analytics/DashboardsPlaceholder.jsx";
+import AnalyticsDashboards from "../features/analytics/AnalyticsDashboards.jsx";
 import AnalyticsSectionTabs from "../features/analytics/AnalyticsSectionTabs.jsx";
 import AnalyticsHub from "../features/analytics/AnalyticsHub.jsx";
 import WorkspaceExplorer from "../features/explorer/WorkspaceExplorer";
@@ -6481,10 +6481,12 @@ function ProcessStage({
                   onClose={closePropertiesRegistry}
                 />
               ) : (
-                <DashboardsPlaceholder
+                <AnalyticsDashboards
                   workspaceId={dashboardsRoute.workspaceId || activeProjectWorkspaceId}
                   projectId={dashboardsRoute.projectId || activeProjectId}
                   sessionId=""
+                  projectTitle={toText(activeProjectRouteContext?.projectTitle)}
+                  sessionTitle=""
                   onClose={closeDashboards}
                   onOpenProductActionsRegistry={openProductActionsRegistry}
                   onOpenPropertiesRegistry={openPropertiesRegistry}
@@ -6544,10 +6546,12 @@ function ProcessStage({
                 onClose={closePropertiesRegistry}
               />
             ) : (
-              <DashboardsPlaceholder
+              <AnalyticsDashboards
                 workspaceId={dashboardsRoute.workspaceId || activeProjectWorkspaceId}
                 projectId={dashboardsRoute.projectId || activeProjectId}
                 sessionId={sid}
+                projectTitle={toText(activeProjectRouteContext?.projectTitle || draft?.project_title || draft?.projectTitle)}
+                sessionTitle={toText(draft?.title)}
                 onClose={closeDashboards}
                 onOpenProductActionsRegistry={openProductActionsRegistry}
                 onOpenPropertiesRegistry={openPropertiesRegistry}

@@ -613,6 +613,56 @@ export async function apiBatchSuggestProductActions(sessionId, payload = {}) {
   };
 }
 
+export async function apiGetSessionAnalytics(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.analytics(sid)));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    session_id: String(data.session_id || sid),
+    analytics: data.analytics && typeof data.analytics === "object" ? data.analytics : {},
+  };
+}
+
+export async function apiGetProjectAnalytics(projectId) {
+  const pid = String(projectId || "").trim();
+  if (!pid) return { ok: false, status: 0, error: "missing project_id" };
+  const r = okOrError(await request(apiRoutes.projects.analytics(pid)));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    project_id: String(data.project_id || pid),
+    sessions_count: Number(data.sessions_count || 0),
+    total_actions: Number(data.total_actions || 0),
+    avg_duration_min: Number(data.avg_duration_min || 0),
+    total_critical_questions: Number(data.total_critical_questions || 0),
+    sessions: Array.isArray(data.sessions) ? data.sessions : [],
+  };
+}
+
+export async function apiGetWorkspaceAnalytics(workspaceId) {
+  const wid = String(workspaceId || "").trim();
+  if (!wid) return { ok: false, status: 0, error: "missing workspace_id" };
+  const r = okOrError(await request(apiRoutes.workspaces.analytics(wid)));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    workspace_id: String(data.workspace_id || wid),
+    projects_count: Number(data.projects_count || 0),
+    sessions_count: Number(data.sessions_count || 0),
+    total_actions: Number(data.total_actions || 0),
+    avg_duration_min: Number(data.avg_duration_min || 0),
+    recent_sessions: Array.isArray(data.recent_sessions) ? data.recent_sessions : [],
+  };
+}
+
 export async function apiGetSessionAnalysisViewModel(sessionId) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
