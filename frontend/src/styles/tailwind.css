@@ -11945,3 +11945,220 @@
     gap: 16px;
   }
 }
+
+/* ── Analytics Dashboards ── */
+.analyticsDashboardsPage {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  background: hsl(var(--panel) / 0.98);
+  padding: 18px;
+}
+
+.analyticsDashboardsSurface {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.analyticsDashboardsHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.analyticsDashboardsHeader h1 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--analysis-text);
+  margin: 0;
+}
+
+.analyticsDashboardsHeader p {
+  font-size: 14px;
+  color: var(--analysis-muted);
+  margin: 4px 0 0;
+}
+
+.analyticsDashboardsHeader small {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: hsl(var(--accent2) / 0.9);
+  margin-top: 6px;
+}
+
+.analyticsDashboardsMetrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.analyticsDashboardsSection {
+  margin-bottom: 18px;
+}
+
+.analyticsDashboardsSection h2 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--analysis-text);
+  margin: 0 0 10px;
+}
+
+.analyticsDashboardsLoading,
+.analyticsDashboardsError,
+.analyticsDashboardsEmpty {
+  font-size: 14px;
+  color: var(--analysis-muted);
+  padding: 24px 0;
+}
+
+.analyticsDashboardsError {
+  color: hsl(var(--danger));
+}
+
+.analyticsDashboardsSummaryList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.analyticsDashboardsSummaryList li {
+  font-size: 13px;
+  color: var(--analysis-muted);
+  line-height: 1.4;
+}
+
+.analyticsDashboardsTableWrap {
+  overflow: auto;
+  border: 1px solid var(--analysis-border-soft);
+  border-radius: 10px;
+}
+
+.analyticsDashboardsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.analyticsDashboardsTable th,
+.analyticsDashboardsTable td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--analysis-border-soft);
+  color: var(--analysis-text);
+}
+
+.analyticsDashboardsTable th {
+  font-weight: 700;
+  background: hsl(var(--bg-soft) / 0.5);
+  font-size: 12px;
+}
+
+.analyticsDashboardsTable tr:last-child td {
+  border-bottom: none;
+}
+
+/* Metric Card */
+.dashboardMetricCard {
+  background: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow-soft);
+  border-left: 3px solid transparent;
+}
+
+.dashboardMetricCard--success {
+  border-left-color: hsl(var(--success));
+}
+
+.dashboardMetricCard--warning {
+  border-left-color: hsl(var(--warning));
+}
+
+.dashboardMetricCard--danger {
+  border-left-color: hsl(var(--danger));
+}
+
+.dashboardMetricCardTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--analysis-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-bottom: 6px;
+}
+
+.dashboardMetricCardValue {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--analysis-text);
+  line-height: 1.2;
+}
+
+.dashboardMetricCardSubtitle {
+  font-size: 12px;
+  color: var(--analysis-muted);
+  margin-top: 4px;
+}
+
+/* Bar Chart */
+.dashboardBarChart {
+  display: grid;
+  gap: 8px;
+}
+
+.dashboardBarChart--empty {
+  padding: 16px;
+  background: hsl(var(--bg-soft) / 0.5);
+  border-radius: 10px;
+}
+
+.dashboardBarChartEmpty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--analysis-muted);
+}
+
+.dashboardBarChartRow {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.dashboardBarChartLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--analysis-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboardBarTrack {
+  height: 8px;
+  background: hsl(var(--border) / 0.4);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dashboardBarFill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 300ms ease;
+}
+
+.dashboardBarChartValue {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--analysis-muted);
+  min-width: 32px;
+  text-align: right;
+}
