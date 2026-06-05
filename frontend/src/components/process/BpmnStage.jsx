@@ -1205,7 +1205,6 @@ async function ensureCanvasVisibleAndFit(inst, tag = "", sid = "", options = {})
         logCanvasMetrics,
         isAnyShapeInViewport,
         logViewAction,
-        getViewportState,
       },
     },
     inst,
