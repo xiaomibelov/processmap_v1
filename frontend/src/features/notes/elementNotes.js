@@ -28,6 +28,12 @@ function normalizeNoteItem(raw, fallbackIndex = 0) {
     text,
     createdAt,
     updatedAt,
+    author: toText(
+      obj.author || obj.createdBy || obj.created_by ||
+      obj.userId || obj.user_id || obj.authorId || obj.author_id
+    ),
+    author_name: toText(obj.authorName || obj.author_name),
+    author_email: toText(obj.authorEmail || obj.author_email),
   };
 }
 
