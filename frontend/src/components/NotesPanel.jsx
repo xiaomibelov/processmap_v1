@@ -950,6 +950,8 @@ export default function NotesPanel({
   onPreviewNotesExtraction,
   onApplyNotesExtraction,
   onAddElementNote,
+  onUpdateElementNote,
+  onDeleteElementNote,
   onSetElementStepTime,
   onSetElementNoteSummary,
   onUpdateElementAiQuestion,
@@ -3142,6 +3144,8 @@ export default function NotesPanel({
                   elementSyncState={isElementMode ? elementSyncState : "saved"}
                   onElementTextChange={onElementTextChangeCallback}
                   onSendElementNote={sendElementNote}
+                  onUpdateElementNote={onUpdateElementNote}
+                  onDeleteElementNote={onDeleteElementNote}
                   elementBusy={isElementMode ? elementBusy : false}
                   elementErr={isElementMode ? elementErr : ""}
                   onNodeEditorRef={onNodeEditorRefCallback}

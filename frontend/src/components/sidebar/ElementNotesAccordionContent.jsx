@@ -422,8 +422,14 @@ export default function ElementNotesAccordionContent({
   selectedElementNotes,
   noteCount,
   onNodeEditorRef,
+  onUpdateElementNote,
+  onDeleteElementNote,
   disabled,
 }) {
+  const [editingNoteId, setEditingNoteId] = useState("");
+  const [editText, setEditText] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState("");
   const list = [...asArray(selectedElementNotes)]
     .filter((item) => String(item?.kind || "").trim().toLowerCase() !== "review_comment")
     .slice(-10)
@@ -494,6 +500,48 @@ export default function ElementNotesAccordionContent({
     );
   }
 
+  function startEdit(item) {
+    setEditingNoteId(item?.id || "");
+    setEditText(noteText(item));
+  }
+
+  function cancelEdit() {
+    setEditingNoteId("");
+    setEditText("");
+  }
+
+  async function saveEdit(noteId) {
+    const nid = String(noteId || "").trim();
+    const eid = String(selectedElementId || "").trim();
+    const text = String(editText || "").trim();
+    if (!nid || !eid || !text) return;
+    setEditBusy(true);
+    try {
+      const r = onUpdateElementNote?.(eid, nid, text);
+      const rr = r && typeof r.then === "function" ? await r : r;
+      if (rr && rr.ok === false) {
+        return;
+      }
+      setEditingNoteId("");
+      setEditText("");
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  async function removeNote(noteId) {
+    const nid = String(noteId || "").trim();
+    const eid = String(selectedElementId || "").trim();
+    if (!nid || !eid) return;
+    setDeleteBusy(nid);
+    try {
+      const r = onDeleteElementNote?.(eid, nid);
+      const rr = r && typeof r.then === "function" ? await r : r;
+    } finally {
+      setDeleteBusy("");
+    }
+  }
+
   return (
     <div className="sidebarControlStack gap-3">
       {list.length ? (
@@ -502,14 +550,77 @@ export default function ElementNotesAccordionContent({
           <div className="sidebarMiniList">
           {list.map((item, idx) => (
             <div key={item?.id || `node_note_${idx + 1}`} className="sidebarMiniItem">
-              <div className="sidebarMiniItemText">{noteText(item)}</div>
-              <div className="sidebarMiniItemMeta">
-                {noteAuthor(item)}
-                {compactTime(item?.updatedAt || item?.createdAt || item?.ts || item?.created_at)
-                  ? ` · ${compactTime(item?.updatedAt || item?.createdAt || item?.ts || item?.created_at)}`
-                  : ""}
-                <span className="ml-1 text-[10px] text-muted/80">#{Math.max(1, Number(noteCount || 0) - idx)}</span>
-              </div>
+              {editingNoteId === item?.id ? (
+                <div className="flex flex-col gap-2">
+                  <textarea
+                    className="input min-h-[64px] w-full rounded-lg px-2 py-1.5 text-sm"
+                    value={editText}
+                    onChange={(event) => setEditText(event.target.value)}
+                    rows={3}
+                    style={{ resize: "vertical" }}
+                    disabled={!!disabled || !!editBusy}
+                    onKeyDown={(event) => {
+                      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                        event.preventDefault();
+                        void saveEdit(item?.id);
+                      }
+                    }}
+                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      className="secondaryBtn smallBtn"
+                      onClick={cancelEdit}
+                      disabled={!!disabled || !!editBusy}
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      type="button"
+                      className="primaryBtn smallBtn"
+                      onClick={() => saveEdit(item?.id)}
+                      disabled={!!disabled || !!editBusy || !String(editText || "").trim()}
+                    >
+                      {editBusy ? "Сохраняю..." : "Сохранить"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="sidebarMiniItemText flex-1">{noteText(item)}</div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        className="text-[11px] text-muted hover:text-fg"
+                        onClick={() => startEdit(item)}
+                        disabled={!!disabled || !!deleteBusy || !!editBusy}
+                        aria-label="Изменить"
+                        title="Изменить"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        type="button"
+                        className="text-[11px] text-muted hover:text-danger"
+                        onClick={() => removeNote(item?.id)}
+                        disabled={!!disabled || deleteBusy === item?.id || !!editBusy}
+                        aria-label="Удалить"
+                        title="Удалить"
+                      >
+                        {deleteBusy === item?.id ? "..." : "×"}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="sidebarMiniItemMeta">
+                    {noteAuthor(item)}
+                    {compactTime(item?.updatedAt || item?.createdAt || item?.ts || item?.created_at)
+                      ? ` · ${compactTime(item?.updatedAt || item?.createdAt || item?.ts || item?.created_at)}`
+                      : ""}
+                    <span className="ml-1 text-[10px] text-muted/80">#{Math.max(1, Number(noteCount || 0) - idx)}</span>
+                  </div>
+                </>
+              )}
             </div>
           ))}
           </div>

@@ -28,6 +28,12 @@ function normalizeNoteItem(raw, fallbackIndex = 0) {
     text,
     createdAt,
     updatedAt,
+    author: toText(
+      obj.author || obj.createdBy || obj.created_by ||
+      obj.userId || obj.user_id || obj.authorId || obj.author_id
+    ),
+    author_name: toText(obj.authorName || obj.author_name),
+    author_email: toText(obj.authorEmail || obj.author_email),
   };
 }
 
@@ -77,7 +83,7 @@ export function elementNoteSummaryForId(notesMap, elementId) {
   return toText(map[id]?.summary);
 }
 
-export function withAddedElementNote(notesMap, elementId, text) {
+export function withAddedElementNote(notesMap, elementId, text, authorInfo = {}) {
   const id = toText(elementId);
   const noteText = toText(text);
   if (!id || !noteText) return normalizeElementNotesMap(notesMap);
@@ -87,6 +93,9 @@ export function withAddedElementNote(notesMap, elementId, text) {
     text: noteText,
     createdAt: now,
     updatedAt: now,
+    author: toText(authorInfo.author || authorInfo.label || authorInfo.name || authorInfo.userId || ""),
+    author_name: toText(authorInfo.author_name || authorInfo.name || ""),
+    author_email: toText(authorInfo.author_email || authorInfo.email || ""),
   };
   const next = normalizeElementNotesMap(notesMap);
   const prev = asObject(next[id]);
@@ -98,6 +107,61 @@ export function withAddedElementNote(notesMap, elementId, text) {
     summaryUpdatedAt: toNumber(prev.summaryUpdatedAt || prev.summary_updated_at),
     templateKey: toText(prev.templateKey || prev.template_key),
   };
+  return next;
+}
+
+export function withUpdatedElementNote(notesMap, elementId, noteId, text, authorInfo = {}) {
+  const id = toText(elementId);
+  const nid = toText(noteId);
+  const noteText = toText(text);
+  if (!id || !nid || !noteText) return normalizeElementNotesMap(notesMap);
+  const next = normalizeElementNotesMap(notesMap);
+  const entry = asObject(next[id]);
+  const items = asArray(entry.items);
+  const idx = items.findIndex((item) => toText(item?.id) === nid);
+  if (idx < 0) return next;
+  const now = Date.now();
+  const current = asObject(items[idx]);
+  const nextItem = {
+    ...current,
+    text: noteText,
+    updatedAt: now,
+    author: toText(authorInfo.author || authorInfo.label || authorInfo.name || authorInfo.userId || current.author || ""),
+    author_name: toText(authorInfo.author_name || authorInfo.name || current.author_name || ""),
+    author_email: toText(authorInfo.author_email || authorInfo.email || current.author_email || ""),
+  };
+  const nextItems = [...items];
+  nextItems[idx] = nextItem;
+  next[id] = {
+    items: nextItems,
+    updatedAt: now,
+    summary: toText(entry.summary),
+    summaryUpdatedAt: toNumber(entry.summaryUpdatedAt || entry.summary_updated_at),
+    templateKey: toText(entry.templateKey || entry.template_key),
+  };
+  return next;
+}
+
+export function withRemovedElementNote(notesMap, elementId, noteId) {
+  const id = toText(elementId);
+  const nid = toText(noteId);
+  if (!id || !nid) return normalizeElementNotesMap(notesMap);
+  const next = normalizeElementNotesMap(notesMap);
+  const entry = asObject(next[id]);
+  const items = asArray(entry.items);
+  const nextItems = items.filter((item) => toText(item?.id) !== nid);
+  if (nextItems.length === items.length) return next;
+  const now = Date.now();
+  next[id] = {
+    items: nextItems,
+    updatedAt: now,
+    summary: toText(entry.summary),
+    summaryUpdatedAt: toNumber(entry.summaryUpdatedAt || entry.summary_updated_at),
+    templateKey: toText(entry.templateKey || entry.template_key),
+  };
+  if (!nextItems.length && !toText(entry.summary)) {
+    delete next[id];
+  }
   return next;
 }
 

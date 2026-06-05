@@ -12,6 +12,8 @@ import useSessionStore from "./features/sessions/hooks/useSessionStore";
 import {
   normalizeElementNotesMap,
   withAddedElementNote,
+  withUpdatedElementNote,
+  withRemovedElementNote,
   withElementNoteSummary,
   withRemappedElementNotes,
 } from "./features/notes/elementNotes";
@@ -1992,8 +1994,14 @@ export default function App() {
     const noteText = String(text || "").trim();
     if (!eid || !noteText) return { ok: false, error: "Пустая заметка или элемент не выбран." };
 
+    const authorInfo = {
+      author: user?.name,
+      author_name: user?.name,
+      author_email: user?.email,
+      userId: user?.id,
+    };
     const current = normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId);
-    const nextMap = withAddedElementNote(current, eid, noteText);
+    const nextMap = withAddedElementNote(current, eid, noteText, authorInfo);
 
     if (!sid || isLocalSessionId(sid)) {
       setDraftPersisted((d) => ({ ...d, notes_by_element: nextMap }));
@@ -2023,6 +2031,65 @@ export default function App() {
       badgeKind: "notes",
       label: "Note added",
     });
+    return { ok: true };
+  }
+
+  async function updateElementNote(elementId, noteId, text) {
+    const sid = String(draft?.session_id || "");
+    const eid = String(elementId || "").trim();
+    const nid = String(noteId || "").trim();
+    const noteText = String(text || "").trim();
+    if (!eid || !nid || !noteText) return { ok: false, error: "Пустая заметка или элемент не выбран." };
+
+    const authorInfo = {
+      author: user?.name,
+      author_name: user?.name,
+      author_email: user?.email,
+      userId: user?.id,
+    };
+    const current = normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId);
+    const nextMap = withUpdatedElementNote(current, eid, nid, noteText, authorInfo);
+
+    if (!sid || isLocalSessionId(sid)) {
+      setDraftPersisted((d) => ({ ...d, notes_by_element: nextMap }));
+      markOk("Локальная заметка обновлена.");
+      return { ok: true };
+    }
+
+    const r = await apiPatchSession(sid, { notes_by_element: nextMap });
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "Не удалось обновить заметку узла.") };
+    }
+    const serverMap = normalizeElementNotesMap(r.session?.notes_by_element || nextMap);
+    setDraftPersisted((d) => ({ ...d, notes_by_element: serverMap }));
+    markOk("API OK");
+    return { ok: true };
+  }
+
+  async function deleteElementNote(elementId, noteId) {
+    const sid = String(draft?.session_id || "");
+    const eid = String(elementId || "").trim();
+    const nid = String(noteId || "").trim();
+    if (!eid || !nid) return { ok: false, error: "Заметка или элемент не выбран." };
+
+    const current = normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId);
+    const nextMap = withRemovedElementNote(current, eid, nid);
+
+    if (!sid || isLocalSessionId(sid)) {
+      setDraftPersisted((d) => ({ ...d, notes_by_element: nextMap }));
+      markOk("Локальная заметка удалена.");
+      return { ok: true };
+    }
+
+    const r = await apiPatchSession(sid, { notes_by_element: nextMap });
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "Не удалось удалить заметку узла.") };
+    }
+    const serverMap = normalizeElementNotesMap(r.session?.notes_by_element || nextMap);
+    setDraftPersisted((d) => ({ ...d, notes_by_element: serverMap }));
+    markOk("API OK");
     return { ok: true };
   }
 
@@ -3098,6 +3165,8 @@ export default function App() {
         onPreviewNotesExtraction={previewNotesExtraction}
         onApplyNotesExtraction={applyNotesExtraction}
         onAddElementNote={addElementNote}
+        onUpdateElementNote={updateElementNote}
+        onDeleteElementNote={deleteElementNote}
         onSetElementStepTime={setElementStepTime}
         onSetElementNoteSummary={setElementNoteSummary}
         onUpdateElementAiQuestion={updateElementAiQuestion}
