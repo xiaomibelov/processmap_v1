@@ -5,6 +5,7 @@ import DashboardBarChart from "./DashboardBarChart.jsx";
 import {
   sessionAnalyticsToCards,
   sessionAnalyticsToBarChartItems,
+  sessionAnalyticsToBarChartItemsBySection,
 } from "./dashboardModel.js";
 
 export default function SessionAnalyticsDashboard({
@@ -36,8 +37,6 @@ export default function SessionAnalyticsDashboard({
     };
   }, [sessionId]);
 
-  const cards = sessionAnalyticsToCards(data);
-  const barItems = sessionAnalyticsToBarChartItems(data);
 
   return (
     <div className="analyticsDashboardsPage" data-testid="session-analytics-dashboard">
@@ -57,14 +56,19 @@ export default function SessionAnalyticsDashboard({
         ) : (
           <>
             <section className="analyticsDashboardsMetrics" data-testid="analytics-metrics">
-              {cards.map((card, idx) => (
+              {sessionAnalyticsToCards(data).map((card, idx) => (
                 <DashboardMetricCard key={idx} {...card} />
               ))}
             </section>
 
             <section className="analyticsDashboardsSection" data-testid="analytics-actions-by-role">
               <h2>Действия по ролям</h2>
-              <DashboardBarChart items={barItems} />
+              <DashboardBarChart items={sessionAnalyticsToBarChartItems(data)} ariaLabel="Действия по ролям" />
+            </section>
+
+            <section className="analyticsDashboardsSection" data-testid="analytics-actions-by-section">
+              <h2>Действия по секциям</h2>
+              <DashboardBarChart items={sessionAnalyticsToBarChartItemsBySection(data)} ariaLabel="Действия по секциям" />
             </section>
 
             {data?.summary?.length ? (
