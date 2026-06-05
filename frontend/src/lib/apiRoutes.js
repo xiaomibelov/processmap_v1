@@ -95,6 +95,10 @@ export const apiRoutes = {
       const path = `/api/projects/${encode(projectId)}/sessions`;
       return withQuery(path, { mode: String(mode || "").trim(), view: String(view || "").trim() });
     },
+    analytics: (projectId) => `/api/projects/${encode(projectId)}/analytics`,
+  },
+  workspaces: {
+    analytics: (workspaceId) => `/api/workspaces/${encode(workspaceId)}/analytics`,
   },
   analysis: {
     productActionsRegistryQuery: () => "/api/analysis/product-actions/registry/query",
