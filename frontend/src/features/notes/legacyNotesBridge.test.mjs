@@ -39,6 +39,32 @@ test("buildLegacyElementBridgeThread synthesizes selected-element legacy notes i
   assert.equal(thread?.comments?.[0]?.author_user_id, "Legacy");
 });
 
+test("buildLegacyElementBridgeThread preserves author fields from legacy note items", () => {
+  const thread = buildLegacyElementBridgeThread({
+    elementId: "Task_2",
+    elementName: "Утвердить",
+    notesMap: {
+      Task_2: {
+        items: [
+          {
+            id: "legacy_note_2",
+            text: "Согласовать с руководителем",
+            author: "user_ivan",
+            authorName: "Иван Петров",
+            authorEmail: "ivan@example.test",
+            createdAt: 1710000000000,
+          },
+        ],
+        summary: "",
+      },
+    },
+  });
+
+  assert.equal(thread?.comments?.[0]?.author_user_id, "user_ivan");
+  assert.equal(thread?.comments?.[0]?.author_full_name, "Иван Петров");
+  assert.equal(thread?.comments?.[0]?.author_email, "ivan@example.test");
+});
+
 test("injectLegacyBridgeThread prepends bridge without mutating real thread list", () => {
   const realThreads = [{ id: "thread_1" }, { id: "thread_2" }];
   const bridgeThread = { id: "legacy_element:Task_1", legacy_bridge: true };

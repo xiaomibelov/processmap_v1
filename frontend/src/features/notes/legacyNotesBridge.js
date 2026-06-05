@@ -33,7 +33,9 @@ export function buildLegacyElementBridgeThread({
   const comments = items.map((item, idx) => ({
     id: text(item?.id) || `legacy_comment_${id}_${idx + 1}`,
     body: text(item?.text),
-    author_user_id: "Legacy",
+    author_user_id: text(item?.author) || "Legacy",
+    author_full_name: text(item?.author_name),
+    author_email: text(item?.author_email),
     created_at: numericTime(item?.createdAt),
     updated_at: numericTime(item?.updatedAt || item?.createdAt),
   })).filter((item) => item.body);
