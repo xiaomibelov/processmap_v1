@@ -28,7 +28,6 @@ export default function WorkspaceAnalyticsDashboard({ workspaceId }) {
     };
   }, [workspaceId]);
 
-  const cards = normalizeWorkspaceAnalyticsCards(data);
   const recentSessions = Array.isArray(data?.recent_sessions)
     ? data.recent_sessions
     : [];
@@ -50,7 +49,7 @@ export default function WorkspaceAnalyticsDashboard({ workspaceId }) {
         ) : (
           <>
             <section className="analyticsDashboardsMetrics" data-testid="analytics-metrics">
-              {cards.map((card, idx) => (
+              {normalizeWorkspaceAnalyticsCards(data).map((card, idx) => (
                 <DashboardMetricCard key={idx} {...card} />
               ))}
             </section>

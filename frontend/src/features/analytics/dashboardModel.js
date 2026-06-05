@@ -125,6 +125,19 @@ export function normalizeWorkspaceAnalyticsCards(data = {}) {
   ];
 }
 
+
+export function sessionAnalyticsToBarChartItemsBySection(analytics = {}) {
+  const actions = analytics.actions || {};
+  const bySection = actions.by_section || {};
+
+  const items = Object.entries(bySection).map(([label, value]) => ({
+    label,
+    value: Number(value || 0),
+    max: Math.max(...Object.values(bySection).map((v) => Number(v || 0)), 1),
+  }));
+
+  return items;
+}
 export function computeBarChartMax(items = []) {
   if (!items.length) return 1;
   return Math.max(...items.map((i) => Number(i.value || 0)), 1);

@@ -32,7 +32,6 @@ export default function ProjectAnalyticsDashboard({
     };
   }, [projectId]);
 
-  const cards = normalizeProjectAnalyticsCards(data);
   const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
 
   return (
@@ -53,7 +52,7 @@ export default function ProjectAnalyticsDashboard({
         ) : (
           <>
             <section className="analyticsDashboardsMetrics" data-testid="analytics-metrics">
-              {cards.map((card, idx) => (
+              {normalizeProjectAnalyticsCards(data).map((card, idx) => (
                 <DashboardMetricCard key={idx} {...card} />
               ))}
             </section>
