@@ -1,8 +1,15 @@
 export const appVersionInfo = {
-  currentVersion: "v1.0.141",
+  currentVersion: "v1.0.142",
   // Keep newest entry first. Each landed bounded update should bump version
   // and add 1-3 short Russian change lines here.
   changelog: [
+    {
+      version: "v1.0.142",
+      changes: [
+        "Сохранение и восстановление позиции/zoom BPMN-канваса при переключении вкладок в рамках сессии.",
+        "Исправлен сброс пользовательского viewport при каждом рендере диаграммы.",
+      ],
+    },
     {
       version: "v1.0.141",
       changes: [
