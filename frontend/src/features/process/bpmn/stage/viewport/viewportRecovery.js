@@ -24,6 +24,24 @@ function resolveCallbacks(ctx) {
   return asObject(ctx?.callbacks);
 }
 
+async function tryRestoreViewport(inst, savedState, suppress) {
+  if (!savedState || !savedState.viewbox || !Number.isFinite(savedState.zoom)) return false;
+  const canvas = inst?.get?.("canvas");
+  if (!canvas) return false;
+  try {
+    suppress?.(1);
+    try {
+      canvas.viewbox(savedState.viewbox);
+      canvas.zoom(savedState.zoom);
+    } finally {
+      suppress?.(-1);
+    }
+  } catch {
+    return false;
+  }
+  return true;
+}
+
 export async function ensureCanvasVisibleAndFit(ctx, inst, options = {}) {
   if (!inst) return;
   const helpers = resolveHelpers(ctx);
@@ -144,13 +162,35 @@ export async function ensureCanvasVisibleAndFit(ctx, inst, options = {}) {
       || afterResized.zoom <= 0
       || (fitIfInvisible && afterResized.count > 0 && !hasVisibleShapes);
     if (shouldFit) {
-      await safeFit?.(inst, {
-        reason,
-        tab,
-        sid,
-        token,
-        suppressViewbox: suppress,
-      });
+      const getViewportState = helpers.getViewportState;
+      let restored = false;
+      if (typeof getViewportState === "function") {
+        const saved = getViewportState(sid);
+        if (saved) {
+          restored = await tryRestoreViewport(inst, saved, suppress);
+          if (restored) {
+            const probeAfter = typeof probeCanvas === "function"
+              ? probeCanvas(inst, `${String(tag || "canvas")}.post_restore_probe`, {
+                tab,
+                sid: String(sid || "-"),
+                token,
+                reason: `${reason}:post_restore`,
+                cycleIndex,
+              })
+              : { invisible: false };
+            restored = !probeAfter.invisible;
+          }
+        }
+      }
+      if (!restored) {
+        await safeFit?.(inst, {
+          reason,
+          tab,
+          sid,
+          token,
+          suppressViewbox: suppress,
+        });
+      }
     }
   }
   logCanvasMetrics?.(inst, tag, sid);
@@ -179,6 +219,25 @@ export async function recoverByReimport(ctx, inst, options = {}) {
     refs.modelerReadyRef.current = !!status?.ready && !!status?.defs;
     if (!loaded?.ok || loaded?.reason === "stale" || inst !== refs.modelerRef?.current) return false;
     refs.lastModelerXmlHashRef.current = callbacks.fnv1aHex?.(raw) || "";
+    const helpersModeler = resolveHelpers(ctx);
+    let restoredModeler = false;
+    if (typeof helpersModeler.getViewportState === "function") {
+      const saved = helpersModeler.getViewportState(sid);
+      if (saved && saved.xmlHash === refs.lastModelerXmlHashRef.current) {
+        restoredModeler = await tryRestoreViewport(inst, saved, callbacks.suppressViewboxEvents);
+        if (restoredModeler) {
+          const probeAfter = typeof helpersModeler.probeCanvas === "function"
+            ? helpersModeler.probeCanvas(inst, "recover2.modeler.post_restore", {
+              sid,
+              tab: "diagram",
+              token: refs.runtimeTokenRef.current,
+              reason: "recover2_modeler_restore",
+            })
+            : { invisible: false };
+          restoredModeler = !probeAfter.invisible;
+        }
+      }
+    }
     await ensureCanvasVisibleAndFit(ctx, inst, {
       tag: "recover2.modeler",
       sid,
@@ -212,6 +271,27 @@ export async function recoverByReimport(ctx, inst, options = {}) {
     }
     if (token !== refs.runtimeTokenRef.current || inst !== refs.viewerRef?.current) return false;
     refs.viewerReadyRef.current = true;
+    if (refs.lastViewerXmlHashRef) refs.lastViewerXmlHashRef.current = callbacks.fnv1aHex?.(raw) || "";
+    const helpersViewer = resolveHelpers(ctx);
+    let restoredViewer = false;
+    if (typeof helpersViewer.getViewportState === "function") {
+      const saved = helpersViewer.getViewportState(sid);
+      const currentHash = refs.lastViewerXmlHashRef ? refs.lastViewerXmlHashRef.current : "";
+      if (saved && saved.xmlHash === currentHash) {
+        restoredViewer = await tryRestoreViewport(inst, saved, callbacks.suppressViewboxEvents);
+        if (restoredViewer) {
+          const probeAfter = typeof helpersViewer.probeCanvas === "function"
+            ? helpersViewer.probeCanvas(inst, "recover2.viewer.post_restore", {
+              sid,
+              tab: "diagram",
+              token: refs.runtimeTokenRef.current,
+              reason: "recover2_viewer_restore",
+            })
+            : { invisible: false };
+          restoredViewer = !probeAfter.invisible;
+        }
+      }
+    }
     await ensureCanvasVisibleAndFit(ctx, inst, {
       tag: "recover2.viewer",
       sid,
@@ -275,6 +355,25 @@ export async function recoverByHardReset(ctx, inst, options = {}) {
     refs.modelerReadyRef.current = !!status?.ready && !!status?.defs;
     if (!loaded?.ok || !m || m !== refs.modelerRef?.current) return false;
     refs.lastModelerXmlHashRef.current = callbacks.fnv1aHex?.(raw) || "";
+    const helpersHardModeler = resolveHelpers(ctx);
+    let restoredHardModeler = false;
+    if (typeof helpersHardModeler.getViewportState === "function") {
+      const saved = helpersHardModeler.getViewportState(sid);
+      if (saved && saved.xmlHash === refs.lastModelerXmlHashRef.current) {
+        restoredHardModeler = await tryRestoreViewport(m, saved, callbacks.suppressViewboxEvents);
+        if (restoredHardModeler) {
+          const probeAfter = typeof helpersHardModeler.probeCanvas === "function"
+            ? helpersHardModeler.probeCanvas(m, "recover3.modeler.post_restore", {
+              sid,
+              tab: "diagram",
+              token: refs.runtimeTokenRef.current,
+              reason: "recover3_modeler_restore",
+            })
+            : { invisible: false };
+          restoredHardModeler = !probeAfter.invisible;
+        }
+      }
+    }
     await ensureCanvasVisibleAndFit(ctx, m, {
       tag: "recover3.modeler",
       sid,
@@ -320,6 +419,27 @@ export async function recoverByHardReset(ctx, inst, options = {}) {
     if (guard && !guard("recover3.viewer.after_load", v, { allowTokenDrift: true, syncToken: true })) return false;
     if (token !== refs.runtimeTokenRef.current || v !== refs.viewerRef?.current) return false;
     refs.viewerReadyRef.current = true;
+    if (refs.lastViewerXmlHashRef) refs.lastViewerXmlHashRef.current = callbacks.fnv1aHex?.(raw) || "";
+    const helpersHardViewer = resolveHelpers(ctx);
+    let restoredHardViewer = false;
+    if (typeof helpersHardViewer.getViewportState === "function") {
+      const saved = helpersHardViewer.getViewportState(sid);
+      const currentHash = refs.lastViewerXmlHashRef ? refs.lastViewerXmlHashRef.current : "";
+      if (saved && saved.xmlHash === currentHash) {
+        restoredHardViewer = await tryRestoreViewport(v, saved, callbacks.suppressViewboxEvents);
+        if (restoredHardViewer) {
+          const probeAfter = typeof helpersHardViewer.probeCanvas === "function"
+            ? helpersHardViewer.probeCanvas(v, "recover3.viewer.post_restore", {
+              sid,
+              tab: "diagram",
+              token: refs.runtimeTokenRef.current,
+              reason: "recover3_viewer_restore",
+            })
+            : { invisible: false };
+          restoredHardViewer = !probeAfter.invisible;
+        }
+      }
+    }
     await ensureCanvasVisibleAndFit(ctx, v, {
       tag: "recover3.viewer",
       sid,

@@ -1,5 +1,30 @@
 import { applyFullBpmnDecorSet } from "./runBpmnRenderDecorSync";
 
+async function tryRestoreViewport(ctx, inst, sessionId, currentXmlHash) {
+  const { getViewportState, probeCanvas, suppressViewboxEvents } = ctx;
+  if (typeof getViewportState !== "function") return false;
+  const saved = getViewportState(String(sessionId || ""));
+  if (!saved || !saved.viewbox || !Number.isFinite(saved.zoom)) return false;
+  if (saved.xmlHash && String(saved.xmlHash) !== String(currentXmlHash || "")) return false;
+  const canvas = inst?.get?.("canvas");
+  if (!canvas) return false;
+  try {
+    suppressViewboxEvents?.(1);
+    try {
+      canvas.viewbox(saved.viewbox);
+      canvas.zoom(saved.zoom);
+    } finally {
+      suppressViewboxEvents?.(-1);
+    }
+  } catch {
+    return false;
+  }
+  const probeAfter = typeof probeCanvas === "function"
+    ? probeCanvas(inst, "restore_after", { sid: String(sessionId || "") })
+    : { invisible: false };
+  return !probeAfter.invisible;
+}
+
 export async function renderViewerDiagram(ctx, nextXml) {
   const {
     ensureViewer,
@@ -30,6 +55,8 @@ export async function renderViewerDiagram(ctx, nextXml) {
     applyInterviewDecor,
     applyUserNotesDecor,
     applyStepTimeDecor,
+    getViewportState,
+    lastViewerXmlHashRef,
   } = ctx;
 
   const v = await ensureViewer();
@@ -82,11 +109,14 @@ export async function renderViewerDiagram(ctx, nextXml) {
     registryCount,
   });
   finishImportSelectionGuard(v, "viewer", "import_restore");
+  const viewerHash = fnv1aHex(String(nextXml || ""));
+  if (lastViewerXmlHashRef) lastViewerXmlHashRef.current = viewerHash;
+  const restoredViewer = await tryRestoreViewport(ctx, v, String(sessionId || ""), viewerHash);
   await ensureCanvasVisibleAndFit(v, "renderViewer", String(sessionId || ""), {
     reason: "render_viewer_import",
     tab: "diagram",
     token: runtimeTokenRef.current,
-    allowFit: true,
+    allowFit: !restoredViewer,
     fitIfInvisible: true,
     suppressViewbox: suppressViewboxEvents,
   });
@@ -281,11 +311,12 @@ export async function renderModelerDiagram(ctx, nextXml) {
     } catch {
     }
     finishImportSelectionGuard(m, "editor", "import_restore");
+    const restoredModeler = await tryRestoreViewport(ctx, m, String(activeSessionRef.current || sessionId || "-"), lastModelerXmlHashRef.current);
     await ensureCanvasVisibleAndFit(m, "renderModeler", String(sessionId || ""), {
       reason: "render_modeler_import",
       tab: "diagram",
       token: runtimeTokenRef.current,
-      allowFit: true,
+      allowFit: !restoredModeler,
       fitIfInvisible: true,
       suppressViewbox: suppressViewboxEvents,
     });
@@ -359,6 +390,8 @@ export async function renderNewDiagramInModelerRuntime(ctx) {
     applyInterviewDecor,
     applyUserNotesDecor,
     applyStepTimeDecor,
+    clearViewportState,
+    userViewportTouchedRef,
   } = ctx;
 
   const runtime = ensureModelerRuntime();
@@ -383,6 +416,8 @@ export async function renderNewDiagramInModelerRuntime(ctx) {
     );
   }
   const created = await runtime.createDiagram({ source: "renderNewDiagramInModeler" });
+  if (clearViewportState) clearViewportState(sidNow);
+  if (userViewportTouchedRef) userViewportTouchedRef.current = false;
   const status = runtime.getStatus();
   runtimeTokenRef.current = Number(status?.token || runtimeTokenRef.current || 0);
   modelerReadyRef.current = !!status?.ready && !!status?.defs;

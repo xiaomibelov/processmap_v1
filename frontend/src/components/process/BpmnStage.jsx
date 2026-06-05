@@ -1205,6 +1205,7 @@ async function ensureCanvasVisibleAndFit(inst, tag = "", sid = "", options = {})
         logCanvasMetrics,
         isAnyShapeInViewport,
         logViewAction,
+        getViewportState,
       },
     },
     inst,
@@ -1341,6 +1342,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const modelerReadyRef = useRef(false);
   const viewerReadyRef = useRef(false);
   const userViewportTouchedRef = useRef(false);
+  const viewportStateBySessionRef = useRef(new Map());
   const lastStoreEventRef = useRef({
     source: "",
     reason: "",
@@ -1348,6 +1350,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     hash: "",
   });
   const lastModelerXmlHashRef = useRef("");
+  const lastViewerXmlHashRef = useRef("");
   const modelerInstanceMetaRef = useRef({ id: 0, containerKey: "" });
   const viewerInstanceMetaRef = useRef({ id: 0, containerKey: "" });
   const ensureVisiblePromiseRef = useRef(null);
@@ -1393,6 +1396,52 @@ const BpmnStage = forwardRef(function BpmnStage({
       } catch {
       }
     });
+    if (payload.suppressed === false && payload.snapshot) {
+      const sid = String(activeSessionRef.current || sessionId || "");
+      const hash = payload.mode === "viewer"
+        ? lastViewerXmlHashRef.current
+        : lastModelerXmlHashRef.current;
+      saveViewportState(sid, payload.snapshot, hash);
+    }
+  }
+
+  function saveViewportState(sessionIdArg, snapshot, xmlHash) {
+    if (!sessionIdArg || !snapshot) return;
+    const state = {
+      zoom: Number(snapshot?.zoom || 0),
+      viewbox: {
+        x: Number(snapshot?.viewbox?.x || 0),
+        y: Number(snapshot?.viewbox?.y || 0),
+        width: Number(snapshot?.viewbox?.width || 0),
+        height: Number(snapshot?.viewbox?.height || 0),
+      },
+      xmlHash: String(xmlHash || ""),
+      touchedAt: Date.now(),
+    };
+    viewportStateBySessionRef.current.set(String(sessionIdArg), state);
+    if (viewportStateBySessionRef.current.size > 10) {
+      let oldestKey = null;
+      let oldestAt = Infinity;
+      viewportStateBySessionRef.current.forEach((value, key) => {
+        if (value.touchedAt < oldestAt) {
+          oldestAt = value.touchedAt;
+          oldestKey = key;
+        }
+      });
+      if (oldestKey !== null) {
+        viewportStateBySessionRef.current.delete(oldestKey);
+      }
+    }
+  }
+
+  function getViewportState(sessionIdArg) {
+    if (!sessionIdArg) return null;
+    return viewportStateBySessionRef.current.get(String(sessionIdArg)) || null;
+  }
+
+  function clearViewportState(sessionIdArg) {
+    if (!sessionIdArg) return;
+    viewportStateBySessionRef.current.delete(String(sessionIdArg));
   }
 
   useEffect(() => {
@@ -4354,6 +4403,8 @@ const BpmnStage = forwardRef(function BpmnStage({
     modelerReadyRef.current = false;
     userViewportTouchedRef.current = false;
     lastModelerXmlHashRef.current = "";
+    lastViewerXmlHashRef.current = "";
+    clearViewportState(sidBeforeDestroy);
     modelerInstanceMetaRef.current = { id: 0, containerKey: "" };
     viewerInstanceMetaRef.current = { id: 0, containerKey: "" };
     suppressViewboxEventRef.current = 0;
@@ -4693,7 +4744,12 @@ const BpmnStage = forwardRef(function BpmnStage({
       hydrateCamundaExtensionsFromImportedBpmn,
       waitAnimationFrame,
       lastModelerXmlHashRef,
+      lastViewerXmlHashRef,
       applyXmlSnapshot,
+      saveViewportState,
+      getViewportState,
+      clearViewportState,
+      userViewportTouchedRef,
     };
   }
 
@@ -4727,6 +4783,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         userViewportTouchedRef,
         viewerInitPromiseRef,
         lastModelerXmlHashRef,
+        lastViewerXmlHashRef,
         editorEl,
         viewerEl,
       },
@@ -4743,6 +4800,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         isAnyShapeInViewport,
         logCanvasMetrics,
         logViewAction,
+        getViewportState,
       },
       callbacks: {
         suppressViewboxEvents,
@@ -5486,7 +5544,6 @@ const BpmnStage = forwardRef(function BpmnStage({
             if (isStale("modeler.same_hash.after")) return;
             return;
           }
-          userViewportTouchedRef.current = false;
           if (isStale("modeler.render.before")) return;
           await renderModeler(resolvedXml);
           if (isStale("modeler.render.after")) return;
