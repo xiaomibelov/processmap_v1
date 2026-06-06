@@ -3102,8 +3102,14 @@ export default function App() {
     };
     const r = await apiPatchSession(sid, payload);
     if (!r.ok) {
-      markFail(r.error);
-      return { ok: false, error: String(r.error || "status_update_failed") };
+      const statusErr = String(r.error || "").toLowerCase();
+      const userMessage = statusErr.includes("invalid status transition")
+        ? "Недопустимый переход статуса."
+        : statusErr.includes("forbidden")
+          ? "Недостаточно прав для изменения статуса."
+          : String(r.error || "status_update_failed");
+      markFail(userMessage);
+      return { ok: false, error: userMessage };
     }
     onSessionSync(r.session || {});
     await refreshSessions(projectId);
