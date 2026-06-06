@@ -6,11 +6,12 @@ from app.session_status import normalize_session_status, validate_session_status
 
 
 class SessionStatusTransitionsTest(unittest.TestCase):
-    def _assert_http_error(self, fn, *, status_code: int, detail: str):
+    def _assert_http_error(self, fn, *, status_code: int, detail=None):
         with self.assertRaises(HTTPException) as err:
             fn()
         self.assertEqual(int(err.exception.status_code or 0), int(status_code))
-        self.assertEqual(str(err.exception.detail or ""), str(detail))
+        if detail is not None:
+            self.assertEqual(str(err.exception.detail or ""), str(detail))
 
     def test_normalize_supports_done_and_archive_aliases(self):
         self.assertEqual(normalize_session_status("done"), "ready")
@@ -44,18 +45,22 @@ class SessionStatusTransitionsTest(unittest.TestCase):
                 )
 
     def test_business_conflict_409_kept_for_invalid_transition(self):
-        self._assert_http_error(
-            lambda: validate_session_status_transition("draft", "review", can_edit=True, can_archive=True),
-            status_code=409,
-            detail="invalid status transition",
-        )
+        with self.assertRaises(HTTPException) as err:
+            validate_session_status_transition("draft", "review", can_edit=True, can_archive=True)
+        self.assertEqual(int(err.exception.status_code or 0), 409)
+        detail = err.exception.detail
+        self.assertIsInstance(detail, dict)
+        self.assertEqual(detail.get("code"), "STATUS_TRANSITION_INVALID")
+        self.assertEqual(detail.get("current"), "draft")
+        self.assertEqual(detail.get("next"), "review")
 
     def test_archiving_requires_manage_rights(self):
-        self._assert_http_error(
-            lambda: validate_session_status_transition("review", "archived", can_edit=True, can_archive=False),
-            status_code=403,
-            detail="forbidden",
-        )
+        with self.assertRaises(HTTPException) as err:
+            validate_session_status_transition("review", "archived", can_edit=True, can_archive=False)
+        self.assertEqual(int(err.exception.status_code or 0), 403)
+        detail = err.exception.detail
+        self.assertIsInstance(detail, dict)
+        self.assertEqual(detail.get("code"), "STATUS_FORBIDDEN")
 
 
 if __name__ == "__main__":
