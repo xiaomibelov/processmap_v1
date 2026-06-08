@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { matrixToDiagram, matrixToScreen } from "../utils/hybridCoords.js";
+import { wrapWithProfiler } from "../../bpmn/stage/profiling/panProfiler";
 
 function asObject(value) {
   return value && typeof value === "object" ? value : {};
@@ -129,12 +130,35 @@ export default function useBpmnViewportSource({
   const [viewportMatrix, setViewportMatrix] = useState({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
   const [viewbox, setViewbox] = useState({ x: 0, y: 0, width: 0, height: 0, scale: 1 });
   const [containerRect, setContainerRect] = useState({ left: 0, top: 0, width: 0, height: 0 });
+  const cachedContainerRectRef = useRef({ left: 0, top: 0, width: 0, height: 0 });
+
+  // Keep a cached container rect updated via ResizeObserver so we never
+  // force a synchronous layout via getBoundingClientRect() during panning.
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const host = canvasApi?.getCanvasContainerEl?.();
+    if (!(host instanceof Element)) return undefined;
+    const update = () => {
+      const rect = host.getBoundingClientRect?.() || {};
+      cachedContainerRectRef.current = normalizeRect(rect);
+    };
+    update();
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(update);
+      ro.observe(host);
+    }
+    const onResize = () => update();
+    window.addEventListener("resize", onResize);
+    return () => {
+      if (ro) ro.disconnect();
+      window.removeEventListener("resize", onResize);
+    };
+  }, [canvasApi, enabled]);
 
   const readContainerRect = useCallback(() => {
-    const host = canvasApi?.getCanvasContainerEl?.();
-    const rect = host?.getBoundingClientRect?.() || {};
-    return normalizeRect(rect);
-  }, [canvasApi]);
+    return cachedContainerRectRef.current;
+  }, []);
 
   const readViewportMatrixFromDom = useCallback((hostRaw = null) => {
     const host = hostRaw instanceof Element ? hostRaw : canvasApi?.getCanvasContainerEl?.();
@@ -221,7 +245,7 @@ export default function useBpmnViewportSource({
 
   const getViewportMatrix = useCallback(() => normalizeMatrix(matrixRef.current), []);
 
-  const applyViewbox = useCallback((viewboxRaw) => {
+  const _applyViewbox = useCallback((viewboxRaw) => {
     const nextViewbox = normalizeViewbox(viewboxRaw);
     const host = canvasApi?.getCanvasContainerEl?.();
     const nextRect = readContainerRect();
@@ -270,11 +294,12 @@ export default function useBpmnViewportSource({
       return nextViewbox;
     });
   }, [canvasApi, notifyViewportMatrix, readContainerRect, readViewportMatrixFromDom]);
+  const applyViewbox = wrapWithProfiler("useBpmnViewportSource.applyViewbox", _applyViewbox);
 
   // Settled debounce: 150ms after the last viewbox event, mark changing=false.
   const SETTLED_DELAY_MS = 150;
 
-  const scheduleApply = useCallback((viewboxRaw = null) => {
+  const _scheduleApply = useCallback((viewboxRaw = null) => {
     // Mark overlays as changing — subscribers hide overlay layer imperatively.
     setViewboxChanging(true);
     // Clear any pending settled timer.
@@ -303,6 +328,7 @@ export default function useBpmnViewportSource({
       });
     }
   }, [applyViewbox, canvasApi, setViewboxChanging]);
+  const scheduleApply = wrapWithProfiler("useBpmnViewportSource.scheduleApply", _scheduleApply);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -331,7 +357,7 @@ export default function useBpmnViewportSource({
       window.addEventListener("resize", onResize);
       stopResize = () => window.removeEventListener("resize", onResize);
     }
-    const fallbackTimer = window.setInterval(() => scheduleApply(null), 360);
+    const fallbackTimer = window.setInterval(() => scheduleApply(null), 2000);
     stopFallbackRefresh = () => window.clearInterval(fallbackTimer);
 
     scheduleApply(canvasApi?.getViewbox?.() || null);

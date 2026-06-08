@@ -3,6 +3,7 @@ import {
   resolveFirstHybridSeedElementId as resolveFirstHybridSeedElementIdImpl,
   resolveHybridTargetElementIdFromPoint as resolveHybridTargetElementIdFromPointImpl,
 } from "./bpmnHybridHitTest.js";
+import { wrapWithProfiler } from "../../bpmn/stage/profiling/panProfiler";
 
 function asObject(value) {
   return value && typeof value === "object" ? value : {};
@@ -29,7 +30,7 @@ export default function useBpmnCanvasController({
     return bpmnStageHostRef.current;
   }, [bpmnStageHostRef, canvasApi]);
 
-  const readHybridElementAnchor = useCallback((elementIdRaw) => {
+  const _readHybridElementAnchor = useCallback((elementIdRaw) => {
     const elementId = toText(elementIdRaw);
     if (!elementId) return null;
     const bounds = canvasApi?.getElementBBox?.(elementId) || getElementBBox?.(elementId);
@@ -89,6 +90,7 @@ export default function useBpmnCanvasController({
       height,
     };
   }, [canvasApi, cssEscapeAttr, getCanvasHost, getElementBBox, localToDiagram, toText]);
+  const readHybridElementAnchor = wrapWithProfiler("useBpmnCanvasController.readHybridElementAnchor", _readHybridElementAnchor);
 
   const resolveHybridTargetElementIdFromPoint = useCallback((clientXRaw, clientYRaw) => {
     return resolveHybridTargetElementIdFromPointImpl({
@@ -107,7 +109,7 @@ export default function useBpmnCanvasController({
     });
   }, [getCanvasHost, toNodeId]);
 
-  const syncHybridLayerPositions = useCallback(() => {
+  const _syncHybridLayerPositions = useCallback(() => {
     const next = {};
     hybridLayerItems.forEach((itemRaw) => {
       const item = asObject(itemRaw);
@@ -130,6 +132,7 @@ export default function useBpmnCanvasController({
     hybridLayerPositionsRef.current = next;
     setHybridLayerPositions(next);
   }, [hybridLayerItems, readHybridElementAnchor, toText]);
+  const syncHybridLayerPositions = wrapWithProfiler("useBpmnCanvasController.syncHybridLayerPositions", _syncHybridLayerPositions);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -140,18 +143,22 @@ export default function useBpmnCanvasController({
     }
     let canceled = false;
     let frameId = 0;
-    const intervalMs = 900;
+    const intervalMs = 2000;
     const scheduleFrame = typeof window.requestAnimationFrame === "function"
       ? window.requestAnimationFrame.bind(window)
       : (fn) => window.setTimeout(fn, 16);
     const cancelFrame = typeof window.cancelAnimationFrame === "function"
       ? window.cancelAnimationFrame.bind(window)
       : window.clearTimeout.bind(window);
+    const lastSyncRef = { current: 0 };
     const schedule = () => {
       if (canceled || frameId) return;
+      const now = performance.now();
+      if (now - lastSyncRef.current < 100) return;
       frameId = scheduleFrame(() => {
         frameId = 0;
         if (canceled) return;
+        lastSyncRef.current = performance.now();
         syncHybridLayerPositions();
       });
     };
