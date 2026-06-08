@@ -227,8 +227,13 @@ export const apiRoutes = {
     aiPromptArchive: (promptId) => `/api/admin/ai/prompts/${encode(promptId)}/archive`,
     ragSettings: () => "/api/admin/rag/settings",
     ragPatchSettings: () => "/api/admin/rag/settings",
+    featureFlags: () => "/api/admin/feature-flags",
+    featureFlagsPatch: () => "/api/admin/feature-flags",
     agentRuns: () => "/api/admin/agent-runs",
     agentRun: (runId) => `/api/admin/agent-runs/${encodeURIComponent(String(runId || ""))}`,
+  },
+  featureFlags: {
+    get: () => "/api/feature-flags",
   },
   rag: {
     search: (params = {}) => withQuery("/api/rag/search", {
