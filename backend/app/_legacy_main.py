@@ -225,6 +225,7 @@ AUTH_PUBLIC_PATHS = {
     "/api/invites/accept",
     "/api/health",
     "/api/meta",
+    "/api/feature-flags",
 }
 
 _ORG_WRITE_ROLES = {"org_owner", "org_admin"}
