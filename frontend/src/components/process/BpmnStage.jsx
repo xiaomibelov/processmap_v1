@@ -93,6 +93,8 @@ import { instrumentBpmnInst, wrapWithProfiler } from "../../features/process/bpm
 
 patchOverlaysPrototype();
 import { maybeStartPanProfilerFromUrl } from "../../features/process/bpmn/stage/profiling/panProfiler";
+import BpmnFpsMeter from "./BpmnFpsMeter";
+import { apiGetFeatureFlags } from "../../lib/apiModules/featureFlagsApi";
 maybeStartPanProfilerFromUrl();
 
 const shapeTitleLookupCache = new WeakMap();
@@ -1281,6 +1283,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const [srcHint, setSrcHint] = useState("");
   const [err, setErr] = useState("");
   const [diagramReady, setDiagramReady] = useState(false);
+  const [featureFlags, setFeatureFlags] = useState({ bpmn_fps_meter_enabled: false, canvas_profiler_enabled: false });
   const bottlenecksRef = useRef([]);
   const markerStateRef = useRef({ viewer: [], editor: [] });
   const overlayStateRef = useRef({ viewer: [], editor: [] });
@@ -1410,6 +1413,14 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     onDiagramMutationRef.current = onDiagramMutation;
   }, [onDiagramMutation]);
+
+  useEffect(() => {
+    apiGetFeatureFlags().then((r) => {
+      if (r.ok && r.flags) {
+        setFeatureFlags(r.flags);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     onElementSelectionChangeRef.current = onElementSelectionChange;
@@ -5875,6 +5886,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           <div className="bpmnCanvas" ref={editorEl} style={{ width: "100%", height: "100%" }} />
         </div>
       </div>
+      {featureFlags.bpmn_fps_meter_enabled ? <BpmnFpsMeter enabled={true} /> : null}
     </div>
   );
 });

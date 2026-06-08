@@ -3,6 +3,7 @@ import AutoPassOutcomesWidget from "../components/dashboard/AutoPassOutcomesWidg
 import DashboardKpiRow from "../components/dashboard/DashboardKpiRow";
 import JobsThroughputWidget from "../components/dashboard/JobsThroughputWidget";
 import PublishGitMirrorWidget from "../components/dashboard/PublishGitMirrorWidget";
+import FeatureFlagsWidget from "../components/dashboard/FeatureFlagsWidget";
 import RecentAuditWidget from "../components/dashboard/RecentAuditWidget";
 import RedisHealthWidget from "../components/dashboard/RedisHealthWidget";
 import ReportsHealthWidget from "../components/dashboard/ReportsHealthWidget";
@@ -32,6 +33,9 @@ export default function AdminDashboardPage({
       <div className="grid gap-4 xl:grid-cols-2">
         <RequiresAttentionWidget items={payload?.requires_attention || []} onNavigate={onNavigate} />
         <PublishGitMirrorWidget payload={payload?.publish_git_mirror || {}} />
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <FeatureFlagsWidget />
       </div>
     </AdminPageContainer>
   );
