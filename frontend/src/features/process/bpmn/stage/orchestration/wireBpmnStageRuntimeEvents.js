@@ -1,4 +1,5 @@
 import { resolveBpmnContextMenuRuntimeResolution } from "../../context-menu/resolveBpmnContextMenuTarget.js";
+import { patchOverlaysInstance } from "../patches/patchOverlayPanPerf";
 
 // ── Overlay pan debounce ──
 // During canvas pan bpmn-js fires canvas.viewbox.changing/changed on every
@@ -20,8 +21,27 @@ function debounce(fn, ms) {
   };
 }
 
+// Throttle to one execution per animation frame. This collapses rapid
+// canvas.viewbox.changed bursts (e.g. 120 Hz mouse events) into a single
+// fanout per 60 Hz frame, cutting JS time without dropping the final update.
+function throttleRaf(fn) {
+  let frameId = 0;
+  let pendingArgs = null;
+  return function (...args) {
+    pendingArgs = args;
+    if (frameId) return;
+    frameId = requestAnimationFrame(() => {
+      frameId = 0;
+      const useArgs = pendingArgs;
+      pendingArgs = null;
+      if (useArgs) fn.apply(this, useArgs);
+    });
+  };
+}
+
 function bindOverlayPanDebouncer({ eventBus, inst }) {
   if (!eventBus || !inst) return;
+  patchOverlaysInstance(inst);
   let overlayRoot = null;
   try {
     overlayRoot = inst.get("overlays")?._overlayRoot || null;
