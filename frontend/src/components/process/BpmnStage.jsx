@@ -92,6 +92,8 @@ import { patchOverlaysPrototype } from "../../features/process/bpmn/stage/patche
 import { instrumentBpmnInst, wrapWithProfiler } from "../../features/process/bpmn/stage/profiling/panProfiler";
 
 patchOverlaysPrototype();
+import { maybeStartPanProfilerFromUrl } from "../../features/process/bpmn/stage/profiling/panProfiler";
+maybeStartPanProfilerFromUrl();
 
 const shapeTitleLookupCache = new WeakMap();
 const CONTEXT_MENU_HANDLED_FLAG = "__fpcBpmnContextHandled";
