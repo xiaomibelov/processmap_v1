@@ -88,6 +88,10 @@ import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
+import { patchOverlaysPrototype } from "../../features/process/bpmn/stage/patches/patchOverlayPanPerf";
+import { instrumentBpmnInst, wrapWithProfiler } from "../../features/process/bpmn/stage/profiling/panProfiler";
+
+patchOverlaysPrototype();
 
 const shapeTitleLookupCache = new WeakMap();
 const CONTEXT_MENU_HANDLED_FLAG = "__fpcBpmnContextHandled";
@@ -690,18 +694,22 @@ function XmlView({ xmlDraft, xmlDirty, saveBusy, onChange, onSave, onReset }) {
   );
 }
 
-function getCanvasSnapshot(inst) {
+function _getCanvasSnapshotRaw(inst) {
   try {
     const canvas = inst?.get?.("canvas");
     const registry = inst?.get?.("elementRegistry");
     const container = canvas?._container;
-    const rect = container?.getBoundingClientRect?.();
+    // Avoid getBoundingClientRect() — it forces a full synchronous layout
+    // recalculation on every pan frame. clientWidth/Height is cached and
+    // orders of magnitude cheaper when the container size hasn't changed.
+    const width = Number(container?.clientWidth || 0);
+    const height = Number(container?.clientHeight || 0);
     const vb = canvas?.viewbox?.() || {};
     const zoom = Number(canvas?.zoom?.() || 0);
     const count = Array.isArray(registry?.getAll?.()) ? registry.getAll().length : 0;
     return {
-      width: Number(rect?.width || container?.clientWidth || 0),
-      height: Number(rect?.height || container?.clientHeight || 0),
+      width,
+      height,
       zoom: Number.isFinite(zoom) ? zoom : 0,
       viewbox: {
         x: Number(vb?.x || 0),
@@ -721,6 +729,7 @@ function getCanvasSnapshot(inst) {
     };
   }
 }
+const getCanvasSnapshot = wrapWithProfiler("BpmnStage.getCanvasSnapshot", _getCanvasSnapshotRaw);
 
 function emitCurrentViewboxSnapshot(inst, emitViewboxChanged, mode, meta = {}) {
   if (typeof emitViewboxChanged !== "function") return;
@@ -963,7 +972,7 @@ async function waitForNonZeroRect(getNode, options = {}) {
     }
 
     attempt += 1;
-    await waitAnimationFrame();
+    await new Promise((resolve) => setTimeout(resolve, 40));
   }
 
   logLayoutTrace({
@@ -1384,7 +1393,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   });
   const prefersReducedMotionRef = useRef(false);
 
-  function emitViewboxChanged(payload = {}) {
+  function _emitViewboxChangedRaw(payload = {}) {
     const listeners = viewboxListenersRef.current;
     if (!(listeners instanceof Set) || !listeners.size) return;
     listeners.forEach((listener) => {
@@ -1394,6 +1403,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       }
     });
   }
+  const emitViewboxChanged = wrapWithProfiler("BpmnStage.emitViewboxChanged", _emitViewboxChangedRaw);
 
   useEffect(() => {
     onDiagramMutationRef.current = onDiagramMutation;
@@ -4478,6 +4488,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         moddleExtensions: { pm: pmModdleDescriptor, camunda: camundaModdleDescriptor },
         deferUpdate: true,
       });
+      instrumentBpmnInst(v, "viewer");
       runtimeInstanceSeq += 1;
       viewerInstanceMetaRef.current = {
         id: runtimeInstanceSeq,
@@ -4569,6 +4580,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       } catch {
       }
       const m = await runtime.init(editorEl.current, { mode: "modeler" });
+      instrumentBpmnInst(m, "modeler");
       runtimeInstanceSeq += 1;
       modelerInstanceMetaRef.current = {
         id: runtimeInstanceSeq,
@@ -5486,10 +5498,30 @@ const BpmnStage = forwardRef(function BpmnStage({
             if (isStale("modeler.same_hash.after")) return;
             return;
           }
+          const preRenderSnapshot = modelerRef.current ? getCanvasSnapshot(modelerRef.current) : null;
           userViewportTouchedRef.current = false;
           if (isStale("modeler.render.before")) return;
           await renderModeler(resolvedXml);
           if (isStale("modeler.render.after")) return;
+          if (preRenderSnapshot && preRenderSnapshot.zoom > 0) {
+            const snapshotRunId = runId;
+            const restore = () => {
+              if (renderRunRef.current !== snapshotRunId) return;
+              try {
+                const canvas = modelerRef.current?.get?.("canvas");
+                if (canvas) {
+                  canvas.viewbox(preRenderSnapshot.viewbox);
+                  canvas.zoom(preRenderSnapshot.zoom);
+                  userViewportTouchedRef.current = true;
+                }
+              } catch {
+                // viewport recovery best-effort
+              }
+            };
+            window.requestAnimationFrame(() => {
+              window.setTimeout(restore, 120);
+            });
+          }
         }
       } catch (e) {
         if (isStale("catch")) return;
