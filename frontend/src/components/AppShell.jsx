@@ -5,6 +5,7 @@ import SidebarHandle from "./sidebar/SidebarHandle";
 import { resolveSessionNavNoticeCopy } from "../features/process/navigation/sessionNavNoticeUi";
 import { appVersionInfo } from "../config/appVersion.js";
 import AppUpdateBanner from "../features/appUpdate/AppUpdateBanner.jsx";
+import BuildBadge from "./BuildBadge.jsx";
 import useAppUpdateAvailable from "../features/appUpdate/useAppUpdateAvailable.js";
 
 function isUpdatesHash() {
@@ -305,11 +306,12 @@ export default function AppShell({
         </div>
       </div>
 
-      <div className="footerHint border-t border-border px-4 py-2 text-xs text-muted" data-testid="app-version-footer">
+      <div className="footerHint flex flex-wrap items-center border-t border-border px-4 py-2 text-xs text-muted" data-testid="app-version-footer">
         <a className="font-semibold text-info underline underline-offset-4 hover:text-info/80" href="#updates" data-testid="app-version-link">
           Версия {appVersionInfo.currentVersion}
         </a>
         {latestChangeSummary ? <span> · {latestChangeSummary}</span> : null}
+        <BuildBadge />
       </div>
     </div>
   );

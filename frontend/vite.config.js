@@ -58,6 +58,10 @@ function loadStageDeployFingerprintMeta() {
 export default defineConfig({
   define: {
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(appVersionInfo.currentVersion),
+    __BUILD_ID__: JSON.stringify(process.env.VITE_BUILD_ID || "dev"),
+    __BUILD_TIME__: JSON.stringify(process.env.VITE_BUILD_TIME || new Date().toISOString()),
+    __BUILD_BRANCH__: JSON.stringify(process.env.VITE_BUILD_BRANCH || "dev"),
+    __BUILD_ENV__: JSON.stringify(process.env.VITE_BUILD_ENV || "dev"),
   },
   plugins: [
     react(),

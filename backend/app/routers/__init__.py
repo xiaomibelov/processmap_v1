@@ -1,5 +1,6 @@
 from .auto_pass import router as auto_pass_router
 from .admin import router as admin_router
+from .version import router as version_router
 from .clipboard import router as clipboard_router
 from .error_events import router as error_events_router
 from .explorer import router as explorer_router
@@ -42,4 +43,5 @@ ROUTERS = (
     org_members_router,
     org_property_dictionary_router,
     org_router,
+    version_router,
 )
