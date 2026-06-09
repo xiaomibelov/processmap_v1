@@ -1,3 +1,4 @@
+import { apiGetFeatureFlags } from "../lib/apiModules/featureFlagsApi";
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import DocStage from "./process/DocStage";
 import DodStage from "./process/DodStage";
@@ -420,6 +421,7 @@ function ProcessStage({
   const bpmnVersionsOpenRef = useRef(false);
   const bpmnVersionsListRequestRef = useRef({ key: "", promise: null });
   const bpmnVersionDetailRequestRef = useRef(new Map());
+  const [featureFlags, setFeatureFlags] = useState({ bpmn_fps_meter_enabled: false, canvas_profiler_enabled: false });
   const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
   const [saveConflictNoticeDismissed, setSaveConflictNoticeDismissed] = useState(false);
@@ -491,6 +493,14 @@ function ProcessStage({
   const resolveDraftDiagramStateVersion = useCallback(() => {
     return normalizeDiagramStateVersion(draft?.diagram_state_version ?? draft?.diagramStateVersion);
   }, [draft?.diagramStateVersion, draft?.diagram_state_version]);
+
+  useEffect(() => {
+    apiGetFeatureFlags().then((r) => {
+      if (r.ok && r.flags) {
+        setFeatureFlags(r.flags);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     const currentSid = String(sid || "");
@@ -6366,6 +6376,7 @@ function ProcessStage({
     hasPathHighlightData,
   } = shellVm.shellProps;
   const headerView = buildDiagramHeaderView({
+    featureFlags,
     shellProps: {
       ...shellVm.shellProps,
       sessionRevisionHistorySnapshot: revisionHistoryUiSnapshot,
