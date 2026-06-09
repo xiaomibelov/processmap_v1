@@ -134,7 +134,7 @@ export default function ProcessStageHeader({ view = {} }) {
               </button>
             )}
           {featureFlags?.bpmn_fps_meter_enabled ? (
-            <div className="ml-2">
+            <div className="ml-2" style={{ display: "inline-block", verticalAlign: "middle" }}>
               <BpmnFpsMeter enabled={true} />
             </div>
           ) : null}
