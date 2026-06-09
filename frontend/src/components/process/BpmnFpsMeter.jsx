@@ -85,21 +85,22 @@ export default function BpmnFpsMeter({ enabled = true }) {
 
   return (
     <div
+      data-testid="fps-meter"
       style={{
-        position: "relative",
-        zIndex: 10,
+        display: "inline-flex",
+        flexDirection: "column",
+        gap: 2,
         background: "#f97316",
         border: "1px solid #fb923c",
         color: "#fff",
         fontFamily: "monospace",
-        fontSize: 12,
-        lineHeight: "1.4",
-        padding: "8px 10px",
-        borderRadius: 6,
+        fontSize: 11,
+        lineHeight: "1.3",
+        padding: "4px 8px",
+        borderRadius: 4,
         pointerEvents: "auto",
         userSelect: "none",
-        minWidth: 160,
-        maxWidth: 420,
+        minWidth: 120,
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
