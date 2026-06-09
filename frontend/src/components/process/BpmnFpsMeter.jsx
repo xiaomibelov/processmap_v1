@@ -127,17 +127,8 @@ export default function BpmnFpsMeter({ enabled = true }) {
         <span style={{ color: drops > 0 ? "#ef4444" : "inherit" }}>drops {drops}</span>
       </div>
       {active && (
-        <div style={{ marginTop: 6, fontSize: 10, color: "#93c5fd" }}>
-          Profiling… pan the canvas. Click Stop when done.
-        </div>
-      )}
-      {summary && (
-        <div style={{ marginTop: 8, fontSize: 10, opacity: 0.95, borderTop: "1px solid rgba(255,255,255,0.15)", paddingTop: 6 }}>
-          <div>avg FPS: {summary.avgFps} | min FPS: {summary.minFps}</div>
-          <div>frames &lt;10 FPS: {summary.framesUnder10}</div>
-          <div>forced reflows: {summary.forcedReflowsTotal}</div>
-          <div>long tasks: {summary.longTasks}</div>
-          <div style={{ marginTop: 4, color: "#86efac" }}>Open Console → copy __fpcPanProfileSummary</div>
+        <div style={{ marginTop: 2, fontSize: 10, color: "#93c5fd" }}>
+          Profiling…
         </div>
       )}
     </div>
