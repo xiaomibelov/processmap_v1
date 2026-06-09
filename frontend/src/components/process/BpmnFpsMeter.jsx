@@ -86,10 +86,8 @@ export default function BpmnFpsMeter({ enabled = true }) {
   return (
     <div
       style={{
-        position: "fixed",
-        top: 8,
-        left: 8,
-        zIndex: 9999,
+        position: "relative",
+        zIndex: 10,
         background: "rgba(0,0,0,0.85)",
         color: "#fff",
         fontFamily: "monospace",

@@ -323,6 +323,7 @@ export function buildDialogsView({
 }
 
 export function buildDiagramHeaderView({
+  featureFlags = {},
   shellProps = {},
   sid,
   saveDirtyHint,
@@ -362,6 +363,7 @@ export function buildDiagramHeaderView({
 } = {}) {
   return {
     ...shellProps,
+    featureFlags,
     sessionId: sid,
     saveDirtyHint,
     handleSaveCurrentTab,

@@ -1,4 +1,5 @@
 import ProcessPanels from "./ProcessPanels";
+import BpmnFpsMeter from "../../../../components/process/BpmnFpsMeter";
 import { getFirstPickedFile } from "./fileInputEvent.js";
 import { resolvePublishedRevisionBadgeView } from "./revisionBadgePolicy.js";
 
@@ -43,6 +44,7 @@ export default function ProcessStageHeader({ view = {} }) {
     handleDrawioImportFile,
     topPanelsView,
     sessionPresenceView,
+    featureFlags,
   } = view;
   const publishedRevisionBadge = resolvePublishedRevisionBadgeView(sessionRevisionHistorySnapshot);
   const latestPublishedRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestPublishedRevisionNumber || 0);
@@ -131,6 +133,11 @@ export default function ProcessStageHeader({ view = {} }) {
                 {workbench.labels.save}
               </button>
             )}
+          {featureFlags?.bpmn_fps_meter_enabled ? (
+            <div className="ml-2">
+              <BpmnFpsMeter enabled={true} />
+            </div>
+          ) : null}
         </div>
       </div>
 
