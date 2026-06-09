@@ -88,8 +88,9 @@ export default function BpmnFpsMeter({ enabled = true }) {
       style={{
         position: "relative",
         zIndex: 10,
-        background: "rgba(0,0,0,0.85)",
-        color: "#fff",
+        background: "#0f172a",
+        border: "1px solid #334155",
+        color: "#e2e8f0",
         fontFamily: "monospace",
         fontSize: 12,
         lineHeight: "1.4",
