@@ -20,6 +20,7 @@ import {
 } from "../../features/process/bpmn/stage/fanout/postStagingFanout";
 import { applyFullBpmnDecorSet } from "../../features/process/bpmn/stage/orchestration/runBpmnRenderDecorSync";
 import useBpmnSettledDecorFanout from "../../features/process/bpmn/stage/orchestration/useBpmnSettledDecorFanout";
+import useDiagramLoadStateMachine from "../../features/process/bpmn/stage/load/useDiagramLoadStateMachine";
 import {
   bindModelerStageEvents,
   bindViewerStageEvents,
@@ -1280,7 +1281,8 @@ const BpmnStage = forwardRef(function BpmnStage({
   const [xmlSaveBusy, setXmlSaveBusy] = useState(false);
   const [srcHint, setSrcHint] = useState("");
   const [err, setErr] = useState("");
-  const [diagramReady, setDiagramReady] = useState(false);
+  const { isReady: loadStateIsReady } = useDiagramLoadStateMachine();
+  const diagramReady = loadStateIsReady;
   const bottlenecksRef = useRef([]);
   const markerStateRef = useRef({ viewer: [], editor: [] });
   const overlayStateRef = useRef({ viewer: [], editor: [] });
@@ -1479,9 +1481,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     draftRef.current = draft;
   }, [draft]);
 
-  useEffect(() => {
-    setDiagramReady(false);
-  }, [sessionId, reloadKey]);
+  /* diagramReady now sourced from useDiagramLoadStateMachine.isReady */
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
@@ -1700,7 +1700,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       ready: nextReady,
       destroyed: nextDestroyed,
     };
-    setDiagramReady((prev) => (prev === nextReady ? prev : nextReady));
+    /* diagramReady now sourced from useDiagramLoadStateMachine.isReady */
   }
 
   function ensureBpmnPersistence() {
