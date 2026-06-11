@@ -4251,6 +4251,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
 
 
 @app.delete("/api/projects/{project_id}")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def delete_project_api(project_id: str, request: Request = None):
     pid = str(project_id or "").strip()
     if not pid:
@@ -8936,6 +8937,7 @@ def create_org_endpoint(inp: OrgCreateIn, request: Request) -> Dict[str, Any]:
 
 
 @app.patch("/api/orgs/{org_id}")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def patch_org_endpoint(org_id: str, inp: OrgPatchIn, request: Request) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     role, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
@@ -8969,6 +8971,7 @@ def patch_org_endpoint(org_id: str, inp: OrgPatchIn, request: Request) -> Dict[s
 
 
 @app.get("/api/orgs/{org_id}/git-mirror")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def get_org_git_mirror_endpoint(org_id: str, request: Request) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     role, err = _enterprise_require_org_member(request, oid)
@@ -8986,6 +8989,7 @@ def get_org_git_mirror_endpoint(org_id: str, request: Request) -> Dict[str, Any]
 
 
 @app.patch("/api/orgs/{org_id}/git-mirror")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def patch_org_git_mirror_endpoint(org_id: str, inp: OrgGitMirrorPatchIn, request: Request) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     role, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
@@ -9056,6 +9060,7 @@ def patch_org_git_mirror_endpoint(org_id: str, inp: OrgGitMirrorPatchIn, request
 
 
 @app.post("/api/orgs/{org_id}/git-mirror/validate")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def validate_org_git_mirror_endpoint(org_id: str, inp: OrgGitMirrorPatchIn, request: Request) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     role, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
@@ -9107,6 +9112,7 @@ def list_org_members_endpoint(org_id: str, request: Request) -> Dict[str, Any]:
 
 
 @app.patch("/api/orgs/{org_id}/members/{user_id}")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def patch_org_member_endpoint(org_id: str, user_id: str, inp: OrgMemberPatchIn, request: Request):
     oid = str(org_id or "").strip()
     uid = str(user_id or "").strip()
@@ -9134,6 +9140,7 @@ def patch_org_member_endpoint(org_id: str, user_id: str, inp: OrgMemberPatchIn, 
 
 
 @app.get("/api/orgs/{org_id}/projects")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def list_org_projects(org_id: str, request: Request) -> List[Dict[str, Any]]:
     oid = str(org_id or "").strip()
     _, err = _enterprise_require_org_member(request, oid)
@@ -9149,6 +9156,7 @@ def list_org_projects(org_id: str, request: Request) -> List[Dict[str, Any]]:
 
 
 @app.post("/api/orgs/{org_id}/projects")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def create_org_project(org_id: str, inp: CreateProjectIn, request: Request) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     _, err = _enterprise_require_org_role(request, oid, _ORG_WRITE_ROLES)
@@ -9179,6 +9187,7 @@ def create_org_project(org_id: str, inp: CreateProjectIn, request: Request) -> D
 
 
 @app.get("/api/orgs/{org_id}/projects/{project_id}")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def get_org_project(org_id: str, project_id: str, request: Request) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     _, _, err = _enterprise_require_project_access(request, oid, project_id)
@@ -9192,6 +9201,7 @@ def get_org_project(org_id: str, project_id: str, request: Request) -> Dict[str,
 
 
 @app.get("/api/orgs/{org_id}/projects/{project_id}/sessions")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def list_org_project_sessions(org_id: str, project_id: str, request: Request, mode: str | None = None, view: str | None = None) -> List[Dict[str, Any]]:
     oid = str(org_id or "").strip()
     _, _, err = _enterprise_require_project_access(request, oid, project_id)
@@ -9219,6 +9229,7 @@ def list_org_project_sessions(org_id: str, project_id: str, request: Request, mo
 
 
 @app.post("/api/orgs/{org_id}/projects/{project_id}/sessions")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def create_org_project_session(
     org_id: str,
     project_id: str,
@@ -9287,6 +9298,7 @@ def create_org_project_session(
 
 
 @app.get("/api/orgs/{org_id}/projects/{project_id}/members")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def list_org_project_members(org_id: str, project_id: str, request: Request) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     pid = str(project_id or "").strip()
@@ -9301,6 +9313,7 @@ def list_org_project_members(org_id: str, project_id: str, request: Request) -> 
 
 
 @app.post("/api/orgs/{org_id}/projects/{project_id}/members")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def create_org_project_member(org_id: str, project_id: str, inp: ProjectMemberUpsertIn, request: Request):
     oid = str(org_id or "").strip()
     pid = str(project_id or "").strip()
@@ -9331,6 +9344,7 @@ def create_org_project_member(org_id: str, project_id: str, inp: ProjectMemberUp
 
 
 @app.patch("/api/orgs/{org_id}/projects/{project_id}/members/{user_id}")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def patch_org_project_member(org_id: str, project_id: str, user_id: str, inp: ProjectMemberPatchIn, request: Request):
     oid = str(org_id or "").strip()
     pid = str(project_id or "").strip()
@@ -9361,6 +9375,7 @@ def patch_org_project_member(org_id: str, project_id: str, user_id: str, inp: Pr
 
 
 @app.delete("/api/orgs/{org_id}/projects/{project_id}/members/{user_id}")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def delete_org_project_member(org_id: str, project_id: str, user_id: str, request: Request):
     oid = str(org_id or "").strip()
     pid = str(project_id or "").strip()
@@ -9411,6 +9426,7 @@ def _pick_current_org_invite(items_raw: Any) -> Dict[str, Any]:
 
 @app.get("/api/orgs/{org_id}/invites")
 @app.get("/api/admin/organizations/{org_id}/invites")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def list_org_invites_endpoint(org_id: str, request: Request):
     oid = str(org_id or "").strip()
     _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
@@ -9427,6 +9443,7 @@ def list_org_invites_endpoint(org_id: str, request: Request):
 
 @app.post("/api/orgs/{org_id}/invites")
 @app.post("/api/admin/organizations/{org_id}/invites")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Request):
     oid = str(org_id or "").strip()
     _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
@@ -9615,6 +9632,7 @@ def _accept_org_invite_response(request: Request, *, org_id: Optional[str], toke
 
 
 @app.post("/api/orgs/{org_id}/invites/accept")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def accept_org_invite_endpoint(org_id: str, inp: OrgInviteAcceptIn, request: Request):
     oid = str(org_id or "").strip()
     token = str(getattr(inp, "token", "") or "").strip()
@@ -9622,6 +9640,7 @@ def accept_org_invite_endpoint(org_id: str, inp: OrgInviteAcceptIn, request: Req
 
 
 @app.post("/api/invites/accept")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def accept_invite_endpoint(inp: OrgInviteAcceptIn, request: Request):
     token = str(getattr(inp, "token", "") or "").strip()
     return _accept_org_invite_response(request, org_id=None, token=token)
@@ -9629,6 +9648,7 @@ def accept_invite_endpoint(inp: OrgInviteAcceptIn, request: Request):
 
 @app.post("/api/orgs/{org_id}/invites/{invite_id}/revoke")
 @app.post("/api/admin/organizations/{org_id}/invites/{invite_id}/revoke")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def revoke_org_invite_endpoint(org_id: str, invite_id: str, request: Request):
     oid = str(org_id or "").strip()
     iid = str(invite_id or "").strip()
@@ -9651,6 +9671,7 @@ def revoke_org_invite_endpoint(org_id: str, invite_id: str, request: Request):
 
 
 @app.post("/api/orgs/{org_id}/invites/cleanup")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def cleanup_org_invites_endpoint(org_id: str, request: Request, keep_days: int = 0):
     oid = str(org_id or "").strip()
     _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
@@ -9673,6 +9694,7 @@ def cleanup_org_invites_endpoint(org_id: str, request: Request, keep_days: int =
 
 
 @app.get("/api/orgs/{org_id}/audit")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def list_org_audit_endpoint(
     org_id: str,
     request: Request,
@@ -9724,6 +9746,7 @@ def list_org_audit_endpoint(
 
 
 @app.post("/api/orgs/{org_id}/audit/cleanup")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def cleanup_org_audit_endpoint(org_id: str, request: Request, retention_days: int = 0):
     oid = str(org_id or "").strip()
     _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
@@ -9911,6 +9934,7 @@ def delete_org_session_report_version(
 # -----------------------------
 
 @app.get("/api/projects")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def list_projects(request: Request = None) -> list[dict]:
     oid = _request_active_org_id(request) if request is not None else ""
     scope = _project_scope_for_request(request, oid or get_default_org_id())
@@ -9923,6 +9947,7 @@ def list_projects(request: Request = None) -> list[dict]:
 
 
 @app.post("/api/projects")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def create_project(inp: CreateProjectIn, request: Request = None) -> dict:
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
@@ -9967,6 +9992,7 @@ def create_project(inp: CreateProjectIn, request: Request = None) -> dict:
 
 
 @app.get("/api/projects/{project_id}")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def get_project(project_id: str, request: Request = None) -> dict:
     proj, _, _ = _legacy_load_project_scoped(project_id, request)
     if not proj:
@@ -9975,6 +10001,7 @@ def get_project(project_id: str, request: Request = None) -> dict:
 
 
 @app.patch("/api/projects/{project_id}")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def patch_project(project_id: str, inp: UpdateProjectIn, request: Request = None) -> dict:
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
@@ -10027,6 +10054,7 @@ def patch_project(project_id: str, inp: UpdateProjectIn, request: Request = None
 
 
 @app.put("/api/projects/{project_id}")
+  # DEPRECATED: moved to routers/orgs.py + org_service.py
 def put_project(project_id: str, inp: CreateProjectIn, request: Request = None) -> dict:
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
@@ -10070,7 +10098,7 @@ def export_legacy_routes() -> Tuple[APIRoute, ...]:
 
 # ── Wire overlay_cache stubs ──
 from .exporters.bpmn import _collect_interview_comments
-import backend.app.overlay_cache as _oc_mod
+from . import overlay_cache as _oc_mod
 
 def _wired_fetch_session_bpmn(sid: str) -> str:
     s = _legacy_load_session_scoped(sid, None)[0]
