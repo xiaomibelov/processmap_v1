@@ -14,13 +14,13 @@
 - [ ] pm-20260611-009 | Extract authz helpers from _legacy_main.py | BACKEND | — | HIGH | 5 | refactoring
 
 ## IN_PROGRESS
-- [ ] pm-20260611-009 | Extract authz helpers from _legacy_main.py | BACKEND | — | HIGH | 5 | refactoring | Started: 2026-06-11T17:35Z
 
 ## REVIEW
 
 ## BLOCKED
 
 ## DONE
+- [x] pm-20260611-009 | Extract authz helpers from _legacy_main.py | BACKEND | — | HIGH | 5 | refactoring | Closed: 2026-06-11T17:48Z | Commit: 9729c90e
 - [x] pm-20260611-003 | Wire frontend lightweight overlays | FRONTEND | — | HIGH | 5 | overlay-cache | Closed: 2026-06-11T10:15Z
 - [x] pm-20260611-004 | Fix e2e fixture base_version for diagram CAS guard | QA | — | HIGH | 2 | e2e-qa | Closed: 2026-06-11T09:11Z
 - [x] pm-20260610-001 | Redis overlay cache + Celery backend | CACHE | — | HIGH | 5 | overlay-cache | Closed: 2026-06-10T20:15Z
