@@ -154,53 +154,43 @@ def delete_edge(session_id: str, inp: CreateEdgeIn, request: Request = None):
 
 @router.get('/api/sessions/{session_id}/bpmn_meta')
 def session_bpmn_meta_get(session_id: str):
-    import backend.app._legacy_main as _lm
-    return _lm.session_bpmn_meta_get(session_id)
+    return _svc.bpmn_meta_get(session_id)
 
 @router.patch('/api/sessions/{session_id}/bpmn_meta')
 def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.session_bpmn_meta_patch(session_id, inp, request)
+    return _svc.bpmn_meta_patch(session_id, inp, request)
 
 @router.post('/api/sessions/{session_id}/bpmn_meta/infer_rtiers')
 def session_bpmn_meta_infer_rtiers(session_id: str, inp: InferRtiersIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.session_bpmn_meta_infer_rtiers(session_id, inp, request)
+    return _svc.bpmn_meta_infer_rtiers(session_id, inp, request)
 
 @router.get('/api/sessions/{session_id}/bpmn')
 def session_bpmn_export(session_id: str, raw: int = Query(0, description='1 = return stored bpmn_xml as-is (no regenerate/overlay)'), include_overlay: int = Query(1, description='1 = overlay interview annotations (ignored when raw=1)'), zoom: float = Query(1.0), pan_x: float = Query(0.0), pan_y: float = Query(0.0), request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.session_bpmn_export(session_id, raw, include_overlay, zoom, pan_x, pan_y, request)
+    return _svc.bpmn_export(session_id, raw=raw, include_overlay=include_overlay, zoom=zoom, pan_x=pan_x, pan_y=pan_y, request=request)
 
 @router.get('/api/sessions/{session_id}/overlays')
 def session_overlays(session_id: str, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.session_overlays(session_id, request)
+    return _svc.overlays(session_id)
 
 @router.put('/api/sessions/{session_id}/bpmn')
 def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.session_bpmn_save(session_id, inp, request)
+    return _svc.bpmn_save(session_id, inp, request)
 
 @router.get('/api/sessions/{session_id}/bpmn/versions')
 def session_bpmn_versions_list(session_id: str, request: Request = None, limit: int = Query(100, description='Max versions to return'), include_xml: int = Query(0, description='1 = include bpmn_xml payload')):
-    import backend.app._legacy_main as _lm
-    return _lm.session_bpmn_versions_list(session_id, request, limit, include_xml)
+    return _svc.bpmn_versions_list(session_id, request=request)
 
 @router.get('/api/sessions/{session_id}/bpmn/versions/{version_id}')
 def session_bpmn_version_detail(session_id: str, version_id: str, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.session_bpmn_version_detail(session_id, version_id, request)
+    return _svc.bpmn_version_detail(session_id, version_id, request)
 
 @router.post('/api/sessions/{session_id}/bpmn/restore/{version_id}')
 def session_bpmn_restore(session_id: str, version_id: str, inp: BpmnRestoreIn | None = None, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.session_bpmn_restore(session_id, version_id, inp, request)
+    return _svc.bpmn_restore(session_id, version_id, request)
 
 @router.delete('/api/sessions/{session_id}/bpmn')
 def session_bpmn_clear(session_id: str, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.session_bpmn_clear(session_id, request)
+    return _svc.bpmn_clear(session_id, request)
 
 @router.get('/api/sessions/{session_id}/export')
 def export(session_id: str):
