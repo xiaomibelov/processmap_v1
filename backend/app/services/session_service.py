@@ -491,3 +491,85 @@ def delete_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
     )
     st.save(s)
     return s.model_dump()
+
+
+# ── Notes / Answers / AI subdomain (thin extraction) ──────────────
+
+# These endpoints are large and deeply coupled to legacy helpers.
+# They are thin-wrapped here so routers/sessions.py no longer needs
+# to import _legacy_main for the HTTP surface.
+
+def post_notes(session_id: str, inp, request=None) -> Dict[str, Any]:
+    """Save notes and run AI extraction."""
+    import backend.app._legacy_main as _lm
+    return _lm.post_notes(session_id, inp, request)
+
+
+def post_notes_extraction_apply(session_id: str, inp, request=None) -> Dict[str, Any]:
+    """Apply a note-extraction result to the session."""
+    import backend.app._legacy_main as _lm
+    return _lm.post_notes_extraction_apply(session_id, inp, request)
+
+
+def post_notes_extraction_preview(session_id: str, inp, request=None) -> Dict[str, Any]:
+    """Preview a note-extraction result without saving."""
+    import backend.app._legacy_main as _lm
+    return _lm.post_notes_extraction_preview(session_id, inp, request)
+
+
+def answer(session_id: str, inp, request=None) -> Dict[str, Any]:
+    """Apply an answer to a session question."""
+    import backend.app._legacy_main as _lm
+    return _lm.answer(session_id, inp, request)
+
+
+def answer_v2(session_id: str, inp, request=None) -> Dict[str, Any]:
+    """Apply an answer to a session question (v2)."""
+    import backend.app._legacy_main as _lm
+    return _lm.answer_v2(session_id, inp, request)
+
+
+def ai_questions(session_id: str, inp, request=None) -> Dict[str, Any]:
+    """Generate AI questions for a session."""
+    import backend.app._legacy_main as _lm
+    return _lm.ai_questions(session_id, inp, request)
+
+
+# ── Export subdomain (thin extraction) ────────────────────────────
+
+def export(session_id: str) -> Dict[str, Any]:
+    """Export session as JSON."""
+    import backend.app._legacy_main as _lm
+    return _lm.export(session_id)
+
+
+def export_zip(session_id: str):
+    """Export session as ZIP."""
+    import backend.app._legacy_main as _lm
+    return _lm.export_zip(session_id)
+
+
+# ── Org-scoped reports subdomain (thin extraction) ────────────────
+
+def list_org_session_report_versions(org_id: str, session_id: str, request=None, path_id: str = "", steps_hash: str = ""):
+    """List report versions for an org-scoped session."""
+    import backend.app._legacy_main as _lm
+    return _lm.list_org_session_report_versions(org_id, session_id, request, path_id, steps_hash)
+
+
+def build_org_session_report(org_id: str, session_id: str, inp, request=None):
+    """Build a report for an org-scoped session."""
+    import backend.app._legacy_main as _lm
+    return _lm.build_org_session_report(org_id, session_id, inp, request)
+
+
+def get_org_session_report_version(org_id: str, session_id: str, version_id: str, request=None, path_id: str = ""):
+    """Get a specific report version for an org-scoped session."""
+    import backend.app._legacy_main as _lm
+    return _lm.get_org_session_report_version(org_id, session_id, version_id, request, path_id)
+
+
+def delete_org_session_report_version(org_id: str, session_id: str, version_id: str, request=None, path_id: str = ""):
+    """Delete a report version for an org-scoped session."""
+    import backend.app._legacy_main as _lm
+    return _lm.delete_org_session_report_version(org_id, session_id, version_id, request, path_id)

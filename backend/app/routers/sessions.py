@@ -99,33 +99,27 @@ def recompute(session_id: str):
 
 @router.post('/api/sessions/{session_id}/ai/questions')
 def ai_questions(session_id: str, inp: AiQuestionsIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.ai_questions(session_id, inp, request)
+    return _svc.ai_questions(session_id, inp, request)
 
 @router.post('/api/sessions/{session_id}/notes')
 def post_notes(session_id: str, inp: NotesIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.post_notes(session_id, inp, request)
+    return _svc.post_notes(session_id, inp, request)
 
 @router.post('/api/sessions/{session_id}/notes/extraction-apply')
 def post_notes_extraction_apply(session_id: str, inp: NotesExtractionApplyIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.post_notes_extraction_apply(session_id, inp, request)
+    return _svc.post_notes_extraction_apply(session_id, inp, request)
 
 @router.post('/api/sessions/{session_id}/notes/extraction-preview')
 def post_notes_extraction_preview(session_id: str, inp: NotesExtractionPreviewIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.post_notes_extraction_preview(session_id, inp, request)
+    return _svc.post_notes_extraction_preview(session_id, inp, request)
 
 @router.post('/api/sessions/{session_id}/answer')
 def answer(session_id: str, inp: AnswerIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.answer(session_id, inp, request)
+    return _svc.answer(session_id, inp, request)
 
 @router.post('/api/sessions/{session_id}/answers')
 def answer_v2(session_id: str, inp: AnswerIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.answer_v2(session_id, inp, request)
+    return _svc.answer_v2(session_id, inp, request)
 
 @router.post('/api/sessions/{session_id}/nodes/{node_id}')
 def patch_node(session_id: str, node_id: str, inp: NodePatchIn, request: Request = None):
@@ -189,30 +183,24 @@ def session_bpmn_clear(session_id: str, request: Request = None):
 
 @router.get('/api/sessions/{session_id}/export')
 def export(session_id: str):
-    import backend.app._legacy_main as _lm
-    return _lm.export(session_id)
+    return _svc.export(session_id)
 
 @router.get('/api/sessions/{session_id}/export.zip')
 def export_zip(session_id: str):
-    import backend.app._legacy_main as _lm
-    return _lm.export_zip(session_id)
+    return _svc.export_zip(session_id)
 
 @router.get('/api/orgs/{org_id}/sessions/{session_id}/reports/versions')
 def list_org_session_report_versions(org_id: str, session_id: str, request: Request, path_id: str = '', steps_hash: str = ''):
-    import backend.app._legacy_main as _lm
-    return _lm.list_org_session_report_versions(org_id, session_id, request, path_id, steps_hash)
+    return _svc.list_org_session_report_versions(org_id, session_id, request, path_id, steps_hash)
 
 @router.post('/api/orgs/{org_id}/sessions/{session_id}/reports/build')
 def build_org_session_report(org_id: str, session_id: str, inp: OrgReportBuildIn, request: Request):
-    import backend.app._legacy_main as _lm
-    return _lm.build_org_session_report(org_id, session_id, inp, request)
+    return _svc.build_org_session_report(org_id, session_id, inp, request)
 
 @router.get('/api/orgs/{org_id}/sessions/{session_id}/reports/{version_id}')
 def get_org_session_report_version(org_id: str, session_id: str, version_id: str, request: Request, path_id: str = ''):
-    import backend.app._legacy_main as _lm
-    return _lm.get_org_session_report_version(org_id, session_id, version_id, request, path_id)
+    return _svc.get_org_session_report_version(org_id, session_id, version_id, request, path_id)
 
 @router.delete('/api/orgs/{org_id}/sessions/{session_id}/reports/{version_id}')
 def delete_org_session_report_version(org_id: str, session_id: str, version_id: str, request: Request, path_id: str = ''):
-    import backend.app._legacy_main as _lm
-    return _lm.delete_org_session_report_version(org_id, session_id, version_id, request, path_id)
+    return _svc.delete_org_session_report_version(org_id, session_id, version_id, request, path_id)

@@ -4625,6 +4625,7 @@ def _record_ai_questions_execution_safe(**kwargs: Any) -> None:
 
 
 @app.post("/api/sessions/{session_id}/ai/questions")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def ai_questions(session_id: str, inp: AiQuestionsIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
@@ -5474,6 +5475,7 @@ def post_llm_verify(inp: LlmVerifyIn) -> Dict[str, Any]:
 
 
 @app.post("/api/sessions/{session_id}/notes")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def post_notes(session_id: str, inp: NotesIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
@@ -5852,6 +5854,7 @@ def _entity_list_signature(values: Any) -> str:
 
 
 @app.post("/api/sessions/{session_id}/notes/extraction-apply")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def post_notes_extraction_apply(
     session_id: str,
     inp: NotesExtractionApplyIn,
@@ -5965,6 +5968,7 @@ def post_notes_extraction_apply(
 
 
 @app.post("/api/sessions/{session_id}/notes/extraction-preview")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def post_notes_extraction_preview(
     session_id: str,
     inp: NotesExtractionPreviewIn,
@@ -6348,6 +6352,7 @@ def _apply_answer(s: Session, inp: AnswerIn) -> None:
 
 
 @app.post("/api/sessions/{session_id}/answer")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def answer(session_id: str, inp: AnswerIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
@@ -6381,6 +6386,7 @@ def answer(session_id: str, inp: AnswerIn, request: Request = None) -> Dict[str,
 
 
 @app.post("/api/sessions/{session_id}/answers")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def answer_v2(session_id: str, inp: AnswerIn, request: Request = None) -> Dict[str, Any]:
     return answer(session_id, inp, request=request)
 
@@ -7829,6 +7835,7 @@ def session_bpmn_clear(session_id: str, request: Request = None) -> Dict[str, An
     return out
 
 @app.get("/api/sessions/{session_id}/export")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def export(session_id: str) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
@@ -7877,6 +7884,7 @@ def export(session_id: str) -> Dict[str, Any]:
 
 
 @app.get("/api/sessions/{session_id}/export.zip")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def export_zip(session_id: str):
     res = export(session_id)
     if not isinstance(res, dict) or res.get("error"):
@@ -9730,6 +9738,7 @@ def cleanup_org_audit_endpoint(org_id: str, request: Request, retention_days: in
 
 
 @app.get("/api/orgs/{org_id}/sessions/{session_id}/reports/versions")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def list_org_session_report_versions(
     org_id: str,
     session_id: str,
@@ -9761,6 +9770,7 @@ def list_org_session_report_versions(
 
 
 @app.post("/api/orgs/{org_id}/sessions/{session_id}/reports/build")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def build_org_session_report(
     org_id: str,
     session_id: str,
@@ -9800,6 +9810,7 @@ def build_org_session_report(
 
 
 @app.get("/api/orgs/{org_id}/sessions/{session_id}/reports/{version_id}")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def get_org_session_report_version(
     org_id: str,
     session_id: str,
@@ -9842,6 +9853,7 @@ def get_org_session_report_version(
 
 
 @app.delete("/api/orgs/{org_id}/sessions/{session_id}/reports/{version_id}")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def delete_org_session_report_version(
     org_id: str,
     session_id: str,
