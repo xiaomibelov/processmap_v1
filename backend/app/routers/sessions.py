@@ -129,28 +129,23 @@ def answer_v2(session_id: str, inp: AnswerIn, request: Request = None):
 
 @router.post('/api/sessions/{session_id}/nodes/{node_id}')
 def patch_node(session_id: str, node_id: str, inp: NodePatchIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.patch_node(session_id, node_id, inp, request)
+    return _svc.patch_node(session_id, node_id, inp, request)
 
 @router.post('/api/sessions/{session_id}/nodes')
 def add_node(session_id: str, inp: CreateNodeIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.add_node(session_id, inp, request)
+    return _svc.add_node(session_id, inp, request)
 
 @router.delete('/api/sessions/{session_id}/nodes/{node_id}')
 def delete_node(session_id: str, node_id: str, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.delete_node(session_id, node_id, request)
+    return _svc.delete_node(session_id, node_id, request)
 
 @router.post('/api/sessions/{session_id}/edges')
 def add_edge(session_id: str, inp: CreateEdgeIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.add_edge(session_id, inp, request)
+    return _svc.add_edge(session_id, inp, request)
 
 @router.delete('/api/sessions/{session_id}/edges')
 def delete_edge(session_id: str, inp: CreateEdgeIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.delete_edge(session_id, inp, request)
+    return _svc.delete_edge(session_id, inp, request)
 
 @router.get('/api/sessions/{session_id}/bpmn_meta')
 def session_bpmn_meta_get(session_id: str):
