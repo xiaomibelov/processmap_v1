@@ -252,3 +252,242 @@ def overlays(session_id: str) -> Any:
     """Return lightweight JSON overlays for a session."""
     from ..overlay_cache import get_overlays_json
     return get_overlays_json(session_id)
+
+
+# ── Node / Edge subdomain ─────────────────────────────────────────
+
+from ..models import Node, Edge
+from ..utils.session_helpers import (
+    _require_diagram_cas_or_409,
+    _resolve_base_diagram_state_version,
+    _resolve_actor_context,
+    _mark_diagram_truth_write,
+)
+
+
+def patch_node(session_id: str, node_id: str, inp, request=None) -> Dict[str, Any]:
+    """Patch a single node in a session."""
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    node = next((n for n in s.nodes if n.id == node_id), None)
+    if not node:
+        return {"error": "node not found"}
+
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(
+            request=request,
+            payload=inp.model_dump(exclude_unset=True),
+        ),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
+
+    data = inp.model_dump(exclude_unset=True)
+
+    if "title" in data:
+        node.title = data["title"] or node.title
+        node.parameters["_manual_title"] = True
+    if "type" in data:
+        node.type = data["type"] or node.type
+        node.parameters["_manual_type"] = True
+    if "actor_role" in data:
+        node.actor_role = data["actor_role"] or None
+        node.parameters["_manual_actor"] = True
+    if "recipient_role" in data:
+        node.recipient_role = data["recipient_role"] or None
+        node.parameters["_manual_recipient"] = True
+    if "equipment" in data and data["equipment"] is not None:
+        node.equipment = data["equipment"]
+        node.parameters["_manual_equipment"] = True
+    if "duration_min" in data:
+        node.duration_min = data["duration_min"]
+        node.parameters["_manual_duration"] = True
+    if "parameters" in data and data["parameters"] is not None:
+        node.parameters = data["parameters"]
+        node.parameters["_manual_parameters"] = True
+    if "disposition" in data and data["disposition"] is not None:
+        node.disposition = data["disposition"]
+        node.parameters["_manual_disposition"] = True
+
+    import backend.app._legacy_main as _lm
+    s = _lm._recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["nodes"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
+    st.save(s)
+    return s.model_dump()
+
+
+def add_node(session_id: str, inp, request=None) -> Dict[str, Any]:
+    """Add a new node to a session."""
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(
+            request=request,
+            payload=inp.model_dump(exclude_unset=True),
+        ),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
+
+    node_id = (inp.id or "").strip() or f"n_{uuid.uuid4().hex[:8]}"
+    if any(n.id == node_id for n in s.nodes):
+        return {"error": "node already exists", "node_id": node_id}
+
+    node = Node(
+        id=node_id,
+        title=inp.title,
+        type=inp.type or "step",
+        actor_role=inp.actor_role,
+        recipient_role=inp.recipient_role,
+        equipment=list(inp.equipment or []),
+        parameters=dict(inp.parameters or {}),
+        duration_min=inp.duration_min,
+        disposition=dict(inp.disposition or {}),
+        qc=[],
+        exceptions=[],
+        evidence=[],
+        confidence=0.0,
+    )
+    s.nodes.append(node)
+
+    import backend.app._legacy_main as _lm
+    s = _lm._recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["nodes"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
+    st.save(s)
+    return s.model_dump()
+
+
+def delete_node(session_id: str, node_id: str, request=None) -> Dict[str, Any]:
+    """Delete a node (and incident edges) from a session."""
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(request=request),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
+
+    before_n = len(s.nodes)
+    s.nodes = [n for n in s.nodes if n.id != node_id]
+    if len(s.nodes) == before_n:
+        return {"error": "node not found"}
+
+    s.edges = [e for e in s.edges if e.from_id != node_id and e.to_id != node_id]
+
+    import backend.app._legacy_main as _lm
+    s = _lm._recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["nodes", "edges"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
+    st.save(s)
+    return s.model_dump()
+
+
+def add_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
+    """Add a new edge to a session."""
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(
+            request=request,
+            payload=inp.model_dump(exclude_unset=True),
+        ),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
+
+    if not any(n.id == inp.from_id for n in s.nodes):
+        return {"error": "from_id not found", "from_id": inp.from_id}
+    if not any(n.id == inp.to_id for n in s.nodes):
+        return {"error": "to_id not found", "to_id": inp.to_id}
+
+    exists = any(
+        (e.from_id == inp.from_id and e.to_id == inp.to_id and (e.when or None) == (inp.when or None))
+        for e in s.edges
+    )
+    if exists:
+        return {"error": "edge already exists"}
+
+    s.edges.append(Edge(from_id=inp.from_id, to_id=inp.to_id, when=inp.when))
+
+    import backend.app._legacy_main as _lm
+    s = _lm._recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["edges"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
+    st.save(s)
+    return s.model_dump()
+
+
+def delete_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
+    """Delete an edge from a session."""
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(
+            request=request,
+            payload=inp.model_dump(exclude_unset=True),
+        ),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
+
+    before = len(s.edges)
+    s.edges = [
+        e for e in s.edges
+        if not (e.from_id == inp.from_id and e.to_id == inp.to_id and (e.when or None) == (inp.when or None))
+    ]
+    if len(s.edges) == before:
+        return {"error": "edge not found"}
+
+    import backend.app._legacy_main as _lm
+    s = _lm._recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["edges"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
+    st.save(s)
+    return s.model_dump()

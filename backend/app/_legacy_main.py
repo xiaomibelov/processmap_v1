@@ -6386,6 +6386,7 @@ def answer_v2(session_id: str, inp: AnswerIn, request: Request = None) -> Dict[s
 
 
 @app.post("/api/sessions/{session_id}/nodes/{node_id}")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def patch_node(session_id: str, node_id: str, inp: NodePatchIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
@@ -6445,6 +6446,7 @@ def patch_node(session_id: str, node_id: str, inp: NodePatchIn, request: Request
 
 
 @app.post("/api/sessions/{session_id}/nodes")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def add_node(session_id: str, inp: CreateNodeIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
@@ -6494,6 +6496,7 @@ def add_node(session_id: str, inp: CreateNodeIn, request: Request = None) -> Dic
 
 
 @app.delete("/api/sessions/{session_id}/nodes/{node_id}")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def delete_node(session_id: str, node_id: str, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
@@ -6526,6 +6529,7 @@ def delete_node(session_id: str, node_id: str, request: Request = None) -> Dict[
 
 
 @app.post("/api/sessions/{session_id}/edges")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def add_edge(session_id: str, inp: CreateEdgeIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
@@ -6565,6 +6569,7 @@ def add_edge(session_id: str, inp: CreateEdgeIn, request: Request = None) -> Dic
 
 
 @app.delete("/api/sessions/{session_id}/edges")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def delete_edge(session_id: str, inp: CreateEdgeIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
