@@ -121,18 +121,22 @@ async function createFixture(request, runId) {
 }
 
 async function switchTab(page, title) {
-  const btn = page.locator(".segBtn").filter({ hasText: new RegExp(`^${title}$`, "i") }).first();
+  const map = { Diagram: "Diagram (BPMN)", Interview: "Анализ процессов" };
+  const label = map[title] || title;
+  const safe = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const btn = page.locator(".segBtn").filter({ hasText: new RegExp(`^${safe}$`, "i") }).first();
   await expect(btn).toBeVisible();
   await btn.click();
 }
 
 async function openFixture(page, fixture, options = {}) {
-  if (!options?.skipGoto) await page.goto("/");
-  await expect(page.locator(".topbar .topSelect--project")).toBeVisible();
-  await page.selectOption(".topbar .topSelect--project", fixture.projectId);
-  await page.getByRole("button", { name: "Обновить" }).click();
-  await expect(page.locator(`.topbar .topSelect--session option[value="${fixture.sessionId}"]`)).toHaveCount(1);
-  await page.selectOption(".topbar .topSelect--session", fixture.sessionId);
+  if (!options?.skipGoto) {
+    const params = new URLSearchParams();
+    params.set("project", fixture.projectId);
+    params.set("session", fixture.sessionId);
+    await page.goto(`/app?${params.toString()}`);
+  }
+  await expect(page.locator('[data-testid="topbar-project-title"]')).toBeVisible({ timeout: 20000 });
   await switchTab(page, "Diagram");
 }
 

@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bpmnApi";
+import { useFeatureFlag } from "../../features/config/featureFlagsContext";
+import { apiDeleteBpmnXml, apiGetBpmnXml, apiGetOverlays, apiPutBpmnXml } from "../../lib/api/bpmnApi";
 import { apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
 import {
@@ -1300,6 +1301,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const robotMetaDecorStateRef = useRef({ viewer: {}, editor: {} });
   const propertiesOverlayStateRef = useRef({ viewer: {}, editor: {} });
   const propertiesOverlayZoomBucketRef = useRef({ viewer: "", editor: "" });
+  const lightweightOverlayStateRef = useRef({ viewer: [], editor: [] });
   const settledSelectionFanoutRef = useRef({ viewer: "", editor: "" });
   const playbackDecorStateRef = useRef({
     viewer: createPlaybackDecorRuntimeState(),
@@ -4196,6 +4198,48 @@ const BpmnStage = forwardRef(function BpmnStage({
     return playbackOverlayAdapter.focusNodeOnInstance(inst, kind, nodeId, options);
   }
 
+  function clearLightweightOverlays(inst, kind) {
+    if (!inst) return;
+    try {
+      const overlays = inst.get("overlays");
+      asArray(lightweightOverlayStateRef.current[kind]).forEach((id) => {
+        try { overlays.remove(id); } catch {}
+      });
+      lightweightOverlayStateRef.current[kind] = [];
+    } catch {}
+  }
+
+  const lightweightOverlaysEnabled = useFeatureFlag("lightweightOverlays");
+
+  async function mountLightweightOverlays(inst, kind) {
+    if (!inst || typeof window === "undefined" || !lightweightOverlaysEnabled) return;
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    if (!sid) return;
+    clearLightweightOverlays(inst, kind);
+    try {
+      const resp = await apiGetOverlays(sid);
+      if (!resp.ok || !Array.isArray(resp.overlays)) return;
+      const overlays = inst.get("overlays");
+      const registry = inst.get("elementRegistry");
+      resp.overlays.forEach((ovl) => {
+        const nodeId = String(ovl.node_id || ovl.nodeId || "").trim();
+        const el = nodeId ? registry.get(nodeId) : null;
+        if (!el) return;
+        const div = document.createElement("div");
+        div.className = `fpcLightweightOverlay ${String(ovl.style || "").trim()}`;
+        div.textContent = String(ovl.text || "");
+        div.style.width = `${Number(ovl.width || 100)}px`;
+        div.style.height = `${Number(ovl.height || 30)}px`;
+        if (ovl.meta?.title) div.title = String(ovl.meta.title);
+        const oid = overlays.add(el.id, {
+          position: { top: Number(ovl.y || 0), left: Number(ovl.x || 0) },
+          html: div,
+        });
+        lightweightOverlayStateRef.current[kind].push(oid);
+      });
+    } catch {}
+  }
+
   function clearBottleneckDecor(inst, kind) {
     if (!inst) return;
     try {
@@ -4285,6 +4329,8 @@ const BpmnStage = forwardRef(function BpmnStage({
     clearSelectedDecor(modelerRef.current, "editor");
     clearBottleneckDecor(viewerRef.current, "viewer");
     clearBottleneckDecor(modelerRef.current, "editor");
+    clearLightweightOverlays(viewerRef.current, "viewer");
+    clearLightweightOverlays(modelerRef.current, "editor");
     clearInterviewDecor(viewerRef.current, "viewer");
     clearInterviewDecor(modelerRef.current, "editor");
     clearTaskTypeDecor(viewerRef.current, "viewer");
@@ -4712,11 +4758,19 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   async function renderViewer(nextXml) {
-    return renderViewerDiagram(createRenderLifecycleCtx(), nextXml);
+    const result = await renderViewerDiagram(createRenderLifecycleCtx(), nextXml);
+    if (typeof window !== "undefined" && window.__FPC_LIGHTWEIGHT_OVERLAYS__) {
+      await mountLightweightOverlays(viewerRef.current, "viewer");
+    }
+    return result;
   }
 
   async function renderModeler(nextXml) {
-    return renderModelerDiagram(createRenderLifecycleCtx(), nextXml);
+    const result = await renderModelerDiagram(createRenderLifecycleCtx(), nextXml);
+    if (typeof window !== "undefined" && window.__FPC_LIGHTWEIGHT_OVERLAYS__) {
+      await mountLightweightOverlays(modelerRef.current, "editor");
+    }
+    return result;
   }
 
   async function renderNewDiagramInModeler() {

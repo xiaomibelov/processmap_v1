@@ -325,6 +325,7 @@ def _build_bpmn_version_author(created_by: Any) -> Dict[str, str]:
     }
 
 
+  # DEPRECATED: moved to utils/authz.py
 def _practical_role_for_org(role_raw: Any, is_admin: bool = False) -> str:
     if bool(is_admin):
         return "admin"
@@ -336,14 +337,17 @@ def _practical_role_for_org(role_raw: Any, is_admin: bool = False) -> str:
     return "viewer"
 
 
+  # DEPRECATED: moved to utils/authz.py
 def _can_manage_workspace(role_raw: Any, is_admin: bool = False) -> bool:
     return _practical_role_for_org(role_raw, is_admin=is_admin) == "admin"
 
 
+  # DEPRECATED: moved to utils/authz.py
 def _can_edit_workspace(role_raw: Any, is_admin: bool = False) -> bool:
     return _practical_role_for_org(role_raw, is_admin=is_admin) in {"admin", "editor"}
 
 
+  # DEPRECATED: moved to utils/authz.py
 def _can_delete_workspace_content(role_raw: Any, is_admin: bool = False) -> bool:
     return _practical_role_for_org(role_raw, is_admin=is_admin) == "admin"
 
@@ -7953,6 +7957,7 @@ def api_meta(response: Response):
 # -----------------------------
 
 
+  # DEPRECATED: moved to utils/authz.py
 def _enterprise_require_project_access(
     request: Request,
     org_id: str,
@@ -7973,6 +7978,7 @@ def _enterprise_require_project_access(
     return role, scope, None
 
 
+  # DEPRECATED: moved to utils/authz.py
 def _session_access_from_request(
     request: Optional[Request],
     session_id: str,
@@ -7996,6 +8002,7 @@ def _session_access_from_request(
     return sess, scope, None
 
 
+  # DEPRECATED: moved to utils/authz.py
 def _scope_allowed_project_ids(scope_raw: Any) -> Set[str]:
     scope = scope_raw if isinstance(scope_raw, dict) else {}
     if str(scope.get("mode") or "") == "all":
@@ -8007,6 +8014,7 @@ def _scope_allowed_project_ids(scope_raw: Any) -> Set[str]:
     }
 
 
+  # DEPRECATED: moved to utils/authz.py
 def _is_role_allowed(role_raw: Any, allowed: Set[str]) -> bool:
     role = str(role_raw or "").strip().lower()
     return role in {str(item or "").strip().lower() for item in allowed}
@@ -8246,6 +8254,7 @@ def _legacy_load_session_scoped(
     return sess, (resolved_oid or str(getattr(sess, "org_id", "") or "").strip() or get_default_org_id()), scope
 
 
+  # DEPRECATED: moved to utils/authz.py
 def _enterprise_manage_project_members_guard(
     request: Request,
     org_id: str,
@@ -8259,6 +8268,7 @@ def _enterprise_manage_project_members_guard(
     return role, scope, None
 
 
+  # DEPRECATED: moved to utils/authz.py
 def _accessible_session_ids_for_request(
     request: Optional[Request],
     org_id: str,

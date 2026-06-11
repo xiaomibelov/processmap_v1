@@ -5,6 +5,7 @@ import os
 import re
 import sqlite3
 import threading
+import time
 import uuid
 import hashlib
 import secrets
@@ -1721,6 +1722,24 @@ def _ensure_schema() -> None:
                     updated_by              TEXT NOT NULL DEFAULT ''
                 )
             """)
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS feature_flags (
+                    key         TEXT PRIMARY KEY,
+                    value       TEXT NOT NULL DEFAULT '',
+                    description TEXT NOT NULL DEFAULT '',
+                    updated_at  INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_feature_flags_updated_at ON feature_flags(updated_at)")
+            con.execute(
+                """
+                INSERT OR IGNORE INTO feature_flags (key, value, description, updated_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                ["lightweightOverlays", "false", "Enable lightweight JSON overlays instead of monolithic XML", int(time.time())],
+            )
             con.commit()
         _SCHEMA_READY = True
         _SCHEMA_DB_FILE = db_file
@@ -1759,6 +1778,37 @@ def get_rag_settings(org_id: str) -> dict:
         "allowed_source_types": source_types,
         "show_technical_fragments": bool(d.get("show_technical_fragments", 0)),
     }
+
+
+def get_feature_flags() -> dict[str, str]:
+    try:
+        with _connect() as con:
+            rows = con.execute("SELECT key, value FROM feature_flags").fetchall()
+            return {str(r["key"]): str(r["value"]) for r in rows}
+    except Exception:
+        return {}
+
+
+def get_feature_flag(key: str) -> str:
+    try:
+        with _connect() as con:
+            row = con.execute("SELECT value FROM feature_flags WHERE key = ? LIMIT 1", [str(key or "")]).fetchone()
+            return str(row["value"]) if row else ""
+    except Exception:
+        return ""
+
+
+def set_feature_flag(key: str, value: str) -> None:
+    with _connect() as con:
+        con.execute(
+            """
+            INSERT INTO feature_flags (key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+            """,
+            [str(key or ""), str(value or ""), int(time.time())],
+        )
+        con.commit()
 
 
 def _meta_get(con: sqlite3.Connection, key: str) -> str:

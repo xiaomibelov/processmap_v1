@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import App from "./App";
 import AdminApp from "./features/admin/AdminApp";
 import { AuthProvider, useAuth } from "./features/auth/AuthProvider";
+import { FeatureFlagsProvider } from "./features/config/featureFlagsContext";
 import LoginModal from "./features/auth/LoginModal";
 import LoginPage from "./features/auth/LoginPage";
 import PublicHomePage from "./features/auth/PublicHomePage";
@@ -323,7 +324,9 @@ function AppRoutes() {
 export default function RootApp() {
   return (
     <AuthProvider>
-      <AppRoutes />
+      <FeatureFlagsProvider>
+        <AppRoutes />
+      </FeatureFlagsProvider>
     </AuthProvider>
   );
 }
