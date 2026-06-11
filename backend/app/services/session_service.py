@@ -133,3 +133,122 @@ def delete_session(
         org_id=org_id,
         is_admin=is_admin,
     )
+
+
+# ── BPMN subdomain ────────────────────────────────────────────────
+
+def bpmn_meta_get(session_id: str) -> Dict[str, Any]:
+    """Get BPMN metadata for a session."""
+    # CROSS-DOMAIN: depends on _collect_sequence_flow_meta, _normalize_bpmn_meta,
+    # _enforce_gateway_tier_constraints in _legacy_main.py.
+    # Full extraction requires migrating those helpers first.
+    import backend.app._legacy_main as _lm
+    return _lm.session_bpmn_meta_get(session_id)
+
+
+def bpmn_meta_patch(
+    session_id: str,
+    inp: Any,
+    request: Any = None,
+) -> Dict[str, Any]:
+    """Patch BPMN metadata."""
+    # CROSS-DOMAIN: depends on _require_diagram_cas_or_409, _mark_diagram_truth_write.
+    import backend.app._legacy_main as _lm
+    return _lm.session_bpmn_meta_patch(session_id, inp, request)
+
+
+def bpmn_meta_infer_rtiers(
+    session_id: str,
+    inp: Any,
+    request: Any = None,
+) -> Dict[str, Any]:
+    """Infer RTIers from BPMN meta."""
+    # CROSS-DOMAIN: depends on infer_rtiers pipeline in _legacy_main.py.
+    import backend.app._legacy_main as _lm
+    return _lm.session_bpmn_meta_infer_rtiers(session_id, inp, request)
+
+
+def bpmn_export(
+    session_id: str,
+    *,
+    raw: int = 0,
+    include_overlay: int = 1,
+    zoom: float = 1.0,
+    pan_x: float = 0.0,
+    pan_y: float = 0.0,
+    request: Any = None,
+) -> Any:
+    """Export session BPMN XML."""
+    # CROSS-DOMAIN: depends on _overlay_interview_annotations_on_bpmn_xml,
+    # _session_graph_fingerprint, _create_bpmn_revision_snapshot_if_needed,
+    # _mark_diagram_truth_write, exporters.bpmn in _legacy_main.py.
+    import backend.app._legacy_main as _lm
+    return _lm.session_bpmn_export(
+        session_id,
+        raw=raw,
+        include_overlay=include_overlay,
+        zoom=zoom,
+        pan_x=pan_x,
+        pan_y=pan_y,
+        request=request,
+    )
+
+
+def bpmn_save(
+    session_id: str,
+    inp: Any,
+    request: Any = None,
+) -> Dict[str, Any]:
+    """Save BPMN XML to session."""
+    # CROSS-DOMAIN: depends on _require_diagram_cas_or_409, _mark_diagram_truth_write,
+    # _create_bpmn_revision_snapshot_if_needed, _resolve_base_diagram_state_version.
+    import backend.app._legacy_main as _lm
+    return _lm.session_bpmn_save(session_id, inp, request)
+
+
+def bpmn_versions_list(
+    session_id: str,
+    *,
+    request: Any = None,
+) -> Dict[str, Any]:
+    """List BPMN version snapshots for a session."""
+    import backend.app._legacy_main as _lm
+    return _lm.session_bpmn_versions_list(session_id, request=request)
+
+
+def bpmn_version_detail(
+    session_id: str,
+    version_id: str,
+    request: Any = None,
+) -> Dict[str, Any]:
+    """Get a single BPMN version snapshot."""
+    import backend.app._legacy_main as _lm
+    return _lm.session_bpmn_version_detail(session_id, version_id, request)
+
+
+def bpmn_restore(
+    session_id: str,
+    version_id: str,
+    request: Any = None,
+) -> Dict[str, Any]:
+    """Restore a BPMN version snapshot."""
+    # CROSS-DOMAIN: depends on _latest_user_facing_bpmn_version,
+    # _create_bpmn_revision_snapshot_if_needed, _mark_diagram_truth_write.
+    import backend.app._legacy_main as _lm
+    return _lm.session_bpmn_restore(session_id, version_id, request)
+
+
+def bpmn_clear(
+    session_id: str,
+    request: Any = None,
+) -> Dict[str, Any]:
+    """Clear BPMN XML from session."""
+    # CROSS-DOMAIN: depends on _require_diagram_cas_or_409, _mark_diagram_truth_write.
+    import backend.app._legacy_main as _lm
+    return _lm.session_bpmn_clear(session_id, request)
+
+
+def overlays(session_id: str) -> Any:
+    """Return lightweight JSON overlays for a session."""
+    from ..overlay_cache import get_overlays_json
+    return get_overlays_json(session_id)
