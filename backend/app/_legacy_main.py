@@ -209,9 +209,17 @@ from .utils.response_builders import (
     build_items_count_payload,
 )
 from .startup.static_mounts import GLOSSARY_SEED, STATIC_DIR, WORKSPACE_DIR as WORKSPACE
+from .overlay_cache import get_overlay, invalidate_overlay
+from . import overlay_cache
+from .services import auth_service as _auth_service
+from .utils.auth_helpers import set_refresh_cookie, clear_refresh_cookie
+# DEPRECATED: auth routes moved to routers/auth.py — kept for backward compatibility during migration.
+# from .routers.auth import router as _auth_router
 
 
 app = FastAPI(title="Food Process Copilot MVP")
+from .metrics import start_polling
+start_polling(overlay_cache.r)
 logger = logging.getLogger(__name__)
 
 AUTH_PUBLIC_PATHS = {
@@ -425,6 +433,7 @@ def _is_report_active(report_id: str) -> bool:
         return rid in _REPORT_ACTIVE_IDS
 
 
+# DEPRECATED: moved to utils/auth_helpers.py — kept for backward compatibility during migration.
 def _set_refresh_cookie(resp: Response, refresh_token: str, max_age_seconds: int) -> None:
     resp.set_cookie(
         key="refresh_token",
@@ -437,6 +446,7 @@ def _set_refresh_cookie(resp: Response, refresh_token: str, max_age_seconds: int
     )
 
 
+# DEPRECATED: moved to utils/auth_helpers.py — kept for backward compatibility during migration.
 def _clear_refresh_cookie(resp: Response) -> None:
     resp.delete_cookie(
         key="refresh_token",
@@ -742,6 +752,63 @@ def _overlay_interview_annotations_on_bpmn_xml(sess: Session, xml_text: str) -> 
         return raw
 
 
+def _compute_overlays_json(sess: Session, xml_text: str) -> list[dict[str, Any]]:
+    xml = _overlay_interview_annotations_on_bpmn_xml(sess, xml_text)
+    if not xml:
+        return []
+    try:
+        root = ET.fromstring(xml)
+    except Exception:
+        return []
+    ns_map: dict[str, str] = {}
+    for el in root.iter():
+        tag = str(getattr(el, "tag", "") or "")
+        if tag.startswith("{") and "}" in tag:
+            uri = tag[1:tag.index("}")]
+            if "bpmn" not in ns_map and "omg.org/spec/BPMN/20100524/MODEL" in uri:
+                ns_map["bpmn"] = uri
+            if "bpmndi" not in ns_map and "omg.org/spec/BPMN/20100524/DI" in uri:
+                ns_map["bpmndi"] = uri
+            if "dc" not in ns_map and "omg.org/spec/DD/20100524/DC" in uri:
+                ns_map["dc"] = uri
+    texts: dict[str, str] = {}
+    for el in root.iter():
+        tag = str(getattr(el, "tag", "") or "")
+        local = tag.rsplit("}", 1)[-1] if "}" in tag else tag
+        if local == "textAnnotation":
+            ann_id = str(el.attrib.get("id") or "")
+            if ann_id.startswith("FPC_TextAnnotation_"):
+                t = el.find(f"{{{ns_map.get('bpmn', '')}}}text") if ns_map.get("bpmn") else None
+                texts[ann_id] = (t.text or "") if t is not None else ""
+    overlays: list[dict[str, Any]] = []
+    for el in root.iter():
+        tag = str(getattr(el, "tag", "") or "")
+        local = tag.rsplit("}", 1)[-1] if "}" in tag else tag
+        if local == "BPMNShape":
+            bpmn_el = str(el.attrib.get("bpmnElement") or "")
+            if bpmn_el.startswith("FPC_TextAnnotation_"):
+                bounds = None
+                for ch in el:
+                    ch_tag = str(getattr(ch, "tag", "") or "")
+                    ch_local = ch_tag.rsplit("}", 1)[-1] if "}" in ch_tag else ch_tag
+                    if ch_local == "Bounds":
+                        bounds = ch
+                        break
+                if bounds is not None:
+                    overlays.append({
+                        "id": bpmn_el,
+                        "node_id": bpmn_el.replace("FPC_TextAnnotation_", ""),
+                        "x": float(bounds.attrib.get("x", "0") or 0),
+                        "y": float(bounds.attrib.get("y", "0") or 0),
+                        "width": float(bounds.attrib.get("width", "0") or 0),
+                        "height": float(bounds.attrib.get("height", "0") or 0),
+                        "text": texts.get(bpmn_el, ""),
+                        "style": {"bg": "#fff9c4", "color": "#333", "fontSize": 12, "border": "1px solid #fbc02d"},
+                        "meta": {},
+                    })
+    return overlays
+
+
 def _session_api_dump(sess: Session) -> Dict[str, Any]:
     d = sess.model_dump()
     d["notes"] = _notes_decode(d.get("notes"))
@@ -885,6 +952,10 @@ def _require_diagram_cas_or_409(
     # Compatibility bridge for direct function-call harnesses used in unit tests.
     # Real HTTP requests always provide `.scope`; CAS stays strict there.
     if request is None or not hasattr(request, "scope"):
+        return
+    # SECURITY: E2E CAS bypass. MUST be unset in production.
+    # Controlled test environments only (CI, local e2e).
+    if os.environ.get("FPC_E2E_CAS_BYPASS") == "1":
         return
     current_version = int(getattr(sess, "diagram_state_version", 0) or 0)
     if client_base_version is None:
@@ -3379,6 +3450,35 @@ def api_health():
     return payload
 
 
+@app.get("/health/overlay-cache")
+def health_overlay_cache():
+    from fastapi.responses import JSONResponse
+    from .celery_app import app as celery_app
+    from .overlay_cache import r as redis_client
+    from .storage import _get_pg_pool
+    checks={"redis":"fail","celery":"fail","postgres":"fail"}
+    try:redis_client.ping();checks["redis"]="ok"
+    except Exception:pass
+    try:active=celery_app.control.inspect(timeout=2).active()or{};checks["celery"]="ok"if len(active)>0 else"fail"
+    except Exception:pass
+    try:
+        pool=_get_pg_pool()
+        with pool.connection() as con:
+            con.execute("SELECT 1")
+            con.commit()
+        checks["postgres"]="ok"
+    except Exception:pass
+    degraded=any(v=="fail"for v in checks.values())
+    return JSONResponse(content={**checks,"degraded":degraded},status_code=503 if degraded else 200)
+
+
+@app.get("/metrics")
+def metrics_endpoint():
+    from .metrics import metrics
+    return Response(content=metrics(), media_type="text/plain")
+
+
+# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
 @app.post("/api/auth/login", response_model=AuthTokenOut)
 def auth_login(inp: AuthLoginIn, request: Request):
     login_limit = max(1, _env_int("RL_LOGIN_PER_MIN", 30))
@@ -3426,6 +3526,7 @@ def auth_login(inp: AuthLoginIn, request: Request):
     return resp
 
 
+# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
 @app.post("/api/auth/refresh", response_model=AuthTokenOut)
 def auth_refresh(request: Request):
     refresh_token = str(request.cookies.get("refresh_token") or "").strip()
@@ -3455,6 +3556,7 @@ def auth_refresh(request: Request):
     return resp
 
 
+# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
 @app.post("/api/auth/logout")
 def auth_logout(request: Request):
     refresh_token = str(request.cookies.get("refresh_token") or "").strip()
@@ -3465,6 +3567,7 @@ def auth_logout(request: Request):
     return resp
 
 
+# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
 @app.get("/api/auth/me", response_model=AuthMeOut)
 def auth_me(request: Request):
     user = getattr(request.state, "auth_user", None)
@@ -3488,6 +3591,7 @@ def auth_me(request: Request):
     )
 
 
+# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
 @app.post("/api/auth/invite/preview")
 @app.post("/api/invite/resolve")
 def auth_invite_preview(inp: InvitePreviewIn, request: Request):
@@ -3507,6 +3611,7 @@ def auth_invite_preview(inp: InvitePreviewIn, request: Request):
     )
 
 
+# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
 @app.post("/api/auth/invite/activate")
 @app.post("/api/invite/activate")
 def auth_invite_activate(inp: InviteActivateIn, request: Request):
@@ -7008,12 +7113,26 @@ def session_bpmn_export(
     session_id: str,
     raw: int = Query(0, description="1 = return stored bpmn_xml as-is (no regenerate/overlay)"),
     include_overlay: int = Query(1, description="1 = overlay interview annotations (ignored when raw=1)"),
+    zoom: float = Query(1.0),
+    pan_x: float = Query(0.0),
+    pan_y: float = Query(0.0),
     request: Request = None,
 ):
     st = get_storage()
     s, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not s:
         return Response(content="not found", media_type="text/plain", status_code=404)
+
+    raw_mode = bool(int(raw or 0))
+    overlay_mode = bool(int(include_overlay or 0))
+    if overlay_mode and not raw_mode:
+        result = get_overlay(session_id, zoom, pan_x, pan_y)
+        if result.status == 200:
+            return Response(content=result.body, media_type="application/xml", headers={"Cache-Control": "max-age=60"})
+        if result.status == 202:
+            return JSONResponse(content=result.body, status_code=202)
+        if result.status == 503:
+            return JSONResponse(content=result.body, status_code=503, headers={"Retry-After": "2"})
 
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
@@ -7105,6 +7224,15 @@ def session_bpmn_export(
             "Expires": "0",
         },
     )
+
+
+@app.get("/api/sessions/{session_id}/overlays")
+def session_overlays(session_id: str, request: Request = None):
+    s, oid, _ = _legacy_load_session_scoped(session_id, request)
+    if not s:
+        raise HTTPException(status_code=404, detail="not found")
+    from .overlay_cache import get_overlays_json
+    return JSONResponse(content=get_overlays_json(session_id))
 
 
 _USER_FACING_BPMN_VERSION_ACTIONS = {
@@ -7331,6 +7459,10 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
             diagram_state_version=current_diagram_state_version + 1,
         )
         st.save(s, user_id=user_id, org_id=oid_locked, is_admin=True)
+        try:
+            invalidate_overlay(session_id)
+        except Exception:
+            pass
         if auto_pass_state_write_requested:
             _capture_persisted_auto_pass_failed_state(
                 s,
@@ -9894,3 +10026,36 @@ LEGACY_ROUTE_EXPORT: Tuple[APIRoute, ...] = _build_legacy_route_export()
 
 def export_legacy_routes() -> Tuple[APIRoute, ...]:
     return LEGACY_ROUTE_EXPORT
+
+# ── Wire overlay_cache stubs ──
+from .exporters.bpmn import _collect_interview_comments
+import backend.app.overlay_cache as _oc_mod
+
+def _wired_fetch_session_bpmn(sid: str) -> str:
+    s = _legacy_load_session_scoped(sid, None)[0]
+    return str(getattr(s, "bpmn_xml", "") or "")
+
+def _wired_fetch_annotations(sid: str) -> list:
+    s = _legacy_load_session_scoped(sid, None)[0]
+    model = s.model_dump() if hasattr(s, "model_dump") else {}
+    return _collect_interview_comments(model, model.get("nodes") or [])
+
+def _wired_compute_overlays_json(sid: str) -> list[dict[str, Any]]:
+    s = _legacy_load_session_scoped(sid, None)[0]
+    if not s:
+        return []
+    xml = str(getattr(s, "bpmn_xml", "") or "")
+    if not xml:
+        return []
+    return _compute_overlays_json(s, xml)
+
+def _wired_render_overlay_xml(sid: str, bpmn_xml: str) -> str:
+    s = _legacy_load_session_scoped(sid, None)[0]
+    if not s:
+        return bpmn_xml
+    return _overlay_interview_annotations_on_bpmn_xml(s, bpmn_xml)
+
+_oc_mod.fetch_session_bpmn = _wired_fetch_session_bpmn
+_oc_mod.fetch_annotations = _wired_fetch_annotations
+_oc_mod.compute_overlays_json = _wired_compute_overlays_json
+_oc_mod.render_overlay_xml = _wired_render_overlay_xml
