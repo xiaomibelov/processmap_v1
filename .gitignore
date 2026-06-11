@@ -61,3 +61,6 @@ tools/agent-ui/
 workspace/_bak_*/
 *.agent.bak
 *.bak.[0-9]*
+
+# Vault has its own git repo for Obsidian sync
+vault/.git
