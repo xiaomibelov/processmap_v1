@@ -573,3 +573,53 @@ def delete_org_session_report_version(org_id: str, session_id: str, version_id: 
     """Delete a report version for an org-scoped session."""
     import backend.app._legacy_main as _lm
     return _lm.delete_org_session_report_version(org_id, session_id, version_id, request, path_id)
+
+
+# ── Presence / TLDR / Analytics / Patch / Put / Recompute (thin) ──
+
+def create_project_session(project_id: str, inp, mode: str = "quick_skeleton", request=None):
+    """Create a session inside a project."""
+    import backend.app._legacy_main as _lm
+    return _lm.create_project_session(project_id, inp, mode, request)
+
+
+def touch_session_presence(session_id: str, inp, request=None):
+    """Touch session presence."""
+    import backend.app._legacy_main as _lm
+    return _lm.touch_session_presence_api(session_id, inp, request)
+
+
+def leave_session_presence(session_id: str, inp, request=None):
+    """Leave session presence."""
+    import backend.app._legacy_main as _lm
+    return _lm.leave_session_presence_api(session_id, inp, request)
+
+
+def get_session_tldr(session_id: str, request=None):
+    """Get session TLDR."""
+    import backend.app._legacy_main as _lm
+    return _lm.get_session_tldr(session_id, request)
+
+
+def get_session_analytics(session_id: str, request=None):
+    """Get session analytics."""
+    import backend.app._legacy_main as _lm
+    return _lm.get_session_analytics(session_id, request)
+
+
+def patch_session(session_id: str, inp, request=None):
+    """Patch session metadata."""
+    import backend.app._legacy_main as _lm
+    return _lm.patch_session(session_id, inp, request)
+
+
+def put_session(session_id: str, inp, request=None):
+    """Replace session metadata."""
+    import backend.app._legacy_main as _lm
+    return _lm.put_session(session_id, inp, request)
+
+
+def recompute_session(session_id: str):
+    """Recompute derived fields for a session."""
+    import backend.app._legacy_main as _lm
+    return _lm.recompute(session_id)
