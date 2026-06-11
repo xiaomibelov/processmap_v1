@@ -3685,6 +3685,7 @@ def auth_invite_activate(inp: InviteActivateIn, request: Request):
     return resp
 
 
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.post("/api/sessions")
 def create_session(inp: CreateSessionIn) -> Dict[str, Any]:
     st = get_storage()
@@ -3730,6 +3731,7 @@ def create_session(inp: CreateSessionIn) -> Dict[str, Any]:
 
 
 
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.get("/api/projects/{project_id}/sessions")
 def list_project_sessions(project_id: str, mode: str | None = None, view: str | None = None, request: Request = None):
     proj, oid, _ = _legacy_load_project_scoped(project_id, request)
@@ -3753,6 +3755,7 @@ def list_project_sessions(project_id: str, mode: str | None = None, view: str | 
     return out
 
 
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.post("/api/projects/{project_id}/sessions")
 def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | None = Query(default="quick_skeleton"), request: Request = None):
     user = _request_auth_user(request) if request is not None else {}
@@ -3830,6 +3833,7 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
         return _session_api_dump(sess)
 
 
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.get("/api/sessions")
 def list_sessions(q: Optional[str] = None, limit: int = 200, request: Request = None) -> Dict[str, Any]:
     oid = _request_active_org_id(request) if request is not None else ""
@@ -3845,6 +3849,7 @@ def list_sessions(q: Optional[str] = None, limit: int = 200, request: Request = 
     return {"items": items, "count": len(items)}
 
 
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.get("/api/sessions/{session_id}")
 def get_session(session_id: str, request: Request = None) -> Dict[str, Any]:
     sess, _, _ = _legacy_load_session_scoped(session_id, request)
@@ -4280,6 +4285,7 @@ def delete_project_api(project_id: str, request: Request = None):
     return {"ok": True, "project_id": pid, "deleted_sessions": deleted_sessions}
 
 
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.delete("/api/sessions/{session_id}")
 def delete_session_api(session_id: str, request: Request = None):
     sid = str(session_id or "").strip()
@@ -6759,6 +6765,7 @@ def _infer_and_merge_rtiers(
     }
 
 
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.get("/api/sessions/{session_id}/bpmn_meta")
 def session_bpmn_meta_get(session_id: str) -> Dict[str, Any]:
     st = get_storage()
@@ -6786,6 +6793,7 @@ def session_bpmn_meta_get(session_id: str) -> Dict[str, Any]:
     return normalized
 
 
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.patch("/api/sessions/{session_id}/bpmn_meta")
 def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
@@ -7066,6 +7074,7 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn, request: Requ
     return normalized
 
 
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.post("/api/sessions/{session_id}/bpmn_meta/infer_rtiers")
 def session_bpmn_meta_infer_rtiers(session_id: str, inp: InferRtiersIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
@@ -7108,6 +7117,7 @@ def session_bpmn_meta_infer_rtiers(session_id: str, inp: InferRtiersIn, request:
 
 
 
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.get("/api/sessions/{session_id}/bpmn")
 def session_bpmn_export(
     session_id: str,
@@ -7226,6 +7236,7 @@ def session_bpmn_export(
     )
 
 
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.get("/api/sessions/{session_id}/overlays")
 def session_overlays(session_id: str, request: Request = None):
     s, oid, _ = _legacy_load_session_scoped(session_id, request)
@@ -7313,6 +7324,7 @@ def _create_bpmn_revision_snapshot_if_needed(
     )
 
 
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.put("/api/sessions/{session_id}/bpmn")
 def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) -> Dict[str, Any]:
     user = _request_auth_user(request) if request is not None else {}
@@ -7486,6 +7498,7 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         lock.release()
 
 
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.get("/api/sessions/{session_id}/bpmn/versions")
 def session_bpmn_versions_list(
     session_id: str,
@@ -7571,6 +7584,7 @@ def session_bpmn_versions_list(
     }
 
 
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.get("/api/sessions/{session_id}/bpmn/versions/{version_id}")
 def session_bpmn_version_detail(session_id: str, version_id: str, request: Request = None) -> Dict[str, Any]:
     sess, oid, _ = _legacy_load_session_scoped(session_id, request)
@@ -7614,6 +7628,7 @@ def session_bpmn_version_detail(session_id: str, version_id: str, request: Reque
     }
 
 
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.post("/api/sessions/{session_id}/bpmn/restore/{version_id}")
 def session_bpmn_restore(
     session_id: str,
@@ -7758,6 +7773,7 @@ def session_bpmn_restore(
         lock.release()
 
 
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.delete("/api/sessions/{session_id}/bpmn")
 def session_bpmn_clear(session_id: str, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
