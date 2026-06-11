@@ -1282,6 +1282,13 @@ export async function apiGetBpmnXml(sessionId, options = {}) {
   return r.ok ? { ok: true, status: r.status, xml: r.text || "" } : r;
 }
 
+export async function apiGetOverlays(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.overlays(sid)));
+  return r.ok ? { ok: true, status: r.status, overlays: Array.isArray(r.data) ? r.data : [] } : r;
+}
+
 export async function apiGetBpmnVersions(sessionId, options = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
@@ -1661,4 +1668,14 @@ export async function apiWipeDevAll() {
   }
 
   return { ok: true, status: 200, deleted };
+}
+
+export async function apiGetFeatureFlags() {
+  const r = okOrError(await request("/api/feature-flags"));
+  return r.ok ? { ok: true, flags: r.data?.flags || {} } : r;
+}
+
+export async function apiPatchFeatureFlags(flags) {
+  const r = okOrError(await request("/api/admin/feature-flags", { method: "PATCH", body: JSON.stringify({ flags }) }));
+  return r.ok ? { ok: true, flags: r.data?.flags || {} } : r;
 }

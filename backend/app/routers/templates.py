@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel
 
 from .. import _legacy_main
+from ..utils.authz import is_role_allowed, scope_allowed_project_ids
 from ..redis_cache import cache_delete_prefix, cache_get_json, cache_set_json
 from ..storage import (
     create_template,
@@ -156,7 +157,7 @@ def _template_can_manage(
         return True
     scope = _normalize_template_scope(template.get("scope"))
     if scope == "org":
-        return _legacy_main._is_role_allowed(org_role, _legacy_main._ORG_TEMPLATE_WRITE_ROLES)
+        return is_role_allowed(org_role, _legacy_main._ORG_TEMPLATE_WRITE_ROLES)
     return False
 
 
@@ -206,7 +207,7 @@ def _template_folder_can_manage(
     owner_id = str(folder.get("owner_user_id") or "").strip()
     if scope == "personal":
         return owner_id and owner_id == str(user_id or "").strip()
-    return _legacy_main._is_role_allowed(org_role, _ORG_FOLDER_WRITE_ROLES)
+    return is_role_allowed(org_role, _ORG_FOLDER_WRITE_ROLES)
 
 
 def _template_folder_response_row(
@@ -263,7 +264,7 @@ def _validate_template_folder_for_scope(
     folder_org_id = str(folder.get("org_id") or "").strip()
     if folder_org_id != str(org_id or "").strip():
         return "", _legacy_main._enterprise_error(422, "validation_error", "folder_org_mismatch")
-    if not (is_admin or _legacy_main._is_role_allowed(org_role, _legacy_main._ORG_READ_ROLES)):
+    if not (is_admin or is_role_allowed(org_role, _legacy_main._ORG_READ_ROLES)):
         return "", _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
     return folder_id, None
 
@@ -335,7 +336,7 @@ def create_template_folder_endpoint(inp: TemplateFolderCreateIn, request: Reques
         if err is not None:
             return err
         org_role = str(role or "").strip().lower()
-        if not (is_admin or _legacy_main._is_role_allowed(org_role, _ORG_FOLDER_WRITE_ROLES)):
+        if not (is_admin or is_role_allowed(org_role, _ORG_FOLDER_WRITE_ROLES)):
             return _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
 
     try:
@@ -523,7 +524,7 @@ def create_template_endpoint(inp: TemplateCreateIn, request: Request) -> Dict[st
         if err is not None:
             return err
         org_role = str(role or "").strip().lower()
-        if not (is_admin or _legacy_main._is_role_allowed(org_role, _legacy_main._ORG_TEMPLATE_WRITE_ROLES)):
+        if not (is_admin or is_role_allowed(org_role, _legacy_main._ORG_TEMPLATE_WRITE_ROLES)):
             return _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
     validated_folder_id, folder_err = _validate_template_folder_for_scope(
         folder_id_raw=folder_id,

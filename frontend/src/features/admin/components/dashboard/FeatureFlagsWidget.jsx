@@ -3,7 +3,7 @@ import ChartCard from "../common/ChartCard";
 import { apiGetFeatureFlags, apiPatchFeatureFlags } from "../../../../lib/apiModules/featureFlagsApi";
 
 export default function FeatureFlagsWidget() {
-  const [flags, setFlags] = useState({ bpmn_fps_meter_enabled: false, canvas_profiler_enabled: false });
+  const [flags, setFlags] = useState({ bpmn_fps_meter_enabled: false, canvas_profiler_enabled: false, lightweightOverlays: false });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -52,6 +52,16 @@ export default function FeatureFlagsWidget() {
                 disabled={saving}
               />
               <span className="text-sm">Canvas Profiler (console metrics)</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-border"
+                checked={!!flags.lightweightOverlays}
+                onChange={() => toggle("lightweightOverlays")}
+                disabled={saving}
+              />
+              <span className="text-sm">Lightweight Overlays (JSON instead of XML)</span>
             </label>
           </>
         )}

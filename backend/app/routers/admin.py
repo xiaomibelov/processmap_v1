@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from starlette.responses import Response
 
 from .. import _legacy_main
+from ..utils.authz import is_role_allowed, scope_allowed_project_ids
 from ..ai.execution_log import list_ai_executions
 from ..ai.module_catalog import ai_module_catalog_payload, ai_provider_settings_summary
 from ..ai.prompt_registry import (
@@ -221,7 +222,7 @@ def _admin_context(
     if err is not None:
         return None, False, None, None, None, err
     role_l = _as_text(role).lower()
-    if not (is_admin or _legacy_main._is_role_allowed(role_l, _ADMIN_ALLOWED_ROLES)):
+    if not (is_admin or is_role_allowed(role_l, _ADMIN_ALLOWED_ROLES)):
         return None, False, None, None, None, _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
     scope = _legacy_main._project_scope_for_request(request, oid)
     return uid, bool(is_admin), oid, role_l, scope, None
@@ -243,7 +244,7 @@ def _telemetry_read_context(
     uid, is_admin, oid, role, _scope, err = _admin_context(request)
     if err is not None:
         return None, False, None, None, err
-    if not (bool(is_admin) or _legacy_main._is_role_allowed(role, _TELEMETRY_READ_ROLES)):
+    if not (bool(is_admin) or is_role_allowed(role, _TELEMETRY_READ_ROLES)):
         return None, False, None, None, _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
     return uid, bool(is_admin), oid, role, None
 
@@ -445,7 +446,7 @@ def _session_meta_map(
     st = _legacy_main.get_storage()
     rows = st.list(limit=5000, org_id=(org_id or None), is_admin=True)
     scope = scope_raw if isinstance(scope_raw, dict) else {}
-    allowed_ids = set(_legacy_main._scope_allowed_project_ids(scope))
+    allowed_ids = set(scope_allowed_project_ids(scope))
     out: Dict[str, Dict[str, Any]] = {}
     for raw in rows:
         item = _as_dict(raw)

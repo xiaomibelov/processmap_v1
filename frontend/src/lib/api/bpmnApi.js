@@ -9,6 +9,7 @@ import {
   apiGetBpmnMeta,
   apiPatchBpmnMeta,
   apiInferBpmnRtiers,
+  apiGetOverlays,
 } from "../api";
 
 export {
@@ -22,4 +23,5 @@ export {
   apiGetBpmnMeta,
   apiPatchBpmnMeta,
   apiInferBpmnRtiers,
+  apiGetOverlays,
 };

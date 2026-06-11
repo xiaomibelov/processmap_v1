@@ -92,16 +92,17 @@ export async function createFixture(request, runId, headers, xml) {
 }
 
 export async function openFixture(page, fixture) {
-  await page.goto("/app");
-  await expect(page.locator(".topbar .topSelect--project")).toBeVisible();
-  await page.selectOption(".topbar .topSelect--project", fixture.projectId);
-  await page.getByRole("button", { name: "Обновить" }).click();
-  await expect(page.locator(`.topbar .topSelect--session option[value="${fixture.sessionId}"]`)).toHaveCount(1);
-  await page.selectOption(".topbar .topSelect--session", fixture.sessionId);
+  const params = new URLSearchParams();
+  params.set("project", fixture.projectId);
+  params.set("session", fixture.sessionId);
+  await page.goto(`/app?${params.toString()}`);
 }
 
 export async function switchTab(page, title) {
-  const btn = page.locator(".segBtn").filter({ hasText: new RegExp(`^${title}$`, "i") }).first();
+  const map = { Diagram: "Diagram (BPMN)", Interview: "Анализ процессов" };
+  const label = map[title] || title;
+  const safe = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const btn = page.locator(".segBtn").filter({ hasText: new RegExp(`^${safe}$`, "i") }).first();
   await expect(btn).toBeVisible();
   await btn.click();
 }

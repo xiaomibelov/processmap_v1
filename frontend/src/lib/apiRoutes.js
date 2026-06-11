@@ -149,6 +149,7 @@ export const apiRoutes = {
     bpmnVersion: (sessionId, versionId) => `/api/sessions/${encode(sessionId)}/bpmn/versions/${encode(versionId)}`,
     bpmnRestore: (sessionId, versionId) => `/api/sessions/${encode(sessionId)}/bpmn/restore/${encode(versionId)}`,
     bpmnMeta: (sessionId) => `/api/sessions/${encode(sessionId)}/bpmn_meta`,
+    overlays: (sessionId) => `/api/sessions/${encode(sessionId)}/overlays`,
     inferRtiers: (sessionId) => `/api/sessions/${encode(sessionId)}/bpmn_meta/infer_rtiers`,
     autoPass: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/auto-pass`, {
       job_id: String(options?.job_id || options?.jobId || "").trim(),

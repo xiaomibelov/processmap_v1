@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Request
 
 from .. import _legacy_main
+from ..utils.authz import is_role_allowed, scope_allowed_project_ids
 from ..analytics import compute_analytics
 from ..storage import (
     _connect,
@@ -156,7 +157,7 @@ def get_project_analytics(project_id: str, request: Request) -> Dict[str, Any]:
         return _legacy_main._enterprise_error(422, "validation_error", "project_id required")
 
     scope = _legacy_main._project_scope_for_request(request, oid)
-    allowed = _legacy_main._scope_allowed_project_ids(scope)
+    allowed = scope_allowed_project_ids(scope)
     if allowed and pid not in allowed:
         return _legacy_main._enterprise_error(404, "not_found", "not_found")
 
@@ -185,7 +186,7 @@ def get_workspace_analytics(workspace_id: str, request: Request) -> Dict[str, An
         return _legacy_main._enterprise_error(422, "validation_error", "workspace_id required")
 
     scope = _legacy_main._project_scope_for_request(request, oid)
-    allowed = _legacy_main._scope_allowed_project_ids(scope)
+    allowed = scope_allowed_project_ids(scope)
 
     projects = _projects_for_workspace(oid, wid)
     if allowed:

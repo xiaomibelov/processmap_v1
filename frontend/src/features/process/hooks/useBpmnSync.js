@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { useFeatureFlag } from "../../config/featureFlagsContext";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { buildBpmnSaveFailureDiagnostics } from "../bpmn/save/saveBeforeSwitchDiagnostics.js";
 import {
@@ -549,7 +550,9 @@ export default function useBpmnSync({
     if (!sid || isLocal) {
       return { ok: true, xml: toText(draftRef.current?.bpmn_xml || "") };
     }
-    const latest = await apiGetBpmnXml(sid);
+    const latest = await apiGetBpmnXml(sid, {
+      includeOverlay: !(typeof window !== "undefined" && useFeatureFlag("lightweightOverlays")),
+    });
     if (!latest.ok) {
       return {
         ok: false,
@@ -620,7 +623,9 @@ export default function useBpmnSync({
       return { ok: true, xml: draftXml, seeded: false, source: "draft" };
     }
     if (sid && !isLocal && typeof apiGetBpmnXml === "function") {
-      const latest = await apiGetBpmnXml(sid);
+      const latest = await apiGetBpmnXml(sid, {
+        includeOverlay: !(typeof window !== "undefined" && useFeatureFlag("lightweightOverlays")),
+      });
       if (latest?.ok) {
         const backendXml = toText(latest.xml || "");
         if (backendXml.trim()) {
