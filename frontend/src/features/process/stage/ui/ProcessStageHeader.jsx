@@ -116,7 +116,7 @@ export default function ProcessStageHeader({ view = {} }) {
           {hasSession ? (
             <button
               type="button"
-              className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+              className="primaryBtn processSaveBtn h-8 whitespace-nowrap px-2.5 text-xs"
               onClick={handleSaveCurrentTab}
               title={workbench.saveTooltip}
               data-testid="diagram-toolbar-save"

@@ -74,32 +74,26 @@ async function createFixture(request, runId, xmlText, authHeaders) {
 }
 
 async function switchTab(page, title) {
-  const btn = page.locator(".segBtn").filter({ hasText: new RegExp(`^${title}$`, "i") }).first();
+  const map = { Diagram: "Diagram (BPMN)", Interview: "Анализ процессов" };
+  const label = map[title] || title;
+  const safe = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const btn = page.locator(".segBtn").filter({ hasText: new RegExp(`^${safe}$`, "i") }).first();
   await expect(btn).toBeVisible();
   await btn.click();
 }
 
 async function openFixture(page, fixture, accessToken) {
-  const projectSelect = page.locator(".topbar .topSelect--project");
   await page.addInitScript(() => {
     window.__FPC_E2E__ = true;
     window.localStorage.setItem("fpc_debug_bpmn", "1");
     window.localStorage.setItem("fpc_debug_tabs", "1");
     window.localStorage.setItem("fpc_debug_trace", "1");
   });
-  await page.goto("/app");
-  const hasWorkspace = await projectSelect.isVisible({ timeout: 3000 }).catch(() => false);
-  if (!hasWorkspace) {
-    await page.evaluate((token) => {
-      window.localStorage.setItem("fpc_auth_access_token", String(token || ""));
-    }, accessToken);
-    await page.reload({ waitUntil: "domcontentloaded" });
-  }
-  await expect(projectSelect).toBeVisible();
-  await page.selectOption(".topbar .topSelect--project", fixture.projectId);
-  await page.getByRole("button", { name: "Обновить" }).click();
-  await expect(page.locator(`.topbar .topSelect--session option[value="${fixture.sessionId}"]`)).toHaveCount(1);
-  await page.selectOption(".topbar .topSelect--session", fixture.sessionId);
+  const params = new URLSearchParams();
+  params.set("project", fixture.projectId);
+  params.set("session", fixture.sessionId);
+  await page.goto(`/app?${params.toString()}`);
+  await expect(page.locator('[data-testid="topbar-project-title"]')).toBeVisible({ timeout: 20000 });
   await switchTab(page, "Diagram");
 }
 
@@ -226,6 +220,14 @@ test("big BPMN round-trip keeps DI and stable payload after export/import", asyn
     }
   });
 
+  page.on("dialog", async (dialog) => {
+    if (dialog.type() === "confirm" && /критич/i.test(dialog.message())) {
+      await dialog.accept();
+      return;
+    }
+    await dialog.dismiss();
+  });
+
   await setUiToken(page, auth.accessToken);
   await openFixture(page, fixture, auth.accessToken);
   await assertDiagramHealthy(page, "diagram_initial_ready");
@@ -248,10 +250,13 @@ test("big BPMN round-trip keeps DI and stable payload after export/import", asyn
   expect(persistedTaskCount).toBeGreaterThanOrEqual(initialTaskCount);
 
   await switchTab(page, "Diagram");
-  const exportBtn = page.getByRole("button", { name: /Экспорт|Export/i }).first();
+  const overflowToggle = page.getByTestId("diagram-toolbar-overflow-toggle");
+  await expect(overflowToggle).toBeVisible();
+  await overflowToggle.click();
+  const exportBtn = page.getByTestId("bpmn-export-button");
   await expect(exportBtn).toBeVisible();
   const downloadPromise = page.waitForEvent("download");
-  await exportBtn.evaluate((node) => node.click());
+  await exportBtn.click();
   const download = await downloadPromise;
   const downloadPath = await download.path();
   expect(downloadPath).toBeTruthy();
