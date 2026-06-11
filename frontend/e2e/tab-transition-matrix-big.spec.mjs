@@ -73,13 +73,15 @@ async function createFixture(request, runId, xmlText, authHeaders) {
 }
 
 async function switchTab(page, title) {
-  const btn = page.locator(".segBtn").filter({ hasText: new RegExp(`^${title}$`, "i") }).first();
+  const map = { Diagram: "Diagram (BPMN)", Interview: "Анализ процессов" };
+  const label = map[title] || title;
+  const safe = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const btn = page.locator(".segBtn").filter({ hasText: new RegExp(`^${safe}$`, "i") }).first();
   await expect(btn).toBeVisible();
   await btn.click();
 }
 
 async function openFixture(page, fixture, accessToken, options = {}) {
-  const projectSelect = page.locator(".topbar .topSelect--project");
   if (!options?.skipInit) {
     await page.addInitScript(() => {
       window.__FPC_E2E__ = true;
@@ -89,19 +91,13 @@ async function openFixture(page, fixture, accessToken, options = {}) {
       window.localStorage.setItem("fpc_debug_snapshots", "1");
     });
   }
-  if (!options?.skipGoto) await page.goto("/app");
-  const hasWorkspace = await projectSelect.isVisible({ timeout: 3000 }).catch(() => false);
-  if (!hasWorkspace) {
-    await page.evaluate((token) => {
-      window.localStorage.setItem("fpc_auth_access_token", String(token || ""));
-    }, accessToken);
-    await page.reload({ waitUntil: "domcontentloaded" });
+  if (!options?.skipGoto) {
+    const params = new URLSearchParams();
+    params.set("project", fixture.projectId);
+    params.set("session", fixture.sessionId);
+    await page.goto(`/app?${params.toString()}`);
   }
-  await expect(projectSelect).toBeVisible();
-  await page.selectOption(".topbar .topSelect--project", fixture.projectId);
-  await page.getByRole("button", { name: "Обновить" }).click();
-  await expect(page.locator(`.topbar .topSelect--session option[value="${fixture.sessionId}"]`)).toHaveCount(1);
-  await page.selectOption(".topbar .topSelect--session", fixture.sessionId);
+  await expect(page.locator('[data-testid="topbar-project-title"]')).toBeVisible({ timeout: 20000 });
   await switchTab(page, "Diagram");
 }
 
@@ -166,7 +162,13 @@ async function saveAndWaitPut(page, putStatuses) {
       && /\/api\/sessions\/[^/]+\/bpmn(?:\?|$)/.test(resp.url())
       && resp.status() === 200;
   });
-  await page.locator("button.processSaveBtn").first().click();
+  const createRevisionBtn = page.getByTestId("diagram-toolbar-create-revision").first();
+  if (await createRevisionBtn.isVisible().catch(() => false)
+      && await createRevisionBtn.isEnabled().catch(() => false)) {
+    await createRevisionBtn.click();
+  } else {
+    await page.locator("button.processSaveBtn").first().click();
+  }
   const resp = await responsePromise;
   putStatuses.push(resp.status());
 }
@@ -198,20 +200,45 @@ async function mutateDiagram(page, marker) {
   expect(result.ok, JSON.stringify(result)).toBeTruthy();
 }
 
+async function assertInterviewVisible(page, label) {
+  await expect
+    .poll(async () => {
+      const rows = await page.locator(".interviewStepRow").count();
+      return rows > 0;
+    }, label)
+    .toBeTruthy();
+}
+
 async function mutateInterview(page, marker) {
+  await assertInterviewVisible(page, "interview_ready");
   const quickInput = page.getByPlaceholder("Быстрый ввод шага: введите действие и нажмите Enter").first();
   if (await quickInput.isVisible().catch(() => false)) {
     await quickInput.fill(marker);
     await quickInput.press("Enter");
     return;
   }
-  const firstInput = page.locator(".interviewStepRow td .input").first();
+  const quickToggle = page.getByTestId("interview-quick-input-toggle").first();
+  if (await quickToggle.isVisible().catch(() => false)) {
+    await quickToggle.click();
+    if (await quickInput.isVisible().catch(() => false)) {
+      await quickInput.fill(marker);
+      await quickInput.press("Enter");
+      return;
+    }
+  }
+  const firstStepRow = page.locator(".interviewStepRow").first();
+  await expect(firstStepRow).toBeVisible();
+  await firstStepRow.click();
+  const firstInput = page.locator(".interviewStepDetailsPanel .input").first();
   await expect(firstInput).toBeVisible();
   await firstInput.fill(marker);
   await firstInput.press("Tab");
 }
 
 async function openVersionsModal(page) {
+  const overflowToggle = page.getByTestId("diagram-toolbar-overflow-toggle");
+  await expect(overflowToggle).toBeVisible();
+  await overflowToggle.click();
   const trigger = page.getByTestId("bpmn-versions-open");
   await expect(trigger).toBeVisible();
   await trigger.evaluate((node) => node.click());
@@ -244,6 +271,14 @@ test("big tab transition matrix keeps diagram stable across tab chains, reload, 
     `[FIXTURE] source=${String(fixturePayload?.source || "unknown")} xmlLen=${seedXml.length} hasDI=${hasDiMarkers(seedXml) ? "true" : "false"} hash=${fnv1aHex(seedXml)}`,
   );
   const fixture = await createFixture(request, runId, seedXml, auth.headers);
+
+  page.on("dialog", async (dialog) => {
+    if (dialog.type() === "confirm") {
+      await dialog.accept();
+      return;
+    }
+    await dialog.dismiss();
+  });
 
   const putStatuses = [];
   const putPayloads = [];
@@ -433,7 +468,7 @@ test("big tab transition matrix keeps diagram stable across tab chains, reload, 
     break;
   }
   expect(restored).toBeTruthy();
-  await expect(page.getByText(/Версия восстановлена/i)).toBeVisible();
+  await expect(page.getByText(/Версия.*восстановлена/i)).toBeVisible();
   await page.getByRole("button", { name: "Закрыть" }).click();
 
   const afterRestore = await readXmlFromEditor(page);
