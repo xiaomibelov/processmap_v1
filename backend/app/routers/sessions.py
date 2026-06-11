@@ -46,8 +46,7 @@ def list_project_sessions(project_id: str, mode: str | None = None, view: str | 
 
 @router.post('/api/projects/{project_id}/sessions')
 def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | None = Query(default='quick_skeleton'), request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.create_project_session(project_id, inp, mode, request)
+    return _svc.create_project_session(project_id, inp, mode, request)
 
 @router.get('/api/sessions')
 def list_sessions(q: Optional[str] = None, limit: int = 200, request: Request = None):
@@ -59,28 +58,23 @@ def get_session(session_id: str, request: Request = None):
 
 @router.post('/api/sessions/{session_id}/presence')
 def touch_session_presence_api(session_id: str, inp: SessionPresenceTouchIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.touch_session_presence_api(session_id, inp, request)
+    return _svc.touch_session_presence(session_id, inp, request)
 
 @router.delete('/api/sessions/{session_id}/presence')
 def leave_session_presence_api(session_id: str, inp: SessionPresenceTouchIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.leave_session_presence_api(session_id, inp, request)
+    return _svc.leave_session_presence(session_id, inp, request)
 
 @router.get('/api/sessions/{session_id}/tldr')
 def get_session_tldr(session_id: str, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.get_session_tldr(session_id, request)
+    return _svc.get_session_tldr(session_id, request)
 
 @router.get('/api/sessions/{session_id}/analytics')
 def get_session_analytics(session_id: str, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.get_session_analytics(session_id, request)
+    return _svc.get_session_analytics(session_id, request)
 
 @router.patch('/api/sessions/{session_id}')
 def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.patch_session(session_id, inp, request)
+    return _svc.patch_session(session_id, inp, request)
 
 @router.delete('/api/sessions/{session_id}')
 def delete_session_api(session_id: str, request: Request = None):
@@ -89,13 +83,11 @@ def delete_session_api(session_id: str, request: Request = None):
 
 @router.put('/api/sessions/{session_id}')
 def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None):
-    import backend.app._legacy_main as _lm
-    return _lm.put_session(session_id, inp, request)
+    return _svc.put_session(session_id, inp, request)
 
 @router.post('/api/sessions/{session_id}/recompute')
 def recompute(session_id: str):
-    import backend.app._legacy_main as _lm
-    return _lm.recompute(session_id)
+    return _svc.recompute_session(session_id)
 
 @router.post('/api/sessions/{session_id}/ai/questions')
 def ai_questions(session_id: str, inp: AiQuestionsIn, request: Request = None):

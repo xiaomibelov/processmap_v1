@@ -3757,6 +3757,7 @@ def list_project_sessions(project_id: str, mode: str | None = None, view: str | 
 
 # DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.post("/api/projects/{project_id}/sessions")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | None = Query(default="quick_skeleton"), request: Request = None):
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
@@ -3882,6 +3883,7 @@ def get_session(session_id: str, request: Request = None) -> Dict[str, Any]:
 
 
 @app.post("/api/sessions/{session_id}/presence")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def touch_session_presence_api(
     session_id: str,
     inp: SessionPresenceTouchIn,
@@ -3933,6 +3935,7 @@ def touch_session_presence_api(
 
 
 @app.delete("/api/sessions/{session_id}/presence")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def leave_session_presence_api(
     session_id: str,
     inp: SessionPresenceTouchIn,
@@ -3971,6 +3974,7 @@ def leave_session_presence_api(
 
 
 @app.get("/api/sessions/{session_id}/tldr")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def get_session_tldr(session_id: str, request: Request = None) -> Dict[str, Any]:
     sess, _, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
@@ -3985,6 +3989,7 @@ def get_session_tldr(session_id: str, request: Request = None) -> Dict[str, Any]
 
 
 @app.get("/api/sessions/{session_id}/analytics")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def get_session_analytics(session_id: str, request: Request = None) -> dict:
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
@@ -3999,6 +4004,7 @@ def get_session_analytics(session_id: str, request: Request = None) -> dict:
 
 
 @app.patch("/api/sessions/{session_id}")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None) -> Dict[str, Any]:
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
@@ -4317,6 +4323,7 @@ def delete_session_api(session_id: str, request: Request = None):
 
 
 @app.put("/api/sessions/{session_id}")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) -> Dict[str, Any]:
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
@@ -4410,6 +4417,7 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
     return _session_api_dump(sess)
 
 @app.post("/api/sessions/{session_id}/recompute")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
 def recompute(session_id: str) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
