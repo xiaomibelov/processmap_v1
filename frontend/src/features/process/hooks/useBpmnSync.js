@@ -170,6 +170,7 @@ export default function useBpmnSync({
   const sid = toText(sessionId).trim();
   const draftRef = useRef(draft);
   const storeUpdateCountRef = useRef(0);
+  const v2OverlaysEnabled = useFeatureFlag("__FPC_OVERLAY_V2__");
 
   useEffect(() => {
     draftRef.current = draft;
@@ -551,7 +552,7 @@ export default function useBpmnSync({
       return { ok: true, xml: toText(draftRef.current?.bpmn_xml || "") };
     }
     const latest = await apiGetBpmnXml(sid, {
-      includeOverlay: !(typeof window !== "undefined" && useFeatureFlag("__FPC_OVERLAY_V2__")),
+      includeOverlay: !(typeof window !== "undefined" && v2OverlaysEnabled),
     });
     if (!latest.ok) {
       return {
@@ -563,7 +564,7 @@ export default function useBpmnSync({
     const xml = toText(latest.xml || "");
     if (syncSession) syncXmlToSession(xml, { source: "fetch_latest_xml:backend" });
     return { ok: true, xml };
-  }, [apiGetBpmnXml, isLocal, sid, syncXmlToSession]);
+  }, [apiGetBpmnXml, isLocal, sid, syncXmlToSession, v2OverlaysEnabled]);
 
   const importXml = useCallback(
     async (xmlText) => {
@@ -624,7 +625,7 @@ export default function useBpmnSync({
     }
     if (sid && !isLocal && typeof apiGetBpmnXml === "function") {
       const latest = await apiGetBpmnXml(sid, {
-        includeOverlay: !(typeof window !== "undefined" && useFeatureFlag("__FPC_OVERLAY_V2__")),
+        includeOverlay: !(typeof window !== "undefined" && v2OverlaysEnabled),
       });
       if (latest?.ok) {
         const backendXml = toText(latest.xml || "");
@@ -645,7 +646,7 @@ export default function useBpmnSync({
       console.debug(`[COORD] ensureSeed ok sid=${sid || "-"} reason=generated len=${seedXml.length}`);
     }
     return { ok: true, xml: seedXml, seeded: true, source: "seed" };
-  }, [apiGetBpmnXml, isLocal, sid, syncXmlToSession]);
+  }, [apiGetBpmnXml, isLocal, sid, syncXmlToSession, v2OverlaysEnabled]);
 
   return {
     saveFromModeler,
