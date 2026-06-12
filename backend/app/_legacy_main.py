@@ -481,10 +481,10 @@ def _is_legacy_seed_bpmn(xml_text: str) -> bool:
     return False
 
 
-def _overlay_interview_annotations_on_bpmn_xml(sess: Session, xml_text: str) -> str:
+def _overlay_interview_annotations_on_bpmn_xml(sess: Session, xml_text: str, include_overlay: bool = True) -> str:
     raw = str(xml_text or "").strip()
-    if not raw:
-        return ""
+    if not raw or not include_overlay:
+        return raw
 
     try:
         root = ET.fromstring(raw)
@@ -6420,7 +6420,7 @@ def session_bpmn_export(
 
     # Keep imported BPMN layout intact, but overlay Interview annotations only when requested.
     if (not raw_mode) and overlay_mode:
-        xml = _overlay_interview_annotations_on_bpmn_xml(s, xml)
+        xml = _overlay_interview_annotations_on_bpmn_xml(s, xml, overlay_mode)
 
     title = getattr(s, "title", None) or getattr(s, "name", None) or "process"
     title = re.sub(r"[^a-zA-Z0-9_\-]+", "_", str(title)).strip("_")
