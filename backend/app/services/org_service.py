@@ -10,10 +10,10 @@ from ..legacy.request_context import (
     enterprise_error as _enterprise_error,
     request_active_org_id as _request_active_org_id,
     request_auth_user as _request_auth_user,
-    request_user_meta as _request_user_meta,
+    request_user_meta,
 )
 from ..redis_cache import invalidate_workspace_org
-from ..repositories import org_repo
+from ..repositories import org_repo, project_repo
 from ..services.org_workspace import (
     enterprise_require_org_member as _enterprise_require_org_member,
     enterprise_require_org_role as _enterprise_require_org_role,
@@ -312,12 +312,12 @@ def get_org_project(org_id: str, project_id: str, request: Request) -> Dict[str,
 # ── Project sessions (thin — deeply coupled to session logic) ─────
 
 def list_org_project_sessions(org_id: str, project_id: str, request: Request, mode=None, view=None) -> List[Dict[str, Any]]:
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.list_org_project_sessions(org_id, project_id, request, mode, view)
 
 
 def create_org_project_session(org_id: str, project_id: str, inp, request=None, mode=None):
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.create_org_project_session(org_id, project_id, inp, request, mode)
 
 
@@ -496,37 +496,37 @@ def _audit_retention_days() -> int:
 # ── Workspace / Invites (thin — keep in legacy for now) ───────────
 
 def get_enterprise_workspace(request=None):
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.get_enterprise_workspace(request)
 
 
 def list_org_invites(org_id: str, request=None):
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.list_org_invites_endpoint(org_id, request)
 
 
 def create_org_invite(org_id: str, inp, request=None):
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.create_org_invite_endpoint(org_id, inp, request)
 
 
 def accept_org_invite(org_id: str, inp, request=None):
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.accept_org_invite_endpoint(org_id, inp, request)
 
 
 def accept_invite(inp, request=None):
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.accept_invite_endpoint(inp, request)
 
 
 def revoke_org_invite(org_id: str, invite_id: str, request=None):
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.revoke_org_invite_endpoint(org_id, invite_id, request)
 
 
 def cleanup_org_invites(org_id: str, request=None, keep_days: int = 0):
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.cleanup_org_invites_endpoint(org_id, request, keep_days)
 
 import os
