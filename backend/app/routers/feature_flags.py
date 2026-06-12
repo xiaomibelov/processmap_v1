@@ -59,9 +59,9 @@ def _set_flag(org_id: str, flag: str, value: bool) -> None:
 
 
 def _request_auth_user(request: Request) -> dict:
-    user = getattr(request.state, "user", None)
+    user = getattr(request.state, "auth_user", None)
     if user is None:
-        from ..auth import request_auth_user
+        from ..legacy.request_context import request_auth_user
         user = request_auth_user(request)
     return user if isinstance(user, dict) else {}
 
