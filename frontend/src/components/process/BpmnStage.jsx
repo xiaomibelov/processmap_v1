@@ -4226,10 +4226,29 @@ const BpmnStage = forwardRef(function BpmnStage({
         const el = nodeId ? registry.get(nodeId) : null;
         if (!el) return;
         const div = document.createElement("div");
-        div.className = `fpcLightweightOverlay ${String(ovl.style || "").trim()}`;
+        div.className = "fpc-overlay-v2";
         div.textContent = String(ovl.text || "");
+        div.style.position = "absolute";
+        div.style.zIndex = "1000";
+        div.style.boxSizing = "border-box";
         div.style.width = `${Number(ovl.width || 100)}px`;
         div.style.height = `${Number(ovl.height || 30)}px`;
+        div.style.backgroundColor = "#ffffff";
+        div.style.color = "#1f2937";
+        div.style.fontSize = "12px";
+        div.style.border = "1px solid #e5e7eb";
+        div.style.borderRadius = "6px";
+        div.style.padding = "4px 8px";
+        div.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
+        div.style.display = "flex";
+        div.style.alignItems = "center";
+        div.style.justifyContent = "center";
+        div.style.pointerEvents = "none";
+        const style = ovl.style && typeof ovl.style === "object" && !Array.isArray(ovl.style) ? ovl.style : {};
+        if (style.bg) div.style.backgroundColor = String(style.bg);
+        if (style.color) div.style.color = String(style.color);
+        if (style.fontSize) div.style.fontSize = String(style.fontSize);
+        if (style.border) div.style.border = String(style.border);
         if (ovl.meta?.title) div.title = String(ovl.meta.title);
         const oid = overlays.add(el.id, {
           position: { top: Number(ovl.y || 0), left: Number(ovl.x || 0) },
