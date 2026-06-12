@@ -13,6 +13,7 @@ _DEFAULT_FLAGS: Dict[str, str] = {
     "bpmn_fps_meter_enabled": "0",
     "canvas_profiler_enabled": "0",
     "lightweightOverlays": "0",
+    "__FPC_OVERLAY_V2__": "0",
 }
 
 
@@ -61,7 +62,7 @@ def _set_flag(org_id: str, flag: str, value: bool) -> None:
 def _request_auth_user(request: Request) -> dict:
     user = getattr(request.state, "user", None)
     if user is None:
-        from ..auth import request_auth_user
+        from ..legacy.request_context import request_auth_user
         user = request_auth_user(request)
     return user if isinstance(user, dict) else {}
 
