@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { useFeatureFlag } from "../../config/featureFlagsContext";
+import { useFeatureFlag } from "../../config/featureFlagsContext.jsx";
 import { deriveActorsFromBpmn } from "../lib/deriveActorsFromBpmn";
 import { buildBpmnSaveFailureDiagnostics } from "../bpmn/save/saveBeforeSwitchDiagnostics.js";
 import {
@@ -168,6 +168,7 @@ export default function useBpmnSync({
   apiGetBpmnXml,
 }) {
   const sid = toText(sessionId).trim();
+  const lightweightOverlaysEnabled = useFeatureFlag("lightweightOverlays");
   const draftRef = useRef(draft);
   const storeUpdateCountRef = useRef(0);
 
@@ -551,7 +552,8 @@ export default function useBpmnSync({
       return { ok: true, xml: toText(draftRef.current?.bpmn_xml || "") };
     }
     const latest = await apiGetBpmnXml(sid, {
-      includeOverlay: !(typeof window !== "undefined" && useFeatureFlag("lightweightOverlays")),
+      raw: true,
+      includeOverlay: !lightweightOverlaysEnabled,
     });
     if (!latest.ok) {
       return {
@@ -624,7 +626,8 @@ export default function useBpmnSync({
     }
     if (sid && !isLocal && typeof apiGetBpmnXml === "function") {
       const latest = await apiGetBpmnXml(sid, {
-        includeOverlay: !(typeof window !== "undefined" && useFeatureFlag("lightweightOverlays")),
+        raw: true,
+        includeOverlay: !lightweightOverlaysEnabled,
       });
       if (latest?.ok) {
         const backendXml = toText(latest.xml || "");

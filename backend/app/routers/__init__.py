@@ -1,3 +1,4 @@
+from .auth import router as auth_router
 from .auto_pass import router as auto_pass_router
 from .admin import router as admin_router
 from .version import router as version_router
@@ -23,6 +24,7 @@ from .templates import router as templates_router
 from .feature_flags import router as feature_flags_router
 
 ROUTERS = (
+    auth_router,
     system_router,
     admin_router,
     error_events_router,
