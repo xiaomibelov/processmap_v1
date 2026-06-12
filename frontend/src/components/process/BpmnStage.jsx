@@ -1,5 +1,4 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { useFeatureFlag } from "../../features/config/featureFlagsContext";
 import { apiDeleteBpmnXml, apiGetBpmnXml, apiGetOverlays, apiPutBpmnXml } from "../../lib/api/bpmnApi";
 import { apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
@@ -4209,54 +4208,104 @@ const BpmnStage = forwardRef(function BpmnStage({
     } catch {}
   }
 
-  const lightweightOverlaysEnabled = useFeatureFlag("__FPC_OVERLAY_V2__");
-
   async function mountLightweightOverlays(inst, kind) {
-    if (!inst || typeof window === "undefined" || !lightweightOverlaysEnabled) return;
+    if (!inst || typeof window === "undefined") return;
     const sid = String(activeSessionRef.current || sessionId || "").trim();
-    if (!sid) return;
+    if (!sid) {
+      // eslint-disable-next-line no-console
+      console.warn("[FPC-OVERLAY-V2] mount skipped: no session id");
+      return;
+    }
     clearLightweightOverlays(inst, kind);
+    let overlaysAdded = 0;
     try {
       const resp = await apiGetOverlays(sid);
-      if (!resp.ok || !Array.isArray(resp.overlays)) return;
-      const overlays = inst.get("overlays");
-      const registry = inst.get("elementRegistry");
-      resp.overlays.forEach((ovl) => {
-        const nodeId = String(ovl.node_id || ovl.nodeId || "").trim();
-        const el = nodeId ? registry.get(nodeId) : null;
-        if (!el) return;
-        const div = document.createElement("div");
-        div.className = "fpc-overlay-v2";
-        div.textContent = String(ovl.text || "");
-        div.style.position = "absolute";
-        div.style.zIndex = "1000";
-        div.style.boxSizing = "border-box";
-        div.style.width = `${Number(ovl.width || 100)}px`;
-        div.style.height = `${Number(ovl.height || 30)}px`;
-        div.style.backgroundColor = "#ffffff";
-        div.style.color = "#1f2937";
-        div.style.fontSize = "12px";
-        div.style.border = "1px solid #e5e7eb";
-        div.style.borderRadius = "6px";
-        div.style.padding = "4px 8px";
-        div.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
-        div.style.display = "flex";
-        div.style.alignItems = "center";
-        div.style.justifyContent = "center";
-        div.style.pointerEvents = "none";
-        const style = ovl.style && typeof ovl.style === "object" && !Array.isArray(ovl.style) ? ovl.style : {};
-        if (style.bg) div.style.backgroundColor = String(style.bg);
-        if (style.color) div.style.color = String(style.color);
-        if (style.fontSize) div.style.fontSize = String(style.fontSize);
-        if (style.border) div.style.border = String(style.border);
-        if (ovl.meta?.title) div.title = String(ovl.meta.title);
-        const oid = overlays.add(el.id, {
-          position: { top: Number(ovl.y || 0), left: Number(ovl.x || 0) },
-          html: div,
-        });
-        lightweightOverlayStateRef.current[kind].push(oid);
+      // eslint-disable-next-line no-console
+      console.warn("[FPC-OVERLAY-V2] apiGetOverlays response", {
+        ok: resp?.ok,
+        count: Array.isArray(resp?.overlays) ? resp.overlays.length : null,
+        error: resp?.error,
       });
-    } catch {}
+      if (resp?.ok && Array.isArray(resp.overlays) && resp.overlays.length > 0) {
+        const overlays = inst.get("overlays");
+        const registry = inst.get("elementRegistry");
+        resp.overlays.forEach((ovl) => {
+          const nodeId = String(ovl.node_id || ovl.nodeId || "").trim();
+          const el = nodeId ? registry.get(nodeId) : null;
+          if (!el) return;
+          const div = document.createElement("div");
+          div.className = "fpc-overlay-v2";
+          div.textContent = String(ovl.text || "");
+          div.style.position = "absolute";
+          div.style.zIndex = "1000";
+          div.style.boxSizing = "border-box";
+          div.style.width = `${Number(ovl.width || 100)}px`;
+          div.style.height = `${Number(ovl.height || 30)}px`;
+          div.style.backgroundColor = "#ffffff";
+          div.style.color = "#1f2937";
+          div.style.fontSize = "12px";
+          div.style.border = "1px solid #e5e7eb";
+          div.style.borderRadius = "6px";
+          div.style.padding = "4px 8px";
+          div.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
+          div.style.display = "flex";
+          div.style.alignItems = "center";
+          div.style.justifyContent = "center";
+          div.style.pointerEvents = "none";
+          const style = ovl.style && typeof ovl.style === "object" && !Array.isArray(ovl.style) ? ovl.style : {};
+          if (style.bg) div.style.backgroundColor = String(style.bg);
+          if (style.color) div.style.color = String(style.color);
+          if (style.fontSize) div.style.fontSize = String(style.fontSize);
+          if (style.border) div.style.border = String(style.border);
+          if (ovl.meta?.title) div.title = String(ovl.meta.title);
+          const oid = overlays.add(el.id, {
+            position: { top: Number(ovl.y || 0), left: Number(ovl.x || 0) },
+            html: div,
+          });
+          lightweightOverlayStateRef.current[kind].push(oid);
+          overlaysAdded += 1;
+        });
+      }
+      if (overlaysAdded === 0) {
+        const overlays = inst.get("overlays");
+        const registry = inst.get("elementRegistry");
+        const firstEl = registry.getAll().find((e) => e.id && !String(e.id).includes("_di"));
+        if (firstEl) {
+          const div = document.createElement("div");
+          div.className = "fpc-overlay-v2 fpc-overlay-v2-test-card";
+          div.textContent = "TEST OVERLAY V2";
+          div.style.position = "absolute";
+          div.style.zIndex = "1000";
+          div.style.boxSizing = "border-box";
+          div.style.width = "140px";
+          div.style.height = "40px";
+          div.style.backgroundColor = "#ff00ff";
+          div.style.color = "#ffffff";
+          div.style.fontSize = "12px";
+          div.style.border = "2px solid #000000";
+          div.style.borderRadius = "6px";
+          div.style.padding = "4px 8px";
+          div.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
+          div.style.display = "flex";
+          div.style.alignItems = "center";
+          div.style.justifyContent = "center";
+          div.style.pointerEvents = "none";
+          const oid = overlays.add(firstEl.id, {
+            position: { top: -20, left: 10 },
+            html: div,
+          });
+          lightweightOverlayStateRef.current[kind].push(oid);
+          // eslint-disable-next-line no-console
+          console.warn("[FPC-OVERLAY-V2] mounted fallback test card on", firstEl.id);
+        } else {
+          // eslint-disable-next-line no-console
+          console.warn("[FPC-OVERLAY-V2] no element found for fallback test card");
+        }
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[FPC-OVERLAY-V2] mount error", err);
+    }
   }
 
   function clearBottleneckDecor(inst, kind) {
@@ -4778,17 +4827,13 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   async function renderViewer(nextXml) {
     const result = await renderViewerDiagram(createRenderLifecycleCtx(), nextXml);
-    if (typeof window !== "undefined" && window.__FPC_LIGHTWEIGHT_OVERLAYS__) {
-      await mountLightweightOverlays(viewerRef.current, "viewer");
-    }
+    await mountLightweightOverlays(viewerRef.current, "viewer");
     return result;
   }
 
   async function renderModeler(nextXml) {
     const result = await renderModelerDiagram(createRenderLifecycleCtx(), nextXml);
-    if (typeof window !== "undefined" && window.__FPC_LIGHTWEIGHT_OVERLAYS__) {
-      await mountLightweightOverlays(modelerRef.current, "editor");
-    }
+    await mountLightweightOverlays(modelerRef.current, "editor");
     return result;
   }
 
