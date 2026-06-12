@@ -139,7 +139,7 @@ export const apiRoutes = {
     export: (sessionId) => `/api/sessions/${encode(sessionId)}/export`,
     bpmn: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/bpmn`, {
       raw: options?.raw === true ? "1" : "",
-      include_overlay: options?.includeOverlay === false ? "0" : (options?.includeOverlay === true ? "1" : ""),
+      include_overlay: options?.includeOverlay === false ? "0" : "",
       _ts: options?.cacheBust === true ? String(Date.now()) : "",
     }),
     bpmnVersions: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/bpmn/versions`, {

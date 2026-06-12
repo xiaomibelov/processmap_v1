@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { useFeatureFlag } from "../../features/config/featureFlagsContext.jsx";
+import { useFeatureFlag } from "../../features/config/featureFlagsContext";
 import { apiDeleteBpmnXml, apiGetBpmnXml, apiGetOverlays, apiPutBpmnXml } from "../../lib/api/bpmnApi";
 import { apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
@@ -32,9 +32,6 @@ import {
   renderViewerDiagram,
 } from "../../features/process/bpmn/stage/orchestration/bpmnRenderRuntimeLifecycle";
 import { readOverlayCanvasZoom } from "../../features/process/bpmn/stage/decor/overlayLayoutModel.js";
-import { renderHybridOverlays } from "../../features/process/overlays/overlayRenderer";
-import { OverlayPanel } from "../../features/process/overlays/OverlayPanel";
-import "../../features/process/overlays/overlayStyles.css";
 import forceTaskResizeRulesModule from "../../features/process/bpmn/runtime/modules/forceTaskResizeRules";
 import {
   saveBpmnSnapshot,
@@ -1305,7 +1302,6 @@ const BpmnStage = forwardRef(function BpmnStage({
   const propertiesOverlayStateRef = useRef({ viewer: {}, editor: {} });
   const propertiesOverlayZoomBucketRef = useRef({ viewer: "", editor: "" });
   const lightweightOverlayStateRef = useRef({ viewer: [], editor: [] });
-  const hybridOverlayRef = useRef({ viewer: null, editor: null });
   const settledSelectionFanoutRef = useRef({ viewer: "", editor: "" });
   const playbackDecorStateRef = useRef({
     viewer: createPlaybackDecorRuntimeState(),
@@ -4203,7 +4199,6 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   function clearLightweightOverlays(inst, kind) {
-    clearHybridOverlays(kind);
     if (!inst) return;
     try {
       const overlays = inst.get("overlays");
@@ -4215,38 +4210,15 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   const lightweightOverlaysEnabled = useFeatureFlag("lightweightOverlays");
-  const hybridOverlaysEnabled = useFeatureFlag("__FPC_OVERLAY_V2__");
-  const [overlayPanelItems, setOverlayPanelItems] = useState([]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (lightweightOverlaysEnabled || hybridOverlaysEnabled) {
-      if (viewerRef.current) mountLightweightOverlays(viewerRef.current, "viewer");
-      if (modelerRef.current) mountLightweightOverlays(modelerRef.current, "editor");
-    }
-  }, [lightweightOverlaysEnabled, hybridOverlaysEnabled]);
 
   async function mountLightweightOverlays(inst, kind) {
-    if (!inst || typeof window === "undefined") return;
-    if (!lightweightOverlaysEnabled && !hybridOverlaysEnabled) return;
+    if (!inst || typeof window === "undefined" || !lightweightOverlaysEnabled) return;
     const sid = String(activeSessionRef.current || sessionId || "").trim();
     if (!sid) return;
     clearLightweightOverlays(inst, kind);
     try {
       const resp = await apiGetOverlays(sid);
       if (!resp.ok || !Array.isArray(resp.overlays)) return;
-
-      if (hybridOverlaysEnabled) {
-        hybridOverlayRef.current[kind]?.clear?.();
-        const onPanelItems = kind === "viewer"
-          ? (items) => setOverlayPanelItems(items)
-          : () => {};
-        hybridOverlayRef.current[kind] = renderHybridOverlays(inst, resp.overlays, {
-          onPanelItems,
-        });
-        return;
-      }
-
       const overlays = inst.get("overlays");
       const registry = inst.get("elementRegistry");
       resp.overlays.forEach((ovl) => {
@@ -4266,11 +4238,6 @@ const BpmnStage = forwardRef(function BpmnStage({
         lightweightOverlayStateRef.current[kind].push(oid);
       });
     } catch {}
-  }
-
-  function clearHybridOverlays(kind) {
-    hybridOverlayRef.current[kind]?.clear?.();
-    hybridOverlayRef.current[kind] = null;
   }
 
   function clearBottleneckDecor(inst, kind) {
@@ -4790,39 +4757,9 @@ const BpmnStage = forwardRef(function BpmnStage({
     };
   }
 
-  function hideNativeTextAnnotations(inst) {
-    if (!inst) return;
-    try {
-      const registry = inst.get("elementRegistry");
-      asArray(registry?.filter?.((el) => el.type === "bpmn:TextAnnotation")).forEach((el) => {
-        const gfx = registry.getGraphics(el);
-        if (gfx) gfx.style.display = "none";
-      });
-    } catch {}
-    try {
-      const overlays = inst.get("overlays");
-      const map = overlays?._overlays || {};
-      Object.entries(map).forEach(([id, o]) => {
-        if (o?.type === "fpc-properties" || o?.element?.classList?.contains("djs-overlay-fpc")) {
-          try { overlays.remove(id); } catch {}
-        }
-      });
-    } catch {}
-    if (typeof document !== "undefined" && !document.getElementById("fpc-hide-text-annotations")) {
-      const s = document.createElement("style");
-      s.id = "fpc-hide-text-annotations";
-      s.textContent = '.djs-element.djs-shape[data-element-id^="TextAnnotation_"]{display:none !important}';
-      document.head.appendChild(s);
-    }
-  }
-
   async function renderViewer(nextXml) {
     const result = await renderViewerDiagram(createRenderLifecycleCtx(), nextXml);
-    hideNativeTextAnnotations(viewerRef.current);
-    if (typeof window !== "undefined") {
-      if (lightweightOverlaysEnabled || hybridOverlaysEnabled) {
-        try { viewerRef.current?.get?.("overlays")?.clear(); } catch {}
-      }
+    if (typeof window !== "undefined" && window.__FPC_LIGHTWEIGHT_OVERLAYS__) {
       await mountLightweightOverlays(viewerRef.current, "viewer");
     }
     return result;
@@ -4830,11 +4767,7 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   async function renderModeler(nextXml) {
     const result = await renderModelerDiagram(createRenderLifecycleCtx(), nextXml);
-    hideNativeTextAnnotations(modelerRef.current);
-    if (typeof window !== "undefined") {
-      if (lightweightOverlaysEnabled || hybridOverlaysEnabled) {
-        try { modelerRef.current?.get?.("overlays")?.clear(); } catch {}
-      }
+    if (typeof window !== "undefined" && window.__FPC_LIGHTWEIGHT_OVERLAYS__) {
       await mountLightweightOverlays(modelerRef.current, "editor");
     }
     return result;
@@ -5951,7 +5884,6 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   return (
     <div className="bpmnStage">
-      {hybridOverlaysEnabled ? <OverlayPanel items={overlayPanelItems} /> : null}
       {err ? (
         <div className="badge err" style={{ marginBottom: 10 }}>
           {err}

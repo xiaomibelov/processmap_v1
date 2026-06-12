@@ -210,12 +210,10 @@ def bpmn_versions_list(
     session_id: str,
     *,
     request: Any = None,
-    limit: int = 100,
-    include_xml: int = 0,
 ) -> Dict[str, Any]:
     """List BPMN version snapshots for a session."""
     import backend.app._legacy_main as _lm
-    return _lm.session_bpmn_versions_list(session_id, request=request, limit=limit, include_xml=include_xml)
+    return _lm.session_bpmn_versions_list(session_id, request=request)
 
 
 def bpmn_version_detail(
