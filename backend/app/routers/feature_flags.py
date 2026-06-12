@@ -13,6 +13,7 @@ _DEFAULT_FLAGS: Dict[str, str] = {
     "bpmn_fps_meter_enabled": "0",
     "canvas_profiler_enabled": "0",
     "lightweightOverlays": "0",
+    "__FPC_OVERLAY_V2__": "0",
 }
 
 
