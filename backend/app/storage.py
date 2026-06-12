@@ -1740,6 +1740,13 @@ def _ensure_schema() -> None:
                 """,
                 ["lightweightOverlays", "false", "Enable lightweight JSON overlays instead of monolithic XML", int(time.time())],
             )
+            con.execute(
+                """
+                INSERT OR IGNORE INTO feature_flags (key, value, description, updated_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                ["__FPC_OVERLAY_V2__", "false", "Enable hybrid overlay Variant F", int(time.time())],
+            )
             con.commit()
         _SCHEMA_READY = True
         _SCHEMA_DB_FILE = db_file
