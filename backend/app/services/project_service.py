@@ -218,7 +218,7 @@ def put_project(project_id: str, inp, request: Optional[Request] = None) -> dict
 
 def delete_project(project_id: str, request: Optional[Request] = None):
     # Thin wrapper — cascading delete + session invalidation stays in legacy for now.
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.delete_project_api(project_id, request)
 
 
@@ -267,5 +267,5 @@ def _invalidate_workspace_cache_for_org(org_id: Any) -> None:
 
 
 def _invalidate_explorer_children_for_project(project_id: Any, org_id: Any) -> None:
-    from ..storage import invalidate_explorer_children
-    invalidate_explorer_children(str(project_id or "").strip(), str(org_id or "").strip() or get_default_org_id())
+    import app._legacy_main as _lm
+    _lm._invalidate_explorer_children_for_project(project_id, org_id)

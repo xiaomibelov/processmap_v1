@@ -8083,6 +8083,20 @@ def _build_invite_link(base_url: str, token: str) -> str:
     return f"{base}/accept-invite?token={invite_token}"
 
 
+def _with_invite_links(items: List[Dict[str, Any]], base_url: str) -> List[Dict[str, Any]]:
+    for item in items:
+        token = str(item.get("token") or item.get("invite_key") or "").strip()
+        item["invite_link"] = _build_invite_link(base_url, token)
+    return items
+
+
+def _pick_current_org_invite(items: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    for item in items:
+        if not item.get("used_at") and not item.get("revoked_at"):
+            return item
+    return None
+
+
 def _send_org_invite_email(
     *,
     to_email: str,
@@ -10138,3 +10152,515 @@ _oc_mod.fetch_session_bpmn = _wired_fetch_session_bpmn
 _oc_mod.fetch_annotations = _wired_fetch_annotations
 _oc_mod.compute_overlays_json = _wired_compute_overlays_json
 _oc_mod.render_overlay_xml = _wired_render_overlay_xml
+
+
+
+
+# Restored legacy session helpers removed by router split
+def list_project_sessions(project_id: str, mode: str | None = None, view: str | None = None, request: Request = None):
+    proj, oid, _ = _legacy_load_project_scoped(project_id, request)
+    if proj is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    raw_mode = mode
+    mode = _norm_project_session_mode(mode)
+    if raw_mode is not None and mode is None:
+        raise HTTPException(status_code=422, detail="invalid mode; allowed: quick_skeleton, deep_audit")
+    view_mode = _norm_project_sessions_view(view)
+    if not view_mode:
+        raise HTTPException(status_code=422, detail="invalid view; allowed: summary, full")
+    st = get_storage()
+    if view_mode == "summary":
+        return st.list_project_session_summaries(project_id=project_id, mode=mode, limit=500, org_id=oid, is_admin=True)
+    rows = st.list(project_id=project_id, mode=mode, limit=500, org_id=oid, is_admin=True)
+    out = []
+    for row in rows:
+        if isinstance(row, dict):
+            out.append(_session_api_dump(Session.model_validate(row)))
+    return out
+
+
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
+@app.post("/api/projects/{project_id}/sessions")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
+def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | None = Query(default="quick_skeleton"), request: Request = None):
+    user = _request_auth_user(request) if request is not None else {}
+    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
+    proj, oid, _ = _legacy_load_project_scoped(project_id, request)
+    if proj is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    role = _org_role_for_request(request, oid) if request is not None and oid else ""
+    if not _can_edit_workspace(role, is_admin=is_admin):
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    st = get_storage()
+    title = _clean_name(getattr(inp, "title", None) or "process") or "process"
+    sibling_titles = {
+        _clean_name(str((row or {}).get("title") or ""))
+        for row in st.list(project_id=project_id, mode=mode, limit=500, org_id=oid, is_admin=True)
+    }
+    if title in sibling_titles:
+        raise HTTPException(status_code=409, detail="session title already exists")
+    roles = _norm_roles(getattr(inp, "roles", None))
+    sr = getattr(inp, "start_role", None)
+    if sr is not None and str(sr).strip() != "":
+        sr = str(sr).strip()
+        if roles and sr not in roles:
+            return {"error": "start_role must be one of roles", "start_role": sr, "roles": roles}
+    else:
+        sr = None
+    prep_questions = _norm_prep_questions(getattr(inp, "ai_prep_questions", None))
+    # prefer storage-native create signature if it supports project_id/mode
+    try:
+        sid = st.create(title=title, roles=roles, start_role=sr, project_id=project_id, mode=mode, user_id=user_id, org_id=oid)
+        sess = st.load(sid, org_id=oid, is_admin=True)
+        if sess is None:
+            raise HTTPException(status_code=500, detail="session not persisted")
+        if prep_questions:
+            sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
+            st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+        _audit_log_safe(
+            request,
+            org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
+            action="session.create",
+            entity_type="session",
+            entity_id=str(getattr(sess, "id", "") or sid),
+            project_id=project_id,
+            session_id=str(getattr(sess, "id", "") or sid),
+            meta={"mode": str(getattr(sess, "mode", "") or ""), "title": str(getattr(sess, "title", "") or "")},
+        )
+        _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
+        return _session_api_dump(sess)
+    except TypeError:
+        # fallback: create base session then attach fields
+        sid = st.create(title=title, roles=roles, start_role=sr, user_id=user_id, org_id=oid)
+        sess = st.load(sid, org_id=oid, is_admin=True)
+        if sess is None:
+            raise HTTPException(status_code=500, detail="session not persisted")
+        if hasattr(sess, "project_id"):
+            sess.project_id = project_id
+        if hasattr(sess, "mode"):
+            sess.mode = mode
+        if prep_questions:
+            sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
+        st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+        _audit_log_safe(
+            request,
+            org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
+            action="session.create",
+            entity_type="session",
+            entity_id=str(getattr(sess, "id", "") or sid),
+            project_id=project_id,
+            session_id=str(getattr(sess, "id", "") or sid),
+            meta={"mode": str(getattr(sess, "mode", "") or ""), "title": str(getattr(sess, "title", "") or ""), "fallback": True},
+        )
+        _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
+        return _session_api_dump(sess)
+
+
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
+@app.get("/api/sessions")
+def list_sessions(q: Optional[str] = None, limit: int = 200, request: Request = None) -> Dict[str, Any]:
+    oid = _request_active_org_id(request) if request is not None else ""
+    scope = _project_scope_for_request(request, oid or get_default_org_id())
+    allowed = _scope_allowed_project_ids(scope)
+    st = get_storage()
+    items = st.list(query=q, limit=min(max(int(limit), 1), 500), org_id=(oid or None), is_admin=True)
+    if allowed:
+        items = [
+            item for item in items
+            if str((item or {}).get("project_id") or "").strip() in allowed
+        ]
+    return {"items": items, "count": len(items)}
+
+
+# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
+@app.get("/api/sessions/{session_id}")
+def get_session(session_id: str, request: Request = None) -> Dict[str, Any]:
+    sess, _, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return {"error": "not found"}
+    sid = str(getattr(sess, "id", "") or session_id).strip()
+    version_token = session_open_version_token(sess)
+    cache_key = session_open_cache_key(sid, version_token)
+    cached = cache_get_json(cache_key)
+    if isinstance(cached, dict):
+        logger.info(
+            "session_open_cache: hit session_id=%s version=%s",
+            sid,
+            version_token,
+        )
+        return cached
+    logger.info(
+        "session_open_cache: miss session_id=%s version=%s",
+        sid,
+        version_token,
+    )
+    payload = _session_api_dump(sess)
+    if cache_set_json(cache_key, payload, ttl_sec=session_open_cache_ttl_sec()):
+        logger.info(
+            "session_open_cache: write session_id=%s version=%s",
+            sid,
+            version_token,
+        )
+    return payload
+
+
+@app.post("/api/sessions/{session_id}/presence")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
+def touch_session_presence_api(
+    session_id: str,
+    inp: SessionPresenceTouchIn,
+    request: Request = None,
+) -> Dict[str, Any]:
+    user_id, is_admin = _request_user_meta(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="authentication required")
+    sess, oid, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        raise HTTPException(status_code=404, detail="session not found")
+    client_id = _normalize_session_presence_client_id(getattr(inp, "client_id", ""))
+    if not client_id:
+        raise HTTPException(status_code=422, detail="client_id is required")
+    surface = _normalize_session_presence_surface(getattr(inp, "surface", "process_stage"))
+    sid = str(getattr(sess, "id", "") or session_id).strip()
+    project_id = str(getattr(sess, "project_id", "") or "").strip()
+    org_id = str(oid or getattr(sess, "org_id", "") or get_default_org_id()).strip()
+    active_org_id = _request_active_org_id(request) if request is not None else org_id
+    if active_org_id and org_id and active_org_id != org_id:
+        raise HTTPException(status_code=404, detail="session not found")
+    if not _user_is_member_of_org(user_id, org_id, is_admin=is_admin):
+        raise HTTPException(status_code=404, detail="session not found")
+    now = int(time.time())
+    touch_session_presence(
+        sid,
+        user_id,
+        client_id,
+        org_id=org_id,
+        project_id=project_id,
+        surface=surface,
+        now_ts=now,
+    )
+    prune_stale_session_presence(ttl_seconds=_SESSION_PRESENCE_TTL_SECONDS, now_ts=now)
+    active_users = list_session_presence(
+        sid,
+        org_id=org_id,
+        project_id=project_id,
+        ttl_seconds=_SESSION_PRESENCE_TTL_SECONDS,
+        now_ts=now,
+        current_user_id=user_id,
+    )
+    return {
+        "ok": True,
+        "session_id": sid,
+        "ttl_seconds": _SESSION_PRESENCE_TTL_SECONDS,
+        "active_users": active_users,
+    }
+
+
+@app.delete("/api/sessions/{session_id}/presence")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
+def leave_session_presence_api(
+    session_id: str,
+    inp: SessionPresenceTouchIn,
+    request: Request = None,
+) -> Dict[str, Any]:
+    user_id, is_admin = _request_user_meta(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="authentication required")
+    sess, oid, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        raise HTTPException(status_code=404, detail="session not found")
+    client_id = _normalize_session_presence_client_id(getattr(inp, "client_id", ""))
+    if not client_id:
+        raise HTTPException(status_code=422, detail="client_id is required")
+    sid = str(getattr(sess, "id", "") or session_id).strip()
+    project_id = str(getattr(sess, "project_id", "") or "").strip()
+    org_id = str(oid or getattr(sess, "org_id", "") or get_default_org_id()).strip()
+    active_org_id = _request_active_org_id(request) if request is not None else org_id
+    if active_org_id and org_id and active_org_id != org_id:
+        raise HTTPException(status_code=404, detail="session not found")
+    if not _user_is_member_of_org(user_id, org_id, is_admin=is_admin):
+        raise HTTPException(status_code=404, detail="session not found")
+    removed = leave_session_presence(
+        sid,
+        user_id,
+        client_id,
+        org_id=org_id,
+        project_id=project_id,
+    )
+    prune_stale_session_presence(ttl_seconds=_SESSION_PRESENCE_TTL_SECONDS)
+    return {
+        "ok": True,
+        "session_id": sid,
+        "removed": removed,
+    }
+
+
+@app.get("/api/sessions/{session_id}/tldr")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
+def patch_node(session_id: str, node_id: str, inp: NodePatchIn, request: Request = None) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+
+    node = next((n for n in s.nodes if n.id == node_id), None)
+    if not node:
+        return {"error": "node not found"}
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(
+            request=request,
+            payload=inp.model_dump(exclude_unset=True),
+        ),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
+
+    data = inp.model_dump(exclude_unset=True)
+
+    if "title" in data:
+        node.title = data["title"] or node.title
+        node.parameters["_manual_title"] = True
+    if "type" in data:
+        node.type = data["type"] or node.type
+        node.parameters["_manual_type"] = True
+    if "actor_role" in data:
+        node.actor_role = data["actor_role"] or None
+        node.parameters["_manual_actor"] = True
+    if "recipient_role" in data:
+        node.recipient_role = data["recipient_role"] or None
+        node.parameters["_manual_recipient"] = True
+    if "equipment" in data and data["equipment"] is not None:
+        node.equipment = data["equipment"]
+        node.parameters["_manual_equipment"] = True
+    if "duration_min" in data:
+        node.duration_min = data["duration_min"]
+        node.parameters["_manual_duration"] = True
+    if "parameters" in data and data["parameters"] is not None:
+        node.parameters = data["parameters"]
+        node.parameters["_manual_parameters"] = True
+    if "disposition" in data and data["disposition"] is not None:
+        node.disposition = data["disposition"]
+        node.parameters["_manual_disposition"] = True
+
+    s = _recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["nodes"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
+    st.save(s)
+    return s.model_dump()
+
+
+@app.post("/api/sessions/{session_id}/nodes")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
+def add_node(session_id: str, inp: CreateNodeIn, request: Request = None) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(
+            request=request,
+            payload=inp.model_dump(exclude_unset=True),
+        ),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
+
+    node_id = (inp.id or "").strip() or f"n_{uuid.uuid4().hex[:8]}"
+    if any(n.id == node_id for n in s.nodes):
+        return {"error": "node already exists", "node_id": node_id}
+
+    node = Node(
+        id=node_id,
+        title=inp.title,
+        type=inp.type or "step",
+        actor_role=inp.actor_role,
+        recipient_role=inp.recipient_role,
+        equipment=list(inp.equipment or []),
+        parameters=dict(inp.parameters or {}),
+        duration_min=inp.duration_min,
+        disposition=dict(inp.disposition or {}),
+        qc=[],
+        exceptions=[],
+        evidence=[],
+        confidence=0.0,
+    )
+    s.nodes.append(node)
+
+    s = _recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["nodes"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
+    st.save(s)
+    return s.model_dump()
+
+
+@app.delete("/api/sessions/{session_id}/nodes/{node_id}")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
+def delete_node(session_id: str, node_id: str, request: Request = None) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(request=request),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
+
+    before_n = len(s.nodes)
+    s.nodes = [n for n in s.nodes if n.id != node_id]
+    if len(s.nodes) == before_n:
+        return {"error": "node not found"}
+
+    s.edges = [e for e in s.edges if e.from_id != node_id and e.to_id != node_id]
+
+    s = _recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["nodes", "edges"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
+    st.save(s)
+    return s.model_dump()
+
+
+@app.post("/api/sessions/{session_id}/edges")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
+def add_edge(session_id: str, inp: CreateEdgeIn, request: Request = None) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(
+            request=request,
+            payload=inp.model_dump(exclude_unset=True),
+        ),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
+
+    if not any(n.id == inp.from_id for n in s.nodes):
+        return {"error": "from_id not found", "from_id": inp.from_id}
+    if not any(n.id == inp.to_id for n in s.nodes):
+        return {"error": "to_id not found", "to_id": inp.to_id}
+
+    exists = any((e.from_id == inp.from_id and e.to_id == inp.to_id and (e.when or None) == (inp.when or None)) for e in s.edges)
+    if exists:
+        return {"error": "edge already exists"}
+
+    s.edges.append(Edge(from_id=inp.from_id, to_id=inp.to_id, when=inp.when))
+
+    s = _recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["edges"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
+    st.save(s)
+    return s.model_dump()
+
+
+@app.delete("/api/sessions/{session_id}/edges")
+  # DEPRECATED: moved to routers/sessions.py + session_service.py
+def delete_edge(session_id: str, inp: CreateEdgeIn, request: Request = None) -> Dict[str, Any]:
+    st = get_storage()
+    s = st.load(session_id)
+    if not s:
+        return {"error": "not found"}
+    _require_diagram_cas_or_409(
+        sess=s,
+        session_id=session_id,
+        request=request,
+        client_base_version=_resolve_base_diagram_state_version(
+            request=request,
+            payload=inp.model_dump(exclude_unset=True),
+        ),
+    )
+    _, actor_user_id, actor_label = _resolve_actor_context(request)
+
+    before = len(s.edges)
+    s.edges = [
+        e for e in s.edges
+        if not (e.from_id == inp.from_id and e.to_id == inp.to_id and (e.when or None) == (inp.when or None))
+    ]
+    if len(s.edges) == before:
+        return {"error": "edge not found"}
+
+    s = _recompute_session(s)
+    _mark_diagram_truth_write(
+        s,
+        changed_keys=["edges"],
+        actor_user_id=actor_user_id,
+        actor_label=actor_label,
+    )
+    st.save(s)
+    return s.model_dump()
+
+
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
+
+
+# Legacy test compatibility re-exports (router/service split).
+# Only back-fill symbols that were removed from this module; do not shadow
+# existing legacy implementations to avoid recursion.
+try:
+    if 'auth_invite_activate' not in globals():
+        from app.routers.auth import auth_invite_activate, auth_invite_preview, auth_me  # noqa: F401
+    if 'cleanup_org_audit_endpoint' not in globals():
+        from app.routers.org import (
+            cleanup_org_audit_endpoint,
+            get_org_git_mirror_endpoint,
+            list_org_audit_endpoint,
+            patch_org_endpoint,
+            patch_org_git_mirror_endpoint,
+        )  # noqa: F401
+    if 'create_session' not in globals():
+        from app.routers.sessions import create_session  # noqa: F401
+    if 'create_org_project' not in globals():
+        from app.services.org_service import create_org_project, get_org_project  # noqa: F401
+    if 'create_project' not in globals():
+        from app.services.project_service import create_project, list_projects, patch_project  # noqa: F401
+    _session_reexports = {
+        'add_edge', 'add_node', 'create_project_session', 'delete_edge', 'delete_node',
+        'get_session', 'list_project_sessions', 'patch_node',
+    }
+    if not _session_reexports.issubset(globals()):
+        from app.services.session_service import (
+            add_edge,
+            add_node,
+            create_project_session,
+            delete_edge,
+            delete_node,
+            get_session,
+            list_project_sessions,
+            patch_node,
+        )  # noqa: F401
+except Exception:  # pragma: no cover
+    pass

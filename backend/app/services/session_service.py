@@ -41,7 +41,7 @@ def create_session(
         session_repo.save(sess, user_id=user_id, org_id=org_id, is_admin=True)
     # Note: _recompute_session and _session_api_dump are still in _legacy_main.py
     # Full extraction requires moving those helpers first.
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     sess = _lm._recompute_session(sess)
     session_repo.save(sess, user_id=user_id, org_id=org_id, is_admin=True)
     _lm._invalidate_session_caches(sess, org_id=org_id or getattr(sess, "org_id", "") or "")
@@ -59,7 +59,7 @@ def get_session(
     sess = session_repo.load(session_id, user_id=user_id, org_id=org_id, is_admin=is_admin)
     if not sess:
         return {"error": "not found"}
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm._session_api_dump(sess)
 
 
@@ -112,7 +112,7 @@ def list_project_sessions(
     # Filter by project_id in memory (storage.list does not support project_id filter directly)
     rows = [r for r in rows if str((r or {}).get("project_id") or "").strip() == project_id]
     out = []
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     for row in rows:
         if isinstance(row, dict):
             out.append(_lm._session_api_dump(Session.model_validate(row)))
@@ -142,7 +142,7 @@ def bpmn_meta_get(session_id: str) -> Dict[str, Any]:
     # CROSS-DOMAIN: depends on _collect_sequence_flow_meta, _normalize_bpmn_meta,
     # _enforce_gateway_tier_constraints in _legacy_main.py.
     # Full extraction requires migrating those helpers first.
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.session_bpmn_meta_get(session_id)
 
 
@@ -153,7 +153,7 @@ def bpmn_meta_patch(
 ) -> Dict[str, Any]:
     """Patch BPMN metadata."""
     # CROSS-DOMAIN: depends on _require_diagram_cas_or_409, _mark_diagram_truth_write.
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.session_bpmn_meta_patch(session_id, inp, request)
 
 
@@ -164,7 +164,7 @@ def bpmn_meta_infer_rtiers(
 ) -> Dict[str, Any]:
     """Infer RTIers from BPMN meta."""
     # CROSS-DOMAIN: depends on infer_rtiers pipeline in _legacy_main.py.
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.session_bpmn_meta_infer_rtiers(session_id, inp, request)
 
 
@@ -182,7 +182,7 @@ def bpmn_export(
     # CROSS-DOMAIN: depends on _overlay_interview_annotations_on_bpmn_xml,
     # _session_graph_fingerprint, _create_bpmn_revision_snapshot_if_needed,
     # _mark_diagram_truth_write, exporters.bpmn in _legacy_main.py.
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.session_bpmn_export(
         session_id,
         raw=raw,
@@ -202,7 +202,7 @@ def bpmn_save(
     """Save BPMN XML to session."""
     # CROSS-DOMAIN: depends on _require_diagram_cas_or_409, _mark_diagram_truth_write,
     # _create_bpmn_revision_snapshot_if_needed, _resolve_base_diagram_state_version.
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.session_bpmn_save(session_id, inp, request)
 
 
@@ -210,10 +210,12 @@ def bpmn_versions_list(
     session_id: str,
     *,
     request: Any = None,
+    limit: int = 100,
+    include_xml: int = 0,
 ) -> Dict[str, Any]:
     """List BPMN version snapshots for a session."""
-    import backend.app._legacy_main as _lm
-    return _lm.session_bpmn_versions_list(session_id, request=request)
+    import app._legacy_main as _lm
+    return _lm.session_bpmn_versions_list(session_id, request=request, limit=limit, include_xml=include_xml)
 
 
 def bpmn_version_detail(
@@ -222,7 +224,7 @@ def bpmn_version_detail(
     request: Any = None,
 ) -> Dict[str, Any]:
     """Get a single BPMN version snapshot."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.session_bpmn_version_detail(session_id, version_id, request)
 
 
@@ -234,7 +236,7 @@ def bpmn_restore(
     """Restore a BPMN version snapshot."""
     # CROSS-DOMAIN: depends on _latest_user_facing_bpmn_version,
     # _create_bpmn_revision_snapshot_if_needed, _mark_diagram_truth_write.
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.session_bpmn_restore(session_id, version_id, request)
 
 
@@ -244,7 +246,7 @@ def bpmn_clear(
 ) -> Dict[str, Any]:
     """Clear BPMN XML from session."""
     # CROSS-DOMAIN: depends on _require_diagram_cas_or_409, _mark_diagram_truth_write.
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.session_bpmn_clear(session_id, request)
 
 
@@ -314,7 +316,7 @@ def patch_node(session_id: str, node_id: str, inp, request=None) -> Dict[str, An
         node.disposition = data["disposition"]
         node.parameters["_manual_disposition"] = True
 
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     s = _lm._recompute_session(s)
     _mark_diagram_truth_write(
         s,
@@ -365,7 +367,7 @@ def add_node(session_id: str, inp, request=None) -> Dict[str, Any]:
     )
     s.nodes.append(node)
 
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     s = _lm._recompute_session(s)
     _mark_diagram_truth_write(
         s,
@@ -399,7 +401,7 @@ def delete_node(session_id: str, node_id: str, request=None) -> Dict[str, Any]:
 
     s.edges = [e for e in s.edges if e.from_id != node_id and e.to_id != node_id]
 
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     s = _lm._recompute_session(s)
     _mark_diagram_truth_write(
         s,
@@ -443,7 +445,7 @@ def add_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
 
     s.edges.append(Edge(from_id=inp.from_id, to_id=inp.to_id, when=inp.when))
 
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     s = _lm._recompute_session(s)
     _mark_diagram_truth_write(
         s,
@@ -481,7 +483,7 @@ def delete_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
     if len(s.edges) == before:
         return {"error": "edge not found"}
 
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     s = _lm._recompute_session(s)
     _mark_diagram_truth_write(
         s,
@@ -501,37 +503,37 @@ def delete_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
 
 def post_notes(session_id: str, inp, request=None) -> Dict[str, Any]:
     """Save notes and run AI extraction."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.post_notes(session_id, inp, request)
 
 
 def post_notes_extraction_apply(session_id: str, inp, request=None) -> Dict[str, Any]:
     """Apply a note-extraction result to the session."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.post_notes_extraction_apply(session_id, inp, request)
 
 
 def post_notes_extraction_preview(session_id: str, inp, request=None) -> Dict[str, Any]:
     """Preview a note-extraction result without saving."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.post_notes_extraction_preview(session_id, inp, request)
 
 
 def answer(session_id: str, inp, request=None) -> Dict[str, Any]:
     """Apply an answer to a session question."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.answer(session_id, inp, request)
 
 
 def answer_v2(session_id: str, inp, request=None) -> Dict[str, Any]:
     """Apply an answer to a session question (v2)."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.answer_v2(session_id, inp, request)
 
 
 def ai_questions(session_id: str, inp, request=None) -> Dict[str, Any]:
     """Generate AI questions for a session."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.ai_questions(session_id, inp, request)
 
 
@@ -539,13 +541,13 @@ def ai_questions(session_id: str, inp, request=None) -> Dict[str, Any]:
 
 def export(session_id: str) -> Dict[str, Any]:
     """Export session as JSON."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.export(session_id)
 
 
 def export_zip(session_id: str):
     """Export session as ZIP."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.export_zip(session_id)
 
 
@@ -553,25 +555,25 @@ def export_zip(session_id: str):
 
 def list_org_session_report_versions(org_id: str, session_id: str, request=None, path_id: str = "", steps_hash: str = ""):
     """List report versions for an org-scoped session."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.list_org_session_report_versions(org_id, session_id, request, path_id, steps_hash)
 
 
 def build_org_session_report(org_id: str, session_id: str, inp, request=None):
     """Build a report for an org-scoped session."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.build_org_session_report(org_id, session_id, inp, request)
 
 
 def get_org_session_report_version(org_id: str, session_id: str, version_id: str, request=None, path_id: str = ""):
     """Get a specific report version for an org-scoped session."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.get_org_session_report_version(org_id, session_id, version_id, request, path_id)
 
 
 def delete_org_session_report_version(org_id: str, session_id: str, version_id: str, request=None, path_id: str = ""):
     """Delete a report version for an org-scoped session."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.delete_org_session_report_version(org_id, session_id, version_id, request, path_id)
 
 
@@ -579,47 +581,47 @@ def delete_org_session_report_version(org_id: str, session_id: str, version_id: 
 
 def create_project_session(project_id: str, inp, mode: str = "quick_skeleton", request=None):
     """Create a session inside a project."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.create_project_session(project_id, inp, mode, request)
 
 
 def touch_session_presence(session_id: str, inp, request=None):
     """Touch session presence."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.touch_session_presence_api(session_id, inp, request)
 
 
 def leave_session_presence(session_id: str, inp, request=None):
     """Leave session presence."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.leave_session_presence_api(session_id, inp, request)
 
 
 def get_session_tldr(session_id: str, request=None):
     """Get session TLDR."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.get_session_tldr(session_id, request)
 
 
 def get_session_analytics(session_id: str, request=None):
     """Get session analytics."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.get_session_analytics(session_id, request)
 
 
 def patch_session(session_id: str, inp, request=None):
     """Patch session metadata."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.patch_session(session_id, inp, request)
 
 
 def put_session(session_id: str, inp, request=None):
     """Replace session metadata."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.put_session(session_id, inp, request)
 
 
 def recompute_session(session_id: str):
     """Recompute derived fields for a session."""
-    import backend.app._legacy_main as _lm
+    import app._legacy_main as _lm
     return _lm.recompute(session_id)
