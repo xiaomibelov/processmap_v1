@@ -1,27 +1,5 @@
 import { applyFullBpmnDecorSet } from "./runBpmnRenderDecorSync";
 
-function hideTextAnnotations(inst) {
-  try {
-    const registry = inst?.get?.("elementRegistry");
-    if (registry) {
-      registry
-        .filter((el) => el.type === "bpmn:TextAnnotation")
-        .forEach((el) => {
-          const gfx = registry.getGraphics(el);
-          if (gfx) gfx.style.display = "none";
-        });
-    }
-    if (typeof document !== "undefined" && !document.getElementById("fpc-hide-text-annotations")) {
-      const s = document.createElement("style");
-      s.id = "fpc-hide-text-annotations";
-      s.textContent = '.djs-element.djs-shape[data-element-id^="TextAnnotation_"]{display:none !important}';
-      document.head.appendChild(s);
-    }
-  } catch {
-    // ignore
-  }
-}
-
 export async function renderViewerDiagram(ctx, nextXml) {
   const {
     ensureViewer,
@@ -79,7 +57,6 @@ export async function renderViewerDiagram(ctx, nextXml) {
   });
   logBpmnTrace("importXML.viewer.before", nextXml, { sid: String(sessionId || "") });
   await v.importXML(String(nextXml || ""));
-  hideTextAnnotations(v);
   if (token !== runtimeTokenRef.current || v !== viewerRef.current) return;
   viewerReadyRef.current = true;
   const registryCount = Array.isArray(v?.get?.("elementRegistry")?.getAll?.())
@@ -142,7 +119,6 @@ export async function renderViewerDiagram(ctx, nextXml) {
     applyUserNotesDecor,
     applyStepTimeDecor,
   });
-  hideTextAnnotations(v);
 }
 
 export async function renderModelerDiagram(ctx, nextXml) {
@@ -262,7 +238,6 @@ export async function renderModelerDiagram(ctx, nextXml) {
       throw new Error(String(loaded.error || loaded.reason || "importXML failed"));
     }
     if (!m || m !== modelerRef.current) return;
-    hideTextAnnotations(m);
     hydrateRobotMetaFromImportedBpmn(m, nextXml, "renderModeler");
     hydrateCamundaExtensionsFromImportedBpmn(nextXml, "renderModeler");
     try {
@@ -343,7 +318,6 @@ export async function renderModelerDiagram(ctx, nextXml) {
       applyUserNotesDecor,
       applyStepTimeDecor,
     });
-    hideTextAnnotations(m);
   })();
 
   modelerImportInFlightRef.current = { sid: sidNow, xmlHash, promise: importPromise };

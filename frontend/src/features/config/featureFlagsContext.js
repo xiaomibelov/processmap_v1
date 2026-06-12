@@ -18,24 +18,14 @@ export function FeatureFlagsProvider({ children }) {
   return <FeatureFlagsContext.Provider value={value}>{children}</FeatureFlagsContext.Provider>;
 }
 
-function readWindowFlag(key) {
-  if (typeof window === "undefined") return false;
-  const direct = window[key];
-  if (direct === true || direct === "true" || direct === "1") return true;
-  if (direct === false || direct === "false" || direct === "0") return false;
-  const legacy = window.__FPC_LIGHTWEIGHT_OVERLAYS__;
-  if (legacy === true || legacy === "true" || legacy === "1") return true;
-  return false;
-}
-
 export function useFeatureFlag(key) {
   const { flags, loading } = useContext(FeatureFlagsContext);
   if (loading) {
-    return readWindowFlag(key);
+    return typeof window !== "undefined" ? window.__FPC_LIGHTWEIGHT_OVERLAYS__ || false : false;
   }
   const val = flags[key];
   if (val === undefined) {
-    return readWindowFlag(key);
+    return typeof window !== "undefined" ? window.__FPC_LIGHTWEIGHT_OVERLAYS__ || false : false;
   }
   return String(val).toLowerCase() === "true" || String(val).toLowerCase() === "1";
 }
