@@ -551,7 +551,7 @@ export default function useBpmnSync({
       return { ok: true, xml: toText(draftRef.current?.bpmn_xml || "") };
     }
     const latest = await apiGetBpmnXml(sid, {
-      includeOverlay: !(typeof window !== "undefined" && useFeatureFlag("lightweightOverlays")),
+      includeOverlay: !(typeof window !== "undefined" && useFeatureFlag("__FPC_OVERLAY_V2__")),
     });
     if (!latest.ok) {
       return {
@@ -624,7 +624,7 @@ export default function useBpmnSync({
     }
     if (sid && !isLocal && typeof apiGetBpmnXml === "function") {
       const latest = await apiGetBpmnXml(sid, {
-        includeOverlay: !(typeof window !== "undefined" && useFeatureFlag("lightweightOverlays")),
+        includeOverlay: !(typeof window !== "undefined" && useFeatureFlag("__FPC_OVERLAY_V2__")),
       });
       if (latest?.ok) {
         const backendXml = toText(latest.xml || "");

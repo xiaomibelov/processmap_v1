@@ -4209,7 +4209,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     } catch {}
   }
 
-  const lightweightOverlaysEnabled = useFeatureFlag("lightweightOverlays");
+  const lightweightOverlaysEnabled = useFeatureFlag("__FPC_OVERLAY_V2__");
 
   async function mountLightweightOverlays(inst, kind) {
     if (!inst || typeof window === "undefined" || !lightweightOverlaysEnabled) return;
