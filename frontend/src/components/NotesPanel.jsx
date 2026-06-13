@@ -3067,8 +3067,9 @@ export default function NotesPanel({
                       checked={!!showPropertiesOverlayAlways}
                       onChange={(event) => void onShowPropertiesOverlayAlwaysChange?.(!!event.target.checked)}
                       disabled={!!disabled}
+                      data-testid="bpmn-show-properties-checkbox"
                     />
-                    <span>Всегда показывать свойства над задачей</span>
+                    <span>Показывать свойства над задачей</span>
                   </label>
                 </div>
                 <CamundaPropertiesSection

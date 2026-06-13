@@ -686,12 +686,15 @@
 
 .fpcPropertyOverlay--sequence {
   transform: translate(-50%, -50%);
+  border: 1.5px dashed #f59e0b;
+  border-radius: 6px;
+  padding: 3px;
+  background: hsl(var(--diagram-badge-bg) / 0.9);
+  pointer-events: none;
 }
 
 .fpcPropertyOverlay--sequence .fpcPropertyRow {
   min-height: var(--fpc-property-row-min-height, 14px);
-  border-style: dashed;
-  border-left-style: dashed;
 }
 
 .fpcPropertyRow--linked {
