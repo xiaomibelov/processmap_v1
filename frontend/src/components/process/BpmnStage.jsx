@@ -1647,14 +1647,20 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   useEffect(() => {
     selectedPropertiesOverlayPreviewRef.current = asObject(selectedPropertiesOverlayPreview);
+    applyPropertiesOverlayDecor(modelerRef.current, "editor");
+    applyPropertiesOverlayDecor(viewerRef.current, "viewer");
   }, [selectedPropertiesOverlayPreview]);
 
   useEffect(() => {
     propertiesOverlayAlwaysEnabledRef.current = !!propertiesOverlayAlwaysEnabled;
+    applyPropertiesOverlayDecor(modelerRef.current, "editor");
+    applyPropertiesOverlayDecor(viewerRef.current, "viewer");
   }, [propertiesOverlayAlwaysEnabled]);
 
   useEffect(() => {
     propertiesOverlayAlwaysPreviewByElementIdRef.current = asObject(propertiesOverlayAlwaysPreviewByElementId);
+    applyPropertiesOverlayDecor(modelerRef.current, "editor");
+    applyPropertiesOverlayDecor(viewerRef.current, "viewer");
   }, [propertiesOverlayAlwaysPreviewByElementId]);
 
   useEffect(() => {
