@@ -147,26 +147,64 @@ function fillOverlayTooltip(tooltip, payload) {
 }
 
 let overlayBadgeTooltipListenerInstalled = false;
+let overlayBadgeTooltipHandler = null;
 function installOverlayBadgeTooltipListener() {
   if (overlayBadgeTooltipListenerInstalled || typeof document === "undefined") return;
+  overlayBadgeTooltipHandler = (event) => {
+    const wrapper = event?.target?.closest?.(".fpc-overlay-badge-wrapper");
+    if (!wrapper) return;
+    const tooltip = wrapper.querySelector(".fpc-overlay-tooltip");
+    if (!tooltip || tooltip.dataset.filled === "1") return;
+    try {
+      const payload = JSON.parse(wrapper.dataset.fpcOverlayProps || "{}");
+      fillOverlayTooltip(tooltip, payload);
+      tooltip.dataset.filled = "1";
+    } catch {
+      // Tooltip population failures are non-critical.
+    }
+  };
+  document.addEventListener("mouseover", overlayBadgeTooltipHandler, { passive: true });
   overlayBadgeTooltipListenerInstalled = true;
-  document.addEventListener(
-    "mouseover",
-    (event) => {
-      const wrapper = event?.target?.closest?.(".fpc-overlay-badge-wrapper");
-      if (!wrapper) return;
-      const tooltip = wrapper.querySelector(".fpc-overlay-tooltip");
-      if (!tooltip || tooltip.dataset.filled === "1") return;
-      try {
-        const payload = JSON.parse(wrapper.dataset.fpcOverlayProps || "{}");
-        fillOverlayTooltip(tooltip, payload);
-        tooltip.dataset.filled = "1";
-      } catch {
-        // Tooltip population failures are non-critical.
-      }
-    },
-    { passive: true },
-  );
+}
+function uninstallOverlayBadgeTooltipListener() {
+  if (!overlayBadgeTooltipListenerInstalled || !overlayBadgeTooltipHandler || typeof document === "undefined") {
+    return;
+  }
+  document.removeEventListener("mouseover", overlayBadgeTooltipHandler, { passive: true });
+  overlayBadgeTooltipListenerInstalled = false;
+  overlayBadgeTooltipHandler = null;
+}
+
+const overlayCardHoverInstalled = new WeakSet();
+const overlayCardHoverHandlers = new WeakMap();
+function setPropertyCardExpandedForElement(elementId, expanded) {
+  if (typeof document === "undefined" || !elementId) return;
+  const selector = `.fpc-overlay-property-card[data-fpc-element-id="${CSS.escape(elementId)}"]`;
+  document.querySelectorAll(selector).forEach((card) => {
+    card.classList.toggle("fpc-overlay-property-card--expanded", expanded);
+  });
+}
+function installOverlayCardHoverListeners(inst) {
+  if (!inst || overlayCardHoverInstalled.has(inst)) return;
+  const eventBus = inst.get?.("eventBus");
+  if (!eventBus) return;
+  const onHover = (event) => setPropertyCardExpandedForElement(event?.element?.id, true);
+  const onOut = (event) => setPropertyCardExpandedForElement(event?.element?.id, false);
+  eventBus.on("element.hover", onHover);
+  eventBus.on("element.out", onOut);
+  overlayCardHoverInstalled.add(inst);
+  overlayCardHoverHandlers.set(inst, { onHover, onOut });
+}
+function uninstallOverlayCardHoverListeners(inst) {
+  if (!inst || !overlayCardHoverInstalled.has(inst)) return;
+  const eventBus = inst.get?.("eventBus");
+  const handlers = overlayCardHoverHandlers.get(inst);
+  if (eventBus && handlers) {
+    eventBus.off("element.hover", handlers.onHover);
+    eventBus.off("element.out", handlers.onOut);
+  }
+  overlayCardHoverInstalled.delete(inst);
+  overlayCardHoverHandlers.delete(inst);
 }
 
 const CARD_GAP = 8;
@@ -1622,6 +1660,20 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
+
+  useEffect(() => {
+    installOverlayBadgeTooltipListener();
+    return () => {
+      uninstallOverlayBadgeTooltipListener();
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (viewerRef.current) uninstallOverlayCardHoverListeners(viewerRef.current);
+      if (modelerRef.current) uninstallOverlayCardHoverListeners(modelerRef.current);
+    };
+  }, []);
 
   /* diagramReady now sourced from useDiagramLoadStateMachine.isReady */
 
@@ -4366,6 +4418,7 @@ const BpmnStage = forwardRef(function BpmnStage({
 
       if (overlaysToRender.length > 0) {
         installOverlayBadgeTooltipListener();
+        installOverlayCardHoverListeners(inst);
         const overlays = inst.get("overlays");
         const registry = inst.get("elementRegistry");
         const MIN_ELEMENT_SIZE = 20;
@@ -4439,6 +4492,7 @@ const BpmnStage = forwardRef(function BpmnStage({
 
           if (ovl.showProperties && elWidth >= 60 && elHeight >= 30) {
             const card = createPropertyCard(ovl, realProps, elWidth);
+            card.dataset.fpcElementId = el.id;
             // Measure the card height before attaching it to the overlay layer.
             const measurer = getOverlayMeasurementContainer();
             if (!measurer) return;
@@ -5006,6 +5060,21 @@ const BpmnStage = forwardRef(function BpmnStage({
   async function renderNewDiagramInModeler() {
     return renderNewDiagramInModelerRuntime(createRenderLifecycleCtx());
   }
+
+  useEffect(() => {
+    if (!useExtensionOverlays) return;
+    try {
+      if (viewerRef.current && hasDefinitionsLoaded(viewerRef.current)) {
+        mountLightweightOverlays(viewerRef.current, "viewer", extractOverlaysFromBpmn(viewerRef.current) || []);
+      }
+      if (modelerRef.current && hasDefinitionsLoaded(modelerRef.current)) {
+        mountLightweightOverlays(modelerRef.current, "editor", extractOverlaysFromBpmn(modelerRef.current) || []);
+      }
+    } catch {
+      // Re-mount failures are non-critical.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useExtensionOverlays, draft?.bpmn_meta]);
 
   function createViewportCtx() {
     return {
