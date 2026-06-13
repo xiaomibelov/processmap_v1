@@ -66,6 +66,17 @@
   --menu-bg-elevated: 220 30% 99%;
   --menu-border-elevated: 217 24% 72%;
 
+  /* analytics state tokens */
+  --analysis-state-bg: hsl(var(--panel) / 0.9);
+  --analysis-state-border: hsl(var(--border) / 0.5);
+  --analysis-error-bg: hsl(var(--danger) / 0.08);
+  --analysis-error-border: hsl(var(--danger) / 0.35);
+  --analysis-error-text: hsl(var(--danger));
+  --analysis-empty-bg: hsl(var(--panel2) / 0.5);
+  --analysis-empty-border: hsl(var(--border) / 0.45);
+  --analysis-skeleton-bg: hsl(var(--border) / 0.32);
+  --analysis-skeleton-shine: hsl(var(--border) / 0.14);
+
   /* compatibility aliases for legacy rules */
   --c-bg: hsl(var(--bg));
   --c-bg-soft: hsl(var(--bg-soft));
@@ -150,6 +161,17 @@
   --quality-panel-border: 222 30% 34%;
   --menu-bg-elevated: 223 41% 14%;
   --menu-border-elevated: 222 30% 36%;
+
+  /* analytics state tokens (dark) */
+  --analysis-state-bg: hsl(var(--panel) / 0.92);
+  --analysis-state-border: hsl(var(--border) / 0.55);
+  --analysis-error-bg: hsl(var(--danger) / 0.12);
+  --analysis-error-border: hsl(var(--danger) / 0.45);
+  --analysis-error-text: hsl(var(--danger));
+  --analysis-empty-bg: hsl(var(--panel2) / 0.45);
+  --analysis-empty-border: hsl(var(--border) / 0.5);
+  --analysis-skeleton-bg: hsl(var(--border) / 0.4);
+  --analysis-skeleton-shine: hsl(var(--border) / 0.18);
 
   /* registry design tokens */
   --registry-bg-canvas: #ffffff;

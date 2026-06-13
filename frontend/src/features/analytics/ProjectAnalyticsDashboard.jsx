@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { apiGetProjectAnalytics } from "../../lib/api.js";
 import DashboardMetricCard from "./DashboardMetricCard.jsx";
+import AnalyticsSkeleton from "./AnalyticsSkeleton.jsx";
+import AnalyticsErrorState from "./AnalyticsErrorState.jsx";
+import AnalyticsEmptyState from "./AnalyticsEmptyState.jsx";
 import { normalizeProjectAnalyticsCards } from "./dashboardModel.js";
 
 export default function ProjectAnalyticsDashboard({
@@ -11,6 +14,7 @@ export default function ProjectAnalyticsDashboard({
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -30,9 +34,10 @@ export default function ProjectAnalyticsDashboard({
     return () => {
       alive = false;
     };
-  }, [projectId]);
+  }, [projectId, retryNonce]);
 
   const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
+  const cards = data ? normalizeProjectAnalyticsCards(data) : [];
 
   return (
     <div className="analyticsDashboardsPage" data-testid="project-analytics-dashboard">
@@ -46,13 +51,17 @@ export default function ProjectAnalyticsDashboard({
         </header>
 
         {loading ? (
-          <p className="analyticsDashboardsLoading" data-testid="analytics-loading">Загрузка…</p>
+          <AnalyticsSkeleton />
         ) : error ? (
-          <p className="analyticsDashboardsError" data-testid="analytics-error">{error}</p>
+          <AnalyticsErrorState
+            title="Не удалось загрузить аналитику проекта"
+            message={error}
+            onRetry={() => setRetryNonce((n) => n + 1)}
+          />
         ) : (
           <>
             <section className="analyticsDashboardsMetrics" data-testid="analytics-metrics">
-              {normalizeProjectAnalyticsCards(data).map((card, idx) => (
+              {cards.map((card, idx) => (
                 <DashboardMetricCard key={idx} {...card} />
               ))}
             </section>
@@ -60,7 +69,10 @@ export default function ProjectAnalyticsDashboard({
             <section className="analyticsDashboardsSection" data-testid="analytics-recent-sessions">
               <h2>Последние сессии</h2>
               {sessions.length === 0 ? (
-                <p className="analyticsDashboardsEmpty">Нет сессий</p>
+                <AnalyticsEmptyState
+                  title="Нет сессий"
+                  message="В проекте пока нет завершённых сессий для аналитики."
+                />
               ) : (
                 <div className="analyticsDashboardsTableWrap">
                   <table className="analyticsDashboardsTable">

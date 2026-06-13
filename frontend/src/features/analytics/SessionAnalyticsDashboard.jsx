@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { apiGetSessionAnalytics } from "../../lib/api.js";
 import DashboardMetricCard from "./DashboardMetricCard.jsx";
 import DashboardBarChart from "./DashboardBarChart.jsx";
+import AnalyticsSkeleton from "./AnalyticsSkeleton.jsx";
+import AnalyticsErrorState from "./AnalyticsErrorState.jsx";
+import AnalyticsEmptyState from "./AnalyticsEmptyState.jsx";
 import {
   sessionAnalyticsToCards,
   sessionAnalyticsToBarChartItems,
@@ -16,6 +19,7 @@ export default function SessionAnalyticsDashboard({
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -35,8 +39,12 @@ export default function SessionAnalyticsDashboard({
     return () => {
       alive = false;
     };
-  }, [sessionId]);
+  }, [sessionId, retryNonce]);
 
+  const cards = data ? sessionAnalyticsToCards(data) : [];
+  const byRole = data ? sessionAnalyticsToBarChartItems(data) : [];
+  const bySection = data ? sessionAnalyticsToBarChartItemsBySection(data) : [];
+  const hasContent = cards.length > 0 || byRole.length > 0 || bySection.length > 0 || (data?.summary?.length > 0);
 
   return (
     <div className="analyticsDashboardsPage" data-testid="session-analytics-dashboard">
@@ -50,25 +58,42 @@ export default function SessionAnalyticsDashboard({
         </header>
 
         {loading ? (
-          <p className="analyticsDashboardsLoading" data-testid="analytics-loading">Загрузка…</p>
+          <AnalyticsSkeleton />
         ) : error ? (
-          <p className="analyticsDashboardsError" data-testid="analytics-error">{error}</p>
+          <AnalyticsErrorState
+            title="Не удалось загрузить аналитику сессии"
+            message={error}
+            onRetry={() => setRetryNonce((n) => n + 1)}
+          />
+        ) : !hasContent ? (
+          <AnalyticsEmptyState
+            title="Нет данных по сессии"
+            message="Для этой сессии ещё не собрана аналитика."
+          />
         ) : (
           <>
             <section className="analyticsDashboardsMetrics" data-testid="analytics-metrics">
-              {sessionAnalyticsToCards(data).map((card, idx) => (
+              {cards.map((card, idx) => (
                 <DashboardMetricCard key={idx} {...card} />
               ))}
             </section>
 
             <section className="analyticsDashboardsSection" data-testid="analytics-actions-by-role">
               <h2>Действия по ролям</h2>
-              <DashboardBarChart items={sessionAnalyticsToBarChartItems(data)} ariaLabel="Действия по ролям" />
+              {byRole.length > 0 ? (
+                <DashboardBarChart items={byRole} ariaLabel="Действия по ролям" />
+              ) : (
+                <AnalyticsEmptyState title="Нет данных по ролям" message="" />
+              )}
             </section>
 
             <section className="analyticsDashboardsSection" data-testid="analytics-actions-by-section">
               <h2>Действия по секциям</h2>
-              <DashboardBarChart items={sessionAnalyticsToBarChartItemsBySection(data)} ariaLabel="Действия по секциям" />
+              {bySection.length > 0 ? (
+                <DashboardBarChart items={bySection} ariaLabel="Действия по секциям" />
+              ) : (
+                <AnalyticsEmptyState title="Нет данных по секциям" message="" />
+              )}
             </section>
 
             {data?.summary?.length ? (
