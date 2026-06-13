@@ -110,6 +110,144 @@ function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
 }
 
+function fillOverlayTooltip(tooltip, payload) {
+  if (!tooltip) return;
+  tooltip.innerHTML = "";
+  const titleText = String(payload?.title || "").trim();
+  if (titleText) {
+    const titleEl = document.createElement("div");
+    titleEl.className = "fpc-overlay-tooltip__title";
+    titleEl.textContent = titleText;
+    tooltip.appendChild(titleEl);
+  }
+  const listEl = document.createElement("ul");
+  listEl.className = "fpc-overlay-tooltip__properties";
+  asArray(payload?.properties).forEach((prop) => {
+    const name = String(prop?.name ?? "").trim();
+    if (!name) return;
+    let displayValue = String(prop?.value ?? "");
+    if (displayValue.length > 80) {
+      displayValue = `${displayValue.slice(0, 80)}...`;
+    }
+    const itemEl = document.createElement("li");
+    itemEl.className = "fpc-overlay-tooltip__property";
+    const nameEl = document.createElement("span");
+    nameEl.className = "fpc-overlay-tooltip__property-name";
+    nameEl.textContent = `${name}:`;
+    const valueEl = document.createElement("span");
+    valueEl.className = "fpc-overlay-tooltip__property-value";
+    valueEl.textContent = displayValue;
+    itemEl.appendChild(nameEl);
+    itemEl.appendChild(valueEl);
+    listEl.appendChild(itemEl);
+  });
+  if (listEl.childNodes.length > 0) {
+    tooltip.appendChild(listEl);
+  }
+}
+
+let overlayBadgeTooltipListenerInstalled = false;
+function installOverlayBadgeTooltipListener() {
+  if (overlayBadgeTooltipListenerInstalled || typeof document === "undefined") return;
+  overlayBadgeTooltipListenerInstalled = true;
+  document.addEventListener(
+    "mouseover",
+    (event) => {
+      const wrapper = event?.target?.closest?.(".fpc-overlay-badge-wrapper");
+      if (!wrapper) return;
+      const tooltip = wrapper.querySelector(".fpc-overlay-tooltip");
+      if (!tooltip || tooltip.dataset.filled === "1") return;
+      try {
+        const payload = JSON.parse(wrapper.dataset.fpcOverlayProps || "{}");
+        fillOverlayTooltip(tooltip, payload);
+        tooltip.dataset.filled = "1";
+      } catch {
+        // Tooltip population failures are non-critical.
+      }
+    },
+    { passive: true },
+  );
+}
+
+const CARD_GAP = 8;
+const MAX_VISIBLE_CARD_PROPS = 5;
+
+function createPropertyCard(ovl, realProps, elementWidth) {
+  const card = document.createElement("div");
+  card.className = "fpc-overlay-property-card";
+  card.style.width = `${Math.max(20, Number(elementWidth || 0))}px`;
+
+  const titleText = String(ovl.text || ovl.meta?.title || "").trim();
+  if (titleText) {
+    const titleEl = document.createElement("div");
+    titleEl.className = "fpc-overlay-property-card__title";
+    titleEl.textContent = titleText;
+    card.appendChild(titleEl);
+  }
+
+  function makeRow(prop) {
+    const name = String(prop.name ?? "").trim();
+    let value = String(prop.value ?? "");
+    if (value.length > 80) value = `${value.slice(0, 80)}...`;
+    const colorModel = overlayPropertyColorByKey(name || "property");
+
+    const rowEl = document.createElement("li");
+    rowEl.className = "fpc-overlay-property-card__row";
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "fpc-overlay-property-card__name";
+    nameEl.style.color = colorModel.accent;
+    nameEl.textContent = `${name}:`;
+
+    const valueEl = document.createElement("span");
+    valueEl.className = "fpc-overlay-property-card__value";
+    valueEl.textContent = value;
+
+    rowEl.appendChild(nameEl);
+    rowEl.appendChild(valueEl);
+    return rowEl;
+  }
+
+  const visibleProps = realProps.slice(0, MAX_VISIBLE_CARD_PROPS);
+  const hiddenProps = realProps.slice(MAX_VISIBLE_CARD_PROPS);
+
+  const listEl = document.createElement("ul");
+  listEl.className = "fpc-overlay-property-card__list";
+  visibleProps.forEach((prop) => listEl.appendChild(makeRow(prop)));
+  card.appendChild(listEl);
+
+  if (hiddenProps.length > 0) {
+    const moreEl = document.createElement("div");
+    moreEl.className = "fpc-overlay-property-card__more";
+    moreEl.textContent = `+${hiddenProps.length} more`;
+    card.appendChild(moreEl);
+
+    const extraEl = document.createElement("ul");
+    extraEl.className = "fpc-overlay-property-card__extra";
+    hiddenProps.forEach((prop) => extraEl.appendChild(makeRow(prop)));
+    card.appendChild(extraEl);
+  }
+
+  return card;
+}
+
+function getOverlayMeasurementContainer() {
+  if (typeof document === "undefined") return null;
+  let el = document.getElementById("__fpc_overlay_measurer__");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "__fpc_overlay_measurer__";
+    el.style.position = "absolute";
+    el.style.visibility = "hidden";
+    el.style.pointerEvents = "none";
+    el.style.top = "-9999px";
+    el.style.left = "-9999px";
+    if (!document.body) return null;
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
 function toText(v) {
   return String(v || "").trim();
 }
@@ -4217,7 +4355,8 @@ const BpmnStage = forwardRef(function BpmnStage({
     if (!inst || typeof window === "undefined") return;
     clearLightweightOverlays(inst, kind);
     const overlaysToRender = Array.isArray(overlayList) ? overlayList : [];
-    let overlaysAdded = 0;
+    let elementOverlaysAdded = 0;
+    let overlayNodesAdded = 0;
 
     try {
       // eslint-disable-next-line no-console
@@ -4226,150 +4365,103 @@ const BpmnStage = forwardRef(function BpmnStage({
       });
 
       if (overlaysToRender.length > 0) {
+        installOverlayBadgeTooltipListener();
         const overlays = inst.get("overlays");
         const registry = inst.get("elementRegistry");
+        const MIN_ELEMENT_SIZE = 20;
+
         overlaysToRender.forEach((ovl) => {
           const nodeId = String(ovl.node_id || ovl.nodeId || "").trim();
           const el = nodeId ? registry.get(nodeId) : null;
           if (!el) return;
-          const width = Number(ovl.width || 100);
-          const baseHeight = Number(ovl.height || 30);
-          const offsetY = Number(ovl.y ?? -40);
-          const offsetX = Number(ovl.x ?? 0);
+
+          // Keep the badge strictly inside the element; skip tiny elements.
+          const elWidth = Number(el.width || 0);
+          const elHeight = Number(el.height || 0);
+          if (elWidth < MIN_ELEMENT_SIZE || elHeight < MIN_ELEMENT_SIZE) return;
+
           const properties = Array.isArray(ovl.properties) ? ovl.properties : [];
 
-          // Determine the card color from the overlay type or the first real property.
+          // Filter out overlay descriptor properties; only real BPMN/custom properties count.
+          const isOverlayMetaProperty = (name) => {
+            const n = String(name).trim().toLowerCase();
+            return n === "fpc-overlay-v2" || n.startsWith("fpc:overlay:");
+          };
+          const realProps = properties.filter((prop) => {
+            const name = String(prop.name ?? "").trim();
+            return !!name && !isOverlayMetaProperty(name);
+          });
+          if (realProps.length === 0) return;
+
           const colorKey = String(
             ovl.colorKey || ovl.meta?.type || ovl.type || ""
           ).trim();
           const colorModel = overlayPropertyColorByKey(colorKey || "property");
 
-          // Legacy lightweight overlay defaults, overridden by any explicit style
-          // in the overlay descriptor and then by the color model derived above.
-          const legacyStyle = {
-            bg: "#fff9c4",
-            color: "#333333",
-            fontSize: "12px",
-            border: "1px solid #fbc02d",
-          };
-          const incomingStyle = ovl.style && typeof ovl.style === "object" && !Array.isArray(ovl.style) ? ovl.style : {};
-          const style = {
-            ...legacyStyle,
-            ...incomingStyle,
-            bg: colorModel.background,
-            color: colorModel.text,
-            border: `1px solid ${colorModel.accent}`,
-          };
+          // Wrapper anchors the badge to the element's top-right corner.
+          const wrapper = document.createElement("div");
+          wrapper.className = "fpc-overlay-badge-wrapper";
 
-          // Optional fixed-palette modifier class for well-known overlay types.
-          const knownTypes = new Set(["green", "blue", "orange", "red", "purple", "yellow"]);
-          const isKnownType = knownTypes.has(colorKey.toLowerCase());
-          const typeModifier = isKnownType ? ` fpc-overlay-v2--${colorKey.toLowerCase()}` : "";
+          // Compact badge: one colored pill/circle showing the count or first-key prefix.
+          const badge = document.createElement("div");
+          badge.className = "fpc-overlay-badge";
+          badge.style.backgroundColor = colorModel.background;
+          badge.style.borderColor = colorModel.accent;
+          badge.style.color = colorModel.text;
 
-          const div = document.createElement("div");
-          div.className = `fpc-overlay-v2${typeModifier}`;
-          div.title = String(ovl.meta?.title || ovl.text || "");
-          div.style.boxSizing = "border-box";
-          div.style.width = `${width}px`;
-          div.style.minHeight = `${baseHeight}px`;
-          if (!isKnownType) {
-            div.style.backgroundColor = String(style.bg);
-            div.style.color = String(style.color);
-            div.style.border = String(style.border);
-          }
-          div.style.borderRadius = "6px";
-          div.style.boxShadow = `0 2px 6px ${colorModel.shadow}`;
-          div.style.pointerEvents = "none";
+          const firstKey = String(realProps[0]?.name || "").trim();
+          badge.textContent = realProps.length > 1
+            ? String(realProps.length)
+            : firstKey.slice(0, 2).toUpperCase();
+          badge.title = String(ovl.meta?.title || ovl.text || "").trim() || firstKey;
+          wrapper.appendChild(badge);
 
-          const titleEl = document.createElement("div");
-          titleEl.className = "fpc-overlay-v2__title";
-          titleEl.textContent = String(ovl.text || "");
-          div.appendChild(titleEl);
+          // Hidden tooltip container. Its content is populated lazily on the
+          // first hover so that the idle DOM stays tiny (wrapper + badge + empty
+          // tooltip container = 3 nodes per element).
+          const tooltip = document.createElement("div");
+          tooltip.className = "fpc-overlay-tooltip";
+          wrapper.appendChild(tooltip);
 
-          // Filter out overlay descriptor properties; only show real BPMN/custom properties.
-          const isOverlayMetaProperty = (name) => {
-            const n = String(name).trim().toLowerCase();
-            return n === "fpc-overlay-v2" || n.startsWith("fpc:overlay:");
-          };
-          let visibleProperties = properties.filter((prop) => {
-            const name = String(prop.name ?? "").trim();
-            return !!name && !isOverlayMetaProperty(name);
+          const titleText = String(ovl.text || ovl.meta?.title || "").trim() || firstKey;
+          wrapper.dataset.fpcOverlayProps = JSON.stringify({
+            title: titleText,
+            properties: realProps,
           });
 
-          const isAutoOverlay = ovl.auto === true;
-          const MAX_AUTO_PROPS = 4;
-          const hiddenAutoCount = isAutoOverlay && visibleProperties.length > MAX_AUTO_PROPS
-            ? visibleProperties.length - MAX_AUTO_PROPS
-            : 0;
-          if (isAutoOverlay && hiddenAutoCount > 0) {
-            visibleProperties = visibleProperties.slice(0, MAX_AUTO_PROPS);
-          }
-
-          if (visibleProperties.length > 0) {
-            const listEl = document.createElement("ul");
-            listEl.className = "fpc-overlay-v2__properties";
-            visibleProperties.forEach((prop) => {
-              const name = String(prop.name ?? "").trim();
-              let displayValue = String(prop.value ?? "");
-              if (displayValue.length > 50) {
-                displayValue = `${displayValue.slice(0, 50)}...`;
-              }
-
-              const propColor = overlayPropertyColorByKey(name);
-
-              const itemEl = document.createElement("li");
-              itemEl.className = "fpc-overlay-v2__property";
-              itemEl.style.borderLeft = `3px solid ${propColor.accent}`;
-              itemEl.style.paddingLeft = "6px";
-
-              const nameEl = document.createElement("span");
-              nameEl.className = "fpc-overlay-v2__property-name";
-              nameEl.style.color = propColor.accent;
-              nameEl.textContent = `${name}:`;
-
-              const valueEl = document.createElement("span");
-              valueEl.className = "fpc-overlay-v2__property-value";
-              valueEl.textContent = displayValue;
-
-              itemEl.appendChild(nameEl);
-              itemEl.appendChild(valueEl);
-              listEl.appendChild(itemEl);
-            });
-            if (hiddenAutoCount > 0) {
-              const moreEl = document.createElement("li");
-              moreEl.className = "fpc-overlay-v2__property fpc-overlay-v2__property--more";
-              moreEl.textContent = `+${hiddenAutoCount} more`;
-              listEl.appendChild(moreEl);
-            }
-            if (listEl.childNodes.length > 0) {
-              div.appendChild(listEl);
-            }
-          }
-
-          // Expand height when there are visible properties so the list is readable,
-          // while keeping the bottom offset equal to offsetY.
-          const lineHeight = 16;
-          const titleHeight = 18;
-          const listPadding = 8;
-          const computedHeight = visibleProperties.length > 0
-            ? Math.max(baseHeight, titleHeight + listPadding + (visibleProperties.length + (hiddenAutoCount > 0 ? 1 : 0)) * lineHeight)
-            : baseHeight;
-          div.style.height = `${computedHeight}px`;
-
-          // y is interpreted as the vertical gap between the element top and the overlay bottom;
-          // negative values place the overlay above the element with that padding.
+          // Anchor the badge overlay to the top-right corner of the element.
           const oid = overlays.add(el.id, {
-            position: { top: offsetY - computedHeight, left: offsetX },
-            html: div,
+            position: { top: 0, left: 0 },
+            html: wrapper,
           });
           lightweightOverlayStateRef.current[kind].push(oid);
-          overlaysAdded += 1;
+          overlayNodesAdded += 1;
+
+          if (ovl.showProperties && elWidth >= 60 && elHeight >= 30) {
+            const card = createPropertyCard(ovl, realProps, elWidth);
+            // Measure the card height before attaching it to the overlay layer.
+            const measurer = getOverlayMeasurementContainer();
+            if (!measurer) return;
+            measurer.appendChild(card);
+            const cardHeight = card.offsetHeight || 30;
+            measurer.innerHTML = "";
+
+            const cardOid = overlays.add(el.id, {
+              position: { top: -(cardHeight + CARD_GAP), left: 0 },
+              html: card,
+            });
+            lightweightOverlayStateRef.current[kind].push(cardOid);
+            overlayNodesAdded += 1;
+          }
+
+          elementOverlaysAdded += 1;
         });
       }
 
       // eslint-disable-next-line no-console
       console.log("[FPC-OVERLAY-V2] overlays mounted", {
-        count: overlaysAdded,
+        elements: elementOverlaysAdded,
+        overlayNodes: overlayNodesAdded,
       });
     } catch {
       // Overlay mount failures are non-critical; keep the diagram usable.
