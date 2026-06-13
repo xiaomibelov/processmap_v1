@@ -90,3 +90,28 @@ test("All new components have data-testid attributes", () => {
   assert.match(cardSource, /data-testid=/);
   assert.match(chartSource, /data-testid=/);
 });
+
+const skeletonSource = read("AnalyticsSkeleton.jsx");
+const errorSource = read("AnalyticsErrorState.jsx");
+const emptySource = read("AnalyticsEmptyState.jsx");
+
+test("Analytics surface has skeleton, error and empty state components", () => {
+  assert.match(skeletonSource, /analyticsSkeleton/);
+  assert.match(skeletonSource, /role="status"/);
+  assert.match(errorSource, /analyticsErrorState/);
+  assert.match(errorSource, /role="alert"/);
+  assert.match(errorSource, /onRetry/);
+  assert.match(emptySource, /analyticsEmptyState/);
+});
+
+test("Dashboards use new loading and error states", () => {
+  assert.match(sessionSource, /AnalyticsSkeleton/);
+  assert.match(sessionSource, /AnalyticsErrorState/);
+  assert.match(sessionSource, /AnalyticsEmptyState/);
+  assert.match(projectSource, /AnalyticsSkeleton/);
+  assert.match(projectSource, /AnalyticsErrorState/);
+  assert.match(projectSource, /AnalyticsEmptyState/);
+  assert.match(workspaceSource, /AnalyticsSkeleton/);
+  assert.match(workspaceSource, /AnalyticsErrorState/);
+  assert.match(workspaceSource, /AnalyticsEmptyState/);
+});

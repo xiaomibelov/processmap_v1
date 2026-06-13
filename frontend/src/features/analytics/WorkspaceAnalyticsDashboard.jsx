@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
 import { apiGetWorkspaceAnalytics } from "../../lib/api.js";
 import DashboardMetricCard from "./DashboardMetricCard.jsx";
+import AnalyticsSkeleton from "./AnalyticsSkeleton.jsx";
+import AnalyticsErrorState from "./AnalyticsErrorState.jsx";
+import AnalyticsEmptyState from "./AnalyticsEmptyState.jsx";
 import { normalizeWorkspaceAnalyticsCards } from "./dashboardModel.js";
 
 export default function WorkspaceAnalyticsDashboard({ workspaceId }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -26,11 +30,12 @@ export default function WorkspaceAnalyticsDashboard({ workspaceId }) {
     return () => {
       alive = false;
     };
-  }, [workspaceId]);
+  }, [workspaceId, retryNonce]);
 
   const recentSessions = Array.isArray(data?.recent_sessions)
     ? data.recent_sessions
     : [];
+  const cards = data ? normalizeWorkspaceAnalyticsCards(data) : [];
 
   return (
     <div className="analyticsDashboardsPage" data-testid="workspace-analytics-dashboard">
@@ -43,13 +48,17 @@ export default function WorkspaceAnalyticsDashboard({ workspaceId }) {
         </header>
 
         {loading ? (
-          <p className="analyticsDashboardsLoading" data-testid="analytics-loading">Загрузка…</p>
+          <AnalyticsSkeleton />
         ) : error ? (
-          <p className="analyticsDashboardsError" data-testid="analytics-error">{error}</p>
+          <AnalyticsErrorState
+            title="Не удалось загрузить аналитику workspace"
+            message={error}
+            onRetry={() => setRetryNonce((n) => n + 1)}
+          />
         ) : (
           <>
             <section className="analyticsDashboardsMetrics" data-testid="analytics-metrics">
-              {normalizeWorkspaceAnalyticsCards(data).map((card, idx) => (
+              {cards.map((card, idx) => (
                 <DashboardMetricCard key={idx} {...card} />
               ))}
             </section>
@@ -57,7 +66,10 @@ export default function WorkspaceAnalyticsDashboard({ workspaceId }) {
             <section className="analyticsDashboardsSection" data-testid="analytics-recent-sessions">
               <h2>Последние сессии</h2>
               {recentSessions.length === 0 ? (
-                <p className="analyticsDashboardsEmpty">Нет сессий</p>
+                <AnalyticsEmptyState
+                  title="Нет сессий"
+                  message="В workspace пока нет сессий для аналитики."
+                />
               ) : (
                 <div className="analyticsDashboardsTableWrap">
                   <table className="analyticsDashboardsTable">
