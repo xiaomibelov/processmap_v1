@@ -985,6 +985,8 @@ export default function NotesPanel({
   onShowPropertiesOverlayAlwaysChange,
   showPropertiesOverlayOnSelect = false,
   onShowPropertiesOverlayOnSelectChange,
+  v2OverlaysEnabled = false,
+  onShowV2OverlaysChange,
   onGoToDiagram,
   onProjectBreadcrumbClick,
   onSessionBreadcrumbClick,
@@ -3111,6 +3113,17 @@ export default function NotesPanel({
                       data-testid="bpmn-show-properties-per-element-checkbox"
                     />
                     <span>Показывать свойства над задачей</span>
+                  </label>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted py-1">V2-оверлеи</div>
+                  <label className="sidebarPropertiesInlineToggle">
+                    <input
+                      type="checkbox"
+                      checked={!!v2OverlaysEnabled}
+                      onChange={(event) => void onShowV2OverlaysChange?.(!!event.target.checked)}
+                      disabled={!!disabled}
+                      data-testid="bpmn-show-v2-overlays-checkbox"
+                    />
+                    <span>Показывать все V2-оверлеи свойств</span>
                   </label>
                 </div>
                 <CamundaPropertiesSection

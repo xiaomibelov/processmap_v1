@@ -874,6 +874,7 @@ export default function App() {
   const [renameDialog, setRenameDialog] = useState({ open: false, scope: "", value: "", error: "", busy: false });
   const [deleteDialog, setDeleteDialog] = useState({ open: false, scope: "", error: "", busy: false });
   const [showPropertiesOverlayAlways, setShowPropertiesOverlayAlways] = useState(false);
+  const [v2OverlaysEnabled, setV2OverlaysEnabled] = useState(false);
   const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
   const [notesPanelOpenRequest, setNotesPanelOpenRequest] = useState(null);
   const [notesDiscussionsOpen, setNotesDiscussionsOpen] = useState(false);
@@ -3117,6 +3118,8 @@ export default function App() {
         onPropertiesOverlayAlwaysPreviewChange={setSelectedPropertiesOverlayAlwaysPreview}
         showPropertiesOverlayAlways={showPropertiesOverlayAlways}
         onShowPropertiesOverlayAlwaysChange={setShowPropertiesOverlayAlways}
+        v2OverlaysEnabled={v2OverlaysEnabled}
+        onShowV2OverlaysChange={setV2OverlaysEnabled}
         onGoToDiagram={() => {
           const sid = String(draft?.session_id || "").trim();
           if (!sid) return;
@@ -3454,6 +3457,7 @@ export default function App() {
         selectedPropertiesOverlayPreview={selectedPropertiesOverlayPreview}
         propertiesOverlayAlwaysEnabled={showPropertiesOverlayAlways}
         propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
+        v2OverlaysEnabled={v2OverlaysEnabled}
         drawioCompanionFocusIntent={drawioCompanionFocusIntent}
         discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
         onDiscussionLinkedElementFocusResult={completeDiscussionLinkedElementFocus}

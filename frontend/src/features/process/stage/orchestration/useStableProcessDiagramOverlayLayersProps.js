@@ -92,6 +92,7 @@ const BPMN_INPUT_KEYS = [
   "propertiesOverlayAlwaysEnabled",
   "propertiesOverlayAlwaysPreviewByElementId",
   "queueDiagramMutation",
+  "v2OverlaysEnabled",
   "reloadKey",
   "robotMetaOverlayEnabled",
   "robotMetaOverlayFilters",
