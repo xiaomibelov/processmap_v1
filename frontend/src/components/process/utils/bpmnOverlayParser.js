@@ -47,8 +47,12 @@ export function extractOverlayProperties(businessObject) {
   values.forEach((entryRaw) => {
     const entry = asObject(entryRaw);
     const type = String(entry?.$type || entry?.type || "").toLowerCase();
-    if (type === "camunda:properties") {
-      asArray(entry.values).forEach((itemRaw) => {
+    if (type === "camunda:properties" || type.endsWith(":properties")) {
+      // Known extension descriptors (e.g. camunda:Properties) use `values`.
+      // Unknown extension elements (e.g. zeebe:properties parsed without the
+      // zeebe moddle descriptor) use `$children`.
+      const items = asArray(entry.values || entry.$children);
+      items.forEach((itemRaw) => {
         const item = asObject(itemRaw);
         if (item.name) {
           props.push({
@@ -72,6 +76,8 @@ export function extractOverlayProperties(businessObject) {
  */
 export function parseOverlayFromProperties(props, nodeId) {
   if (!Array.isArray(props) || !props.length) return null;
+
+  const realProps = props.filter((p) => !isOverlayMetaProperty(p.name));
 
   const jsonProp = props.find(
     (p) => String(p.name).trim().toLowerCase() === "fpc-overlay-v2"
@@ -108,41 +114,48 @@ export function parseOverlayFromProperties(props, nodeId) {
   const overlayProps = props.filter((p) =>
     String(p.name).trim().toLowerCase().startsWith(prefixLower)
   );
-  if (!overlayProps.length) return null;
 
-  const get = (key) => {
-    const p = overlayProps.find(
-      (p) =>
-        String(p.name).trim().toLowerCase() ===
-        `${prefixLower}${key.toLowerCase()}`
-    );
-    return p ? String(p.value) : undefined;
-  };
+  if (overlayProps.length) {
+    const get = (key) => {
+      const p = overlayProps.find(
+        (p) =>
+          String(p.name).trim().toLowerCase() ===
+          `${prefixLower}${key.toLowerCase()}`
+      );
+      return p ? String(p.value) : undefined;
+    };
 
-  const text = get("text") || "";
-  if (!text) return null;
+    const text = get("text") || "";
+    if (text) {
+      const style = {};
+      const bg = get("bg");
+      if (bg) style.bg = bg;
+      const color = get("color");
+      if (color) style.color = color;
+      const fontSize = get("fontsize");
+      if (fontSize) style.fontSize = fontSize;
+      const border = get("border");
+      if (border) style.border = border;
 
-  const style = {};
-  const bg = get("bg");
-  if (bg) style.bg = bg;
-  const color = get("color");
-  if (color) style.color = color;
-  const fontSize = get("fontsize");
-  if (fontSize) style.fontSize = fontSize;
-  const border = get("border");
-  if (border) style.border = border;
+      return {
+        node_id: nodeId,
+        text,
+        x: Number(get("x") ?? 0),
+        y: Number(get("y") ?? 0),
+        width: Number(get("width") ?? 100),
+        height: Number(get("height") ?? 30),
+        style,
+        meta: { title: String(get("title") ?? "") },
+        colorKey: deriveOverlayColorKey(props, get("type")),
+      };
+    }
+  }
 
-  return {
-    node_id: nodeId,
-    text,
-    x: Number(get("x") ?? 0),
-    y: Number(get("y") ?? 0),
-    width: Number(get("width") ?? 100),
-    height: Number(get("height") ?? 30),
-    style,
-    meta: { title: String(get("title") ?? "") },
-    colorKey: deriveOverlayColorKey(props, get("type")),
-  };
+  // No explicit overlay descriptor found and no prefixed overlay properties.
+  // The element may still have real BPMN/custom properties, but those are
+  // rendered by the legacy property overlay unless an explicit V2 descriptor
+  // is added to the element.
+  return null;
 }
 
 /**
