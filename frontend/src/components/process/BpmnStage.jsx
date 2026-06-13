@@ -1430,6 +1430,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   selectedPropertiesOverlayPreview = null,
   propertiesOverlayAlwaysEnabled = false,
   propertiesOverlayAlwaysPreviewByElementId = null,
+  v2OverlaysEnabled = false,
   onDiagramContextMenuRequest = null,
   onDiagramContextMenuDismiss = null,
 }, ref) {
@@ -1516,6 +1517,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const selectedPropertiesOverlayPreviewRef = useRef(asObject(selectedPropertiesOverlayPreview));
   const propertiesOverlayAlwaysEnabledRef = useRef(!!propertiesOverlayAlwaysEnabled);
   const propertiesOverlayAlwaysPreviewByElementIdRef = useRef(asObject(propertiesOverlayAlwaysPreviewByElementId));
+  const v2OverlaysEnabledRef = useRef(!!v2OverlaysEnabled);
   const replaceCommandStateRef = useRef({
     oldId: "",
     oldType: "",
@@ -1662,6 +1664,10 @@ const BpmnStage = forwardRef(function BpmnStage({
     applyPropertiesOverlayDecor(modelerRef.current, "editor");
     applyPropertiesOverlayDecor(viewerRef.current, "viewer");
   }, [propertiesOverlayAlwaysPreviewByElementId]);
+
+  useEffect(() => {
+    v2OverlaysEnabledRef.current = !!v2OverlaysEnabled;
+  }, [v2OverlaysEnabled]);
 
   useEffect(() => {
     draftRef.current = draft;
@@ -4496,7 +4502,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           lightweightOverlayStateRef.current[kind].push(oid);
           overlayNodesAdded += 1;
 
-          if (ovl.showProperties && elWidth >= 60 && elHeight >= 30) {
+          if ((ovl.showProperties || v2OverlaysEnabledRef.current) && elWidth >= 60 && elHeight >= 30) {
             const card = createPropertyCard(ovl, realProps, elWidth);
             card.dataset.fpcElementId = el.id;
             // Measure the card height before attaching it to the overlay layer.
@@ -5080,7 +5086,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       // Re-mount failures are non-critical.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [useExtensionOverlays, draft?.bpmn_meta]);
+  }, [useExtensionOverlays, draft?.bpmn_meta, v2OverlaysEnabled]);
 
   function createViewportCtx() {
     return {
