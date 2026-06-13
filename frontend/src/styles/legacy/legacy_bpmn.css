@@ -166,7 +166,7 @@
   line-height: 1.35;
   overflow: hidden;
   user-select: none;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .fpc-overlay-property-card__title {
@@ -194,11 +194,13 @@
   display: none;
 }
 
-.fpc-overlay-property-card:hover .fpc-overlay-property-card__extra {
+.fpc-overlay-property-card:hover .fpc-overlay-property-card__extra,
+.fpc-overlay-property-card--expanded .fpc-overlay-property-card__extra {
   display: flex;
 }
 
-.fpc-overlay-property-card:hover .fpc-overlay-property-card__more {
+.fpc-overlay-property-card:hover .fpc-overlay-property-card__more,
+.fpc-overlay-property-card--expanded .fpc-overlay-property-card__more {
   display: none;
 }
 
