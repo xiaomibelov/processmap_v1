@@ -1617,13 +1617,22 @@ export function applyPropertiesOverlayDecor(ctx) {
         ? asArray(registry.getAll())
         : (typeof registry?.filter === "function" ? asArray(registry.filter(() => true)) : []);
       allDiagramElements.forEach((el) => {
-        const isConnection = typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el);
-        if (!isConnection) return;
         const elementType = toText(el?.businessObject?.$type || el?.type).toLowerCase();
-        if (elementType !== "bpmn:sequenceflow" && elementType !== "sequenceflow") return;
         const elementId = toText(el?.businessObject?.id || el?.id);
         if (!elementId || previewByElementId[elementId]) return;
-        const items = buildSequenceOverlayItemsFromBusinessObject(el?.businessObject, { asArray, asObject, toText });
+        const isConnection = Array.isArray(el?.waypoints);
+        const isSequenceFlow = isConnection && (elementType === "bpmn:sequenceflow" || elementType === "sequenceflow");
+        const isTaskLike = !isConnection && /task$/i.test(elementType);
+        if (!isSequenceFlow && !isTaskLike) return;
+        const items = [];
+        if (isSequenceFlow) {
+          const sequenceItems = buildSequenceOverlayItemsFromBusinessObject(el?.businessObject, { asArray, asObject, toText });
+          items.push(...sequenceItems);
+        }
+        const elementName = toText(el?.businessObject?.name || el?.name);
+        if (elementName) {
+          items.unshift({ key: "name", label: "Name", value: elementName });
+        }
         if (!items.length) return;
         previewByElementId[elementId] = {
           elementId,
