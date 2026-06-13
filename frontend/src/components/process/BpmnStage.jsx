@@ -1,7 +1,10 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useFeatureFlag } from "../../features/config/featureFlagsContext";
 import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bpmnApi";
-import { extractOverlaysFromBpmn } from "./utils/bpmnOverlayParser";
+import {
+  extractOverlaysFromBpmn,
+  isOverlayMetaProperty,
+} from "./utils/bpmnOverlayParser";
 import { overlayPropertyColorByKey } from "../../features/process/bpmn/stage/decor/overlayColorModel.js";
 import { apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
@@ -213,7 +216,9 @@ const MAX_VISIBLE_CARD_PROPS = 5;
 function createPropertyCard(ovl, realProps, elementWidth) {
   const card = document.createElement("div");
   card.className = "fpc-overlay-property-card";
-  card.style.width = `${Math.max(20, Number(elementWidth || 0))}px`;
+  // Gateways, events and data references are much smaller than tasks. Clamp
+  // the card to a readable minimum so the overlay is useful on those elements.
+  card.style.width = `${Math.min(300, Math.max(120, Number(elementWidth || 0)))}px`;
 
   const titleText = String(ovl.text || ovl.meta?.title || "").trim();
   if (titleText) {
@@ -246,24 +251,26 @@ function createPropertyCard(ovl, realProps, elementWidth) {
     return rowEl;
   }
 
-  const visibleProps = realProps.slice(0, MAX_VISIBLE_CARD_PROPS);
-  const hiddenProps = realProps.slice(MAX_VISIBLE_CARD_PROPS);
+  if (realProps.length > 0) {
+    const visibleProps = realProps.slice(0, MAX_VISIBLE_CARD_PROPS);
+    const hiddenProps = realProps.slice(MAX_VISIBLE_CARD_PROPS);
 
-  const listEl = document.createElement("ul");
-  listEl.className = "fpc-overlay-property-card__list";
-  visibleProps.forEach((prop) => listEl.appendChild(makeRow(prop)));
-  card.appendChild(listEl);
+    const listEl = document.createElement("ul");
+    listEl.className = "fpc-overlay-property-card__list";
+    visibleProps.forEach((prop) => listEl.appendChild(makeRow(prop)));
+    card.appendChild(listEl);
 
-  if (hiddenProps.length > 0) {
-    const moreEl = document.createElement("div");
-    moreEl.className = "fpc-overlay-property-card__more";
-    moreEl.textContent = `+${hiddenProps.length} more`;
-    card.appendChild(moreEl);
+    if (hiddenProps.length > 0) {
+      const moreEl = document.createElement("div");
+      moreEl.className = "fpc-overlay-property-card__more";
+      moreEl.textContent = `+${hiddenProps.length} свойств`;
+      card.appendChild(moreEl);
 
-    const extraEl = document.createElement("ul");
-    extraEl.className = "fpc-overlay-property-card__extra";
-    hiddenProps.forEach((prop) => extraEl.appendChild(makeRow(prop)));
-    card.appendChild(extraEl);
+      const extraEl = document.createElement("ul");
+      extraEl.className = "fpc-overlay-property-card__extra";
+      hiddenProps.forEach((prop) => extraEl.appendChild(makeRow(prop)));
+      card.appendChild(extraEl);
+    }
   }
 
   return card;
@@ -4435,6 +4442,8 @@ const BpmnStage = forwardRef(function BpmnStage({
         const registry = inst.get("elementRegistry");
         const MIN_ELEMENT_SIZE = 20;
 
+        const v2Enabled = v2OverlaysEnabledRef.current;
+
         overlaysToRender.forEach((ovl) => {
           const nodeId = String(ovl.node_id || ovl.nodeId || "").trim();
           const el = nodeId ? registry.get(nodeId) : null;
@@ -4448,15 +4457,19 @@ const BpmnStage = forwardRef(function BpmnStage({
           const properties = Array.isArray(ovl.properties) ? ovl.properties : [];
 
           // Filter out overlay descriptor properties; only real BPMN/custom properties count.
-          const isOverlayMetaProperty = (name) => {
-            const n = String(name).trim().toLowerCase();
-            return n === "fpc-overlay-v2" || n.startsWith("fpc:overlay:");
-          };
+          // This is the second line of defense: the parser already strips meta keys,
+          // but we re-validate here in case a caller passes raw properties directly.
           const realProps = properties.filter((prop) => {
             const name = String(prop.name ?? "").trim();
             return !!name && !isOverlayMetaProperty(name);
           });
-          if (realProps.length === 0) return;
+
+          const titleText = String(ovl.text || ovl.meta?.title || el.businessObject?.name || el.name || "").trim();
+          const hasProps = realProps.length > 0;
+          // In global V2 mode we also render a lightweight badge/card for
+          // supported elements that have a name but no custom properties
+          // (e.g. gateways, data stores).
+          if (!hasProps && (!v2Enabled || !titleText)) return;
 
           const colorKey = String(
             ovl.colorKey || ovl.meta?.type || ovl.type || ""
@@ -4475,10 +4488,15 @@ const BpmnStage = forwardRef(function BpmnStage({
           badge.style.color = colorModel.text;
 
           const firstKey = String(realProps[0]?.name || "").trim();
-          badge.textContent = realProps.length > 1
-            ? String(realProps.length)
-            : firstKey.slice(0, 2).toUpperCase();
-          badge.title = String(ovl.meta?.title || ovl.text || "").trim() || firstKey;
+          if (hasProps) {
+            badge.textContent = realProps.length > 1
+              ? String(realProps.length)
+              : firstKey.slice(0, 2).toUpperCase();
+          } else {
+            // Name-only fallback for global V2 mode.
+            badge.textContent = titleText.slice(0, 2).toUpperCase();
+          }
+          badge.title = String(ovl.meta?.title || ovl.text || "").trim() || firstKey || titleText;
           wrapper.appendChild(badge);
 
           // Hidden tooltip container. Its content is populated lazily on the
@@ -4488,7 +4506,6 @@ const BpmnStage = forwardRef(function BpmnStage({
           tooltip.className = "fpc-overlay-tooltip";
           wrapper.appendChild(tooltip);
 
-          const titleText = String(ovl.text || ovl.meta?.title || "").trim() || firstKey;
           wrapper.dataset.fpcOverlayProps = JSON.stringify({
             title: titleText,
             properties: realProps,
@@ -4502,7 +4519,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           lightweightOverlayStateRef.current[kind].push(oid);
           overlayNodesAdded += 1;
 
-          if ((ovl.showProperties || v2OverlaysEnabledRef.current) && elWidth >= 60 && elHeight >= 30) {
+          if ((ovl.showProperties || v2Enabled) && elWidth >= 30 && elHeight >= 30) {
             const card = createPropertyCard(ovl, realProps, elWidth);
             card.dataset.fpcElementId = el.id;
             // Measure the card height before attaching it to the overlay layer.
@@ -5054,7 +5071,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   async function renderViewer(nextXml) {
     const result = await renderViewerDiagram(createRenderLifecycleCtx(), nextXml);
     if (useExtensionOverlays && result?.ok !== false) {
-      const overlayList = extractOverlaysFromBpmn(viewerRef.current) || [];
+      const overlayList = extractOverlaysFromBpmn(viewerRef.current, v2OverlaysEnabledRef.current) || [];
       mountLightweightOverlays(viewerRef.current, "viewer", overlayList);
     }
     return result;
@@ -5063,7 +5080,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   async function renderModeler(nextXml) {
     const result = await renderModelerDiagram(createRenderLifecycleCtx(), nextXml);
     if (useExtensionOverlays && result?.ok !== false) {
-      const overlayList = extractOverlaysFromBpmn(modelerRef.current) || [];
+      const overlayList = extractOverlaysFromBpmn(modelerRef.current, v2OverlaysEnabledRef.current) || [];
       mountLightweightOverlays(modelerRef.current, "editor", overlayList);
     }
     return result;
@@ -5077,10 +5094,10 @@ const BpmnStage = forwardRef(function BpmnStage({
     if (!useExtensionOverlays) return;
     try {
       if (viewerRef.current && hasDefinitionsLoaded(viewerRef.current)) {
-        mountLightweightOverlays(viewerRef.current, "viewer", extractOverlaysFromBpmn(viewerRef.current) || []);
+        mountLightweightOverlays(viewerRef.current, "viewer", extractOverlaysFromBpmn(viewerRef.current, v2OverlaysEnabledRef.current) || []);
       }
       if (modelerRef.current && hasDefinitionsLoaded(modelerRef.current)) {
-        mountLightweightOverlays(modelerRef.current, "editor", extractOverlaysFromBpmn(modelerRef.current) || []);
+        mountLightweightOverlays(modelerRef.current, "editor", extractOverlaysFromBpmn(modelerRef.current, v2OverlaysEnabledRef.current) || []);
       }
     } catch {
       // Re-mount failures are non-critical.

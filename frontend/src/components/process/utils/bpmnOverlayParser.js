@@ -21,13 +21,22 @@ function isShapeElement(el) {
   return !!el && !Array.isArray(el?.waypoints) && el.type !== "label";
 }
 
-function isOverlayMetaProperty(name) {
+/**
+ * Meta-property keys that configure the overlay itself and must never be shown
+ * to the user as regular business properties.
+ * Strings are matched case-insensitively; RegExps are tested as-is.
+ */
+export const META_PROPERTY_KEYS = [
+  "fpc-overlay-v2",
+  "fpc-show-properties",
+  "fpc:show-properties",
+  /^fpc:overlay:/,
+];
+
+export function isOverlayMetaProperty(name) {
   const n = String(name).trim().toLowerCase();
-  return (
-    n === "fpc-overlay-v2" ||
-    n.startsWith("fpc:overlay:") ||
-    n === "fpc-show-properties" ||
-    n === "fpc:show-properties"
+  return META_PROPERTY_KEYS.some((key) =>
+    typeof key === "string" ? n === key : key.test(n)
   );
 }
 
@@ -84,17 +93,96 @@ export function extractOverlayProperties(businessObject) {
 }
 
 /**
+ * Element types that are allowed to render a name-only V2 overlay when the
+ * global "show all V2 overlays" flag is enabled. This covers the non-task
+ * elements users explicitly asked for (gateways, data stores) plus the
+ * common flow-node categories that also carry meaningful names.
+ */
+const SUPPORTED_NAME_ONLY_ELEMENT_TYPES = new Set([
+  // Tasks
+  "bpmn:task",
+  "bpmn:usertask",
+  "bpmn:servicetask",
+  "bpmn:sendtask",
+  "bpmn:receivetask",
+  "bpmn:manualtask",
+  "bpmn:businessruletask",
+  "bpmn:scripttask",
+  // Subprocesses / call activity
+  "bpmn:subprocess",
+  "bpmn:adhocsubprocess",
+  "bpmn:transaction",
+  "bpmn:callactivity",
+  // Gateways
+  "bpmn:exclusivegateway",
+  "bpmn:parallelgateway",
+  "bpmn:inclusivegateway",
+  "bpmn:complexgateway",
+  "bpmn:eventbasedgateway",
+  // Events
+  "bpmn:startevent",
+  "bpmn:endevent",
+  "bpmn:intermediatethrowevent",
+  "bpmn:intermediatecatchevent",
+  "bpmn:boundaryevent",
+  // Data
+  "bpmn:datastorereference",
+  "bpmn:dataobjectreference",
+]);
+
+function isSupportedNameOnlyElementType(type) {
+  const t = String(type).trim().toLowerCase();
+  if (SUPPORTED_NAME_ONLY_ELEMENT_TYPES.has(t)) return true;
+  return (
+    /(task|gateway|event|subprocess)$/i.test(t) ||
+    t.startsWith("data") ||
+    t.includes("callactivity")
+  );
+}
+
+/**
  * Parses overlay properties for a single BPMN element into the overlay format
  * expected by `mountLightweightOverlays`.
  *
  * @param {{ name: string, value: string }[]} props - Properties from `extractOverlayProperties`.
  * @param {string} nodeId - BPMN element id (e.g. `StartEvent_1`).
+ * @param {string} elementName - Optional element name used as a fallback title.
+ * @param {string} elementType - BPMN element type (e.g. `bpmn:ExclusiveGateway`).
+ * @param {boolean} forceShow - When true, generate an overlay from the element name even if there are no real properties.
  * @returns {object | null} Overlay descriptor or `null` if no overlay properties found.
  */
-export function parseOverlayFromProperties(props, nodeId, elementName = "") {
-  if (!Array.isArray(props) || !props.length) return null;
+export function parseOverlayFromProperties(
+  props,
+  nodeId,
+  elementName = "",
+  elementType = "",
+  forceShow = false
+) {
+  const cleanProps = Array.isArray(props) ? props : [];
 
-  const realProps = props.filter((p) => !isOverlayMetaProperty(p.name));
+  const realProps = cleanProps.filter((p) => !isOverlayMetaProperty(p.name));
+
+  if (!cleanProps.length) {
+    // Even without properties, the global "show all V2 overlays" mode can
+    // render a name-only card for supported element types.
+    const cleanName = String(elementName || "").trim();
+    if (forceShow && cleanName && isSupportedNameOnlyElementType(elementType)) {
+      return {
+        node_id: nodeId,
+        text: cleanName,
+        x: 0,
+        y: -40,
+        width: 180,
+        height: 30,
+        style: {},
+        meta: { title: cleanName },
+        colorKey: "property",
+        auto: true,
+        showProperties: false,
+      };
+    }
+    return null;
+  }
 
   const jsonProp = props.find(
     (p) => String(p.name).trim().toLowerCase() === "fpc-overlay-v2"
@@ -174,32 +262,36 @@ export function parseOverlayFromProperties(props, nodeId, elementName = "") {
   // properties. Create a compact auto-generated V2 card so the properties are
   // visible immediately without requiring users to add an fpc-overlay-v2
   // descriptor by hand.
-  if (!realProps.length) return null;
+  if (realProps.length) {
+    const firstKey = String(realProps[0]?.name || "").trim();
+    const titleText = String(elementName || firstKey || "Properties").trim();
+    return {
+      node_id: nodeId,
+      text: titleText,
+      x: 0,
+      y: -40,
+      width: 180,
+      height: 30,
+      style: {},
+      meta: { title: `${realProps.length} element properties` },
+      colorKey: deriveOverlayColorKey(props, ""),
+      auto: true,
+      showProperties: readShowPropertiesFlag(props),
+    };
+  }
 
-  const firstKey = String(realProps[0]?.name || "").trim();
-  const titleText = String(elementName || firstKey || "Properties").trim();
-  return {
-    node_id: nodeId,
-    text: titleText,
-    x: 0,
-    y: -40,
-    width: 180,
-    height: 30,
-    style: {},
-    meta: { title: `${realProps.length} element properties` },
-    colorKey: deriveOverlayColorKey(props, ""),
-    auto: true,
-    showProperties: readShowPropertiesFlag(props),
-  };
+  return null;
 }
 
 /**
  * Extracts V2 overlays from all shape elements of a bpmn-js viewer/modeler instance.
  *
  * @param {object} inst - bpmn-js viewer or modeler instance.
+ * @param {boolean} forceShow - When true, also generate name-only overlays for
+ *   supported element types that have no custom properties.
  * @returns {object[]} Array of overlay descriptors ready for `mountLightweightOverlays`.
  */
-export function extractOverlaysFromBpmn(inst) {
+export function extractOverlaysFromBpmn(inst, forceShow = false) {
   if (!inst) return [];
   try {
     const registry = inst.get("elementRegistry");
@@ -208,8 +300,22 @@ export function extractOverlaysFromBpmn(inst) {
     elements.forEach((el) => {
       const bo = asObject(el.businessObject);
       const props = extractOverlayProperties(bo);
-      const overlay = parseOverlayFromProperties(props, el.id, String(bo.name || ""));
-      if (overlay) result.push({ ...overlay, properties: props });
+      const overlay = parseOverlayFromProperties(
+        props,
+        el.id,
+        String(bo.name || ""),
+        String(bo.$type || el.type || ""),
+        forceShow
+      );
+      if (overlay) {
+        // Only business properties travel with the overlay; meta-descriptors
+        // (fpc-overlay-v2, fpc-show-properties, fpc:overlay:*) are consumed by
+        // the parser and must never leak into the rendered card.
+        const businessProperties = props.filter(
+          (p) => !isOverlayMetaProperty(p?.name)
+        );
+        result.push({ ...overlay, properties: businessProperties });
+      }
     });
     return result;
   } catch (err) {
