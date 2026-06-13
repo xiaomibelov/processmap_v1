@@ -1,10 +1,10 @@
 export const PROCESSMAP_BUILD_INFO = {
-  "branch": "feat/active-runs-monitor-v1",
-  "sha": "5affb5ff0abce2735df1c34fe369a39fe9c354e3",
-  "shaShort": "5affb5f",
-  "timestamp": "2026-05-22T16:32:53.888Z",
-  "contourId": "cleanup/analytics-single-source-of-truth-v1",
-  "dirty": true,
+  "branch": "main",
+  "sha": "7485c1b309bb73012a6489fbbadab294da944ab2",
+  "shaShort": "7485c1b3",
+  "timestamp": "2026-06-13T12:05:00Z",
+  "contourId": "feat-checkbox-property-card",
+  "dirty": false,
   "host": "clearvestnic.ru"
 };
 export default PROCESSMAP_BUILD_INFO;
