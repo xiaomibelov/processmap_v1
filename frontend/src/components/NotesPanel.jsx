@@ -3107,7 +3107,7 @@ export default function NotesPanel({
                       type="checkbox"
                       checked={!!showPropertiesFlag}
                       onChange={(event) => void setShowPropertiesFlag(!!event.target.checked)}
-                      disabled={!!disabled || !!camundaPropertiesBusy}
+                      disabled={!!disabled || !!camundaPropertiesBusy || !selectedCamundaPropertiesEditable}
                       data-testid="bpmn-show-properties-per-element-checkbox"
                     />
                     <span>Показывать свойства над задачей</span>
