@@ -9,3 +9,42 @@
 @import "./app/04-process-llm.css";
 @import "./app/05-leftpanel-polish.css";
 @import "./app/06-final-structure.css";
+
+/* V2 BPMN extension overlay color modifiers (fixed-palette fallback for
+   well-known overlay types). Dynamic HSL colors are applied inline from
+   overlayPropertyColorByKey for arbitrary property names. */
+.fpc-overlay-v2--green {
+  background-color: #e8f5e9 !important;
+  border-color: #4caf50 !important;
+  color: #1b5e20 !important;
+}
+
+.fpc-overlay-v2--blue {
+  background-color: #e3f2fd !important;
+  border-color: #2196f3 !important;
+  color: #0d47a1 !important;
+}
+
+.fpc-overlay-v2--orange {
+  background-color: #fff3e0 !important;
+  border-color: #ff9800 !important;
+  color: #e65100 !important;
+}
+
+.fpc-overlay-v2--red {
+  background-color: #ffebee !important;
+  border-color: #f44336 !important;
+  color: #b71c1c !important;
+}
+
+.fpc-overlay-v2--purple {
+  background-color: #f3e5f5 !important;
+  border-color: #9c27b0 !important;
+  color: #4a148c !important;
+}
+
+.fpc-overlay-v2--yellow {
+  background-color: #fff9c4 !important;
+  border-color: #fbc02d !important;
+  color: #333333 !important;
+}

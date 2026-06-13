@@ -21,6 +21,19 @@ function isShapeElement(el) {
   return !!el && !Array.isArray(el?.waypoints) && el.type !== "label";
 }
 
+function isOverlayMetaProperty(name) {
+  const n = String(name).trim().toLowerCase();
+  return n === "fpc-overlay-v2" || n.startsWith("fpc:overlay:");
+}
+
+function deriveOverlayColorKey(props, explicitType) {
+  const type = String(explicitType || "").trim();
+  if (type) return type;
+  const firstReal = (props || []).find((p) => !isOverlayMetaProperty(p.name));
+  if (firstReal?.name) return String(firstReal.name).trim();
+  return "property";
+}
+
 /**
  * Collects `camunda:properties` entries from a BPMN element business object.
  *
@@ -82,6 +95,7 @@ export function parseOverlayFromProperties(props, nodeId) {
               ? parsed.style
               : {},
           meta: { title: String(parsed.title ?? meta.title ?? "") },
+          colorKey: deriveOverlayColorKey(props, parsed.type || meta.type),
         };
       }
     } catch {
@@ -127,6 +141,7 @@ export function parseOverlayFromProperties(props, nodeId) {
     height: Number(get("height") ?? 30),
     style,
     meta: { title: String(get("title") ?? "") },
+    colorKey: deriveOverlayColorKey(props, get("type")),
   };
 }
 
