@@ -40,6 +40,7 @@ function createStyleMock() {
 function createGraphicsMock() {
   const attrs = new Map();
   return {
+    parentNode: { nodeName: "g" },
     style: createStyleMock(),
     setAttribute(name, value) {
       attrs.set(String(name || ""), String(value || ""));
@@ -121,7 +122,8 @@ function createRegistry(elements = []) {
       return list.filter((el) => fn(el));
     },
     getGraphics(id) {
-      return graphicsById.get(String(id || "")) || null;
+      const key = id && typeof id === "object" ? String(id.id || "") : String(id || "");
+      return graphicsById.get(key) || null;
     },
   };
 }
@@ -443,11 +445,16 @@ test("properties overlay decor builds sequence preview from zeebe properties in 
     const call = fixture.overlays.addCalls[0];
     assert.equal(call.elementId, "Flow_1");
     assert.equal(call.overlayType, "fpc-properties");
-    const firstRow = call.payload.html.childNodes[0].childNodes[0];
-    assert.equal(firstRow?.title, "container_condition: Закрыта");
-    assert.equal(firstRow.childNodes[0]?.childNodes[0]?.textContent, "container_condition");
-    assert.equal(firstRow.childNodes[1]?.textContent, "Закрыта");
-    assert.notEqual(firstRow.childNodes[0]?.childNodes[0]?.textContent, "Да");
+    const rows = call.payload.html.childNodes[0].childNodes;
+    assert.equal(rows.length, 2);
+    const nameRow = rows[0];
+    assert.equal(nameRow?.title, "Name: Да");
+    assert.equal(nameRow.childNodes[0]?.childNodes[0]?.textContent, "Name");
+    assert.equal(nameRow.childNodes[1]?.textContent, "Да");
+    const propRow = rows[1];
+    assert.equal(propRow?.title, "container_condition: Закрыта");
+    assert.equal(propRow.childNodes[0]?.childNodes[0]?.textContent, "container_condition");
+    assert.equal(propRow.childNodes[1]?.textContent, "Закрыта");
   });
 });
 
