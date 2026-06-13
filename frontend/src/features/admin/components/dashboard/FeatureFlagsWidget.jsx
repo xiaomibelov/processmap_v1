@@ -6,7 +6,7 @@ const DEFAULT_LABELS = {
   bpmn_fps_meter_enabled: "Bpmn FPS Meter (visible overlay)",
   canvas_profiler_enabled: "Canvas Profiler (console metrics)",
   lightweightOverlays: "Lightweight Overlays (JSON instead of XML)",
-  __FPC_OVERLAY_V2__: "Hybrid Overlay V2 (white cards, anchor lines)",
+  useBpmnExtensionOverlays: "Hybrid Overlay V2 (white cards, anchor lines)",
 };
 
 export default function FeatureFlagsWidget() {

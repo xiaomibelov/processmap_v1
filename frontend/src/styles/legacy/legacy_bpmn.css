@@ -28,25 +28,9 @@
   background-color: var(--bpmn-bg);
   background-image:
     radial-gradient(130% 90% at 8% -8%, var(--bpmn-glow-a), transparent 62%),
-    radial-gradient(120% 95% at 102% 4%, var(--bpmn-glow-b), transparent 58%),
-    linear-gradient(var(--bpmn-grid-major) 1px, transparent 1px),
-    linear-gradient(90deg, var(--bpmn-grid-major) 1px, transparent 1px),
-    linear-gradient(var(--bpmn-grid-minor) 1px, transparent 1px),
-    linear-gradient(90deg, var(--bpmn-grid-minor) 1px, transparent 1px);
-  background-size:
-    auto,
-    auto,
-    120px 120px,
-    120px 120px,
-    24px 24px,
-    24px 24px;
-  background-position:
-    0 0,
-    0 0,
-    -1px -1px,
-    -1px -1px,
-    -1px -1px,
-    -1px -1px;
+    radial-gradient(120% 80% at 95% 5%, var(--bpmn-glow-b), transparent 55%),
+    linear-gradient(135deg, var(--bpmn-grid-a) 0%, var(--bpmn-grid-b) 100%);
+  opacity: 0.85;
 }
 
 .bpmnStage .bpmnLayer {
@@ -63,4 +47,64 @@
 .bpmnStage .bpmnCanvas .djs-container svg,
 .bpmnStage .bpmnCanvas .djs-container .djs-canvas {
   background: transparent !important;
+}
+
+/* V2 BPMN extension overlays */
+.fpc-overlay-v2 {
+  position: relative;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 4px 8px;
+  overflow: hidden;
+  user-select: none;
+  font-family: inherit;
+  line-height: 1.2;
+  border-left: 3px solid #fbc02d;
+}
+
+.fpc-overlay-v2__title {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fpc-overlay-v2__properties {
+  flex: 1 1 auto;
+  list-style: none;
+  margin: 4px 0 0 0;
+  padding: 4px 0 0 0;
+  max-height: 54px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  font-size: 11px;
+  color: #555555;
+  border-top: 1px dashed #fbc02d;
+}
+
+.fpc-overlay-v2__property {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  margin: 0;
+  padding: 1px 0;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.fpc-overlay-v2__property-name {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: #444444;
+}
+
+.fpc-overlay-v2__property-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: inherit;
 }
