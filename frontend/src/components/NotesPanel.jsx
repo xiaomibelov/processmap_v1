@@ -35,6 +35,7 @@ import {
 } from "../features/process/camunda/propertyDictionaryModel";
 import useCamundaPropertiesOverlayPreview from "../features/process/camunda/useCamundaPropertiesOverlayPreview";
 import useNotesPanelController from "./notesPanel/useNotesPanelController.js";
+import { SHOW_PROPERTIES_FLAG_KEY } from "./sidebar/useElementSettingsController.js";
 import SidebarShell from "./sidebar/SidebarShell";
 import ActorsSection from "./sidebar/ActorsSection";
 import TemplatesAndTldrSection from "./sidebar/TemplatesAndTldrSection";
@@ -76,6 +77,10 @@ import ExecutionBridgeSection from "./sidebar/ExecutionBridgeSection";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
+}
+
+function isShowPropertiesFlagRow(row) {
+  return String(row?.name || "").trim().toLowerCase() === SHOW_PROPERTIES_FLAG_KEY;
 }
 
 function str(v) {
@@ -1402,6 +1407,11 @@ export default function NotesPanel({
   const robotMetaSyncState = robotMetaBusy
     ? "syncing"
     : (robotMetaSaveFailed ? "error" : (robotMetaHasLocalChanges ? "local" : "saved"));
+  const showPropertiesFlag = useMemo(() => {
+    const rows = camundaPropertiesDraft?.properties?.extensionProperties;
+    if (!Array.isArray(rows)) return false;
+    return rows.some(isShowPropertiesFlagRow);
+  }, [camundaPropertiesDraft]);
   const {
     finalizedCamundaPropertiesDraft,
     selectedCamundaExtensionCanonical,
@@ -2390,6 +2400,27 @@ export default function NotesPanel({
     setCamundaPropertiesErr("");
   }, [camundaPropertiesDraftKey]);
 
+  const setShowPropertiesFlag = useCallback((enabled) => {
+    if (!selectedCamundaPropertiesEditable || !selectedElementId) return;
+    const nextEnabled = !!enabled;
+    const prevRows = Array.isArray(camundaPropertiesDraft?.properties?.extensionProperties)
+      ? camundaPropertiesDraft.properties.extensionProperties
+      : [];
+    if (nextEnabled === showPropertiesFlag) return;
+    const nextRows = nextEnabled
+      ? [...prevRows, { id: `prop_draft_${Date.now()}`, name: SHOW_PROPERTIES_FLAG_KEY, value: "true" }]
+      : prevRows.filter((row) => !isShowPropertiesFlagRow(row));
+    const nextDraft = {
+      ...camundaPropertiesDraft,
+      properties: {
+        ...camundaPropertiesDraft.properties,
+        extensionProperties: nextRows,
+      },
+    };
+    updateCamundaPropertiesDraft(nextDraft);
+    void saveSelectedCamundaProperties(nextDraft);
+  }, [selectedCamundaPropertiesEditable, selectedElementId, showPropertiesFlag, camundaPropertiesDraft, updateCamundaPropertiesDraft, saveSelectedCamundaProperties]);
+
   const updateBpmnDocumentationDraft = useCallback((nextRowsRaw) => {
     setBpmnDocumentationDraftRows(normalizeDocumentationRows(nextRowsRaw, { keepEmpty: true }));
     setBpmnDocumentationSaveFailed(false);
@@ -2464,11 +2495,11 @@ export default function NotesPanel({
     }
   }
 
-  async function saveSelectedCamundaProperties() {
+  async function saveSelectedCamundaProperties(draftOverride) {
     if (!selectedCamundaPropertiesEditable || !selectedElementId) return;
     if (typeof onSetElementCamundaExtensions !== "function" || disabled || camundaPropertiesBusy) return;
     const finalizedDraft = finalizeExtensionStateWithDictionary({
-      extensionStateRaw: camundaPropertiesDraft,
+      extensionStateRaw: draftOverride || camundaPropertiesDraft,
       dictionaryBundleRaw: orgPropertyDictionaryBundle,
     });
     const normalized = normalizeCamundaExtensionState(finalizedDraft);
@@ -3068,6 +3099,16 @@ export default function NotesPanel({
                       onChange={(event) => void onShowPropertiesOverlayAlwaysChange?.(!!event.target.checked)}
                       disabled={!!disabled}
                       data-testid="bpmn-show-properties-checkbox"
+                    />
+                    <span>Всегда показывать свойства над задачей</span>
+                  </label>
+                  <label className="sidebarPropertiesInlineToggle">
+                    <input
+                      type="checkbox"
+                      checked={!!showPropertiesFlag}
+                      onChange={(event) => void setShowPropertiesFlag(!!event.target.checked)}
+                      disabled={!!disabled || !!camundaPropertiesBusy}
+                      data-testid="bpmn-show-properties-per-element-checkbox"
                     />
                     <span>Показывать свойства над задачей</span>
                   </label>
