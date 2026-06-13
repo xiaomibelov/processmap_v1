@@ -13,6 +13,12 @@ import {
 import { setSchemaPropertyValueInExtensionState } from "../../features/process/camunda/propertyDictionaryModel";
 import { deleteExtensionPropertyRowsByDeleteAction } from "./propertyDeleteSemantics";
 
+export const SHOW_PROPERTIES_FLAG_KEY = "fpc-show-properties";
+
+function isShowPropertiesFlagRow(row) {
+  return String(row?.name || "").trim().toLowerCase() === SHOW_PROPERTIES_FLAG_KEY;
+}
+
 export default function useElementSettingsController({
   selectedElementId,
   extensionStateDraft,
@@ -36,6 +42,7 @@ export default function useElementSettingsController({
   const properties = Array.isArray(state?.properties?.extensionProperties)
     ? state.properties.extensionProperties
     : [];
+  const showPropertiesFlag = properties.some(isShowPropertiesFlagRow);
   const listeners = Array.isArray(state?.properties?.extensionListeners)
     ? state.properties.extensionListeners
     : [];
@@ -150,6 +157,19 @@ export default function useElementSettingsController({
 
   function deletePropertyRow(rowId) {
     replaceExtensionProperties(deleteExtensionPropertyRowsByDeleteAction(properties, rowId));
+  }
+
+  function setShowPropertiesFlag(enabled) {
+    const nextEnabled = !!enabled;
+    if (nextEnabled === showPropertiesFlag) return;
+    if (nextEnabled) {
+      replaceExtensionProperties([
+        ...properties,
+        { id: `prop_draft_${Date.now()}`, name: SHOW_PROPERTIES_FLAG_KEY, value: "true" },
+      ]);
+    } else {
+      replaceExtensionProperties(properties.filter((row) => !isShowPropertiesFlagRow(row)));
+    }
   }
 
   function updateCamundaIoParameter(rowRef, patch = {}) {
@@ -317,6 +337,8 @@ export default function useElementSettingsController({
     updatePropertyRow,
     addPropertyRow,
     deletePropertyRow,
+    showPropertiesFlag,
+    setShowPropertiesFlag,
     updateCamundaIoParameter,
     addCamundaIoRow,
     deleteCamundaIoRow,

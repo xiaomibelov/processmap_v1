@@ -24,7 +24,7 @@ import {
 import { deriveNodePathCompareSummary } from "./nodePathCompare";
 import { resolveNodePathStatusState } from "./nodePathSyncState";
 import SidebarTrustStatus from "./SidebarTrustStatus";
-import useElementSettingsController from "./useElementSettingsController";
+import useElementSettingsController, { SHOW_PROPERTIES_FLAG_KEY } from "./useElementSettingsController";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -35,6 +35,10 @@ function clampInlineValue(value, limit = 120) {
   if (!text) return "";
   if (text.length <= limit) return text;
   return `${text.slice(0, Math.max(18, limit - 1)).trimEnd()}…`;
+}
+
+function isShowPropertiesFlagRow(row) {
+  return String(row?.name || "").trim().toLowerCase() === SHOW_PROPERTIES_FLAG_KEY;
 }
 
 function camundaIoTypeLabel(shapeRaw) {
@@ -1112,6 +1116,8 @@ export function CamundaPropertiesSettings({
     updatePropertyRow,
     addPropertyRow,
     deletePropertyRow,
+    showPropertiesFlag,
+    setShowPropertiesFlag,
     updateCamundaIoParameter,
     addCamundaIoRow,
     deleteCamundaIoRow,
@@ -1152,11 +1158,12 @@ export function CamundaPropertiesSettings({
     : [];
   const hasDuplicateLogicalProperties = duplicateLogicalKeys.length > 0;
   const rawPropertyRows = properties;
-  const additionalBpmnRows = hasDuplicateLogicalProperties
+  const additionalBpmnRows = (hasDuplicateLogicalProperties
     ? rawPropertyRows
     : (hasDictionarySchema
       ? (Array.isArray(dictionaryEditorModel?.customRows) ? dictionaryEditorModel.customRows : [])
-      : visibleFallbackProperties);
+      : visibleFallbackProperties))
+    .filter((row) => !isShowPropertiesFlagRow(row));
   const operationPropertiesCount = Array.isArray(dictionaryEditorModel?.schemaRows)
     ? dictionaryEditorModel.schemaRows.length
     : 0;
@@ -1677,6 +1684,7 @@ export function CamundaPropertiesSettings({
 
   const showSchemaHint = !hasDictionarySchema && !!normalizedOperationKey && !!dictionaryLoading && !dictionaryError;
   const showFallbackBlock = !hasDictionarySchema && (!normalizedOperationKey || !dictionaryLoading || !!dictionaryError);
+  const isTaskLikeElement = /(^|:)Task$/i.test(String(selectedElementType || ""));
   const additionalBpmnCount = hasDuplicateLogicalProperties
     ? additionalBpmnRows.length
     : (hasDictionarySchema
@@ -1937,6 +1945,19 @@ export function CamundaPropertiesSettings({
           ctaVariant={String(extensionStateStatusMeta.tone || "").trim().toLowerCase() === "error" ? "primary" : "secondary"}
           testIdPrefix="camunda-extension-state-status"
         />
+
+        {isTaskLikeElement ? (
+          <label className="inline-flex items-center gap-2 text-[11px] text-muted px-3 py-1">
+            <input
+              type="checkbox"
+              checked={showPropertiesFlag}
+              onChange={(event) => setShowPropertiesFlag(!!event.target.checked)}
+              disabled={!!disabled || !!extensionStateBusy}
+              data-testid="bpmn-show-properties-checkbox"
+            />
+            Показывать свойства над задачей
+          </label>
+        ) : null}
 
         <section className="sidebarPropertiesBlock">
           <div className="sidebarPropertiesBlockHead">
