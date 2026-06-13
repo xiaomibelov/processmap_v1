@@ -23,7 +23,24 @@ function isShapeElement(el) {
 
 function isOverlayMetaProperty(name) {
   const n = String(name).trim().toLowerCase();
-  return n === "fpc-overlay-v2" || n.startsWith("fpc:overlay:");
+  return (
+    n === "fpc-overlay-v2" ||
+    n.startsWith("fpc:overlay:") ||
+    n === "fpc-show-properties" ||
+    n === "fpc:show-properties"
+  );
+}
+
+function isShowPropertiesFlag(name) {
+  const n = String(name).trim().toLowerCase();
+  return n === "fpc-show-properties" || n === "fpc:show-properties";
+}
+
+function readShowPropertiesFlag(props) {
+  const flag = asArray(props).find((p) => isShowPropertiesFlag(p?.name));
+  if (!flag) return false;
+  const v = String(flag.value ?? "").trim().toLowerCase();
+  return v === "true" || v === "1" || v === "yes";
 }
 
 function deriveOverlayColorKey(props, explicitType) {
@@ -102,6 +119,7 @@ export function parseOverlayFromProperties(props, nodeId, elementName = "") {
               : {},
           meta: { title: String(parsed.title ?? meta.title ?? "") },
           colorKey: deriveOverlayColorKey(props, parsed.type || meta.type),
+          showProperties: readShowPropertiesFlag(props),
         };
       }
     } catch {
@@ -147,6 +165,7 @@ export function parseOverlayFromProperties(props, nodeId, elementName = "") {
         style,
         meta: { title: String(get("title") ?? "") },
         colorKey: deriveOverlayColorKey(props, get("type")),
+        showProperties: readShowPropertiesFlag(props),
       };
     }
   }
@@ -170,6 +189,7 @@ export function parseOverlayFromProperties(props, nodeId, elementName = "") {
     meta: { title: `${realProps.length} element properties` },
     colorKey: deriveOverlayColorKey(props, ""),
     auto: true,
+    showProperties: readShowPropertiesFlag(props),
   };
 }
 
