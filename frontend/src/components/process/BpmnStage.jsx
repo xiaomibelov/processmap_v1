@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import { useFeatureFlag } from "../../features/config/featureFlagsContext";
 import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bpmnApi";
 import { extractOverlaysFromBpmn } from "./utils/bpmnOverlayParser";
+import { overlayPropertyColorByKey } from "../../features/process/bpmn/stage/decor/overlayColorModel.js";
 import { apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
 import {
@@ -4236,10 +4237,15 @@ const BpmnStage = forwardRef(function BpmnStage({
           const offsetY = Number(ovl.y ?? -40);
           const offsetX = Number(ovl.x ?? 0);
           const properties = Array.isArray(ovl.properties) ? ovl.properties : [];
-          const hasExtraProperties = properties.length > 1;
 
-          // Legacy lightweight overlay defaults (yellow sticky-note look used by the
-          // original backend _compute_overlays_json / apiGetOverlays path).
+          // Determine the card color from the overlay type or the first real property.
+          const colorKey = String(
+            ovl.colorKey || ovl.meta?.type || ovl.type || ""
+          ).trim();
+          const colorModel = overlayPropertyColorByKey(colorKey || "property");
+
+          // Legacy lightweight overlay defaults, overridden by any explicit style
+          // in the overlay descriptor and then by the color model derived above.
           const legacyStyle = {
             bg: "#fff9c4",
             color: "#333333",
@@ -4247,19 +4253,32 @@ const BpmnStage = forwardRef(function BpmnStage({
             border: "1px solid #fbc02d",
           };
           const incomingStyle = ovl.style && typeof ovl.style === "object" && !Array.isArray(ovl.style) ? ovl.style : {};
-          const style = { ...legacyStyle, ...incomingStyle };
+          const style = {
+            ...legacyStyle,
+            ...incomingStyle,
+            bg: colorModel.background,
+            color: colorModel.text,
+            border: `1px solid ${colorModel.accent}`,
+          };
+
+          // Optional fixed-palette modifier class for well-known overlay types.
+          const knownTypes = new Set(["green", "blue", "orange", "red", "purple", "yellow"]);
+          const isKnownType = knownTypes.has(colorKey.toLowerCase());
+          const typeModifier = isKnownType ? ` fpc-overlay-v2--${colorKey.toLowerCase()}` : "";
 
           const div = document.createElement("div");
-          div.className = "fpc-overlay-v2";
+          div.className = `fpc-overlay-v2${typeModifier}`;
           div.title = String(ovl.meta?.title || ovl.text || "");
           div.style.boxSizing = "border-box";
           div.style.width = `${width}px`;
           div.style.minHeight = `${baseHeight}px`;
-          div.style.backgroundColor = String(style.bg);
-          div.style.color = String(style.color);
-          div.style.border = String(style.border);
+          if (!isKnownType) {
+            div.style.backgroundColor = String(style.bg);
+            div.style.color = String(style.color);
+            div.style.border = String(style.border);
+          }
           div.style.borderRadius = "6px";
-          div.style.boxShadow = "0 2px 6px rgba(0,0,0,0.15)";
+          div.style.boxShadow = `0 2px 6px ${colorModel.shadow}`;
           div.style.pointerEvents = "none";
 
           const titleEl = document.createElement("div");
@@ -4268,12 +4287,13 @@ const BpmnStage = forwardRef(function BpmnStage({
           div.appendChild(titleEl);
 
           // Filter out overlay descriptor properties; only show real BPMN/custom properties.
+          const isOverlayMetaProperty = (name) => {
+            const n = String(name).trim().toLowerCase();
+            return n === "fpc-overlay-v2" || n.startsWith("fpc:overlay:");
+          };
           const visibleProperties = properties.filter((prop) => {
             const name = String(prop.name ?? "").trim();
-            if (!name) return false;
-            if (name.toLowerCase() === "fpc-overlay-v2") return false;
-            if (name.toLowerCase().startsWith("fpc:overlay:")) return false;
-            return true;
+            return !!name && !isOverlayMetaProperty(name);
           });
 
           if (visibleProperties.length > 0) {
@@ -4286,11 +4306,16 @@ const BpmnStage = forwardRef(function BpmnStage({
                 displayValue = `${displayValue.slice(0, 50)}...`;
               }
 
+              const propColor = overlayPropertyColorByKey(name);
+
               const itemEl = document.createElement("li");
               itemEl.className = "fpc-overlay-v2__property";
+              itemEl.style.borderLeft = `3px solid ${propColor.accent}`;
+              itemEl.style.paddingLeft = "6px";
 
               const nameEl = document.createElement("span");
               nameEl.className = "fpc-overlay-v2__property-name";
+              nameEl.style.color = propColor.accent;
               nameEl.textContent = `${name}:`;
 
               const valueEl = document.createElement("span");
