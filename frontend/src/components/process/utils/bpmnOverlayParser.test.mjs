@@ -1,0 +1,160 @@
+import { describe, it } from "node:test";
+import assert from "node:assert";
+import {
+  extractOverlayProperties,
+  parseOverlayFromProperties,
+  extractOverlaysFromBpmn,
+  isOverlayMetaProperty,
+} from "./bpmnOverlayParser.js";
+
+describe("bpmnOverlayParser", () => {
+  it("parses real properties into an auto overlay", () => {
+    const props = [{ name: "owner", value: "finance" }];
+    const overlay = parseOverlayFromProperties(props, "Task_1", "Approve invoice");
+    assert.ok(overlay);
+    assert.strictEqual(overlay.node_id, "Task_1");
+    assert.strictEqual(overlay.text, "Approve invoice");
+    assert.strictEqual(overlay.showProperties, false);
+    assert.strictEqual(overlay.auto, true);
+  });
+
+  it("returns null when there are no properties and forceShow is off", () => {
+    const overlay = parseOverlayFromProperties([], "Gateway_1", "Approve?");
+    assert.strictEqual(overlay, null);
+  });
+
+  it("creates a name-only overlay for supported types when forceShow is on", () => {
+    const overlay = parseOverlayFromProperties([], "Gateway_1", "Approve?", "bpmn:ExclusiveGateway", true);
+    assert.ok(overlay);
+    assert.strictEqual(overlay.text, "Approve?");
+    assert.strictEqual(overlay.showProperties, false);
+    assert.strictEqual(overlay.auto, true);
+  });
+
+  it("creates a name-only overlay for data stores when forceShow is on", () => {
+    const overlay = parseOverlayFromProperties([], "DataStore_1", "Invoices", "bpmn:DataStoreReference", true);
+    assert.ok(overlay);
+    assert.strictEqual(overlay.text, "Invoices");
+  });
+
+  it("does not create a name-only overlay for unsupported types even when forceShow is on", () => {
+    const overlay = parseOverlayFromProperties([], "Lane_1", "Finance", "bpmn:Lane", true);
+    assert.strictEqual(overlay, null);
+  });
+
+  it("extracts overlays for all shape elements including gateways/data stores when forceShow is on", () => {
+    const registry = {
+      getAll: () => [
+        {
+          id: "Task_1",
+          type: "bpmn:Task",
+          businessObject: {
+            id: "Task_1",
+            $type: "bpmn:Task",
+            name: "Task",
+            extensionElements: {
+              values: [
+                {
+                  $type: "camunda:properties",
+                  values: [{ name: "owner", value: "a" }],
+                },
+              ],
+            },
+          },
+        },
+        {
+          id: "Gateway_1",
+          type: "bpmn:ExclusiveGateway",
+          width: 50,
+          height: 50,
+          businessObject: {
+            id: "Gateway_1",
+            $type: "bpmn:ExclusiveGateway",
+            name: "Approve?",
+          },
+        },
+        {
+          id: "DataStore_1",
+          type: "bpmn:DataStoreReference",
+          width: 50,
+          height: 50,
+          businessObject: {
+            id: "DataStore_1",
+            $type: "bpmn:DataStoreReference",
+            name: "Invoices",
+          },
+        },
+      ],
+    };
+    const inst = { get: (name) => (name === "elementRegistry" ? registry : undefined) };
+    const overlays = extractOverlaysFromBpmn(inst, true);
+    const ids = overlays.map((o) => o.node_id).sort();
+    assert.deepStrictEqual(ids, ["DataStore_1", "Gateway_1", "Task_1"]);
+  });
+
+  it("recognizes meta property keys", () => {
+    assert.strictEqual(isOverlayMetaProperty("fpc-overlay-v2"), true);
+    assert.strictEqual(isOverlayMetaProperty("fpc-show-properties"), true);
+    assert.strictEqual(isOverlayMetaProperty("fpc:show-properties"), true);
+    assert.strictEqual(isOverlayMetaProperty("fpc:overlay:text"), true);
+    assert.strictEqual(isOverlayMetaProperty("ingredient"), false);
+    assert.strictEqual(isOverlayMetaProperty("Equipment"), false);
+  });
+
+  it("strips meta properties from overlay properties in extractOverlaysFromBpmn", () => {
+    const registry = {
+      getAll: () => [
+        {
+          id: "Task_1",
+          type: "bpmn:Task",
+          businessObject: {
+            id: "Task_1",
+            $type: "bpmn:Task",
+            name: "Mix",
+            extensionElements: {
+              values: [
+                {
+                  $type: "camunda:properties",
+                  values: [
+                    { name: "fpc-overlay-v2", value: '{"text":"Mix"}' },
+                    { name: "fpc-show-properties", value: "true" },
+                    { name: "fpc:overlay:text", value: "Mix" },
+                    { name: "ingredient", value: "cream" },
+                    { name: "equipment", value: "mixer" },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+    const inst = { get: (name) => (name === "elementRegistry" ? registry : undefined) };
+    const overlays = extractOverlaysFromBpmn(inst, false);
+    assert.strictEqual(overlays.length, 1);
+    const props = overlays[0].properties;
+    assert.strictEqual(props.length, 2);
+    assert.ok(props.some((p) => p.name === "ingredient"));
+    assert.ok(props.some((p) => p.name === "equipment"));
+    assert.ok(!props.some((p) => isOverlayMetaProperty(p.name)));
+  });
+
+  it("extractOverlayProperties reads camunda:properties from a business object", () => {
+    const bo = {
+      extensionElements: {
+        values: [
+          {
+            $type: "camunda:properties",
+            values: [
+              { name: "region", value: "eu" },
+              { name: "fpc-overlay-v2", value: "{}" },
+            ],
+          },
+        ],
+      },
+    };
+    const props = extractOverlayProperties(bo);
+    assert.strictEqual(props.length, 2);
+    assert.strictEqual(props[0].name, "region");
+  });
+});
