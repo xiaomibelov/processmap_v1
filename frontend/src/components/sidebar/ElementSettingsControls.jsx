@@ -1116,8 +1116,6 @@ export function CamundaPropertiesSettings({
     updatePropertyRow,
     addPropertyRow,
     deletePropertyRow,
-    showPropertiesFlag,
-    setShowPropertiesFlag,
     updateCamundaIoParameter,
     addCamundaIoRow,
     deleteCamundaIoRow,
@@ -1684,7 +1682,6 @@ export function CamundaPropertiesSettings({
 
   const showSchemaHint = !hasDictionarySchema && !!normalizedOperationKey && !!dictionaryLoading && !dictionaryError;
   const showFallbackBlock = !hasDictionarySchema && (!normalizedOperationKey || !dictionaryLoading || !!dictionaryError);
-  const isTaskLikeElement = /(^|:)Task$/i.test(String(selectedElementType || ""));
   const additionalBpmnCount = hasDuplicateLogicalProperties
     ? additionalBpmnRows.length
     : (hasDictionarySchema
@@ -1945,19 +1942,6 @@ export function CamundaPropertiesSettings({
           ctaVariant={String(extensionStateStatusMeta.tone || "").trim().toLowerCase() === "error" ? "primary" : "secondary"}
           testIdPrefix="camunda-extension-state-status"
         />
-
-        {isTaskLikeElement ? (
-          <label className="inline-flex items-center gap-2 text-[11px] text-muted px-3 py-1">
-            <input
-              type="checkbox"
-              checked={showPropertiesFlag}
-              onChange={(event) => setShowPropertiesFlag(!!event.target.checked)}
-              disabled={!!disabled || !!extensionStateBusy}
-              data-testid="bpmn-show-properties-checkbox"
-            />
-            Показывать свойства над задачей
-          </label>
-        ) : null}
 
         <section className="sidebarPropertiesBlock">
           <div className="sidebarPropertiesBlockHead">
