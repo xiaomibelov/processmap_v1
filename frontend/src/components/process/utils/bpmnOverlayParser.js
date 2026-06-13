@@ -74,7 +74,7 @@ export function extractOverlayProperties(businessObject) {
  * @param {string} nodeId - BPMN element id (e.g. `StartEvent_1`).
  * @returns {object | null} Overlay descriptor or `null` if no overlay properties found.
  */
-export function parseOverlayFromProperties(props, nodeId) {
+export function parseOverlayFromProperties(props, nodeId, elementName = "") {
   if (!Array.isArray(props) || !props.length) return null;
 
   const realProps = props.filter((p) => !isOverlayMetaProperty(p.name));
@@ -151,11 +151,26 @@ export function parseOverlayFromProperties(props, nodeId) {
     }
   }
 
-  // No explicit overlay descriptor found and no prefixed overlay properties.
-  // The element may still have real BPMN/custom properties, but those are
-  // rendered by the legacy property overlay unless an explicit V2 descriptor
-  // is added to the element.
-  return null;
+  // No explicit overlay descriptor found, but the element has real BPMN/custom
+  // properties. Create a compact auto-generated V2 card so the properties are
+  // visible immediately without requiring users to add an fpc-overlay-v2
+  // descriptor by hand.
+  if (!realProps.length) return null;
+
+  const firstKey = String(realProps[0]?.name || "").trim();
+  const titleText = String(elementName || firstKey || "Properties").trim();
+  return {
+    node_id: nodeId,
+    text: titleText,
+    x: 0,
+    y: -40,
+    width: 180,
+    height: 30,
+    style: {},
+    meta: { title: `${realProps.length} element properties` },
+    colorKey: deriveOverlayColorKey(props, ""),
+    auto: true,
+  };
 }
 
 /**
@@ -173,7 +188,7 @@ export function extractOverlaysFromBpmn(inst) {
     elements.forEach((el) => {
       const bo = asObject(el.businessObject);
       const props = extractOverlayProperties(bo);
-      const overlay = parseOverlayFromProperties(props, el.id);
+      const overlay = parseOverlayFromProperties(props, el.id, String(bo.name || ""));
       if (overlay) result.push({ ...overlay, properties: props });
     });
     return result;

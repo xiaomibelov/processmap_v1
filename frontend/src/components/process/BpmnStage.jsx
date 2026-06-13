@@ -4291,10 +4291,19 @@ const BpmnStage = forwardRef(function BpmnStage({
             const n = String(name).trim().toLowerCase();
             return n === "fpc-overlay-v2" || n.startsWith("fpc:overlay:");
           };
-          const visibleProperties = properties.filter((prop) => {
+          let visibleProperties = properties.filter((prop) => {
             const name = String(prop.name ?? "").trim();
             return !!name && !isOverlayMetaProperty(name);
           });
+
+          const isAutoOverlay = ovl.auto === true;
+          const MAX_AUTO_PROPS = 4;
+          const hiddenAutoCount = isAutoOverlay && visibleProperties.length > MAX_AUTO_PROPS
+            ? visibleProperties.length - MAX_AUTO_PROPS
+            : 0;
+          if (isAutoOverlay && hiddenAutoCount > 0) {
+            visibleProperties = visibleProperties.slice(0, MAX_AUTO_PROPS);
+          }
 
           if (visibleProperties.length > 0) {
             const listEl = document.createElement("ul");
@@ -4326,6 +4335,12 @@ const BpmnStage = forwardRef(function BpmnStage({
               itemEl.appendChild(valueEl);
               listEl.appendChild(itemEl);
             });
+            if (hiddenAutoCount > 0) {
+              const moreEl = document.createElement("li");
+              moreEl.className = "fpc-overlay-v2__property fpc-overlay-v2__property--more";
+              moreEl.textContent = `+${hiddenAutoCount} more`;
+              listEl.appendChild(moreEl);
+            }
             if (listEl.childNodes.length > 0) {
               div.appendChild(listEl);
             }
@@ -4333,13 +4348,18 @@ const BpmnStage = forwardRef(function BpmnStage({
 
           // Expand height when there are visible properties so the list is readable,
           // while keeping the bottom offset equal to offsetY.
-          const renderedHeight = visibleProperties.length > 0 ? Math.max(baseHeight, 80) : baseHeight;
-          div.style.height = `${renderedHeight}px`;
+          const lineHeight = 16;
+          const titleHeight = 18;
+          const listPadding = 8;
+          const computedHeight = visibleProperties.length > 0
+            ? Math.max(baseHeight, titleHeight + listPadding + (visibleProperties.length + (hiddenAutoCount > 0 ? 1 : 0)) * lineHeight)
+            : baseHeight;
+          div.style.height = `${computedHeight}px`;
 
           // y is interpreted as the vertical gap between the element top and the overlay bottom;
           // negative values place the overlay above the element with that padding.
           const oid = overlays.add(el.id, {
-            position: { top: offsetY - renderedHeight, left: offsetX },
+            position: { top: offsetY - computedHeight, left: offsetX },
             html: div,
           });
           lightweightOverlayStateRef.current[kind].push(oid);
