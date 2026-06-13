@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useFeatureFlag } from "../../features/config/featureFlagsContext";
-import { apiDeleteBpmnXml, apiGetBpmnXml, apiGetOverlays, apiPutBpmnXml } from "../../lib/api/bpmnApi";
+import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bpmnApi";
+import { extractOverlaysFromBpmn } from "./utils/bpmnOverlayParser";
 import { apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
 import {
@@ -4209,193 +4210,111 @@ const BpmnStage = forwardRef(function BpmnStage({
     } catch {}
   }
 
-  const useExtensionOverlays = useFeatureFlag("__FPC_OVERLAY_V2__");
-  // TODO: rename admin flag to useBpmnExtensionOverlays; __FPC_OVERLAY_V2__ is used temporarily.
+  const useExtensionOverlays = useFeatureFlag("useBpmnExtensionOverlays");
 
-  function extractOverlayProperties(businessObject) {
-    const ext = asObject(businessObject?.extensionElements);
-    const values = asArray(ext?.values);
-    const props = [];
-    values.forEach((entryRaw) => {
-      const entry = asObject(entryRaw);
-      const type = String(entry?.$type || entry?.type || "").toLowerCase();
-      if (type === "camunda:properties") {
-        asArray(entry.values).forEach((itemRaw) => {
-          const item = asObject(itemRaw);
-          if (item.name) {
-            props.push({
-              name: String(item.name),
-              value: String(item.value ?? ""),
-            });
-          }
-        });
-      }
-    });
-    return props;
-  }
-
-  function parseOverlayFromProperties(props, nodeId) {
-    if (!Array.isArray(props) || !props.length) return null;
-
-    const jsonProp = props.find((p) => String(p.name).trim().toLowerCase() === "fpc-overlay-v2");
-    if (jsonProp?.value) {
-      try {
-        const parsed = JSON.parse(String(jsonProp.value).trim());
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          const meta = asObject(parsed.meta);
-          return {
-            node_id: nodeId,
-            text: String(parsed.text ?? ""),
-            x: Number(parsed.x ?? 0),
-            y: Number(parsed.y ?? 0),
-            width: Number(parsed.width ?? 100),
-            height: Number(parsed.height ?? 30),
-            style: parsed.style && typeof parsed.style === "object" && !Array.isArray(parsed.style)
-              ? parsed.style
-              : {},
-            meta: { title: String(parsed.title ?? meta.title ?? "") },
-          };
-        }
-      } catch {
-        // fall through to prefixed properties
-      }
-    }
-
-    const prefix = "fpc:overlay:";
-    const prefixLower = prefix.toLowerCase();
-    const overlayProps = props.filter((p) =>
-      String(p.name).trim().toLowerCase().startsWith(prefixLower)
-    );
-    if (!overlayProps.length) return null;
-
-    const get = (key) => {
-      const p = overlayProps.find(
-        (p) => String(p.name).trim().toLowerCase() === `${prefixLower}${key.toLowerCase()}`,
-      );
-      return p ? String(p.value) : undefined;
-    };
-
-    const text = get("text") || "";
-    if (!text) return null;
-
-    const style = {};
-    const bg = get("bg");
-    if (bg) style.bg = bg;
-    const color = get("color");
-    if (color) style.color = color;
-    const fontSize = get("fontsize");
-    if (fontSize) style.fontSize = fontSize;
-    const border = get("border");
-    if (border) style.border = border;
-
-    return {
-      node_id: nodeId,
-      text,
-      x: Number(get("x") ?? 0),
-      y: Number(get("y") ?? 0),
-      width: Number(get("width") ?? 100),
-      height: Number(get("height") ?? 30),
-      style,
-      meta: { title: String(get("title") ?? "") },
-    };
-  }
-
-  function extractOverlaysFromBpmn(inst) {
-    if (!inst) return [];
-    try {
-      const registry = inst.get("elementRegistry");
-      const elements = registry.getAll().filter(isShapeElement);
-      const result = [];
-      elements.forEach((el) => {
-        const bo = asObject(el.businessObject);
-        const props = extractOverlayProperties(bo);
-        const overlay = parseOverlayFromProperties(props, el.id);
-        if (overlay) result.push(overlay);
-      });
-      return result;
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn("[FPC-OVERLAY-V2] extract error", err);
-      return [];
-    }
-  }
-
-  async function mountLightweightOverlays(inst, kind, overlayList) {
+  function mountLightweightOverlays(inst, kind, overlayList = []) {
     if (!inst || typeof window === "undefined") return;
-    const sid = String(activeSessionRef.current || sessionId || "").trim();
-    if (!sid) {
-      // eslint-disable-next-line no-console
-      console.warn("[FPC-OVERLAY-V2] mount skipped: no session id");
-      return;
-    }
     clearLightweightOverlays(inst, kind);
+    const overlaysToRender = Array.isArray(overlayList) ? overlayList : [];
     let overlaysAdded = 0;
-    let sourceOverlays = [];
-    let source = "none";
 
     try {
-      if (Array.isArray(overlayList)) {
-        source = "bpmn-extension";
-        sourceOverlays = overlayList;
-        // eslint-disable-next-line no-console
-        console.warn("[FPC-OVERLAY-V2] using overlayList from BPMN extensions", {
-          count: overlayList.length,
-        });
-      } else {
-        source = "api";
-        const resp = await apiGetOverlays(sid);
-        // eslint-disable-next-line no-console
-        console.warn("[FPC-OVERLAY-V2] apiGetOverlays response", {
-          ok: resp?.ok,
-          count: Array.isArray(resp?.overlays) ? resp.overlays.length : null,
-          error: resp?.error,
-        });
-        if (resp?.ok && Array.isArray(resp.overlays) && resp.overlays.length > 0) {
-          sourceOverlays = resp.overlays;
-        }
-      }
-
       // eslint-disable-next-line no-console
-      console.warn("[FPC-OVERLAY-V2] mapping overlays", {
-        source,
-        elementsWithExtension: Array.isArray(overlayList) ? overlayList.length : null,
-        mappedCount: sourceOverlays.length,
+      console.log("[FPC-OVERLAY-V2] extension overlays found", {
+        count: overlaysToRender.length,
       });
 
-      if (sourceOverlays.length > 0) {
+      if (overlaysToRender.length > 0) {
         const overlays = inst.get("overlays");
         const registry = inst.get("elementRegistry");
-        sourceOverlays.forEach((ovl) => {
+        overlaysToRender.forEach((ovl) => {
           const nodeId = String(ovl.node_id || ovl.nodeId || "").trim();
           const el = nodeId ? registry.get(nodeId) : null;
           if (!el) return;
+          const width = Number(ovl.width || 100);
+          const baseHeight = Number(ovl.height || 30);
+          const offsetY = Number(ovl.y ?? -40);
+          const offsetX = Number(ovl.x ?? 0);
+          const properties = Array.isArray(ovl.properties) ? ovl.properties : [];
+          const hasExtraProperties = properties.length > 1;
+
+          // Legacy lightweight overlay defaults (yellow sticky-note look used by the
+          // original backend _compute_overlays_json / apiGetOverlays path).
+          const legacyStyle = {
+            bg: "#fff9c4",
+            color: "#333333",
+            fontSize: "12px",
+            border: "1px solid #fbc02d",
+          };
+          const incomingStyle = ovl.style && typeof ovl.style === "object" && !Array.isArray(ovl.style) ? ovl.style : {};
+          const style = { ...legacyStyle, ...incomingStyle };
+
           const div = document.createElement("div");
           div.className = "fpc-overlay-v2";
-          div.textContent = String(ovl.text || "");
-          div.style.position = "absolute";
-          div.style.zIndex = "1000";
+          div.title = String(ovl.meta?.title || ovl.text || "");
           div.style.boxSizing = "border-box";
-          div.style.width = `${Number(ovl.width || 100)}px`;
-          div.style.height = `${Number(ovl.height || 30)}px`;
-          div.style.backgroundColor = "#ffffff";
-          div.style.color = "#1f2937";
-          div.style.fontSize = "12px";
-          div.style.border = "1px solid #e5e7eb";
+          div.style.width = `${width}px`;
+          div.style.minHeight = `${baseHeight}px`;
+          div.style.backgroundColor = String(style.bg);
+          div.style.color = String(style.color);
+          div.style.border = String(style.border);
           div.style.borderRadius = "6px";
-          div.style.padding = "4px 8px";
-          div.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
-          div.style.display = "flex";
-          div.style.alignItems = "center";
-          div.style.justifyContent = "center";
+          div.style.boxShadow = "0 2px 6px rgba(0,0,0,0.15)";
           div.style.pointerEvents = "none";
-          const style = ovl.style && typeof ovl.style === "object" && !Array.isArray(ovl.style) ? ovl.style : {};
-          if (style.bg) div.style.backgroundColor = String(style.bg);
-          if (style.color) div.style.color = String(style.color);
-          if (style.fontSize) div.style.fontSize = String(style.fontSize);
-          if (style.border) div.style.border = String(style.border);
-          if (ovl.meta?.title) div.title = String(ovl.meta.title);
+
+          const titleEl = document.createElement("div");
+          titleEl.className = "fpc-overlay-v2__title";
+          titleEl.textContent = String(ovl.text || "");
+          div.appendChild(titleEl);
+
+          // Filter out overlay descriptor properties; only show real BPMN/custom properties.
+          const visibleProperties = properties.filter((prop) => {
+            const name = String(prop.name ?? "").trim();
+            if (!name) return false;
+            if (name.toLowerCase() === "fpc-overlay-v2") return false;
+            if (name.toLowerCase().startsWith("fpc:overlay:")) return false;
+            return true;
+          });
+
+          if (visibleProperties.length > 0) {
+            const listEl = document.createElement("ul");
+            listEl.className = "fpc-overlay-v2__properties";
+            visibleProperties.forEach((prop) => {
+              const name = String(prop.name ?? "").trim();
+              let displayValue = String(prop.value ?? "");
+              if (displayValue.length > 50) {
+                displayValue = `${displayValue.slice(0, 50)}...`;
+              }
+
+              const itemEl = document.createElement("li");
+              itemEl.className = "fpc-overlay-v2__property";
+
+              const nameEl = document.createElement("span");
+              nameEl.className = "fpc-overlay-v2__property-name";
+              nameEl.textContent = `${name}:`;
+
+              const valueEl = document.createElement("span");
+              valueEl.className = "fpc-overlay-v2__property-value";
+              valueEl.textContent = displayValue;
+
+              itemEl.appendChild(nameEl);
+              itemEl.appendChild(valueEl);
+              listEl.appendChild(itemEl);
+            });
+            if (listEl.childNodes.length > 0) {
+              div.appendChild(listEl);
+            }
+          }
+
+          // Expand height when there are visible properties so the list is readable,
+          // while keeping the bottom offset equal to offsetY.
+          const renderedHeight = visibleProperties.length > 0 ? Math.max(baseHeight, 80) : baseHeight;
+          div.style.height = `${renderedHeight}px`;
+
+          // y is interpreted as the vertical gap between the element top and the overlay bottom;
+          // negative values place the overlay above the element with that padding.
           const oid = overlays.add(el.id, {
-            position: { top: Number(ovl.y || 0), left: Number(ovl.x || 0) },
+            position: { top: offsetY - renderedHeight, left: offsetX },
             html: div,
           });
           lightweightOverlayStateRef.current[kind].push(oid);
@@ -4403,45 +4322,12 @@ const BpmnStage = forwardRef(function BpmnStage({
         });
       }
 
-      if (overlaysAdded === 0) {
-        const overlays = inst.get("overlays");
-        const registry = inst.get("elementRegistry");
-        const firstEl = registry.getAll().find((e) => e.id && !String(e.id).includes("_di"));
-        if (firstEl) {
-          const div = document.createElement("div");
-          div.className = "fpc-overlay-v2 fpc-overlay-v2-test-card";
-          div.textContent = "TEST OVERLAY V2";
-          div.style.position = "absolute";
-          div.style.zIndex = "1000";
-          div.style.boxSizing = "border-box";
-          div.style.width = "140px";
-          div.style.height = "40px";
-          div.style.backgroundColor = "#ff00ff";
-          div.style.color = "#ffffff";
-          div.style.fontSize = "12px";
-          div.style.border = "2px solid #000000";
-          div.style.borderRadius = "6px";
-          div.style.padding = "4px 8px";
-          div.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
-          div.style.display = "flex";
-          div.style.alignItems = "center";
-          div.style.justifyContent = "center";
-          div.style.pointerEvents = "none";
-          const oid = overlays.add(firstEl.id, {
-            position: { top: -20, left: 10 },
-            html: div,
-          });
-          lightweightOverlayStateRef.current[kind].push(oid);
-          // eslint-disable-next-line no-console
-          console.warn("[FPC-OVERLAY-V2] mounted fallback test card on", firstEl.id);
-        } else {
-          // eslint-disable-next-line no-console
-          console.warn("[FPC-OVERLAY-V2] no element found for fallback test card");
-        }
-      }
-    } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn("[FPC-OVERLAY-V2] mount error", err);
+      console.log("[FPC-OVERLAY-V2] overlays mounted", {
+        count: overlaysAdded,
+      });
+    } catch {
+      // Overlay mount failures are non-critical; keep the diagram usable.
     }
   }
 
@@ -4965,8 +4851,8 @@ const BpmnStage = forwardRef(function BpmnStage({
   async function renderViewer(nextXml) {
     const result = await renderViewerDiagram(createRenderLifecycleCtx(), nextXml);
     if (useExtensionOverlays && result?.ok !== false) {
-      const overlayList = extractOverlaysFromBpmn(viewerRef.current);
-      await mountLightweightOverlays(viewerRef.current, "viewer", overlayList);
+      const overlayList = extractOverlaysFromBpmn(viewerRef.current) || [];
+      mountLightweightOverlays(viewerRef.current, "viewer", overlayList);
     }
     return result;
   }
@@ -4974,8 +4860,8 @@ const BpmnStage = forwardRef(function BpmnStage({
   async function renderModeler(nextXml) {
     const result = await renderModelerDiagram(createRenderLifecycleCtx(), nextXml);
     if (useExtensionOverlays && result?.ok !== false) {
-      const overlayList = extractOverlaysFromBpmn(modelerRef.current);
-      await mountLightweightOverlays(modelerRef.current, "editor", overlayList);
+      const overlayList = extractOverlaysFromBpmn(modelerRef.current) || [];
+      mountLightweightOverlays(modelerRef.current, "editor", overlayList);
     }
     return result;
   }
