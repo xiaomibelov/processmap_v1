@@ -221,6 +221,7 @@ app = FastAPI(title="Food Process Copilot MVP")
 from .metrics import start_polling
 start_polling(overlay_cache.r)
 logger = logging.getLogger(__name__)
+_auth_logger = logging.getLogger("auth_debug")
 
 AUTH_PUBLIC_PATHS = {
     "/api/auth/login",
@@ -3535,6 +3536,7 @@ def auth_login(inp: AuthLoginIn, request: Request):
 def auth_refresh(request: Request):
     refresh_token = str(request.cookies.get("refresh_token") or "").strip()
     if not refresh_token:
+        _auth_logger.warning("refresh_failed: missing_refresh_token ip=%s ua=%s", _request_client_ip(request), str(request.headers.get("user-agent", ""))[:120])
         resp = JSONResponse(status_code=401, content={"detail": "missing_refresh_token"})
         _clear_refresh_cookie(resp)
         return resp
@@ -3546,6 +3548,7 @@ def auth_refresh(request: Request):
             ip=_request_client_ip(request),
         )
     except AuthError as e:
+        _auth_logger.warning("refresh_failed: %s ip=%s ua=%s", e, _request_client_ip(request), str(request.headers.get("user-agent", ""))[:120])
         resp = JSONResponse(status_code=401, content={"detail": str(e)})
         _clear_refresh_cookie(resp)
         return resp

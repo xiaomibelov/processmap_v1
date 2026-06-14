@@ -875,6 +875,7 @@ export default function App() {
   const [deleteDialog, setDeleteDialog] = useState({ open: false, scope: "", error: "", busy: false });
   const [showPropertiesOverlayAlways, setShowPropertiesOverlayAlways] = useState(false);
   const [v2OverlaysEnabled, setV2OverlaysEnabled] = useState(false);
+  const [v2OverlaysExpanded, setV2OverlaysExpanded] = useState(false);
   const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
   const [notesPanelOpenRequest, setNotesPanelOpenRequest] = useState(null);
   const [notesDiscussionsOpen, setNotesDiscussionsOpen] = useState(false);
@@ -1064,6 +1065,7 @@ export default function App() {
     openSessionReqSeqRef,
     projectWorkspaceHintsRef,
     createLocalSessionId: () => `local_${uid()}`,
+    activeOrgId,
   });
 
   const {
@@ -3120,6 +3122,8 @@ export default function App() {
         onShowPropertiesOverlayAlwaysChange={setShowPropertiesOverlayAlways}
         v2OverlaysEnabled={v2OverlaysEnabled}
         onShowV2OverlaysChange={setV2OverlaysEnabled}
+        v2OverlaysExpanded={v2OverlaysExpanded}
+        onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
         onGoToDiagram={() => {
           const sid = String(draft?.session_id || "").trim();
           if (!sid) return;
@@ -3458,6 +3462,8 @@ export default function App() {
         propertiesOverlayAlwaysEnabled={showPropertiesOverlayAlways}
         propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
         v2OverlaysEnabled={v2OverlaysEnabled}
+        v2OverlaysExpanded={v2OverlaysExpanded}
+        onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
         drawioCompanionFocusIntent={drawioCompanionFocusIntent}
         discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
         onDiscussionLinkedElementFocusResult={completeDiscussionLinkedElementFocus}

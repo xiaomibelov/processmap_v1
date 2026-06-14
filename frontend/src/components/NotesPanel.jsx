@@ -987,6 +987,8 @@ export default function NotesPanel({
   onShowPropertiesOverlayOnSelectChange,
   v2OverlaysEnabled = false,
   onShowV2OverlaysChange,
+  v2OverlaysExpanded = false,
+  onShowV2OverlaysExpandedChange,
   onGoToDiagram,
   onProjectBreadcrumbClick,
   onSessionBreadcrumbClick,
@@ -3124,6 +3126,16 @@ export default function NotesPanel({
                       data-testid="bpmn-show-v2-overlays-checkbox"
                     />
                     <span>Показывать все V2-оверлеи свойств</span>
+                  </label>
+                  <label className="sidebarPropertiesInlineToggle">
+                    <input
+                      type="checkbox"
+                      checked={!!v2OverlaysExpanded}
+                      onChange={(event) => void onShowV2OverlaysExpandedChange?.(!!event.target.checked)}
+                      disabled={!!disabled || !v2OverlaysEnabled}
+                      data-testid="bpmn-show-v2-overlays-expanded-checkbox"
+                    />
+                    <span>Показывать все V2-оверлеи свойств раскрытыми</span>
                   </label>
                 </div>
                 <CamundaPropertiesSection

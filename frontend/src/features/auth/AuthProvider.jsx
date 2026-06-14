@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   apiAuthLogin,
@@ -22,6 +22,7 @@ export function AuthProvider({ children }) {
   const [defaultOrgId, setDefaultOrgId] = useState("");
   const [loading, setLoading] = useState(true);
   const [reauthRequired, setReauthRequired] = useState(false);
+  const bootStartedRef = useRef(false);
 
   const applyAnonymous = useCallback(() => {
     clearAccessToken();
@@ -93,41 +94,45 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let disposed = false;
 
-    async function boot() {
-      setLoading(true);
-      const hasAccess = Boolean(getAccessToken());
+    if (!bootStartedRef.current) {
+      bootStartedRef.current = true;
 
-      if (hasAccess) {
-        const me = await hydrateUser();
-        if (me.ok) {
-          if (!disposed) {
-            setReauthRequired(false);
-            setLoading(false);
+      async function boot() {
+        setLoading(true);
+        const hasAccess = Boolean(getAccessToken());
+
+        if (hasAccess) {
+          const me = await hydrateUser();
+          if (me.ok) {
+            if (!disposed) {
+              setReauthRequired(false);
+              setLoading(false);
+            }
+            return;
           }
-          return;
+        }
+
+        const refreshed = await apiAuthRefresh({ silent: true });
+        if (refreshed.ok) {
+          const me = await hydrateUser();
+          if (me.ok) {
+            if (!disposed) {
+              setReauthRequired(false);
+              setLoading(false);
+            }
+            return;
+          }
+        }
+
+        if (!disposed) {
+          applyAnonymous();
+          setReauthRequired(false);
+          setLoading(false);
         }
       }
 
-      const refreshed = await apiAuthRefresh({ silent: true });
-      if (refreshed.ok) {
-        const me = await hydrateUser();
-        if (me.ok) {
-          if (!disposed) {
-            setReauthRequired(false);
-            setLoading(false);
-          }
-          return;
-        }
-      }
-
-      if (!disposed) {
-        applyAnonymous();
-        setReauthRequired(false);
-        setLoading(false);
-      }
+      boot();
     }
-
-    boot();
 
     const unsub = onAuthFailure(() => {
       if (disposed) return;

@@ -130,6 +130,8 @@ export default function AppShell({
   propertiesOverlayAlwaysEnabled = false,
   propertiesOverlayAlwaysPreviewByElementId = null,
   v2OverlaysEnabled = false,
+  v2OverlaysExpanded = false,
+  onShowV2OverlaysExpandedChange,
   drawioCompanionFocusIntent = null,
   discussionLinkedElementFocusIntent = null,
   onDiscussionLinkedElementFocusResult = null,
@@ -299,6 +301,7 @@ export default function AppShell({
               propertiesOverlayAlwaysEnabled={propertiesOverlayAlwaysEnabled}
               propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
               v2OverlaysEnabled={v2OverlaysEnabled}
+              v2OverlaysExpanded={v2OverlaysExpanded}
               drawioCompanionFocusIntent={drawioCompanionFocusIntent}
               discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
               onDiscussionLinkedElementFocusResult={onDiscussionLinkedElementFocusResult}

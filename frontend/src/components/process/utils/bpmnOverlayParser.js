@@ -17,8 +17,31 @@ function asArray(x) {
   return [x];
 }
 
+/**
+ * Removes duplicate property entries by name while preserving the order of
+ * first occurrences. This protects the overlay renderer from showing the same
+ * property twice when the underlying BPMN XML contains accidental duplicates
+ * (e.g. two `equipment_mode` entries on the same element).
+ */
+function dedupePropertiesByName(props, { keep = "first" } = {}) {
+  if (!Array.isArray(props)) return [];
+  const seen = new Map();
+  props.forEach((prop) => {
+    const name = String(prop?.name ?? "").trim();
+    if (!name) return;
+    if (keep === "last" || !seen.has(name)) {
+      seen.set(name, { name, value: String(prop?.value ?? "") });
+    }
+  });
+  return Array.from(seen.values());
+}
+
 function isShapeElement(el) {
   return !!el && !Array.isArray(el?.waypoints) && el.type !== "label";
+}
+
+function isSequenceFlowElement(el) {
+  return !!el && Array.isArray(el?.waypoints) && String(el.type).toLowerCase() === "bpmn:sequenceflow";
 }
 
 /**
@@ -62,6 +85,8 @@ function deriveOverlayColorKey(props, explicitType) {
 
 /**
  * Collects `camunda:properties` entries from a BPMN element business object.
+ * Duplicate property names are collapsed to a single entry (first occurrence
+ * wins) so the overlay renderer never shows the same key twice.
  *
  * @param {object} businessObject - The `businessObject` from a bpmn-js registry element.
  * @returns {{ name: string, value: string }[]} Flat list of `{ name, value }` property entries.
@@ -89,7 +114,7 @@ export function extractOverlayProperties(businessObject) {
       });
     }
   });
-  return props;
+  return dedupePropertiesByName(props, { keep: "first" });
 }
 
 /**
@@ -295,7 +320,7 @@ export function extractOverlaysFromBpmn(inst, forceShow = false) {
   if (!inst) return [];
   try {
     const registry = inst.get("elementRegistry");
-    const elements = registry.getAll().filter(isShapeElement);
+    const elements = registry.getAll().filter((el) => isShapeElement(el) || isSequenceFlowElement(el));
     const result = [];
     elements.forEach((el) => {
       const bo = asObject(el.businessObject);
