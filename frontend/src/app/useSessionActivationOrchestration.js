@@ -103,6 +103,7 @@ export default function useSessionActivationOrchestration({
 
   const refreshProjectsInFlightRef = useRef(null);
   const refreshSessionsInFlightRef = useRef(null);
+  const workspaceSessionOpeningRef = useRef(null);
 
   const {
     initialSelectionRef,
@@ -178,39 +179,44 @@ export default function useSessionActivationOrchestration({
       return { ok: true, sessionId: sid, projectId: String(projectId || "").trim(), local: true };
     }
 
-    const r = await apiGetSession(sid);
-    if (reqSeq !== openSessionReqSeqRef.current) return { ok: false, cancelled: true, error: "stale_open_session" };
-    if (!r.ok) {
-      const status = Number(r?.status || 0);
-      setActivationPhase("failed", {
-        sessionId: sid,
-        projectId: String(projectId || "").trim(),
-        source,
-        error: String(r.error || "api_get_session_failed"),
-      });
-      logCreateTrace("OPEN_SESSION", {
-        phase: "done",
-        sid,
-        projectId: String(projectId || "-"),
-        ok: 0,
-        error: String(r.error || "api_get_session_failed"),
-      });
-      markFail(r.error);
-      const isUnavailable = status === 401 || status === 403 || status === 404;
-      if (isUnavailable) {
-        setSessionNavNotice({
-          code: `HTTP_${status || "ERR"}`,
-          status,
-          projectId: String(projectId || ""),
+    let nextRaw;
+    if (options?.session && typeof options.session === "object") {
+      nextRaw = options.session;
+    } else {
+      const r = await apiGetSession(sid);
+      if (reqSeq !== openSessionReqSeqRef.current) return { ok: false, cancelled: true, error: "stale_open_session" };
+      if (!r.ok) {
+        const status = Number(r?.status || 0);
+        setActivationPhase("failed", {
           sessionId: sid,
-          message: `Сессия недоступна: ${String(r.error || "request failed")}`,
+          projectId: String(projectId || "").trim(),
+          source,
+          error: String(r.error || "api_get_session_failed"),
         });
+        logCreateTrace("OPEN_SESSION", {
+          phase: "done",
+          sid,
+          projectId: String(projectId || "-"),
+          ok: 0,
+          error: String(r.error || "api_get_session_failed"),
+        });
+        markFail(r.error);
+        const isUnavailable = status === 401 || status === 403 || status === 404;
+        if (isUnavailable) {
+          setSessionNavNotice({
+            code: `HTTP_${status || "ERR"}`,
+            status,
+            projectId: String(projectId || ""),
+            sessionId: sid,
+            message: `Сессия недоступна: ${String(r.error || "request failed")}`,
+          });
+        }
+        logNav("open_session_error", { sessionId: sid, source, status, error: String(r?.error || "api_error") });
+        return { ok: false, error: String(r.error || "api_get_session_failed"), status };
       }
-      logNav("open_session_error", { sessionId: sid, source, status, error: String(r?.error || "api_error") });
-      return { ok: false, error: String(r.error || "api_get_session_failed"), status };
-    }
 
-    const nextRaw = r.session || ensureDraftShape(sid);
+      nextRaw = r.session || ensureDraftShape(sid);
+    }
     const sidProject = String(nextRaw?.project_id || projectId || "").trim();
     if (sidProject && sidProject !== String(projectId || "").trim()) {
       setProjectId(sidProject);
@@ -522,6 +528,16 @@ export default function useSessionActivationOrchestration({
         });
         return;
       }
+      const workspaceOpeningSid = workspaceSessionOpeningRef.current;
+      if (workspaceOpeningSid && workspaceOpeningSid === requestedSid) {
+        logNav("url_restore_skip_workspace_in_flight", { projectId: p, sessionId: requestedSid });
+        setActivationPhase("idle", {
+          projectId: p,
+          sessionId: requestedSid,
+          source: "refreshSessions",
+        });
+        return;
+      }
       setActivationPhase("restoring_session", {
         projectId: p,
         sessionId: requestedSid,
@@ -562,15 +578,37 @@ export default function useSessionActivationOrchestration({
     const pid = String(row?.project_id || "").trim();
     const wid = String(row?.workspace_id || "").trim();
     const source = String(options?.source || "workspace_dashboard").trim() || "workspace_dashboard";
-    if (!sid) return;
+    if (!sid) return { ok: false, error: "empty_session_id" };
     if (pid && wid) {
       projectWorkspaceHintsRef.current.set(pid, wid);
     }
-    if (pid && pid !== String(projectId || "").trim()) {
-      setProjectId(pid);
+
+    // Fetch the session first so we don't change projectId before validation.
+    // Guard refreshSessions from concurrently opening the same session when
+    // projectId changes as a side effect of this call.
+    workspaceSessionOpeningRef.current = sid;
+    try {
+      const r = await apiGetSession(sid);
+      if (!r.ok) {
+        const status = Number(r?.status || 0);
+        setActivationPhase("failed", {
+          sessionId: sid,
+          projectId: String(projectId || "").trim(),
+          source,
+          error: String(r.error || "api_get_session_failed"),
+        });
+        return { ok: false, status, error: String(r.error || "api_get_session_failed") };
+      }
+      const session = r.session || {};
+      const sidProject = String(session?.project_id || pid || "").trim();
+      if (sidProject && sidProject !== String(projectId || "").trim()) {
+        setProjectId(sidProject);
+      }
+      return await openSession(sid, { source, session });
+    } finally {
+      workspaceSessionOpeningRef.current = null;
     }
-    return openSession(sid, { source });
-  }, [ensureObject, openSession, projectId, projectWorkspaceHintsRef, setProjectId]);
+  }, [apiGetSession, ensureObject, openSession, projectId, projectWorkspaceHintsRef, setProjectId]);
 
   const createLocalSession = useCallback(() => {
     const sid = typeof createLocalSessionId === "function"
