@@ -235,15 +235,35 @@ async function refreshAccessTokenLocked(meta = {}) {
       withOrgHeader: false,
     });
     if (!refreshResult.ok) {
+      const errText = normalizeApiErrorPayload(refreshResult?.data) || String(refreshResult?.error || "refresh_failed");
+      const marker = errText.toLowerCase();
+      const maybeRace = marker.includes("refresh_revoked")
+        || marker.includes("refresh_not_found")
+        || marker.includes("refresh_expired");
+      if (maybeRace) {
+        // Another tab may have rotated the refresh token and stored a new access token.
+        // Give it a moment to finish writing localStorage, then attempt recovery.
+        await new Promise((resolve) => { setTimeout(resolve, 150); });
+        const raceToken = readStoredAccessToken();
+        if (raceToken && raceToken !== accessToken) {
+          setAccessToken(raceToken, { persist: false });
+          logAuthTrace("refresh_race_recovered", {
+            requestId: Number(meta?.requestId || 0),
+            status: Number(refreshResult.status || 0),
+          });
+          return { ok: true, status: 200, access_token: raceToken, token_type: "bearer" };
+        }
+      }
       clearAccessToken();
       logAuthTrace("refresh_fail", {
         requestId: Number(meta?.requestId || 0),
         status: Number(refreshResult.status || 0),
+        error: errText,
       });
       return {
         ok: false,
         status: Number(refreshResult.status || 0),
-        error: normalizeApiErrorPayload(refreshResult?.data) || String(refreshResult?.error || "refresh_failed"),
+        error: errText,
       };
     }
 

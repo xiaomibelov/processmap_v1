@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import {
   apiGetSession,
@@ -91,6 +91,7 @@ export default function useSessionActivationOrchestration({
   openSessionReqSeqRef,
   projectWorkspaceHintsRef,
   createLocalSessionId,
+  activeOrgId,
 }) {
   const [activationState, setActivationState] = useState({
     phase: "idle",
@@ -99,6 +100,9 @@ export default function useSessionActivationOrchestration({
     source: "",
     error: "",
   });
+
+  const refreshProjectsInFlightRef = useRef(null);
+  const refreshSessionsInFlightRef = useRef(null);
 
   const {
     initialSelectionRef,
@@ -325,88 +329,103 @@ export default function useSessionActivationOrchestration({
   ]);
 
   const refreshProjects = useCallback(async () => {
-    setActivationPhase("restoring_projects", {
-      projectId: String(projectId || "").trim(),
-      sessionId: String(requestedSessionIdRef.current || "").trim(),
-      source: "refreshProjects",
-    });
-    const ok = await refreshMeta();
-    if (!ok) {
-      setActivationPhase("failed", {
+    const orgKey = String(activeOrgId || "").trim();
+    if (refreshProjectsInFlightRef.current?.key === orgKey) {
+      return refreshProjectsInFlightRef.current.promise;
+    }
+    const promise = (async () => {
+      setActivationPhase("restoring_projects", {
         projectId: String(projectId || "").trim(),
-        error: "refresh_meta_failed",
+        sessionId: String(requestedSessionIdRef.current || "").trim(),
         source: "refreshProjects",
       });
-      return;
-    }
-    const r = await apiListProjects();
-    if (!r.ok) {
-      setActivationPhase("failed", {
-        projectId: String(projectId || "").trim(),
-        error: String(r.error || "api_list_projects_failed"),
-        source: "refreshProjects",
-      });
-      return markFail(r.error);
-    }
-    const list = ensureArray(r.projects || r.items);
-    setProjects(list);
-    const selectionFromUrl = readSelectionFromUrl();
-    const currentUrlProjectId = String(selectionFromUrl?.projectId || "").trim();
-    const bootRequestedProjectId = initialProjectSelectionConsumedRef.current
-      ? ""
-      : String(initialSelectionRef.current?.projectId || "").trim();
-    const preferredFromUrl = String(currentUrlProjectId || bootRequestedProjectId).trim();
-    initialProjectSelectionConsumedRef.current = true;
-    const suppressAutoselect = !!suppressProjectAutoselectRef.current;
-    if (suppressAutoselect) {
-      suppressProjectAutoselectRef.current = false;
-    }
-    const current = String(projectId || "").trim();
-    if (current) {
-      const existsCurrent = list.some((p) => projectIdOf(p) === current);
-      if (existsCurrent) {
-        setActivationPhase("idle", { projectId: current, source: "refreshProjects" });
+      const ok = await refreshMeta();
+      if (!ok) {
+        setActivationPhase("failed", {
+          projectId: String(projectId || "").trim(),
+          error: "refresh_meta_failed",
+          source: "refreshProjects",
+        });
         return;
       }
-      if (preferredFromUrl && preferredFromUrl === current) {
-        logNav("project_keep_requested_url", { projectId: current });
-        setActivationPhase("idle", { projectId: current, source: "refreshProjects" });
+      const r = await apiListProjects();
+      if (!r.ok) {
+        setActivationPhase("failed", {
+          projectId: String(projectId || "").trim(),
+          error: String(r.error || "api_list_projects_failed"),
+          source: "refreshProjects",
+        });
+        return markFail(r.error);
+      }
+      const list = ensureArray(r.projects || r.items);
+      setProjects(list);
+      const selectionFromUrl = readSelectionFromUrl();
+      const currentUrlProjectId = String(selectionFromUrl?.projectId || "").trim();
+      const bootRequestedProjectId = initialProjectSelectionConsumedRef.current
+        ? ""
+        : String(initialSelectionRef.current?.projectId || "").trim();
+      const preferredFromUrl = String(currentUrlProjectId || bootRequestedProjectId).trim();
+      initialProjectSelectionConsumedRef.current = true;
+      const suppressAutoselect = !!suppressProjectAutoselectRef.current;
+      if (suppressAutoselect) {
+        suppressProjectAutoselectRef.current = false;
+      }
+      const current = String(projectId || "").trim();
+      if (current) {
+        const existsCurrent = list.some((p) => projectIdOf(p) === current);
+        if (existsCurrent) {
+          setActivationPhase("idle", { projectId: current, source: "refreshProjects" });
+          return;
+        }
+        if (preferredFromUrl && preferredFromUrl === current) {
+          logNav("project_keep_requested_url", { projectId: current });
+          setActivationPhase("idle", { projectId: current, source: "refreshProjects" });
+          return;
+        }
+        setProjectId("");
+        setSessions([]);
+        setSessionNavNotice(null);
+        clearSessionRestoreMemory();
+        resetDraft(ensureDraftShape(null));
+      }
+      if (!list.length) {
+        setActivationPhase("idle", { source: "refreshProjects" });
         return;
       }
-      setProjectId("");
-      setSessions([]);
-      setSessionNavNotice(null);
-      clearSessionRestoreMemory();
-      resetDraft(ensureDraftShape(null));
-    }
-    if (!list.length) {
-      setActivationPhase("idle", { source: "refreshProjects" });
-      return;
-    }
-    if (preferredFromUrl && !list.some((p) => projectIdOf(p) === preferredFromUrl)) {
-      if (!current) {
-        setProjectId(preferredFromUrl);
-        logNav("project_restore_missing_from_list", { projectId: preferredFromUrl });
+      if (preferredFromUrl && !list.some((p) => projectIdOf(p) === preferredFromUrl)) {
+        if (!current) {
+          setProjectId(preferredFromUrl);
+          logNav("project_restore_missing_from_list", { projectId: preferredFromUrl });
+        }
+        setActivationPhase("idle", { projectId: preferredFromUrl, source: "refreshProjects" });
+        return;
       }
-      setActivationPhase("idle", { projectId: preferredFromUrl, source: "refreshProjects" });
-      return;
+      const preferred = preferredFromUrl && list.some((p) => projectIdOf(p) === preferredFromUrl)
+        ? preferredFromUrl
+        : "";
+      if (!preferred && suppressAutoselect) {
+        logNav("project_autoselect_suppressed", {});
+        setActivationPhase("idle", { source: "refreshProjects" });
+        return;
+      }
+      if (!preferred) {
+        logNav("project_keep_home", { projects: list.length });
+        setActivationPhase("idle", { source: "refreshProjects" });
+        return;
+      }
+      setProjectId(preferred);
+      logNav("project_restore_from_url", { projectId: preferred });
+      setActivationPhase("idle", { projectId: preferred, source: "refreshProjects" });
+    })();
+    const entry = { key: orgKey, promise };
+    refreshProjectsInFlightRef.current = entry;
+    try {
+      return await promise;
+    } finally {
+      if (refreshProjectsInFlightRef.current === entry) {
+        refreshProjectsInFlightRef.current = null;
+      }
     }
-    const preferred = preferredFromUrl && list.some((p) => projectIdOf(p) === preferredFromUrl)
-      ? preferredFromUrl
-      : "";
-    if (!preferred && suppressAutoselect) {
-      logNav("project_autoselect_suppressed", {});
-      setActivationPhase("idle", { source: "refreshProjects" });
-      return;
-    }
-    if (!preferred) {
-      logNav("project_keep_home", { projects: list.length });
-      setActivationPhase("idle", { source: "refreshProjects" });
-      return;
-    }
-    setProjectId(preferred);
-    logNav("project_restore_from_url", { projectId: preferred });
-    setActivationPhase("idle", { projectId: preferred, source: "refreshProjects" });
   }, [
     clearSessionRestoreMemory,
     ensureArray,
@@ -426,83 +445,99 @@ export default function useSessionActivationOrchestration({
     setSessionNavNotice,
     setSessions,
     suppressProjectAutoselectRef,
+    activeOrgId,
   ]);
 
   const refreshSessions = useCallback(async (pid) => {
-    const p = String(pid || "").trim();
-    if (!p) {
-      setSessions([]);
-      setActivationPhase("idle", { source: "refreshSessions" });
-      return;
+    const sessionKey = String(pid || "").trim();
+    if (refreshSessionsInFlightRef.current?.key === sessionKey) {
+      return refreshSessionsInFlightRef.current.promise;
     }
-    setActivationPhase("restoring_sessions", {
-      projectId: p,
-      sessionId: String(requestedSessionIdRef.current || "").trim(),
-      source: "refreshSessions",
-    });
-    logNav("sessions_refresh_start", { projectId: p });
-    const r = await apiListProjectSessions(p);
-    if (!r.ok) {
-      setActivationPhase("failed", {
+    const promise = (async () => {
+      const p = String(pid || "").trim();
+      if (!p) {
+        setSessions([]);
+        setActivationPhase("idle", { source: "refreshSessions" });
+        return;
+      }
+      setActivationPhase("restoring_sessions", {
         projectId: p,
         sessionId: String(requestedSessionIdRef.current || "").trim(),
         source: "refreshSessions",
-        error: String(r?.error || "api_list_project_sessions_failed"),
       });
-      markFail(r.error);
-      logNav("sessions_refresh_error", { projectId: p, status: Number(r?.status || 0), error: String(r?.error || "api_error") });
-      return;
-    }
-    markOk("API OK");
-    const nextSessions = ensureArray(r.sessions || r.items);
-    setSessions(nextSessions);
-
-    const currentSid = String(draft?.session_id || "").trim();
-    if (currentSid && !isLocalSessionId(currentSid)) {
-      const stillExists = nextSessions.some((s) => sessionIdOf(s) === currentSid);
-      if (!stillExists) {
-        setSessionNavNotice({
-          code: "MISSING_IN_LIST",
-          status: 404,
+      logNav("sessions_refresh_start", { projectId: p });
+      const r = await apiListProjectSessions(p);
+      if (!r.ok) {
+        setActivationPhase("failed", {
           projectId: p,
-          sessionId: currentSid,
-          message: `Сессия ${currentSid} не найдена в текущем проекте.`,
+          sessionId: String(requestedSessionIdRef.current || "").trim(),
+          source: "refreshSessions",
+          error: String(r?.error || "api_list_project_sessions_failed"),
         });
-        logNav("session_missing_in_list", { projectId: p, sessionId: currentSid });
-      } else if (String(sessionNavNotice?.sessionId || "") === currentSid) {
-        setSessionNavNotice(null);
+        markFail(r.error);
+        logNav("sessions_refresh_error", { projectId: p, status: Number(r?.status || 0), error: String(r?.error || "api_error") });
+        return;
       }
-    }
-
-    const requestedSid = String(requestedSessionIdRef.current || "").trim();
-    const existsRequested = nextSessions.some((s) => sessionIdOf(s) === requestedSid);
-    const routeSelection = readSelectionFromUrl();
-    const shouldRestore = shouldAttemptRequestedSessionRestore({
-      requestedSessionId: requestedSid,
-      currentSessionId: currentSid,
-      activeSessionId: activeSessionIdRef.current,
-      confirmedSessionId: confirmedSessionIdRef.current,
-      urlSessionId: routeSelection?.sessionId,
-      requestedExists: existsRequested,
-      isLocalSessionId,
-    });
-    if (!shouldRestore) {
-      if (requestedSid && existsRequested) {
-        logNav("url_restore_skip_confirmed", { projectId: p, sessionId: requestedSid });
+      markOk("API OK");
+      const nextSessions = ensureArray(r.sessions || r.items);
+      setSessions(nextSessions);
+  
+      const currentSid = String(draft?.session_id || "").trim();
+      if (currentSid && !isLocalSessionId(currentSid)) {
+        const stillExists = nextSessions.some((s) => sessionIdOf(s) === currentSid);
+        if (!stillExists) {
+          setSessionNavNotice({
+            code: "MISSING_IN_LIST",
+            status: 404,
+            projectId: p,
+            sessionId: currentSid,
+            message: `Сессия ${currentSid} не найдена в текущем проекте.`,
+          });
+          logNav("session_missing_in_list", { projectId: p, sessionId: currentSid });
+        } else if (String(sessionNavNotice?.sessionId || "") === currentSid) {
+          setSessionNavNotice(null);
+        }
       }
-      setActivationPhase("idle", {
-        projectId: p,
-        sessionId: currentSid || requestedSid,
-        source: "refreshSessions",
+  
+      const requestedSid = String(requestedSessionIdRef.current || "").trim();
+      const existsRequested = nextSessions.some((s) => sessionIdOf(s) === requestedSid);
+      const routeSelection = readSelectionFromUrl();
+      const shouldRestore = shouldAttemptRequestedSessionRestore({
+        requestedSessionId: requestedSid,
+        currentSessionId: currentSid,
+        activeSessionId: activeSessionIdRef.current,
+        confirmedSessionId: confirmedSessionIdRef.current,
+        urlSessionId: routeSelection?.sessionId,
+        requestedExists: existsRequested,
+        isLocalSessionId,
       });
-      return;
+      if (!shouldRestore) {
+        if (requestedSid && existsRequested) {
+          logNav("url_restore_skip_confirmed", { projectId: p, sessionId: requestedSid });
+        }
+        setActivationPhase("idle", {
+          projectId: p,
+          sessionId: currentSid || requestedSid,
+          source: "refreshSessions",
+        });
+        return;
+      }
+      setActivationPhase("restoring_session", {
+        projectId: p,
+        sessionId: requestedSid,
+        source: "url_restore",
+      });
+      void openSession(requestedSid, { source: "url_restore" });
+    })();
+    const entry = { key: sessionKey, promise };
+    refreshSessionsInFlightRef.current = entry;
+    try {
+      return await promise;
+    } finally {
+      if (refreshSessionsInFlightRef.current === entry) {
+        refreshSessionsInFlightRef.current = null;
+      }
     }
-    setActivationPhase("restoring_session", {
-      projectId: p,
-      sessionId: requestedSid,
-      source: "url_restore",
-    });
-    void openSession(requestedSid, { source: "url_restore" });
   }, [
     activeSessionIdRef,
     confirmedSessionIdRef,

@@ -31,6 +31,8 @@ function sanitizeNextPath(raw) {
 function navigate(to, { replace = false } = {}) {
   if (typeof window === "undefined") return;
   const target = String(to || "/");
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (target === current) return;
   if (replace) window.history.replaceState({}, "", target);
   else window.history.pushState({}, "", target);
   window.dispatchEvent(new PopStateEvent("popstate"));

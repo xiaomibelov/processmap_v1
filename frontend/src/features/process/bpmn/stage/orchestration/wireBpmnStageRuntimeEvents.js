@@ -1,12 +1,15 @@
 import { resolveBpmnContextMenuRuntimeResolution } from "../../context-menu/resolveBpmnContextMenuTarget.js";
-import { patchOverlaysInstance } from "../patches/patchOverlayPanPerf";
+import {
+  patchOverlaysInstance,
+  setOverlaysUpdatePaused,
+} from "../patches/patchOverlayPanPerf";
 
 // ── Overlay pan debounce ──
-// During canvas pan bpmn-js fires canvas.viewbox.changing/changed on every
-// frame. The Overlays module hides on .changing and shows on .changed,
-// forcing layout/paint for 180+ heavy DOM nodes each frame.
-// We suppress the overlay root visibility during active pan so overlays stay
-// hidden until the viewbox settles (150 ms trailing debounce).
+// bpmn-js hides the overlay root on canvas.viewbox.changing and updates + shows
+// it on canvas.viewbox.changed. This causes all overlays to flicker out of view
+// during every tiny pan/zoom. Instead of hiding the root, we pause the expensive
+// per-overlay position/scale updates while the viewbox is changing and perform
+// one final update after it settles (150 ms trailing debounce).
 
 const OVERLAY_PAN_DEBOUNCE_MS = 150;
 
@@ -21,51 +24,40 @@ function debounce(fn, ms) {
   };
 }
 
-// Throttle to one execution per animation frame. This collapses rapid
-// canvas.viewbox.changed bursts (e.g. 120 Hz mouse events) into a single
-// fanout per 60 Hz frame, cutting JS time without dropping the final update.
-function throttleRaf(fn) {
-  let frameId = 0;
-  let pendingArgs = null;
-  return function (...args) {
-    pendingArgs = args;
-    if (frameId) return;
-    frameId = requestAnimationFrame(() => {
-      frameId = 0;
-      const useArgs = pendingArgs;
-      pendingArgs = null;
-      if (useArgs) fn.apply(this, useArgs);
-    });
-  };
-}
-
 function bindOverlayPanDebouncer({ eventBus, inst }) {
   if (!eventBus || !inst) return;
   patchOverlaysInstance(inst);
-  let overlayRoot = null;
-  try {
-    overlayRoot = inst.get("overlays")?._overlayRoot || null;
-  } catch {
-    return;
-  }
-  if (!(overlayRoot instanceof Element)) return;
+  const overlays = inst.get("overlays");
+  if (!overlays) return;
 
-  const restoreVisibility = () => {
-    if (overlayRoot instanceof Element) {
-      overlayRoot.style.visibility = "";
+  const restoreUpdates = () => {
+    setOverlaysUpdatePaused(overlays, false);
+    // Final position/scale update after pan/zoom settles.
+    try {
+      overlays._updateOverlaysVisibilty(overlays._canvas.viewbox());
+    } catch {
+      // ignore
     }
   };
-  const scheduleRestore = debounce(restoreVisibility, OVERLAY_PAN_DEBOUNCE_MS);
+  const scheduleRestore = debounce(restoreUpdates, OVERLAY_PAN_DEBOUNCE_MS);
 
   eventBus.on("canvas.viewbox.changing", 1300, () => {
-    if (overlayRoot instanceof Element) {
-      overlayRoot.style.visibility = "hidden";
-    }
+    setOverlaysUpdatePaused(overlays, true);
     scheduleRestore();
   });
 
   eventBus.on("canvas.viewbox.changed", 1300, () => {
     scheduleRestore();
+  });
+
+  // bpmn-js hides the overlay root by default on viewbox.changing. Run a
+  // low-priority handler after the default one to keep overlays visible.
+  eventBus.on("canvas.viewbox.changing", 500, () => {
+    try {
+      overlays.show();
+    } catch {
+      // ignore
+    }
   });
 }
 

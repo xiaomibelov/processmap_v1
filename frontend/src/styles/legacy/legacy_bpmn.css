@@ -152,79 +152,222 @@
   color: #333333;
 }
 
-/* V2 checkbox-driven property card above tasks */
-.fpc-overlay-property-card {
-  position: relative;
-  box-sizing: border-box;
-  padding: 6px 8px;
-  background: #fff9c4;
-  color: #333333;
-  border: 1px solid #fbc02d;
-  border-radius: 6px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-  font-size: 10px;
-  line-height: 1.35;
-  overflow: hidden;
-  user-select: none;
+/* V2 checkbox-driven property card rendered beside the BPMN element */
+.fpc-overlay-property-card-host {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 100;
+}
+
+.fpc-overlay-property-card-host:hover {
+  pointer-events: auto;
+}
+
+/* Let pointer events pass through overlay areas that are not explicitly
+   interactive so the underlying BPMN shape still receives hover/click events. */
+.djs-overlay-container {
   pointer-events: none;
 }
 
-.fpc-overlay-property-card__title {
-  font-weight: 700;
+.fpc-overlay-property-card {
+  position: absolute;
+  top: 4px;
+  left: calc(100% + 4px);
+  box-sizing: border-box;
+  max-width: 160px;
+  max-height: 80px;
+  padding: 4px 6px;
+  background: #ffffff;
+  color: #374151;
+  border-left: 3px solid var(--fpc-overlay-accent, #888888);
+  border-radius: 0 4px 4px 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  font-size: 10px;
+  line-height: 1.3;
+  overflow: hidden;
+  user-select: none;
+  pointer-events: none;
+  transition: max-height 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, max-width 0.2s ease;
+}
+
+.fpc-overlay-property-card--expanded,
+.fpc-overlay-property-card--hovered {
+  max-width: 260px;
+  max-height: 1000px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  transform: translateY(-1px);
+  pointer-events: auto;
+  z-index: 200;
+}
+
+.fpc-overlay-property-card__header {
   font-size: 11px;
-  margin-bottom: 4px;
-  padding-bottom: 3px;
-  border-bottom: 1px dashed #fbc02d;
+  font-weight: 600;
+  color: #1a1a2e;
+  line-height: 1.2;
+  margin-bottom: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.fpc-overlay-property-card__list,
-.fpc-overlay-property-card__extra {
+.fpc-overlay-property-card__list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-}
-
-.fpc-overlay-property-card__extra {
-  display: none;
-}
-
-.fpc-overlay-property-card:hover .fpc-overlay-property-card__extra,
-.fpc-overlay-property-card--expanded .fpc-overlay-property-card__extra {
-  display: flex;
-}
-
-.fpc-overlay-property-card:hover .fpc-overlay-property-card__more,
-.fpc-overlay-property-card--expanded .fpc-overlay-property-card__more {
-  display: none;
+  gap: 1px;
 }
 
 .fpc-overlay-property-card__row {
+  display: block;
+  font-size: 10px;
+  line-height: 1.3;
+  color: #374151;
+  overflow-wrap: break-word;
+  white-space: normal;
+}
+
+.fpc-overlay-property-card__row::before {
+  content: attr(data-name) ": ";
+  font-weight: 500;
+  color: var(--fpc-overlay-accent, #374151);
+}
+
+.fpc-overlay-property-card__footer {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #6b7280;
+  text-align: right;
+}
+
+/* V2 checkbox-driven overlay: compact badge centered above the element in idle,
+   expands upward and sideways on hover to show the full property list. */
+.fpc-overlay-v2-host {
+  position: absolute;
+  top: -20px;
+  left: 0;
+  width: 100%;
+  height: 20px;
+  z-index: 1000;
+  pointer-events: auto;
+}
+
+.fpc-overlay-v2-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  transform-origin: bottom center;
+  box-sizing: border-box;
   display: flex;
-  gap: 4px;
+  flex-direction: column-reverse;
+  justify-content: flex-start;
+  align-items: stretch;
+  min-width: 16px;
+  min-height: 16px;
+  max-width: 100%;
+  max-height: 130px;
+  width: max-content;
+  padding: 0 4px;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background-color: var(--fpc-overlay-accent, #888888);
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+  transition: max-height 0.2s ease, max-width 0.2s ease, padding 0.2s ease;
+}
+
+.fpc-overlay-v2-host:hover .fpc-overlay-v2-badge,
+.fpc-overlay-v2-host.fpc-overlay-v2-host--expanded .fpc-overlay-v2-badge {
+  max-height: 300px;
+  max-width: min(420px, 95vw);
+  width: max-content;
+  padding: 4px;
+  overflow: auto;
+  line-height: 1.3;
+}
+
+.fpc-overlay-v2-footer {
+  display: none;
+  flex: 0 0 auto;
+  text-align: center;
+  font-size: 9px;
+  line-height: 14px;
+  opacity: 0.9;
+  border-top: 1px solid rgba(255, 255, 255, 0.25);
+  padding-top: 2px;
+  margin-top: 2px;
+}
+
+.fpc-overlay-v2-host:not(:hover):not(.fpc-overlay-v2-host--expanded) .fpc-overlay-v2-footer[data-hidden-count]:not([data-hidden-count=""]) {
+  display: block;
+}
+
+.fpc-overlay-v2-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.fpc-overlay-v2-host:not(:hover):not(.fpc-overlay-v2-host--expanded) .fpc-overlay-v2-list li:nth-child(n+6) {
+  display: none;
+}
+
+.fpc-overlay-v2-item {
+  display: flex;
+  gap: 3px;
+  padding: 1px 0 1px 4px;
+  border-left: 2px solid var(--fpc-property-accent, var(--fpc-overlay-accent, #888888));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.fpc-overlay-property-card__name {
-  font-weight: 600;
+.fpc-overlay-v2-host:hover .fpc-overlay-v2-item,
+.fpc-overlay-v2-host.fpc-overlay-v2-host--expanded .fpc-overlay-v2-item {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.fpc-overlay-v2-name {
   flex: 0 0 auto;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
 }
 
-.fpc-overlay-property-card__value {
+.fpc-overlay-v2-value {
   flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: #ffffff;
 }
 
-.fpc-overlay-property-card__more {
-  color: #777777;
-  font-style: italic;
+/* V2 sequence-flow overlay host: positioned above the polyline midpoint,
+   but the badge itself uses the same style as shape-element overlays.
+   Width is capped so the overlay stays inside the flow bounds and does not
+   overlap neighbouring elements. */
+.fpc-overlay-v2-host--sequence {
+  pointer-events: none;
+}
+
+.fpc-overlay-v2-host--sequence .fpc-overlay-v2-badge {
+  pointer-events: auto;
+}
+
+.fpc-overlay-v2-host--sequence:hover .fpc-overlay-v2-badge,
+.fpc-overlay-v2-host--sequence.fpc-overlay-v2-host--expanded .fpc-overlay-v2-badge {
+  max-width: min(240px, 95vw);
 }

@@ -182,21 +182,37 @@ const overlayCardHoverInstalled = new WeakSet();
 const overlayCardHoverHandlers = new WeakMap();
 function setPropertyCardExpandedForElement(elementId, expanded) {
   if (typeof document === "undefined" || !elementId) return;
-  const selector = `.fpc-overlay-property-card[data-fpc-element-id="${CSS.escape(elementId)}"]`;
-  document.querySelectorAll(selector).forEach((card) => {
-    card.classList.toggle("fpc-overlay-property-card--expanded", expanded);
+  const selector = `.fpc-overlay-property-card-host[data-fpc-element-id="${CSS.escape(elementId)}"]`;
+  document.querySelectorAll(selector).forEach((host) => {
+    const card = host.querySelector(".fpc-overlay-property-card");
+    if (!card) return;
+    if (expanded) {
+      expandPropertyCard(card);
+    } else if (!card.classList.contains("fpc-overlay-property-card--hovered")) {
+      collapsePropertyCard(card);
+    }
   });
 }
-function installOverlayCardHoverListeners(inst) {
+function installOverlayCardHoverListeners(inst, v2ExpandedRef) {
   if (!inst || overlayCardHoverInstalled.has(inst)) return;
   const eventBus = inst.get?.("eventBus");
   if (!eventBus) return;
-  const onHover = (event) => setPropertyCardExpandedForElement(event?.element?.id, true);
-  const onOut = (event) => setPropertyCardExpandedForElement(event?.element?.id, false);
+  const onHover = (event) => {
+    setPropertyCardExpandedForElement(event?.element?.id, true);
+    setV2OverlayExpandedForElement(event?.element?.id, true);
+  };
+  const onOut = (event) => {
+    setPropertyCardExpandedForElement(event?.element?.id, false);
+    // Keep V2 overlays expanded on mouse-out when the global "always expanded"
+    // checkbox is active; collapsing here made them appear to hide on hover.
+    if (!v2ExpandedRef?.current) {
+      setV2OverlayExpandedForElement(event?.element?.id, false);
+    }
+  };
   eventBus.on("element.hover", onHover);
   eventBus.on("element.out", onOut);
   overlayCardHoverInstalled.add(inst);
-  overlayCardHoverHandlers.set(inst, { onHover, onOut });
+  overlayCardHoverHandlers.set(inst, { onHover, onOut, v2ExpandedRef });
 }
 function uninstallOverlayCardHoverListeners(inst) {
   if (!inst || !overlayCardHoverInstalled.has(inst)) return;
@@ -210,70 +226,220 @@ function uninstallOverlayCardHoverListeners(inst) {
   overlayCardHoverHandlers.delete(inst);
 }
 
-const CARD_GAP = 8;
-const MAX_VISIBLE_CARD_PROPS = 5;
+const CARD_IDLE_MAX_PROPS = 4;
+const CARD_IDLE_MAX_HEIGHT = 80;
+const V2_OVERLAY_IDLE_MAX_PROPS = 5;
 
-function createPropertyCard(ovl, realProps, elementWidth) {
+function makePropertyRow(prop, accent) {
+  const name = String(prop.name ?? "").trim();
+  let value = String(prop.value ?? "");
+  if (value.length > 80) value = `${value.slice(0, 80)}...`;
+
+  const rowEl = document.createElement("li");
+  rowEl.className = "fpc-overlay-property-card__row";
+  rowEl.style.setProperty("--fpc-overlay-accent", accent);
+  rowEl.dataset.name = name;
+  rowEl.textContent = value;
+  return rowEl;
+}
+
+function expandPropertyCard(card) {
+  if (card.classList.contains("fpc-overlay-property-card--expanded")) return;
+  card.classList.add("fpc-overlay-property-card--expanded");
+  const hiddenPropsRaw = card.dataset.fpcHiddenProps;
+  if (!hiddenPropsRaw) return;
+  let hiddenProps = [];
+  try {
+    hiddenProps = JSON.parse(hiddenPropsRaw);
+  } catch {
+    hiddenProps = [];
+  }
+  if (!hiddenProps.length) return;
+  const list = card.querySelector(".fpc-overlay-property-card__list");
+  if (!list) return;
+  const accent = card.dataset.fpcAccent || "#888888";
+  const fragment = document.createDocumentFragment();
+  hiddenProps.forEach((prop) => fragment.appendChild(makePropertyRow(prop, accent)));
+  list.appendChild(fragment);
+  const footer = card.querySelector(".fpc-overlay-property-card__footer");
+  if (footer) footer.style.display = "none";
+}
+
+function collapsePropertyCard(card) {
+  card.classList.remove("fpc-overlay-property-card--expanded");
+  const list = card.querySelector(".fpc-overlay-property-card__list");
+  if (list) {
+    const rows = list.querySelectorAll(".fpc-overlay-property-card__row");
+    rows.forEach((row, idx) => {
+      if (idx >= CARD_IDLE_MAX_PROPS) row.remove();
+    });
+  }
+  const footer = card.querySelector(".fpc-overlay-property-card__footer");
+  if (footer) footer.style.display = "";
+}
+
+function createPropertyCard(ovl, realProps, elementWidth, elementHeight, accent, elementId) {
+  const host = document.createElement("div");
+  host.className = "fpc-overlay-property-card-host";
+  host.dataset.fpcElementId = elementId;
+  host.style.width = `${elementWidth}px`;
+  host.style.height = `${elementHeight}px`;
+
   const card = document.createElement("div");
   card.className = "fpc-overlay-property-card";
-  // Gateways, events and data references are much smaller than tasks. Clamp
-  // the card to a readable minimum so the overlay is useful on those elements.
-  card.style.width = `${Math.min(300, Math.max(120, Number(elementWidth || 0)))}px`;
+  card.dataset.fpcElementId = elementId;
+  card.style.setProperty("--fpc-overlay-accent", accent);
 
   const titleText = String(ovl.text || ovl.meta?.title || "").trim();
   if (titleText) {
-    const titleEl = document.createElement("div");
-    titleEl.className = "fpc-overlay-property-card__title";
-    titleEl.textContent = titleText;
-    card.appendChild(titleEl);
+    const header = document.createElement("div");
+    header.className = "fpc-overlay-property-card__header";
+    header.textContent = titleText;
+    header.title = titleText;
+    card.appendChild(header);
   }
 
-  function makeRow(prop) {
-    const name = String(prop.name ?? "").trim();
-    let value = String(prop.value ?? "");
-    if (value.length > 80) value = `${value.slice(0, 80)}...`;
-    const colorModel = overlayPropertyColorByKey(name || "property");
+  const list = document.createElement("ul");
+  list.className = "fpc-overlay-property-card__list";
+  card.appendChild(list);
 
-    const rowEl = document.createElement("li");
-    rowEl.className = "fpc-overlay-property-card__row";
+  const visibleProps = realProps.slice(0, CARD_IDLE_MAX_PROPS);
+  const hiddenProps = realProps.slice(CARD_IDLE_MAX_PROPS);
+  visibleProps.forEach((prop) => list.appendChild(makePropertyRow(prop, accent)));
 
-    const nameEl = document.createElement("span");
-    nameEl.className = "fpc-overlay-property-card__name";
-    nameEl.style.color = colorModel.accent;
-    nameEl.textContent = `${name}:`;
-
-    const valueEl = document.createElement("span");
-    valueEl.className = "fpc-overlay-property-card__value";
-    valueEl.textContent = value;
-
-    rowEl.appendChild(nameEl);
-    rowEl.appendChild(valueEl);
-    return rowEl;
+  if (hiddenProps.length > 0) {
+    const footer = document.createElement("div");
+    footer.className = "fpc-overlay-property-card__footer";
+    footer.textContent = `+${hiddenProps.length}`;
+    card.appendChild(footer);
+    card.dataset.fpcHiddenProps = JSON.stringify(hiddenProps);
   }
 
-  if (realProps.length > 0) {
-    const visibleProps = realProps.slice(0, MAX_VISIBLE_CARD_PROPS);
-    const hiddenProps = realProps.slice(MAX_VISIBLE_CARD_PROPS);
+  card.dataset.fpcAccent = accent;
 
-    const listEl = document.createElement("ul");
-    listEl.className = "fpc-overlay-property-card__list";
-    visibleProps.forEach((prop) => listEl.appendChild(makeRow(prop)));
-    card.appendChild(listEl);
+  card.addEventListener("mouseenter", () => {
+    card.classList.add("fpc-overlay-property-card--hovered");
+    expandPropertyCard(card);
+  });
+  card.addEventListener("mouseleave", () => {
+    card.classList.remove("fpc-overlay-property-card--hovered");
+    collapsePropertyCard(card);
+  });
 
-    if (hiddenProps.length > 0) {
-      const moreEl = document.createElement("div");
-      moreEl.className = "fpc-overlay-property-card__more";
-      moreEl.textContent = `+${hiddenProps.length} свойств`;
-      card.appendChild(moreEl);
+  host.appendChild(card);
+  return host;
+}
 
-      const extraEl = document.createElement("ul");
-      extraEl.className = "fpc-overlay-property-card__extra";
-      hiddenProps.forEach((prop) => extraEl.appendChild(makeRow(prop)));
-      card.appendChild(extraEl);
+function makeV2PropertyRow(prop) {
+  const name = String(prop.name ?? "").trim();
+  if (!name) return null;
+  let value = String(prop.value ?? "");
+  if (value.length > 80) value = `${value.slice(0, 80)}...`;
+
+  const colorModel = overlayPropertyColorByKey(name || "property");
+
+  const itemEl = document.createElement("li");
+  itemEl.className = "fpc-overlay-v2-item";
+  itemEl.style.setProperty("--fpc-property-accent", colorModel.accent);
+
+  const nameEl = document.createElement("span");
+  nameEl.className = "fpc-overlay-v2-name";
+  nameEl.textContent = `${name}:`;
+
+  const valueEl = document.createElement("span");
+  valueEl.className = "fpc-overlay-v2-value";
+  valueEl.textContent = value;
+
+  itemEl.appendChild(nameEl);
+  itemEl.appendChild(valueEl);
+  return itemEl;
+}
+
+function createV2Overlay(ovl, realProps, colorModel, titleText, elementId, elementWidth, expanded = false, options = {}) {
+  const { isSequenceFlow = false } = options;
+  const host = document.createElement("div");
+  host.className = "fpc-overlay-v2-host";
+  if (isSequenceFlow) {
+    host.classList.add("fpc-overlay-v2-host--sequence");
+  }
+  if (expanded) {
+    host.classList.add("fpc-overlay-v2-host--expanded");
+  }
+  host.dataset.fpcElementId = elementId;
+  host.style.width = `${elementWidth}px`;
+  host.style.setProperty("--fpc-overlay-accent", colorModel.accent);
+
+  const badge = document.createElement("div");
+  badge.className = "fpc-overlay-v2-badge";
+  badge.title = String(ovl.meta?.title || ovl.text || titleText || "").trim();
+
+  const hiddenCount = realProps.length > V2_OVERLAY_IDLE_MAX_PROPS
+    ? realProps.length - V2_OVERLAY_IDLE_MAX_PROPS
+    : 0;
+
+  const footer = document.createElement("span");
+  footer.className = "fpc-overlay-v2-footer";
+  if (hiddenCount > 0) {
+    footer.textContent = `+${hiddenCount}`;
+    footer.dataset.hiddenCount = String(hiddenCount);
+  }
+
+  const list = document.createElement("ul");
+  list.className = "fpc-overlay-v2-list";
+  realProps.forEach((prop) => {
+    const row = makeV2PropertyRow(prop);
+    if (row) list.appendChild(row);
+  });
+
+  if (hiddenCount > 0) {
+    badge.appendChild(footer);
+  }
+  badge.appendChild(list);
+
+  host.appendChild(badge);
+  return host;
+}
+
+function setV2OverlayExpandedForElement(elementId, expanded) {
+  if (typeof document === "undefined" || !elementId) return;
+  const selector = `.fpc-overlay-v2-host[data-fpc-element-id="${CSS.escape(elementId)}"]`;
+  document.querySelectorAll(selector).forEach((host) => {
+    host.classList.toggle("fpc-overlay-v2-host--expanded", expanded);
+  });
+}
+
+function computeSequenceFlowMidpoint(waypoints) {
+  if (!Array.isArray(waypoints) || waypoints.length < 2) return null;
+  let totalLength = 0;
+  const segments = [];
+  for (let i = 0; i < waypoints.length - 1; i += 1) {
+    const start = waypoints[i];
+    const end = waypoints[i + 1];
+    const dx = Number(end?.x || 0) - Number(start?.x || 0);
+    const dy = Number(end?.y || 0) - Number(start?.y || 0);
+    const len = Math.sqrt(dx * dx + dy * dy);
+    segments.push({ dx, dy, len, start });
+    totalLength += len;
+  }
+  if (!Number.isFinite(totalLength) || totalLength <= 0) {
+    const first = waypoints[0];
+    return { x: Number(first?.x || 0), y: Number(first?.y || 0) };
+  }
+  const target = totalLength / 2;
+  let accumulated = 0;
+  for (let i = 0; i < segments.length; i += 1) {
+    const seg = segments[i];
+    if (accumulated + seg.len >= target) {
+      const t = seg.len > 0 ? (target - accumulated) / seg.len : 0;
+      return {
+        x: seg.start.x + seg.dx * t,
+        y: seg.start.y + seg.dy * t,
+      };
     }
+    accumulated += seg.len;
   }
-
-  return card;
+  const last = waypoints[waypoints.length - 1];
+  return { x: Number(last?.x || 0), y: Number(last?.y || 0) };
 }
 
 function getOverlayMeasurementContainer() {
@@ -1438,6 +1604,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   propertiesOverlayAlwaysEnabled = false,
   propertiesOverlayAlwaysPreviewByElementId = null,
   v2OverlaysEnabled = false,
+  v2OverlaysExpanded = false,
   onDiagramContextMenuRequest = null,
   onDiagramContextMenuDismiss = null,
 }, ref) {
@@ -1525,6 +1692,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const propertiesOverlayAlwaysEnabledRef = useRef(!!propertiesOverlayAlwaysEnabled);
   const propertiesOverlayAlwaysPreviewByElementIdRef = useRef(asObject(propertiesOverlayAlwaysPreviewByElementId));
   const v2OverlaysEnabledRef = useRef(!!v2OverlaysEnabled);
+  const v2OverlaysExpandedRef = useRef(!!v2OverlaysExpanded);
   const replaceCommandStateRef = useRef({
     oldId: "",
     oldType: "",
@@ -1675,6 +1843,14 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     v2OverlaysEnabledRef.current = !!v2OverlaysEnabled;
   }, [v2OverlaysEnabled]);
+
+  useEffect(() => {
+    v2OverlaysExpandedRef.current = !!v2OverlaysExpanded;
+    if (typeof document === "undefined") return;
+    document.querySelectorAll(".fpc-overlay-v2-host").forEach((host) => {
+      host.classList.toggle("fpc-overlay-v2-host--expanded", v2OverlaysExpandedRef.current);
+    });
+  }, [v2OverlaysExpanded]);
 
   useEffect(() => {
     draftRef.current = draft;
@@ -4437,7 +4613,7 @@ const BpmnStage = forwardRef(function BpmnStage({
 
       if (overlaysToRender.length > 0) {
         installOverlayBadgeTooltipListener();
-        installOverlayCardHoverListeners(inst);
+        installOverlayCardHoverListeners(inst, v2OverlaysExpandedRef);
         const overlays = inst.get("overlays");
         const registry = inst.get("elementRegistry");
         const MIN_ELEMENT_SIZE = 20;
@@ -4449,10 +4625,12 @@ const BpmnStage = forwardRef(function BpmnStage({
           const el = nodeId ? registry.get(nodeId) : null;
           if (!el) return;
 
+          const isSequenceFlow = Array.isArray(el.waypoints) && String(el.type).toLowerCase() === "bpmn:sequenceflow";
+
           // Keep the badge strictly inside the element; skip tiny elements.
           const elWidth = Number(el.width || 0);
           const elHeight = Number(el.height || 0);
-          if (elWidth < MIN_ELEMENT_SIZE || elHeight < MIN_ELEMENT_SIZE) return;
+          if (!isSequenceFlow && (elWidth < MIN_ELEMENT_SIZE || elHeight < MIN_ELEMENT_SIZE)) return;
 
           const properties = Array.isArray(ovl.properties) ? ovl.properties : [];
 
@@ -4476,66 +4654,39 @@ const BpmnStage = forwardRef(function BpmnStage({
           ).trim();
           const colorModel = overlayPropertyColorByKey(colorKey || "property");
 
-          // Wrapper anchors the badge to the element's top-right corner.
-          const wrapper = document.createElement("div");
-          wrapper.className = "fpc-overlay-badge-wrapper";
-
-          // Compact badge: one colored pill/circle showing the count or first-key prefix.
-          const badge = document.createElement("div");
-          badge.className = "fpc-overlay-badge";
-          badge.style.backgroundColor = colorModel.background;
-          badge.style.borderColor = colorModel.accent;
-          badge.style.color = colorModel.text;
-
-          const firstKey = String(realProps[0]?.name || "").trim();
-          if (hasProps) {
-            badge.textContent = realProps.length > 1
-              ? String(realProps.length)
-              : firstKey.slice(0, 2).toUpperCase();
-          } else {
-            // Name-only fallback for global V2 mode.
-            badge.textContent = titleText.slice(0, 2).toUpperCase();
+          if (!v2Enabled) {
+            // The V2 master toggle is off: hide all extension overlays.
+            return;
           }
-          badge.title = String(ovl.meta?.title || ovl.text || "").trim() || firstKey || titleText;
-          wrapper.appendChild(badge);
 
-          // Hidden tooltip container. Its content is populated lazily on the
-          // first hover so that the idle DOM stays tiny (wrapper + badge + empty
-          // tooltip container = 3 nodes per element).
-          const tooltip = document.createElement("div");
-          tooltip.className = "fpc-overlay-tooltip";
-          wrapper.appendChild(tooltip);
-
-          wrapper.dataset.fpcOverlayProps = JSON.stringify({
-            title: titleText,
-            properties: realProps,
+          // V2 mode: compact badge centered above the element. The badge expands
+          // upward on hover to show the full property list. Badge width is
+          // clamped to the element width so it never sticks out sideways.
+          // Sequence flows use the same badge style, but the host is centered
+          // above the polyline midpoint so the overlay sits in the middle of the arrow.
+          const v2Expanded = v2OverlaysExpandedRef.current;
+          const SEQUENCE_OVERLAY_MAX_WIDTH = 160;
+          const v2HostWidth = isSequenceFlow
+            ? Math.min(Number(el.width || 0) || SEQUENCE_OVERLAY_MAX_WIDTH, SEQUENCE_OVERLAY_MAX_WIDTH)
+            : elWidth;
+          const v2Host = createV2Overlay(ovl, realProps, colorModel, titleText, el.id, v2HostWidth, v2Expanded, {
+            isSequenceFlow,
           });
-
-          // Anchor the badge overlay to the top-right corner of the element.
-          const oid = overlays.add(el.id, {
-            position: { top: 0, left: 0 },
-            html: wrapper,
+          let v2Position = { top: -20, left: 0 };
+          if (isSequenceFlow) {
+            const mid = computeSequenceFlowMidpoint(el.waypoints);
+            if (mid) {
+              v2Host.style.top = `${mid.y - el.y - 20}px`;
+              v2Host.style.left = `${mid.x - el.x - v2HostWidth / 2}px`;
+              v2Position = { top: 0, left: 0 };
+            }
+          }
+          const v2Oid = overlays.add(el.id, {
+            position: v2Position,
+            html: v2Host,
           });
-          lightweightOverlayStateRef.current[kind].push(oid);
+          lightweightOverlayStateRef.current[kind].push(v2Oid);
           overlayNodesAdded += 1;
-
-          if ((ovl.showProperties || v2Enabled) && elWidth >= 30 && elHeight >= 30) {
-            const card = createPropertyCard(ovl, realProps, elWidth);
-            card.dataset.fpcElementId = el.id;
-            // Measure the card height before attaching it to the overlay layer.
-            const measurer = getOverlayMeasurementContainer();
-            if (!measurer) return;
-            measurer.appendChild(card);
-            const cardHeight = card.offsetHeight || 30;
-            measurer.innerHTML = "";
-
-            const cardOid = overlays.add(el.id, {
-              position: { top: -(cardHeight + CARD_GAP), left: 0 },
-              html: card,
-            });
-            lightweightOverlayStateRef.current[kind].push(cardOid);
-            overlayNodesAdded += 1;
-          }
 
           elementOverlaysAdded += 1;
         });

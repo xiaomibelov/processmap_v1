@@ -29,6 +29,7 @@ export function buildBpmnDiagramOverlayLayersProps({
   propertiesOverlayAlwaysPreviewByElementId,
   queueDiagramMutation,
   v2OverlaysEnabled,
+  v2OverlaysExpanded,
   reloadKey,
   robotMetaOverlayEnabled,
   robotMetaOverlayFilters,
@@ -69,6 +70,7 @@ export function buildBpmnDiagramOverlayLayersProps({
       propertiesOverlayAlwaysEnabled,
       propertiesOverlayAlwaysPreviewByElementId,
       v2OverlaysEnabled,
+      v2OverlaysExpanded,
     },
     bpmnContextMenuProps: {
       menu: bpmnContextMenu,
