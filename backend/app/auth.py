@@ -106,6 +106,21 @@ def refresh_ttl_seconds() -> int:
     return days * 24 * 60 * 60
 
 
+def refresh_rotation_grace_seconds() -> int:
+    """Grace period during which a rotated refresh token stays usable.
+
+    This prevents cross-tab/token races: if two requests carrying the same
+    refresh token arrive nearly simultaneously, both can rotate before the
+    old token is fully revoked.
+    """
+    raw = os.getenv("JWT_REFRESH_ROTATION_GRACE_SEC", "").strip()
+    try:
+        sec = int(raw)
+    except Exception:
+        sec = 5
+    return max(0, sec)
+
+
 def jwt_secret() -> str:
     secret = os.getenv("JWT_SECRET", "").strip()
     return secret or DEFAULT_JWT_SECRET
@@ -523,7 +538,9 @@ def rotate_refresh_token(
         raise AuthError("refresh_not_found")
 
     row = rows[idx]
-    if row.get("revoked_at"):
+    revoked_at = int(row.get("revoked_at") or 0)
+    # A future revoked_at means the token is inside the rotation grace window.
+    if revoked_at and revoked_at <= now_ts():
         raise AuthError("refresh_revoked")
 
     expires_at = int(row.get("expires_at") or 0)
@@ -536,7 +553,9 @@ def rotate_refresh_token(
 
     new_jti = uuid.uuid4().hex
     row = dict(row)
-    row["revoked_at"] = now_ts()
+    # Soft-revoke the old token: it stays valid for a short grace window so
+    # concurrent requests carrying the same token don't get logged out.
+    row["revoked_at"] = now_ts() + refresh_rotation_grace_seconds()
     row["replaced_by_jti"] = new_jti
     rows[idx] = row
 
