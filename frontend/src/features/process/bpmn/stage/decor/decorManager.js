@@ -16,14 +16,21 @@ function clampNumber(value, min, max) {
 
 function buildUserNotesDecorPayload(ctx) {
   const getElementNotesMap = ctx?.getters?.getElementNotesMap;
+  const getElementThreadCounts = ctx?.getters?.getElementThreadCounts;
   const asArray = ctx?.utils?.asArray;
+  const asObject = ctx?.utils?.asObject;
   if (typeof getElementNotesMap !== "function" || typeof asArray !== "function") return [];
   const out = [];
   const map = getElementNotesMap();
-  Object.entries(map).forEach(([elementId, entry]) => {
+  const threadCounts = typeof getElementThreadCounts === "function" ? asObject(getElementThreadCounts()) : {};
+  const mergedKeys = new Set([...Object.keys(map), ...Object.keys(threadCounts)]);
+  mergedKeys.forEach((elementId) => {
     const eid = String(elementId || "").trim();
-    const count = asArray(entry?.items).length;
-    if (!eid || count <= 0) return;
+    if (!eid) return;
+    const noteCount = asArray(asObject(map[eid])?.items).length;
+    const threadCount = Number(threadCounts[eid] || 0);
+    const count = noteCount + threadCount;
+    if (count <= 0) return;
     out.push({ elementId: eid, count });
   });
   return out;
