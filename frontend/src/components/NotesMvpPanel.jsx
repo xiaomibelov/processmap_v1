@@ -1208,6 +1208,22 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setCreateOpen(false);
     setSelectedThreadId(nextThreadId);
     await fetchThreads({ preferredThreadId: nextThreadId });
+
+    // Ensure the diagram pencil overlay appears for element-scoped discussions.
+    // The overlay renderer only looks at the legacy notes_by_element map, so
+    // mirror the first comment of a new element thread into it.
+    if (
+      scopeKey === "diagram_element"
+      && selectedElementId
+      && typeof onAddLegacyElementNote === "function"
+    ) {
+      const firstComment = asArray(result.thread?.comments)[0];
+      const noteText = text(firstComment?.body) || text(createSubject) || text(details);
+      if (noteText) {
+        await onAddLegacyElementNote(selectedElementId, noteText);
+      }
+    }
+
     emitNotesAggregateChanged(sid);
     emitNoteMentionsChanged();
     setCreateSubjectByScope((prev) => (prev[scopeKey] ? { ...prev, [scopeKey]: "" } : prev));
