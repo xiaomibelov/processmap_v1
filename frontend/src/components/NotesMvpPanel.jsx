@@ -402,6 +402,23 @@ function emitNoteMentionsChanged() {
   window.dispatchEvent(new CustomEvent("processmap:note-mentions-changed"));
 }
 
+function emitElementNoteThreadsChanged(sessionId, threads) {
+  if (typeof window === "undefined") return;
+  const sid = text(sessionId);
+  if (!sid) return;
+  const countsByElementId = {};
+  asArray(threads).forEach((thread) => {
+    if (text(thread?.scope_type) !== "diagram_element") return;
+    const ref = thread?.scope_ref || thread?.scopeRef || {};
+    const eid = text(ref.element_id || ref.elementId);
+    if (!eid) return;
+    countsByElementId[eid] = (countsByElementId[eid] || 0) + 1;
+  });
+  window.dispatchEvent(new CustomEvent("processmap:element-note-threads-changed", {
+    detail: { sessionId: sid, countsByElementId },
+  }));
+}
+
 const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   sessionId,
   sessionTitle = "",
@@ -840,21 +857,27 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   }, [open, sid]);
 
   const fetchThreads = useCallback(async (options = {}) => {
-    if (!sid || !open) return;
-    setLoading(true);
+    if (!sid) return;
+    if (open) setLoading(true);
     setError("");
     const preferredThreadId = text(options?.preferredThreadId);
-    if (!notificationMode && scopeFilter === "selected_element" && !selectedElementId) {
-      setThreads([]);
-      setSelectedThreadId("");
-      setLoading(false);
-      return;
+    let filters;
+    if (!open) {
+      // Keep overlay counts up to date even when the panel is closed.
+      filters = { status: "", scopeType: "", elementId: "" };
+    } else {
+      if (!notificationMode && scopeFilter === "selected_element" && !selectedElementId) {
+        setThreads([]);
+        setSelectedThreadId("");
+        setLoading(false);
+        return;
+      }
+      filters = {
+        status: notificationMode || statusFilter === "all" ? "" : statusFilter,
+        scopeType: notificationMode || scopeFilter === "all" ? "" : (scopeFilter === "selected_element" ? "diagram_element" : scopeFilter),
+        elementId: notificationMode ? "" : (scopeFilter === "selected_element" ? selectedElementId : ""),
+      };
     }
-    const filters = {
-      status: notificationMode || statusFilter === "all" ? "" : statusFilter,
-      scopeType: notificationMode || scopeFilter === "all" ? "" : (scopeFilter === "selected_element" ? "diagram_element" : scopeFilter),
-      elementId: notificationMode ? "" : (scopeFilter === "selected_element" ? selectedElementId : ""),
-    };
     const result = await apiListNoteThreads(sid, filters);
     if (!result.ok) {
       setError(errorText(result, "Не удалось загрузить заметки и обсуждения."));
@@ -877,6 +900,10 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   useEffect(() => {
     void fetchThreads();
   }, [fetchThreads]);
+
+  useEffect(() => {
+    emitElementNoteThreadsChanged(sid, threads);
+  }, [sid, threads]);
 
   useEffect(() => {
     void fetchMentionableUsers();
