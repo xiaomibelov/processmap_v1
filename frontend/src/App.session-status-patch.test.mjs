@@ -37,6 +37,19 @@ test("changeCurrentSessionStatus reads base diagram state version from draft", (
   );
 });
 
+test("changeCurrentSessionStatus falls back to apiGetSession when draft version is missing", () => {
+  assert.equal(
+    fnText.includes("apiGetSession(sid)"),
+    true,
+    "should fetch session snapshot when draft version is unavailable",
+  );
+  assert.equal(
+    /snapshot\?\.session\?\.diagram_state_version|\bsnapshot\?\.session\?\.diagramStateVersion/.test(fnText),
+    true,
+    "should read diagram_state_version from fetched session snapshot",
+  );
+});
+
 test("changeCurrentSessionStatus includes base_diagram_state_version in patch payload", () => {
   assert.equal(
     fnText.includes("base_diagram_state_version"),

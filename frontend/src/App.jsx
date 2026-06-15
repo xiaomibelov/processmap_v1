@@ -3022,13 +3022,27 @@ export default function App() {
     if (!sid || isLocalSessionId(sid)) return { ok: false, error: "Сессия не выбрана." };
     const status = String(nextStatus || "").trim();
     if (!status) return { ok: false, error: "status_required" };
-    const baseDiagramStateVersion = Number(
-      draft?.diagram_state_version ?? draft?.diagramStateVersion ?? 0,
+    let baseDiagramStateVersion = Number(
+      draft?.diagram_state_version ?? draft?.diagramStateVersion ?? NaN,
     );
-    const payload = { status };
-    if (Number.isFinite(baseDiagramStateVersion)) {
-      payload.base_diagram_state_version = Math.round(baseDiagramStateVersion);
+    if (!Number.isFinite(baseDiagramStateVersion) || baseDiagramStateVersion < 0) {
+      const snapshot = await apiGetSession(sid);
+      baseDiagramStateVersion = Number(
+        snapshot?.session?.diagram_state_version
+        ?? snapshot?.session?.diagramStateVersion
+        ?? NaN,
+      );
+      if (!snapshot?.ok || !Number.isFinite(baseDiagramStateVersion) || baseDiagramStateVersion < 0) {
+        const error = String(snapshot?.error || "Не удалось получить актуальную версию сессии.");
+        markFail(error);
+        return { ok: false, error };
+      }
     }
+
+    const payload = {
+      status,
+      base_diagram_state_version: Math.round(baseDiagramStateVersion),
+    };
     const r = await apiPatchSession(sid, payload);
     if (!r.ok) {
       markFail(r.error);
