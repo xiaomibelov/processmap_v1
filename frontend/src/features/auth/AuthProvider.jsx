@@ -153,6 +153,19 @@ export function AuthProvider({ children }) {
     });
   }, [activeOrgId, user?.id]);
 
+  // Refresh the access token when the user returns to the tab after it may
+  // have expired during a long idle period.
+  useEffect(() => {
+    if (typeof window === "undefined" || !user?.id) return undefined;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void apiAuthRefresh({ silent: true });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [user?.id]);
+
   const login = useCallback(async (email, password) => {
     const loginRes = await apiAuthLogin(email, password);
     if (!loginRes.ok) return loginRes;

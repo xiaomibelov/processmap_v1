@@ -1649,6 +1649,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const happyFlowMarkerStateRef = useRef({ viewer: [], editor: [] });
   const happyFlowStyledStateRef = useRef({ viewer: [], editor: [] });
   const userNotesDecorStateRef = useRef({ viewer: {}, editor: {} });
+  const elementThreadCountsRef = useRef({});
   const stepTimeOverlayStateRef = useRef({ viewer: [], editor: [] });
   const stepTimeDecorSignatureRef = useRef({ viewer: "", editor: "" });
   const robotMetaDecorStateRef = useRef({ viewer: {}, editor: {} });
@@ -4192,6 +4193,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         getNodePathMetaMap,
         getRobotMetaMap,
         getElementNotesMap,
+        getElementThreadCounts: () => elementThreadCountsRef.current,
         findDiagramElementForHint,
         findShapeByNodeId,
         findShapeForHint,
@@ -6220,6 +6222,21 @@ const BpmnStage = forwardRef(function BpmnStage({
     };
     window.addEventListener(DIAGRAM_FLASH_EVENT, onFlash);
     return () => window.removeEventListener(DIAGRAM_FLASH_EVENT, onFlash);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onElementNoteThreadsChanged = (event) => {
+      const detail = event?.detail && typeof event.detail === "object" ? event.detail : {};
+      const sid = toText(detail?.sessionId || detail?.sid);
+      const activeSid = toText(activeSessionRef.current || sessionId);
+      if (sid && activeSid && sid !== activeSid) return;
+      elementThreadCountsRef.current = asObject(detail?.countsByElementId);
+      applyUserNotesDecor(viewerRef.current, "viewer");
+      applyUserNotesDecor(modelerRef.current, "editor");
+    };
+    window.addEventListener("processmap:element-note-threads-changed", onElementNoteThreadsChanged);
+    return () => window.removeEventListener("processmap:element-note-threads-changed", onElementNoteThreadsChanged);
   }, [sessionId]);
 
   useEffect(() => {

@@ -68,5 +68,23 @@ export function injectLegacyBridgeThread(threads, bridgeThread) {
   const bridgeId = text(bridgeThread.id);
   if (!bridgeId) return items;
   if (items.some((item) => text(item?.id) === bridgeId)) return items;
+
+  // Avoid showing a legacy notes bridge for an element that already has real
+  // discussion threads; otherwise creating an element-scoped discussion would
+  // duplicate its own marker in the discussions list.
+  const bridgeElementId = text(bridgeThread?.scope_ref?.element_id);
+  if (
+    bridgeElementId
+    && items.some((item) => {
+      if (item?.legacy_bridge) return false;
+      const scopeType = text(item?.scope_type);
+      if (scopeType !== "diagram_element") return false;
+      const ref = item?.scope_ref || item?.scopeRef || {};
+      return text(ref.element_id) === bridgeElementId;
+    })
+  ) {
+    return items;
+  }
+
   return [bridgeThread, ...items];
 }
