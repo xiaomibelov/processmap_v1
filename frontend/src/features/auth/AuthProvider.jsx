@@ -153,6 +153,26 @@ export function AuthProvider({ children }) {
     });
   }, [activeOrgId, user?.id]);
 
+  // Keep the access token fresh during idle periods so users are not kicked
+  // out while a session tab stays open.
+  useEffect(() => {
+    if (typeof window === "undefined" || !user?.id) return undefined;
+    const intervalMs = 5 * 60 * 1000; // every 5 minutes
+    const id = setInterval(() => {
+      void apiAuthRefresh({ silent: true });
+    }, intervalMs);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void apiAuthRefresh({ silent: true });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [user?.id]);
+
   const login = useCallback(async (email, password) => {
     const loginRes = await apiAuthLogin(email, password);
     if (!loginRes.ok) return loginRes;
