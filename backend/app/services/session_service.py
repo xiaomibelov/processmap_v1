@@ -4,11 +4,27 @@ import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
+from fastapi import HTTPException, Request
+
+from ..legacy.request_context import request_user_meta, request_active_org_id
 from ..models import Session
 from ..repositories import session_repo
 from ..storage import get_storage
 
 logger = logging.getLogger(__name__)
+
+
+class SessionAccessDenied(HTTPException):
+    def __init__(self):
+        super().__init__(status_code=403, detail="Недостаточно прав для открытия этой сессии.")
+
+
+def _request_context(request: Optional[Any] = None) -> Dict[str, Any]:
+    if request is not None:
+        user_id, is_admin = request_user_meta(request)
+        org_id = request_active_org_id(request)
+        return {"user_id": user_id, "is_admin": is_admin, "org_id": org_id}
+    return {"user_id": None, "is_admin": None, "org_id": None}
 
 
 def create_session(
@@ -21,6 +37,7 @@ def create_session(
     mode: Optional[str] = None,
     user_id: Optional[str] = None,
     org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Create a new session."""
     st = get_storage()
@@ -33,17 +50,17 @@ def create_session(
         user_id=user_id,
         org_id=org_id,
     )
-    sess = session_repo.load(sid, user_id=user_id, org_id=org_id, is_admin=True)
+    sess = session_repo.load(sid, user_id=user_id, org_id=org_id, is_admin=is_admin)
     if sess is None:
         raise RuntimeError("session not persisted")
     if prep_questions:
         sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
-        session_repo.save(sess, user_id=user_id, org_id=org_id, is_admin=True)
+        session_repo.save(sess, user_id=user_id, org_id=org_id, is_admin=is_admin)
     # Note: _recompute_session and _session_api_dump are still in _legacy_main.py
     # Full extraction requires moving those helpers first.
     import app._legacy_main as _lm
     sess = _lm._recompute_session(sess)
-    session_repo.save(sess, user_id=user_id, org_id=org_id, is_admin=True)
+    session_repo.save(sess, user_id=user_id, org_id=org_id, is_admin=is_admin)
     _lm._invalidate_session_caches(sess, org_id=org_id or getattr(sess, "org_id", "") or "")
     return _lm._session_api_dump(sess)
 
@@ -54,10 +71,19 @@ def get_session(
     user_id: Optional[str] = None,
     org_id: Optional[str] = None,
     is_admin: Optional[bool] = None,
+    request: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Load a single session by id."""
-    sess = session_repo.load(session_id, user_id=user_id, org_id=org_id, is_admin=is_admin)
+    ctx = _request_context(request)
+    ctx_user_id = user_id if user_id is not None else ctx.get("user_id")
+    ctx_org_id = org_id if org_id is not None else ctx.get("org_id")
+    ctx_is_admin = is_admin if is_admin is not None else ctx.get("is_admin")
+    sess = session_repo.load(session_id, user_id=ctx_user_id, org_id=ctx_org_id, is_admin=ctx_is_admin)
     if not sess:
+        if ctx_is_admin is False and ctx_user_id and ctx_org_id:
+            candidate = session_repo.load(session_id, org_id=ctx_org_id, is_admin=True)
+            if candidate:
+                raise SessionAccessDenied()
         return {"error": "not found"}
     import app._legacy_main as _lm
     return _lm._session_api_dump(sess)
@@ -67,16 +93,23 @@ def list_sessions(
     query: Optional[str] = None,
     limit: int = 200,
     *,
+    user_id: Optional[str] = None,
     org_id: Optional[str] = None,
     is_admin: Optional[bool] = None,
     allowed_project_ids: Optional[List[str]] = None,
+    request: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """List sessions with optional filtering."""
+    ctx = _request_context(request)
+    ctx_user_id = user_id if user_id is not None else ctx.get("user_id")
+    ctx_org_id = org_id if org_id is not None else ctx.get("org_id")
+    ctx_is_admin = is_admin if is_admin is not None else ctx.get("is_admin")
     items = session_repo.list_sessions(
         query=query,
         limit=min(max(int(limit), 1), 500),
-        org_id=org_id,
-        is_admin=is_admin,
+        user_id=ctx_user_id,
+        org_id=ctx_org_id,
+        is_admin=ctx_is_admin,
     )
     if allowed_project_ids:
         items = [
@@ -91,23 +124,31 @@ def list_project_sessions(
     mode: Optional[str] = None,
     view: str = "full",
     *,
+    user_id: Optional[str] = None,
     org_id: Optional[str] = None,
-    is_admin: Optional[bool] = True,
+    is_admin: Optional[bool] = None,
+    request: Optional[Any] = None,
 ) -> List[Dict[str, Any]]:
     """List sessions scoped to a project."""
+    ctx = _request_context(request)
+    ctx_user_id = user_id if user_id is not None else ctx.get("user_id")
+    ctx_org_id = org_id if org_id is not None else ctx.get("org_id")
+    ctx_is_admin = is_admin if is_admin is not None else ctx.get("is_admin")
     if view == "summary":
         return session_repo.list_project_session_summaries(
             project_id=project_id,
             mode=mode,
             limit=500,
-            org_id=org_id,
-            is_admin=is_admin,
+            user_id=ctx_user_id,
+            org_id=ctx_org_id,
+            is_admin=ctx_is_admin,
         )
     rows = session_repo.list_sessions(
         query=None,
         limit=500,
-        org_id=org_id,
-        is_admin=is_admin,
+        user_id=ctx_user_id,
+        org_id=ctx_org_id,
+        is_admin=ctx_is_admin,
     )
     # Filter by project_id in memory (storage.list does not support project_id filter directly)
     rows = [r for r in rows if str((r or {}).get("project_id") or "").strip() == project_id]
@@ -125,13 +166,25 @@ def delete_session(
     user_id: Optional[str] = None,
     org_id: Optional[str] = None,
     is_admin: Optional[bool] = None,
+    request: Optional[Any] = None,
 ) -> bool:
     """Delete a session."""
+    ctx = _request_context(request)
+    ctx_user_id = user_id if user_id is not None else ctx.get("user_id")
+    ctx_org_id = org_id if org_id is not None else ctx.get("org_id")
+    ctx_is_admin = is_admin if is_admin is not None else ctx.get("is_admin")
+    sess = session_repo.load(session_id, org_id=ctx_org_id, is_admin=True)
+    if not sess:
+        return False
+    if not ctx_is_admin:
+        owner_id = str(getattr(sess, "user_id", "") or "").strip()
+        if owner_id and owner_id != str(ctx_user_id or "").strip():
+            raise HTTPException(status_code=403, detail="Только владелец сессии может её удалить.")
     return session_repo.delete(
         session_id,
-        user_id=user_id,
-        org_id=org_id,
-        is_admin=is_admin,
+        user_id=ctx_user_id,
+        org_id=ctx_org_id,
+        is_admin=ctx_is_admin,
     )
 
 
