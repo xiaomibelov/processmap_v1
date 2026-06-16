@@ -483,9 +483,6 @@ def _session_read_scope(
         return {"mode": "all", "project_ids": []}
 
     scope = get_effective_project_scope(uid, oid, is_admin=admin)
-    if str(scope.get("mode") or "") == "all":
-        return {"mode": "all", "project_ids": []}
-
     project_ids = [
         str(item).strip()
         for item in (scope.get("project_ids") or [])
