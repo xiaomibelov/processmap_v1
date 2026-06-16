@@ -1,8 +1,11 @@
 import os
+import shutil
+import tempfile
 import unittest
 
 from app.auth import create_user
 from app.storage import (
+    create_org_record,
     get_storage,
     upsert_org_membership,
     upsert_project_membership,
@@ -11,16 +14,25 @@ from app.storage import (
 
 class TestSessionReadRbac(unittest.TestCase):
     def setUp(self):
-        os.environ["PROCESS_STORAGE_DIR"] = "/tmp/processmap_rbac_test_sessions"
-        os.environ["PROJECT_STORAGE_DIR"] = "/tmp/processmap_rbac_test_projects"
+        self._orig_process_storage_dir = os.environ.get("PROCESS_STORAGE_DIR")
+        self._orig_project_storage_dir = os.environ.get("PROJECT_STORAGE_DIR")
+        self._temp_dir = tempfile.TemporaryDirectory()
+        os.environ["PROCESS_STORAGE_DIR"] = os.path.join(self._temp_dir.name, "sessions")
+        os.environ["PROJECT_STORAGE_DIR"] = os.path.join(self._temp_dir.name, "projects")
         os.makedirs(os.environ["PROCESS_STORAGE_DIR"], exist_ok=True)
         os.makedirs(os.environ["PROJECT_STORAGE_DIR"], exist_ok=True)
         self.st = get_storage()
 
     def tearDown(self):
-        import shutil
-        shutil.rmtree(os.environ["PROCESS_STORAGE_DIR"], ignore_errors=True)
-        shutil.rmtree(os.environ["PROJECT_STORAGE_DIR"], ignore_errors=True)
+        self._temp_dir.cleanup()
+        if self._orig_process_storage_dir is not None:
+            os.environ["PROCESS_STORAGE_DIR"] = self._orig_process_storage_dir
+        else:
+            os.environ.pop("PROCESS_STORAGE_DIR", None)
+        if self._orig_project_storage_dir is not None:
+            os.environ["PROJECT_STORAGE_DIR"] = self._orig_project_storage_dir
+        else:
+            os.environ.pop("PROJECT_STORAGE_DIR", None)
 
     def _make_user(self, email, is_admin=False):
         return create_user(email, "password", is_admin=is_admin)
@@ -37,6 +49,7 @@ class TestSessionReadRbac(unittest.TestCase):
         owner = self._make_user("owner@local")
         admin = self._make_user("admin@local")
         org_id = "org_1"
+        create_org_record("Org 1", created_by=str(owner["id"]), org_id=org_id)
         upsert_org_membership(org_id, str(admin["id"]), "org_admin")
         sid = self._create_session(str(owner["id"]), org_id, project_id="proj_1")
         sess = self.st.load(sid, user_id=str(admin["id"]), org_id=org_id, is_admin=False)
@@ -46,8 +59,18 @@ class TestSessionReadRbac(unittest.TestCase):
         owner = self._make_user("owner@local")
         editor = self._make_user("editor@local")
         org_id = "org_1"
+        create_org_record("Org 1", created_by=str(owner["id"]), org_id=org_id)
         upsert_org_membership(org_id, str(editor["id"]), "editor")
         upsert_project_membership(org_id, "proj_1", str(editor["id"]), "editor")
         sid = self._create_session(str(owner["id"]), org_id, project_id="proj_2")
         sess = self.st.load(sid, user_id=str(editor["id"]), org_id=org_id, is_admin=False)
+        self.assertIsNone(sess)
+
+    def test_non_member_cannot_read_org_session(self):
+        owner = self._make_user("owner@local")
+        rando = self._make_user("rando@local")
+        org_id = "org_1"
+        create_org_record("Org 1", created_by=str(owner["id"]), org_id=org_id)
+        sid = self._create_session(str(owner["id"]), org_id, project_id="proj_1")
+        sess = self.st.load(sid, user_id=str(rando["id"]), org_id=org_id, is_admin=False)
         self.assertIsNone(sess)
