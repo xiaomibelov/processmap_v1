@@ -3,10 +3,13 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 
 from app.services.bpmn_navigation import (
+    _local_tag,
     auto_target_element_id,
     called_element_id,
+    element_type,
     extract_embedded_process_xml,
     extract_subprocess_xml,
+    find_bpmn_element,
     resolve_target_element_id,
 )
 
@@ -27,6 +30,23 @@ SAMPLE_BPMN = """<?xml version="1.0" encoding="UTF-8"?>
   </bpmn:process>
 </bpmn:definitions>
 """
+
+
+def test_find_bpmn_element_returns_element():
+    el = find_bpmn_element(SAMPLE_BPMN, "CallActivity_1")
+    assert el is not None
+    assert el.attrib.get("id") == "CallActivity_1"
+
+
+def test_find_bpmn_element_missing_returns_none():
+    assert find_bpmn_element(SAMPLE_BPMN, "Missing") is None
+
+
+def test_element_type():
+    assert element_type(SAMPLE_BPMN, "CallActivity_1") == "callactivity"
+    assert element_type(SAMPLE_BPMN, "SubProcess_1") == "subprocess"
+    assert element_type(SAMPLE_BPMN, "UserTask_main") == "usertask"
+    assert element_type(SAMPLE_BPMN, "Missing") is None
 
 
 def test_called_element_id():
@@ -70,7 +90,3 @@ def test_resolve_target_element_id_explicit_override():
     assert resolve_target_element_id(SAMPLE_BPMN, explicit_target_id="UserTask_sub") == "UserTask_sub"
     assert resolve_target_element_id(SAMPLE_BPMN, explicit_target_id="Missing") == "UserTask_in_sub"
     assert resolve_target_element_id(SAMPLE_BPMN) == "UserTask_in_sub"
-
-
-def _local_tag(tag: str) -> str:
-    return str(tag).rsplit("}", 1)[-1].lower() if "}" in str(tag) else str(tag).lower()

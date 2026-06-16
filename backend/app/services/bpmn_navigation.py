@@ -1,16 +1,20 @@
 from __future__ import annotations
 import xml.etree.ElementTree as ET
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional
 
 
 def _local_tag(tag: str) -> str:
     return str(tag).rsplit("}", 1)[-1].lower() if "}" in str(tag) else str(tag).lower()
 
 
+def _element_id(el: ET.Element) -> str:
+    return str(el.attrib.get("id") or "").strip()
+
+
 def find_bpmn_element(xml_text: str, element_id: str) -> Optional[ET.Element]:
     root = ET.fromstring(xml_text)
     for el in root.iter():
-        if str(el.attrib.get("id") or "").strip() == element_id:
+        if _element_id(el) == element_id:
             return el
     return None
 
@@ -31,7 +35,7 @@ def called_element_id(xml_text: str, element_id: str) -> Optional[str]:
 def extract_embedded_process_xml(xml_text: str, process_id: str) -> Optional[str]:
     root = ET.fromstring(xml_text)
     for el in root.iter():
-        if _local_tag(el.tag) == "process" and str(el.attrib.get("id") or "").strip() == process_id:
+        if _local_tag(el.tag) == "process" and _element_id(el) == process_id:
             return ET.tostring(el, encoding="utf-8", xml_declaration=False).decode("utf-8")
     return None
 
@@ -44,7 +48,7 @@ def extract_subprocess_xml(xml_text: str, element_id: str) -> Optional[str]:
     if tag == "subprocess":
         return ET.tostring(el, encoding="utf-8", xml_declaration=False).decode("utf-8")
     if tag == "callactivity":
-        called = called_element_id(xml_text, element_id)
+        called = str(el.attrib.get("calledElement") or "").strip()
         if called:
             return extract_embedded_process_xml(xml_text, called)
     return None
@@ -54,7 +58,7 @@ def _first_element_by_tag(xml_text: str, tags: List[str]) -> Optional[str]:
     root = ET.fromstring(xml_text)
     for el in root.iter():
         if _local_tag(el.tag) in tags:
-            return str(el.attrib.get("id") or "").strip() or None
+            return _element_id(el) or None
     return None
 
 
