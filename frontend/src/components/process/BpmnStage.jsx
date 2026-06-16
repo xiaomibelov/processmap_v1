@@ -5058,7 +5058,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           contextMenuInteractionRef,
           viewportCuller: viewerCullerRef.current,
         });
-        v.on("element.dblclick", (event) => {
+        v.on("element.click", (event) => {
           const el = event.element;
           if (!el || el.type !== "bpmn:CallActivity") return;
           const cb = onNavigateToSubprocessRef.current;
