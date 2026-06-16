@@ -2778,6 +2778,27 @@ class Storage:
             return None
         return _session_row_to_model(row)
 
+    def find_by_parent_element(
+        self,
+        parent_session_id: str,
+        element_id_in_parent: str,
+        *,
+        org_id: Optional[str] = None,
+    ) -> Optional[Session]:
+        pid = str(parent_session_id or "").strip()
+        eid = str(element_id_in_parent or "").strip()
+        if not pid or not eid:
+            return None
+        org = _scope_org_id(org_id) or _default_org_id()
+        org_clause, org_params = _org_clause(org)
+        _ensure_schema()
+        with _connect() as con:
+            row = con.execute(
+                f"SELECT * FROM sessions WHERE parent_session_id = ? AND element_id_in_parent = ? {org_clause} LIMIT 1",
+                [pid, eid, *org_params],
+            ).fetchone()
+        return _session_row_to_model(row) if row else None
+
     def save(
         self,
         s: Session,
