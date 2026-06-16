@@ -71,11 +71,12 @@ def list_sessions(
     query: Optional[str] = None,
     limit: int = 200,
     *,
+    user_id: Optional[str] = None,
     org_id: Optional[str] = None,
     is_admin: Optional[bool] = None,
 ) -> List[Dict[str, Any]]:
     st = get_storage()
-    return st.list(query=query, limit=limit, org_id=org_id, is_admin=is_admin)
+    return st.list(query=query, limit=limit, user_id=user_id, org_id=org_id, is_admin=is_admin)
 
 
 def list_project_session_summaries(
@@ -83,6 +84,7 @@ def list_project_session_summaries(
     mode: Optional[str] = None,
     limit: int = 500,
     *,
+    user_id: Optional[str] = None,
     org_id: Optional[str] = None,
     is_admin: Optional[bool] = None,
 ) -> List[Dict[str, Any]]:
@@ -91,6 +93,7 @@ def list_project_session_summaries(
         project_id=project_id,
         mode=mode,
         limit=limit,
+        user_id=user_id,
         org_id=org_id,
         is_admin=is_admin,
     )

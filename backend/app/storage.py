@@ -458,6 +458,103 @@ def _org_clause(org_id: str) -> Tuple[str, List[Any]]:
     return " AND org_id = ? ", [oid]
 
 
+def _session_read_scope(
+    user_id: Optional[str],
+    org_id: Optional[str],
+    is_admin: Optional[bool],
+) -> Dict[str, Any]:
+    """Return session read access scope for a user/org context.
+
+    - mode "all": user may read sessions across the org.
+    - mode "owner": user may only read sessions they own.
+    - mode "scoped": user may read sessions in the listed project_ids.
+    """
+    admin = bool(is_admin)
+    if admin:
+        return {"mode": "all", "project_ids": []}
+
+    uid = str(user_id or "").strip()
+    oid = str(org_id or "").strip()
+    if not uid or not oid:
+        return {"mode": "owner", "project_ids": []}
+
+    role = str(get_user_org_role(uid, oid, is_admin=admin) or "").strip().lower()
+    if role in _ORG_FULL_ACCESS_ROLES:
+        return {"mode": "all", "project_ids": []}
+
+    scope = get_effective_project_scope(uid, oid, is_admin=admin)
+    project_ids = [
+        str(item).strip()
+        for item in (scope.get("project_ids") or [])
+        if str(item or "").strip()
+    ]
+    if project_ids:
+        return {"mode": "scoped", "project_ids": project_ids}
+
+    return {"mode": "owner", "project_ids": []}
+
+
+def _session_read_scope_filter(
+    scope: Dict[str, Any], owner_user_id: str
+) -> Tuple[str, List[Any]]:
+    """Build a SQL filter and parameters enforcing a session read scope."""
+    mode = str(scope.get("mode") or "").strip().lower()
+    if mode == "all":
+        return "", []
+    if mode == "owner":
+        if not owner_user_id:
+            return "", []
+        return "owner_user_id = ?", [owner_user_id]
+    # scoped
+    project_ids = [
+        str(item).strip()
+        for item in (scope.get("project_ids") or [])
+        if str(item or "").strip()
+    ]
+    if project_ids:
+        placeholders = ", ".join("?" for _ in project_ids)
+        if owner_user_id:
+            return f"(owner_user_id = ? OR project_id IN ({placeholders}))", [
+                owner_user_id,
+                *project_ids,
+            ]
+        return f"project_id IN ({placeholders})", project_ids
+    if owner_user_id:
+        return "owner_user_id = ?", [owner_user_id]
+    return "1 = 0", []
+
+
+def _session_read_scope_filters(
+    user_id: Optional[str],
+    is_admin: Optional[bool],
+    org_id: Optional[str],
+) -> Tuple[List[str], List[Any]]:
+    """Return (filter_expressions, params) for session read scope."""
+    owner = _scope_user_id(user_id)
+    admin = _scope_is_admin(is_admin)
+    org = _scope_org_id(org_id) or _default_org_id()
+    read_scope = _session_read_scope(owner, org, admin)
+    mode = str(read_scope.get("mode") or "").strip()
+    if mode == "all":
+        return [], []
+    if mode == "owner":
+        if owner:
+            return ["owner_user_id = ?"], [owner]
+        return ["1 = 0"], []
+    # scoped
+    allowed = [
+        str(item or "").strip()
+        for item in (read_scope.get("project_ids") or [])
+        if str(item or "").strip()
+    ]
+    if allowed and owner:
+        placeholders = ", ".join(["?"] * len(allowed))
+        return [f"(owner_user_id = ? OR project_id IN ({placeholders}))"], [owner, *allowed]
+    if owner:
+        return ["owner_user_id = ?"], [owner]
+    return ["1 = 0"], []
+
+
 def _row_value(row: Any, key: str, fallback_idx: Optional[int] = None) -> Any:
     if row is None:
         return None
@@ -2750,17 +2847,30 @@ class Storage:
         owner = _scope_user_id(user_id)
         admin = _scope_is_admin(is_admin)
         org = _scope_org_id(org_id) or _default_org_id()
-        clause, params = _owner_clause(owner, admin)
         org_clause, org_params = _org_clause(org)
         _ensure_schema()
         with _connect() as con:
             row = con.execute(
-                f"SELECT * FROM sessions WHERE id = ? {org_clause} {clause} LIMIT 1",
-                [sid, *org_params, *params],
+                f"SELECT * FROM sessions WHERE id = ? {org_clause} LIMIT 1",
+                [sid, *org_params],
             ).fetchone()
         if not row:
             return None
-        return _session_row_to_model(row)
+        sess = _session_row_to_model(row)
+        scope = _session_read_scope(owner, org, admin)
+        mode = str(scope.get("mode") or "").strip().lower()
+        if mode == "all":
+            return sess
+        if mode == "owner":
+            return sess if sess.owner_user_id == owner else None
+        if mode == "scoped":
+            allowed_project_ids = set(scope.get("project_ids") or [])
+            if sess.owner_user_id == owner:
+                return sess
+            if sess.project_id and str(sess.project_id).strip() in allowed_project_ids:
+                return sess
+            return None
+        return None
 
     def save(
         self,
@@ -2993,17 +3103,15 @@ class Storage:
         except Exception:
             lim = 200
         lim = min(max(lim, 1), 500)
-        owner = _scope_user_id(user_id)
-        admin = _scope_is_admin(is_admin)
-        org = _scope_org_id(org_id) or _default_org_id()
         filters = []
         params: List[Any] = []
+        org = _scope_org_id(org_id) or _default_org_id()
         if org:
             filters.append("org_id = ?")
             params.append(org)
-        if not admin and owner:
-            filters.append("owner_user_id = ?")
-            params.append(owner)
+        scope_filters, scope_params = _session_read_scope_filters(user_id, is_admin, org_id)
+        filters.extend(scope_filters)
+        params.extend(scope_params)
         if project_id is not None:
             filters.append("COALESCE(project_id,'') = ?")
             params.append(str(project_id or ""))
@@ -3045,17 +3153,15 @@ class Storage:
         except Exception:
             lim = 500
         lim = min(max(lim, 1), 500)
-        owner = _scope_user_id(user_id)
-        admin = _scope_is_admin(is_admin)
-        org = _scope_org_id(org_id) or _default_org_id()
         filters = ["COALESCE(project_id,'') = ?"]
         params: List[Any] = [pid]
+        org = _scope_org_id(org_id) or _default_org_id()
         if org:
             filters.append("org_id = ?")
             params.append(org)
-        if not admin and owner:
-            filters.append("owner_user_id = ?")
-            params.append(owner)
+        scope_filters, scope_params = _session_read_scope_filters(user_id, is_admin, org_id)
+        filters.extend(scope_filters)
+        params.extend(scope_params)
         if mode is not None:
             filters.append("COALESCE(mode,'') = ?")
             params.append(str(mode or ""))
