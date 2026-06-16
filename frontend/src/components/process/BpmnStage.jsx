@@ -31,6 +31,7 @@ import {
   bindModelerStageEvents,
   bindViewerStageEvents,
 } from "../../features/process/bpmn/stage/orchestration/wireBpmnStageRuntimeEvents";
+import { bindSubprocessNavigationEvents } from "../../features/process/bpmn/stage/orchestration/bindSubprocessNavigationEvents";
 import {
   renderModelerDiagram,
   renderNewDiagramInModelerRuntime,
@@ -5058,14 +5059,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           contextMenuInteractionRef,
           viewportCuller: viewerCullerRef.current,
         });
-        v.on("element.click", (event) => {
-          const el = event.element;
-          if (!el || el.type !== "bpmn:CallActivity") return;
-          const cb = onNavigateToSubprocessRef.current;
-          if (typeof cb === "function") {
-            cb(el.id);
-          }
-        });
+        bindSubprocessNavigationEvents(v, onNavigateToSubprocessRef);
         } catch {
         }
       viewerRef.current = v;
@@ -5169,6 +5163,7 @@ const BpmnStage = forwardRef(function BpmnStage({
             applyShapeReplacePost,
             viewportCuller: modelerCullerRef.current,
           });
+          bindSubprocessNavigationEvents(m, onNavigateToSubprocessRef);
           modelerDecorBoundInstanceRef.current = m;
         }
       } catch {
