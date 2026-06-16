@@ -2789,17 +2789,30 @@ class Storage:
         owner = _scope_user_id(user_id)
         admin = _scope_is_admin(is_admin)
         org = _scope_org_id(org_id) or _default_org_id()
-        clause, params = _owner_clause(owner, admin)
         org_clause, org_params = _org_clause(org)
         _ensure_schema()
         with _connect() as con:
             row = con.execute(
-                f"SELECT * FROM sessions WHERE id = ? {org_clause} {clause} LIMIT 1",
-                [sid, *org_params, *params],
+                f"SELECT * FROM sessions WHERE id = ? {org_clause} LIMIT 1",
+                [sid, *org_params],
             ).fetchone()
         if not row:
             return None
-        return _session_row_to_model(row)
+        sess = _session_row_to_model(row)
+        scope = _session_read_scope(owner, org, admin)
+        mode = str(scope.get("mode") or "").strip().lower()
+        if mode == "all":
+            return sess
+        if mode == "owner":
+            return sess if sess.owner_user_id == owner else None
+        if mode == "scoped":
+            allowed_project_ids = set(scope.get("project_ids") or [])
+            if sess.owner_user_id == owner:
+                return sess
+            if sess.project_id and str(sess.project_id).strip() in allowed_project_ids:
+                return sess
+            return None
+        return None
 
     def save(
         self,
