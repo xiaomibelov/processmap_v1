@@ -19,7 +19,7 @@ class SessionAccessDenied(HTTPException):
         super().__init__(status_code=403, detail="Недостаточно прав для открытия этой сессии.")
 
 
-def _request_context(request: Optional[Any] = None) -> Dict[str, Any]:
+def _request_context(request: Optional[Request] = None) -> Dict[str, Any]:
     if request is not None:
         user_id, is_admin = request_user_meta(request)
         org_id = request_active_org_id(request)
@@ -80,7 +80,7 @@ def get_session(
     ctx_is_admin = is_admin if is_admin is not None else ctx.get("is_admin")
     sess = session_repo.load(session_id, user_id=ctx_user_id, org_id=ctx_org_id, is_admin=ctx_is_admin)
     if not sess:
-        if ctx_is_admin is False and ctx_user_id and ctx_org_id:
+        if not ctx_is_admin and ctx_user_id and ctx_org_id:
             candidate = session_repo.load(session_id, org_id=ctx_org_id, is_admin=True)
             if candidate:
                 raise SessionAccessDenied()
@@ -178,7 +178,7 @@ def delete_session(
         return False
     if not ctx_is_admin:
         owner_id = str(getattr(sess, "user_id", "") or "").strip()
-        if owner_id and owner_id != str(ctx_user_id or "").strip():
+        if not ctx_user_id or not owner_id or owner_id != str(ctx_user_id or "").strip():
             raise HTTPException(status_code=403, detail="Только владелец сессии может её удалить.")
     return session_repo.delete(
         session_id,
