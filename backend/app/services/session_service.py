@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import datetime
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -644,6 +645,125 @@ def _request_context(request: Optional[Request]):
     return uid, oid, admin
 
 
+def _resolve_child_bpmn_xml(
+    parent_session: Session,
+    element_id: str,
+    called: Optional[str],
+    request: Optional[Request],
+) -> str:
+    """Resolve the BPMN XML for a subprocess/call activity child session."""
+    xml = str(getattr(parent_session, "bpmn_xml", "") or "").strip()
+    project_id = str(getattr(parent_session, "project_id", "") or "").strip()
+    child_xml = None
+
+    uid, oid, admin = _request_context(request)
+    org_id = getattr(parent_session, "org_id", None)
+
+    if called and project_id:
+        candidates = session_repo.list_project_session_summaries(
+            project_id, org_id=org_id
+        )
+        for c in candidates:
+            meta = (c or {}).get("bpmn_meta") or {}
+            if str(meta.get("process_id") or "").strip() == called:
+                cand = session_repo.load(
+                    str((c or {}).get("id") or ""),
+                    user_id=uid,
+                    org_id=org_id,
+                    is_admin=admin,
+                )
+                if cand:
+                    child_xml = str(getattr(cand, "bpmn_xml", "") or "").strip()
+                    break
+
+        if not child_xml:
+            for c in candidates:
+                cand = session_repo.load(
+                    str((c or {}).get("id") or ""),
+                    user_id=uid,
+                    org_id=org_id,
+                    is_admin=admin,
+                )
+                if cand and called in str(getattr(cand, "bpmn_xml", "") or ""):
+                    child_xml = str(getattr(cand, "bpmn_xml", "") or "").strip()
+                    break
+
+    if not child_xml and called:
+        child_xml = extract_subprocess_xml(xml, element_id)
+
+    if not child_xml:
+        raise HTTPException(status_code=404, detail="Subprocess BPMN not found")
+
+    return child_xml
+
+
+def _create_child_session(
+    parent_session: Session,
+    element_id: str,
+    child_xml: str,
+    request: Optional[Request],
+) -> Session:
+    """Create and persist a new child subprocess session."""
+    uid, oid, admin = _request_context(request)
+    project_id = str(getattr(parent_session, "project_id", "") or "").strip()
+    parent_id = str(getattr(parent_session, "id", "") or "").strip()
+    parent_org_id = getattr(parent_session, "org_id", None)
+
+    parent_bpmn = str(getattr(parent_session, "bpmn_xml", "") or "").strip()
+    called = called_element_id(parent_bpmn, element_id) if parent_bpmn else None
+    title = f"Подпроцесс: {called or element_id}"
+
+    child_id = session_repo.create(
+        title=title,
+        project_id=project_id,
+        user_id=uid,
+        org_id=oid,
+    )
+    child = session_repo.load(
+        child_id, user_id=uid, org_id=oid, is_admin=admin
+    )
+    if not child:
+        raise HTTPException(status_code=500, detail="Failed to create subprocess session")
+
+    now_iso = datetime.datetime.utcnow().isoformat() + "Z"
+    parent_stack = list(getattr(parent_session, "navigation_stack", []) or [])
+    new_frame = {
+        "session_id": child_id,
+        "parent_session_id": parent_id,
+        "element_id_in_parent": element_id,
+        "entered_at": now_iso,
+    }
+    child.bpmn_xml = child_xml
+    child.parent_session_id = parent_id
+    child.element_id_in_parent = element_id
+    child.navigation_stack = parent_stack + [new_frame]
+    session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)
+    return child
+
+
+def _build_breadcrumbs(
+    child_session: Session,
+    request: Optional[Request],
+) -> List[Dict[str, Any]]:
+    """Build the navigation breadcrumb list with readable session names."""
+    uid, oid, admin = _request_context(request)
+    org_id = getattr(child_session, "org_id", None)
+
+    breadcrumbs = [
+        {"session_id": f["session_id"], "name": "", "element_id": f.get("element_id_in_parent")}
+        for f in (getattr(child_session, "navigation_stack", []) or [])
+    ]
+    for crumb in breadcrumbs:
+        crumb_sess = session_repo.load(
+            crumb["session_id"],
+            user_id=uid,
+            org_id=org_id,
+            is_admin=admin,
+        )
+        crumb["name"] = str(getattr(crumb_sess, "title", "") or "") if crumb_sess else ""
+    return breadcrumbs
+
+
 def navigate_to_subprocess(
     session_id: str,
     element_id: str,
@@ -670,76 +790,14 @@ def navigate_to_subprocess(
         child_check, _, child_err = session_access_from_request(request, existing.id)
         if child_err:
             raise HTTPException(status_code=child_err.status_code, detail=child_err.body)
-        child = child_check or existing
+        child = child_check
     else:
-        child_xml = None
-        project_id = str(getattr(sess, "project_id", "") or "").strip()
-
-        if called and project_id:
-            candidates = session_repo.list_project_session_summaries(project_id, org_id=getattr(sess, "org_id", None))
-            for c in candidates:
-                meta = (c or {}).get("bpmn_meta") or {}
-                if str(meta.get("process_id") or "").strip() == called:
-                    cand = session_repo.load(str((c or {}).get("id") or ""), org_id=getattr(sess, "org_id", None), is_admin=True)
-                    if cand:
-                        child_xml = str(getattr(cand, "bpmn_xml", "") or "").strip()
-                        break
-
-            if not child_xml:
-                for c in candidates:
-                    cand = session_repo.load(str((c or {}).get("id") or ""), org_id=getattr(sess, "org_id", None), is_admin=True)
-                    if cand and called in str(getattr(cand, "bpmn_xml", "") or ""):
-                        child_xml = str(getattr(cand, "bpmn_xml", "") or "").strip()
-                        break
-
-        if not child_xml and called:
-            child_xml = extract_subprocess_xml(xml, element_id)
-
-        if not child_xml:
-            raise HTTPException(status_code=404, detail="Subprocess BPMN not found")
-
-        uid, oid, admin = _request_context(request)
-        title = f"Подпроцесс: {called or element_id}"
-        child_id = session_repo.create(
-            title=title,
-            project_id=project_id,
-            user_id=uid,
-            org_id=oid,
-        )
-        child = session_repo.load(child_id, user_id=uid, org_id=oid, is_admin=admin)
-        if not child:
-            raise HTTPException(status_code=500, detail="Failed to create subprocess session")
-
-        import datetime
-        now_iso = datetime.datetime.utcnow().isoformat() + "Z"
-        parent_stack = list(getattr(sess, "navigation_stack", []) or [])
-        new_frame = {
-            "session_id": child_id,
-            "parent_session_id": session_id,
-            "element_id_in_parent": element_id,
-            "entered_at": now_iso,
-        }
-        child.bpmn_xml = child_xml
-        child.parent_session_id = session_id
-        child.element_id_in_parent = element_id
-        child.navigation_stack = parent_stack + [new_frame]
-        session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)
+        child_xml = _resolve_child_bpmn_xml(sess, element_id, called, request)
+        child = _create_child_session(sess, element_id, child_xml, request)
 
     child_xml = str(getattr(child, "bpmn_xml", "") or "").strip()
     target_id = resolve_target_element_id(child_xml, target_element_id)
-
-    breadcrumbs = [
-        {"session_id": f["session_id"], "name": "", "element_id": f.get("element_id_in_parent")}
-        for f in (getattr(child, "navigation_stack", []) or [])
-    ]
-    for crumb in breadcrumbs:
-        crumb_sess = session_repo.load(
-            crumb["session_id"],
-            user_id=(getattr(request.state, "auth_user", "") if request else ""),
-            org_id=getattr(sess, "org_id", None),
-            is_admin=True,
-        )
-        crumb["name"] = str(getattr(crumb_sess, "title", "") or "") if crumb_sess else ""
+    breadcrumbs = _build_breadcrumbs(child, request)
 
     return {
         "subprocess_session_id": getattr(child, "id", ""),
