@@ -864,7 +864,10 @@ def _ensure_schema() -> None:
                   created_by TEXT NOT NULL DEFAULT '',
                   updated_by TEXT NOT NULL DEFAULT '',
                   created_at INTEGER NOT NULL DEFAULT 0,
-                  updated_at INTEGER NOT NULL DEFAULT 0
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  navigation_stack TEXT DEFAULT '[]',
+                  parent_session_id TEXT,
+                  element_id_in_parent TEXT
                 )
                 """
             )
@@ -981,6 +984,13 @@ def _ensure_schema() -> None:
             if not _column_exists(con, "note_comments", "edited_by_user_id"):
                 con.execute("ALTER TABLE note_comments ADD COLUMN edited_by_user_id TEXT DEFAULT ''")
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_comments_reply_to ON note_comments(reply_to_comment_id)")
+            if not _column_exists(con, "sessions", "navigation_stack"):
+                con.execute("ALTER TABLE sessions ADD COLUMN navigation_stack TEXT DEFAULT '[]'")
+            if not _column_exists(con, "sessions", "parent_session_id"):
+                con.execute("ALTER TABLE sessions ADD COLUMN parent_session_id TEXT")
+            if not _column_exists(con, "sessions", "element_id_in_parent"):
+                con.execute("ALTER TABLE sessions ADD COLUMN element_id_in_parent TEXT")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_parent_element ON sessions(parent_session_id, element_id_in_parent)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS note_comment_mentions (
@@ -2645,6 +2655,12 @@ def _session_row_to_model(row: sqlite3.Row) -> Session:
         "updated_by": str((row["updated_by"] if "updated_by" in keys else "") or ""),
         "created_at": int(row["created_at"] or 0),
         "updated_at": int(row["updated_at"] or 0),
+        "navigation_stack": _json_loads(
+            (row["navigation_stack"] if "navigation_stack" in keys else "[]") or "[]",
+            [],
+        ),
+        "parent_session_id": str((row["parent_session_id"] if "parent_session_id" in keys else "") or ""),
+        "element_id_in_parent": str((row["element_id_in_parent"] if "element_id_in_parent" in keys else "") or ""),
     }
     return Session.model_validate(payload)
 
@@ -2841,6 +2857,9 @@ class Storage:
                 "updated_by": updated_by,
                 "created_at": created_at,
                 "updated_at": now,
+                "navigation_stack": _json_dumps(getattr(s, "navigation_stack", []) or [], []),
+                "parent_session_id": str(getattr(s, "parent_session_id", "") or ""),
+                "element_id_in_parent": str(getattr(s, "element_id_in_parent", "") or ""),
             }
             con.execute(
                 """
@@ -2851,7 +2870,8 @@ class Storage:
                   bpmn_xml, bpmn_xml_version, diagram_state_version,
                   diagram_last_write_actor_user_id, diagram_last_write_actor_label, diagram_last_write_at,
                   diagram_last_write_changed_keys_json, bpmn_graph_fingerprint, bpmn_meta_json, version,
-                  owner_user_id, org_id, created_by, updated_by, created_at, updated_at
+                  owner_user_id, org_id, created_by, updated_by, created_at, updated_at,
+                  navigation_stack, parent_session_id, element_id_in_parent
                 ) VALUES (
                   :id, :title, :roles_json, :start_role, :project_id, :mode, :notes, :notes_by_element_json,
                   :interview_json, :nodes_json, :edges_json, :questions_json, :mermaid, :mermaid_simple, :mermaid_lanes,
@@ -2859,7 +2879,8 @@ class Storage:
                   :bpmn_xml, :bpmn_xml_version, :diagram_state_version,
                   :diagram_last_write_actor_user_id, :diagram_last_write_actor_label, :diagram_last_write_at,
                   :diagram_last_write_changed_keys_json, :bpmn_graph_fingerprint, :bpmn_meta_json, :version,
-                  :owner_user_id, :org_id, :created_by, :updated_by, :created_at, :updated_at
+                  :owner_user_id, :org_id, :created_by, :updated_by, :created_at, :updated_at,
+                  :navigation_stack, :parent_session_id, :element_id_in_parent
                 )
                 ON CONFLICT(id) DO UPDATE SET
                   title=excluded.title,
@@ -2895,7 +2916,10 @@ class Storage:
                   created_by=excluded.created_by,
                   updated_by=excluded.updated_by,
                   created_at=excluded.created_at,
-                  updated_at=excluded.updated_at
+                  updated_at=excluded.updated_at,
+                  navigation_stack=excluded.navigation_stack,
+                  parent_session_id=excluded.parent_session_id,
+                  element_id_in_parent=excluded.element_id_in_parent
                 """,
                 values,
             )
