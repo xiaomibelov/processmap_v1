@@ -211,6 +211,16 @@ class TestSessionReadRbac(unittest.TestCase):
             svc.delete_session(sid, request=req)
         self.assertEqual(cm.exception.status_code, 403)
 
+    def test_owner_can_delete_own_session(self):
+        owner = self._make_user("owner_self_delete@local")
+        org_id = "org_owner_self_delete"
+        create_org_record("Owner Self Delete Org", created_by=str(owner["id"]), org_id=org_id)
+        sid = self._create_session(str(owner["id"]), org_id, project_id="proj_1")
+        req = _DummyRequest(owner, org_id)
+        result = svc.delete_session(sid, request=req)
+        self.assertTrue(result)
+        self.assertIsNone(self.st.load(sid, user_id=str(owner["id"]), org_id=org_id, is_admin=False))
+
     def test_list_project_sessions_does_not_leak_other_projects_for_editor(self):
         owner = self._make_user("owner_list_leak@local")
         editor = self._make_user("editor_list_leak@local")

@@ -177,7 +177,7 @@ def delete_session(
     if not sess:
         return False
     if not ctx_is_admin:
-        owner_id = str(getattr(sess, "user_id", "") or "").strip()
+        owner_id = str(getattr(sess, "owner_user_id", "") or "").strip()
         if not ctx_user_id or not owner_id or owner_id != str(ctx_user_id or "").strip():
             raise HTTPException(status_code=403, detail="Только владелец сессии может её удалить.")
     return session_repo.delete(
