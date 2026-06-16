@@ -42,6 +42,7 @@ def list_project_sessions(project_id: str, mode: str | None = None, view: str | 
         project_id=project_id,
         mode=mode,
         view=view or "full",
+        request=request,
     )
 
 @router.post('/api/projects/{project_id}/sessions')
@@ -50,11 +51,11 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
 
 @router.get('/api/sessions')
 def list_sessions(q: Optional[str] = None, limit: int = 200, request: Request = None):
-    return _svc.list_sessions(query=q, limit=limit)
+    return _svc.list_sessions(query=q, limit=limit, request=request)
 
 @router.get('/api/sessions/{session_id}')
 def get_session(session_id: str, request: Request = None):
-    return _svc.get_session(session_id)
+    return _svc.get_session(session_id, request=request)
 
 @router.post('/api/sessions/{session_id}/presence')
 def touch_session_presence_api(session_id: str, inp: SessionPresenceTouchIn, request: Request = None):
@@ -78,7 +79,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
 
 @router.delete('/api/sessions/{session_id}')
 def delete_session_api(session_id: str, request: Request = None):
-    _svc.delete_session(session_id)
+    _svc.delete_session(session_id, request=request)
     return {"ok": True}
 
 @router.put('/api/sessions/{session_id}')
@@ -150,7 +151,7 @@ def session_bpmn_export(session_id: str, raw: int = Query(0, description='1 = re
     return _svc.bpmn_export(session_id, raw=raw, include_overlay=include_overlay, zoom=zoom, pan_x=pan_x, pan_y=pan_y, request=request)
 
 @router.get('/api/sessions/{session_id}/overlays')
-def session_overlays(session_id: str, request: Request = None):
+def session_overlays(session_id: str):
     return _svc.overlays(session_id)
 
 @router.put('/api/sessions/{session_id}/bpmn')
