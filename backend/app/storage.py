@@ -458,6 +458,40 @@ def _org_clause(org_id: str) -> Tuple[str, List[Any]]:
     return " AND org_id = ? ", [oid]
 
 
+def _session_read_scope(user_id: str, org_id: str, is_admin: bool) -> Dict[str, Any]:
+    """Return session read access scope for a user/org context.
+
+    - mode "all": user may read sessions across the org.
+    - mode "owner": user may only read sessions they own.
+    - mode "scoped": user may read sessions in the listed project_ids.
+    """
+    if is_admin:
+        return {"mode": "all", "project_ids": []}
+
+    uid = str(user_id or "").strip()
+    oid = str(org_id or "").strip()
+    if not uid or not oid:
+        return {"mode": "owner", "project_ids": []}
+
+    role = get_user_org_role(uid, oid, is_admin=False)
+    if role in _ORG_FULL_ACCESS_ROLES:
+        return {"mode": "all", "project_ids": []}
+
+    scope = get_effective_project_scope(uid, oid, is_admin=False)
+    if str(scope.get("mode") or "") == "all":
+        return {"mode": "all", "project_ids": []}
+
+    project_ids = [
+        str(item).strip()
+        for item in (scope.get("project_ids") or [])
+        if str(item or "").strip()
+    ]
+    if project_ids:
+        return {"mode": "scoped", "project_ids": project_ids}
+
+    return {"mode": "owner", "project_ids": []}
+
+
 def _row_value(row: Any, key: str, fallback_idx: Optional[int] = None) -> Any:
     if row is None:
         return None
