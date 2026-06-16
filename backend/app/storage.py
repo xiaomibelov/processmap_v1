@@ -494,6 +494,36 @@ def _session_read_scope(
     return {"mode": "owner", "project_ids": []}
 
 
+def _session_read_scope_filter(
+    scope: Dict[str, Any], owner_user_id: str
+) -> Tuple[str, List[Any]]:
+    """Build a SQL filter and parameters enforcing a session read scope."""
+    mode = str(scope.get("mode") or "").strip().lower()
+    if mode == "all":
+        return "", []
+    if mode == "owner":
+        if not owner_user_id:
+            return "", []
+        return "owner_user_id = ?", [owner_user_id]
+    # scoped
+    project_ids = [
+        str(item).strip()
+        for item in (scope.get("project_ids") or [])
+        if str(item or "").strip()
+    ]
+    if project_ids:
+        placeholders = ", ".join("?" for _ in project_ids)
+        if owner_user_id:
+            return f"(owner_user_id = ? OR project_id IN ({placeholders}))", [
+                owner_user_id,
+                *project_ids,
+            ]
+        return f"project_id IN ({placeholders})", project_ids
+    if owner_user_id:
+        return "owner_user_id = ?", [owner_user_id]
+    return "1 = 0", []
+
+
 def _row_value(row: Any, key: str, fallback_idx: Optional[int] = None) -> Any:
     if row is None:
         return None
@@ -3050,9 +3080,11 @@ class Storage:
         if org:
             filters.append("org_id = ?")
             params.append(org)
-        if not admin and owner:
-            filters.append("owner_user_id = ?")
-            params.append(owner)
+        scope = _session_read_scope(owner, org, admin)
+        scope_filter, scope_params = _session_read_scope_filter(scope, owner)
+        if scope_filter:
+            filters.append(scope_filter)
+            params.extend(scope_params)
         if project_id is not None:
             filters.append("COALESCE(project_id,'') = ?")
             params.append(str(project_id or ""))
@@ -3102,9 +3134,11 @@ class Storage:
         if org:
             filters.append("org_id = ?")
             params.append(org)
-        if not admin and owner:
-            filters.append("owner_user_id = ?")
-            params.append(owner)
+        scope = _session_read_scope(owner, org, admin)
+        scope_filter, scope_params = _session_read_scope_filter(scope, owner)
+        if scope_filter:
+            filters.append(scope_filter)
+            params.extend(scope_params)
         if mode is not None:
             filters.append("COALESCE(mode,'') = ?")
             params.append(str(mode or ""))
