@@ -64,3 +64,6 @@ workspace/_bak_*/
 
 # Vault has its own git repo for Obsidian sync
 vault/.git
+
+# Git worktrees
+.worktrees/

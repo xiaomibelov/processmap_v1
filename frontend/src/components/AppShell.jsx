@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import TopBar from "./TopBar";
+import SubprocessBreadcrumbs from "../features/process/SubprocessBreadcrumbs";
 import ProcessStage from "./ProcessStage";
 import SidebarHandle from "./sidebar/SidebarHandle";
 import { resolveSessionNavNoticeCopy } from "../features/process/navigation/sessionNavNoticeUi";
@@ -138,11 +139,15 @@ export default function AppShell({
   sessionNavNotice,
   onDismissSessionNavNotice,
   onReturnToSessionList,
+  onNavigateToSubprocess,
   mentionNotifications,
   noteNotifications,
   noteNotificationsAvailable = false,
   onOpenMentionNotification,
   onRefreshMentionNotifications,
+  subprocessBreadcrumbs,
+  onBreadcrumbNavigate,
+  onReturnToParent,
 }) {
   const hasActiveSession = String(shellSessionId || sessionId || "").trim().length > 0;
   const effectiveLeftHidden = hasActiveSession ? !!leftHidden : true;
@@ -221,6 +226,12 @@ export default function AppShell({
         noteNotificationsAvailable={noteNotificationsAvailable}
         onOpenMentionNotification={onOpenMentionNotification}
         onRefreshMentionNotifications={onRefreshMentionNotifications}
+      />
+
+      <SubprocessBreadcrumbs
+        breadcrumbs={subprocessBreadcrumbs}
+        onNavigate={onBreadcrumbNavigate}
+        onBack={onReturnToParent}
       />
 
       <AppUpdateBanner
@@ -306,6 +317,7 @@ export default function AppShell({
               discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
               onDiscussionLinkedElementFocusResult={onDiscussionLinkedElementFocusResult}
               onOpenNotesDiscussions={onOpenNotesDiscussions}
+              onNavigateToSubprocess={onNavigateToSubprocess}
             />
           )}
         </div>

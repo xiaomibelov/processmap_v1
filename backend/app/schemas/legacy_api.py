@@ -313,3 +313,14 @@ class CreatePathReportVersionIn(BaseModel):
 
 class OrgReportBuildIn(CreatePathReportVersionIn):
     path_id: str
+
+
+class SubprocessNavigateOut(BaseModel):
+    subprocess_session_id: str
+    target_element_id: Optional[str] = None
+    breadcrumbs: List[Dict[str, Any]] = []
+
+
+class SubprocessReturnOut(BaseModel):
+    parent_session_id: str
+    element_id_in_parent: str
