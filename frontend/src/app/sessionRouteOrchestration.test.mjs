@@ -108,11 +108,11 @@ test("duplicate url_restore is skipped when the same session is already confirme
 test("readSelectionFromUrl preserves old project/session deep-link behavior", () => {
   assert.deepEqual(
     readSelectionFromUrl(makeWindow("https://processmap.local/app?project=p1&session=s1")),
-    { projectId: "p1", sessionId: "s1" },
+    { projectId: "p1", sessionId: "s1", parentSessionId: "", focusElementId: "" },
   );
   assert.deepEqual(
     readSelectionFromUrl(makeWindow("https://processmap.local/app?session=s1")),
-    { projectId: "", sessionId: "" },
+    { projectId: "", sessionId: "", parentSessionId: "", focusElementId: "" },
   );
 });
 
@@ -251,6 +251,8 @@ test("seedSessionParentHistoryToUrl skips sessions already opened through intern
     folderId: "",
     projectId: "p1",
     sessionId: "s1",
+    parentSessionId: "",
+    focusElementId: "",
     source: "internal",
   };
   const result = seedSessionParentHistoryToUrl({ projectId: "p1", sessionId: "s1" }, win);

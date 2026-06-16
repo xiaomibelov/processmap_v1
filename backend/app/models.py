@@ -101,6 +101,9 @@ class Session(BaseModel):
     updated_by: str = ""
     created_at: int = 0
     updated_at: int = 0
+    navigation_stack: List[Dict[str, Any]] = Field(default_factory=list)
+    parent_session_id: str = ""
+    element_id_in_parent: str = ""
 # -----------------------------
 # Epic #1: Project (process passport)
 # -----------------------------

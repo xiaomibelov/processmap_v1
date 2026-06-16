@@ -1,0 +1,11 @@
+.subprocess-focus-highlight {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  border: 3px solid #f59e0b;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 100;
+}
