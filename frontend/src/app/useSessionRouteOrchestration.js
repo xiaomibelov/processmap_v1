@@ -14,18 +14,22 @@ export function readSelectionFromUrl(win = typeof window !== "undefined" ? windo
     return {
       projectId: String(route.projectId || "").trim(),
       sessionId: String(route.sessionId || "").trim(),
+      parentSessionId: String(route.parentSessionId || "").trim(),
+      focusElementId: String(route.focusElementId || "").trim(),
     };
   } catch {
     return { projectId: "", sessionId: "" };
   }
 }
 
-export function writeSelectionToUrl({ projectId, sessionId }, win = typeof window !== "undefined" ? window : undefined) {
+export function writeSelectionToUrl({ projectId, sessionId, parentSessionId, focusElementId }, win = typeof window !== "undefined" ? window : undefined) {
   if (!win) return;
   try {
     const nextHref = buildProcessMapUrl({
       projectId,
       sessionId,
+      parentSessionId,
+      focusElementId,
       source: "internal",
     }, {
       pathname: win.location.pathname || "/app",
@@ -34,7 +38,7 @@ export function writeSelectionToUrl({ projectId, sessionId }, win = typeof windo
     });
     const currentHref = `${win.location.pathname}${win.location.search}${win.location.hash}`;
     if (nextHref !== currentHref) {
-      replaceProcessMapHistory({ projectId, sessionId, source: "internal" }, {
+      replaceProcessMapHistory({ projectId, sessionId, parentSessionId, focusElementId, source: "internal" }, {
         win,
         baseSearch: win.location.search || "",
       });
@@ -44,7 +48,7 @@ export function writeSelectionToUrl({ projectId, sessionId }, win = typeof windo
   }
 }
 
-export function pushSessionSelectionToUrl({ projectId, sessionId, projectContext }, win = typeof window !== "undefined" ? window : undefined) {
+export function pushSessionSelectionToUrl({ projectId, sessionId, parentSessionId, focusElementId, projectContext }, win = typeof window !== "undefined" ? window : undefined) {
   if (!win) return { ok: false, action: "none", reason: "missing_window" };
   const pid = String(projectId || "").trim();
   const sid = String(sessionId || "").trim();
@@ -54,11 +58,11 @@ export function pushSessionSelectionToUrl({ projectId, sessionId, projectContext
     if (currentRoute.projectId === pid && currentRoute.sessionId === sid) {
       return { ok: true, action: "none", reason: "already_current_session" };
     }
-    const parentResult = replaceProcessMapHistory({ projectId: pid, sessionId: "", source: "internal", projectContext }, {
+    const parentResult = replaceProcessMapHistory({ projectId: pid, sessionId: "", parentSessionId: "", focusElementId: "", source: "internal", projectContext }, {
       win,
       baseSearch: win.location.search || "",
     });
-    const sessionResult = pushProcessMapHistory({ projectId: pid, sessionId: sid, source: "internal", projectContext }, {
+    const sessionResult = pushProcessMapHistory({ projectId: pid, sessionId: sid, parentSessionId, focusElementId, source: "internal", projectContext }, {
       win,
       baseSearch: win.location.search || "",
     });
