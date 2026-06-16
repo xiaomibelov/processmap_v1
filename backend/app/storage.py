@@ -524,6 +524,37 @@ def _session_read_scope_filter(
     return "1 = 0", []
 
 
+def _session_read_scope_filters(
+    user_id: Optional[str],
+    is_admin: Optional[bool],
+    org_id: Optional[str],
+) -> Tuple[List[str], List[Any]]:
+    """Return (filter_expressions, params) for session read scope."""
+    owner = _scope_user_id(user_id)
+    admin = _scope_is_admin(is_admin)
+    org = _scope_org_id(org_id) or _default_org_id()
+    read_scope = _session_read_scope(owner, org, admin)
+    mode = str(read_scope.get("mode") or "").strip()
+    if mode == "all":
+        return [], []
+    if mode == "owner":
+        if owner:
+            return ["owner_user_id = ?"], [owner]
+        return ["1 = 0"], []
+    # scoped
+    allowed = [
+        str(item or "").strip()
+        for item in (read_scope.get("project_ids") or [])
+        if str(item or "").strip()
+    ]
+    if allowed and owner:
+        placeholders = ", ".join(["?"] * len(allowed))
+        return [f"(owner_user_id = ? OR project_id IN ({placeholders}))"], [owner, *allowed]
+    if owner:
+        return ["owner_user_id = ?"], [owner]
+    return ["1 = 0"], []
+
+
 def _row_value(row: Any, key: str, fallback_idx: Optional[int] = None) -> Any:
     if row is None:
         return None
@@ -3072,19 +3103,15 @@ class Storage:
         except Exception:
             lim = 200
         lim = min(max(lim, 1), 500)
-        owner = _scope_user_id(user_id)
-        admin = _scope_is_admin(is_admin)
-        org = _scope_org_id(org_id) or _default_org_id()
         filters = []
         params: List[Any] = []
+        org = _scope_org_id(org_id) or _default_org_id()
         if org:
             filters.append("org_id = ?")
             params.append(org)
-        scope = _session_read_scope(owner, org, admin)
-        scope_filter, scope_params = _session_read_scope_filter(scope, owner)
-        if scope_filter:
-            filters.append(scope_filter)
-            params.extend(scope_params)
+        scope_filters, scope_params = _session_read_scope_filters(user_id, is_admin, org_id)
+        filters.extend(scope_filters)
+        params.extend(scope_params)
         if project_id is not None:
             filters.append("COALESCE(project_id,'') = ?")
             params.append(str(project_id or ""))
@@ -3126,19 +3153,15 @@ class Storage:
         except Exception:
             lim = 500
         lim = min(max(lim, 1), 500)
-        owner = _scope_user_id(user_id)
-        admin = _scope_is_admin(is_admin)
-        org = _scope_org_id(org_id) or _default_org_id()
         filters = ["COALESCE(project_id,'') = ?"]
         params: List[Any] = [pid]
+        org = _scope_org_id(org_id) or _default_org_id()
         if org:
             filters.append("org_id = ?")
             params.append(org)
-        scope = _session_read_scope(owner, org, admin)
-        scope_filter, scope_params = _session_read_scope_filter(scope, owner)
-        if scope_filter:
-            filters.append(scope_filter)
-            params.extend(scope_params)
+        scope_filters, scope_params = _session_read_scope_filters(user_id, is_admin, org_id)
+        filters.extend(scope_filters)
+        params.extend(scope_params)
         if mode is not None:
             filters.append("COALESCE(mode,'') = ?")
             params.append(str(mode or ""))

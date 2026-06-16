@@ -117,3 +117,11 @@ class TestSessionReadRbac(unittest.TestCase):
         ids = {str((r or {}).get("id") or "").strip() for r in rows}
         self.assertIn(sid1, ids)
         self.assertEqual(len(ids), 1)
+        rows_proj2 = self.st.list_project_session_summaries(
+            project_id="proj_2",
+            org_id=org_id,
+            user_id=str(viewer["id"]),
+            is_admin=False,
+            limit=500,
+        )
+        self.assertEqual(len(rows_proj2), 0)
