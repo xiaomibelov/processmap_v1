@@ -1191,6 +1191,9 @@ export default function App() {
       focusElementId: res.elementIdInParent || "",
       projectContext: projectRouteContext,
     });
+    if (typeof window !== "undefined") {
+      window.__SUBPROCESS_FOCUS_ELEMENT_ID__ = res.elementIdInParent || "";
+    }
     openSession(res.parentSessionId);
   }, [openSession, projectId, projectRouteContext]);
 
@@ -3262,15 +3265,30 @@ export default function App() {
 
   useEffect(() => {
     const { parentSessionId, focusElementId: focusId, sessionId: sid } = initialSelectionRef.current || {};
-    if (parentSessionId && sid) {
-      setSubprocessBreadcrumbs([
-        { session_id: parentSessionId, name: "" },
-        { session_id: sid, name: "" },
-      ]);
-    }
     if (focusId) {
       setFocusElementId(focusId);
+      if (typeof window !== "undefined") {
+        window.__SUBPROCESS_FOCUS_ELEMENT_ID__ = focusId || "";
+      }
     }
+    if (!sid) return;
+    void (async () => {
+      const loaded = await apiGetSession(sid);
+      if (loaded.ok && loaded.session?.navigation_stack?.length > 0) {
+        setSubprocessBreadcrumbs(
+          loaded.session.navigation_stack.map((frame) => ({
+            session_id: frame.session_id,
+            name: frame.name || "",
+            element_id: frame.element_id_in_parent,
+          }))
+        );
+      } else if (parentSessionId) {
+        setSubprocessBreadcrumbs([
+          { session_id: parentSessionId, name: "" },
+          { session_id: sid, name: "" },
+        ]);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
