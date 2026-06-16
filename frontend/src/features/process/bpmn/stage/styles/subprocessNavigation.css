@@ -9,3 +9,8 @@
   pointer-events: none;
   z-index: 100;
 }
+
+/* CallActivity is clickable for subprocess navigation */
+.fpc-call-activity-clickable {
+  cursor: pointer;
+}
