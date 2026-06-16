@@ -87,6 +87,8 @@ export function normalizeProcessMapRoute(routeRaw = {}) {
   const folderId = text(route.folderId ?? route.folder_id);
   const projectId = text(route.projectId ?? route.project_id);
   const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
+  const parentSessionId = projectId ? text(route.parentSessionId ?? route.parent_session_id ?? route.parent) : "";
+  const focusElementId = sessionId ? text(route.focusElementId ?? route.focus_element_id ?? route.focus) : "";
   const surface = sessionId && projectId
     ? "session"
     : projectId
@@ -99,6 +101,8 @@ export function normalizeProcessMapRoute(routeRaw = {}) {
     folderId,
     projectId,
     sessionId,
+    parentSessionId,
+    focusElementId,
     source: normalizeSource(route.source),
   };
 }
@@ -112,6 +116,8 @@ export function parseProcessMapRoute(locationLike = typeof window !== "undefined
       folderId: params.get("folder"),
       projectId: params.get("project"),
       sessionId: params.get("session"),
+      parentSessionId: params.get("parent"),
+      focusElementId: params.get("focus"),
       source: options?.source || "direct",
     });
   } catch {
@@ -243,6 +249,14 @@ export function buildProcessMapUrl(routeRaw = {}, options = {}) {
     if (route.sessionId) params.set("session", route.sessionId);
     else params.delete("session");
   }
+  if (shouldApply("parentSessionId", "parent_session_id")) {
+    if (route.parentSessionId) params.set("parent", route.parentSessionId);
+    else params.delete("parent");
+  }
+  if (shouldApply("focusElementId", "focus_element_id")) {
+    if (route.focusElementId) params.set("focus", route.focusElementId);
+    else params.delete("focus");
+  }
 
   const search = params.toString();
   return `${pathname}${search ? `?${search}` : ""}${hash}`;
@@ -255,7 +269,9 @@ export function routesEqual(a, b) {
     && left.workspaceId === right.workspaceId
     && left.folderId === right.folderId
     && left.projectId === right.projectId
-    && left.sessionId === right.sessionId;
+    && left.sessionId === right.sessionId
+    && left.parentSessionId === right.parentSessionId
+    && left.focusElementId === right.focusElementId;
 }
 
 export function readProcessMapProjectContextFromHistory(win = typeof window !== "undefined" ? window : undefined) {
