@@ -70,7 +70,7 @@ def leave_session_presence_api(session_id: str, inp: SessionPresenceTouchIn, req
 def get_session_tldr(session_id: str, request: Request = None):
     return _svc.get_session_tldr(session_id, request)
 
-@router.post('/api/sessions/{session_id}/subprocess/{element_id}/navigate')
+@router.post('/api/sessions/{session_id}/subprocess/{element_id}/navigate', response_model=SubprocessNavigateOut)
 def navigate_to_subprocess(
     session_id: str,
     element_id: str,
@@ -79,7 +79,7 @@ def navigate_to_subprocess(
 ):
     return _svc.navigate_to_subprocess(session_id, element_id, target_element_id, request)
 
-@router.post('/api/sessions/{subprocess_session_id}/return')
+@router.post('/api/sessions/{subprocess_session_id}/return', response_model=SubprocessReturnOut)
 def return_to_parent(subprocess_session_id: str, request: Request = None):
     return _svc.return_to_parent(subprocess_session_id, request)
 
