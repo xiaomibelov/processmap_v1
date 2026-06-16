@@ -1,0 +1,8 @@
+{
+  "contour": "feature/rbac-session-read",
+  "type": "feature",
+  "status": "planning",
+  "title": "RBAC for session read access",
+  "created_at": "2026-06-16T09:03:41Z",
+  "rag_preflight": "done"
+}
