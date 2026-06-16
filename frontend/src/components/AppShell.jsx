@@ -138,6 +138,7 @@ export default function AppShell({
   sessionNavNotice,
   onDismissSessionNavNotice,
   onReturnToSessionList,
+  onNavigateToSubprocess,
   mentionNotifications,
   noteNotifications,
   noteNotificationsAvailable = false,
@@ -306,6 +307,7 @@ export default function AppShell({
               discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
               onDiscussionLinkedElementFocusResult={onDiscussionLinkedElementFocusResult}
               onOpenNotesDiscussions={onOpenNotesDiscussions}
+              onNavigateToSubprocess={onNavigateToSubprocess}
             />
           )}
         </div>

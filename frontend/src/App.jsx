@@ -1172,6 +1172,9 @@ export default function App() {
       focusElementId: res.targetElementId || "",
       projectContext: projectRouteContext,
     });
+    if (typeof window !== "undefined") {
+      window.__SUBPROCESS_FOCUS_ELEMENT_ID__ = res.targetElementId || "";
+    }
     openSession(res.subprocessSessionId);
   }, [openSession, projectId, projectRouteContext]);
 
@@ -3555,6 +3558,10 @@ export default function App() {
         onReturnToParent={() => {
           const sid = sessionIdOf(draft);
           if (sid) returnToParent(sid);
+        }}
+        onNavigateToSubprocess={(elementId) => {
+          const sid = sessionIdOf(draft);
+          if (sid) navigateToSubprocess(sid, elementId);
         }}
         mentionNotifications={mentionNotifications}
         noteNotifications={noteNotifications}

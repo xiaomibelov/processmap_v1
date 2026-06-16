@@ -1607,6 +1607,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   v2OverlaysExpanded = false,
   onDiagramContextMenuRequest = null,
   onDiagramContextMenuDismiss = null,
+  onNavigateToSubprocess = null,
 }, ref) {
   const viewerEl = useRef(null);
   const editorEl = useRef(null);
@@ -1683,6 +1684,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const onSaveLifecycleEventRef = useRef(onSaveLifecycleEvent);
   const onDiagramContextMenuRequestRef = useRef(onDiagramContextMenuRequest);
   const onDiagramContextMenuDismissRef = useRef(onDiagramContextMenuDismiss);
+  const onNavigateToSubprocessRef = useRef(onNavigateToSubprocess);
   const aiQuestionsModeEnabledRef = useRef(!!aiQuestionsModeEnabled);
   const diagramDisplayModeRef = useRef(String(diagramDisplayMode || "normal").trim().toLowerCase() || "normal");
   const stepTimeUnitRef = useRef(normalizeStepTimeUnit(stepTimeUnit));
@@ -1798,6 +1800,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     onDiagramContextMenuDismissRef.current = onDiagramContextMenuDismiss;
   }, [onDiagramContextMenuDismiss]);
+
+  useEffect(() => {
+    onNavigateToSubprocessRef.current = onNavigateToSubprocess;
+  }, [onNavigateToSubprocess]);
 
   useEffect(() => {
     aiQuestionsModeEnabledRef.current = !!aiQuestionsModeEnabled;
@@ -5050,6 +5056,14 @@ const BpmnStage = forwardRef(function BpmnStage({
           onDiagramContextMenuDismiss: emitDiagramContextMenuDismiss,
           contextMenuInteractionRef,
           viewportCuller: viewerCullerRef.current,
+        });
+        v.on("element.dblclick", (event) => {
+          const el = event.element;
+          if (!el || el.type !== "bpmn:CallActivity") return;
+          const cb = onNavigateToSubprocessRef.current;
+          if (typeof cb === "function") {
+            cb(el.id);
+          }
         });
         } catch {
         }

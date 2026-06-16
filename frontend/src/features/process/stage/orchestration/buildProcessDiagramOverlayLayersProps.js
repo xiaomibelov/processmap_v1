@@ -40,6 +40,7 @@ export function buildBpmnDiagramOverlayLayersProps({
   tab,
   runBpmnContextMenuAction,
   openBpmnSubprocessPreviewProperties,
+  onNavigateToSubprocess,
 }) {
   bumpDrawioPerfCounter("overlay.vm.diagramOverlayProps.builds");
   return {
@@ -71,6 +72,7 @@ export function buildBpmnDiagramOverlayLayersProps({
       propertiesOverlayAlwaysPreviewByElementId,
       v2OverlaysEnabled,
       v2OverlaysExpanded,
+      onNavigateToSubprocess,
     },
     bpmnContextMenuProps: {
       menu: bpmnContextMenu,
