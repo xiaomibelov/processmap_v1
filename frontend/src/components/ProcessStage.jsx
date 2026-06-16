@@ -371,6 +371,7 @@ function ProcessStage({
   drawioCompanionFocusIntent = null,
   discussionLinkedElementFocusIntent = null,
   onDiscussionLinkedElementFocusResult = null,
+  onNavigateToSubprocess = null,
 }) {
   const sid = String(sessionId || "");
   const { user } = useAuth();
@@ -6180,6 +6181,11 @@ function ProcessStage({
     toText,
     runBpmnContextMenuAction: handleBpmnContextMenuAction,
     openBpmnSubprocessPreviewProperties: handleBpmnSubprocessPreviewOpenProperties,
+    onNavigateToSubprocess: (elementId) => {
+      if (sid && typeof onNavigateToSubprocess === "function") {
+        onNavigateToSubprocess(elementId);
+      }
+    },
     withHybridOverlayGuard,
   });
 
