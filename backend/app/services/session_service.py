@@ -636,7 +636,7 @@ def recompute_session(session_id: str):
     return _lm.recompute(session_id)
 
 
-def _request_context(request: Optional[Request]):
+def _subprocess_request_context(request: Optional[Request]):
     if request is None:
         return "", "", False
     uid = str(getattr(request.state, "auth_user", "") or "").strip()
@@ -656,7 +656,7 @@ def _resolve_child_bpmn_xml(
     project_id = str(getattr(parent_session, "project_id", "") or "").strip()
     child_xml = None
 
-    uid, oid, admin = _request_context(request)
+    uid, oid, admin = _subprocess_request_context(request)
     org_id = getattr(parent_session, "org_id", None)
 
     if called and project_id:
@@ -704,7 +704,7 @@ def _create_child_session(
     request: Optional[Request],
 ) -> Session:
     """Create and persist a new child subprocess session."""
-    uid, oid, admin = _request_context(request)
+    uid, oid, admin = _subprocess_request_context(request)
     project_id = str(getattr(parent_session, "project_id", "") or "").strip()
     parent_id = str(getattr(parent_session, "id", "") or "").strip()
     parent_org_id = getattr(parent_session, "org_id", None)
@@ -757,7 +757,7 @@ def _build_breadcrumbs(
     request: Optional[Request],
 ) -> List[Dict[str, Any]]:
     """Build the navigation breadcrumb list with readable session names."""
-    uid, oid, admin = _request_context(request)
+    uid, oid, admin = _subprocess_request_context(request)
     org_id = getattr(child_session, "org_id", None)
 
     breadcrumbs = [
