@@ -726,11 +726,22 @@ def _create_child_session(
         raise HTTPException(status_code=500, detail="Failed to create subprocess session")
 
     now_iso = datetime.datetime.utcnow().isoformat() + "Z"
-    parent_stack = list(getattr(parent_session, "navigation_stack", []) or [])
+    parent_stack = [dict(f) for f in (getattr(parent_session, "navigation_stack", []) or [])]
+    if parent_stack:
+        parent_stack[-1]["element_id_in_parent"] = element_id
+    else:
+        parent_stack = [
+            {
+                "session_id": parent_id,
+                "parent_session_id": "",
+                "element_id_in_parent": element_id,
+                "entered_at": now_iso,
+            }
+        ]
     new_frame = {
         "session_id": child_id,
         "parent_session_id": parent_id,
-        "element_id_in_parent": element_id,
+        "element_id_in_parent": "",
         "entered_at": now_iso,
     }
     child.bpmn_xml = child_xml
