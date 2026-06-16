@@ -74,3 +74,46 @@ class TestSessionReadRbac(unittest.TestCase):
         sid = self._create_session(str(owner["id"]), org_id, project_id="proj_1")
         sess = self.st.load(sid, user_id=str(rando["id"]), org_id=org_id, is_admin=False)
         self.assertIsNone(sess)
+
+    def _create_org(self, org_id, name):
+        owner = self._make_user(f"owner_{org_id}@local")
+        create_org_record(name, created_by=str(owner["id"]), org_id=org_id)
+
+    def test_list_filters_sessions_by_project_scope_for_editor(self):
+        owner = self._make_user("owner@local")
+        editor = self._make_user("editor@local")
+        org_id = "org_1"
+        self._create_org(org_id, "Org")
+        upsert_org_membership(org_id, str(editor["id"]), "editor")
+        upsert_project_membership(org_id, "proj_1", str(editor["id"]), "editor")
+        sid1 = self._create_session(str(owner["id"]), org_id, project_id="proj_1", title="alpha")
+        sid2 = self._create_session(str(owner["id"]), org_id, project_id="proj_2", title="beta")
+        rows = self.st.list(
+            org_id=org_id,
+            user_id=str(editor["id"]),
+            is_admin=False,
+            limit=500,
+        )
+        ids = {str((r or {}).get("id") or "").strip() for r in rows}
+        self.assertIn(sid1, ids)
+        self.assertNotIn(sid2, ids)
+
+    def test_list_project_session_summaries_filters_by_project_scope(self):
+        owner = self._make_user("owner@local")
+        viewer = self._make_user("viewer@local")
+        org_id = "org_1"
+        self._create_org(org_id, "Org")
+        upsert_org_membership(org_id, str(viewer["id"]), "org_viewer")
+        upsert_project_membership(org_id, "proj_1", str(viewer["id"]), "viewer")
+        sid1 = self._create_session(str(owner["id"]), org_id, project_id="proj_1", title="alpha")
+        self._create_session(str(owner["id"]), org_id, project_id="proj_2", title="beta")
+        rows = self.st.list_project_session_summaries(
+            project_id="proj_1",
+            org_id=org_id,
+            user_id=str(viewer["id"]),
+            is_admin=False,
+            limit=500,
+        )
+        ids = {str((r or {}).get("id") or "").strip() for r in rows}
+        self.assertIn(sid1, ids)
+        self.assertEqual(len(ids), 1)
