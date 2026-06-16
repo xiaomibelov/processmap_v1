@@ -28,13 +28,12 @@ from ..schemas.legacy_api import (
 router = APIRouter()
 
 @router.post('/api/sessions')
-def create_session(inp: CreateSessionIn, request: Request):
+def create_session(inp: CreateSessionIn):
     return _svc.create_session(
         title=str(getattr(inp, "title", "") or "").strip() or "process",
         roles=getattr(inp, "roles", None),
         start_role=getattr(inp, "start_role", None),
         prep_questions=getattr(inp, "ai_prep_questions", None),
-        request=request,
     )
 
 @router.get('/api/projects/{project_id}/sessions')
