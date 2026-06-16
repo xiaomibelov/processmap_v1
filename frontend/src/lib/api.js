@@ -450,6 +450,25 @@ export async function apiDeleteSession(sessionId) {
   return okOrError(await request(apiRoutes.sessions.item(id), { method: "DELETE" }));
 }
 
+export async function apiNavigateToSubprocess(sessionId, elementId, targetElementId = "") {
+  const id = String(sessionId || "").trim();
+  const el = String(elementId || "").trim();
+  if (!id || !el) return { ok: false, status: 0, error: "missing session_id or element_id" };
+  const r = okOrError(await request(apiRoutes.sessions.subprocessNavigate(id, el, targetElementId), { method: "POST" }));
+  return r.ok
+    ? { ok: true, status: r.status, subprocessSessionId: r.data?.subprocess_session_id, targetElementId: r.data?.target_element_id, breadcrumbs: r.data?.breadcrumbs }
+    : r;
+}
+
+export async function apiReturnToParent(sessionId) {
+  const id = String(sessionId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.subprocessReturn(id), { method: "POST" }));
+  return r.ok
+    ? { ok: true, status: r.status, parentSessionId: r.data?.parent_session_id, elementIdInParent: r.data?.element_id_in_parent }
+    : r;
+}
+
 // ------- Nodes -------
 export async function apiCreateNode(sessionId, payload) {
   const sid = String(sessionId || "").trim();

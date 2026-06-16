@@ -104,6 +104,7 @@ const BPMN_INPUT_KEYS = [
   "tab",
   "runBpmnContextMenuAction",
   "openBpmnSubprocessPreviewProperties",
+  "onNavigateToSubprocess",
 ];
 
 const DRAWIO_BASE_KEYS = [

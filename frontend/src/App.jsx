@@ -41,6 +41,8 @@ import {
   apiRecompute,
   apiPutBpmnXml,
   apiInferBpmnRtiers,
+  apiNavigateToSubprocess,
+  apiReturnToParent,
 } from "./lib/api";
 import {
   getLatestBpmnSnapshot,
@@ -882,6 +884,8 @@ export default function App() {
   const [mentionNotifications, setMentionNotifications] = useState([]);
   const [noteNotifications, setNoteNotifications] = useState([]);
   const [noteNotificationsAvailable, setNoteNotificationsAvailable] = useState(false);
+  const [subprocessBreadcrumbs, setSubprocessBreadcrumbs] = useState([]);
+  const [focusElementId, setFocusElementId] = useState("");
   const discussionLinkedElementFocusResolversRef = useRef(new Map());
   const notesPanelRef = useRef(null);
   const activeOrgIdRef = useRef(String(activeOrgId || "").trim());
@@ -1152,6 +1156,46 @@ export default function App() {
     }
     return result;
   }, [confirmLeaveIfUnsafe, draft?.session_id, openSession, projectId, projectRouteContext]);
+
+  const navigateToSubprocess = useCallback(async (sessionIdArg, elementId) => {
+    const res = await apiNavigateToSubprocess(sessionIdArg, elementId);
+    if (!res.ok) {
+      console.error("navigate failed", res.error);
+      return;
+    }
+    setSubprocessBreadcrumbs(res.breadcrumbs || []);
+    setFocusElementId(res.targetElementId || "");
+    pushSessionSelectionToUrl({
+      projectId,
+      sessionId: res.subprocessSessionId,
+      parentSessionId: sessionIdArg,
+      focusElementId: res.targetElementId || "",
+      projectContext: projectRouteContext,
+    });
+    if (typeof window !== "undefined") {
+      window.__SUBPROCESS_FOCUS_ELEMENT_ID__ = res.targetElementId || "";
+    }
+    openSession(res.subprocessSessionId);
+  }, [openSession, projectId, projectRouteContext]);
+
+  const returnToParent = useCallback(async (sessionIdArg) => {
+    const res = await apiReturnToParent(sessionIdArg);
+    if (!res.ok) {
+      console.error("return failed", res.error);
+      return;
+    }
+    setFocusElementId(res.elementIdInParent || "");
+    pushSessionSelectionToUrl({
+      projectId,
+      sessionId: res.parentSessionId,
+      focusElementId: res.elementIdInParent || "",
+      projectContext: projectRouteContext,
+    });
+    if (typeof window !== "undefined") {
+      window.__SUBPROCESS_FOCUS_ELEMENT_ID__ = res.elementIdInParent || "";
+    }
+    openSession(res.parentSessionId);
+  }, [openSession, projectId, projectRouteContext]);
 
   const openWorkspaceSession = useCallback(async (sessionLike, options = {}) => {
     const row = ensureObject(sessionLike);
@@ -3220,6 +3264,42 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const { parentSessionId, focusElementId: focusId, sessionId: sid } = initialSelectionRef.current || {};
+    if (focusId) {
+      setFocusElementId(focusId);
+      if (typeof window !== "undefined") {
+        window.__SUBPROCESS_FOCUS_ELEMENT_ID__ = focusId || "";
+      }
+    }
+    if (!sid) return;
+    void (async () => {
+      const loaded = await apiGetSession(sid);
+      if (loaded.ok && loaded.session?.navigation_stack?.length > 0) {
+        setSubprocessBreadcrumbs(
+          loaded.session.navigation_stack.map((frame) => ({
+            session_id: frame.session_id,
+            name: frame.name || "",
+            element_id: frame.element_id_in_parent,
+          }))
+        );
+      } else if (parentSessionId) {
+        setSubprocessBreadcrumbs([
+          { session_id: parentSessionId, name: "" },
+          { session_id: sid, name: "" },
+        ]);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (focusElementId) {
+      setFocusElementId("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft?.session_id]);
+
+  useEffect(() => {
     const nextOrg = String(activeOrgId || "").trim();
     if (!nextOrg || nextOrg === activeOrgIdRef.current) return;
     activeOrgIdRef.current = nextOrg;
@@ -3491,6 +3571,16 @@ export default function App() {
         sessionNavNotice={sessionNavNotice}
         onDismissSessionNavNotice={() => setSessionNavNotice(null)}
         onReturnToSessionList={() => returnToSessionList("banner_action")}
+        subprocessBreadcrumbs={subprocessBreadcrumbs}
+        onBreadcrumbNavigate={(sid) => openSession(sid)}
+        onReturnToParent={() => {
+          const sid = sessionIdOf(draft);
+          if (sid) returnToParent(sid);
+        }}
+        onNavigateToSubprocess={(elementId) => {
+          const sid = sessionIdOf(draft);
+          if (sid) navigateToSubprocess(sid, elementId);
+        }}
         mentionNotifications={mentionNotifications}
         noteNotifications={noteNotifications}
         noteNotificationsAvailable={noteNotificationsAvailable}

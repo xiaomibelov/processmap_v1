@@ -124,3 +124,8 @@ def create_bpmn_version_snapshot(
         user_id=user_id,
         org_id=org_id,
     )
+
+
+def find_by_parent_element(parent_session_id: str, element_id_in_parent: str, *, org_id: Optional[str] = None) -> Optional[Session]:
+    st = get_storage()
+    return st.find_by_parent_element(parent_session_id, element_id_in_parent, org_id=org_id)
