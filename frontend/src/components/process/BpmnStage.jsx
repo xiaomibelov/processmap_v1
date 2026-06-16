@@ -95,6 +95,7 @@ import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
+import "../../features/process/bpmn/stage/styles/subprocessNavigation.css";
 import { patchOverlaysPrototype } from "../../features/process/bpmn/stage/patches/patchOverlayPanPerf";
 import { instrumentBpmnInst, wrapWithProfiler } from "../../features/process/bpmn/stage/profiling/panProfiler";
 

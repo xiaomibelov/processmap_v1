@@ -819,6 +819,7 @@ def _session_api_dump(sess: Session) -> Dict[str, Any]:
     d["notes"] = _notes_decode(d.get("notes"))
     d["bpmn_meta"] = _normalize_bpmn_meta(d.get("bpmn_meta"))
     d["publish_git_mirror"] = _extract_publish_git_mirror(d.get("interview"))
+    d["navigation_stack"] = list(d.get("navigation_stack") or [])
     return d
 
 
