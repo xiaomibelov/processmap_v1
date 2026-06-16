@@ -28,12 +28,13 @@ from ..schemas.legacy_api import (
 router = APIRouter()
 
 @router.post('/api/sessions')
-def create_session(inp: CreateSessionIn):
+def create_session(inp: CreateSessionIn, request: Request):
     return _svc.create_session(
         title=str(getattr(inp, "title", "") or "").strip() or "process",
         roles=getattr(inp, "roles", None),
         start_role=getattr(inp, "start_role", None),
         prep_questions=getattr(inp, "ai_prep_questions", None),
+        request=request,
     )
 
 @router.get('/api/projects/{project_id}/sessions')
@@ -42,6 +43,7 @@ def list_project_sessions(project_id: str, mode: str | None = None, view: str | 
         project_id=project_id,
         mode=mode,
         view=view or "full",
+        request=request,
     )
 
 @router.post('/api/projects/{project_id}/sessions')
@@ -50,11 +52,11 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
 
 @router.get('/api/sessions')
 def list_sessions(q: Optional[str] = None, limit: int = 200, request: Request = None):
-    return _svc.list_sessions(query=q, limit=limit)
+    return _svc.list_sessions(query=q, limit=limit, request=request)
 
 @router.get('/api/sessions/{session_id}')
 def get_session(session_id: str, request: Request = None):
-    return _svc.get_session(session_id)
+    return _svc.get_session(session_id, request=request)
 
 @router.post('/api/sessions/{session_id}/presence')
 def touch_session_presence_api(session_id: str, inp: SessionPresenceTouchIn, request: Request = None):
@@ -78,7 +80,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
 
 @router.delete('/api/sessions/{session_id}')
 def delete_session_api(session_id: str, request: Request = None):
-    _svc.delete_session(session_id)
+    _svc.delete_session(session_id, request=request)
     return {"ok": True}
 
 @router.put('/api/sessions/{session_id}')
