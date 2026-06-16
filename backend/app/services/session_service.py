@@ -667,7 +667,10 @@ def navigate_to_subprocess(
     # Try existing child session
     existing = session_repo.find_by_parent_element(session_id, element_id, org_id=getattr(sess, "org_id", None))
     if existing:
-        child = existing
+        child_check, _, child_err = session_access_from_request(request, existing.id)
+        if child_err:
+            raise HTTPException(status_code=child_err.status_code, detail=child_err.body)
+        child = child_check or existing
     else:
         child_xml = None
         project_id = str(getattr(sess, "project_id", "") or "").strip()
