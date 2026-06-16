@@ -458,14 +458,19 @@ def _org_clause(org_id: str) -> Tuple[str, List[Any]]:
     return " AND org_id = ? ", [oid]
 
 
-def _session_read_scope(user_id: str, org_id: str, is_admin: bool) -> Dict[str, Any]:
+def _session_read_scope(
+    user_id: Optional[str],
+    org_id: Optional[str],
+    is_admin: Optional[bool],
+) -> Dict[str, Any]:
     """Return session read access scope for a user/org context.
 
     - mode "all": user may read sessions across the org.
     - mode "owner": user may only read sessions they own.
     - mode "scoped": user may read sessions in the listed project_ids.
     """
-    if is_admin:
+    admin = bool(is_admin)
+    if admin:
         return {"mode": "all", "project_ids": []}
 
     uid = str(user_id or "").strip()
@@ -473,11 +478,11 @@ def _session_read_scope(user_id: str, org_id: str, is_admin: bool) -> Dict[str, 
     if not uid or not oid:
         return {"mode": "owner", "project_ids": []}
 
-    role = get_user_org_role(uid, oid, is_admin=False)
+    role = str(get_user_org_role(uid, oid, is_admin=admin) or "").strip().lower()
     if role in _ORG_FULL_ACCESS_ROLES:
         return {"mode": "all", "project_ids": []}
 
-    scope = get_effective_project_scope(uid, oid, is_admin=False)
+    scope = get_effective_project_scope(uid, oid, is_admin=admin)
     if str(scope.get("mode") or "") == "all":
         return {"mode": "all", "project_ids": []}
 
