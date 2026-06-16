@@ -151,7 +151,7 @@ def session_bpmn_export(session_id: str, raw: int = Query(0, description='1 = re
     return _svc.bpmn_export(session_id, raw=raw, include_overlay=include_overlay, zoom=zoom, pan_x=pan_x, pan_y=pan_y, request=request)
 
 @router.get('/api/sessions/{session_id}/overlays')
-def session_overlays(session_id: str, request: Request = None):
+def session_overlays(session_id: str):
     return _svc.overlays(session_id)
 
 @router.put('/api/sessions/{session_id}/bpmn')
