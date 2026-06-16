@@ -104,6 +104,23 @@ export async function renderViewerDiagram(ctx, nextXml) {
       expectElements: String(nextXml || "").trim().length > 0,
     });
   }
+  const focusId = typeof window !== "undefined" ? window.__SUBPROCESS_FOCUS_ELEMENT_ID__ || "" : "";
+  if (focusId) {
+    try {
+      const canvas = v.get("canvas");
+      canvas.scrollToElement(focusId);
+      const overlays = v.get("overlays");
+      overlays.add(focusId, {
+        position: { top: -2, left: -2 },
+        html: '<div class="subprocess-focus-highlight"></div>',
+      });
+    } catch (e) {
+      console.warn("focus element not found", focusId, e);
+    }
+    if (typeof window !== "undefined") {
+      window.__SUBPROCESS_FOCUS_ELEMENT_ID__ = "";
+    }
+  }
   emitCurrentViewboxSnapshot(v, emitViewboxChanged, "viewer", {
     reason: "viewer_import_ready",
   });

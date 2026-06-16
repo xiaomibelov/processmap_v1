@@ -160,6 +160,11 @@ export const apiRoutes = {
       { steps_hash: String(stepsHash || "").trim() },
     ),
     pathReport: (sessionId, pathId, reportId) => `/api/sessions/${encode(sessionId)}/paths/${encode(pathId)}/reports/${encode(reportId)}`,
+    subprocessNavigate: (sessionId, elementId, targetElementId = "") => withQuery(
+      `/api/sessions/${encode(sessionId)}/subprocess/${encode(elementId)}/navigate`,
+      { target_element_id: String(targetElementId || "").trim() }
+    ),
+    subprocessReturn: (sessionId) => `/api/sessions/${encode(sessionId)}/return`,
   },
   clipboard: {
     bpmn: () => "/api/clipboard/bpmn",

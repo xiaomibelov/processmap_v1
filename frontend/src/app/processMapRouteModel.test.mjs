@@ -53,6 +53,8 @@ test("parseProcessMapRoute parses /app as workspace root", () => {
     folderId: "",
     projectId: "",
     sessionId: "",
+    parentSessionId: "",
+    focusElementId: "",
     source: "direct",
   });
 });
@@ -64,6 +66,8 @@ test("parseProcessMapRoute parses workspace and folder routes", () => {
     folderId: "",
     projectId: "",
     sessionId: "",
+    parentSessionId: "",
+    focusElementId: "",
     source: "popstate",
   });
   assert.deepEqual(parseProcessMapRoute("/app?workspace=w1&folder=f1"), {
@@ -72,6 +76,8 @@ test("parseProcessMapRoute parses workspace and folder routes", () => {
     folderId: "f1",
     projectId: "",
     sessionId: "",
+    parentSessionId: "",
+    focusElementId: "",
     source: "direct",
   });
 });
@@ -83,6 +89,8 @@ test("parseProcessMapRoute parses project and session routes including old links
     folderId: "f1",
     projectId: "p1",
     sessionId: "",
+    parentSessionId: "",
+    focusElementId: "",
     source: "direct",
   });
   assert.deepEqual(parseProcessMapRoute("/app?project=p1"), {
@@ -91,6 +99,8 @@ test("parseProcessMapRoute parses project and session routes including old links
     folderId: "",
     projectId: "p1",
     sessionId: "",
+    parentSessionId: "",
+    focusElementId: "",
     source: "direct",
   });
   assert.deepEqual(parseProcessMapRoute("/app?project=p1&session=s1"), {
@@ -99,6 +109,18 @@ test("parseProcessMapRoute parses project and session routes including old links
     folderId: "",
     projectId: "p1",
     sessionId: "s1",
+    parentSessionId: "",
+    focusElementId: "",
+    source: "direct",
+  });
+  assert.deepEqual(parseProcessMapRoute("/app?project=p1&session=s1&parent=ps1&focus=e1"), {
+    surface: "session",
+    workspaceId: "",
+    folderId: "",
+    projectId: "p1",
+    sessionId: "s1",
+    parentSessionId: "ps1",
+    focusElementId: "e1",
     source: "direct",
   });
 });
@@ -119,6 +141,8 @@ test("sessionId without projectId normalizes safely", () => {
     folderId: "",
     projectId: "",
     sessionId: "",
+    parentSessionId: "",
+    focusElementId: "",
     source: "direct",
   });
   assert.equal(buildProcessMapUrl({ sessionId: "s1" }), "/app");
@@ -148,6 +172,8 @@ test("pushProcessMapHistory writes URL and route state", () => {
     folderId: "f1",
     projectId: "",
     sessionId: "",
+    parentSessionId: "",
+    focusElementId: "",
     source: "internal",
   });
 });
