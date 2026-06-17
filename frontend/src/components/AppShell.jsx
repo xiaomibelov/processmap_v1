@@ -229,12 +229,6 @@ export default function AppShell({
           onRefreshMentionNotifications={onRefreshMentionNotifications}
         />
 
-        <SubprocessBreadcrumbs
-          breadcrumbs={subprocessBreadcrumbs}
-          onNavigate={onBreadcrumbNavigate}
-          onBack={onReturnToParent}
-        />
-
         <AppUpdateBanner
           visible={appUpdate.visible}
           runtime={appUpdate.runtime}
@@ -278,6 +272,15 @@ export default function AppShell({
           ) : null}
         </div>
         <div className="workspaceMain relative rounded-xl2 border border-border bg-panel">
+          {subprocessBreadcrumbs?.length >= 2 ? (
+            <div className="subprocessBreadcrumbsOnCanvas">
+              <SubprocessBreadcrumbs
+                breadcrumbs={subprocessBreadcrumbs}
+                onNavigate={onBreadcrumbNavigate}
+                onBack={onReturnToParent}
+              />
+            </div>
+          ) : null}
           {updatesOpen ? (
             <AppUpdatesPage onClose={closeUpdatesPage} />
           ) : (

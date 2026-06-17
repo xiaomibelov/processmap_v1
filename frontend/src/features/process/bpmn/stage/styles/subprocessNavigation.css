@@ -16,3 +16,17 @@
   z-index: 300;
   pointer-events: auto;
 }
+
+/* On-canvas breadcrumb panel so drill-down context floats over the diagram. */
+.subprocessBreadcrumbsOnCanvas {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  max-width: calc(100% - 16px);
+  pointer-events: none;
+}
+
+.subprocessBreadcrumbsOnCanvas > * {
+  pointer-events: auto;
+}
