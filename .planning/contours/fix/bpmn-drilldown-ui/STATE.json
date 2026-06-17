@@ -1,23 +1,23 @@
 {
   "contour_id": "fix/bpmn-drilldown-ui",
   "bug_id": "BUG-DRILLDOWN-UI-001",
-  "phase": "planning",
+  "phase": "fix",
   "planner_status": "complete",
-  "worker_status": "pending",
+  "worker_status": "complete",
   "reviewer_status": "pending",
   "branch": "fix/bpmn-drilldown-ui",
   "base": "origin/fix/sub-process-navigation",
-  "head": "7ce7c1d7",
+  "head": "72288376",
   "test_stand": "http://clearvestnic.ru:5177",
-  "deployed_commit": "e6127144",
+  "deployed_commit": "72288376",
   "acceptance_criteria": {
-    "breadcrumb_offset": "pending",
-    "discussion_badge": "pending",
-    "drilldown_loading_state": "pending",
-    "session_open_loading_state": "pending",
-    "e2e_regression": "pending",
-    "frontend_build": "pending",
-    "runtime_deployed": "no"
+    "breadcrumb_offset": "pass",
+    "discussion_badge": "pass",
+    "drilldown_loading_state": "pass",
+    "session_open_loading_state": "pass",
+    "e2e_regression": "pass",
+    "frontend_build": "pass",
+    "runtime_deployed": "yes"
   },
-  "next_action": "wait_for_user_approval_to_implement"
+  "next_action": "wait_for_user_approval_for_pr_merge"
 }

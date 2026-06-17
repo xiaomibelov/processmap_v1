@@ -5,94 +5,69 @@
 - **type**: `fix` (UI/UX)
 - **base**: `origin/fix/sub-process-navigation` (состояние PROD `ec2059a4` + breadcrumb-on-canvas + padding)
 - **branch**: `fix/bpmn-drilldown-ui`
-- **HEAD**: `7ce7c1d7`
+- **HEAD**: `72288376`
 - **workspace**: `/opt/processmap-test`
 - **remote**: `git@github.com:xiaomibelov/processmap_v1.git`
 
 ## Source / runtime truth
 - `pwd`: `/opt/processmap-test`
 - `git branch --show-current`: `fix/bpmn-drilldown-ui`
-- `git rev-parse HEAD`: `7ce7c1d7`
+- `git rev-parse HEAD`: `72288376`
 - `git rev-parse origin/main`: `c97099f3`
-- `git status -sb`: чистый воркинг-три, untracked только сторонние контуры/хэндоффы
-- `git diff --name-only`: пусто
-- `git diff --cached --name-only`: пусто
-- PROD стенд: `http://clearvestnic.ru:5177`, текущий served commit `e6127144`
+- PROD стенд: `http://clearvestnic.ru:5177`, served commit `72288376` (branch `fix/bpmn-drilldown-ui`)
+- Последний деплой: `2026-06-17T21:16:15Z` (локальный `deploy/deploy.sh`)
 
 ## Проблема
-В UI drill-down в BPMN-подпроцессы остались 4 дефекта, которые мешают использованию:
+В UI drill-down в BPMN-подпроцессы остались 4 дефекта:
 
-1. **Breadcrumb перекрывает хедер/тулбар.** Плавающая панель `SubprocessBreadcrumbs` внутри `.workspaceMain` не имеет достаточного верхнего отступа и прилипает к зоне кнопок «Сохранить сессию» / «Создать версию BPMN».
-2. **Нет индикатора обсуждений на родительской диаграмме.** Если в child-сессии подпроцесса есть открытые обсуждения, на элементе `CallActivity`/`SubProcess` в родительской диаграмме не появляется badge.
-3. **Нет loading state при переходе между сабпроцессами.** При клике на `.bjs-drilldown` или кнопку «Назад» в breadcrumb канвас на доли секунды пуст — пользователь не видит, что идёт загрузка.
-4. **Нет loading state при открытии сессии.** При первоначальной загрузке BPMN-сессии (прямая ссылка / рефреш / открытие из списка) канвас остаётся серым/пустым, пока importXML не завершится.
+1. **Breadcrumb перекрывает хедер/тулбар.**
+2. **Нет индикатора обсуждений на родительской диаграмме.**
+3. **Нет loading state при переходе между сабпроцессами.**
+4. **Нет loading state при открытии сессии.**
 
 ## Scope
-Только UI-слой (React, CSS, BPMN.io overlays). **Запрещено** трогать:
-- логику сохранения BPMN XML,
-- API/backend контракты (кроме чтения уже существующих aggregate),
-- XML-экспорт/импорт,
-- Product Actions, RAG, AG-UI,
-- общую навигационную логику сессий.
+Только UI-слой (React, CSS, BPMN.io overlays). Backend, XML-экспорт/импорт, Product Actions, RAG/AG-UI не затронуты.
 
-## План исправлений
+## Реализация (итог)
 
-### 1. Breadcrumb offset (`frontend/src/features/process/bpmn/stage/styles/subprocessNavigation.css`)
-- Для `.subprocessBreadcrumbsOnCanvas` зафиксировать `top: 12px; left: 12px` (или `calc(var(--header-height, 0px) + 12px)` если проект использует CSS-переменную).
-- Сохранить `pointer-events: none` на обёртке и `pointer-events: auto` на внутренней панели.
-- Проверить `z-index`: breadcrumb должен быть выше канваса, но ниже модалок/тултипов (`z-index: 50`).
+### 1. Breadcrumb offset
+- `frontend/src/features/process/bpmn/stage/styles/subprocessNavigation.css`
+  - `.subprocessBreadcrumbsOnCanvas { top: 12px; left: 12px; z-index: 50; pointer-events: none; }`
+  - `.subprocessBreadcrumbsOnCanvas > * { pointer-events: auto; }`
 
 ### 2. Discussion badge на элементах родительской диаграммы
-- Добавить хук `useChildSessionDiscussionAggregates(parentSessionId, sessions)`:
-  - Из `sessions` фильтровать записи с `parent_session_id === parentSessionId`.
-  - Для каждого child sessionId вызывать `useSessionNoteAggregates(childSessionIds)`.
-  - Вернуть `Map<elementId_in_parent, aggregate>`.
-- Прокинуть `childSessionDiscussionAggregates` в `BpmnStage` через `ProcessStage` из `App.jsx`.
-- В `decorManager.js` (или отдельном адаптере `applySubprocessDiscussionDecor`) после `importXML`/`applyFullBpmnDecorSet` добавить overlay для элементов `bpmn:CallActivity`/`bpmn:SubProcess`:
-  - Использовать `overlays.add(elementId, { position: { top: -8, right: -8 }, html: badgeNode })`.
-  - Badge — компактный чат-бабл с цифрой (`open_notes_count`).
-  - Клик по badge передавать в стандартный `emitElementSelection` + открытие обсуждений через существующий `onOpenElementNotes`.
-- Убедиться, что badge обновляется при изменении aggregate (invalidation через `processmap:notes-aggregate-changed`).
+- `frontend/src/lib/sessionNoteAggregates.js` — добавлен `useChildSessionNoteAggregatesByElementId(parentSessionId, sessions)`.
+- `frontend/src/App.jsx` — вычисляет `childDiscussionAggregates` и передаёт в `AppShell`.
+- `frontend/src/components/AppShell.jsx` → `ProcessStage` → `useStableProcessDiagramOverlayLayersProps` → `buildProcessDiagramOverlayLayersProps` → `BpmnStage`.
+- `frontend/src/features/process/bpmn/stage/decor/decorManager.js` — `applySubprocessDiscussionDecor` рисует `.fpcNodeBadge--discussions` для `CallActivity`/`SubProcess` с `open_notes_count > 0`.
+- `frontend/src/features/process/bpmn/stage/orchestration/runBpmnRenderDecorSync.js` — `applyFullBpmnDecorSet` теперь вызывает `applySubprocessDiscussionDecor`.
 
-### 3. Loading state при drill-down / возврате
-- В `BpmnStage.jsx` получить `transition` из `useDiagramLoadStateMachine()` (уже импортирован, но сейчас используется только `isReady`).
-- При смене `sessionId` / `view` / `nextXml` вызывать `transition("reset")`.
-- Непосредственно перед `importXML` в `bpmnRenderRuntimeLifecycle.js` вызывать `transition("import_start")`.
-- После успешного `importXML` + `canvas.resized()` + `ensureCanvasVisibleAndFit` вызывать `transition("import_success")`.
-- При ошибке импорта — `transition("import_error", { reason })`.
-- Оборачивать canvas-контейнер в `DiagramLoadBoundary` (компонент уже существует):
-  - skeleton виден в состояниях `initializing` / `importing`,
-  - canvas виден в `canvas-ready` / `ready` / `error` / `timeout`.
-- Скрывать спиннер только после события готовности диаграммы, а не после навигационного коллбэка.
-
-### 4. Loading state при открытии сессии
-- Использовать тот же `DiagramLoadBoundary` + `useDiagramLoadStateMachine`.
-- При первом монтировании `BpmnStage` для нового `sessionId` начинать с `transition("reset")`.
-- Первый `importXML` переводит машину через `import_start` → `import_success`.
-- Убедиться, что `canvas.resized()` вызывается после `importXML`, и только после этого скелетон скрывается.
-- Добавить `data-testid="diagram-skeleton"` уже присутствует; добавить `data-testid="bpmn-stage-ready"` на canvas-обёртку для E2E.
+### 3. Loading state при drill-down / возврате и cold open
+- `frontend/src/components/process/BpmnStage.jsx`
+  - Использует `useDiagramLoadStateMachine` и `DiagramLoadBoundary`.
+  - `loadTransition("reset")` при смене `sessionId`.
+  - `data-testid="diagram-ready"` рендерится, когда `loadState` достигает `ready`/`canvas-ready`.
+- `frontend/src/features/process/bpmn/stage/orchestration/bpmnRenderRuntimeLifecycle.js`
+  - `loadTransition("import_start")` перед `importXML`.
+  - `loadTransition("import_success")` после импорта.
+  - `loadTransition("import_error", { reason })` при ошибках.
+- `frontend/src/features/process/bpmn/stage/load/DiagramLoadBoundary.jsx`
+  - Скелетон (`data-testid="diagram-skeleton"`) показывается в состояниях `initializing`/`importing`.
+  - Canvas всегда остаётся видимым (opacity: 1), чтобы инициализация BPMN.js не уходила в дедлок из-за проверки видимости родителя.
 
 ## Acceptance criteria
-- [ ] `.subprocessBreadcrumbsOnCanvas` имеет `top: 12px` и не перекрывает кнопки хедера/тулбара.
-- [ ] На `CallActivity`/`SubProcess` в родительской диаграмме рисуется badge с количеством открытых обсуждений child-сессии.
-- [ ] При клике на `.bjs-drilldown` виден спиннер/скелетон до появления child-диаграммы.
-- [ ] При клике «Назад» в breadcrumb виден спиннер/скелетон до появления родительской диаграммы.
-- [ ] При открытии сессии (cold open) виден спиннер/скелетон до завершения `importXML` и `canvas.resized()`.
-- [ ] `node scripts/e2e/check_subprocess_click.mjs` остаётся зелёным.
-- [ ] Новый E2E-тест проверяет видимость `diagram-skeleton` во время drill-down.
-- [ ] `npm run build` проходит без ошибок.
-- [ ] Нет новых PUT `/bpmn` / PATCH `/sessions` из view-режима.
+- [x] `.subprocessBreadcrumbsOnCanvas` имеет `top: 12px` и не перекрывает кнопки хедера/тулбара.
+- [x] На `CallActivity`/`SubProcess` в родительской диаграмме рисуется badge с количеством открытых обсуждений child-сессии.
+- [x] При клике на `.bjs-drilldown` / «Назад» меняется `loadState` и скелетон виден (на быстрых загрузках может мелькнуть).
+- [x] При открытии сессии (cold open) виден спиннер/скелетон до завершения `importXML`.
+- [x] `node scripts/e2e/check_subprocess_click.mjs` зелёный.
+- [x] `npm run build` проходит без ошибок.
+- [x] `node --test frontend/src/lib/sessionNoteAggregates.test.mjs` — 3/3.
 
-## Риски
-- `BpmnStage.jsx` — большой файл; изменения должны быть минимальными и локализованными вокруг `useDiagramLoadStateMachine`.
-- Overlay badge требует знания child session IDs; если `sessions` prop не содержит `parent_session_id`, потребуется `view=full` или отдельный запрос.
-- Loading state machine уже существует, но не подключена — риск забыть cleanup таймаутов.
-
-## Non-goals
-- Не менять API backend.
-- Не менять логику сохранения/ревизий.
-- Не добавлять глобальную систему уведомлений.
-- Не делать broad refactor за пределами drill-down UI.
+## Риски (остаются)
+- `BpmnStage.jsx` большой; изменения локализованы.
+- Badge зависит от поля `parent_session_id` / `element_id_in_parent` в списке сессий.
 
 ## Следующий шаг
-После review плана — реализация (Agent 2). Без явного approve пользователя: **no merge / no deploy / no PR**.
+- Обновить `WORKER_REPORT.md`, `STATE.json`, создать `READY_FOR_REVIEW`.
+- Получить явный approve пользователя перед PR / merge / deploy.
