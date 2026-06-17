@@ -39,7 +39,7 @@ Users were constantly kicked out of the app and had to log in again. Server logs
   - `tests/test_auth_users_db_profile_storage.py`
 
 ## Deployed
-- Commit `8c9d6920` on http://clearvestnic.ru:5177.
+- Commit `282c2ee9` on http://clearvestnic.ru:5177.
 
 ## Next steps / follow-up
 - Ask affected users to clear site data once more to remove any remaining stale cookies, then log in.

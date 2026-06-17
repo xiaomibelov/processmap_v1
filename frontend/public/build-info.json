@@ -1,10 +1,10 @@
 {
   "branch": "fix/sub-process-navigation",
-  "sha": "0491d9b1",
-  "shaShort": "0491d9b1",
-  "timestamp": "2026-06-17T11:56:18Z",
+  "sha": "282c2ee94e2fdf7b3a638a9070978a9d692bd55c",
+  "shaShort": "282c2ee9",
+  "timestamp": "2026-06-17T12:05:51.515Z",
   "contourId": "fix-sub-process-navigation",
   "dirty": true,
   "host": "clearvestnic.ru",
-  "env": "prod"
+  "env": "dev"
 }
