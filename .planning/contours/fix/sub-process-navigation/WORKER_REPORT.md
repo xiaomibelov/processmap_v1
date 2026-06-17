@@ -23,6 +23,8 @@
 - `b788789c` fix(subprocess-navigation): drill-down only via drilldown arrow overlay, not single click
 - `5c5c9918` fix(subprocess-navigation): ensure drilldown arrow is clickable; update e2e to use direct arrow click
 - `6b6cc84c` chore: remove temporary e2e debug scripts
+- `5de1d712` docs(fix/sub-process-navigation): update STATE, WORKER_REPORT and Obsidian fallback after click regression fix
+- `ec2059a4` fix(frontend): render subprocess breadcrumb as on-canvas overlay
 
 ## Changes
 ### Frontend
@@ -106,6 +108,10 @@
 #### `frontend/src/features/process/bpmn/stage/styles/subprocessNavigation.css`
 - Removed the `.fpc-call-activity-clickable` cursor rule (no longer needed).
 - Added `position: relative`, `z-index: 300` and `pointer-events: auto` for `.bjs-drilldown` so the arrow stays clickable above hover/selection overlays.
+- Added `.subprocessBreadcrumbsOnCanvas` to float the breadcrumb panel over the BPMN canvas.
+
+#### `frontend/src/components/AppShell.jsx`
+- Moved `<SubprocessBreadcrumbs>` out of `.appTopStack` and into `.workspaceMain` as an absolute overlay so it renders on top of the canvas.
 
 #### `scripts/e2e/check_subprocess_click.mjs`
 - Rewrote scenario to verify:
@@ -163,7 +169,7 @@
 - E2E confirms `.bjs-drilldown` arrow click navigates to child session with breadcrumbs and back navigation.
 
 ### Test stand
-- Deployed version: `6b6cc84c` on http://clearvestnic.ru:5177.
+- Deployed version: `ec2059a4` on http://clearvestnic.ru:5177.
 - Verified via Playwright from local environment.
 
 ### Known issues

@@ -12,8 +12,8 @@ status: source-tested
 | ---- | -------- |
 | source | `new-origin/main` |
 | branch | `fix/sub-process-navigation` |
-| head | `6b6cc84c` |
-| deployed commit | `6b6cc84c` |
+| head | `ec2059a4` |
+| deployed commit | `ec2059a4` |
 | test stand | http://clearvestnic.ru:5177 |
 | verdict | `SOURCE_TESTED` |
 
@@ -23,6 +23,7 @@ status: source-tested
 > [!success] After source proof
 > TopBar, breadcrumbs и баннер обёрнуты в `.appTopStack`; `.appRoot` использует `grid-rows-[auto_minmax(0,1fr)_auto]`; `.processShell` больше не имеет фиксированной высоты. Canvas занимает всё оставшееся пространство при появлении breadcrumbs.
 > Одиночный клик по телу `CallActivity`/`SubProcess` больше не вызывает drill-down; навигация происходит только по клику на overlay-иконку `.bjs-drilldown`.
+> Breadcrumb подпроцесса рендерится внутри рабочей области (over the canvas), а не в топ-баре.
 
 Tests:
 
