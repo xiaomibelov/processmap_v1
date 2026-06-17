@@ -14,11 +14,6 @@ import DiagramSkeleton from "./DiagramSkeleton";
 export default function DiagramLoadBoundary({ loadState, errorReason, onRetry, children }) {
   const isSkeletonVisible = loadState === "initializing" || loadState === "importing";
   const isError = loadState === "error" || loadState === "timeout";
-  const isCanvasVisible =
-    loadState === "canvas-ready" ||
-    loadState === "ready" ||
-    loadState === "error" ||
-    loadState === "timeout";
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
@@ -79,8 +74,8 @@ export default function DiagramLoadBoundary({ loadState, errorReason, onRetry, c
           position: "absolute",
           inset: 0,
           zIndex: 1,
-          opacity: isCanvasVisible ? 1 : 0,
-          pointerEvents: isCanvasVisible ? "auto" : "none",
+          opacity: 1,
+          pointerEvents: isSkeletonVisible || isError ? "none" : "auto",
         }}
       >
         {children}
