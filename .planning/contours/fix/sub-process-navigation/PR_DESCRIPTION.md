@@ -6,6 +6,7 @@
 ## Почему
 1. Изначально переход был привязан только на двойной клик (`element.dblclick`).
 2. После первого hotfix перешли на одиночный клик (`element.click`), но обработчик был зарегистрирован **только для viewer** (`bpmn-js/lib/NavigatedViewer`), а рабочий canvas в редакторе использует **modeler**. В итоге клик по CallActivity не вызывал навигацию.
+3. В некоторых окружениях событие `element.click` могло не доходить из-за overlay/selection pipeline.
 
 ## Как исправлено
 - Вынесена общая функция `bindSubprocessNavigationEvents`:
@@ -13,8 +14,10 @@
   - Фильтрует только `bpmn:CallActivity`.
   - Вызывает `onNavigateToSubprocess(elementId)`.
   - Добавляет CSS-класс `fpc-call-activity-clickable` к SVG-группе элемента после рендера.
+  - **Native DOM click fallback**: слушает клик на canvas-контейнере в фазе capture, определяет элемент по `.djs-element` и `elementRegistry`, и тоже вызывает навигацию для CallActivity.
 - Хелпер вызывается при инициализации **и viewer, и modeler** в `BpmnStage.jsx`.
-- Добавлен `cursor: pointer` для CallActivity, чтобы было видно, что элемент кликабелен.
+- Добавлен `cursor: pointer` для CallActivity.
+- Добавлено opt-in debug-логирование: `window.__FPC_DEBUG_SUBPROCESS__ = true` или `localStorage.fpc_debug_subprocess = 1`.
 
 ## Файлы
 - `frontend/src/components/process/BpmnStage.jsx`
@@ -53,8 +56,16 @@ node scripts/e2e/check_subprocess_click.mjs
 4. Кликнуть один раз на CallActivity `Open Subprocess`.
 5. Должна открыться child-сессия `Подпроцесс: Process_sub`, URL должен содержать `session=547f33d6ea&parent=4fe9e94289&focus=SubTask_1`.
 
+### Диагностика в браузере
+Если вручную не работает, откройте DevTools → Console и выполните:
+```js
+window.__FPC_DEBUG_SUBPROCESS__ = true;
+localStorage.setItem("fpc_debug_subprocess", "1");
+```
+Затем кликните на CallActivity — в консоли появятся строки `[SUBPROCESS_NAV] ...`. Пришлите их.
+
 ## Deploy
-- Уже задеплоено на тестовый стенд: http://clearvestnic.ru:5177 (commit `b3b93dd5`).
+- Уже задеплоено на тестовый стенд: http://clearvestnic.ru:5177 (commit `df7a6bd6`).
 - После merge можно деплоить на stage.
 
 ## Связь с J-4
