@@ -9,3 +9,10 @@
   pointer-events: none;
   z-index: 100;
 }
+
+/* Keep the bpmn-js drilldown arrow above hover/selection overlays and clickable. */
+.bpmnStageHost .bjs-drilldown {
+  position: relative;
+  z-index: 300;
+  pointer-events: auto;
+}

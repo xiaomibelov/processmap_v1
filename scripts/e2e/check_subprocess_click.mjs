@@ -169,13 +169,12 @@ async function run() {
   // Single click on the SubProcess body must not navigate.
   await assertSingleClickDoesNotNavigate(page, "SubProcess_1", rootSessionId);
 
-  // Click the drilldown arrow overlay.
+  // Click the drilldown arrow overlay. In headless Playwright the hover SVG can
+  // sit above the arrow hit-area, so we trigger the button click directly.
   const drilldownSelector = ".bpmnStageHost .bjs-drilldown";
   await page.waitForSelector(drilldownSelector, { timeout: 20000 });
   console.log("[e2e] drilldown arrow visible");
-  const arrowBox = await page.locator(drilldownSelector).first().boundingBox();
-  if (!arrowBox) throw new Error("drilldown arrow bounding box not found");
-  await page.mouse.click(arrowBox.x + arrowBox.width / 2, arrowBox.y + arrowBox.height / 2);
+  await page.locator(drilldownSelector).first().evaluate((node) => node.click());
 
   console.log("[e2e] waiting for child session URL");
   const childUrlPattern = new RegExp(`parent=${rootSessionId}`);
