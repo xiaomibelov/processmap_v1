@@ -6,7 +6,7 @@
 ## Root cause
 - Изначально обработчик навигации был подключён только на двойной клик (`element.dblclick`).
 - После первой итерации исправления перешли на одиночный клик, но обработчик `element.click` был зарегистрирован **только для viewer**, тогда как рабочий canvas в редакторе использует **modeler** (`bpmn-js/lib/Modeler`).
-- В результате клик по CallActivity в режиме редактора/просмотра не вызывал навигацию.
+- В некоторых окружениях событие `element.click` могло не доходить до обработчика из-за overlay/selection pipeline.
 
 ## Scope
 Bounded contour: только subprocess drill-down из canvas. Не трогаем оверлеи, аналитику, сохранение, product actions.
@@ -15,8 +15,10 @@ Bounded contour: только subprocess drill-down из canvas. Не трога
 1. Вынести подписку на `element.click` для `bpmn:CallActivity` в общий хелпер `bindSubprocessNavigationEvents`.
 2. Вызвать хелпер при инициализации **и viewer, и modeler** в `BpmnStage.jsx`.
 3. Подписаться с приоритетом `3000`, чтобы клик не терялся среди обработчиков selection.
-4. Добавить CSS-класс `fpc-call-activity-clickable` + `cursor: pointer` для визуальной обратной связи.
-5. Добавить e2e-тест на Playwright: клик по CallActivity → переход к child session.
+4. Добавить **native DOM click fallback** на canvas-контейнере для надёжности.
+5. Добавить CSS-класс `fpc-call-activity-clickable` + `cursor: pointer` для визуальной обратной связи.
+6. Добавить opt-in debug-логирование для диагностики в браузере.
+7. Добавить e2e-тест на Playwright: клик по CallActivity → переход к child session.
 
 ## Acceptance criteria
 - [x] Одиночный клик на CallActivity в canvas открывает subprocess-сессию.
@@ -39,3 +41,4 @@ Bounded contour: только subprocess drill-down из canvas. Не трога
 ## Risks / Notes
 - CallActivity и SubProcess в BPMN — разные типы. Навигация поддерживается только для `bpmn:CallActivity` (calledElement указывает на внешний/встроенный процесс).
 - Одиночный клик уже используется для selection; приоритет 3000 гарантирует, что навигация сработает, не мешая выделению.
+- Native fallback в capture phase обходит возможные проблемы с event propagation.

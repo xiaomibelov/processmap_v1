@@ -43,12 +43,25 @@ async function run() {
   await ensureOrgSelected();
 
   // Wait for BPMN canvas
-  await page.waitForSelector(".bpmnStageHost", { timeout: 20000 });
+  try {
+    await page.waitForSelector(".bpmnStageHost", { timeout: 20000 });
+  } catch (e) {
+    console.error("[e2e] BPMN canvas not found");
+    await page.screenshot({ path: "/tmp/e2e_no_canvas.png", fullPage: true });
+    console.log("[e2e] current url:", page.url());
+    throw e;
+  }
   await page.waitForTimeout(2000);
 
   // Wait for CallActivity shape to be marked clickable
   const callActivitySelector = `[data-element-id="${CALL_ACTIVITY_ID}"].fpc-call-activity-clickable`;
-  await page.waitForSelector(callActivitySelector, { timeout: 20000 });
+  try {
+    await page.waitForSelector(callActivitySelector, { timeout: 20000 });
+  } catch (e) {
+    console.error("[e2e] clickable call activity not found");
+    await page.screenshot({ path: "/tmp/e2e_no_clickable.png", fullPage: true });
+    throw e;
+  }
   console.log("[e2e] call activity found", CALL_ACTIVITY_ID);
 
   // Click center of the CallActivity shape
