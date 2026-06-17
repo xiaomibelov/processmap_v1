@@ -15,6 +15,7 @@ Users could not drill down into a BPMN subprocess from the canvas. CallActivity 
    - Copy the matching BPMNDiagram when available; emit a minimal empty diagram otherwise.
    - Normalize embedded `<bpmn:subProcess>` fragments to `<bpmn:process>` for standalone rendering.
 5. Regenerate stale child-session XML on the next navigation if it lacks a `<bpmn:definitions>` wrapper.
+6. Fix: `_resolve_child_bpmn_xml` must fall back to `extract_subprocess_xml` for embedded `bpmn:subProcess` elements even when `calledElement` is absent.
 
 ## Rationale
 - Minimal frontend changes: one binding helper, context-menu extension, modal button, and CSS.
@@ -27,7 +28,7 @@ Users could not drill down into a BPMN subprocess from the canvas. CallActivity 
 - Frontend unit tests: 42 passed.
 - Frontend build: success.
 - Playwright E2E `check_subprocess_click.mjs`: success.
-- Deployed to http://clearvestnic.ru:5177 at commit `33890c64`.
+- Deployed to http://clearvestnic.ru:5177 at commit `3f1bafd5`.
 
 ## Known issues
 - Browsers with stale `refresh_token` cookies may see 401 until cookies/localStorage are cleared.
