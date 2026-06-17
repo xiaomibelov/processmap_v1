@@ -1,0 +1,20 @@
+{
+  "contour_id": "fix/sub-process-navigation",
+  "bug_id": "BUG-SUB-001",
+  "phase": "ready_for_review",
+  "planner_status": "complete",
+  "worker_status": "complete",
+  "reviewer_status": "complete",
+  "branch": "fix/sub-process-navigation",
+  "base": "new-origin/main",
+  "head": "889606a2",
+  "test_stand": "http://clearvestnic.ru:5177",
+  "deployed_commit": "b3b93dd5",
+  "acceptance_criteria": {
+    "backend_tests": "passed",
+    "frontend_build": "passed",
+    "e2e_click_navigation": "passed",
+    "runtime_deployed": "yes"
+  },
+  "next_action": "wait_for_user_approval_to_create_pr_and_merge"
+}
