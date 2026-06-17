@@ -7,7 +7,7 @@
   "reviewer_status": "pending",
   "branch": "fix/bpmn-drilldown-ui",
   "base": "origin/fix/sub-process-navigation",
-  "head": "72288376",
+  "head": "4b3d2f5c",
   "test_stand": "http://clearvestnic.ru:5177",
   "deployed_commit": "72288376",
   "acceptance_criteria": {
