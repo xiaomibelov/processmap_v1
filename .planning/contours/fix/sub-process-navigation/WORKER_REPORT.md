@@ -1,7 +1,7 @@
 # WORKER_REPORT — fix/sub-process-navigation
 
 ## Status
-✅ Implemented and verified on test stand.
+✅ Deployed and verified on test stand.
 
 ## Commits
 - `c8e21003` fix(subprocess-navigation): use single click on call activity to navigate
@@ -90,8 +90,11 @@
 ```
 
 ### Test stand
-- Deployed version: `<to-update-after-deploy>` on http://clearvestnic.ru:5177.
+- Deployed version: `33890c64` on http://clearvestnic.ru:5177.
 - Verified via Playwright from local environment.
+
+### Known issues
+- Auth 401 in browsers with stale `refresh_token` cookies: clear site cookies/localStorage and log in again. E2E with a clean browser state passes.
 
 ## Known limitations
 - Drill-down is supported for `bpmn:CallActivity` and `bpmn:SubProcess` shapes.
