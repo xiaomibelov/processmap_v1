@@ -12,6 +12,7 @@
 - `5bdf0847` fix(backend): wrap extracted subprocess XML in bpmn:definitions with proper namespaces
 - `fc089edc` fix(backend,e2e): regenerate invalid child XML and robust org selection
 - `00271d09` test(e2e): robust org selection wait before BPMN canvas check
+- `26df6304` feat(subprocess-navigation): enable drill-down for CallActivity and SubProcess via context menu and preview modal
 
 ## Changes
 ### Frontend
@@ -19,17 +20,35 @@
 - Removed viewer-only inline `v.on("element.click", ...)`.
 - Added `bindSubprocessNavigationEvents(v, onNavigateToSubprocessRef)` after `bindViewerStageEvents`.
 - Added `bindSubprocessNavigationEvents(m, onNavigateToSubprocessRef)` after `bindModelerStageEvents`.
+- Passed `onNavigateToSubprocess` into the BPMN context-menu action executor.
 
-#### `frontend/src/features/process/bpmn/stage/orchestration/bindSubprocessNavigationEvents.js` (new)
+#### `frontend/src/features/process/bpmn/stage/orchestration/bindSubprocessNavigationEvents.js`
 - Registers `element.click` handler with priority `3000`.
-- Filters elements by `bpmn:CallActivity` type (checks both `el.type` and `el.businessObject?.$type`).
+- Filters navigable elements by `bpmn:CallActivity` and `bpmn:SubProcess` types (checks both `el.type` and `el.businessObject?.$type`).
 - Calls `onNavigateToSubprocessRef.current(elementId)` when clicked.
-- **Native DOM click fallback**: listens on canvas container in capture phase, resolves clicked `.djs-element` via `elementRegistry`, triggers navigation if it is a CallActivity.
-- Marks CallActivity SVG groups with `fpc-call-activity-clickable` class after render.
+- **Native DOM click fallback**: listens on canvas container in capture phase, resolves clicked `.djs-element` via `elementRegistry`, triggers navigation if it is a CallActivity or SubProcess.
+- Marks navigable SVG groups with `fpc-call-activity-clickable` class after render.
 - Optional debug logging via `window.__FPC_DEBUG_SUBPROCESS__ = true` or `localStorage.fpc_debug_subprocess = 1`.
 
 #### `frontend/src/features/process/bpmn/stage/styles/subprocessNavigation.css`
 - Added `.fpc-call-activity-clickable { cursor: pointer; }`.
+
+#### `frontend/src/features/process/bpmn/context-menu/schema/bpmnContextMenuSchemas.js`
+- Added new `call_activity` context-menu kind with `navigate_to_subprocess` action.
+- Added `navigate_to_subprocess` action to the `subprocess` kind.
+
+#### `frontend/src/features/process/bpmn/context-menu/bpmnContextMenuActionMatrix.js`
+- `resolveBpmnContextTargetKind` returns `call_activity` for `bpmn:CallActivity`.
+- Quick-edit name is enabled for `call_activity`.
+
+#### `frontend/src/features/process/bpmn/context-menu/executeBpmnContextMenuAction.js`
+- Accepts `onNavigateToSubprocess` and handles `navigate_to_subprocess` action for CallActivity and SubProcess.
+
+#### `frontend/src/features/process/bpmn/context-menu/BpmnSubprocessPreviewModal.jsx`
+- Shows a primary **"Перейти в подпроцесс"** button when the preview target is a CallActivity or SubProcess.
+
+#### `frontend/src/features/process/stage/orchestration/buildProcessDiagramOverlayLayersProps.js`
+- Passes `onNavigateToSubprocess` through to the subprocess preview modal props.
 
 ### Backend
 #### `backend/app/services/bpmn_navigation.py`
@@ -43,18 +62,25 @@
 - Legacy child sessions created before the backend fix are automatically re-extracted and updated on the next navigation.
 
 ### E2E
-#### `scripts/e2e/check_subprocess_click.mjs` (new)
+#### `scripts/e2e/check_subprocess_click.mjs`
 - Playwright E2E scenario with robust org-selection handling and screenshots on failure.
 
 ## Verification
 ### Backend tests
 ```
-29 passed, 4 warnings in 8.67s
+29 passed, 4 warnings in 8.84s
+```
+
+### Frontend unit tests
+```
+# tests 42
+# pass 42
+# fail 0
 ```
 
 ### Frontend build
 ```
-✓ built in 22.16s
+✓ built in 23.82s
 ```
 
 ### E2E
@@ -64,8 +90,9 @@
 ```
 
 ### Test stand
-- Deployed version: `00271d09` on http://clearvestnic.ru:5177.
+- Deployed version: `<to-update-after-deploy>` on http://clearvestnic.ru:5177.
 - Verified via Playwright from local environment.
 
 ## Known limitations
-- Only `bpmn:CallActivity` triggers drill-down. Embedded `bpmn:SubProcess` shapes are not clickable for navigation in this contour.
+- Drill-down is supported for `bpmn:CallActivity` and `bpmn:SubProcess` shapes.
+- Other BPMN link types (sequence/message flow, associations) do not trigger navigation.
