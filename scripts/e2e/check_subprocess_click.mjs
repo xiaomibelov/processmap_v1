@@ -28,12 +28,13 @@ async function run() {
 
   // Handle org selection if presented
   async function ensureOrgSelected() {
-    const orgScreen = page.locator('h1:has-text("Выберите организацию")');
-    if (await orgScreen.isVisible({ timeout: 5000 }).catch(() => false)) {
+    try {
+      await page.waitForSelector('h1:has-text("Выберите организацию")', { timeout: 10000 });
       console.log("[e2e] selecting org Default");
-      const orgButton = page.locator('button:has-text("Default")').first();
-      await orgButton.click();
+      await page.click('button:has-text("Default")');
       await page.waitForURL(/\/app/, { timeout: 15000 });
+    } catch {
+      // org screen not shown
     }
   }
 
