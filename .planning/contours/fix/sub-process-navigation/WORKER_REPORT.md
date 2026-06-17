@@ -13,6 +13,7 @@
 - `fc089edc` fix(backend,e2e): regenerate invalid child XML and robust org selection
 - `00271d09` test(e2e): robust org selection wait before BPMN canvas check
 - `26df6304` feat(subprocess-navigation): enable drill-down for CallActivity and SubProcess via context menu and preview modal
+- `3f1bafd5` fix(backend): allow embedded SubProcess navigation when calledElement is absent
 
 ## Changes
 ### Frontend
@@ -60,16 +61,19 @@
 #### `backend/app/services/session_service.py`
 - `navigate_to_subprocess` now validates that an existing child session's `bpmn_xml` contains a `<bpmn:definitions>` wrapper.
 - Legacy child sessions created before the backend fix are automatically re-extracted and updated on the next navigation.
+- Fixed embedded `bpmn:subProcess` navigation: `_resolve_child_bpmn_xml` now falls back to `extract_subprocess_xml` even when `calledElement` is absent.
 
 ### E2E
 #### `scripts/e2e/check_subprocess_click.mjs`
 - Playwright E2E scenario with robust org-selection handling and screenshots on failure.
 
 ## Verification
-### Backend tests
+### Backend tests (relevant)
 ```
-29 passed, 4 warnings in 8.84s
+15 passed, 5 warnings in 2.09s
 ```
+- `tests/test_subprocess_navigation.py`
+- `tests/test_bpmn_navigation_helpers.py`
 
 ### Frontend unit tests
 ```
@@ -88,6 +92,9 @@
 [e2e] current url http://clearvestnic.ru:5177/app?project=0715811eb7&session=547f33d6ea&parent=4fe9e94289&focus=SubTask_1
 [e2e] SUCCESS: subprocess navigation from canvas works
 ```
+
+### Test stand
+- Deployed version: `3f1bafd5` on http://clearvestnic.ru:5177.
 
 ### Test stand
 - Deployed version: `33890c64` on http://clearvestnic.ru:5177.
