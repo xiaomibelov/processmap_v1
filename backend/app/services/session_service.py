@@ -813,6 +813,11 @@ def _build_breadcrumbs(
     uid, oid, admin = _subprocess_request_context(request)
     org_id = getattr(child_session, "org_id", None)
 
+    def _session_title(sess: Any) -> str:
+        if isinstance(sess, dict):
+            return str(sess.get("title") or "").strip()
+        return str(getattr(sess, "title", "") or "").strip()
+
     breadcrumbs = [
         {"session_id": f["session_id"], "name": "", "element_id": f.get("element_id_in_parent")}
         for f in (getattr(child_session, "navigation_stack", []) or [])
@@ -824,7 +829,7 @@ def _build_breadcrumbs(
             org_id=org_id,
             is_admin=admin,
         )
-        crumb["name"] = str(getattr(crumb_sess, "title", "") or "") if crumb_sess else ""
+        crumb["name"] = _session_title(crumb_sess) if crumb_sess else ""
     return breadcrumbs
 
 
