@@ -25,6 +25,7 @@
 - `6b6cc84c` chore: remove temporary e2e debug scripts
 - `5de1d712` docs(fix/sub-process-navigation): update STATE, WORKER_REPORT and Obsidian fallback after click regression fix
 - `ec2059a4` fix(frontend): render subprocess breadcrumb as on-canvas overlay
+- `e6127144` fix(frontend): add 12px gap for on-canvas subprocess breadcrumb
 
 ## Changes
 ### Frontend
@@ -35,15 +36,18 @@
 - Passed `onNavigateToSubprocess` into the BPMN context-menu action executor.
 
 #### `frontend/src/features/process/bpmn/stage/orchestration/bindSubprocessNavigationEvents.js`
-- Registers `element.click` handler with priority `3000`.
+- Registers `element.click` handler with priority `3000` (early iterations).
 - Filters navigable elements by `bpmn:CallActivity` and `bpmn:SubProcess` types (checks both `el.type` and `el.businessObject?.$type`).
 - Calls `onNavigateToSubprocessRef.current(elementId)` when clicked.
 - **Native DOM click fallback**: listens on canvas container in capture phase, resolves clicked `.djs-element` via `elementRegistry`, triggers navigation if it is a CallActivity or SubProcess.
 - Marks navigable SVG groups with `fpc-call-activity-clickable` class after render.
 - Optional debug logging via `window.__FPC_DEBUG_SUBPROCESS__ = true` or `localStorage.fpc_debug_subprocess = 1`.
+- Final version: removed `element.click` and native DOM body-click handlers that caused single-click drill-down regression; added delegated capture-phase listener on the bpmn-js top-level container for `.bjs-drilldown` overlay buttons only, resolves the element via `type: "drilldown"` overlays and calls `onNavigateToSubprocess`.
 
 #### `frontend/src/features/process/bpmn/stage/styles/subprocessNavigation.css`
-- Added `.fpc-call-activity-clickable { cursor: pointer; }`.
+- Added `.fpc-call-activity-clickable { cursor: pointer; }` (later removed).
+- Added `.bpmnStageHost .bjs-drilldown` with `position: relative`, `z-index: 300` and `pointer-events: auto` so the drill-down arrow stays clickable above hover/selection overlays.
+- Added `.subprocessBreadcrumbsOnCanvas` to float the breadcrumb panel over the BPMN canvas with `top: 12px`, `left: 12px`, `z-index: 50`, `max-width: calc(100% - 24px)`; the wrapper uses `pointer-events: none` while its children use `pointer-events: auto` so the panel does not block diagram interaction.
 
 #### `frontend/src/features/process/bpmn/context-menu/schema/bpmnContextMenuSchemas.js`
 - Added new `call_activity` context-menu kind with `navigate_to_subprocess` action.
@@ -73,14 +77,12 @@
 - `navigate_to_subprocess` now validates that an existing child session's `bpmn_xml` contains a `<bpmn:definitions>` wrapper.
 - Legacy child sessions created before the backend fix are automatically re-extracted and updated on the next navigation.
 - Fixed embedded `bpmn:subProcess` navigation: `_resolve_child_bpmn_xml` now falls back to `extract_subprocess_xml` even when `calledElement` is absent.
+- Fixed subprocess breadcrumb parent name: `_build_breadcrumbs` now reads `title` from both dict and Pydantic session objects.
+- Fixed `_subprocess_request_context` to correctly extract `id` and `is_admin` from the dict stored in `request.state.auth_user`.
 
 #### `backend/app/_legacy_main.py` and `backend/app/auth.py`
 - Fixed constant session logout: legacy auth endpoints now set/clear the `refresh_token` cookie at `Path=/` and explicitly delete the old `Path=/api/auth/` cookie.
 - Refresh-token JSON file writes are now atomic (temp-file + rename) to avoid corruption during concurrent refreshes.
-
-#### `backend/app/services/session_service.py`
-- Fixed subprocess breadcrumb parent name: `_build_breadcrumbs` now reads `title` from both dict and Pydantic session objects.
-- Fixed `_subprocess_request_context` to correctly extract `id` and `is_admin` from the dict stored in `request.state.auth_user`.
 
 #### E2E
 - Added `/root/scripts/e2e/check_subprocess_element_click.mjs` — full Playwright scenario for SubProcess drill-down, breadcrumb/back-button, and return to parent.
@@ -89,7 +91,8 @@
 - Deploy now regenerates `frontend/public/build-info.json` from the actual git SHA/branch/timestamp, so the deployed build metadata is accurate.
 
 #### `frontend/src/components/AppShell.jsx`
-- Wrapped `TopBar`, `SubprocessBreadcrumbs`, `AppUpdateBanner` and session nav notice in `.appTopStack` so the top row grows naturally without pushing the workspace out of the viewport.
+- Wrapped `TopBar`, `AppUpdateBanner` and session nav notice in `.appTopStack` so the top row grows naturally without pushing the workspace out of the viewport.
+- Moved `<SubprocessBreadcrumbs>` out of `.appTopStack` and into `.workspaceMain` as an absolute overlay so it renders on top of the canvas; rendered only when `subprocessBreadcrumbs.length >= 2`.
 
 #### `frontend/src/styles/tailwind.css`
 - `.appRoot` now uses `grid-rows-[auto_minmax(0,1fr)_auto]` and `.appTopStack` uses `flex min-h-0 flex-col`, letting the workspace shrink correctly when breadcrumbs appear.
@@ -100,28 +103,11 @@
 #### `frontend/src/features/process/SubprocessBreadcrumbs.jsx`
 - Renders only when breadcrumb chain has >= 2 items; shows back button, clickable parent crumb(s), and bold current subprocess name.
 
-#### `frontend/src/features/process/bpmn/stage/orchestration/bindSubprocessNavigationEvents.js`
-- Removed `element.click` and native DOM body-click handlers that caused single-click drill-down regression.
-- Added delegated capture-phase listener on the bpmn-js top-level container for `.bjs-drilldown` overlay buttons only.
-- Finds the matching `type: "drilldown"` overlay to resolve the element and calls `onNavigateToSubprocess`.
-
-#### `frontend/src/features/process/bpmn/stage/styles/subprocessNavigation.css`
-- Removed the `.fpc-call-activity-clickable` cursor rule (no longer needed).
-- Added `position: relative`, `z-index: 300` and `pointer-events: auto` for `.bjs-drilldown` so the arrow stays clickable above hover/selection overlays.
-- Added `.subprocessBreadcrumbsOnCanvas` to float the breadcrumb panel over the BPMN canvas.
-
-#### `frontend/src/components/AppShell.jsx`
-- Moved `<SubprocessBreadcrumbs>` out of `.appTopStack` and into `.workspaceMain` as an absolute overlay so it renders on top of the canvas.
-
 #### `scripts/e2e/check_subprocess_click.mjs`
 - Rewrote scenario to verify:
   - Single click on `CallActivity` keeps the user on the parent session (select only).
   - Single click on `SubProcess` body keeps the user on the parent session (select only).
   - Clicking the `.bjs-drilldown` arrow navigates to the child session, shows breadcrumbs, and the back button returns to parent.
-
-### E2E
-#### `scripts/e2e/check_subprocess_click.mjs`
-- Playwright E2E scenario with robust org-selection handling and screenshots on failure.
 
 ## Verification
 ### Backend tests (relevant)
@@ -140,7 +126,7 @@
 
 ### Frontend build
 ```
-✓ built in 20.60s
+✓ built in 23.19s
 ```
 
 ### E2E — CallActivity drill-down
@@ -151,17 +137,18 @@
 
 ### E2E — SubProcess drill-down, breadcrumbs and back navigation
 ```
-[e2e] current url http://clearvestnic.ru:5177/app?project=0715811eb7&session=922b770080&parent=8fdd4a0084&focus=SubTask_1
-[e2e] child session 922b770080
+[e2e] current url http://clearvestnic.ru:5177/app?project=0715811eb7&session=249eea70ba&parent=76bf115a17&focus=SubTask_1
+[e2e] child session 249eea70ba
 [e2e] back button visible true
-[e2e] breadcrumb text ←E2E SubProcess …>Подпроцесс: SubProcess_1
-[e2e] returned to parent ...
-[e2e] SUCCESS: SubProcess drill-down and back navigation works
+[e2e] breadcrumb text ←E2E SubProcess 1781725757692>Подпроцесс: SubProcess_1
+[e2e] returned to parent http://clearvestnic.ru:5177/app?project=0715811eb7&session=76bf115a17&focus=SubProcess_1
+[e2e] SUCCESS: single click selects, drilldown arrow navigates
 ```
 
 ### Layout verification
 - Manual/browser check: BPMN canvas fills the available workspace both before and after breadcrumb row appears.
 - No empty gap below the top header; no canvas collapse after drill-down.
+- On-canvas breadcrumb panel floats `12px` from the top/left edges of the workspace and never touches the header.
 
 ### Regression fix verification (single-click drill-down)
 - E2E confirms single click on `CallActivity_1` does not change URL.
@@ -169,7 +156,7 @@
 - E2E confirms `.bjs-drilldown` arrow click navigates to child session with breadcrumbs and back navigation.
 
 ### Test stand
-- Deployed version: `ec2059a4` on http://clearvestnic.ru:5177.
+- Deployed version: `e6127144` on http://clearvestnic.ru:5177.
 - Verified via Playwright from local environment.
 
 ### Known issues
