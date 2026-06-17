@@ -28,7 +28,9 @@ Users could not drill down into a BPMN subprocess from the canvas. CallActivity 
 - Frontend unit tests: 42 passed.
 - Frontend build: success.
 - Playwright E2E `check_subprocess_click.mjs`: success.
-- Deployed to http://clearvestnic.ru:5177 at commit `3f1bafd5`.
+- Deployed to http://clearvestnic.ru:5177 at commit `282c2ee9`.
+- Added E2E scenario for SubProcess drill-down: `/root/scripts/e2e/check_subprocess_element_click.mjs`.
+- Fixed breadcrumb parent name and auth-user context extraction in `_subprocess_request_context`.
 
 ## Known issues
 - Browsers with stale `refresh_token` cookies may see 401 until cookies/localStorage are cleared.

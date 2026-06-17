@@ -15,6 +15,8 @@
 - `26df6304` feat(subprocess-navigation): enable drill-down for CallActivity and SubProcess via context menu and preview modal
 - `3f1bafd5` fix(backend): allow embedded SubProcess navigation when calledElement is absent
 - `8c9d6920` fix(auth): unify refresh cookie path to /, atomic refresh-token writes, and regenerate build-info on deploy
+- `0491d9b1` fix(backend): read parent session title from dict in subprocess breadcrumbs
+- `282c2ee9` fix(backend): extract user id and admin flag from dict in subprocess request context
 
 ## Changes
 ### Frontend
@@ -68,6 +70,13 @@
 - Fixed constant session logout: legacy auth endpoints now set/clear the `refresh_token` cookie at `Path=/` and explicitly delete the old `Path=/api/auth/` cookie.
 - Refresh-token JSON file writes are now atomic (temp-file + rename) to avoid corruption during concurrent refreshes.
 
+#### `backend/app/services/session_service.py`
+- Fixed subprocess breadcrumb parent name: `_build_breadcrumbs` now reads `title` from both dict and Pydantic session objects.
+- Fixed `_subprocess_request_context` to correctly extract `id` and `is_admin` from the dict stored in `request.state.auth_user`.
+
+#### E2E
+- Added `/root/scripts/e2e/check_subprocess_element_click.mjs` — full Playwright scenario for SubProcess drill-down, breadcrumb/back-button, and return to parent.
+
 #### `deploy/deploy.sh` and `frontend/scripts/generate-build-info.mjs`
 - Deploy now regenerates `frontend/public/build-info.json` from the actual git SHA/branch/timestamp, so the deployed build metadata is accurate.
 
@@ -102,7 +111,7 @@
 ```
 
 ### Test stand
-- Deployed version: `8c9d6920` on http://clearvestnic.ru:5177.
+- Deployed version: `282c2ee9` on http://clearvestnic.ru:5177.
 
 ### Test stand
 - Deployed version: `33890c64` on http://clearvestnic.ru:5177.
