@@ -3758,6 +3758,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     buildInsertBetweenCandidate,
     cloneCompanionStateForCopiedElement,
     buildCopyElementOptions,
+    onNavigateToSubprocess: (elementId) => onNavigateToSubprocessRef.current?.(elementId),
     backendClipboard: createBackendBpmnClipboardController({
       getSessionId: () => String(activeSessionRef.current || sessionId || ""),
       refreshAfterPaste: async ({ sessionId: pastedSessionId }) => {

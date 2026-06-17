@@ -30,10 +30,16 @@ function DetailLines({
   );
 }
 
+function isSubprocessNavigableType(typeRaw) {
+  const type = String(typeRaw || "").toLowerCase();
+  return type.includes("callactivity") || type.includes("subprocess");
+}
+
 export default function BpmnSubprocessPreviewModal({
   preview,
   onClose,
   onOpenProperties,
+  onNavigateToSubprocess,
 }) {
   const [portalRoot, setPortalRoot] = useState(null);
 
@@ -136,6 +142,19 @@ export default function BpmnSubprocessPreviewModal({
           </div>
 
           <div className="flex items-center justify-end gap-1.5">
+            {isSubprocessNavigableType(preview?.targetType) && (
+              <button
+                type="button"
+                className="primaryBtn h-6 px-1.5 text-[10px]"
+                onClick={() => {
+                  onNavigateToSubprocess?.(preview?.targetId);
+                  onClose?.();
+                }}
+                data-testid="bpmn-open-inside-preview-navigate"
+              >
+                Перейти в подпроцесс
+              </button>
+            )}
             <button
               type="button"
               className="secondaryBtn h-6 px-1.5 text-[10px]"
