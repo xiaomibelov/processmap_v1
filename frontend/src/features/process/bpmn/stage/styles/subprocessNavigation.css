@@ -30,3 +30,28 @@
 .subprocessBreadcrumbsOnCanvas > * {
   pointer-events: auto;
 }
+
+/* Discussion badge on CallActivity/SubProcess elements that have child-session discussions. */
+.fpcNodeBadge--discussions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 9999px;
+  border: 1px solid rgba(125, 211, 252, 0.7);
+  background: rgba(14, 165, 233, 0.1);
+  padding: 1px 5px;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 600;
+  color: rgb(7, 89, 133);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.fpcNodeBadgeIcon--discussions {
+  font-size: 10px;
+}
+
+.fpcNodeBadgeCount {
+  font-variant-numeric: tabular-nums;
+}

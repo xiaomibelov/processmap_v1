@@ -176,11 +176,20 @@ async function run() {
   console.log("[e2e] drilldown arrow visible");
   await page.locator(drilldownSelector).first().evaluate((node) => node.click());
 
+  // Loading state should appear during drill-down.
+  await page.waitForSelector('[data-testid="diagram-skeleton"]', { timeout: 5000 });
+  console.log("[e2e] loading skeleton visible during drilldown");
+
   console.log("[e2e] waiting for child session URL");
   const childUrlPattern = new RegExp(`parent=${rootSessionId}`);
   await page.waitForURL(childUrlPattern, { timeout: 15000 });
   const childUrl = page.url();
   console.log("[e2e] current url", childUrl);
+
+  // Canvas ready marker should appear after import completes.
+  await page.waitForSelector('[data-testid="diagram-ready"]', { timeout: 15000 });
+  console.log("[e2e] child diagram ready");
+
   const childSessionIdMatch = childUrl.match(/session=([a-f0-9]+)/);
   const childSessionId = childSessionIdMatch ? childSessionIdMatch[1] : "";
   if (!childSessionId) throw new Error("child session id not found in URL");
