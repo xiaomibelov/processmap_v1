@@ -4,18 +4,19 @@ function getElementType(el) {
   return String(el?.type || el?.businessObject?.$type || "").trim();
 }
 
-function isCallActivity(el) {
-  return getElementType(el) === "bpmn:CallActivity";
+function isSubprocessNavigable(el) {
+  const type = getElementType(el);
+  return type === "bpmn:CallActivity" || type === "bpmn:SubProcess";
 }
 
-function markClickableCallActivities(inst) {
+function markClickableSubprocessElements(inst) {
   if (!inst || typeof inst.get !== "function") return;
   try {
     const elementRegistry = inst.get("elementRegistry");
     if (!elementRegistry) return;
     const elements = elementRegistry.getAll();
     elements.forEach((el) => {
-      if (!isCallActivity(el)) return;
+      if (!isSubprocessNavigable(el)) return;
       const gfx = elementRegistry.getGraphics(el);
       if (!gfx) return;
       const cls = String(gfx.getAttribute("class") || "");
@@ -45,13 +46,13 @@ function tryNativeResolveElement(inst, nativeEvent) {
     if (!gfx) return null;
 
     let element = elementRegistry.get(gfx);
-    if (element && isCallActivity(element)) return element;
+    if (element && isSubprocessNavigable(element)) return element;
 
     // Fallback: try data-element-id attribute.
     const id = gfx.getAttribute?.("data-element-id");
     if (id) {
       element = elementRegistry.get(id);
-      if (element && isCallActivity(element)) return element;
+      if (element && isSubprocessNavigable(element)) return element;
     }
     return null;
   } catch {
@@ -88,7 +89,7 @@ export function bindSubprocessNavigationEvents(inst, onNavigateToSubprocessRef) 
     const el = event?.element;
     const type = getElementType(el);
     logSubprocess("element.click", { id: el?.id, type, source: "eventBus" });
-    if (!isCallActivity(el)) return;
+    if (!isSubprocessNavigable(el)) return;
     const cb = onNavigateToSubprocessRef?.current;
     if (typeof cb === "function") {
       logSubprocess("navigate", { id: el.id, source: "eventBus" });
@@ -123,13 +124,13 @@ export function bindSubprocessNavigationEvents(inst, onNavigateToSubprocessRef) 
   }
 
   const renderHandler = () => {
-    markClickableCallActivities(inst);
+    markClickableSubprocessElements(inst);
   };
 
   eventBus.on("diagram.render", renderHandler);
   eventBus.on("shape.added", renderHandler);
   eventBus.on("shape.changed", renderHandler);
-  markClickableCallActivities(inst);
+  markClickableSubprocessElements(inst);
 
   return () => {
     try {

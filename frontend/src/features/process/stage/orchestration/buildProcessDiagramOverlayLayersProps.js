@@ -85,6 +85,7 @@ export function buildBpmnDiagramOverlayLayersProps({
       preview: bpmnSubprocessPreview,
       onClose: closeBpmnSubprocessPreview,
       onOpenProperties: () => openBpmnSubprocessPreviewProperties?.(),
+      onNavigateToSubprocess,
     },
     fragmentGhostProps: {
       active: bpmnFragmentPlacementActive,

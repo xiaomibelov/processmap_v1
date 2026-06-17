@@ -34,6 +34,18 @@ const ACTIONS_BY_KIND = Object.freeze({
     action("copy_id", "Копировать ID", "service"),
     action("delete", "Удалить", "destructive", { destructive: true }),
   ],
+  call_activity: [
+    action("navigate_to_subprocess", "Перейти в подпроцесс", "actions"),
+    action("open_properties", "Открыть свойства", "actions"),
+    action("add_next_step", "Добавить следующий шаг", "actions"),
+    action(ACTION_ID_UNDO, "Шаг назад", "history"),
+    action(ACTION_ID_REDO, "Повторить отменённое действие", "history"),
+    action("copy_element", "Скопировать элемент", "service"),
+    action("paste", "Вставить рядом", "service"),
+    action("copy_name", "Копировать имя", "service"),
+    action("copy_id", "Скопировать ID", "service"),
+    action("delete", "Удалить", "destructive", { destructive: true }),
+  ],
   gateway: [
     action("rename", "Переименовать", "actions"),
     action("open_properties", "Открыть свойства", "actions"),
@@ -70,6 +82,7 @@ const ACTIONS_BY_KIND = Object.freeze({
     action("delete", "Удалить", "destructive", { destructive: true }),
   ],
   subprocess: [
+    action("navigate_to_subprocess", "Перейти в подпроцесс", "actions"),
     action("open_properties", "Открыть свойства", "actions"),
     action("open_inside", "Открыть подпроцесс", "actions"),
     action("add_next_step", "Добавить следующий шаг", "actions"),

@@ -802,6 +802,53 @@ test("open_inside returns read-only subprocess preview and does not require dril
   assert.ok(Array.isArray(result.openInsidePreview.items[0]?.executionAttrs));
 });
 
+test("navigate_to_subprocess calls onNavigateToSubprocess for SubProcess", async () => {
+  const { inst } = createStubModeler({ root: { id: "Process_1" }, registryItems: [] });
+  const navigatedIds = [];
+  const onNavigateToSubprocess = (id) => navigatedIds.push(id);
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "navigate_to_subprocess",
+      target: { id: "SubProcess_1", type: "bpmn:SubProcess" },
+    },
+    modelerRef: { current: inst },
+    onNavigateToSubprocess,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.navigatedToSubprocess, "SubProcess_1");
+  assert.deepEqual(navigatedIds, ["SubProcess_1"]);
+});
+
+test("navigate_to_subprocess calls onNavigateToSubprocess for CallActivity", async () => {
+  const { inst } = createStubModeler({ root: { id: "Process_1" }, registryItems: [] });
+  const navigatedIds = [];
+  const onNavigateToSubprocess = (id) => navigatedIds.push(id);
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "navigate_to_subprocess",
+      target: { id: "CallActivity_1", type: "bpmn:CallActivity" },
+    },
+    modelerRef: { current: inst },
+    onNavigateToSubprocess,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.navigatedToSubprocess, "CallActivity_1");
+  assert.deepEqual(navigatedIds, ["CallActivity_1"]);
+});
+
+test("navigate_to_subprocess rejects non-subprocess elements", async () => {
+  const { inst } = createStubModeler({ root: { id: "Process_1" }, registryItems: [] });
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "navigate_to_subprocess",
+      target: { id: "Task_1", type: "bpmn:Task" },
+    },
+    modelerRef: { current: inst },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "not_a_subprocess_element");
+});
+
 test("copy_element calls backend clipboard copy and still keeps local in-tab snapshot", async () => {
   const task = {
     id: "Task_1",

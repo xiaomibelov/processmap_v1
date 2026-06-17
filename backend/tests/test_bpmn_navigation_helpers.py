@@ -55,11 +55,20 @@ def test_called_element_id():
     assert called_element_id(SAMPLE_BPMN, "SubProcess_1") is None
 
 
+def _find_process_id(root):
+    for el in root.iter():
+        if _local_tag(el.tag) == "process":
+            return el.attrib.get("id")
+    return None
+
+
 def test_extract_embedded_process_xml():
     xml = extract_embedded_process_xml(SAMPLE_BPMN, "Process_sub")
     assert xml is not None
+    assert "bpmn:definitions" in xml
     root = ET.fromstring(xml)
-    assert root.attrib.get("id") == "Process_sub"
+    assert _local_tag(root.tag) == "definitions"
+    assert _find_process_id(root) == "Process_sub"
     tags = {_local_tag(el.tag) for el in root.iter()}
     assert "usertask" in tags
     assert "startevent" in tags
@@ -68,15 +77,19 @@ def test_extract_embedded_process_xml():
 def test_extract_subprocess_xml_call_activity():
     xml = extract_subprocess_xml(SAMPLE_BPMN, "CallActivity_1")
     assert xml is not None
+    assert "bpmn:definitions" in xml
     root = ET.fromstring(xml)
-    assert root.attrib.get("id") == "Process_sub"
+    assert _local_tag(root.tag) == "definitions"
+    assert _find_process_id(root) == "Process_sub"
 
 
 def test_extract_subprocess_xml_embedded_subprocess():
     xml = extract_subprocess_xml(SAMPLE_BPMN, "SubProcess_1")
     assert xml is not None
+    assert "bpmn:definitions" in xml
     root = ET.fromstring(xml)
-    assert root.attrib.get("id") == "SubProcess_1"
+    assert _local_tag(root.tag) == "definitions"
+    assert _find_process_id(root) == "SubProcess_1"
     tags = {_local_tag(el.tag) for el in root.iter()}
     assert "usertask" in tags
 
