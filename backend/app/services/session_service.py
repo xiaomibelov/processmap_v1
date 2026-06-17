@@ -838,6 +838,8 @@ def navigate_to_subprocess(
     if err:
         raise HTTPException(status_code=err.status_code, detail=err.body)
 
+    uid, oid, admin = _subprocess_request_context(request)
+
     xml = str(getattr(sess, "bpmn_xml", "") or "").strip()
     if not xml:
         raise HTTPException(status_code=404, detail="Session has no BPMN diagram")
@@ -848,6 +850,10 @@ def navigate_to_subprocess(
 
     called = called_element_id(xml, element_id) if el_type == "callactivity" else None
 
+    def _xml_has_definitions(child_xml: str) -> bool:
+        lower = child_xml.lower()
+        return "<bpmn:definitions" in lower or "<definitions" in lower
+
     # Try existing child session
     existing = session_repo.find_by_parent_element(session_id, element_id, org_id=getattr(sess, "org_id", None))
     if existing:
@@ -855,6 +861,11 @@ def navigate_to_subprocess(
         if child_err:
             raise HTTPException(status_code=child_err.status_code, detail=child_err.body)
         child = child_check
+        child_xml = str(getattr(child, "bpmn_xml", "") or "").strip()
+        if not _xml_has_definitions(child_xml):
+            child_xml = _resolve_child_bpmn_xml(sess, element_id, called, request)
+            child.bpmn_xml = child_xml
+            session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)
     else:
         child_xml = _resolve_child_bpmn_xml(sess, element_id, called, request)
         child = _create_child_session(sess, element_id, child_xml, request)
