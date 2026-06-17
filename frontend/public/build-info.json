@@ -1,9 +1,10 @@
 {
-  "branch": "main",
-  "sha": "8fa9c6b704794b2eb4cc4299490aeac414f1590f",
-  "shaShort": "8fa9c6b7",
-  "timestamp": "2026-06-13T17:33:23Z",
-  "contourId": "feat-checkbox-property-card",
-  "dirty": false,
-  "host": "clearvestnic.ru"
+  "branch": "fix/sub-process-navigation",
+  "sha": "83643f306187f6264f341fa649aa11930dae7daf",
+  "shaShort": "83643f30",
+  "timestamp": "2026-06-17T11:08:15.003Z",
+  "contourId": "fix-sub-process-navigation",
+  "dirty": true,
+  "host": "clearvestnic.ru",
+  "env": "dev"
 }
