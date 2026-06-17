@@ -7,14 +7,16 @@
   "reviewer_status": "complete",
   "branch": "fix/sub-process-navigation",
   "base": "new-origin/main",
-  "head": "282c2ee9",
+  "head": "2558a34e",
   "test_stand": "http://clearvestnic.ru:5177",
-  "deployed_commit": "282c2ee9",
+  "deployed_commit": "2558a34e",
   "acceptance_criteria": {
     "backend_tests": "passed",
     "frontend_build": "passed",
     "e2e_click_navigation": "passed",
+    "e2e_subprocess_element_click": "passed",
+    "layout_no_canvas_collapse": "verified",
     "runtime_deployed": "yes"
   },
-  "next_action": "wait_for_user_approval_to_create_pr_and_merge"
+  "next_action": "create_pr_and_merge"
 }

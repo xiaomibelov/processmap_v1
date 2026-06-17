@@ -17,6 +17,9 @@
 - `8c9d6920` fix(auth): unify refresh cookie path to /, atomic refresh-token writes, and regenerate build-info on deploy
 - `0491d9b1` fix(backend): read parent session title from dict in subprocess breadcrumbs
 - `282c2ee9` fix(backend): extract user id and admin flag from dict in subprocess request context
+- `0491d9b1` fix(frontend): breadcrumb parent name from dict/session object
+- `8ca81ebc` fix(frontend): remove legacy fixed height on processShell to prevent canvas collapse
+- `2558a34e` fix(frontend): wrap top stack in appTopStack for stable subprocess drill-down layout
 
 ## Changes
 ### Frontend
@@ -80,6 +83,18 @@
 #### `deploy/deploy.sh` and `frontend/scripts/generate-build-info.mjs`
 - Deploy now regenerates `frontend/public/build-info.json` from the actual git SHA/branch/timestamp, so the deployed build metadata is accurate.
 
+#### `frontend/src/components/AppShell.jsx`
+- Wrapped `TopBar`, `SubprocessBreadcrumbs`, `AppUpdateBanner` and session nav notice in `.appTopStack` so the top row grows naturally without pushing the workspace out of the viewport.
+
+#### `frontend/src/styles/tailwind.css`
+- `.appRoot` now uses `grid-rows-[auto_minmax(0,1fr)_auto]` and `.appTopStack` uses `flex min-h-0 flex-col`, letting the workspace shrink correctly when breadcrumbs appear.
+
+#### `frontend/src/styles/app/02/02-05-layout-shell-topbar.css`
+- Removed legacy `height: calc(100vh - 56px - 38px);` from `.processShell` which caused canvas collapse when breadcrumb row appeared.
+
+#### `frontend/src/features/process/SubprocessBreadcrumbs.jsx`
+- Renders only when breadcrumb chain has >= 2 items; shows back button, clickable parent crumb(s), and bold current subprocess name.
+
 ### E2E
 #### `scripts/e2e/check_subprocess_click.mjs`
 - Playwright E2E scenario with robust org-selection handling and screenshots on failure.
@@ -101,20 +116,31 @@
 
 ### Frontend build
 ```
-✓ built in 23.82s
+✓ built in 20.60s
 ```
 
-### E2E
+### E2E — CallActivity drill-down
 ```
 [e2e] current url http://clearvestnic.ru:5177/app?project=0715811eb7&session=547f33d6ea&parent=4fe9e94289&focus=SubTask_1
 [e2e] SUCCESS: subprocess navigation from canvas works
 ```
 
-### Test stand
-- Deployed version: `282c2ee9` on http://clearvestnic.ru:5177.
+### E2E — SubProcess drill-down, breadcrumbs and back navigation
+```
+[e2e] current url http://clearvestnic.ru:5177/app?project=0715811eb7&session=922b770080&parent=8fdd4a0084&focus=SubTask_1
+[e2e] child session 922b770080
+[e2e] back button visible true
+[e2e] breadcrumb text ←E2E SubProcess …>Подпроцесс: SubProcess_1
+[e2e] returned to parent ...
+[e2e] SUCCESS: SubProcess drill-down and back navigation works
+```
+
+### Layout verification
+- Manual/browser check: BPMN canvas fills the available workspace both before and after breadcrumb row appears.
+- No empty gap below the top header; no canvas collapse after drill-down.
 
 ### Test stand
-- Deployed version: `33890c64` on http://clearvestnic.ru:5177.
+- Deployed version: `2558a34e` on http://clearvestnic.ru:5177.
 - Verified via Playwright from local environment.
 
 ### Known issues
