@@ -21,7 +21,9 @@ Bounded contour: только subprocess drill-down из canvas. Не трога
 7. Добавить e2e-тест на Playwright: клик по CallActivity → переход к child session.
 
 ## Acceptance criteria
-- [x] Одиночный клик на CallActivity в canvas открывает subprocess-сессию.
+- [x] Одиночный клик на CallActivity / SubProcess в canvas открывает subprocess-сессию.
+- [x] Контекстное меню элемента содержит пункт "Перейти в подпроцесс" для CallActivity и SubProcess.
+- [x] В модальном превью подпроцесса отображается кнопка "Перейти в подпроцесс".
 - [x] URL меняется на `?project=...&session=<child>&parent=<root>&focus=<target>`.
 - [x] Backend unit tests проходят (`test_subprocess_navigation.py`, `test_bpmn_navigation_helpers.py`, `test_session_read_rbac.py`).
 - [x] Frontend production build собирается без ошибок.
@@ -29,9 +31,14 @@ Bounded contour: только subprocess drill-down из canvas. Не трога
 
 ## Files to change
 - `frontend/src/components/process/BpmnStage.jsx`
-- `frontend/src/features/process/bpmn/stage/orchestration/bindSubprocessNavigationEvents.js` (new)
+- `frontend/src/features/process/bpmn/stage/orchestration/bindSubprocessNavigationEvents.js`
 - `frontend/src/features/process/bpmn/stage/styles/subprocessNavigation.css`
-- `scripts/e2e/check_subprocess_click.mjs` (new)
+- `frontend/src/features/process/bpmn/context-menu/schema/bpmnContextMenuSchemas.js`
+- `frontend/src/features/process/bpmn/context-menu/bpmnContextMenuActionMatrix.js`
+- `frontend/src/features/process/bpmn/context-menu/executeBpmnContextMenuAction.js`
+- `frontend/src/features/process/bpmn/context-menu/BpmnSubprocessPreviewModal.jsx`
+- `frontend/src/features/process/stage/orchestration/buildProcessDiagramOverlayLayersProps.js`
+- `scripts/e2e/check_subprocess_click.mjs`
 
 ## Tests
 - Backend: `python3 -m pytest tests/test_subprocess_navigation.py tests/test_bpmn_navigation_helpers.py tests/test_session_read_rbac.py -q`
@@ -39,6 +46,7 @@ Bounded contour: только subprocess drill-down из canvas. Не трога
 - E2E: `node scripts/e2e/check_subprocess_click.mjs`
 
 ## Risks / Notes
-- CallActivity и SubProcess в BPMN — разные типы. Навигация поддерживается только для `bpmn:CallActivity` (calledElement указывает на внешний/встроенный процесс).
+- CallActivity и SubProcess в BPMN — разные типы. Навигация поддерживается для обоих: `bpmn:CallActivity` (calledElement) и `bpmn:SubProcess` (встроенный подпроцесс).
 - Одиночный клик уже используется для selection; приоритет 3000 гарантирует, что навигация сработает, не мешая выделению.
 - Native fallback в capture phase обходит возможные проблемы с event propagation.
+- Другие BPMN-ссылки (sequence/message flow, ассоциации) не являются триггерами навигации.
