@@ -692,9 +692,14 @@ def recompute_session(session_id: str):
 def _subprocess_request_context(request: Optional[Request]):
     if request is None:
         return "", "", False
-    uid = str(getattr(request.state, "auth_user", "") or "").strip()
+    auth_user = getattr(request.state, "auth_user", None) or {}
+    if isinstance(auth_user, dict):
+        uid = str(auth_user.get("id") or "").strip()
+        admin = bool(auth_user.get("is_admin", False))
+    else:
+        uid = str(getattr(auth_user, "id", "") or "").strip()
+        admin = bool(getattr(auth_user, "is_admin", False))
     oid = str(getattr(request.state, "active_org_id", "") or "").strip()
-    admin = bool(getattr(request.state, "is_admin", False))
     return uid, oid, admin
 
 
