@@ -140,6 +140,7 @@ export default function AppShell({
   onDismissSessionNavNotice,
   onReturnToSessionList,
   onNavigateToSubprocess,
+  childSessionDiscussionAggregates,
   mentionNotifications,
   noteNotifications,
   noteNotificationsAvailable = false,
@@ -323,6 +324,7 @@ export default function AppShell({
               onDiscussionLinkedElementFocusResult={onDiscussionLinkedElementFocusResult}
               onOpenNotesDiscussions={onOpenNotesDiscussions}
               onNavigateToSubprocess={onNavigateToSubprocess}
+              childSessionDiscussionAggregates={childSessionDiscussionAggregates}
             />
           )}
         </div>

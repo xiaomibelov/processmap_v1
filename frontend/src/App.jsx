@@ -119,6 +119,7 @@ import {
   projectTitleOf,
   sessionIdOf,
 } from "./app/projectSessionSelectors";
+import { useChildSessionNoteAggregatesByElementId } from "./lib/sessionNoteAggregates";
 import {
   emptyBpmnMeta,
   mergeHybridV2Doc,
@@ -3478,6 +3479,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  const childDiscussionAggregates = useChildSessionNoteAggregatesByElementId(
+    sessionIdOf(draft),
+    sessions,
+  );
+
   return (
     <>
       <AppShell
@@ -3581,6 +3587,7 @@ export default function App() {
           const sid = sessionIdOf(draft);
           if (sid) navigateToSubprocess(sid, elementId);
         }}
+        childSessionDiscussionAggregates={childDiscussionAggregates}
         mentionNotifications={mentionNotifications}
         noteNotifications={noteNotifications}
         noteNotificationsAvailable={noteNotificationsAvailable}

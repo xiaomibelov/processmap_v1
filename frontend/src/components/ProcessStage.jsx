@@ -372,6 +372,7 @@ function ProcessStage({
   discussionLinkedElementFocusIntent = null,
   onDiscussionLinkedElementFocusResult = null,
   onNavigateToSubprocess = null,
+  childSessionDiscussionAggregates,
 }) {
   const sid = String(sessionId || "");
   const { user } = useAuth();
@@ -6186,6 +6187,7 @@ function ProcessStage({
         onNavigateToSubprocess(elementId);
       }
     },
+    childSessionDiscussionAggregates,
     withHybridOverlayGuard,
   });
 

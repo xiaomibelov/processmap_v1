@@ -1128,6 +1128,109 @@ export function applyUserNotesDecor(ctx) {
   }
 }
 
+export function clearSubprocessDiscussionDecor(inst) {
+  if (!inst) return;
+  try {
+    const overlays = inst.get("overlays");
+    const existing = overlays.get({ type: "subprocess_discussions" });
+    (Array.isArray(existing) ? existing : []).forEach((overlay) => {
+      if (overlay?.id !== undefined && overlay?.id !== null && overlay?.id !== "") {
+        overlays.remove(overlay.id);
+      }
+    });
+  } catch {
+    // ignore
+  }
+}
+
+export function applySubprocessDiscussionDecor(ctx) {
+  const inst = ctx?.inst;
+  const kind = ctx?.kind;
+  const getters = ctx?.getters;
+  const callbacks = ctx?.callbacks;
+  const toText = ctx?.utils?.toText;
+  const asObject = ctx?.utils?.asObject;
+  const aggregateMap = ctx?.readOnly?.childSessionDiscussionAggregates;
+  if (
+    !inst
+    || !kind
+    || !getters
+    || !callbacks
+    || typeof toText !== "function"
+    || typeof asObject !== "function"
+  ) {
+    return;
+  }
+  if (typeof getters.isShapeElement !== "function") return;
+
+  const map = aggregateMap instanceof Map ? aggregateMap : new Map();
+  if (map.size === 0) {
+    clearSubprocessDiscussionDecor(inst);
+    return;
+  }
+
+  try {
+    const overlays = inst.get("overlays");
+    const registry = inst.get("elementRegistry");
+    const canvas = inst.get("canvas");
+    const allElements = typeof registry?.getAll === "function" ? asArray(registry.getAll()) : [];
+
+    clearSubprocessDiscussionDecor(inst);
+
+    const bindBadgeClick = (btn, onClick) => {
+      btn.addEventListener("mousedown", (ev) => ev.stopPropagation());
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        onClick?.();
+      });
+    };
+
+    allElements.forEach((el) => {
+      if (!getters.isShapeElement(el)) return;
+      if (typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el)) return;
+      const type = String(el?.type || "");
+      if (type !== "bpmn:CallActivity" && type !== "bpmn:SubProcess") return;
+      const nodeId = toText(el?.businessObject?.id || el?.id);
+      const aggregate = map.get(nodeId);
+      const count = Number(asObject(aggregate)?.open_notes_count || 0);
+      if (!(count > 0)) return;
+
+      const badge = document.createElement("button");
+      badge.type = "button";
+      badge.className = "fpcNodeBadge fpcNodeBadge--discussions";
+      badge.dataset.badgeKind = "subprocess_discussions";
+      badge.dataset.elementId = nodeId;
+      badge.title = `Открытые обсуждения: ${count}`;
+      badge.setAttribute("aria-label", badge.title);
+
+      const icon = document.createElement("span");
+      icon.className = "fpcNodeBadgeIcon fpcNodeBadgeIcon--discussions";
+      icon.textContent = "💬";
+      badge.appendChild(icon);
+
+      const countPill = document.createElement("span");
+      countPill.className = "fpcNodeBadgeCount";
+      countPill.textContent = count > 99 ? "99+" : String(count);
+      badge.appendChild(countPill);
+
+      bindBadgeClick(badge, () => {
+        callbacks.setSelectedDecor?.(inst, kind, el.id);
+        callbacks.emitElementSelection(el, `${kind}.subprocess_discussion_badge_click`);
+      });
+
+      overlays.add(nodeId, {
+        type: "subprocess_discussions",
+        position: { top: -8, right: -8 },
+        html: badge,
+        show: { minZoom: 0.2 },
+      });
+    });
+  } catch {
+    // ignore
+  }
+}
+
 export function clearStepTimeDecor(ctx) {
   const inst = ctx?.inst;
   const kind = ctx?.kind;
