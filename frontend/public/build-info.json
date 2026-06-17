@@ -1,8 +1,8 @@
 {
   "branch": "fix/sub-process-navigation",
-  "sha": "83643f306187f6264f341fa649aa11930dae7daf",
-  "shaShort": "83643f30",
-  "timestamp": "2026-06-17T11:08:15.003Z",
+  "sha": "8c9d6920ab0be9181f3fe2424acfcda1cdc53a91",
+  "shaShort": "8c9d6920",
+  "timestamp": "2026-06-17T11:10:56.604Z",
   "contourId": "fix-sub-process-navigation",
   "dirty": true,
   "host": "clearvestnic.ru",

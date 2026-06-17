@@ -7,9 +7,9 @@
   "reviewer_status": "complete",
   "branch": "fix/sub-process-navigation",
   "base": "new-origin/main",
-  "head": "3f1bafd5",
+  "head": "8c9d6920",
   "test_stand": "http://clearvestnic.ru:5177",
-  "deployed_commit": "3f1bafd5",
+  "deployed_commit": "8c9d6920",
   "acceptance_criteria": {
     "backend_tests": "passed",
     "frontend_build": "passed",

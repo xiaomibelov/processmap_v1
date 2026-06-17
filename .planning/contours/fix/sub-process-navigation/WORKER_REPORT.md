@@ -14,6 +14,7 @@
 - `00271d09` test(e2e): robust org selection wait before BPMN canvas check
 - `26df6304` feat(subprocess-navigation): enable drill-down for CallActivity and SubProcess via context menu and preview modal
 - `3f1bafd5` fix(backend): allow embedded SubProcess navigation when calledElement is absent
+- `8c9d6920` fix(auth): unify refresh cookie path to /, atomic refresh-token writes, and regenerate build-info on deploy
 
 ## Changes
 ### Frontend
@@ -63,6 +64,13 @@
 - Legacy child sessions created before the backend fix are automatically re-extracted and updated on the next navigation.
 - Fixed embedded `bpmn:subProcess` navigation: `_resolve_child_bpmn_xml` now falls back to `extract_subprocess_xml` even when `calledElement` is absent.
 
+#### `backend/app/_legacy_main.py` and `backend/app/auth.py`
+- Fixed constant session logout: legacy auth endpoints now set/clear the `refresh_token` cookie at `Path=/` and explicitly delete the old `Path=/api/auth/` cookie.
+- Refresh-token JSON file writes are now atomic (temp-file + rename) to avoid corruption during concurrent refreshes.
+
+#### `deploy/deploy.sh` and `frontend/scripts/generate-build-info.mjs`
+- Deploy now regenerates `frontend/public/build-info.json` from the actual git SHA/branch/timestamp, so the deployed build metadata is accurate.
+
 ### E2E
 #### `scripts/e2e/check_subprocess_click.mjs`
 - Playwright E2E scenario with robust org-selection handling and screenshots on failure.
@@ -94,7 +102,7 @@
 ```
 
 ### Test stand
-- Deployed version: `3f1bafd5` on http://clearvestnic.ru:5177.
+- Deployed version: `8c9d6920` on http://clearvestnic.ru:5177.
 
 ### Test stand
 - Deployed version: `33890c64` on http://clearvestnic.ru:5177.
