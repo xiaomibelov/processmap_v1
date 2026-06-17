@@ -1,0 +1,41 @@
+# PLAN — fix/sub-process-navigation (BUG-SUB-001)
+
+## Bug
+При клике на `bpmn:CallActivity` / sub-process на BPMN-диаграмме не происходит проваливания (drill-down) в child sub-process.
+
+## Root cause
+- Изначально обработчик навигации был подключён только на двойной клик (`element.dblclick`).
+- После первой итерации исправления перешли на одиночный клик, но обработчик `element.click` был зарегистрирован **только для viewer**, тогда как рабочий canvas в редакторе использует **modeler** (`bpmn-js/lib/Modeler`).
+- В результате клик по CallActivity в режиме редактора/просмотра не вызывал навигацию.
+
+## Scope
+Bounded contour: только subprocess drill-down из canvas. Не трогаем оверлеи, аналитику, сохранение, product actions.
+
+## Fix plan
+1. Вынести подписку на `element.click` для `bpmn:CallActivity` в общий хелпер `bindSubprocessNavigationEvents`.
+2. Вызвать хелпер при инициализации **и viewer, и modeler** в `BpmnStage.jsx`.
+3. Подписаться с приоритетом `3000`, чтобы клик не терялся среди обработчиков selection.
+4. Добавить CSS-класс `fpc-call-activity-clickable` + `cursor: pointer` для визуальной обратной связи.
+5. Добавить e2e-тест на Playwright: клик по CallActivity → переход к child session.
+
+## Acceptance criteria
+- [x] Одиночный клик на CallActivity в canvas открывает subprocess-сессию.
+- [x] URL меняется на `?project=...&session=<child>&parent=<root>&focus=<target>`.
+- [x] Backend unit tests проходят (`test_subprocess_navigation.py`, `test_bpmn_navigation_helpers.py`, `test_session_read_rbac.py`).
+- [x] Frontend production build собирается без ошибок.
+- [x] Playwright e2e проходит на http://clearvestnic.ru:5177.
+
+## Files to change
+- `frontend/src/components/process/BpmnStage.jsx`
+- `frontend/src/features/process/bpmn/stage/orchestration/bindSubprocessNavigationEvents.js` (new)
+- `frontend/src/features/process/bpmn/stage/styles/subprocessNavigation.css`
+- `scripts/e2e/check_subprocess_click.mjs` (new)
+
+## Tests
+- Backend: `python3 -m pytest tests/test_subprocess_navigation.py tests/test_bpmn_navigation_helpers.py tests/test_session_read_rbac.py -q`
+- Frontend build: `npm run build`
+- E2E: `node scripts/e2e/check_subprocess_click.mjs`
+
+## Risks / Notes
+- CallActivity и SubProcess в BPMN — разные типы. Навигация поддерживается только для `bpmn:CallActivity` (calledElement указывает на внешний/встроенный процесс).
+- Одиночный клик уже используется для selection; приоритет 3000 гарантирует, что навигация сработает, не мешая выделению.
