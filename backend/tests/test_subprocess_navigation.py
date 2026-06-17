@@ -108,3 +108,39 @@ def test_navigate_existing_child_reuses_session():
     first = navigate_to_subprocess(sid, "ca_1", request=req)
     second = navigate_to_subprocess(sid, "ca_1", request=req)
     assert first["subprocess_session_id"] == second["subprocess_session_id"]
+
+
+BPMN_WITH_SUBPROCESS = """<?xml version="1.0"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs">
+  <process id="Process_root">
+    <startEvent id="start" />
+    <subProcess id="sub_1">
+      <startEvent id="sub_start" />
+      <task id="sub_task" />
+      <userTask id="sub_user_task" />
+      <endEvent id="sub_end" />
+    </subProcess>
+    <endEvent id="end" />
+  </process>
+</definitions>"""
+
+
+def test_navigate_to_embedded_subprocess_element():
+    owner = "owner_nav_sub_1"
+    org = "org_nav_sub_1"
+    pid = project_repo.create_project("Test project", user_id=owner, org_id=org)
+    sid = session_repo.create(title="Root", project_id=pid, user_id=owner, org_id=org)
+    root = session_repo.load(sid, user_id=owner, org_id=org, is_admin=True)
+    root.bpmn_xml = BPMN_WITH_SUBPROCESS
+    session_repo.save(root, user_id=owner, org_id=org, is_admin=True)
+
+    req = _make_request(owner, org)
+    result = navigate_to_subprocess(sid, "sub_1", request=req)
+    assert result["subprocess_session_id"]
+    assert result["target_element_id"] == "sub_user_task"
+    assert len(result["breadcrumbs"]) == 2
+
+    child = session_repo.load(result["subprocess_session_id"], user_id=owner, org_id=org, is_admin=True)
+    assert child.parent_session_id == sid
+    assert child.element_id_in_parent == "sub_1"
+    assert "<bpmn:definitions" in (child.bpmn_xml or "")

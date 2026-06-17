@@ -741,7 +741,7 @@ def _resolve_child_bpmn_xml(
                     child_xml = str(getattr(cand, "bpmn_xml", "") or "").strip()
                     break
 
-    if not child_xml and called:
+    if not child_xml:
         child_xml = extract_subprocess_xml(xml, element_id)
 
     if not child_xml:
