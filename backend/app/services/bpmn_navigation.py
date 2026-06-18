@@ -193,6 +193,104 @@ def _copy_diagram_element(diagram_el: ET.Element, defs: ET.Element) -> None:
                         ET.SubElement(new_shape, _ns("Bounds", DC_NS), waypoint.attrib)
 
 
+def _shape_bounds(shape_el: ET.Element):
+    bounds = shape_el.find(".//{http://www.omg.org/spec/DD/20100524/DC}Bounds")
+    if bounds is None:
+        return None
+    return {k: bounds.attrib.get(k) for k in ["x", "y", "width", "height"]}
+
+
+def _bounds_contained(inner, outer, tolerance: float = 0.0) -> bool:
+    ix = float(inner["x"])
+    iy = float(inner["y"])
+    iw = float(inner["width"])
+    ih = float(inner["height"])
+    ox = float(outer["x"])
+    oy = float(outer["y"])
+    ow = float(outer["width"])
+    oh = float(outer["height"])
+    return (
+        ix + tolerance >= ox
+        and iy + tolerance >= oy
+        and ix + iw - tolerance <= ox + ow
+        and iy + ih - tolerance <= oy + oh
+    )
+
+
+def _recursive_copy_translate(src: ET.Element, dst_parent: ET.Element, offset_x: float, offset_y: float) -> None:
+    new = ET.SubElement(dst_parent, src.tag, dict(src.attrib))
+    if _local_tag(new.tag) in ("bounds", "waypoint"):
+        if "x" in new.attrib:
+            new.attrib["x"] = str(float(new.attrib["x"]) - offset_x)
+        if "y" in new.attrib:
+            new.attrib["y"] = str(float(new.attrib["y"]) - offset_y)
+    for child in src:
+        _recursive_copy_translate(child, new, offset_x, offset_y)
+
+
+def _find_expanded_subprocess_shape(root: ET.Element, process_id: str):
+    """Find an expanded BPMNShape for the given process inside any parent plane."""
+    for diagram in root.iter():
+        if _local_tag(diagram.tag) != "bpmndiagram":
+            continue
+        for plane in diagram:
+            if _local_tag(plane.tag) != "bpmnplane":
+                continue
+            for shape in plane:
+                if (
+                    _local_tag(shape.tag) == "bpmnshape"
+                    and shape.attrib.get("bpmnElement") == process_id
+                    and shape.attrib.get("isExpanded") == "true"
+                ):
+                    return shape, plane
+    return None, None
+
+
+def _extract_di_from_expanded_shape(source_root: ET.Element, outer_shape: ET.Element, plane: ET.Element, process_id: str) -> Optional[ET.Element]:
+    """Extract inner shapes/edges from an expanded subprocess shape, translating coordinates."""
+    outer_bounds = _shape_bounds(outer_shape)
+    if not outer_bounds:
+        return None
+    ox = float(outer_bounds["x"])
+    oy = float(outer_bounds["y"])
+
+    new_diagram = ET.Element(_ns("BPMNDiagram", BPMNDI_NS), {"id": "BPMNDiagram_1"})
+    new_plane = ET.SubElement(new_diagram, _ns("BPMNPlane", BPMNDI_NS), {"id": "BPMNPlane_1", "bpmnElement": process_id})
+
+    inner_semantic_ids = set()
+    for shape in plane:
+        if _local_tag(shape.tag) != "bpmnshape":
+            continue
+        if shape is outer_shape:
+            continue
+        bounds = _shape_bounds(shape)
+        if not bounds:
+            continue
+        if not _bounds_contained(bounds, outer_bounds, tolerance=1.0):
+            continue
+        _recursive_copy_translate(shape, new_plane, ox, oy)
+        inner_semantic_ids.add(shape.attrib.get("bpmnElement"))
+
+    if not inner_semantic_ids:
+        return None
+
+    for edge in plane:
+        if _local_tag(edge.tag) != "bpmnedge":
+            continue
+        flow_id = edge.attrib.get("bpmnElement")
+        if not flow_id:
+            continue
+        flow_el = next((e for e in source_root.iter() if _element_id(e) == flow_id), None)
+        if flow_el is None:
+            continue
+        src = flow_el.attrib.get("sourceRef")
+        dst = flow_el.attrib.get("targetRef")
+        if src in inner_semantic_ids and dst in inner_semantic_ids:
+            _recursive_copy_translate(edge, new_plane, ox, oy)
+
+    return new_diagram
+
+
 def _wrap_process_fragment(process_el: ET.Element, source_root: ET.Element) -> str:
     """Wrap a <process> fragment into a full <bpmn:definitions> document."""
     process_id = _element_id(process_el)
@@ -218,8 +316,17 @@ def _wrap_process_fragment(process_el: ET.Element, source_root: ET.Element) -> s
     if diagram_el is not None and _count_shapes_in_diagram(diagram_el) > 0:
         _copy_diagram_element(diagram_el, defs)
     else:
-        # Generate a minimal grid layout so bpmn-js can render the subprocess contents.
-        defs.append(_generate_di_for_process(new_process, process_id))
+        # Fallback 1: the subprocess may be drawn as an expanded shape inside another plane.
+        outer_shape, plane = _find_expanded_subprocess_shape(source_root, process_id)
+        if outer_shape is not None and plane is not None:
+            expanded_diagram = _extract_di_from_expanded_shape(source_root, outer_shape, plane, process_id)
+            if expanded_diagram is not None:
+                defs.append(expanded_diagram)
+            else:
+                defs.append(_generate_di_for_process(new_process, process_id))
+        else:
+            # Fallback 2: generate a minimal grid layout.
+            defs.append(_generate_di_for_process(new_process, process_id))
 
     return ET.tostring(defs, encoding="utf-8", xml_declaration=True).decode("utf-8")
 
