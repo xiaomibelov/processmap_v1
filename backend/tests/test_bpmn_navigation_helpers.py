@@ -103,3 +103,33 @@ def test_resolve_target_element_id_explicit_override():
     assert resolve_target_element_id(SAMPLE_BPMN, explicit_target_id="UserTask_sub") == "UserTask_sub"
     assert resolve_target_element_id(SAMPLE_BPMN, explicit_target_id="Missing") == "UserTask_in_sub"
     assert resolve_target_element_id(SAMPLE_BPMN) == "UserTask_in_sub"
+
+
+BPMN_SUBPROCESS_WITHOUT_DI = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_1">
+  <bpmn:process id="Process_main" isExecutable="true">
+    <bpmn:subProcess id="SubProcess_no_di">
+      <bpmn:startEvent id="Start_no_di" />
+      <bpmn:task id="Task_no_di" />
+      <bpmn:endEvent id="End_no_di" />
+      <bpmn:sequenceFlow id="Flow_1" sourceRef="Start_no_di" targetRef="Task_no_di" />
+      <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_no_di" targetRef="End_no_di" />
+    </bpmn:subProcess>
+  </bpmn:process>
+</bpmn:definitions>
+"""
+
+
+def test_extract_subprocess_xml_generates_di_when_parent_plane_missing():
+    xml = extract_subprocess_xml(BPMN_SUBPROCESS_WITHOUT_DI, "SubProcess_no_di")
+    assert xml is not None
+    assert "bpmn:definitions" in xml
+    assert "bpmndi:BPMNShape" in xml
+    assert "bpmndi:BPMNEdge" in xml
+    root = ET.fromstring(xml)
+    shape_ids = {el.attrib.get("bpmnElement") for el in root.iter() if _local_tag(el.tag) == "bpmnshape"}
+    assert "Start_no_di" in shape_ids
+    assert "Task_no_di" in shape_ids
+    assert "End_no_di" in shape_ids
+    edge_count = sum(1 for el in root.iter() if _local_tag(el.tag) == "bpmnedge")
+    assert edge_count == 2
