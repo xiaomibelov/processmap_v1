@@ -167,8 +167,11 @@ test("Discussion chat surface keeps compact density without dropping primitives"
   assert.match(notesMvpPanelSource, /function discussionThreadRowClass\(\{ active, attentionActive \}\)/);
   assert.match(notesMvpPanelSource, /function discussionMessageClass\(focused\)/);
   assert.match(notesMvpPanelSource, /function discussionQuietActionClass\(tone = "neutral"\)/);
-  assert.match(notesMvpPanelSource, /w-\[min\(1120px,calc\(100vw-2\.5rem\)\)\]/);
-  assert.match(notesMvpPanelSource, /grid-cols-\[minmax\(0,1fr\)_minmax\(286px,320px\)\]/);
+  assert.match(notesMvpPanelSource, /const DEFAULT_PANEL_WIDTH = 480;/);
+  assert.match(notesMvpPanelSource, /const MAX_PANEL_WIDTH = 800;/);
+  assert.match(notesMvpPanelSource, /lg:w-\[var\(--panel-width\)\]/);
+  assert.match(notesMvpPanelSource, /grid-cols-\[minmax\(0,1fr\)_220px\]/);
+  assert.match(notesMvpPanelSource, /pointer-events-none/);
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-message-scroll" className="min-h-0 overflow-auto bg-bg\/10 px-4 py-3"/);
   assert.match(notesMvpPanelSource, /className=\{`rounded-lg border px-3 py-2\.5 transition \$\{discussionMessageClass\(commentFocused\)\}`\}/);
   assert.match(notesMvpPanelSource, /border-l-2 border-info\/45[\s\S]{0,140}data-testid="notes-comment-reply-quote"/);

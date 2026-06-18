@@ -39,6 +39,13 @@ import { readableBpmnText } from "../features/process/bpmn/bpmnIdentity";
 import NotesAggregateBadge from "./NotesAggregateBadge.jsx";
 import { useSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
 
+const DEFAULT_PANEL_WIDTH = 480;
+const MIN_PANEL_WIDTH = 320;
+const MAX_PANEL_WIDTH = 800;
+const COLLAPSED_WIDTH = 40;
+const LS_PANEL_WIDTH_KEY = "fpc_discussion_panel_width";
+const LS_PANEL_COLLAPSED_KEY = "fpc_discussion_panel_collapsed";
+
 const STATUS_OPTIONS = [
   { value: "open", label: "Открытые" },
   { value: "resolved", label: "Закрытые" },
@@ -441,6 +448,9 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const selectedElementType = text(selectedElement?.type);
 
   const [open, setOpen] = useState(false);
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("open");
   const [scopeFilter, setScopeFilter] = useState("all");
@@ -1014,15 +1024,12 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     applyExternalOpenRequest(externalOpenRequest);
   }, [applyExternalOpenRequest, externalOpenRequest]);
 
+  // The discussion panel now stays open while the user interacts with the canvas,
+  // so we intentionally do not auto-close on outside pointer events.
   useEffect(() => {
     if (!open) return undefined;
-    function handlePointerDown(event) {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (panelRef.current?.contains(target)) return;
-      if (target instanceof Element && target.closest?.("[data-notes-panel-trigger='true']")) return;
-      setOpen(false);
-      setCreateOpen(false);
+    function handlePointerDown() {
+      // no-op: panel remains open; click-through to the canvas is handled via pointer-events.
     }
     window.addEventListener("pointerdown", handlePointerDown, true);
     return () => window.removeEventListener("pointerdown", handlePointerDown, true);
@@ -1031,6 +1038,55 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   useEffect(() => {
     onOpenChange?.(open);
   }, [onOpenChange, open]);
+
+  useEffect(() => {
+    try {
+      const saved = Number(window.localStorage.getItem(LS_PANEL_WIDTH_KEY));
+      if (Number.isFinite(saved) && saved >= MIN_PANEL_WIDTH && saved <= MAX_PANEL_WIDTH) {
+        setPanelWidth(saved);
+      }
+      const collapsedRaw = window.localStorage.getItem(LS_PANEL_COLLAPSED_KEY);
+      if (collapsedRaw === "1") setIsCollapsed(true);
+    } catch {
+      // ignore localStorage errors
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LS_PANEL_WIDTH_KEY, String(panelWidth));
+    } catch {
+      // ignore
+    }
+  }, [panelWidth]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LS_PANEL_COLLAPSED_KEY, isCollapsed ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [isCollapsed]);
+
+  const startResize = useCallback((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsResizing(true);
+    const startX = event.clientX;
+    const startWidth = panelWidth;
+    const onMove = (e) => {
+      const delta = startX - e.clientX;
+      const next = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, startWidth + delta));
+      setPanelWidth(next);
+    };
+    const onUp = () => {
+      setIsResizing(false);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [panelWidth]);
 
   function openPanel() {
     setOpen(true);
@@ -1478,9 +1534,17 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       {open ? (
         <div
           ref={panelRef}
-          className="fixed bottom-5 right-5 top-16 z-[88] flex w-[min(1120px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-panel transition-all duration-200 max-lg:bottom-3 max-lg:right-3 max-lg:w-[calc(100vw-1.5rem)] max-sm:top-14"
+          className={`fixed bottom-5 right-5 top-16 z-[100] flex flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-panel max-lg:bottom-3 max-lg:right-3 max-lg:w-[calc(100vw-1.5rem)] max-sm:top-14 lg:w-[var(--panel-width)] ${isResizing ? "transition-none" : "transition-all duration-200"} pointer-events-none`}
+          style={{ "--panel-width": isCollapsed ? `${COLLAPSED_WIDTH}px` : `${panelWidth}px` }}
         >
-          <div className="border-b border-border/70 bg-panel/95 px-4 py-3 sm:px-5">
+          {!isCollapsed ? (
+            <>
+              <div
+                className="absolute left-0 top-0 bottom-0 z-20 w-[3px] cursor-ew-resize hover:bg-info/30 active:bg-info/50 pointer-events-auto max-lg:hidden"
+                onPointerDown={startResize}
+                style={{ touchAction: "none" }}
+              />
+              <div className="border-b border-border/70 bg-panel/95 px-4 py-3 sm:px-5 pointer-events-auto">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="text-base font-bold leading-tight text-fg">
@@ -1535,6 +1599,15 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                 <button
                   type="button"
                   className="secondaryBtn tinyBtn h-8 px-2.5 text-[12px]"
+                  onClick={() => setIsCollapsed(true)}
+                  aria-label="Свернуть обсуждения"
+                  title="Свернуть"
+                >
+                  {"<<"}
+                </button>
+                <button
+                  type="button"
+                  className="secondaryBtn tinyBtn h-8 px-2.5 text-[12px]"
                   onClick={() => {
                     setOpen(false);
                     setCreateOpen(false);
@@ -1547,7 +1620,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
             </div>
           </div>
 
-          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(286px,320px)] overflow-hidden max-lg:grid-cols-1">
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_220px] overflow-hidden max-lg:grid-cols-1 pointer-events-auto">
             <section className="flex min-h-0 flex-col overflow-hidden border-r border-border/70 bg-panel max-lg:border-b max-lg:border-r-0">
               {error ? (
                 <div className="mx-4 mt-4 rounded-xl border border-danger/50 bg-danger/10 px-3 py-2 text-xs text-danger">
@@ -2250,6 +2323,22 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
               )}
             </aside>
           </div>
+          </>
+          ) : (
+            <button
+              type="button"
+              className="flex flex-1 flex-col items-center gap-2 py-4 pointer-events-auto"
+              onClick={() => setIsCollapsed(false)}
+              title="Развернуть обсуждения"
+            >
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-info/10 text-sm text-info" aria-hidden="true">✎</span>
+              {aggregate?.open_notes_count > 0 ? (
+                <span className="rounded-full bg-sky-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  {aggregate.open_notes_count}
+                </span>
+              ) : null}
+            </button>
+          )}
         </div>
       ) : null}
     </>
