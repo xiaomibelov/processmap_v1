@@ -144,3 +144,4 @@ def test_navigate_to_embedded_subprocess_element():
     assert child.parent_session_id == sid
     assert child.element_id_in_parent == "sub_1"
     assert "<bpmn:definitions" in (child.bpmn_xml or "")
+    assert "bpmndi:BPMNShape" in (child.bpmn_xml or "")

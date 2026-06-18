@@ -49,6 +49,114 @@ def _ns(tag: str, ns: str = BPMN_NS) -> str:
     return f"{{{ns}}}{tag}"
 
 
+_SHAPE_ELEMENT_TYPES = {
+    "task", "usertask", "servicetask", "sendtask", "receivetask", "manualtask",
+    "businessruletask", "scripttask", "callactivity",
+    "startevent", "intermediatethrowevent", "intermediatecatchevent", "endevent",
+    "exclusivegateway", "parallelgateway", "inclusivegateway", "eventbasedgateway",
+    "subprocess", "dataobjectreference", "datastorereference", "textannotation",
+}
+
+
+def _is_shape_element(el: ET.Element) -> bool:
+    return _local_tag(el.tag) in _SHAPE_ELEMENT_TYPES
+
+
+def _default_size_for_element(el: ET.Element):
+    tag = _local_tag(el.tag)
+    if "event" in tag:
+        return (36, 36)
+    if "gateway" in tag:
+        return (50, 50)
+    if tag in ("dataobjectreference", "datastorereference"):
+        return (36, 50)
+    if tag == "textannotation":
+        return (100, 30)
+    return (100, 80)
+
+
+def _center(bounds):
+    return (bounds[0] + bounds[2] / 2.0, bounds[1] + bounds[3] / 2.0)
+
+
+def _generate_di_for_process(process_el: ET.Element, process_id: str) -> ET.Element:
+    """Generate a minimal grid layout BPMNDiagram for a process without DI."""
+    diagram = ET.Element(_ns("BPMNDiagram", BPMNDI_NS), {"id": "BPMNDiagram_1"})
+    plane = ET.SubElement(diagram, _ns("BPMNPlane", BPMNDI_NS), {"id": "BPMNPlane_1", "bpmnElement": process_id})
+
+    children = list(process_el)
+    shape_els = [c for c in children if _is_shape_element(c)]
+
+    def _sort_key(el: ET.Element):
+        tag = _local_tag(el.tag)
+        if "startevent" in tag:
+            return (0, 0)
+        if "endevent" in tag:
+            return (2, 0)
+        return (1, 0)
+
+    shape_els_sorted = sorted(shape_els, key=_sort_key)
+
+    positions = {}
+    start_set = False
+    end_set = False
+    for idx, el in enumerate(shape_els_sorted):
+        tag = _local_tag(el.tag)
+        if "startevent" in tag and not start_set:
+            x, y = 50, 50
+            start_set = True
+        elif "endevent" in tag and not end_set:
+            x, y = 250, 200
+            end_set = True
+        else:
+            x = 50 + (idx % 3) * 120
+            y = 50 + (idx // 3) * 80
+        positions[_element_id(el)] = (x, y)
+
+    bounds_by_id = {}
+    for el in shape_els_sorted:
+        eid = _element_id(el)
+        x, y = positions.get(eid, (50, 50))
+        w, h = _default_size_for_element(el)
+        shape = ET.SubElement(plane, _ns("BPMNShape", BPMNDI_NS), {"id": f"{eid}_di", "bpmnElement": eid})
+        ET.SubElement(shape, _ns("Bounds", DC_NS), {"x": str(x), "y": str(y), "width": str(w), "height": str(h)})
+        bounds_by_id[eid] = (x, y, w, h)
+
+    for el in children:
+        tag = _local_tag(el.tag)
+        if tag not in ("sequenceflow", "association"):
+            continue
+        eid = _element_id(el)
+        source = el.attrib.get("sourceRef")
+        target = el.attrib.get("targetRef")
+        if not source or not target:
+            continue
+        if source not in bounds_by_id or target not in bounds_by_id:
+            continue
+        edge = ET.SubElement(
+            plane,
+            _ns("BPMNEdge", BPMNDI_NS),
+            {"id": f"{eid}_di", "bpmnElement": eid, "sourceElement": source, "targetElement": target},
+        )
+        sx, sy = _center(bounds_by_id[source])
+        tx, ty = _center(bounds_by_id[target])
+        ET.SubElement(edge, _ns("waypoint", DI_NS), {"x": str(sx), "y": str(sy)})
+        ET.SubElement(edge, _ns("waypoint", DI_NS), {"x": str(tx), "y": str(ty)})
+
+    return diagram
+
+
+def _count_shapes_in_diagram(diagram_el: ET.Element) -> int:
+    count = 0
+    for plane in diagram_el:
+        if _local_tag(plane.tag) != "bpmnplane":
+            continue
+        for shape in plane:
+            if _local_tag(shape.tag) in ("bpmnshape", "bpmnedge"):
+                count += 1
+    return count
+
+
 def _copy_diagram_for_process(root: ET.Element, process_id: str) -> Optional[ET.Element]:
     """Extract BPMNDiagram/BPMNPlane and shapes/edges that belong to the given process."""
     for el in root.iter():
@@ -60,6 +168,29 @@ def _copy_diagram_for_process(root: ET.Element, process_id: str) -> Optional[ET.
             if str(plane.attrib.get("bpmnElement") or "").strip() == process_id:
                 return el
     return None
+
+
+def _copy_diagram_element(diagram_el: ET.Element, defs: ET.Element) -> None:
+    """Copy a BPMNDiagram element into a new definitions tree, rewriting namespaces."""
+    new_diagram = ET.SubElement(defs, _ns("BPMNDiagram", BPMNDI_NS), diagram_el.attrib)
+    for plane in diagram_el:
+        if _local_tag(plane.tag) != "bpmnplane":
+            continue
+        new_plane = ET.SubElement(new_diagram, _ns("BPMNPlane", BPMNDI_NS), plane.attrib)
+        for shape in plane:
+            tag = _local_tag(shape.tag)
+            if tag in ("bpmnshape", "bpmnedge"):
+                new_shape = ET.SubElement(
+                    new_plane,
+                    _ns(tag.capitalize().replace("Bpmnshape", "BPMNShape").replace("Bpmnedge", "BPMNEdge"), BPMNDI_NS),
+                    shape.attrib,
+                )
+                for waypoint in shape:
+                    wp_tag = _local_tag(waypoint.tag)
+                    if wp_tag == "waypoint":
+                        ET.SubElement(new_shape, _ns("waypoint", DI_NS), waypoint.attrib)
+                    elif wp_tag == "bounds":
+                        ET.SubElement(new_shape, _ns("Bounds", DC_NS), waypoint.attrib)
 
 
 def _wrap_process_fragment(process_el: ET.Element, source_root: ET.Element) -> str:
@@ -84,29 +215,11 @@ def _wrap_process_fragment(process_el: ET.Element, source_root: ET.Element) -> s
 
     # Try to copy diagram for this process.
     diagram_el = _copy_diagram_for_process(source_root, process_id)
-    if diagram_el is not None:
-        # Strip namespace prefixes from source tag names — they will be re-serialized with
-        # bpmndi: prefix because of xmlns:bpmndi attribute above. ET does not allow easy
-        # namespace rewriting, so we rebuild the diagram tree using the declared prefixes.
-        new_diagram = ET.SubElement(defs, _ns("BPMNDiagram", BPMNDI_NS), diagram_el.attrib)
-        for plane in diagram_el:
-            if _local_tag(plane.tag) != "bpmnplane":
-                continue
-            new_plane = ET.SubElement(new_diagram, _ns("BPMNPlane", BPMNDI_NS), plane.attrib)
-            for shape in plane:
-                tag = _local_tag(shape.tag)
-                if tag in ("bpmnshape", "bpmnedge"):
-                    new_shape = ET.SubElement(new_plane, _ns(tag.capitalize().replace("Bpmnshape", "BPMNShape").replace("Bpmnedge", "BPMNEdge"), BPMNDI_NS), shape.attrib)
-                    for waypoint in shape:
-                        wp_tag = _local_tag(waypoint.tag)
-                        if wp_tag == "waypoint":
-                            ET.SubElement(new_shape, _ns("waypoint", DI_NS), waypoint.attrib)
-                        elif wp_tag == "bounds":
-                            ET.SubElement(new_shape, _ns("Bounds", DC_NS), waypoint.attrib)
+    if diagram_el is not None and _count_shapes_in_diagram(diagram_el) > 0:
+        _copy_diagram_element(diagram_el, defs)
     else:
-        # Minimal empty diagram so bpmn-js can render with auto-layout.
-        diagram = ET.SubElement(defs, _ns("BPMNDiagram", BPMNDI_NS), {"id": "BPMNDiagram_1"})
-        ET.SubElement(diagram, _ns("BPMNPlane", BPMNDI_NS), {"id": "BPMNPlane_1", "bpmnElement": process_id})
+        # Generate a minimal grid layout so bpmn-js can render the subprocess contents.
+        defs.append(_generate_di_for_process(new_process, process_id))
 
     return ET.tostring(defs, encoding="utf-8", xml_declaration=True).decode("utf-8")
 

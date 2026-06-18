@@ -864,6 +864,10 @@ def navigate_to_subprocess(
         lower = child_xml.lower()
         return "<bpmn:definitions" in lower or "<definitions" in lower
 
+    def _xml_has_minimal_di(child_xml: str) -> bool:
+        lower = child_xml.lower()
+        return "<bpmndi:bpmnshape" in lower or "<bpmndi:bpmnedge" in lower
+
     # Try existing child session
     existing = session_repo.find_by_parent_element(session_id, element_id, org_id=getattr(sess, "org_id", None))
     if existing:
@@ -872,7 +876,7 @@ def navigate_to_subprocess(
             raise HTTPException(status_code=child_err.status_code, detail=child_err.body)
         child = child_check
         child_xml = str(getattr(child, "bpmn_xml", "") or "").strip()
-        if not _xml_has_definitions(child_xml):
+        if not _xml_has_definitions(child_xml) or not _xml_has_minimal_di(child_xml):
             child_xml = _resolve_child_bpmn_xml(sess, element_id, called, request)
             child.bpmn_xml = child_xml
             session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)
