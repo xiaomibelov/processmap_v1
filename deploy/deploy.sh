@@ -29,6 +29,14 @@ sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^VIT
 
 echo "[DEPLOY] BUILD_ID=${BUILD_ID} branch=${BUILD_BRANCH} env=${BUILD_ENV}"
 
+# 2a. Regenerate frontend build-info.json so the deployed gateway shows the real SHA.
+export BUILD_ID
+export BUILD_BRANCH
+export BUILD_TIME
+export BUILD_ENV
+export BUILD_HOST="${BUILD_HOST:-clearvestnic.ru}"
+node frontend/scripts/generate-build-info.mjs
+
 # 3. Detect if full clean build is needed (package.json / Dockerfile / docker-compose changed)
 NEEDS_CLEAN=false
 if git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -qE '(package\.json|package-lock\.json|Dockerfile|docker-compose)'; then

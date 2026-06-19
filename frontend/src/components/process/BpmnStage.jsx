@@ -27,10 +27,12 @@ import {
 import { applyFullBpmnDecorSet } from "../../features/process/bpmn/stage/orchestration/runBpmnRenderDecorSync";
 import useBpmnSettledDecorFanout from "../../features/process/bpmn/stage/orchestration/useBpmnSettledDecorFanout";
 import useDiagramLoadStateMachine from "../../features/process/bpmn/stage/load/useDiagramLoadStateMachine";
+import DiagramLoadBoundary from "../../features/process/bpmn/stage/load/DiagramLoadBoundary";
 import {
   bindModelerStageEvents,
   bindViewerStageEvents,
 } from "../../features/process/bpmn/stage/orchestration/wireBpmnStageRuntimeEvents";
+import { bindSubprocessNavigationEvents } from "../../features/process/bpmn/stage/orchestration/bindSubprocessNavigationEvents";
 import {
   renderModelerDiagram,
   renderNewDiagramInModelerRuntime,
@@ -1609,6 +1611,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   onDiagramContextMenuRequest = null,
   onDiagramContextMenuDismiss = null,
   onNavigateToSubprocess = null,
+  childSessionDiscussionAggregates = null,
 }, ref) {
   const viewerEl = useRef(null);
   const editorEl = useRef(null);
@@ -1637,7 +1640,12 @@ const BpmnStage = forwardRef(function BpmnStage({
   const [xmlSaveBusy, setXmlSaveBusy] = useState(false);
   const [srcHint, setSrcHint] = useState("");
   const [err, setErr] = useState("");
-  const { isReady: loadStateIsReady } = useDiagramLoadStateMachine();
+  const {
+    isReady: loadStateIsReady,
+    transition: loadTransition,
+    loadState,
+    errorReason,
+  } = useDiagramLoadStateMachine({ warmTimeoutMs: 10000, coldTimeoutMs: 20000 });
   const diagramReady = loadStateIsReady;
   const bottlenecksRef = useRef([]);
   const markerStateRef = useRef({ viewer: [], editor: [] });
@@ -3757,6 +3765,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     buildInsertBetweenCandidate,
     cloneCompanionStateForCopiedElement,
     buildCopyElementOptions,
+    onNavigateToSubprocess: (elementId) => onNavigateToSubprocessRef.current?.(elementId),
     backendClipboard: createBackendBpmnClipboardController({
       getSessionId: () => String(activeSessionRef.current || sessionId || ""),
       refreshAfterPaste: async ({ sessionId: pastedSessionId }) => {
@@ -4229,6 +4238,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         propertiesOverlayAlwaysEnabledRef,
         propertiesOverlayAlwaysPreviewByElementIdRef,
         aiQuestionPanelTargetRef,
+        childSessionDiscussionAggregates,
       },
       utils: {
         asArray,
@@ -4465,6 +4475,10 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   function applyUserNotesDecor(inst, kind) {
     return decorManager.applyUserNotesDecor(createDecorCtx(inst, kind));
+  }
+
+  function applySubprocessDiscussionDecor(inst, kind) {
+    return decorManager.applySubprocessDiscussionDecor(createDecorCtx(inst, kind));
   }
 
   function clearStepTimeDecor(inst, kind) {
@@ -5058,14 +5072,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           contextMenuInteractionRef,
           viewportCuller: viewerCullerRef.current,
         });
-        v.on("element.dblclick", (event) => {
-          const el = event.element;
-          if (!el || el.type !== "bpmn:CallActivity") return;
-          const cb = onNavigateToSubprocessRef.current;
-          if (typeof cb === "function") {
-            cb(el.id);
-          }
-        });
+        bindSubprocessNavigationEvents(v, onNavigateToSubprocessRef);
         } catch {
         }
       viewerRef.current = v;
@@ -5169,6 +5176,7 @@ const BpmnStage = forwardRef(function BpmnStage({
             applyShapeReplacePost,
             viewportCuller: modelerCullerRef.current,
           });
+          bindSubprocessNavigationEvents(m, onNavigateToSubprocessRef);
           modelerDecorBoundInstanceRef.current = m;
         }
       } catch {
@@ -5191,6 +5199,7 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   function createRenderLifecycleCtx() {
     return {
+      loadTransition,
       ensureViewer,
       invalidateShapeTitleLookup,
       viewerRef,
@@ -5218,6 +5227,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       applyBottleneckDecor,
       applyInterviewDecor,
       applyUserNotesDecor,
+      applySubprocessDiscussionDecor,
       applyStepTimeDecor,
       modelerImportInFlightRef,
       modelerInstanceMetaRef,
@@ -5880,6 +5890,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     activeSessionRef.current = sid;
     userMutationObservedRef.current = false;
     ensureEpochRef.current += 1;
+    loadTransition("reset");
     robotMetaHydrateStateRef.current = { key: "" };
     camundaHydrateStateRef.current = { key: "" };
     importCamundaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
@@ -6412,34 +6423,36 @@ const BpmnStage = forwardRef(function BpmnStage({
         />
       </div>
 
-      <div className={view === "xml" ? "bpmnStack hidden" : "bpmnStack"}>
-        {diagramReady ? (
+      <DiagramLoadBoundary loadState={loadState} errorReason={errorReason}>
+        <div className={view === "xml" ? "bpmnStack hidden" : "bpmnStack"}>
+          {diagramReady ? (
+            <div
+              data-testid="diagram-ready"
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: 1,
+                height: 1,
+                opacity: 0,
+                pointerEvents: "none",
+              }}
+            />
+          ) : null}
           <div
-            data-testid="diagram-ready"
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: 1,
-              height: 1,
-              opacity: 0,
-              pointerEvents: "none",
-            }}
-          />
-        ) : null}
-        <div
-          className={"bpmnLayer bpmnLayer--diagram " + (view === "viewer" ? "on" : "off")}
-          style={{ position: "absolute", inset: 0, display: view === "viewer" ? "block" : "none" }}
-        >
-          <div className="bpmnCanvas" ref={viewerEl} style={{ width: "100%", height: "100%" }} />
+            className={"bpmnLayer bpmnLayer--diagram " + (view === "viewer" ? "on" : "off")}
+            style={{ position: "absolute", inset: 0, display: view === "viewer" ? "block" : "none" }}
+          >
+            <div className="bpmnCanvas" ref={viewerEl} style={{ width: "100%", height: "100%" }} />
+          </div>
+          <div
+            className={"bpmnLayer bpmnLayer--editor " + ((view === "editor" || view === "diagram") ? "on" : "off")}
+            style={{ position: "absolute", inset: 0, display: (view === "editor" || view === "diagram") ? "block" : "none" }}
+          >
+            <div className="bpmnCanvas" ref={editorEl} style={{ width: "100%", height: "100%" }} />
+          </div>
         </div>
-        <div
-          className={"bpmnLayer bpmnLayer--editor " + ((view === "editor" || view === "diagram") ? "on" : "off")}
-          style={{ position: "absolute", inset: 0, display: (view === "editor" || view === "diagram") ? "block" : "none" }}
-        >
-          <div className="bpmnCanvas" ref={editorEl} style={{ width: "100%", height: "100%" }} />
-        </div>
-      </div>
+      </DiagramLoadBoundary>
     </div>
   );
 });

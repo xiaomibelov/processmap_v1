@@ -50,6 +50,21 @@ test("subprocess action matrix keeps open_inside action with updated label", () 
   assert.equal(openInside?.label, "Открыть подпроцесс");
 });
 
+test("subprocess action matrix includes navigate_to_subprocess", () => {
+  const ids = actionIds({ bpmnType: "bpmn:SubProcess" });
+  assert.equal(ids.includes("navigate_to_subprocess"), true);
+});
+
+test("call_activity action matrix includes navigate_to_subprocess", () => {
+  const ids = actionIds({ bpmnType: "bpmn:CallActivity" });
+  assert.equal(ids[0], "navigate_to_subprocess");
+  assert.equal(ids.includes("open_properties"), true);
+});
+
+test("target kind detection recognizes call_activity", () => {
+  assert.equal(resolveBpmnContextTargetKind({ bpmnType: "bpmn:CallActivity" }), "call_activity");
+});
+
 test("gateway action matrix includes add_outgoing_branch", () => {
   const ids = actionIds({ bpmnType: "bpmn:ExclusiveGateway" });
   assert.equal(ids.includes("add_outgoing_branch"), true);

@@ -201,6 +201,38 @@ export function useSessionNoteAggregate(sessionId) {
   return aggregate;
 }
 
+export function useChildSessionNoteAggregatesByElementId(parentSessionId, sessions = []) {
+  const childSessions = useMemo(() => {
+    const pid = String(parentSessionId || "").trim();
+    if (!pid) return [];
+    return sessions.filter((s) => {
+      const sParent = String(s?.parent_session_id || "").trim();
+      const eid = String(s?.element_id_in_parent || "").trim();
+      return sParent === pid && eid.length > 0;
+    });
+  }, [parentSessionId, sessions]);
+
+  const childIds = useMemo(
+    () => childSessions.map((s) => String(s?.id || s?.session_id || "").trim()).filter(Boolean),
+    [childSessions],
+  );
+  const aggregates = useSessionNoteAggregates(childIds);
+
+  return useMemo(() => {
+    const map = new Map();
+    for (const s of childSessions) {
+      const sid = String(s?.id || s?.session_id || "").trim();
+      const eid = String(s?.element_id_in_parent || "").trim();
+      if (!sid || !eid) continue;
+      const agg = aggregates.get(sid) || null;
+      if (agg && Number(agg.open_notes_count || 0) > 0) {
+        map.set(eid, agg);
+      }
+    }
+    return map;
+  }, [childSessions, aggregates]);
+}
+
 export function useSessionNoteAggregates(sessionIds = []) {
   const idsKey = normalizeSessionAggregateIds(sessionIds).join("\u001f");
   const ids = useMemo(() => idsKey.split("\u001f").filter(Boolean), [idsKey]);

@@ -140,6 +140,7 @@ export default function AppShell({
   onDismissSessionNavNotice,
   onReturnToSessionList,
   onNavigateToSubprocess,
+  childSessionDiscussionAggregates,
   mentionNotifications,
   noteNotifications,
   noteNotificationsAvailable = false,
@@ -200,67 +201,63 @@ export default function AppShell({
 
   return (
     <div className={"appRoot graphite " + (hasActiveSession && effectiveLeftHidden ? "leftHidden" : "")}>
-      <TopBar
-        orgs={orgs}
-        activeOrgId={activeOrgId}
-        onOrgChange={onOrgChange}
-        onOpenOrgSettings={onOpenOrgSettings}
-        projects={projects}
-        projectId={projectId}
-        onDeleteProject={onDeleteProject}
-        canManageProjectEntities={canManageProjectEntities}
-        onProjectChange={onProjectChange}
-        sessions={sessions}
-        sessionId={String(shellSessionId || sessionId || "").trim()}
-        sessionStatus={sessionStatus}
-        onDeleteSession={onDeleteSession}
-        onChangeSessionStatus={onChangeSessionStatus}
-        onOpenSession={onOpenSession}
-        onOpenWorkspace={workspaceBackHandler}
-        onOpenDiscussionNotifications={onOpenDiscussionNotifications}
-        onNewProject={onNewProject}
-        onNewBackendSession={onNewBackendSession}
-        draft={draft}
-        mentionNotifications={mentionNotifications}
-        noteNotifications={noteNotifications}
-        noteNotificationsAvailable={noteNotificationsAvailable}
-        onOpenMentionNotification={onOpenMentionNotification}
-        onRefreshMentionNotifications={onRefreshMentionNotifications}
-      />
+      <div className="appTopStack">
+        <TopBar
+          orgs={orgs}
+          activeOrgId={activeOrgId}
+          onOrgChange={onOrgChange}
+          onOpenOrgSettings={onOpenOrgSettings}
+          projects={projects}
+          projectId={projectId}
+          onDeleteProject={onDeleteProject}
+          canManageProjectEntities={canManageProjectEntities}
+          onProjectChange={onProjectChange}
+          sessions={sessions}
+          sessionId={String(shellSessionId || sessionId || "").trim()}
+          sessionStatus={sessionStatus}
+          onDeleteSession={onDeleteSession}
+          onChangeSessionStatus={onChangeSessionStatus}
+          onOpenSession={onOpenSession}
+          onOpenWorkspace={workspaceBackHandler}
+          onOpenDiscussionNotifications={onOpenDiscussionNotifications}
+          onNewProject={onNewProject}
+          onNewBackendSession={onNewBackendSession}
+          draft={draft}
+          mentionNotifications={mentionNotifications}
+          noteNotifications={noteNotifications}
+          noteNotificationsAvailable={noteNotificationsAvailable}
+          onOpenMentionNotification={onOpenMentionNotification}
+          onRefreshMentionNotifications={onRefreshMentionNotifications}
+        />
 
-      <SubprocessBreadcrumbs
-        breadcrumbs={subprocessBreadcrumbs}
-        onNavigate={onBreadcrumbNavigate}
-        onBack={onReturnToParent}
-      />
+        <AppUpdateBanner
+          visible={appUpdate.visible}
+          runtime={appUpdate.runtime}
+          refreshRisk={appUpdate.refreshRisk}
+          refreshBusy={appUpdate.refreshBusy}
+          refreshError={appUpdate.refreshError}
+          onRefresh={appUpdate.refresh}
+          onDismiss={appUpdate.dismiss}
+        />
 
-      <AppUpdateBanner
-        visible={appUpdate.visible}
-        runtime={appUpdate.runtime}
-        refreshRisk={appUpdate.refreshRisk}
-        refreshBusy={appUpdate.refreshBusy}
-        refreshError={appUpdate.refreshError}
-        onRefresh={appUpdate.refresh}
-        onDismiss={appUpdate.dismiss}
-      />
-
-      {sessionNavNotice ? (
-        <div className="mx-3 mt-2 rounded-lg border border-warning/45 bg-warning/10 px-3 py-2 text-xs text-warning">
-          <div className="flex flex-wrap items-center gap-2">
-            <strong>{sessionNavNoticeCopy.title}</strong>
-            <span className="text-warning/90">{String(sessionNavNotice?.message || sessionNavNoticeCopy.fallbackMessage)}</span>
-            {Number(sessionNavNotice?.status || 0) > 0 ? (
-              <span className="badge warn">HTTP {Number(sessionNavNotice?.status || 0)}</span>
-            ) : null}
-            <button type="button" className="secondaryBtn tinyBtn" onClick={() => onReturnToSessionList?.()}>
-              Вернуться к списку
-            </button>
-            <button type="button" className="secondaryBtn tinyBtn" onClick={() => onDismissSessionNavNotice?.()}>
-              Скрыть
-            </button>
+        {sessionNavNotice ? (
+          <div className="mx-3 mt-2 rounded-lg border border-warning/45 bg-warning/10 px-3 py-2 text-xs text-warning">
+            <div className="flex flex-wrap items-center gap-2">
+              <strong>{sessionNavNoticeCopy.title}</strong>
+              <span className="text-warning/90">{String(sessionNavNotice?.message || sessionNavNoticeCopy.fallbackMessage)}</span>
+              {Number(sessionNavNotice?.status || 0) > 0 ? (
+                <span className="badge warn">HTTP {Number(sessionNavNotice?.status || 0)}</span>
+              ) : null}
+              <button type="button" className="secondaryBtn tinyBtn" onClick={() => onReturnToSessionList?.()}>
+                Вернуться к списку
+              </button>
+              <button type="button" className="secondaryBtn tinyBtn" onClick={() => onDismissSessionNavNotice?.()}>
+                Скрыть
+              </button>
+            </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
       <div className={workspaceClass}>
         <div className={effectiveLeftHidden ? "workspaceLeft workspaceLeft--rail" : `workspaceLeft ${leftCompact ? "workspaceLeft--compact" : "flex min-w-0 flex-col"}`.trim()}>
@@ -276,6 +273,15 @@ export default function AppShell({
           ) : null}
         </div>
         <div className="workspaceMain relative rounded-xl2 border border-border bg-panel">
+          {subprocessBreadcrumbs?.length >= 2 ? (
+            <div className="subprocessBreadcrumbsOnCanvas">
+              <SubprocessBreadcrumbs
+                breadcrumbs={subprocessBreadcrumbs}
+                onNavigate={onBreadcrumbNavigate}
+                onBack={onReturnToParent}
+              />
+            </div>
+          ) : null}
           {updatesOpen ? (
             <AppUpdatesPage onClose={closeUpdatesPage} />
           ) : (
@@ -318,6 +324,7 @@ export default function AppShell({
               onDiscussionLinkedElementFocusResult={onDiscussionLinkedElementFocusResult}
               onOpenNotesDiscussions={onOpenNotesDiscussions}
               onNavigateToSubprocess={onNavigateToSubprocess}
+              childSessionDiscussionAggregates={childSessionDiscussionAggregates}
             />
           )}
         </div>

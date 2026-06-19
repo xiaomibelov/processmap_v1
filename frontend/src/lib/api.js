@@ -1690,11 +1690,11 @@ export async function apiWipeDevAll() {
 }
 
 export async function apiGetFeatureFlags() {
-  const r = okOrError(await request("/api/feature-flags"));
+  const r = okOrError(await request(apiRoutes.featureFlags.get()));
   return r.ok ? { ok: true, flags: r.data?.flags || {} } : r;
 }
 
 export async function apiPatchFeatureFlags(flags) {
-  const r = okOrError(await request("/api/admin/feature-flags", { method: "PATCH", body: JSON.stringify({ flags }) }));
+  const r = okOrError(await request(apiRoutes.admin.featureFlagsPatch(), { method: "PATCH", body: JSON.stringify({ flags }) }));
   return r.ok ? { ok: true, flags: r.data?.flags || {} } : r;
 }

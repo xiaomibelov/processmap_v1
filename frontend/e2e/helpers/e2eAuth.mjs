@@ -117,7 +117,9 @@ export async function apiLogin(request, options = {}) {
     if (meRes.ok()) {
       const meText = await meRes.text();
       const meBody = safeJsonParse(meText);
-      const user = meBody?.user && typeof meBody.user === "object" ? meBody.user : {};
+      const user = (meBody?.user && typeof meBody.user === "object")
+        ? meBody.user
+        : (meBody && typeof meBody === "object" ? meBody : {});
       activeOrgId = String(user?.active_org_id || user?.default_org_id || "").trim();
     }
   } catch {
