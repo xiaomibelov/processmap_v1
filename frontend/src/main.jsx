@@ -6,6 +6,13 @@ import { installGlobalFrontendTelemetry } from "./features/telemetry/telemetryCl
 import "./styles/tailwind.css";
 import "./styles/legacy/legacy_bpmn.css";
 
+// Reference the deploy fingerprint so it becomes part of the entry chunk
+// content and forces a new hashed filename on every stage deploy.
+const deployFingerprint = __DEPLOY_FINGERPRINT__;
+if (typeof window !== "undefined" && deployFingerprint) {
+  window.__DEPLOY_FINGERPRINT__ = deployFingerprint;
+}
+
 const themeKey = "fpc_theme";
 try {
   const stored = String(window.localStorage.getItem(themeKey) || "").trim();
