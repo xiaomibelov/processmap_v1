@@ -37,12 +37,26 @@ jobs:
 
             echo "[deploy-stage-ref] requested ref: ${DEPLOY_REF}"
             git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
+            # Force a clean checkout of source directories to eliminate stale working-tree files
+            rm -rf backend frontend deploy Dockerfile docker-compose.yml docker-compose.stage.yml
+
             git fetch --prune origin "${DEPLOY_REF}"
             DEPLOY_SHA="$(git rev-parse --verify FETCH_HEAD)"
             echo "[deploy-stage-ref] resolved sha: ${DEPLOY_SHA}"
 
             # Pull requested source code only, preserve server configs
             git checkout "${DEPLOY_SHA}" -- backend frontend Dockerfile deploy docker-compose.yml docker-compose.stage.yml
+
+            echo "[deploy-stage-ref] source diagnostics:"
+            git status --short
+            git diff --stat HEAD || true
+            echo "[deploy-stage-ref] file checksums after checkout:"
+            sha256sum frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
+            echo "[deploy-stage-ref] App.jsx sessions:"
+            grep -n "const \\[sessions" frontend/src/App.jsx || echo "NOT FOUND"
+            grep -n "sessions={sessions}" frontend/src/App.jsx || echo "NOT FOUND"
+            echo "[deploy-stage-ref] NotesMvpPanel sessions prop:"
+            grep -n "sessions = \\[\\]" frontend/src/components/NotesMvpPanel.jsx || echo "NOT FOUND"
 
             deploy/scripts/stage_freshness_proof.sh prepare-source \
               --requested-ref "${DEPLOY_REF}" \

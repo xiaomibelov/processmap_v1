@@ -31,6 +31,9 @@ jobs:
 
             # Pull latest source code only, preserve server configs
             git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
+            # Force a clean checkout of source directories to eliminate stale working-tree files
+            rm -rf backend frontend deploy Dockerfile docker-compose.yml docker-compose.stage.yml
+
             git fetch origin main
             DEPLOY_SHA="$(git rev-parse --verify origin/main)"
             echo "[deploy-stage] resolved sha: ${DEPLOY_SHA}"
@@ -39,6 +42,8 @@ jobs:
             echo "[deploy-stage] source diagnostics:"
             git status --short
             git diff --stat HEAD || true
+            echo "[deploy-stage] file checksums after checkout:"
+            sha256sum frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
             echo "[deploy-stage] App.jsx sessions:"
             grep -n "const \[sessions" frontend/src/App.jsx || echo "NOT FOUND"
             grep -n "sessions={sessions}" frontend/src/App.jsx || echo "NOT FOUND"
