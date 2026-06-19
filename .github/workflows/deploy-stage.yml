@@ -31,13 +31,14 @@ jobs:
 
             # Pull latest source code only, preserve server configs
             git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
-            # Force a clean checkout of source directories to eliminate stale working-tree files
-            rm -rf backend frontend deploy Dockerfile docker-compose.yml docker-compose.stage.yml
-
             git fetch origin main
             DEPLOY_SHA="$(git rev-parse --verify origin/main)"
             echo "[deploy-stage] resolved sha: ${DEPLOY_SHA}"
-            git checkout "${DEPLOY_SHA}" -- backend frontend Dockerfile deploy docker-compose.yml docker-compose.stage.yml
+
+            # Ensure frontend source files are really updated even if marked assume-unchanged/skip-worktree
+            git update-index --no-assume-unchanged -- frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
+            git update-index --no-skip-worktree -- frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
+            git checkout -f "${DEPLOY_SHA}" -- backend frontend Dockerfile deploy docker-compose.yml docker-compose.stage.yml
 
             echo "[deploy-stage] source diagnostics:"
             git status --short
