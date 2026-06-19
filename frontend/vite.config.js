@@ -62,6 +62,7 @@ export default defineConfig({
     __BUILD_TIME__: JSON.stringify(process.env.VITE_BUILD_TIME || new Date().toISOString()),
     __BUILD_BRANCH__: JSON.stringify(process.env.VITE_BUILD_BRANCH || "dev"),
     __BUILD_ENV__: JSON.stringify(process.env.VITE_BUILD_ENV || "dev"),
+    __DEPLOY_FINGERPRINT__: JSON.stringify(stageDeployFingerprintMeta?.fingerprint || ""),
   },
   plugins: [
     react(),
