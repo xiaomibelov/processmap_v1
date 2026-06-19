@@ -48,13 +48,30 @@ jobs:
               -p processmap_stage \
               build --no-cache api gateway
 
-            # Restart updated containers (force-recreate to guarantee the new image is used)
+            # Diagnostics: show current gateway mounts/assets before recreate
+            echo "[deploy-stage] current gateway mounts:"
+            docker inspect processmap_stage-gateway-1 --format='{{json .Mounts}}' 2>/dev/null || true
+            echo "[deploy-stage] current gateway assets:"
+            docker exec processmap_stage-gateway-1 sh -c 'ls -la /usr/share/nginx/html/assets/index-*.js 2>/dev/null || true' 2>/dev/null || true
+
+            # Remove the old gateway container and any attached volumes so stale statics cannot survive
+            docker compose -p processmap_stage rm -fsv gateway 2>/dev/null || true
+            # Drop any project named volume that could be masking /usr/share/nginx/html
+            docker volume ls -q | grep '^processmap_stage_gateway' | xargs -r docker volume rm 2>/dev/null || true
+
+            # Start fresh containers (renew anonymous volumes to pull files from the new image)
             APP_ENV_FILE=.env.stage docker compose \
               --env-file .env.stage \
               -f docker-compose.yml \
               -f docker-compose.stage.yml \
               -p processmap_stage \
-              up -d --no-deps --force-recreate api gateway
+              up -d --no-deps --force-recreate -V api gateway
+
+            # Diagnostics after recreate
+            echo "[deploy-stage] new gateway mounts:"
+            docker inspect processmap_stage-gateway-1 --format='{{json .Mounts}}' 2>/dev/null || true
+            echo "[deploy-stage] new gateway assets:"
+            docker exec processmap_stage-gateway-1 sh -c 'ls -la /usr/share/nginx/html/assets/index-*.js 2>/dev/null || true' 2>/dev/null || true
 
             deploy/scripts/stage_freshness_proof.sh verify-chain \
               --requested-ref "${REQUESTED_REF}" \
