@@ -372,8 +372,28 @@ function ProcessStage({
   discussionLinkedElementFocusIntent = null,
   onDiscussionLinkedElementFocusResult = null,
   onNavigateToSubprocess = null,
+  childSessionDiscussionAggregates,
 }) {
   const sid = String(sessionId || "");
+
+  function isDescendantSessionSid(childSid, ancestorSid, sessionsList) {
+    if (!childSid || !ancestorSid || childSid === ancestorSid) return childSid === ancestorSid;
+    const byId = new Map();
+    for (const s of Array.isArray(sessionsList) ? sessionsList : []) {
+      const id = String(s?.session_id || s?.id || "").trim();
+      if (id) byId.set(id, s);
+    }
+    let current = childSid;
+    for (let i = 0; i < 50; i += 1) {
+      const s = byId.get(current);
+      const parent = String(s?.parent_session_id || s?.parentSessionId || "").trim();
+      if (!parent) return false;
+      if (parent === ancestorSid) return true;
+      current = parent;
+    }
+    return false;
+  }
+
   const { user } = useAuth();
   const bpmnRef = useRef(null);
   const importInputRef = useRef(null);
@@ -5470,7 +5490,9 @@ function ProcessStage({
     if (!intent) return;
     const intentSid = String(intent.sid || "").trim();
     const elementId = toNodeId(intent.elementId || intent.element_id);
-    if (!intentSid || intentSid !== sid || !elementId) return;
+    const isTargetSession =
+      intentSid === sid || isDescendantSessionSid(sid, intentSid, sessions);
+    if (!intentSid || !isTargetSession || !elementId) return;
     logDiscussionFocusDiag("stage-intent", {
       sid,
       intentSid,
@@ -5509,7 +5531,7 @@ function ProcessStage({
         ready = await Promise.resolve(
           bpmnRef.current?.whenReady?.({
             timeoutMs: 5000,
-            expectedSid: intentSid,
+            expectedSid: sid,
           }),
         );
       } catch {
@@ -5526,16 +5548,63 @@ function ProcessStage({
         complete(false, "not_ready");
         return;
       }
-      const selected = bpmnRef.current?.selectElements?.([elementId], {
+
+      // Try to select the element on the current (parent) canvas first.
+      let selected = bpmnRef.current?.selectElements?.([elementId], {
         focusFirst: false,
         source: "discussion_linked_element",
       });
-      logDiscussionFocusDiag("stage-select", {
+      logDiscussionFocusDiag("stage-select-first", {
         requestId,
         elementId,
         selected,
       });
+
+      // If the element is hidden inside a collapsed SubProcess, expand the
+      // ancestors and try again — without leaving the parent diagram.
       if (!selected?.ok) {
+        const expandResult = bpmnRef.current?.expandSubprocessAncestors?.(elementId);
+        logDiscussionFocusDiag("stage-expand-ancestors", {
+          requestId,
+          elementId,
+          expandResult,
+        });
+        if (expandResult?.ok && expandResult.expanded && expandResult.expandedIds?.length) {
+          setInfoMsg("SubProcess развёрнут");
+          window.setTimeout(() => setInfoMsg(""), 2000);
+          // Wait for bpmn-js to re-render the expanded children.
+          await new Promise((resolve) => window.setTimeout(resolve, 350));
+          selected = bpmnRef.current?.selectElements?.([elementId], {
+            focusFirst: false,
+            source: "discussion_linked_element",
+          });
+          logDiscussionFocusDiag("stage-select-after-expand", {
+            requestId,
+            elementId,
+            selected,
+          });
+        }
+      }
+
+      // Fallback to drilldown only when the element is truly not on the parent
+      // canvas (e.g. it belongs to an external CallActivity process).
+      if (!selected?.ok) {
+        const subprocessAncestorId = bpmnRef.current?.findSubprocessAncestor?.(elementId);
+        logDiscussionFocusDiag("stage-select-fallback", {
+          requestId,
+          elementId,
+          subprocessAncestorId,
+        });
+        if (subprocessAncestorId) {
+          logDiscussionFocusDiag("stage-drilldown", {
+            requestId,
+            elementId,
+            subprocessAncestorId,
+            sid,
+          });
+          onNavigateToSubprocess?.(subprocessAncestorId, elementId);
+          return;
+        }
         setGenErr("Элемент больше не найден на схеме.");
         complete(false, "missing_element");
         return;
@@ -5571,7 +5640,7 @@ function ProcessStage({
       complete(true);
     };
     void run();
-  }, [discussionLinkedElementFocusIntent, onDiscussionLinkedElementFocusResult, setTab, sid, tab, toNodeId, toText]);
+  }, [discussionLinkedElementFocusIntent, onDiscussionLinkedElementFocusResult, onNavigateToSubprocess, sessions, setTab, sid, tab, toNodeId, toText]);
 
   useEffect(() => {
     setToolbarMenuOpen(false);
@@ -6186,6 +6255,7 @@ function ProcessStage({
         onNavigateToSubprocess(elementId);
       }
     },
+    childSessionDiscussionAggregates,
     withHybridOverlayGuard,
   });
 

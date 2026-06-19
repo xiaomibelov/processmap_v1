@@ -440,24 +440,43 @@ def _is_report_active(report_id: str) -> bool:
 
 # DEPRECATED: moved to utils/auth_helpers.py — kept for backward compatibility during migration.
 def _set_refresh_cookie(resp: Response, refresh_token: str, max_age_seconds: int) -> None:
+    secure = refresh_cookie_secure()
+    samesite = refresh_cookie_samesite()
+    # Use root path so the cookie is visible and replaceable on every route.
+    # Also clear any legacy cookie scoped to /api/auth/ to avoid duplicate cookies.
     resp.set_cookie(
         key="refresh_token",
         value=str(refresh_token or ""),
         httponly=True,
-        secure=refresh_cookie_secure(),
-        samesite=refresh_cookie_samesite(),
+        secure=secure,
+        samesite=samesite,
         max_age=max(1, int(max_age_seconds)),
+        path="/",
+    )
+    resp.delete_cookie(
+        key="refresh_token",
         path="/api/auth/",
+        secure=secure,
+        samesite=samesite,
     )
 
 
 # DEPRECATED: moved to utils/auth_helpers.py — kept for backward compatibility during migration.
 def _clear_refresh_cookie(resp: Response) -> None:
+    secure = refresh_cookie_secure()
+    samesite = refresh_cookie_samesite()
+    # Clear both current root path and legacy /api/auth/ path.
+    resp.delete_cookie(
+        key="refresh_token",
+        path="/",
+        secure=secure,
+        samesite=samesite,
+    )
     resp.delete_cookie(
         key="refresh_token",
         path="/api/auth/",
-        secure=refresh_cookie_secure(),
-        samesite=refresh_cookie_samesite(),
+        secure=secure,
+        samesite=samesite,
     )
 
 

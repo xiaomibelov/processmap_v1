@@ -1,0 +1,67 @@
+{
+  "contour": "premium-urgent-task-analytics-ui-ux-addi-mqdo4sea",
+  "type": "feat",
+  "status": "ready_for_execution",
+  "branch": "feature/analytics-fields-export",
+  "workspace": "/opt/processmap-test",
+  "gateway_source": "/root/processmap_v1",
+  "head": "4e8c0939b4c03ebc21297edb179866c61a1d75e1",
+  "origin_main": "e1143c14f901882c12dc550f71bfd6757d60b882",
+  "estimated_hours": 6,
+  "actual_hours": 0,
+  "started_at": "2026-06-14T10:55:50Z",
+  "phases": [
+    {
+      "id": 0,
+      "name": "pre-flight",
+      "status": "done",
+      "description": "Git state, build baseline, analytics tests baseline recorded."
+    },
+    {
+      "id": 1,
+      "name": "data-model-pass-through",
+      "status": "pending",
+      "description": "Preserve backend fields in api.js; make all new columns filterable."
+    },
+    {
+      "id": 2,
+      "name": "ui-ux-polish",
+      "status": "pending",
+      "description": "Active-filter empty state, responsive card collapse, export metadata."
+    },
+    {
+      "id": 3,
+      "name": "tests",
+      "status": "pending",
+      "description": "Add/update explicit tests for table render, filter apply, export download."
+    },
+    {
+      "id": 4,
+      "name": "gateway-sync",
+      "status": "pending",
+      "description": "Sync frontend changes to /root/processmap_v1 and build."
+    },
+    {
+      "id": 5,
+      "name": "deploy-and-runtime-proof",
+      "status": "pending",
+      "description": "Deploy to clearvestnic.ru:5177 and capture runtime evidence."
+    },
+    {
+      "id": 6,
+      "name": "review-handoff",
+      "status": "pending",
+      "description": "Worker report, mirror to Obsidian, READY_FOR_REVIEW."
+    }
+  ],
+  "risks": [
+    "Backend fields missing: some columns will display '—' until backend returns data.",
+    "Pre-existing ProcessAnalyticsHub.test.mjs failures are unrelated and must not be fixed in this contour.",
+    "Client-side export only; >10k rows may need a future server-side endpoint."
+  ],
+  "notes": [
+    "Core analytics table/export/filter scaffolding already exists on the branch.",
+    "RAG query returned invalid_user; proceeding from direct codebase inspection.",
+    "Build passes in /opt/processmap-test/frontend before work starts."
+  ]
+}

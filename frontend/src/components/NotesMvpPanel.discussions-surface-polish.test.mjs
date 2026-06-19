@@ -156,7 +156,7 @@ test("Discussion cards and messages render authorship without promoting raw tech
   assert.match(notesMvpPanelSource, /setUserLabel\(out, comment\?\.author_user_id, comment\?\.author_full_name, comment\?\.author_email\);/);
   assert.match(notesMvpPanelSource, /const author = authorLabel\(comment\?\.author_user_id, authorLabelsById, viewerUserId\);/);
   assert.match(notesMvpPanelSource, /Создал \{threadCreatorLabel\(thread, authorLabelsById, viewerUserId\)\}/);
-  assert.match(notesMvpPanelSource, /Последний: \{threadLastAuthorLabel\(thread, authorLabelsById, viewerUserId\)\}/);
+  assert.match(notesMvpPanelSource, /последний ответ \{threadLastAuthorLabel\(thread, authorLabelsById, viewerUserId\)\}/);
   assert.match(notesMvpPanelSource, /const mentionLabel = firstMentionLabel\(thread, authorLabelsById, viewerUserId\);/);
   assert.match(notesMvpPanelSource, /authorLabel\(mention\?\.mentioned_user_id, authorLabelsById, viewerUserId\)/);
   assert.doesNotMatch(notesMvpPanelSource, /const author = authorLabel\(comment\?\.author_user_id\);/);
@@ -167,15 +167,19 @@ test("Discussion chat surface keeps compact density without dropping primitives"
   assert.match(notesMvpPanelSource, /function discussionThreadRowClass\(\{ active, attentionActive \}\)/);
   assert.match(notesMvpPanelSource, /function discussionMessageClass\(focused\)/);
   assert.match(notesMvpPanelSource, /function discussionQuietActionClass\(tone = "neutral"\)/);
-  assert.match(notesMvpPanelSource, /w-\[min\(1120px,calc\(100vw-2\.5rem\)\)\]/);
-  assert.match(notesMvpPanelSource, /grid-cols-\[minmax\(0,1fr\)_minmax\(286px,320px\)\]/);
+  assert.match(notesMvpPanelSource, /const DEFAULT_PANEL_WIDTH = 480;/);
+  assert.match(notesMvpPanelSource, /const MAX_PANEL_WIDTH = 800;/);
+  assert.match(notesMvpPanelSource, /lg:w-\[var\(--panel-width\)\]/);
+  assert.match(notesMvpPanelSource, /grid-cols-\[minmax\(0,1fr\)_220px\]/);
+  assert.match(notesMvpPanelSource, /pointer-events-none/);
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-message-scroll" className="min-h-0 overflow-auto bg-bg\/10 px-4 py-3"/);
   assert.match(notesMvpPanelSource, /className=\{`rounded-lg border px-3 py-2\.5 transition \$\{discussionMessageClass\(commentFocused\)\}`\}/);
   assert.match(notesMvpPanelSource, /border-l-2 border-info\/45[\s\S]{0,140}data-testid="notes-comment-reply-quote"/);
   assert.match(notesMvpPanelSource, /border-l-2 border-info\/45[\s\S]{0,140}data-testid="notes-reply-preview"/);
-  assert.match(notesMvpPanelSource, /className=\{`relative rounded-lg border px-3 py-2\.5 pl-4 text-left transition \$\{discussionThreadRowClass\(\{ active, attentionActive \}\)\}`\}/);
-  assert.match(notesMvpPanelSource, /className="mt-1 line-clamp-1 text-\[11px\] leading-snug text-muted">\s*\{commentBodyPreview\(threadPreview\(thread\), "Без текста"\)\}/);
-  assert.match(notesMvpPanelSource, /\{meta\.relation\} · Создал \{threadCreatorLabel\(thread, authorLabelsById, viewerUserId\)\}/);
+  assert.match(notesMvpPanelSource, /className=\{discussionThreadRowClass\(\{ active, attentionActive \}\)\}/);
+  assert.match(notesMvpPanelSource, /className="mt-1 line-clamp-2 text-\[12px\] leading-snug text-\[#6b7280\]">\s*\{commentBodyPreview\(threadPreview\(thread\), "Без текста"\)\}/);
+  assert.match(notesMvpPanelSource, /<span>Создал \{threadCreatorLabel\(thread, authorLabelsById, viewerUserId\)\}<\/span>/);
+  assert.match(notesMvpPanelSource, /<span>последний ответ \{threadLastAuthorLabel\(thread, authorLabelsById, viewerUserId\)\}<\/span>/);
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-unread-badge"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-comment-reply-action"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-comment-edit-action"/);
@@ -203,7 +207,7 @@ test("Discussions render entity priority and attention from the thread source of
   assert.match(notesMvpPanelSource, /apiListMentionableUsers/);
   assert.match(notesMvpPanelSource, /mention_user_ids/);
   assert.match(notesMvpPanelSource, /processmap:note-mentions-changed/);
-  assert.match(notesMvpPanelSource, /data-testid="notes-thread-priority-select"/);
+  assert.match(notesMvpPanelSource, /data-testid=\{`notes-thread-priority-\$\{item\.value\}`\}/);
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-attention-toggle"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-attention-acknowledge"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-attention-acknowledged"/);
@@ -211,8 +215,9 @@ test("Discussions render entity priority and attention from the thread source of
   assert.match(notesMvpPanelSource, /attention_acknowledged_by_me/);
   assert.match(notesMvpPanelSource, /priority: createPriority/);
   assert.match(notesMvpPanelSource, /requires_attention: createRequiresAttention/);
-  assert.match(notesMvpPanelSource, /patchThreadMeta\(\{ priority: event\.target\.value \}\)/);
-  assert.match(notesMvpPanelSource, /patchThreadMeta\(\{ requires_attention: !requiresAttention\(selectedThread\) \}\)/);
+  assert.match(notesMvpPanelSource, /patchThreadMeta\(\{ priority: item\.value \}\)/);
+  assert.match(notesMvpPanelSource, /patchThreadMeta\(\{ requires_attention: false \}\)/);
+  assert.match(notesMvpPanelSource, /patchThreadMeta\(\{ requires_attention: true \}\)/);
 });
 
 test("Create discussion flow presents an entity-style form and composes initial message from subject and details", () => {
@@ -304,7 +309,7 @@ test("Element-scoped discussion exposes a linked element focus action through Ap
   assert.match(notesMvpPanelSource, /function linkedElementContext\(thread\)/);
   assert.match(notesMvpPanelSource, /text\(thread\?\.scope_type\) !== "diagram_element"/);
   assert.match(notesMvpPanelSource, /data-testid="notes-thread-focus-linked-element"/);
-  assert.match(notesMvpPanelSource, />\s*Перейти к элементу\s*<\/button>/);
+  assert.match(notesMvpPanelSource, /aria-label="Перейти к элементу на схеме"/);
   assert.match(notesMvpPanelSource, /\[DISCUSSION_FOCUS_DIAG\]/);
   assert.match(notesMvpPanelSource, /onFocusLinkedElement\?\.\(\{/);
   assert.match(notesMvpPanelSource, /Элемент больше не найден на схеме\./);

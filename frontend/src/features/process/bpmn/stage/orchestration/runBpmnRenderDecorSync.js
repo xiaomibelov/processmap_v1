@@ -9,6 +9,7 @@ export function applyFullBpmnDecorSet({
   applyInterviewDecor,
   applyUserNotesDecor,
   applyStepTimeDecor,
+  applySubprocessDiscussionDecor,
 }) {
   if (!inst) return;
   applyTaskTypeDecor(inst, kind);
@@ -18,5 +19,6 @@ export function applyFullBpmnDecorSet({
   applyBottleneckDecor(inst, kind);
   applyInterviewDecor(inst, kind);
   applyUserNotesDecor(inst, kind);
+  applySubprocessDiscussionDecor?.(inst, kind);
   applyStepTimeDecor(inst, kind);
 }

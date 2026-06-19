@@ -105,6 +105,7 @@ const BPMN_INPUT_KEYS = [
   "runBpmnContextMenuAction",
   "openBpmnSubprocessPreviewProperties",
   "onNavigateToSubprocess",
+  "childSessionDiscussionAggregates",
 ];
 
 const DRAWIO_BASE_KEYS = [

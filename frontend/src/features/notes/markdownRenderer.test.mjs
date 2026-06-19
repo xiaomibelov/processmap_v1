@@ -55,3 +55,8 @@ test("note markdown blocks unsafe links and raw HTML execution", () => {
   assert.doesNotMatch(out, /<img\b/);
   assert.match(out, /&lt;img src=x onerror=alert\(1\)&gt;/);
 });
+
+test("note markdown highlights @mentions inline", () => {
+  const out = html("Привет @admin@local, проверь задачу.");
+  assert.match(out, /<span[^>]*class="[^"]*mention[^"]*"[^>]*>@admin@local<\/span>/);
+});

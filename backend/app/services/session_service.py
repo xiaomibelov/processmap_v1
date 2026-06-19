@@ -692,9 +692,14 @@ def recompute_session(session_id: str):
 def _subprocess_request_context(request: Optional[Request]):
     if request is None:
         return "", "", False
-    uid = str(getattr(request.state, "auth_user", "") or "").strip()
+    auth_user = getattr(request.state, "auth_user", None) or {}
+    if isinstance(auth_user, dict):
+        uid = str(auth_user.get("id") or "").strip()
+        admin = bool(auth_user.get("is_admin", False))
+    else:
+        uid = str(getattr(auth_user, "id", "") or "").strip()
+        admin = bool(getattr(auth_user, "is_admin", False))
     oid = str(getattr(request.state, "active_org_id", "") or "").strip()
-    admin = bool(getattr(request.state, "is_admin", False))
     return uid, oid, admin
 
 
@@ -741,7 +746,7 @@ def _resolve_child_bpmn_xml(
                     child_xml = str(getattr(cand, "bpmn_xml", "") or "").strip()
                     break
 
-    if not child_xml and called:
+    if not child_xml:
         child_xml = extract_subprocess_xml(xml, element_id)
 
     if not child_xml:
@@ -813,6 +818,11 @@ def _build_breadcrumbs(
     uid, oid, admin = _subprocess_request_context(request)
     org_id = getattr(child_session, "org_id", None)
 
+    def _session_title(sess: Any) -> str:
+        if isinstance(sess, dict):
+            return str(sess.get("title") or "").strip()
+        return str(getattr(sess, "title", "") or "").strip()
+
     breadcrumbs = [
         {"session_id": f["session_id"], "name": "", "element_id": f.get("element_id_in_parent")}
         for f in (getattr(child_session, "navigation_stack", []) or [])
@@ -824,7 +834,7 @@ def _build_breadcrumbs(
             org_id=org_id,
             is_admin=admin,
         )
-        crumb["name"] = str(getattr(crumb_sess, "title", "") or "") if crumb_sess else ""
+        crumb["name"] = _session_title(crumb_sess) if crumb_sess else ""
     return breadcrumbs
 
 
@@ -838,6 +848,8 @@ def navigate_to_subprocess(
     if err:
         raise HTTPException(status_code=err.status_code, detail=err.body)
 
+    uid, oid, admin = _subprocess_request_context(request)
+
     xml = str(getattr(sess, "bpmn_xml", "") or "").strip()
     if not xml:
         raise HTTPException(status_code=404, detail="Session has no BPMN diagram")
@@ -848,6 +860,14 @@ def navigate_to_subprocess(
 
     called = called_element_id(xml, element_id) if el_type == "callactivity" else None
 
+    def _xml_has_definitions(child_xml: str) -> bool:
+        lower = child_xml.lower()
+        return "<bpmn:definitions" in lower or "<definitions" in lower
+
+    def _xml_has_minimal_di(child_xml: str) -> bool:
+        lower = child_xml.lower()
+        return "<bpmndi:bpmnshape" in lower or "<bpmndi:bpmnedge" in lower
+
     # Try existing child session
     existing = session_repo.find_by_parent_element(session_id, element_id, org_id=getattr(sess, "org_id", None))
     if existing:
@@ -855,6 +875,11 @@ def navigate_to_subprocess(
         if child_err:
             raise HTTPException(status_code=child_err.status_code, detail=child_err.body)
         child = child_check
+        child_xml = str(getattr(child, "bpmn_xml", "") or "").strip()
+        if not _xml_has_definitions(child_xml) or not _xml_has_minimal_di(child_xml):
+            child_xml = _resolve_child_bpmn_xml(sess, element_id, called, request)
+            child.bpmn_xml = child_xml
+            session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)
     else:
         child_xml = _resolve_child_bpmn_xml(sess, element_id, called, request)
         child = _create_child_session(sess, element_id, child_xml, request)
