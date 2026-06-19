@@ -10,7 +10,7 @@ HEAD:    7f6232e28cb4ac32e40719f1f272ec7f36346db2
 origin/main: c97099f3fe22cd8ad1659a319065aac7cade0bbd
 ```
 
-### git status --short
+### git status --short (before)
 
 ```
 ?? .planning/contours/audit/analytic_01/
@@ -61,7 +61,21 @@ git commit -m "fix: текущее состояние билда перед пр
 
 ### Result
 
-- Commit hash: `<to be filled after commit>`
-- Files committed: all untracked planning contours, handoff notes, and decision artifacts listed above.
+- Commit hash: `c17c1eab`
+- Files changed: 371
+- Insertions: 15610
+- No deletions.
 - No product code changes were committed.
 - No merge conflicts.
+
+### git log --oneline -3 (after commit)
+
+```
+c17c1eab fix: текущее состояние билда перед правками subprocess transitions
+7f6232e2 docs(fix/bpmn-drilldown-ui): обновить HEAD в STATE.json
+4b3d2f5c docs(fix/bpmn-drilldown-ui): обновить PLAN, PR, TESTS, STATE, WORKER_REPORT — готово к review
+```
+
+### Working tree after commit
+
+Clean — no untracked or modified files remain.
