@@ -373,6 +373,7 @@ function ProcessStage({
   onDiscussionLinkedElementFocusResult = null,
   onNavigateToSubprocess = null,
   childSessionDiscussionAggregates,
+  sessions = [],
 }) {
   const sid = String(sessionId || "");
 
