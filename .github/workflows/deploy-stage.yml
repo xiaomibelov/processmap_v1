@@ -46,15 +46,15 @@ jobs:
               -f docker-compose.yml \
               -f docker-compose.stage.yml \
               -p processmap_stage \
-              build api gateway
+              build --no-cache api gateway
 
-            # Restart updated containers
+            # Restart updated containers (force-recreate to guarantee the new image is used)
             APP_ENV_FILE=.env.stage docker compose \
               --env-file .env.stage \
               -f docker-compose.yml \
               -f docker-compose.stage.yml \
               -p processmap_stage \
-              up -d --no-deps api gateway
+              up -d --no-deps --force-recreate api gateway
 
             deploy/scripts/stage_freshness_proof.sh verify-chain \
               --requested-ref "${REQUESTED_REF}" \
