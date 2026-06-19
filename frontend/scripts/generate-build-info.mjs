@@ -4,12 +4,10 @@
 
 import { writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
-const __filename = fileURLToPath(import.meta.url);
-const repoRoot = resolve(dirname(__filename), "../..");
-const outPath = resolve(repoRoot, "frontend/public/build-info.json");
+const repoRoot = process.cwd();
+const outPath = resolve(repoRoot, "public/build-info.json");
 
 function git(cmd) {
   try {
@@ -23,10 +21,10 @@ function envOr(name, fallback = "") {
   return String(process.env[name] || fallback).trim();
 }
 
-const sha = envOr("BUILD_ID") || git("git rev-parse HEAD 2>/dev/null") || "dev";
-const branch = envOr("BUILD_BRANCH") || git("git branch --show-current 2>/dev/null") || "unknown";
-const time = envOr("BUILD_TIME") || new Date().toISOString();
-const env = envOr("BUILD_ENV", "dev");
+const sha = envOr("BUILD_ID") || envOr("VITE_BUILD_ID") || git("git rev-parse HEAD 2>/dev/null") || "dev";
+const branch = envOr("BUILD_BRANCH") || envOr("VITE_BUILD_BRANCH") || git("git branch --show-current 2>/dev/null") || "unknown";
+const time = envOr("BUILD_TIME") || envOr("VITE_BUILD_TIME") || new Date().toISOString();
+const env = envOr("BUILD_ENV") || envOr("VITE_BUILD_ENV", "dev");
 const host = envOr("BUILD_HOST", "clearvestnic.ru");
 
 let dirty = false;

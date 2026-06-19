@@ -1,4 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import "./NotesMvpPanel.icons.css";
 import {
   apiAcknowledgeNoteThreadAttention,
   apiAddNoteThreadComment,
@@ -234,14 +235,101 @@ function attentionMeta(thread) {
 }
 
 function discussionThreadRowClass({ active, attentionActive }) {
+  const base = "relative rounded-lg border px-3 py-3 pl-[9px] text-left transition duration-150 ease-in-out";
   if (attentionActive) {
     return active
-      ? "border-warning/50 bg-warning/10 shadow-sm ring-1 ring-warning/20"
-      : "border-warning/35 bg-warning/5 hover:border-warning/55 hover:bg-warning/10";
+      ? `${base} border-l-[3px] border-l-warning/70 border-warning/50 bg-warning/10 shadow-sm`
+      : `${base} border-l-[3px] border-l-warning/50 border-warning/35 bg-warning/5 hover:border-warning/55 hover:border-l-warning/70 hover:bg-warning/10`;
   }
   return active
-    ? "border-info/45 bg-info/10 shadow-sm ring-1 ring-info/20"
-    : "border-border/60 bg-bg/10 hover:border-info/35 hover:bg-panel2/35";
+    ? `${base} border-l-[3px] border-l-[#2563eb] border-info/45 bg-[#eff6ff] shadow-sm`
+    : `${base} border-l-[3px] border-l-transparent border-border/60 bg-bg/10 hover:border-info/35 hover:border-l-[#3b82f6] hover:bg-[#f9fafb]`;
+}
+
+function threadStatusListClass(thread) {
+  if (isLegacyBridgeThread(thread)) {
+    return "rounded border border-[#f59e0b]/30 bg-[#fef3c7] px-1.5 py-0.5 font-semibold text-[#92400e]";
+  }
+  if (text(thread?.status) === "resolved") {
+    return "rounded border border-[#10b981]/30 bg-[#d1fae5] px-1.5 py-0.5 font-semibold text-[#065f46]";
+  }
+  return "rounded border border-[#60a5fa]/30 bg-[#dbeafe] px-1.5 py-0.5 font-semibold text-[#1e40af]";
+}
+
+function attentionListClass() {
+  return "rounded border border-[#f87171]/30 bg-[#fee2e2] px-1.5 py-0.5 font-semibold text-[#991b1b]";
+}
+
+function childSessionListClass() {
+  return "rounded border border-[#f59e0b]/30 bg-[#fef3c7] px-1.5 py-0.5 font-semibold text-[#92400e]";
+}
+
+function DiscussionThreadSkeletonList() {
+  return (
+    <div className="grid gap-2 transition-opacity duration-200" data-testid="notes-skeleton-list">
+      {[1, 2, 3, 4].map((i) => (
+        <div
+          key={i}
+          data-testid="notes-thread-skeleton"
+          className="relative rounded-lg border border-border/40 bg-panel/50 px-3 py-3 pl-[9px]"
+        >
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-start justify-between gap-2">
+              <div className="h-4 w-3/4 rounded bg-gray-200 animate-pulse" />
+              <div className="h-4 w-6 rounded bg-gray-200 animate-pulse" />
+            </div>
+            <div className="mt-2 h-3 w-full rounded bg-gray-200 animate-pulse" />
+            <div className="mt-1 h-3 w-2/3 rounded bg-gray-200 animate-pulse" />
+            <div className="mt-3 flex flex-wrap items-center gap-1">
+              <div className="h-5 w-12 rounded bg-gray-200 animate-pulse" />
+              <div className="h-5 w-16 rounded bg-gray-200 animate-pulse" />
+              <div className="ml-auto h-3 w-10 rounded bg-gray-200 animate-pulse" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DiscussionEmptyState({ disabled, scopeFilter, selectedElementName, onCreate }) {
+  const isElementScope = scopeFilter === "selected_element" || scopeFilter === "diagram_element";
+  const message = isElementScope
+    ? `Нет обсуждений для ${scopeFilter === "selected_element" ? `элемента «${selectedElementName}»` : "этой диаграммы"}.`
+    : "Обсуждения пока не созданы.";
+  return (
+    <div
+      className="flex min-h-full flex-col items-center justify-center p-6 text-center transition-opacity duration-200"
+      data-testid="notes-empty-state"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-6 w-6 text-[#9ca3af]"
+        aria-hidden="true"
+      >
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      </svg>
+      <p className="mt-3 max-w-[240px] text-sm text-[#6b7280]">{message}</p>
+      {!disabled ? (
+        <button
+          type="button"
+          className="primaryBtn smallBtn mt-4"
+          onClick={onCreate}
+          data-testid="notes-empty-create"
+        >
+          + Создать обсуждение
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 function discussionMessageClass(focused) {
@@ -429,7 +517,12 @@ function emitElementNoteThreadsChanged(sessionId, threads) {
 const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   sessionId,
   sessionTitle = "",
+  projectTitle = "",
+  projectId = "",
+  sessions = [],
   selectedElement = null,
+  onNavigateToProject = null,
+  onNavigateToSession = null,
   legacyElementNotesMap = null,
   onAddLegacyElementNote = null,
   disabled = false,
@@ -447,11 +540,44 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const selectedElementName = readableBpmnLabel(selectedElement?.name) || "Элемент BPMN";
   const selectedElementType = text(selectedElement?.type);
 
+  const sessionById = useMemo(() => {
+    const map = new Map();
+    for (const s of Array.isArray(sessions) ? sessions : []) {
+      const id = text(s?.session_id || s?.id);
+      if (id) map.set(id, s);
+    }
+    return map;
+  }, [sessions]);
+
+  const descendantSessionIds = useMemo(() => {
+    const byParent = new Map();
+    for (const s of Array.isArray(sessions) ? sessions : []) {
+      const id = text(s?.session_id || s?.id);
+      const parentId = text(s?.parent_session_id || s?.parentSessionId);
+      if (!id) continue;
+      if (!byParent.has(parentId)) byParent.set(parentId, []);
+      byParent.get(parentId).push(id);
+    }
+    const out = new Set();
+    const queue = [sid];
+    while (queue.length) {
+      const pid = queue.shift();
+      if (out.has(pid)) continue;
+      out.add(pid);
+      for (const childId of byParent.get(pid) || []) {
+        if (!out.has(childId)) queue.push(childId);
+      }
+    }
+    return Array.from(out).filter(Boolean);
+  }, [sid, sessions]);
+
   const [open, setOpen] = useState(false);
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
+  const [panelView, setPanelView] = useState("list");
   const [createOpen, setCreateOpen] = useState(false);
+  const [threadActionsOpen, setThreadActionsOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("open");
   const [scopeFilter, setScopeFilter] = useState("all");
   const [participationFilter, setParticipationFilter] = useState("all");
@@ -492,6 +618,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const createDetailsRef = useRef(null);
   const commentDraftRef = useRef(null);
   const editDraftRef = useRef(null);
+  const threadActionsRef = useRef(null);
   const markReadInFlightRef = useRef(new Set());
 
   const createSubject = createSubjectByScope[createScope] || "";
@@ -584,6 +711,9 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const visibleThreads = useMemo(() => {
     const query = text(searchQuery).toLowerCase();
     const filtered = asArray(displayThreads).filter((thread) => {
+      if (statusFilter !== "all" && text(thread.status) !== statusFilter) {
+        return false;
+      }
       if (participationFilter === "my" && !isThreadParticipatedByCurrentUser(thread, viewerUserId)) {
         return false;
       }
@@ -595,11 +725,12 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       return sortOrder === "oldest" ? -delta : delta;
     });
     return filtered;
-  }, [displayThreads, participationFilter, searchQuery, sortOrder, viewerUserId]);
+  }, [displayThreads, participationFilter, searchQuery, sortOrder, statusFilter, viewerUserId]);
 
   const selectedThread = useMemo(() => {
-    return visibleThreads.find((item) => text(item?.id) === selectedThreadId) || (notificationMode ? null : visibleThreads[0]) || null;
-  }, [notificationMode, selectedThreadId, visibleThreads]);
+    if (panelView !== "thread" || !selectedThreadId) return null;
+    return visibleThreads.find((item) => text(item?.id) === selectedThreadId) || null;
+  }, [panelView, selectedThreadId, visibleThreads]);
   const selectedThreadIsLegacyBridge = isLegacyBridgeThread(selectedThread);
   const selectedThreadLinkedElement = useMemo(() => linkedElementContext(selectedThread), [selectedThread]);
 
@@ -609,7 +740,8 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const editDraft = editDraftByComment[editingCommentId] || "";
   const editMentionComposer = editMentionByComment[editingCommentId] || emptyMentionComposer();
   const legacyDraft = legacyDraftByThread[text(selectedThread?.id)] || "";
-  const openThreadsCount = Math.max(0, Number(aggregate?.open_notes_count || 0) || 0);
+  const openThreadsCount = Math.max(0, asArray(threads).filter((t) => text(t.status) === "open").length);
+  const totalThreadsCount = asArray(threads).length;
   const activeFilterCount = Number(statusFilter !== "open") + Number(scopeFilter !== "all") + Number(participationFilter !== "all") + Number(sortOrder !== "newest");
   const discussionSummaryLine = useMemo(() => {
     if (notificationMode) {
@@ -624,13 +756,13 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     const parts = [
       text(sessionTitle) || "Сессия",
       `${openThreadsCount} открытых`,
-      `${displayThreads.length} тем`,
+      `${totalThreadsCount} тем`,
     ];
     if (visibleThreads.length !== displayThreads.length) {
       parts.push(`показано ${visibleThreads.length}`);
     }
     return parts.join(" · ");
-  }, [displayThreads.length, notificationCenter.signalCount, notificationCenter.totalCount, notificationMode, openThreadsCount, sessionTitle, visibleThreads.length]);
+  }, [displayThreads.length, notificationCenter.signalCount, notificationCenter.totalCount, notificationMode, openThreadsCount, sessionTitle, totalThreadsCount, visibleThreads.length]);
   const createMentionSuggestions = useMemo(
     () => filterMentionSuggestions(mentionableUsers, createMentionComposer.active?.query || "", createMentionComposer.selected),
     [createMentionComposer.active?.query, createMentionComposer.selected, mentionableUsers],
@@ -883,36 +1015,50 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
         return;
       }
       filters = {
-        status: notificationMode || statusFilter === "all" ? "" : statusFilter,
+        status: "",
         scopeType: notificationMode || scopeFilter === "all" ? "" : (scopeFilter === "selected_element" ? "diagram_element" : scopeFilter),
         elementId: notificationMode ? "" : (scopeFilter === "selected_element" ? selectedElementId : ""),
       };
     }
-    const result = await apiListNoteThreads(sid, filters);
-    if (!result.ok) {
-      setError(errorText(result, "Не удалось загрузить заметки и обсуждения."));
-      setLoading(false);
-      return;
+    const idsToLoad = descendantSessionIds.length ? descendantSessionIds : [sid];
+    const results = await Promise.all(idsToLoad.map((id) => apiListNoteThreads(id, filters)));
+    const nextThreads = [];
+    let loadError = "";
+    for (const result of results) {
+      if (!result.ok) {
+        loadError = errorText(result, "Не удалось загрузить обсуждения. Попробуйте позже.");
+        continue;
+      }
+      for (const thread of asArray(result.items)) {
+        const threadSessionId = text(thread?.session_id || thread?.sessionId);
+        const isChild = threadSessionId !== sid;
+        nextThreads.push({ ...thread, _isChildSessionThread: isChild });
+      }
     }
-    const nextThreads = asArray(result.items);
+    nextThreads.sort((left, right) => threadUpdatedAt(right) - threadUpdatedAt(left));
     setThreads(nextThreads);
+    if (loadError) {
+      setError(loadError);
+    }
     setSelectedThreadId((prev) => {
       if (preferredThreadId && nextThreads.some((item) => text(item?.id) === preferredThreadId)) {
         return preferredThreadId;
       }
       if (nextThreads.some((item) => text(item?.id) === prev)) return prev;
-      if (notificationMode) return "";
-      return text(nextThreads[0]?.id);
+      return "";
     });
     setLoading(false);
-  }, [notificationMode, open, scopeFilter, selectedElementId, sid, statusFilter]);
+  }, [descendantSessionIds, notificationMode, open, scopeFilter, selectedElementId, sid, statusFilter]);
 
   useEffect(() => {
     void fetchThreads();
   }, [fetchThreads]);
 
   useEffect(() => {
-    emitElementNoteThreadsChanged(sid, threads);
+    emitElementNoteThreadsChanged(
+      sid,
+      asArray(threads).filter((t) => text(t?.session_id || t?.sessionId) === sid),
+    );
   }, [sid, threads]);
 
   useEffect(() => {
@@ -924,6 +1070,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setSelectedThreadId("");
     setFocusedCommentId("");
     setPanelMode("discussions");
+    setPanelView("list");
     setError("");
     setCreateOpen(false);
     setMentionableUsers([]);
@@ -957,6 +1104,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     }
     setSelectedThreadId(nextThreadId);
     setFocusedCommentId(nextCommentId);
+    setPanelView(nextThreadId ? "thread" : "list");
     return true;
   }, [sid]);
 
@@ -1068,6 +1216,16 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     }
   }, [isCollapsed]);
 
+  useEffect(() => {
+    if (!threadActionsOpen) return undefined;
+    function handlePointerDown(event) {
+      if (!threadActionsRef.current || threadActionsRef.current.contains(event.target)) return;
+      setThreadActionsOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [threadActionsOpen]);
+
   const startResize = useCallback((event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -1091,6 +1249,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   function openPanel() {
     setOpen(true);
     setPanelMode("discussions");
+    setPanelView("list");
     setCreateOpen(false);
   }
 
@@ -1109,6 +1268,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setParticipationFilter("all");
     setSelectedThreadId(threadId);
     setFocusedCommentId(text(notification.commentId));
+    setPanelView("thread");
     if (text(notification.targetElementId)) {
       onFocusNotificationTarget?.({
         element_id: text(notification.targetElementId),
@@ -1165,6 +1325,79 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     }
     setOpen(false);
     setCreateOpen(false);
+  }
+
+  function threadSessionInfo(thread) {
+    const threadSid = text(thread?.session_id || thread?.sessionId);
+    const session = threadSid
+      ? asArray(sessions).find((s) => text(s?.session_id || s?.id) === threadSid)
+      : null;
+    const parentSid = text(session?.parent_session_id || session?.parentSessionId);
+    return {
+      id: threadSid || sid,
+      title: text(session?.title || session?.name || sessionTitle || "Сессия"),
+      parentId: parentSid,
+    };
+  }
+
+  function handleBreadcrumbProjectClick() {
+    if (typeof onNavigateToProject === "function") {
+      onNavigateToProject();
+    } else {
+      setOpen(false);
+      setCreateOpen(false);
+    }
+  }
+
+  function handleBreadcrumbSessionClick() {
+    const info = threadSessionInfo(selectedThread);
+    const targetSid = info.id;
+    if (!targetSid || targetSid === sid) {
+      // Already in the target session: just go back to the thread list and close
+      // the panel instead of reloading the same canvas.
+      setPanelView("list");
+      setSelectedThreadId("");
+      setOpen(false);
+      setCreateOpen(false);
+      return;
+    }
+    onNavigateToSession?.(targetSid);
+  }
+
+  function handleBreadcrumbElementClick() {
+    if (!selectedThreadLinkedElement?.elementId) return;
+    onFocusLinkedElement?.({
+      element_id: selectedThreadLinkedElement.elementId,
+      element_name: selectedThreadLinkedElement.elementName,
+      element_type: selectedThreadLinkedElement.elementType,
+      scope_type: "diagram_element",
+      thread_id: text(selectedThread?.id),
+    });
+  }
+
+  function renderThreadBreadcrumb() {
+    const info = threadSessionInfo(selectedThread);
+    const projectLabel = text(projectTitle) || "Проект";
+    const sessionLabel = info.title;
+    const elementId = selectedThreadLinkedElement?.elementId;
+    const elementLabel = selectedThreadLinkedElement?.elementName || elementId || "Элемент";
+    const topicLabel = threadTitle(selectedThread);
+    const separator = <span className="mx-1 text-muted/60" aria-hidden="true">/</span>;
+    return (
+      <div className="flex flex-wrap items-center text-[12px] text-muted" data-testid="notes-thread-breadcrumb">
+        <button type="button" className="transition hover:text-fg" onClick={handleBreadcrumbProjectClick}>{projectLabel}</button>
+        {separator}
+        <button type="button" className="transition hover:text-fg" onClick={handleBreadcrumbSessionClick}>{sessionLabel}</button>
+        {elementId ? (
+          <>
+            {separator}
+            <button type="button" className="transition hover:text-fg" onClick={handleBreadcrumbElementClick} data-testid="notes-thread-breadcrumb-element">{elementLabel}</button>
+          </>
+        ) : null}
+        {separator}
+        <span className="font-semibold text-fg">{topicLabel}</span>
+      </div>
+    );
   }
 
   function notificationTone(type) {
@@ -1290,6 +1523,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setCreateMentionComposer(emptyMentionComposer());
     setCreateOpen(false);
     setSelectedThreadId(nextThreadId);
+    setPanelView("thread");
     await fetchThreads({ preferredThreadId: nextThreadId });
     emitNotesAggregateChanged(sid);
     emitNoteMentionsChanged();
@@ -1544,7 +1778,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                 onPointerDown={startResize}
                 style={{ touchAction: "none" }}
               />
-              <div className="border-b border-border/70 bg-panel/95 px-4 py-3 sm:px-5 pointer-events-auto">
+              <div className="border-b border-border/70 bg-panel/95 px-4 py-3 sm:px-5 pointer-events-auto" data-testid="notes-panel-header">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="text-base font-bold leading-tight text-fg">
@@ -1554,31 +1788,22 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                   {discussionSummaryLine}
                 </div>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 self-center">
-                <button
-                  type="button"
-                  className={`primaryBtn tinyBtn h-8 px-2.5 text-[12px] ${createOpen ? "ring-1 ring-info/35" : ""}`}
-                  onClick={() => {
-                    setCreateOpen(true);
-                    setError("");
-                  }}
-                  disabled={disabled}
-                >
-                  + Новое обсуждение
-                </button>
+              <div className="flex shrink-0 items-center gap-1 self-center">
                 {notificationMode ? (
                   <button
                     type="button"
-                    className="secondaryBtn tinyBtn h-8 px-2.5 text-[12px]"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/70 text-muted transition hover:border-info/55 hover:bg-info/10 hover:text-info"
                     onClick={() => setPanelMode("discussions")}
-                    data-testid="discussion-notifications-back"
+                    aria-label="Все обсуждения"
+                    title="Все обсуждения"
+                    data-testid="notes-header-notifications-back"
                   >
-                    Все обсуждения
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
                   </button>
                 ) : (
                   <button
                     type="button"
-                    className="secondaryBtn tinyBtn h-8 px-2.5 text-[12px]"
+                    className="icon-button inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/70 text-muted transition hover:border-info/55 hover:bg-info/10 hover:text-info"
                     onClick={() => {
                       setPanelMode("notifications");
                       setStatusFilter("all");
@@ -1586,35 +1811,43 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                       setFiltersOpen(false);
                       setSelectedThreadId("");
                     }}
-                    data-testid="discussion-notifications-open"
+                    aria-label="Уведомления"
+                    data-testid="notes-header-notifications"
                   >
-                    Уведомления
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
                     {notificationCenter.totalCount > 0 ? (
-                      <span className="ml-1 rounded-full border border-info/45 bg-info/10 px-1.5 py-0 text-[10px] font-bold leading-4 tabular-nums text-info">
+                      <span
+                        className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white"
+                        data-testid="notes-notification-badge"
+                      >
                         {notificationCenter.totalCount}
                       </span>
                     ) : null}
+                    <span className="icon-button__tooltip" data-testid="icon-button-tooltip">Уведомления</span>
                   </button>
                 )}
                 <button
                   type="button"
-                  className="secondaryBtn tinyBtn h-8 px-2.5 text-[12px]"
+                  className="icon-button inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/70 text-muted transition hover:border-info/55 hover:bg-info/10 hover:text-info"
                   onClick={() => setIsCollapsed(true)}
                   aria-label="Свернуть обсуждения"
-                  title="Свернуть"
+                  data-testid="notes-header-collapse"
                 >
-                  {"<<"}
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                  <span className="icon-button__tooltip" data-testid="icon-button-tooltip">Свернуть панель</span>
                 </button>
                 <button
                   type="button"
-                  className="secondaryBtn tinyBtn h-8 px-2.5 text-[12px]"
+                  className="icon-button inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/70 text-muted transition hover:border-danger/55 hover:bg-danger/10 hover:text-danger"
                   onClick={() => {
                     setOpen(false);
                     setCreateOpen(false);
                   }}
-                  aria-label="Скрыть обсуждения"
+                  aria-label="Закрыть обсуждения"
+                  data-testid="notes-header-close"
                 >
-                  Скрыть
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                  <span className="icon-button__tooltip" data-testid="icon-button-tooltip">Закрыть</span>
                 </button>
               </div>
             </div>
@@ -1623,8 +1856,22 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
           <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_220px] overflow-hidden max-lg:grid-cols-1 pointer-events-auto">
             <section className="flex min-h-0 flex-col overflow-hidden border-r border-border/70 bg-panel max-lg:border-b max-lg:border-r-0">
               {error ? (
-                <div className="mx-4 mt-4 rounded-xl border border-danger/50 bg-danger/10 px-3 py-2 text-xs text-danger">
-                  {error}
+                <div
+                  data-testid="notes-error-banner"
+                  className="mx-4 mt-4 border-l-4 border-red-400 bg-red-50 px-3 py-3 text-sm text-red-700 transition-opacity duration-200"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <span>{error}</span>
+                    <button
+                      type="button"
+                      onClick={() => void fetchThreads()}
+                      disabled={loading}
+                      className="shrink-0 rounded border border-red-400 bg-white px-2 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      data-testid="notes-error-retry"
+                    >
+                      Повторить
+                    </button>
+                  </div>
                 </div>
               ) : null}
 
@@ -1745,23 +1992,23 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                 </div>
               ) : selectedThread ? (
                 <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr_auto] overflow-hidden">
-                  <div className="border-b border-border/70 bg-panel/95 px-4 py-3 sm:px-5">
+                  <div className="border-b border-border/70 bg-panel/95 px-4 py-3 sm:px-5" data-testid="notes-thread-header">
                     <div className="flex items-start justify-between gap-4 max-sm:flex-col">
                       <div className="min-w-0 flex-1">
-                        <div className="text-[15px] font-bold leading-snug text-fg">{threadTitle(selectedThread)}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] leading-5 text-muted">
+                        <button
+                          type="button"
+                          className="mb-2 inline-flex items-center gap-1 rounded px-2 py-1 text-[13px] font-medium text-fg transition hover:bg-[#f3f4f6]"
+                          onClick={() => {
+                            setPanelView("list");
+                            setSelectedThreadId("");
+                          }}
+                          data-testid="notes-thread-back-to-list"
+                        >
+                          ← Назад
+                        </button>
+                        {renderThreadBreadcrumb()}
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] leading-5 text-muted">
                           <span>{scopeMeta(selectedThread).relation}</span>
-                          {selectedThreadLinkedElement ? (
-                            <button
-                              type="button"
-                              className={discussionQuietActionClass()}
-                              onClick={focusSelectedThreadLinkedElement}
-                              title="Показать элемент на схеме"
-                              data-testid="notes-thread-focus-linked-element"
-                            >
-                              Перейти к элементу
-                            </button>
-                          ) : null}
                         </div>
                         <div data-testid="notes-thread-header-meta" className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-5 text-muted">
                           <span>Создал {threadCreatorLabel(selectedThread, authorLabelsById, viewerUserId)}</span>
@@ -1801,58 +2048,144 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         ) : null}
                       </div>
                       {!selectedThreadIsLegacyBridge ? (
-                        <div className="flex max-w-[292px] shrink-0 flex-col items-end gap-1.5 max-sm:w-full max-sm:max-w-none max-sm:items-stretch">
-                          <div className="flex flex-wrap items-center justify-end gap-1.5 max-sm:justify-start">
-                            <select
-                              className="select h-8 min-h-0 w-[118px] text-xs"
-                              value={threadPriority(selectedThread)}
-                              onChange={(event) => patchThreadMeta({ priority: event.target.value })}
-                              disabled={busy.startsWith("meta:")}
-                              aria-label="Приоритет обсуждения"
-                              data-testid="notes-thread-priority-select"
-                            >
-                              {PRIORITY_OPTIONS.map((item) => (
-                                <option key={item.value} value={item.value}>{item.label}</option>
-                              ))}
-                            </select>
-                            {text(selectedThread.status) === "resolved" ? (
-                              <button type="button" className={discussionQuietActionClass()} onClick={() => patchStatus("open")} disabled={busy.startsWith("status:")}>
-                                Вернуть в открытые
-                              </button>
-                            ) : (
-                              <button type="button" className={discussionQuietActionClass()} onClick={() => patchStatus("resolved")} disabled={busy.startsWith("status:")}>
-                                Закрыть обсуждение
-                              </button>
-                            )}
-                          </div>
-                          <div className="flex flex-wrap items-center justify-end gap-1.5 border-t border-border/60 pt-2 max-sm:justify-start">
+                        <div className="relative flex shrink-0 items-start gap-1" data-testid="notes-thread-toolbar">
+                          {selectedThreadLinkedElement ? (
                             <button
                               type="button"
-                              className={discussionQuietActionClass(requiresAttention(selectedThread) ? "warning" : "neutral")}
-                              onClick={() => patchThreadMeta({ requires_attention: !requiresAttention(selectedThread) })}
-                              disabled={busy.startsWith("meta:") || busy.startsWith("ack:")}
-                              data-testid="notes-thread-attention-toggle"
+                              className="icon-button inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/70 text-muted transition hover:border-info/55 hover:bg-info/10 hover:text-info"
+                              onClick={focusSelectedThreadLinkedElement}
+                              aria-label="Перейти к элементу на схеме"
+                              data-testid="notes-thread-focus-linked-element"
                             >
-                              {requiresAttention(selectedThread) ? "Снять внимание" : "Требует внимания"}
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                              <span className="icon-button__tooltip" data-testid="icon-button-tooltip">Перейти к элементу на схеме</span>
                             </button>
-                            {requiresAttention(selectedThread) && !attentionAcknowledged(selectedThread) ? (
-                              <button
-                                type="button"
-                                className={discussionQuietActionClass("success")}
-                                onClick={acknowledgeAttention}
-                                disabled={busy.startsWith("ack:") || busy.startsWith("meta:")}
-                                data-testid="notes-thread-attention-acknowledge"
-                              >
-                                {busy.startsWith("ack:") ? "Подтверждаем..." : "Подтвердить"}
-                              </button>
-                            ) : null}
-                            {requiresAttention(selectedThread) && attentionAcknowledged(selectedThread) ? (
-                              <span
-                                className="inline-flex h-7 items-center rounded-md border border-success/40 bg-success/10 px-2 text-[11px] font-semibold text-success"
-                                data-testid="notes-thread-attention-acknowledged"
-                              >
-                                Подтверждено вами
-                              </span>
+                          ) : null}
+                          <div ref={threadActionsRef} className="relative">
+                            <button
+                              type="button"
+                              className="icon-button inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/70 text-muted transition hover:border-info/55 hover:bg-info/10 hover:text-info"
+                              onClick={() => setThreadActionsOpen((prev) => !prev)}
+                              aria-label="Действия"
+                              aria-expanded={threadActionsOpen}
+                              aria-haspopup="menu"
+                              data-testid="notes-thread-actions-toggle"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+                              <span className="icon-button__tooltip" data-testid="icon-button-tooltip">Действия</span>
+                            </button>
+                            {threadActionsOpen ? (
+                              <div className="thread-actions-dropdown" role="menu" data-testid="notes-thread-actions-menu">
+                                <div className="thread-actions-dropdown-section" role="group" aria-label="Приоритет">
+                                  <div className="thread-actions-dropdown-label">Приоритет</div>
+                                  {PRIORITY_OPTIONS.map((item) => {
+                                    const selected = threadPriority(selectedThread) === item.value;
+                                    return (
+                                      <button
+                                        key={item.value}
+                                        type="button"
+                                        role="menuitemradio"
+                                        aria-checked={selected}
+                                        className="thread-actions-dropdown-item thread-actions-dropdown-item--radio"
+                                        onClick={() => {
+                                          patchThreadMeta({ priority: item.value });
+                                          setThreadActionsOpen(false);
+                                        }}
+                                        disabled={busy.startsWith("meta:")}
+                                        data-testid={`notes-thread-priority-${item.value}`}
+                                      >
+                                        <span className={`thread-actions-dropdown-radio ${selected ? "thread-actions-dropdown-radio--checked" : ""}`} />
+                                        {item.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                {requiresAttention(selectedThread) ? (
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    className="thread-actions-dropdown-item"
+                                    onClick={() => {
+                                      patchThreadMeta({ requires_attention: false });
+                                      setThreadActionsOpen(false);
+                                    }}
+                                    disabled={busy.startsWith("meta:") || busy.startsWith("ack:")}
+                                    data-testid="notes-thread-attention-toggle"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                                    Снять внимание
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    className="thread-actions-dropdown-item"
+                                    onClick={() => {
+                                      patchThreadMeta({ requires_attention: true });
+                                      setThreadActionsOpen(false);
+                                    }}
+                                    disabled={busy.startsWith("meta:") || busy.startsWith("ack:")}
+                                    data-testid="notes-thread-attention-toggle"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                    Требует внимания
+                                  </button>
+                                )}
+                                {requiresAttention(selectedThread) && !attentionAcknowledged(selectedThread) ? (
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    className="thread-actions-dropdown-item"
+                                    onClick={() => {
+                                      acknowledgeAttention();
+                                      setThreadActionsOpen(false);
+                                    }}
+                                    disabled={busy.startsWith("ack:") || busy.startsWith("meta:")}
+                                    data-testid="notes-thread-attention-acknowledge"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                                    Подтвердить
+                                  </button>
+                                ) : null}
+                                {requiresAttention(selectedThread) && attentionAcknowledged(selectedThread) ? (
+                                  <div className="thread-actions-dropdown-item thread-actions-dropdown-item--disabled" data-testid="notes-thread-attention-acknowledged">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                                    Подтверждено вами
+                                  </div>
+                                ) : null}
+                                <hr className="thread-actions-dropdown-separator" />
+                                {text(selectedThread.status) === "resolved" ? (
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    className="thread-actions-dropdown-item"
+                                    onClick={() => {
+                                      patchStatus("open");
+                                      setThreadActionsOpen(false);
+                                    }}
+                                    disabled={busy.startsWith("status:")}
+                                    data-testid="notes-thread-status-open"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                                    Открыть обсуждение
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    className="thread-actions-dropdown-item thread-actions-dropdown-item--danger"
+                                    onClick={() => {
+                                      patchStatus("resolved");
+                                      setThreadActionsOpen(false);
+                                    }}
+                                    disabled={busy.startsWith("status:")}
+                                    data-testid="notes-thread-status-resolved"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                    Закрыть обсуждение
+                                  </button>
+                                )}
+                              </div>
                             ) : null}
                           </div>
                         </div>
@@ -2133,31 +2466,66 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
               ) : (
                 <>
               <div className="flex items-center gap-2">
-                <input
-                  type="search"
-                  data-testid="notes-sidebar-search"
-                  className="input h-8 min-h-0 flex-1 border-border/80 bg-panel/75 text-sm shadow-none"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Поиск"
-                  aria-label="Поиск по обсуждениям"
-                />
+                <button
+                  type="button"
+                  className={`primaryBtn tinyBtn h-8 shrink-0 px-2.5 text-[12px] ${createOpen ? "ring-1 ring-info/35" : ""}`}
+                  onClick={() => {
+                    setCreateOpen(true);
+                    setError("");
+                  }}
+                  disabled={disabled}
+                  data-testid="notes-filters-create"
+                >
+                  + Новое
+                </button>
+                <div className="relative flex-1">
+                  <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                  </span>
+                  <input
+                    type="search"
+                    data-testid="notes-sidebar-search"
+                    className="input h-8 min-h-0 w-full border-border/80 bg-panel/75 pl-8 text-sm shadow-none"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Поиск"
+                    aria-label="Поиск по обсуждениям"
+                  />
+                </div>
                 <button
                   type="button"
                   data-testid="notes-filters-toggle"
-                  className={`secondaryBtn tinyBtn h-8 px-2.5 text-[11px] ${filtersOpen ? "ring-1 ring-accent/50" : ""}`}
+                  className={`icon-button relative inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/70 text-muted transition hover:border-info/55 hover:bg-info/10 hover:text-info ${filtersOpen ? "ring-1 ring-accent/50" : ""}`}
                   onClick={() => setFiltersOpen((prev) => !prev)}
                   aria-expanded={filtersOpen}
                   aria-label="Открыть фильтры обсуждений"
                 >
-                  {activeFilterCount > 0 ? `Фильтры ${activeFilterCount}` : "Фильтры"}
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16"/><path d="M8 12h8"/><path d="M6 18h12"/></svg>
+                  {activeFilterCount > 0 ? (
+                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-info text-[9px] font-bold leading-none text-white">
+                      {activeFilterCount}
+                    </span>
+                  ) : null}
+                  <span className="icon-button__tooltip" data-testid="icon-button-tooltip">Фильтры</span>
                 </button>
-                <button type="button" className="secondaryBtn tinyBtn h-8 px-2.5 text-[11px]" onClick={fetchThreads} disabled={loading} aria-label="Обновить обсуждения">
-                  {loading ? "..." : "↻"}
+                <button
+                  type="button"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/70 text-muted transition hover:border-info/55 hover:bg-info/10 hover:text-info disabled:opacity-60"
+                  onClick={() => void fetchThreads()}
+                  disabled={loading}
+                  aria-label="Обновить обсуждения"
+                  title="Обновить"
+                  data-testid="notes-filters-refresh"
+                >
+                  {loading ? (
+                    <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+                  )}
                 </button>
               </div>
 
-              <div className="mt-2 grid grid-cols-2 gap-1 rounded-lg border border-border/60 bg-bg/20 p-1 text-[11px] font-semibold" aria-label="Фильтр участия в обсуждениях">
+              <div className="mt-2 grid grid-cols-2 gap-1 rounded-lg border border-border/60 bg-bg/20 p-1 text-[12px] font-semibold" aria-label="Фильтр участия в обсуждениях">
                 <button
                   type="button"
                   className={`rounded-md px-2 py-1.5 transition ${participationFilter === "all" ? "bg-panel2 text-fg shadow-sm" : "text-muted hover:bg-panel2/50 hover:text-fg"}`}
@@ -2241,32 +2609,37 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
               ) : null}
 
               <div className="mt-2 min-h-0 flex-1 overflow-auto pr-1">
-                {visibleThreads.length ? (
-                  <div className="grid gap-2">
+                {loading ? (
+                  <DiscussionThreadSkeletonList />
+                ) : error && displayThreads.length === 0 ? (
+                  null
+                ) : visibleThreads.length ? (
+                  <div className="grid gap-2 transition-opacity duration-200" data-testid="notes-thread-list">
                     {visibleThreads.map((thread) => {
                       const threadId = text(thread?.id);
                       const active = threadId === text(selectedThread?.id);
-                      const meta = scopeMeta(thread);
                       const mentionLabel = firstMentionLabel(thread, authorLabelsById, viewerUserId);
                       const newMessagesCount = unreadCount(thread);
                       const attentionActive = requiresAttention(thread);
+                      const childSessionId = text(thread?.session_id || thread?.sessionId);
+                      const childSession = thread?._isChildSessionThread ? sessionById.get(childSessionId) : null;
+                      const childSessionLabel = childSession
+                        ? (text(childSession.title || childSession.name) || text(childSession.element_id_in_parent || childSession.elementIdInParent) || "Подпроцесс")
+                        : "";
                       return (
                         <button
                           key={threadId}
                           type="button"
-                          className={`relative rounded-lg border px-3 py-2.5 pl-4 text-left transition ${discussionThreadRowClass({ active, attentionActive })}`}
+                          className={discussionThreadRowClass({ active, attentionActive })}
                           onClick={() => {
                             setCreateOpen(false);
                             setSelectedThreadId(threadId);
+                            setPanelView("thread");
                           }}
                         >
-                          <span
-                            className={`absolute bottom-2.5 left-2 top-2.5 w-0.5 rounded-full ${attentionActive ? "bg-warning/70" : active ? "bg-info/65" : "bg-border/70"}`}
-                            aria-hidden="true"
-                          />
                           <div className="min-w-0">
                             <div className="flex min-w-0 items-start justify-between gap-2">
-                              <div className="line-clamp-2 text-[13px] font-bold leading-snug text-fg">{threadTitle(thread)}</div>
+                              <div className="line-clamp-2 text-[14px] font-semibold leading-[1.3] text-[#1a1a2e]">{threadTitle(thread)}</div>
                               {newMessagesCount > 0 ? (
                                 <span
                                   className="shrink-0 rounded-full border border-info/55 bg-info/10 px-1.5 py-0.5 text-[10px] font-bold leading-4 tabular-nums text-info"
@@ -2278,29 +2651,39 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                                 </span>
                               ) : null}
                             </div>
-                            <div className="mt-1 line-clamp-1 text-[11px] leading-snug text-muted">
+                            <div className="mt-1 line-clamp-2 text-[12px] leading-snug text-[#6b7280]">
                               {commentBodyPreview(threadPreview(thread), "Без текста")}
                             </div>
-                            <div className="mt-1 line-clamp-1 text-[11px] leading-snug text-muted">
-                              {meta.relation} · Создал {threadCreatorLabel(thread, authorLabelsById, viewerUserId)}
+                            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[#9ca3af]">
+                              <span>Создал {threadCreatorLabel(thread, authorLabelsById, viewerUserId)}</span>
+                              <span aria-hidden="true">·</span>
+                              <span>последний ответ {threadLastAuthorLabel(thread, authorLabelsById, viewerUserId)}</span>
+                              <span aria-hidden="true">·</span>
+                              <span>{formatDate(threadUpdatedAt(thread)) || "сейчас"}</span>
                             </div>
                           </div>
-                          <div className="mt-2 flex flex-wrap items-center gap-1 text-[10px] text-muted">
-                            <span className="truncate">Последний: {threadLastAuthorLabel(thread, authorLabelsById, viewerUserId)}</span>
-                            <span aria-hidden="true">·</span>
-                            <span>{formatDate(threadUpdatedAt(thread)) || "сейчас"}</span>
-                            <span className={`rounded-full border px-1.5 py-0.5 font-semibold leading-4 ${threadStatusTone(thread)}`}>{threadStatusLabel(thread)}</span>
+                          <div className="mt-2 flex flex-wrap items-center gap-1 text-[10px]">
+                            <span className={`${threadStatusListClass(thread)}`}>{threadStatusLabel(thread)}</span>
                             {attentionActive ? (
-                              <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold leading-4 ${attentionMeta(thread).tone}`}>
+                              <span className={`${attentionListClass()}`}>
                                 {attentionMeta(thread).shortLabel}
                               </span>
                             ) : null}
                             {threadPriority(thread) === "high" ? (
-                              <span className={`rounded-full border px-1.5 py-0.5 font-semibold leading-4 ${priorityMeta(thread).tone}`}>{priorityMeta(thread).shortLabel}</span>
+                              <span className={`rounded border px-1.5 py-0.5 font-semibold leading-4 ${priorityMeta(thread).tone}`}>{priorityMeta(thread).shortLabel}</span>
                             ) : null}
                             {mentionLabel ? (
-                              <span className="min-w-0 max-w-full truncate rounded-full border border-info/40 bg-info/10 px-1.5 py-0.5 font-semibold leading-4 text-info">
+                              <span className="min-w-0 max-w-full truncate rounded border border-info/40 bg-info/10 px-1.5 py-0.5 font-semibold leading-4 text-info">
                                 {mentionLabel}
+                              </span>
+                            ) : null}
+                            {childSessionLabel ? (
+                              <span
+                                data-testid="notes-thread-child-session-label"
+                                className={`min-w-0 max-w-[160px] truncate ${childSessionListClass()}`}
+                                title={`Обсуждение находится в подпроцессе: ${childSessionLabel}`}
+                              >
+                                {childSessionLabel}
                               </span>
                             ) : null}
                             <span className="ml-auto text-[10px] leading-4 text-muted">{asArray(thread.comments).length} сообщ.</span>
@@ -2309,13 +2692,28 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                       );
                     })}
                   </div>
+                ) : displayThreads.length === 0 ? (
+                  <DiscussionEmptyState
+                    disabled={disabled}
+                    scopeFilter={scopeFilter}
+                    selectedElementName={selectedElementName}
+                    onCreate={() => {
+                      if (scopeFilter === "selected_element" && selectedElementId) {
+                        setCreateScope("diagram_element");
+                      } else if (scopeFilter === "diagram") {
+                        setCreateScope("diagram");
+                      } else {
+                        setCreateScope("session");
+                      }
+                      setCreateOpen(true);
+                      setError("");
+                    }}
+                  />
                 ) : (
-                  <div className="rounded-lg border border-dashed border-border bg-panel/70 p-4 text-sm text-muted">
-                    {loading
-                      ? "Загружаем обсуждения..."
-                      : participationFilter === "my" && participatedThreadsCount === 0
-                        ? "Пока нет обсуждений с вашим участием."
-                        : "По текущим фильтрам ничего не найдено."}
+                  <div className="rounded-lg border border-dashed border-border bg-panel/70 p-4 text-sm text-muted transition-opacity duration-200">
+                    {participationFilter === "my" && participatedThreadsCount === 0
+                      ? "Пока нет обсуждений с вашим участием."
+                      : "По текущим фильтрам ничего не найдено."}
                   </div>
                 )}
               </div>

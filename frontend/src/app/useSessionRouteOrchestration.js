@@ -58,10 +58,8 @@ export function pushSessionSelectionToUrl({ projectId, sessionId, parentSessionI
     if (currentRoute.projectId === pid && currentRoute.sessionId === sid) {
       return { ok: true, action: "none", reason: "already_current_session" };
     }
-    const parentResult = replaceProcessMapHistory({ projectId: pid, sessionId: "", parentSessionId: "", focusElementId: "", source: "internal", projectContext }, {
-      win,
-      baseSearch: win.location.search || "",
-    });
+    // Preserve the current history entry (e.g. the parent session) so that the
+    // browser back button can return to it. Only push the new session on top.
     const sessionResult = pushProcessMapHistory({ projectId: pid, sessionId: sid, parentSessionId, focusElementId, source: "internal", projectContext }, {
       win,
       baseSearch: win.location.search || "",
@@ -69,9 +67,9 @@ export function pushSessionSelectionToUrl({ projectId, sessionId, parentSessionI
     return {
       ok: true,
       action: sessionResult?.action || "none",
-      parentAction: parentResult?.action || "none",
+      parentAction: "none",
       sessionAction: sessionResult?.action || "none",
-      parentUrl: parentResult?.url || "",
+      parentUrl: "",
       sessionUrl: sessionResult?.url || "",
     };
   } catch {
@@ -98,20 +96,21 @@ export function seedSessionParentHistoryToUrl({ projectId, sessionId }, win = ty
     ) {
       return { ok: true, action: "none", reason: "already_internal_session" };
     }
-    const parentResult = replaceProcessMapHistory({ projectId: pid, sessionId: "", source: "internal" }, {
+    // Preserve the current history entry (the parent session deep-link) by
+    // replacing it in-place with internal state. Do NOT insert a project-only
+    // entry, otherwise browser back from a child session lands on a URL with no
+    // session and the canvas gets unloaded.
+    const sessionResult = replaceProcessMapHistory({ projectId: pid, sessionId: sid, source: "internal" }, {
       win,
       baseSearch: win.location.search || "",
-    });
-    const sessionResult = pushProcessMapHistory({ projectId: pid, sessionId: sid, source: "internal" }, {
-      win,
-      baseSearch: win.location.search || "",
+      force: true,
     });
     return {
       ok: true,
       action: "seed",
-      parentAction: parentResult?.action || "none",
+      parentAction: "none",
       sessionAction: sessionResult?.action || "none",
-      parentUrl: parentResult?.url || "",
+      parentUrl: "",
       sessionUrl: sessionResult?.url || "",
     };
   } catch {

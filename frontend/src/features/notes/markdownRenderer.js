@@ -4,6 +4,28 @@ function text(value) {
   return String(value || "");
 }
 
+const MENTION_RE = /@(\w+@[\w.]+)/g;
+const MENTION_CLASS = "mention-highlight rounded-[3px] bg-[#e0e7ff] px-1 font-medium text-[#3730a3]";
+
+function renderMentions(node, keyPrefix = "mention") {
+  if (typeof node !== "string") return [node];
+  const out = [];
+  let lastIndex = 0;
+  let match;
+  MENTION_RE.lastIndex = 0;
+  while ((match = MENTION_RE.exec(node)) !== null) {
+    if (match.index > lastIndex) out.push(node.slice(lastIndex, match.index));
+    out.push(React.createElement(
+      "span",
+      { key: `${keyPrefix}_${match.index}`, className: MENTION_CLASS },
+      match[0],
+    ));
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < node.length) out.push(node.slice(lastIndex));
+  return out.length ? out : [node];
+}
+
 function isSafeMarkdownHref(rawHref) {
   const href = text(rawHref).trim();
   if (!href || /[\u0000-\u001f\u007f\s]/u.test(href)) return false;
@@ -106,7 +128,7 @@ export function renderNoteInlineMarkdown(value, keyPrefix = "note_md_inline") {
     cursor = next + 1;
   }
 
-  return out;
+  return out.flatMap((node, idx) => renderMentions(node, `${keyPrefix}_m_${idx}`));
 }
 
 function renderInlineWithBreaks(value, keyPrefix) {

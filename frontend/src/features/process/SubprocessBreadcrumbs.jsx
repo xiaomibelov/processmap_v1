@@ -4,12 +4,16 @@ export default function SubprocessBreadcrumbs({ breadcrumbs = [], onNavigate, on
   if (!breadcrumbs || breadcrumbs.length < 2) return null;
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 bg-neutral-100 dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700 text-sm">
+    <div
+      className="flex flex-wrap items-center gap-2 px-4 py-2 bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-sm text-sm"
+      data-testid="subprocess-breadcrumbs"
+    >
       <button
         type="button"
         onClick={onBack}
         className="px-2 py-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700"
         title="Назад"
+        data-testid="subprocess-back-button"
       >
         ←
       </button>

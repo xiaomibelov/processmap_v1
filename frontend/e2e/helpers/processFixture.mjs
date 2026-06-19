@@ -85,7 +85,11 @@ export async function createFixture(request, runId, headers, xml) {
 
   const putRes = await request.put(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/bpmn`, {
     headers,
-    data: { xml: String(xml || seedXml()) },
+    data: {
+      xml: String(xml || seedXml()),
+      base_diagram_state_version: 0,
+      base_bpmn_xml_version: 0,
+    },
   });
   await apiJson(putRes, "seed bpmn");
   return { projectId, sessionId, orgId };
