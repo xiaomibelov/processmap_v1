@@ -325,6 +325,7 @@ export default function AppShell({
               onOpenNotesDiscussions={onOpenNotesDiscussions}
               onNavigateToSubprocess={onNavigateToSubprocess}
               childSessionDiscussionAggregates={childSessionDiscussionAggregates}
+              sessions={sessions}
             />
           )}
         </div>
