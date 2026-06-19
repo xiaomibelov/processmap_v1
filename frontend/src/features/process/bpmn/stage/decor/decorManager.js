@@ -114,6 +114,33 @@ export function extractDocumentationMetaMapFromBpmnXml(xmlRaw, toText) {
   }
 }
 
+function findVisibleSubprocessAncestor(element, rootElement, toText) {
+  if (!element || !rootElement) return null;
+  let node = element;
+  while (node && node.parent) {
+    if (node.parent === rootElement) return null;
+    const parentType = toText(node.parent.type || node.parent.$type || "").toLowerCase();
+    if (parentType.includes("subprocess") || parentType.includes("callactivity")) {
+      return node.parent;
+    }
+    node = node.parent;
+  }
+  return null;
+}
+
+function isCollapsedSubprocessShape(inst, subprocessId) {
+  if (!inst || !subprocessId) return false;
+  try {
+    const registry = inst.get("elementRegistry");
+    const shape = registry?.get?.(subprocessId);
+    if (shape && shape.collapsed === true) return true;
+    const diExpanded = shape?.businessObject?.di?.isExpanded;
+    if (typeof diExpanded === "boolean") return !diExpanded;
+  } catch {
+  }
+  return false;
+}
+
 function buildStepTimeDecorPayload(ctx) {
   const asArray = ctx?.utils?.asArray;
   const asObject = ctx?.utils?.asObject;
@@ -922,6 +949,7 @@ export function applyUserNotesDecor(ctx) {
     const canvas = inst.get("canvas");
     const overlays = inst.get("overlays");
     const registry = inst.get("elementRegistry");
+    const rootElement = typeof canvas?.getRootElement === "function" ? canvas.getRootElement() : null;
     const currentState = { ...asObject(refs.userNotesDecorStateRef.current[kind]) };
     const nextState = {};
     const notesByNodeId = {};
@@ -1017,6 +1045,20 @@ export function applyUserNotesDecor(ctx) {
       if (!el) return;
       if (!isGfxInDom(inst, el)) return;
       const elementId = toText(el?.id);
+      // Hide child element badges when the element is inside a collapsed
+      // SubProcess on a parent-level diagram. The aggregate badge on the
+      // SubProcess itself already represents these discussions; rendering
+      // individual badges here causes them to overlap the aggregate badge.
+      // For expanded SubProcesses we keep the badges but shift them to the
+      // top-right corner so they do not sit on the SubProcess aggregate badge.
+      let badgePosition = { top: -18, left: 2 };
+      const subprocessAncestor = rootElement
+        ? findVisibleSubprocessAncestor(el, rootElement, toText)
+        : null;
+      if (subprocessAncestor) {
+        if (isCollapsedSubprocessShape(inst, subprocessAncestor.id)) return;
+        badgePosition = { top: -18, right: 2 };
+      }
       if (!elementId) return;
       const markerClass = count > 0 ? "fpcHasUserNote" : "";
       const docsSignature = docsText ? docsText.slice(0, 240) : "";
@@ -1099,7 +1141,7 @@ export function applyUserNotesDecor(ctx) {
       }
 
       const overlayId = overlays.add(elementId, {
-        position: { top: -18, left: 2 },
+        position: badgePosition,
         html: stack,
       });
       nextState[elementId] = {

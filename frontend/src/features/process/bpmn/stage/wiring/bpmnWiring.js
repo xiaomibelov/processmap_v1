@@ -238,9 +238,18 @@ export function createBpmnWiring(ctxBase, deps = {}) {
     if (refs.modelerRuntimeRef?.current) return refs.modelerRuntimeRef.current;
     const runtime = createBpmnRuntime({
       mode: "modeler",
-      getCtorOptions: (runtimeMode) => {
+      getCtorOptions: async (runtimeMode) => {
         if (String(runtimeMode || "").toLowerCase() !== "modeler") return {};
         const additionalModules = forceTaskResizeRulesModule ? [forceTaskResizeRulesModule] : [];
+        if (typeof window !== "undefined") {
+          try {
+            const drilldown = await import("bpmn-js/lib/features/drilldown/index.js");
+            additionalModules.push(drilldown.default || drilldown);
+          } catch (drilldownError) {
+            // eslint-disable-next-line no-console
+            console.warn("[bpmnWiring] failed to load drilldown module", drilldownError);
+          }
+        }
         const moddleExtensions = {
           ...(pmModdleDescriptor ? { pm: pmModdleDescriptor } : {}),
           ...(camundaModdleDescriptor ? { camunda: camundaModdleDescriptor } : {}),

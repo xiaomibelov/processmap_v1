@@ -128,17 +128,16 @@ test("writeSelectionToUrl preserves replace-only behavior and unrelated query pa
   assert.equal(win.location.hash, "#updates");
 });
 
-test("pushSessionSelectionToUrl replaces parent project entry then pushes session entry", () => {
+test("pushSessionSelectionToUrl pushes session entry while preserving current entry", () => {
   const win = makeWindow("https://processmap.local/app?workspace=w1&folder=f1");
   const result = pushSessionSelectionToUrl({ projectId: "p1", sessionId: "s1" }, win);
 
   assert.equal(result.ok, true);
-  assert.equal(result.parentAction, "replace");
+  assert.equal(result.parentAction, "none");
   assert.equal(result.sessionAction, "push");
   assert.deepEqual(
     win.calls.map((call) => [call.type, call.url]),
     [
-      ["replace", "/app?workspace=w1&folder=f1&project=p1"],
       ["push", "/app?workspace=w1&folder=f1&project=p1&session=s1"],
     ],
   );
@@ -161,12 +160,10 @@ test("pushSessionSelectionToUrl preserves parent breadcrumb context on parent an
 
   pushSessionSelectionToUrl({ projectId: "p1", sessionId: "s1", projectContext }, win);
 
-  assert.equal(win.calls[0].type, "replace");
-  assert.equal(win.calls[0].url, "/app?project=p1");
+  assert.equal(win.calls.length, 1);
+  assert.equal(win.calls[0].type, "push");
+  assert.equal(win.calls[0].url, "/app?project=p1&session=s1");
   assert.deepEqual(win.calls[0].state[PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY], projectContext);
-  assert.equal(win.calls[1].type, "push");
-  assert.equal(win.calls[1].url, "/app?project=p1&session=s1");
-  assert.deepEqual(win.calls[1].state[PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY], projectContext);
 });
 
 test("pushSessionSelectionToUrl updates same parent URL with context without adding a duplicate parent entry", () => {
@@ -187,7 +184,6 @@ test("pushSessionSelectionToUrl updates same parent URL with context without add
   assert.deepEqual(
     win.calls.map((call) => [call.type, call.url]),
     [
-      ["replace", "/app?project=p1"],
       ["push", "/app?project=p1&session=s1"],
     ],
   );
@@ -199,12 +195,10 @@ test("pushSessionSelectionToUrl still works without breadcrumb context for direc
 
   pushSessionSelectionToUrl({ projectId: "p1", sessionId: "s1" }, win);
 
-  assert.equal(win.calls[0].type, "replace");
-  assert.equal(win.calls[0].url, "/app?project=p1");
+  assert.equal(win.calls.length, 1);
+  assert.equal(win.calls[0].type, "push");
+  assert.equal(win.calls[0].url, "/app?project=p1&session=s1");
   assert.equal(win.calls[0].state[PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY], undefined);
-  assert.equal(win.calls[1].type, "push");
-  assert.equal(win.calls[1].url, "/app?project=p1&session=s1");
-  assert.equal(win.calls[1].state[PROCESS_MAP_PROJECT_CONTEXT_STATE_KEY], undefined);
 });
 
 test("pushSessionSelectionToUrl skips duplicate current session", () => {
@@ -227,7 +221,7 @@ test("pushSessionSelectionToUrl requires project and session ids", () => {
   assert.equal(win.calls.length, 0);
 });
 
-test("seedSessionParentHistoryToUrl seeds parent when direct session URL has no internal route state", () => {
+test("seedSessionParentHistoryToUrl seeds internal state on current session entry", () => {
   const win = makeWindow("https://processmap.local/app?project=p1&session=s1");
   const result = seedSessionParentHistoryToUrl({ projectId: "p1", sessionId: "s1" }, win);
 
@@ -236,11 +230,11 @@ test("seedSessionParentHistoryToUrl seeds parent when direct session URL has no 
   assert.deepEqual(
     win.calls.map((call) => [call.type, call.url]),
     [
-      ["replace", "/app?project=p1"],
-      ["push", "/app?project=p1&session=s1"],
+      ["replace", "/app?project=p1&session=s1"],
     ],
   );
   assert.equal(win.location.search, "?project=p1&session=s1");
+  assert.equal(win.history.state?.processMapRoute?.source, "internal");
 });
 
 test("seedSessionParentHistoryToUrl skips sessions already opened through internal history", () => {

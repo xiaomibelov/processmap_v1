@@ -99,12 +99,13 @@ export default function createBpmnRuntime(options = {}) {
   const statusSubs = new Set();
   const changeSubs = new Set();
 
-  function resolveCtorOptions(runtimeMode) {
+  async function resolveCtorOptions(runtimeMode) {
     const modeName = asMode(runtimeMode || mode);
     try {
       if (typeof options?.getCtorOptions === "function") {
         const out = options.getCtorOptions(modeName);
-        if (out && typeof out === "object" && !Array.isArray(out)) return out;
+        const resolved = out && typeof out.then === "function" ? await out : out;
+        if (resolved && typeof resolved === "object" && !Array.isArray(resolved)) return resolved;
       }
     } catch {
       // no-op
@@ -222,7 +223,7 @@ export default function createBpmnRuntime(options = {}) {
       disableBpmnZoomScroll(instance);
       clearBjsContainers(container);
       const RuntimeCtor = await importCtor(mode);
-      const ctorOptions = resolveCtorOptions(mode);
+      const ctorOptions = await resolveCtorOptions(mode);
       const next = new RuntimeCtor({ container, ...ctorOptions });
       instance = next;
       containerEl = container;
