@@ -42,7 +42,7 @@ jobs:
             echo "[deploy-stage-ref] resolved sha: ${DEPLOY_SHA}"
 
             # Pull requested source code only, preserve server configs
-            git checkout "${DEPLOY_SHA}" -- backend frontend Dockerfile deploy docker-compose.yml
+            git checkout "${DEPLOY_SHA}" -- backend frontend Dockerfile deploy docker-compose.yml docker-compose.stage.yml
 
             deploy/scripts/stage_freshness_proof.sh prepare-source \
               --requested-ref "${DEPLOY_REF}" \

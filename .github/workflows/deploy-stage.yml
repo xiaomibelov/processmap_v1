@@ -34,7 +34,7 @@ jobs:
             git fetch origin main
             DEPLOY_SHA="$(git rev-parse --verify origin/main)"
             echo "[deploy-stage] resolved sha: ${DEPLOY_SHA}"
-            git checkout "${DEPLOY_SHA}" -- backend frontend Dockerfile deploy docker-compose.yml
+            git checkout "${DEPLOY_SHA}" -- backend frontend Dockerfile deploy docker-compose.yml docker-compose.stage.yml
 
             deploy/scripts/stage_freshness_proof.sh prepare-source \
               --requested-ref "${REQUESTED_REF}" \
