@@ -28,6 +28,19 @@ export async function apiAdminListUsers() {
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
 
+function normalizeMembershipPermissions(row) {
+  const perms = row?.permissions;
+  if (!perms || typeof perms !== "object" || Array.isArray(perms)) return undefined;
+  return {
+    view: perms.view !== false,
+    create: perms.create === true,
+    edit: perms.edit === true,
+    export: perms.export === true,
+    delete: perms.delete === true,
+    manage_users: perms.manage_users === true,
+  };
+}
+
 export async function apiAdminCreateUser(payload = {}) {
   const membershipsRaw = Array.isArray(payload?.memberships) ? payload.memberships : [];
   const body = {
@@ -40,6 +53,7 @@ export async function apiAdminCreateUser(payload = {}) {
     memberships: membershipsRaw.map((row) => ({
       org_id: String(row?.org_id || "").trim(),
       role: String(row?.role || "org_viewer").trim() || "org_viewer",
+      permissions: normalizeMembershipPermissions(row),
     })).filter((row) => row.org_id),
   };
   const r = okOrError(await request(apiRoutes.admin.users(), { method: "POST", body }));
@@ -63,6 +77,7 @@ export async function apiAdminPatchUser(userId, payload = {}) {
     body.memberships = membershipsRaw.map((row) => ({
       org_id: String(row?.org_id || "").trim(),
       role: String(row?.role || "org_viewer").trim() || "org_viewer",
+      permissions: normalizeMembershipPermissions(row),
     })).filter((row) => row.org_id);
   }
   const r = okOrError(await request(apiRoutes.admin.user(uid), { method: "PATCH", body }));
