@@ -53,6 +53,11 @@ for f in \
   REPAIR_OPTIONS.md \
   STATE.json \
   READY_FOR_EXECUTION \
+  AUDIT.md \
+  AUDIT-TESTS.md \
+  AUDIT-IMPL.md \
+  FIX.md \
+  GAPS.md \
   WORKER_STARTED \
   WORKER_DONE \
   REVIEW_PASS \
