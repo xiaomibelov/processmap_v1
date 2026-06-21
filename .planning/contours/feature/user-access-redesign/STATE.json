@@ -1,0 +1,28 @@
+{
+  "contour_id": "feature/user-access-redesign",
+  "contour_type": "feature",
+  "branch": "feature/user-access-redesign",
+  "baseline": "origin/main @ f3a1eaa0f2cd7db93bba771f7461b5e527b26648",
+  "role": "planner",
+  "status": "planned",
+  "artifacts": [
+    "PLAN.md",
+    "UI.md",
+    "API.md",
+    "TESTS.md",
+    "PR.md",
+    "STATE.json",
+    "RAG_PREFLIGHT_PLANNER.md"
+  ],
+  "gates": {
+    "rag_preflight": true,
+    "source_runtime_truth": true,
+    "bounded_scope": true,
+    "acceptance_criteria": true,
+    "no_product_code_by_planner": true,
+    "no_merge_deploy_pr_without_approval": true
+  },
+  "next_role": "executor",
+  "next_action": "Wait for user approval of PLAN.md before creating EXEC_REPORT/implementation.",
+  "notes": "Permission matrix is UI/API/DB contract only; authz enforcement remains role-based in this contour to avoid broad refactor."
+}
