@@ -1,9 +1,29 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from typing import Optional
+
+from fastapi import APIRouter, Request, Query
 from fastapi.responses import JSONResponse
 
 from ..services import session_service as _svc
+from ..schemas.legacy_api import (
+    AiQuestionsIn,
+    AnswerIn,
+    BpmnMetaPatchIn,
+    BpmnRestoreIn,
+    BpmnXmlIn,
+    CreateEdgeIn,
+    CreateNodeIn,
+    CreateSessionIn,
+    InferRtiersIn,
+    NodePatchIn,
+    NotesExtractionApplyIn,
+    NotesExtractionPreviewIn,
+    NotesIn,
+    OrgReportBuildIn,
+    SessionPresenceTouchIn,
+    UpdateSessionIn,
+)
 
 router = APIRouter()
 
@@ -49,7 +69,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
 
 @router.delete('/api/sessions/{session_id}')
 def delete_session_api(session_id: str, request: Request = None):
-    return _svc.delete_session_api(session_id)
+    return _svc.delete_session_api(session_id, request)
 
 @router.put('/api/sessions/{session_id}')
 def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None):
@@ -125,11 +145,11 @@ def session_overlays(session_id: str, request: Request = None):
 
 @router.put('/api/sessions/{session_id}/bpmn')
 def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None):
-    return _svc.session_bpmn_save(session_id, inp)
+    return _svc.session_bpmn_save(session_id, inp, request)
 
 @router.get('/api/sessions/{session_id}/bpmn/versions')
-def session_bpmn_versions_list(session_id: str, request: Request = None, limit: int, include_xml: int):
-    return _svc.session_bpmn_versions_list(session_id, limit, include_xml)
+def session_bpmn_versions_list(session_id: str, limit: int = Query(100), include_xml: int = Query(0), request: Request = None):
+    return _svc.bpmn_versions_list(session_id, request=request, limit=limit, include_xml=include_xml)
 
 @router.get('/api/sessions/{session_id}/bpmn/versions/{version_id}')
 def session_bpmn_version_detail(session_id: str, version_id: str, request: Request = None):
