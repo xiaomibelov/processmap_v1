@@ -23,6 +23,12 @@ from ..services.bpmn_navigation import (
 logger = logging.getLogger(__name__)
 
 
+# Import legacy authz helper locally to avoid circular imports at module load.
+def _legacy_load_session_scoped(session_id: str, request: Optional[Request] = None):
+    import app._legacy_main as _lm
+    return _lm._legacy_load_session_scoped(session_id, request)
+
+
 class SessionAccessDenied(HTTPException):
     def __init__(self):
         super().__init__(status_code=403, detail="Недостаточно прав для открытия этой сессии.")
@@ -199,11 +205,14 @@ def delete_session(
 
 # ── BPMN subdomain ────────────────────────────────────────────────
 
-def bpmn_meta_get(session_id: str) -> Dict[str, Any]:
+def bpmn_meta_get(session_id: str, request: Any = None) -> Dict[str, Any]:
     """Get BPMN metadata for a session."""
     # CROSS-DOMAIN: depends on _collect_sequence_flow_meta, _normalize_bpmn_meta,
     # _enforce_gateway_tier_constraints in _legacy_main.py.
     # Full extraction requires migrating those helpers first.
+    sess, _oid, _scope = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return {"error": "not found"}
     import app._legacy_main as _lm
     return _lm.session_bpmn_meta_get(session_id)
 
@@ -312,8 +321,11 @@ def bpmn_clear(
     return _lm.session_bpmn_clear(session_id, request)
 
 
-def overlays(session_id: str) -> Any:
+def overlays(session_id: str, request: Any = None) -> Any:
     """Return lightweight JSON overlays for a session."""
+    sess, _oid, _scope = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return {"error": "not found"}
     from ..overlay_cache import get_overlays_json
     return get_overlays_json(session_id)
 
@@ -331,10 +343,10 @@ from ..utils.session_helpers import (
 
 def patch_node(session_id: str, node_id: str, inp, request=None) -> Dict[str, Any]:
     """Patch a single node in a session."""
-    st = get_storage()
-    s = st.load(session_id)
+    s, _oid, _scope = _legacy_load_session_scoped(session_id, request)
     if not s:
         return {"error": "not found"}
+    st = get_storage()
 
     node = next((n for n in s.nodes if n.id == node_id), None)
     if not node:
@@ -392,10 +404,10 @@ def patch_node(session_id: str, node_id: str, inp, request=None) -> Dict[str, An
 
 def add_node(session_id: str, inp, request=None) -> Dict[str, Any]:
     """Add a new node to a session."""
-    st = get_storage()
-    s = st.load(session_id)
+    s, _oid, _scope = _legacy_load_session_scoped(session_id, request)
     if not s:
         return {"error": "not found"}
+    st = get_storage()
 
     _require_diagram_cas_or_409(
         sess=s,
@@ -443,10 +455,10 @@ def add_node(session_id: str, inp, request=None) -> Dict[str, Any]:
 
 def delete_node(session_id: str, node_id: str, request=None) -> Dict[str, Any]:
     """Delete a node (and incident edges) from a session."""
-    st = get_storage()
-    s = st.load(session_id)
+    s, _oid, _scope = _legacy_load_session_scoped(session_id, request)
     if not s:
         return {"error": "not found"}
+    st = get_storage()
 
     _require_diagram_cas_or_409(
         sess=s,
@@ -477,10 +489,10 @@ def delete_node(session_id: str, node_id: str, request=None) -> Dict[str, Any]:
 
 def add_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
     """Add a new edge to a session."""
-    st = get_storage()
-    s = st.load(session_id)
+    s, _oid, _scope = _legacy_load_session_scoped(session_id, request)
     if not s:
         return {"error": "not found"}
+    st = get_storage()
 
     _require_diagram_cas_or_409(
         sess=s,
@@ -521,10 +533,10 @@ def add_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
 
 def delete_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
     """Delete an edge from a session."""
-    st = get_storage()
-    s = st.load(session_id)
+    s, _oid, _scope = _legacy_load_session_scoped(session_id, request)
     if not s:
         return {"error": "not found"}
+    st = get_storage()
 
     _require_diagram_cas_or_409(
         sess=s,
@@ -601,14 +613,21 @@ def ai_questions(session_id: str, inp, request=None) -> Dict[str, Any]:
 
 # ── Export subdomain (thin extraction) ────────────────────────────
 
-def export(session_id: str) -> Dict[str, Any]:
+def export(session_id: str, request: Any = None) -> Dict[str, Any]:
     """Export session as JSON."""
+    sess, _oid, _scope = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return {"error": "not found"}
     import app._legacy_main as _lm
     return _lm.export(session_id)
 
 
-def export_zip(session_id: str):
+def export_zip(session_id: str, request: Any = None):
     """Export session as ZIP."""
+    sess, _oid, _scope = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        from fastapi.responses import Response
+        return Response(content="not found", media_type="text/plain", status_code=404)
     import app._legacy_main as _lm
     return _lm.export_zip(session_id)
 
@@ -683,8 +702,11 @@ def put_session(session_id: str, inp, request=None):
     return _lm.put_session(session_id, inp, request)
 
 
-def recompute_session(session_id: str):
+def recompute_session(session_id: str, request: Any = None):
     """Recompute derived fields for a session."""
+    sess, _oid, _scope = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return {"error": "not found"}
     import app._legacy_main as _lm
     return _lm.recompute(session_id)
 
