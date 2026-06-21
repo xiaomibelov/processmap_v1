@@ -169,6 +169,12 @@ def list_project_sessions(
     return out
 
 
+def delete_session_api(session_id: str, request: Any = None):
+    """Delete a session using workspace-content delete authz (org admin/owner + platform admin)."""
+    import app._legacy_main as _lm
+    return _lm.delete_session_api(session_id, request)
+
+
 def delete_session(
     session_id: str,
     *,
@@ -254,6 +260,11 @@ def bpmn_export(
         pan_y=pan_y,
         request=request,
     )
+
+
+def session_bpmn_save(session_id: str, inp: Any, request: Any = None) -> Dict[str, Any]:
+    """Router-facing alias for bpmn_save that accepts request."""
+    return bpmn_save(session_id, inp, request)
 
 
 def bpmn_save(
