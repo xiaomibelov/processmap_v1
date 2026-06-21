@@ -94,8 +94,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
 
 @router.delete('/api/sessions/{session_id}')
 def delete_session_api(session_id: str, request: Request = None):
-    _svc.delete_session(session_id, request=request)
-    return {"ok": True}
+    return _svc.delete_session_api(session_id, request)
 
 @router.put('/api/sessions/{session_id}')
 def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None):
