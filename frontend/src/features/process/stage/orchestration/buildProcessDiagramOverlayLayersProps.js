@@ -42,6 +42,10 @@ export function buildBpmnDiagramOverlayLayersProps({
   openBpmnSubprocessPreviewProperties,
   onNavigateToSubprocess,
   childSessionDiscussionAggregates,
+  focusElementId = "",
+  onFocusElementApplied = null,
+  restoreViewportSnapshot = null,
+  onRestoreViewportSnapshotApplied = null,
 }) {
   bumpDrawioPerfCounter("overlay.vm.diagramOverlayProps.builds");
   return {
@@ -75,6 +79,10 @@ export function buildBpmnDiagramOverlayLayersProps({
       v2OverlaysExpanded,
       onNavigateToSubprocess,
       childSessionDiscussionAggregates,
+      focusElementId,
+      onFocusElementApplied,
+      restoreViewportSnapshot,
+      onRestoreViewportSnapshotApplied,
     },
     bpmnContextMenuProps: {
       menu: bpmnContextMenu,

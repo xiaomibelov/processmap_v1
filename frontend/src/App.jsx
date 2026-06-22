@@ -888,6 +888,11 @@ export default function App() {
   const [noteNotificationsAvailable, setNoteNotificationsAvailable] = useState(false);
   const [subprocessBreadcrumbs, setSubprocessBreadcrumbs] = useState([]);
   const [focusElementId, setFocusElementId] = useState("");
+  const [isChangingSessionStatus, setIsChangingSessionStatus] = useState(false);
+  const [restoreViewportSnapshot, setRestoreViewportSnapshot] = useState(null);
+  const statusChangeSnapshotRef = useRef(null);
+  const bpmnStageRef = useRef(null);
+  const parentViewportSnapshotRef = useRef(new Map());
   const discussionLinkedElementFocusResolversRef = useRef(new Map());
   const notesPanelRef = useRef(null);
   const activeOrgIdRef = useRef(String(activeOrgId || "").trim());
@@ -1165,6 +1170,15 @@ export default function App() {
       console.error("navigate failed", res.error);
       return;
     }
+    // Persist the parent viewport so we can restore it when the user returns.
+    try {
+      const snapshot = bpmnStageRef.current?.getCanvasSnapshot?.();
+      if (snapshot) {
+        parentViewportSnapshotRef.current.set(String(sessionIdArg || "").trim(), snapshot);
+      }
+    } catch (e) {
+      logNav("subprocess_viewport_snapshot_failed", { sessionId: sessionIdArg, error: String(e?.message || e) });
+    }
     setSubprocessBreadcrumbs(res.breadcrumbs || []);
     setFocusElementId(res.targetElementId || "");
     pushSessionSelectionToUrl({
@@ -1174,9 +1188,6 @@ export default function App() {
       focusElementId: res.targetElementId || "",
       projectContext: projectRouteContext,
     });
-    if (typeof window !== "undefined") {
-      window.__SUBPROCESS_FOCUS_ELEMENT_ID__ = res.targetElementId || "";
-    }
     // If a discussion-linked element focus intent is active and matches the
     // target we are drilling down to, re-target that intent to the child
     // session so the child ProcessStage can finish selecting/highlighting it.
@@ -1197,6 +1208,11 @@ export default function App() {
       console.error("return failed", res.error);
       return;
     }
+    const parentSid = String(res.parentSessionId || "").trim();
+    const snapshot = parentSid ? parentViewportSnapshotRef.current.get(parentSid) : null;
+    if (snapshot) {
+      setRestoreViewportSnapshot(snapshot);
+    }
     setFocusElementId(res.elementIdInParent || "");
     pushSessionSelectionToUrl({
       projectId,
@@ -1204,9 +1220,6 @@ export default function App() {
       focusElementId: res.elementIdInParent || "",
       projectContext: projectRouteContext,
     });
-    if (typeof window !== "undefined") {
-      window.__SUBPROCESS_FOCUS_ELEMENT_ID__ = res.elementIdInParent || "";
-    }
     openSession(res.parentSessionId);
   }, [openSession, projectId, projectRouteContext]);
 
@@ -3096,23 +3109,57 @@ export default function App() {
       }
     }
 
+    const previousInterviewStatus = draft?.interview?.status;
+    const previousDirectStatus = draft?.status;
+    statusChangeSnapshotRef.current = { interviewStatus: previousInterviewStatus, directStatus: previousDirectStatus };
+
+    setIsChangingSessionStatus(true);
+    setDraftPersisted((prev) => {
+      const next = { ...prev };
+      next.interview = next.interview && typeof next.interview === "object" ? { ...next.interview, status } : { status };
+      next.status = status;
+      return next;
+    });
+
     const payload = {
       status,
       base_diagram_state_version: Math.round(baseDiagramStateVersion),
     };
     const r = await apiPatchSession(sid, payload);
     if (!r.ok) {
-      const statusErr = String(r.error || "").toLowerCase();
-      const userMessage = statusErr.includes("invalid status transition")
-        ? "Недопустимый переход статуса."
-        : statusErr.includes("forbidden")
-          ? "Недостаточно прав для изменения статуса."
-          : String(r.error || "status_update_failed");
-      markFail(userMessage);
-      return { ok: false, error: userMessage };
+      setDraftPersisted((prev) => {
+        const next = { ...prev };
+        const snap = statusChangeSnapshotRef.current || {};
+        next.interview = next.interview && typeof next.interview === "object" ? { ...next.interview } : {};
+        if (snap.interviewStatus !== undefined) next.interview.status = snap.interviewStatus;
+        else delete next.interview.status;
+        if (snap.directStatus !== undefined) next.status = snap.directStatus;
+        else delete next.status;
+        return next;
+      });
+      if (r.status === 409) {
+        markFail("Переход в выбранный статус недоступен для текущего состояния сессии.");
+      } else {
+        const statusErr = String(r.error || "").toLowerCase();
+        const userMessage = statusErr.includes("invalid status transition")
+          ? "Недопустимый переход статуса."
+          : statusErr.includes("forbidden")
+            ? "Недостаточно прав для изменения статуса."
+            : String(r.error || "status_update_failed");
+        markFail(userMessage);
+      }
+      setIsChangingSessionStatus(false);
+      return { ok: false, error: String(r.error || "status_update_failed") };
     }
     onSessionSync(r.session || {});
-    await refreshSessions(projectId);
+    try {
+      await refreshSessions(projectId);
+    } catch (refreshError) {
+      // Explorer consistency refresh failed, but the status change itself succeeded.
+      // Do not surface as a user error; the active session is already updated.
+      logNav("refresh_sessions_after_status_failed", { projectId, error: String(refreshError?.message || refreshError) });
+    }
+    setIsChangingSessionStatus(false);
     markOk("API OK");
     return { ok: true };
   }
@@ -3597,6 +3644,12 @@ export default function App() {
         })}
         onDeleteSession={workspacePermissions.canDeleteSession ? deleteCurrentSession : undefined}
         onChangeSessionStatus={workspacePermissions.canChangeStatus ? changeCurrentSessionStatus : undefined}
+        isChangingSessionStatus={isChangingSessionStatus}
+        bpmnStageRef={bpmnStageRef}
+        focusElementId={focusElementId}
+        onFocusElementApplied={() => setFocusElementId("")}
+        restoreViewportSnapshot={restoreViewportSnapshot}
+        onRestoreViewportSnapshotApplied={() => setRestoreViewportSnapshot(null)}
         onRefresh={async () => {
           await refreshProjects();
           await refreshSessions(projectId);

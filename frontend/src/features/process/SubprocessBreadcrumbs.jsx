@@ -5,7 +5,7 @@ export default function SubprocessBreadcrumbs({ breadcrumbs = [], onNavigate, on
 
   return (
     <div
-      className="flex flex-wrap items-center gap-2 px-4 py-2 bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-sm text-sm"
+      className="subprocessBreadcrumbs flex flex-wrap items-center gap-2 px-4 py-2 bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-sm text-sm"
       data-testid="subprocess-breadcrumbs"
     >
       <button

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../features/auth/AuthProvider";
 import { getManualSessionStatusMeta, MANUAL_SESSION_STATUSES } from "../features/workspace/workspacePermissions";
+import { getAllowedNextStatuses } from "../features/workspace/sessionStatus.js";
 import {
   buildAccountDiscussionNotificationGroups,
   filterDiscussionNotificationGroups,
@@ -115,6 +116,7 @@ export default function TopBar({
   onOpen,
   onDeleteSession,
   onChangeSessionStatus,
+  isChangingSessionStatus = false,
   onNewProject,
   onOpenDiscussionNotifications,
   draft,
@@ -143,6 +145,19 @@ export default function TopBar({
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+  const normalizedSessionStatus = useMemo(
+    () => getAllowedNextStatuses(sessionStatus).has(sessionStatus) ? sessionStatus : "draft",
+    [sessionStatus],
+  );
+  const allowedNextStatuses = useMemo(
+    () => getAllowedNextStatuses(normalizedSessionStatus),
+    [normalizedSessionStatus],
+  );
+  const statusOptions = useMemo(
+    () => MANUAL_SESSION_STATUSES.filter((s) => allowedNextStatuses.has(s.value)),
+    [allowedNextStatuses],
+  );
+  const hasStatusAlternatives = statusOptions.length > 1 || (statusOptions.length === 1 && statusOptions[0].value !== normalizedSessionStatus);
   const notesAggregate = useSessionNoteAggregate(effectiveSessionId);
   const sessionAggregateIds = useMemo(
     () => ((accountMenuOpen || notificationCenterOpen) ? sessList.map((item) => sessionIdFrom(item)).filter(Boolean) : []),
@@ -633,14 +648,17 @@ export default function TopBar({
                 ref={statusMenuButtonRef}
                 type="button"
                 className={`statusComboPill inline-flex h-8 items-center rounded-md border px-2.5 text-[11px] font-medium transition hover:opacity-80 ${sessionStatusMeta.badgeClass}`}
-                title="Статус сессии — нажмите чтобы изменить"
+                title={hasStatusAlternatives && !isChangingSessionStatus ? "Статус сессии — нажмите чтобы изменить" : "Статус сессии"}
                 data-testid="topbar-session-status"
-                onClick={() => setStatusMenuOpen((prev) => !prev)}
+                onClick={() => hasStatusAlternatives && !isChangingSessionStatus && setStatusMenuOpen((prev) => !prev)}
+                disabled={isChangingSessionStatus || !hasStatusAlternatives}
               >
-                {sessionStatusMeta.label}
-                <svg viewBox="0 0 10 6" className="ml-1 h-2.5 w-2.5 opacity-70" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M1 1l4 4 4-4" />
-                </svg>
+                {isChangingSessionStatus ? "Сохранение…" : sessionStatusMeta.label}
+                {hasStatusAlternatives && !isChangingSessionStatus ? (
+                  <svg viewBox="0 0 10 6" className="ml-1 h-2.5 w-2.5 opacity-70" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M1 1l4 4 4-4" />
+                  </svg>
+                ) : null}
               </button>
               {statusMenuOpen ? (
                 <div
@@ -648,15 +666,18 @@ export default function TopBar({
                   className="absolute left-0 top-[calc(100%+6px)] z-[130] grid min-w-[160px] gap-0.5 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
                   data-testid="topbar-status-change-menu"
                 >
-                  {MANUAL_SESSION_STATUSES.map((s) => (
+                  {statusOptions.map((s) => (
                     <button
                       key={s.value}
                       type="button"
-                      className={`secondaryBtn h-8 w-full justify-start px-3 text-left text-sm ${sessionStatus === s.value ? "ring-1 ring-accent/60" : ""}`}
+                      className={`secondaryBtn h-8 w-full justify-start px-3 text-left text-sm ${normalizedSessionStatus === s.value ? "ring-1 ring-accent/60" : ""}`}
                       onClick={() => {
                         setStatusMenuOpen(false);
-                        onChangeSessionStatus?.(s.value);
+                        if (normalizedSessionStatus !== s.value) {
+                          onChangeSessionStatus?.(s.value);
+                        }
                       }}
+                      disabled={isChangingSessionStatus}
                     >
                       {s.label}
                     </button>

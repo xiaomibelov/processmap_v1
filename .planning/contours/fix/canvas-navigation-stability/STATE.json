@@ -1,0 +1,27 @@
+{
+  "contour": "canvas-navigation-stability",
+  "type": "fix",
+  "branch": "fix/canvas-navigation-stability",
+  "head": "4d4fd759b0c8e3e7f3b2a4c5d6e7f8a9b0c1d2e3",
+  "base": "main",
+  "pr": 399,
+  "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/399",
+  "status": "awaiting_review",
+  "commits": [
+    "4d4fd759b0c8e3e7f3b2a4c5d6e7f8a9b0c1d2e3"
+  ],
+  "deploy": {
+    "target": "test-stand",
+    "url": "http://clearvestnic.ru:5177",
+    "build_info": {
+      "branch": "fix/canvas-navigation-stability",
+      "sha": "4d4fd759",
+      "timestamp": "2026-06-22T15:56:36Z",
+      "host": "clearvestnic.ru"
+    },
+    "healthcheck": "passed"
+  },
+  "mirrored": true,
+  "mirror_dest": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/fix/canvas-navigation-stability",
+  "updated_at": "2026-06-22T15:58:00Z"
+}

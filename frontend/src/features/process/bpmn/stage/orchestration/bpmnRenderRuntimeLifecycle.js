@@ -111,7 +111,7 @@ export async function renderViewerDiagram(ctx, nextXml) {
       expectElements: String(nextXml || "").trim().length > 0,
     });
   }
-  const focusId = typeof window !== "undefined" ? window.__SUBPROCESS_FOCUS_ELEMENT_ID__ || "" : "";
+  const focusId = String(ctx?.focusElementId || "").trim();
   if (focusId) {
     try {
       const canvas = v.get("canvas");
@@ -123,9 +123,6 @@ export async function renderViewerDiagram(ctx, nextXml) {
       });
     } catch (e) {
       console.warn("focus element not found", focusId, e);
-    }
-    if (typeof window !== "undefined") {
-      window.__SUBPROCESS_FOCUS_ELEMENT_ID__ = "";
     }
   }
   emitCurrentViewboxSnapshot(v, emitViewboxChanged, "viewer", {

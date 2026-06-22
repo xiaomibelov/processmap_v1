@@ -1612,6 +1612,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   onDiagramContextMenuDismiss = null,
   onNavigateToSubprocess = null,
   childSessionDiscussionAggregates = null,
+  focusElementId = "",
+  onFocusElementApplied = null,
+  restoreViewportSnapshot = null,
+  onRestoreViewportSnapshotApplied = null,
 }, ref) {
   const viewerEl = useRef(null);
   const editorEl = useRef(null);
@@ -1632,6 +1636,9 @@ const BpmnStage = forwardRef(function BpmnStage({
   const activeSessionRef = useRef("");
   const prevSessionRef = useRef("");
   const loadTokenRef = useRef(0);
+  const pendingFocusElementIdRef = useRef("");
+  const appliedFocusElementIdRef = useRef("");
+  const pendingRestoreViewportRef = useRef(null);
   const draftRef = useRef(draft);
 
   const [xml, setXml] = useState("");
@@ -1813,6 +1820,19 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     onNavigateToSubprocessRef.current = onNavigateToSubprocess;
   }, [onNavigateToSubprocess]);
+
+  useEffect(() => {
+    const next = String(focusElementId || "").trim();
+    if (next && next !== appliedFocusElementIdRef.current) {
+      pendingFocusElementIdRef.current = next;
+    }
+  }, [focusElementId]);
+
+  useEffect(() => {
+    if (restoreViewportSnapshot) {
+      pendingRestoreViewportRef.current = restoreViewportSnapshot;
+    }
+  }, [restoreViewportSnapshot]);
 
   useEffect(() => {
     aiQuestionsModeEnabledRef.current = !!aiQuestionsModeEnabled;
@@ -5209,6 +5229,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       logRuntimeTrace,
       activeSessionRef,
       sessionId,
+      focusElementId: pendingFocusElementIdRef.current,
       viewerInstanceMetaRef,
       fnv1aHex,
       logImportTrace,
@@ -5246,8 +5267,31 @@ const BpmnStage = forwardRef(function BpmnStage({
     };
   }
 
+  function applyPendingFocusAndViewport() {
+    if (pendingFocusElementIdRef.current) {
+      appliedFocusElementIdRef.current = pendingFocusElementIdRef.current;
+      pendingFocusElementIdRef.current = "";
+      try {
+        onFocusElementApplied?.();
+      } catch {
+        // ignore callback errors
+      }
+    }
+    if (pendingRestoreViewportRef.current) {
+      const snapshot = pendingRestoreViewportRef.current;
+      pendingRestoreViewportRef.current = null;
+      imperativeApi.restoreViewport(snapshot);
+      try {
+        onRestoreViewportSnapshotApplied?.();
+      } catch {
+        // ignore callback errors
+      }
+    }
+  }
+
   async function renderViewer(nextXml) {
     const result = await renderViewerDiagram(createRenderLifecycleCtx(), nextXml);
+    applyPendingFocusAndViewport();
     if (useExtensionOverlays && result?.ok !== false) {
       const overlayList = extractOverlaysFromBpmn(viewerRef.current, v2OverlaysEnabledRef.current) || [];
       mountLightweightOverlays(viewerRef.current, "viewer", overlayList);
@@ -5257,6 +5301,7 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   async function renderModeler(nextXml) {
     const result = await renderModelerDiagram(createRenderLifecycleCtx(), nextXml);
+    applyPendingFocusAndViewport();
     if (useExtensionOverlays && result?.ok !== false) {
       const overlayList = extractOverlaysFromBpmn(modelerRef.current, v2OverlaysEnabledRef.current) || [];
       mountLightweightOverlays(modelerRef.current, "editor", overlayList);
