@@ -1,0 +1,29 @@
+{
+  "contour_id": "audit/authz-impl",
+  "contour_type": "audit",
+  "branch": "audit/authz-impl",
+  "baseline": "origin/main @ f3a1eaa0f2cd7db93bba771f7461b5e527b26648",
+  "audited_code": "feature/user-access-redesign @ bf2a3b8c",
+  "role": "planner",
+  "status": "planned",
+  "artifacts": [
+    "PLAN.md",
+    "AUDIT-IMPL.md",
+    "GAPS.md",
+    "STATE.json",
+    "READY_FOR_EXECUTION",
+    "RAG_PREFLIGHT_PLANNER.md",
+    "RAG_PREFLIGHT_PLANNER.md.ready"
+  ],
+  "gates": {
+    "rag_preflight": true,
+    "source_runtime_truth": true,
+    "bounded_scope": true,
+    "acceptance_criteria": true,
+    "no_product_code_by_planner": true,
+    "no_merge_deploy_pr_without_approval": true
+  },
+  "next_role": "executor (fix-контур)",
+  "next_action": "Wait for user approval of PLAN.md / AUDIT-IMPL.md / GAPS.md before creating a fix contour.",
+  "notes": "Audit confirms: org_memberships.permissions_json is stored by admin API but not consumed by backend authz. All write gates remain role-name based; several endpoints (node/edge mutations, BPMN-meta, export, property dictionary, global session create) lack authz entirely."
+}
