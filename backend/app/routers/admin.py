@@ -63,9 +63,19 @@ _ADMIN_USER_ROLE_ALIASES = {
 }
 
 
+class AdminUserPermissionSet(BaseModel):
+    view: bool = True
+    create: bool = False
+    edit: bool = False
+    export: bool = False
+    delete: bool = False
+    manage_users: bool = False
+
+
 class AdminUserMembershipIn(BaseModel):
     org_id: str
     role: str = "org_viewer"
+    permissions: Optional[AdminUserPermissionSet] = None
 
 
 class AdminUserCreateBody(BaseModel):
@@ -257,8 +267,10 @@ def _normalize_admin_membership_role(raw: Any) -> str:
     return normalized
 
 
-def _normalize_admin_memberships(rows: List[AdminUserMembershipIn], *, allow_empty: bool = False) -> List[Dict[str, str]]:
-    out: List[Dict[str, str]] = []
+def _normalize_admin_memberships(
+    rows: List[AdminUserMembershipIn], *, allow_empty: bool = False
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
     seen: set[str] = set()
     for item in rows:
         org_id = _as_text(getattr(item, "org_id", ""))
@@ -267,7 +279,18 @@ def _normalize_admin_memberships(rows: List[AdminUserMembershipIn], *, allow_emp
         if org_id in seen:
             continue
         role = _normalize_admin_membership_role(getattr(item, "role", "org_viewer"))
-        out.append({"org_id": org_id, "role": role})
+        permissions = getattr(item, "permissions", None)
+        permissions_dict: Optional[Dict[str, bool]] = None
+        if permissions is not None:
+            permissions_dict = {
+                "view": bool(getattr(permissions, "view", True)),
+                "create": bool(getattr(permissions, "create", False)),
+                "edit": bool(getattr(permissions, "edit", False)),
+                "export": bool(getattr(permissions, "export", False)),
+                "delete": bool(getattr(permissions, "delete", False)),
+                "manage_users": bool(getattr(permissions, "manage_users", False)),
+            }
+        out.append({"org_id": org_id, "role": role, "permissions": permissions_dict})
         seen.add(org_id)
     if not out and not allow_empty:
         raise ValueError("at least one organization membership is required")
@@ -300,11 +323,13 @@ def _membership_payload_for_user(user_id: str, *, org_name_by_id: Dict[str, str]
     items: List[Dict[str, Any]] = []
     for row in rows:
         org_id = _as_text(row.get("org_id"))
+        role = _as_text(row.get("role") or "org_viewer") or "org_viewer"
         items.append(
             {
                 "org_id": org_id,
                 "org_name": _as_text(org_name_by_id.get(org_id) or row.get("name") or org_id),
-                "role": _as_text(row.get("role") or "org_viewer") or "org_viewer",
+                "role": role,
+                "permissions": row.get("permissions") if isinstance(row.get("permissions"), dict) else None,
                 "created_at": _as_int(row.get("created_at"), 0),
             }
         )
@@ -355,7 +380,7 @@ def _error_event_admin_item(row_raw: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _replace_user_memberships(user_id: str, memberships: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+def _replace_user_memberships(user_id: str, memberships: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     current = {
         _as_text(row.get("org_id")): row
         for row in list_user_org_memberships(user_id, is_admin=False)
@@ -366,7 +391,12 @@ def _replace_user_memberships(user_id: str, memberships: List[Dict[str, str]]) -
         if org_id not in next_map:
             delete_org_membership(org_id, user_id)
     for org_id, row in next_map.items():
-        upsert_org_membership(org_id, user_id, _as_text(row.get("role") or "org_viewer"))
+        upsert_org_membership(
+            org_id,
+            user_id,
+            _as_text(row.get("role") or "org_viewer"),
+            row.get("permissions"),
+        )
     return list_user_org_memberships(user_id, is_admin=False)
 
 

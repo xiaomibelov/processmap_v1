@@ -35,7 +35,7 @@ export BUILD_BRANCH
 export BUILD_TIME
 export BUILD_ENV
 export BUILD_HOST="${BUILD_HOST:-clearvestnic.ru}"
-node frontend/scripts/generate-build-info.mjs
+(cd frontend && node scripts/generate-build-info.mjs)
 
 # 3. Detect if full clean build is needed (package.json / Dockerfile / docker-compose changed)
 NEEDS_CLEAN=false

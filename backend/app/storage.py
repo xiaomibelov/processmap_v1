@@ -1157,6 +1157,7 @@ def _ensure_schema() -> None:
                   org_id TEXT NOT NULL,
                   user_id TEXT NOT NULL,
                   role TEXT NOT NULL DEFAULT 'editor',
+                  permissions_json TEXT NOT NULL DEFAULT '{}',
                   created_at INTEGER NOT NULL DEFAULT 0,
                   PRIMARY KEY (org_id, user_id)
                 )
@@ -1494,6 +1495,8 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE orgs ADD COLUMN git_updated_at INTEGER NOT NULL DEFAULT 0")
             if not _column_exists(con, "orgs", "git_updated_by"):
                 con.execute("ALTER TABLE orgs ADD COLUMN git_updated_by TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "org_memberships", "permissions_json"):
+                con.execute("ALTER TABLE org_memberships ADD COLUMN permissions_json TEXT NOT NULL DEFAULT '{}'")
             if not _column_exists(con, "templates", "template_type"):
                 con.execute("ALTER TABLE templates ADD COLUMN template_type TEXT NOT NULL DEFAULT 'bpmn_selection_v1'")
             if not _column_exists(con, "templates", "folder_id"):
@@ -4177,6 +4180,7 @@ def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) 
               m.org_id AS org_id,
               o.name AS org_name,
               m.role AS role,
+              m.permissions_json AS permissions_json,
               m.created_at AS created_at,
               o.git_mirror_enabled AS git_mirror_enabled,
               o.git_provider AS git_provider,
@@ -4196,10 +4200,12 @@ def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) 
         ).fetchall()
     out: List[Dict[str, Any]] = []
     for row in rows:
+        role = str(row["role"] or "org_viewer")
         item = {
             "org_id": str(row["org_id"] or ""),
             "name": str(row["org_name"] or row["org_id"] or ""),
-            "role": str(row["role"] or "org_viewer"),
+            "role": role,
+            "permissions": _normalize_membership_permissions(role, row["permissions_json"]),
             "created_at": int(row["created_at"] or 0),
         }
         item.update(_org_git_mirror_payload(row))
@@ -4216,6 +4222,7 @@ def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) 
                 "org_id": org_id,
                 "name": str(row.get("name") or org_id),
                 "role": "platform_admin",
+                "permissions": _permission_template_for_role("org_admin"),
                 "created_at": int(row.get("created_at") or 0),
                 "git_mirror_enabled": bool(row.get("git_mirror_enabled")),
                 "git_provider": row.get("git_provider"),
@@ -4722,6 +4729,37 @@ def _normalize_org_membership_role(raw: Any) -> str:
     return role
 
 
+_PERMISSION_KEYS = ("view", "create", "edit", "export", "delete", "manage_users")
+
+
+def _permission_template_for_role(role: str) -> Dict[str, bool]:
+    key = str(role or "").strip().lower()
+    if key in {"org_owner", "org_admin"}:
+        return {k: True for k in _PERMISSION_KEYS}
+    if key == "project_manager":
+        return {"view": True, "create": True, "edit": True, "export": True, "delete": False, "manage_users": False}
+    if key == "editor":
+        return {"view": True, "create": True, "edit": True, "export": True, "delete": False, "manage_users": False}
+    return {"view": True, "create": False, "edit": False, "export": False, "delete": False, "manage_users": False}
+
+
+def _normalize_membership_permissions(role: str, permissions_raw: Any) -> Dict[str, bool]:
+    template = _permission_template_for_role(role)
+    if isinstance(permissions_raw, dict):
+        parsed = permissions_raw
+    else:
+        parsed = _json_loads(permissions_raw, {})
+    if not isinstance(parsed, dict):
+        parsed = {}
+    out: Dict[str, bool] = {}
+    for key in _PERMISSION_KEYS:
+        if key == "view":
+            out[key] = True
+        else:
+            out[key] = bool(parsed.get(key)) if key in parsed else template.get(key, False)
+    return out
+
+
 def _normalize_org_invite_role(raw: Any) -> str:
     role = _normalize_org_membership_role(raw)
     if role not in _ORG_INVITE_ROLES:
@@ -4994,7 +5032,7 @@ def list_org_memberships(org_id: str) -> List[Dict[str, Any]]:
     with _connect() as con:
         rows = con.execute(
             """
-            SELECT org_id, user_id, role, created_at
+            SELECT org_id, user_id, role, permissions_json, created_at
               FROM org_memberships
              WHERE org_id = ?
              ORDER BY created_at ASC, user_id ASC
@@ -5008,34 +5046,43 @@ def list_org_memberships(org_id: str) -> List[Dict[str, Any]]:
                 "org_id": str(row["org_id"] or ""),
                 "user_id": str(row["user_id"] or ""),
                 "role": _normalize_org_membership_role(row["role"]),
+                "permissions": _normalize_membership_permissions(row["role"], row["permissions_json"]),
                 "created_at": int(row["created_at"] or 0),
             }
         )
     return out
 
 
-def upsert_org_membership(org_id: str, user_id: str, role: str) -> Dict[str, Any]:
+def upsert_org_membership(
+    org_id: str,
+    user_id: str,
+    role: str,
+    permissions: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     uid = str(user_id or "").strip()
     if not oid or not uid:
         raise ValueError("org_id and user_id are required")
     normalized_role = _normalize_org_membership_role(role)
+    permissions_payload = _normalize_membership_permissions(normalized_role, permissions)
+    permissions_json = _json_dumps(permissions_payload, {})
     now = _now_ts()
     _ensure_schema()
     with _connect() as con:
         con.execute(
             """
-            INSERT INTO org_memberships (org_id, user_id, role, created_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO org_memberships (org_id, user_id, role, permissions_json, created_at)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(org_id, user_id) DO UPDATE SET
-              role = excluded.role
+              role = excluded.role,
+              permissions_json = excluded.permissions_json
             """,
-            [oid, uid, normalized_role, now],
+            [oid, uid, normalized_role, permissions_json, now],
         )
         con.commit()
         row = con.execute(
             """
-            SELECT org_id, user_id, role, created_at
+            SELECT org_id, user_id, role, permissions_json, created_at
               FROM org_memberships
              WHERE org_id = ? AND user_id = ?
              LIMIT 1
@@ -5043,11 +5090,18 @@ def upsert_org_membership(org_id: str, user_id: str, role: str) -> Dict[str, Any
             [oid, uid],
         ).fetchone()
     if not row:
-        return {"org_id": oid, "user_id": uid, "role": normalized_role, "created_at": now}
+        return {
+            "org_id": oid,
+            "user_id": uid,
+            "role": normalized_role,
+            "permissions": permissions_payload,
+            "created_at": now,
+        }
     return {
         "org_id": str(row["org_id"] or ""),
         "user_id": str(row["user_id"] or ""),
         "role": _normalize_org_membership_role(row["role"]),
+        "permissions": _normalize_membership_permissions(row["role"], row["permissions_json"]),
         "created_at": int(row["created_at"] or 0),
     }
 
