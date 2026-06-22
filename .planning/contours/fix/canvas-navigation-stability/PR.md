@@ -5,7 +5,8 @@
 - **Branch:** `fix/canvas-navigation-stability`
 - **Base:** `main`
 - **Status:** `open` — awaiting review
-- **Test stand deploy:** http://clearvestnic.ru:5177 (build SHA `4d4fd759`, healthcheck passed)
+- **Test stand deploy:** http://clearvestnic.ru:5177 (build SHA `23f0e00a`, healthcheck passed)
+- **Hotfix:** `subprocessBreadcrumbs is not defined` — fixed by destructuring breadcrumb props in `AppShell`
 
 ## Description
 
