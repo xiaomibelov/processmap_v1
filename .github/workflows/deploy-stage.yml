@@ -34,7 +34,22 @@ jobs:
             git fetch origin main
             DEPLOY_SHA="$(git rev-parse --verify origin/main)"
             echo "[deploy-stage] resolved sha: ${DEPLOY_SHA}"
-            git checkout "${DEPLOY_SHA}" -- backend frontend Dockerfile deploy docker-compose.yml
+
+            # Ensure frontend source files are really updated even if marked assume-unchanged/skip-worktree
+            git update-index --no-assume-unchanged -- frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
+            git update-index --no-skip-worktree -- frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
+            git checkout -f "${DEPLOY_SHA}" -- backend frontend Dockerfile deploy docker-compose.yml docker-compose.stage.yml
+
+            echo "[deploy-stage] source diagnostics:"
+            git status --short
+            git diff --stat HEAD || true
+            echo "[deploy-stage] file checksums after checkout:"
+            sha256sum frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
+            echo "[deploy-stage] App.jsx sessions:"
+            grep -n "const \[sessions" frontend/src/App.jsx || echo "NOT FOUND"
+            grep -n "sessions={sessions}" frontend/src/App.jsx || echo "NOT FOUND"
+            echo "[deploy-stage] NotesMvpPanel sessions prop:"
+            grep -n "sessions = \[\]" frontend/src/components/NotesMvpPanel.jsx || echo "NOT FOUND"
 
             deploy/scripts/stage_freshness_proof.sh prepare-source \
               --requested-ref "${REQUESTED_REF}" \
@@ -46,15 +61,32 @@ jobs:
               -f docker-compose.yml \
               -f docker-compose.stage.yml \
               -p processmap_stage \
-              build api gateway
+              build --no-cache api gateway
 
-            # Restart updated containers
+            # Diagnostics: show current gateway mounts/assets before recreate
+            echo "[deploy-stage] current gateway mounts:"
+            docker inspect processmap_stage-gateway-1 --format='{{json .Mounts}}' 2>/dev/null || true
+            echo "[deploy-stage] current gateway assets:"
+            docker exec processmap_stage-gateway-1 sh -c 'ls -la /usr/share/nginx/html/assets/index-*.js 2>/dev/null || true' 2>/dev/null || true
+
+            # Remove the old gateway container and any attached volumes so stale statics cannot survive
+            docker compose -p processmap_stage rm -fsv gateway 2>/dev/null || true
+            # Drop any project named volume that could be masking /usr/share/nginx/html
+            docker volume ls -q | grep '^processmap_stage_gateway' | xargs -r docker volume rm 2>/dev/null || true
+
+            # Start fresh containers (renew anonymous volumes to pull files from the new image)
             APP_ENV_FILE=.env.stage docker compose \
               --env-file .env.stage \
               -f docker-compose.yml \
               -f docker-compose.stage.yml \
               -p processmap_stage \
-              up -d --no-deps api gateway
+              up -d --no-deps --force-recreate -V api gateway
+
+            # Diagnostics after recreate
+            echo "[deploy-stage] new gateway mounts:"
+            docker inspect processmap_stage-gateway-1 --format='{{json .Mounts}}' 2>/dev/null || true
+            echo "[deploy-stage] new gateway assets:"
+            docker exec processmap_stage-gateway-1 sh -c 'ls -la /usr/share/nginx/html/assets/index-*.js 2>/dev/null || true' 2>/dev/null || true
 
             deploy/scripts/stage_freshness_proof.sh verify-chain \
               --requested-ref "${REQUESTED_REF}" \

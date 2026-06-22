@@ -1,0 +1,17 @@
+{
+  "contour": "audit/prod-runtime-source-truth-20260615",
+  "type": "audit",
+  "status": "completed",
+  "head": "38d4b3664e4de30733cc454fb6e006cce75d7eb5",
+  "origin_main": "38d4b3664e4de30733cc454fb6e006cce75d7eb5",
+  "branch": "fix/discussion-element-pencil-overlay",
+  "worktree": "/root/processmap_v1",
+  "deployed_at": "2026-06-15T13:00:06Z",
+  "runtime_api": "processmap_v1-api-1",
+  "runtime_gateway": "processmap_v1-gateway-1",
+  "healthcheck": "passed",
+  "rag_preflight": "empty",
+  "obsidian_context": "AGENTS.md only",
+  "gsd_context": "skills available, not invoked",
+  "known_issue": "build-info.json stale (shows 8fa9c6b7, actual 38d4b366)"
+}

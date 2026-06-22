@@ -30,6 +30,7 @@ export function resolveBpmnContextTargetKind(targetRaw = null) {
   if (kind === "canvas" || (!type && !toText(target.id) && !explicitConnection)) return "canvas";
   if (explicitConnection || type.includes("sequenceflow")) return "sequence_flow";
   if (type.includes("subprocess")) return "subprocess";
+  if (type.includes("callactivity")) return "call_activity";
   if (type.includes("gateway")) return "gateway";
   if (type.includes("startevent")) return "start_event";
   if (type.includes("endevent")) return "end_event";
@@ -71,7 +72,7 @@ export function resolveBpmnContextMenuHeader(targetRaw = null) {
 export function resolveBpmnContextMenuQuickEdit(targetRaw = null) {
   const target = targetRaw && typeof targetRaw === "object" ? targetRaw : {};
   const kind = resolveBpmnContextTargetKind(target);
-  if (kind === "task" || kind === "subprocess") {
+  if (kind === "task" || kind === "subprocess" || kind === "call_activity") {
     return {
       actionId: "quick_set_name",
       label: "Название",

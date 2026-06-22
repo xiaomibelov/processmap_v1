@@ -30,6 +30,7 @@ export async function renderViewerDiagram(ctx, nextXml) {
     applyInterviewDecor,
     applyUserNotesDecor,
     applyStepTimeDecor,
+    loadTransition,
   } = ctx;
 
   const v = await ensureViewer();
@@ -56,7 +57,13 @@ export async function renderViewerDiagram(ctx, nextXml) {
     xmlHash: fnv1aHex(String(nextXml || "")),
   });
   logBpmnTrace("importXML.viewer.before", nextXml, { sid: String(sessionId || "") });
-  await v.importXML(String(nextXml || ""));
+  loadTransition?.("import_start");
+  try {
+    await v.importXML(String(nextXml || ""));
+  } catch (importErr) {
+    loadTransition?.("import_error", { reason: String(importErr?.message || "viewer_import_failed") });
+    throw importErr;
+  }
   if (token !== runtimeTokenRef.current || v !== viewerRef.current) return;
   viewerReadyRef.current = true;
   const registryCount = Array.isArray(v?.get?.("elementRegistry")?.getAll?.())
@@ -124,6 +131,7 @@ export async function renderViewerDiagram(ctx, nextXml) {
   emitCurrentViewboxSnapshot(v, emitViewboxChanged, "viewer", {
     reason: "viewer_import_ready",
   });
+  loadTransition?.("import_success");
   applyFullBpmnDecorSet({
     inst: v,
     kind: "viewer",
@@ -177,6 +185,7 @@ export async function renderModelerDiagram(ctx, nextXml) {
     applyInterviewDecor,
     applyUserNotesDecor,
     applyStepTimeDecor,
+    loadTransition,
   } = ctx;
 
   const sidNow = String(activeSessionRef.current || sessionId || "-");
@@ -239,6 +248,7 @@ export async function renderModelerDiagram(ctx, nextXml) {
       xmlHash: fnv1aHex(String(nextXml || "")),
     });
     logBpmnTrace("importXML.modeler.before", nextXml, { sid: String(sessionId || "") });
+    loadTransition?.("import_start");
     const loaded = await runtime.load(String(nextXml || ""), { source: "renderModeler" });
     const afterStatus = runtime.getStatus();
     runtimeTokenRef.current = Number(afterStatus?.token || runtimeTokenRef.current || 0);
@@ -252,6 +262,7 @@ export async function renderModelerDiagram(ctx, nextXml) {
     }
     if (!loaded.ok) {
       if (loaded.reason === "stale") return;
+      loadTransition?.("import_error", { reason: String(loaded.error || loaded.reason || "importXML failed") });
       throw new Error(String(loaded.error || loaded.reason || "importXML failed"));
     }
     if (!m || m !== modelerRef.current) return;
@@ -323,6 +334,7 @@ export async function renderModelerDiagram(ctx, nextXml) {
     emitCurrentViewboxSnapshot(m, emitViewboxChanged, "editor", {
       reason: "modeler_import_ready",
     });
+    loadTransition?.("import_success");
     applyFullBpmnDecorSet({
       inst: m,
       kind: "editor",

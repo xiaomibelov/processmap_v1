@@ -114,6 +114,33 @@ export function extractDocumentationMetaMapFromBpmnXml(xmlRaw, toText) {
   }
 }
 
+function findVisibleSubprocessAncestor(element, rootElement, toText) {
+  if (!element || !rootElement) return null;
+  let node = element;
+  while (node && node.parent) {
+    if (node.parent === rootElement) return null;
+    const parentType = toText(node.parent.type || node.parent.$type || "").toLowerCase();
+    if (parentType.includes("subprocess") || parentType.includes("callactivity")) {
+      return node.parent;
+    }
+    node = node.parent;
+  }
+  return null;
+}
+
+function isCollapsedSubprocessShape(inst, subprocessId) {
+  if (!inst || !subprocessId) return false;
+  try {
+    const registry = inst.get("elementRegistry");
+    const shape = registry?.get?.(subprocessId);
+    if (shape && shape.collapsed === true) return true;
+    const diExpanded = shape?.businessObject?.di?.isExpanded;
+    if (typeof diExpanded === "boolean") return !diExpanded;
+  } catch {
+  }
+  return false;
+}
+
 function buildStepTimeDecorPayload(ctx) {
   const asArray = ctx?.utils?.asArray;
   const asObject = ctx?.utils?.asObject;
@@ -922,6 +949,7 @@ export function applyUserNotesDecor(ctx) {
     const canvas = inst.get("canvas");
     const overlays = inst.get("overlays");
     const registry = inst.get("elementRegistry");
+    const rootElement = typeof canvas?.getRootElement === "function" ? canvas.getRootElement() : null;
     const currentState = { ...asObject(refs.userNotesDecorStateRef.current[kind]) };
     const nextState = {};
     const notesByNodeId = {};
@@ -1017,6 +1045,20 @@ export function applyUserNotesDecor(ctx) {
       if (!el) return;
       if (!isGfxInDom(inst, el)) return;
       const elementId = toText(el?.id);
+      // Hide child element badges when the element is inside a collapsed
+      // SubProcess on a parent-level diagram. The aggregate badge on the
+      // SubProcess itself already represents these discussions; rendering
+      // individual badges here causes them to overlap the aggregate badge.
+      // For expanded SubProcesses we keep the badges but shift them to the
+      // top-right corner so they do not sit on the SubProcess aggregate badge.
+      let badgePosition = { top: -18, left: 2 };
+      const subprocessAncestor = rootElement
+        ? findVisibleSubprocessAncestor(el, rootElement, toText)
+        : null;
+      if (subprocessAncestor) {
+        if (isCollapsedSubprocessShape(inst, subprocessAncestor.id)) return;
+        badgePosition = { top: -18, right: 2 };
+      }
       if (!elementId) return;
       const markerClass = count > 0 ? "fpcHasUserNote" : "";
       const docsSignature = docsText ? docsText.slice(0, 240) : "";
@@ -1099,7 +1141,7 @@ export function applyUserNotesDecor(ctx) {
       }
 
       const overlayId = overlays.add(elementId, {
-        position: { top: -18, left: 2 },
+        position: badgePosition,
         html: stack,
       });
       nextState[elementId] = {
@@ -1125,6 +1167,109 @@ export function applyUserNotesDecor(ctx) {
 
     refs.userNotesDecorStateRef.current[kind] = nextState;
   } catch {
+  }
+}
+
+export function clearSubprocessDiscussionDecor(inst) {
+  if (!inst) return;
+  try {
+    const overlays = inst.get("overlays");
+    const existing = overlays.get({ type: "subprocess_discussions" });
+    (Array.isArray(existing) ? existing : []).forEach((overlay) => {
+      if (overlay?.id !== undefined && overlay?.id !== null && overlay?.id !== "") {
+        overlays.remove(overlay.id);
+      }
+    });
+  } catch {
+    // ignore
+  }
+}
+
+export function applySubprocessDiscussionDecor(ctx) {
+  const inst = ctx?.inst;
+  const kind = ctx?.kind;
+  const getters = ctx?.getters;
+  const callbacks = ctx?.callbacks;
+  const toText = ctx?.utils?.toText;
+  const asObject = ctx?.utils?.asObject;
+  const aggregateMap = ctx?.readOnly?.childSessionDiscussionAggregates;
+  if (
+    !inst
+    || !kind
+    || !getters
+    || !callbacks
+    || typeof toText !== "function"
+    || typeof asObject !== "function"
+  ) {
+    return;
+  }
+  if (typeof getters.isShapeElement !== "function") return;
+
+  const map = aggregateMap instanceof Map ? aggregateMap : new Map();
+  if (map.size === 0) {
+    clearSubprocessDiscussionDecor(inst);
+    return;
+  }
+
+  try {
+    const overlays = inst.get("overlays");
+    const registry = inst.get("elementRegistry");
+    const canvas = inst.get("canvas");
+    const allElements = typeof registry?.getAll === "function" ? asArray(registry.getAll()) : [];
+
+    clearSubprocessDiscussionDecor(inst);
+
+    const bindBadgeClick = (btn, onClick) => {
+      btn.addEventListener("mousedown", (ev) => ev.stopPropagation());
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        onClick?.();
+      });
+    };
+
+    allElements.forEach((el) => {
+      if (!getters.isShapeElement(el)) return;
+      if (typeof getters.isConnectionElement === "function" && getters.isConnectionElement(el)) return;
+      const type = String(el?.type || "");
+      if (type !== "bpmn:CallActivity" && type !== "bpmn:SubProcess") return;
+      const nodeId = toText(el?.businessObject?.id || el?.id);
+      const aggregate = map.get(nodeId);
+      const count = Number(asObject(aggregate)?.open_notes_count || 0);
+      if (!(count > 0)) return;
+
+      const badge = document.createElement("button");
+      badge.type = "button";
+      badge.className = "fpcNodeBadge fpcNodeBadge--discussions";
+      badge.dataset.badgeKind = "subprocess_discussions";
+      badge.dataset.elementId = nodeId;
+      badge.title = `Открытые обсуждения: ${count}`;
+      badge.setAttribute("aria-label", badge.title);
+
+      const icon = document.createElement("span");
+      icon.className = "fpcNodeBadgeIcon fpcNodeBadgeIcon--discussions";
+      icon.textContent = "💬";
+      badge.appendChild(icon);
+
+      const countPill = document.createElement("span");
+      countPill.className = "fpcNodeBadgeCount";
+      countPill.textContent = count > 99 ? "99+" : String(count);
+      badge.appendChild(countPill);
+
+      bindBadgeClick(badge, () => {
+        callbacks.setSelectedDecor?.(inst, kind, el.id);
+        callbacks.emitElementSelection(el, `${kind}.subprocess_discussion_badge_click`);
+      });
+
+      overlays.add(nodeId, {
+        type: "subprocess_discussions",
+        position: { top: -8, right: -8 },
+        html: badge,
+        show: { minZoom: 0.2 },
+      });
+    });
+  } catch {
+    // ignore
   }
 }
 

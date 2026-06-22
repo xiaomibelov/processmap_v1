@@ -679,6 +679,103 @@ export function createBpmnStageImperativeApi(ctxBase) {
       const editorOk = callbacks.focusNodeOnInstance?.(refs.modelerRef?.current, "editor", nid, options);
       return !!viewerOk || !!editorOk;
     },
+    findSubprocessAncestor: (nodeIdRaw) => {
+      const nodeId = String(nodeIdRaw || "").trim();
+      if (!nodeId) return null;
+      const inst = getPreferredInstance("editor") || getReadyInstance("editor");
+      if (!inst) return null;
+      try {
+        const registry = inst.get("elementRegistry");
+        const canvas = inst.get("canvas");
+        const rootElement = canvas?.getRootElement?.();
+        let element = registry?.get?.(nodeId);
+        while (element && element.parent) {
+          if (element.parent === rootElement) return null;
+          const parentType = String(element.parent.type || element.parent.$type || "").toLowerCase();
+          if (parentType.includes("subprocess") || parentType.includes("callactivity")) {
+            // A subprocess plane root's id may be synthesized (e.g. "SubProcess_1_plane");
+            // use the underlying business-object id so backend navigation works.
+            return String(element.parent.businessObject?.id || element.parent.id || "").trim() || null;
+          }
+          element = element.parent;
+        }
+      } catch {
+      }
+      // Collapsed subprocess children are not in the element registry on the
+      // parent diagram, so fall back to the semantic BPMN definitions tree.
+      try {
+        const definitions = inst.get("canvas")?.getRootElement?.()?.businessObject?.$parent;
+        const isSubprocessLike = (type) => String(type || "").toLowerCase().includes("subprocess")
+          || String(type || "").toLowerCase().includes("callactivity");
+        const find = (elements) => {
+          for (const el of elements || []) {
+            if (String(el?.id || "").trim() === nodeId) {
+              const parent = el?.$parent;
+              return isSubprocessLike(parent?.$type) ? String(parent.id || "").trim() || null : null;
+            }
+            if (Array.isArray(el?.flowElements) && el.flowElements.length) {
+              const nested = find(el.flowElements);
+              if (nested !== undefined) return nested;
+            }
+          }
+          return undefined;
+        };
+        for (const root of definitions?.rootElements || []) {
+          const result = find(root?.flowElements);
+          if (result !== undefined) return result;
+        }
+      } catch {
+      }
+      return null;
+    },
+    expandSubprocessAncestors: (nodeIdRaw) => {
+      const nodeId = toText(nodeIdRaw);
+      if (!nodeId) return { ok: false, error: "missing_id", expandedIds: [] };
+      const inst = getPreferredInstance("editor") || getReadyInstance("editor");
+      if (!inst) return { ok: false, error: "instance_not_ready", expandedIds: [] };
+      try {
+        const registry = inst.get("elementRegistry");
+        const modeling = inst.get("modeling");
+        const canvas = inst.get("canvas");
+        const definitions = canvas?.getRootElement?.()?.businessObject?.$parent;
+        const isSubprocessType = (type) => String(type || "").toLowerCase().includes("subprocess");
+
+        const collectAncestorIds = (elements, targetId, ancestors) => {
+          for (const item of elements || []) {
+            const itemId = String(item?.id || "").trim();
+            const nextAncestors = isSubprocessType(item?.$type) ? [...ancestors, itemId] : ancestors;
+            if (itemId === targetId) return nextAncestors;
+            if (Array.isArray(item?.flowElements) && item.flowElements.length) {
+              const nested = collectAncestorIds(item.flowElements, targetId, nextAncestors);
+              if (nested) return nested;
+            }
+          }
+          return null;
+        };
+
+        let ancestorIds = [];
+        for (const root of definitions?.rootElements || []) {
+          const result = collectAncestorIds(root?.flowElements, nodeId, []);
+          if (result) {
+            ancestorIds = result;
+            break;
+          }
+        }
+
+        const expandedIds = [];
+        for (const ancestorId of ancestorIds) {
+          const shape = registry?.get?.(ancestorId);
+          if (!shape || !isSubprocessType(shape.type || shape.$type)) continue;
+          if (shape.collapsed === true) {
+            modeling.toggleCollapse(shape);
+            expandedIds.push(String(shape.businessObject?.id || shape.id || "").trim());
+          }
+        }
+        return { ok: true, expanded: expandedIds.length > 0, expandedIds };
+      } catch (e) {
+        return { ok: false, error: String(e?.message || e || "expand_failed"), expandedIds: [] };
+      }
+    },
     preparePlayback: (timelineItems = []) => {
       callbacks.preparePlaybackCache?.(refs.viewerRef?.current, "viewer", timelineItems);
       callbacks.preparePlaybackCache?.(refs.modelerRef?.current, "editor", timelineItems);

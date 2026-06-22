@@ -1,0 +1,40 @@
+{
+  "contour_id": "stage2/test-atomic-20260612T215825Z",
+  "contour_type": "test",
+  "stage": "stage2",
+  "created_at": "2026-06-12T21:58:29Z",
+  "updated_at": "2026-06-12T22:02:44Z",
+  "planner_status": "complete",
+  "worker_status": "complete",
+  "reviewer_status": "complete",
+  "verdict": "pass",
+  "blocked_reason": null,
+  "artifacts": {
+    "PLAN.md": "present",
+    "WORKER_PROMPT.md": "present",
+    "REVIEWER_PROMPT.md": "present",
+    "STATE.json": "present",
+    "READY_FOR_EXECUTION": "present",
+    "ATOMIC_TEST_ARTIFACT.txt": "present",
+    "ATOMIC_TEST_ARTIFACT.txt.ready": "present",
+    "WORKER_REPORT.md": "present",
+    "WORKER_DONE": "present",
+    "REVIEW_REPORT.md": "present",
+    "REVIEW_PASS": "present",
+    "CHANGES_REQUESTED": "absent"
+  },
+  "markers": {
+    "ready_for_execution": true,
+    "execution_started": true,
+    "ready_for_review": true,
+    "review_pass": true,
+    "changes_requested": false,
+    "closed": false
+  },
+  "scope_guard": {
+    "product_code_allowed": false,
+    "bpmn_xml_allowed": false,
+    "schema_allowed": false,
+    "deploy_allowed": false
+  }
+}
