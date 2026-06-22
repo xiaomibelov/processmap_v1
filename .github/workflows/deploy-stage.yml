@@ -53,6 +53,11 @@ jobs:
               --requested-ref "${REQUESTED_REF}" \
               --resolved-sha "${DEPLOY_SHA}"
 
+            DEPLOY_FINGERPRINT="processmap-stage-deploy-sha:${DEPLOY_SHA}"
+            export VITE_DEPLOY_FINGERPRINT="${DEPLOY_FINGERPRINT}"
+            export VITE_DEPLOY_REQUESTED_REF="${REQUESTED_REF}"
+            export VITE_DEPLOY_RESOLVED_SHA="${DEPLOY_SHA}"
+
             # Rebuild api and gateway (frontend is baked into gateway image)
             APP_ENV_FILE=.env.stage docker compose \
               --env-file .env.stage \

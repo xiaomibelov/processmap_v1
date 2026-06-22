@@ -24,6 +24,19 @@ const stageDeployFingerprintBanner = stageDeployFingerprintMeta
   : "";
 
 function loadStageDeployFingerprintMeta() {
+  // Prefer explicit env var from CI/build orchestration.
+  const envFingerprint = String(process.env.VITE_DEPLOY_FINGERPRINT || "").trim();
+  const envRequestedRef = String(process.env.VITE_DEPLOY_REQUESTED_REF || "").trim();
+  const envResolvedSha = String(process.env.VITE_DEPLOY_RESOLVED_SHA || "").trim();
+  if (envFingerprint && envRequestedRef && envResolvedSha) {
+    return {
+      sourceFile: "<env>",
+      requestedRef: envRequestedRef,
+      resolvedSha: envResolvedSha,
+      fingerprint: envFingerprint,
+    };
+  }
+
   const sourceFile = path.resolve(
     process.cwd(),
     process.env.STAGE_DEPLOY_FINGERPRINT_FILE || ".stage-deploy-fingerprint.json"
