@@ -34,6 +34,10 @@ copy_if_exists() {
 # Explicit allowlist: no hidden files, no .env, no private keys, no arbitrary logs.
 for f in \
   PLAN.md \
+  UI.md \
+  API.md \
+  TESTS.md \
+  PR.md \
   WORKER_PROMPT.md \
   REVIEWER_PROMPT.md \
   RUNTIME_NAVIGATION.md \
@@ -49,6 +53,11 @@ for f in \
   REPAIR_OPTIONS.md \
   STATE.json \
   READY_FOR_EXECUTION \
+  AUDIT.md \
+  AUDIT-TESTS.md \
+  AUDIT-IMPL.md \
+  FIX.md \
+  GAPS.md \
   WORKER_STARTED \
   WORKER_DONE \
   REVIEW_PASS \

@@ -205,5 +205,128 @@ class AdminUserManagementApiTest(unittest.TestCase):
         self.assertEqual(int(target.get("pending_invites_count") or 0), 1)
 
 
+    def _permission_template(self, role):
+        if role == "org_admin":
+            return {"view": True, "create": True, "edit": True, "export": True, "delete": True, "manage_users": True}
+        if role == "editor":
+            return {"view": True, "create": True, "edit": True, "export": True, "delete": False, "manage_users": False}
+        return {"view": True, "create": False, "edit": False, "export": False, "delete": False, "manage_users": False}
+
+    def test_create_user_persists_and_returns_permissions(self):
+        created = self.admin_create_user(
+            self.AdminUserCreateBody(
+                email="perm.user@local",
+                password="strongpass1",
+                memberships=[{
+                    "org_id": self.default_org_id,
+                    "role": "editor",
+                    "permissions": {"create": False, "edit": True, "export": True, "delete": False, "manage_users": False},
+                }],
+            ),
+            self.request,
+        )
+        self.assertTrue(bool(created.get("ok")))
+        user = created.get("item") or {}
+        membership = (user.get("memberships") or [])[0]
+        self.assertEqual(membership.get("org_id"), self.default_org_id)
+        self.assertEqual(membership.get("role"), "editor")
+        perms = membership.get("permissions") or {}
+        self.assertEqual(perms.get("view"), True)
+        self.assertEqual(perms.get("create"), False)
+        self.assertEqual(perms.get("edit"), True)
+        self.assertEqual(perms.get("export"), True)
+        self.assertEqual(perms.get("delete"), False)
+        self.assertEqual(perms.get("manage_users"), False)
+
+    def test_create_user_without_permissions_falls_back_to_role_template(self):
+        created = self.admin_create_user(
+            self.AdminUserCreateBody(
+                email="fallback.user@local",
+                password="strongpass1",
+                memberships=[{"org_id": self.default_org_id, "role": "org_admin"}],
+            ),
+            self.request,
+        )
+        self.assertTrue(bool(created.get("ok")))
+        user = created.get("item") or {}
+        membership = (user.get("memberships") or [])[0]
+        self.assertEqual(membership.get("permissions"), self._permission_template("org_admin"))
+
+    def test_patch_user_replaces_memberships_with_permissions(self):
+        created = self.admin_create_user(
+            self.AdminUserCreateBody(
+                email="patch.perm@local",
+                password="strongpass1",
+                memberships=[{"org_id": self.default_org_id, "role": "editor"}],
+            ),
+            self.request,
+        )
+        user_id = str((created.get("item") or {}).get("id") or "")
+        patched = self.admin_patch_user(
+            user_id,
+            self.AdminUserPatchBody(
+                memberships=[{
+                    "org_id": self.org_b_id,
+                    "role": "org_admin",
+                    "permissions": {"delete": False, "manage_users": False},
+                }],
+            ),
+            self.request,
+        )
+        self.assertTrue(bool(patched.get("ok")))
+        updated = patched.get("item") or {}
+        membership = (updated.get("memberships") or [])[0]
+        self.assertEqual(membership.get("org_id"), self.org_b_id)
+        self.assertEqual(membership.get("role"), "org_admin")
+        self.assertEqual(membership.get("permissions"), {
+            "view": True,
+            "create": False,
+            "edit": False,
+            "export": False,
+            "delete": False,
+            "manage_users": False,
+        })
+
+    def test_view_permission_is_always_true_even_if_sent_false(self):
+        created = self.admin_create_user(
+            self.AdminUserCreateBody(
+                email="view.false@local",
+                password="strongpass1",
+                memberships=[{
+                    "org_id": self.default_org_id,
+                    "role": "org_viewer",
+                    "permissions": {"view": False},
+                }],
+            ),
+            self.request,
+        )
+        self.assertTrue(bool(created.get("ok")))
+        user = created.get("item") or {}
+        membership = (user.get("memberships") or [])[0]
+        self.assertEqual(membership.get("permissions", {}).get("view"), True)
+
+    def test_listed_user_includes_permissions(self):
+        created = self.admin_create_user(
+            self.AdminUserCreateBody(
+                email="listed.perm@local",
+                password="strongpass1",
+                memberships=[{
+                    "org_id": self.default_org_id,
+                    "role": "editor",
+                    "permissions": {"create": True, "edit": True, "export": False},
+                }],
+            ),
+            self.request,
+        )
+        user_id = str((created.get("item") or {}).get("id") or "")
+        listed = self.admin_users(self.request)
+        target = next((row for row in (listed.get("items") or []) if str(row.get("id") or "") == user_id), {})
+        membership = (target.get("memberships") or [])[0]
+        self.assertEqual(membership.get("permissions", {}).get("view"), True)
+        self.assertEqual(membership.get("permissions", {}).get("create"), True)
+        self.assertEqual(membership.get("permissions", {}).get("edit"), True)
+        self.assertEqual(membership.get("permissions", {}).get("export"), False)
+
+
 if __name__ == "__main__":
     unittest.main()
