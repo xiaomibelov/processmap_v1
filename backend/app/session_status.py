@@ -48,12 +48,15 @@ def validate_session_status_transition(
     current_status = normalize_session_status(current_raw) or "draft"
     next_status = normalize_session_status(next_raw)
     if not next_status:
-        raise HTTPException(status_code=422, detail="invalid status")
+        raise HTTPException(status_code=422, detail={"code": "STATUS_INVALID", "message": "invalid status"})
     if not can_edit:
-        raise HTTPException(status_code=403, detail="forbidden")
+        raise HTTPException(status_code=403, detail={"code": "STATUS_FORBIDDEN", "message": "forbidden"})
     allowed = set(SESSION_STATUS_TRANSITIONS.get(current_status) or {current_status})
     if next_status not in allowed:
-        raise HTTPException(status_code=409, detail="invalid status transition")
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "STATUS_TRANSITION_INVALID", "message": "invalid status transition", "current": current_status, "next": next_status},
+        )
     if next_status == "archived" and not can_archive:
-        raise HTTPException(status_code=403, detail="forbidden")
+        raise HTTPException(status_code=403, detail={"code": "STATUS_FORBIDDEN", "message": "forbidden"})
     return next_status
