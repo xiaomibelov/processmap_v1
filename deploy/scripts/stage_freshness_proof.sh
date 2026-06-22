@@ -124,7 +124,7 @@ done
 [ -n "$RESOLVED_SHA" ] || fail "--resolved-sha is required"
 
 STAGE_URL="${STAGE_URL:-https://stage.processmap.ru}"
-SOURCE_FINGERPRINT_FILE="${STAGE_FRESHNESS_SOURCE_FILE:-frontend/.stage-deploy-fingerprint.json}"
+SOURCE_FINGERPRINT_FILE="${STAGE_FRESHNESS_SOURCE_FILE:-/tmp/processmap-stage-deploy-fingerprint-${REQUESTED_REF//[^A-Za-z0-9._-]/_}-${RESOLVED_SHA:0:12}.json}"
 ROOT_OVERRIDE="${STAGE_FRESHNESS_GATEWAY_ROOT:-}"
 HTML_OVERRIDE="${STAGE_FRESHNESS_HTML_FILE:-}"
 JS_OVERRIDE="${STAGE_FRESHNESS_JS_FILE:-}"
