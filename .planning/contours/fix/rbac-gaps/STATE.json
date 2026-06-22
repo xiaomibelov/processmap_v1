@@ -1,0 +1,29 @@
+{
+  "contour_id": "fix/rbac-gaps",
+  "contour_type": "fix",
+  "branch": "fix/rbac-gaps",
+  "baseline": "origin/main @ f3a1eaa0f2cd7db93bba771f7461b5e527b26648",
+  "role": "planner",
+  "status": "planned",
+  "artifacts": [
+    "PLAN.md",
+    "FIX.md",
+    "TESTS.md",
+    "PR.md",
+    "STATE.json",
+    "READY_FOR_EXECUTION",
+    "RAG_PREFLIGHT_PLANNER.md",
+    "RAG_PREFLIGHT_PLANNER.md.ready"
+  ],
+  "gates": {
+    "rag_preflight": true,
+    "source_runtime_truth": true,
+    "bounded_scope": true,
+    "acceptance_criteria": true,
+    "no_product_code_by_planner": true,
+    "no_merge_deploy_pr_without_approval": true
+  },
+  "next_role": "executor",
+  "next_action": "Wait for user approval of PLAN.md before implementing patches and tests.",
+  "notes": "Plan covers 5 P0-P1 RBAC gaps: session delete, export, discussions create, templates org-scope, BPMN save. All patches use permission flags with role fallback. Existing test_session_read_rbac.py will be adjusted for intended org_admin behavior."
+}
