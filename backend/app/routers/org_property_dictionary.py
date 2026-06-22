@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ..services.org_workspace import require_org_member_for_enterprise
+from ..utils.authz import ORG_READ_ROLES, ORG_WRITE_ROLES, is_role_allowed
 from ..storage import (
     delete_org_property_dictionary_definition,
     delete_org_property_dictionary_value,
@@ -28,17 +29,31 @@ def _actor_user_id(request: Request) -> str:
     return ""
 
 
+def _request_is_admin(request: Request) -> bool:
+    user = getattr(request.state, "auth_user", None)
+    if isinstance(user, dict):
+        return bool(user.get("is_admin", False))
+    return False
+
+
 def _ensure_org_member(request: Request, org_id: str) -> str:
     oid = str(org_id or "").strip()
     if not oid:
         raise HTTPException(status_code=422, detail="org_id required")
     try:
-        require_org_member_for_enterprise(request, oid)
+        role = require_org_member_for_enterprise(request, oid)
     except Exception as exc:
         message = str(getattr(exc, "detail", "") or str(exc) or "forbidden")
         status_code = int(getattr(exc, "status_code", 403) or 403)
         raise HTTPException(status_code=status_code, detail=message) from exc
-    return oid
+    return role
+
+
+def _require_org_role(request: Request, org_id: str, allowed_roles: set[str]) -> str:
+    role = _ensure_org_member(request, org_id)
+    if not _request_is_admin(request) and not is_role_allowed(role, allowed_roles):
+        raise HTTPException(status_code=403, detail="forbidden")
+    return role
 
 
 class OperationUpsertIn(BaseModel):
@@ -70,7 +85,8 @@ def list_org_property_dictionary_operations_endpoint(
     request: Request,
     include_inactive: bool = False,
 ) -> Dict[str, Any]:
-    oid = _ensure_org_member(request, org_id)
+    _require_org_role(request, org_id, ORG_READ_ROLES)
+    oid = str(org_id or "").strip()
     items = list_org_property_dictionary_operations(oid, include_inactive=include_inactive)
     return {"items": items, "count": len(items), "org_id": oid}
 
@@ -81,7 +97,8 @@ def create_or_update_org_property_dictionary_operation_endpoint(
     body: OperationUpsertIn,
     request: Request,
 ) -> Dict[str, Any]:
-    oid = _ensure_org_member(request, org_id)
+    _require_org_role(request, org_id, ORG_WRITE_ROLES)
+    oid = str(org_id or "").strip()
     item = upsert_org_property_dictionary_operation(
         oid,
         operation_key=body.operation_key,
@@ -100,7 +117,8 @@ def patch_org_property_dictionary_operation_endpoint(
     body: OperationUpsertIn,
     request: Request,
 ) -> Dict[str, Any]:
-    oid = _ensure_org_member(request, org_id)
+    _require_org_role(request, org_id, ORG_WRITE_ROLES)
+    oid = str(org_id or "").strip()
     item = upsert_org_property_dictionary_operation(
         oid,
         operation_key=operation_key or body.operation_key,
@@ -119,7 +137,8 @@ def get_org_property_dictionary_bundle_endpoint(
     request: Request,
     include_inactive: bool = False,
 ) -> Dict[str, Any]:
-    oid = _ensure_org_member(request, org_id)
+    _require_org_role(request, org_id, ORG_READ_ROLES)
+    oid = str(org_id or "").strip()
     return get_org_property_dictionary_bundle(oid, operation_key, include_inactive=include_inactive)
 
 
@@ -130,7 +149,8 @@ def create_or_update_org_property_dictionary_definition_endpoint(
     body: DefinitionUpsertIn,
     request: Request,
 ) -> Dict[str, Any]:
-    oid = _ensure_org_member(request, org_id)
+    _require_org_role(request, org_id, ORG_WRITE_ROLES)
+    oid = str(org_id or "").strip()
     item = upsert_org_property_dictionary_definition(
         oid,
         operation_key=operation_key,
@@ -154,7 +174,8 @@ def patch_org_property_dictionary_definition_endpoint(
     body: DefinitionUpsertIn,
     request: Request,
 ) -> Dict[str, Any]:
-    oid = _ensure_org_member(request, org_id)
+    _require_org_role(request, org_id, ORG_WRITE_ROLES)
+    oid = str(org_id or "").strip()
     item = upsert_org_property_dictionary_definition(
         oid,
         operation_key=operation_key,
@@ -177,7 +198,8 @@ def delete_org_property_dictionary_definition_endpoint(
     property_key: str,
     request: Request,
 ) -> Dict[str, Any]:
-    oid = _ensure_org_member(request, org_id)
+    _require_org_role(request, org_id, ORG_WRITE_ROLES)
+    oid = str(org_id or "").strip()
     deleted = delete_org_property_dictionary_definition(oid, operation_key, property_key)
     return {"ok": bool(deleted)}
 
@@ -190,7 +212,8 @@ def create_or_update_org_property_dictionary_value_endpoint(
     body: ValueUpsertIn,
     request: Request,
 ) -> Dict[str, Any]:
-    oid = _ensure_org_member(request, org_id)
+    _require_org_role(request, org_id, ORG_WRITE_ROLES)
+    oid = str(org_id or "").strip()
     item = upsert_org_property_dictionary_value(
         oid,
         operation_key=operation_key,
@@ -210,7 +233,8 @@ def patch_org_property_dictionary_value_endpoint(
     body: ValueUpsertIn,
     request: Request,
 ) -> Dict[str, Any]:
-    oid = _ensure_org_member(request, org_id)
+    _require_org_role(request, org_id, ORG_WRITE_ROLES)
+    oid = str(org_id or "").strip()
     current = get_org_property_dictionary_value_by_id(oid, value_id)
     if not current:
         raise HTTPException(status_code=404, detail="value_not_found")
@@ -233,6 +257,7 @@ def delete_org_property_dictionary_value_endpoint(
     value_id: str,
     request: Request,
 ) -> Dict[str, Any]:
-    oid = _ensure_org_member(request, org_id)
+    _require_org_role(request, org_id, ORG_WRITE_ROLES)
+    oid = str(org_id or "").strip()
     deleted = delete_org_property_dictionary_value(oid, value_id)
     return {"ok": bool(deleted)}
