@@ -166,7 +166,7 @@
 .bpmnCanvas .djs-element[data-element-id^="Lane"] .djs-label {
   fill: var(--bpmn-task-text) !important;
   font-size: 12px !important;
-  font-weight: 700 !important;
+  font-weight: 500 !important;
   paint-order: stroke fill;
   stroke: var(--bpmn-label-outline);
   stroke-width: 2px;
@@ -182,7 +182,7 @@
 .bpmnCanvas .djs-shape.fpcTaskLightBg .djs-label,
 .bpmnCanvas .djs-shape.fpcTaskLightBg text {
   fill: var(--bpmn-task-text) !important;
-  font-weight: 600 !important;
+  font-weight: 400 !important;
 }
 
 .bpmnCanvas .djs-shape[data-element-id*="Gateway"] .djs-visual > polygon {
