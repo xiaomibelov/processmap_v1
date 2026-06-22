@@ -70,6 +70,11 @@ jobs:
             # Drop any project named volume that could be masking /usr/share/nginx/html
             docker volume ls -q | grep '^processmap_stage_gateway' | xargs -r docker volume rm 2>/dev/null || true
 
+            DEPLOY_FINGERPRINT="processmap-stage-deploy-sha:${DEPLOY_SHA}"
+            export VITE_DEPLOY_FINGERPRINT="${DEPLOY_FINGERPRINT}"
+            export VITE_DEPLOY_REQUESTED_REF="${DEPLOY_REF}"
+            export VITE_DEPLOY_RESOLVED_SHA="${DEPLOY_SHA}"
+
             # Rebuild images (frontend is baked into gateway)
             APP_ENV_FILE=.env.stage docker compose \
               --env-file .env.stage \
