@@ -24,11 +24,6 @@ jobs:
             cd /opt/processmap/app
 
             DEPLOY_REF="${{ github.event.inputs.deploy_ref }}"
-            FRESHNESS_SOURCE_FILE="frontend/.stage-deploy-fingerprint.json"
-            cleanup_freshness_source() {
-              rm -f "${FRESHNESS_SOURCE_FILE}"
-            }
-            trap cleanup_freshness_source EXIT
 
             if [ -z "${DEPLOY_REF}" ]; then
               echo "[deploy-stage-ref] deploy_ref is required"
@@ -56,6 +51,9 @@ jobs:
             grep -n "sessions={sessions}" frontend/src/App.jsx || echo "NOT FOUND"
             echo "[deploy-stage-ref] NotesMvpPanel sessions prop:"
             grep -n "sessions = \\[\\]" frontend/src/components/NotesMvpPanel.jsx || echo "NOT FOUND"
+
+            STAGE_FRESHNESS_SOURCE_FILE="/tmp/processmap-stage-deploy-fingerprint-${DEPLOY_REF//[^A-Za-z0-9._-]/_}-${DEPLOY_SHA:0:12}.json"
+            export STAGE_FRESHNESS_SOURCE_FILE
 
             deploy/scripts/stage_freshness_proof.sh prepare-source \
               --requested-ref "${DEPLOY_REF}" \
@@ -97,5 +95,7 @@ jobs:
             deploy/scripts/stage_freshness_proof.sh verify-chain \
               --requested-ref "${DEPLOY_REF}" \
               --resolved-sha "${DEPLOY_SHA}"
+
+            rm -f "${STAGE_FRESHNESS_SOURCE_FILE}"
 
             echo "[deploy-stage-ref] done ref=${DEPLOY_REF} sha=${DEPLOY_SHA}"
