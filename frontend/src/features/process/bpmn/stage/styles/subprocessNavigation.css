@@ -17,18 +17,35 @@
   pointer-events: auto;
 }
 
-/* On-canvas breadcrumb panel so drill-down context floats over the diagram. */
-.subprocessBreadcrumbsOnCanvas {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 50;
-  max-width: calc(100% - 24px);
+/* Breadcrumb bar rendered below the process header so it never overlaps toolbar buttons. */
+.subprocessBreadcrumbsBar {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  padding: 8px 12px 0;
   pointer-events: none;
 }
 
-.subprocessBreadcrumbsOnCanvas > * {
+.subprocessBreadcrumbsBar > * {
   pointer-events: auto;
+}
+
+@media (max-width: 768px) {
+  .subprocessBreadcrumbsBar {
+    padding: 6px 8px 0;
+  }
+  .subprocessBreadcrumbsBar .subprocessBreadcrumbs {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 320px) {
+  .subprocessBreadcrumbsBar .subprocessBreadcrumbs > * {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 /* Discussion badge on CallActivity/SubProcess elements that have child-session discussions. */

@@ -106,6 +106,10 @@ const BPMN_INPUT_KEYS = [
   "openBpmnSubprocessPreviewProperties",
   "onNavigateToSubprocess",
   "childSessionDiscussionAggregates",
+  "focusElementId",
+  "onFocusElementApplied",
+  "restoreViewportSnapshot",
+  "onRestoreViewportSnapshotApplied",
 ];
 
 const DRAWIO_BASE_KEYS = [

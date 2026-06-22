@@ -9,6 +9,7 @@ import AnalyticsDashboards from "../features/analytics/AnalyticsDashboards.jsx";
 import AnalyticsSectionTabs from "../features/analytics/AnalyticsSectionTabs.jsx";
 import AnalyticsHub from "../features/analytics/AnalyticsHub.jsx";
 import WorkspaceExplorer from "../features/explorer/WorkspaceExplorer";
+import SubprocessBreadcrumbs from "../features/process/SubprocessBreadcrumbs.jsx";
 import { useAuth } from "../features/auth/AuthProvider";
 import {
   apiGetSession,
@@ -374,6 +375,14 @@ function ProcessStage({
   onNavigateToSubprocess = null,
   childSessionDiscussionAggregates,
   sessions = [],
+  subprocessBreadcrumbs = [],
+  onBreadcrumbNavigate = null,
+  onReturnToParent = null,
+  bpmnStageRef = null,
+  focusElementId = "",
+  onFocusElementApplied = null,
+  restoreViewportSnapshot = null,
+  onRestoreViewportSnapshotApplied = null,
 }) {
   const sid = String(sessionId || "");
 
@@ -396,7 +405,8 @@ function ProcessStage({
   }
 
   const { user } = useAuth();
-  const bpmnRef = useRef(null);
+  const localBpmnRef = useRef(null);
+  const bpmnRef = bpmnStageRef || localBpmnRef;
   const importInputRef = useRef(null);
   const processBodyRef = useRef(null);
   const toolbarMenuRef = useRef(null);
@@ -6152,6 +6162,10 @@ function ProcessStage({
     activeProjectId,
     asObject,
     bpmnFragmentPlacementActive,
+    focusElementId,
+    onFocusElementApplied,
+    restoreViewportSnapshot,
+    onRestoreViewportSnapshotApplied,
     bpmnFragmentPlacementGhost,
     bpmnContextMenu,
     bpmnSubprocessPreview,
@@ -6509,6 +6523,15 @@ function ProcessStage({
   return (
     <ProcessStageShell className={shellClassName}>
       <ProcessStageHeader view={headerView} />
+      {subprocessBreadcrumbs?.length >= 2 ? (
+        <div className="subprocessBreadcrumbsBar">
+          <SubprocessBreadcrumbs
+            breadcrumbs={subprocessBreadcrumbs}
+            onNavigate={onBreadcrumbNavigate}
+            onBack={onReturnToParent}
+          />
+        </div>
+      ) : null}
       <ProcessSaveAckToast
         visible={saveAckToast.visible === true}
         message={saveAckToast.message}

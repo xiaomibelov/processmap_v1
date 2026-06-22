@@ -34,6 +34,7 @@ import {
   MANUAL_SESSION_STATUSES,
   getManualSessionStatusMeta,
 } from "../workspace/workspacePermissions";
+import { getAllowedNextStatuses, normalizeManualSessionStatus } from "../workspace/sessionStatus.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { buildVisibleRows, hasFolderChildren } from "./work3TreeState.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
@@ -2174,6 +2175,18 @@ function SessionRow({
   const [renaming, setRenaming] = useState(false);
   const [pendingStatus, setPendingStatus] = useState(String(session.status || "draft"));
   const sessionStatusMeta = getManualSessionStatusMeta(pendingStatus);
+  const normalizedSessionStatus = useMemo(
+    () => normalizeManualSessionStatus(session.status, "draft"),
+    [session.status],
+  );
+  const allowedNextStatuses = useMemo(
+    () => getAllowedNextStatuses(normalizedSessionStatus),
+    [normalizedSessionStatus],
+  );
+  const statusOptions = useMemo(
+    () => MANUAL_SESSION_STATUSES.filter((s) => allowedNextStatuses.has(s.value)),
+    [allowedNextStatuses],
+  );
   useEffect(() => {
     setPendingStatus(String(session.status || "draft"));
   }, [session.status]);
@@ -2263,7 +2276,10 @@ function SessionRow({
                 });
                 if (!resp?.ok) {
                   setPendingStatus(String(session.status || "draft"));
-                  window.alert(formatSessionPatchError(resp));
+                  const message = resp?.status === 409
+                    ? "Переход в выбранный статус недоступен для текущего состояния сессии."
+                    : formatSessionPatchError(resp);
+                  window.alert(message);
                   return;
                 }
                 onSessionPatched?.(session.id, {
@@ -2272,8 +2288,9 @@ function SessionRow({
                 });
                 onReload?.();
               }}
+              disabled={pendingStatus !== String(session.status || "draft")}
             >
-              {MANUAL_SESSION_STATUSES.map((item) => (
+              {statusOptions.map((item) => (
                 <option key={item.value} value={item.value}>{item.label}</option>
               ))}
             </select>

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import TopBar from "./TopBar";
-import SubprocessBreadcrumbs from "../features/process/SubprocessBreadcrumbs";
 import ProcessStage from "./ProcessStage";
 import SidebarHandle from "./sidebar/SidebarHandle";
 import { resolveSessionNavNoticeCopy } from "../features/process/navigation/sessionNavNoticeUi";
@@ -117,6 +116,7 @@ export default function AppShell({
   onOpenNotesDiscussions,
   onDeleteSession,
   onChangeSessionStatus,
+  isChangingSessionStatus = false,
   onNewProject,
   onNewBackendSession,
   selectedBpmnElement,
@@ -146,9 +146,11 @@ export default function AppShell({
   noteNotificationsAvailable = false,
   onOpenMentionNotification,
   onRefreshMentionNotifications,
-  subprocessBreadcrumbs,
-  onBreadcrumbNavigate,
-  onReturnToParent,
+  bpmnStageRef = null,
+  focusElementId = "",
+  onFocusElementApplied = null,
+  restoreViewportSnapshot = null,
+  onRestoreViewportSnapshotApplied = null,
 }) {
   const hasActiveSession = String(shellSessionId || sessionId || "").trim().length > 0;
   const effectiveLeftHidden = hasActiveSession ? !!leftHidden : true;
@@ -217,6 +219,7 @@ export default function AppShell({
           sessionStatus={sessionStatus}
           onDeleteSession={onDeleteSession}
           onChangeSessionStatus={onChangeSessionStatus}
+          isChangingSessionStatus={isChangingSessionStatus}
           onOpenSession={onOpenSession}
           onOpenWorkspace={workspaceBackHandler}
           onOpenDiscussionNotifications={onOpenDiscussionNotifications}
@@ -273,15 +276,6 @@ export default function AppShell({
           ) : null}
         </div>
         <div className="workspaceMain relative rounded-xl2 border border-border bg-panel">
-          {subprocessBreadcrumbs?.length >= 2 ? (
-            <div className="subprocessBreadcrumbsOnCanvas">
-              <SubprocessBreadcrumbs
-                breadcrumbs={subprocessBreadcrumbs}
-                onNavigate={onBreadcrumbNavigate}
-                onBack={onReturnToParent}
-              />
-            </div>
-          ) : null}
           {updatesOpen ? (
             <AppUpdatesPage onClose={closeUpdatesPage} />
           ) : (
@@ -326,6 +320,14 @@ export default function AppShell({
               onNavigateToSubprocess={onNavigateToSubprocess}
               childSessionDiscussionAggregates={childSessionDiscussionAggregates}
               sessions={sessions}
+              subprocessBreadcrumbs={subprocessBreadcrumbs}
+              onBreadcrumbNavigate={onBreadcrumbNavigate}
+              onReturnToParent={onReturnToParent}
+              bpmnStageRef={bpmnStageRef}
+              focusElementId={focusElementId}
+              onFocusElementApplied={onFocusElementApplied}
+              restoreViewportSnapshot={restoreViewportSnapshot}
+              onRestoreViewportSnapshotApplied={onRestoreViewportSnapshotApplied}
             />
           )}
         </div>
