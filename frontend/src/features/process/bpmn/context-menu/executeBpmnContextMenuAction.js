@@ -604,6 +604,7 @@ export function createBpmnContextMenuActionExecutor({
   cloneCompanionStateForCopiedElement,
   buildCopyElementOptions,
   backendClipboard,
+  onNavigateToSubprocess,
 } = {}) {
   return async function executeBpmnContextMenuActionRequest(payloadRaw = {}) {
     return await executeBpmnContextMenuAction({
@@ -616,6 +617,7 @@ export function createBpmnContextMenuActionExecutor({
       cloneCompanionStateForCopiedElement,
       buildCopyElementOptions,
       backendClipboard,
+      onNavigateToSubprocess,
     });
   };
 }
@@ -626,6 +628,7 @@ export async function executeBpmnContextMenuAction({
   ensureModeler,
   emitDiagramMutation,
   emitElementSelection,
+  onNavigateToSubprocess,
   buildInsertBetweenCandidate,
   cloneCompanionStateForCopiedElement,
   buildCopyElementOptions,
@@ -858,6 +861,20 @@ export async function executeBpmnContextMenuAction({
       }
       emitMutation({ count: ids.length, source: "native_copy_paste" });
       return { ok: true, changedIds: ids };
+    }
+
+    if (actionId === "navigate_to_subprocess") {
+      const targetType = readElementType(targetMeta);
+      if (!targetType.includes("callactivity") && !targetType.includes("subprocess")) {
+        return { ok: false, error: "not_a_subprocess_element" };
+      }
+      const id = toText(targetMeta?.id);
+      if (!id) return { ok: false, error: "missing_target_id" };
+      if (typeof onNavigateToSubprocess === "function") {
+        onNavigateToSubprocess(id);
+        return { ok: true, changedIds: [id], navigatedToSubprocess: id };
+      }
+      return { ok: false, error: "navigation_handler_missing" };
     }
 
     if (!target) return { ok: false, error: "target_not_found" };

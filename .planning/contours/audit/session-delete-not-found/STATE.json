@@ -1,0 +1,41 @@
+{
+  "contour": "audit/session-delete-not-found",
+  "type": "audit",
+  "mode": "read-only",
+  "host": "45.87.104.206",
+  "ssh_user": "deploy",
+  "ssh_key_attempted": "/root/.ssh/processmap_v1_deploy_key",
+  "ssh_access_method": "password-auth fallback (SSH_ASKPASS)",
+  "production_code_path": "/opt/processmap/app",
+  "production_code_head": "dbda26e6775964df948409280e979039d8cb56d6",
+  "dev_repo_path": "/opt/processmap-test",
+  "dev_branch": "fix/bpmn-drilldown-ui",
+  "dev_head": "7f6232e2",
+  "containers": {
+    "api": "app-api-1",
+    "postgres": "app-postgres-1",
+    "frontend": "app-frontend-1",
+    "celery": "app-celery-worker-1",
+    "gateway": "app-gateway-1",
+    "redis": "app-redis-1"
+  },
+  "findings": {
+    "database_index_corruption": true,
+    "corrupted_index": "pg_index_indrelid_index",
+    "missing_user_index": "idx_sessions_parent_element",
+    "delete_router_ignores_result": true,
+    "session_repo_delete_swallows_exceptions": true,
+    "patch_returns_not_found_body": true,
+    "frontend_maps_error_body_to_404": true,
+    "rbac_mismatch_non_owners_get_not_found": true
+  },
+  "artifacts": [
+    "AUDIT.md",
+    "EVIDENCE.md",
+    "HYPOTHESIS.md",
+    "NOGO.md",
+    "STATE.json"
+  ],
+  "status": "AUDIT_COMPLETE",
+  "next_action_requires_approve": true
+}

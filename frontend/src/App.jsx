@@ -99,6 +99,7 @@ import useSessionRouteOrchestration, {
 import {
   normalizeProcessMapProjectContext,
   readProcessMapProjectContextFromHistory,
+  PROCESS_MAP_ROUTE_STATE_KEY,
 } from "./app/processMapRouteModel";
 import useSessionActivationOrchestration from "./app/useSessionActivationOrchestration";
 import useSessionShellOrchestration from "./app/useSessionShellOrchestration";
@@ -119,6 +120,7 @@ import {
   projectTitleOf,
   sessionIdOf,
 } from "./app/projectSessionSelectors";
+import { useChildSessionNoteAggregatesByElementId } from "./lib/sessionNoteAggregates";
 import {
   emptyBpmnMeta,
   mergeHybridV2Doc,
@@ -1157,8 +1159,8 @@ export default function App() {
     return result;
   }, [confirmLeaveIfUnsafe, draft?.session_id, openSession, projectId, projectRouteContext]);
 
-  const navigateToSubprocess = useCallback(async (sessionIdArg, elementId) => {
-    const res = await apiNavigateToSubprocess(sessionIdArg, elementId);
+  const navigateToSubprocess = useCallback(async (sessionIdArg, elementId, targetElementId = "") => {
+    const res = await apiNavigateToSubprocess(sessionIdArg, elementId, targetElementId);
     if (!res.ok) {
       console.error("navigate failed", res.error);
       return;
@@ -1175,6 +1177,17 @@ export default function App() {
     if (typeof window !== "undefined") {
       window.__SUBPROCESS_FOCUS_ELEMENT_ID__ = res.targetElementId || "";
     }
+    // If a discussion-linked element focus intent is active and matches the
+    // target we are drilling down to, re-target that intent to the child
+    // session so the child ProcessStage can finish selecting/highlighting it.
+    setDiscussionLinkedElementFocusIntent((prev) => {
+      if (!prev || !res.targetElementId) return prev;
+      const prevElementId = String(prev.elementId || prev.element_id || "").trim();
+      const prevSid = String(prev.sid || "").trim();
+      if (prevElementId !== String(res.targetElementId || "").trim()) return prev;
+      if (prevSid && prevSid !== String(sessionIdArg || "").trim()) return prev;
+      return { ...prev, sid: String(res.subprocessSessionId || "").trim(), drilldown: true };
+    });
     openSession(res.subprocessSessionId);
   }, [openSession, projectId, projectRouteContext]);
 
@@ -3315,6 +3328,24 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrgId]);
 
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
+  const draftSessionIdRef = useRef(draft?.session_id);
+  draftSessionIdRef.current = draft?.session_id;
+  const openSessionRef = useRef(openSession);
+  openSessionRef.current = openSession;
+  const confirmLeaveIfUnsafeRef = useRef(confirmLeaveIfUnsafe);
+  confirmLeaveIfUnsafeRef.current = confirmLeaveIfUnsafe;
+  const returnToSessionListRef = useRef(returnToSessionList);
+  returnToSessionListRef.current = returnToSessionList;
+  const rememberProjectRouteContextRef = useRef(rememberProjectRouteContext);
+  rememberProjectRouteContextRef.current = rememberProjectRouteContext;
+  const setRequestedSessionIdRef = useRef(setRequestedSessionId);
+  setRequestedSessionIdRef.current = setRequestedSessionId;
+  const setProjectIdRef = useRef(setProjectId);
+  setProjectIdRef.current = setProjectId;
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     async function onPopState() {
       const fromUrl = readSelectionFromUrl();
@@ -3330,8 +3361,8 @@ export default function App() {
         projectId: fromUrl.projectId || "-",
         sessionId: fromUrl.sessionId || "-",
       });
-      const currentProjectId = String(projectId || "").trim();
-      const currentSessionId = String(draft?.session_id || "").trim();
+      const currentProjectId = String(projectIdRef.current || "").trim();
+      const currentSessionId = String(draftSessionIdRef.current || "").trim();
       const nextProjectId = String(fromUrl.projectId || "").trim();
       const nextSessionId = String(fromUrl.sessionId || "").trim();
       const nextProjectContext = readProcessMapProjectContextFromHistory();
@@ -3340,7 +3371,7 @@ export default function App() {
       const clearsProjectSelection = !!currentProjectId && !nextProjectId && !orgOpen;
       if (
         (leavesCurrentSession || changesProject || clearsProjectSelection)
-        && !confirmLeaveIfUnsafe("popstate_navigation")
+        && !confirmLeaveIfUnsafeRef.current("popstate_navigation")
       ) {
         writeSelectionToUrl({ projectId: currentProjectId, sessionId: currentSessionId });
         logNav("popstate_leave_guard_cancelled", {
@@ -3350,11 +3381,23 @@ export default function App() {
         return;
       }
       if (leavesCurrentSession && !nextSessionId) {
-        rememberProjectRouteContext(nextProjectContext);
-        if (nextProjectId && nextProjectId !== currentProjectId) {
-          setProjectId(nextProjectId);
+        const historyRoute = window.history?.state?.[PROCESS_MAP_ROUTE_STATE_KEY];
+        const parentSessionIdFromHistory = String(historyRoute?.parentSessionId || "").trim();
+        if (parentSessionIdFromHistory) {
+          logNav("popstate_restore_parent_from_history", {
+            parentSessionId: parentSessionIdFromHistory,
+          });
+          if (nextProjectId && nextProjectId !== currentProjectId) {
+            setProjectIdRef.current(nextProjectId);
+          }
+          await openSessionRef.current(parentSessionIdFromHistory);
+          return;
         }
-        const returned = await returnToSessionList("popstate_navigation", { skipLeaveGuard: true });
+        rememberProjectRouteContextRef.current(nextProjectContext);
+        if (nextProjectId && nextProjectId !== currentProjectId) {
+          setProjectIdRef.current(nextProjectId);
+        }
+        const returned = await returnToSessionListRef.current("popstate_navigation", { skipLeaveGuard: true });
         if (!returned?.ok) {
           writeSelectionToUrl({ projectId: currentProjectId, sessionId: currentSessionId });
           logNav("popstate_return_to_project_failed", {
@@ -3366,20 +3409,20 @@ export default function App() {
         }
         return;
       }
-      if (fromUrl.projectId && fromUrl.projectId !== String(projectId || "").trim()) {
-        rememberProjectRouteContext(nextProjectContext);
-        setProjectId(fromUrl.projectId);
+      if (fromUrl.projectId && fromUrl.projectId !== currentProjectId) {
+        rememberProjectRouteContextRef.current(nextProjectContext);
+        setProjectIdRef.current(fromUrl.projectId);
       }
       if (!fromUrl.projectId && !orgOpen) {
         setProjectRouteContext(null);
       }
-      if (fromUrl.sessionId) {
-        setRequestedSessionId(fromUrl.sessionId);
+      if (fromUrl.sessionId && fromUrl.sessionId !== currentSessionId) {
+        await openSessionRef.current(fromUrl.sessionId);
       }
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [confirmLeaveIfUnsafe, draft?.session_id, projectId, rememberProjectRouteContext, returnToSessionList, setRequestedSessionId]);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -3477,6 +3520,11 @@ export default function App() {
     refreshSessions(projectId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  const childDiscussionAggregates = useChildSessionNoteAggregatesByElementId(
+    sessionIdOf(draft),
+    sessions,
+  );
 
   return (
     <>
@@ -3577,10 +3625,11 @@ export default function App() {
           const sid = sessionIdOf(draft);
           if (sid) returnToParent(sid);
         }}
-        onNavigateToSubprocess={(elementId) => {
+        onNavigateToSubprocess={(elementId, targetElementId) => {
           const sid = sessionIdOf(draft);
-          if (sid) navigateToSubprocess(sid, elementId);
+          if (sid) navigateToSubprocess(sid, elementId, targetElementId);
         }}
+        childSessionDiscussionAggregates={childDiscussionAggregates}
         mentionNotifications={mentionNotifications}
         noteNotifications={noteNotifications}
         noteNotificationsAvailable={noteNotificationsAvailable}
@@ -3592,6 +3641,9 @@ export default function App() {
         ref={notesPanelRef}
         sessionId={String(draft?.session_id || "")}
         sessionTitle={currentSessionTitle}
+        projectTitle={currentProjectTitle}
+        projectId={projectId}
+        sessions={sessions}
         selectedElement={selectedBpmnElement}
         legacyElementNotesMap={draft?.notes_by_element || draft?.notesByElementId || null}
         onAddLegacyElementNote={addElementNote}
@@ -3600,6 +3652,8 @@ export default function App() {
         onOpenChange={setNotesDiscussionsOpen}
         onFocusNotificationTarget={focusDiscussionNotificationTarget}
         onFocusLinkedElement={focusDiscussionLinkedElement}
+        onNavigateToProject={() => setNotesDiscussionsOpen(false)}
+        onNavigateToSession={openSession}
         currentUserId={user?.id}
         mentionNotifications={mentionNotifications}
         onOpenMentionNotification={openMentionNotification}

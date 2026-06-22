@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/generate-build-info.mjs",
     "build": "vite build",
     "preview": "vite preview --port 5173",
     "test": "node --test \"src/**/*.test.mjs\"",

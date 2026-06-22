@@ -1,0 +1,29 @@
+{
+  "contour": "audit/analytic_01",
+  "status": "review_done",
+  "branch": "feature/analytics-nav-ux-fix",
+  "head": "7fed6c0f0c93cd840a03ee641722e403e2c9b3fa",
+  "origin_main": "e1143c14f901882c12dc550f71bfd6757d60b882",
+  "plan": "PLAN.md",
+  "worker_prompt": "WORKER_PROMPT.md",
+  "reviewer_prompt": "REVIEWER_PROMPT.md",
+  "runtime_navigation": "RUNTIME_NAVIGATION.md",
+  "runtime_proof_checklist": "RUNTIME_PROOF_CHECKLIST.md",
+  "audit_report": "AUDIT_REPORT.md",
+  "review_report": "REVIEW_REPORT.md",
+  "review_status": "PASS",
+  "findings_count": 15,
+  "test_status": {
+    "useAnalyticsRouteState": "PASS",
+    "AnalyticsDashboards": "PASS",
+    "TopBarContainer": "PASS"
+  },
+  "runtime_proof": "runtime",
+  "created_at": "2026-06-14T07:57:00.000Z",
+  "completed_at": "2026-06-14T08:04:00.000Z",
+  "reviewed_at": "2026-06-14T08:06:35.260Z",
+  "blocking_issues": [],
+  "non_blocking_suggestions": [
+    "Future audits of authenticated surfaces should arrange a logged-in session or stubbed auth to observe header active state and back/forward navigation directly."
+  ]
+}

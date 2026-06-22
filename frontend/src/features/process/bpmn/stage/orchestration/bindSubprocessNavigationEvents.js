@@ -1,62 +1,60 @@
-const CLICKABLE_CLASS = "fpc-call-activity-clickable";
+function getElementType(el) {
+  return String(el?.type || el?.businessObject?.$type || "").trim();
+}
 
-function markClickableCallActivities(inst) {
-  if (!inst || typeof inst.get !== "function") return;
+function isSubprocessNavigable(el) {
+  const type = getElementType(el);
+  return type === "bpmn:CallActivity" || type === "bpmn:SubProcess";
+}
+
+function findDrilldownOverlayForButton(inst, button) {
   try {
-    const elementRegistry = inst.get("elementRegistry");
-    const graphicsFactory = inst.get("graphicsFactory");
-    if (!elementRegistry || !graphicsFactory) return;
-    const elements = elementRegistry.getAll();
-    elements.forEach((el) => {
-      const type = String(el?.type || el?.businessObject?.$type || "").trim();
-      if (type !== "bpmn:CallActivity") return;
-      const gfx = elementRegistry.getGraphics(el);
-      if (!gfx) return;
-      const cls = String(gfx.getAttribute("class") || "");
-      if (!cls.includes(CLICKABLE_CLASS)) {
-        gfx.setAttribute("class", `${cls} ${CLICKABLE_CLASS}`.trim());
-      }
-    });
+    const overlays = inst.get("overlays");
+    if (!overlays) return null;
+    const candidates = overlays.get({ type: "drilldown" });
+    if (!Array.isArray(candidates)) return null;
+    return candidates.find((overlay) => {
+      const html = overlay?.html;
+      if (!html) return false;
+      return html === button || (typeof html.contains === "function" && html.contains(button));
+    }) || null;
   } catch {
-    // ignore
+    return null;
   }
 }
 
 export function bindSubprocessNavigationEvents(inst, onNavigateToSubprocessRef) {
   if (!inst || typeof inst.get !== "function") return () => {};
-  const eventBus = inst.get("eventBus");
-  if (!eventBus) return () => {};
+
+  // Use the bpmn-js top-level container (.bjs-container) so the delegated
+  // listener catches clicks on the default drilldown overlay button.
+  const container = inst._container;
+  if (!(container instanceof Element)) return () => {};
 
   const handler = (event) => {
-    const el = event?.element;
-    if (!el) return;
-    const type = String(el.type || el.businessObject?.$type || "").trim();
-    if (type !== "bpmn:CallActivity") return;
+    const button = event?.target?.closest?.(".bjs-drilldown");
+    if (!button) return;
+
+    const overlay = findDrilldownOverlayForButton(inst, button);
+    if (!overlay) return;
+
+    const element = overlay.element;
+    if (!element || !isSubprocessNavigable(element)) return;
+
+    event.stopPropagation();
+    event.preventDefault();
+
     const cb = onNavigateToSubprocessRef?.current;
     if (typeof cb === "function") {
-      cb(el.id);
+      cb(element.id);
     }
   };
 
-  eventBus.on("element.click", 3000, handler);
-
-  const renderHandler = () => {
-    markClickableCallActivities(inst);
-  };
-
-  eventBus.on("diagram.render", renderHandler);
-  eventBus.on("shape.added", renderHandler);
-  eventBus.on("shape.changed", renderHandler);
-
-  // Initial mark in case diagram is already rendered.
-  markClickableCallActivities(inst);
+  container.addEventListener("click", handler, true);
 
   return () => {
     try {
-      eventBus.off("element.click", handler);
-      eventBus.off("diagram.render", renderHandler);
-      eventBus.off("shape.added", renderHandler);
-      eventBus.off("shape.changed", renderHandler);
+      container.removeEventListener("click", handler, true);
     } catch {
       // ignore
     }
