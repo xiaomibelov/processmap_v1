@@ -5,8 +5,9 @@
 - **Branch:** `fix/canvas-navigation-stability`
 - **Base:** `main`
 - **Status:** `open` — awaiting review
-- **Test stand deploy:** http://clearvestnic.ru:5177 (build SHA `23f0e00a`, healthcheck passed)
-- **Hotfix:** `subprocessBreadcrumbs is not defined` — fixed by destructuring breadcrumb props in `AppShell`
+- **Test stand deploy:** http://clearvestnic.ru:5177 (build SHA `68b6ec31`, healthcheck passed)
+- **Hotfix 1:** `subprocessBreadcrumbs is not defined` — fixed by destructuring breadcrumb props in `AppShell`
+- **Hotfix 2:** breadcrumb now shows the current hierarchy path, syncs on return, and renders inside the canvas area below the toolbar
 
 ## Description
 
@@ -14,7 +15,7 @@
 
 1. **Кнопка статуса сессии** — добавлена фильтрация переходов по backend-матрице, optimistic update и rollback, индикатор сохранения.
 2. **Перезагрузка канваса при смене статуса** — статус меняется без изменения `sessionId`/`reloadKey`/`bpmn_xml`, канвас остаётся живым.
-3. **Breadcrumb поверх toolbar** — breadcrumb перенесён под заголовок процесса в normal flow с responsive wrap и корректным z-index.
+3. **Breadcrumb поверх toolbar** — breadcrumb перенесён внутрь canvas-области (absolute top-left), не перекрывает toolbar; отображает текущую иерархию, при возврате сбрасывается до корня.
 4. **Subprocess navigation** — drill-in/out работает как SPA-переход с сохранением viewport/zoom родительского процесса и focus-элемента через props, без `window.location.reload`.
 
 ## Acceptance criteria
