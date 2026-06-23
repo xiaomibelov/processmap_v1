@@ -59,6 +59,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     activeQualityOverlayCount,
     diagramActionQualityOpen,
     diagramActionOverflowOpen,
+    showOverlaysDuringPan,
+    setShowOverlaysDuringPan,
   } = topbarSection;
   const discussionsSessionId = toText(legacyView.sessionId);
   const explicitOpenNotesDiscussions = typeof topbarSection.openNotesDiscussions === "function"
@@ -492,6 +494,31 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             <span className="diagramActionChip" title={overlayStatusTitle}>
               {overlayStatusLabel}
             </span>
+          </button>
+          <button
+            type="button"
+            className={`secondaryBtn diagramActionBtn ${showOverlaysDuringPan ? "ring-1 ring-accent/60" : ""}`}
+            onClick={() => setShowOverlaysDuringPan?.((prev) => !prev)}
+            disabled={!isBpmnTab}
+            title={
+              showOverlaysDuringPan
+                ? "Оверлеи остаются видимыми при перемещении/зуме"
+                : "Скрывать оверлеи при перемещении/зуме для производительности"
+            }
+            data-testid="diagram-action-overlay-pan-toggle"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="h-3.5 w-3.5 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
+              <path d="M8 2.5c-4 0-7.5 3-7.5 5.5s3.5 5.5 7.5 5.5 7.5-3 7.5-5.5-3.5-5.5-7.5-5.5z" />
+              <circle cx="8" cy="8" r="2.5" />
+            </svg>
+            <span>Оверлеи при pan</span>
           </button>
           <span data-testid="templates-menu-button">
             <button

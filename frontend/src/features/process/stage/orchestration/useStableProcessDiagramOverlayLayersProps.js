@@ -111,6 +111,7 @@ const BPMN_INPUT_KEYS = [
   "onFocusElementApplied",
   "restoreViewportSnapshot",
   "onRestoreViewportSnapshotApplied",
+  "showOverlaysDuringPan",
 ];
 
 const DRAWIO_BASE_KEYS = [
