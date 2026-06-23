@@ -45,7 +45,7 @@ def list_sessions(q: Optional[str] = None, limit: int = 200, request: Request = 
 
 @router.get('/api/sessions/{session_id}')
 def get_session(session_id: str, request: Request = None):
-    return _svc.get_session(session_id)
+    return _svc.get_session(session_id, request=request)
 
 @router.post('/api/sessions/{session_id}/presence')
 def touch_session_presence_api(session_id: str, inp: SessionPresenceTouchIn, request: Request = None):
@@ -65,7 +65,7 @@ def get_session_analytics(session_id: str, request: Request = None):
 
 @router.patch('/api/sessions/{session_id}')
 def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None):
-    return _svc.patch_session(session_id, inp)
+    return _svc.patch_session(session_id, inp, request)
 
 @router.delete('/api/sessions/{session_id}')
 def delete_session_api(session_id: str, request: Request = None):
@@ -73,7 +73,7 @@ def delete_session_api(session_id: str, request: Request = None):
 
 @router.put('/api/sessions/{session_id}')
 def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None):
-    return _svc.put_session(session_id, inp)
+    return _svc.put_session(session_id, inp, request)
 
 @router.post('/api/sessions/{session_id}/recompute')
 def recompute(session_id: str):
