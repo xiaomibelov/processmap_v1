@@ -9,6 +9,7 @@ import AnalyticsDashboards from "../features/analytics/AnalyticsDashboards.jsx";
 import AnalyticsSectionTabs from "../features/analytics/AnalyticsSectionTabs.jsx";
 import AnalyticsHub from "../features/analytics/AnalyticsHub.jsx";
 import WorkspaceExplorer from "../features/explorer/WorkspaceExplorer";
+import SubprocessBreadcrumbs from "../features/process/SubprocessBreadcrumbs.jsx";
 import { useAuth } from "../features/auth/AuthProvider";
 import {
   apiGetSession,
@@ -374,6 +375,15 @@ function ProcessStage({
   onNavigateToSubprocess = null,
   childSessionDiscussionAggregates,
   sessions = [],
+  subprocessBreadcrumbs = [],
+  onBreadcrumbNavigate = null,
+  onReturnToParent = null,
+  bpmnStageRef = null,
+  bpmnXmlCacheRef = null,
+  focusElementId = "",
+  onFocusElementApplied = null,
+  restoreViewportSnapshot = null,
+  onRestoreViewportSnapshotApplied = null,
 }) {
   const sid = String(sessionId || "");
 
@@ -396,7 +406,8 @@ function ProcessStage({
   }
 
   const { user } = useAuth();
-  const bpmnRef = useRef(null);
+  const localBpmnRef = useRef(null);
+  const bpmnRef = bpmnStageRef || localBpmnRef;
   const importInputRef = useRef(null);
   const processBodyRef = useRef(null);
   const toolbarMenuRef = useRef(null);
@@ -6152,6 +6163,10 @@ function ProcessStage({
     activeProjectId,
     asObject,
     bpmnFragmentPlacementActive,
+    focusElementId,
+    onFocusElementApplied,
+    restoreViewportSnapshot,
+    onRestoreViewportSnapshotApplied,
     bpmnFragmentPlacementGhost,
     bpmnContextMenu,
     bpmnSubprocessPreview,
@@ -6235,6 +6250,7 @@ function ProcessStage({
     v2OverlaysEnabled,
     v2OverlaysExpanded,
     reloadKey,
+    bpmnXmlCacheRef,
     robotMetaOverlayEnabled,
     robotMetaOverlayFilters,
     robotMetaStatusByElementId,
@@ -6667,6 +6683,25 @@ function ProcessStage({
                 className={`bpmnStageHost h-full ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""}`}
                 ref={bpmnStageHostRef}
               >
+                {subprocessBreadcrumbs?.length > 0 ? (
+                  <div className="subprocessBreadcrumbsBar">
+                    {subprocessBreadcrumbs.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => onReturnToParent?.(sid)}
+                        className="subprocessBackButton"
+                        title="Назад"
+                        data-testid="subprocess-back-button"
+                      >
+                        ←
+                      </button>
+                    ) : null}
+                    <SubprocessBreadcrumbs
+                      breadcrumbs={subprocessBreadcrumbs}
+                      onNavigate={onBreadcrumbNavigate}
+                    />
+                  </div>
+                ) : null}
                 <ProcessStageDiagramControls
                   view={buildDiagramControlsView({
                     tab,

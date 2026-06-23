@@ -54,6 +54,8 @@ export default function TopBar({
 
         <div className="topBarControls">
           <select
+            id="topbar-project-select"
+            name="topbar_project"
             className="input topbarSelectSm"
             value={projectId || ""}
             onChange={(e) => onProjectChange?.(e.target.value || "")}
@@ -71,6 +73,8 @@ export default function TopBar({
           </select>
 
           <select
+            id="topbar-session-select"
+            name="topbar_session"
             className="input topbarSelectLg"
             value={sessionId || ""}
             onChange={(e) => onOpen?.(e.target.value)}

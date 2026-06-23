@@ -34,13 +34,38 @@ function createPatchedUpdate(original) {
   };
 }
 
+function createPatchedToggle(original) {
+  return function (...args) {
+    if (this.__fpcOverlayUpdatesPaused) {
+      return;
+    }
+    return original.apply(this, args);
+  };
+}
+
 export function patchOverlaysPrototype() {
   if (patchedGlobal) return;
   try {
-    const original = Overlays?.prototype?._updateOverlaysVisibilty;
-    if (!original || original.__overlayPanPatched) return;
-    Overlays.prototype._updateOverlaysVisibilty = createPatchedUpdate(original);
-    Overlays.prototype._updateOverlaysVisibilty.__overlayPanPatched = true;
+    const originalUpdate = Overlays?.prototype?._updateOverlaysVisibilty;
+    if (originalUpdate && !originalUpdate.__overlayPanPatched) {
+      Overlays.prototype._updateOverlaysVisibilty = createPatchedUpdate(originalUpdate);
+      Overlays.prototype._updateOverlaysVisibilty.__overlayPanPatched = true;
+    }
+    const originalRoot = Overlays?.prototype?._updateRoot;
+    if (originalRoot && !originalRoot.__overlayPanPatched) {
+      Overlays.prototype._updateRoot = createPatchedToggle(originalRoot);
+      Overlays.prototype._updateRoot.__overlayPanPatched = true;
+    }
+    const originalShow = Overlays?.prototype?.show;
+    if (originalShow && !originalShow.__overlayPanPatched) {
+      Overlays.prototype.show = createPatchedToggle(originalShow);
+      Overlays.prototype.show.__overlayPanPatched = true;
+    }
+    const originalHide = Overlays?.prototype?.hide;
+    if (originalHide && !originalHide.__overlayPanPatched) {
+      Overlays.prototype.hide = createPatchedToggle(originalHide);
+      Overlays.prototype.hide.__overlayPanPatched = true;
+    }
     patchedGlobal = true;
     if (typeof window !== "undefined") {
       window.__fpcOverlayPanPatchActive = true;
@@ -55,10 +80,27 @@ export function patchOverlaysInstance(inst) {
   if (!inst) return;
   try {
     const overlays = inst.get("overlays");
-    if (!overlays || overlays._updateOverlaysVisibilty?.__overlayPanPatched) return;
-    const original = overlays._updateOverlaysVisibilty.bind(overlays);
-    overlays._updateOverlaysVisibilty = createPatchedUpdate(original);
-    overlays._updateOverlaysVisibilty.__overlayPanPatched = true;
+    if (!overlays) return;
+    if (!overlays._updateOverlaysVisibilty?.__overlayPanPatched) {
+      const original = overlays._updateOverlaysVisibilty.bind(overlays);
+      overlays._updateOverlaysVisibilty = createPatchedUpdate(original);
+      overlays._updateOverlaysVisibilty.__overlayPanPatched = true;
+    }
+    if (!overlays._updateRoot?.__overlayPanPatched) {
+      const original = overlays._updateRoot.bind(overlays);
+      overlays._updateRoot = createPatchedToggle(original);
+      overlays._updateRoot.__overlayPanPatched = true;
+    }
+    if (!overlays.show?.__overlayPanPatched) {
+      const original = overlays.show.bind(overlays);
+      overlays.show = createPatchedToggle(original);
+      overlays.show.__overlayPanPatched = true;
+    }
+    if (!overlays.hide?.__overlayPanPatched) {
+      const original = overlays.hide.bind(overlays);
+      overlays.hide = createPatchedToggle(original);
+      overlays.hide.__overlayPanPatched = true;
+    }
   } catch {
     // no-op
   }

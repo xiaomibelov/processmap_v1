@@ -31,6 +31,7 @@ export function buildBpmnDiagramOverlayLayersProps({
   v2OverlaysEnabled,
   v2OverlaysExpanded,
   reloadKey,
+  bpmnXmlCacheRef,
   robotMetaOverlayEnabled,
   robotMetaOverlayFilters,
   robotMetaStatusByElementId,
@@ -42,6 +43,10 @@ export function buildBpmnDiagramOverlayLayersProps({
   openBpmnSubprocessPreviewProperties,
   onNavigateToSubprocess,
   childSessionDiscussionAggregates,
+  focusElementId = "",
+  onFocusElementApplied = null,
+  restoreViewportSnapshot = null,
+  onRestoreViewportSnapshotApplied = null,
 }) {
   bumpDrawioPerfCounter("overlay.vm.diagramOverlayProps.builds");
   return {
@@ -52,6 +57,7 @@ export function buildBpmnDiagramOverlayLayersProps({
       view: tab === "xml" ? "xml" : "editor",
       draft,
       reloadKey,
+      bpmnXmlCacheRef,
       onDiagramMutation: queueDiagramMutation,
       onElementSelectionChange: handleBpmnSelectionChange,
       onElementNotesRemap: onElementNotesRemap,
@@ -75,6 +81,10 @@ export function buildBpmnDiagramOverlayLayersProps({
       v2OverlaysExpanded,
       onNavigateToSubprocess,
       childSessionDiscussionAggregates,
+      focusElementId,
+      onFocusElementApplied,
+      restoreViewportSnapshot,
+      onRestoreViewportSnapshotApplied,
     },
     bpmnContextMenuProps: {
       menu: bpmnContextMenu,

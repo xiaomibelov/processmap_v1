@@ -95,6 +95,7 @@ const BPMN_INPUT_KEYS = [
   "v2OverlaysEnabled",
   "v2OverlaysExpanded",
   "reloadKey",
+  "bpmnXmlCacheRef",
   "robotMetaOverlayEnabled",
   "robotMetaOverlayFilters",
   "robotMetaStatusByElementId",
@@ -106,6 +107,10 @@ const BPMN_INPUT_KEYS = [
   "openBpmnSubprocessPreviewProperties",
   "onNavigateToSubprocess",
   "childSessionDiscussionAggregates",
+  "focusElementId",
+  "onFocusElementApplied",
+  "restoreViewportSnapshot",
+  "onRestoreViewportSnapshotApplied",
 ];
 
 const DRAWIO_BASE_KEYS = [
