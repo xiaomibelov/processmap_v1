@@ -19,14 +19,21 @@ Adds a toolbar toggle that lets users keep BPMN overlays visible while panning/z
 
 ## Verification
 
-- [ ] `npm run build` passes.
-- [ ] Toggle visible and clickable.
-- [ ] On: overlays visible during pan.
-- [ ] Off: overlays hidden during pan.
-- [ ] State persists after reload.
+- [x] `npm run build` passes (local + deploy container).
+- [x] Deployed to `http://clearvestnic.ru:5177` (`a808e48a`).
+- [x] Toggle visible and clickable.
+- [x] On: overlays visible during pan.
+- [x] Off: overlays hidden during pan.
+- [x] State persists after reload.
 
 ## Screenshots / video
 
-Pending deployment to `http://clearvestnic.ru:5177`.
+See `VERIFICATION_OVERLAY_PAN_TOGGLE.md` and artifacts:
+- `overlay_pan_initial.png`
+- `overlay_pan_on.png`
+- `overlay_pan_on_during_pan.png`
+- `overlay_pan_off_during_pan.png`
+- `overlay_pan_persist_on.png`
+- `overlay_pan_toggle_demo.webm`
 
 ## No merge without explicit approve
