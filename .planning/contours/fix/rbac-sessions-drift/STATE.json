@@ -3,5 +3,7 @@
   "status": "merged",
   "merged_at": "2026-06-23T21:20:00Z",
   "merged_into": "main",
-  "note": "Merged via fast-forward after rebase. Conflicted with fix/rbac-gaps-rebased; merged separately."
+  "deployed": false,
+  "deploy_sha": "",
+  "note": "Merged via fast-forward after rebase. Clean merge, tests pass."
 }
