@@ -3742,7 +3742,16 @@ export default function App() {
         onDismissSessionNavNotice={() => setSessionNavNotice(null)}
         onReturnToSessionList={() => returnToSessionList("banner_action")}
         subprocessBreadcrumbs={subprocessBreadcrumbs}
-        onBreadcrumbNavigate={(sid) => openSession(sid)}
+        onBreadcrumbNavigate={(sid) => {
+          const targetSid = String(sid || "").trim();
+          setSubprocessBreadcrumbs((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            const idx = list.findIndex((c) => String(c?.session_id || "").trim() === targetSid);
+            if (idx >= 0) return list.slice(0, idx + 1);
+            return list;
+          });
+          if (targetSid) openSession(targetSid);
+        }}
         onReturnToParent={() => {
           const sid = sessionIdOf(draft);
           if (sid) returnToParent(sid);
