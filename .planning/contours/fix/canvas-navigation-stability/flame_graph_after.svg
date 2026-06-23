@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="320" viewBox="0 0 800 320">
+<rect width="100%" height="100%" fill="#0f172a"/>
+<text x="20" y="24" fill="#f8fafc" font="bold 14px sans-serif">Pan-profiled function time — after Option C mitigation</text>
+<text x="20" y="44" fill="#94a3b8" font="12px sans-serif">Forced getBoundingClientRect still dominated by bpmn-js internal reads, but hot functions dropped.</text>
+<text x="20" y="98" fill="#e2e8f0" font="12px sans-serif">BpmnStage.getCanvasSnapshot</text>
+<rect x="240" y="80" width="195.86666666666667" height="22" rx="3" fill="#3b82f6" opacity="0.85"/>
+<text x="440.8666666666667" y="96" fill="#e2e8f0" font="12px sans-serif">11.3 ms</text>
+<text x="20" y="148" fill="#e2e8f0" font="12px sans-serif">Overlays._updateRoot</text>
+<rect x="240" y="130" width="2" height="22" rx="3" fill="#ef4444" opacity="0.85"/>
+<text x="247" y="146" fill="#e2e8f0" font="12px sans-serif">0 ms</text>
+<text x="20" y="198" fill="#e2e8f0" font="12px sans-serif">Overlays._updateOverlaysVisibilty</text>
+<rect x="240" y="180" width="20.8" height="22" rx="3" fill="#f59e0b" opacity="0.85"/>
+<text x="265.8" y="196" fill="#e2e8f0" font="12px sans-serif">1.2 ms</text>
+<text x="20" y="248" fill="#e2e8f0" font="12px sans-serif">BpmnStage.emitViewboxChanged</text>
+<rect x="240" y="230" width="5.2" height="22" rx="3" fill="#10b981" opacity="0.85"/>
+<text x="250.2" y="246" fill="#e2e8f0" font="12px sans-serif">0.3 ms</text>
+<text x="20" y="290" fill="#94a3b8" font="11px sans-serif">_updateRoot per-frame calls eliminated (0 ms); getCanvasSnapshot calls ↓ 66% (121 → 40)</text></svg>

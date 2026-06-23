@@ -1,4 +1,5 @@
 import { applyFullBpmnDecorSet } from "./runBpmnRenderDecorSync";
+import { safeCanvasResized } from "../viewport/viewportRecovery.js";
 
 export async function renderViewerDiagram(ctx, nextXml) {
   const {
@@ -111,7 +112,7 @@ export async function renderViewerDiagram(ctx, nextXml) {
       expectElements: String(nextXml || "").trim().length > 0,
     });
   }
-  const focusId = typeof window !== "undefined" ? window.__SUBPROCESS_FOCUS_ELEMENT_ID__ || "" : "";
+  const focusId = String(ctx?.focusElementId || "").trim();
   if (focusId) {
     try {
       const canvas = v.get("canvas");
@@ -123,9 +124,6 @@ export async function renderViewerDiagram(ctx, nextXml) {
       });
     } catch (e) {
       console.warn("focus element not found", focusId, e);
-    }
-    if (typeof window !== "undefined") {
-      window.__SUBPROCESS_FOCUS_ELEMENT_ID__ = "";
     }
   }
   emitCurrentViewboxSnapshot(v, emitViewboxChanged, "viewer", {
@@ -273,7 +271,7 @@ export async function renderModelerDiagram(ctx, nextXml) {
       await waitAnimationFrame();
       suppressViewboxEvents(1);
       try {
-        canvas?.resized?.();
+        safeCanvasResized(canvas, { thresholdPx: 2 });
       } finally {
         suppressViewboxEvents(-1);
       }

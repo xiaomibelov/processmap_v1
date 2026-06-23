@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { forwardRef, memo } from "react";
 import BpmnStage from "../../../../components/process/BpmnStage";
 import BpmnFragmentPlacementGhost from "../../../templates/ui/BpmnFragmentPlacementGhost";
 import DrawioOverlayRenderer from "../../drawio/DrawioOverlayRenderer";
@@ -10,7 +10,7 @@ import HybridPersistToast from "../../hybrid/ui/HybridPersistToast";
 import BpmnDiagramContextMenu from "../../bpmn/context-menu/BpmnDiagramContextMenu";
 import BpmnSubprocessPreviewModal from "../../bpmn/context-menu/BpmnSubprocessPreviewModal";
 
-function ProcessDiagramOverlayLayers({
+const ProcessDiagramOverlayLayers = forwardRef(function ProcessDiagramOverlayLayers({
   bpmnStageProps,
   bpmnContextMenuProps,
   bpmnSubprocessPreviewProps,
@@ -20,11 +20,11 @@ function ProcessDiagramOverlayLayers({
   hybridContextMenuProps,
   hybridPersistToastProps,
   drawioEditorModalProps,
-}) {
+}, ref) {
   bumpDrawioPerfCounter("overlay.renderer.layers.renders");
   return (
     <>
-      <BpmnStage {...bpmnStageProps} />
+      <BpmnStage ref={ref} {...bpmnStageProps} />
       <BpmnDiagramContextMenu {...bpmnContextMenuProps} />
       <BpmnSubprocessPreviewModal {...bpmnSubprocessPreviewProps} />
       <BpmnFragmentPlacementGhost {...fragmentGhostProps} />
@@ -35,6 +35,6 @@ function ProcessDiagramOverlayLayers({
       <DrawioEditorModal {...drawioEditorModalProps} />
     </>
   );
-}
+});
 
 export default memo(ProcessDiagramOverlayLayers);

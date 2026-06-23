@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../features/auth/AuthProvider";
 import { getManualSessionStatusMeta, MANUAL_SESSION_STATUSES } from "../features/workspace/workspacePermissions";
+import { getAllowedNextStatuses, normalizeManualSessionStatus } from "../features/workspace/sessionStatus.js";
 import {
   buildAccountDiscussionNotificationGroups,
   filterDiscussionNotificationGroups,
@@ -19,6 +20,39 @@ function asArray(x) {
 function toText(v) {
   return String(v || "").trim();
 }
+
+const STATUS_CHIP_STYLES = {
+  draft: {
+    dot: "#9CA3AF",
+    bg: "#F3F4F6",
+    text: "#4B5563",
+    border: "#E5E7EB",
+  },
+  in_progress: {
+    dot: "#3B82F6",
+    bg: "#EFF6FF",
+    text: "#1D4ED8",
+    border: "#BFDBFE",
+  },
+  review: {
+    dot: "#F59E0B",
+    bg: "#FFFBEB",
+    text: "#B45309",
+    border: "#FDE68A",
+  },
+  ready: {
+    dot: "#10B981",
+    bg: "#ECFDF5",
+    text: "#047857",
+    border: "#A7F3D0",
+  },
+  archived: {
+    dot: "#6B7280",
+    bg: "#F9FAFB",
+    text: "#6B7280",
+    border: "#E5E7EB",
+  },
+};
 
 function projectIdFrom(p) {
   return String((p && (p.id || p.project_id || p.slug)) || "").trim();
@@ -115,6 +149,7 @@ export default function TopBar({
   onOpen,
   onDeleteSession,
   onChangeSessionStatus,
+  isChangingSessionStatus = false,
   onNewProject,
   onOpenDiscussionNotifications,
   draft,
@@ -143,6 +178,19 @@ export default function TopBar({
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+  const normalizedSessionStatus = useMemo(
+    () => normalizeManualSessionStatus(sessionStatus, "draft"),
+    [sessionStatus],
+  );
+  const allowedNextStatuses = useMemo(
+    () => getAllowedNextStatuses(normalizedSessionStatus),
+    [normalizedSessionStatus],
+  );
+  const statusOptions = useMemo(
+    () => MANUAL_SESSION_STATUSES.filter((s) => allowedNextStatuses.has(s.value)),
+    [allowedNextStatuses],
+  );
+  const hasStatusAlternatives = statusOptions.length > 1 || (statusOptions.length === 1 && statusOptions[0].value !== normalizedSessionStatus);
   const notesAggregate = useSessionNoteAggregate(effectiveSessionId);
   const sessionAggregateIds = useMemo(
     () => ((accountMenuOpen || notificationCenterOpen) ? sessList.map((item) => sessionIdFrom(item)).filter(Boolean) : []),
@@ -157,6 +205,22 @@ export default function TopBar({
   const sessionMenuButtonRef = useRef(null);
   const statusMenuRef = useRef(null);
   const statusMenuButtonRef = useRef(null);
+  useEffect(() => {
+    if (!statusMenuOpen) return;
+    function onDocClick(event) {
+      const target = event.target;
+      if (!statusMenuRef.current || !statusMenuButtonRef.current) return;
+      if (
+        statusMenuRef.current.contains(target) ||
+        statusMenuButtonRef.current.contains(target)
+      ) {
+        return;
+      }
+      setStatusMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [statusMenuOpen]);
 
   useEffect(() => {
     try {
@@ -310,7 +374,7 @@ export default function TopBar({
     [activeOrgId, currentOrg],
   );
   const hasMultiOrg = orgList.length > 1;
-  const sessionStatusMeta = getManualSessionStatusMeta(sessionStatus);
+  const sessionStatusMeta = getManualSessionStatusMeta(normalizedSessionStatus);
   const canOpenOrgSettings = Boolean(user?.is_admin) || ["org_owner", "org_admin", "auditor"].includes(activeOrgRole);
   const mentionItems = asArray(mentionNotifications);
   const noteNotificationItems = asArray(noteNotifications);
@@ -632,35 +696,63 @@ export default function TopBar({
               <button
                 ref={statusMenuButtonRef}
                 type="button"
-                className={`statusComboPill inline-flex h-8 items-center rounded-md border px-2.5 text-[11px] font-medium transition hover:opacity-80 ${sessionStatusMeta.badgeClass}`}
-                title="Статус сессии — нажмите чтобы изменить"
+                className="statusComboPill inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm font-medium transition hover:opacity-90"
+                style={{
+                  backgroundColor: STATUS_CHIP_STYLES[normalizedSessionStatus]?.bg || "#F3F4F6",
+                  color: STATUS_CHIP_STYLES[normalizedSessionStatus]?.text || "#4B5563",
+                  borderColor: STATUS_CHIP_STYLES[normalizedSessionStatus]?.border || "#E5E7EB",
+                }}
+                title={hasStatusAlternatives && !isChangingSessionStatus ? "Статус сессии — нажмите чтобы изменить" : "Статус сессии"}
                 data-testid="topbar-session-status"
-                onClick={() => setStatusMenuOpen((prev) => !prev)}
+                onClick={() => hasStatusAlternatives && !isChangingSessionStatus && setStatusMenuOpen((prev) => !prev)}
+                disabled={isChangingSessionStatus || !hasStatusAlternatives}
               >
-                {sessionStatusMeta.label}
-                <svg viewBox="0 0 10 6" className="ml-1 h-2.5 w-2.5 opacity-70" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M1 1l4 4 4-4" />
-                </svg>
+                {isChangingSessionStatus ? (
+                  <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+                    <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                ) : (
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: STATUS_CHIP_STYLES[normalizedSessionStatus]?.dot || "#9CA3AF" }}
+                  />
+                )}
+                <span className="whitespace-nowrap">{isChangingSessionStatus ? "Сохранение…" : sessionStatusMeta.label}</span>
+                {hasStatusAlternatives && !isChangingSessionStatus ? (
+                  <svg viewBox="0 0 10 6" className="ml-0.5 h-2.5 w-2.5 opacity-70" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M1 1l4 4 4-4" />
+                  </svg>
+                ) : null}
               </button>
               {statusMenuOpen ? (
                 <div
                   ref={statusMenuRef}
-                  className="absolute left-0 top-[calc(100%+6px)] z-[130] grid min-w-[160px] gap-0.5 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
+                  className="absolute left-0 top-[calc(100%+4px)] z-[130] min-w-[160px] max-w-[200px] overflow-hidden rounded-md border border-[#E5E7EB] bg-white py-1 shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
                   data-testid="topbar-status-change-menu"
+                  style={{ animation: "statusMenuFade 150ms ease-out" }}
                 >
-                  {MANUAL_SESSION_STATUSES.map((s) => (
-                    <button
-                      key={s.value}
-                      type="button"
-                      className={`secondaryBtn h-8 w-full justify-start px-3 text-left text-sm ${sessionStatus === s.value ? "ring-1 ring-accent/60" : ""}`}
-                      onClick={() => {
-                        setStatusMenuOpen(false);
-                        onChangeSessionStatus?.(s.value);
-                      }}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
+                  {statusOptions.map((s) => {
+                    const style = STATUS_CHIP_STYLES[s.value] || STATUS_CHIP_STYLES.draft;
+                    return (
+                      <button
+                        key={s.value}
+                        type="button"
+                        className="flex h-7 w-full items-center gap-2 px-2 text-left text-xs font-medium transition hover:bg-[#F9FAFB]"
+                        style={{ color: normalizedSessionStatus === s.value ? style.text : "#374151" }}
+                        onClick={() => {
+                          setStatusMenuOpen(false);
+                          if (normalizedSessionStatus !== s.value) {
+                            onChangeSessionStatus?.(s.value);
+                          }
+                        }}
+                        disabled={isChangingSessionStatus}
+                      >
+                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: style.dot }} />
+                        <span>{s.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               ) : null}
             </div>
@@ -676,6 +768,8 @@ export default function TopBar({
             <label className="inline-flex min-w-[210px] items-center gap-2 rounded-full border border-border/70 bg-panel2/40 px-3 py-1 text-xs text-muted">
               <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em]">Org</span>
               <select
+                id="org-switcher-select"
+                name="active_org"
                 className="h-7 min-h-0 flex-1 border-0 bg-transparent px-0 text-sm font-medium text-fg outline-none"
                 value={toText(activeOrgId)}
                 onChange={(event) => onOrgChange?.(event.target.value)}

@@ -888,6 +888,13 @@ export default function App() {
   const [noteNotificationsAvailable, setNoteNotificationsAvailable] = useState(false);
   const [subprocessBreadcrumbs, setSubprocessBreadcrumbs] = useState([]);
   const [focusElementId, setFocusElementId] = useState("");
+  const [isChangingSessionStatus, setIsChangingSessionStatus] = useState(false);
+  const [restoreViewportSnapshot, setRestoreViewportSnapshot] = useState(null);
+  const statusChangeSnapshotRef = useRef(null);
+  const bpmnStageRef = useRef(null);
+  const parentViewportSnapshotRef = useRef(new Map());
+  const sessionCacheRef = useRef(new Map());
+  const bpmnXmlCacheRef = useRef(new Map());
   const discussionLinkedElementFocusResolversRef = useRef(new Map());
   const notesPanelRef = useRef(null);
   const activeOrgIdRef = useRef(String(activeOrgId || "").trim());
@@ -1018,6 +1025,15 @@ export default function App() {
     writeLocalBpmnMeta(sid, draft?.bpmn_meta);
   }, [draft?.bpmn_meta, draft?.session_id]);
 
+  // Cache the loaded BPMN XML by session id so subprocess return can skip the backend fetch.
+  useEffect(() => {
+    const sid = String(draft?.session_id || draft?.id || "").trim();
+    const xml = String(draft?.bpmn_xml || "").trim();
+    if (sid && xml) {
+      bpmnXmlCacheRef.current.set(sid, xml);
+    }
+  }, [draft?.session_id, draft?.id, draft?.bpmn_xml]);
+
   async function refreshMeta() {
     const r = await apiMeta();
     if (r.ok) {
@@ -1072,6 +1088,7 @@ export default function App() {
     projectWorkspaceHintsRef,
     createLocalSessionId: () => `local_${uid()}`,
     activeOrgId,
+    sessionCacheRef,
   });
 
   const {
@@ -1165,7 +1182,38 @@ export default function App() {
       console.error("navigate failed", res.error);
       return;
     }
-    setSubprocessBreadcrumbs(res.breadcrumbs || []);
+    // Persist the parent viewport and session data so we can restore them instantly when the user returns.
+    try {
+      const snapshot = bpmnStageRef.current?.getCanvasSnapshot?.();
+      if (snapshot) {
+        parentViewportSnapshotRef.current.set(String(sessionIdArg || "").trim(), snapshot);
+      }
+    } catch (e) {
+      logNav("subprocess_viewport_snapshot_failed", { sessionId: sessionIdArg, error: String(e?.message || e) });
+    }
+    if (sessionCacheRef.current && draft?.session_id === String(sessionIdArg || "").trim()) {
+      sessionCacheRef.current.set(String(sessionIdArg || "").trim(), draft);
+    }
+    // Build the breadcrumb stack client-side by pushing the new child crumb.
+    // Backend breadcrumbs are intentionally ignored here to keep nested navigation stable.
+    setSubprocessBreadcrumbs((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const childCrumb = {
+        session_id: res.subprocessSessionId,
+        name: res.subprocessTitle || "Подпроцесс",
+        element_id: res.targetElementId || elementId,
+      };
+      if (list.length === 0) {
+        return [
+          { session_id: String(sessionIdArg || "").trim(), name: draft?.title || "", element_id: elementId },
+          childCrumb,
+        ];
+      }
+      const lastSid = String(list[list.length - 1]?.session_id || "").trim();
+      const childSid = String(childCrumb.session_id || "").trim();
+      if (lastSid && childSid && lastSid === childSid) return list;
+      return [...list, childCrumb];
+    });
     setFocusElementId(res.targetElementId || "");
     pushSessionSelectionToUrl({
       projectId,
@@ -1174,9 +1222,6 @@ export default function App() {
       focusElementId: res.targetElementId || "",
       projectContext: projectRouteContext,
     });
-    if (typeof window !== "undefined") {
-      window.__SUBPROCESS_FOCUS_ELEMENT_ID__ = res.targetElementId || "";
-    }
     // If a discussion-linked element focus intent is active and matches the
     // target we are drilling down to, re-target that intent to the child
     // session so the child ProcessStage can finish selecting/highlighting it.
@@ -1197,6 +1242,17 @@ export default function App() {
       console.error("return failed", res.error);
       return;
     }
+    const parentSid = String(res.parentSessionId || "").trim();
+    const snapshot = parentSid ? parentViewportSnapshotRef.current.get(parentSid) : null;
+    if (snapshot) {
+      setRestoreViewportSnapshot(snapshot);
+    }
+    // Keep breadcrumbs in sync with the current hierarchy depth.
+    setSubprocessBreadcrumbs((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      if (list.length > 1) return list.slice(0, -1);
+      return list;
+    });
     setFocusElementId(res.elementIdInParent || "");
     pushSessionSelectionToUrl({
       projectId,
@@ -1204,10 +1260,12 @@ export default function App() {
       focusElementId: res.elementIdInParent || "",
       projectContext: projectRouteContext,
     });
-    if (typeof window !== "undefined") {
-      window.__SUBPROCESS_FOCUS_ELEMENT_ID__ = res.elementIdInParent || "";
-    }
-    openSession(res.parentSessionId);
+    // Use cached parent session data to avoid an extra API + XML fetch.
+    const cachedParentSession = parentSid ? sessionCacheRef.current.get(parentSid) : null;
+    openSession(res.parentSessionId, {
+      source: "subprocess_return",
+      session: cachedParentSession || null,
+    });
   }, [openSession, projectId, projectRouteContext]);
 
   const openWorkspaceSession = useCallback(async (sessionLike, options = {}) => {
@@ -1591,6 +1649,13 @@ export default function App() {
     if (!sid) return;
     const activeSid = String(activeSessionIdRef.current || "").trim();
     if (activeSid && sid !== activeSid) return;
+    // Invalidate cached session data so subprocess return always loads the latest diagram.
+    if (sessionCacheRef.current) {
+      sessionCacheRef.current.delete(sid);
+    }
+    if (bpmnXmlCacheRef.current) {
+      bpmnXmlCacheRef.current.delete(sid);
+    }
     const source = String(session?._sync_source || session?._source || "session_sync");
     setDraftPersisted((prevDraft) => {
       const hydration = applySessionMetaHydration({
@@ -3096,23 +3161,57 @@ export default function App() {
       }
     }
 
+    const previousInterviewStatus = draft?.interview?.status;
+    const previousDirectStatus = draft?.status;
+    statusChangeSnapshotRef.current = { interviewStatus: previousInterviewStatus, directStatus: previousDirectStatus };
+
+    setIsChangingSessionStatus(true);
+    setDraftPersisted((prev) => {
+      const next = { ...prev };
+      next.interview = next.interview && typeof next.interview === "object" ? { ...next.interview, status } : { status };
+      next.status = status;
+      return next;
+    });
+
     const payload = {
       status,
       base_diagram_state_version: Math.round(baseDiagramStateVersion),
     };
     const r = await apiPatchSession(sid, payload);
     if (!r.ok) {
-      const statusErr = String(r.error || "").toLowerCase();
-      const userMessage = statusErr.includes("invalid status transition")
-        ? "Недопустимый переход статуса."
-        : statusErr.includes("forbidden")
-          ? "Недостаточно прав для изменения статуса."
-          : String(r.error || "status_update_failed");
-      markFail(userMessage);
-      return { ok: false, error: userMessage };
+      setDraftPersisted((prev) => {
+        const next = { ...prev };
+        const snap = statusChangeSnapshotRef.current || {};
+        next.interview = next.interview && typeof next.interview === "object" ? { ...next.interview } : {};
+        if (snap.interviewStatus !== undefined) next.interview.status = snap.interviewStatus;
+        else delete next.interview.status;
+        if (snap.directStatus !== undefined) next.status = snap.directStatus;
+        else delete next.status;
+        return next;
+      });
+      if (r.status === 409) {
+        markFail("Переход в выбранный статус недоступен для текущего состояния сессии.");
+      } else {
+        const statusErr = String(r.error || "").toLowerCase();
+        const userMessage = statusErr.includes("invalid status transition")
+          ? "Недопустимый переход статуса."
+          : statusErr.includes("forbidden")
+            ? "Недостаточно прав для изменения статуса."
+            : String(r.error || "status_update_failed");
+        markFail(userMessage);
+      }
+      setIsChangingSessionStatus(false);
+      return { ok: false, error: String(r.error || "status_update_failed") };
     }
     onSessionSync(r.session || {});
-    await refreshSessions(projectId);
+    try {
+      await refreshSessions(projectId);
+    } catch (refreshError) {
+      // Explorer consistency refresh failed, but the status change itself succeeded.
+      // Do not surface as a user error; the active session is already updated.
+      logNav("refresh_sessions_after_status_failed", { projectId, error: String(refreshError?.message || refreshError) });
+    }
+    setIsChangingSessionStatus(false);
     markOk("API OK");
     return { ok: true };
   }
@@ -3305,6 +3404,11 @@ export default function App() {
         setSubprocessBreadcrumbs([
           { session_id: parentSessionId, name: "" },
           { session_id: sid, name: "" },
+        ]);
+      } else if (loaded.ok) {
+        // Root process: show a single-item breadcrumb with the current session name.
+        setSubprocessBreadcrumbs([
+          { session_id: sid, name: loaded.session?.title || "" },
         ]);
       }
     })();
@@ -3597,6 +3701,13 @@ export default function App() {
         })}
         onDeleteSession={workspacePermissions.canDeleteSession ? deleteCurrentSession : undefined}
         onChangeSessionStatus={workspacePermissions.canChangeStatus ? changeCurrentSessionStatus : undefined}
+        isChangingSessionStatus={isChangingSessionStatus}
+        bpmnStageRef={bpmnStageRef}
+        focusElementId={focusElementId}
+        onFocusElementApplied={() => setFocusElementId("")}
+        restoreViewportSnapshot={restoreViewportSnapshot}
+        onRestoreViewportSnapshotApplied={() => setRestoreViewportSnapshot(null)}
+        bpmnXmlCacheRef={bpmnXmlCacheRef}
         onRefresh={async () => {
           await refreshProjects();
           await refreshSessions(projectId);

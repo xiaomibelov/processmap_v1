@@ -84,6 +84,8 @@ export default function DiagramSearchPopover({
       <div className="diagramActionField">
         <span>Запрос</span>
         <input
+          id="diagram-search-query"
+          name="diagram_search_query"
           type="text"
           className="input h-8 min-h-0 text-xs"
           value={query}

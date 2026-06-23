@@ -1589,6 +1589,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   view,
   draft,
   reloadKey,
+  bpmnXmlCacheRef = null,
   onDiagramMutation,
   onElementSelectionChange,
   onElementNotesRemap,
@@ -1612,6 +1613,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   onDiagramContextMenuDismiss = null,
   onNavigateToSubprocess = null,
   childSessionDiscussionAggregates = null,
+  focusElementId = "",
+  onFocusElementApplied = null,
+  restoreViewportSnapshot = null,
+  onRestoreViewportSnapshotApplied = null,
 }, ref) {
   const viewerEl = useRef(null);
   const editorEl = useRef(null);
@@ -1632,6 +1637,9 @@ const BpmnStage = forwardRef(function BpmnStage({
   const activeSessionRef = useRef("");
   const prevSessionRef = useRef("");
   const loadTokenRef = useRef(0);
+  const pendingFocusElementIdRef = useRef("");
+  const appliedFocusElementIdRef = useRef("");
+  const pendingRestoreViewportRef = useRef(null);
   const draftRef = useRef(draft);
 
   const [xml, setXml] = useState("");
@@ -1813,6 +1821,19 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     onNavigateToSubprocessRef.current = onNavigateToSubprocess;
   }, [onNavigateToSubprocess]);
+
+  useEffect(() => {
+    const next = String(focusElementId || "").trim();
+    if (next && next !== appliedFocusElementIdRef.current) {
+      pendingFocusElementIdRef.current = next;
+    }
+  }, [focusElementId]);
+
+  useEffect(() => {
+    if (restoreViewportSnapshot) {
+      pendingRestoreViewportRef.current = restoreViewportSnapshot;
+    }
+  }, [restoreViewportSnapshot]);
 
   useEffect(() => {
     aiQuestionsModeEnabledRef.current = !!aiQuestionsModeEnabled;
@@ -4964,6 +4985,20 @@ const BpmnStage = forwardRef(function BpmnStage({
       return;
     }
 
+    // Use the App-level BPMN XML cache when available to avoid a backend round-trip.
+    // This is the key path that makes subprocess return instantaneous.
+    const cachedXml = bpmnXmlCacheRef?.current?.get(s);
+    if (cachedXml?.trim()) {
+      applyXmlSnapshot(cachedXml, "cache");
+      setErr("");
+      logBpmnTrace("loadSnapshot.cache", cachedXml, {
+        sid: s,
+        status: 200,
+        rev: Number(bpmnStoreRef.current?.getState?.()?.rev || 0),
+      });
+      return;
+    }
+
     const coordinator = ensureBpmnCoordinator();
     const loaded = await coordinator.reload({
       reason: options?.reason || "stage_load",
@@ -5209,6 +5244,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       logRuntimeTrace,
       activeSessionRef,
       sessionId,
+      focusElementId: pendingFocusElementIdRef.current,
       viewerInstanceMetaRef,
       fnv1aHex,
       logImportTrace,
@@ -5246,8 +5282,31 @@ const BpmnStage = forwardRef(function BpmnStage({
     };
   }
 
+  function applyPendingFocusAndViewport() {
+    if (pendingFocusElementIdRef.current) {
+      appliedFocusElementIdRef.current = pendingFocusElementIdRef.current;
+      pendingFocusElementIdRef.current = "";
+      try {
+        onFocusElementApplied?.();
+      } catch {
+        // ignore callback errors
+      }
+    }
+    if (pendingRestoreViewportRef.current) {
+      const snapshot = pendingRestoreViewportRef.current;
+      pendingRestoreViewportRef.current = null;
+      imperativeApi.restoreViewport(snapshot);
+      try {
+        onRestoreViewportSnapshotApplied?.();
+      } catch {
+        // ignore callback errors
+      }
+    }
+  }
+
   async function renderViewer(nextXml) {
     const result = await renderViewerDiagram(createRenderLifecycleCtx(), nextXml);
+    applyPendingFocusAndViewport();
     if (useExtensionOverlays && result?.ok !== false) {
       const overlayList = extractOverlaysFromBpmn(viewerRef.current, v2OverlaysEnabledRef.current) || [];
       mountLightweightOverlays(viewerRef.current, "viewer", overlayList);
@@ -5257,6 +5316,7 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   async function renderModeler(nextXml) {
     const result = await renderModelerDiagram(createRenderLifecycleCtx(), nextXml);
+    applyPendingFocusAndViewport();
     if (useExtensionOverlays && result?.ok !== false) {
       const overlayList = extractOverlaysFromBpmn(modelerRef.current, v2OverlaysEnabledRef.current) || [];
       mountLightweightOverlays(modelerRef.current, "editor", overlayList);
@@ -5887,6 +5947,29 @@ const BpmnStage = forwardRef(function BpmnStage({
       // eslint-disable-next-line no-console
       console.debug(`[SESSION] activate sid=${sid || "-"} prevSid=${prevSid || "-"} tab=${view === "xml" ? "xml" : "diagram"}`);
     }
+
+    // Soft return path: if we have cached XML for the target session and a pending viewport
+    // snapshot to restore, keep the existing BPMN runtime alive and let the render effect
+    // re-import the cached XML. This avoids the visible flash caused by destroyRuntime().
+    const cachedXml = sid ? bpmnXmlCacheRef?.current?.get(sid) : null;
+    if (cachedXml?.trim() && restoreViewportSnapshot) {
+      activeSessionRef.current = sid;
+      userMutationObservedRef.current = false;
+      ensureEpochRef.current += 1;
+      robotMetaHydrateStateRef.current = { key: "" };
+      camundaHydrateStateRef.current = { key: "" };
+      importCamundaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
+      copyPasteRobotMetaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
+      setErr("");
+      if (shouldLogBpmnTrace()) {
+        // eslint-disable-next-line no-console
+        console.debug(
+          `[SESSION] soft_return sid=${sid || "-"} len=${cachedXml.length} hash=${fnv1aHex(cachedXml)}`,
+        );
+      }
+      return;
+    }
+
     activeSessionRef.current = sid;
     userMutationObservedRef.current = false;
     ensureEpochRef.current += 1;
@@ -5963,6 +6046,30 @@ const BpmnStage = forwardRef(function BpmnStage({
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [activeProjectId, sessionId, view]);
+
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const activeInst = view === "viewer" ? viewerRef.current : modelerRef.current;
+      const canvas = activeInst?.get?.("canvas");
+      if (!canvas) return;
+      let width = 0;
+      let height = 0;
+      for (const entry of entries) {
+        if (entry.target === viewerEl.current || entry.target === editorEl.current) {
+          const rect = entry.contentRect;
+          width = Number(rect?.width || 0);
+          height = Number(rect?.height || 0);
+        }
+      }
+      if (width > 0 && height > 0) {
+        viewportRecovery.safeCanvasResized(canvas, { width, height, thresholdPx: 2 });
+      }
+    });
+    if (viewerEl.current) observer.observe(viewerEl.current);
+    if (editorEl.current) observer.observe(editorEl.current);
+    return () => observer.disconnect();
+  }, [view]);
 
   useEffect(() => {
     const sid = String(sessionId || "");
