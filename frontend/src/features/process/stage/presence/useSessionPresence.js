@@ -69,10 +69,17 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
   const surface = toText(options.surface) || "process_stage";
   const touchPresence = typeof options.apiTouch === "function" ? options.apiTouch : apiTouchSessionPresence;
   const leavePresenceApi = typeof options.apiLeave === "function" ? options.apiLeave : apiLeaveSessionPresence;
+  const initialActiveUsers = Array.isArray(options.initialActiveUsers) ? options.initialActiveUsers : [];
+  const skipMountHeartbeat = options.skipMountHeartbeat === true && initialActiveUsers.length > 0;
+  const initialTtlSeconds = Number(options.initialTtlSeconds || 0);
   const clientIdRef = useRef("");
   const mountedRef = useRef(false);
-  const [activeUsers, setActiveUsers] = useState([]);
-  const [ttlMs, setTtlMs] = useState(SESSION_PRESENCE_TTL_MS);
+  const [activeUsers, setActiveUsers] = useState(normalizeSessionPresenceUsers(initialActiveUsers));
+  const [ttlMs, setTtlMs] = useState(
+    Number.isFinite(initialTtlSeconds) && initialTtlSeconds > 0
+      ? Math.round(initialTtlSeconds * 1000)
+      : SESSION_PRESENCE_TTL_MS
+  );
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [lastError, setLastError] = useState("");
 
@@ -145,7 +152,9 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
     }
 
     clientIdRef.current = getSessionPresenceClientId();
-    void heartbeat("mount");
+    if (!skipMountHeartbeat) {
+      void heartbeat("mount");
+    }
     const intervalId = window.setInterval(() => {
       void heartbeat("interval");
     }, heartbeatMs);
@@ -170,7 +179,7 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
       window.removeEventListener("beforeunload", handlePageExit);
       clearPresence();
     };
-  }, [clearPresence, currentUserId, heartbeat, heartbeatMs, leavePresence, sessionId]);
+  }, [clearPresence, currentUserId, heartbeat, heartbeatMs, leavePresence, sessionId, skipMountHeartbeat]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;

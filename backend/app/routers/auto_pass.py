@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import logging
 import uuid
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from .. import _legacy_main
 from ..auto_pass_engine import compute_auto_pass_precheck, compute_auto_pass_v1
+from ..cache import session_cache
+from ..services.org_workspace import project_access_allowed
+from ..storage import get_storage
 from ..auto_pass_telemetry import capture_auto_pass_failed_state
 from ..auto_pass_jobs import (
     enqueue_job,
@@ -335,22 +340,92 @@ def run_auto_pass(session_id: str, inp: AutoPassRunIn, request: Request) -> Dict
     }
 
 
+def _run_auto_pass_precheck_background(session_id: str, org_id: str) -> None:
+    """Compute auto-pass precheck in the background and cache the result."""
+    sid = str(session_id or "").strip()
+    oid = str(org_id or "").strip()
+    try:
+        st = get_storage()
+        sess = st.load(sid, org_id=(oid or None), is_admin=True)
+        if not sess:
+            session_cache.set_auto_pass_precheck(
+                sid,
+                {
+                    "ok": False,
+                    "code": "not_found",
+                    "message": "session not found",
+                    "main_start_event_ids": [],
+                    "main_end_event_ids": [],
+                },
+                ttl_sec=10,
+            )
+            return
+        precheck = compute_auto_pass_precheck(sess)
+        session_cache.set_auto_pass_precheck(
+            sid,
+            {
+                "ok": bool(precheck.get("ok")),
+                "code": str(precheck.get("code") or ""),
+                "message": str(precheck.get("message") or ""),
+                "main_start_event_ids": precheck.get("main_start_event_ids") or [],
+                "main_end_event_ids": precheck.get("main_end_event_ids") or [],
+            },
+        )
+    except Exception as exc:
+        logger = logging.getLogger(__name__)
+        logger.warning("auto_pass_precheck background task failed for %s: %s", sid, exc)
+        session_cache.set_auto_pass_precheck(
+            sid,
+            {
+                "ok": False,
+                "code": "error",
+                "message": str(exc),
+                "main_start_event_ids": [],
+                "main_end_event_ids": [],
+            },
+            ttl_sec=10,
+        )
+
+
 @router.get("/api/sessions/{session_id}/auto-pass/precheck")
-def auto_pass_precheck(session_id: str, request: Request) -> Dict[str, Any]:
+def auto_pass_precheck(
+    session_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> Dict[str, Any]:
     uid, _ = _legacy_main._request_user_meta(request)
     if not uid:
         return _legacy_main._enterprise_error(401, "unauthorized", "unauthorized")
-    sess, _, _ = _legacy_main._legacy_load_session_scoped(session_id, request)
-    if not sess:
+
+    sid = str(session_id or "").strip()
+    # Lightweight access check using the projection (avoids loading bpmn_xml).
+    st = get_storage()
+    active_org_id = _legacy_main._request_active_org_id(request)
+    row = st.load_session_projection(sid, user_id=uid, org_id=active_org_id)
+    if not row:
         return _legacy_main._enterprise_error(404, "not_found", "not_found")
-    precheck = compute_auto_pass_precheck(sess)
-    return {
-        "ok": bool(precheck.get("ok")),
-        "code": str(precheck.get("code") or ""),
-        "message": str(precheck.get("message") or ""),
-        "main_start_event_ids": precheck.get("main_start_event_ids") or [],
-        "main_end_event_ids": precheck.get("main_end_event_ids") or [],
-    }
+    project_id = str(row.get("project_id") or "").strip()
+    org_id = str(row.get("org_id") or active_org_id or "").strip()
+    if project_id and not project_access_allowed(request, org_id, project_id):
+        return _legacy_main._enterprise_error(404, "not_found", "not_found")
+
+    cached = session_cache.get_auto_pass_precheck(sid)
+    if isinstance(cached, dict):
+        return cached
+
+    # No cached result: schedule background computation and return 202.
+    background_tasks.add_task(_run_auto_pass_precheck_background, sid, org_id)
+    return JSONResponse(
+        status_code=202,
+        content={
+            "ok": False,
+            "status": "pending",
+            "message": "Precheck is running in background",
+            "code": "PENDING",
+            "main_start_event_ids": [],
+            "main_end_event_ids": [],
+        },
+    )
 
 
 @router.get("/api/sessions/{session_id}/auto-pass")
