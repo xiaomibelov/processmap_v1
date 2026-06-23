@@ -6,10 +6,19 @@
 import Overlays from "diagram-js/lib/features/overlays/Overlays";
 
 let patchedGlobal = false;
+let showOverlaysDuringPan = false;
 
 export function setOverlaysUpdatePaused(overlays, paused) {
   if (!overlays) return;
   overlays.__fpcOverlayUpdatesPaused = paused === true;
+}
+
+export function setShowOverlaysDuringPan(enabled) {
+  showOverlaysDuringPan = enabled === true;
+}
+
+export function getShowOverlaysDuringPan() {
+  return showOverlaysDuringPan === true;
 }
 
 function createPatchedUpdate(original) {
@@ -18,7 +27,11 @@ function createPatchedUpdate(original) {
   let lastLog = 0;
   return function (viewbox) {
     total += 1;
-    if (this.__fpcOverlayUpdatesPaused) {
+    // When the user has enabled "show overlays while panning", allow the
+    // expensive per-overlay visibility/scale pass to run on every frame.
+    // Otherwise (default) throttle it by skipping calls while the viewbox is
+    // actively changing.
+    if (this.__fpcOverlayUpdatesPaused && !showOverlaysDuringPan) {
       skipped += 1;
       const now = performance.now();
       if (now - lastLog > 5000) {
@@ -36,7 +49,11 @@ function createPatchedUpdate(original) {
 
 function createPatchedToggle(original) {
   return function (...args) {
-    if (this.__fpcOverlayUpdatesPaused) {
+    // When "show overlays while panning" is enabled, keep the overlay root
+    // visible by suppressing diagram-js's hide/show calls during pan/zoom.
+    // When disabled, let the original hide/show run so the root is hidden
+    // during the gesture for better performance.
+    if (this.__fpcOverlayUpdatesPaused && showOverlaysDuringPan) {
       return;
     }
     return original.apply(this, args);
@@ -51,11 +68,9 @@ export function patchOverlaysPrototype() {
       Overlays.prototype._updateOverlaysVisibilty = createPatchedUpdate(originalUpdate);
       Overlays.prototype._updateOverlaysVisibilty.__overlayPanPatched = true;
     }
-    const originalRoot = Overlays?.prototype?._updateRoot;
-    if (originalRoot && !originalRoot.__overlayPanPatched) {
-      Overlays.prototype._updateRoot = createPatchedToggle(originalRoot);
-      Overlays.prototype._updateRoot.__overlayPanPatched = true;
-    }
+    // _updateRoot is intentionally NOT patched. It is a cheap O(1) CSS
+    // transform on the single overlay root container and must stay in sync
+    // with the canvas on every frame regardless of the pan-visibility toggle.
     const originalShow = Overlays?.prototype?.show;
     if (originalShow && !originalShow.__overlayPanPatched) {
       Overlays.prototype.show = createPatchedToggle(originalShow);
@@ -85,11 +100,6 @@ export function patchOverlaysInstance(inst) {
       const original = overlays._updateOverlaysVisibilty.bind(overlays);
       overlays._updateOverlaysVisibilty = createPatchedUpdate(original);
       overlays._updateOverlaysVisibilty.__overlayPanPatched = true;
-    }
-    if (!overlays._updateRoot?.__overlayPanPatched) {
-      const original = overlays._updateRoot.bind(overlays);
-      overlays._updateRoot = createPatchedToggle(original);
-      overlays._updateRoot.__overlayPanPatched = true;
     }
     if (!overlays.show?.__overlayPanPatched) {
       const original = overlays.show.bind(overlays);

@@ -38,6 +38,8 @@ const TOPBAR_KEYS = [
   "activeQualityOverlayCount",
   "diagramActionQualityOpen",
   "diagramActionOverflowOpen",
+  "showOverlaysDuringPan",
+  "setShowOverlaysDuringPan",
 ];
 
 const DRAWIO_LAYERS_KEYS = [
