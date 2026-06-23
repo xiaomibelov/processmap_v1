@@ -257,6 +257,10 @@ import {
 } from "../features/process/stage/utils/processStageHelpers";
 import { pushDeleteTrace } from "../features/process/stage/utils/deleteTrace";
 import {
+  readOverlayPanVisibility,
+  writeOverlayPanVisibility,
+} from "../features/process/bpmn/stage/utils/overlayPanVisibilityStorage.js";
+import {
   buildProductActionsRegistryCloseUrl,
   readProductActionsRegistryRoute,
   readPropertiesRegistryRoute,
@@ -459,7 +463,7 @@ function ProcessStage({
   const [featureFlags, setFeatureFlags] = useState({ bpmn_fps_meter_enabled: false, canvas_profiler_enabled: false });
   const [showOverlaysDuringPan, setShowOverlaysDuringPan] = useState(() => {
     if (typeof window === "undefined") return false;
-    return window.localStorage.getItem("processmap_overlay_pan_visible") === "true";
+    return readOverlayPanVisibility();
   });
   const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
@@ -543,7 +547,7 @@ function ProcessStage({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    window.localStorage.setItem("processmap_overlay_pan_visible", showOverlaysDuringPan ? "true" : "false");
+    writeOverlayPanVisibility(showOverlaysDuringPan);
   }, [showOverlaysDuringPan]);
 
   useEffect(() => {
