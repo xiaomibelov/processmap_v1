@@ -388,6 +388,7 @@ export async function renderNewDiagramInModelerRuntime(ctx) {
     applyInterviewDecor,
     applyUserNotesDecor,
     applyStepTimeDecor,
+    loadTransition,
   } = ctx;
 
   const runtime = ensureModelerRuntime();
@@ -411,6 +412,7 @@ export async function renderNewDiagramInModelerRuntime(ctx) {
       `[CREATE_DIAGRAM] start sid=${sidNow || "-"} token=${Number(runtimeTokenRef.current || 0)}`,
     );
   }
+  loadTransition?.("import_start");
   const created = await runtime.createDiagram({ source: "renderNewDiagramInModeler" });
   const status = runtime.getStatus();
   runtimeTokenRef.current = Number(status?.token || runtimeTokenRef.current || 0);
@@ -477,6 +479,7 @@ export async function renderNewDiagramInModelerRuntime(ctx) {
       tab: "diagram",
     });
   }
+  loadTransition?.("import_success");
   applyFullBpmnDecorSet({
     inst: m,
     kind: "editor",
