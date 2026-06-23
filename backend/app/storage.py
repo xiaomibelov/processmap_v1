@@ -45,6 +45,7 @@ _DEFAULT_WORKSPACE_NAME = (
     or "Main Workspace"
 )
 _ORG_FULL_ACCESS_ROLES = {"org_owner", "org_admin", "auditor"}
+_SESSION_ORG_WIDE_READ_ROLES = {"editor", "project_manager"}
 _PROJECT_MEMBER_ROLES = {"project_manager", "editor", "viewer"}
 _ORG_MEMBER_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "org_viewer", "auditor"}
 _ORG_INVITE_ROLES = {"org_admin", "project_manager", "editor", "viewer", "org_viewer", "auditor"}
@@ -490,6 +491,13 @@ def _session_read_scope(
     ]
     if project_ids:
         return {"mode": "scoped", "project_ids": project_ids}
+
+    # Org-level editors/managers without explicit project assignments may read
+    # any session in the org. This matches can_edit_workspace and fixes the case
+    # where a user has an org editor role (or gets one via default-org auto-membership)
+    # but has not been assigned to individual projects yet.
+    if role in _SESSION_ORG_WIDE_READ_ROLES:
+        return {"mode": "all", "project_ids": []}
 
     return {"mode": "owner", "project_ids": []}
 
