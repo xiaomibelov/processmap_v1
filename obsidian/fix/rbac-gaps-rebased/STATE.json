@@ -1,0 +1,7 @@
+{
+  "contour": "fix/rbac-gaps-rebased",
+  "status": "discarded",
+  "reason": "conflict_with_main_logic",
+  "details": "Rebase on main after fix/rbac-sessions-drift merge produced content conflict in backend/app/routers/sessions_new.py. Per policy, no manual conflict resolution for old/broken logic branches; create fix/rbac-gaps-v2 from current main if gaps still needed.",
+  "discarded_at": "2026-06-23T21:25:00Z"
+}
