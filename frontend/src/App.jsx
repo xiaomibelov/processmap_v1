@@ -893,6 +893,7 @@ export default function App() {
   const statusChangeSnapshotRef = useRef(null);
   const bpmnStageRef = useRef(null);
   const parentViewportSnapshotRef = useRef(new Map());
+  const sessionCacheRef = useRef(new Map());
   const discussionLinkedElementFocusResolversRef = useRef(new Map());
   const notesPanelRef = useRef(null);
   const activeOrgIdRef = useRef(String(activeOrgId || "").trim());
@@ -1077,6 +1078,7 @@ export default function App() {
     projectWorkspaceHintsRef,
     createLocalSessionId: () => `local_${uid()}`,
     activeOrgId,
+    sessionCacheRef,
   });
 
   const {
@@ -1170,7 +1172,7 @@ export default function App() {
       console.error("navigate failed", res.error);
       return;
     }
-    // Persist the parent viewport so we can restore it when the user returns.
+    // Persist the parent viewport and session data so we can restore them instantly when the user returns.
     try {
       const snapshot = bpmnStageRef.current?.getCanvasSnapshot?.();
       if (snapshot) {
@@ -1178,6 +1180,9 @@ export default function App() {
       }
     } catch (e) {
       logNav("subprocess_viewport_snapshot_failed", { sessionId: sessionIdArg, error: String(e?.message || e) });
+    }
+    if (sessionCacheRef.current && draft?.session_id === String(sessionIdArg || "").trim()) {
+      sessionCacheRef.current.set(String(sessionIdArg || "").trim(), draft);
     }
     setSubprocessBreadcrumbs(res.breadcrumbs || []);
     setFocusElementId(res.targetElementId || "");
@@ -1226,7 +1231,7 @@ export default function App() {
       focusElementId: res.elementIdInParent || "",
       projectContext: projectRouteContext,
     });
-    openSession(res.parentSessionId);
+    openSession(res.parentSessionId, { useCache: true, source: "subprocess_return" });
   }, [openSession, projectId, projectRouteContext]);
 
   const openWorkspaceSession = useCallback(async (sessionLike, options = {}) => {
@@ -1610,6 +1615,10 @@ export default function App() {
     if (!sid) return;
     const activeSid = String(activeSessionIdRef.current || "").trim();
     if (activeSid && sid !== activeSid) return;
+    // Invalidate cached session data so subprocess return always loads the latest diagram.
+    if (sessionCacheRef.current) {
+      sessionCacheRef.current.delete(sid);
+    }
     const source = String(session?._sync_source || session?._source || "session_sync");
     setDraftPersisted((prevDraft) => {
       const hydration = applySessionMetaHydration({
