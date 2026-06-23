@@ -46,7 +46,8 @@ export function bindSubprocessNavigationEvents(inst, onNavigateToSubprocessRef) 
 
     const cb = onNavigateToSubprocessRef?.current;
     if (typeof cb === "function") {
-      cb(element.id);
+      const elementName = String(element?.businessObject?.name || element?.name || "").trim();
+      cb(element.id, undefined, elementName);
     }
   };
 

@@ -1176,7 +1176,7 @@ export default function App() {
     return result;
   }, [confirmLeaveIfUnsafe, draft?.session_id, openSession, projectId, projectRouteContext]);
 
-  const navigateToSubprocess = useCallback(async (sessionIdArg, elementId, targetElementId = "") => {
+  const navigateToSubprocess = useCallback(async (sessionIdArg, elementId, targetElementId = "", elementName = "") => {
     const res = await apiNavigateToSubprocess(sessionIdArg, elementId, targetElementId);
     if (!res.ok) {
       console.error("navigate failed", res.error);
@@ -1198,9 +1198,10 @@ export default function App() {
     // Backend breadcrumbs are intentionally ignored here to keep nested navigation stable.
     setSubprocessBreadcrumbs((prev) => {
       const list = Array.isArray(prev) ? prev : [];
+      const displayName = String(elementName || "").trim() || String(elementId || "").trim() || "Подпроцесс";
       const childCrumb = {
         session_id: res.subprocessSessionId,
-        name: res.subprocessTitle || "Подпроцесс",
+        name: `Подпроцесс: ${displayName}`,
         element_id: res.targetElementId || elementId,
       };
       if (list.length === 0) {
@@ -3746,9 +3747,9 @@ export default function App() {
           const sid = sessionIdOf(draft);
           if (sid) returnToParent(sid);
         }}
-        onNavigateToSubprocess={(elementId, targetElementId) => {
+        onNavigateToSubprocess={(elementId, targetElementId, elementName) => {
           const sid = sessionIdOf(draft);
-          if (sid) navigateToSubprocess(sid, elementId, targetElementId);
+          if (sid) navigateToSubprocess(sid, elementId, targetElementId, elementName);
         }}
         childSessionDiscussionAggregates={childDiscussionAggregates}
         mentionNotifications={mentionNotifications}
