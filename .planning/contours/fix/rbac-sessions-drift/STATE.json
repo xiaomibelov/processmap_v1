@@ -3,7 +3,8 @@
   "status": "merged",
   "merged_at": "2026-06-23T21:20:00Z",
   "merged_into": "main",
-  "deployed": false,
-  "deploy_sha": "",
-  "note": "Merged via fast-forward after rebase. Clean merge, tests pass."
+  "deployed": true,
+  "deploy_sha": "31a5ec4e",
+  "deployed_at": "2026-06-23T21:31:04Z",
+  "note": "Merged via fast-forward after rebase. Clean merge, tests pass, deployed to clearvestnic.ru:5177."
 }
