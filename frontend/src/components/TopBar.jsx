@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../features/auth/AuthProvider";
 import { getManualSessionStatusMeta, MANUAL_SESSION_STATUSES } from "../features/workspace/workspacePermissions";
-import { getAllowedNextStatuses } from "../features/workspace/sessionStatus.js";
+import { getAllowedNextStatuses, normalizeManualSessionStatus } from "../features/workspace/sessionStatus.js";
 import {
   buildAccountDiscussionNotificationGroups,
   filterDiscussionNotificationGroups,
@@ -20,6 +20,14 @@ function asArray(x) {
 function toText(v) {
   return String(v || "").trim();
 }
+
+const STATUS_DOT_COLORS = {
+  draft: "bg-slate-400",
+  in_progress: "bg-sky-500",
+  review: "bg-amber-500",
+  ready: "bg-emerald-500",
+  archived: "bg-zinc-500",
+};
 
 function projectIdFrom(p) {
   return String((p && (p.id || p.project_id || p.slug)) || "").trim();
@@ -146,7 +154,7 @@ export default function TopBar({
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const normalizedSessionStatus = useMemo(
-    () => getAllowedNextStatuses(sessionStatus).has(sessionStatus) ? sessionStatus : "draft",
+    () => normalizeManualSessionStatus(sessionStatus, "draft"),
     [sessionStatus],
   );
   const allowedNextStatuses = useMemo(
@@ -325,7 +333,7 @@ export default function TopBar({
     [activeOrgId, currentOrg],
   );
   const hasMultiOrg = orgList.length > 1;
-  const sessionStatusMeta = getManualSessionStatusMeta(sessionStatus);
+  const sessionStatusMeta = getManualSessionStatusMeta(normalizedSessionStatus);
   const canOpenOrgSettings = Boolean(user?.is_admin) || ["org_owner", "org_admin", "auditor"].includes(activeOrgRole);
   const mentionItems = asArray(mentionNotifications);
   const noteNotificationItems = asArray(noteNotifications);
@@ -647,15 +655,23 @@ export default function TopBar({
               <button
                 ref={statusMenuButtonRef}
                 type="button"
-                className={`statusComboPill inline-flex h-8 items-center rounded-md border px-2.5 text-[11px] font-medium transition hover:opacity-80 ${sessionStatusMeta.badgeClass}`}
+                className={`statusComboPill inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-medium transition hover:opacity-80 ${sessionStatusMeta.badgeClass}`}
                 title={hasStatusAlternatives && !isChangingSessionStatus ? "Статус сессии — нажмите чтобы изменить" : "Статус сессии"}
                 data-testid="topbar-session-status"
                 onClick={() => hasStatusAlternatives && !isChangingSessionStatus && setStatusMenuOpen((prev) => !prev)}
                 disabled={isChangingSessionStatus || !hasStatusAlternatives}
               >
-                {isChangingSessionStatus ? "Сохранение…" : sessionStatusMeta.label}
+                {isChangingSessionStatus ? (
+                  <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+                    <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                ) : (
+                  <span className={`h-2 w-2 rounded-full ${STATUS_DOT_COLORS[normalizedSessionStatus] || "bg-current opacity-60"}`} />
+                )}
+                <span>{isChangingSessionStatus ? "Сохранение…" : sessionStatusMeta.label}</span>
                 {hasStatusAlternatives && !isChangingSessionStatus ? (
-                  <svg viewBox="0 0 10 6" className="ml-1 h-2.5 w-2.5 opacity-70" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <svg viewBox="0 0 10 6" className="ml-0.5 h-2.5 w-2.5 opacity-70" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M1 1l4 4 4-4" />
                   </svg>
                 ) : null}
@@ -663,25 +679,29 @@ export default function TopBar({
               {statusMenuOpen ? (
                 <div
                   ref={statusMenuRef}
-                  className="absolute left-0 top-[calc(100%+6px)] z-[130] grid min-w-[160px] gap-0.5 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
+                  className="absolute left-0 top-[calc(100%+6px)] z-[130] grid min-w-[170px] gap-0.5 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
                   data-testid="topbar-status-change-menu"
                 >
-                  {statusOptions.map((s) => (
-                    <button
-                      key={s.value}
-                      type="button"
-                      className={`secondaryBtn h-8 w-full justify-start px-3 text-left text-sm ${normalizedSessionStatus === s.value ? "ring-1 ring-accent/60" : ""}`}
-                      onClick={() => {
-                        setStatusMenuOpen(false);
-                        if (normalizedSessionStatus !== s.value) {
-                          onChangeSessionStatus?.(s.value);
-                        }
-                      }}
-                      disabled={isChangingSessionStatus}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
+                  {statusOptions.map((s) => {
+                    const meta = getManualSessionStatusMeta(s.value);
+                    return (
+                      <button
+                        key={s.value}
+                        type="button"
+                        className={`secondaryBtn h-8 w-full justify-start gap-2 px-2.5 text-left text-xs ${normalizedSessionStatus === s.value ? "ring-1 ring-accent/60" : ""}`}
+                        onClick={() => {
+                          setStatusMenuOpen(false);
+                          if (normalizedSessionStatus !== s.value) {
+                            onChangeSessionStatus?.(s.value);
+                          }
+                        }}
+                        disabled={isChangingSessionStatus}
+                      >
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT_COLORS[s.value] || "bg-current opacity-60"}`} />
+                        <span>{s.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               ) : null}
             </div>

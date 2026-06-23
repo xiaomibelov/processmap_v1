@@ -92,6 +92,7 @@ export default function useSessionActivationOrchestration({
   projectWorkspaceHintsRef,
   createLocalSessionId,
   activeOrgId,
+  sessionCacheRef,
 }) {
   const [activationState, setActivationState] = useState({
     phase: "idle",
@@ -182,6 +183,8 @@ export default function useSessionActivationOrchestration({
     let nextRaw;
     if (options?.session && typeof options.session === "object") {
       nextRaw = options.session;
+    } else if (options?.useCache && sessionCacheRef?.current?.has?.(sid)) {
+      nextRaw = sessionCacheRef.current.get(sid);
     } else {
       const r = await apiGetSession(sid);
       if (reqSeq !== openSessionReqSeqRef.current) return { ok: false, cancelled: true, error: "stale_open_session" };
@@ -216,6 +219,9 @@ export default function useSessionActivationOrchestration({
       }
 
       nextRaw = r.session || ensureDraftShape(sid);
+      if (sessionCacheRef?.current) {
+        sessionCacheRef.current.set(sid, nextRaw);
+      }
     }
     const sidProject = String(nextRaw?.project_id || projectId || "").trim();
     if (sidProject && sidProject !== String(projectId || "").trim()) {
