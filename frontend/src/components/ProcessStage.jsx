@@ -6697,7 +6697,7 @@ function ProcessStage({
                 className={`bpmnStageHost h-full ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""}`}
                 ref={bpmnStageHostRef}
               >
-                {subprocessBreadcrumbs?.length > 0 ? (
+                {subprocessBreadcrumbs?.length > 1 ? (
                   <div className="subprocessBreadcrumbsBar">
                     {subprocessBreadcrumbs.length > 1 ? (
                       <button

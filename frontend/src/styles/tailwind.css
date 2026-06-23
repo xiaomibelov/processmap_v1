@@ -2762,23 +2762,49 @@
   }
 
   .diagramActionToolbarGroup {
-    @apply flex min-w-0 items-center gap-1 rounded-lg border border-border/60 bg-panel2/55 px-1 py-1;
+    @apply flex min-w-0 items-center gap-0.5 rounded-full border border-border/50 bg-panel2/40 px-1 py-1;
   }
 
   .diagramActionToolbarGroup--zoom {
-    @apply ml-auto bg-panel/80;
+    @apply ml-auto bg-panel/60;
   }
 
   .diagramActionBtn {
-    @apply h-8 min-h-0 px-2 text-[11px] leading-none;
+    @apply inline-flex h-8 min-h-0 items-center justify-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-fg transition-colors;
+  }
+
+  .diagramActionBtn:hover:not(:disabled) {
+    @apply bg-accent/10;
+  }
+
+  .diagramActionBtn.isActive:not(:disabled) {
+    @apply border-transparent bg-accent text-white;
+  }
+
+  .diagramActionBtn:disabled {
+    @apply cursor-not-allowed opacity-50;
   }
 
   .diagramActionBtn--icon {
-    @apply w-8 px-0 text-sm;
+    @apply w-8 px-0;
+  }
+
+  .diagramActionBtnLabel {
+    @apply hidden md:inline;
+  }
+
+  @media (max-width: 1280px) {
+    .diagramActionToolbarGroup--zoom .diagramActionBtnLabel {
+      display: none;
+    }
+  }
+
+  .diagramActionBtnIcon {
+    @apply h-4 w-4 shrink-0;
   }
 
   .diagramActionBarSpacer {
-    @apply mx-0.5 h-6 w-px bg-border;
+    @apply mx-0.5 h-4 w-px bg-border/60;
   }
 
   .diagramActionChip {
@@ -3115,7 +3141,65 @@
   }
 
   .diagramActionPopover--overflow {
-    width: min(280px, calc(100% - 24px));
+    width: min(260px, calc(100% - 24px));
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .diagramActionOverflowMenu {
+    @apply py-1;
+  }
+
+  .diagramActionOverflowSection {
+    @apply border-t border-border/40 first:border-t-0;
+  }
+
+  .diagramActionOverflowSectionTitle {
+    @apply px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted;
+  }
+
+  .diagramActionOverflowItem {
+    @apply flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-xs text-fg transition-colors hover:bg-accent/10;
+  }
+
+  .diagramActionOverflowItem:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
+  .diagramActionOverflowItem.isActive {
+    @apply bg-accent/10;
+  }
+
+  .diagramActionOverflowItemIcon {
+    @apply flex h-4 w-4 shrink-0 items-center justify-center text-muted;
+  }
+
+  .diagramActionOverflowItemLabel {
+    @apply min-w-0 flex-1 truncate;
+  }
+
+  .diagramActionOverflowItemMeta {
+    @apply inline-flex items-center rounded-full border border-border bg-panel2 px-1.5 py-0 text-[10px] font-semibold text-muted;
+  }
+
+  .diagramActionOverflowItemChevron {
+    @apply h-4 w-4 shrink-0 text-muted;
+  }
+
+  .diagramActionToggle {
+    @apply relative inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full border border-border bg-panel2 transition-colors;
+  }
+
+  .diagramActionToggle.isActive {
+    @apply border-accent bg-accent;
+  }
+
+  .diagramActionToggle > span {
+    @apply pointer-events-none inline-block h-2.5 w-2.5 translate-x-0.5 rounded-full bg-fg transition-transform;
+  }
+
+  .diagramActionToggle.isActive > span {
+    @apply translate-x-3.5 bg-white;
   }
 
   .templatesBottomMenu {
