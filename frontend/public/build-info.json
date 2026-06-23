@@ -1,10 +1,10 @@
 {
-  "branch": "fix/sub-process-navigation",
-  "sha": "ec2059a4",
-  "shaShort": "ec2059a4",
-  "timestamp": "2026-06-17T19:32:15Z",
-  "contourId": "fix-sub-process-navigation",
+  "branch": "fix/canvas-header-ux",
+  "sha": "2c00ea217eea1398a7933d8cf642162ce3a0c692",
+  "shaShort": "2c00ea21",
+  "timestamp": "2026-06-23T22:27:15.594Z",
+  "contourId": "fix-canvas-header-ux",
   "dirty": true,
   "host": "clearvestnic.ru",
-  "env": "prod"
+  "env": "dev"
 }
