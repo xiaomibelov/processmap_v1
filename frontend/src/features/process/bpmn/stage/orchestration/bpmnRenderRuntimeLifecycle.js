@@ -1,4 +1,5 @@
 import { applyFullBpmnDecorSet } from "./runBpmnRenderDecorSync";
+import { safeCanvasResized } from "../viewport/viewportRecovery.js";
 
 export async function renderViewerDiagram(ctx, nextXml) {
   const {
@@ -270,7 +271,7 @@ export async function renderModelerDiagram(ctx, nextXml) {
       await waitAnimationFrame();
       suppressViewboxEvents(1);
       try {
-        canvas?.resized?.();
+        safeCanvasResized(canvas, { thresholdPx: 2 });
       } finally {
         suppressViewboxEvents(-1);
       }
