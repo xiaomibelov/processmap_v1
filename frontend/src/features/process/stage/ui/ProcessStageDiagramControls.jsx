@@ -18,6 +18,41 @@ function clickNotesPanelFloatingTrigger() {
   return true;
 }
 
+function OverflowMenuItem({ icon, label, onClick, disabled, active, meta }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className={`diagramActionOverflowItem ${active ? "isActive" : ""}`}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      <span className="diagramActionOverflowItemIcon">{icon}</span>
+      <span className="diagramActionOverflowItemLabel">{label}</span>
+      {meta ? <span className="diagramActionOverflowItemMeta">{meta}</span> : null}
+    </button>
+  );
+}
+
+function OverflowMenuToggle({ icon, label, checked, onChange, disabled }) {
+  return (
+    <button
+      type="button"
+      role="menuitemcheckbox"
+      aria-checked={checked}
+      className="diagramActionOverflowItem"
+      onClick={() => onChange?.(!checked)}
+      disabled={disabled}
+    >
+      <span className="diagramActionOverflowItemIcon">{icon}</span>
+      <span className="diagramActionOverflowItemLabel">{label}</span>
+      <span className={`diagramActionToggle ${checked ? "isActive" : ""}`} aria-hidden="true">
+        <span />
+      </span>
+    </button>
+  );
+}
+
 export default function ProcessStageDiagramControls({ view = {} }) {
   const legacyView = ensureObject(view);
   const sections = ensureObject(legacyView.sections);
@@ -479,47 +514,6 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         style={{ zIndex: 92, pointerEvents: "auto" }}
       >
         <div className="diagramActionToolbarGroup">
-          <button
-            type="button"
-            className={`secondaryBtn diagramActionBtn ${unifiedOverlayPanelOpen ? "ring-1 ring-accent/60" : ""}`}
-            onClick={() => {
-              const next = !unifiedOverlayPanelOpen;
-              closeDiagramPopovers();
-              setDiagramActionLayersOpen(next);
-              setDiagramActionHybridToolsOpen(next);
-            }}
-            data-testid="diagram-action-layers"
-          >
-            <span>Слои</span>
-            <span className="diagramActionChip" title={overlayStatusTitle}>
-              {overlayStatusLabel}
-            </span>
-          </button>
-          <button
-            type="button"
-            className={`secondaryBtn diagramActionBtn ${showOverlaysDuringPan ? "ring-1 ring-accent/60" : ""}`}
-            onClick={() => setShowOverlaysDuringPan?.((prev) => !prev)}
-            disabled={!isBpmnTab}
-            title={
-              showOverlaysDuringPan
-                ? "Оверлеи остаются видимыми при перемещении/зуме"
-                : "Скрывать оверлеи при перемещении/зуме для производительности"
-            }
-            data-testid="diagram-action-overlay-pan-toggle"
-          >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 16 16"
-              className="h-3.5 w-3.5 shrink-0"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <path d="M8 2.5c-4 0-7.5 3-7.5 5.5s3.5 5.5 7.5 5.5 7.5-3 7.5-5.5-3.5-5.5-7.5-5.5z" />
-              <circle cx="8" cy="8" r="2.5" />
-            </svg>
-            <span>Оверлеи при pan</span>
-          </button>
           <span data-testid="templates-menu-button">
             <button
               type="button"
@@ -535,7 +529,21 @@ export default function ProcessStageDiagramControls({ view = {} }) {
               title="Открыть список шаблонов"
               data-testid="btn-templates"
             >
-              Шаблоны
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 16 16"
+                className="diagramActionBtnIcon"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M2 5l6-3 6 3" />
+                <path d="M2 8l6 3 6-3" />
+                <path d="M2 11l6 3 6-3" />
+              </svg>
+              <span className="diagramActionBtnLabel">Шаблоны</span>
             </button>
           </span>
           <button
@@ -549,7 +557,23 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             title="Открыть Reports для выбранного сценария"
             data-testid="diagram-action-reports"
           >
-            Отчёты
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="diagramActionBtnIcon"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M2 12h12" />
+              <path d="M3 12V8" />
+              <path d="M6 12V5" />
+              <path d="M10 12V9" />
+              <path d="M13 12V3" />
+            </svg>
+            <span className="diagramActionBtnLabel">Отчёты</span>
           </button>
           <button
             type="button"
@@ -560,21 +584,56 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             data-testid="diagram-action-notes"
             data-notes-panel-trigger="true"
           >
-            <span aria-hidden="true">✎</span>
-            <span>Обсуждения</span>
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="diagramActionBtnIcon"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M8 2.5c-3.5 0-6.5 2.5-6.5 5.5 0 1.5.7 2.9 1.8 3.9L3 13.5l2.2-1.1c.8.3 1.7.4 2.8.4 3.5 0 6.5-2.5 6.5-5.5S11.5 2.5 8 2.5z" />
+            </svg>
+            <span className="diagramActionBtnLabel">Обсуждения</span>
             <NotesAggregateBadge
               aggregate={notesAggregate}
               compact
               compactNumericOnly
               label="Обсуждения"
-              className="border-sky-200/80 bg-white/85 px-1.5 py-0 text-[10px] text-sky-950"
+              className="border-transparent bg-red-500 px-1.5 py-0 text-[10px] text-white"
             />
           </button>
         </div>
-        <div className="diagramActionToolbarGroup">
+        <div className="diagramActionToolbarGroup diagramActionToolbarGroup--zoom">
           <button
             type="button"
-            className={`secondaryBtn diagramActionBtn ${diagramActionSearchOpen ? "ring-1 ring-accent/60" : ""}`}
+            className={`secondaryBtn diagramActionBtn diagramActionBtn--icon ${showOverlaysDuringPan ? "isActive" : ""}`}
+            onClick={() => setShowOverlaysDuringPan?.((prev) => !prev)}
+            disabled={!isBpmnTab}
+            title={
+              showOverlaysDuringPan
+                ? "Оверлеи остаются видимыми при перемещении/зуме"
+                : "Скрывать оверлеи при перемещении/зуме для производительности"
+            }
+            data-testid="diagram-action-overlay-pan-toggle"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="diagramActionBtnIcon"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
+              <path d="M8 2.5c-4 0-7.5 3-7.5 5.5s3.5 5.5 7.5 5.5 7.5-3 7.5-5.5-3.5-5.5-7.5-5.5z" />
+              <circle cx="8" cy="8" r="2.5" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className={`secondaryBtn diagramActionBtn ${diagramActionSearchOpen ? "isActive" : ""}`}
             onClick={() => {
               const next = !diagramActionSearchOpen;
               closeDiagramPopovers();
@@ -586,7 +645,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             <svg
               aria-hidden="true"
               viewBox="0 0 16 16"
-              className="h-3.5 w-3.5 shrink-0"
+              className="diagramActionBtnIcon"
               fill="none"
               stroke="currentColor"
               strokeWidth="1.5"
@@ -594,11 +653,11 @@ export default function ProcessStageDiagramControls({ view = {} }) {
               <circle cx="7" cy="7" r="4.5" />
               <path d="M10.5 10.5L14 14" strokeLinecap="round" />
             </svg>
-            Поиск
+            <span className="diagramActionBtnLabel">Поиск</span>
           </button>
           <button
             type="button"
-            className={`secondaryBtn diagramActionBtn ${diagramFocusMode ? "ring-1 ring-accent/60" : ""}`}
+            className={`secondaryBtn diagramActionBtn ${diagramFocusMode ? "isActive" : ""}`}
             onClick={() => {
               setDiagramFocusMode((prev) => !prev);
               closeDiagramPopovers();
@@ -606,11 +665,31 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             title="Скрыть второстепенные панели и сфокусироваться на диаграмме"
             data-testid="diagram-action-focus-mode"
           >
-            {diagramFocusMode ? "Выход из фокуса" : "Фокус"}
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="diagramActionBtnIcon"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M1.5 6.5h2" />
+              <path d="M1.5 9.5h2" />
+              <path d="M12.5 6.5h2" />
+              <path d="M12.5 9.5h2" />
+              <path d="M6.5 1.5v2" />
+              <path d="M9.5 1.5v2" />
+              <path d="M6.5 12.5v2" />
+              <path d="M9.5 12.5v2" />
+              <circle cx="8" cy="8" r="2.5" />
+            </svg>
+            <span className="diagramActionBtnLabel">{diagramFocusMode ? "Выход из фокуса" : "Фокус"}</span>
           </button>
           <button
             type="button"
-            className={`secondaryBtn diagramActionBtn ${diagramFullscreenActive ? "ring-1 ring-accent/60" : ""}`}
+            className={`secondaryBtn diagramActionBtn ${diagramFullscreenActive ? "isActive" : ""}`}
             onClick={() => {
               closeDiagramPopovers();
               void toggleDiagramFullscreen?.();
@@ -618,7 +697,99 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             title="Fullscreen диаграммы"
             data-testid="diagram-action-fullscreen-mode"
           >
-            {diagramFullscreenActive ? "Обычный экран" : "Полный экран"}
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="diagramActionBtnIcon"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              {diagramFullscreenActive ? (
+                <>
+                  <path d="M4 6H2V4" />
+                  <path d="M12 6h2V4" />
+                  <path d="M4 10H2v2" />
+                  <path d="M12 10h2v2" />
+                </>
+              ) : (
+                <>
+                  <path d="M2 6V4h3" />
+                  <path d="M14 6V4h-3" />
+                  <path d="M2 10v2h3" />
+                  <path d="M14 10v2h-3" />
+                </>
+              )}
+            </svg>
+            <span className="diagramActionBtnLabel">{diagramFullscreenActive ? "Обычный экран" : "Полный экран"}</span>
+          </button>
+          <span className="diagramActionBarSpacer" />
+          <button
+            type="button"
+            className="secondaryBtn diagramActionBtn diagramActionBtn--icon"
+            onClick={() => bpmnRef.current?.zoomOut?.()}
+            disabled={!isBpmnTab}
+            title={!isBpmnTab ? "Доступно в Diagram/XML" : "Zoom out"}
+            data-testid="diagram-zoom-out"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="diagramActionBtnIcon"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            >
+              <path d="M3 8h10" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="secondaryBtn diagramActionBtn diagramActionBtn--icon"
+            onClick={() => bpmnRef.current?.fit?.()}
+            disabled={!isBpmnTab}
+            title={!isBpmnTab ? "Доступно в Diagram/XML" : "Fit"}
+            data-testid="diagram-zoom-fit"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="diagramActionBtnIcon"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M2 6h4V2" />
+              <path d="M14 6h-4V2" />
+              <path d="M2 10h4v4" />
+              <path d="M14 10h-4v4" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="secondaryBtn diagramActionBtn diagramActionBtn--icon"
+            onClick={() => bpmnRef.current?.zoomIn?.()}
+            disabled={!isBpmnTab}
+            title={!isBpmnTab ? "Доступно в Diagram/XML" : "Zoom in"}
+            data-testid="diagram-zoom-in"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="diagramActionBtnIcon"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            >
+              <path d="M8 3v10" />
+              <path d="M3 8h10" />
+            </svg>
           </button>
           <button
             type="button"
@@ -631,39 +802,16 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             aria-label="Открыть дополнительные действия Diagram"
             data-testid="diagram-action-overflow"
           >
-            ⋯
-          </button>
-        </div>
-        <div className="diagramActionToolbarGroup diagramActionToolbarGroup--zoom">
-          <button
-            type="button"
-            className="secondaryBtn diagramActionBtn diagramActionBtn--icon"
-            onClick={() => bpmnRef.current?.zoomOut?.()}
-            disabled={!isBpmnTab}
-            title={!isBpmnTab ? "Доступно в Diagram/XML" : "Zoom out"}
-            data-testid="diagram-zoom-out"
-          >
-            –
-          </button>
-          <button
-            type="button"
-            className="secondaryBtn diagramActionBtn diagramActionBtn--icon"
-            onClick={() => bpmnRef.current?.fit?.()}
-            disabled={!isBpmnTab}
-            title={!isBpmnTab ? "Доступно в Diagram/XML" : "Fit"}
-            data-testid="diagram-zoom-fit"
-          >
-            ↔
-          </button>
-          <button
-            type="button"
-            className="secondaryBtn diagramActionBtn diagramActionBtn--icon"
-            onClick={() => bpmnRef.current?.zoomIn?.()}
-            disabled={!isBpmnTab}
-            title={!isBpmnTab ? "Доступно в Diagram/XML" : "Zoom in"}
-            data-testid="diagram-zoom-in"
-          >
-            +
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="diagramActionBtnIcon"
+              fill="currentColor"
+            >
+              <circle cx="3" cy="8" r="1.5" />
+              <circle cx="8" cy="8" r="1.5" />
+              <circle cx="13" cy="8" r="1.5" />
+            </svg>
           </button>
         </div>
       </div>
@@ -1699,128 +1847,169 @@ export default function ProcessStageDiagramControls({ view = {} }) {
       ) : null}
 
       {diagramActionOverflowOpen ? (
-        <div className="diagramActionPopover diagramActionPopover--overflow" ref={diagramOverflowPopoverRef} data-testid="diagram-action-overflow-popover">
-          <div className="diagramActionPopoverHead">
-            <span>Действия Diagram</span>
-            <button
-              type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
-              onClick={() => setDiagramActionOverflowOpen(false)}
-            >
-              Закрыть
-            </button>
-          </div>
-          <div className="diagramIssueRows">
-            <div className="diagramIssueRow">
-              <span>Навигация и диагностика</span>
+        <div className="diagramActionPopover diagramActionPopover--overflow" ref={diagramOverflowPopoverRef} data-testid="diagram-action-overflow-popover" role="menu">
+          <div className="diagramActionOverflowMenu">
+            <div className="diagramActionOverflowSection">
+              <div className="diagramActionOverflowSectionTitle">Оверлеи</div>
+              <OverflowMenuItem
+                icon={
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M2 5l6-3 6 3" />
+                    <path d="M2 8l6 3 6-3" />
+                    <path d="M2 11l6 3 6-3" />
+                  </svg>
+                }
+                label="Слои"
+                meta={overlayStatusLabel}
+                active={unifiedOverlayPanelOpen}
+                onClick={() => {
+                  const next = !unifiedOverlayPanelOpen;
+                  closeDiagramPopovers();
+                  setDiagramActionLayersOpen(next);
+                  setDiagramActionHybridToolsOpen(next);
+                }}
+              />
+              <OverflowMenuToggle
+                icon={
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M8 2.5c-4 0-7.5 3-7.5 5.5s3.5 5.5 7.5 5.5 7.5-3 7.5-5.5-3.5-5.5-7.5-5.5z" />
+                    <circle cx="8" cy="8" r="2.5" />
+                  </svg>
+                }
+                label="Оверлеи при pan"
+                checked={!!showOverlaysDuringPan}
+                onChange={(next) => setShowOverlaysDuringPan?.(() => next)}
+              />
             </div>
-          </div>
-          <div className="diagramActionPopoverActions">
-            <button
-              type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
-              onClick={() => {
-                closeDiagramPopovers();
-                setDiagramActionPathOpen(true);
-              }}
-            >
-              Подсветка путей
-            </button>
-            <button
-              type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
-              onClick={() => {
-                closeDiagramPopovers();
-                setDiagramActionPlaybackOpen(true);
-              }}
-            >
-              Проход
-            </button>
-            <button
-              type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
-              onClick={() => {
-                closeDiagramPopovers();
-                setDiagramActionPlanOpen(true);
-              }}
-            >
-              План (JSON)
-            </button>
-            <button
-              type="button"
-              className={`secondaryBtn h-7 px-2 text-[11px] ${robotMetaOverlayEnabled ? "ring-1 ring-accent/60" : ""}`}
-              onClick={() => {
-                closeDiagramPopovers();
-                setDiagramActionRobotMetaOpen(true);
-                setRobotMetaOverlayEnabled(true);
-                setRobotMetaOverlayFilters((prev) => {
-                  const next = {
-                    ready: !!prev?.ready,
-                    incomplete: !!prev?.incomplete,
-                  };
-                  if (!next.ready && !next.incomplete) return { ready: true, incomplete: true };
-                  return next;
-                });
-              }}
-            >
-              Robot Meta
-            </button>
-          </div>
-          <div className="diagramIssueRows mt-2">
-            <div className="diagramIssueRow">
-              <span>Контекст и редактирование</span>
-            </div>
-          </div>
-          <div className="diagramActionPopoverActions">
-            <button
-              type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
-              onClick={() => {
-                closeDiagramPopovers();
-                openCreateTemplateModal();
-              }}
-              disabled={!canCreateTemplateFromSelection}
-              title={canCreateTemplateFromSelection ? "Сохранить выделенные BPMN элементы как шаблон" : "Выделите BPMN элементы"}
-            >
-              {`Добавить шаблон${templateSelectionCount > 0 ? ` (${templateSelectionCount})` : ""}`}
-            </button>
-            <button
-              type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
-              onClick={() => {
-                closeDiagramPopovers();
-                openSelectedElementNotes();
-              }}
-              disabled={!canUseElementContextActions}
-              title="Открыть заметки по выбранному узлу"
-            >
-              Заметки
-            </button>
-            <button
-              type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
-              onClick={() => {
-                closeDiagramPopovers();
-                openSelectedElementAi();
-              }}
-              disabled={!canUseElementContextActions}
-            >
-              AI
-            </button>
-            {selectedInsertBetween ? (
-              <button
-                type="button"
-                className="secondaryBtn h-7 px-2 text-[11px]"
+            <div className="diagramActionOverflowSection">
+              <div className="diagramActionOverflowSectionTitle">Навигация и диагностика</div>
+              <OverflowMenuItem
+                icon={
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="4" cy="4" r="2" />
+                    <circle cx="12" cy="12" r="2" />
+                    <path d="M6 4h3c1.5 0 2.5 1 2.5 2.5V10" />
+                    <path d="M10 12H7c-1.5 0-2.5-1-2.5-2.5V6" />
+                  </svg>
+                }
+                label="Подсветка путей"
                 onClick={() => {
                   closeDiagramPopovers();
-                  openInsertBetweenModal();
+                  setDiagramActionPathOpen(true);
                 }}
-                disabled={insertBetweenBusy || !canInsertBetween}
-                title={canInsertBetween ? "Вставить шаг между" : insertBetweenErrorMessage(selectedInsertBetween?.error)}
-              >
-                Вставить между
-              </button>
-            ) : null}
+              />
+              <OverflowMenuItem
+                icon={
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 3l10 5-10 5V3z" />
+                  </svg>
+                }
+                label="Проход"
+                onClick={() => {
+                  closeDiagramPopovers();
+                  setDiagramActionPlaybackOpen(true);
+                }}
+              />
+              <OverflowMenuItem
+                icon={
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 6l-3 2 3 2" />
+                    <path d="M12 6l3 2-3 2" />
+                    <path d="M7 13l2-10" />
+                  </svg>
+                }
+                label="План (JSON)"
+                onClick={() => {
+                  closeDiagramPopovers();
+                  setDiagramActionPlanOpen(true);
+                }}
+              />
+              <OverflowMenuItem
+                icon={
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="4" y="6" width="8" height="6" rx="1" />
+                    <path d="M6 6V4a2 2 0 014 0v2" />
+                    <circle cx="8" cy="9" r="1" />
+                  </svg>
+                }
+                label="Robot Meta"
+                active={robotMetaOverlayEnabled}
+                onClick={() => {
+                  closeDiagramPopovers();
+                  setDiagramActionRobotMetaOpen(true);
+                  setRobotMetaOverlayEnabled(true);
+                  setRobotMetaOverlayFilters((prev) => {
+                    const next = {
+                      ready: !!prev?.ready,
+                      incomplete: !!prev?.incomplete,
+                    };
+                    if (!next.ready && !next.incomplete) return { ready: true, incomplete: true };
+                    return next;
+                  });
+                }}
+              />
+            </div>
+            <div className="diagramActionOverflowSection">
+              <div className="diagramActionOverflowSectionTitle">Контекст и редактирование</div>
+              <OverflowMenuItem
+                icon={
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="10" height="10" rx="1" />
+                    <path d="M8 5v6" />
+                    <path d="M5 8h6" />
+                  </svg>
+                }
+                label={`Добавить шаблон${templateSelectionCount > 0 ? ` (${templateSelectionCount})` : ""}`}
+                disabled={!canCreateTemplateFromSelection}
+                onClick={() => {
+                  closeDiagramPopovers();
+                  openCreateTemplateModal();
+                }}
+              />
+              <OverflowMenuItem
+                icon={
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 4h8v9l-4-2-4 2V4z" />
+                  </svg>
+                }
+                label="Заметки"
+                disabled={!canUseElementContextActions}
+                onClick={() => {
+                  closeDiagramPopovers();
+                  openSelectedElementNotes();
+                }}
+              />
+              <OverflowMenuItem
+                icon={
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M8 2l1.5 3.5L13 7l-3.5 1.5L8 12l-1.5-3.5L3 7l3.5-1.5L8 2z" />
+                  </svg>
+                }
+                label="AI"
+                disabled={!canUseElementContextActions}
+                onClick={() => {
+                  closeDiagramPopovers();
+                  openSelectedElementAi();
+                }}
+              />
+              {selectedInsertBetween ? (
+                <OverflowMenuItem
+                  icon={
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 8h4" />
+                      <path d="M9 8h4" />
+                      <circle cx="8" cy="8" r="1.5" />
+                    </svg>
+                  }
+                  label="Вставить между"
+                  disabled={insertBetweenBusy || !canInsertBetween}
+                  onClick={() => {
+                    closeDiagramPopovers();
+                    openInsertBetweenModal();
+                  }}
+                />
+              ) : null}
+            </div>
           </div>
         </div>
       ) : null}
