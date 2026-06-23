@@ -98,7 +98,10 @@ import "bpmn-js/dist/assets/bpmn-js.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn.css";
 import "bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css";
 import "../../features/process/bpmn/stage/styles/subprocessNavigation.css";
-import { patchOverlaysPrototype } from "../../features/process/bpmn/stage/patches/patchOverlayPanPerf";
+import {
+  patchOverlaysPrototype,
+  setShowOverlaysDuringPan,
+} from "../../features/process/bpmn/stage/patches/patchOverlayPanPerf";
 import { instrumentBpmnInst, wrapWithProfiler } from "../../features/process/bpmn/stage/profiling/panProfiler";
 
 patchOverlaysPrototype();
@@ -1617,6 +1620,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   onFocusElementApplied = null,
   restoreViewportSnapshot = null,
   onRestoreViewportSnapshotApplied = null,
+  showOverlaysDuringPan = false,
 }, ref) {
   const viewerEl = useRef(null);
   const editorEl = useRef(null);
@@ -1703,6 +1707,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   const onDiagramContextMenuDismissRef = useRef(onDiagramContextMenuDismiss);
   const onNavigateToSubprocessRef = useRef(onNavigateToSubprocess);
   const aiQuestionsModeEnabledRef = useRef(!!aiQuestionsModeEnabled);
+
+  useEffect(() => {
+    setShowOverlaysDuringPan(showOverlaysDuringPan);
+  }, [showOverlaysDuringPan]);
   const diagramDisplayModeRef = useRef(String(diagramDisplayMode || "normal").trim().toLowerCase() || "normal");
   const stepTimeUnitRef = useRef(normalizeStepTimeUnit(stepTimeUnit));
   const robotMetaOverlayEnabledRef = useRef(!!robotMetaOverlayEnabled);
