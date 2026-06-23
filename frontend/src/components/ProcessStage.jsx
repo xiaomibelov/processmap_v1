@@ -6678,30 +6678,30 @@ function ProcessStage({
           <DodStage readiness={dodReadinessV1} />
         ) : (
           <div className="relative h-full min-h-0">
-            {subprocessBreadcrumbs?.length > 0 ? (
-              <div className="subprocessBreadcrumbsBar">
-                {subprocessBreadcrumbs.length > 1 ? (
-                  <button
-                    type="button"
-                    onClick={() => onReturnToParent?.(sid)}
-                    className="subprocessBackButton"
-                    title="Назад"
-                    data-testid="subprocess-back-button"
-                  >
-                    ←
-                  </button>
-                ) : null}
-                <SubprocessBreadcrumbs
-                  breadcrumbs={subprocessBreadcrumbs}
-                  onNavigate={onBreadcrumbNavigate}
-                />
-              </div>
-            ) : null}
             <div className={isInterview ? "absolute inset-0 opacity-0 pointer-events-none" : "absolute inset-0"}>
               <div
                 className={`bpmnStageHost h-full ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""}`}
                 ref={bpmnStageHostRef}
               >
+                {subprocessBreadcrumbs?.length > 0 ? (
+                  <div className="subprocessBreadcrumbsBar">
+                    {subprocessBreadcrumbs.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => onReturnToParent?.(sid)}
+                        className="subprocessBackButton"
+                        title="Назад"
+                        data-testid="subprocess-back-button"
+                      >
+                        ←
+                      </button>
+                    ) : null}
+                    <SubprocessBreadcrumbs
+                      breadcrumbs={subprocessBreadcrumbs}
+                      onNavigate={onBreadcrumbNavigate}
+                    />
+                  </div>
+                ) : null}
                 <ProcessStageDiagramControls
                   view={buildDiagramControlsView({
                     tab,

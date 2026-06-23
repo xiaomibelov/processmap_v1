@@ -5947,6 +5947,29 @@ const BpmnStage = forwardRef(function BpmnStage({
       // eslint-disable-next-line no-console
       console.debug(`[SESSION] activate sid=${sid || "-"} prevSid=${prevSid || "-"} tab=${view === "xml" ? "xml" : "diagram"}`);
     }
+
+    // Soft return path: if we have cached XML for the target session and a pending viewport
+    // snapshot to restore, keep the existing BPMN runtime alive and let the render effect
+    // re-import the cached XML. This avoids the visible flash caused by destroyRuntime().
+    const cachedXml = sid ? bpmnXmlCacheRef?.current?.get(sid) : null;
+    if (cachedXml?.trim() && restoreViewportSnapshot) {
+      activeSessionRef.current = sid;
+      userMutationObservedRef.current = false;
+      ensureEpochRef.current += 1;
+      robotMetaHydrateStateRef.current = { key: "" };
+      camundaHydrateStateRef.current = { key: "" };
+      importCamundaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
+      copyPasteRobotMetaPreserveGuardRef.current = { ids: [], expiresAt: 0 };
+      setErr("");
+      if (shouldLogBpmnTrace()) {
+        // eslint-disable-next-line no-console
+        console.debug(
+          `[SESSION] soft_return sid=${sid || "-"} len=${cachedXml.length} hash=${fnv1aHex(cachedXml)}`,
+        );
+      }
+      return;
+    }
+
     activeSessionRef.current = sid;
     userMutationObservedRef.current = false;
     ensureEpochRef.current += 1;

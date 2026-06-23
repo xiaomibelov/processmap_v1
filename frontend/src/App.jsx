@@ -1195,26 +1195,22 @@ export default function App() {
       sessionCacheRef.current.set(String(sessionIdArg || "").trim(), draft);
     }
     // Build the breadcrumb stack client-side by pushing the new child crumb.
-    // This keeps nested navigation stable regardless of whether backend breadcrumbs
-    // include the full hierarchy.
+    // Backend breadcrumbs are intentionally ignored here to keep nested navigation stable.
     setSubprocessBreadcrumbs((prev) => {
       const list = Array.isArray(prev) ? prev : [];
-      const backendList = Array.isArray(res.breadcrumbs) ? res.breadcrumbs : [];
-      if (list.length === 0) {
-        return backendList.length > 0
-          ? backendList
-          : [
-              { session_id: String(sessionIdArg || "").trim(), name: draft?.title || "", element_id: elementId },
-              { session_id: res.subprocessSessionId, name: "Подпроцесс", element_id: res.targetElementId || elementId },
-            ];
-      }
-      const childCrumb = backendList[backendList.length - 1] || {
+      const childCrumb = {
         session_id: res.subprocessSessionId,
-        name: "Подпроцесс",
+        name: res.subprocessTitle || "Подпроцесс",
         element_id: res.targetElementId || elementId,
       };
+      if (list.length === 0) {
+        return [
+          { session_id: String(sessionIdArg || "").trim(), name: draft?.title || "", element_id: elementId },
+          childCrumb,
+        ];
+      }
       const lastSid = String(list[list.length - 1]?.session_id || "").trim();
-      const childSid = String(childCrumb?.session_id || "").trim();
+      const childSid = String(childCrumb.session_id || "").trim();
       if (lastSid && childSid && lastSid === childSid) return list;
       return [...list, childCrumb];
     });
