@@ -95,6 +95,7 @@ const BPMN_INPUT_KEYS = [
   "v2OverlaysEnabled",
   "v2OverlaysExpanded",
   "reloadKey",
+  "bpmnXmlCacheRef",
   "robotMetaOverlayEnabled",
   "robotMetaOverlayFilters",
   "robotMetaStatusByElementId",

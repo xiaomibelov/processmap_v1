@@ -1589,6 +1589,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   view,
   draft,
   reloadKey,
+  bpmnXmlCacheRef = null,
   onDiagramMutation,
   onElementSelectionChange,
   onElementNotesRemap,
@@ -4981,6 +4982,20 @@ const BpmnStage = forwardRef(function BpmnStage({
       applyXmlSnapshot("");
       setSrcHint("");
       setErr("");
+      return;
+    }
+
+    // Use the App-level BPMN XML cache when available to avoid a backend round-trip.
+    // This is the key path that makes subprocess return instantaneous.
+    const cachedXml = bpmnXmlCacheRef?.current?.get(s);
+    if (cachedXml?.trim()) {
+      applyXmlSnapshot(cachedXml, "cache");
+      setErr("");
+      logBpmnTrace("loadSnapshot.cache", cachedXml, {
+        sid: s,
+        status: 200,
+        rev: Number(bpmnStoreRef.current?.getState?.()?.rev || 0),
+      });
       return;
     }
 
