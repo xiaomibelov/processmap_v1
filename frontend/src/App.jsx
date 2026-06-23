@@ -1262,6 +1262,10 @@ export default function App() {
     });
     // Use cached parent session data to avoid an extra API + XML fetch.
     const cachedParentSession = parentSid ? sessionCacheRef.current.get(parentSid) : null;
+    const cachedParentXml = String(cachedParentSession?.bpmn_xml || "").trim();
+    if (parentSid && cachedParentXml && bpmnXmlCacheRef.current) {
+      bpmnXmlCacheRef.current.set(parentSid, cachedParentXml);
+    }
     openSession(res.parentSessionId, {
       source: "subprocess_return",
       session: cachedParentSession || null,

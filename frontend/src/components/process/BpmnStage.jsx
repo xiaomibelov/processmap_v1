@@ -4990,6 +4990,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     const cachedXml = bpmnXmlCacheRef?.current?.get(s);
     if (cachedXml?.trim()) {
       applyXmlSnapshot(cachedXml, "cache");
+      loadTransition?.("import_success");
       setErr("");
       logBpmnTrace("loadSnapshot.cache", cachedXml, {
         sid: s,
