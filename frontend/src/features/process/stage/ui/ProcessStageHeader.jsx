@@ -239,8 +239,10 @@ export default function ProcessStageHeader({ view = {} }) {
         </div>
       </div>
 
-      <input ref={importInputRef} type="file" accept=".bpmn,.xml,text/xml,application/xml" style={{ display: "none" }} onChange={onImportPicked} />
+      <input id="diagram-import-bpmn-input" name="import_bpmn" ref={importInputRef} type="file" accept=".bpmn,.xml,text/xml,application/xml" style={{ display: "none" }} onChange={onImportPicked} />
       <input
+        id="diagram-import-hybrid-input"
+        name="import_hybrid"
         ref={hybridV2FileInputRef}
         type="file"
         accept=".drawio,.xml,text/xml,application/xml"
@@ -255,6 +257,8 @@ export default function ProcessStageHeader({ view = {} }) {
         }}
       />
       <input
+        id="diagram-import-drawio-input"
+        name="import_drawio"
         ref={drawioFileInputRef}
         type="file"
         accept=".drawio,.xml,text/xml,application/xml"
