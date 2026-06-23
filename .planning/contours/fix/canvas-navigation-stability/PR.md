@@ -5,7 +5,7 @@
 - **Branch:** `fix/canvas-navigation-stability`
 - **Base:** `main`
 - **Status:** `open` — awaiting review
-- **Test stand deploy:** http://clearvestnic.ru:5177 (build SHA `68b6ec31`, healthcheck passed)
+- **Test stand deploy:** http://clearvestnic.ru:5177 (build SHA `3b7ae8f0`, healthcheck passed)
 - **Hotfix 1:** `subprocessBreadcrumbs is not defined` — fixed by destructuring breadcrumb props in `AppShell`
 - **Hotfix 2:** breadcrumb now shows the current hierarchy path, syncs on return, and renders inside the canvas area below the toolbar
 
