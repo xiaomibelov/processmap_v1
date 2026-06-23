@@ -39,11 +39,27 @@
   align-items: center;
   gap: 8px;
   max-width: calc(100% - 132px);
+  height: 40px;
+  min-height: 40px;
   pointer-events: none;
 }
 
 .subprocessBreadcrumbsBar > * {
   pointer-events: auto;
+}
+
+.subprocessBreadcrumbsBar .subprocessBreadcrumbs {
+  flex-wrap: nowrap;
+  height: 100%;
+  min-width: 120px;
+  max-width: 100%;
+}
+
+.subprocessBreadcrumbsBar .subprocessBreadcrumbs > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .subprocessBackButton {
@@ -84,10 +100,6 @@
     top: 6px;
     left: 96px;
     max-width: calc(100% - 104px);
-  }
-
-  .subprocessBreadcrumbsBar .subprocessBreadcrumbs {
-    flex-wrap: wrap;
   }
 }
 
