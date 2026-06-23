@@ -2,14 +2,14 @@
 
 **Branch:** `feature/overlay-pan-visibility-toggle`  
 **Stand:** `http://clearvestnic.ru:5177`  
-**Deploy:** `a808e48a` (2026-06-23 20:25:40 UTC)  
+**Deploy:** `238431df` (2026-06-23 20:38 UTC) — includes `QuotaExceededError` hotfix  
 
 ---
 
 ## Deploy
 
 ```
-[DEPLOY] BUILD_ID=a808e48a branch=feature/overlay-pan-visibility-toggle env=prod
+[DEPLOY] BUILD_ID=238431df branch=feature/overlay-pan-visibility-toggle env=prod
 [DEPLOY] Healthcheck passed (http://localhost:8011/version)
 ```
 
@@ -44,6 +44,18 @@ The setting survives full page reload.
 
 ---
 
+## Quota-exceeded fallback
+
+A Playwright run artificially filled `localStorage` to trigger quota pressure, then clicked the toggle ON/OFF.
+
+```
+localStorage item after fallback: false
+console errors: ["ERROR: Failed to load resource: 401 (Unauthorized)"]
+screenshot: overlay_pan_quota_fallback.png
+```
+
+No `QuotaExceededError` surfaced; the app silently falls back to in-memory state and remains usable. The only error is the unrelated websocket 401.
+
 ## Overlay counts on test session
 
 The test session (`project=b1c8a56b6e&session=03db107ebb`) has 21 `.djs-overlay` nodes, primarily `djs-overlay-drilldown`. With the toggle ON they remain attached during pan; with OFF the overlay root is hidden during the gesture.
@@ -56,6 +68,7 @@ The test session (`project=b1c8a56b6e&session=03db107ebb`) has 21 `.djs-overlay`
 - ON: overlays stay visible during pan/zoom.
 - OFF: overlays hide during pan/zoom (default performance mode).
 - State persists across reload via `localStorage`.
+- `QuotaExceededError` is caught and handled; toggle stays usable even when localStorage is full.
 - Build and deploy succeeded.
 
 **No merge to `main` without explicit approve.**

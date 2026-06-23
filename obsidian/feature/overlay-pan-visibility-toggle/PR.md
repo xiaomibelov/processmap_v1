@@ -2,7 +2,7 @@
 
 **Branch:** `feature/overlay-pan-visibility-toggle`  
 **Base:** `new-origin/main`  
-**Deploy:** pending explicit approve  
+**Deploy:** `238431df` deployed to `http://clearvestnic.ru:5177`; merge pending explicit approve  
 
 ## Summary
 
@@ -16,6 +16,7 @@ Adds a toolbar toggle that lets users keep BPMN overlays visible while panning/z
 - `ProcessStage.jsx`: state + localStorage wiring.
 - `useStableProcessDiagramOverlayLayersProps.js`, `buildProcessDiagramOverlayLayersProps.js`: pass prop through to `BpmnStage`.
 - `buildDiagramControlsSections.js`, `ProcessStageDiagramControls.jsx`: toolbar UI.
+- `overlayPanVisibilityStorage.js` (hotfix): safe `localStorage` wrapper with `QuotaExceededError` cleanup + in-memory fallback.
 
 ## Verification
 
@@ -25,6 +26,7 @@ Adds a toolbar toggle that lets users keep BPMN overlays visible while panning/z
 - [x] On: overlays visible during pan.
 - [x] Off: overlays hidden during pan.
 - [x] State persists after reload.
+- [x] `QuotaExceededError` fallback verified under artificially filled localStorage.
 
 ## Screenshots / video
 
