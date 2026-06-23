@@ -1,5 +1,42 @@
 import { disableBpmnZoomScroll } from "../../runtime/zoomScrollLifecycle.js";
 
+// Cache last observed container sizes to avoid calling canvas.resized() when
+// the container rect has not meaningfully changed. This reduces synchronous
+// layout recalculations during status changes, subprocess returns, and React
+// re-renders that do not reflect a real resize.
+const resizeCache = new WeakMap();
+
+export function safeCanvasResized(canvas, options = {}) {
+  if (!canvas || typeof canvas.resized !== "function") return false;
+  const container = canvas._container;
+  if (!container) {
+    canvas.resized();
+    return true;
+  }
+  const thresholdPx = Number(options?.thresholdPx ?? 2);
+  const providedWidth = Number(options?.width || 0);
+  const providedHeight = Number(options?.height || 0);
+  const rect = container.getBoundingClientRect?.();
+  const width = providedWidth > 0
+    ? providedWidth
+    : Number(rect?.width || container.clientWidth || 0);
+  const height = providedHeight > 0
+    ? providedHeight
+    : Number(rect?.height || container.clientHeight || 0);
+  if (width <= 0 || height <= 0) return false;
+
+  const cached = resizeCache.get(container) || { width: 0, height: 0 };
+  const changed =
+    Math.abs(width - cached.width) > thresholdPx ||
+    Math.abs(height - cached.height) > thresholdPx;
+  if (!changed && cached.width > 0 && cached.height > 0) {
+    return false;
+  }
+  resizeCache.set(container, { width, height });
+  canvas.resized();
+  return true;
+}
+
 function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
 }
@@ -71,7 +108,7 @@ export async function ensureCanvasVisibleAndFit(ctx, inst, options = {}) {
     const height = Number(rect?.height || container?.clientHeight || 0);
     suppress?.(1);
     try {
-      canvas?.resized?.();
+      safeCanvasResized(canvas, { thresholdPx: 2 });
     } finally {
       suppress?.(-1);
     }
@@ -93,7 +130,7 @@ export async function ensureCanvasVisibleAndFit(ctx, inst, options = {}) {
             : before;
           suppress?.(1);
           try {
-            canvas?.resized?.();
+            safeCanvasResized(canvas, { thresholdPx: 2 });
           } finally {
             suppress?.(-1);
           }
@@ -493,7 +530,7 @@ export async function ensureVisibleOnInstance(ctx, inst, options = {}) {
       if (!guard("recover1.after_raf", inst)) return { ok: false, reason: "skip_stale", step: 1 };
       callbacks.suppressViewboxEvents?.(1);
       try {
-        canvas?.resized?.();
+        safeCanvasResized(canvas, { thresholdPx: 2 });
       } finally {
         callbacks.suppressViewboxEvents?.(-1);
       }

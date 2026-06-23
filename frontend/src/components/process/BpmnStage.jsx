@@ -6048,6 +6048,30 @@ const BpmnStage = forwardRef(function BpmnStage({
   }, [activeProjectId, sessionId, view]);
 
   useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const activeInst = view === "viewer" ? viewerRef.current : modelerRef.current;
+      const canvas = activeInst?.get?.("canvas");
+      if (!canvas) return;
+      let width = 0;
+      let height = 0;
+      for (const entry of entries) {
+        if (entry.target === viewerEl.current || entry.target === editorEl.current) {
+          const rect = entry.contentRect;
+          width = Number(rect?.width || 0);
+          height = Number(rect?.height || 0);
+        }
+      }
+      if (width > 0 && height > 0) {
+        viewportRecovery.safeCanvasResized(canvas, { width, height, thresholdPx: 2 });
+      }
+    });
+    if (viewerEl.current) observer.observe(viewerEl.current);
+    if (editorEl.current) observer.observe(editorEl.current);
+    return () => observer.disconnect();
+  }, [view]);
+
+  useEffect(() => {
     const sid = String(sessionId || "");
     activeSessionRef.current = sid;
     userMutationObservedRef.current = false;

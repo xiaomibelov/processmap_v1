@@ -24,6 +24,21 @@ function debounce(fn, ms) {
   };
 }
 
+function throttle(fn, ms) {
+  let lastArgs;
+  let timer = 0;
+  return function (...args) {
+    lastArgs = args;
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = 0;
+      fn.apply(this, lastArgs);
+    }, ms);
+  };
+}
+
+const VIEWBOX_EMIT_THROTTLE_MS = 100;
+
 function bindOverlayPanDebouncer({ eventBus, inst }) {
   if (!eventBus || !inst) return;
   patchOverlaysInstance(inst);
@@ -32,7 +47,14 @@ function bindOverlayPanDebouncer({ eventBus, inst }) {
 
   const restoreUpdates = () => {
     setOverlaysUpdatePaused(overlays, false);
-    // Final position/scale update after pan/zoom settles.
+    // Restore root visibility once after pan/zoom settles, then perform the
+    // final position/scale update. This batches the expensive _updateRoot work
+    // into a single call instead of running it on every pan frame.
+    try {
+      overlays.show();
+    } catch {
+      // ignore
+    }
     try {
       overlays._updateOverlaysVisibilty(overlays._canvas.viewbox());
     } catch {
@@ -41,23 +63,16 @@ function bindOverlayPanDebouncer({ eventBus, inst }) {
   };
   const scheduleRestore = debounce(restoreUpdates, OVERLAY_PAN_DEBOUNCE_MS);
 
-  eventBus.on("canvas.viewbox.changing", 1300, () => {
+  // Set the paused flag *before* bpmn-js's default overlay hide handler runs
+  // (default priority is 1000). The patched Overlays#hide/show will no-op while
+  // paused, so the root stays visible without per-frame show() calls.
+  eventBus.on("canvas.viewbox.changing", 900, () => {
     setOverlaysUpdatePaused(overlays, true);
     scheduleRestore();
   });
 
   eventBus.on("canvas.viewbox.changed", 1300, () => {
     scheduleRestore();
-  });
-
-  // bpmn-js hides the overlay root by default on viewbox.changing. Run a
-  // low-priority handler after the default one to keep overlays visible.
-  eventBus.on("canvas.viewbox.changing", 500, () => {
-    try {
-      overlays.show();
-    } catch {
-      // ignore
-    }
   });
 }
 
@@ -353,12 +368,7 @@ export function bindViewerStageEvents({
     syncAiQuestionPanelWithSelection(inst, "viewer", selected, "viewer.selection_changed");
   });
 
-  eventBus.on("canvas.viewbox.changed", 1200, () => {
-    if (typeof onDiagramContextMenuDismiss === "function") {
-      onDiagramContextMenuDismiss({ mode: "viewer", reason: "viewbox_changed" });
-    }
-    const suppressed = Number(suppressViewboxEventRef.current || 0) > 0;
-    if (!suppressed) userViewportTouchedRef.current = true;
+  const throttledViewboxChanged = throttle((mode, suppressed) => {
     const snap = getCanvasSnapshot(inst);
     logViewAction(
       "viewbox.changed",
@@ -372,14 +382,23 @@ export function bindViewerStageEvents({
       },
     );
     emitViewboxChanged({
-      mode: "viewer",
+      mode,
       suppressed,
       snapshot: snap,
     });
-    applyPropertiesOverlayDecorForZoomChangeDebounced(inst, "viewer");
+    applyPropertiesOverlayDecorForZoomChangeDebounced(inst, mode);
     if (viewportCuller) {
       viewportCuller.scheduleCull();
     }
+  }, VIEWBOX_EMIT_THROTTLE_MS);
+
+  eventBus.on("canvas.viewbox.changed", 1200, () => {
+    if (typeof onDiagramContextMenuDismiss === "function") {
+      onDiagramContextMenuDismiss({ mode: "viewer", reason: "viewbox_changed" });
+    }
+    const suppressed = Number(suppressViewboxEventRef.current || 0) > 0;
+    if (!suppressed) userViewportTouchedRef.current = true;
+    throttledViewboxChanged("viewer", suppressed);
   });
 }
 
@@ -500,12 +519,7 @@ export function bindModelerStageEvents({
     });
     syncAiQuestionPanelWithSelection(inst, "editor", selected, "editor.selection_changed");
   });
-  eventBus.on("canvas.viewbox.changed", 1200, () => {
-    if (typeof onDiagramContextMenuDismiss === "function") {
-      onDiagramContextMenuDismiss({ mode: "editor", reason: "viewbox_changed" });
-    }
-    const suppressed = Number(suppressViewboxEventRef.current || 0) > 0;
-    if (!suppressed) userViewportTouchedRef.current = true;
+  const throttledViewboxChanged = throttle((mode, suppressed) => {
     const snap = getCanvasSnapshot(inst);
     logViewAction(
       "viewbox.changed",
@@ -519,13 +533,22 @@ export function bindModelerStageEvents({
       },
     );
     emitViewboxChanged({
-      mode: "editor",
+      mode,
       suppressed,
       snapshot: snap,
     });
-    applyPropertiesOverlayDecorForZoomChangeDebounced(inst, "editor");
+    applyPropertiesOverlayDecorForZoomChangeDebounced(inst, mode);
     if (viewportCuller) {
       viewportCuller.scheduleCull();
     }
+  }, VIEWBOX_EMIT_THROTTLE_MS);
+
+  eventBus.on("canvas.viewbox.changed", 1200, () => {
+    if (typeof onDiagramContextMenuDismiss === "function") {
+      onDiagramContextMenuDismiss({ mode: "editor", reason: "viewbox_changed" });
+    }
+    const suppressed = Number(suppressViewboxEventRef.current || 0) > 0;
+    if (!suppressed) userViewportTouchedRef.current = true;
+    throttledViewboxChanged("editor", suppressed);
   });
 }
