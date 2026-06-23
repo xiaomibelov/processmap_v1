@@ -2899,6 +2899,139 @@ class Storage:
             return None
         return None
 
+    def load_session_projection(
+        self,
+        session_id: str,
+        *,
+        user_id: Optional[str] = None,
+        is_admin: Optional[bool] = None,
+        org_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Load a lightweight session projection without the raw bpmn_xml blob."""
+        sid = str(session_id or "").strip()
+        if not sid:
+            return None
+        owner = _scope_user_id(user_id)
+        admin = _scope_is_admin(is_admin)
+        org = _scope_org_id(org_id) or _default_org_id()
+        org_clause, org_params = _org_clause(org)
+        _ensure_schema()
+        columns = """
+            id,
+            title,
+            roles_json,
+            start_role,
+            project_id,
+            mode,
+            notes,
+            notes_by_element_json,
+            interview_json,
+            nodes_json,
+            edges_json,
+            questions_json,
+            mermaid,
+            mermaid_simple,
+            mermaid_lanes,
+            normalized_json,
+            resources_json,
+            analytics_json,
+            ai_llm_state_json,
+            bpmn_xml,
+            LENGTH(COALESCE(bpmn_xml, '')) AS bpmn_xml_length,
+            bpmn_xml_version,
+            diagram_state_version,
+            bpmn_graph_fingerprint,
+            bpmn_meta_json,
+            version,
+            owner_user_id,
+            org_id,
+            created_by,
+            updated_by,
+            created_at,
+            updated_at,
+            navigation_stack,
+            parent_session_id,
+            element_id_in_parent
+        """
+        with _connect() as con:
+            row = con.execute(
+                f"SELECT {columns} FROM sessions WHERE id = ? {org_clause} LIMIT 1",
+                [sid, *org_params],
+            ).fetchone()
+        if not row:
+            return None
+        data = dict(row)
+        scope = _session_read_scope(owner, org, admin)
+        mode = str(scope.get("mode") or "").strip().lower()
+        if mode == "all":
+            return data
+        if mode == "owner":
+            return data if str(data.get("owner_user_id") or "").strip() == owner else None
+        if mode == "scoped":
+            allowed_project_ids = set(scope.get("project_ids") or [])
+            if str(data.get("owner_user_id") or "").strip() == owner:
+                return data
+            if data.get("project_id") and str(data.get("project_id")).strip() in allowed_project_ids:
+                return data
+            return None
+        return None
+
+    def count_bpmn_versions(
+        self,
+        session_id: str,
+        *,
+        org_id: Optional[str] = None,
+    ) -> int:
+        sid = str(session_id or "").strip()
+        if not sid:
+            return 0
+        scope_org = str(org_id or "").strip()
+        _ensure_schema()
+        with _connect() as con:
+            sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
+            if not sess_row:
+                return 0
+            session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
+            oid = scope_org or session_org
+            if oid != session_org:
+                return 0
+            row = con.execute(
+                "SELECT COUNT(*) AS cnt FROM bpmn_versions WHERE session_id = ? AND org_id = ?",
+                [sid, oid],
+            ).fetchone()
+        return int((dict(row) if row else {}).get("cnt") or 0)
+
+    def count_note_threads(
+        self,
+        session_id: str,
+        *,
+        org_id: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> int:
+        sid = str(session_id or "").strip()
+        if not sid:
+            return 0
+        oid = str(org_id or "").strip() or _default_org_id()
+        filters = ["session_id = ?"]
+        params: List[Any] = [sid]
+        if oid:
+            filters.append("org_id = ?")
+            params.append(oid)
+        normalized_status = None
+        if status is not None and str(status or "").strip():
+            normalized_status = _normalize_note_status(status)
+        if normalized_status:
+            filters.append("status = ?")
+            params.append(normalized_status)
+        where = f"WHERE {' AND '.join(filters)}"
+        _ensure_schema()
+        with _connect() as con:
+            row = con.execute(
+                f"SELECT COUNT(*) AS cnt FROM note_threads {where}",
+                params,
+            ).fetchone()
+        return int((dict(row) if row else {}).get("cnt") or 0)
+
     def find_by_parent_element(
         self,
         parent_session_id: str,

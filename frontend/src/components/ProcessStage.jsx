@@ -13,6 +13,7 @@ import SubprocessBreadcrumbs from "../features/process/SubprocessBreadcrumbs.jsx
 import { useAuth } from "../features/auth/AuthProvider";
 import {
   apiGetSession,
+  apiGetSessionMeta,
   apiPatchSession,
   apiRecompute,
   apiStartAutoPass,
@@ -1131,6 +1132,7 @@ function ProcessStage({
   const sessionPresence = useSessionPresence(hasSession ? sid : "", user, {
     surface: "process_stage",
   });
+  const [sessionMeta, setSessionMeta] = useState(null);
 
   const sessionCompanionMetaLive = useMemo(() => {
     return normalizeSessionCompanion(sessionCompanionBridgeSnapshot.companion);
@@ -2499,8 +2501,14 @@ function ProcessStage({
     const reqSeq = Number(autoPassPrecheckReqSeqRef.current || 0) + 1;
     autoPassPrecheckReqSeqRef.current = reqSeq;
     setAutoPassPrecheck((prev) => ({ ...prev, loading: true }));
-    (async () => {
-      const result = await apiGetAutoPassPrecheck(currentSid);
+    let pollTimer = null;
+    const finish = () => {
+      if (pollTimer) {
+        window.clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
+    const applyResult = (result) => {
       if (autoPassPrecheckReqSeqRef.current !== reqSeq) return;
       if (result?.ok) {
         const canRun = result.can_run === true;
@@ -2510,12 +2518,24 @@ function ProcessStage({
           reason: canRun ? "" : (toText(result.message) || "No complete path to EndEvent in main process."),
           code: toText(result.code),
         });
+        finish();
         return;
       }
       const status = Number(result?.status || 0);
       if (status === 404) {
         // Backward compatibility: if precheck endpoint is not present, do not block Auto.
         setAutoPassPrecheck({ loading: false, canRun: true, reason: "", code: "" });
+        finish();
+        return;
+      }
+      if (status === 202) {
+        // Background precheck is running; keep loading and poll every 2s.
+        setAutoPassPrecheck((prev) => ({ ...prev, loading: true, canRun: false, reason: "", code: "PENDING" }));
+        if (!pollTimer) {
+          pollTimer = window.setInterval(() => {
+            void apiGetAutoPassPrecheck(currentSid).then(applyResult);
+          }, 2000);
+        }
         return;
       }
       setAutoPassPrecheck({
@@ -2524,8 +2544,29 @@ function ProcessStage({
         reason: shortErr(result?.error || "No complete path to EndEvent in main process."),
         code: "",
       });
-    })();
+      finish();
+    };
+    void apiGetAutoPassPrecheck(currentSid).then(applyResult);
+    return () => finish();
   }, [sid, shortErr]);
+  useEffect(() => {
+    const currentSid = toText(sid);
+    if (!currentSid) {
+      setSessionMeta(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const meta = await apiGetSessionMeta(currentSid);
+      if (cancelled) return;
+      if (meta?.ok) {
+        setSessionMeta(meta);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sid]);
   useEffect(() => {
     if (tab !== "doc" || !sid) return;
     const current = asObject(asObject(draft?.bpmn_meta)?.auto_pass_v1);

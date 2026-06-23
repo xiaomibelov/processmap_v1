@@ -1293,6 +1293,32 @@ export async function apiGetAnalytics(sessionId) {
   return r.ok ? { ok: true, status: r.status, analytics: r.data } : r;
 }
 
+export async function apiGetSessionMeta(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const buildPath = apiRoutes?.sessions?.meta;
+  if (typeof buildPath !== "function") {
+    return { ok: false, status: 404, error: "route_unavailable" };
+  }
+  const r = okOrError(await request(buildPath(sid)));
+  if (!r.ok) return r;
+  const payload = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    session_id: String(payload.session_id || sid),
+    versions_count: Number(payload.versions_count || 0),
+    notes_count: Number(payload.notes_count || 0),
+    presence_ttl_seconds: Number(payload.presence_ttl_seconds || 0),
+    active_users: Array.isArray(payload.active_users) ? payload.active_users : [],
+    activeUsers: Array.isArray(payload.active_users) ? payload.active_users : [],
+    auto_pass_status: String(payload.auto_pass_status || "").trim(),
+    bpmn_xml_version: Number(payload.bpmn_xml_version || 0),
+    diagram_state_version: Number(payload.diagram_state_version || 0),
+    version: Number(payload.version || 0),
+  };
+}
+
 export async function apiGetBpmnXml(sessionId, options = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
