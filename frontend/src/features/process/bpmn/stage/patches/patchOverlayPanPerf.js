@@ -2,6 +2,10 @@
 // skipping the expensive per-overlay visibility/scale updates while the viewbox
 // is changing. This eliminates the O(n) DOM write storm that drops FPS to <10
 // on diagrams with 50+ property overlays, without hiding overlays from the user.
+//
+// Note: _updateRoot is intentionally NOT paused. It is a cheap O(1) CSS transform
+// on the single overlay root container and must stay in sync with the canvas on
+// every frame so overlays do not drift from their elements.
 
 import Overlays from "diagram-js/lib/features/overlays/Overlays";
 
@@ -51,11 +55,6 @@ export function patchOverlaysPrototype() {
       Overlays.prototype._updateOverlaysVisibilty = createPatchedUpdate(originalUpdate);
       Overlays.prototype._updateOverlaysVisibilty.__overlayPanPatched = true;
     }
-    const originalRoot = Overlays?.prototype?._updateRoot;
-    if (originalRoot && !originalRoot.__overlayPanPatched) {
-      Overlays.prototype._updateRoot = createPatchedToggle(originalRoot);
-      Overlays.prototype._updateRoot.__overlayPanPatched = true;
-    }
     const originalShow = Overlays?.prototype?.show;
     if (originalShow && !originalShow.__overlayPanPatched) {
       Overlays.prototype.show = createPatchedToggle(originalShow);
@@ -85,11 +84,6 @@ export function patchOverlaysInstance(inst) {
       const original = overlays._updateOverlaysVisibilty.bind(overlays);
       overlays._updateOverlaysVisibilty = createPatchedUpdate(original);
       overlays._updateOverlaysVisibilty.__overlayPanPatched = true;
-    }
-    if (!overlays._updateRoot?.__overlayPanPatched) {
-      const original = overlays._updateRoot.bind(overlays);
-      overlays._updateRoot = createPatchedToggle(original);
-      overlays._updateRoot.__overlayPanPatched = true;
     }
     if (!overlays.show?.__overlayPanPatched) {
       const original = overlays.show.bind(overlays);
