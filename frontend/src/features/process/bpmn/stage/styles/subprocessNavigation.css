@@ -17,12 +17,16 @@
   pointer-events: auto;
 }
 
-/* Breadcrumb bar rendered below the process header so it never overlaps toolbar buttons. */
+/* Breadcrumb bar rendered inside the canvas area, below the toolbar (z-92). */
 .subprocessBreadcrumbsBar {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  padding: 8px 12px 0;
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 16px);
   pointer-events: none;
 }
 
@@ -30,10 +34,46 @@
   pointer-events: auto;
 }
 
+.subprocessBackButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  background-color: rgb(245 245 245 / 0.9);
+  border: 1px solid rgb(229 229 229);
+  color: rgb(64 64 64);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.subprocessBackButton:hover {
+  background-color: rgb(229 229 229);
+}
+
+@media (prefers-color-scheme: dark) {
+  .subprocessBackButton {
+    background-color: rgb(38 38 38 / 0.9);
+    border-color: rgb(64 64 64);
+    color: rgb(212 212 212);
+  }
+
+  .subprocessBackButton:hover {
+    background-color: rgb(64 64 64);
+  }
+}
+
 @media (max-width: 768px) {
   .subprocessBreadcrumbsBar {
-    padding: 6px 8px 0;
+    top: 6px;
+    left: 6px;
+    max-width: calc(100% - 12px);
   }
+
   .subprocessBreadcrumbsBar .subprocessBreadcrumbs {
     flex-wrap: wrap;
   }

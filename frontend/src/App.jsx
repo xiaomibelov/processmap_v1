@@ -1213,6 +1213,12 @@ export default function App() {
     if (snapshot) {
       setRestoreViewportSnapshot(snapshot);
     }
+    // Keep breadcrumbs in sync with the current hierarchy depth.
+    setSubprocessBreadcrumbs((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      if (list.length > 1) return list.slice(0, -1);
+      return list;
+    });
     setFocusElementId(res.elementIdInParent || "");
     pushSessionSelectionToUrl({
       projectId,
@@ -3352,6 +3358,11 @@ export default function App() {
         setSubprocessBreadcrumbs([
           { session_id: parentSessionId, name: "" },
           { session_id: sid, name: "" },
+        ]);
+      } else if (loaded.ok) {
+        // Root process: show a single-item breadcrumb with the current session name.
+        setSubprocessBreadcrumbs([
+          { session_id: sid, name: loaded.session?.title || "" },
         ]);
       }
     })();
