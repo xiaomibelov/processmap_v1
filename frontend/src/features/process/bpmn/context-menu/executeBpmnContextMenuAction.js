@@ -871,7 +871,8 @@ export async function executeBpmnContextMenuAction({
       const id = toText(targetMeta?.id);
       if (!id) return { ok: false, error: "missing_target_id" };
       if (typeof onNavigateToSubprocess === "function") {
-        onNavigateToSubprocess(id);
+        const elementName = String(target?.businessObject?.name || target?.name || "").trim();
+        onNavigateToSubprocess(id, undefined, elementName);
         return { ok: true, changedIds: [id], navigatedToSubprocess: id };
       }
       return { ok: false, error: "navigation_handler_missing" };
