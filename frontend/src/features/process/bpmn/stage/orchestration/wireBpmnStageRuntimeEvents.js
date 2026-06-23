@@ -47,11 +47,17 @@ function bindOverlayPanDebouncer({ eventBus, inst }) {
 
   const restoreUpdates = () => {
     setOverlaysUpdatePaused(overlays, false);
-    // Restore root visibility once after pan/zoom settles, then perform the
-    // final position/scale update. This batches the expensive _updateRoot work
-    // into a single call instead of running it on every pan frame.
+    // After pan/zoom settles, make sure the overlay root transform matches the
+    // current viewbox and then refresh per-overlay visibility/scale. The root
+    // transform is not paused during the gesture (it is cheap O(1) work), but
+    // we call it here as a safety net after unpausing.
     try {
       overlays.show();
+    } catch {
+      // ignore
+    }
+    try {
+      overlays._updateRoot(overlays._canvas.viewbox());
     } catch {
       // ignore
     }

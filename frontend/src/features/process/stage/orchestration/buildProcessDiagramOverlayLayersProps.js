@@ -47,6 +47,7 @@ export function buildBpmnDiagramOverlayLayersProps({
   onFocusElementApplied = null,
   restoreViewportSnapshot = null,
   onRestoreViewportSnapshotApplied = null,
+  showOverlaysDuringPan = false,
 }) {
   bumpDrawioPerfCounter("overlay.vm.diagramOverlayProps.builds");
   return {
@@ -85,6 +86,7 @@ export function buildBpmnDiagramOverlayLayersProps({
       onFocusElementApplied,
       restoreViewportSnapshot,
       onRestoreViewportSnapshotApplied,
+      showOverlaysDuringPan,
     },
     bpmnContextMenuProps: {
       menu: bpmnContextMenu,

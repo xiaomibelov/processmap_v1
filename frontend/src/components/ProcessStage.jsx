@@ -457,6 +457,10 @@ function ProcessStage({
   const bpmnVersionsListRequestRef = useRef({ key: "", promise: null });
   const bpmnVersionDetailRequestRef = useRef(new Map());
   const [featureFlags, setFeatureFlags] = useState({ bpmn_fps_meter_enabled: false, canvas_profiler_enabled: false });
+  const [showOverlaysDuringPan, setShowOverlaysDuringPan] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("processmap_overlay_pan_visible") === "true";
+  });
   const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
   const [saveConflictNoticeDismissed, setSaveConflictNoticeDismissed] = useState(false);
@@ -536,6 +540,11 @@ function ProcessStage({
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("processmap_overlay_pan_visible", showOverlaysDuringPan ? "true" : "false");
+  }, [showOverlaysDuringPan]);
 
   useEffect(() => {
     const currentSid = String(sid || "");
@@ -6274,6 +6283,7 @@ function ProcessStage({
     },
     childSessionDiscussionAggregates,
     withHybridOverlayGuard,
+    showOverlaysDuringPan,
   });
 
   const topPanelsView = buildTopPanelsView({
@@ -6706,6 +6716,8 @@ function ProcessStage({
                   view={buildDiagramControlsView({
                     tab,
                     diagramActionBarRef,
+                    showOverlaysDuringPan,
+                    setShowOverlaysDuringPan,
                     pathHighlightEnabled,
                     setDiagramActionPathOpen,
                     setDiagramActionHybridToolsOpen,
