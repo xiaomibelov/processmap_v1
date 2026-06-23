@@ -21,12 +21,37 @@ function toText(v) {
   return String(v || "").trim();
 }
 
-const STATUS_DOT_COLORS = {
-  draft: "bg-slate-400",
-  in_progress: "bg-sky-500",
-  review: "bg-amber-500",
-  ready: "bg-emerald-500",
-  archived: "bg-zinc-500",
+const STATUS_CHIP_STYLES = {
+  draft: {
+    dot: "#9CA3AF",
+    bg: "#F3F4F6",
+    text: "#4B5563",
+    border: "#E5E7EB",
+  },
+  in_progress: {
+    dot: "#3B82F6",
+    bg: "#EFF6FF",
+    text: "#1D4ED8",
+    border: "#BFDBFE",
+  },
+  review: {
+    dot: "#F59E0B",
+    bg: "#FFFBEB",
+    text: "#B45309",
+    border: "#FDE68A",
+  },
+  ready: {
+    dot: "#10B981",
+    bg: "#ECFDF5",
+    text: "#047857",
+    border: "#A7F3D0",
+  },
+  archived: {
+    dot: "#6B7280",
+    bg: "#F9FAFB",
+    text: "#6B7280",
+    border: "#E5E7EB",
+  },
 };
 
 function projectIdFrom(p) {
@@ -180,6 +205,22 @@ export default function TopBar({
   const sessionMenuButtonRef = useRef(null);
   const statusMenuRef = useRef(null);
   const statusMenuButtonRef = useRef(null);
+  useEffect(() => {
+    if (!statusMenuOpen) return;
+    function onDocClick(event) {
+      const target = event.target;
+      if (!statusMenuRef.current || !statusMenuButtonRef.current) return;
+      if (
+        statusMenuRef.current.contains(target) ||
+        statusMenuButtonRef.current.contains(target)
+      ) {
+        return;
+      }
+      setStatusMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [statusMenuOpen]);
 
   useEffect(() => {
     try {
@@ -655,7 +696,12 @@ export default function TopBar({
               <button
                 ref={statusMenuButtonRef}
                 type="button"
-                className={`statusComboPill inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-medium transition hover:opacity-80 ${sessionStatusMeta.badgeClass}`}
+                className="statusComboPill inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm font-medium transition hover:opacity-90"
+                style={{
+                  backgroundColor: STATUS_CHIP_STYLES[normalizedSessionStatus]?.bg || "#F3F4F6",
+                  color: STATUS_CHIP_STYLES[normalizedSessionStatus]?.text || "#4B5563",
+                  borderColor: STATUS_CHIP_STYLES[normalizedSessionStatus]?.border || "#E5E7EB",
+                }}
                 title={hasStatusAlternatives && !isChangingSessionStatus ? "Статус сессии — нажмите чтобы изменить" : "Статус сессии"}
                 data-testid="topbar-session-status"
                 onClick={() => hasStatusAlternatives && !isChangingSessionStatus && setStatusMenuOpen((prev) => !prev)}
@@ -667,9 +713,12 @@ export default function TopBar({
                     <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
                   </svg>
                 ) : (
-                  <span className={`h-2 w-2 rounded-full ${STATUS_DOT_COLORS[normalizedSessionStatus] || "bg-current opacity-60"}`} />
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: STATUS_CHIP_STYLES[normalizedSessionStatus]?.dot || "#9CA3AF" }}
+                  />
                 )}
-                <span>{isChangingSessionStatus ? "Сохранение…" : sessionStatusMeta.label}</span>
+                <span className="whitespace-nowrap">{isChangingSessionStatus ? "Сохранение…" : sessionStatusMeta.label}</span>
                 {hasStatusAlternatives && !isChangingSessionStatus ? (
                   <svg viewBox="0 0 10 6" className="ml-0.5 h-2.5 w-2.5 opacity-70" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M1 1l4 4 4-4" />
@@ -679,16 +728,18 @@ export default function TopBar({
               {statusMenuOpen ? (
                 <div
                   ref={statusMenuRef}
-                  className="absolute left-0 top-[calc(100%+6px)] z-[130] grid min-w-[170px] gap-0.5 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
+                  className="absolute left-0 top-[calc(100%+4px)] z-[130] min-w-[160px] max-w-[200px] overflow-hidden rounded-md border border-[#E5E7EB] bg-white py-1 shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
                   data-testid="topbar-status-change-menu"
+                  style={{ animation: "statusMenuFade 150ms ease-out" }}
                 >
                   {statusOptions.map((s) => {
-                    const meta = getManualSessionStatusMeta(s.value);
+                    const style = STATUS_CHIP_STYLES[s.value] || STATUS_CHIP_STYLES.draft;
                     return (
                       <button
                         key={s.value}
                         type="button"
-                        className={`secondaryBtn h-8 w-full justify-start gap-2 px-2.5 text-left text-xs ${normalizedSessionStatus === s.value ? "ring-1 ring-accent/60" : ""}`}
+                        className="flex h-7 w-full items-center gap-2 px-2 text-left text-xs font-medium transition hover:bg-[#F9FAFB]"
+                        style={{ color: normalizedSessionStatus === s.value ? style.text : "#374151" }}
                         onClick={() => {
                           setStatusMenuOpen(false);
                           if (normalizedSessionStatus !== s.value) {
@@ -697,7 +748,7 @@ export default function TopBar({
                         }}
                         disabled={isChangingSessionStatus}
                       >
-                        <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT_COLORS[s.value] || "bg-current opacity-60"}`} />
+                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: style.dot }} />
                         <span>{s.label}</span>
                       </button>
                     );

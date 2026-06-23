@@ -1231,7 +1231,12 @@ export default function App() {
       focusElementId: res.elementIdInParent || "",
       projectContext: projectRouteContext,
     });
-    openSession(res.parentSessionId, { useCache: true, source: "subprocess_return" });
+    // Use cached parent session data to avoid an extra API + XML fetch.
+    const cachedParentSession = parentSid ? sessionCacheRef.current.get(parentSid) : null;
+    openSession(res.parentSessionId, {
+      source: "subprocess_return",
+      session: cachedParentSession || null,
+    });
   }, [openSession, projectId, projectRouteContext]);
 
   const openWorkspaceSession = useCallback(async (sessionLike, options = {}) => {

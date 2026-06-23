@@ -1,3 +1,14 @@
+@keyframes statusMenuFade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .subprocess-focus-highlight {
   position: absolute;
   top: -4px;
@@ -22,12 +33,12 @@
 .subprocessBreadcrumbsBar {
   position: absolute;
   top: 8px;
-  left: 92px;
+  left: 124px;
   z-index: 10;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  max-width: calc(100% - 100px);
+  max-width: calc(100% - 132px);
   pointer-events: none;
 }
 
@@ -71,8 +82,8 @@
 @media (max-width: 768px) {
   .subprocessBreadcrumbsBar {
     top: 6px;
-    left: 72px;
-    max-width: calc(100% - 80px);
+    left: 96px;
+    max-width: calc(100% - 104px);
   }
 
   .subprocessBreadcrumbsBar .subprocessBreadcrumbs {
