@@ -77,6 +77,7 @@ from .settings import load_llm_settings, llm_status, save_llm_settings, verify_l
 from .ai.execution_log import check_ai_rate_limit, hash_ai_input, record_ai_execution
 from .ai.prompt_registry import get_active_prompt, seed_existing_ai_prompts
 from .redis_lock import acquire_session_lock
+from .cache import session_cache
 from .redis_cache import (
     cache_get_json,
     cache_set_json,
@@ -8609,6 +8610,10 @@ def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = Non
     if sid:
         _invalidate_session_open_cache_for_session(sid)
         _invalidate_tldr_cache_for_session(sid)
+        try:
+            session_cache.invalidate_session(sid)
+        except Exception as exc:
+            logger.warning("_invalidate_session_caches: session_cache invalidation failed for %s: %s", sid, exc)
 
 
 def _extract_report_summary_text(report_row: Dict[str, Any]) -> str:
