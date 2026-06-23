@@ -768,6 +768,8 @@ export default function TopBar({
             <label className="inline-flex min-w-[210px] items-center gap-2 rounded-full border border-border/70 bg-panel2/40 px-3 py-1 text-xs text-muted">
               <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em]">Org</span>
               <select
+                id="org-switcher-select"
+                name="active_org"
                 className="h-7 min-h-0 flex-1 border-0 bg-transparent px-0 text-sm font-medium text-fg outline-none"
                 value={toText(activeOrgId)}
                 onChange={(event) => onOrgChange?.(event.target.value)}

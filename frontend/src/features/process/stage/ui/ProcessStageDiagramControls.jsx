@@ -661,6 +661,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             <>
               <label className="diagramActionCheckboxRow">
                 <input
+                  id="path-highlight-enabled"
+                  name="path_highlight_enabled"
                   type="checkbox"
                   checked={pathHighlightEnabled}
                   onChange={(event) => setPathHighlightEnabled(!!event.target.checked)}
@@ -691,6 +693,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
               <div className="diagramActionField">
                 <span>Alt / sequence</span>
                 <select
+                  id="path-highlight-sequence"
+                  name="path_highlight_sequence"
                   className="select h-8 min-h-0 text-xs"
                   value={pathHighlightSequenceKey}
                   onChange={(event) => {
@@ -1196,6 +1200,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
                     <div className="playbackAdvancedField">
                       <span>Источник решений</span>
                       <select
+                        id="playback-decision-source"
+                        name="playback_decision_source"
                         className="select h-8 min-h-0 text-xs"
                         value={playbackDecisionModeIsAuto ? "auto_pass" : "manual"}
                         disabled={!canSetPlaybackDecisionMode}
@@ -1214,6 +1220,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
                     <div className="playbackAdvancedField">
                       <span>Скорость</span>
                       <select
+                        id="playback-speed"
+                        name="playback_speed"
                         className="select h-8 min-h-0 text-xs"
                         value={playbackSpeed}
                         onChange={(event) => setPlaybackSpeed(toText(event.target.value) || "1")}
@@ -1227,6 +1235,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
                     </div>
                     <label className="diagramActionCheckboxRow">
                       <input
+                        id="playback-manual-gateway"
+                        name="playback_manual_gateway"
                         type="checkbox"
                         checked={!!playbackManualAtGateway}
                         disabled={playbackDecisionModeIsAuto}
@@ -1237,6 +1247,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
                     </label>
                     <label className="diagramActionCheckboxRow">
                       <input
+                        id="playback-autocamera"
+                        name="playback_autocamera"
                         type="checkbox"
                         checked={!!playbackAutoCamera}
                         onChange={(event) => setPlaybackAutoCamera(!!event.target.checked)}
@@ -1458,6 +1470,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             <div className="diagramIssueRow">
               <label className="diagramActionCheckboxRow">
                 <input
+                  id="robot-meta-filter-ready"
+                  name="robot_meta_filter_ready"
                   type="checkbox"
                   checked={!!robotMetaOverlayFilters?.ready}
                   onChange={() => toggleRobotMetaOverlayFilter("ready")}
@@ -1469,6 +1483,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             <div className="diagramIssueRow">
               <label className="diagramActionCheckboxRow">
                 <input
+                  id="robot-meta-filter-incomplete"
+                  name="robot_meta_filter_incomplete"
                   type="checkbox"
                   checked={!!robotMetaOverlayFilters?.incomplete}
                   onChange={() => toggleRobotMetaOverlayFilter("incomplete")}
@@ -1507,6 +1523,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
           {robotMetaListOpen ? (
             <div className="diagramIssueListWrap mt-2 border-t border-border/70 pt-2" ref={diagramRobotMetaListRef} data-testid="diagram-action-robotmeta-list">
               <input
+                id="robot-meta-search"
+                name="robot_meta_search"
                 type="text"
                 className="input h-8 min-h-0 text-xs"
                 value={robotMetaListSearch}
@@ -1592,6 +1610,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
                 <div className="diagramIssueRow" key={`quality_row_${row.key}`}>
                   <label className="diagramActionCheckboxRow">
                     <input
+                      id={`quality-overlay-filter-${row.key}`}
+                      name={`quality_overlay_filter_${row.key}`}
                       type="checkbox"
                       checked={checked}
                       onChange={() => toggleQualityOverlayFilter(row.key)}
@@ -1616,6 +1636,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
           {qualityOverlayListKey ? (
             <div className="diagramIssueListWrap">
               <input
+                id="quality-overlay-search"
+                name="quality_overlay_search"
                 type="text"
                 className="input h-8 min-h-0 text-xs"
                 value={qualityOverlaySearch}

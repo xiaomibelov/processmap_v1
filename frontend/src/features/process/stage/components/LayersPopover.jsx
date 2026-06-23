@@ -845,6 +845,8 @@ export default function LayersPopover({
               <div className="flex min-w-0 items-center gap-2">
                 <span className="text-[11px] text-slate-500">W</span>
                 <input
+                  id="layers-selected-width"
+                  name="layers_selected_width"
                   type="number" min="24" max="1600" step="1"
                   className="min-w-0 w-20 rounded border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900"
                   value={selectedDrawioWidthDraft}
@@ -854,6 +856,8 @@ export default function LayersPopover({
                 />
                 <span className="text-[11px] text-slate-500">H</span>
                 <input
+                  id="layers-selected-height"
+                  name="layers_selected_height"
                   type="number" min="24" max="1600" step="1"
                   className="min-w-0 w-20 rounded border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900"
                   value={selectedDrawioHeightDraft}
@@ -894,6 +898,8 @@ export default function LayersPopover({
           <div className="diagramIssueRow">
             <label className="diagramActionCheckboxRow">
               <input
+                id="layers-drawio-enabled"
+                name="layers_drawio_enabled"
                 type="checkbox"
                 checked={drawioEnabled}
                 onChange={() => onToggleDrawioVisible?.()}
@@ -934,6 +940,8 @@ export default function LayersPopover({
           <div className="diagramIssueRow">
             <span className="text-[10px] text-slate-500">Opacity</span>
             <input
+              id="layers-drawio-opacity"
+              name="layers_drawio_opacity"
               className="accent-accent flex-1"
               type="range" min="5" max="100" step="5"
               value={drawioOpacityPct}
@@ -992,6 +1000,8 @@ export default function LayersPopover({
           <div className="diagramIssueRow">
             <label className="diagramActionCheckboxRow">
               <input
+                id="layers-hybrid-enabled"
+                name="layers_hybrid_enabled"
                 type="checkbox"
                 checked={!!hybridVisible}
                 onChange={(event) => { if (event.target.checked) showHybridLayer(); else hideHybridLayer(); }}
@@ -1026,11 +1036,11 @@ export default function LayersPopover({
           {/* Строка 2: lock + затемнить */}
           <div className="diagramIssueRow">
             <label className="diagramActionCheckboxRow">
-              <input type="checkbox" checked={!!hybridUiPrefs.lock} onChange={toggleHybridLayerLock} data-testid="diagram-action-layers-lock" />
+              <input id="layers-hybrid-lock" name="layers_hybrid_lock" type="checkbox" checked={!!hybridUiPrefs.lock} onChange={toggleHybridLayerLock} data-testid="diagram-action-layers-lock" />
               <span>Блок</span>
             </label>
             <label className="diagramActionCheckboxRow">
-              <input type="checkbox" checked={hybridFocusActive} onChange={toggleHybridLayerFocus} disabled={!hybridVisible} data-testid="diagram-action-layers-focus" />
+              <input id="layers-hybrid-focus" name="layers_hybrid_focus" type="checkbox" checked={hybridFocusActive} onChange={toggleHybridLayerFocus} disabled={!hybridVisible} data-testid="diagram-action-layers-focus" />
               <span>Затемнить BPMN</span>
             </label>
           </div>
@@ -1065,11 +1075,11 @@ export default function LayersPopover({
                     </span>
                     <div className="diagramActionPopoverActions mt-0">
                       <label className="diagramActionCheckboxRow">
-                        <input type="checkbox" checked={layer.visible !== false} onChange={() => toggleHybridV2LayerVisibility(layerId)} data-testid={`diagram-action-layers-layer-visible-${layerId}`} />
+                        <input id={`layers-layer-visible-${layerId}`} name={`layers_layer_visible_${layerId}`} type="checkbox" checked={layer.visible !== false} onChange={() => toggleHybridV2LayerVisibility(layerId)} data-testid={`diagram-action-layers-layer-visible-${layerId}`} />
                         <span>вид</span>
                       </label>
                       <label className="diagramActionCheckboxRow">
-                        <input type="checkbox" checked={layer.locked === true} onChange={() => toggleHybridV2LayerLock(layerId)} data-testid={`diagram-action-layers-layer-lock-${layerId}`} />
+                        <input id={`layers-layer-lock-${layerId}`} name={`layers_layer_lock_${layerId}`} type="checkbox" checked={layer.locked === true} onChange={() => toggleHybridV2LayerLock(layerId)} data-testid={`diagram-action-layers-layer-lock-${layerId}`} />
                         <span>блок</span>
                       </label>
                       {[100, 60, 30].map((opacity) => (
