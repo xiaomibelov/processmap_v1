@@ -894,6 +894,7 @@ export default function App() {
   const bpmnStageRef = useRef(null);
   const parentViewportSnapshotRef = useRef(new Map());
   const sessionCacheRef = useRef(new Map());
+  const bpmnXmlCacheRef = useRef(new Map());
   const discussionLinkedElementFocusResolversRef = useRef(new Map());
   const notesPanelRef = useRef(null);
   const activeOrgIdRef = useRef(String(activeOrgId || "").trim());
@@ -1023,6 +1024,15 @@ export default function App() {
     if (!sid) return;
     writeLocalBpmnMeta(sid, draft?.bpmn_meta);
   }, [draft?.bpmn_meta, draft?.session_id]);
+
+  // Cache the loaded BPMN XML by session id so subprocess return can skip the backend fetch.
+  useEffect(() => {
+    const sid = String(draft?.session_id || draft?.id || "").trim();
+    const xml = String(draft?.bpmn_xml || "").trim();
+    if (sid && xml) {
+      bpmnXmlCacheRef.current.set(sid, xml);
+    }
+  }, [draft?.session_id, draft?.id, draft?.bpmn_xml]);
 
   async function refreshMeta() {
     const r = await apiMeta();
@@ -1184,7 +1194,30 @@ export default function App() {
     if (sessionCacheRef.current && draft?.session_id === String(sessionIdArg || "").trim()) {
       sessionCacheRef.current.set(String(sessionIdArg || "").trim(), draft);
     }
-    setSubprocessBreadcrumbs(res.breadcrumbs || []);
+    // Build the breadcrumb stack client-side by pushing the new child crumb.
+    // This keeps nested navigation stable regardless of whether backend breadcrumbs
+    // include the full hierarchy.
+    setSubprocessBreadcrumbs((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const backendList = Array.isArray(res.breadcrumbs) ? res.breadcrumbs : [];
+      if (list.length === 0) {
+        return backendList.length > 0
+          ? backendList
+          : [
+              { session_id: String(sessionIdArg || "").trim(), name: draft?.title || "", element_id: elementId },
+              { session_id: res.subprocessSessionId, name: "Подпроцесс", element_id: res.targetElementId || elementId },
+            ];
+      }
+      const childCrumb = backendList[backendList.length - 1] || {
+        session_id: res.subprocessSessionId,
+        name: "Подпроцесс",
+        element_id: res.targetElementId || elementId,
+      };
+      const lastSid = String(list[list.length - 1]?.session_id || "").trim();
+      const childSid = String(childCrumb?.session_id || "").trim();
+      if (lastSid && childSid && lastSid === childSid) return list;
+      return [...list, childCrumb];
+    });
     setFocusElementId(res.targetElementId || "");
     pushSessionSelectionToUrl({
       projectId,
@@ -1623,6 +1656,9 @@ export default function App() {
     // Invalidate cached session data so subprocess return always loads the latest diagram.
     if (sessionCacheRef.current) {
       sessionCacheRef.current.delete(sid);
+    }
+    if (bpmnXmlCacheRef.current) {
+      bpmnXmlCacheRef.current.delete(sid);
     }
     const source = String(session?._sync_source || session?._source || "session_sync");
     setDraftPersisted((prevDraft) => {
@@ -3675,6 +3711,7 @@ export default function App() {
         onFocusElementApplied={() => setFocusElementId("")}
         restoreViewportSnapshot={restoreViewportSnapshot}
         onRestoreViewportSnapshotApplied={() => setRestoreViewportSnapshot(null)}
+        bpmnXmlCacheRef={bpmnXmlCacheRef}
         onRefresh={async () => {
           await refreshProjects();
           await refreshSessions(projectId);

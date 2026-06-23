@@ -150,6 +150,7 @@ export default function AppShell({
   onBreadcrumbNavigate = null,
   onReturnToParent = null,
   bpmnStageRef = null,
+  bpmnXmlCacheRef = null,
   focusElementId = "",
   onFocusElementApplied = null,
   restoreViewportSnapshot = null,
@@ -326,6 +327,7 @@ export default function AppShell({
               subprocessBreadcrumbs={subprocessBreadcrumbs}
               onBreadcrumbNavigate={onBreadcrumbNavigate}
               onReturnToParent={onReturnToParent}
+              bpmnXmlCacheRef={bpmnXmlCacheRef}
               bpmnStageRef={bpmnStageRef}
               focusElementId={focusElementId}
               onFocusElementApplied={onFocusElementApplied}
