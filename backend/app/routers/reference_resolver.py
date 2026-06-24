@@ -30,10 +30,15 @@ def get_reference_options(
     if org_id:
         require_org_member_for_enterprise(request, org_id)
 
-    if not source or ":" not in source:
+    if not source:
         raise HTTPException(status_code=422, detail="invalid source format; expected type:identifier")
 
-    source_type, source_id = source.split(":", 1)
+    if ":" in source:
+        source_type, source_id = source.split(":", 1)
+    elif "/" in source:
+        source_type, source_id = source.split("/", 1)
+    else:
+        raise HTTPException(status_code=422, detail="invalid source format; expected type:identifier")
     if source_type == "table":
         items = list_reference_options(source_id, org_id=org_id or None, q=q, limit=min(max(limit, 1), 100))
     elif source_type == "org_dict":

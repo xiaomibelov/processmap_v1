@@ -631,16 +631,18 @@ def list_reference_options(
     if oid:
         clauses.append("(org_id = ? OR org_id IS NULL)")
         params.append(oid)
-    if qq:
-        clauses.append("name LIKE ?")
-        params.append(f"%{qq}%")
+    # SQLite LIKE/LOWER are ASCII-only by default; filter in Python for Unicode case folding.
     where = " AND ".join(clauses)
     with _connect() as con:
         rows = con.execute(
-            f"SELECT * FROM {table_name} WHERE {where} ORDER BY name LIMIT ?",
-            [*params, lim],
+            f"SELECT * FROM {table_name} WHERE {where} ORDER BY name",
+            params,
         ).fetchall()
-    return [_row_to_dict(row) for row in rows]
+    out = [_row_to_dict(row) for row in rows]
+    if qq:
+        q_lower = qq.lower()
+        out = [row for row in out if q_lower in str(row.get("name") or "").lower()]
+    return out[:lim]
 
 
 def _seed_process_property_metadata(con: Optional[sqlite3.Connection] = None) -> None:
