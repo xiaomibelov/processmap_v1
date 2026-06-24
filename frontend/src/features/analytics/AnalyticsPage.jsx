@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   apiExportAnalyticsActionsCsv,
+  apiExportAnalyticsActionsXlsx,
   apiGetAnalyticsActions,
   apiGetAnalyticsDashboard,
 } from "../../lib/api.js";
@@ -8,6 +9,7 @@ import AnalyticsPropertiesPanel from "./AnalyticsPropertiesPanel.jsx";
 import DashboardMetricCard from "./DashboardMetricCard.jsx";
 import AnalyticsDataTable, { Badge, Pill } from "./AnalyticsDataTable.jsx";
 import AnalyticsDashboardsPanel from "./AnalyticsDashboardsPanel.jsx";
+import { AnalyticsError, AnalyticsErrorBoundary, AnalyticsLoading } from "./AnalyticsStatus.jsx";
 import EmptyState from "./registry/EmptyState.jsx";
 import {
   ActivityIcon,
@@ -73,28 +75,40 @@ function useAnalyticsDashboard(scope, scopeId) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const abortRef = useRef(null);
 
-  useEffect(() => {
-    let alive = true;
-    async function load() {
-      setLoading(true);
-      setError("");
-      const result = await apiGetAnalyticsDashboard(scope, scopeId);
-      if (!alive) return;
+  const loadData = useCallback(async ({ signal } = {}) => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await apiGetAnalyticsDashboard(scope, scopeId, { signal });
+      if (signal?.aborted) return;
       setLoading(false);
       if (!result?.ok) {
         setError(text(result?.error) || "Не удалось загрузить аналитику.");
         return;
       }
       setData(result.data);
+    } catch (e) {
+      if (signal?.aborted || e?.name === "AbortError") return;
+      setLoading(false);
+      setError(String(e?.message || e || "Ошибка загрузки"));
     }
-    load();
-    return () => {
-      alive = false;
-    };
   }, [scope, scopeId]);
 
-  return { data, loading, error };
+  useEffect(() => {
+    const controller = new AbortController();
+    if (abortRef.current) {
+      try { abortRef.current.abort(); } catch {}
+    }
+    abortRef.current = controller;
+    loadData({ signal: controller.signal });
+    return () => {
+      controller.abort();
+    };
+  }, [loadData]);
+
+  return { data, loading, error, retry: () => loadData() };
 }
 
 function FilterBar({ options = {}, filters = {}, onChange }) {
@@ -202,18 +216,18 @@ function AnalyticsActionsPanel({ scope, scopeId }) {
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
+  const abortRef = useRef(null);
 
-  useEffect(() => {
-    let alive = true;
-    async function load() {
-      setLoading(true);
-      setError("");
-      const params = { page, limit };
-      if (filters.section) params.section_filter = [filters.section];
-      if (filters.role) params.role_filter = [filters.role];
-      if (filters.type) params.type_filter = [filters.type];
-      const result = await apiGetAnalyticsActions(scope, scopeId, params);
-      if (!alive) return;
+  const loadData = useCallback(async ({ signal } = {}) => {
+    setLoading(true);
+    setError("");
+    const params = { page, limit };
+    if (filters.section) params.section_filter = [filters.section];
+    if (filters.role) params.role_filter = [filters.role];
+    if (filters.type) params.type_filter = [filters.type];
+    try {
+      const result = await apiGetAnalyticsActions(scope, scopeId, params, { signal });
+      if (signal?.aborted) return;
       setLoading(false);
       if (!result?.ok) {
         setError(text(result?.error) || "Не удалось загрузить реестр действий.");
@@ -222,12 +236,24 @@ function AnalyticsActionsPanel({ scope, scopeId }) {
       setRows(result.rows);
       setTotal(result.total);
       setOptions(result.filter_options || {});
+    } catch (e) {
+      if (signal?.aborted || e?.name === "AbortError") return;
+      setLoading(false);
+      setError(String(e?.message || e || "Ошибка загрузки"));
     }
-    load();
-    return () => {
-      alive = false;
-    };
   }, [scope, scopeId, page, limit, filters]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (abortRef.current) {
+      try { abortRef.current.abort(); } catch {}
+    }
+    abortRef.current = controller;
+    loadData({ signal: controller.signal });
+    return () => {
+      controller.abort();
+    };
+  }, [loadData]);
 
   async function handleExportCsv() {
     if (exporting) return;
@@ -235,6 +261,16 @@ function AnalyticsActionsPanel({ scope, scopeId }) {
     const result = await apiExportAnalyticsActionsCsv(scope, scopeId);
     if (result?.ok && result.blob) {
       downloadBlob(result.blob, result.filename || `actions-${scope}-${scopeId}.csv`);
+    }
+    setExporting(false);
+  }
+
+  async function handleExportXlsx() {
+    if (exporting) return;
+    setExporting(true);
+    const result = await apiExportAnalyticsActionsXlsx(scope, scopeId);
+    if (result?.ok && result.blob) {
+      downloadBlob(result.blob, result.filename || `actions-${scope}-${scopeId}.xlsx`);
     }
     setExporting(false);
   }
@@ -260,10 +296,18 @@ function AnalyticsActionsPanel({ scope, scopeId }) {
           <DownloadIcon className="w-4 h-4" />
           {exporting ? "Экспорт…" : "CSV"}
         </button>
+        <button
+          type="button"
+          onClick={handleExportXlsx}
+          disabled={exporting}
+          className="analyticsExportBtn"
+        >
+          {exporting ? "Экспорт…" : "Excel"}
+        </button>
       </div>
-      {loading ? <div className="text-sm text-muted">Загрузка…</div> : null}
-      {error ? <div className="text-sm text-red-500">{error}</div> : null}
-      {!loading && !rows.length ? (
+      {loading && !rows.length ? <AnalyticsLoading text="Загрузка реестра действий…" /> : null}
+      {error ? <AnalyticsError message={error} onRetry={() => loadData()} /> : null}
+      {!loading && !error && !rows.length ? (
         <EmptyState
           title="Нет действий"
           description="Для выбранного scope и фильтров не найдено действий."
@@ -309,7 +353,7 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
     }
   }, [embedded, initialScope, initialScopeId, initialModule]);
 
-  const { data, loading, error } = useAnalyticsDashboard(scope, scopeId);
+  const { data, loading, error, retry } = useAnalyticsDashboard(scope, scopeId);
 
   const derivedScopeIds = useMemo(() => {
     if (!data) return { workspaceId: "", projectId: "", sessionId: "" };
@@ -386,29 +430,31 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
           })}
         </div>
 
-        {module === ANALYTICS_MODULE_OVERVIEW && (
-          <div>
-            {loading ? <div className="text-sm text-muted">Загрузка…</div> : null}
-            {error ? <div className="text-sm text-red-500">{error}</div> : null}
-            {data ? (
-              <div className="analyticsMetricsGrid">
-                <MetricCard label="Действий" value={formatNumber(data.actions_total)} tone="blue" icon={ActivityIcon} sparklineItems={sparklineItems} />
-                <MetricCard label="Длительность" value={formatNumber(data.total_duration_min)} unit="мин" tone="teal" icon={ClockIcon} sparklineItems={sparklineItems} />
-                <MetricCard label="Крит. путь" value={formatNumber(data.critical_path_min)} unit="мин" tone="warning" icon={CriticalIcon} sparklineItems={sparklineItems} />
-                <MetricCard label="Handoffs" value={formatNumber(data.handoffs_count)} tone="amber" icon={HandoffIcon} sparklineItems={sparklineItems} />
-                <MetricCard label="Открыто" value={formatNumber(data.open_questions)} tone="orange" icon={QuestionIcon} sparklineItems={sparklineItems} />
-                <MetricCard label="Критично" value={formatNumber(data.critical_questions)} tone="danger" icon={CriticalIcon} sparklineItems={sparklineItems} />
-                <MetricCard label="Сессий" value={formatNumber(data.sessions_count)} tone="slate" icon={SessionIcon} sparklineItems={sparklineItems} />
-                <MetricCard label="Проектов" value={formatNumber(data.projects_count)} tone="slate" icon={ProjectIcon} sparklineItems={sparklineItems} />
-              </div>
-            ) : null}
-          </div>
-        )}
-        {module === ANALYTICS_MODULE_ACTIONS && <AnalyticsActionsPanel scope={scope} scopeId={scopeId} />}
-        {module === ANALYTICS_MODULE_PROPERTIES && <AnalyticsPropertiesPanel scope={scope} scopeId={scopeId} />}
-        {module === ANALYTICS_MODULE_DASHBOARDS && (
-          <AnalyticsDashboardsPanel scope={scope} scopeId={scopeId} data={data} loading={loading} error={error} />
-        )}
+        <AnalyticsErrorBoundary>
+          {module === ANALYTICS_MODULE_OVERVIEW && (
+            <div>
+              {loading && !data ? <AnalyticsLoading /> : null}
+              {error ? <AnalyticsError message={error} onRetry={retry} /> : null}
+              {data ? (
+                <div className="analyticsMetricsGrid">
+                  <MetricCard label="Действий" value={formatNumber(data.actions_total)} tone="blue" icon={ActivityIcon} sparklineItems={sparklineItems} />
+                  <MetricCard label="Длительность" value={formatNumber(data.total_duration_min)} unit="мин" tone="teal" icon={ClockIcon} sparklineItems={sparklineItems} />
+                  <MetricCard label="Крит. путь" value={formatNumber(data.critical_path_min)} unit="мин" tone="warning" icon={CriticalIcon} sparklineItems={sparklineItems} />
+                  <MetricCard label="Handoffs" value={formatNumber(data.handoffs_count)} tone="amber" icon={HandoffIcon} sparklineItems={sparklineItems} />
+                  <MetricCard label="Открыто" value={formatNumber(data.open_questions)} tone="orange" icon={QuestionIcon} sparklineItems={sparklineItems} />
+                  <MetricCard label="Критично" value={formatNumber(data.critical_questions)} tone="danger" icon={CriticalIcon} sparklineItems={sparklineItems} />
+                  <MetricCard label="Сессий" value={formatNumber(data.sessions_count)} tone="slate" icon={SessionIcon} sparklineItems={sparklineItems} />
+                  <MetricCard label="Проектов" value={formatNumber(data.projects_count)} tone="slate" icon={ProjectIcon} sparklineItems={sparklineItems} />
+                </div>
+              ) : null}
+            </div>
+          )}
+          {module === ANALYTICS_MODULE_ACTIONS && <AnalyticsActionsPanel scope={scope} scopeId={scopeId} />}
+          {module === ANALYTICS_MODULE_PROPERTIES && <AnalyticsPropertiesPanel scope={scope} scopeId={scopeId} />}
+          {module === ANALYTICS_MODULE_DASHBOARDS && (
+            <AnalyticsDashboardsPanel scope={scope} scopeId={scopeId} data={data} loading={loading} error={error} retry={retry} />
+          )}
+        </AnalyticsErrorBoundary>
       </section>
     </main>
   );

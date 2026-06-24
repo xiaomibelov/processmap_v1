@@ -1,0 +1,21 @@
+{
+  "contour": "fix/analytics-redis-cache-xlsx",
+  "type": "fix",
+  "branch": "fix/analytics-redis-cache-xlsx",
+  "base": "new-origin/main",
+  "base_commit": "5e564cd06f88030e5a743ccb9c8a335e23c142f1",
+  "status": "in_progress",
+  "phases": {
+    "diagnose": "pending",
+    "white_screen_fix": "pending",
+    "redis_cache": "pending",
+    "xlsx_export": "pending",
+    "verify": "pending"
+  },
+  "rag_preflight": "No prior RAG context found — proceeding from first principles.",
+  "notes": [
+    "White screen on repeated analytics tab loads",
+    "Missing cache causes repeated full recompute",
+    "CSV only; need XLSX export"
+  ]
+}

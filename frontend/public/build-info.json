@@ -1,9 +1,9 @@
 {
-  "branch": "feature/analytics-super-redesign",
-  "sha": "7e12c7e230e5d89d2cb1aa7efb79245d7f16a404",
-  "shaShort": "7e12c7e2",
-  "timestamp": "2026-06-24T19:57:29.618Z",
-  "contourId": "feature-analytics-super-redesign",
+  "branch": "fix/analytics-redis-cache-xlsx",
+  "sha": "5e564cd06f88030e5a743ccb9c8a335e23c142f1",
+  "shaShort": "5e564cd0",
+  "timestamp": "2026-06-24T20:50:41.375Z",
+  "contourId": "fix-analytics-redis-cache-xlsx",
   "dirty": true,
   "host": "clearvestnic.ru",
   "env": "dev"

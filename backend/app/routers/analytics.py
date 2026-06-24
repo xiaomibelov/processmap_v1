@@ -18,6 +18,11 @@ from ..analytics_read_model import (
 )
 from ..routers.process_properties_registry import _extract_camunda_rows
 from ..routers.product_actions_registry import _registry_row
+from ..analytics_cache import (
+    ANALYTICS_CACHE_TTL_SEC,
+    cached_analytics,
+    invalidate_analytics_scope,
+)
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -138,8 +143,12 @@ def get_dashboard(
 ):
     oid = org_id or _org_id_from_request(request)
     require_analytics_scope(request, scope, scope_id, oid)
-    data = _load_snapshot(scope, scope_id, oid)
-    return _ok(data, {"scope_type": scope, "scope_id": scope_id, "computed_at": data.get("computed_at", 0)})
+
+    def _compute():
+        data = _load_snapshot(scope, scope_id, oid)
+        return _ok(data, {"scope_type": scope, "scope_id": scope_id, "computed_at": data.get("computed_at", 0)})
+
+    return cached_analytics("dashboard", scope, scope_id, oid, compute=_compute)
 
 
 @router.get("/{scope}/{scope_id}/dashboard")
@@ -153,8 +162,12 @@ def get_dashboard_path(
         raise HTTPException(status_code=400, detail="invalid scope_type")
     oid = org_id or _org_id_from_request(request)
     require_analytics_scope(request, scope, scope_id, oid)
-    data = _load_snapshot(scope, scope_id, oid)
-    return _ok(data, {"scope_type": scope, "scope_id": scope_id, "computed_at": data.get("computed_at", 0)})
+
+    def _compute():
+        data = _load_snapshot(scope, scope_id, oid)
+        return _ok(data, {"scope_type": scope, "scope_id": scope_id, "computed_at": data.get("computed_at", 0)})
+
+    return cached_analytics("dashboard", scope, scope_id, oid, compute=_compute)
 
 
 def _session_ids_for_scope(scope_type: str, scope_id: str, org_id: str) -> List[str]:
@@ -273,8 +286,9 @@ def _infer_property_value_type(name: str, value: Any) -> str:
     if value_str.endswith(_DURATION_SUFFIXES):
         return "duration"
     try:
-        json.loads(value_str)
-        return "json"
+        parsed = json.loads(value_str)
+        if isinstance(parsed, (dict, list)):
+            return "json"
     except Exception:
         pass
     try:
@@ -393,17 +407,28 @@ def get_properties(
 ):
     oid = org_id or _org_id_from_request(request)
     require_analytics_scope(request, scope, scope_id, oid)
-    rows = _properties_rows(scope, scope_id, oid)
-    rows = _apply_filters(rows, type_filter, category_filter, source_filter, [], [])
-    total = len(rows)
-    start = (page - 1) * limit
-    end = start + limit
-    paged = rows[start:end]
-    options = _filter_options(rows)
-    return _ok(
-        {"rows": paged, "total": total, "page": page, "limit": limit, "filter_options": options},
-        {"scope_type": scope, "scope_id": scope_id, "computed_at": int(time.time())},
-    )
+    cache_params = {
+        "page": page,
+        "limit": limit,
+        "type_filter": sorted(type_filter),
+        "category_filter": sorted(category_filter),
+        "source_filter": sorted(source_filter),
+    }
+
+    def _compute():
+        rows = _properties_rows(scope, scope_id, oid)
+        rows = _apply_filters(rows, type_filter, category_filter, source_filter, [], [])
+        total = len(rows)
+        start = (page - 1) * limit
+        end = start + limit
+        paged = rows[start:end]
+        options = _filter_options(rows)
+        return _ok(
+            {"rows": paged, "total": total, "page": page, "limit": limit, "filter_options": options},
+            {"scope_type": scope, "scope_id": scope_id, "computed_at": int(time.time())},
+        )
+
+    return cached_analytics("properties", scope, scope_id, oid, params=cache_params, compute=_compute)
 
 
 def _actions_rows(scope_type: str, scope_id: str, org_id: str) -> List[Dict[str, Any]]:
@@ -465,17 +490,28 @@ def get_actions(
 ):
     oid = org_id or _org_id_from_request(request)
     require_analytics_scope(request, scope, scope_id, oid)
-    rows = _actions_rows(scope, scope_id, oid)
-    rows = _apply_filters(rows, type_filter, [], [], section_filter, role_filter)
-    total = len(rows)
-    start = (page - 1) * limit
-    end = start + limit
-    paged = rows[start:end]
-    options = _filter_options(rows)
-    return _ok(
-        {"rows": paged, "total": total, "page": page, "limit": limit, "filter_options": options},
-        {"scope_type": scope, "scope_id": scope_id, "computed_at": int(time.time())},
-    )
+    cache_params = {
+        "page": page,
+        "limit": limit,
+        "section_filter": sorted(section_filter),
+        "role_filter": sorted(role_filter),
+        "type_filter": sorted(type_filter),
+    }
+
+    def _compute():
+        rows = _actions_rows(scope, scope_id, oid)
+        rows = _apply_filters(rows, type_filter, [], [], section_filter, role_filter)
+        total = len(rows)
+        start = (page - 1) * limit
+        end = start + limit
+        paged = rows[start:end]
+        options = _filter_options(rows)
+        return _ok(
+            {"rows": paged, "total": total, "page": page, "limit": limit, "filter_options": options},
+            {"scope_type": scope, "scope_id": scope_id, "computed_at": int(time.time())},
+        )
+
+    return cached_analytics("actions", scope, scope_id, oid, params=cache_params, compute=_compute)
 
 
 def _csv_response(rows: List[Dict[str, Any]], filename: str, fieldnames: List[str]) -> Response:
@@ -536,8 +572,55 @@ def export_actions_csv(
     )
 
 
-@router.get("/properties/summary")
-def get_properties_summary(
+def _xlsx_response(rows: List[Dict[str, Any]], filename: str, columns: List[tuple]) -> Response:
+    import io
+
+    import xlsxwriter
+
+    out = io.BytesIO()
+    workbook = xlsxwriter.Workbook(out, {"in_memory": True})
+    worksheet = workbook.add_worksheet()
+
+    header_format = workbook.add_format({
+        "bold": True,
+        "bg_color": "#4F46E5",
+        "font_color": "#FFFFFF",
+        "border": 1,
+        "align": "center",
+        "valign": "vcenter",
+    })
+    cell_format = workbook.add_format({"border": 1, "valign": "vcenter"})
+
+    for col_idx, (_, label) in enumerate(columns):
+        worksheet.write(0, col_idx, label, header_format)
+
+    for row_idx, row in enumerate(rows, start=1):
+        for col_idx, (key, _) in enumerate(columns):
+            value = row.get(key)
+            if value is None:
+                value = ""
+            worksheet.write(row_idx, col_idx, value, cell_format)
+
+    # Auto-width
+    for col_idx, (_, label) in enumerate(columns):
+        max_len = len(str(label))
+        for row in rows:
+            max_len = max(max_len, len(str(row.get(col_idx) or "")))
+        worksheet.set_column(col_idx, col_idx, min(max_len + 3, 60))
+
+    worksheet.autofilter(0, 0, len(rows), len(columns) - 1)
+    workbook.close()
+    out.seek(0)
+
+    return Response(
+        content=out.read(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/properties/export.xlsx")
+def export_properties_xlsx(
     request: Request,
     scope: str = Query(..., pattern="^(workspace|project|session)$"),
     scope_id: str = Query(..., min_length=1),
@@ -550,10 +633,73 @@ def get_properties_summary(
     require_analytics_scope(request, scope, scope_id, oid)
     rows = _properties_rows(scope, scope_id, oid)
     rows = _apply_filters(rows, type_filter, category_filter, source_filter, [], [])
-    return _ok(
-        _properties_summary(rows),
-        {"scope_type": scope, "scope_id": scope_id, "computed_at": int(time.time())},
-    )
+    columns = [
+        ("bpmn_id", "BPMN ID"),
+        ("name", "Название"),
+        ("value", "Значение"),
+        ("type", "Тип"),
+        ("category", "Категория"),
+        ("source", "Источник"),
+        ("element_type", "Тип элемента"),
+        ("usage_count", "Использований"),
+    ]
+    return _xlsx_response(rows, f"properties-{scope}-{scope_id}.xlsx", columns)
+
+
+@router.get("/actions/export.xlsx")
+def export_actions_xlsx(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    section_filter: List[str] = Query(default_factory=list),
+    role_filter: List[str] = Query(default_factory=list),
+    type_filter: List[str] = Query(default_factory=list),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+    rows = _actions_rows(scope, scope_id, oid)
+    rows = _apply_filters(rows, type_filter, [], [], section_filter, role_filter)
+    columns = [
+        ("bpmn_id", "BPMN ID"),
+        ("name", "Действие"),
+        ("section", "Секция"),
+        ("role", "Роль"),
+        ("type", "Тип"),
+        ("product_group", "Группа"),
+        ("product_name", "Продукт"),
+        ("source", "Источник"),
+    ]
+    return _xlsx_response(rows, f"actions-{scope}-{scope_id}.xlsx", columns)
+
+
+@router.get("/properties/summary")
+def get_properties_summary(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    type_filter: List[str] = Query(default_factory=list),
+    category_filter: List[str] = Query(default_factory=list),
+    source_filter: List[str] = Query(default_factory=list),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+    cache_params = {
+        "type_filter": sorted(type_filter),
+        "category_filter": sorted(category_filter),
+        "source_filter": sorted(source_filter),
+    }
+
+    def _compute():
+        rows = _properties_rows(scope, scope_id, oid)
+        rows = _apply_filters(rows, type_filter, category_filter, source_filter, [], [])
+        return _ok(
+            _properties_summary(rows),
+            {"scope_type": scope, "scope_id": scope_id, "computed_at": int(time.time())},
+        )
+
+    return cached_analytics("properties_summary", scope, scope_id, oid, params=cache_params, compute=_compute)
 
 
 @router.get("/actions/summary")
@@ -568,9 +714,18 @@ def get_actions_summary(
 ):
     oid = org_id or _org_id_from_request(request)
     require_analytics_scope(request, scope, scope_id, oid)
-    rows = _actions_rows(scope, scope_id, oid)
-    rows = _apply_filters(rows, type_filter, [], [], section_filter, role_filter)
-    return _ok(
-        _actions_summary(rows),
-        {"scope_type": scope, "scope_id": scope_id, "computed_at": int(time.time())},
-    )
+    cache_params = {
+        "section_filter": sorted(section_filter),
+        "role_filter": sorted(role_filter),
+        "type_filter": sorted(type_filter),
+    }
+
+    def _compute():
+        rows = _actions_rows(scope, scope_id, oid)
+        rows = _apply_filters(rows, type_filter, [], [], section_filter, role_filter)
+        return _ok(
+            _actions_summary(rows),
+            {"scope_type": scope, "scope_id": scope_id, "computed_at": int(time.time())},
+        )
+
+    return cached_analytics("actions_summary", scope, scope_id, oid, params=cache_params, compute=_compute)
