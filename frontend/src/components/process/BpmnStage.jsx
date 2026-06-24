@@ -28,6 +28,7 @@ import { applyFullBpmnDecorSet } from "../../features/process/bpmn/stage/orchest
 import useBpmnSettledDecorFanout from "../../features/process/bpmn/stage/orchestration/useBpmnSettledDecorFanout";
 import useDiagramLoadStateMachine from "../../features/process/bpmn/stage/load/useDiagramLoadStateMachine";
 import DiagramLoadBoundary from "../../features/process/bpmn/stage/load/DiagramLoadBoundary";
+import { useV2OverlayState } from "../../features/process/bpmn/stage/state/useV2OverlayState";
 import {
   bindModelerStageEvents,
   bindViewerStageEvents,
@@ -1719,8 +1720,6 @@ const BpmnStage = forwardRef(function BpmnStage({
   const selectedPropertiesOverlayPreviewRef = useRef(asObject(selectedPropertiesOverlayPreview));
   const propertiesOverlayAlwaysEnabledRef = useRef(!!propertiesOverlayAlwaysEnabled);
   const propertiesOverlayAlwaysPreviewByElementIdRef = useRef(asObject(propertiesOverlayAlwaysPreviewByElementId));
-  const v2OverlaysEnabledRef = useRef(!!v2OverlaysEnabled);
-  const v2OverlaysExpandedRef = useRef(!!v2OverlaysExpanded);
   const replaceCommandStateRef = useRef({
     oldId: "",
     oldType: "",
@@ -1885,17 +1884,16 @@ const BpmnStage = forwardRef(function BpmnStage({
     applyPropertiesOverlayDecor(viewerRef.current, "viewer");
   }, [propertiesOverlayAlwaysPreviewByElementId]);
 
-  useEffect(() => {
-    v2OverlaysEnabledRef.current = !!v2OverlaysEnabled;
-  }, [v2OverlaysEnabled]);
-
-  useEffect(() => {
-    v2OverlaysExpandedRef.current = !!v2OverlaysExpanded;
-    if (typeof document === "undefined") return;
-    document.querySelectorAll(".fpc-overlay-v2-host").forEach((host) => {
-      host.classList.toggle("fpc-overlay-v2-host--expanded", v2OverlaysExpandedRef.current);
-    });
-  }, [v2OverlaysExpanded]);
+  const v2OverlayState = useV2OverlayState({
+    v2OverlaysEnabled,
+    v2OverlaysExpanded,
+    sessionId,
+    threadCountsRef: elementThreadCountsRef,
+    applyNotes: (kind) => {
+      const inst = kind === "viewer" ? viewerRef.current : modelerRef.current;
+      if (inst) applyUserNotesDecor(inst, kind);
+    },
+  });
 
   useEffect(() => {
     draftRef.current = draft;
@@ -6363,21 +6361,6 @@ const BpmnStage = forwardRef(function BpmnStage({
     };
     window.addEventListener(DIAGRAM_FLASH_EVENT, onFlash);
     return () => window.removeEventListener(DIAGRAM_FLASH_EVENT, onFlash);
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const onElementNoteThreadsChanged = (event) => {
-      const detail = event?.detail && typeof event.detail === "object" ? event.detail : {};
-      const sid = toText(detail?.sessionId || detail?.sid);
-      const activeSid = toText(activeSessionRef.current || sessionId);
-      if (sid && activeSid && sid !== activeSid) return;
-      elementThreadCountsRef.current = asObject(detail?.countsByElementId);
-      applyUserNotesDecor(viewerRef.current, "viewer");
-      applyUserNotesDecor(modelerRef.current, "editor");
-    };
-    window.addEventListener("processmap:element-note-threads-changed", onElementNoteThreadsChanged);
-    return () => window.removeEventListener("processmap:element-note-threads-changed", onElementNoteThreadsChanged);
   }, [sessionId]);
 
   useEffect(() => {
