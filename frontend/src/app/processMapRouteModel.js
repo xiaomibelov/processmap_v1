@@ -552,3 +552,67 @@ export function replaceProcessMapHistory(routeRaw, options = {}) {
     replace: true,
   });
 }
+
+// ------- Backend-driven analytics path routes -------
+export const ANALYTICS_MODULE_OVERVIEW = "overview";
+export const ANALYTICS_MODULE_ACTIONS = "actions";
+export const ANALYTICS_MODULE_PROPERTIES = "properties";
+export const ANALYTICS_MODULE_DASHBOARDS = "dashboards";
+export const VALID_ANALYTICS_MODULES = new Set([
+  ANALYTICS_MODULE_OVERVIEW,
+  ANALYTICS_MODULE_ACTIONS,
+  ANALYTICS_MODULE_PROPERTIES,
+  ANALYTICS_MODULE_DASHBOARDS,
+]);
+
+export function normalizeAnalyticsScope(value) {
+  const scope = text(value).toLowerCase();
+  if (scope === "workspace" || scope === "project" || scope === "session") return scope;
+  return "workspace";
+}
+
+export function normalizeAnalyticsModule(value) {
+  const moduleId = text(value).toLowerCase() || ANALYTICS_MODULE_OVERVIEW;
+  return VALID_ANALYTICS_MODULES.has(moduleId) ? moduleId : ANALYTICS_MODULE_OVERVIEW;
+}
+
+export function buildAnalyticsPath(scope, scopeId, moduleId = ANALYTICS_MODULE_OVERVIEW) {
+  const normalizedScope = normalizeAnalyticsScope(scope);
+  const normalizedModule = normalizeAnalyticsModule(moduleId);
+  const id = text(scopeId);
+  if (!id) return "/analytics";
+  if (normalizedModule === ANALYTICS_MODULE_OVERVIEW) return `/analytics/${normalizedScope}/${id}`;
+  return `/analytics/${normalizedScope}/${id}/${normalizedModule}`;
+}
+
+export function parseAnalyticsPath(pathname = "") {
+  const path = text(pathname).replace(/\/+$/g, "");
+  const match = path.match(/^\/analytics\/(workspace|project|session)\/([^/]+)(?:\/(overview|actions|properties|dashboards))?$/i);
+  if (!match) return null;
+  return {
+    scope: match[1].toLowerCase(),
+    scopeId: text(match[2]),
+    module: normalizeAnalyticsModule(match[3]),
+  };
+}
+
+export function readLegacyAnalyticsRedirect(locationLike = typeof window !== "undefined" ? window.location : undefined) {
+  try {
+    const url = asLocationUrl(locationLike);
+    const params = new URLSearchParams(url.search || "");
+    const surface = text(params.get("surface")).toLowerCase();
+    const workspaceId = text(params.get("workspace"));
+    const projectId = text(params.get("project"));
+    const sessionId = projectId ? text(params.get("session")) : "";
+    const scope = sessionId ? "session" : projectId ? "project" : workspaceId ? "workspace" : "";
+    const scopeId = sessionId || projectId || workspaceId || "";
+    if (!scope || !scopeId) return null;
+    if (surface === ANALYTICS_HUB_SURFACE) return { scope, scopeId, module: ANALYTICS_MODULE_OVERVIEW };
+    if (surface === PRODUCT_ACTIONS_REGISTRY_SURFACE) return { scope, scopeId, module: ANALYTICS_MODULE_ACTIONS };
+    if (surface === PROPERTIES_REGISTRY_SURFACE) return { scope, scopeId, module: ANALYTICS_MODULE_PROPERTIES };
+    if (surface === DASHBOARDS_SURFACE) return { scope, scopeId, module: ANALYTICS_MODULE_DASHBOARDS };
+    return null;
+  } catch {
+    return null;
+  }
+}
