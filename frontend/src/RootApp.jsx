@@ -7,6 +7,7 @@ import { FeatureFlagsProvider } from "./features/config/featureFlagsContext";
 import LoginModal from "./features/auth/LoginModal";
 import LoginPage from "./features/auth/LoginPage";
 import PublicHomePage from "./features/auth/PublicHomePage";
+import AnalyticsApp from "./features/analytics/AnalyticsApp.jsx";
 import { canAccessAdminConsole } from "./features/admin/adminUtils";
 import { ru } from "./shared/i18n/ru";
 
@@ -114,7 +115,8 @@ function AppRoutes() {
     return `fpc_org_choice_done:${uid}`;
   }, [user?.id]);
   const activeOrg = String(activeOrgId || "").trim();
-  const shouldSelectOrg = Boolean(isAuthed && pathname.startsWith("/app") && orgItems.length > 1 && !orgChoiceDone);
+  const isWorkspaceLike = pathname.startsWith("/app") || pathname.startsWith("/analytics");
+  const shouldSelectOrg = Boolean(isAuthed && isWorkspaceLike && orgItems.length > 1 && !orgChoiceDone);
   const canAccessAdmin = useMemo(() => canAccessAdminConsole(user, orgItems), [orgItems, user]);
 
   const nextFromQuery = useMemo(() => {
@@ -134,7 +136,7 @@ function AppRoutes() {
       return;
     }
 
-    if (!isAuthed && (pathname.startsWith("/app") || pathname.startsWith("/admin")) && !reauthRequired) {
+    if (!isAuthed && (pathname.startsWith("/app") || pathname.startsWith("/admin") || pathname.startsWith("/analytics")) && !reauthRequired) {
       const next = encodeURIComponent(`${pathname}${search}${hash}`);
       navigate(`/?next=${next}`, { replace: true });
     }
@@ -215,7 +217,7 @@ function AppRoutes() {
           // ignore storage errors
         }
       }
-      if (pathname !== "/app") navigate("/app", { replace: true });
+      if (pathname !== "/app" && !pathname.startsWith("/analytics")) navigate("/app", { replace: true });
     } finally {
       setOrgSwitchBusy(false);
     }
@@ -230,8 +232,10 @@ function AppRoutes() {
   }
 
   const wantsWorkspace = pathname.startsWith("/app");
+  const wantsAnalytics = pathname.startsWith("/analytics");
   const wantsAdmin = pathname.startsWith("/admin");
   const showWorkspace = wantsWorkspace && isAuthed;
+  const showAnalytics = wantsAnalytics && isAuthed;
   const showAdmin = wantsAdmin && isAuthed;
 
   return (
@@ -281,7 +285,13 @@ function AppRoutes() {
         ) : (
           <App />
         )
-      ) : wantsWorkspace ? (
+      ) : showAnalytics ? (
+        isAuthed && shouldSelectOrg ? (
+          <OrgSelectScreen orgs={orgItems} activeOrgId={activeOrg} busy={orgSwitchBusy} onSelect={handleOrgSelect} />
+        ) : (
+          <AnalyticsApp />
+        )
+      ) : wantsWorkspace || wantsAnalytics ? (
         <LoginPage
           onBack={() => navigate("/")}
           onSuccess={() => {

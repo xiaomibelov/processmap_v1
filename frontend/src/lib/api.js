@@ -1834,3 +1834,43 @@ export async function apiPatchFeatureFlags(flags) {
   const r = okOrError(await request(apiRoutes.admin.featureFlagsPatch(), { method: "PATCH", body: JSON.stringify({ flags }) }));
   return r.ok ? { ok: true, flags: r.data?.flags || {} } : r;
 }
+
+// ------- Analytics (backend-driven) -------
+export async function apiGetAnalyticsDashboard(scope, scopeId) {
+  const r = okOrError(await request(apiRoutes.analytics.dashboard(scope, scopeId)));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  return { ok: true, status: r.status, data, meta: r.meta };
+}
+
+export async function apiGetAnalyticsProperties(scope, scopeId, params = {}) {
+  const r = okOrError(await request(apiRoutes.analytics.properties(scope, scopeId, params)));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    rows: Array.isArray(data.rows) ? data.rows : [],
+    total: Number(data.total || 0),
+    page: Number(data.page || params.page || 1),
+    limit: Number(data.limit || params.limit || 50),
+    filter_options: data.filter_options && typeof data.filter_options === "object" ? data.filter_options : {},
+    meta: r.meta,
+  };
+}
+
+export async function apiGetAnalyticsActions(scope, scopeId, params = {}) {
+  const r = okOrError(await request(apiRoutes.analytics.actions(scope, scopeId, params)));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    rows: Array.isArray(data.rows) ? data.rows : [],
+    total: Number(data.total || 0),
+    page: Number(data.page || params.page || 1),
+    limit: Number(data.limit || params.limit || 50),
+    filter_options: data.filter_options && typeof data.filter_options === "object" ? data.filter_options : {},
+    meta: r.meta,
+  };
+}
