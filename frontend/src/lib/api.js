@@ -1874,3 +1874,17 @@ export async function apiGetAnalyticsActions(scope, scopeId, params = {}) {
     meta: r.meta,
   };
 }
+
+export async function apiExportAnalyticsPropertiesCsv(scope, scopeId) {
+  const r = await request(apiRoutes.analytics.exportPropertiesCsv(scope, scopeId), { method: "GET", responseType: "blob" });
+  if (!r.ok) return r;
+  const blob = r.data instanceof Blob ? r.data : new Blob([String(r.text || "")]);
+  return { ok: true, status: r.status, blob, filename: `properties-${scope}-${scopeId}.csv` };
+}
+
+export async function apiExportAnalyticsActionsCsv(scope, scopeId) {
+  const r = await request(apiRoutes.analytics.exportActionsCsv(scope, scopeId), { method: "GET", responseType: "blob" });
+  if (!r.ok) return r;
+  const blob = r.data instanceof Blob ? r.data : new Blob([String(r.text || "")]);
+  return { ok: true, status: r.status, blob, filename: `actions-${scope}-${scopeId}.csv` };
+}
