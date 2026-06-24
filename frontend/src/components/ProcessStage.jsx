@@ -288,6 +288,88 @@ function readableBpmnLabel(...values) {
   return readableBpmnText(...values);
 }
 
+function formatSnapshotTs(ts) {
+  return formatRevisionTimestampRu(ts);
+}
+
+function defaultCheckpointLabel(ts) {
+  return `Контрольная точка ${formatSnapshotTs(ts || Date.now())}`;
+}
+
+function snapshotLabel(item) {
+  const explicit = String(item?.label || "").trim();
+  if (explicit) return explicit;
+  const comment = String(item?.comment || "").trim();
+  if (comment) return comment;
+  const revisionNumber = Number(item?.revisionNumber || item?.rev || 0);
+  if (revisionNumber > 0) return `Версия ${revisionNumber}`;
+  if (item?.pinned) return defaultCheckpointLabel(item?.ts);
+  return "Без названия";
+}
+
+function normalizeBpmnVersionListItem(itemRaw) {
+  const item = itemRaw && typeof itemRaw === "object" ? itemRaw : {};
+  const hasXml = Object.prototype.hasOwnProperty.call(item, "bpmn_xml")
+    || Object.prototype.hasOwnProperty.call(item, "xml");
+  const xml = hasXml ? String(item?.bpmn_xml || item?.xml || "") : "";
+  const versionNumber = Number(item?.version_number || item?.versionNumber || item?.revisionNumber || item?.rev || 0);
+  const userFacingRevisionNumber = Number(
+    item?.user_facing_revision_number
+    || item?.userFacingRevisionNumber
+    || item?.revision_display_number
+    || item?.revisionDisplayNumber
+    || 0,
+  );
+  const createdAt = normalizeRevisionTimestampMs(
+    item?.created_at_ms
+    || item?.createdAtMs
+    || item?.created_at
+    || item?.createdAt
+    || item?.ts
+    || 0,
+  );
+  const sourceAction = String(item?.source_action || item?.sourceAction || item?.reason || "import_bpmn").trim() || "import_bpmn";
+  const sourceClassification = classifyRevisionSourceAction(sourceAction);
+  const normalizedSourceAction = String(sourceClassification.action || sourceAction || "import_bpmn").trim() || "import_bpmn";
+  const importNote = String(item?.import_note || item?.importNote || item?.comment || "").trim();
+  const author = formatRevisionAuthor({
+    ...(asObject(item?.author)),
+    id: item?.author_id || item?.authorId || item?.created_by || item?.createdBy,
+    name: item?.author_name || item?.authorName,
+    email: item?.author_email || item?.authorEmail,
+    display: item?.author_display || item?.authorDisplay,
+  });
+  const id = String(item?.id || "").trim();
+  return {
+    ...item,
+    id,
+    xml,
+    ts: createdAt,
+    reason: normalizedSourceAction,
+    reasonLabel: localizeRevisionSourceAction(normalizedSourceAction),
+    reasonBucket: String(sourceClassification.bucket || "meaningful"),
+    isMeaningfulRevision: sourceClassification.isMeaningful !== false,
+    isTechnicalRevision: sourceClassification.isTechnical === true,
+    comment: importNote,
+    technicalRevisionNumber: versionNumber,
+    userFacingRevisionNumber,
+    revisionDisplayNumber: userFacingRevisionNumber,
+    revisionNumber: userFacingRevisionNumber || versionNumber,
+    rev: userFacingRevisionNumber || versionNumber,
+    sessionPayloadHash: String(item?.session_payload_hash || item?.sessionPayloadHash || "").trim(),
+    sessionVersion: Number(item?.session_version || item?.sessionVersion || 0),
+    sessionUpdatedAt: Number(item?.session_updated_at || item?.sessionUpdatedAt || 0),
+    authorId: author.authorId,
+    authorName: author.authorName,
+    authorEmail: author.authorEmail,
+    authorLabel: author.label,
+    hasXml,
+    len: Number(item?.len || (hasXml ? xml.length : 0) || 0),
+  };
+}
+
+
+
 const IDLE_SAVE_UPLOAD_EVENT = Object.freeze({
   event: "",
   stage: "idle",
@@ -4323,85 +4405,6 @@ function ProcessStage({
     [versionsList, previewSnapshotId],
   );
 
-  function formatSnapshotTs(ts) {
-    return formatRevisionTimestampRu(ts);
-  }
-
-  function defaultCheckpointLabel(ts) {
-    return `Контрольная точка ${formatSnapshotTs(ts || Date.now())}`;
-  }
-
-  function snapshotLabel(item) {
-    const explicit = String(item?.label || "").trim();
-    if (explicit) return explicit;
-    const comment = String(item?.comment || "").trim();
-    if (comment) return comment;
-    const revisionNumber = Number(item?.revisionNumber || item?.rev || 0);
-    if (revisionNumber > 0) return `Версия ${revisionNumber}`;
-    if (item?.pinned) return defaultCheckpointLabel(item?.ts);
-    return "Без названия";
-  }
-
-  const normalizeBpmnVersionListItem = useCallback((itemRaw) => {
-    const item = itemRaw && typeof itemRaw === "object" ? itemRaw : {};
-    const hasXml = Object.prototype.hasOwnProperty.call(item, "bpmn_xml")
-      || Object.prototype.hasOwnProperty.call(item, "xml");
-    const xml = hasXml ? String(item?.bpmn_xml || item?.xml || "") : "";
-    const versionNumber = Number(item?.version_number || item?.versionNumber || item?.revisionNumber || item?.rev || 0);
-    const userFacingRevisionNumber = Number(
-      item?.user_facing_revision_number
-      || item?.userFacingRevisionNumber
-      || item?.revision_display_number
-      || item?.revisionDisplayNumber
-      || 0,
-    );
-    const createdAt = normalizeRevisionTimestampMs(
-      item?.created_at_ms
-      || item?.createdAtMs
-      || item?.created_at
-      || item?.createdAt
-      || item?.ts
-      || 0,
-    );
-    const sourceAction = String(item?.source_action || item?.sourceAction || item?.reason || "import_bpmn").trim() || "import_bpmn";
-    const sourceClassification = classifyRevisionSourceAction(sourceAction);
-    const normalizedSourceAction = String(sourceClassification.action || sourceAction || "import_bpmn").trim() || "import_bpmn";
-    const importNote = String(item?.import_note || item?.importNote || item?.comment || "").trim();
-    const author = formatRevisionAuthor({
-      ...(asObject(item?.author)),
-      id: item?.author_id || item?.authorId || item?.created_by || item?.createdBy,
-      name: item?.author_name || item?.authorName,
-      email: item?.author_email || item?.authorEmail,
-      display: item?.author_display || item?.authorDisplay,
-    });
-    const id = String(item?.id || "").trim();
-    return {
-      ...item,
-      id,
-      xml,
-      ts: createdAt,
-      reason: normalizedSourceAction,
-      reasonLabel: localizeRevisionSourceAction(normalizedSourceAction),
-      reasonBucket: String(sourceClassification.bucket || "meaningful"),
-      isMeaningfulRevision: sourceClassification.isMeaningful !== false,
-      isTechnicalRevision: sourceClassification.isTechnical === true,
-      comment: importNote,
-      technicalRevisionNumber: versionNumber,
-      userFacingRevisionNumber,
-      revisionDisplayNumber: userFacingRevisionNumber,
-      revisionNumber: userFacingRevisionNumber || versionNumber,
-      rev: userFacingRevisionNumber || versionNumber,
-      sessionPayloadHash: String(item?.session_payload_hash || item?.sessionPayloadHash || "").trim(),
-      sessionVersion: Number(item?.session_version || item?.sessionVersion || 0),
-      sessionUpdatedAt: Number(item?.session_updated_at || item?.sessionUpdatedAt || 0),
-      authorId: author.authorId,
-      authorName: author.authorName,
-      authorEmail: author.authorEmail,
-      authorLabel: author.label,
-      hasXml,
-      len: Number(item?.len || (hasXml ? xml.length : 0) || 0),
-    };
-  }, []);
 
   const semanticDiffView = useMemo(() => {
     return buildRevisionDiffView({
