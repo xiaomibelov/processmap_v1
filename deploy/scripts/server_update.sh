@@ -12,7 +12,7 @@ fi
 
 docker compose config -q
 docker compose build api frontend
-docker compose up -d --remove-orphans postgres redis api frontend gateway
+docker compose up -d --remove-orphans postgres redis api frontend
 
 "$ROOT_DIR/deploy/scripts/server_smoke.sh"
 echo "[deploy] update completed"
