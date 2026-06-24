@@ -6,12 +6,10 @@ export function normalizeProcessTabId(tab) {
 }
 
 export function isKnownProcessTab(tab) {
-  return tab === "interview" || tab === "diagram" || tab === "xml" || tab === "doc" || tab === "dod";
+  return tab === "interview" || tab === "diagram" || tab === "xml" || tab === "doc" || tab === "dod" || tab === "analytics";
 }
 
 export function defaultProcessTabForSession(draft) {
-  const hasXml = String(draft?.bpmn_xml || "").trim().length > 0;
-  if (hasXml) return "diagram";
   return "diagram";
 }
 

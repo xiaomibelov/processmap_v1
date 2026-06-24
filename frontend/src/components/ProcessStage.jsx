@@ -8,6 +8,7 @@ import ProcessPropertiesRegistryPage from "./process/analysis/ProcessPropertiesR
 import AnalyticsDashboards from "../features/analytics/AnalyticsDashboards.jsx";
 import AnalyticsSectionTabs from "../features/analytics/AnalyticsSectionTabs.jsx";
 import AnalyticsHub from "../features/analytics/AnalyticsHub.jsx";
+import AnalyticsPage from "../features/analytics/AnalyticsPage.jsx";
 import WorkspaceExplorer from "../features/explorer/WorkspaceExplorer";
 import SubprocessBreadcrumbs from "../features/process/SubprocessBreadcrumbs.jsx";
 import { useAuth } from "../features/auth/AuthProvider";
@@ -493,7 +494,7 @@ function ProcessStage({
     return false;
   }
 
-  const { user } = useAuth();
+  const { user, activeOrgId } = useAuth();
   const localBpmnRef = useRef(null);
   const bpmnRef = bpmnStageRef || localBpmnRef;
   const importInputRef = useRef(null);
@@ -6773,6 +6774,10 @@ function ProcessStage({
           />
         ) : tab === "dod" ? (
           <DodStage readiness={dodReadinessV1} />
+        ) : tab === "analytics" ? (
+          <div className="h-full min-h-0 overflow-hidden">
+            <AnalyticsPage scope="session" scopeId={sid} module="overview" orgId={activeOrgId} embedded />
+          </div>
         ) : (
           <div className="relative h-full min-h-0">
             <div className={isInterview ? "absolute inset-0 opacity-0 pointer-events-none" : "absolute inset-0"}>

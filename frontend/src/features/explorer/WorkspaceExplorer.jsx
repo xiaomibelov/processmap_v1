@@ -77,6 +77,7 @@ import AppRouteLink from "../../components/navigation/AppRouteLink.jsx";
 import NotesAggregateBadge from "../../components/NotesAggregateBadge.jsx";
 import { useSessionNoteAggregates } from "../../lib/sessionNoteAggregates.js";
 import { buildAppWorkspaceHref, shouldHandleClientNavigation } from "../navigation/appLinkBehavior.js";
+import AnalyticsPage from "../analytics/AnalyticsPage.jsx";
 
 // ─── Icons (inline SVG to avoid external deps) ────────────────────────────────
 function IcoFolder({ open = false, className = "" }) {
@@ -1517,6 +1518,7 @@ function ExplorerPane({
   });
   const [explorerSort, setExplorerSort] = useState(null);
   const [treeStateByContext, setTreeStateByContext] = useState({});
+  const [activeTab, setActiveTab] = useState("projects");
   const inFlightFolderLoadsRef = useRef(new Set());
   const contextKey = `${String(workspaceId || "").trim()}::${String(folderId || "").trim()}`;
 
@@ -1869,13 +1871,35 @@ function ExplorerPane({
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {/* Header */}
       <div className="px-4 pt-3 pb-2 border-b border-border flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
-        <Breadcrumb
-          crumbs={page?.breadcrumbs || []}
-          onNavigate={(crumb) => {
-            if (crumb.type === "workspace") onNavigateToBreadcrumb(workspaceId, "");
-            else onNavigateToBreadcrumb(workspaceId, crumb.id);
-          }}
-        />
+        <div className="flex items-center gap-3">
+          <Breadcrumb
+            crumbs={page?.breadcrumbs || []}
+            onNavigate={(crumb) => {
+              if (crumb.type === "workspace") onNavigateToBreadcrumb(workspaceId, "");
+              else onNavigateToBreadcrumb(workspaceId, crumb.id);
+            }}
+          />
+          <div className="hidden sm:flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
+            <button
+              type="button"
+              onClick={() => setActiveTab("projects")}
+              className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
+                activeTab === "projects" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
+              }`}
+            >
+              Проекты
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("analytics")}
+              className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
+                activeTab === "analytics" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
+              }`}
+            >
+              Аналитика
+            </button>
+          </div>
+        </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <ExplorerSearchBox
             id="workspace-explorer-tree-search"
@@ -1917,7 +1941,11 @@ function ExplorerPane({
         <div className="px-4 py-2 text-sm text-accent bg-accentSoft/40 border-b border-border">{moveNotice}</div>
       ) : null}
 
-      {visibleSearchModel.active ? (
+      {activeTab === "analytics" ? (
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <AnalyticsPage scope="workspace" scopeId={workspaceId} module="overview" orgId={activeOrgId} embedded />
+        </div>
+      ) : visibleSearchModel.active ? (
         <ExplorerSearchResults model={visibleSearchModel} onOpenResult={handleOpenSearchResult} />
       ) : !isEmpty ? (
         <div className="flex-1 overflow-y-auto">
@@ -2409,7 +2437,7 @@ function SessionRow({
 
 // ─── Project Pane (sessions list) ─────────────────────────────────────────────
 
-function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumbBase, permissions }) {
+function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumbBase, permissions, activeOrgId }) {
   const [page, setPage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -2417,6 +2445,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const [openingSessionId, setOpeningSessionId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [sessionSort, setSessionSort] = useState(null);
+  const [activeTab, setActiveTab] = useState("sessions");
   const openingSessionIdRef = useRef("");
 
   const load = useCallback(async () => {
@@ -2588,13 +2617,38 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
         {proj && (
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
             <span>Сессии: {sessionCount}</span>
-
+            <div className="flex h-7 items-center rounded-lg border border-border bg-panel p-0.5">
+              <button
+                type="button"
+                onClick={() => setActiveTab("sessions")}
+                className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
+                  activeTab === "sessions" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
+                }`}
+              >
+                Сессии
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("analytics")}
+                className={`rounded-md px-2.5 py-0.5 text-xs font-medium transition ${
+                  activeTab === "analytics" ? "bg-accent text-white" : "text-muted hover:text-fg hover:bg-panel2"
+                }`}
+              >
+                Аналитика
+              </button>
+            </div>
           </div>
         )}
       </div>
 
+      {activeTab === "analytics" ? (
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <AnalyticsPage scope="project" scopeId={projectId} module="overview" orgId={activeOrgId} embedded />
+        </div>
+      ) : null}
+
       {/* Sessions */}
-      <div className="px-4 py-2 border-b border-border flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
+      <div className={`px-4 py-2 border-b border-border flex flex-wrap items-center justify-between gap-2 flex-shrink-0 ${activeTab === "analytics" ? "hidden" : ""}`}>
         <span className="text-xs font-semibold uppercase tracking-wide text-muted">Сессии</span>
         <ExplorerSearchBox
           id="workspace-explorer-project-search"
@@ -2831,7 +2885,7 @@ export default function WorkspaceExplorer({
                   projectId={currentProjectId}
                   onBack={handleBackFromProject}
                   onOpenSession={onOpenSession}
-
+                  activeOrgId={activeOrgId}
                   breadcrumbBase={breadcrumbBase}
                   permissions={permissions}
                 />
