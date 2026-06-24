@@ -1,9 +1,9 @@
 {
-  "branch": "fix/analytics-compact-embedded",
-  "sha": "36b7f685739a7ba3360fbe1411eab8feab6f88c3",
-  "shaShort": "36b7f685",
-  "timestamp": "2026-06-24T17:51:38.136Z",
-  "contourId": "fix-analytics-compact-embedded",
+  "branch": "feature/analytics-dashboard-redesign",
+  "sha": "d1e6adba80c5bfb00dd2ec0865b7f25ce9cedb28",
+  "shaShort": "d1e6adba",
+  "timestamp": "2026-06-24T18:55:11.685Z",
+  "contourId": "feature-analytics-dashboard-redesign",
   "dirty": true,
   "host": "clearvestnic.ru",
   "env": "dev"
