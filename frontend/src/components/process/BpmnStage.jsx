@@ -1657,7 +1657,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     transition: loadTransition,
     loadState,
     errorReason,
-  } = useDiagramLoadStateMachine({ warmTimeoutMs: 10000, coldTimeoutMs: 20000 });
+  } = useDiagramLoadStateMachine({ warmTimeoutMs: 0, coldTimeoutMs: 0 });
   const diagramReady = loadStateIsReady;
   const bottlenecksRef = useRef([]);
   const markerStateRef = useRef({ viewer: [], editor: [] });
