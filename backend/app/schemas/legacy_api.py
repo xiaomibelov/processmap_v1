@@ -319,6 +319,7 @@ class SubprocessNavigateOut(BaseModel):
     subprocess_session_id: str
     target_element_id: Optional[str] = None
     breadcrumbs: List[Dict[str, Any]] = []
+    bpmn_xml: Optional[str] = None
 
 
 class SubprocessReturnOut(BaseModel):

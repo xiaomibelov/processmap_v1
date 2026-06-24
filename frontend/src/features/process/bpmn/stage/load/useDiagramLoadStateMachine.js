@@ -105,15 +105,17 @@ export default function useDiagramLoadStateMachine(options = {}) {
       setLastTransitionAt(now);
       if (reason) setErrorReason(reason);
 
-      // Manage timeout timer
+      // Manage timeout timer (disabled when timeout <= 0)
       if (next === "initializing" || next === "importing") {
         clearTimer();
         const timeoutMs = transitionCountRef.current <= 1 ? coldTimeoutMs : warmTimeoutMs;
-        timeoutRef.current = setTimeout(() => {
-          if (stateRef.current === "initializing" || stateRef.current === "importing") {
-            transition("timeout", { reason: `exceeded_${timeoutMs}ms` });
-          }
-        }, timeoutMs);
+        if (timeoutMs > 0) {
+          timeoutRef.current = setTimeout(() => {
+            if (stateRef.current === "initializing" || stateRef.current === "importing") {
+              transition("timeout", { reason: `exceeded_${timeoutMs}ms` });
+            }
+          }, timeoutMs);
+        }
       } else if (next === "ready" || next === "error" || next === "timeout" || next === "idle") {
         clearTimer();
       }
