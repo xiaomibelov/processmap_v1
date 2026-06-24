@@ -59,29 +59,29 @@ jobs:
               --requested-ref "${DEPLOY_REF}" \
               --resolved-sha "${DEPLOY_SHA}"
 
-            # Diagnostics: show current gateway mounts/assets before recreate
-            echo "[deploy-stage-ref] current gateway mounts:"
-            docker inspect processmap_stage-gateway-1 --format='{{json .Mounts}}' 2>/dev/null || true
-            echo "[deploy-stage-ref] current gateway assets:"
-            docker exec processmap_stage-gateway-1 sh -c 'ls -la /usr/share/nginx/html/assets/index-*.js 2>/dev/null || true' 2>/dev/null || true
+            # Diagnostics: show current frontend mounts/assets before recreate
+            echo "[deploy-stage-ref] current frontend mounts:"
+            docker inspect processmap_stage-frontend-1 --format='{{json .Mounts}}' 2>/dev/null || true
+            echo "[deploy-stage-ref] current frontend assets:"
+            docker exec processmap_stage-frontend-1 sh -c 'ls -la /usr/share/nginx/html/assets/index-*.js 2>/dev/null || true' 2>/dev/null || true
 
-            # Remove the old gateway container and any attached volumes so stale statics cannot survive
-            docker compose -p processmap_stage rm -fsv gateway 2>/dev/null || true
+            # Remove the old frontend container and any attached volumes so stale statics cannot survive
+            docker compose -p processmap_stage rm -fsv frontend 2>/dev/null || true
             # Drop any project named volume that could be masking /usr/share/nginx/html
-            docker volume ls -q | grep '^processmap_stage_gateway' | xargs -r docker volume rm 2>/dev/null || true
+            docker volume ls -q | grep '^processmap_stage_frontend' | xargs -r docker volume rm 2>/dev/null || true
 
             DEPLOY_FINGERPRINT="processmap-stage-deploy-sha:${DEPLOY_SHA}"
             export VITE_DEPLOY_FINGERPRINT="${DEPLOY_FINGERPRINT}"
             export VITE_DEPLOY_REQUESTED_REF="${DEPLOY_REF}"
             export VITE_DEPLOY_RESOLVED_SHA="${DEPLOY_SHA}"
 
-            # Rebuild images (frontend is baked into gateway)
+            # Rebuild images (frontend is baked into frontend)
             APP_ENV_FILE=.env.stage docker compose \
               --env-file .env.stage \
               -f docker-compose.yml \
               -f docker-compose.stage.yml \
               -p processmap_stage \
-              build --no-cache api gateway
+              build --no-cache api frontend
 
             # Start fresh containers (renew anonymous volumes to pull files from the new image)
             APP_ENV_FILE=.env.stage docker compose \
@@ -89,13 +89,13 @@ jobs:
               -f docker-compose.yml \
               -f docker-compose.stage.yml \
               -p processmap_stage \
-              up -d --no-deps --force-recreate -V api gateway
+              up -d --no-deps --force-recreate -V api frontend
 
             # Diagnostics after recreate
-            echo "[deploy-stage-ref] new gateway mounts:"
-            docker inspect processmap_stage-gateway-1 --format='{{json .Mounts}}' 2>/dev/null || true
-            echo "[deploy-stage-ref] new gateway assets:"
-            docker exec processmap_stage-gateway-1 sh -c 'ls -la /usr/share/nginx/html/assets/index-*.js 2>/dev/null || true' 2>/dev/null || true
+            echo "[deploy-stage-ref] new frontend mounts:"
+            docker inspect processmap_stage-frontend-1 --format='{{json .Mounts}}' 2>/dev/null || true
+            echo "[deploy-stage-ref] new frontend assets:"
+            docker exec processmap_stage-frontend-1 sh -c 'ls -la /usr/share/nginx/html/assets/index-*.js 2>/dev/null || true' 2>/dev/null || true
 
             deploy/scripts/stage_freshness_proof.sh verify-chain \
               --requested-ref "${DEPLOY_REF}" \
