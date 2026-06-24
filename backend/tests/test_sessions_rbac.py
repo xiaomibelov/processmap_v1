@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from fastapi import HTTPException
 
 from app.auth import create_user
+from app.models import Edge, Node
 from app.schemas.legacy_api import BpmnXmlIn
 from app.services import session_service as svc
 from app.storage import (
@@ -135,3 +136,21 @@ class TestSessionsRbac(unittest.TestCase):
         with self.assertRaises(HTTPException) as cm:
             svc.delete_session(sid, request=req)
         self.assertEqual(cm.exception.status_code, 403)
+
+    def test_graph_rbac(self):
+        owner = self._make_user("owner_graph_rbac@local")
+        editor = self._make_user("editor_graph_rbac@local")
+        org_id = "org_graph_rbac"
+        create_org_record("Graph RBAC Org", created_by=str(owner["id"]), org_id=org_id)
+        upsert_org_membership(org_id, str(editor["id"]), "editor")
+        upsert_project_membership(org_id, "proj_1", str(editor["id"]), "editor")
+        sid = self._create_session(str(owner["id"]), org_id, project_id="proj_1", title="graph")
+        # Seed nodes/edges through repository save
+        sess = self.st.load(sid, org_id=org_id, is_admin=True)
+        sess.nodes = [Node(id="n1", title="Start", type="step")]
+        sess.edges = [Edge(from_id="n1", to_id="n2")]
+        self.st.save(sess, user_id=str(owner["id"]), org_id=org_id, is_admin=True)
+        req = _DummyRequest(editor, org_id)
+        result = svc.get_session_graph(sid, request=req)
+        self.assertEqual(len(result["nodes"]), 1)
+        self.assertEqual(len(result["edges"]), 1)

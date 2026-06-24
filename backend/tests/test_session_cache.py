@@ -65,6 +65,24 @@ class SessionCacheUnitTest(unittest.TestCase):
         self.assertNotEqual(projection["bpmn_xml_hash"], "")
         self.assertEqual(projection["version"], 5)
 
+    def test_build_projection_excludes_nodes_and_edges(self):
+        from app.cache.session_cache import build_projection
+
+        # load_session_projection no longer selects the raw JSON blobs, so the
+        # lightweight projection should carry empty node/edge arrays and never
+        # expose the raw *_json columns.
+        row = {
+            "id": "s1",
+            "title": "Test",
+            "bpmn_meta_json": '{}',
+            "version": 1,
+        }
+        projection = build_projection("s1", row)
+        self.assertEqual(projection.get("nodes"), [])
+        self.assertEqual(projection.get("edges"), [])
+        self.assertNotIn("nodes_json", projection)
+        self.assertNotIn("edges_json", projection)
+
     def test_session_cache_get_set_invalidate(self):
         from app.cache import session_cache
         from app.redis_cache import cache_stats_reset

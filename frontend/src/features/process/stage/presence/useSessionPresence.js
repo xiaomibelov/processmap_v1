@@ -207,5 +207,7 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
     lastError,
     heartbeat,
     leavePresence,
+    setActiveUsers,
+    setTtlMs,
   }), [activeUsers, heartbeat, lastError, leavePresence, nowMs, ttlMs]);
 }

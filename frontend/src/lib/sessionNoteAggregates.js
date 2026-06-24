@@ -77,6 +77,14 @@ export function invalidateSessionNoteAggregate(sessionId) {
   notifySessionAggregateSubscribers(sid);
 }
 
+export function seedSessionNoteAggregate(sessionId, aggregate) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return;
+  const key = sessionNoteAggregateCacheKey(sid);
+  cache.set(key, aggregate || null);
+  notifySessionAggregateSubscribers(sid);
+}
+
 export function clearSessionNoteAggregateCache() {
   cache.clear();
   inFlight.clear();
