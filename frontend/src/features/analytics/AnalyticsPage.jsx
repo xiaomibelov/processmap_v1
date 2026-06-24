@@ -8,6 +8,7 @@ import AnalyticsPropertiesPanel from "./AnalyticsPropertiesPanel.jsx";
 import DashboardMetricCard from "./DashboardMetricCard.jsx";
 import AnalyticsDataTable, { Badge, Pill } from "./AnalyticsDataTable.jsx";
 import AnalyticsDashboardsPanel from "./AnalyticsDashboardsPanel.jsx";
+import EmptyState from "./registry/EmptyState.jsx";
 import {
   ActivityIcon,
   ChartBarIcon,
