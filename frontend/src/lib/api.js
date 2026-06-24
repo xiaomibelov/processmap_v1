@@ -1842,15 +1842,15 @@ function unwrapAnalyticsData(response) {
   return payload.data && typeof payload.data === "object" ? payload.data : payload;
 }
 
-export async function apiGetAnalyticsDashboard(scope, scopeId) {
-  const r = okOrError(await request(apiRoutes.analytics.dashboard(scope, scopeId)));
+export async function apiGetAnalyticsDashboard(scope, scopeId, opts = {}) {
+  const r = okOrError(await request(apiRoutes.analytics.dashboard(scope, scopeId), { signal: opts.signal }));
   const data = unwrapAnalyticsData(r);
   if (!data) return r;
   return { ok: true, status: r.status, data, meta: r.meta };
 }
 
-export async function apiGetAnalyticsProperties(scope, scopeId, params = {}) {
-  const r = okOrError(await request(apiRoutes.analytics.properties(scope, scopeId, params)));
+export async function apiGetAnalyticsProperties(scope, scopeId, params = {}, opts = {}) {
+  const r = okOrError(await request(apiRoutes.analytics.properties(scope, scopeId, params), { signal: opts.signal }));
   const data = unwrapAnalyticsData(r);
   if (!data) return r;
   return {
@@ -1865,8 +1865,8 @@ export async function apiGetAnalyticsProperties(scope, scopeId, params = {}) {
   };
 }
 
-export async function apiGetAnalyticsActions(scope, scopeId, params = {}) {
-  const r = okOrError(await request(apiRoutes.analytics.actions(scope, scopeId, params)));
+export async function apiGetAnalyticsActions(scope, scopeId, params = {}, opts = {}) {
+  const r = okOrError(await request(apiRoutes.analytics.actions(scope, scopeId, params), { signal: opts.signal }));
   const data = unwrapAnalyticsData(r);
   if (!data) return r;
   return {
@@ -1881,15 +1881,15 @@ export async function apiGetAnalyticsActions(scope, scopeId, params = {}) {
   };
 }
 
-export async function apiGetAnalyticsPropertiesSummary(scope, scopeId, params = {}) {
-  const r = okOrError(await request(apiRoutes.analytics.propertiesSummary(scope, scopeId, params)));
+export async function apiGetAnalyticsPropertiesSummary(scope, scopeId, params = {}, opts = {}) {
+  const r = okOrError(await request(apiRoutes.analytics.propertiesSummary(scope, scopeId, params), { signal: opts.signal }));
   const data = unwrapAnalyticsData(r);
   if (!data) return r;
   return { ok: true, status: r.status, data, meta: r.meta };
 }
 
-export async function apiGetAnalyticsActionsSummary(scope, scopeId, params = {}) {
-  const r = okOrError(await request(apiRoutes.analytics.actionsSummary(scope, scopeId, params)));
+export async function apiGetAnalyticsActionsSummary(scope, scopeId, params = {}, opts = {}) {
+  const r = okOrError(await request(apiRoutes.analytics.actionsSummary(scope, scopeId, params), { signal: opts.signal }));
   const data = unwrapAnalyticsData(r);
   if (!data) return r;
   return { ok: true, status: r.status, data, meta: r.meta };
@@ -1907,4 +1907,18 @@ export async function apiExportAnalyticsActionsCsv(scope, scopeId) {
   if (!r.ok) return r;
   const blob = r.data instanceof Blob ? r.data : new Blob([String(r.text || "")]);
   return { ok: true, status: r.status, blob, filename: `actions-${scope}-${scopeId}.csv` };
+}
+
+export async function apiExportAnalyticsPropertiesXlsx(scope, scopeId) {
+  const r = await request(apiRoutes.analytics.exportPropertiesXlsx(scope, scopeId), { method: "GET", responseType: "blob" });
+  if (!r.ok) return r;
+  const blob = r.data instanceof Blob ? r.data : new Blob([String(r.text || "")]);
+  return { ok: true, status: r.status, blob, filename: `properties-${scope}-${scopeId}.xlsx` };
+}
+
+export async function apiExportAnalyticsActionsXlsx(scope, scopeId) {
+  const r = await request(apiRoutes.analytics.exportActionsXlsx(scope, scopeId), { method: "GET", responseType: "blob" });
+  if (!r.ok) return r;
+  const blob = r.data instanceof Blob ? r.data : new Blob([String(r.text || "")]);
+  return { ok: true, status: r.status, blob, filename: `actions-${scope}-${scopeId}.xlsx` };
 }
