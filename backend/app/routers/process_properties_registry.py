@@ -926,6 +926,101 @@ def query_property_registry_metadata(
     return {"ok": True, "properties": out, "count": len(out)}
 
 
+@router.get("/api/analysis/properties/registry/export")
+def export_property_registry(
+    request: Request,
+    format: str = "csv",
+    category: str = "all",
+    applicable_to: str = "",
+    source: str = "",
+    editable: str = "all",
+    include_usage: bool = True,
+):
+    require_authenticated_user(request)
+    org_id = request_active_org_id(request) or ""
+    if org_id:
+        require_org_member_for_enterprise(request, org_id)
+
+    data = query_property_registry_metadata(
+        request,
+        category=category,
+        applicable_to=applicable_to,
+        source=source,
+        editable=editable,
+        include_usage=include_usage,
+        include_reference_options=False,
+    )
+    properties = data.get("properties", [])
+
+    headers = [
+        "Идентификатор", "Название", "Тип", "Применимо к", "Значение по умолчанию",
+        "Диапазон значений", "Правила валидации", "Источник", "Редактируемо",
+        "Видимость", "Категория", "Наследование", "Версия", "Создано", "Обновлено", "Использований",
+    ]
+
+    rows = []
+    for p in properties:
+        rows.append([
+            p["id"],
+            p["display_name"],
+            p["property_type"],
+            "|".join(p.get("applicable_to", [])),
+            p.get("default_value") or "",
+            json.dumps(p.get("value_range") or {}, ensure_ascii=False),
+            json.dumps(p.get("validation_rules") or [], ensure_ascii=False),
+            p["source"],
+            "true" if p.get("editable") else "false",
+            "|".join(p.get("visible_in", [])),
+            p["category"],
+            p["inheritance"],
+            str(p["version"]),
+            p.get("created_at") or "",
+            p.get("updated_at") or "",
+            str(p.get("usage_count", 0)),
+        ])
+
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output, delimiter=";", lineterminator="\r\n")
+        output.write("\ufeff")
+        writer.writerow(headers)
+        writer.writerows(rows)
+        body = output.getvalue().encode("utf-8-sig")
+        return Response(
+            content=body,
+            media_type="text/csv; charset=utf-8-sig",
+            headers={"Content-Disposition": f'attachment; filename="property-registry-{timestamp}.csv"'},
+        )
+
+    if format == "xlsx":
+        import xlsxwriter
+        buf = io.BytesIO()
+        workbook = xlsxwriter.Workbook(buf, {"in_memory": True})
+        worksheet = workbook.add_worksheet("Свойства")
+        bold = workbook.add_format({"bold": True})
+        for col, h in enumerate(headers):
+            worksheet.write(0, col, h, bold)
+        for row_idx, row in enumerate(rows, start=1):
+            for col_idx, value in enumerate(row):
+                worksheet.write(row_idx, col_idx, value)
+        worksheet.freeze_panes(1, 0)
+        worksheet.autofilter(0, 0, len(rows), len(headers) - 1)
+        widths = [20, 25, 15, 20, 18, 20, 20, 15, 12, 20, 15, 15, 10, 18, 18, 12]
+        for i, w in enumerate(widths):
+            worksheet.set_column(i, i, w)
+        workbook.close()
+        buf.seek(0)
+        return Response(
+            content=buf.read(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="property-registry-{timestamp}.xlsx"'},
+        )
+
+    raise HTTPException(status_code=422, detail="unsupported format")
+
+
 @router.post("/api/analysis/properties/registry/query")
 def query_process_properties_registry(inp: ProcessPropertiesRegistryQueryIn, request: Request) -> Dict[str, Any]:
     return _registry_payload(inp, request, paginate=True)

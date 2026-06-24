@@ -35,6 +35,7 @@ class ProcessPropertiesRegistryApiTests(unittest.TestCase):
             _EXPORT_COLUMNS,
             export_process_properties_registry_csv,
             export_process_properties_registry_xlsx,
+            export_property_registry,
             query_process_properties_registry,
             query_property_registry_metadata,
             router as process_properties_registry_router,
@@ -52,6 +53,7 @@ class ProcessPropertiesRegistryApiTests(unittest.TestCase):
         self.EXPORT_COLUMNS = _EXPORT_COLUMNS
         self.export_process_properties_registry_csv = export_process_properties_registry_csv
         self.export_process_properties_registry_xlsx = export_process_properties_registry_xlsx
+        self.export_property_registry = export_property_registry
         self.query_process_properties_registry = query_process_properties_registry
         self.query_property_registry_metadata = query_property_registry_metadata
         self.process_properties_registry_router = process_properties_registry_router
@@ -211,6 +213,19 @@ class ProcessPropertiesRegistryApiTests(unittest.TestCase):
         self.assertIn("/api/analysis/properties/registry/query", paths)
         self.assertIn("/api/analysis/properties/registry/export.csv", paths)
         self.assertIn("/api/analysis/properties/registry/export.xlsx", paths)
+        self.assertIn("/api/analysis/properties/registry/export", paths)
+
+    def test_property_registry_export_csv(self):
+        response = self.export_property_registry(self._req(self.admin), format="csv")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/csv", response.media_type)
+        body = bytes(response.body)
+        self.assertIn("Идентификатор;Название".encode("utf-8"), body)
+
+    def test_property_registry_export_xlsx(self):
+        response = self.export_property_registry(self._req(self.admin), format="xlsx")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("spreadsheetml.sheet", response.media_type)
 
     def test_project_and_workspace_scope_aggregate_multiple_sessions(self):
         project_out = self._query(scope="project", project_id=self.project_a, limit=10)
