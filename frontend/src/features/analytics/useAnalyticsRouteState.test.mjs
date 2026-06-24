@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import {
+  ANALYTICS_MODULE_ACTIONS,
+  ANALYTICS_MODULE_OVERVIEW,
+  ANALYTICS_MODULE_PROPERTIES,
+  buildAnalyticsPath,
+  buildProcessMapUrl,
+} from "../../app/processMapRouteModel.js";
+
 // Minimal React re-implementation for node:test without DOM
 let hookState = new Map();
 let hookIndex = 0;
@@ -92,147 +100,64 @@ function setupWindow(url = "https://processmap.local/app") {
   return { listeners };
 }
 
-// Inline the route model helpers needed for tests
-const ANALYTICS_HUB_SURFACE = "analytics";
-const PRODUCT_ACTIONS_REGISTRY_SURFACE = "product-actions-registry";
-
 function text(value) {
   return String(value || "").trim();
 }
 
-function readAnalyticsHubRoute(locationLike = global.window?.location) {
+function normalizeScope(value) {
+  const scope = text(value).toLowerCase();
+  if (scope === "session" || scope === "current") return "session";
+  if (scope === "project") return "project";
+  if (scope === "workspace") return "workspace";
+  return "";
+}
+
+function resolveScopeId(options = {}, sessionId = "", projectId = "", workspaceId = "") {
+  const explicitScope = normalizeScope(options?.scope);
+  if (explicitScope === "session" || text(options?.sessionId)) {
+    return { scope: "session", scopeId: text(options?.sessionId) || sessionId };
+  }
+  if (explicitScope === "project" || text(options?.projectId)) {
+    return { scope: "project", scopeId: text(options?.projectId) || projectId };
+  }
+  if (explicitScope === "workspace" || text(options?.workspaceId)) {
+    return { scope: "workspace", scopeId: text(options?.workspaceId) || workspaceId };
+  }
+  if (sessionId) return { scope: "session", scopeId: sessionId };
+  if (projectId) return { scope: "project", scopeId: projectId };
+  if (workspaceId) return { scope: "workspace", scopeId: workspaceId };
+  return { scope: "workspace", scopeId: "" };
+}
+
+function readRoute(locationLike = global.window?.location) {
   try {
     const url = new URL(locationLike?.href || "https://processmap.local/app");
     const params = new URLSearchParams(url.search || "");
-    const surface = text(params.get("surface")).toLowerCase();
-    const projectId = text(params.get("project"));
-    const sessionId = projectId ? text(params.get("session")) : "";
-    const workspaceId = text(params.get("workspace"));
-    if (surface !== ANALYTICS_HUB_SURFACE) {
-      return { active: false, workspaceId, projectId, sessionId };
-    }
-    return { active: true, workspaceId, projectId, sessionId };
+    return {
+      active: false,
+      workspaceId: text(params.get("workspace")),
+      projectId: text(params.get("project")),
+      sessionId: text(params.get("session")),
+    };
   } catch {
     return { active: false, workspaceId: "", projectId: "", sessionId: "" };
   }
 }
 
 function readProductActionsRegistryRoute(locationLike = global.window?.location) {
-  try {
-    const url = new URL(locationLike?.href || "https://processmap.local/app");
-    const params = new URLSearchParams(url.search || "");
-    const surface = text(params.get("surface")).toLowerCase();
-    const projectId = text(params.get("project"));
-    const sessionId = projectId ? text(params.get("session")) : "";
-    const workspaceId = text(params.get("workspace"));
-    if (surface !== PRODUCT_ACTIONS_REGISTRY_SURFACE) {
-      return { active: false, scope: "workspace", workspaceId, projectId, sessionId };
-    }
-    const explicitScope = text(params.get("registry_scope"));
-    const scope = explicitScope
-      ? (explicitScope === "session" || explicitScope === "current" ? "session" : explicitScope === "project" ? "project" : "workspace")
-      : sessionId
-        ? "session"
-        : projectId
-          ? "project"
-          : "workspace";
-    return { active: true, scope, workspaceId, projectId, sessionId };
-  } catch {
-    return { active: false, scope: "workspace", workspaceId: "", projectId: "", sessionId: "" };
-  }
+  const base = readRoute(locationLike);
+  return { ...base, scope: "workspace" };
 }
 
-function buildAnalyticsHubUrl(routeRaw = {}, options = {}) {
-  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
-  const pathname = text(options?.pathname) || "/app";
-  const hash = text(options?.hash);
-  const params = new URLSearchParams(text(options?.baseSearch));
-  const workspaceId = text(route.workspaceId ?? route.workspace_id);
-  const projectId = text(route.projectId ?? route.project_id);
-  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
-  params.set("surface", ANALYTICS_HUB_SURFACE);
-  if (workspaceId) params.set("workspace", workspaceId);
-  else params.delete("workspace");
-  if (projectId) params.set("project", projectId);
-  else params.delete("project");
-  if (sessionId) params.set("session", sessionId);
-  else params.delete("session");
-  const search = params.toString();
-  return `${pathname}${search ? `?${search}` : ""}${hash}`;
-}
-
-function buildAnalyticsHubCloseUrl(routeRaw = {}, options = {}) {
-  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
-  const pathname = text(options?.pathname) || "/app";
-  const hash = text(options?.hash);
-  const params = new URLSearchParams(text(options?.baseSearch));
-  params.delete("surface");
-  params.delete("registry_scope");
-  const workspaceId = text(route.workspaceId ?? route.workspace_id);
-  const projectId = text(route.projectId ?? route.project_id);
-  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
-  if (workspaceId) params.set("workspace", workspaceId);
-  if (projectId) params.set("project", projectId);
-  else params.delete("project");
-  if (sessionId) params.set("session", sessionId);
-  else params.delete("session");
-  const search = params.toString();
-  return `${pathname}${search ? `?${search}` : ""}${hash}`;
-}
-
-function buildProductActionsRegistryUrl(routeRaw = {}, options = {}) {
-  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
-  const scope = text(route.scope ?? route.registry_scope).toLowerCase();
-  const normalizedScope = scope === "session" || scope === "current" ? "session" : scope === "project" ? "project" : "workspace";
-  const pathname = text(options?.pathname) || "/app";
-  const hash = text(options?.hash);
-  const params = new URLSearchParams(text(options?.baseSearch));
-  const workspaceId = text(route.workspaceId ?? route.workspace_id);
-  const projectId = text(route.projectId ?? route.project_id);
-  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
-  params.set("surface", PRODUCT_ACTIONS_REGISTRY_SURFACE);
-  params.set("registry_scope", normalizedScope);
-  if (workspaceId) params.set("workspace", workspaceId);
-  else params.delete("workspace");
-  if (normalizedScope === "workspace") {
-    params.delete("project");
-    params.delete("session");
-  } else if (normalizedScope === "project") {
-    if (projectId) params.set("project", projectId);
-    else params.delete("project");
-    params.delete("session");
-  } else {
-    if (projectId) params.set("project", projectId);
-    else params.delete("project");
-    if (sessionId) params.set("session", sessionId);
-    else params.delete("session");
-  }
-  const search = params.toString();
-  return `${pathname}${search ? `?${search}` : ""}${hash}`;
-}
-
-function buildProductActionsRegistryCloseUrl(routeRaw = {}, options = {}) {
-  const route = routeRaw && typeof routeRaw === "object" ? routeRaw : {};
-  const pathname = text(options?.pathname) || "/app";
-  const hash = text(options?.hash);
-  const params = new URLSearchParams(text(options?.baseSearch));
-  params.delete("surface");
-  params.delete("registry_scope");
-  const workspaceId = text(route.workspaceId ?? route.workspace_id);
-  const projectId = text(route.projectId ?? route.project_id);
-  const sessionId = projectId ? text(route.sessionId ?? route.session_id) : "";
-  if (workspaceId) params.set("workspace", workspaceId);
-  if (projectId) params.set("project", projectId);
-  else params.delete("project");
-  if (sessionId) params.set("session", sessionId);
-  else params.delete("session");
-  const search = params.toString();
-  return `${pathname}${search ? `?${search}` : ""}${hash}`;
+function navigateToPath(path) {
+  if (!path) return;
+  global.window.history.pushState({}, "", path);
+  global.window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
 // Re-implement hook using mocked React and route model
 function useAnalyticsRouteState({ sessionId = "", projectId = "", workspaceId = "" } = {}) {
-  const [analyticsHubRoute, setAnalyticsHubRoute] = useState(() => readAnalyticsHubRoute());
+  const [analyticsHubRoute, setAnalyticsHubRoute] = useState(() => readRoute());
   const [productActionsRegistryRoute, setProductActionsRegistryRoute] = useState(
     () => readProductActionsRegistryRoute(),
   );
@@ -240,7 +165,7 @@ function useAnalyticsRouteState({ sessionId = "", projectId = "", workspaceId = 
   const scopeKeyRef = useRef("");
 
   const syncAnalyticsHubRoute = useCallback(() => {
-    setAnalyticsHubRoute(readAnalyticsHubRoute());
+    setAnalyticsHubRoute(readRoute());
   }, []);
 
   const syncProductActionsRegistryRoute = useCallback(() => {
@@ -261,106 +186,64 @@ function useAnalyticsRouteState({ sessionId = "", projectId = "", workspaceId = 
     const scopeKey = `${text(workspaceId)}::${text(projectId)}::${text(sessionId)}`;
     if (scopeKeyRef.current === scopeKey) return;
     scopeKeyRef.current = scopeKey;
-    setAnalyticsHubRoute(readAnalyticsHubRoute());
+    setAnalyticsHubRoute(readRoute());
     setProductActionsRegistryRoute(readProductActionsRegistryRoute());
   }, [sessionId, projectId, workspaceId]);
 
   const openAnalyticsHub = useCallback((options = {}) => {
-    if (typeof global.window === "undefined") return;
-    const nextUrl = buildAnalyticsHubUrl({
-      workspaceId: options?.workspaceId || workspaceId || analyticsHubRoute.workspaceId,
-      projectId: options?.projectId ?? projectId,
-      sessionId: options?.sessionId ?? sessionId,
-    }, {
-      pathname: global.window.location.pathname || "/app",
-      baseSearch: global.window.location.search || "",
-      hash: global.window.location.hash || "",
-    });
-    global.window.history.pushState({ ...(global.window.history.state || {}), surface: "analytics" }, "", nextUrl);
-    setAnalyticsHubRoute(readAnalyticsHubRoute(global.window.location));
+    const { scope, scopeId } = resolveScopeId(options, sessionId, projectId, workspaceId);
+    if (!scopeId) return;
+    navigateToPath(buildAnalyticsPath(scope, scopeId, ANALYTICS_MODULE_OVERVIEW));
+    setAnalyticsHubRoute(readRoute(global.window.location));
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(global.window.location));
-  }, [workspaceId, projectId, sessionId, analyticsHubRoute.workspaceId]);
+  }, [workspaceId, projectId, sessionId]);
 
   const closeAnalyticsHub = useCallback(() => {
-    if (typeof global.window === "undefined") return;
-    const nextUrl = buildAnalyticsHubCloseUrl({
+    const nextUrl = buildProcessMapUrl({
       workspaceId: analyticsHubRoute.workspaceId || workspaceId,
-      projectId: projectId,
-      sessionId: sessionId,
-    }, {
-      pathname: global.window.location.pathname || "/app",
-      baseSearch: global.window.location.search || "",
-      hash: global.window.location.hash || "",
+      projectId: analyticsHubRoute.projectId || projectId,
+      sessionId: analyticsHubRoute.sessionId || sessionId,
     });
-    global.window.history.pushState({ ...(global.window.history.state || {}) }, "", nextUrl);
-    setAnalyticsHubRoute(readAnalyticsHubRoute(global.window.location));
+    navigateToPath(nextUrl);
+    setAnalyticsHubRoute(readRoute(global.window.location));
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(global.window.location));
-  }, [workspaceId, projectId, sessionId, analyticsHubRoute.workspaceId]);
+  }, [workspaceId, projectId, sessionId, analyticsHubRoute.workspaceId, analyticsHubRoute.projectId, analyticsHubRoute.sessionId]);
+
+  const openPropertiesRegistry = useCallback((options = {}) => {
+    const { scope, scopeId } = resolveScopeId(options, sessionId, projectId, workspaceId);
+    if (!scopeId) return;
+    navigateToPath(buildAnalyticsPath(scope, scopeId, ANALYTICS_MODULE_PROPERTIES));
+    setProductActionsRegistryRoute(readProductActionsRegistryRoute(global.window.location));
+    setAnalyticsHubRoute(readRoute(global.window.location));
+  }, [workspaceId, projectId, sessionId]);
 
   const openProductActionsRegistry = useCallback((options = {}) => {
-    if (typeof global.window === "undefined") return;
-    const scope = text(options?.scope) || (sessionId ? "session" : projectId ? "project" : "workspace");
-    const currentUrl = new URL(global.window.location.href);
-    const fromAnalytics = analyticsHubRoute.active || currentUrl.searchParams.get("surface") === "analytics";
-    if (fromAnalytics) {
-      currentUrl.searchParams.set("return_to", "analytics");
-    }
-    const nextUrl = buildProductActionsRegistryUrl({
-      scope,
-      workspaceId: options?.workspaceId || workspaceId || productActionsRegistryRoute.workspaceId,
-      projectId: options?.projectId ?? projectId,
-      sessionId: options?.sessionId ?? sessionId,
-    }, {
-      pathname: global.window.location.pathname || "/app",
-      baseSearch: currentUrl.searchParams.toString(),
-      hash: global.window.location.hash || "",
-    });
-    global.window.history.pushState({ ...(global.window.history.state || {}), surface: "product-actions-registry" }, "", nextUrl);
+    const { scope, scopeId } = resolveScopeId(options, sessionId, projectId, workspaceId);
+    if (!scopeId) return;
+    navigateToPath(buildAnalyticsPath(scope, scopeId, ANALYTICS_MODULE_ACTIONS));
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(global.window.location));
-    setAnalyticsHubRoute(readAnalyticsHubRoute(global.window.location));
-  }, [workspaceId, projectId, sessionId, analyticsHubRoute.active, productActionsRegistryRoute.workspaceId]);
+    setAnalyticsHubRoute(readRoute(global.window.location));
+  }, [workspaceId, projectId, sessionId]);
 
   const closeProductActionsRegistry = useCallback(() => {
-    if (typeof global.window === "undefined") return;
-    const url = new URL(global.window.location.href);
-    const returnTo = url.searchParams.get("return_to");
-    let nextUrl;
-    if (returnTo === "analytics") {
-      url.searchParams.delete("return_to");
-      nextUrl = buildAnalyticsHubUrl({
-        workspaceId: productActionsRegistryRoute.workspaceId || workspaceId,
-        projectId: projectId,
-        sessionId: sessionId,
-      }, {
-        pathname: global.window.location.pathname || "/app",
-        baseSearch: url.searchParams.toString(),
-        hash: global.window.location.hash || "",
-      });
-    } else {
-      nextUrl = buildProductActionsRegistryCloseUrl({
-        workspaceId: productActionsRegistryRoute.workspaceId || workspaceId,
-        projectId: projectId,
-        sessionId: sessionId,
-      }, {
-        pathname: global.window.location.pathname || "/app",
-        baseSearch: global.window.location.search || "",
-        hash: global.window.location.hash || "",
-      });
-    }
-    global.window.history.pushState({ ...(global.window.history.state || {}) }, "", nextUrl);
+    const nextUrl = buildProcessMapUrl({
+      workspaceId: productActionsRegistryRoute.workspaceId || workspaceId,
+      projectId: productActionsRegistryRoute.projectId || projectId,
+      sessionId: productActionsRegistryRoute.sessionId || sessionId,
+    });
+    navigateToPath(nextUrl);
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(global.window.location));
-    setAnalyticsHubRoute(readAnalyticsHubRoute(global.window.location));
-  }, [workspaceId, projectId, sessionId, productActionsRegistryRoute.workspaceId]);
+    setAnalyticsHubRoute(readRoute(global.window.location));
+  }, [workspaceId, projectId, sessionId, productActionsRegistryRoute.workspaceId, productActionsRegistryRoute.projectId, productActionsRegistryRoute.sessionId]);
 
   return {
     analyticsHubRoute,
     productActionsRegistryRoute,
-    setAnalyticsHubRoute,
-    setProductActionsRegistryRoute,
     openAnalyticsHub,
     closeAnalyticsHub,
     openProductActionsRegistry,
     closeProductActionsRegistry,
+    openPropertiesRegistry,
   };
 }
 
@@ -368,7 +251,6 @@ function renderHook(fn, props) {
   resetHooks();
   currentComponent = "test";
   const result = fn(props);
-  // Run effects once but do NOT clean up immediately so listeners stay registered
   effectQueue.forEach(({ fn: effectFn }) => {
     effectFn();
   });
@@ -395,7 +277,6 @@ function rerenderHook(fn, props) {
   return { result };
 }
 
-// Helper to read fresh state after actions mutate hookState
 function getFreshResult() {
   hookIndex = 0;
   effectQueue = [];
@@ -403,113 +284,59 @@ function getFreshResult() {
   return useAnalyticsRouteState({});
 }
 
-test("initializes routes from location", () => {
-  setupWindow("https://processmap.local/app?surface=analytics&project=p1&session=s1");
+test("initializes route state from /app query params", () => {
+  setupWindow("https://processmap.local/app?project=p1&session=s1");
   const { result } = renderHook(useAnalyticsRouteState, { sessionId: "s1", projectId: "p1" });
-  assert.equal(result.analyticsHubRoute.active, true);
+  assert.equal(result.analyticsHubRoute.active, false);
   assert.equal(result.analyticsHubRoute.projectId, "p1");
   assert.equal(result.analyticsHubRoute.sessionId, "s1");
-  assert.equal(result.productActionsRegistryRoute.active, false);
 });
 
-test("initializes product actions registry route from location", () => {
-  setupWindow("https://processmap.local/app?surface=product-actions-registry&registry_scope=session&project=p1&session=s1");
-  const { result } = renderHook(useAnalyticsRouteState, { sessionId: "s1", projectId: "p1" });
-  assert.equal(result.productActionsRegistryRoute.active, true);
-  assert.equal(result.productActionsRegistryRoute.scope, "session");
-  assert.equal(result.productActionsRegistryRoute.projectId, "p1");
-  assert.equal(result.analyticsHubRoute.active, false);
-});
-
-test("openAnalyticsHub sets surface and updates route state", () => {
+test("openAnalyticsHub navigates to backend-driven analytics path", () => {
   setupWindow("https://processmap.local/app?project=p1&session=s1");
   const { result } = renderHook(useAnalyticsRouteState, { sessionId: "s1", projectId: "p1" });
-  assert.equal(result.analyticsHubRoute.active, false);
   result.openAnalyticsHub();
   const fresh = getFreshResult();
-  assert.equal(fresh.analyticsHubRoute.active, true);
-  assert.equal(fresh.analyticsHubRoute.projectId, "p1");
-  assert.equal(global.window.location.search.includes("surface=analytics"), true);
-});
-
-test("closeAnalyticsHub clears surface", () => {
-  setupWindow("https://processmap.local/app?surface=analytics&project=p1&session=s1");
-  const { result } = renderHook(useAnalyticsRouteState, { sessionId: "s1", projectId: "p1" });
-  assert.equal(result.analyticsHubRoute.active, true);
-  result.closeAnalyticsHub();
-  const fresh = getFreshResult();
+  assert.equal(global.window.location.pathname, "/analytics/session/s1");
   assert.equal(fresh.analyticsHubRoute.active, false);
-  assert.equal(global.window.location.search.includes("surface=analytics"), false);
 });
 
-test("openProductActionsRegistry sets scope from sessionId fallback", () => {
+test("closeAnalyticsHub returns to /app preserving context", () => {
   setupWindow("https://processmap.local/app?project=p1&session=s1");
   const { result } = renderHook(useAnalyticsRouteState, { sessionId: "s1", projectId: "p1" });
-  result.openProductActionsRegistry();
-  const fresh = getFreshResult();
-  assert.equal(fresh.productActionsRegistryRoute.active, true);
-  assert.equal(fresh.productActionsRegistryRoute.scope, "session");
-  assert.equal(global.window.location.search.includes("surface=product-actions-registry"), true);
+  result.openAnalyticsHub();
+  result.closeAnalyticsHub();
+  assert.equal(global.window.location.pathname, "/app");
+  const params = new URLSearchParams(global.window.location.search);
+  assert.equal(params.get("project"), "p1");
+  assert.equal(params.get("session"), "s1");
 });
 
-test("openProductActionsRegistry sets scope from project fallback when no session", () => {
+test("openProductActionsRegistry navigates to actions module path", () => {
   setupWindow("https://processmap.local/app?project=p1");
   const { result } = renderHook(useAnalyticsRouteState, { projectId: "p1" });
   result.openProductActionsRegistry();
-  const fresh = getFreshResult();
-  assert.equal(fresh.productActionsRegistryRoute.scope, "project");
+  assert.equal(global.window.location.pathname, "/analytics/project/p1/actions");
 });
 
-test("openProductActionsRegistry sets scope to workspace when no project or session", () => {
+test("openProductActionsRegistry respects explicit session scope", () => {
   setupWindow("https://processmap.local/app");
-  const { result } = renderHook(useAnalyticsRouteState, {});
+  const { result } = renderHook(useAnalyticsRouteState, { workspaceId: "ws1" });
+  result.openProductActionsRegistry({ scope: "session", sessionId: "s2" });
+  assert.equal(global.window.location.pathname, "/analytics/session/s2/actions");
+});
+
+test("openPropertiesRegistry navigates to properties module path", () => {
+  setupWindow("https://processmap.local/app?project=p1");
+  const { result } = renderHook(useAnalyticsRouteState, { projectId: "p1" });
+  result.openPropertiesRegistry();
+  assert.equal(global.window.location.pathname, "/analytics/project/p1/properties");
+});
+
+test("closeProductActionsRegistry returns to /app", () => {
+  setupWindow("https://processmap.local/app?project=p1");
+  const { result } = renderHook(useAnalyticsRouteState, { projectId: "p1" });
   result.openProductActionsRegistry();
-  const fresh = getFreshResult();
-  assert.equal(fresh.productActionsRegistryRoute.scope, "workspace");
-});
-
-test("closeProductActionsRegistry with return_to=analytics restores analytics hub", () => {
-  setupWindow("https://processmap.local/app?surface=product-actions-registry&registry_scope=session&project=p1&session=s1&return_to=analytics");
-  const { result } = renderHook(useAnalyticsRouteState, { sessionId: "s1", projectId: "p1" });
   result.closeProductActionsRegistry();
-  const fresh = getFreshResult();
-  assert.equal(fresh.productActionsRegistryRoute.active, false);
-  assert.equal(fresh.analyticsHubRoute.active, true);
-  assert.equal(global.window.location.search.includes("return_to="), false);
-});
-
-test("closeProductActionsRegistry without return_to clears surface", () => {
-  setupWindow("https://processmap.local/app?surface=product-actions-registry&registry_scope=session&project=p1&session=s1");
-  const { result } = renderHook(useAnalyticsRouteState, { sessionId: "s1", projectId: "p1" });
-  result.closeProductActionsRegistry();
-  const fresh = getFreshResult();
-  assert.equal(fresh.productActionsRegistryRoute.active, false);
-  assert.equal(fresh.analyticsHubRoute.active, false);
-  assert.equal(global.window.location.search.includes("surface="), false);
-});
-
-test("resets routes on session change", () => {
-  setupWindow("https://processmap.local/app?surface=analytics&project=p1&session=s1");
-  const { result } = renderHook(useAnalyticsRouteState, { sessionId: "s1", projectId: "p1" });
-  assert.equal(result.analyticsHubRoute.active, true);
-
-  // Change session and location
-  setupWindow("https://processmap.local/app?project=p1&session=s2");
-  const { result: result2 } = rerenderHook(useAnalyticsRouteState, { sessionId: "s2", projectId: "p1" });
-  assert.equal(result2.analyticsHubRoute.active, false);
-});
-
-test("registers popstate listeners", () => {
-  setupWindow("https://processmap.local/app?project=p1&session=s1");
-  renderHook(useAnalyticsRouteState, { sessionId: "s1", projectId: "p1" });
-  const popstateListeners = global.window._listeners.get("popstate");
-  assert.ok(popstateListeners);
-  assert.equal(popstateListeners.size >= 2, true);
-});
-
-test("setters are exposed", () => {
-  setupWindow("https://processmap.local/app");
-  const { result } = renderHook(useAnalyticsRouteState, {});
-  assert.equal(typeof result.setAnalyticsHubRoute, "function");
-  assert.equal(typeof result.setProductActionsRegistryRoute, "function");
+  assert.equal(global.window.location.pathname, "/app");
 });

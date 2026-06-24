@@ -265,10 +265,8 @@ import {
   writeOverlayPanVisibility,
 } from "../features/process/bpmn/stage/utils/overlayPanVisibilityStorage.js";
 import {
-  buildProductActionsRegistryCloseUrl,
-  readProductActionsRegistryRoute,
-  readPropertiesRegistryRoute,
-  readDashboardsRoute,
+  ANALYTICS_MODULE_ACTIONS,
+  buildAnalyticsPath,
 } from "../app/processMapRouteModel.js";
 import { useAnalyticsRouteState } from "../features/analytics/useAnalyticsRouteState";
 
@@ -1111,20 +1109,12 @@ function ProcessStage({
       source: options?.source || "product_actions_registry",
     });
     if (result?.ok === false || typeof window === "undefined") return;
-    const nextProjectId = toText(result?.projectId || project_id);
     const nextSessionId = toText(result?.sessionId || session_id);
-    const nextUrl = buildProductActionsRegistryCloseUrl({
-      workspaceId: workspace_id,
-      projectId: nextProjectId,
-      sessionId: nextSessionId,
-    }, {
-      pathname: window.location.pathname || "/app",
-      baseSearch: window.location.search || "",
-      hash: window.location.hash || "",
-    });
+    if (!nextSessionId) return;
+    const nextUrl = buildAnalyticsPath("session", nextSessionId, ANALYTICS_MODULE_ACTIONS);
     window.history.pushState({ ...(window.history.state || {}) }, "", nextUrl);
-    setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
-  }, [activeProjectId, activeProjectWorkspaceId, onOpenWorkspaceSession, productActionsRegistryRoute.workspaceId]);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, [activeProjectId, activeProjectWorkspaceId, onOpenWorkspaceSession]);
   const saveAckToastTimerRef = useRef(0);
   const processStatusToastLastSignatureRef = useRef("");
   const saveLifecycleToastLastSignatureRef = useRef("");

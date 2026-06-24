@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  apiExportAnalyticsActionsCsv,
+  apiExportAnalyticsPropertiesCsv,
   apiGetAnalyticsActions,
   apiGetAnalyticsDashboard,
   apiGetAnalyticsProperties,
 } from "../../lib/api.js";
+import DashboardBarChart from "./DashboardBarChart.jsx";
+import DashboardMetricCard from "./DashboardMetricCard.jsx";
 import {
   ANALYTICS_MODULE_ACTIONS,
   ANALYTICS_MODULE_DASHBOARDS,
@@ -141,6 +145,17 @@ function Paginator({ page, limit, total, onChange }) {
   );
 }
 
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function AnalyticsActionsPanel({ scope, scopeId }) {
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
@@ -149,6 +164,7 @@ function AnalyticsActionsPanel({ scope, scopeId }) {
   const [options, setOptions] = useState({});
   const [filters, setFilters] = useState({});
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -177,8 +193,28 @@ function AnalyticsActionsPanel({ scope, scopeId }) {
     };
   }, [scope, scopeId, page, limit, filters]);
 
+  async function handleExportCsv() {
+    if (exporting) return;
+    setExporting(true);
+    const result = await apiExportAnalyticsActionsCsv(scope, scopeId);
+    if (result?.ok && result.blob) {
+      downloadBlob(result.blob, result.filename || `actions-${scope}-${scopeId}.csv`);
+    }
+    setExporting(false);
+  }
+
   return (
     <div>
+      <div className="mb-3 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={handleExportCsv}
+          disabled={exporting}
+          className="rounded-md border border-border bg-panel px-3 py-1.5 text-sm hover:bg-panel2 disabled:opacity-50"
+        >
+          {exporting ? "Экспорт…" : "Экспорт CSV"}
+        </button>
+      </div>
       <FilterBar options={options} filters={filters} onChange={(f) => { setFilters(f); setPage(1); }} />
       {loading ? <div className="text-sm text-muted">Загрузка…</div> : null}
       {error ? <div className="text-sm text-red-500">{error}</div> : null}
@@ -220,6 +256,7 @@ function AnalyticsPropertiesPanel({ scope, scopeId }) {
   const [options, setOptions] = useState({});
   const [filters, setFilters] = useState({});
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -248,8 +285,28 @@ function AnalyticsPropertiesPanel({ scope, scopeId }) {
     };
   }, [scope, scopeId, page, limit, filters]);
 
+  async function handleExportCsv() {
+    if (exporting) return;
+    setExporting(true);
+    const result = await apiExportAnalyticsPropertiesCsv(scope, scopeId);
+    if (result?.ok && result.blob) {
+      downloadBlob(result.blob, result.filename || `properties-${scope}-${scopeId}.csv`);
+    }
+    setExporting(false);
+  }
+
   return (
     <div>
+      <div className="mb-3 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={handleExportCsv}
+          disabled={exporting}
+          className="rounded-md border border-border bg-panel px-3 py-1.5 text-sm hover:bg-panel2 disabled:opacity-50"
+        >
+          {exporting ? "Экспорт…" : "Экспорт CSV"}
+        </button>
+      </div>
       <FilterBar options={options} filters={filters} onChange={(f) => { setFilters(f); setPage(1); }} />
       {loading ? <div className="text-sm text-muted">Загрузка…</div> : null}
       {error ? <div className="text-sm text-red-500">{error}</div> : null}
@@ -263,6 +320,7 @@ function AnalyticsPropertiesPanel({ scope, scopeId }) {
                 <th className="px-3 py-2">Тип</th>
                 <th className="px-3 py-2">Категория</th>
                 <th className="px-3 py-2">Источник</th>
+                <th className="px-3 py-2">Использований</th>
                 <th className="px-3 py-2">Значение</th>
               </tr>
             </thead>
@@ -273,6 +331,7 @@ function AnalyticsPropertiesPanel({ scope, scopeId }) {
                   <td className="px-3 py-2">{text(row.type)}</td>
                   <td className="px-3 py-2">{text(row.category)}</td>
                   <td className="px-3 py-2">{text(row.source)}</td>
+                  <td className="px-3 py-2">{formatNumber(row.usage_count)}</td>
                   <td className="px-3 py-2">{text(row.value)}</td>
                 </tr>
               ))}
@@ -285,10 +344,56 @@ function AnalyticsPropertiesPanel({ scope, scopeId }) {
   );
 }
 
-function AnalyticsDashboardsPanel() {
+function chartItems(map = {}) {
+  return Object.entries(map || {})
+    .map(([label, value]) => ({ label, value: Number(value) || 0 }))
+    .sort((a, b) => b.value - a.value);
+}
+
+function AnalyticsDashboardsPanel({ data = null, loading = false, error = "" }) {
+  if (loading) return <div className="text-sm text-muted">Загрузка…</div>;
+  if (error) return <div className="text-sm text-red-500">{error}</div>;
+  if (!data) return <div className="text-sm text-muted">Нет данных для дашборда.</div>;
+
+  const roleItems = chartItems(data.actions_by_role);
+  const sectionItems = chartItems(data.actions_by_section);
+  const typeItems = chartItems(data.actions_by_type);
+
   return (
-    <div className="rounded-xl border border-border bg-panel p-6 text-center text-sm text-muted">
-      Дашборды будут подключены отдельным контуром.
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <DashboardMetricCard title="Всего действий" value={formatNumber(data.actions_total)} testId="dashboard-metric-actions-total" />
+        <DashboardMetricCard title="Продолжительность, мин" value={formatNumber(data.total_duration_min)} testId="dashboard-metric-duration" />
+        <DashboardMetricCard title="Критический путь, мин" value={formatNumber(data.critical_path_min)} testId="dashboard-metric-critical-path" />
+        <DashboardMetricCard title="Рукопожатий" value={formatNumber(data.handoffs_count)} testId="dashboard-metric-handoffs" />
+        <DashboardMetricCard title="Открытых вопросов" value={formatNumber(data.open_questions)} testId="dashboard-metric-open-questions" />
+        <DashboardMetricCard title="Критических вопросов" value={formatNumber(data.critical_questions)} testId="dashboard-metric-critical-questions" />
+        <DashboardMetricCard title="Сессий" value={formatNumber(data.sessions_count)} testId="dashboard-metric-sessions" />
+        <DashboardMetricCard title="Проектов" value={formatNumber(data.projects_count)} testId="dashboard-metric-projects" />
+      </div>
+
+      {roleItems.length > 0 || sectionItems.length > 0 || typeItems.length > 0 ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {roleItems.length > 0 ? (
+            <div className="rounded-xl border border-border bg-panel p-4">
+              <h3 className="mb-3 text-sm font-semibold">Действия по ролям</h3>
+              <DashboardBarChart items={roleItems} ariaLabel="Действия по ролям" />
+            </div>
+          ) : null}
+          {sectionItems.length > 0 ? (
+            <div className="rounded-xl border border-border bg-panel p-4">
+              <h3 className="mb-3 text-sm font-semibold">Действия по секциям</h3>
+              <DashboardBarChart items={sectionItems} ariaLabel="Действия по секциям" />
+            </div>
+          ) : null}
+          {typeItems.length > 0 ? (
+            <div className="rounded-xl border border-border bg-panel p-4">
+              <h3 className="mb-3 text-sm font-semibold">Действия по типам</h3>
+              <DashboardBarChart items={typeItems} ariaLabel="Действия по типам" />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -379,7 +484,7 @@ export default function AnalyticsPage({ scope, scopeId, module, orgId }) {
         )}
         {module === ANALYTICS_MODULE_ACTIONS && <AnalyticsActionsPanel scope={scope} scopeId={scopeId} />}
         {module === ANALYTICS_MODULE_PROPERTIES && <AnalyticsPropertiesPanel scope={scope} scopeId={scopeId} />}
-        {module === ANALYTICS_MODULE_DASHBOARDS && <AnalyticsDashboardsPanel />}
+        {module === ANALYTICS_MODULE_DASHBOARDS && <AnalyticsDashboardsPanel data={data} loading={loading} error={error} />}
       </section>
     </main>
   );

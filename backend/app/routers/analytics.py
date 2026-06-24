@@ -10,7 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from ..legacy.request_context import request_active_org_id
 from ..schemas.analytics import AnalyticsActionsQuery, AnalyticsDashboardOut, AnalyticsPropertiesQuery
 from ..services.analytics_authz import require_analytics_scope
-from ..storage import _connect
+from ..storage import _connect, get_storage
+from ..routers.process_properties_registry import _extract_camunda_rows
+from ..routers.product_actions_registry import _registry_row
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -151,32 +153,55 @@ def _session_ids_for_scope(scope_type: str, scope_id: str, org_id: str) -> List[
 
 
 def _properties_rows(scope_type: str, scope_id: str, org_id: str) -> List[Dict[str, Any]]:
-    from .._legacy_main import list_process_properties_registry_sources
+    storage = get_storage()
+    if scope_type == "session":
+        sources = storage.list_process_properties_registry_sources(
+            org_id=org_id, session_ids=[scope_id], is_admin=True
+        )
+    elif scope_type == "project":
+        sources = storage.list_process_properties_registry_sources(
+            org_id=org_id, project_ids=[scope_id], is_admin=True
+        )
+    else:
+        sources = storage.list_process_properties_registry_sources(
+            org_id=org_id, workspace_id=scope_id, is_admin=True
+        )
 
     rows: List[Dict[str, Any]] = []
     seen = set()
-    for sid in _session_ids_for_scope(scope_type, scope_id, org_id):
-        for r in list_process_properties_registry_sources(sid):
-            key = (r.get("bpmn_id"), r.get("name"), r.get("value"))
+    counts: Dict[tuple, int] = {}
+    for source in sources:
+        for r in _extract_camunda_rows(source):
+            key = (r.get("element_id"), r.get("property_name"), r.get("property_value"))
+            counts[key] = counts.get(key, 0) + 1
             if key in seen:
                 continue
             seen.add(key)
-            rows.append(r)
+            rows.append({
+                "bpmn_id": r.get("element_id") or "",
+                "name": r.get("property_name") or "",
+                "value": r.get("property_value") or "",
+                "type": r.get("property_type") or "",
+                "category": r.get("property_group") or "",
+                "source": r.get("source") or "",
+                "element_type": r.get("element_type") or "",
+                "section": "",
+                "role": "",
+                "usage_count": 1,
+            })
+
+    for row in rows:
+        row["usage_count"] = counts.get((row["bpmn_id"], row["name"], row["value"]), 1)
     return rows
 
 
 def _filter_options(rows: List[Dict[str, Any]]) -> Dict[str, List[str]]:
-    types = sorted({str(r.get("type", "")) for r in rows if r.get("type")})
-    categories = sorted({str(r.get("category", "")) for r in rows if r.get("category")})
-    sources = sorted({str(r.get("source", "")) for r in rows if r.get("source")})
-    sections = sorted({str(r.get("section", "")) for r in rows if r.get("section")})
-    roles = sorted({str(r.get("role", "")) for r in rows if r.get("role")})
     return {
-        "types": types,
-        "categories": categories,
-        "sources": sources,
-        "sections": sections,
-        "roles": roles,
+        "type": sorted({str(r.get("type", "")) for r in rows if r.get("type")}),
+        "category": sorted({str(r.get("category", "")) for r in rows if r.get("category")}),
+        "source": sorted({str(r.get("source", "")) for r in rows if r.get("source")}),
+        "section": sorted({str(r.get("section", "")) for r in rows if r.get("section")}),
+        "role": sorted({str(r.get("role", "")) for r in rows if r.get("role")}),
     }
 
 
@@ -232,17 +257,47 @@ def get_properties(
 
 
 def _actions_rows(scope_type: str, scope_id: str, org_id: str) -> List[Dict[str, Any]]:
-    from .._legacy_main import list_product_action_registry_sources
+    storage = get_storage()
+    if scope_type == "session":
+        sources = storage.list_product_action_registry_sources(
+            org_id=org_id, session_ids=[scope_id], is_admin=True
+        )
+    elif scope_type == "project":
+        sources = storage.list_product_action_registry_sources(
+            org_id=org_id, project_ids=[scope_id], is_admin=True
+        )
+    else:
+        sources = storage.list_product_action_registry_sources(
+            org_id=org_id, workspace_id=scope_id, is_admin=True
+        )
 
     rows: List[Dict[str, Any]] = []
     seen = set()
-    for sid in _session_ids_for_scope(scope_type, scope_id, org_id):
-        for r in list_product_action_registry_sources(sid, None):
-            key = (r.get("bpmn_id"), r.get("name"), r.get("value"), r.get("section"), r.get("role"))
+    for source in sources:
+        for index, action in enumerate(source.get("product_actions") or []):
+            r = _registry_row(source, action, index)
+            key = (
+                r.get("action_object") or r.get("product_name") or r.get("action_id") or "",
+                r.get("action_stage") or "",
+                r.get("role") or "",
+                r.get("action_type") or "",
+                r.get("product_group") or "",
+                r.get("product_name") or "",
+            )
             if key in seen:
                 continue
             seen.add(key)
-            rows.append(r)
+            rows.append({
+                "bpmn_id": r.get("bpmn_element_id") or r.get("node_id") or "",
+                "name": r.get("action_object") or r.get("product_name") or r.get("action_id") or "",
+                "value": "",
+                "section": r.get("action_stage") or "",
+                "role": r.get("role") or "",
+                "type": r.get("action_type") or "",
+                "product_group": r.get("product_group") or "",
+                "product_name": r.get("product_name") or "",
+                "source": r.get("source") or "",
+            })
     return rows
 
 
@@ -306,7 +361,7 @@ def export_properties_csv(
     return _csv_response(
         rows,
         f"properties-{scope}-{scope_id}.csv",
-        ["bpmn_id", "name", "value", "type", "category", "source", "element_type", "section", "role"],
+        ["bpmn_id", "name", "value", "type", "category", "source", "element_type", "section", "role", "usage_count"],
     )
 
 
