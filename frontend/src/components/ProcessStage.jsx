@@ -4,7 +4,7 @@ import DocStage from "./process/DocStage";
 import DodStage from "./process/DodStage";
 import InterviewStage from "./process/InterviewStage";
 import ProductActionsRegistry from "../features/analytics/ProductActionsRegistry.jsx";
-import PropertiesRegistry from "../features/analytics/PropertiesRegistry.jsx";
+import ProcessPropertiesRegistryPage from "./process/analysis/ProcessPropertiesRegistryPage.jsx";
 import AnalyticsDashboards from "../features/analytics/AnalyticsDashboards.jsx";
 import AnalyticsSectionTabs from "../features/analytics/AnalyticsSectionTabs.jsx";
 import AnalyticsHub from "../features/analytics/AnalyticsHub.jsx";
@@ -13,12 +13,15 @@ import SubprocessBreadcrumbs from "../features/process/SubprocessBreadcrumbs.jsx
 import { useAuth } from "../features/auth/AuthProvider";
 import {
   apiGetSession,
+  apiGetSessionMeta,
+  apiGetSessionGraph,
   apiPatchSession,
   apiRecompute,
   apiStartAutoPass,
   apiGetAutoPassPrecheck,
   apiGetAutoPassStatus,
 } from "../lib/api/sessionApi";
+import { seedSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
 import {
   apiGetBpmnMeta,
   apiGetBpmnVersion,
@@ -34,6 +37,7 @@ import {
 import { buildManualSaveProjectionSyncPlan } from "../features/process/bpmn/save/manualSaveProjectionSync.js";
 import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
 import useBpmnSync from "../features/process/hooks/useBpmnSync";
+import { useViewportResizeController } from "../features/process/bpmn/stage/viewport/useViewportResizeController";
 import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
 import useProcessWorkbenchController from "../features/process/hooks/useProcessWorkbenchController";
 import { deriveActorsFromBpmn, sameDerivedActors } from "../features/process/lib/deriveActorsFromBpmn";
@@ -144,7 +148,7 @@ import BottomViewportScrubber from "../features/process/stage/scrubber/BottomVie
 import BpmnPropertiesOverlayModal from "../features/process/bpmn/context-menu/properties-overlay/BpmnPropertiesOverlayModal";
 import { buildSaveConflictModalView } from "../features/process/stage/ui/saveConflictModalModel";
 import { buildSessionPresenceView } from "../features/process/stage/ui/sessionPresenceModel";
-import useSessionPresence from "../features/process/stage/presence/useSessionPresence";
+import useSessionPresence, { normalizeSessionPresenceUsers } from "../features/process/stage/presence/useSessionPresence";
 import {
   buildRemoteSaveHighlightView,
   deriveRemoteChangedElementIds,
@@ -261,10 +265,8 @@ import {
   writeOverlayPanVisibility,
 } from "../features/process/bpmn/stage/utils/overlayPanVisibilityStorage.js";
 import {
-  buildProductActionsRegistryCloseUrl,
-  readProductActionsRegistryRoute,
-  readPropertiesRegistryRoute,
-  readDashboardsRoute,
+  ANALYTICS_MODULE_ACTIONS,
+  buildAnalyticsPath,
 } from "../app/processMapRouteModel.js";
 import { useAnalyticsRouteState } from "../features/analytics/useAnalyticsRouteState";
 
@@ -284,6 +286,88 @@ function logDiscussionFocusDiag(event, payload = {}) {
 function readableBpmnLabel(...values) {
   return readableBpmnText(...values);
 }
+
+function formatSnapshotTs(ts) {
+  return formatRevisionTimestampRu(ts);
+}
+
+function defaultCheckpointLabel(ts) {
+  return `Контрольная точка ${formatSnapshotTs(ts || Date.now())}`;
+}
+
+function snapshotLabel(item) {
+  const explicit = String(item?.label || "").trim();
+  if (explicit) return explicit;
+  const comment = String(item?.comment || "").trim();
+  if (comment) return comment;
+  const revisionNumber = Number(item?.revisionNumber || item?.rev || 0);
+  if (revisionNumber > 0) return `Версия ${revisionNumber}`;
+  if (item?.pinned) return defaultCheckpointLabel(item?.ts);
+  return "Без названия";
+}
+
+function normalizeBpmnVersionListItem(itemRaw) {
+  const item = itemRaw && typeof itemRaw === "object" ? itemRaw : {};
+  const hasXml = Object.prototype.hasOwnProperty.call(item, "bpmn_xml")
+    || Object.prototype.hasOwnProperty.call(item, "xml");
+  const xml = hasXml ? String(item?.bpmn_xml || item?.xml || "") : "";
+  const versionNumber = Number(item?.version_number || item?.versionNumber || item?.revisionNumber || item?.rev || 0);
+  const userFacingRevisionNumber = Number(
+    item?.user_facing_revision_number
+    || item?.userFacingRevisionNumber
+    || item?.revision_display_number
+    || item?.revisionDisplayNumber
+    || 0,
+  );
+  const createdAt = normalizeRevisionTimestampMs(
+    item?.created_at_ms
+    || item?.createdAtMs
+    || item?.created_at
+    || item?.createdAt
+    || item?.ts
+    || 0,
+  );
+  const sourceAction = String(item?.source_action || item?.sourceAction || item?.reason || "import_bpmn").trim() || "import_bpmn";
+  const sourceClassification = classifyRevisionSourceAction(sourceAction);
+  const normalizedSourceAction = String(sourceClassification.action || sourceAction || "import_bpmn").trim() || "import_bpmn";
+  const importNote = String(item?.import_note || item?.importNote || item?.comment || "").trim();
+  const author = formatRevisionAuthor({
+    ...(asObject(item?.author)),
+    id: item?.author_id || item?.authorId || item?.created_by || item?.createdBy,
+    name: item?.author_name || item?.authorName,
+    email: item?.author_email || item?.authorEmail,
+    display: item?.author_display || item?.authorDisplay,
+  });
+  const id = String(item?.id || "").trim();
+  return {
+    ...item,
+    id,
+    xml,
+    ts: createdAt,
+    reason: normalizedSourceAction,
+    reasonLabel: localizeRevisionSourceAction(normalizedSourceAction),
+    reasonBucket: String(sourceClassification.bucket || "meaningful"),
+    isMeaningfulRevision: sourceClassification.isMeaningful !== false,
+    isTechnicalRevision: sourceClassification.isTechnical === true,
+    comment: importNote,
+    technicalRevisionNumber: versionNumber,
+    userFacingRevisionNumber,
+    revisionDisplayNumber: userFacingRevisionNumber,
+    revisionNumber: userFacingRevisionNumber || versionNumber,
+    rev: userFacingRevisionNumber || versionNumber,
+    sessionPayloadHash: String(item?.session_payload_hash || item?.sessionPayloadHash || "").trim(),
+    sessionVersion: Number(item?.session_version || item?.sessionVersion || 0),
+    sessionUpdatedAt: Number(item?.session_updated_at || item?.sessionUpdatedAt || 0),
+    authorId: author.authorId,
+    authorName: author.authorName,
+    authorEmail: author.authorEmail,
+    authorLabel: author.label,
+    hasXml,
+    len: Number(item?.len || (hasXml ? xml.length : 0) || 0),
+  };
+}
+
+
 
 const IDLE_SAVE_UPLOAD_EVENT = Object.freeze({
   event: "",
@@ -460,6 +544,7 @@ function ProcessStage({
   const bpmnVersionsOpenRef = useRef(false);
   const bpmnVersionsListRequestRef = useRef({ key: "", promise: null });
   const bpmnVersionDetailRequestRef = useRef(new Map());
+  const metaVersionHeadSeededRef = useRef(false);
   const [featureFlags, setFeatureFlags] = useState({ bpmn_fps_meter_enabled: false, canvas_profiler_enabled: false });
   const [showOverlaysDuringPan, setShowOverlaysDuringPan] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -1024,20 +1109,12 @@ function ProcessStage({
       source: options?.source || "product_actions_registry",
     });
     if (result?.ok === false || typeof window === "undefined") return;
-    const nextProjectId = toText(result?.projectId || project_id);
     const nextSessionId = toText(result?.sessionId || session_id);
-    const nextUrl = buildProductActionsRegistryCloseUrl({
-      workspaceId: workspace_id,
-      projectId: nextProjectId,
-      sessionId: nextSessionId,
-    }, {
-      pathname: window.location.pathname || "/app",
-      baseSearch: window.location.search || "",
-      hash: window.location.hash || "",
-    });
+    if (!nextSessionId) return;
+    const nextUrl = buildAnalyticsPath("session", nextSessionId, ANALYTICS_MODULE_ACTIONS);
     window.history.pushState({ ...(window.history.state || {}) }, "", nextUrl);
-    setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
-  }, [activeProjectId, activeProjectWorkspaceId, onOpenWorkspaceSession, productActionsRegistryRoute.workspaceId]);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, [activeProjectId, activeProjectWorkspaceId, onOpenWorkspaceSession]);
   const saveAckToastTimerRef = useRef(0);
   const processStatusToastLastSignatureRef = useRef("");
   const saveLifecycleToastLastSignatureRef = useRef("");
@@ -1130,7 +1207,9 @@ function ProcessStage({
   const currentUserId = toText(user?.id || user?.user_id || user?.email);
   const sessionPresence = useSessionPresence(hasSession ? sid : "", user, {
     surface: "process_stage",
+    skipMountHeartbeat: true,
   });
+  const [sessionMeta, setSessionMeta] = useState(null);
 
   const sessionCompanionMetaLive = useMemo(() => {
     return normalizeSessionCompanion(sessionCompanionBridgeSnapshot.companion);
@@ -2499,8 +2578,14 @@ function ProcessStage({
     const reqSeq = Number(autoPassPrecheckReqSeqRef.current || 0) + 1;
     autoPassPrecheckReqSeqRef.current = reqSeq;
     setAutoPassPrecheck((prev) => ({ ...prev, loading: true }));
-    (async () => {
-      const result = await apiGetAutoPassPrecheck(currentSid);
+    let pollTimer = null;
+    const finish = () => {
+      if (pollTimer) {
+        window.clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
+    const applyResult = (result) => {
       if (autoPassPrecheckReqSeqRef.current !== reqSeq) return;
       if (result?.ok) {
         const canRun = result.can_run === true;
@@ -2510,12 +2595,24 @@ function ProcessStage({
           reason: canRun ? "" : (toText(result.message) || "No complete path to EndEvent in main process."),
           code: toText(result.code),
         });
+        finish();
         return;
       }
       const status = Number(result?.status || 0);
       if (status === 404) {
         // Backward compatibility: if precheck endpoint is not present, do not block Auto.
         setAutoPassPrecheck({ loading: false, canRun: true, reason: "", code: "" });
+        finish();
+        return;
+      }
+      if (status === 202) {
+        // Background precheck is running; keep loading and poll every 2s.
+        setAutoPassPrecheck((prev) => ({ ...prev, loading: true, canRun: false, reason: "", code: "PENDING" }));
+        if (!pollTimer) {
+          pollTimer = window.setInterval(() => {
+            void apiGetAutoPassPrecheck(currentSid).then(applyResult);
+          }, 2000);
+        }
         return;
       }
       setAutoPassPrecheck({
@@ -2524,8 +2621,69 @@ function ProcessStage({
         reason: shortErr(result?.error || "No complete path to EndEvent in main process."),
         code: "",
       });
-    })();
+      finish();
+    };
+    void apiGetAutoPassPrecheck(currentSid).then(applyResult);
+    return () => finish();
   }, [sid, shortErr]);
+  const applySessionMeta = useCallback((meta) => {
+    if (!meta?.ok || !sid) return;
+    const versionItems = Array.isArray(meta.versions) ? meta.versions : [];
+    const currentHash = String(meta.current_session_payload_hash || "");
+    const latestHash = String(meta.latest_user_version_session_payload_hash || "");
+    setBpmnVersionTruthState({
+      currentSessionPayloadHash: currentHash,
+      latestUserVersionSessionPayloadHash: latestHash,
+      hasSessionChangesSinceLatestBpmnVersion: meta.has_session_changes_since_latest_bpmn_version === true,
+    });
+    const normalizedList = versionItems.map(normalizeBpmnVersionListItem);
+    const nextMeaningfulHead = normalizedList[0] || null;
+    setLatestBpmnVersionHead(nextMeaningfulHead);
+    setLatestBpmnVersionHeadStatus(nextMeaningfulHead ? "ready" : "idle");
+    metaVersionHeadSeededRef.current = true;
+
+    // Seed discussion badge cache from meta count.
+    const notesCount = Number.isFinite(meta.notes_count) ? Math.max(0, Math.round(meta.notes_count)) : 0;
+    seedSessionNoteAggregate(sid, {
+      open_notes_count: notesCount,
+      total_notes_count: notesCount,
+      unread_mentions_count: 0,
+    });
+
+    // Seed presence list from meta so we don't need a separate mount heartbeat.
+    if (Array.isArray(meta.active_users) && meta.active_users.length > 0) {
+      sessionPresence.setActiveUsers(normalizeSessionPresenceUsers(meta.active_users));
+      const ttlSeconds = Number(meta.presence_ttl_seconds || 0);
+      if (Number.isFinite(ttlSeconds) && ttlSeconds > 0) {
+        sessionPresence.setTtlMs(Math.round(ttlSeconds * 1000));
+      }
+    }
+  }, [sid, normalizeBpmnVersionListItem, sessionPresence.setActiveUsers, sessionPresence.setTtlMs]);
+
+  useEffect(() => {
+    const currentSid = toText(sid);
+    if (!currentSid) {
+      setSessionMeta(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const meta = await apiGetSessionMeta(currentSid);
+      if (cancelled) return;
+      if (meta?.ok) {
+        setSessionMeta(meta);
+        applySessionMeta(meta);
+      } else {
+        // Fallback: meta unavailable — fetch presence via the original mount heartbeat.
+        if (sessionPresence.heartbeat) {
+          void sessionPresence.heartbeat("mount");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sid, applySessionMeta, sessionPresence.heartbeat]);
   useEffect(() => {
     if (tab !== "doc" || !sid) return;
     const current = asObject(asObject(draft?.bpmn_meta)?.auto_pass_v1);
@@ -3008,23 +3166,19 @@ function ProcessStage({
       el.style.opacity = changing ? "0" : "";
     });
   }, [subscribeViewboxChanging]);
-  const templatesDiagramContainerRect = (() => {
+  // Cached host rect updated by ResizeObserver / resize listener.
+  // NEVER read getBoundingClientRect during render — only in the observer callback.
+  const [hostContainerRect, setHostContainerRect] = useState({ left: 0, top: 0, width: 0, height: 0 });
+  useViewportResizeController({
+    hostRef: bpmnStageHostRef,
+    onHostRect: setHostContainerRect,
+  });
+
+  const templatesDiagramContainerRect = useMemo(() => {
     const rect = asObject(overlayContainerRect);
-    const width = Number(rect.width || 0);
-    const height = Number(rect.height || 0);
-    if (width > 0 && height > 0) return rect;
-    const host = bpmnStageHostRef?.current;
-    if (host instanceof Element && typeof host.getBoundingClientRect === "function") {
-      const box = host.getBoundingClientRect();
-      return {
-        left: Number(box.left || 0),
-        top: Number(box.top || 0),
-        width: Number(box.width || 0),
-        height: Number(box.height || 0),
-      };
-    }
-    return rect;
-  })();
+    if (rect.width > 0 && rect.height > 0) return rect;
+    return hostContainerRect;
+  }, [overlayContainerRect, hostContainerRect]);
   const {
     hybridLayerPositions,
     hybridLayerPositionsRef,
@@ -4238,85 +4392,6 @@ function ProcessStage({
     [versionsList, previewSnapshotId],
   );
 
-  function formatSnapshotTs(ts) {
-    return formatRevisionTimestampRu(ts);
-  }
-
-  function defaultCheckpointLabel(ts) {
-    return `Контрольная точка ${formatSnapshotTs(ts || Date.now())}`;
-  }
-
-  function snapshotLabel(item) {
-    const explicit = String(item?.label || "").trim();
-    if (explicit) return explicit;
-    const comment = String(item?.comment || "").trim();
-    if (comment) return comment;
-    const revisionNumber = Number(item?.revisionNumber || item?.rev || 0);
-    if (revisionNumber > 0) return `Версия ${revisionNumber}`;
-    if (item?.pinned) return defaultCheckpointLabel(item?.ts);
-    return "Без названия";
-  }
-
-  const normalizeBpmnVersionListItem = useCallback((itemRaw) => {
-    const item = itemRaw && typeof itemRaw === "object" ? itemRaw : {};
-    const hasXml = Object.prototype.hasOwnProperty.call(item, "bpmn_xml")
-      || Object.prototype.hasOwnProperty.call(item, "xml");
-    const xml = hasXml ? String(item?.bpmn_xml || item?.xml || "") : "";
-    const versionNumber = Number(item?.version_number || item?.versionNumber || item?.revisionNumber || item?.rev || 0);
-    const userFacingRevisionNumber = Number(
-      item?.user_facing_revision_number
-      || item?.userFacingRevisionNumber
-      || item?.revision_display_number
-      || item?.revisionDisplayNumber
-      || 0,
-    );
-    const createdAt = normalizeRevisionTimestampMs(
-      item?.created_at_ms
-      || item?.createdAtMs
-      || item?.created_at
-      || item?.createdAt
-      || item?.ts
-      || 0,
-    );
-    const sourceAction = String(item?.source_action || item?.sourceAction || item?.reason || "import_bpmn").trim() || "import_bpmn";
-    const sourceClassification = classifyRevisionSourceAction(sourceAction);
-    const normalizedSourceAction = String(sourceClassification.action || sourceAction || "import_bpmn").trim() || "import_bpmn";
-    const importNote = String(item?.import_note || item?.importNote || item?.comment || "").trim();
-    const author = formatRevisionAuthor({
-      ...(asObject(item?.author)),
-      id: item?.author_id || item?.authorId || item?.created_by || item?.createdBy,
-      name: item?.author_name || item?.authorName,
-      email: item?.author_email || item?.authorEmail,
-      display: item?.author_display || item?.authorDisplay,
-    });
-    const id = String(item?.id || "").trim();
-    return {
-      ...item,
-      id,
-      xml,
-      ts: createdAt,
-      reason: normalizedSourceAction,
-      reasonLabel: localizeRevisionSourceAction(normalizedSourceAction),
-      reasonBucket: String(sourceClassification.bucket || "meaningful"),
-      isMeaningfulRevision: sourceClassification.isMeaningful !== false,
-      isTechnicalRevision: sourceClassification.isTechnical === true,
-      comment: importNote,
-      technicalRevisionNumber: versionNumber,
-      userFacingRevisionNumber,
-      revisionDisplayNumber: userFacingRevisionNumber,
-      revisionNumber: userFacingRevisionNumber || versionNumber,
-      rev: userFacingRevisionNumber || versionNumber,
-      sessionPayloadHash: String(item?.session_payload_hash || item?.sessionPayloadHash || "").trim(),
-      sessionVersion: Number(item?.session_version || item?.sessionVersion || 0),
-      sessionUpdatedAt: Number(item?.session_updated_at || item?.sessionUpdatedAt || 0),
-      authorId: author.authorId,
-      authorName: author.authorName,
-      authorEmail: author.authorEmail,
-      authorLabel: author.label,
-      hasXml,
-      len: Number(item?.len || (hasXml ? xml.length : 0) || 0),
-    };
-  }, []);
 
   const semanticDiffView = useMemo(() => {
     return buildRevisionDiffView({
@@ -5298,6 +5373,12 @@ function ProcessStage({
     if (!sid) {
       setLatestBpmnVersionHead(null);
       setLatestBpmnVersionHeadStatus("idle");
+      metaVersionHeadSeededRef.current = false;
+      return;
+    }
+    // If /meta already seeded the head on initial load, skip the first versions call.
+    if (metaVersionHeadSeededRef.current) {
+      metaVersionHeadSeededRef.current = false;
       return;
     }
     setLatestBpmnVersionHead(null);
@@ -6596,7 +6677,8 @@ function ProcessStage({
                   onClose={closeProductActionsRegistry}
                 />
               ) : propertiesRegistryRoute.active ? (
-                <PropertiesRegistry
+                <ProcessPropertiesRegistryPage
+                  scope="project"
                   workspaceId={propertiesRegistryRoute.workspaceId || activeProjectWorkspaceId}
                   projectId={propertiesRegistryRoute.projectId || activeProjectId}
                   sessionId=""
@@ -6661,7 +6743,8 @@ function ProcessStage({
                 onClose={closeProductActionsRegistry}
               />
             ) : propertiesRegistryRoute.active ? (
-              <PropertiesRegistry
+              <ProcessPropertiesRegistryPage
+                scope="session"
                 workspaceId={propertiesRegistryRoute.workspaceId || activeProjectWorkspaceId}
                 projectId={propertiesRegistryRoute.projectId || activeProjectId}
                 sessionId={sid}
@@ -6697,7 +6780,7 @@ function ProcessStage({
                 className={`bpmnStageHost h-full ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""}`}
                 ref={bpmnStageHostRef}
               >
-                {subprocessBreadcrumbs?.length > 0 ? (
+                {subprocessBreadcrumbs?.length > 1 ? (
                   <div className="subprocessBreadcrumbsBar">
                     {subprocessBreadcrumbs.length > 1 ? (
                       <button

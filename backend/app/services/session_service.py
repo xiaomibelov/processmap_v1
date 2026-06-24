@@ -7,11 +7,13 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException, Request
 
+from fastapi import HTTPException, Request, Response
+
+from ..cache import session_cache
 from ..legacy.request_context import request_user_meta, request_active_org_id
 from ..models import Session
 from ..repositories import session_repo
-from ..storage import get_storage
-from fastapi import HTTPException, Request
+from ..storage import get_storage, list_session_presence
 from ..utils.authz import session_access_from_request
 from ..services.bpmn_navigation import (
     called_element_id,
@@ -74,6 +76,18 @@ def create_session(
     return _lm._session_api_dump(sess)
 
 
+def _build_session_projection(row: Dict[str, Any]) -> Dict[str, Any]:
+    import app._legacy_main as _lm
+    sid = str(row.get("id") or "").strip()
+    return session_cache.build_projection(
+        sid,
+        row,
+        normalize_bpmn_meta=_lm._normalize_bpmn_meta,
+        extract_publish_git_mirror=_lm._extract_publish_git_mirror,
+        notes_decode=_lm._notes_decode,
+    )
+
+
 def get_session(
     session_id: str,
     *,
@@ -82,20 +96,38 @@ def get_session(
     is_admin: Optional[bool] = None,
     request: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """Load a single session by id."""
+    """Load a single session by id (cached lightweight projection)."""
     ctx = _request_context(request)
     ctx_user_id = user_id if user_id is not None else ctx.get("user_id")
     ctx_org_id = org_id if org_id is not None else ctx.get("org_id")
     ctx_is_admin = is_admin if is_admin is not None else ctx.get("is_admin")
-    sess = session_repo.load(session_id, user_id=ctx_user_id, org_id=ctx_org_id, is_admin=ctx_is_admin)
-    if not sess:
+
+    sid = str(session_id or "").strip()
+    if not sid:
+        return {"error": "not found"}
+
+    # Try cached projection first.
+    cached = session_cache.get_projection(sid)
+    if isinstance(cached, dict) and str(cached.get("id") or "").strip() == sid:
+        return cached
+
+    st = get_storage()
+    row = st.load_session_projection(
+        sid,
+        user_id=ctx_user_id,
+        org_id=ctx_org_id,
+        is_admin=ctx_is_admin,
+    )
+    if not row:
         if not ctx_is_admin and ctx_user_id and ctx_org_id:
-            candidate = session_repo.load(session_id, org_id=ctx_org_id, is_admin=True)
+            candidate = st.load(sid, org_id=ctx_org_id, is_admin=True)
             if candidate:
                 raise SessionAccessDenied()
         return {"error": "not found"}
-    import app._legacy_main as _lm
-    return _lm._session_api_dump(sess)
+
+    projection = _build_session_projection(row)
+    session_cache.set_projection(sid, projection)
+    return projection
 
 
 def list_sessions(
@@ -246,12 +278,17 @@ def bpmn_export(
     pan_y: float = 0.0,
     request: Any = None,
 ) -> Any:
-    """Export session BPMN XML."""
-    # CROSS-DOMAIN: depends on _overlay_interview_annotations_on_bpmn_xml,
-    # _session_graph_fingerprint, _create_bpmn_revision_snapshot_if_needed,
-    # _mark_diagram_truth_write, exporters.bpmn in _legacy_main.py.
+    """Export session BPMN XML (raw XML is Redis-cached)."""
     import app._legacy_main as _lm
-    return _lm.session_bpmn_export(
+    sid = str(session_id or "").strip()
+    raw_mode = bool(int(raw or 0))
+
+    if raw_mode and sid:
+        cached_xml = session_cache.get_bpmn_raw(sid)
+        if isinstance(cached_xml, str):
+            return Response(content=cached_xml, media_type="application/xml")
+
+    response = _lm.session_bpmn_export(
         session_id,
         raw=raw,
         include_overlay=include_overlay,
@@ -260,6 +297,138 @@ def bpmn_export(
         pan_y=pan_y,
         request=request,
     )
+
+    if raw_mode and sid and isinstance(response, Response):
+        try:
+            xml_body = response.body.decode("utf-8") if isinstance(response.body, bytes) else str(response.body or "")
+            session_cache.set_bpmn_raw(sid, xml_body)
+        except Exception as exc:
+            logger.warning("bpmn_export: failed to cache raw XML for %s: %s", sid, exc)
+
+    return response
+
+
+def get_session_meta(
+    session_id: str,
+    *,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    request: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Return aggregated metadata for a session (versions/presence/notes/auto-pass).
+
+    This is a single batched read intended to replace the parallel calls the
+    canvas currently fires on open.
+    """
+    ctx = _request_context(request)
+    ctx_user_id = user_id if user_id is not None else ctx.get("user_id")
+    ctx_org_id = org_id if org_id is not None else ctx.get("org_id")
+    ctx_is_admin = is_admin if is_admin is not None else ctx.get("is_admin")
+
+    sid = str(session_id or "").strip()
+    if not sid:
+        return {"error": "not found"}
+
+    cached = session_cache.get_meta(sid)
+    if isinstance(cached, dict) and str(cached.get("session_id") or "").strip() == sid:
+        return cached
+
+    st = get_storage()
+    row = st.load_session_projection(
+        sid,
+        user_id=ctx_user_id,
+        org_id=ctx_org_id,
+        is_admin=ctx_is_admin,
+    )
+    if not row:
+        return {"error": "not found"}
+
+    session_org_id = str(row.get("org_id") or ctx_org_id or "").strip() or None
+    projection = _build_session_projection(row)
+
+    versions_count = st.count_bpmn_versions(sid, org_id=session_org_id)
+    notes_count = st.count_note_threads(sid, org_id=session_org_id, status="open")
+
+    # Include the latest BPMN version header for conflict detection (same shape as /bpmn/versions?limit=1).
+    versions_payload: Dict[str, Any] = {}
+    try:
+        import app._legacy_main as _lm
+        versions_payload = _lm.session_bpmn_versions_list(sid, request=None, limit=1, include_xml=0) or {}
+    except Exception as exc:
+        logger.warning("get_session_meta: versions list failed for %s: %s", sid, exc)
+
+    active_users: List[Dict[str, Any]] = []
+    try:
+        active_users = list_session_presence(
+            sid,
+            org_id=session_org_id or "",
+            project_id=str(row.get("project_id") or "").strip(),
+            current_user_id=ctx_user_id or "",
+        )
+    except Exception as exc:
+        logger.warning("get_session_meta: presence load failed for %s: %s", sid, exc)
+
+    bpmn_meta = projection.get("bpmn_meta") or {}
+    auto_pass_v1 = bpmn_meta.get("auto_pass_v1") or {}
+    auto_pass_status = str(auto_pass_v1.get("status") or "").strip() or None
+
+    version_items = versions_payload.get("items") or []
+    latest_version = version_items[0] if version_items else None
+    meta = {
+        "session_id": sid,
+        "versions_count": versions_count,
+        "notes_count": notes_count,
+        "presence_ttl_seconds": 60,
+        "active_users": active_users,
+        "auto_pass_status": auto_pass_status,
+        "bpmn_xml_version": projection.get("bpmn_xml_version"),
+        "diagram_state_version": projection.get("diagram_state_version"),
+        "version": projection.get("version"),
+        "versions": version_items,
+        "items": version_items,
+        "count": versions_payload.get("count") or versions_count,
+        "user_facing_count": versions_payload.get("user_facing_count") or 0,
+        "latest_user_facing_revision_number": versions_payload.get("latest_user_facing_revision_number") or 0,
+        "current_session_payload_hash": versions_payload.get("current_session_payload_hash") or "",
+        "latest_user_version_session_payload_hash": versions_payload.get("latest_user_version_session_payload_hash") or "",
+        "has_session_changes_since_latest_bpmn_version": versions_payload.get("has_session_changes_since_latest_bpmn_version") or False,
+        "latest_version": latest_version,
+    }
+    session_cache.set_meta(sid, meta)
+    return meta
+
+
+def get_session_graph(
+    session_id: str,
+    *,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    request: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Return only nodes/edges for a session (used by graph analysis / AI)."""
+    ctx = _request_context(request)
+    ctx_user_id = user_id if user_id is not None else ctx.get("user_id")
+    ctx_org_id = org_id if org_id is not None else ctx.get("org_id")
+    ctx_is_admin = is_admin if is_admin is not None else ctx.get("is_admin")
+
+    sid = str(session_id or "").strip()
+    if not sid:
+        return {"error": "not found"}
+
+    sess = session_repo.load(sid, user_id=ctx_user_id, org_id=ctx_org_id, is_admin=ctx_is_admin)
+    if not sess:
+        return {"error": "not found"}
+
+    return {
+        "session_id": sid,
+        "nodes": [n.model_dump() if hasattr(n, "model_dump") else dict(n) for n in (getattr(sess, "nodes", None) or [])],
+        "edges": [e.model_dump() if hasattr(e, "model_dump") else dict(e) for e in (getattr(sess, "edges", None) or [])],
+        "bpmn_graph_fingerprint": str(getattr(sess, "bpmn_graph_fingerprint", "") or ""),
+        "version": int(getattr(sess, "version", 0) or 0),
+        "diagram_state_version": int(getattr(sess, "diagram_state_version", 0) or 0),
+    }
 
 
 def session_bpmn_save(session_id: str, inp: Any, request: Any = None) -> Dict[str, Any]:
@@ -398,6 +567,7 @@ def patch_node(session_id: str, node_id: str, inp, request=None) -> Dict[str, An
         actor_label=actor_label,
     )
     st.save(s)
+    session_cache.invalidate_session(session_id)
     return s.model_dump()
 
 
@@ -449,6 +619,7 @@ def add_node(session_id: str, inp, request=None) -> Dict[str, Any]:
         actor_label=actor_label,
     )
     st.save(s)
+    session_cache.invalidate_session(session_id)
     return s.model_dump()
 
 
@@ -483,6 +654,7 @@ def delete_node(session_id: str, node_id: str, request=None) -> Dict[str, Any]:
         actor_label=actor_label,
     )
     st.save(s)
+    session_cache.invalidate_session(session_id)
     return s.model_dump()
 
 
@@ -527,6 +699,7 @@ def add_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
         actor_label=actor_label,
     )
     st.save(s)
+    session_cache.invalidate_session(session_id)
     return s.model_dump()
 
 
@@ -565,6 +738,7 @@ def delete_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
         actor_label=actor_label,
     )
     st.save(s)
+    session_cache.invalidate_session(session_id)
     return s.model_dump()
 
 
@@ -903,6 +1077,7 @@ def navigate_to_subprocess(
         "subprocess_session_id": getattr(child, "id", ""),
         "target_element_id": target_id,
         "breadcrumbs": breadcrumbs,
+        "bpmn_xml": child_xml,
     }
 
 

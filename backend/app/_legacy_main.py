@@ -31,6 +31,7 @@ from .exporters.yaml_export import dump_yaml, session_to_process_dict
 from .glossary import normalize_kind, slugify_canon, upsert_term
 from .models import Node, Edge, Question, ReportVersion, Session, Project, CreateProjectIn, UpdateProjectIn
 from .analytics import compute_analytics
+from .analytics_read_model import refresh_analytics_for_session
 from .normalizer import load_seed_glossary, normalize_nodes
 from .resources import build_resources_report
 from .storage import (
@@ -77,6 +78,7 @@ from .settings import load_llm_settings, llm_status, save_llm_settings, verify_l
 from .ai.execution_log import check_ai_rate_limit, hash_ai_input, record_ai_execution
 from .ai.prompt_registry import get_active_prompt, seed_existing_ai_prompts
 from .redis_lock import acquire_session_lock
+from .cache import session_cache
 from .redis_cache import (
     cache_get_json,
     cache_set_json,
@@ -4274,6 +4276,10 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
         meta={"keys": sorted(list(data.keys()))},
     )
     _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
+    try:
+        refresh_analytics_for_session(str(getattr(sess, "id", "") or session_id), oid or str(getattr(sess, "org_id", "") or get_default_org_id()))
+    except Exception:
+        pass
     return _session_api_dump(sess)
 
 
@@ -4442,6 +4448,10 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
         meta={"put": True},
     )
     _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
+    try:
+        refresh_analytics_for_session(str(getattr(sess, "id", "") or session_id), oid or str(getattr(sess, "org_id", "") or get_default_org_id()))
+    except Exception:
+        pass
     return _session_api_dump(sess)
 
 @app.post("/api/sessions/{session_id}/recompute")
@@ -4453,6 +4463,10 @@ def recompute(session_id: str) -> Dict[str, Any]:
         return {"error": "not found"}
     s = _recompute_session(s)
     st.save(s)
+    try:
+        refresh_analytics_for_session(session_id, str(getattr(s, "org_id", "") or get_default_org_id()))
+    except Exception:
+        pass
     return s.model_dump()
 
 
@@ -8609,6 +8623,10 @@ def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = Non
     if sid:
         _invalidate_session_open_cache_for_session(sid)
         _invalidate_tldr_cache_for_session(sid)
+        try:
+            session_cache.invalidate_session(sid)
+        except Exception as exc:
+            logger.warning("_invalidate_session_caches: session_cache invalidation failed for %s: %s", sid, exc)
 
 
 def _extract_report_summary_text(report_row: Dict[str, Any]) -> str:

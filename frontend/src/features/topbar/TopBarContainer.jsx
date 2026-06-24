@@ -1,31 +1,41 @@
 import { useCallback, useEffect, useState } from "react";
 import TopBar from "../../components/TopBar";
+import { buildAnalyticsPath, ANALYTICS_MODULE_OVERVIEW } from "../../app/processMapRouteModel.js";
 
-function isAnalyticsSurface() {
+function isAnalyticsPath() {
   if (typeof window === "undefined") return false;
-  const surface = new URL(window.location.href).searchParams.get("surface");
-  return ["analytics", "product-actions-registry", "process-properties-registry", "dashboards"].includes(surface);
+  return String(window.location.pathname || "").startsWith("/analytics");
+}
+
+function resolveAnalyticsScope(sessionId, projectId, workspaceId) {
+  if (sessionId) return { scope: "session", scopeId: sessionId };
+  if (projectId) return { scope: "project", scopeId: projectId };
+  if (workspaceId) return { scope: "workspace", scopeId: workspaceId };
+  return null;
 }
 
 export default function TopBarContainer({ ctl }) {
   const sessionId = ctl?.draft?.session_id || "";
-  const [isAnalyticsActive, setIsAnalyticsActive] = useState(() => isAnalyticsSurface());
+  const projectId = ctl?.projectId || "";
+  const workspaceId = ctl?.workspaceId || "";
+  const [isAnalyticsActive, setIsAnalyticsActive] = useState(() => isAnalyticsPath());
 
   useEffect(() => {
-    const handle = () => setIsAnalyticsActive(isAnalyticsSurface());
+    const handle = () => setIsAnalyticsActive(isAnalyticsPath());
     window.addEventListener("popstate", handle);
     return () => window.removeEventListener("popstate", handle);
   }, []);
 
   const onOpenAnalyticsHub = useCallback(() => {
     if (typeof window === "undefined") return;
-    const url = new URL(window.location.href);
-    url.searchParams.set("surface", "analytics");
-    url.searchParams.delete("registry_scope");
-    window.history.pushState({ ...(window.history.state || {}), surface: "analytics" }, "", url.toString());
-    window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+    const target = resolveAnalyticsScope(sessionId, projectId, workspaceId);
+    const next = target
+      ? buildAnalyticsPath(target.scope, target.scopeId, ANALYTICS_MODULE_OVERVIEW)
+      : "/analytics";
+    window.history.pushState({}, "", next);
+    window.dispatchEvent(new PopStateEvent("popstate"));
     setIsAnalyticsActive(true);
-  }, []);
+  }, [sessionId, projectId, workspaceId]);
 
   return (
     <TopBar

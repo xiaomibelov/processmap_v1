@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  buildAnalyticsHubCloseUrl,
-  buildAnalyticsHubUrl,
-  buildDashboardsCloseUrl,
-  buildDashboardsUrl,
-  buildProductActionsRegistryCloseUrl,
-  buildProductActionsRegistryUrl,
-  buildPropertiesRegistryCloseUrl,
-  buildPropertiesRegistryUrl,
+  ANALYTICS_MODULE_ACTIONS,
+  ANALYTICS_MODULE_DASHBOARDS,
+  ANALYTICS_MODULE_OVERVIEW,
+  ANALYTICS_MODULE_PROPERTIES,
+  buildAnalyticsPath,
+  buildProcessMapUrl,
   readAnalyticsHubRoute,
   readDashboardsRoute,
   readProductActionsRegistryRoute,
@@ -16,6 +14,37 @@ import {
 
 function text(value) {
   return String(value || "").trim();
+}
+
+function navigateToPath(path) {
+  if (typeof window === "undefined" || !path) return;
+  window.history.pushState({}, "", path);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
+function normalizeScope(value) {
+  const scope = text(value).toLowerCase();
+  if (scope === "session" || scope === "current") return "session";
+  if (scope === "project") return "project";
+  if (scope === "workspace") return "workspace";
+  return "";
+}
+
+function resolveScopeId(options = {}, sessionId = "", projectId = "", workspaceId = "") {
+  const explicitScope = normalizeScope(options?.scope);
+  if (explicitScope === "session" || text(options?.sessionId)) {
+    return { scope: "session", scopeId: text(options?.sessionId) || sessionId };
+  }
+  if (explicitScope === "project" || text(options?.projectId)) {
+    return { scope: "project", scopeId: text(options?.projectId) || projectId };
+  }
+  if (explicitScope === "workspace" || text(options?.workspaceId)) {
+    return { scope: "workspace", scopeId: text(options?.workspaceId) || workspaceId };
+  }
+  if (sessionId) return { scope: "session", scopeId: sessionId };
+  if (projectId) return { scope: "project", scopeId: projectId };
+  if (workspaceId) return { scope: "workspace", scopeId: workspaceId };
+  return { scope: "workspace", scopeId: "" };
 }
 
 export function useAnalyticsRouteState({
@@ -81,171 +110,111 @@ export function useAnalyticsRouteState({
   }, [sessionId, projectId, workspaceId]);
 
   const openAnalyticsHub = useCallback((options = {}) => {
-    if (typeof window === "undefined") return;
-    const nextUrl = buildAnalyticsHubUrl({
-      workspaceId: options?.workspaceId || workspaceId || analyticsHubRoute.workspaceId,
-      projectId: options?.projectId ?? projectId,
-      sessionId: options?.sessionId ?? sessionId,
-    }, {
-      pathname: window.location.pathname || "/app",
-      baseSearch: window.location.search || "",
-      hash: window.location.hash || "",
-    });
-    window.history.pushState({ ...(window.history.state || {}), surface: "analytics" }, "", nextUrl);
+    const { scope, scopeId } = resolveScopeId(options, sessionId, projectId, workspaceId);
+    if (!scopeId) return;
+    navigateToPath(buildAnalyticsPath(scope, scopeId, ANALYTICS_MODULE_OVERVIEW));
     setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
     setPropertiesRegistryRoute(readPropertiesRegistryRoute(window.location));
     setDashboardsRoute(readDashboardsRoute(window.location));
-  }, [workspaceId, projectId, sessionId, analyticsHubRoute.workspaceId]);
+  }, [workspaceId, projectId, sessionId]);
 
   const closeAnalyticsHub = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const nextUrl = buildAnalyticsHubCloseUrl({
+    const nextUrl = buildProcessMapUrl({
       workspaceId: analyticsHubRoute.workspaceId || workspaceId,
-      projectId: projectId,
-      sessionId: sessionId,
-    }, {
-      pathname: window.location.pathname || "/app",
-      baseSearch: window.location.search || "",
-      hash: window.location.hash || "",
+      projectId: analyticsHubRoute.projectId || projectId,
+      sessionId: analyticsHubRoute.sessionId || sessionId,
     });
-    window.history.pushState({ ...(window.history.state || {}) }, "", nextUrl);
+    navigateToPath(nextUrl);
     setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
     setPropertiesRegistryRoute(readPropertiesRegistryRoute(window.location));
     setDashboardsRoute(readDashboardsRoute(window.location));
-  }, [workspaceId, projectId, sessionId, analyticsHubRoute.workspaceId]);
+  }, [workspaceId, projectId, sessionId, analyticsHubRoute.workspaceId, analyticsHubRoute.projectId, analyticsHubRoute.sessionId]);
 
   const openPropertiesRegistry = useCallback((options = {}) => {
-    if (typeof window === "undefined") return;
-    const nextUrl = buildPropertiesRegistryUrl({
-      workspaceId: options?.workspaceId || workspaceId || propertiesRegistryRoute.workspaceId,
-      projectId: options?.projectId ?? projectId,
-      sessionId: options?.sessionId ?? sessionId,
-    }, {
-      pathname: window.location.pathname || "/app",
-      baseSearch: window.location.search || "",
-      hash: window.location.hash || "",
-    });
-    window.history.pushState({ ...(window.history.state || {}), surface: "process-properties-registry" }, "", nextUrl);
+    const { scope, scopeId } = resolveScopeId(options, sessionId, projectId, workspaceId);
+    if (!scopeId) return;
+    navigateToPath(buildAnalyticsPath(scope, scopeId, ANALYTICS_MODULE_PROPERTIES));
     setPropertiesRegistryRoute(readPropertiesRegistryRoute(window.location));
     setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
     setDashboardsRoute(readDashboardsRoute(window.location));
-  }, [workspaceId, projectId, sessionId, propertiesRegistryRoute.workspaceId]);
+  }, [workspaceId, projectId, sessionId]);
 
   const closePropertiesRegistry = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const nextUrl = buildPropertiesRegistryCloseUrl({
+    const nextUrl = buildProcessMapUrl({
       workspaceId: propertiesRegistryRoute.workspaceId || workspaceId,
-      projectId: projectId,
-      sessionId: sessionId,
-    }, {
-      pathname: window.location.pathname || "/app",
-      baseSearch: window.location.search || "",
-      hash: window.location.hash || "",
+      projectId: propertiesRegistryRoute.projectId || projectId,
+      sessionId: propertiesRegistryRoute.sessionId || sessionId,
     });
-    window.history.pushState({ ...(window.history.state || {}) }, "", nextUrl);
+    navigateToPath(nextUrl);
     setPropertiesRegistryRoute(readPropertiesRegistryRoute(window.location));
     setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
     setDashboardsRoute(readDashboardsRoute(window.location));
-  }, [workspaceId, projectId, sessionId, propertiesRegistryRoute.workspaceId]);
+  }, [workspaceId, projectId, sessionId, propertiesRegistryRoute.workspaceId, propertiesRegistryRoute.projectId, propertiesRegistryRoute.sessionId]);
 
   const openDashboards = useCallback((options = {}) => {
-    if (typeof window === "undefined") return;
-    const nextUrl = buildDashboardsUrl({
-      workspaceId: options?.workspaceId || workspaceId || dashboardsRoute.workspaceId,
-      projectId: options?.projectId ?? projectId,
-      sessionId: options?.sessionId ?? sessionId,
-    }, {
-      pathname: window.location.pathname || "/app",
-      baseSearch: window.location.search || "",
-      hash: window.location.hash || "",
-    });
-    window.history.pushState({ ...(window.history.state || {}), surface: "dashboards" }, "", nextUrl);
+    const { scope, scopeId } = resolveScopeId(options, sessionId, projectId, workspaceId);
+    if (!scopeId) return;
+    navigateToPath(buildAnalyticsPath(scope, scopeId, ANALYTICS_MODULE_DASHBOARDS));
     setDashboardsRoute(readDashboardsRoute(window.location));
     setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
     setPropertiesRegistryRoute(readPropertiesRegistryRoute(window.location));
-  }, [workspaceId, projectId, sessionId, dashboardsRoute.workspaceId]);
+  }, [workspaceId, projectId, sessionId]);
 
   const closeDashboards = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const nextUrl = buildDashboardsCloseUrl({
+    const nextUrl = buildProcessMapUrl({
       workspaceId: dashboardsRoute.workspaceId || workspaceId,
-      projectId: projectId,
-      sessionId: sessionId,
-    }, {
-      pathname: window.location.pathname || "/app",
-      baseSearch: window.location.search || "",
-      hash: window.location.hash || "",
+      projectId: dashboardsRoute.projectId || projectId,
+      sessionId: dashboardsRoute.sessionId || sessionId,
     });
-    window.history.pushState({ ...(window.history.state || {}) }, "", nextUrl);
+    navigateToPath(nextUrl);
     setDashboardsRoute(readDashboardsRoute(window.location));
     setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
     setPropertiesRegistryRoute(readPropertiesRegistryRoute(window.location));
-  }, [workspaceId, projectId, sessionId, dashboardsRoute.workspaceId]);
+  }, [workspaceId, projectId, sessionId, dashboardsRoute.workspaceId, dashboardsRoute.projectId, dashboardsRoute.sessionId]);
 
   const openProductActionsRegistry = useCallback((options = {}) => {
-    if (typeof window === "undefined") return;
-    const scope = text(options?.scope) || (sessionId ? "session" : projectId ? "project" : "workspace");
-    const currentUrl = new URL(window.location.href);
-    const fromAnalytics = analyticsHubRoute.active || currentUrl.searchParams.get("surface") === "analytics";
-    if (fromAnalytics) {
-      currentUrl.searchParams.set("return_to", "analytics");
-    }
-    const nextUrl = buildProductActionsRegistryUrl({
-      scope,
-      workspaceId: options?.workspaceId || workspaceId || productActionsRegistryRoute.workspaceId,
-      projectId: options?.projectId ?? projectId,
-      sessionId: options?.sessionId ?? sessionId,
-    }, {
-      pathname: window.location.pathname || "/app",
-      baseSearch: currentUrl.searchParams.toString(),
-      hash: window.location.hash || "",
-    });
-    window.history.pushState({ ...(window.history.state || {}), surface: "product-actions-registry" }, "", nextUrl);
+    const { scope, scopeId } = resolveScopeId(options, sessionId, projectId, workspaceId);
+    if (!scopeId) return;
+    navigateToPath(buildAnalyticsPath(scope, scopeId, ANALYTICS_MODULE_ACTIONS));
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
     setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
     setPropertiesRegistryRoute(readPropertiesRegistryRoute(window.location));
     setDashboardsRoute(readDashboardsRoute(window.location));
-  }, [workspaceId, projectId, sessionId, analyticsHubRoute.active, productActionsRegistryRoute.workspaceId]);
+  }, [workspaceId, projectId, sessionId]);
 
   const closeProductActionsRegistry = useCallback(() => {
-    if (typeof window === "undefined") return;
-    const url = new URL(window.location.href);
+    const url = new URL(window.location.href || "https://processmap.local/app");
     const returnTo = url.searchParams.get("return_to");
     let nextUrl;
     if (returnTo === "analytics") {
-      url.searchParams.delete("return_to");
-      nextUrl = buildAnalyticsHubUrl({
-        workspaceId: productActionsRegistryRoute.workspaceId || workspaceId,
-        projectId: projectId,
-        sessionId: sessionId,
-      }, {
-        pathname: window.location.pathname || "/app",
-        baseSearch: url.searchParams.toString(),
-        hash: window.location.hash || "",
-      });
+      const { scope, scopeId } = resolveScopeId(
+        { scope: productActionsRegistryRoute.scope },
+        sessionId,
+        projectId,
+        workspaceId,
+      );
+      nextUrl = scopeId
+        ? buildAnalyticsPath(scope, scopeId, ANALYTICS_MODULE_OVERVIEW)
+        : buildProcessMapUrl({ workspaceId, projectId, sessionId });
     } else {
-      nextUrl = buildProductActionsRegistryCloseUrl({
+      nextUrl = buildProcessMapUrl({
         workspaceId: productActionsRegistryRoute.workspaceId || workspaceId,
-        projectId: projectId,
-        sessionId: sessionId,
-      }, {
-        pathname: window.location.pathname || "/app",
-        baseSearch: window.location.search || "",
-        hash: window.location.hash || "",
+        projectId: productActionsRegistryRoute.projectId || projectId,
+        sessionId: productActionsRegistryRoute.sessionId || sessionId,
       });
     }
-    window.history.pushState({ ...(window.history.state || {}) }, "", nextUrl);
+    navigateToPath(nextUrl);
     setProductActionsRegistryRoute(readProductActionsRegistryRoute(window.location));
     setAnalyticsHubRoute(readAnalyticsHubRoute(window.location));
     setPropertiesRegistryRoute(readPropertiesRegistryRoute(window.location));
     setDashboardsRoute(readDashboardsRoute(window.location));
-  }, [workspaceId, projectId, sessionId, productActionsRegistryRoute.workspaceId]);
+  }, [workspaceId, projectId, sessionId, productActionsRegistryRoute.scope, productActionsRegistryRoute.workspaceId, productActionsRegistryRoute.projectId, productActionsRegistryRoute.sessionId]);
 
   return {
     analyticsHubRoute,

@@ -3,6 +3,10 @@ import {
   patchOverlaysInstance,
   setOverlaysUpdatePaused,
 } from "../patches/patchOverlayPanPerf";
+import {
+  OVERLAY_PAN_DEBOUNCE_MS,
+  VIEWBOX_EMIT_THROTTLE_MS,
+} from "../performance/stageRuntimePerformance.js";
 
 // ── Overlay pan debounce ──
 // bpmn-js hides the overlay root on canvas.viewbox.changing and updates + shows
@@ -10,8 +14,6 @@ import {
 // during every tiny pan/zoom. Instead of hiding the root, we pause the expensive
 // per-overlay position/scale updates while the viewbox is changing and perform
 // one final update after it settles (150 ms trailing debounce).
-
-const OVERLAY_PAN_DEBOUNCE_MS = 150;
 
 function debounce(fn, ms) {
   let timer = 0;
@@ -36,8 +38,6 @@ function throttle(fn, ms) {
     }, ms);
   };
 }
-
-const VIEWBOX_EMIT_THROTTLE_MS = 100;
 
 function bindOverlayPanDebouncer({ eventBus, inst }) {
   if (!eventBus || !inst) return;
@@ -392,7 +392,6 @@ export function bindViewerStageEvents({
       suppressed,
       snapshot: snap,
     });
-    applyPropertiesOverlayDecorForZoomChangeDebounced(inst, mode);
     if (viewportCuller) {
       viewportCuller.scheduleCull();
     }
@@ -405,6 +404,7 @@ export function bindViewerStageEvents({
     const suppressed = Number(suppressViewboxEventRef.current || 0) > 0;
     if (!suppressed) userViewportTouchedRef.current = true;
     throttledViewboxChanged("viewer", suppressed);
+    applyPropertiesOverlayDecorForZoomChangeDebounced(inst, "viewer");
   });
 }
 
@@ -543,7 +543,6 @@ export function bindModelerStageEvents({
       suppressed,
       snapshot: snap,
     });
-    applyPropertiesOverlayDecorForZoomChangeDebounced(inst, mode);
     if (viewportCuller) {
       viewportCuller.scheduleCull();
     }
@@ -556,5 +555,6 @@ export function bindModelerStageEvents({
     const suppressed = Number(suppressViewboxEventRef.current || 0) > 0;
     if (!suppressed) userViewportTouchedRef.current = true;
     throttledViewboxChanged("editor", suppressed);
+    applyPropertiesOverlayDecorForZoomChangeDebounced(inst, "editor");
   });
 }
