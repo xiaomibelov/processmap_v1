@@ -923,7 +923,7 @@ def query_property_registry_metadata(
         _enrich_metadata(meta, usage_counts, include_reference_options, org_id or None)
         for meta in filtered
     ]
-    return {"ok": True, "properties": out, "count": len(out)}
+    return {"ok": True, "properties": out, "rows": out, "count": len(out)}
 
 
 @router.get("/api/analysis/properties/registry/export")
