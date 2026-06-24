@@ -8612,6 +8612,20 @@ def _invalidate_explorer_children_for_project(project_id: Any, org_id: Any) -> N
         explorer_invalidate_children(oid, wid, str(folder_id or ""))
 
 
+def _workspace_id_for_project(project_id: str) -> str:
+    pid = str(project_id or "").strip()
+    if not pid:
+        return ""
+    try:
+        ps = get_project_storage()
+        proj = ps.load(pid)
+        if proj:
+            return str(getattr(proj, "workspace_id", "") or "").strip()
+    except Exception as exc:
+        logger.warning("_workspace_id_for_project failed for %s: %s", pid, exc)
+    return ""
+
+
 def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = None, org_id: Any = None) -> None:
     sid = str(session_id or getattr(session_obj, "id", "") or "").strip()
     oid = _resolved_org_for_cache(org_id or getattr(session_obj, "org_id", ""))
@@ -8627,6 +8641,17 @@ def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = Non
             session_cache.invalidate_session(sid)
         except Exception as exc:
             logger.warning("_invalidate_session_caches: session_cache invalidation failed for %s: %s", sid, exc)
+    try:
+        from .analytics_cache import invalidate_analytics_scope
+        if sid:
+            invalidate_analytics_scope("session", sid, oid)
+        if project_id:
+            invalidate_analytics_scope("project", project_id, oid)
+            workspace_id = _workspace_id_for_project(project_id)
+            if workspace_id:
+                invalidate_analytics_scope("workspace", workspace_id, oid)
+    except Exception as exc:
+        logger.warning("_invalidate_session_caches: analytics cache invalidation failed: %s", exc)
 
 
 def _extract_report_summary_text(report_row: Dict[str, Any]) -> str:

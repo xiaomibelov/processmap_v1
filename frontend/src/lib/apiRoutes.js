@@ -308,6 +308,14 @@ export const apiRoutes = {
       scope: String(scope || "").trim(),
       scope_id: String(scopeId || "").trim(),
     }),
+    exportPropertiesXlsx: (scope, scopeId) => withQuery("/api/analytics/properties/export.xlsx", {
+      scope: String(scope || "").trim(),
+      scope_id: String(scopeId || "").trim(),
+    }),
+    exportActionsXlsx: (scope, scopeId) => withQuery("/api/analytics/actions/export.xlsx", {
+      scope: String(scope || "").trim(),
+      scope_id: String(scopeId || "").trim(),
+    }),
   },
 };
 

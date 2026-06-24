@@ -253,3 +253,46 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         self.assertEqual(_infer_property_family("ingredient1", "string"), "ingredient")
         self.assertEqual(_infer_property_family("equipment", "string"), "equipment")
         self.assertEqual(_infer_property_family("fpc-visible", "ui_config"), "ui_config")
+
+    def test_export_properties_xlsx_returns_valid_file(self):
+        r = self.client.get(
+            f"/api/analytics/properties/export.xlsx?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.headers["content-type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn("properties-session-", r.headers.get("content-disposition", ""))
+        # xlsx files start with PK signature
+        self.assertTrue(r.content.startswith(b"PK"))
+        self.assertGreater(len(r.content), 100)
+
+    def test_export_actions_xlsx_returns_valid_file(self):
+        r = self.client.get(
+            f"/api/analytics/actions/export.xlsx?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.headers["content-type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn("actions-session-", r.headers.get("content-disposition", ""))
+        self.assertTrue(r.content.startswith(b"PK"))
+        self.assertGreater(len(r.content), 100)
+
+    def test_dashboard_cached_response_is_consistent(self):
+        # Even when Redis is unavailable the endpoint must return the same shape.
+        r1 = self.client.get(
+            f"/api/analytics/dashboard?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        r2 = self.client.get(
+            f"/api/analytics/dashboard?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r1.status_code, 200)
+        self.assertEqual(r2.status_code, 200)
+        self.assertEqual(r1.json()["data"], r2.json()["data"])

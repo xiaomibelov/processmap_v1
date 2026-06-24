@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   apiExportAnalyticsPropertiesCsv,
+  apiExportAnalyticsPropertiesXlsx,
   apiGetAnalyticsProperties,
 } from "../../lib/api.js";
 import { DownloadIcon, FilterIcon, SearchIcon } from "./AnalyticsIcons.jsx";
@@ -8,6 +9,7 @@ import AnalyticsPropertiesTable, {
   getRowKey,
   usePropertyRowsProcessor,
 } from "./AnalyticsPropertiesTable.jsx";
+import { AnalyticsError, AnalyticsLoading } from "./AnalyticsStatus.jsx";
 import EmptyState from "./registry/EmptyState.jsx";
 import { inferPropertyValueType } from "./propertyValueUtils.js";
 
@@ -156,6 +158,7 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
   const [options, setOptions] = useState({});
+  const abortRef = useRef(null);
 
   const [backendFilters, setBackendFilters] = useState({});
   const [search, setSearch] = useState("");
@@ -173,17 +176,16 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
     setSelectedRows(new Set());
   }, [scope, scopeId, backendFilters, debouncedSearch, quickFilters, valueTypeFilter, usageRange]);
 
-  useEffect(() => {
-    let alive = true;
-    async function load() {
-      setLoading(true);
-      setError("");
-      const params = { page: 1, limit: 500 };
-      if (backendFilters.type?.length) params.type_filter = backendFilters.type;
-      if (backendFilters.category?.length) params.category_filter = backendFilters.category;
-      if (backendFilters.source?.length) params.source_filter = backendFilters.source;
-      const result = await apiGetAnalyticsProperties(scope, scopeId, params);
-      if (!alive) return;
+  const loadData = useCallback(async ({ signal } = {}) => {
+    setLoading(true);
+    setError("");
+    const params = { page: 1, limit: 500 };
+    if (backendFilters.type?.length) params.type_filter = backendFilters.type;
+    if (backendFilters.category?.length) params.category_filter = backendFilters.category;
+    if (backendFilters.source?.length) params.source_filter = backendFilters.source;
+    try {
+      const result = await apiGetAnalyticsProperties(scope, scopeId, params, { signal });
+      if (signal?.aborted) return;
       setLoading(false);
       if (!result?.ok) {
         setError(text(result?.error) || "Не удалось загрузить реестр свойств.");
@@ -192,12 +194,24 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
       setRawRows(result.rows);
       setTotal(result.total);
       setOptions(result.filter_options || {});
+    } catch (e) {
+      if (signal?.aborted || e?.name === "AbortError") return;
+      setLoading(false);
+      setError(String(e?.message || e || "Ошибка загрузки"));
     }
-    load();
-    return () => {
-      alive = false;
-    };
   }, [scope, scopeId, backendFilters]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (abortRef.current) {
+      try { abortRef.current.abort(); } catch {}
+    }
+    abortRef.current = controller;
+    loadData({ signal: controller.signal });
+    return () => {
+      controller.abort();
+    };
+  }, [loadData]);
 
   const filteredRows = usePropertyRowsProcessor(rawRows, {
     search: debouncedSearch,
@@ -245,12 +259,22 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
     [filteredRows, selectedRows]
   );
 
-  async function handleServerExport() {
+  async function handleServerExportCsv() {
     if (exporting) return;
     setExporting(true);
     const result = await apiExportAnalyticsPropertiesCsv(scope, scopeId);
     if (result?.ok && result.blob) {
       downloadBlob(result.blob, result.filename || `properties-${scope}-${scopeId}.csv`);
+    }
+    setExporting(false);
+  }
+
+  async function handleServerExportXlsx() {
+    if (exporting) return;
+    setExporting(true);
+    const result = await apiExportAnalyticsPropertiesXlsx(scope, scopeId);
+    if (result?.ok && result.blob) {
+      downloadBlob(result.blob, result.filename || `properties-${scope}-${scopeId}.xlsx`);
     }
     setExporting(false);
   }
@@ -390,16 +414,19 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
             >
               Сравнить
             </button>
-            <button type="button" className="analyticsExportBtn" onClick={handleServerExport} disabled={exporting}>
+            <button type="button" className="analyticsExportBtn" onClick={handleServerExportCsv} disabled={exporting}>
               {exporting ? "Экспорт…" : "CSV всех"}
+            </button>
+            <button type="button" className="analyticsExportBtn" onClick={handleServerExportXlsx} disabled={exporting}>
+              {exporting ? "Экспорт…" : "Excel всех"}
             </button>
           </div>
         </div>
       </div>
 
-      {loading ? <div className="text-sm text-muted">Загрузка…</div> : null}
-      {error ? <div className="text-sm text-red-500">{error}</div> : null}
-      {!loading && !rawRows.length ? (
+      {loading && !rawRows.length ? <AnalyticsLoading text="Загрузка реестра свойств…" /> : null}
+      {error ? <AnalyticsError message={error} onRetry={() => loadData()} /> : null}
+      {!loading && !error && !rawRows.length ? (
         <EmptyState title="Нет свойств" description="Для выбранного scope не найдено свойств." />
       ) : null}
       {rawRows.length > 0 ? (
