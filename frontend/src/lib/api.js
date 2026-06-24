@@ -456,7 +456,14 @@ export async function apiNavigateToSubprocess(sessionId, elementId, targetElemen
   if (!id || !el) return { ok: false, status: 0, error: "missing session_id or element_id" };
   const r = okOrError(await request(apiRoutes.sessions.subprocessNavigate(id, el, targetElementId), { method: "POST" }));
   return r.ok
-    ? { ok: true, status: r.status, subprocessSessionId: r.data?.subprocess_session_id, targetElementId: r.data?.target_element_id, breadcrumbs: r.data?.breadcrumbs }
+    ? {
+        ok: true,
+        status: r.status,
+        subprocessSessionId: r.data?.subprocess_session_id,
+        targetElementId: r.data?.target_element_id,
+        breadcrumbs: r.data?.breadcrumbs,
+        bpmnXml: r.data?.bpmn_xml,
+      }
     : r;
 }
 
@@ -1354,45 +1361,70 @@ export async function apiGetOverlays(sessionId) {
   return r.ok ? { ok: true, status: r.status, overlays: Array.isArray(r.data) ? r.data : [] } : r;
 }
 
+const _bpmnVersionsInFlight = new Map();
+
+function _bpmnVersionsKey(sessionId, options = {}) {
+  return [
+    String(sessionId || "").trim(),
+    String(options.limit || "").trim(),
+    options.includeXml === true ? "1" : "0",
+  ].join("|");
+}
+
 export async function apiGetBpmnVersions(sessionId, options = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const url = apiRoutes.sessions.bpmnVersions(sid, options);
-  const r = okOrError(await request(url));
-  if (!r.ok) return r;
-  const payload = r.data && typeof r.data === "object" ? r.data : {};
-  const items = Array.isArray(payload.items) ? payload.items : [];
-  return {
-    ok: true,
-    status: r.status,
-    versions: items,
-    items,
-    count: Number(payload.count || items.length || 0),
-    user_facing_count: Number(payload.user_facing_count || 0),
-    userFacingCount: Number(payload.user_facing_count || payload.userFacingCount || 0),
-    latest_user_facing_revision_number: Number(payload.latest_user_facing_revision_number || 0),
-    latestUserFacingRevisionNumber: Number(
-      payload.latest_user_facing_revision_number
-      || payload.latestUserFacingRevisionNumber
-      || 0,
-    ),
-    session_id: String(payload.session_id || sid),
-    current_session_payload_hash: String(payload.current_session_payload_hash || ""),
-    currentSessionPayloadHash: String(payload.current_session_payload_hash || payload.currentSessionPayloadHash || ""),
-    current_session_version: Number(payload.current_session_version || 0),
-    currentSessionVersion: Number(payload.current_session_version || payload.currentSessionVersion || 0),
-    current_session_updated_at: Number(payload.current_session_updated_at || 0),
-    currentSessionUpdatedAt: Number(payload.current_session_updated_at || payload.currentSessionUpdatedAt || 0),
-    latest_user_version_session_payload_hash: String(payload.latest_user_version_session_payload_hash || ""),
-    latestUserVersionSessionPayloadHash: String(
-      payload.latest_user_version_session_payload_hash
-      || payload.latestUserVersionSessionPayloadHash
-      || "",
-    ),
-    has_session_changes_since_latest_bpmn_version: payload.has_session_changes_since_latest_bpmn_version === true,
-    hasSessionChangesSinceLatestBpmnVersion: payload.has_session_changes_since_latest_bpmn_version === true
-      || payload.hasSessionChangesSinceLatestBpmnVersion === true,
-  };
+
+  const key = _bpmnVersionsKey(sid, options);
+  const existing = _bpmnVersionsInFlight.get(key);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    const url = apiRoutes.sessions.bpmnVersions(sid, options);
+    const r = okOrError(await request(url));
+    if (!r.ok) return r;
+    const payload = r.data && typeof r.data === "object" ? r.data : {};
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    return {
+      ok: true,
+      status: r.status,
+      versions: items,
+      items,
+      count: Number(payload.count || items.length || 0),
+      user_facing_count: Number(payload.user_facing_count || 0),
+      userFacingCount: Number(payload.user_facing_count || payload.userFacingCount || 0),
+      latest_user_facing_revision_number: Number(payload.latest_user_facing_revision_number || 0),
+      latestUserFacingRevisionNumber: Number(
+        payload.latest_user_facing_revision_number
+        || payload.latestUserFacingRevisionNumber
+        || 0,
+      ),
+      session_id: String(payload.session_id || sid),
+      current_session_payload_hash: String(payload.current_session_payload_hash || ""),
+      currentSessionPayloadHash: String(payload.current_session_payload_hash || payload.currentSessionPayloadHash || ""),
+      current_session_version: Number(payload.current_session_version || 0),
+      currentSessionVersion: Number(payload.current_session_version || payload.currentSessionVersion || 0),
+      current_session_updated_at: Number(payload.current_session_updated_at || 0),
+      currentSessionUpdatedAt: Number(payload.current_session_updated_at || payload.currentSessionUpdatedAt || 0),
+      latest_user_version_session_payload_hash: String(payload.latest_user_version_session_payload_hash || ""),
+      latestUserVersionSessionPayloadHash: String(
+        payload.latest_user_version_session_payload_hash
+        || payload.latestUserVersionSessionPayloadHash
+        || "",
+      ),
+      has_session_changes_since_latest_bpmn_version: payload.has_session_changes_since_latest_bpmn_version === true,
+      hasSessionChangesSinceLatestBpmnVersion: payload.has_session_changes_since_latest_bpmn_version === true
+        || payload.hasSessionChangesSinceLatestBpmnVersion === true,
+    };
+  })();
+
+  _bpmnVersionsInFlight.set(key, promise);
+  promise.then(
+    () => _bpmnVersionsInFlight.delete(key),
+    () => _bpmnVersionsInFlight.delete(key),
+  );
+
+  return promise;
 }
 
 export async function apiGetBpmnVersion(sessionId, versionId) {
