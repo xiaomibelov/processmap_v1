@@ -107,6 +107,9 @@ export const apiRoutes = {
     processPropertiesRegistryQuery: () => "/api/analysis/properties/registry/query",
     processPropertiesRegistryExportCsv: () => "/api/analysis/properties/registry/export.csv",
     processPropertiesRegistryExportXlsx: () => "/api/analysis/properties/registry/export.xlsx",
+    processPropertyRegistryQuery: () => "/api/analysis/properties/registry/query",
+    processPropertyRegistryExport: () => "/api/analysis/properties/registry/export",
+    referenceOptions: (source) => `/api/reference/${encodeURIComponent(source)}/options`,
     productActionsBulkSuggest: () => "/api/analysis/product-actions/suggest-bulk",
   },
   sessions: {
