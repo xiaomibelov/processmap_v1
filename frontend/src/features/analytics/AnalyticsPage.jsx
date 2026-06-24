@@ -8,6 +8,23 @@ import {
 } from "../../lib/api.js";
 import DashboardBarChart from "./DashboardBarChart.jsx";
 import DashboardMetricCard from "./DashboardMetricCard.jsx";
+import AnalyticsDonutChart from "./AnalyticsDonutChart.jsx";
+import AnalyticsDataTable, { Badge, Pill } from "./AnalyticsDataTable.jsx";
+import EmptyState from "./registry/EmptyState.jsx";
+import {
+  ActivityIcon,
+  ChartBarIcon,
+  ChartPieIcon,
+  ClockIcon,
+  CriticalIcon,
+  DownloadIcon,
+  FilterIcon,
+  HandoffIcon,
+  ProjectIcon,
+  QuestionIcon,
+  SessionIcon,
+  TableIcon,
+} from "./AnalyticsIcons.jsx";
 import {
   ANALYTICS_MODULE_ACTIONS,
   ANALYTICS_MODULE_DASHBOARDS,
@@ -42,11 +59,17 @@ function formatDate(ts) {
 }
 
 const MODULE_TABS = [
-  { id: ANALYTICS_MODULE_OVERVIEW, label: "Обзор" },
-  { id: ANALYTICS_MODULE_ACTIONS, label: "Действия" },
-  { id: ANALYTICS_MODULE_PROPERTIES, label: "Свойства" },
-  { id: ANALYTICS_MODULE_DASHBOARDS, label: "Дашборды" },
+  { id: ANALYTICS_MODULE_OVERVIEW, label: "Обзор", icon: ChartBarIcon },
+  { id: ANALYTICS_MODULE_ACTIONS, label: "Действия", icon: TableIcon },
+  { id: ANALYTICS_MODULE_PROPERTIES, label: "Свойства", icon: TableIcon },
+  { id: ANALYTICS_MODULE_DASHBOARDS, label: "Дашборды", icon: ChartPieIcon },
 ];
+
+function chartItems(map = {}) {
+  return Object.entries(map || {})
+    .map(([label, value]) => ({ label, value: Number(value) || 0 }))
+    .sort((a, b) => b.value - a.value);
+}
 
 function useAnalyticsDashboard(scope, scopeId) {
   const [data, setData] = useState(null);
@@ -76,28 +99,18 @@ function useAnalyticsDashboard(scope, scopeId) {
   return { data, loading, error };
 }
 
-function MetricCard({ label, value, subtext = "", sparklineItems }) {
-  return (
-    <DashboardMetricCard
-      title={label}
-      value={value}
-      subtitle={subtext}
-      sparklineItems={sparklineItems}
-    />
-  );
-}
-
 function FilterBar({ options = {}, filters = {}, onChange }) {
   const entries = Object.entries(options).filter(([, values]) => toArray(values).length > 0);
   if (!entries.length) return null;
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-2">
+    <div className="analyticsFilterBar">
+      <FilterIcon className="analyticsFilterBarIcon" />
       {entries.map(([key, values]) => (
         <select
           key={key}
           value={filters[key] || ""}
           onChange={(e) => onChange({ ...filters, [key]: e.target.value })}
-          className="rounded-md border border-border bg-panel px-2 py-1 text-sm text-fg"
+          className="analyticsFilterSelect"
         >
           <option value="">{key}</option>
           {toArray(values).map((v) => (
@@ -107,13 +120,15 @@ function FilterBar({ options = {}, filters = {}, onChange }) {
           ))}
         </select>
       ))}
-      <button
-        type="button"
-        onClick={() => onChange({})}
-        className="text-xs text-muted hover:text-fg"
-      >
-        Сбросить
-      </button>
+      {Object.keys(filters).length > 0 ? (
+        <button
+          type="button"
+          onClick={() => onChange({})}
+          className="analyticsFilterClear"
+        >
+          Сбросить
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -122,23 +137,23 @@ function Paginator({ page, limit, total, onChange }) {
   const totalPages = Math.max(1, Math.ceil(total / limit));
   if (totalPages <= 1) return null;
   return (
-    <div className="mt-4 flex items-center justify-end gap-2">
+    <div className="analyticsPaginator">
       <button
         type="button"
         disabled={page <= 1}
         onClick={() => onChange(page - 1)}
-        className="rounded-md border border-border px-2 py-1 text-sm disabled:opacity-40"
+        className="analyticsPaginatorBtn"
       >
         ←
       </button>
-      <span className="text-sm text-muted">
+      <span className="analyticsPaginatorText">
         {page} / {totalPages}
       </span>
       <button
         type="button"
         disabled={page >= totalPages}
         onClick={() => onChange(page + 1)}
-        className="rounded-md border border-border px-2 py-1 text-sm disabled:opacity-40"
+        className="analyticsPaginatorBtn"
       >
         →
       </button>
@@ -155,6 +170,36 @@ function downloadBlob(blob, filename) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+function propertyTypeTone(type) {
+  const t = text(type).toLowerCase();
+  if (t.includes("reference")) return "accent";
+  if (t.includes("enum")) return "purple";
+  if (t.includes("camunda")) return "default";
+  return "default";
+}
+
+function roleTone(role) {
+  const r = text(role).toLowerCase();
+  if (!r) return "default";
+  if (r.includes("крем") || r.includes("cook")) return "warning";
+  if (r.includes("бисквит") || r.includes("prep")) return "success";
+  if (r.includes("сборка") || r.includes("assembly")) return "accent";
+  if (r.includes("декор") || r.includes("pack")) return "purple";
+  if (r.includes("unassigned")) return "muted";
+  return "default";
+}
+
+function sectionTone(section) {
+  const s = text(section).toLowerCase();
+  if (!s) return "default";
+  if (s.includes("cook")) return "warning";
+  if (s.includes("prep")) return "success";
+  if (s.includes("move")) return "accent";
+  if (s.includes("qc")) return "purple";
+  if (s.includes("pack")) return "danger";
+  return "default";
 }
 
 function AnalyticsActionsPanel({ scope, scopeId }) {
@@ -204,47 +249,42 @@ function AnalyticsActionsPanel({ scope, scopeId }) {
     setExporting(false);
   }
 
+  const columns = [
+    { key: "name", label: "Действие", width: "35%", minWidth: "200px" },
+    { key: "role", label: "Роль", width: "20%", minWidth: "120px", render: (v) => <Badge tone={roleTone(v)}>{v || "—"}</Badge> },
+    { key: "section", label: "Секция", width: "15%", minWidth: "100px", render: (v) => <Badge tone={sectionTone(v)}>{v || "—"}</Badge> },
+    { key: "action_type", label: "Тип", width: "15%", minWidth: "100px", render: (v) => <Badge tone="default">{v || "—"}</Badge> },
+    { key: "duration_min", label: "Длительность", width: "15%", minWidth: "110px", align: "right", render: (v) => (v == null ? "—" : <Pill>{v} мин</Pill>) },
+  ];
+
   return (
-    <div>
-      <div className="mb-3 flex items-center justify-end gap-2">
+    <div className="analyticsPanel">
+      <div className="analyticsPanelToolbar">
+        <FilterBar options={options} filters={filters} onChange={(f) => { setFilters(f); setPage(1); }} />
         <button
           type="button"
           onClick={handleExportCsv}
           disabled={exporting}
-          className="rounded-md border border-border bg-panel px-3 py-1.5 text-sm hover:bg-panel2 disabled:opacity-50"
+          className="analyticsExportBtn"
         >
-          {exporting ? "Экспорт…" : "Экспорт CSV"}
+          <DownloadIcon className="w-4 h-4" />
+          {exporting ? "Экспорт…" : "CSV"}
         </button>
       </div>
-      <FilterBar options={options} filters={filters} onChange={(f) => { setFilters(f); setPage(1); }} />
       {loading ? <div className="text-sm text-muted">Загрузка…</div> : null}
       {error ? <div className="text-sm text-red-500">{error}</div> : null}
-      {!loading && !rows.length ? <div className="text-sm text-muted">Нет данных.</div> : null}
-      {rows.length ? (
-        <div className="overflow-auto rounded-xl border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-panel2 text-left text-xs uppercase text-muted">
-              <tr>
-                <th className="px-3 py-2">Действие</th>
-                <th className="px-3 py-2">Секция</th>
-                <th className="px-3 py-2">Роль</th>
-                <th className="px-3 py-2">Тип</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, idx) => (
-                <tr key={`${row.registry_id || row.id || idx}`} className="border-t border-border">
-                  <td className="px-3 py-2">{text(row.name || row.action_name)}</td>
-                  <td className="px-3 py-2">{text(row.section)}</td>
-                  <td className="px-3 py-2">{text(row.role)}</td>
-                  <td className="px-3 py-2">{text(row.action_type || row.type)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {!loading && !rows.length ? (
+        <EmptyState
+          title="Нет действий"
+          description="Для выбранного scope и фильтров не найдено действий."
+        />
       ) : null}
-      <Paginator page={page} limit={limit} total={total} onChange={setPage} />
+      {rows.length > 0 ? (
+        <>
+          <AnalyticsDataTable columns={columns} rows={rows} />
+          <Paginator page={page} limit={limit} total={total} onChange={setPage} />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -296,59 +336,50 @@ function AnalyticsPropertiesPanel({ scope, scopeId }) {
     setExporting(false);
   }
 
+  const columns = [
+    { key: "name", label: "Свойство", width: "25%", minWidth: "180px" },
+    { key: "type", label: "Тип", width: "15%", minWidth: "120px", render: (v) => <Badge tone={propertyTypeTone(v)}>{v || "—"}</Badge> },
+    { key: "category", label: "Категория", width: "15%", minWidth: "120px", render: (v) => <Badge tone="muted">{v || "—"}</Badge> },
+    { key: "source", label: "Источник", width: "15%", minWidth: "120px" },
+    { key: "usage_count", label: "Использований", width: "10%", minWidth: "90px", align: "right" },
+    { key: "value", label: "Значение", width: "20%", minWidth: "160px", render: (v, row) => {
+      if (row.value_numeric != null && row.unit) {
+        return <Pill>{formatNumber(row.value_numeric)} {row.unit}</Pill>;
+      }
+      return text(v) || "—";
+    } },
+  ];
+
   return (
-    <div>
-      <div className="mb-3 flex items-center justify-end gap-2">
+    <div className="analyticsPanel">
+      <div className="analyticsPanelToolbar">
+        <FilterBar options={options} filters={filters} onChange={(f) => { setFilters(f); setPage(1); }} />
         <button
           type="button"
           onClick={handleExportCsv}
           disabled={exporting}
-          className="rounded-md border border-border bg-panel px-3 py-1.5 text-sm hover:bg-panel2 disabled:opacity-50"
+          className="analyticsExportBtn"
         >
-          {exporting ? "Экспорт…" : "Экспорт CSV"}
+          <DownloadIcon className="w-4 h-4" />
+          {exporting ? "Экспорт…" : "CSV"}
         </button>
       </div>
-      <FilterBar options={options} filters={filters} onChange={(f) => { setFilters(f); setPage(1); }} />
       {loading ? <div className="text-sm text-muted">Загрузка…</div> : null}
       {error ? <div className="text-sm text-red-500">{error}</div> : null}
-      {!loading && !rows.length ? <div className="text-sm text-muted">Нет данных.</div> : null}
-      {rows.length ? (
-        <div className="overflow-auto rounded-xl border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-panel2 text-left text-xs uppercase text-muted">
-              <tr>
-                <th className="px-3 py-2">Свойство</th>
-                <th className="px-3 py-2">Тип</th>
-                <th className="px-3 py-2">Категория</th>
-                <th className="px-3 py-2">Источник</th>
-                <th className="px-3 py-2">Использований</th>
-                <th className="px-3 py-2">Значение</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, idx) => (
-                <tr key={`${row.id || row.bpmn_id || idx}`} className="border-t border-border">
-                  <td className="px-3 py-2">{text(row.name || row.property_name || row.label)}</td>
-                  <td className="px-3 py-2">{text(row.type)}</td>
-                  <td className="px-3 py-2">{text(row.category)}</td>
-                  <td className="px-3 py-2">{text(row.source)}</td>
-                  <td className="px-3 py-2">{formatNumber(row.usage_count)}</td>
-                  <td className="px-3 py-2">{text(row.value)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {!loading && !rows.length ? (
+        <EmptyState
+          title="Нет свойств"
+          description="Для выбранного scope не найдено свойств."
+        />
       ) : null}
-      <Paginator page={page} limit={limit} total={total} onChange={setPage} />
+      {rows.length > 0 ? (
+        <>
+          <AnalyticsDataTable columns={columns} rows={rows} />
+          <Paginator page={page} limit={limit} total={total} onChange={setPage} />
+        </>
+      ) : null}
     </div>
   );
-}
-
-function chartItems(map = {}) {
-  return Object.entries(map || {})
-    .map(([label, value]) => ({ label, value: Number(value) || 0 }))
-    .sort((a, b) => b.value - a.value);
 }
 
 function AnalyticsDashboardsPanel({ data = null, loading = false, error = "" }) {
@@ -361,41 +392,45 @@ function AnalyticsDashboardsPanel({ data = null, loading = false, error = "" }) 
   const typeItems = chartItems(data.actions_by_type);
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-6">
-        <DashboardMetricCard title="Действий" value={formatNumber(data.actions_total)} testId="dashboard-metric-actions-total" sparklineItems={roleItems} />
-        <DashboardMetricCard title="Длительность, мин" value={formatNumber(data.total_duration_min)} testId="dashboard-metric-duration" sparklineItems={roleItems} />
-        <DashboardMetricCard title="Крит. путь, мин" value={formatNumber(data.critical_path_min)} testId="dashboard-metric-critical-path" sparklineItems={roleItems} />
-        <DashboardMetricCard title="Handoffs" value={formatNumber(data.handoffs_count)} testId="dashboard-metric-handoffs" sparklineItems={roleItems} />
-        <DashboardMetricCard title="Открыто" value={formatNumber(data.open_questions)} testId="dashboard-metric-open-questions" sparklineItems={roleItems} />
-        <DashboardMetricCard title="Критично" value={formatNumber(data.critical_questions)} testId="dashboard-metric-critical-questions" sparklineItems={roleItems} />
-        <DashboardMetricCard title="Сессий" value={formatNumber(data.sessions_count)} testId="dashboard-metric-sessions" sparklineItems={roleItems} />
-        <DashboardMetricCard title="Проектов" value={formatNumber(data.projects_count)} testId="dashboard-metric-projects" sparklineItems={roleItems} />
-      </div>
-
-      {roleItems.length > 0 || sectionItems.length > 0 || typeItems.length > 0 ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          {roleItems.length > 0 ? (
-            <div className="rounded-xl border border-border bg-panel p-4">
-              <h3 className="mb-3 text-sm font-semibold">Действия по ролям</h3>
-              <DashboardBarChart items={roleItems} ariaLabel="Действия по ролям" />
-            </div>
-          ) : null}
-          {sectionItems.length > 0 ? (
-            <div className="rounded-xl border border-border bg-panel p-4">
-              <h3 className="mb-3 text-sm font-semibold">Действия по секциям</h3>
-              <DashboardBarChart items={sectionItems} ariaLabel="Действия по секциям" />
-            </div>
-          ) : null}
-          {typeItems.length > 0 ? (
-            <div className="rounded-xl border border-border bg-panel p-4">
-              <h3 className="mb-3 text-sm font-semibold">Действия по типам</h3>
-              <DashboardBarChart items={typeItems} ariaLabel="Действия по типам" />
-            </div>
-          ) : null}
+    <div className="analyticsDashboardsGrid">
+      {roleItems.length > 0 ? (
+        <div className="analyticsDashboardCard">
+          <h3 className="analyticsDashboardCardTitle">Действия по ролям</h3>
+          <DashboardBarChart items={roleItems} ariaLabel="Действия по ролям" />
         </div>
       ) : null}
+      {sectionItems.length > 0 ? (
+        <div className="analyticsDashboardCard">
+          <h3 className="analyticsDashboardCardTitle">Действия по секциям</h3>
+          <DashboardBarChart items={sectionItems} ariaLabel="Действия по секциям" />
+        </div>
+      ) : null}
+      {typeItems.length > 0 ? (
+        <div className="analyticsDashboardCard">
+          <h3 className="analyticsDashboardCardTitle">Распределение по типам</h3>
+          <AnalyticsDonutChart items={typeItems} ariaLabel="Распределение по типам" />
+        </div>
+      ) : null}
+      {!roleItems.length && !sectionItems.length && !typeItems.length ? (
+        <EmptyState
+          title="Нет визуализаций"
+          description="Для текущего scope недостаточно данных для построения графиков."
+        />
+      ) : null}
     </div>
+  );
+}
+
+function MetricCard({ label, value, unit = "", tone = "default", icon: Icon, sparklineItems }) {
+  return (
+    <DashboardMetricCard
+      title={label}
+      value={value}
+      unit={unit}
+      tone={tone}
+      icon={Icon}
+      sparklineItems={sparklineItems}
+    />
   );
 }
 
@@ -456,41 +491,43 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
     <main className="analyticsHubPage" data-testid="analytics-page">
       <section className="analyticsHubSurface">
         <header className="analyticsHubHeader">
-          <div>
-            <h1>Аналитика <span className="text-accent">{title}</span></h1>
+          <div className="analyticsHubHeaderMain">
+            <div className="analyticsHubHeaderTitleWrap">
+              <h1>Аналитика <span className="text-accent">{title}</span></h1>
+              <span className="analyticsHubHeaderScopeId" title={scopeId}>{scopeId}</span>
+            </div>
             <div className="analyticsHubHeaderMeta">
               {data?.computed_at ? <span>Обновлено: {formatDate(data.computed_at)}</span> : null}
             </div>
-            {!embedded ? (
-              <div className="mt-2">
-                <AnalyticsScopeSwitcher
-                  scope={scope}
-                  scopeId={scopeId}
-                  workspaceId={derivedScopeIds.workspaceId}
-                  projectId={derivedScopeIds.projectId}
-                  sessionId={derivedScopeIds.sessionId}
-                  onChange={navigateTo}
-                />
-              </div>
-            ) : null}
           </div>
+          {!embedded ? (
+            <AnalyticsScopeSwitcher
+              scope={scope}
+              scopeId={scopeId}
+              workspaceId={derivedScopeIds.workspaceId}
+              projectId={derivedScopeIds.projectId}
+              sessionId={derivedScopeIds.sessionId}
+              onChange={navigateTo}
+            />
+          ) : null}
         </header>
 
-        <div className="mb-3 flex h-8 items-center gap-1 border-b border-border">
-          {MODULE_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setModule(tab.id)}
-              className={`px-3 py-1.5 text-xs font-medium transition ${
-                module === tab.id
-                  ? "border-b-2 border-accent text-accent"
-                  : "text-muted hover:text-fg"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div className="analyticsModuleTabs">
+          {MODULE_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const active = module === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setModule(tab.id)}
+                className={`analyticsModuleTab ${active ? "analyticsModuleTab--active" : ""}`}
+              >
+                <Icon className="w-4 h-4" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
 
         {module === ANALYTICS_MODULE_OVERVIEW && (
@@ -498,15 +535,15 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
             {loading ? <div className="text-sm text-muted">Загрузка…</div> : null}
             {error ? <div className="text-sm text-red-500">{error}</div> : null}
             {data ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-6">
-                <MetricCard label="Действий" value={formatNumber(data.actions_total)} sparklineItems={sparklineItems} />
-                <MetricCard label="Длительность, мин" value={formatNumber(data.total_duration_min)} sparklineItems={sparklineItems} />
-                <MetricCard label="Крит. путь, мин" value={formatNumber(data.critical_path_min)} sparklineItems={sparklineItems} />
-                <MetricCard label="Handoffs" value={formatNumber(data.handoffs_count)} sparklineItems={sparklineItems} />
-                <MetricCard label="Открыто" value={formatNumber(data.open_questions)} sparklineItems={sparklineItems} />
-                <MetricCard label="Критично" value={formatNumber(data.critical_questions)} sparklineItems={sparklineItems} />
-                <MetricCard label="Сессий" value={formatNumber(data.sessions_count)} sparklineItems={sparklineItems} />
-                <MetricCard label="Проектов" value={formatNumber(data.projects_count)} sparklineItems={sparklineItems} />
+              <div className="analyticsMetricsGrid">
+                <MetricCard label="Действий" value={formatNumber(data.actions_total)} tone="success" icon={ActivityIcon} sparklineItems={sparklineItems} />
+                <MetricCard label="Длительность" value={formatNumber(data.total_duration_min)} unit="мин" tone="default" icon={ClockIcon} sparklineItems={sparklineItems} />
+                <MetricCard label="Крит. путь" value={formatNumber(data.critical_path_min)} unit="мин" tone="warning" icon={CriticalIcon} sparklineItems={sparklineItems} />
+                <MetricCard label="Handoffs" value={formatNumber(data.handoffs_count)} tone="accent" icon={HandoffIcon} sparklineItems={sparklineItems} />
+                <MetricCard label="Открыто" value={formatNumber(data.open_questions)} tone="default" icon={QuestionIcon} sparklineItems={sparklineItems} />
+                <MetricCard label="Критично" value={formatNumber(data.critical_questions)} tone="danger" icon={CriticalIcon} sparklineItems={sparklineItems} />
+                <MetricCard label="Сессий" value={formatNumber(data.sessions_count)} tone="default" icon={SessionIcon} sparklineItems={sparklineItems} />
+                <MetricCard label="Проектов" value={formatNumber(data.projects_count)} tone="default" icon={ProjectIcon} sparklineItems={sparklineItems} />
               </div>
             ) : null}
           </div>

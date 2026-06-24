@@ -1,3 +1,5 @@
+import { colorForIndex } from "./AnalyticsDonutChart.jsx";
+
 export default function DashboardBarChart({ items = [], unit = "", ariaLabel = "" }) {
   if (!items.length) {
     return (
@@ -14,10 +16,10 @@ export default function DashboardBarChart({ items = [], unit = "", ariaLabel = "
       {items.map((item, idx) => {
         const value = Number(item.value || 0);
         const pct = max > 0 ? (value / max) * 100 : 0;
-        const color = item.color || "hsl(var(--accent))";
+        const color = item.color || colorForIndex(idx);
         return (
           <div className="dashboardBarChartRow" key={idx} data-testid={`bar-chart-row-${idx}`}>
-            <span className="dashboardBarChartLabel">{item.label}</span>
+            <span className="dashboardBarChartLabel" title={item.label}>{item.label}</span>
             <div className="dashboardBarTrack">
               <div
                 className="dashboardBarFill"
