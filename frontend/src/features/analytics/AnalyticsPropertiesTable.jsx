@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { FixedSizeList } from "react-window";
 import { Badge, Pill } from "./AnalyticsDataTable.jsx";
 import {
   inferPropertyValueType,
@@ -148,9 +147,7 @@ function HeaderCell({ col, sort, onSort }) {
   );
 }
 
-function Row({ index, style, data }) {
-  const { rows, selectedRows, onToggleRow, maxUsage } = data;
-  const row = rows[index];
+function Row({ row, index, selectedRows, onToggleRow, maxUsage }) {
   const key = getRowKey(row);
   const valueType = inferPropertyValueType(row.name, row.value);
   const family = inferPropertyFamily(row.name, valueType);
@@ -158,7 +155,7 @@ function Row({ index, style, data }) {
   return (
     <div
       className={`analyticsPropTableRow ${selectedRows.has(key) ? "analyticsPropTableRow--selected" : ""}`}
-      style={{ ...style, display: "grid", gridTemplateColumns: GRID_TEMPLATE }}
+      style={{ display: "grid", gridTemplateColumns: GRID_TEMPLATE }}
       data-testid={`property-row-${index}`}
     >
       <div className="analyticsPropTableCell analyticsPropTableCell--select">
@@ -191,7 +188,7 @@ function Row({ index, style, data }) {
   );
 }
 
-export function usePropertyRowsProcessor(rows, { search, sort, valueTypeFilter, usageRange, quickFilters }) {
+export function usePropertyRowsProcessor(rows, { search, sort, valueTypeFilter, usageRange, familyFilter }) {
   return useMemo(() => {
     let result = [...rows];
 
@@ -204,18 +201,11 @@ export function usePropertyRowsProcessor(rows, { search, sort, valueTypeFilter, 
       );
     }
 
-    if (quickFilters?.length) {
+    if (familyFilter?.length) {
       result = result.filter((r) => {
         const vt = inferPropertyValueType(r.name, r.value);
         const family = inferPropertyFamily(r.name, vt);
-        return quickFilters.some((f) => {
-          if (f === "ingredient") return family === "ingredient";
-          if (f === "equipment") return family === "equipment";
-          if (f === "duration") return vt === "duration" || family === "duration";
-          if (f === "json") return vt === "json";
-          if (f === "unused") return (r.usage_count || 0) === 0;
-          return false;
-        });
+        return familyFilter.includes(family);
       });
     }
 
@@ -245,7 +235,7 @@ export function usePropertyRowsProcessor(rows, { search, sort, valueTypeFilter, 
     }
 
     return result;
-  }, [rows, search, sort, valueTypeFilter, usageRange, quickFilters]);
+  }, [rows, search, sort, valueTypeFilter, usageRange, familyFilter]);
 }
 
 export default function AnalyticsPropertiesTable({
@@ -257,11 +247,6 @@ export default function AnalyticsPropertiesTable({
   onSort,
 }) {
   const maxUsage = useMemo(() => Math.max(...rows.map((r) => Number(r.usage_count) || 0), 1), [rows]);
-  const itemData = useMemo(
-    () => ({ rows, selectedRows, onToggleRow, maxUsage }),
-    [rows, selectedRows, onToggleRow, maxUsage]
-  );
-  const height = Math.min(rows.length * 40, 600);
 
   return (
     <div className="analyticsPropTableWrap">
@@ -278,20 +263,22 @@ export default function AnalyticsPropertiesTable({
           <HeaderCell key={col.key} col={col} sort={sort} onSort={onSort} />
         ))}
       </div>
-      {rows.length === 0 ? (
-        <div className="analyticsPropTableEmpty">Нет свойств по выбранным фильтрам.</div>
-      ) : (
-        <FixedSizeList
-          height={height}
-          itemCount={rows.length}
-          itemSize={40}
-          itemData={itemData}
-          width="100%"
-          className="analyticsPropTableList"
-        >
-          {Row}
-        </FixedSizeList>
-      )}
+      <div className="analyticsPropTableBody">
+        {rows.length === 0 ? (
+          <div className="analyticsPropTableEmpty">Нет свойств по выбранным фильтрам.</div>
+        ) : (
+          rows.map((row, idx) => (
+            <Row
+              key={getRowKey(row) + idx}
+              row={row}
+              index={idx}
+              selectedRows={selectedRows}
+              onToggleRow={onToggleRow}
+              maxUsage={maxUsage}
+            />
+          ))
+        )}
+      </div>
     </div>
   );
 }
