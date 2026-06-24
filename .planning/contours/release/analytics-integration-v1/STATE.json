@@ -1,0 +1,13 @@
+{
+  "contour_id": "release/analytics-integration-v1",
+  "branch": "fix/analytics-integration-v1",
+  "status": "READY_FOR_MERGE",
+  "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/411",
+  "checks": {
+    "frontend_build": "PASS",
+    "frontend_tests": "227/227 PASS",
+    "backend_analytics_tests": "6/6 PASS",
+    "backend_full_suite": "459 passed / 161 failed (baseline)"
+  },
+  "blocked_on": "user_approval_for_merge_and_deploy"
+}
