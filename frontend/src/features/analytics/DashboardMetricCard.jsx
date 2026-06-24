@@ -1,3 +1,5 @@
+import { ActivityIcon } from "./AnalyticsIcons.jsx";
+
 function MetricSparkline({ items = [] }) {
   if (!items.length) return null;
   const max = Math.max(...items.map((i) => Number(i.value || 0)), 1);
@@ -21,7 +23,7 @@ function MetricSparkline({ items = [] }) {
               y={idx * (barHeight + gap)}
               width={Math.max(w, 1)}
               height={barHeight}
-              fill="hsl(var(--accent))"
+              fill="currentColor"
             />
           );
         })}
@@ -30,29 +32,42 @@ function MetricSparkline({ items = [] }) {
   );
 }
 
+const TONE_CLASSES = {
+  default: "",
+  success: " dashboardMetricCard--success",
+  warning: " dashboardMetricCard--warning",
+  danger: " dashboardMetricCard--danger",
+  accent: " dashboardMetricCard--accent",
+};
+
 export default function DashboardMetricCard({
   title,
   value,
+  unit = "",
   subtitle = "",
   tone = "default",
+  icon: Icon = ActivityIcon,
   testId,
   sparklineItems,
 }) {
-  const toneClass =
-    tone === "success"
-      ? " dashboardMetricCard--success"
-      : tone === "warning"
-        ? " dashboardMetricCard--warning"
-        : tone === "danger"
-          ? " dashboardMetricCard--danger"
-          : "";
+  const toneClass = TONE_CLASSES[tone] || "";
 
   return (
     <div className={`dashboardMetricCard${toneClass}`} data-testid={testId}>
-      <div>
-        <div className="dashboardMetricCardTitle">{title}</div>
-        <div className="dashboardMetricCardValue">{value}</div>
-        {subtitle ? <div className="dashboardMetricCardSubtitle">{subtitle}</div> : null}
+      <div className="dashboardMetricCardTop">
+        <div>
+          <div className="dashboardMetricCardTitle">{title}</div>
+          <div className="dashboardMetricCardValueWrap">
+            <span className="dashboardMetricCardValue">{value}</span>
+            {unit ? <span className="dashboardMetricCardUnit">{unit}</span> : null}
+          </div>
+          {subtitle ? <div className="dashboardMetricCardSubtitle">{subtitle}</div> : null}
+        </div>
+        {Icon ? (
+          <div className="dashboardMetricCardIcon" aria-hidden="true">
+            <Icon className="w-5 h-5" />
+          </div>
+        ) : null}
       </div>
       {sparklineItems && sparklineItems.length > 0 ? <MetricSparkline items={sparklineItems} /> : null}
     </div>
