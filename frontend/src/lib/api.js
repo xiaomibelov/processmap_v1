@@ -1836,17 +1836,23 @@ export async function apiPatchFeatureFlags(flags) {
 }
 
 // ------- Analytics (backend-driven) -------
+function unwrapAnalyticsData(response) {
+  if (!response || !response.ok) return null;
+  const payload = response.data && typeof response.data === "object" ? response.data : {};
+  return payload.data && typeof payload.data === "object" ? payload.data : payload;
+}
+
 export async function apiGetAnalyticsDashboard(scope, scopeId) {
   const r = okOrError(await request(apiRoutes.analytics.dashboard(scope, scopeId)));
-  if (!r.ok) return r;
-  const data = r.data && typeof r.data === "object" ? r.data : {};
+  const data = unwrapAnalyticsData(r);
+  if (!data) return r;
   return { ok: true, status: r.status, data, meta: r.meta };
 }
 
 export async function apiGetAnalyticsProperties(scope, scopeId, params = {}) {
   const r = okOrError(await request(apiRoutes.analytics.properties(scope, scopeId, params)));
-  if (!r.ok) return r;
-  const data = r.data && typeof r.data === "object" ? r.data : {};
+  const data = unwrapAnalyticsData(r);
+  if (!data) return r;
   return {
     ok: true,
     status: r.status,
@@ -1861,8 +1867,8 @@ export async function apiGetAnalyticsProperties(scope, scopeId, params = {}) {
 
 export async function apiGetAnalyticsActions(scope, scopeId, params = {}) {
   const r = okOrError(await request(apiRoutes.analytics.actions(scope, scopeId, params)));
-  if (!r.ok) return r;
-  const data = r.data && typeof r.data === "object" ? r.data : {};
+  const data = unwrapAnalyticsData(r);
+  if (!data) return r;
   return {
     ok: true,
     status: r.status,

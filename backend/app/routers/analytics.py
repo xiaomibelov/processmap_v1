@@ -11,6 +11,11 @@ from ..legacy.request_context import request_active_org_id
 from ..schemas.analytics import AnalyticsActionsQuery, AnalyticsDashboardOut, AnalyticsPropertiesQuery
 from ..services.analytics_authz import require_analytics_scope
 from ..storage import _connect, get_storage
+from ..analytics_read_model import (
+    refresh_analytics_for_session,
+    refresh_project_analytics_snapshot,
+    refresh_workspace_analytics_snapshot,
+)
 from ..routers.process_properties_registry import _extract_camunda_rows
 from ..routers.product_actions_registry import _registry_row
 
@@ -25,15 +30,49 @@ def _ok(data: Any, meta: Dict[str, Any]) -> Dict[str, Any]:
     return {"success": True, "data": data, "meta": meta}
 
 
+def _refresh_snapshot(scope_type: str, scope_id: str, org_id: str) -> bool:
+    try:
+        if scope_type == "session":
+            refresh_analytics_for_session(scope_id, org_id)
+        elif scope_type == "project":
+            refresh_project_analytics_snapshot(scope_id, org_id)
+        elif scope_type == "workspace":
+            refresh_workspace_analytics_snapshot(scope_id, org_id)
+        else:
+            return False
+        return True
+    except Exception:
+        return False
+
+
 def _load_snapshot(scope_type: str, scope_id: str, org_id: str) -> Dict[str, Any]:
-    if scope_type == "session":
+    def _row(scope_type: str, scope_id: str, org_id: str):
         with _connect() as con:
-            row = con.execute(
-                "SELECT * FROM analytics_session_snapshots WHERE session_id=? AND org_id=?",
-                (scope_id, org_id),
-            ).fetchone()
-        if not row:
-            return {"scope_type": scope_type, "scope_id": scope_id, "computed_at": 0}
+            if scope_type == "session":
+                return con.execute(
+                    "SELECT * FROM analytics_session_snapshots WHERE session_id=? AND org_id=?",
+                    (scope_id, org_id),
+                ).fetchone()
+            if scope_type == "project":
+                return con.execute(
+                    "SELECT * FROM analytics_project_snapshots WHERE project_id=? AND org_id=?",
+                    (scope_id, org_id),
+                ).fetchone()
+            if scope_type == "workspace":
+                return con.execute(
+                    "SELECT * FROM analytics_workspace_snapshots WHERE workspace_id=? AND org_id=?",
+                    (scope_id, org_id),
+                ).fetchone()
+        return None
+
+    row = _row(scope_type, scope_id, org_id)
+    if not row:
+        _refresh_snapshot(scope_type, scope_id, org_id)
+        row = _row(scope_type, scope_id, org_id)
+    if not row:
+        return {"scope_type": scope_type, "scope_id": scope_id, "computed_at": 0}
+
+    if scope_type == "session":
         return {
             "scope_type": scope_type,
             "scope_id": scope_id,
@@ -53,13 +92,6 @@ def _load_snapshot(scope_type: str, scope_id: str, org_id: str) -> Dict[str, Any
             "computed_at": row["computed_at"] or 0,
         }
     if scope_type == "project":
-        with _connect() as con:
-            row = con.execute(
-                "SELECT * FROM analytics_project_snapshots WHERE project_id=? AND org_id=?",
-                (scope_id, org_id),
-            ).fetchone()
-        if not row:
-            return {"scope_type": scope_type, "scope_id": scope_id, "computed_at": 0}
         return {
             "scope_type": scope_type,
             "scope_id": scope_id,
@@ -78,13 +110,6 @@ def _load_snapshot(scope_type: str, scope_id: str, org_id: str) -> Dict[str, Any
             "computed_at": row["computed_at"] or 0,
         }
     if scope_type == "workspace":
-        with _connect() as con:
-            row = con.execute(
-                "SELECT * FROM analytics_workspace_snapshots WHERE workspace_id=? AND org_id=?",
-                (scope_id, org_id),
-            ).fetchone()
-        if not row:
-            return {"scope_type": scope_type, "scope_id": scope_id, "computed_at": 0}
         return {
             "scope_type": scope_type,
             "scope_id": scope_id,
