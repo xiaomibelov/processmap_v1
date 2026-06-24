@@ -1,6 +1,7 @@
 import {
+  ANALYTICS_MODULE_ACTIONS,
+  buildAnalyticsPath,
   buildProcessMapUrl,
-  buildProductActionsRegistryUrl,
 } from "../../app/processMapRouteModel.js";
 
 export function buildAppWorkspaceHref({ projectId = "", sessionId = "" } = {}) {
@@ -13,12 +14,16 @@ export function buildProductActionsRegistryHref({
   projectId = "",
   sessionId = "",
 } = {}) {
-  return buildProductActionsRegistryUrl({
-    scope,
-    workspaceId,
-    projectId,
-    sessionId,
-  });
+  let effectiveScope = String(scope || "").trim().toLowerCase();
+  if (effectiveScope === "current") effectiveScope = "session";
+  const scopeId =
+    effectiveScope === "session"
+      ? sessionId
+      : effectiveScope === "project"
+        ? projectId
+        : workspaceId;
+  if (!scopeId) return "/analytics";
+  return buildAnalyticsPath(effectiveScope, scopeId, ANALYTICS_MODULE_ACTIONS);
 }
 
 export function shouldHandleClientNavigation(event, target = "") {

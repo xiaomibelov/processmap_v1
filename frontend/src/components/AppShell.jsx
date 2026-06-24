@@ -1,6 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import TopBar from "./TopBar";
 import ProcessStage from "./ProcessStage";
+import {
+  ANALYTICS_MODULE_OVERVIEW,
+  buildAnalyticsPath,
+} from "../app/processMapRouteModel.js";
 import SidebarHandle from "./sidebar/SidebarHandle";
 import { resolveSessionNavNoticeCopy } from "../features/process/navigation/sessionNavNoticeUi";
 import { appVersionInfo } from "../config/appVersion.js";
@@ -168,7 +172,38 @@ export default function AppShell({
     ? String(latestChangeEntry.changes[0] || "").trim()
     : "";
   const [updatesOpen, setUpdatesOpen] = useState(() => isUpdatesHash());
+  const [isAnalyticsActive, setIsAnalyticsActive] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return String(window.location.pathname || "").startsWith("/analytics");
+  });
   const appUpdate = useAppUpdateAvailable();
+
+  useEffect(() => {
+    function handle() {
+      setIsAnalyticsActive(
+        typeof window !== "undefined" && String(window.location.pathname || "").startsWith("/analytics"),
+      );
+    }
+    window.addEventListener("popstate", handle);
+    return () => window.removeEventListener("popstate", handle);
+  }, []);
+
+  const onOpenAnalyticsHub = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const sid = String(shellSessionId || sessionId || "").trim();
+    const pid = String(projectId || "").trim();
+    const wid = String(projectWorkspaceId || "").trim();
+    let path = "/analytics";
+    if (sid) {
+      path = buildAnalyticsPath("session", sid, ANALYTICS_MODULE_OVERVIEW);
+    } else if (pid) {
+      path = buildAnalyticsPath("project", pid, ANALYTICS_MODULE_OVERVIEW);
+    } else if (wid) {
+      path = buildAnalyticsPath("workspace", wid, ANALYTICS_MODULE_OVERVIEW);
+    }
+    window.history.pushState({}, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, [shellSessionId, sessionId, projectId, projectWorkspaceId]);
 
   useEffect(() => {
     // eslint-disable-next-line no-console
@@ -229,6 +264,8 @@ export default function AppShell({
           onOpenDiscussionNotifications={onOpenDiscussionNotifications}
           onNewProject={onNewProject}
           onNewBackendSession={onNewBackendSession}
+          onOpenAnalyticsHub={onOpenAnalyticsHub}
+          isAnalyticsActive={isAnalyticsActive}
           draft={draft}
           mentionNotifications={mentionNotifications}
           noteNotifications={noteNotifications}

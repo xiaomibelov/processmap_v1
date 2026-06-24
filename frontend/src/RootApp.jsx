@@ -9,6 +9,10 @@ import LoginPage from "./features/auth/LoginPage";
 import PublicHomePage from "./features/auth/PublicHomePage";
 import AnalyticsApp from "./features/analytics/AnalyticsApp.jsx";
 import { canAccessAdminConsole } from "./features/admin/adminUtils";
+import {
+  buildAnalyticsPath,
+  readLegacyAnalyticsRedirect,
+} from "./app/processMapRouteModel.js";
 import { ru } from "./shared/i18n/ru";
 
 function readLocation() {
@@ -234,6 +238,15 @@ function AppRoutes() {
   const wantsWorkspace = pathname.startsWith("/app");
   const wantsAnalytics = pathname.startsWith("/analytics");
   const wantsAdmin = pathname.startsWith("/admin");
+
+  useEffect(() => {
+    if (!isAuthed || !wantsWorkspace) return;
+    const redirect = readLegacyAnalyticsRedirect({ pathname, search });
+    if (redirect && redirect.scope && redirect.scopeId) {
+      navigate(buildAnalyticsPath(redirect.scope, redirect.scopeId, redirect.module), { replace: true });
+    }
+  }, [isAuthed, wantsWorkspace, pathname, search]);
+
   const showWorkspace = wantsWorkspace && isAuthed;
   const showAnalytics = wantsAnalytics && isAuthed;
   const showAdmin = wantsAdmin && isAuthed;

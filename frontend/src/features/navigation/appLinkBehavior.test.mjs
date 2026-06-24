@@ -24,19 +24,24 @@ test("buildAppWorkspaceHref builds project/session selection route", () => {
   assert.equal(buildAppWorkspaceHref({ projectId: "p_1" }), "/app?project=p_1");
 });
 
-test("buildProductActionsRegistryHref builds product registry surface routes", () => {
+test("buildProductActionsRegistryHref builds backend-driven analytics path routes", () => {
   assert.equal(
     buildProductActionsRegistryHref({ scope: "workspace", workspaceId: "ws_1" }),
-    "/app?surface=product-actions-registry&registry_scope=workspace&workspace=ws_1",
+    "/analytics/workspace/ws_1/actions",
   );
   assert.equal(
     buildProductActionsRegistryHref({ scope: "project", workspaceId: "ws_1", projectId: "p_1" }),
-    "/app?surface=product-actions-registry&registry_scope=project&workspace=ws_1&project=p_1",
+    "/analytics/project/p_1/actions",
   );
   assert.equal(
     buildProductActionsRegistryHref({ scope: "session", projectId: "p_1", sessionId: "s_2" }),
-    "/app?surface=product-actions-registry&registry_scope=session&project=p_1&session=s_2",
+    "/analytics/session/s_2/actions",
   );
+  assert.equal(
+    buildProductActionsRegistryHref({ scope: "current", sessionId: "s_2" }),
+    "/analytics/session/s_2/actions",
+  );
+  assert.equal(buildProductActionsRegistryHref({}), "/analytics");
 });
 
 test("shouldHandleClientNavigation accepts plain left click", () => {
