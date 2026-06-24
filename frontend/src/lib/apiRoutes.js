@@ -263,6 +263,38 @@ export const apiRoutes = {
     inviteAccept: () => "/api/invites/accept",
     telemetryErrorEvents: () => "/api/telemetry/error-events",
   },
+  analytics: {
+    dashboard: (scope, scopeId) => `/api/analytics/dashboard?scope=${encode(scope)}&scope_id=${encode(scopeId)}`,
+    dashboardByPath: (scope, scopeId) => `/api/analytics/${encode(scope)}/${encode(scopeId)}/dashboard`,
+    properties: (scope, scopeId, params = {}) => withQuery("/api/analytics/properties", {
+      scope: String(scope || "").trim(),
+      scope_id: String(scopeId || "").trim(),
+      page: params.page != null ? String(params.page) : "",
+      limit: params.limit != null ? String(params.limit) : "",
+      type_filter: (params.type_filter || []).join(","),
+      category_filter: (params.category_filter || []).join(","),
+      source_filter: (params.source_filter || []).join(","),
+      section_filter: (params.section_filter || []).join(","),
+      role_filter: (params.role_filter || []).join(","),
+    }),
+    actions: (scope, scopeId, params = {}) => withQuery("/api/analytics/actions", {
+      scope: String(scope || "").trim(),
+      scope_id: String(scopeId || "").trim(),
+      page: params.page != null ? String(params.page) : "",
+      limit: params.limit != null ? String(params.limit) : "",
+      section_filter: (params.section_filter || []).join(","),
+      role_filter: (params.role_filter || []).join(","),
+      type_filter: (params.type_filter || []).join(","),
+    }),
+    exportPropertiesCsv: (scope, scopeId) => withQuery("/api/analytics/properties/export.csv", {
+      scope: String(scope || "").trim(),
+      scope_id: String(scopeId || "").trim(),
+    }),
+    exportActionsCsv: (scope, scopeId) => withQuery("/api/analytics/actions/export.csv", {
+      scope: String(scope || "").trim(),
+      scope_id: String(scopeId || "").trim(),
+    }),
+  },
 };
 
 export default apiRoutes;

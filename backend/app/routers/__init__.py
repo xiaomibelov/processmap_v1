@@ -1,6 +1,7 @@
 from .auto_pass import router as auto_pass_router
 from .admin import router as admin_router
 from .version import router as version_router
+from .analytics import router as analytics_router
 from .clipboard import router as clipboard_router
 from .error_events import router as error_events_router
 from .explorer import router as explorer_router
@@ -34,6 +35,7 @@ ROUTERS = (
     product_actions_registry_router,
     process_properties_registry_router,
     project_analytics_router,
+    analytics_router,
     rag_router,
     notes_router,
     clipboard_router,
