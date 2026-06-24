@@ -12,7 +12,7 @@ fi
 docker compose config -q
 docker compose build api frontend
 docker compose up -d postgres redis
-docker compose up -d api frontend gateway
+docker compose up -d api frontend
 
 "$ROOT_DIR/deploy/scripts/server_smoke.sh"
 echo "[deploy] first deploy completed"

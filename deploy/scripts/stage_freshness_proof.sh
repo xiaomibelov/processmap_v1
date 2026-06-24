@@ -11,7 +11,7 @@ Usage:
 Environment overrides for local validation:
   STAGE_URL                      Stage URL to fetch (default: https://stage.processmap.ru)
   STAGE_FRESHNESS_SOURCE_FILE    Source fingerprint file (default: frontend/.stage-deploy-fingerprint.json)
-  STAGE_FRESHNESS_GATEWAY_ROOT   Local filesystem root that mimics /usr/share/nginx/html
+  STAGE_FRESHNESS_FRONTEND_ROOT  Local filesystem root that mimics /usr/share/nginx/html (legacy alias: STAGE_FRESHNESS_GATEWAY_ROOT)
   STAGE_FRESHNESS_HTML_FILE      Local HTML file to use instead of curling stage root
   STAGE_FRESHNESS_JS_FILE        Local JS file to use instead of curling served bundle
 EOF
@@ -125,7 +125,7 @@ done
 
 STAGE_URL="${STAGE_URL:-https://stage.processmap.ru}"
 SOURCE_FINGERPRINT_FILE="${STAGE_FRESHNESS_SOURCE_FILE:-/tmp/processmap-stage-deploy-fingerprint-${REQUESTED_REF//[^A-Za-z0-9._-]/_}-${RESOLVED_SHA:0:12}.json}"
-ROOT_OVERRIDE="${STAGE_FRESHNESS_GATEWAY_ROOT:-}"
+ROOT_OVERRIDE="${STAGE_FRESHNESS_FRONTEND_ROOT:-${STAGE_FRESHNESS_GATEWAY_ROOT:-}}"
 HTML_OVERRIDE="${STAGE_FRESHNESS_HTML_FILE:-}"
 JS_OVERRIDE="${STAGE_FRESHNESS_JS_FILE:-}"
 CACHE_BUST_TOKEN="${REQUESTED_REF//[^A-Za-z0-9._-]/_}-${RESOLVED_SHA:0:12}"
@@ -156,25 +156,25 @@ SERVED_BUNDLE_FINGERPRINT=""
 SERVED_BUNDLE_SHA256=""
 
 if [ -n "$ROOT_OVERRIDE" ]; then
-  [ -d "$ROOT_OVERRIDE" ] || fail "override gateway root does not exist: $ROOT_OVERRIDE"
+  [ -d "$ROOT_OVERRIDE" ] || fail "override frontend root does not exist: $ROOT_OVERRIDE"
   HTML_PATH="$ROOT_OVERRIDE/index.html"
-  [ -f "$HTML_PATH" ] || fail "override gateway root missing index.html: $HTML_PATH"
+  [ -f "$HTML_PATH" ] || fail "override frontend root missing index.html: $HTML_PATH"
   BUILT_BUNDLE_PATH="$ROOT_OVERRIDE/$(grep -o 'assets/index-[^"]*\.js' "$HTML_PATH" | head -n 1)"
-  [ -n "$BUILT_BUNDLE_PATH" ] || fail "override gateway index.html did not reference assets/index-*.js"
+  [ -n "$BUILT_BUNDLE_PATH" ] || fail "override frontend index.html did not reference assets/index-*.js"
   BUILT_BUNDLE_NAME="$(basename "$BUILT_BUNDLE_PATH")"
   assert_file_contains_fixed "$BUILT_BUNDLE_PATH" "$DEPLOY_FINGERPRINT" "built bundle"
   BUILT_BUNDLE_FINGERPRINT="$DEPLOY_FINGERPRINT"
   BUILT_BUNDLE_SHA256="$(hash_file_local "$BUILT_BUNDLE_PATH")"
 else
-  GATEWAY_CID="$(compose_stage ps -q gateway)"
-  [ -n "$GATEWAY_CID" ] || fail "gateway container is not running"
-  BUILT_HTML_CONTENT="$(docker exec "$GATEWAY_CID" sh -lc 'cat /usr/share/nginx/html/index.html')"
+  FRONTEND_CID="$(compose_stage ps -q frontend)"
+  [ -n "$FRONTEND_CID" ] || fail "frontend container is not running"
+  BUILT_HTML_CONTENT="$(docker exec "$FRONTEND_CID" sh -lc 'cat /usr/share/nginx/html/index.html')"
   BUILT_BUNDLE_PATH="/usr/share/nginx/html/$(printf '%s' "$BUILT_HTML_CONTENT" | grep -o 'assets/index-[^"]*\.js' | head -n 1)"
-  [ -n "$BUILT_BUNDLE_PATH" ] || fail "gateway index.html did not reference assets/index-*.js"
+  [ -n "$BUILT_BUNDLE_PATH" ] || fail "frontend index.html did not reference assets/index-*.js"
   BUILT_BUNDLE_NAME="$(basename "$BUILT_BUNDLE_PATH")"
-  assert_remote_file_contains_fixed "$GATEWAY_CID" "$BUILT_BUNDLE_PATH" "$DEPLOY_FINGERPRINT" "built bundle"
+  assert_remote_file_contains_fixed "$FRONTEND_CID" "$BUILT_BUNDLE_PATH" "$DEPLOY_FINGERPRINT" "built bundle"
   BUILT_BUNDLE_FINGERPRINT="$DEPLOY_FINGERPRINT"
-  BUILT_BUNDLE_SHA256="$(docker exec "$GATEWAY_CID" sh -lc "sha256sum '$BUILT_BUNDLE_PATH' | awk '{print \$1}'")"
+  BUILT_BUNDLE_SHA256="$(docker exec "$FRONTEND_CID" sh -lc "sha256sum '$BUILT_BUNDLE_PATH' | awk '{print \$1}'")"
 fi
 
 log "built bundle path: $BUILT_BUNDLE_PATH"
