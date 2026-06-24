@@ -5708,6 +5708,8 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   useImperativeHandle(ref, () => imperativeApi, [imperativeApi]);
 
+  const hasDiagram = hasDefinitionsLoaded(modelerRef.current) || hasDefinitionsLoaded(viewerRef.current);
+
   return (
     <div className="bpmnStage">
       {err ? (
@@ -5727,7 +5729,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         />
       </div>
 
-      <DiagramLoadBoundary loadState={loadState} errorReason={errorReason}>
+      <DiagramLoadBoundary loadState={loadState} errorReason={errorReason} hasDiagram={hasDiagram}>
         <div className={view === "xml" ? "bpmnStack hidden" : "bpmnStack"}>
           {diagramReady ? (
             <div

@@ -9,8 +9,8 @@ import { diagramLoadStateMachineReducer } from "./diagramLoadStateMachine.js";
  * lifecycle, not this hook.
  */
 export default function useDiagramLoadStateMachine(options = {}) {
-  const warmTimeoutMs = Number(options.warmTimeoutMs || 10000);
-  const coldTimeoutMs = Number(options.coldTimeoutMs || 20000);
+  const warmTimeoutMs = Number(options.warmTimeoutMs ?? 10000);
+  const coldTimeoutMs = Number(options.coldTimeoutMs ?? 20000);
 
   const [loadState, setLoadState] = useState("idle");
   const [errorReason, setErrorReason] = useState("");

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import DiagramSkeleton from "./DiagramSkeleton";
 
 /**
@@ -9,11 +9,21 @@ import DiagramSkeleton from "./DiagramSkeleton";
  *   loadState      — string from useDiagramLoadStateMachine
  *   errorReason    — last error reason
  *   onRetry        — callback for retry button
+ *   hasDiagram     — if true, the canvas already has a rendered diagram;
+ *                    never block it with an error/timeout overlay.
  *   children       — canvas container (always keep mounted after first paint)
  */
-export default function DiagramLoadBoundary({ loadState, errorReason, onRetry, children }) {
+export default function DiagramLoadBoundary({ loadState, errorReason, onRetry, hasDiagram, children }) {
   const isSkeletonVisible = loadState === "initializing" || loadState === "importing";
   const isError = loadState === "error" || loadState === "timeout";
+
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    setDismissed(false);
+  }, [loadState]);
+
+  // If the diagram is already rendered, the overlay is never useful.
+  const isErrorVisible = isError && !hasDiagram && !dismissed;
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
@@ -32,7 +42,7 @@ export default function DiagramLoadBoundary({ loadState, errorReason, onRetry, c
         </div>
       ) : null}
 
-      {isError ? (
+      {isErrorVisible ? (
         <div
           style={{
             position: "absolute",
@@ -56,16 +66,26 @@ export default function DiagramLoadBoundary({ loadState, errorReason, onRetry, c
           <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 16 }}>
             Состояние: {loadState}
           </div>
-          {typeof onRetry === "function" ? (
+          <div style={{ display: "flex", gap: 12 }}>
+            {typeof onRetry === "function" ? (
+              <button
+                type="button"
+                className="primaryBtn"
+                onClick={onRetry}
+                data-testid="diagram-retry-btn"
+              >
+                Повторить
+              </button>
+            ) : null}
             <button
               type="button"
               className="primaryBtn"
-              onClick={onRetry}
-              data-testid="diagram-retry-btn"
+              onClick={() => setDismissed(true)}
+              data-testid="diagram-close-overlay-btn"
             >
-              Повторить
+              Закрыть / Продолжить работу
             </button>
-          ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -75,7 +95,7 @@ export default function DiagramLoadBoundary({ loadState, errorReason, onRetry, c
           inset: 0,
           zIndex: 1,
           opacity: 1,
-          pointerEvents: isSkeletonVisible || isError ? "none" : "auto",
+          pointerEvents: isSkeletonVisible || isErrorVisible ? "none" : "auto",
         }}
       >
         {children}
