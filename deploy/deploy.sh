@@ -29,7 +29,7 @@ sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^VIT
 
 echo "[DEPLOY] BUILD_ID=${BUILD_ID} branch=${BUILD_BRANCH} env=${BUILD_ENV}"
 
-# 2a. Regenerate frontend build-info.json so the deployed gateway shows the real SHA.
+# 2a. Regenerate frontend build-info.json so the deployed frontend shows the real SHA.
 export BUILD_ID
 export BUILD_BRANCH
 export BUILD_TIME
