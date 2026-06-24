@@ -1,5 +1,7 @@
 function readApiBase() {
-  const raw = String(import.meta?.env?.VITE_API_BASE || "").trim();
+  const runtime =
+    (typeof window !== "undefined" && window?.__ENV__?.VITE_API_BASE) || "";
+  const raw = String(runtime || import.meta?.env?.VITE_API_BASE || "").trim();
   if (!raw) return "";
   return raw.endsWith("/") ? raw.slice(0, -1) : raw;
 }

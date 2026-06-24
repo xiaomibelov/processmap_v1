@@ -38,14 +38,14 @@ HEALTHCHECK --interval=10s --timeout=5s --retries=10 --start-period=5s \
 - `listen 80; listen 5177;`
 - `gzip on` с необходимыми `gzip_types`.
 - Проксирование `/api/`, `/version`, `/health/`, `/metrics` → `api:8000`.
-- Cache-Control для hashed assets и no-cache для `index.html`.
+- `Cache-Control` для hashed assets и no-cache для `index.html`, `env.js`.
 - SPA fallback `try_files $uri $uri/ /index.html`.
 
 ### 3. `docker-compose.yml`
 - `frontend` теперь собирается из `frontend/Dockerfile` с build args.
 - Порт `${FRONTEND_PORT:-5177}:5177`.
 - Healthcheck `curl -fsS http://localhost:5177/`.
-- Удалён dev `command`, dev volumes и dev env vars.
+- Удалён dev `command`, dev volumes/env.
 - Удалён сервис `gateway` и volume `frontend_node_modules`.
 
 ### 4. `docker-compose.prod.yml` / `docker-compose.stage.yml`
@@ -56,7 +56,12 @@ HEALTHCHECK --interval=10s --timeout=5s --retries=10 --start-period=5s \
 - `gateway` → `frontend` в build, deprecate, up, healthcheck, reload, label.
 - Frontend healthcheck добавлен: `curl -fsS http://localhost:${FRONTEND_PORT:-5177}/`.
 
+### 6. Runtime env (`window.__ENV__`)
+- `frontend/public/env.js` — runtime env шаблон (`VITE_API_BASE`).
+- `frontend/index.html` — подключает `<script src="/env.js"></script>` перед приложением.
+- `frontend/src/lib/apiClient.js` — читает `window.__ENV__?.VITE_API_BASE` с fallback на `import.meta.env`.
+- `nginx.conf` — отдаёт `/env.js` с `no-cache` заголовками.
+
 ## Что НЕ изменено
 - `frontend/Dockerfile.prod` оставлен как есть (используется отдельным SSL edge-контуром через `docker-compose.ssl.yml`).
 - `vite.config.js` — defaults `base: '/'`, `outDir: 'dist'` не требуют изменений.
-- Runtime env-инъекция `window.__ENV__` не требуется: API работает через относительный `/api`.

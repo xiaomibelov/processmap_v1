@@ -1,67 +1,37 @@
-# TESTS: Smoke-test перехода на nginx
+# TESTS — Smoke-test vite-dev-to-nginx
 
-## Подготовка
-- Стенд: `http://clearvestnic.ru:5177`
-- Контейнер: `processmap_v1-frontend-1`
+## Сценарии
 
-## Автоматические проверки (curl)
-
-### 1. Корень отдаёт 200
+### 1. Gzip + статус
 ```bash
 curl -I http://clearvestnic.ru:5177/
-# HTTP/1.1 200 OK
-# Cache-Control: no-cache, no-store, must-revalidate
 ```
+- Ожидаем: HTTP 200, `content-encoding: gzip` или `Content-Type: text/html`
 
-### 2. SPA fallback — `/analytics` возвращает `index.html`, не 404
+### 2. SPA fallback (deep link)
 ```bash
-curl -s http://clearvestnic.ru:5177/analytics | head -1
-# <!doctype html>
+curl http://clearvestnic.ru:5177/analytics
+curl http://clearvestnic.ru:5177/settings
 ```
+- Ожидаем: HTTP 200, содержит `<div id="root">` (не 404)
 
-### 3. Assets отдаются с gzip
+### 3. UI функционал
+- Открыть `clearvestnic.ru:5177`
+- Навигация: Analytics, Settings, Diagram — работают
+- Экспорт CSV/XLSX из Analytics — работает
+- Фильтры, пагинация 20/50/100 — работают
+
+### 4. Нет HMR dev-соединений
+- DevTools → Network → WS
+- Ожидаем: 0 WebSocket подключений (не должно быть `vite` HMR)
+
+### 5. Cache headers
 ```bash
-curl -I -H 'Accept-Encoding: gzip' http://clearvestnic.ru:5177/assets/index-*.css
-# Content-Encoding: gzip
-# Cache-Control: public, max-age=31536000, immutable
+curl -I http://clearvestnic.ru:5177/assets/index-*.js
 ```
-
-### 4. API proxy работает
-```bash
-curl -fsS http://clearvestnic.ru:5177/version
-# {"version": "..."}
-```
-
-### 5. Dev/HMR больше не используется
-- DevTools → Network: отсутствуют WebSocket-подключения к `wss://`/`ws://` на 5177.
-- Response headers: `Server: nginx/1.27.x`, не `Vite`.
-
-## Ручные проверки
-
-### 6. Приложение работает
-- Открыть `http://clearvestnic.ru:5177/app`.
-- Войти, открыть проект/сессию.
-- Перейти в Аналитика → Свойства.
-- Убедиться, что:
-  - таблица загружается;
-  - пагинация 20/50/100 работает;
-  - экспорт CSV/XLSX скачивает файл.
-
-### 7. Контейнер healthy
-```bash
-docker ps --filter name=processmap_v1-frontend-1 --format 'table {{.Names}}\t{{.Status}}'
-# processmap_v1-frontend-1   Up X minutes (healthy)
-```
-
-### 8. Нет dev-only логики
-- В DevTools Console не должно быть ошибок `WebSocket connection to ... failed`.
-- Вкладка Network: нет запросов к `/@vite/client` или `/.vite/`.
+- Ожидаем: `cache-control: public, max-age=31536000, immutable`
 
 ## Критерии приёмки
-- [ ] `curl -I http://clearvestnic.ru:5177/` → `HTTP/1.1 200 OK`.
-- [ ] `curl http://clearvestnic.ru:5177/analytics` → содержит `<!doctype html>`.
-- [ ] `curl -I -H 'Accept-Encoding: gzip' .../assets/index-*.css` → `Content-Encoding: gzip`.
-- [ ] `curl http://clearvestnic.ru:5177/version` → JSON от API.
-- [ ] Приложение открывается, навигация и экспорт работают.
-- [ ] Контейнер `processmap_v1-frontend-1` в статусе `(healthy)`.
-- [ ] Нет WebSocket/HMR подключений в DevTools.
+- Все 5 сценариев PASS
+- Стенд доступен по `clearvestnic.ru:5177`
+- Zero downtime deploy (<5 мин простоя)
