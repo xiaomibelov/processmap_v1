@@ -4,6 +4,8 @@ const SCOPE_LABELS = {
   session: "Сессия",
 };
 
+const ALL_SCOPES = ["workspace", "project", "session"];
+
 export default function AnalyticsScopeSwitcher({
   scope = "workspace",
   scopeId = "",
@@ -12,35 +14,25 @@ export default function AnalyticsScopeSwitcher({
   sessionId = "",
   onChange,
 }) {
-  const scopes = [];
-  if (workspaceId) scopes.push({ key: "workspace", id: workspaceId });
-  if (projectId) scopes.push({ key: "project", id: projectId });
-  if (sessionId) scopes.push({ key: "session", id: sessionId });
-
-  if (scopes.length < 2) {
-    return (
-      <div className="text-xs text-muted uppercase tracking-wide">
-        {SCOPE_LABELS[scope] || "Scope"}: <span className="font-medium text-fg">{scopeId}</span>
-      </div>
-    );
-  }
+  const ids = { workspace: workspaceId, project: projectId, session: sessionId };
 
   return (
-    <div className="flex items-center gap-1 rounded-lg border border-border bg-panel p-1">
-      {scopes.map((item) => {
-        const active = scope === item.key;
+    <div className="analyticsScopeSwitcher" role="tablist" aria-label="Переключение scope">
+      {ALL_SCOPES.map((key) => {
+        const active = scope === key;
+        const available = Boolean(ids[key]);
         return (
           <button
-            key={item.key}
+            key={key}
             type="button"
-            onClick={() => onChange?.(item.key, item.id)}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition ${
-              active
-                ? "bg-accent text-white"
-                : "text-muted hover:text-fg hover:bg-panel2"
-            }`}
+            role="tab"
+            aria-selected={active}
+            disabled={!available}
+            title={available ? undefined : `Нет доступного ${SCOPE_LABELS[key]}`}
+            onClick={() => available && onChange?.(key, ids[key])}
+            className={`analyticsScopeSwitcherBtn ${active ? "analyticsScopeSwitcherBtn--active" : ""} ${!available ? "analyticsScopeSwitcherBtn--disabled" : ""}`}
           >
-            {SCOPE_LABELS[item.key]}
+            {SCOPE_LABELS[key]}
           </button>
         );
       })}
