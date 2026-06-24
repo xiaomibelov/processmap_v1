@@ -26,6 +26,7 @@ import useDiagramLoadStateMachine from "../../features/process/bpmn/stage/load/u
 import DiagramLoadBoundary from "../../features/process/bpmn/stage/load/DiagramLoadBoundary";
 import { useV2OverlayState } from "../../features/process/bpmn/stage/state/useV2OverlayState";
 import { useOverlayLifecycle } from "../../features/process/bpmn/stage/overlay/useOverlayLifecycle";
+import { useViewportResizeController } from "../../features/process/bpmn/stage/viewport/useViewportResizeController";
 import {
   bindModelerStageEvents,
   bindViewerStageEvents,
@@ -1568,6 +1569,13 @@ const BpmnStage = forwardRef(function BpmnStage({
     v2EnabledRef: v2OverlayState.enabledRef,
     v2ExpandedRef: v2OverlayState.expandedRef,
     useExtensionOverlays,
+  });
+
+  useViewportResizeController({
+    viewerContainerRef: viewerEl,
+    editorContainerRef: editorEl,
+    getActiveInstance: () => (view === "viewer" ? viewerRef.current : modelerRef.current),
+    view,
   });
 
   useEffect(() => {
@@ -5597,30 +5605,6 @@ const BpmnStage = forwardRef(function BpmnStage({
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [activeProjectId, sessionId, view]);
-
-  useEffect(() => {
-    if (typeof ResizeObserver === "undefined") return undefined;
-    const observer = new ResizeObserver((entries) => {
-      const activeInst = view === "viewer" ? viewerRef.current : modelerRef.current;
-      const canvas = activeInst?.get?.("canvas");
-      if (!canvas) return;
-      let width = 0;
-      let height = 0;
-      for (const entry of entries) {
-        if (entry.target === viewerEl.current || entry.target === editorEl.current) {
-          const rect = entry.contentRect;
-          width = Number(rect?.width || 0);
-          height = Number(rect?.height || 0);
-        }
-      }
-      if (width > 0 && height > 0) {
-        viewportRecovery.safeCanvasResized(canvas, { width, height, thresholdPx: 2 });
-      }
-    });
-    if (viewerEl.current) observer.observe(viewerEl.current);
-    if (editorEl.current) observer.observe(editorEl.current);
-    return () => observer.disconnect();
-  }, [view]);
 
   useEffect(() => {
     const sid = String(sessionId || "");
