@@ -37,6 +37,7 @@ import {
 import { buildManualSaveProjectionSyncPlan } from "../features/process/bpmn/save/manualSaveProjectionSync.js";
 import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
 import useBpmnSync from "../features/process/hooks/useBpmnSync";
+import { useViewportResizeController } from "../features/process/bpmn/stage/viewport/useViewportResizeController";
 import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
 import useProcessWorkbenchController from "../features/process/hooks/useProcessWorkbenchController";
 import { deriveActorsFromBpmn, sameDerivedActors } from "../features/process/lib/deriveActorsFromBpmn";
@@ -3176,33 +3177,12 @@ function ProcessStage({
     });
   }, [subscribeViewboxChanging]);
   // Cached host rect updated by ResizeObserver / resize listener.
-  // NEVER read getBoundingClientRect during render — only in this effect.
+  // NEVER read getBoundingClientRect during render — only in the observer callback.
   const [hostContainerRect, setHostContainerRect] = useState({ left: 0, top: 0, width: 0, height: 0 });
-  useEffect(() => {
-    const host = bpmnStageHostRef?.current;
-    if (!(host instanceof Element)) return undefined;
-    const update = () => {
-      const box = host.getBoundingClientRect?.() || {};
-      setHostContainerRect({
-        left: Number(box.left || 0),
-        top: Number(box.top || 0),
-        width: Number(box.width || 0),
-        height: Number(box.height || 0),
-      });
-    };
-    update();
-    let ro = null;
-    if (typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(update);
-      ro.observe(host);
-    }
-    const onResize = () => update();
-    window.addEventListener("resize", onResize);
-    return () => {
-      if (ro) ro.disconnect();
-      window.removeEventListener("resize", onResize);
-    };
-  }, []);
+  useViewportResizeController({
+    hostRef: bpmnStageHostRef,
+    onHostRect: setHostContainerRect,
+  });
 
   const templatesDiagramContainerRect = useMemo(() => {
     const rect = asObject(overlayContainerRect);
