@@ -717,32 +717,35 @@ def _seed_reference_tables(con: Optional[sqlite3.Connection] = None) -> None:
     now = str(_now_ts())
     for table_name, rows in _REFERENCE_SEED.items():
         if table_name == "ingredients":
-            con.executemany(
-                """
-                INSERT INTO ingredients (id, name, unit, calories_per_unit, allergens, supplier_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO NOTHING
-                """,
-                [(rid, name, unit, cal, allergens, supplier, now, now) for rid, name, unit, cal, allergens, supplier in rows],
-            )
+            for rid, name, unit, cal, allergens, supplier in rows:
+                con.execute(
+                    """
+                    INSERT INTO ingredients (id, name, unit, calories_per_unit, allergens, supplier_id, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO NOTHING
+                    """,
+                    [rid, name, unit, cal, allergens, supplier, now, now],
+                )
         elif table_name == "equipment":
-            con.executemany(
-                """
-                INSERT INTO equipment (id, name, type, capacity, maintenance_schedule, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO NOTHING
-                """,
-                [(rid, name, type, capacity, maint, now, now) for rid, name, type, capacity, maint in rows],
-            )
+            for rid, name, type, capacity, maint in rows:
+                con.execute(
+                    """
+                    INSERT INTO equipment (id, name, type, capacity, maintenance_schedule, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO NOTHING
+                    """,
+                    [rid, name, type, capacity, maint, now, now],
+                )
         elif table_name == "containers":
-            con.executemany(
-                """
-                INSERT INTO containers (id, name, volume, material, temperature_range, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO NOTHING
-                """,
-                [(rid, name, volume, material, temp, now, now) for rid, name, volume, material, temp in rows],
-            )
+            for rid, name, volume, material, temp in rows:
+                con.execute(
+                    """
+                    INSERT INTO containers (id, name, volume, material, temperature_range, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO NOTHING
+                    """,
+                    [rid, name, volume, material, temp, now, now],
+                )
     _meta_set(con, _REFERENCE_SEED_KEY, "1")
 
 
