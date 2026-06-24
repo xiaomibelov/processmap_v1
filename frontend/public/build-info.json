@@ -1,10 +1,10 @@
 {
-  "branch": "main",
-  "sha": "c57e38fa",
-  "shaShort": "c57e38fa",
-  "timestamp": "2026-06-24T16:55:49Z",
-  "contourId": "main",
+  "branch": "fix/analytics-compact-embedded",
+  "sha": "36b7f685739a7ba3360fbe1411eab8feab6f88c3",
+  "shaShort": "36b7f685",
+  "timestamp": "2026-06-24T17:51:38.136Z",
+  "contourId": "fix-analytics-compact-embedded",
   "dirty": true,
   "host": "clearvestnic.ru",
-  "env": "prod"
+  "env": "dev"
 }

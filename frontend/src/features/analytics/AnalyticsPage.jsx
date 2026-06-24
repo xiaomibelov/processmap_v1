@@ -27,7 +27,7 @@ function toArray(value) {
 
 function formatNumber(value) {
   const n = Number(value);
-  if (!Number.isFinite(n)) return "—";
+  if (!Number.isFinite(n)) return "0";
   return n.toLocaleString("ru-RU");
 }
 
@@ -76,13 +76,14 @@ function useAnalyticsDashboard(scope, scopeId) {
   return { data, loading, error };
 }
 
-function MetricCard({ label, value, subtext = "" }) {
+function MetricCard({ label, value, subtext = "", sparklineItems }) {
   return (
-    <div className="rounded-xl border border-border bg-panel p-4 shadow-sm">
-      <div className="text-xs uppercase tracking-wide text-muted">{label}</div>
-      <div className="mt-1 text-2xl font-semibold text-fg">{value}</div>
-      {subtext ? <div className="mt-1 text-xs text-muted">{subtext}</div> : null}
-    </div>
+    <DashboardMetricCard
+      title={label}
+      value={value}
+      subtitle={subtext}
+      sparklineItems={sparklineItems}
+    />
   );
 }
 
@@ -361,15 +362,15 @@ function AnalyticsDashboardsPanel({ data = null, loading = false, error = "" }) 
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <DashboardMetricCard title="Всего действий" value={formatNumber(data.actions_total)} testId="dashboard-metric-actions-total" />
-        <DashboardMetricCard title="Продолжительность, мин" value={formatNumber(data.total_duration_min)} testId="dashboard-metric-duration" />
-        <DashboardMetricCard title="Критический путь, мин" value={formatNumber(data.critical_path_min)} testId="dashboard-metric-critical-path" />
-        <DashboardMetricCard title="Рукопожатий" value={formatNumber(data.handoffs_count)} testId="dashboard-metric-handoffs" />
-        <DashboardMetricCard title="Открытых вопросов" value={formatNumber(data.open_questions)} testId="dashboard-metric-open-questions" />
-        <DashboardMetricCard title="Критических вопросов" value={formatNumber(data.critical_questions)} testId="dashboard-metric-critical-questions" />
-        <DashboardMetricCard title="Сессий" value={formatNumber(data.sessions_count)} testId="dashboard-metric-sessions" />
-        <DashboardMetricCard title="Проектов" value={formatNumber(data.projects_count)} testId="dashboard-metric-projects" />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-6">
+        <DashboardMetricCard title="Действий" value={formatNumber(data.actions_total)} testId="dashboard-metric-actions-total" sparklineItems={roleItems} />
+        <DashboardMetricCard title="Длительность, мин" value={formatNumber(data.total_duration_min)} testId="dashboard-metric-duration" sparklineItems={roleItems} />
+        <DashboardMetricCard title="Крит. путь, мин" value={formatNumber(data.critical_path_min)} testId="dashboard-metric-critical-path" sparklineItems={roleItems} />
+        <DashboardMetricCard title="Handoffs" value={formatNumber(data.handoffs_count)} testId="dashboard-metric-handoffs" sparklineItems={roleItems} />
+        <DashboardMetricCard title="Открыто" value={formatNumber(data.open_questions)} testId="dashboard-metric-open-questions" sparklineItems={roleItems} />
+        <DashboardMetricCard title="Критично" value={formatNumber(data.critical_questions)} testId="dashboard-metric-critical-questions" sparklineItems={roleItems} />
+        <DashboardMetricCard title="Сессий" value={formatNumber(data.sessions_count)} testId="dashboard-metric-sessions" sparklineItems={roleItems} />
+        <DashboardMetricCard title="Проектов" value={formatNumber(data.projects_count)} testId="dashboard-metric-projects" sparklineItems={roleItems} />
       </div>
 
       {roleItems.length > 0 || sectionItems.length > 0 || typeItems.length > 0 ? (
@@ -398,7 +399,23 @@ function AnalyticsDashboardsPanel({ data = null, loading = false, error = "" }) 
   );
 }
 
-export default function AnalyticsPage({ scope, scopeId, module, orgId }) {
+export default function AnalyticsPage({ scope: initialScope, scopeId: initialScopeId, module: initialModule, orgId, embedded = false }) {
+  const [pageScope, setPageScope] = useState(initialScope);
+  const [pageScopeId, setPageScopeId] = useState(initialScopeId);
+  const [pageModule, setPageModule] = useState(initialModule || ANALYTICS_MODULE_OVERVIEW);
+
+  const scope = embedded ? pageScope : initialScope;
+  const scopeId = embedded ? pageScopeId : initialScopeId;
+  const module = embedded ? pageModule : initialModule;
+
+  useEffect(() => {
+    if (embedded) {
+      setPageScope(initialScope);
+      setPageScopeId(initialScopeId);
+      setPageModule(initialModule || ANALYTICS_MODULE_OVERVIEW);
+    }
+  }, [embedded, initialScope, initialScopeId, initialModule]);
+
   const { data, loading, error } = useAnalyticsDashboard(scope, scopeId);
 
   const derivedScopeIds = useMemo(() => {
@@ -412,48 +429,60 @@ export default function AnalyticsPage({ scope, scopeId, module, orgId }) {
 
   function navigateTo(targetScope, targetId) {
     if (!targetId) return;
+    if (embedded) {
+      setPageScope(targetScope);
+      setPageScopeId(targetId);
+      return;
+    }
     const next = buildAnalyticsPath(targetScope, targetId, module);
     window.history.pushState({}, "", next);
     window.dispatchEvent(new PopStateEvent("popstate"));
   }
 
   function setModule(nextModule) {
+    if (embedded) {
+      setPageModule(nextModule);
+      return;
+    }
     const next = buildAnalyticsPath(scope, scopeId, nextModule);
     window.history.pushState({}, "", next);
     window.dispatchEvent(new PopStateEvent("popstate"));
   }
 
-  const title = scope === "session" ? "Аналитика сессии" : scope === "project" ? "Аналитика проекта" : "Аналитика workspace";
+  const title = scope === "session" ? "Сессия" : scope === "project" ? "Проект" : "Workspace";
+  const sparklineItems = data ? chartItems(data.actions_by_role) : [];
 
   return (
     <main className="analyticsHubPage" data-testid="analytics-page">
       <section className="analyticsHubSurface">
         <header className="analyticsHubHeader">
           <div>
-            <h1>{title}</h1>
-            <p>Backend-driven аналитика по выбранному scope.</p>
-            <AnalyticsScopeSwitcher
-              scope={scope}
-              scopeId={scopeId}
-              workspaceId={derivedScopeIds.workspaceId}
-              projectId={derivedScopeIds.projectId}
-              sessionId={derivedScopeIds.sessionId}
-              onChange={navigateTo}
-            />
-          </div>
-          <div className="text-right text-xs text-muted">
-            {orgId ? <div>Org: {orgId}</div> : null}
-            {data?.computed_at ? <div>Обновлено: {formatDate(data.computed_at)}</div> : null}
+            <h1>Аналитика <span className="text-accent">{title}</span></h1>
+            <div className="analyticsHubHeaderMeta">
+              {data?.computed_at ? <span>Обновлено: {formatDate(data.computed_at)}</span> : null}
+            </div>
+            {!embedded ? (
+              <div className="mt-2">
+                <AnalyticsScopeSwitcher
+                  scope={scope}
+                  scopeId={scopeId}
+                  workspaceId={derivedScopeIds.workspaceId}
+                  projectId={derivedScopeIds.projectId}
+                  sessionId={derivedScopeIds.sessionId}
+                  onChange={navigateTo}
+                />
+              </div>
+            ) : null}
           </div>
         </header>
 
-        <div className="mb-4 flex items-center gap-1 border-b border-border">
+        <div className="mb-3 flex h-8 items-center gap-1 border-b border-border">
           {MODULE_TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setModule(tab.id)}
-              className={`px-3 py-2 text-sm font-medium transition ${
+              className={`px-3 py-1.5 text-xs font-medium transition ${
                 module === tab.id
                   ? "border-b-2 border-accent text-accent"
                   : "text-muted hover:text-fg"
@@ -469,15 +498,15 @@ export default function AnalyticsPage({ scope, scopeId, module, orgId }) {
             {loading ? <div className="text-sm text-muted">Загрузка…</div> : null}
             {error ? <div className="text-sm text-red-500">{error}</div> : null}
             {data ? (
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                <MetricCard label="Всего действий" value={formatNumber(data.actions_total)} />
-                <MetricCard label="Продолжительность, мин" value={formatNumber(data.total_duration_min)} />
-                <MetricCard label="Критический путь, мин" value={formatNumber(data.critical_path_min)} />
-                <MetricCard label="Рукопожатий" value={formatNumber(data.handoffs_count)} />
-                <MetricCard label="Открытых вопросов" value={formatNumber(data.open_questions)} />
-                <MetricCard label="Критических вопросов" value={formatNumber(data.critical_questions)} />
-                <MetricCard label="Сессий" value={formatNumber(data.sessions_count)} />
-                <MetricCard label="Проектов" value={formatNumber(data.projects_count)} />
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-6">
+                <MetricCard label="Действий" value={formatNumber(data.actions_total)} sparklineItems={sparklineItems} />
+                <MetricCard label="Длительность, мин" value={formatNumber(data.total_duration_min)} sparklineItems={sparklineItems} />
+                <MetricCard label="Крит. путь, мин" value={formatNumber(data.critical_path_min)} sparklineItems={sparklineItems} />
+                <MetricCard label="Handoffs" value={formatNumber(data.handoffs_count)} sparklineItems={sparklineItems} />
+                <MetricCard label="Открыто" value={formatNumber(data.open_questions)} sparklineItems={sparklineItems} />
+                <MetricCard label="Критично" value={formatNumber(data.critical_questions)} sparklineItems={sparklineItems} />
+                <MetricCard label="Сессий" value={formatNumber(data.sessions_count)} sparklineItems={sparklineItems} />
+                <MetricCard label="Проектов" value={formatNumber(data.projects_count)} sparklineItems={sparklineItems} />
               </div>
             ) : null}
           </div>
