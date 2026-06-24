@@ -1,10 +1,10 @@
 {
-  "branch": "fix/analytics-integration-v1",
-  "sha": "04204953db3284e6da07f05ad6501d422fb04aff",
-  "shaShort": "04204953",
-  "timestamp": "2026-06-24T16:14:50.408Z",
-  "contourId": "fix-analytics-integration-v1",
+  "branch": "main",
+  "sha": "c57e38fa",
+  "shaShort": "c57e38fa",
+  "timestamp": "2026-06-24T16:55:49Z",
+  "contourId": "main",
   "dirty": true,
   "host": "clearvestnic.ru",
-  "env": "dev"
+  "env": "prod"
 }

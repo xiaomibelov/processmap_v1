@@ -227,14 +227,6 @@ function AppRoutes() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="rounded-xl border border-border bg-panel px-4 py-3 text-sm text-muted">Проверяем сессию...</div>
-      </div>
-    );
-  }
-
   const wantsWorkspace = pathname.startsWith("/app");
   const wantsAnalytics = pathname.startsWith("/analytics");
   const wantsAdmin = pathname.startsWith("/admin");
@@ -246,6 +238,14 @@ function AppRoutes() {
       navigate(buildAnalyticsPath(redirect.scope, redirect.scopeId, redirect.module), { replace: true });
     }
   }, [isAuthed, wantsWorkspace, pathname, search]);
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="rounded-xl border border-border bg-panel px-4 py-3 text-sm text-muted">Проверяем сессию...</div>
+      </div>
+    );
+  }
 
   const showWorkspace = wantsWorkspace && isAuthed;
   const showAnalytics = wantsAnalytics && isAuthed;
