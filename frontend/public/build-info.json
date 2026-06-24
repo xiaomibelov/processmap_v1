@@ -1,10 +1,10 @@
 {
-  "branch": "feature/analytics-backend-driven-v1",
-  "sha": "f6a420f7a929e5ec387db949d9ac1479c1d971c0",
-  "shaShort": "f6a420f7",
-  "timestamp": "2026-06-24T15:20:27.223Z",
-  "contourId": "feature-analytics-backend-driven-v1",
-  "dirty": false,
+  "branch": "fix/canvas-overlay-kill",
+  "sha": "c387d2bb64bb15cf1b394864d140b3aeac09c219",
+  "shaShort": "c387d2bb",
+  "timestamp": "2026-06-24T15:45:19.114Z",
+  "contourId": "fix-canvas-overlay-kill",
+  "dirty": true,
   "host": "clearvestnic.ru",
   "env": "dev"
 }
