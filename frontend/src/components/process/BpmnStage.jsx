@@ -4273,6 +4273,9 @@ const BpmnStage = forwardRef(function BpmnStage({
       status: Number(loaded.status || 200),
       rev: Number(loaded.loadedRev || loaded.rev || 0),
     });
+    if (bpmnXmlCacheRef?.current && xmlText.trim()) {
+      bpmnXmlCacheRef.current.set(s, xmlText);
+    }
   }
 
   async function ensureViewer() {
