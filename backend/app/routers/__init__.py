@@ -21,6 +21,7 @@ from .sessions import router as sessions_router
 from .system import router as system_router
 from .templates import router as templates_router
 from .feature_flags import router as feature_flags_router
+from .reference_resolver import router as reference_resolver_router
 
 ROUTERS = (
     system_router,
@@ -46,4 +47,5 @@ ROUTERS = (
     org_router,
     version_router,
     feature_flags_router,
+    reference_resolver_router,
 )
