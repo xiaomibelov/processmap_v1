@@ -399,6 +399,38 @@ def get_session_meta(
     return meta
 
 
+def get_session_graph(
+    session_id: str,
+    *,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    request: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Return only nodes/edges for a session (used by graph analysis / AI)."""
+    ctx = _request_context(request)
+    ctx_user_id = user_id if user_id is not None else ctx.get("user_id")
+    ctx_org_id = org_id if org_id is not None else ctx.get("org_id")
+    ctx_is_admin = is_admin if is_admin is not None else ctx.get("is_admin")
+
+    sid = str(session_id or "").strip()
+    if not sid:
+        return {"error": "not found"}
+
+    sess = session_repo.load(sid, user_id=ctx_user_id, org_id=ctx_org_id, is_admin=ctx_is_admin)
+    if not sess:
+        return {"error": "not found"}
+
+    return {
+        "session_id": sid,
+        "nodes": [n.model_dump() if hasattr(n, "model_dump") else dict(n) for n in (getattr(sess, "nodes", None) or [])],
+        "edges": [e.model_dump() if hasattr(e, "model_dump") else dict(e) for e in (getattr(sess, "edges", None) or [])],
+        "bpmn_graph_fingerprint": str(getattr(sess, "bpmn_graph_fingerprint", "") or ""),
+        "version": int(getattr(sess, "version", 0) or 0),
+        "diagram_state_version": int(getattr(sess, "diagram_state_version", 0) or 0),
+    }
+
+
 def session_bpmn_save(session_id: str, inp: Any, request: Any = None) -> Dict[str, Any]:
     """Router-facing alias for bpmn_save that accepts request."""
     return bpmn_save(session_id, inp, request)

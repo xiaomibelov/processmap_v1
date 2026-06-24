@@ -63,6 +63,10 @@ def get_session(session_id: str, request: Request = None):
 def get_session_meta(session_id: str, request: Request = None):
     return _svc.get_session_meta(session_id, request=request)
 
+@router.get('/api/sessions/{session_id}/graph')
+def get_session_graph(session_id: str, request: Request = None):
+    return _svc.get_session_graph(session_id, request=request)
+
 @router.post('/api/sessions/{session_id}/presence')
 def touch_session_presence_api(session_id: str, inp: SessionPresenceTouchIn, request: Request = None):
     return _svc.touch_session_presence(session_id, inp, request)

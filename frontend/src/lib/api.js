@@ -1293,6 +1293,26 @@ export async function apiGetAnalytics(sessionId) {
   return r.ok ? { ok: true, status: r.status, analytics: r.data } : r;
 }
 
+export async function apiGetSessionGraph(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const buildPath = apiRoutes?.sessions?.graph;
+  if (typeof buildPath !== "function") {
+    return { ok: false, status: 404, error: "route_unavailable" };
+  }
+  const r = okOrError(await request(buildPath(sid)));
+  if (!r.ok) return r;
+  const payload = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    session_id: String(payload.session_id || sid),
+    nodes: Array.isArray(payload.nodes) ? payload.nodes : [],
+    edges: Array.isArray(payload.edges) ? payload.edges : [],
+    bpmn_graph_fingerprint: String(payload.bpmn_graph_fingerprint || ""),
+  };
+}
+
 export async function apiGetSessionMeta(sessionId) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
