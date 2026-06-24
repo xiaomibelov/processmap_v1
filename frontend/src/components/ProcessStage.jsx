@@ -3175,23 +3175,40 @@ function ProcessStage({
       el.style.opacity = changing ? "0" : "";
     });
   }, [subscribeViewboxChanging]);
-  const templatesDiagramContainerRect = (() => {
-    const rect = asObject(overlayContainerRect);
-    const width = Number(rect.width || 0);
-    const height = Number(rect.height || 0);
-    if (width > 0 && height > 0) return rect;
+  // Cached host rect updated by ResizeObserver / resize listener.
+  // NEVER read getBoundingClientRect during render — only in this effect.
+  const [hostContainerRect, setHostContainerRect] = useState({ left: 0, top: 0, width: 0, height: 0 });
+  useEffect(() => {
     const host = bpmnStageHostRef?.current;
-    if (host instanceof Element && typeof host.getBoundingClientRect === "function") {
-      const box = host.getBoundingClientRect();
-      return {
+    if (!(host instanceof Element)) return undefined;
+    const update = () => {
+      const box = host.getBoundingClientRect?.() || {};
+      setHostContainerRect({
         left: Number(box.left || 0),
         top: Number(box.top || 0),
         width: Number(box.width || 0),
         height: Number(box.height || 0),
-      };
+      });
+    };
+    update();
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(update);
+      ro.observe(host);
     }
-    return rect;
-  })();
+    const onResize = () => update();
+    window.addEventListener("resize", onResize);
+    return () => {
+      if (ro) ro.disconnect();
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
+
+  const templatesDiagramContainerRect = useMemo(() => {
+    const rect = asObject(overlayContainerRect);
+    if (rect.width > 0 && rect.height > 0) return rect;
+    return hostContainerRect;
+  }, [overlayContainerRect, hostContainerRect]);
   const {
     hybridLayerPositions,
     hybridLayerPositionsRef,
