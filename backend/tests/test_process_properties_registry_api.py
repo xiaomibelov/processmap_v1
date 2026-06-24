@@ -7,6 +7,7 @@ import unittest
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import HTTPException
 
@@ -35,7 +36,9 @@ class ProcessPropertiesRegistryApiTests(unittest.TestCase):
             _EXPORT_COLUMNS,
             export_process_properties_registry_csv,
             export_process_properties_registry_xlsx,
+            export_property_registry,
             query_process_properties_registry,
+            query_property_registry_metadata,
             router as process_properties_registry_router,
         )
         from app.storage import (
@@ -51,7 +54,9 @@ class ProcessPropertiesRegistryApiTests(unittest.TestCase):
         self.EXPORT_COLUMNS = _EXPORT_COLUMNS
         self.export_process_properties_registry_csv = export_process_properties_registry_csv
         self.export_process_properties_registry_xlsx = export_process_properties_registry_xlsx
+        self.export_property_registry = export_property_registry
         self.query_process_properties_registry = query_process_properties_registry
+        self.query_property_registry_metadata = query_property_registry_metadata
         self.process_properties_registry_router = process_properties_registry_router
         self.get_storage = get_storage
         self.get_project_storage = get_project_storage
@@ -183,6 +188,31 @@ class ProcessPropertiesRegistryApiTests(unittest.TestCase):
             self._req(self.admin),
         )
 
+    def _query_registry(self, **kwargs):
+        return self.query_property_registry_metadata(self._req(self.admin), **kwargs)
+
+    def _get(self, path: str):
+        parsed = urlparse(path)
+        query = {k: v[0] if len(v) == 1 else v for k, v in parse_qs(parsed.query).items()}
+        req = self._req(self.admin)
+
+        if parsed.path.startswith("/api/reference/") and parsed.path.endswith("/options"):
+            from app.routers.reference_resolver import get_reference_options
+
+            source = parsed.path[len("/api/reference/") : -len("/options")]
+            try:
+                return get_reference_options(source=source, request=req, **query)
+            except HTTPException as exc:
+                return {"ok": False, "status_code": exc.status_code, "detail": exc.detail}
+
+        if parsed.path == "/api/analysis/properties/registry/export":
+            return self.export_property_registry(req, **query)
+
+        if parsed.path == "/api/analysis/properties/registry/query":
+            return self.query_property_registry_metadata(req, **query)
+
+        raise ValueError(f"unhandled path: {path}")
+
     def test_session_scope_returns_properties_without_heavy_payload(self):
         before = self.get_storage().load(self.session_a1, org_id=self.org_id, is_admin=True)
         out = self._query(scope="session", session_id=self.session_a1, limit=10)
@@ -206,6 +236,19 @@ class ProcessPropertiesRegistryApiTests(unittest.TestCase):
         self.assertIn("/api/analysis/properties/registry/query", paths)
         self.assertIn("/api/analysis/properties/registry/export.csv", paths)
         self.assertIn("/api/analysis/properties/registry/export.xlsx", paths)
+        self.assertIn("/api/analysis/properties/registry/export", paths)
+
+    def test_property_registry_export_csv(self):
+        response = self.export_property_registry(self._req(self.admin), format="csv")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/csv", response.media_type)
+        body = bytes(response.body)
+        self.assertIn("Идентификатор;Название".encode("utf-8"), body)
+
+    def test_property_registry_export_xlsx(self):
+        response = self.export_property_registry(self._req(self.admin), format="xlsx")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("spreadsheetml.sheet", response.media_type)
 
     def test_project_and_workspace_scope_aggregate_multiple_sessions(self):
         project_out = self._query(scope="project", project_id=self.project_a, limit=10)
@@ -456,6 +499,66 @@ class ProcessPropertiesRegistryApiTests(unittest.TestCase):
         out = self._query(scope="session", session_id=self.session_a3_empty, limit=10)
         self.assertTrue(out.get("ok"))
         self.assertEqual(len(out.get("rows", [])), 0)
+
+    def test_property_registry_query_returns_metadata_with_usage(self):
+        out = self._query_registry()
+        self.assertTrue(out.get("ok"))
+        properties = out.get("properties") or []
+        self.assertGreaterEqual(len(properties), 5)
+        by_id = {p.get("id"): p for p in properties}
+        self.assertIn("priority", by_id)
+        self.assertIn("ingredient", by_id)
+        self.assertEqual(by_id["priority"].get("usage_count"), 1)
+        self.assertEqual(by_id["ingredient"].get("usage_count"), 0)
+        self.assertIsInstance(by_id["ingredient"].get("reference_options"), list)
+        self.assertEqual(len(by_id["ingredient"].get("reference_options", [])), 5)
+        self.assertIn("ok", out)
+        self.assertIn("count", out)
+        self.assertEqual(out.get("count"), len(properties))
+
+    def test_property_registry_query_filters_by_category(self):
+        all_out = self._query_registry(category="all")
+        self.assertTrue(all_out.get("ok"))
+        all_count = len(all_out.get("properties", []))
+        self.assertGreaterEqual(all_count, 5)
+
+        materials_out = self._query_registry(category="materials")
+        self.assertTrue(materials_out.get("ok"))
+        materials_ids = {p.get("id") for p in materials_out.get("properties", [])}
+        self.assertEqual(materials_ids, {"ingredient", "container"})
+
+        equipment_out = self._query_registry(category="equipment")
+        self.assertTrue(equipment_out.get("ok"))
+        self.assertEqual(len(equipment_out.get("properties", [])), 1)
+        self.assertEqual(equipment_out["properties"][0].get("id"), "equipment")
+
+    def test_reference_options_ingredients(self):
+        res = self._get("/api/reference/table/ingredients/options?q=мука")
+        self.assertTrue(res.get("ok"))
+        names = [item.get("name", "").lower() for item in res.get("items", [])]
+        self.assertTrue(any("мука" in name for name in names))
+
+    def test_reference_options_invalid_source(self):
+        res = self._get("/api/reference/invalid-source/options")
+        self.assertEqual(res.get("status_code"), 422)
+
+    def test_property_registry_export_csv_filter_by_category(self):
+        res = self._get("/api/analysis/properties/registry/export?format=csv&category=materials")
+        self.assertEqual(res.status_code, 200)
+        body = res.body.decode("utf-8-sig")
+        self.assertIn("Идентификатор;Название", body)
+        self.assertIn("Ингредиент", body)
+
+    def test_property_registry_export_xlsx_has_content_type(self):
+        res = self._get("/api/analysis/properties/registry/export?format=xlsx")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("spreadsheetml.sheet", res.headers.get("content-type", ""))
+
+    def test_property_registry_query_includes_reference_options(self):
+        res = self._query_registry()
+        ingredient = next((p for p in res.get("properties", []) if p["id"] == "ingredient"), None)
+        self.assertIsNotNone(ingredient)
+        self.assertTrue(len(ingredient.get("reference_options", [])) > 0)
 
 
 if __name__ == "__main__":

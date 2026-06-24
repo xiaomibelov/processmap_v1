@@ -149,6 +149,52 @@ def cache_set_json(key: str, value: Any, *, ttl_sec: int, client: Any = None) ->
     return bool(ok)
 
 
+def cache_get_str(key: str, *, client: Any = None) -> Optional[str]:
+    """Get a plain string value from Redis (useful for raw XML)."""
+    cache_key = str(key or "").strip()
+    if not cache_key:
+        _stat_inc("miss")
+        return None
+    conn = _resolve_client(client=client)
+    if conn is None:
+        return None
+    try:
+        raw = conn.get(cache_key)
+    except Exception as exc:
+        _stat_inc("error")
+        logger.warning("redis_cache: get failed key=%s: %s", cache_key, exc)
+        return None
+    if raw is None:
+        _stat_inc("miss")
+        return None
+    _stat_inc("hit")
+    return str(raw)
+
+
+def cache_set_str(key: str, value: str, *, ttl_sec: int, client: Any = None) -> bool:
+    """Set a plain string value in Redis (useful for raw XML)."""
+    cache_key = str(key or "").strip()
+    if not cache_key:
+        return False
+    conn = _resolve_client(client=client)
+    if conn is None:
+        return False
+    ttl = max(1, int(ttl_sec or 1))
+    raw = str(value or "")
+    try:
+        if hasattr(conn, "setex"):
+            ok = conn.setex(cache_key, ttl, raw)
+        else:
+            ok = conn.set(cache_key, raw, ex=ttl)
+    except Exception as exc:
+        _stat_inc("error")
+        logger.warning("redis_cache: set failed key=%s: %s", cache_key, exc)
+        return False
+    if ok:
+        _stat_inc("set")
+    return bool(ok)
+
+
 def cache_delete_key(key: str, *, client: Any = None) -> int:
     cache_key = str(key or "").strip()
     if not cache_key:

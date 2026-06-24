@@ -1051,8 +1051,9 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   }, [descendantSessionIds, notificationMode, open, scopeFilter, selectedElementId, sid, statusFilter]);
 
   useEffect(() => {
+    if (!open) return;
     void fetchThreads();
-  }, [fetchThreads]);
+  }, [fetchThreads, open]);
 
   useEffect(() => {
     emitElementNoteThreadsChanged(

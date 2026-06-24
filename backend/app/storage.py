@@ -34,6 +34,7 @@ _REQ_ORG_ID: ContextVar[str] = ContextVar("fpc_req_org_id", default="")
 _DB_LOCK = threading.RLock()
 _SCHEMA_READY = False
 _SCHEMA_DB_FILE = ""
+_SCHEMA_ENSURE_IN_PROGRESS = False
 _MIGRATION_MARK = "legacy_file_to_sqlite_v1"
 _ENTERPRISE_BOOTSTRAP_MARK = "enterprise_org_bootstrap_v1"
 _AUTH_USERS_BACKFILL_MARK = "auth_users_json_to_db_v1"
@@ -45,6 +46,7 @@ _DEFAULT_WORKSPACE_NAME = (
     or "Main Workspace"
 )
 _ORG_FULL_ACCESS_ROLES = {"org_owner", "org_admin", "auditor"}
+_SESSION_ORG_WIDE_READ_ROLES = {"editor", "project_manager"}
 _PROJECT_MEMBER_ROLES = {"project_manager", "editor", "viewer"}
 _ORG_MEMBER_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "org_viewer", "auditor"}
 _ORG_INVITE_ROLES = {"org_admin", "project_manager", "editor", "viewer", "org_viewer", "auditor"}
@@ -382,6 +384,371 @@ def _json_loads(value: Any, fallback: Any) -> Any:
         return fallback
 
 
+def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    return dict(row)
+
+
+def _json_text(value: Any) -> str:
+    return _json_dumps(value, None)
+
+
+def _parse_json_text(text: Any) -> Any:
+    return _json_loads(text, None)
+
+
+_PROPERTY_METADATA_SEED_KEY = "property_registry_metadata_seed_v1"
+_PROPERTY_METADATA_SEED = [
+    {
+        "id": "ingredient",
+        "display_name": "Ингредиент",
+        "property_type": "reference",
+        "applicable_to": ["Task", "SubProcess"],
+        "validation_rules": ["required"],
+        "source": "bpmn_extension",
+        "editable": True,
+        "visible_in": ["canvas", "properties_panel", "export"],
+        "category": "materials",
+        "inheritance": "from_template",
+        "value_range": {"reference_source": "table:ingredients"},
+    },
+    {
+        "id": "equipment",
+        "display_name": "Оборудование",
+        "property_type": "reference",
+        "applicable_to": ["Task", "SubProcess"],
+        "validation_rules": ["required"],
+        "source": "bpmn_extension",
+        "editable": True,
+        "visible_in": ["canvas", "properties_panel", "export"],
+        "category": "equipment",
+        "inheritance": "from_template",
+        "value_range": {"reference_source": "table:equipment"},
+    },
+    {
+        "id": "container",
+        "display_name": "Контейнер",
+        "property_type": "reference",
+        "applicable_to": ["Task", "SubProcess"],
+        "source": "bpmn_extension",
+        "editable": True,
+        "visible_in": ["canvas", "properties_panel", "export"],
+        "category": "materials",
+        "inheritance": "from_template",
+        "value_range": {"reference_source": "table:containers"},
+    },
+    {
+        "id": "duration",
+        "display_name": "Длительность",
+        "property_type": "duration",
+        "applicable_to": ["Task", "SubProcess", "Process"],
+        "source": "system",
+        "editable": False,
+        "visible_in": ["properties_panel", "analytics", "export"],
+        "category": "timing",
+        "inheritance": "none",
+    },
+    {
+        "id": "priority",
+        "display_name": "Приоритет",
+        "property_type": "enum",
+        "applicable_to": ["Task"],
+        "value_range": {"options": ["low", "medium", "high"]},
+        "source": "bpmn_extension",
+        "editable": True,
+        "visible_in": ["properties_panel", "export"],
+        "category": "general",
+        "inheritance": "none",
+    },
+]
+
+_REFERENCE_SEED_KEY = "property_registry_reference_seed_v1"
+_REFERENCE_SEED = {
+    "ingredients": [
+        ("ing_001", "Мука пшеничная", "kg", 364.0, "[]", None),
+        ("ing_002", "Сахар", "kg", 400.0, "[]", None),
+        ("ing_003", "Соль", "kg", 0.0, "[]", None),
+        ("ing_004", "Дрожжи", "kg", 0.0, "[]", None),
+        ("ing_005", "Молоко", "l", 420.0, '["lactose"]', None),
+    ],
+    "equipment": [
+        ("eq_001", "Печь конвекционная", "oven", "200°C", "ежемесячно"),
+        ("eq_002", "Миксер планетарный", "mixer", "50 л", "ежеквартально"),
+        ("eq_003", "Конвейер охлаждения", "conveyor", "10 м/мин", "ежегодно"),
+    ],
+    "containers": [
+        ("cnt_001", "Пластиковый лоток", "10 л", "plastic", "-10..+40"),
+        ("cnt_002", "Стеклянная банка", "5 л", "glass", "0..+25"),
+        ("cnt_003", "Металлическая бочка", "200 л", "metal", "-20..+40"),
+    ],
+}
+
+
+def list_process_property_metadata(
+    org_id: Optional[str] = None,
+    *,
+    include_global: bool = True,
+) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip() or None
+    _ensure_schema()
+    params: List[Any] = []
+    clauses = ["1=1"]
+    if oid:
+        if include_global:
+            clauses.append("(org_id = ? OR org_id IS NULL)")
+        else:
+            clauses.append("org_id = ?")
+        params.append(oid)
+    where = " AND ".join(clauses)
+    with _connect() as con:
+        rows = con.execute(
+            f"SELECT * FROM process_property_metadata WHERE {where} ORDER BY category, display_name",
+            params,
+        ).fetchall()
+    return [_row_to_dict(row) for row in rows]
+
+
+def get_process_property_metadata(
+    id: str,
+    org_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    row_id = str(id or "").strip()
+    if not row_id:
+        return None
+    oid = str(org_id or "").strip() or None
+    _ensure_schema()
+    params: List[Any] = [row_id]
+    clauses = ["id = ?"]
+    if oid:
+        clauses.append("(org_id = ? OR org_id IS NULL)")
+        params.append(oid)
+    where = " AND ".join(clauses)
+    with _connect() as con:
+        row = con.execute(
+            f"SELECT * FROM process_property_metadata WHERE {where} LIMIT 1",
+            params,
+        ).fetchone()
+    return _row_to_dict(row) if row else None
+
+
+def upsert_process_property_metadata(
+    id: str,
+    display_name: str,
+    property_type: str,
+    *,
+    org_id: Optional[str] = None,
+    applicable_to: Any = None,
+    default_value: Any = None,
+    value_range: Any = None,
+    validation_rules: Any = None,
+    source: str = "bpmn_extension",
+    editable: Any = True,
+    visible_in: Any = None,
+    category: str = "general",
+    inheritance: str = "none",
+    version: Any = 1,
+    actor_user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    row_id = str(id or "").strip()
+    if not row_id:
+        raise ValueError("id required")
+    now = str(_now_ts())
+    _ensure_schema()
+    with _connect() as con:
+        existing = con.execute(
+            "SELECT created_at, created_by FROM process_property_metadata WHERE id = ? LIMIT 1",
+            [row_id],
+        ).fetchone()
+        con.execute(
+            """
+            INSERT INTO process_property_metadata (
+                id, display_name, property_type, applicable_to, default_value, value_range,
+                validation_rules, source, editable, visible_in, category, inheritance, version,
+                created_at, updated_at, org_id, created_by, updated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                display_name=excluded.display_name,
+                property_type=excluded.property_type,
+                applicable_to=excluded.applicable_to,
+                default_value=excluded.default_value,
+                value_range=excluded.value_range,
+                validation_rules=excluded.validation_rules,
+                source=excluded.source,
+                editable=excluded.editable,
+                visible_in=excluded.visible_in,
+                category=excluded.category,
+                inheritance=excluded.inheritance,
+                version=excluded.version,
+                updated_at=excluded.updated_at,
+                updated_by=excluded.updated_by
+            """,
+            [
+                row_id,
+                str(display_name or "").strip(),
+                str(property_type or "").strip(),
+                _json_text(applicable_to),
+                default_value if default_value is not None else None,
+                _json_text(value_range),
+                _json_text(validation_rules),
+                str(source or "bpmn_extension").strip(),
+                1 if editable else 0,
+                _json_text(visible_in),
+                str(category or "general").strip(),
+                str(inheritance or "none").strip(),
+                int(version or 1),
+                str(existing["created_at"] if existing else now),
+                now,
+                str(org_id or "").strip() or None,
+                str(existing["created_by"] if existing else actor_user_id or "").strip(),
+                str(actor_user_id or "").strip(),
+            ],
+        )
+        con.commit()
+    out = get_process_property_metadata(row_id, org_id=org_id)
+    if not out:
+        raise ValueError("process_property_metadata_upsert_failed")
+    return out
+
+
+def list_reference_options(
+    table_name: str,
+    org_id: Optional[str] = None,
+    q: str = "",
+    limit: int = 20,
+) -> List[Dict[str, Any]]:
+    allowed = {"ingredients", "equipment", "containers"}
+    if table_name not in allowed:
+        return []
+    qq = str(q or "").strip()
+    try:
+        lim = int(limit)
+    except Exception:
+        lim = 20
+    lim = min(max(lim, 1), 500)
+    _ensure_schema()
+    params: List[Any] = []
+    clauses = ["1=1"]
+    oid = str(org_id or "").strip() or None
+    if oid:
+        clauses.append("(org_id = ? OR org_id IS NULL)")
+        params.append(oid)
+    # SQLite LIKE/LOWER are ASCII-only by default; filter in Python for Unicode case folding.
+    where = " AND ".join(clauses)
+    with _connect() as con:
+        rows = con.execute(
+            f"SELECT * FROM {table_name} WHERE {where} ORDER BY name",
+            params,
+        ).fetchall()
+    out = [_row_to_dict(row) for row in rows]
+    if qq:
+        q_lower = qq.lower()
+        out = [row for row in out if q_lower in str(row.get("name") or "").lower()]
+    return out[:lim]
+
+
+def _seed_process_property_metadata(con: Optional[sqlite3.Connection] = None) -> None:
+    if con is None:
+        _ensure_schema()
+        with _connect() as con:
+            _seed_process_property_metadata(con)
+        return
+    done = _meta_get(con, _PROPERTY_METADATA_SEED_KEY)
+    if done:
+        return
+    now = str(_now_ts())
+    for item in _PROPERTY_METADATA_SEED:
+        row_id = str(item["id"] or "").strip()
+        if not row_id:
+            continue
+        con.execute(
+            """
+            INSERT INTO process_property_metadata (
+                id, display_name, property_type, applicable_to, default_value, value_range,
+                validation_rules, source, editable, visible_in, category, inheritance, version,
+                created_at, updated_at, org_id, created_by, updated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                display_name=excluded.display_name,
+                property_type=excluded.property_type,
+                applicable_to=excluded.applicable_to,
+                default_value=excluded.default_value,
+                value_range=excluded.value_range,
+                validation_rules=excluded.validation_rules,
+                source=excluded.source,
+                editable=excluded.editable,
+                visible_in=excluded.visible_in,
+                category=excluded.category,
+                inheritance=excluded.inheritance,
+                version=excluded.version,
+                updated_at=excluded.updated_at
+            """,
+            [
+                row_id,
+                str(item.get("display_name") or "").strip(),
+                str(item.get("property_type") or "").strip(),
+                _json_text(item.get("applicable_to")),
+                item.get("default_value") if item.get("default_value") is not None else None,
+                _json_text(item.get("value_range")),
+                _json_text(item.get("validation_rules")),
+                str(item.get("source") or "bpmn_extension").strip(),
+                1 if item.get("editable") else 0,
+                _json_text(item.get("visible_in")),
+                str(item.get("category") or "general").strip(),
+                str(item.get("inheritance") or "none").strip(),
+                int(item.get("version") or 1),
+                now,
+                now,
+                None,
+                "",
+                "",
+            ],
+        )
+    _meta_set(con, _PROPERTY_METADATA_SEED_KEY, "1")
+
+
+def _seed_reference_tables(con: Optional[sqlite3.Connection] = None) -> None:
+    if con is None:
+        _ensure_schema()
+        with _connect() as con:
+            _seed_reference_tables(con)
+        return
+    done = _meta_get(con, _REFERENCE_SEED_KEY)
+    if done:
+        return
+    now = str(_now_ts())
+    for table_name, rows in _REFERENCE_SEED.items():
+        if table_name == "ingredients":
+            for rid, name, unit, cal, allergens, supplier in rows:
+                con.execute(
+                    """
+                    INSERT INTO ingredients (id, name, unit, calories_per_unit, allergens, supplier_id, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO NOTHING
+                    """,
+                    [rid, name, unit, cal, allergens, supplier, now, now],
+                )
+        elif table_name == "equipment":
+            for rid, name, type, capacity, maint in rows:
+                con.execute(
+                    """
+                    INSERT INTO equipment (id, name, type, capacity, maintenance_schedule, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO NOTHING
+                    """,
+                    [rid, name, type, capacity, maint, now, now],
+                )
+        elif table_name == "containers":
+            for rid, name, volume, material, temp in rows:
+                con.execute(
+                    """
+                    INSERT INTO containers (id, name, volume, material, temperature_range, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO NOTHING
+                    """,
+                    [rid, name, volume, material, temp, now, now],
+                )
+    _meta_set(con, _REFERENCE_SEED_KEY, "1")
+
+
 def _build_diagram_truth_payload(sess: Session) -> Dict[str, Any]:
     return {
         "roles": list(getattr(sess, "roles", []) or []),
@@ -490,6 +857,13 @@ def _session_read_scope(
     ]
     if project_ids:
         return {"mode": "scoped", "project_ids": project_ids}
+
+    # Org-level editors/managers without explicit project assignments may read
+    # any session in the org. This matches can_edit_workspace and fixes the case
+    # where a user has an org editor role (or gets one via default-org auto-membership)
+    # but has not been assigned to individual projects yet.
+    if role in _SESSION_ORG_WIDE_READ_ROLES:
+        return {"mode": "all", "project_ids": []}
 
     return {"mode": "owner", "project_ids": []}
 
@@ -863,7 +1237,9 @@ def _org_git_mirror_payload(row: Any) -> Dict[str, Any]:
 
 
 def _ensure_schema() -> None:
-    global _SCHEMA_READY, _SCHEMA_DB_FILE
+    global _SCHEMA_READY, _SCHEMA_DB_FILE, _SCHEMA_ENSURE_IN_PROGRESS
+    if _SCHEMA_ENSURE_IN_PROGRESS:
+        return
     cfg = get_db_runtime_config()
     if cfg.backend == "postgres":
         db_file = f"postgres:{redact_database_url(cfg.database_url)}"
@@ -1300,6 +1676,87 @@ def _ensure_schema() -> None:
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_org_prop_dict_values_sort ON org_property_dictionary_values(org_id, operation_key, property_key, is_active, sort_order ASC, option_value ASC)"
             )
+            # Extended property registry metadata
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS process_property_metadata (
+                  id TEXT PRIMARY KEY,
+                  display_name TEXT NOT NULL,
+                  property_type TEXT NOT NULL,
+                  applicable_to TEXT,
+                  default_value TEXT,
+                  value_range TEXT,
+                  validation_rules TEXT,
+                  source TEXT NOT NULL DEFAULT 'bpmn_extension',
+                  editable INTEGER NOT NULL DEFAULT 1,
+                  visible_in TEXT,
+                  category TEXT NOT NULL DEFAULT 'general',
+                  inheritance TEXT NOT NULL DEFAULT 'none',
+                  version INTEGER NOT NULL DEFAULT 1,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  org_id TEXT,
+                  created_by TEXT,
+                  updated_by TEXT,
+                  FOREIGN KEY (org_id) REFERENCES orgs(id)
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_ppm_org_id ON process_property_metadata(org_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_ppm_category ON process_property_metadata(category)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_ppm_source ON process_property_metadata(source)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ingredients (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT,
+                  name TEXT NOT NULL,
+                  unit TEXT,
+                  calories_per_unit REAL,
+                  allergens TEXT,
+                  supplier_id TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY (org_id) REFERENCES orgs(id)
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_ingredients_org_id ON ingredients(org_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_ingredients_name ON ingredients(name)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS equipment (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT,
+                  name TEXT NOT NULL,
+                  type TEXT,
+                  capacity TEXT,
+                  maintenance_schedule TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY (org_id) REFERENCES orgs(id)
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_equipment_org_id ON equipment(org_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_equipment_name ON equipment(name)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS containers (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT,
+                  name TEXT NOT NULL,
+                  volume TEXT,
+                  material TEXT,
+                  temperature_range TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY (org_id) REFERENCES orgs(id)
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_containers_org_id ON containers(org_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_containers_name ON containers(name)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS org_invites (
@@ -1850,6 +2307,90 @@ def _ensure_schema() -> None:
                 """,
                 ["lightweightOverlays", "false", "Enable lightweight JSON overlays instead of monolithic XML", int(time.time())],
             )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analytics_session_snapshots (
+                  session_id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL,
+                  project_id TEXT,
+                  workspace_id TEXT,
+                  total_duration_min INTEGER NOT NULL DEFAULT 0,
+                  critical_path_min INTEGER,
+                  actions_total INTEGER NOT NULL DEFAULT 0,
+                  actions_by_role_json TEXT NOT NULL DEFAULT '{}',
+                  actions_by_section_json TEXT NOT NULL DEFAULT '{}',
+                  actions_by_type_json TEXT NOT NULL DEFAULT '{}',
+                  handoffs_count INTEGER NOT NULL DEFAULT 0,
+                  open_questions INTEGER NOT NULL DEFAULT 0,
+                  critical_questions INTEGER NOT NULL DEFAULT 0,
+                  unknown_duration_nodes_json TEXT NOT NULL DEFAULT '[]',
+                  computed_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_analytics_session_org_project ON analytics_session_snapshots(org_id, project_id)"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_analytics_session_org_workspace ON analytics_session_snapshots(org_id, workspace_id)"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analytics_project_snapshots (
+                  project_id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL,
+                  workspace_id TEXT,
+                  sessions_count INTEGER NOT NULL DEFAULT 0,
+                  total_actions INTEGER NOT NULL DEFAULT 0,
+                  avg_duration_min REAL NOT NULL DEFAULT 0,
+                  total_critical_questions INTEGER NOT NULL DEFAULT 0,
+                  handoffs_count INTEGER NOT NULL DEFAULT 0,
+                  computed_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_analytics_project_org_workspace ON analytics_project_snapshots(org_id, workspace_id)"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analytics_workspace_snapshots (
+                  workspace_id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL,
+                  projects_count INTEGER NOT NULL DEFAULT 0,
+                  sessions_count INTEGER NOT NULL DEFAULT 0,
+                  total_actions INTEGER NOT NULL DEFAULT 0,
+                  avg_duration_min REAL NOT NULL DEFAULT 0,
+                  total_critical_questions INTEGER NOT NULL DEFAULT 0,
+                  handoffs_count INTEGER NOT NULL DEFAULT 0,
+                  computed_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_analytics_workspace_org ON analytics_workspace_snapshots(org_id)"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analytics_metrics (
+                  id TEXT PRIMARY KEY,
+                  scope_type TEXT NOT NULL,
+                  scope_id TEXT NOT NULL,
+                  metric_name TEXT NOT NULL,
+                  metric_value_json TEXT NOT NULL DEFAULT '{}',
+                  computed_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_analytics_metrics_scope ON analytics_metrics(scope_type, scope_id, metric_name)"
+            )
+            _SCHEMA_ENSURE_IN_PROGRESS = True
+            try:
+                _seed_process_property_metadata(con)
+                _seed_reference_tables(con)
+            finally:
+                _SCHEMA_ENSURE_IN_PROGRESS = False
             con.commit()
         _SCHEMA_READY = True
         _SCHEMA_DB_FILE = db_file
@@ -2890,6 +3431,137 @@ class Storage:
                 return sess
             return None
         return None
+
+    def load_session_projection(
+        self,
+        session_id: str,
+        *,
+        user_id: Optional[str] = None,
+        is_admin: Optional[bool] = None,
+        org_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Load a lightweight session projection without the raw bpmn_xml blob."""
+        sid = str(session_id or "").strip()
+        if not sid:
+            return None
+        owner = _scope_user_id(user_id)
+        admin = _scope_is_admin(is_admin)
+        org = _scope_org_id(org_id) or _default_org_id()
+        org_clause, org_params = _org_clause(org)
+        _ensure_schema()
+        columns = """
+            id,
+            title,
+            roles_json,
+            start_role,
+            project_id,
+            mode,
+            notes,
+            notes_by_element_json,
+            interview_json,
+            questions_json,
+            mermaid,
+            mermaid_simple,
+            mermaid_lanes,
+            normalized_json,
+            resources_json,
+            analytics_json,
+            ai_llm_state_json,
+            bpmn_xml,
+            LENGTH(COALESCE(bpmn_xml, '')) AS bpmn_xml_length,
+            bpmn_xml_version,
+            diagram_state_version,
+            bpmn_graph_fingerprint,
+            bpmn_meta_json,
+            version,
+            owner_user_id,
+            org_id,
+            created_by,
+            updated_by,
+            created_at,
+            updated_at,
+            navigation_stack,
+            parent_session_id,
+            element_id_in_parent
+        """
+        with _connect() as con:
+            row = con.execute(
+                f"SELECT {columns} FROM sessions WHERE id = ? {org_clause} LIMIT 1",
+                [sid, *org_params],
+            ).fetchone()
+        if not row:
+            return None
+        data = dict(row)
+        scope = _session_read_scope(owner, org, admin)
+        mode = str(scope.get("mode") or "").strip().lower()
+        if mode == "all":
+            return data
+        if mode == "owner":
+            return data if str(data.get("owner_user_id") or "").strip() == owner else None
+        if mode == "scoped":
+            allowed_project_ids = set(scope.get("project_ids") or [])
+            if str(data.get("owner_user_id") or "").strip() == owner:
+                return data
+            if data.get("project_id") and str(data.get("project_id")).strip() in allowed_project_ids:
+                return data
+            return None
+        return None
+
+    def count_bpmn_versions(
+        self,
+        session_id: str,
+        *,
+        org_id: Optional[str] = None,
+    ) -> int:
+        sid = str(session_id or "").strip()
+        if not sid:
+            return 0
+        scope_org = str(org_id or "").strip()
+        _ensure_schema()
+        with _connect() as con:
+            sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
+            if not sess_row:
+                return 0
+            session_org = str(sess_row["org_id"] or "").strip() or _default_org_id()
+            oid = scope_org or session_org
+            if oid != session_org:
+                return 0
+            row = con.execute(
+                "SELECT COUNT(*) AS cnt FROM bpmn_versions WHERE session_id = ? AND org_id = ?",
+                [sid, oid],
+            ).fetchone()
+        return int((dict(row) if row else {}).get("cnt") or 0)
+
+    def count_note_threads(
+        self,
+        session_id: str,
+        *,
+        org_id: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> int:
+        sid = str(session_id or "").strip()
+        if not sid:
+            return 0
+        oid = str(org_id or "").strip() or _default_org_id()
+        filters = ["session_id = ?"]
+        params: List[Any] = [sid]
+        if oid:
+            filters.append("org_id = ?")
+            params.append(oid)
+        normalized_status = None
+        if status is not None and str(status or "").strip():
+            normalized_status = _normalize_note_status(status)
+        if normalized_status:
+            filters.append("status = ?")
+            params.append(normalized_status)
+        where = f"WHERE {' AND '.join(filters)}"
+        _ensure_schema()
+        with _connect() as con:
+            row = con.execute(
+                f"SELECT COUNT(*) AS cnt FROM note_threads {where}",
+                params,
+            ).fetchone()
+        return int((dict(row) if row else {}).get("cnt") or 0)
 
     def find_by_parent_element(
         self,

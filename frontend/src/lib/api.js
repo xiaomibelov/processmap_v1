@@ -265,6 +265,64 @@ export async function apiExportProcessPropertiesRegistryXlsx(payload = {}) {
   );
 }
 
+export async function apiQueryPropertyRegistry(params = {}) {
+  const url = new URL(apiRoutes.analysis.processPropertyRegistryQuery(), window.location.origin);
+  if (params.category) url.searchParams.set("category", params.category);
+  if (params.applicable_to) url.searchParams.set("applicable_to", params.applicable_to);
+  if (params.source) url.searchParams.set("source", params.source);
+  if (params.editable) url.searchParams.set("editable", params.editable);
+  if (params.search) url.searchParams.set("search", params.search);
+  url.searchParams.set("include_usage", params.include_usage !== false ? "true" : "false");
+  url.searchParams.set("include_reference_options", params.include_reference_options !== false ? "true" : "false");
+  const r = okOrError(await request(url.toString()));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    rows: Array.isArray(data.rows) ? data.rows : [],
+    sessions: Array.isArray(data.sessions) ? data.sessions : [],
+    session_summary: data.session_summary && typeof data.session_summary === "object" ? data.session_summary : {},
+    summary: data.summary && typeof data.summary === "object" ? data.summary : {},
+    page: data.page && typeof data.page === "object" ? data.page : {},
+    filter_options: data.filter_options && typeof data.filter_options === "object" ? data.filter_options : null,
+    applied_filters: data.applied_filters && typeof data.applied_filters === "object" ? data.applied_filters : null,
+    metrics: data.metrics && typeof data.metrics === "object" ? data.metrics : null,
+    empty_state: data.empty_state && typeof data.empty_state === "object" ? data.empty_state : null,
+    source_state: data.source_state && typeof data.source_state === "object" ? data.source_state : null,
+  };
+}
+
+export function apiExportPropertyRegistry(format, params = {}) {
+  const url = new URL(apiRoutes.analysis.processPropertyRegistryExport(), window.location.origin);
+  url.searchParams.set("format", format);
+  if (params.category) url.searchParams.set("category", params.category);
+  if (params.applicable_to) url.searchParams.set("applicable_to", params.applicable_to);
+  if (params.source) url.searchParams.set("source", params.source);
+  if (params.editable) url.searchParams.set("editable", params.editable);
+  url.searchParams.set("include_usage", "true");
+  window.location.href = url.toString();
+}
+
+export async function apiGetReferenceOptions(source, q = "", limit = 20) {
+  const src = String(source || "").trim();
+  if (!src) return { ok: false, status: 0, error: "missing source" };
+  const url = new URL(apiRoutes.analysis.referenceOptions(src), window.location.origin);
+  if (q) url.searchParams.set("q", q);
+  url.searchParams.set("limit", String(limit));
+  const r = okOrError(await request(url.toString()));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  const items = Array.isArray(data.items) ? data.items : [];
+  return {
+    ok: true,
+    status: r.status,
+    items,
+    options: items,
+    count: Number(data.count || items.length || 0),
+  };
+}
+
 // ------- Enterprise Project Members -------
 export async function apiListOrgProjectMembers(orgId, projectId) {
   const oid = String(orgId || "").trim();
@@ -456,7 +514,14 @@ export async function apiNavigateToSubprocess(sessionId, elementId, targetElemen
   if (!id || !el) return { ok: false, status: 0, error: "missing session_id or element_id" };
   const r = okOrError(await request(apiRoutes.sessions.subprocessNavigate(id, el, targetElementId), { method: "POST" }));
   return r.ok
-    ? { ok: true, status: r.status, subprocessSessionId: r.data?.subprocess_session_id, targetElementId: r.data?.target_element_id, breadcrumbs: r.data?.breadcrumbs }
+    ? {
+        ok: true,
+        status: r.status,
+        subprocessSessionId: r.data?.subprocess_session_id,
+        targetElementId: r.data?.target_element_id,
+        breadcrumbs: r.data?.breadcrumbs,
+        bpmnXml: r.data?.bpmn_xml,
+      }
     : r;
 }
 
@@ -1293,6 +1358,52 @@ export async function apiGetAnalytics(sessionId) {
   return r.ok ? { ok: true, status: r.status, analytics: r.data } : r;
 }
 
+export async function apiGetSessionGraph(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const buildPath = apiRoutes?.sessions?.graph;
+  if (typeof buildPath !== "function") {
+    return { ok: false, status: 404, error: "route_unavailable" };
+  }
+  const r = okOrError(await request(buildPath(sid)));
+  if (!r.ok) return r;
+  const payload = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    session_id: String(payload.session_id || sid),
+    nodes: Array.isArray(payload.nodes) ? payload.nodes : [],
+    edges: Array.isArray(payload.edges) ? payload.edges : [],
+    bpmn_graph_fingerprint: String(payload.bpmn_graph_fingerprint || ""),
+  };
+}
+
+export async function apiGetSessionMeta(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const buildPath = apiRoutes?.sessions?.meta;
+  if (typeof buildPath !== "function") {
+    return { ok: false, status: 404, error: "route_unavailable" };
+  }
+  const r = okOrError(await request(buildPath(sid)));
+  if (!r.ok) return r;
+  const payload = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    session_id: String(payload.session_id || sid),
+    versions_count: Number(payload.versions_count || 0),
+    notes_count: Number(payload.notes_count || 0),
+    presence_ttl_seconds: Number(payload.presence_ttl_seconds || 0),
+    active_users: Array.isArray(payload.active_users) ? payload.active_users : [],
+    activeUsers: Array.isArray(payload.active_users) ? payload.active_users : [],
+    auto_pass_status: String(payload.auto_pass_status || "").trim(),
+    bpmn_xml_version: Number(payload.bpmn_xml_version || 0),
+    diagram_state_version: Number(payload.diagram_state_version || 0),
+    version: Number(payload.version || 0),
+  };
+}
+
 export async function apiGetBpmnXml(sessionId, options = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
@@ -1308,45 +1419,70 @@ export async function apiGetOverlays(sessionId) {
   return r.ok ? { ok: true, status: r.status, overlays: Array.isArray(r.data) ? r.data : [] } : r;
 }
 
+const _bpmnVersionsInFlight = new Map();
+
+function _bpmnVersionsKey(sessionId, options = {}) {
+  return [
+    String(sessionId || "").trim(),
+    String(options.limit || "").trim(),
+    options.includeXml === true ? "1" : "0",
+  ].join("|");
+}
+
 export async function apiGetBpmnVersions(sessionId, options = {}) {
   const sid = String(sessionId || "").trim();
   if (!sid) return { ok: false, status: 0, error: "missing session_id" };
-  const url = apiRoutes.sessions.bpmnVersions(sid, options);
-  const r = okOrError(await request(url));
-  if (!r.ok) return r;
-  const payload = r.data && typeof r.data === "object" ? r.data : {};
-  const items = Array.isArray(payload.items) ? payload.items : [];
-  return {
-    ok: true,
-    status: r.status,
-    versions: items,
-    items,
-    count: Number(payload.count || items.length || 0),
-    user_facing_count: Number(payload.user_facing_count || 0),
-    userFacingCount: Number(payload.user_facing_count || payload.userFacingCount || 0),
-    latest_user_facing_revision_number: Number(payload.latest_user_facing_revision_number || 0),
-    latestUserFacingRevisionNumber: Number(
-      payload.latest_user_facing_revision_number
-      || payload.latestUserFacingRevisionNumber
-      || 0,
-    ),
-    session_id: String(payload.session_id || sid),
-    current_session_payload_hash: String(payload.current_session_payload_hash || ""),
-    currentSessionPayloadHash: String(payload.current_session_payload_hash || payload.currentSessionPayloadHash || ""),
-    current_session_version: Number(payload.current_session_version || 0),
-    currentSessionVersion: Number(payload.current_session_version || payload.currentSessionVersion || 0),
-    current_session_updated_at: Number(payload.current_session_updated_at || 0),
-    currentSessionUpdatedAt: Number(payload.current_session_updated_at || payload.currentSessionUpdatedAt || 0),
-    latest_user_version_session_payload_hash: String(payload.latest_user_version_session_payload_hash || ""),
-    latestUserVersionSessionPayloadHash: String(
-      payload.latest_user_version_session_payload_hash
-      || payload.latestUserVersionSessionPayloadHash
-      || "",
-    ),
-    has_session_changes_since_latest_bpmn_version: payload.has_session_changes_since_latest_bpmn_version === true,
-    hasSessionChangesSinceLatestBpmnVersion: payload.has_session_changes_since_latest_bpmn_version === true
-      || payload.hasSessionChangesSinceLatestBpmnVersion === true,
-  };
+
+  const key = _bpmnVersionsKey(sid, options);
+  const existing = _bpmnVersionsInFlight.get(key);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    const url = apiRoutes.sessions.bpmnVersions(sid, options);
+    const r = okOrError(await request(url));
+    if (!r.ok) return r;
+    const payload = r.data && typeof r.data === "object" ? r.data : {};
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    return {
+      ok: true,
+      status: r.status,
+      versions: items,
+      items,
+      count: Number(payload.count || items.length || 0),
+      user_facing_count: Number(payload.user_facing_count || 0),
+      userFacingCount: Number(payload.user_facing_count || payload.userFacingCount || 0),
+      latest_user_facing_revision_number: Number(payload.latest_user_facing_revision_number || 0),
+      latestUserFacingRevisionNumber: Number(
+        payload.latest_user_facing_revision_number
+        || payload.latestUserFacingRevisionNumber
+        || 0,
+      ),
+      session_id: String(payload.session_id || sid),
+      current_session_payload_hash: String(payload.current_session_payload_hash || ""),
+      currentSessionPayloadHash: String(payload.current_session_payload_hash || payload.currentSessionPayloadHash || ""),
+      current_session_version: Number(payload.current_session_version || 0),
+      currentSessionVersion: Number(payload.current_session_version || payload.currentSessionVersion || 0),
+      current_session_updated_at: Number(payload.current_session_updated_at || 0),
+      currentSessionUpdatedAt: Number(payload.current_session_updated_at || payload.currentSessionUpdatedAt || 0),
+      latest_user_version_session_payload_hash: String(payload.latest_user_version_session_payload_hash || ""),
+      latestUserVersionSessionPayloadHash: String(
+        payload.latest_user_version_session_payload_hash
+        || payload.latestUserVersionSessionPayloadHash
+        || "",
+      ),
+      has_session_changes_since_latest_bpmn_version: payload.has_session_changes_since_latest_bpmn_version === true,
+      hasSessionChangesSinceLatestBpmnVersion: payload.has_session_changes_since_latest_bpmn_version === true
+        || payload.hasSessionChangesSinceLatestBpmnVersion === true,
+    };
+  })();
+
+  _bpmnVersionsInFlight.set(key, promise);
+  promise.then(
+    () => _bpmnVersionsInFlight.delete(key),
+    () => _bpmnVersionsInFlight.delete(key),
+  );
+
+  return promise;
 }
 
 export async function apiGetBpmnVersion(sessionId, versionId) {
@@ -1697,4 +1833,58 @@ export async function apiGetFeatureFlags() {
 export async function apiPatchFeatureFlags(flags) {
   const r = okOrError(await request(apiRoutes.admin.featureFlagsPatch(), { method: "PATCH", body: JSON.stringify({ flags }) }));
   return r.ok ? { ok: true, flags: r.data?.flags || {} } : r;
+}
+
+// ------- Analytics (backend-driven) -------
+export async function apiGetAnalyticsDashboard(scope, scopeId) {
+  const r = okOrError(await request(apiRoutes.analytics.dashboard(scope, scopeId)));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  return { ok: true, status: r.status, data, meta: r.meta };
+}
+
+export async function apiGetAnalyticsProperties(scope, scopeId, params = {}) {
+  const r = okOrError(await request(apiRoutes.analytics.properties(scope, scopeId, params)));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    rows: Array.isArray(data.rows) ? data.rows : [],
+    total: Number(data.total || 0),
+    page: Number(data.page || params.page || 1),
+    limit: Number(data.limit || params.limit || 50),
+    filter_options: data.filter_options && typeof data.filter_options === "object" ? data.filter_options : {},
+    meta: r.meta,
+  };
+}
+
+export async function apiGetAnalyticsActions(scope, scopeId, params = {}) {
+  const r = okOrError(await request(apiRoutes.analytics.actions(scope, scopeId, params)));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    rows: Array.isArray(data.rows) ? data.rows : [],
+    total: Number(data.total || 0),
+    page: Number(data.page || params.page || 1),
+    limit: Number(data.limit || params.limit || 50),
+    filter_options: data.filter_options && typeof data.filter_options === "object" ? data.filter_options : {},
+    meta: r.meta,
+  };
+}
+
+export async function apiExportAnalyticsPropertiesCsv(scope, scopeId) {
+  const r = await request(apiRoutes.analytics.exportPropertiesCsv(scope, scopeId), { method: "GET", responseType: "blob" });
+  if (!r.ok) return r;
+  const blob = r.data instanceof Blob ? r.data : new Blob([String(r.text || "")]);
+  return { ok: true, status: r.status, blob, filename: `properties-${scope}-${scopeId}.csv` };
+}
+
+export async function apiExportAnalyticsActionsCsv(scope, scopeId) {
+  const r = await request(apiRoutes.analytics.exportActionsCsv(scope, scopeId), { method: "GET", responseType: "blob" });
+  if (!r.ok) return r;
+  const blob = r.data instanceof Blob ? r.data : new Blob([String(r.text || "")]);
+  return { ok: true, status: r.status, blob, filename: `actions-${scope}-${scopeId}.csv` };
 }

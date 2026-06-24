@@ -101,7 +101,10 @@ import {
   readProcessMapProjectContextFromHistory,
   PROCESS_MAP_ROUTE_STATE_KEY,
 } from "./app/processMapRouteModel";
+import useBpmnXmlCache from "./features/process/bpmn/stage/cache/useBpmnXmlCache.js";
 import useSessionActivationOrchestration from "./app/useSessionActivationOrchestration";
+import useSubprocessNavigation from "./features/process/bpmn/stage/navigation/useSubprocessNavigation.js";
+import useSessionStatusOptimisticUpdate from "./features/process/bpmn/stage/optimisticUpdate/useSessionStatusOptimisticUpdate.js";
 import useSessionShellOrchestration from "./app/useSessionShellOrchestration";
 import useAppShellController from "./app/useAppShellController";
 import { buildSessionDebugProbeSnapshot } from "./app/sessionDebugProbe";
@@ -890,11 +893,10 @@ export default function App() {
   const [focusElementId, setFocusElementId] = useState("");
   const [isChangingSessionStatus, setIsChangingSessionStatus] = useState(false);
   const [restoreViewportSnapshot, setRestoreViewportSnapshot] = useState(null);
-  const statusChangeSnapshotRef = useRef(null);
   const bpmnStageRef = useRef(null);
   const parentViewportSnapshotRef = useRef(new Map());
   const sessionCacheRef = useRef(new Map());
-  const bpmnXmlCacheRef = useRef(new Map());
+  const bpmnXmlCacheRef = useBpmnXmlCache();
   const discussionLinkedElementFocusResolversRef = useRef(new Map());
   const notesPanelRef = useRef(null);
   const activeOrgIdRef = useRef(String(activeOrgId || "").trim());
@@ -1176,97 +1178,22 @@ export default function App() {
     return result;
   }, [confirmLeaveIfUnsafe, draft?.session_id, openSession, projectId, projectRouteContext]);
 
-  const navigateToSubprocess = useCallback(async (sessionIdArg, elementId, targetElementId = "") => {
-    const res = await apiNavigateToSubprocess(sessionIdArg, elementId, targetElementId);
-    if (!res.ok) {
-      console.error("navigate failed", res.error);
-      return;
-    }
-    // Persist the parent viewport and session data so we can restore them instantly when the user returns.
-    try {
-      const snapshot = bpmnStageRef.current?.getCanvasSnapshot?.();
-      if (snapshot) {
-        parentViewportSnapshotRef.current.set(String(sessionIdArg || "").trim(), snapshot);
-      }
-    } catch (e) {
-      logNav("subprocess_viewport_snapshot_failed", { sessionId: sessionIdArg, error: String(e?.message || e) });
-    }
-    if (sessionCacheRef.current && draft?.session_id === String(sessionIdArg || "").trim()) {
-      sessionCacheRef.current.set(String(sessionIdArg || "").trim(), draft);
-    }
-    // Build the breadcrumb stack client-side by pushing the new child crumb.
-    // Backend breadcrumbs are intentionally ignored here to keep nested navigation stable.
-    setSubprocessBreadcrumbs((prev) => {
-      const list = Array.isArray(prev) ? prev : [];
-      const childCrumb = {
-        session_id: res.subprocessSessionId,
-        name: res.subprocessTitle || "Подпроцесс",
-        element_id: res.targetElementId || elementId,
-      };
-      if (list.length === 0) {
-        return [
-          { session_id: String(sessionIdArg || "").trim(), name: draft?.title || "", element_id: elementId },
-          childCrumb,
-        ];
-      }
-      const lastSid = String(list[list.length - 1]?.session_id || "").trim();
-      const childSid = String(childCrumb.session_id || "").trim();
-      if (lastSid && childSid && lastSid === childSid) return list;
-      return [...list, childCrumb];
-    });
-    setFocusElementId(res.targetElementId || "");
-    pushSessionSelectionToUrl({
-      projectId,
-      sessionId: res.subprocessSessionId,
-      parentSessionId: sessionIdArg,
-      focusElementId: res.targetElementId || "",
-      projectContext: projectRouteContext,
-    });
-    // If a discussion-linked element focus intent is active and matches the
-    // target we are drilling down to, re-target that intent to the child
-    // session so the child ProcessStage can finish selecting/highlighting it.
-    setDiscussionLinkedElementFocusIntent((prev) => {
-      if (!prev || !res.targetElementId) return prev;
-      const prevElementId = String(prev.elementId || prev.element_id || "").trim();
-      const prevSid = String(prev.sid || "").trim();
-      if (prevElementId !== String(res.targetElementId || "").trim()) return prev;
-      if (prevSid && prevSid !== String(sessionIdArg || "").trim()) return prev;
-      return { ...prev, sid: String(res.subprocessSessionId || "").trim(), drilldown: true };
-    });
-    openSession(res.subprocessSessionId);
-  }, [openSession, projectId, projectRouteContext]);
-
-  const returnToParent = useCallback(async (sessionIdArg) => {
-    const res = await apiReturnToParent(sessionIdArg);
-    if (!res.ok) {
-      console.error("return failed", res.error);
-      return;
-    }
-    const parentSid = String(res.parentSessionId || "").trim();
-    const snapshot = parentSid ? parentViewportSnapshotRef.current.get(parentSid) : null;
-    if (snapshot) {
-      setRestoreViewportSnapshot(snapshot);
-    }
-    // Keep breadcrumbs in sync with the current hierarchy depth.
-    setSubprocessBreadcrumbs((prev) => {
-      const list = Array.isArray(prev) ? prev : [];
-      if (list.length > 1) return list.slice(0, -1);
-      return list;
-    });
-    setFocusElementId(res.elementIdInParent || "");
-    pushSessionSelectionToUrl({
-      projectId,
-      sessionId: res.parentSessionId,
-      focusElementId: res.elementIdInParent || "",
-      projectContext: projectRouteContext,
-    });
-    // Use cached parent session data to avoid an extra API + XML fetch.
-    const cachedParentSession = parentSid ? sessionCacheRef.current.get(parentSid) : null;
-    openSession(res.parentSessionId, {
-      source: "subprocess_return",
-      session: cachedParentSession || null,
-    });
-  }, [openSession, projectId, projectRouteContext]);
+  const { navigateToSubprocess, returnToParent } = useSubprocessNavigation({
+    bpmnStageRef,
+    sessionCacheRef,
+    bpmnXmlCacheRef,
+    parentViewportSnapshotRef,
+    setSubprocessBreadcrumbs,
+    setFocusElementId,
+    setDiscussionLinkedElementFocusIntent,
+    pushSessionSelectionToUrl,
+    projectRouteContext,
+    projectId,
+    openSession,
+    setRestoreViewportSnapshot,
+    draft,
+    logNav,
+  });
 
   const openWorkspaceSession = useCallback(async (sessionLike, options = {}) => {
     const row = ensureObject(sessionLike);
@@ -1649,12 +1576,15 @@ export default function App() {
     if (!sid) return;
     const activeSid = String(activeSessionIdRef.current || "").trim();
     if (activeSid && sid !== activeSid) return;
-    // Invalidate cached session data so subprocess return always loads the latest diagram.
+    // Keep caches fresh instead of invalidating; status changes and saves both
+    // include the latest diagram, so subprocess return can stay zero-fetch.
     if (sessionCacheRef.current) {
-      sessionCacheRef.current.delete(sid);
+      const existing = sessionCacheRef.current.get(sid);
+      const merged = { ...(existing && typeof existing === "object" ? existing : {}), ...session, id: sid, session_id: sid };
+      sessionCacheRef.current.set(sid, merged);
     }
-    if (bpmnXmlCacheRef.current) {
-      bpmnXmlCacheRef.current.delete(sid);
+    if (bpmnXmlCacheRef.current && session?.bpmn_xml) {
+      bpmnXmlCacheRef.current.set(sid, String(session.bpmn_xml));
     }
     const source = String(session?._sync_source || session?._source || "session_sync");
     setDraftPersisted((prevDraft) => {
@@ -3138,83 +3068,19 @@ export default function App() {
     }
   }
 
-  async function changeCurrentSessionStatus(nextStatus) {
-    if (!workspacePermissions.canChangeStatus) return { ok: false, error: "forbidden" };
-    const sid = String(draft?.session_id || "").trim();
-    if (!sid || isLocalSessionId(sid)) return { ok: false, error: "Сессия не выбрана." };
-    const status = String(nextStatus || "").trim();
-    if (!status) return { ok: false, error: "status_required" };
-    let baseDiagramStateVersion = Number(
-      draft?.diagram_state_version ?? draft?.diagramStateVersion ?? NaN,
-    );
-    if (!Number.isFinite(baseDiagramStateVersion) || baseDiagramStateVersion < 0) {
-      const snapshot = await apiGetSession(sid);
-      baseDiagramStateVersion = Number(
-        snapshot?.session?.diagram_state_version
-        ?? snapshot?.session?.diagramStateVersion
-        ?? NaN,
-      );
-      if (!snapshot?.ok || !Number.isFinite(baseDiagramStateVersion) || baseDiagramStateVersion < 0) {
-        const error = String(snapshot?.error || "Не удалось получить актуальную версию сессии.");
-        markFail(error);
-        return { ok: false, error };
-      }
-    }
-
-    const previousInterviewStatus = draft?.interview?.status;
-    const previousDirectStatus = draft?.status;
-    statusChangeSnapshotRef.current = { interviewStatus: previousInterviewStatus, directStatus: previousDirectStatus };
-
-    setIsChangingSessionStatus(true);
-    setDraftPersisted((prev) => {
-      const next = { ...prev };
-      next.interview = next.interview && typeof next.interview === "object" ? { ...next.interview, status } : { status };
-      next.status = status;
-      return next;
-    });
-
-    const payload = {
-      status,
-      base_diagram_state_version: Math.round(baseDiagramStateVersion),
-    };
-    const r = await apiPatchSession(sid, payload);
-    if (!r.ok) {
-      setDraftPersisted((prev) => {
-        const next = { ...prev };
-        const snap = statusChangeSnapshotRef.current || {};
-        next.interview = next.interview && typeof next.interview === "object" ? { ...next.interview } : {};
-        if (snap.interviewStatus !== undefined) next.interview.status = snap.interviewStatus;
-        else delete next.interview.status;
-        if (snap.directStatus !== undefined) next.status = snap.directStatus;
-        else delete next.status;
-        return next;
-      });
-      if (r.status === 409) {
-        markFail("Переход в выбранный статус недоступен для текущего состояния сессии.");
-      } else {
-        const statusErr = String(r.error || "").toLowerCase();
-        const userMessage = statusErr.includes("invalid status transition")
-          ? "Недопустимый переход статуса."
-          : statusErr.includes("forbidden")
-            ? "Недостаточно прав для изменения статуса."
-            : String(r.error || "status_update_failed");
-        markFail(userMessage);
-      }
-      setIsChangingSessionStatus(false);
-      return { ok: false, error: String(r.error || "status_update_failed") };
-    }
-    onSessionSync(r.session || {});
-    try {
-      await refreshSessions(projectId);
-    } catch (refreshError) {
-      // Explorer consistency refresh failed, but the status change itself succeeded.
-      // Do not surface as a user error; the active session is already updated.
-      logNav("refresh_sessions_after_status_failed", { projectId, error: String(refreshError?.message || refreshError) });
-    }
-    setIsChangingSessionStatus(false);
-    markOk("API OK");
-    return { ok: true };
-  }
+  const { changeCurrentSessionStatus } = useSessionStatusOptimisticUpdate({
+    canChangeStatus: workspacePermissions.canChangeStatus,
+    draft,
+    isLocalSessionId,
+    setIsChangingSessionStatus,
+    setDraftPersisted,
+    onSessionSync,
+    refreshSessions,
+    projectId,
+    markFail,
+    markOk,
+    logNav,
+  });
 
   // Sessions are valid even without predefined actors; keep editing flow open.
   const locked = false;

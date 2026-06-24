@@ -1,6 +1,7 @@
 from .auto_pass import router as auto_pass_router
 from .admin import router as admin_router
 from .version import router as version_router
+from .analytics import router as analytics_router
 from .clipboard import router as clipboard_router
 from .error_events import router as error_events_router
 from .explorer import router as explorer_router
@@ -21,6 +22,7 @@ from .sessions import router as sessions_router
 from .system import router as system_router
 from .templates import router as templates_router
 from .feature_flags import router as feature_flags_router
+from .reference_resolver import router as reference_resolver_router
 
 ROUTERS = (
     system_router,
@@ -33,6 +35,7 @@ ROUTERS = (
     product_actions_registry_router,
     process_properties_registry_router,
     project_analytics_router,
+    analytics_router,
     rag_router,
     notes_router,
     clipboard_router,
@@ -46,4 +49,5 @@ ROUTERS = (
     org_router,
     version_router,
     feature_flags_router,
+    reference_resolver_router,
 )
