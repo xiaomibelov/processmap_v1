@@ -1077,6 +1077,7 @@ def navigate_to_subprocess(
         "subprocess_session_id": getattr(child, "id", ""),
         "target_element_id": target_id,
         "breadcrumbs": breadcrumbs,
+        "bpmn_xml": child_xml,
     }
 
 

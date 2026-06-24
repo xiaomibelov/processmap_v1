@@ -1214,6 +1214,13 @@ export default function App() {
       if (lastSid && childSid && lastSid === childSid) return list;
       return [...list, childCrumb];
     });
+    // Cache the child BPMN XML so the subprocess canvas can render without a cold fetch.
+    const childXml = String(res.bpmnXml || "").trim();
+    const childSid = String(res.subprocessSessionId || "").trim();
+    if (childSid && childXml && bpmnXmlCacheRef.current) {
+      bpmnXmlCacheRef.current.set(childSid, childXml);
+    }
+
     setFocusElementId(res.targetElementId || "");
     pushSessionSelectionToUrl({
       projectId,

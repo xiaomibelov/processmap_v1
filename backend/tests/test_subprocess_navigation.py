@@ -42,6 +42,7 @@ def test_navigate_to_embedded_subprocess():
     assert result["subprocess_session_id"]
     assert result["target_element_id"] == "sub_user_task"
     assert len(result["breadcrumbs"]) == 2
+    assert "<bpmn:definitions" in (result.get("bpmn_xml") or "")
 
     child = session_repo.load(result["subprocess_session_id"], user_id=owner, org_id=org, is_admin=True)
     assert child.parent_session_id == sid
