@@ -2926,8 +2926,6 @@ class Storage:
             notes,
             notes_by_element_json,
             interview_json,
-            nodes_json,
-            edges_json,
             questions_json,
             mermaid,
             mermaid_simple,

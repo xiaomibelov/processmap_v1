@@ -14,12 +14,14 @@ import { useAuth } from "../features/auth/AuthProvider";
 import {
   apiGetSession,
   apiGetSessionMeta,
+  apiGetSessionGraph,
   apiPatchSession,
   apiRecompute,
   apiStartAutoPass,
   apiGetAutoPassPrecheck,
   apiGetAutoPassStatus,
 } from "../lib/api/sessionApi";
+import { seedSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
 import {
   apiGetBpmnMeta,
   apiGetBpmnVersion,
@@ -145,7 +147,7 @@ import BottomViewportScrubber from "../features/process/stage/scrubber/BottomVie
 import BpmnPropertiesOverlayModal from "../features/process/bpmn/context-menu/properties-overlay/BpmnPropertiesOverlayModal";
 import { buildSaveConflictModalView } from "../features/process/stage/ui/saveConflictModalModel";
 import { buildSessionPresenceView } from "../features/process/stage/ui/sessionPresenceModel";
-import useSessionPresence from "../features/process/stage/presence/useSessionPresence";
+import useSessionPresence, { normalizeSessionPresenceUsers } from "../features/process/stage/presence/useSessionPresence";
 import {
   buildRemoteSaveHighlightView,
   deriveRemoteChangedElementIds,
@@ -461,6 +463,7 @@ function ProcessStage({
   const bpmnVersionsOpenRef = useRef(false);
   const bpmnVersionsListRequestRef = useRef({ key: "", promise: null });
   const bpmnVersionDetailRequestRef = useRef(new Map());
+  const metaVersionHeadSeededRef = useRef(false);
   const [featureFlags, setFeatureFlags] = useState({ bpmn_fps_meter_enabled: false, canvas_profiler_enabled: false });
   const [showOverlaysDuringPan, setShowOverlaysDuringPan] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -1131,6 +1134,7 @@ function ProcessStage({
   const currentUserId = toText(user?.id || user?.user_id || user?.email);
   const sessionPresence = useSessionPresence(hasSession ? sid : "", user, {
     surface: "process_stage",
+    skipMountHeartbeat: true,
   });
   const [sessionMeta, setSessionMeta] = useState(null);
 
@@ -2549,6 +2553,40 @@ function ProcessStage({
     void apiGetAutoPassPrecheck(currentSid).then(applyResult);
     return () => finish();
   }, [sid, shortErr]);
+  const applySessionMeta = useCallback((meta) => {
+    if (!meta?.ok || !sid) return;
+    const versionItems = Array.isArray(meta.versions) ? meta.versions : [];
+    const currentHash = String(meta.current_session_payload_hash || "");
+    const latestHash = String(meta.latest_user_version_session_payload_hash || "");
+    setBpmnVersionTruthState({
+      currentSessionPayloadHash: currentHash,
+      latestUserVersionSessionPayloadHash: latestHash,
+      hasSessionChangesSinceLatestBpmnVersion: meta.has_session_changes_since_latest_bpmn_version === true,
+    });
+    const normalizedList = versionItems.map(normalizeBpmnVersionListItem);
+    const nextMeaningfulHead = normalizedList[0] || null;
+    setLatestBpmnVersionHead(nextMeaningfulHead);
+    setLatestBpmnVersionHeadStatus(nextMeaningfulHead ? "ready" : "idle");
+    metaVersionHeadSeededRef.current = true;
+
+    // Seed discussion badge cache from meta count.
+    const notesCount = Number.isFinite(meta.notes_count) ? Math.max(0, Math.round(meta.notes_count)) : 0;
+    seedSessionNoteAggregate(sid, {
+      open_notes_count: notesCount,
+      total_notes_count: notesCount,
+      unread_mentions_count: 0,
+    });
+
+    // Seed presence list from meta so we don't need a separate mount heartbeat.
+    if (Array.isArray(meta.active_users) && meta.active_users.length > 0) {
+      sessionPresence.setActiveUsers(normalizeSessionPresenceUsers(meta.active_users));
+      const ttlSeconds = Number(meta.presence_ttl_seconds || 0);
+      if (Number.isFinite(ttlSeconds) && ttlSeconds > 0) {
+        sessionPresence.setTtlMs(Math.round(ttlSeconds * 1000));
+      }
+    }
+  }, [sid, normalizeBpmnVersionListItem, sessionPresence.setActiveUsers, sessionPresence.setTtlMs]);
+
   useEffect(() => {
     const currentSid = toText(sid);
     if (!currentSid) {
@@ -2561,12 +2599,18 @@ function ProcessStage({
       if (cancelled) return;
       if (meta?.ok) {
         setSessionMeta(meta);
+        applySessionMeta(meta);
+      } else {
+        // Fallback: meta unavailable — fetch presence via the original mount heartbeat.
+        if (sessionPresence.heartbeat) {
+          void sessionPresence.heartbeat("mount");
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [sid]);
+  }, [sid, applySessionMeta, sessionPresence.heartbeat]);
   useEffect(() => {
     if (tab !== "doc" || !sid) return;
     const current = asObject(asObject(draft?.bpmn_meta)?.auto_pass_v1);
@@ -5339,6 +5383,12 @@ function ProcessStage({
     if (!sid) {
       setLatestBpmnVersionHead(null);
       setLatestBpmnVersionHeadStatus("idle");
+      metaVersionHeadSeededRef.current = false;
+      return;
+    }
+    // If /meta already seeded the head on initial load, skip the first versions call.
+    if (metaVersionHeadSeededRef.current) {
+      metaVersionHeadSeededRef.current = false;
       return;
     }
     setLatestBpmnVersionHead(null);
