@@ -1881,6 +1881,20 @@ export async function apiGetAnalyticsActions(scope, scopeId, params = {}) {
   };
 }
 
+export async function apiGetAnalyticsPropertiesSummary(scope, scopeId, params = {}) {
+  const r = okOrError(await request(apiRoutes.analytics.propertiesSummary(scope, scopeId, params)));
+  const data = unwrapAnalyticsData(r);
+  if (!data) return r;
+  return { ok: true, status: r.status, data, meta: r.meta };
+}
+
+export async function apiGetAnalyticsActionsSummary(scope, scopeId, params = {}) {
+  const r = okOrError(await request(apiRoutes.analytics.actionsSummary(scope, scopeId, params)));
+  const data = unwrapAnalyticsData(r);
+  if (!data) return r;
+  return { ok: true, status: r.status, data, meta: r.meta };
+}
+
 export async function apiExportAnalyticsPropertiesCsv(scope, scopeId) {
   const r = await request(apiRoutes.analytics.exportPropertiesCsv(scope, scopeId), { method: "GET", responseType: "blob" });
   if (!r.ok) return r;

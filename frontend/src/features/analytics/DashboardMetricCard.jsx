@@ -38,6 +38,11 @@ const TONE_CLASSES = {
   warning: " dashboardMetricCard--warning",
   danger: " dashboardMetricCard--danger",
   accent: " dashboardMetricCard--accent",
+  blue: " dashboardMetricCard--blue",
+  teal: " dashboardMetricCard--teal",
+  amber: " dashboardMetricCard--amber",
+  orange: " dashboardMetricCard--orange",
+  slate: " dashboardMetricCard--slate",
 };
 
 export default function DashboardMetricCard({
@@ -49,6 +54,7 @@ export default function DashboardMetricCard({
   icon: Icon = ActivityIcon,
   testId,
   sparklineItems,
+  change,
 }) {
   const toneClass = TONE_CLASSES[tone] || "";
 
@@ -69,7 +75,14 @@ export default function DashboardMetricCard({
           </div>
         ) : null}
       </div>
-      {sparklineItems && sparklineItems.length > 0 ? <MetricSparkline items={sparklineItems} /> : null}
+      <div className="dashboardMetricCardFooter">
+        {change != null ? (
+          <span className={`dashboardMetricCardChange ${Number(change) >= 0 ? "dashboardMetricCardChange--up" : "dashboardMetricCardChange--down"}`}>
+            {Number(change) >= 0 ? "↑" : "↓"} {Math.abs(Number(change))}%
+          </span>
+        ) : null}
+        {sparklineItems && sparklineItems.length > 0 ? <MetricSparkline items={sparklineItems} /> : null}
+      </div>
     </div>
   );
 }

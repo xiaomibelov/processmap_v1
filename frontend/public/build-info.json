@@ -1,9 +1,9 @@
 {
-  "branch": "feature/analytics-dashboard-redesign",
-  "sha": "d1e6adba80c5bfb00dd2ec0865b7f25ce9cedb28",
-  "shaShort": "d1e6adba",
-  "timestamp": "2026-06-24T18:55:11.685Z",
-  "contourId": "feature-analytics-dashboard-redesign",
+  "branch": "feature/analytics-super-redesign",
+  "sha": "7e12c7e230e5d89d2cb1aa7efb79245d7f16a404",
+  "shaShort": "7e12c7e2",
+  "timestamp": "2026-06-24T19:57:29.618Z",
+  "contourId": "feature-analytics-super-redesign",
   "dirty": true,
   "host": "clearvestnic.ru",
   "env": "dev"
