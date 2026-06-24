@@ -4,7 +4,7 @@ import DocStage from "./process/DocStage";
 import DodStage from "./process/DodStage";
 import InterviewStage from "./process/InterviewStage";
 import ProductActionsRegistry from "../features/analytics/ProductActionsRegistry.jsx";
-import PropertiesRegistry from "../features/analytics/PropertiesRegistry.jsx";
+import ProcessPropertiesRegistryPage from "./process/analysis/ProcessPropertiesRegistryPage.jsx";
 import AnalyticsDashboards from "../features/analytics/AnalyticsDashboards.jsx";
 import AnalyticsSectionTabs from "../features/analytics/AnalyticsSectionTabs.jsx";
 import AnalyticsHub from "../features/analytics/AnalyticsHub.jsx";
@@ -6687,7 +6687,8 @@ function ProcessStage({
                   onClose={closeProductActionsRegistry}
                 />
               ) : propertiesRegistryRoute.active ? (
-                <PropertiesRegistry
+                <ProcessPropertiesRegistryPage
+                  scope="project"
                   workspaceId={propertiesRegistryRoute.workspaceId || activeProjectWorkspaceId}
                   projectId={propertiesRegistryRoute.projectId || activeProjectId}
                   sessionId=""
@@ -6752,7 +6753,8 @@ function ProcessStage({
                 onClose={closeProductActionsRegistry}
               />
             ) : propertiesRegistryRoute.active ? (
-              <PropertiesRegistry
+              <ProcessPropertiesRegistryPage
+                scope="session"
                 workspaceId={propertiesRegistryRoute.workspaceId || activeProjectWorkspaceId}
                 projectId={propertiesRegistryRoute.projectId || activeProjectId}
                 sessionId={sid}

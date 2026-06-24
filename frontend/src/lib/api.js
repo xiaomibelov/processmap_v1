@@ -265,6 +265,64 @@ export async function apiExportProcessPropertiesRegistryXlsx(payload = {}) {
   );
 }
 
+export async function apiQueryPropertyRegistry(params = {}) {
+  const url = new URL(apiRoutes.analysis.processPropertyRegistryQuery(), window.location.origin);
+  if (params.category) url.searchParams.set("category", params.category);
+  if (params.applicable_to) url.searchParams.set("applicable_to", params.applicable_to);
+  if (params.source) url.searchParams.set("source", params.source);
+  if (params.editable) url.searchParams.set("editable", params.editable);
+  if (params.search) url.searchParams.set("search", params.search);
+  url.searchParams.set("include_usage", params.include_usage !== false ? "true" : "false");
+  url.searchParams.set("include_reference_options", params.include_reference_options !== false ? "true" : "false");
+  const r = okOrError(await request(url.toString()));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  return {
+    ok: true,
+    status: r.status,
+    rows: Array.isArray(data.rows) ? data.rows : [],
+    sessions: Array.isArray(data.sessions) ? data.sessions : [],
+    session_summary: data.session_summary && typeof data.session_summary === "object" ? data.session_summary : {},
+    summary: data.summary && typeof data.summary === "object" ? data.summary : {},
+    page: data.page && typeof data.page === "object" ? data.page : {},
+    filter_options: data.filter_options && typeof data.filter_options === "object" ? data.filter_options : null,
+    applied_filters: data.applied_filters && typeof data.applied_filters === "object" ? data.applied_filters : null,
+    metrics: data.metrics && typeof data.metrics === "object" ? data.metrics : null,
+    empty_state: data.empty_state && typeof data.empty_state === "object" ? data.empty_state : null,
+    source_state: data.source_state && typeof data.source_state === "object" ? data.source_state : null,
+  };
+}
+
+export function apiExportPropertyRegistry(format, params = {}) {
+  const url = new URL(apiRoutes.analysis.processPropertyRegistryExport(), window.location.origin);
+  url.searchParams.set("format", format);
+  if (params.category) url.searchParams.set("category", params.category);
+  if (params.applicable_to) url.searchParams.set("applicable_to", params.applicable_to);
+  if (params.source) url.searchParams.set("source", params.source);
+  if (params.editable) url.searchParams.set("editable", params.editable);
+  url.searchParams.set("include_usage", "true");
+  window.location.href = url.toString();
+}
+
+export async function apiGetReferenceOptions(source, q = "", limit = 20) {
+  const src = String(source || "").trim();
+  if (!src) return { ok: false, status: 0, error: "missing source" };
+  const url = new URL(apiRoutes.analysis.referenceOptions(src), window.location.origin);
+  if (q) url.searchParams.set("q", q);
+  url.searchParams.set("limit", String(limit));
+  const r = okOrError(await request(url.toString()));
+  if (!r.ok) return r;
+  const data = r.data && typeof r.data === "object" ? r.data : {};
+  const items = Array.isArray(data.items) ? data.items : [];
+  return {
+    ok: true,
+    status: r.status,
+    items,
+    options: items,
+    count: Number(data.count || items.length || 0),
+  };
+}
+
 // ------- Enterprise Project Members -------
 export async function apiListOrgProjectMembers(orgId, projectId) {
   const oid = String(orgId || "").trim();
