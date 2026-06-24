@@ -7,6 +7,7 @@ import unittest
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import HTTPException
 
@@ -189,6 +190,28 @@ class ProcessPropertiesRegistryApiTests(unittest.TestCase):
 
     def _query_registry(self, **kwargs):
         return self.query_property_registry_metadata(self._req(self.admin), **kwargs)
+
+    def _get(self, path: str):
+        parsed = urlparse(path)
+        query = {k: v[0] if len(v) == 1 else v for k, v in parse_qs(parsed.query).items()}
+        req = self._req(self.admin)
+
+        if parsed.path.startswith("/api/reference/") and parsed.path.endswith("/options"):
+            from app.routers.reference_resolver import get_reference_options
+
+            source = parsed.path[len("/api/reference/") : -len("/options")]
+            try:
+                return get_reference_options(source=source, request=req, **query)
+            except HTTPException as exc:
+                return {"ok": False, "status_code": exc.status_code, "detail": exc.detail}
+
+        if parsed.path == "/api/analysis/properties/registry/export":
+            return self.export_property_registry(req, **query)
+
+        if parsed.path == "/api/analysis/properties/registry/query":
+            return self.query_property_registry_metadata(req, **query)
+
+        raise ValueError(f"unhandled path: {path}")
 
     def test_session_scope_returns_properties_without_heavy_payload(self):
         before = self.get_storage().load(self.session_a1, org_id=self.org_id, is_admin=True)
@@ -508,6 +531,34 @@ class ProcessPropertiesRegistryApiTests(unittest.TestCase):
         self.assertTrue(equipment_out.get("ok"))
         self.assertEqual(len(equipment_out.get("properties", [])), 1)
         self.assertEqual(equipment_out["properties"][0].get("id"), "equipment")
+
+    def test_reference_options_ingredients(self):
+        res = self._get("/api/reference/table/ingredients/options?q=мука")
+        self.assertTrue(res.get("ok"))
+        names = [item.get("name", "").lower() for item in res.get("items", [])]
+        self.assertTrue(any("мука" in name for name in names))
+
+    def test_reference_options_invalid_source(self):
+        res = self._get("/api/reference/invalid-source/options")
+        self.assertEqual(res.get("status_code"), 422)
+
+    def test_property_registry_export_csv_filter_by_category(self):
+        res = self._get("/api/analysis/properties/registry/export?format=csv&category=materials")
+        self.assertEqual(res.status_code, 200)
+        body = res.body.decode("utf-8-sig")
+        self.assertIn("Идентификатор;Название", body)
+        self.assertIn("Ингредиент", body)
+
+    def test_property_registry_export_xlsx_has_content_type(self):
+        res = self._get("/api/analysis/properties/registry/export?format=xlsx")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("spreadsheetml.sheet", res.headers.get("content-type", ""))
+
+    def test_property_registry_query_includes_reference_options(self):
+        res = self._query_registry()
+        ingredient = next((p for p in res.get("properties", []) if p["id"] == "ingredient"), None)
+        self.assertIsNotNone(ingredient)
+        self.assertTrue(len(ingredient.get("reference_options", [])) > 0)
 
 
 if __name__ == "__main__":
