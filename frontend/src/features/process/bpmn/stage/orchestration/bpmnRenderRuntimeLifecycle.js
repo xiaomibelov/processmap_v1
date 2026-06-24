@@ -389,105 +389,113 @@ export async function renderNewDiagramInModelerRuntime(ctx) {
     loadTransition,
   } = ctx;
 
-  const runtime = ensureModelerRuntime();
-  const m = await ensureModeler();
-  const layoutReady = await waitForNonZeroRect(
-    () => m?.get?.("canvas")?._container || editorEl.current,
-    {
-      sid: String(activeSessionRef.current || sessionId || "-"),
-      token: Number(runtimeTokenRef.current || 0),
-      reason: "render_new_diagram_before_create",
-      timeoutMs: 5000,
-    },
-  );
-  if (!layoutReady.ok) {
-    throw new Error("layout_not_ready_before_create_diagram");
-  }
-  const sidNow = String(activeSessionRef.current || sessionId || "");
-  if (shouldLogBpmnTrace()) {
-    // eslint-disable-next-line no-console
-    console.debug(
-      `[CREATE_DIAGRAM] start sid=${sidNow || "-"} token=${Number(runtimeTokenRef.current || 0)}`,
+  try {
+    const runtime = ensureModelerRuntime();
+    const m = await ensureModeler();
+    const layoutReady = await waitForNonZeroRect(
+      () => m?.get?.("canvas")?._container || editorEl.current,
+      {
+        sid: String(activeSessionRef.current || sessionId || "-"),
+        token: Number(runtimeTokenRef.current || 0),
+        reason: "render_new_diagram_before_create",
+        timeoutMs: 5000,
+      },
     );
-  }
-  loadTransition?.("import_start");
-  const created = await runtime.createDiagram({ source: "renderNewDiagramInModeler" });
-  const status = runtime.getStatus();
-  runtimeTokenRef.current = Number(status?.token || runtimeTokenRef.current || 0);
-  modelerReadyRef.current = !!status?.ready && !!status?.defs;
-  if (shouldLogBpmnTrace()) {
-    const probe = probeCanvas(m, "create_diagram_done", {
-      sid: sidNow || "-",
+    if (!layoutReady.ok) {
+      throw new Error("layout_not_ready_before_create_diagram");
+    }
+    const sidNow = String(activeSessionRef.current || sessionId || "");
+    if (shouldLogBpmnTrace()) {
+      // eslint-disable-next-line no-console
+      console.debug(
+        `[CREATE_DIAGRAM] start sid=${sidNow || "-"} token=${Number(runtimeTokenRef.current || 0)}`,
+      );
+    }
+    loadTransition?.("import_start");
+    const created = await runtime.createDiagram({ source: "renderNewDiagramInModeler" });
+    const status = runtime.getStatus();
+    runtimeTokenRef.current = Number(status?.token || runtimeTokenRef.current || 0);
+    modelerReadyRef.current = !!status?.ready && !!status?.defs;
+    if (shouldLogBpmnTrace()) {
+      const probe = probeCanvas(m, "create_diagram_done", {
+        sid: sidNow || "-",
+        tab: "diagram",
+        token: runtimeTokenRef.current,
+        reason: "createDiagram_done",
+      });
+      // eslint-disable-next-line no-console
+      console.debug(
+        `[CREATE_DIAGRAM] done sid=${sidNow || "-"} token=${Number(runtimeTokenRef.current || 0)} `
+        + `defs=${status?.defs ? 1 : 0} ready=${modelerReadyRef.current ? 1 : 0} registryCount=${Number(probe?.registryCount || 0)} `
+        + `svgRect=${Math.round(Number(probe?.svgWidth || 0))}x${Math.round(Number(probe?.svgHeight || 0))}`,
+      );
+      // eslint-disable-next-line no-console
+      console.debug(
+        `[READY] sid=${sidNow || "-"} token=${Number(runtimeTokenRef.current || 0)} `
+        + `ready=${modelerReadyRef.current ? 1 : 0} defs=${status?.defs ? 1 : 0} reason=createDiagram_done`,
+      );
+    }
+    if (!created.ok) {
+      if (created.reason === "stale") return;
+      throw new Error(String(created.error || created.reason || "createDiagram failed"));
+    }
+    if (!m || m !== modelerRef.current) return;
+    try {
+      const xmlRes = await runtime.getXml({ format: true });
+      if (xmlRes?.ok) {
+        const seededXml = String(xmlRes.xml || "");
+        lastModelerXmlHashRef.current = fnv1aHex(seededXml);
+        if (seededXml.trim() && sidNow && sidNow === String(activeSessionRef.current || "")) {
+          applyXmlSnapshot(seededXml, "create_diagram_seed");
+        }
+      }
+    } catch {
+    }
+    try {
+      if (typeof window !== "undefined") {
+        window.__FPC_E2E_MODELER__ = m;
+      }
+    } catch {
+    }
+    finishImportSelectionGuard(m, "editor", "create_diagram_restore");
+    await ensureCanvasVisibleAndFit(m, "renderNewDiagramInModeler", String(sessionId || ""), {
+      reason: "render_new_diagram",
       tab: "diagram",
       token: runtimeTokenRef.current,
-      reason: "createDiagram_done",
+      allowFit: true,
+      fitIfInvisible: true,
+      suppressViewbox: suppressViewboxEvents,
     });
-    // eslint-disable-next-line no-console
-    console.debug(
-      `[CREATE_DIAGRAM] done sid=${sidNow || "-"} token=${Number(runtimeTokenRef.current || 0)} `
-      + `defs=${status?.defs ? 1 : 0} ready=${modelerReadyRef.current ? 1 : 0} registryCount=${Number(probe?.registryCount || 0)} `
-      + `svgRect=${Math.round(Number(probe?.svgWidth || 0))}x${Math.round(Number(probe?.svgHeight || 0))}`,
-    );
-    // eslint-disable-next-line no-console
-    console.debug(
-      `[READY] sid=${sidNow || "-"} token=${Number(runtimeTokenRef.current || 0)} `
-      + `ready=${modelerReadyRef.current ? 1 : 0} defs=${status?.defs ? 1 : 0} reason=createDiagram_done`,
-    );
-  }
-  if (!created.ok) {
-    if (created.reason === "stale") return;
-    throw new Error(String(created.error || created.reason || "createDiagram failed"));
-  }
-  if (!m || m !== modelerRef.current) return;
-  try {
-    const xmlRes = await runtime.getXml({ format: true });
-    if (xmlRes?.ok) {
-      const seededXml = String(xmlRes.xml || "");
-      lastModelerXmlHashRef.current = fnv1aHex(seededXml);
-      if (seededXml.trim() && sidNow && sidNow === String(activeSessionRef.current || "")) {
-        applyXmlSnapshot(seededXml, "create_diagram_seed");
-      }
-    }
-  } catch {
-  }
-  try {
-    if (typeof window !== "undefined") {
-      window.__FPC_E2E_MODELER__ = m;
-    }
-  } catch {
-  }
-  finishImportSelectionGuard(m, "editor", "create_diagram_restore");
-  await ensureCanvasVisibleAndFit(m, "renderNewDiagramInModeler", String(sessionId || ""), {
-    reason: "render_new_diagram",
-    tab: "diagram",
-    token: runtimeTokenRef.current,
-    allowFit: true,
-    fitIfInvisible: true,
-    suppressViewbox: suppressViewboxEvents,
-  });
-  const importProbe = probeCanvas(m, "after_import", {
-    sid: String(sessionId || ""),
-    tab: "diagram",
-    token: runtimeTokenRef.current,
-    reason: "modeler_create_diagram",
-  });
-  if (importProbe.invisible) {
-    await ensureVisibleOnInstance(m, {
-      reason: "modeler_create_invisible",
+    const importProbe = probeCanvas(m, "after_import", {
+      sid: String(sessionId || ""),
       tab: "diagram",
+      token: runtimeTokenRef.current,
+      reason: "modeler_create_diagram",
     });
+    if (importProbe.invisible) {
+      await ensureVisibleOnInstance(m, {
+        reason: "modeler_create_invisible",
+        tab: "diagram",
+      });
+    }
+    loadTransition?.("import_success");
+    applyFullBpmnDecorSet({
+      inst: m,
+      kind: "editor",
+      applyTaskTypeDecor,
+      applyLinkEventDecor,
+      applyHappyFlowDecor,
+      applyRobotMetaDecor,
+      applyBottleneckDecor,
+      applyInterviewDecor,
+      applyUserNotesDecor,
+      applyStepTimeDecor,
+    });
+  } catch (err) {
+    if (err?.message === "stale") {
+      return;
+    }
+    loadTransition?.("import_error", { reason: String(err?.message || err || "createDiagram failed") });
+    throw err;
   }
-  loadTransition?.("import_success");
-  applyFullBpmnDecorSet({
-    inst: m,
-    kind: "editor",
-    applyTaskTypeDecor,
-    applyLinkEventDecor,
-    applyHappyFlowDecor,
-    applyRobotMetaDecor,
-    applyBottleneckDecor,
-    applyInterviewDecor,
-    applyUserNotesDecor,
-    applyStepTimeDecor,
-  });
 }
