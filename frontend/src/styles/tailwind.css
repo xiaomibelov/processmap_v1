@@ -1405,11 +1405,11 @@
   min-height: 0;
   overflow: auto;
   background: hsl(var(--panel) / 0.98);
-  padding: 18px;
+  padding: 12px;
 }
 
 .analyticsHubSurface {
-  max-width: 960px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
@@ -1418,29 +1418,30 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 
 .analyticsHubHeader h1 {
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--analysis-text);
   margin: 0;
 }
 
 .analyticsHubHeader p {
-  font-size: 14px;
+  font-size: 12px;
   color: var(--analysis-muted);
-  margin: 4px 0 0;
+  margin: 2px 0 0;
 }
 
-.analyticsHubHeader small {
+.analyticsHubHeader small,
+.analyticsHubHeaderMeta {
   display: block;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  color: hsl(var(--accent2) / 0.9);
-  margin-top: 6px;
+  color: hsl(var(--accent2) / 0.8);
+  margin-top: 4px;
 }
 
 .analyticsHubModules {
@@ -12155,10 +12156,13 @@
 .dashboardMetricCard {
   background: hsl(var(--bg-card));
   border: 1px solid hsl(var(--border));
-  border-radius: 10px;
-  padding: 14px 16px;
-  box-shadow: var(--shadow-soft);
-  border-left: 3px solid transparent;
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: none;
+  border-left: 2px solid transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .dashboardMetricCard--success {
@@ -12174,25 +12178,40 @@
 }
 
 .dashboardMetricCardTitle {
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--analysis-muted);
   text-transform: uppercase;
-  letter-spacing: 0.02em;
-  margin-bottom: 6px;
-}
-
-.dashboardMetricCardValue {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--analysis-text);
+  letter-spacing: 0.03em;
   line-height: 1.2;
 }
 
+.dashboardMetricCardValue {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--analysis-text);
+  line-height: 1.1;
+}
+
 .dashboardMetricCardSubtitle {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--analysis-muted);
-  margin-top: 4px;
+}
+
+.dashboardMetricCardSparkline {
+  margin-top: auto;
+  height: 22px;
+  width: 100%;
+}
+
+.dashboardMetricCardSparkline svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.dashboardMetricCardSparklineBar {
+  rx: 2;
 }
 
 /* Bar Chart */

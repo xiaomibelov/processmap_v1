@@ -5,6 +5,7 @@ export const PROCESS_WORKBENCH_CONFIG = {
     { id: "xml", label: "XML" },
     { id: "doc", label: "DOC" },
     { id: "dod", label: "DOD" },
+    { id: "analytics", label: "Аналитика" },
   ],
   emptyGuide: {
     title: "Начало работы",
@@ -50,7 +51,7 @@ export const PROCESS_WORKBENCH_CONFIG = {
 export function normalizeWorkbenchTab(tab) {
   const t = String(tab || "").trim().toLowerCase();
   if (t === "editor") return "diagram";
-  if (t === "interview" || t === "diagram" || t === "xml" || t === "doc" || t === "dod") return t;
+  if (t === "interview" || t === "diagram" || t === "xml" || t === "doc" || t === "dod" || t === "analytics") return t;
   return "interview";
 }
 
