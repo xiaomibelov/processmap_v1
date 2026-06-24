@@ -187,7 +187,8 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
   const [usageRange, setUsageRange] = useState([0, Infinity]);
   const [sort, setSort] = useState({ key: "usage_count", dir: "desc" });
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [pageSize, setPageSize] = useState(20);
+  const PAGE_SIZES = [20, 50, 100];
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
   const [page, setPage] = useState(1);
 
   const [selectedRows, setSelectedRows] = useState(new Set());
@@ -344,8 +345,9 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
           <div className="analyticsPageSize">
             <label>Показать</label>
             <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
+              {PAGE_SIZES.map((size) => (
+                <option key={size} value={size}>{size}</option>
+              ))}
             </select>
           </div>
           <button
