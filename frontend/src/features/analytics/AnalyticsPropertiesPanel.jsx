@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   apiExportAnalyticsPropertiesCsv,
+  apiExportAnalyticsPropertiesXlsx,
   apiGetAnalyticsProperties,
 } from "../../lib/api.js";
 import { DownloadIcon, FilterIcon, SearchIcon } from "./AnalyticsIcons.jsx";
@@ -8,8 +9,9 @@ import AnalyticsPropertiesTable, {
   getRowKey,
   usePropertyRowsProcessor,
 } from "./AnalyticsPropertiesTable.jsx";
+import { AnalyticsError, AnalyticsLoading } from "./AnalyticsStatus.jsx";
 import EmptyState from "./registry/EmptyState.jsx";
-import { inferPropertyValueType } from "./propertyValueUtils.js";
+import { inferPropertyValueType, inferPropertyFamily } from "./propertyValueUtils.js";
 
 function text(value) {
   return String(value || "").trim();
@@ -66,20 +68,39 @@ function exportRowsToCsv(rows, filename = "properties.csv") {
   downloadBlob(blob, filename);
 }
 
-const QUICK_FILTERS = [
-  { key: "ingredient", label: "Ингредиенты" },
-  { key: "equipment", label: "Оборудование" },
-  { key: "duration", label: "Длительность" },
-  { key: "json", label: "С JSON" },
-  { key: "unused", label: "Не используется" },
-];
+function Paginator({ page, totalPages, onChange }) {
+  if (totalPages <= 1) return null;
+  return (
+    <div className="analyticsPaginator">
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => onChange(page - 1)}
+        className="analyticsPaginatorBtn"
+      >
+        ←
+      </button>
+      <span className="analyticsPaginatorText">
+        {page} / {totalPages}
+      </span>
+      <button
+        type="button"
+        disabled={page >= totalPages}
+        onClick={() => onChange(page + 1)}
+        className="analyticsPaginatorBtn"
+      >
+        →
+      </button>
+    </div>
+  );
+}
 
 function MultiSelect({ label, options = [], selected = [], onChange }) {
   const values = toArray(options);
   return (
     <div className="analyticsFilterField">
       <label className="analyticsFilterFieldLabel">{label}</label>
-      <div className="analyticsFilterFieldOptions">
+      <div className="analyticsFilterFieldOptions analyticsFilterFieldOptions--compact">
         {values.length === 0 ? <span className="analyticsFilterEmptyOptions">Нет значений</span> : null}
         {values.map((opt) => {
           const v = String(opt);
@@ -156,34 +177,38 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
   const [options, setOptions] = useState({});
+  const abortRef = useRef(null);
 
   const [backendFilters, setBackendFilters] = useState({});
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
-  const [quickFilters, setQuickFilters] = useState([]);
   const [valueTypeFilter, setValueTypeFilter] = useState([]);
+  const [familyFilter, setFamilyFilter] = useState([]);
   const [usageRange, setUsageRange] = useState([0, Infinity]);
   const [sort, setSort] = useState({ key: "usage_count", dir: "desc" });
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const PAGE_SIZES = [20, 50, 100];
+  const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+  const [page, setPage] = useState(1);
 
   const [selectedRows, setSelectedRows] = useState(new Set());
   const [compareRows, setCompareRows] = useState([]);
 
   useEffect(() => {
     setSelectedRows(new Set());
-  }, [scope, scopeId, backendFilters, debouncedSearch, quickFilters, valueTypeFilter, usageRange]);
+    setPage(1);
+  }, [scope, scopeId, backendFilters, debouncedSearch, valueTypeFilter, familyFilter, usageRange, pageSize]);
 
-  useEffect(() => {
-    let alive = true;
-    async function load() {
-      setLoading(true);
-      setError("");
-      const params = { page: 1, limit: 500 };
-      if (backendFilters.type?.length) params.type_filter = backendFilters.type;
-      if (backendFilters.category?.length) params.category_filter = backendFilters.category;
-      if (backendFilters.source?.length) params.source_filter = backendFilters.source;
-      const result = await apiGetAnalyticsProperties(scope, scopeId, params);
-      if (!alive) return;
+  const loadData = useCallback(async ({ signal } = {}) => {
+    setLoading(true);
+    setError("");
+    const params = { page: 1, limit: 500 };
+    if (backendFilters.type?.length) params.type_filter = backendFilters.type;
+    if (backendFilters.category?.length) params.category_filter = backendFilters.category;
+    if (backendFilters.source?.length) params.source_filter = backendFilters.source;
+    try {
+      const result = await apiGetAnalyticsProperties(scope, scopeId, params, { signal });
+      if (signal?.aborted) return;
       setLoading(false);
       if (!result?.ok) {
         setError(text(result?.error) || "Не удалось загрузить реестр свойств.");
@@ -192,20 +217,39 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
       setRawRows(result.rows);
       setTotal(result.total);
       setOptions(result.filter_options || {});
+    } catch (e) {
+      if (signal?.aborted || e?.name === "AbortError") return;
+      setLoading(false);
+      setError(String(e?.message || e || "Ошибка загрузки"));
     }
-    load();
-    return () => {
-      alive = false;
-    };
   }, [scope, scopeId, backendFilters]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (abortRef.current) {
+      try { abortRef.current.abort(); } catch {}
+    }
+    abortRef.current = controller;
+    loadData({ signal: controller.signal });
+    return () => {
+      controller.abort();
+    };
+  }, [loadData]);
 
   const filteredRows = usePropertyRowsProcessor(rawRows, {
     search: debouncedSearch,
     sort,
     valueTypeFilter,
     usageRange,
-    quickFilters,
+    familyFilter,
   });
+
+  const pagedRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredRows.slice(start, start + pageSize);
+  }, [filteredRows, page, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
 
   const valueTypeOptions = useMemo(() => {
     const set = new Set();
@@ -213,11 +257,16 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
     return Array.from(set).sort();
   }, [rawRows]);
 
-  const maxUsage = useMemo(() => Math.max(...rawRows.map((r) => Number(r.usage_count) || 0), 1), [rawRows]);
+  const familyOptions = useMemo(() => {
+    const set = new Set();
+    for (const r of rawRows) {
+      const vt = inferPropertyValueType(r.name, r.value);
+      set.add(inferPropertyFamily(r.name, vt));
+    }
+    return Array.from(set).sort();
+  }, [rawRows]);
 
-  const toggleQuick = useCallback((key) => {
-    setQuickFilters((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
-  }, []);
+  const maxUsage = useMemo(() => Math.max(...rawRows.map((r) => Number(r.usage_count) || 0), 1), [rawRows]);
 
   const toggleRow = useCallback((key, row) => {
     setSelectedRows((prev) => {
@@ -245,12 +294,22 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
     [filteredRows, selectedRows]
   );
 
-  async function handleServerExport() {
+  async function handleServerExportCsv() {
     if (exporting) return;
     setExporting(true);
     const result = await apiExportAnalyticsPropertiesCsv(scope, scopeId);
     if (result?.ok && result.blob) {
       downloadBlob(result.blob, result.filename || `properties-${scope}-${scopeId}.csv`);
+    }
+    setExporting(false);
+  }
+
+  async function handleServerExportXlsx() {
+    if (exporting) return;
+    setExporting(true);
+    const result = await apiExportAnalyticsPropertiesXlsx(scope, scopeId);
+    if (result?.ok && result.blob) {
+      downloadBlob(result.blob, result.filename || `properties-${scope}-${scopeId}.xlsx`);
     }
     setExporting(false);
   }
@@ -283,20 +342,13 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
               className="analyticsSearchInput"
             />
           </div>
-          <div className="analyticsQuickFilters">
-            {QUICK_FILTERS.map((f) => {
-              const active = quickFilters.includes(f.key);
-              return (
-                <button
-                  key={f.key}
-                  type="button"
-                  className={`analyticsQuickFilter ${active ? "analyticsQuickFilter--active" : ""}`}
-                  onClick={() => toggleQuick(f.key)}
-                >
-                  {f.label}
-                </button>
-              );
-            })}
+          <div className="analyticsPageSize">
+            <label>Показать</label>
+            <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+              {PAGE_SIZES.map((size) => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
           </div>
           <button
             type="button"
@@ -309,51 +361,59 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
           </button>
         </div>
         {drawerOpen ? (
-          <div className="analyticsAdvancedFilters">
-            <MultiSelect
-              label="Тип"
-              options={options.type}
-              selected={backendFilters.type || []}
-              onChange={(v) => setBackendFilters((prev) => ({ ...prev, type: v }))}
-            />
-            <MultiSelect
-              label="Категория"
-              options={options.category}
-              selected={backendFilters.category || []}
-              onChange={(v) => setBackendFilters((prev) => ({ ...prev, category: v }))}
-            />
-            <MultiSelect
-              label="Источник"
-              options={options.source}
-              selected={backendFilters.source || []}
-              onChange={(v) => setBackendFilters((prev) => ({ ...prev, source: v }))}
-            />
-            <MultiSelect
-              label="Тип значения"
-              options={valueTypeOptions}
-              selected={valueTypeFilter}
-              onChange={setValueTypeFilter}
-            />
-            <div className="analyticsFilterField">
-              <label className="analyticsFilterFieldLabel">Использований (макс {maxUsage})</label>
-              <div className="analyticsUsageRange">
-                <input
-                  type="number"
-                  min={0}
-                  max={maxUsage}
-                  value={usageRange[0]}
-                  onChange={(e) => setUsageRange([Number(e.target.value) || 0, usageRange[1]])}
-                  className="analyticsUsageRangeInput"
-                />
-                <span>—</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={maxUsage}
-                  value={usageRange[1] === Infinity ? "" : usageRange[1]}
-                  onChange={(e) => setUsageRange([usageRange[0], e.target.value === "" ? Infinity : Number(e.target.value)])}
-                  className="analyticsUsageRangeInput"
-                />
+          <div className="analyticsAdvancedFilters analyticsAdvancedFilters--compact">
+            <div className="analyticsAdvancedFiltersGrid">
+              <MultiSelect
+                label="Тип"
+                options={options.type}
+                selected={backendFilters.type || []}
+                onChange={(v) => setBackendFilters((prev) => ({ ...prev, type: v }))}
+              />
+              <MultiSelect
+                label="Категория"
+                options={options.category}
+                selected={backendFilters.category || []}
+                onChange={(v) => setBackendFilters((prev) => ({ ...prev, category: v }))}
+              />
+              <MultiSelect
+                label="Источник"
+                options={options.source}
+                selected={backendFilters.source || []}
+                onChange={(v) => setBackendFilters((prev) => ({ ...prev, source: v }))}
+              />
+              <MultiSelect
+                label="Тип значения"
+                options={valueTypeOptions}
+                selected={valueTypeFilter}
+                onChange={setValueTypeFilter}
+              />
+              <MultiSelect
+                label="Семейство"
+                options={familyOptions}
+                selected={familyFilter}
+                onChange={setFamilyFilter}
+              />
+              <div className="analyticsFilterField">
+                <label className="analyticsFilterFieldLabel">Использований (макс {maxUsage})</label>
+                <div className="analyticsUsageRange">
+                  <input
+                    type="number"
+                    min={0}
+                    max={maxUsage}
+                    value={usageRange[0]}
+                    onChange={(e) => setUsageRange([Number(e.target.value) || 0, usageRange[1]])}
+                    className="analyticsUsageRangeInput"
+                  />
+                  <span>—</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={maxUsage}
+                    value={usageRange[1] === Infinity ? "" : usageRange[1]}
+                    onChange={(e) => setUsageRange([usageRange[0], e.target.value === "" ? Infinity : Number(e.target.value)])}
+                    className="analyticsUsageRangeInput"
+                  />
+                </div>
               </div>
             </div>
             <div className="analyticsFilterActions">
@@ -363,9 +423,9 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
                 onClick={() => {
                   setBackendFilters({});
                   setValueTypeFilter([]);
+                  setFamilyFilter([]);
                   setUsageRange([0, Infinity]);
                   setSearch("");
-                  setQuickFilters([]);
                 }}
               >
                 Сбросить все
@@ -390,27 +450,33 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
             >
               Сравнить
             </button>
-            <button type="button" className="analyticsExportBtn" onClick={handleServerExport} disabled={exporting}>
+            <button type="button" className="analyticsExportBtn" onClick={handleServerExportCsv} disabled={exporting}>
               {exporting ? "Экспорт…" : "CSV всех"}
+            </button>
+            <button type="button" className="analyticsExportBtn" onClick={handleServerExportXlsx} disabled={exporting}>
+              {exporting ? "Экспорт…" : "Excel всех"}
             </button>
           </div>
         </div>
       </div>
 
-      {loading ? <div className="text-sm text-muted">Загрузка…</div> : null}
-      {error ? <div className="text-sm text-red-500">{error}</div> : null}
-      {!loading && !rawRows.length ? (
+      {loading && !rawRows.length ? <AnalyticsLoading text="Загрузка реестра свойств…" /> : null}
+      {error ? <AnalyticsError message={error} onRetry={() => loadData()} /> : null}
+      {!loading && !error && !rawRows.length ? (
         <EmptyState title="Нет свойств" description="Для выбранного scope не найдено свойств." />
       ) : null}
       {rawRows.length > 0 ? (
-        <AnalyticsPropertiesTable
-          rows={filteredRows}
-          selectedRows={selectedRows}
-          onToggleRow={toggleRow}
-          onSelectAllVisible={selectAllVisible}
-          sort={sort}
-          onSort={toggleSort}
-        />
+        <>
+          <AnalyticsPropertiesTable
+            rows={pagedRows}
+            selectedRows={selectedRows}
+            onToggleRow={toggleRow}
+            onSelectAllVisible={selectAllVisible}
+            sort={sort}
+            onSort={toggleSort}
+          />
+          <Paginator page={page} totalPages={totalPages} onChange={setPage} />
+        </>
       ) : null}
       {compareRows.length ? <CompareDrawer rows={compareRows} onClose={() => setCompareRows([])} /> : null}
     </div>

@@ -144,8 +144,6 @@ export default function TopBar({
   sessionStatus = "draft",
   onOpenSession,
   onOpenWorkspace,
-  onOpenAnalyticsHub,
-  isAnalyticsActive = false,
   onOpen,
   onDeleteSession,
   onChangeSessionStatus,
@@ -562,15 +560,6 @@ export default function TopBar({
           data-testid="topbar-back-projects"
         >
           {hasActiveSession ? "← К проекту" : "← Проекты"}
-        </button>
-        <button
-          type="button"
-          className={`secondaryBtn h-8 min-h-0 whitespace-nowrap px-3 py-0 text-sm ${isAnalyticsActive ? "border-accent/60 bg-accent/10 text-accent" : ""}`}
-          onClick={() => onOpenAnalyticsHub?.()}
-          title="Открыть Аналитику"
-          data-testid="topbar-analytics-button"
-        >
-          Аналитика
         </button>
       </div>
 

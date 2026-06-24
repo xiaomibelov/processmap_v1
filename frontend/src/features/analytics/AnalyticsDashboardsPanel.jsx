@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { apiGetAnalyticsActionsSummary, apiGetAnalyticsPropertiesSummary } from "../../lib/api.js";
 import DashboardBarChart from "./DashboardBarChart.jsx";
 import AnalyticsDonutChart, { colorForIndex } from "./AnalyticsDonutChart.jsx";
+import { AnalyticsError, AnalyticsLoading } from "./AnalyticsStatus.jsx";
 import EmptyState from "./registry/EmptyState.jsx";
 
 function text(value) {
@@ -29,17 +30,17 @@ function useAnalyticsSummaries(scope, scopeId) {
   const [actionSummary, setActionSummary] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const abortRef = useRef(null);
 
-  useEffect(() => {
-    let alive = true;
-    async function load() {
-      setLoading(true);
-      setError("");
+  const loadData = useCallback(async ({ signal } = {}) => {
+    setLoading(true);
+    setError("");
+    try {
       const [pResult, aResult] = await Promise.all([
-        apiGetAnalyticsPropertiesSummary(scope, scopeId),
-        apiGetAnalyticsActionsSummary(scope, scopeId),
+        apiGetAnalyticsPropertiesSummary(scope, scopeId, {}, { signal }),
+        apiGetAnalyticsActionsSummary(scope, scopeId, {}, { signal }),
       ]);
-      if (!alive) return;
+      if (signal?.aborted) return;
       setLoading(false);
       if (!pResult?.ok && !aResult?.ok) {
         setError(text(pResult?.error || aResult?.error) || "Не удалось загрузить сводки аналитики.");
@@ -47,14 +48,26 @@ function useAnalyticsSummaries(scope, scopeId) {
       }
       setPropertySummary(pResult?.ok ? pResult.data : null);
       setActionSummary(aResult?.ok ? aResult.data : null);
+    } catch (e) {
+      if (signal?.aborted || e?.name === "AbortError") return;
+      setLoading(false);
+      setError(String(e?.message || e || "Ошибка загрузки"));
     }
-    load();
-    return () => {
-      alive = false;
-    };
   }, [scope, scopeId]);
 
-  return { propertySummary, actionSummary, loading, error };
+  useEffect(() => {
+    const controller = new AbortController();
+    if (abortRef.current) {
+      try { abortRef.current.abort(); } catch {}
+    }
+    abortRef.current = controller;
+    loadData({ signal: controller.signal });
+    return () => {
+      controller.abort();
+    };
+  }, [loadData]);
+
+  return { propertySummary, actionSummary, loading, error, retry: () => loadData() };
 }
 
 function ChartCard({ title, children }) {
@@ -67,7 +80,7 @@ function ChartCard({ title, children }) {
 }
 
 export default function AnalyticsDashboardsPanel({ scope, scopeId, data = null, loading: dashboardLoading = false, error: dashboardError = "" }) {
-  const { propertySummary, actionSummary, loading: summaryLoading, error: summaryError } = useAnalyticsSummaries(scope, scopeId);
+  const { propertySummary, actionSummary, loading: summaryLoading, error: summaryError, retry: retrySummaries } = useAnalyticsSummaries(scope, scopeId);
 
   const roleItems = useMemo(() => {
     if (scope === "session" && data?.actions_by_role) return chartItems(data.actions_by_role);
@@ -103,11 +116,11 @@ export default function AnalyticsDashboardsPanel({ scope, scopeId, data = null, 
   const hasPropertyCharts = familyItems.length > 0 || categoryItems.length > 0 || valueTypeItems.length > 0 || topUsedItems.length > 0;
   const hasAnyCharts = hasActionCharts || hasPropertyCharts;
 
-  if (dashboardLoading || summaryLoading) {
-    return <div className="text-sm text-muted">Загрузка дашбордов…</div>;
+  if ((dashboardLoading || summaryLoading) && !propertySummary && !actionSummary && !data) {
+    return <AnalyticsLoading text="Загрузка дашбордов…" />;
   }
   if (dashboardError || summaryError) {
-    return <div className="text-sm text-red-500">{dashboardError || summaryError}</div>;
+    return <AnalyticsError message={dashboardError || summaryError} onRetry={() => { if (dashboardError) retry?.(); retrySummaries?.(); }} />;
   }
   if (!hasAnyCharts) {
     return (

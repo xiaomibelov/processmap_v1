@@ -1,0 +1,24 @@
+{
+  "contour": "fix/analytics-redis-cache-xlsx",
+  "type": "fix",
+  "branch": "fix/analytics-redis-cache-xlsx",
+  "base": "new-origin/main",
+  "base_commit": "5e564cd06f88030e5a743ccb9c8a335e23c142f1",
+  "head_commit": "75dfba1ec7d34dfca6844bc9a0b52a2f4e9e2f44",
+  "status": "ready_for_review",
+  "phases": {
+    "diagnose": "done",
+    "white_screen_fix": "done",
+    "redis_cache": "done",
+    "xlsx_export": "done",
+    "verify": "done"
+  },
+  "rag_preflight": "No prior RAG context found — proceeding from first principles.",
+  "deploy_url": "http://clearvestnic.ru:5177",
+  "notes": [
+    "White screen reproduced during tab switching; fixed with AbortController + loading/error states.",
+    "Redis cache added for analytics endpoints with 5-min TTL and session save invalidation.",
+    "XLSX export added for properties and actions.",
+    "All tests pass; deployed and smoke-tested."
+  ]
+}
