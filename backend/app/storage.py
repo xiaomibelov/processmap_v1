@@ -2307,6 +2307,84 @@ def _ensure_schema() -> None:
                 """,
                 ["lightweightOverlays", "false", "Enable lightweight JSON overlays instead of monolithic XML", int(time.time())],
             )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analytics_session_snapshots (
+                  session_id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL,
+                  project_id TEXT,
+                  workspace_id TEXT,
+                  total_duration_min INTEGER NOT NULL DEFAULT 0,
+                  critical_path_min INTEGER,
+                  actions_total INTEGER NOT NULL DEFAULT 0,
+                  actions_by_role_json TEXT NOT NULL DEFAULT '{}',
+                  actions_by_section_json TEXT NOT NULL DEFAULT '{}',
+                  actions_by_type_json TEXT NOT NULL DEFAULT '{}',
+                  handoffs_count INTEGER NOT NULL DEFAULT 0,
+                  open_questions INTEGER NOT NULL DEFAULT 0,
+                  critical_questions INTEGER NOT NULL DEFAULT 0,
+                  unknown_duration_nodes_json TEXT NOT NULL DEFAULT '[]',
+                  computed_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_analytics_session_org_project ON analytics_session_snapshots(org_id, project_id)"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_analytics_session_org_workspace ON analytics_session_snapshots(org_id, workspace_id)"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analytics_project_snapshots (
+                  project_id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL,
+                  workspace_id TEXT,
+                  sessions_count INTEGER NOT NULL DEFAULT 0,
+                  total_actions INTEGER NOT NULL DEFAULT 0,
+                  avg_duration_min REAL NOT NULL DEFAULT 0,
+                  total_critical_questions INTEGER NOT NULL DEFAULT 0,
+                  handoffs_count INTEGER NOT NULL DEFAULT 0,
+                  computed_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_analytics_project_org_workspace ON analytics_project_snapshots(org_id, workspace_id)"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analytics_workspace_snapshots (
+                  workspace_id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL,
+                  projects_count INTEGER NOT NULL DEFAULT 0,
+                  sessions_count INTEGER NOT NULL DEFAULT 0,
+                  total_actions INTEGER NOT NULL DEFAULT 0,
+                  avg_duration_min REAL NOT NULL DEFAULT 0,
+                  total_critical_questions INTEGER NOT NULL DEFAULT 0,
+                  handoffs_count INTEGER NOT NULL DEFAULT 0,
+                  computed_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_analytics_workspace_org ON analytics_workspace_snapshots(org_id)"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analytics_metrics (
+                  id TEXT PRIMARY KEY,
+                  scope_type TEXT NOT NULL,
+                  scope_id TEXT NOT NULL,
+                  metric_name TEXT NOT NULL,
+                  metric_value_json TEXT NOT NULL DEFAULT '{}',
+                  computed_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_analytics_metrics_scope ON analytics_metrics(scope_type, scope_id, metric_name)"
+            )
             _SCHEMA_ENSURE_IN_PROGRESS = True
             try:
                 _seed_process_property_metadata(con)
