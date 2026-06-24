@@ -46,9 +46,9 @@ fi
 
 # 4. Build images
 if [ "$NEEDS_CLEAN" = true ]; then
-  docker compose build --no-cache api gateway
+  docker compose build --no-cache api frontend
 else
-  docker compose build --no-cache api gateway
+  docker compose build --no-cache api frontend
 fi
 
 # 5. Deprecate old running containers (rename so compose can create new ones)
@@ -66,28 +66,29 @@ deprecate_old() {
 }
 
 deprecate_old api
-deprecate_old gateway
+deprecate_old frontend
 
 # 6. Start new containers
-docker compose up -d api gateway
+docker compose up -d api frontend
 
 # 7. Healthcheck: wait for /version 200
 HEALTH_URL="http://localhost:${HOST_PORT:-8011}/version"
+FRONTEND_HEALTH_URL="http://localhost:${FRONTEND_PORT:-5177}/"
 HEALTH_RETRIES=0
 MAX_RETRIES=30
 until curl -fsS "${HEALTH_URL}" >/dev/null 2>&1; do
   HEALTH_RETRIES=$((HEALTH_RETRIES + 1))
   if [ "$HEALTH_RETRIES" -gt "$MAX_RETRIES" ]; then
     echo "[DEPLOY] ERROR: Healthcheck failed after ${MAX_RETRIES} attempts. Rolling back..."
-    docker compose stop api gateway || true
-    for svc in api gateway; do
+    docker compose stop api frontend || true
+    for svc in api frontend; do
       latest_deprecated=$(docker ps -a --filter "name=${COMPOSE_PROJECT}-${svc}-1-deprecated-" --format '{{.Names}}' | sort | tail -1)
       if [ -n "${latest_deprecated}" ]; then
         docker rename "${latest_deprecated}" "${COMPOSE_PROJECT}-${svc}-1" || true
         docker start "${COMPOSE_PROJECT}-${svc}-1" || true
       fi
     done
-    docker compose up -d api gateway || true
+    docker compose up -d api frontend || true
     exit 1
   fi
   sleep 2
@@ -95,11 +96,11 @@ done
 echo "[DEPLOY] Healthcheck passed (${HEALTH_URL})"
 
 # 8. Reload nginx
-docker exec "${COMPOSE_PROJECT}-gateway-1" nginx -s reload 2>/dev/null || true
+docker exec "${COMPOSE_PROJECT}-frontend-1" nginx -s reload 2>/dev/null || true
 
 # 9. Tag new containers as active
 docker container update --label-add status=active --label-add buildId="${BUILD_ID}" --label-add deployedAt="${BUILD_TIME}" "${COMPOSE_PROJECT}-api-1" 2>/dev/null || true
-docker container update --label-add status=active --label-add buildId="${BUILD_ID}" --label-add deployedAt="${BUILD_TIME}" "${COMPOSE_PROJECT}-gateway-1" 2>/dev/null || true
+docker container update --label-add status=active --label-add buildId="${BUILD_ID}" --label-add deployedAt="${BUILD_TIME}" "${COMPOSE_PROJECT}-frontend-1" 2>/dev/null || true
 
 # 10. Cleanup deprecated containers older than 24h
 docker ps -a --filter "label=status=deprecated" --format '{{.Names}} {{.RunningFor}}' | while read -r name age; do
