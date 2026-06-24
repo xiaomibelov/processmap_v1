@@ -204,3 +204,52 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
     def test_export_properties_csv_requires_auth(self):
         r = self.client.get(f"/api/analytics/properties/export.csv?scope=session&scope_id={self.session_id}")
         self.assertEqual(r.status_code, 401)
+
+    def test_properties_summary_session_returns_envelope(self):
+        r = self.client.get(
+            f"/api/analytics/properties/summary?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["success"])
+        self.assertIn("total", body["data"])
+        self.assertIn("by_family", body["data"])
+        self.assertIn("top_used", body["data"])
+
+    def test_properties_summary_forbidden_for_non_member(self):
+        r = self.client.get(
+            f"/api/analytics/properties/summary?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.other_token),
+        )
+        self.assertEqual(r.status_code, 403)
+
+    def test_actions_summary_session_returns_envelope(self):
+        r = self.client.get(
+            f"/api/analytics/actions/summary?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["success"])
+        self.assertIn("total", body["data"])
+        self.assertIn("by_role", body["data"])
+        self.assertIn("by_type", body["data"])
+
+    def test_actions_summary_forbidden_for_non_member(self):
+        r = self.client.get(
+            f"/api/analytics/actions/summary?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.other_token),
+        )
+        self.assertEqual(r.status_code, 403)
+
+    def test_property_value_type_inference(self):
+        from app.routers.analytics import _infer_property_value_type, _infer_property_family
+
+        self.assertEqual(_infer_property_value_type("duration", "5 мин"), "duration")
+        self.assertEqual(_infer_property_value_type("mixTime", "10"), "number")
+        self.assertEqual(_infer_property_value_type("config", '{"a":1}'), "json")
+        self.assertEqual(_infer_property_value_type("note", "sugar"), "string")
+        self.assertEqual(_infer_property_family("ingredient1", "string"), "ingredient")
+        self.assertEqual(_infer_property_family("equipment", "string"), "equipment")
+        self.assertEqual(_infer_property_family("fpc-visible", "ui_config"), "ui_config")

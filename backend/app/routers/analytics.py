@@ -254,6 +254,131 @@ def _apply_filters(
     return [r for r in rows if match(r)]
 
 
+_DURATION_SUFFIXES = ("мин", "ч", "с")
+
+
+def _is_visual_property(name: str) -> bool:
+    return str(name or "").lower().startswith("fpc-")
+
+
+def _infer_property_value_type(name: str, value: Any) -> str:
+    """Infer value_type from property name and raw value."""
+    name_lower = str(name or "").lower()
+    value_str = str(value or "")
+
+    if name_lower.startswith("fpc-"):
+        return "ui_config"
+    if any(name_lower.find(token) != -1 for token in ("duration", "work", "mode")):
+        return "duration"
+    if value_str.endswith(_DURATION_SUFFIXES):
+        return "duration"
+    try:
+        json.loads(value_str)
+        return "json"
+    except Exception:
+        pass
+    try:
+        float(value_str.replace(",", ".").replace(" ", ""))
+        return "number"
+    except Exception:
+        pass
+    return "string"
+
+
+def _infer_property_family(name: str, value_type: str) -> str:
+    """Map property name/value_type to a product-family bucket."""
+    name_lower = str(name or "").lower()
+    if name_lower.startswith("fpc-"):
+        return "ui_config"
+    if "ingredient" in name_lower:
+        return "ingredient"
+    if "equipment" in name_lower:
+        return "equipment"
+    if "container" in name_lower:
+        return "container"
+    if any(token in name_lower for token in ("duration", "work", "mode")) or value_type == "duration":
+        return "duration"
+    if value_type == "json":
+        return "structured"
+    return "other"
+
+
+def _properties_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    by_category: Dict[str, int] = {}
+    by_type: Dict[str, int] = {}
+    by_value_type: Dict[str, int] = {}
+    by_family: Dict[str, int] = {}
+    usable_rows: List[Dict[str, Any]] = []
+
+    for r in rows:
+        name = r.get("name", "")
+        if _is_visual_property(name):
+            continue
+        value_type = _infer_property_value_type(name, r.get("value"))
+        family = _infer_property_family(name, value_type)
+        row = dict(r)
+        row["value_type"] = value_type
+        row["property_family"] = family
+        usable_rows.append(row)
+        by_category[row.get("category") or "Не задана"] = by_category.get(row.get("category") or "Не задана", 0) + 1
+        by_type[row.get("type") or "Не задан"] = by_type.get(row.get("type") or "Не задан", 0) + 1
+        by_value_type[value_type] = by_value_type.get(value_type, 0) + 1
+        by_family[family] = by_family.get(family, 0) + 1
+
+    top_used = sorted(
+        usable_rows,
+        key=lambda r: (r.get("usage_count") or 0, r.get("name") or ""),
+        reverse=True,
+    )[:20]
+
+    def _sort_items(d: Dict[str, int]) -> List[Dict[str, Any]]:
+        return sorted([{"label": k, "count": v} for k, v in d.items()], key=lambda x: (-x["count"], x["label"]))
+
+    return {
+        "total": len(usable_rows),
+        "by_category": _sort_items(by_category),
+        "by_type": _sort_items(by_type),
+        "by_value_type": _sort_items(by_value_type),
+        "by_family": _sort_items(by_family),
+        "top_used": [
+            {
+                "name": r.get("name", ""),
+                "value": r.get("value", ""),
+                "type": r.get("type", ""),
+                "category": r.get("category", ""),
+                "value_type": r.get("value_type", ""),
+                "property_family": r.get("property_family", ""),
+                "usage_count": r.get("usage_count") or 0,
+            }
+            for r in top_used
+        ],
+    }
+
+
+def _actions_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    by_role: Dict[str, int] = {}
+    by_section: Dict[str, int] = {}
+    by_type: Dict[str, int] = {}
+
+    for r in rows:
+        role = str(r.get("role") or "Без роли")
+        section = str(r.get("section") or "Без секции")
+        action_type = str(r.get("type") or "Без типа")
+        by_role[role] = by_role.get(role, 0) + 1
+        by_section[section] = by_section.get(section, 0) + 1
+        by_type[action_type] = by_type.get(action_type, 0) + 1
+
+    def _sort_items(d: Dict[str, int]) -> List[Dict[str, Any]]:
+        return sorted([{"label": k, "count": v} for k, v in d.items()], key=lambda x: (-x["count"], x["label"]))
+
+    return {
+        "total": len(rows),
+        "by_role": _sort_items(by_role),
+        "by_section": _sort_items(by_section),
+        "by_type": _sort_items(by_type),
+    }
+
+
 @router.get("/properties")
 def get_properties(
     request: Request,
@@ -408,4 +533,44 @@ def export_actions_csv(
         rows,
         f"actions-{scope}-{scope_id}.csv",
         ["bpmn_id", "action_id", "name", "value", "section", "role", "action_type", "product_group", "product_name"],
+    )
+
+
+@router.get("/properties/summary")
+def get_properties_summary(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    type_filter: List[str] = Query(default_factory=list),
+    category_filter: List[str] = Query(default_factory=list),
+    source_filter: List[str] = Query(default_factory=list),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+    rows = _properties_rows(scope, scope_id, oid)
+    rows = _apply_filters(rows, type_filter, category_filter, source_filter, [], [])
+    return _ok(
+        _properties_summary(rows),
+        {"scope_type": scope, "scope_id": scope_id, "computed_at": int(time.time())},
+    )
+
+
+@router.get("/actions/summary")
+def get_actions_summary(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    section_filter: List[str] = Query(default_factory=list),
+    role_filter: List[str] = Query(default_factory=list),
+    type_filter: List[str] = Query(default_factory=list),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+    rows = _actions_rows(scope, scope_id, oid)
+    rows = _apply_filters(rows, type_filter, [], [], section_filter, role_filter)
+    return _ok(
+        _actions_summary(rows),
+        {"scope_type": scope, "scope_id": scope_id, "computed_at": int(time.time())},
     )
