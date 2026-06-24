@@ -109,8 +109,8 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None):
     return _svc.put_session(session_id, inp, request)
 
 @router.post('/api/sessions/{session_id}/recompute')
-def recompute(session_id: str):
-    return _svc.recompute_session(session_id)
+def recompute(session_id: str, request: Request = None):
+    return _svc.recompute_session(session_id, request)
 
 @router.post('/api/sessions/{session_id}/ai/questions')
 def ai_questions(session_id: str, inp: AiQuestionsIn, request: Request = None):

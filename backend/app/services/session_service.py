@@ -868,10 +868,25 @@ def put_session(session_id: str, inp, request=None):
     return _lm.put_session(session_id, inp, request)
 
 
-def recompute_session(session_id: str):
+def recompute_session(session_id: str, request: Optional[Request] = None):
     """Recompute derived fields for a session."""
     import app._legacy_main as _lm
-    return _lm.recompute(session_id)
+    from app.storage import get_storage, get_default_org_id
+    from app.analytics_read_model import refresh_analytics_for_session
+
+    sess, oid, _ = _lm._legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return {"error": "not found"}
+    sess = _lm._recompute_session(sess)
+    get_storage().save(sess)
+    try:
+        refresh_analytics_for_session(
+            str(getattr(sess, "id", "") or session_id),
+            str(getattr(sess, "org_id", "") or oid or get_default_org_id()),
+        )
+    except Exception:
+        pass
+    return sess.model_dump()
 
 
 def _subprocess_request_context(request: Optional[Request]):
