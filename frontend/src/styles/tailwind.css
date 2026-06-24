@@ -13100,3 +13100,631 @@
   min-width: 40px;
   text-align: center;
 }
+
+/* ── Analytics Properties Super-Table ── */
+.analyticsPropTableWrap {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: hsl(var(--bg-card));
+  overflow: hidden;
+}
+
+.analyticsPropTableHead {
+  display: grid;
+  align-items: center;
+  min-height: 40px;
+  background: hsl(var(--bg-soft) / 0.6);
+  border-bottom: 1px solid hsl(var(--border));
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--analysis-muted);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.analyticsPropTableHeadCell {
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.analyticsPropTableHeadCell--sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.analyticsPropTableHeadCell--sortable:hover {
+  color: var(--analysis-text);
+}
+
+.analyticsPropTableHeadCell--active {
+  color: hsl(var(--accent));
+}
+
+.analyticsSortIndicator {
+  font-size: 12px;
+}
+
+.analyticsPropTableList {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.analyticsPropTableRow {
+  align-items: center;
+  min-height: 40px;
+  border-bottom: 1px solid hsl(var(--border) / 0.6);
+  font-size: 13px;
+  color: var(--analysis-text);
+  transition: background 0.12s ease;
+}
+
+.analyticsPropTableRow:last-child {
+  border-bottom: none;
+}
+
+.analyticsPropTableRow:hover {
+  background: hsl(var(--bg-soft) / 0.5);
+}
+
+.analyticsPropTableRow--selected {
+  background: hsl(var(--accent) / 0.08);
+}
+
+.analyticsPropTableCell {
+  padding: 0 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analyticsPropTableCell--select {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.analyticsPropTableCell--select input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: hsl(var(--accent));
+  cursor: pointer;
+}
+
+.analyticsPropName {
+  font-weight: 500;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.analyticsPropTableEmpty {
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--analysis-muted);
+}
+
+.analyticsUsageBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.analyticsUsageBarTrack {
+  flex: 1;
+  height: 6px;
+  background: hsl(var(--border));
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.analyticsUsageBarFill {
+  height: 100%;
+  background: hsl(var(--accent));
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+.analyticsUsageBarValue {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--analysis-muted);
+  min-width: 28px;
+  text-align: right;
+}
+
+.analyticsValueText {
+  color: var(--analysis-text);
+}
+
+.analyticsValueFromTask {
+  color: var(--analysis-muted);
+  font-style: italic;
+}
+
+.analyticsValueJsonTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.analyticsValueJsonPreview {
+  color: var(--analysis-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+}
+
+.analyticsJsonModalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.analyticsJsonModal {
+  background: hsl(var(--bg-card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  max-width: 720px;
+  width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+.analyticsJsonModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.analyticsJsonModalHeader h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--analysis-text);
+}
+
+.analyticsJsonModalClose {
+  background: transparent;
+  border: none;
+  color: var(--analysis-muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.analyticsJsonModalBody {
+  padding: 20px;
+  margin: 0;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--analysis-text);
+  background: hsl(var(--bg));
+  border-radius: 0 0 12px 12px;
+}
+
+/* ── Analytics Properties Toolbar ── */
+.analyticsPanelToolbar--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.analyticsToolbarRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.analyticsSearchWrap {
+  position: relative;
+  flex: 1 1 260px;
+  min-width: 220px;
+}
+
+.analyticsSearchIcon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: var(--analysis-muted);
+  pointer-events: none;
+}
+
+.analyticsSearchInput {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px 0 34px;
+  font-size: 13px;
+  color: var(--analysis-text);
+  background: hsl(var(--bg));
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+}
+
+.analyticsSearchInput:focus {
+  outline: none;
+  border-color: hsl(var(--accent));
+  box-shadow: 0 0 0 2px hsl(var(--accent) / 0.15);
+}
+
+.analyticsQuickFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.analyticsQuickFilter {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--analysis-muted);
+  background: hsl(var(--bg));
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.analyticsQuickFilter:hover {
+  border-color: hsl(var(--accent) / 0.5);
+  color: var(--analysis-text);
+}
+
+.analyticsQuickFilter--active {
+  color: hsl(var(--accent));
+  background: hsl(var(--accent) / 0.12);
+  border-color: hsl(var(--accent) / 0.5);
+}
+
+.analyticsFilterToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--analysis-text);
+  background: hsl(var(--bg));
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.analyticsFilterToggle--active {
+  border-color: hsl(var(--accent));
+  color: hsl(var(--accent));
+}
+
+.analyticsAdvancedFilters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  padding: 16px;
+  background: hsl(var(--bg-soft) / 0.4);
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+}
+
+.analyticsFilterField {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analyticsFilterFieldLabel {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--analysis-muted);
+}
+
+.analyticsFilterFieldOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.analyticsFilterEmptyOptions {
+  font-size: 12px;
+  color: var(--analysis-muted);
+}
+
+.analyticsFilterOption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--analysis-text);
+  cursor: pointer;
+}
+
+.analyticsFilterOption input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: hsl(var(--accent));
+}
+
+.analyticsUsageRange {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.analyticsUsageRangeInput {
+  width: 80px;
+  height: 32px;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--analysis-text);
+  background: hsl(var(--bg));
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+}
+
+.analyticsFilterActions {
+  display: flex;
+  align-items: flex-end;
+}
+
+.analyticsBulkBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.analyticsBulkInfo {
+  font-size: 12px;
+  color: var(--analysis-muted);
+}
+
+.analyticsBulkButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.analyticsCompareBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--analysis-text);
+  background: hsl(var(--accent) / 0.12);
+  border: 1px solid hsl(var(--accent) / 0.4);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.analyticsCompareBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Analytics Compare Drawer ── */
+.analyticsDrawerOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.analyticsDrawer {
+  width: min(720px, 100vw);
+  max-width: 100%;
+  height: 100%;
+  background: hsl(var(--bg-card));
+  border-left: 1px solid hsl(var(--border));
+  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+}
+
+.analyticsDrawerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.analyticsDrawerHeader h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--analysis-text);
+}
+
+.analyticsDrawerClose {
+  background: transparent;
+  border: none;
+  color: var(--analysis-muted);
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.analyticsDrawerBody {
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+}
+
+.analyticsCompareGrid {
+  display: grid;
+  gap: 16px;
+}
+
+.analyticsCompareColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: hsl(var(--bg));
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+}
+
+.analyticsCompareCell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.analyticsCompareLabel {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--analysis-muted);
+}
+
+.analyticsCompareValue {
+  font-size: 13px;
+  color: var(--analysis-text);
+  word-break: break-word;
+}
+
+.analyticsCompareValue--break {
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+/* ── Analytics Scope Switcher ── */
+.analyticsScopeSwitcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: hsl(var(--bg));
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+}
+
+.analyticsScopeSwitcherBtn {
+  height: 28px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--analysis-muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.analyticsScopeSwitcherBtn:hover:not(:disabled) {
+  color: var(--analysis-text);
+  background: hsl(var(--bg-soft));
+}
+
+.analyticsScopeSwitcherBtn--active {
+  color: hsl(var(--accent));
+  background: hsl(var(--accent) / 0.12);
+}
+
+.analyticsScopeSwitcherBtn--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── Dashboard Metric Card Tones ── */
+.dashboardMetricCard--blue {
+  border-left-color: #4F46E5;
+}
+.dashboardMetricCard--blue .dashboardMetricCardIcon {
+  color: #4F46E5;
+}
+
+.dashboardMetricCard--teal {
+  border-left-color: #14B8A6;
+}
+.dashboardMetricCard--teal .dashboardMetricCardIcon {
+  color: #14B8A6;
+}
+
+.dashboardMetricCard--amber {
+  border-left-color: #F59E0B;
+}
+.dashboardMetricCard--amber .dashboardMetricCardIcon {
+  color: #F59E0B;
+}
+
+.dashboardMetricCard--orange {
+  border-left-color: #F97316;
+}
+.dashboardMetricCard--orange .dashboardMetricCardIcon {
+  color: #F97316;
+}
+
+.dashboardMetricCard--slate {
+  border-left-color: #64748B;
+}
+.dashboardMetricCard--slate .dashboardMetricCardIcon {
+  color: #64748B;
+}
+
+.dashboardMetricCardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  min-height: 20px;
+}
+
+.dashboardMetricCardChange {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dashboardMetricCardChange--up {
+  color: hsl(var(--success));
+}
+
+.dashboardMetricCardChange--down {
+  color: hsl(var(--danger));
+}

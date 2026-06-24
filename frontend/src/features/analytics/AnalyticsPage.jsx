@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   apiExportAnalyticsActionsCsv,
-  apiExportAnalyticsPropertiesCsv,
   apiGetAnalyticsActions,
   apiGetAnalyticsDashboard,
-  apiGetAnalyticsProperties,
 } from "../../lib/api.js";
-import DashboardBarChart from "./DashboardBarChart.jsx";
+import AnalyticsPropertiesPanel from "./AnalyticsPropertiesPanel.jsx";
 import DashboardMetricCard from "./DashboardMetricCard.jsx";
-import AnalyticsDonutChart from "./AnalyticsDonutChart.jsx";
 import AnalyticsDataTable, { Badge, Pill } from "./AnalyticsDataTable.jsx";
+import AnalyticsDashboardsPanel from "./AnalyticsDashboardsPanel.jsx";
 import EmptyState from "./registry/EmptyState.jsx";
 import {
   ActivityIcon,
@@ -172,14 +170,6 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-function propertyTypeTone(type) {
-  const t = text(type).toLowerCase();
-  if (t.includes("reference")) return "accent";
-  if (t.includes("enum")) return "purple";
-  if (t.includes("camunda")) return "default";
-  return "default";
-}
-
 function roleTone(role) {
   const r = text(role).toLowerCase();
   if (!r) return "default";
@@ -289,138 +279,6 @@ function AnalyticsActionsPanel({ scope, scopeId }) {
   );
 }
 
-function AnalyticsPropertiesPanel({ scope, scopeId }) {
-  const [rows, setRows] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [limit] = useState(50);
-  const [options, setOptions] = useState({});
-  const [filters, setFilters] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let alive = true;
-    async function load() {
-      setLoading(true);
-      setError("");
-      const params = { page, limit };
-      if (filters.type) params.type_filter = [filters.type];
-      if (filters.category) params.category_filter = [filters.category];
-      if (filters.source) params.source_filter = [filters.source];
-      const result = await apiGetAnalyticsProperties(scope, scopeId, params);
-      if (!alive) return;
-      setLoading(false);
-      if (!result?.ok) {
-        setError(text(result?.error) || "Не удалось загрузить реестр свойств.");
-        return;
-      }
-      setRows(result.rows);
-      setTotal(result.total);
-      setOptions(result.filter_options || {});
-    }
-    load();
-    return () => {
-      alive = false;
-    };
-  }, [scope, scopeId, page, limit, filters]);
-
-  async function handleExportCsv() {
-    if (exporting) return;
-    setExporting(true);
-    const result = await apiExportAnalyticsPropertiesCsv(scope, scopeId);
-    if (result?.ok && result.blob) {
-      downloadBlob(result.blob, result.filename || `properties-${scope}-${scopeId}.csv`);
-    }
-    setExporting(false);
-  }
-
-  const columns = [
-    { key: "name", label: "Свойство", width: "25%", minWidth: "180px" },
-    { key: "type", label: "Тип", width: "15%", minWidth: "120px", render: (v) => <Badge tone={propertyTypeTone(v)}>{v || "—"}</Badge> },
-    { key: "category", label: "Категория", width: "15%", minWidth: "120px", render: (v) => <Badge tone="muted">{v || "—"}</Badge> },
-    { key: "source", label: "Источник", width: "15%", minWidth: "120px" },
-    { key: "usage_count", label: "Использований", width: "10%", minWidth: "90px", align: "right" },
-    { key: "value", label: "Значение", width: "20%", minWidth: "160px", render: (v, row) => {
-      if (row.value_numeric != null && row.unit) {
-        return <Pill>{formatNumber(row.value_numeric)} {row.unit}</Pill>;
-      }
-      return text(v) || "—";
-    } },
-  ];
-
-  return (
-    <div className="analyticsPanel">
-      <div className="analyticsPanelToolbar">
-        <FilterBar options={options} filters={filters} onChange={(f) => { setFilters(f); setPage(1); }} />
-        <button
-          type="button"
-          onClick={handleExportCsv}
-          disabled={exporting}
-          className="analyticsExportBtn"
-        >
-          <DownloadIcon className="w-4 h-4" />
-          {exporting ? "Экспорт…" : "CSV"}
-        </button>
-      </div>
-      {loading ? <div className="text-sm text-muted">Загрузка…</div> : null}
-      {error ? <div className="text-sm text-red-500">{error}</div> : null}
-      {!loading && !rows.length ? (
-        <EmptyState
-          title="Нет свойств"
-          description="Для выбранного scope не найдено свойств."
-        />
-      ) : null}
-      {rows.length > 0 ? (
-        <>
-          <AnalyticsDataTable columns={columns} rows={rows} />
-          <Paginator page={page} limit={limit} total={total} onChange={setPage} />
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-function AnalyticsDashboardsPanel({ data = null, loading = false, error = "" }) {
-  if (loading) return <div className="text-sm text-muted">Загрузка…</div>;
-  if (error) return <div className="text-sm text-red-500">{error}</div>;
-  if (!data) return <div className="text-sm text-muted">Нет данных для дашборда.</div>;
-
-  const roleItems = chartItems(data.actions_by_role);
-  const sectionItems = chartItems(data.actions_by_section);
-  const typeItems = chartItems(data.actions_by_type);
-
-  return (
-    <div className="analyticsDashboardsGrid">
-      {roleItems.length > 0 ? (
-        <div className="analyticsDashboardCard">
-          <h3 className="analyticsDashboardCardTitle">Действия по ролям</h3>
-          <DashboardBarChart items={roleItems} ariaLabel="Действия по ролям" />
-        </div>
-      ) : null}
-      {sectionItems.length > 0 ? (
-        <div className="analyticsDashboardCard">
-          <h3 className="analyticsDashboardCardTitle">Действия по секциям</h3>
-          <DashboardBarChart items={sectionItems} ariaLabel="Действия по секциям" />
-        </div>
-      ) : null}
-      {typeItems.length > 0 ? (
-        <div className="analyticsDashboardCard">
-          <h3 className="analyticsDashboardCardTitle">Распределение по типам</h3>
-          <AnalyticsDonutChart items={typeItems} ariaLabel="Распределение по типам" />
-        </div>
-      ) : null}
-      {!roleItems.length && !sectionItems.length && !typeItems.length ? (
-        <EmptyState
-          title="Нет визуализаций"
-          description="Для текущего scope недостаточно данных для построения графиков."
-        />
-      ) : null}
-    </div>
-  );
-}
-
 function MetricCard({ label, value, unit = "", tone = "default", icon: Icon, sparklineItems }) {
   return (
     <DashboardMetricCard
@@ -500,16 +358,14 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
               {data?.computed_at ? <span>Обновлено: {formatDate(data.computed_at)}</span> : null}
             </div>
           </div>
-          {!embedded ? (
-            <AnalyticsScopeSwitcher
-              scope={scope}
-              scopeId={scopeId}
-              workspaceId={derivedScopeIds.workspaceId}
-              projectId={derivedScopeIds.projectId}
-              sessionId={derivedScopeIds.sessionId}
-              onChange={navigateTo}
-            />
-          ) : null}
+          <AnalyticsScopeSwitcher
+            scope={scope}
+            scopeId={scopeId}
+            workspaceId={derivedScopeIds.workspaceId}
+            projectId={derivedScopeIds.projectId}
+            sessionId={derivedScopeIds.sessionId}
+            onChange={navigateTo}
+          />
         </header>
 
         <div className="analyticsModuleTabs">
@@ -536,21 +392,23 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
             {error ? <div className="text-sm text-red-500">{error}</div> : null}
             {data ? (
               <div className="analyticsMetricsGrid">
-                <MetricCard label="Действий" value={formatNumber(data.actions_total)} tone="success" icon={ActivityIcon} sparklineItems={sparklineItems} />
-                <MetricCard label="Длительность" value={formatNumber(data.total_duration_min)} unit="мин" tone="default" icon={ClockIcon} sparklineItems={sparklineItems} />
+                <MetricCard label="Действий" value={formatNumber(data.actions_total)} tone="blue" icon={ActivityIcon} sparklineItems={sparklineItems} />
+                <MetricCard label="Длительность" value={formatNumber(data.total_duration_min)} unit="мин" tone="teal" icon={ClockIcon} sparklineItems={sparklineItems} />
                 <MetricCard label="Крит. путь" value={formatNumber(data.critical_path_min)} unit="мин" tone="warning" icon={CriticalIcon} sparklineItems={sparklineItems} />
-                <MetricCard label="Handoffs" value={formatNumber(data.handoffs_count)} tone="accent" icon={HandoffIcon} sparklineItems={sparklineItems} />
-                <MetricCard label="Открыто" value={formatNumber(data.open_questions)} tone="default" icon={QuestionIcon} sparklineItems={sparklineItems} />
+                <MetricCard label="Handoffs" value={formatNumber(data.handoffs_count)} tone="amber" icon={HandoffIcon} sparklineItems={sparklineItems} />
+                <MetricCard label="Открыто" value={formatNumber(data.open_questions)} tone="orange" icon={QuestionIcon} sparklineItems={sparklineItems} />
                 <MetricCard label="Критично" value={formatNumber(data.critical_questions)} tone="danger" icon={CriticalIcon} sparklineItems={sparklineItems} />
-                <MetricCard label="Сессий" value={formatNumber(data.sessions_count)} tone="default" icon={SessionIcon} sparklineItems={sparklineItems} />
-                <MetricCard label="Проектов" value={formatNumber(data.projects_count)} tone="default" icon={ProjectIcon} sparklineItems={sparklineItems} />
+                <MetricCard label="Сессий" value={formatNumber(data.sessions_count)} tone="slate" icon={SessionIcon} sparklineItems={sparklineItems} />
+                <MetricCard label="Проектов" value={formatNumber(data.projects_count)} tone="slate" icon={ProjectIcon} sparklineItems={sparklineItems} />
               </div>
             ) : null}
           </div>
         )}
         {module === ANALYTICS_MODULE_ACTIONS && <AnalyticsActionsPanel scope={scope} scopeId={scopeId} />}
         {module === ANALYTICS_MODULE_PROPERTIES && <AnalyticsPropertiesPanel scope={scope} scopeId={scopeId} />}
-        {module === ANALYTICS_MODULE_DASHBOARDS && <AnalyticsDashboardsPanel data={data} loading={loading} error={error} />}
+        {module === ANALYTICS_MODULE_DASHBOARDS && (
+          <AnalyticsDashboardsPanel scope={scope} scopeId={scopeId} data={data} loading={loading} error={error} />
+        )}
       </section>
     </main>
   );

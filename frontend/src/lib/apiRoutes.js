@@ -286,6 +286,20 @@ export const apiRoutes = {
       role_filter: (params.role_filter || []).join(","),
       type_filter: (params.type_filter || []).join(","),
     }),
+    propertiesSummary: (scope, scopeId, params = {}) => withQuery("/api/analytics/properties/summary", {
+      scope: String(scope || "").trim(),
+      scope_id: String(scopeId || "").trim(),
+      type_filter: (params.type_filter || []).join(","),
+      category_filter: (params.category_filter || []).join(","),
+      source_filter: (params.source_filter || []).join(","),
+    }),
+    actionsSummary: (scope, scopeId, params = {}) => withQuery("/api/analytics/actions/summary", {
+      scope: String(scope || "").trim(),
+      scope_id: String(scopeId || "").trim(),
+      section_filter: (params.section_filter || []).join(","),
+      role_filter: (params.role_filter || []).join(","),
+      type_filter: (params.type_filter || []).join(","),
+    }),
     exportPropertiesCsv: (scope, scopeId) => withQuery("/api/analytics/properties/export.csv", {
       scope: String(scope || "").trim(),
       scope_id: String(scopeId || "").trim(),
