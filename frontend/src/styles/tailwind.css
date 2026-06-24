@@ -13105,6 +13105,8 @@
 .analyticsPropTableWrap {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   border: 1px solid hsl(var(--border));
   border-radius: 10px;
   background: hsl(var(--bg-card));
@@ -13153,9 +13155,11 @@
   font-size: 12px;
 }
 
-.analyticsPropTableList {
+.analyticsPropTableBody {
   flex: 1;
   overflow-y: auto;
+  min-height: 0;
+  max-height: calc(100vh - 360px);
 }
 
 .analyticsPropTableRow {
@@ -13378,34 +13382,22 @@
   box-shadow: 0 0 0 2px hsl(var(--accent) / 0.15);
 }
 
-.analyticsQuickFilters {
-  display: flex;
-  flex-wrap: wrap;
+.analyticsPageSize {
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
-}
-
-.analyticsQuickFilter {
-  height: 32px;
-  padding: 0 12px;
   font-size: 12px;
-  font-weight: 500;
-  color: var(--analysis-muted);
-  background: hsl(var(--bg));
-  border: 1px solid hsl(var(--border));
-  border-radius: 999px;
-  cursor: pointer;
-  transition: all 0.12s ease;
-}
-
-.analyticsQuickFilter:hover {
-  border-color: hsl(var(--accent) / 0.5);
   color: var(--analysis-text);
 }
 
-.analyticsQuickFilter--active {
-  color: hsl(var(--accent));
-  background: hsl(var(--accent) / 0.12);
-  border-color: hsl(var(--accent) / 0.5);
+.analyticsPageSize select {
+  height: 36px;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--analysis-text);
+  background: hsl(var(--bg));
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
 }
 
 .analyticsFilterToggle {
@@ -13438,6 +13430,18 @@
   border-radius: 10px;
 }
 
+.analyticsAdvancedFilters--compact {
+  gap: 10px;
+  padding: 12px;
+}
+
+.analyticsAdvancedFiltersGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
 .analyticsFilterField {
   display: flex;
   flex-direction: column;
@@ -13458,6 +13462,11 @@
   gap: 6px;
   max-height: 160px;
   overflow-y: auto;
+}
+
+.analyticsFilterFieldOptions--compact {
+  gap: 4px;
+  max-height: 120px;
 }
 
 .analyticsFilterEmptyOptions {
