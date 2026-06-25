@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
@@ -208,15 +208,19 @@ def _properties_rows(scope_type: str, scope_id: str, org_id: str) -> List[Dict[s
     rows: List[Dict[str, Any]] = []
     seen = set()
     counts: Dict[tuple, int] = {}
+    session_counts: Dict[tuple, Set[str]] = {}
     for source in sources:
+        session_id = source.get("session_id") or ""
         for r in _extract_camunda_rows(source):
             key = (r.get("element_id"), r.get("property_name"), r.get("property_value"))
             counts[key] = counts.get(key, 0) + 1
+            session_counts.setdefault(key, set()).add(session_id)
             if key in seen:
                 continue
             seen.add(key)
             rows.append({
                 "bpmn_id": r.get("element_id") or "",
+                "bpmn_name": r.get("element_title") or "",
                 "name": r.get("property_name") or "",
                 "value": r.get("property_value") or "",
                 "type": r.get("property_type") or "",
@@ -226,10 +230,12 @@ def _properties_rows(scope_type: str, scope_id: str, org_id: str) -> List[Dict[s
                 "section": "",
                 "role": "",
                 "usage_count": 1,
+                "session_count": 1,
             })
 
     for row in rows:
         row["usage_count"] = counts.get((row["bpmn_id"], row["name"], row["value"]), 1)
+        row["session_count"] = len(session_counts.get((row["bpmn_id"], row["name"], row["value"]), set())) or 1
     return rows
 
 
@@ -547,7 +553,7 @@ def export_properties_csv(
     return _csv_response(
         rows,
         f"properties-{scope}-{scope_id}.csv",
-        ["bpmn_id", "name", "value", "type", "category", "source", "element_type", "section", "role", "usage_count"],
+        ["bpmn_id", "bpmn_name", "name", "value", "type", "category", "source", "element_type", "session_count", "usage_count"],
     )
 
 
@@ -572,7 +578,12 @@ def export_actions_csv(
     )
 
 
-def _xlsx_response(rows: List[Dict[str, Any]], filename: str, columns: List[tuple]) -> Response:
+def _xlsx_response(
+    rows: List[Dict[str, Any]],
+    filename: str,
+    columns: List[tuple],
+    column_formats: Dict[str, Dict[str, Any]] | None = None,
+) -> Response:
     import io
 
     import xlsxwriter
@@ -591,6 +602,11 @@ def _xlsx_response(rows: List[Dict[str, Any]], filename: str, columns: List[tupl
     })
     cell_format = workbook.add_format({"border": 1, "valign": "vcenter"})
 
+    per_col_format = {}
+    if column_formats:
+        for key, fmt_kwargs in column_formats.items():
+            per_col_format[key] = workbook.add_format({"border": 1, "valign": "vcenter", **fmt_kwargs})
+
     for col_idx, (_, label) in enumerate(columns):
         worksheet.write(0, col_idx, label, header_format)
 
@@ -599,13 +615,14 @@ def _xlsx_response(rows: List[Dict[str, Any]], filename: str, columns: List[tupl
             value = row.get(key)
             if value is None:
                 value = ""
-            worksheet.write(row_idx, col_idx, value, cell_format)
+            fmt = per_col_format.get(key, cell_format)
+            worksheet.write(row_idx, col_idx, value, fmt)
 
     # Auto-width
-    for col_idx, (_, label) in enumerate(columns):
+    for col_idx, (key, label) in enumerate(columns):
         max_len = len(str(label))
         for row in rows:
-            max_len = max(max_len, len(str(row.get(col_idx) or "")))
+            max_len = max(max_len, len(str(row.get(key) or "")))
         worksheet.set_column(col_idx, col_idx, min(max_len + 3, 60))
 
     worksheet.autofilter(0, 0, len(rows), len(columns) - 1)
@@ -635,15 +652,21 @@ def export_properties_xlsx(
     rows = _apply_filters(rows, type_filter, category_filter, source_filter, [], [])
     columns = [
         ("bpmn_id", "BPMN ID"),
-        ("name", "Название"),
+        ("bpmn_name", "BPMN Name"),
+        ("name", "Свойство"),
         ("value", "Значение"),
         ("type", "Тип"),
         ("category", "Категория"),
         ("source", "Источник"),
         ("element_type", "Тип элемента"),
+        ("session_count", "Использовано в сессиях"),
         ("usage_count", "Использований"),
     ]
-    return _xlsx_response(rows, f"properties-{scope}-{scope_id}.xlsx", columns)
+    formats = {
+        "bpmn_name": {"bold": True},
+        "session_count": {"num_format": "0"},
+    }
+    return _xlsx_response(rows, f"properties-{scope}-{scope_id}.xlsx", columns, formats)
 
 
 @router.get("/actions/export.xlsx")
