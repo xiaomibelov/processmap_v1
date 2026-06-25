@@ -7,6 +7,17 @@ SMOKE_USER_ID="${SMOKE_USER_ID:-0217a3f745ae4bb6b72a336dd356f0d8}"
 
 echo "[stage-smoke] API_URL=${API_URL}"
 
+# Wait for API to be ready after deploy
+echo "[stage-smoke] waiting for API health..."
+for i in $(seq 1 30); do
+  if curl -fsS "${API_URL}/health" >/dev/null 2>&1; then
+    echo "[stage-smoke] API health OK"
+    break
+  fi
+  echo "[stage-smoke] API not ready yet (attempt ${i})"
+  sleep 2
+done
+
 # Generate a short-lived admin token inside the stage API container
 TOKEN_FILE=$(mktemp)
 cat > "${TOKEN_FILE}" <<'PY'
