@@ -111,6 +111,35 @@ def test_navigate_existing_child_reuses_session():
     assert first["subprocess_session_id"] == second["subprocess_session_id"]
 
 
+def test_atomic_child_upsert_prevents_duplicate():
+    owner = "owner_nav_6"
+    org = "org_nav_6"
+    pid = project_repo.create_project("Test project", user_id=owner, org_id=org)
+    sid = session_repo.create(title="Root", project_id=pid, user_id=owner, org_id=org)
+    root = session_repo.load(sid, user_id=owner, org_id=org, is_admin=True)
+    root.bpmn_xml = BPMN_ROOT
+    session_repo.save(root, user_id=owner, org_id=org, is_admin=True)
+
+    child_xml = "<definitions xmlns='http://www.omg.org/spec/BPMN/20100524/MODEL'><process id='p'/></definitions>"
+    stack = [
+        {"session_id": sid, "parent_session_id": "", "element_id_in_parent": "ca_1", "entered_at": "2024-01-01T00:00:00Z"},
+        {"session_id": "", "parent_session_id": sid, "element_id_in_parent": "", "entered_at": "2024-01-01T00:00:00Z"},
+    ]
+
+    first = session_repo.find_or_create_child_session(
+        root, "ca_1", child_xml, stack, "Sub", user_id=owner, org_id=org, is_admin=True
+    )
+    second = session_repo.find_or_create_child_session(
+        root, "ca_1", child_xml, stack, "Sub", user_id=owner, org_id=org, is_admin=True
+    )
+    assert first.id == second.id
+
+    st = get_storage()
+    rows = st.list(query="Sub", limit=10, user_id=owner, org_id=org, is_admin=True)
+    child_rows = [r for r in rows if r.get("parent_session_id") == sid and r.get("element_id_in_parent") == "ca_1"]
+    assert len(child_rows) == 1
+
+
 BPMN_WITH_SUBPROCESS = """<?xml version="1.0"?>
 <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs">
   <process id="Process_root">

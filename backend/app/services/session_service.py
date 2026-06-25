@@ -963,25 +963,11 @@ def _create_child_session(
 ) -> Session:
     """Create and persist a new child subprocess session."""
     uid, oid, admin = _subprocess_request_context(request)
-    project_id = str(getattr(parent_session, "project_id", "") or "").strip()
     parent_id = str(getattr(parent_session, "id", "") or "").strip()
-    parent_org_id = getattr(parent_session, "org_id", None)
 
     parent_bpmn = str(getattr(parent_session, "bpmn_xml", "") or "").strip()
     called = called_element_id(parent_bpmn, element_id) if parent_bpmn else None
     title = f"Подпроцесс: {called or element_id}"
-
-    child_id = session_repo.create(
-        title=title,
-        project_id=project_id,
-        user_id=uid,
-        org_id=oid,
-    )
-    child = session_repo.load(
-        child_id, user_id=uid, org_id=oid, is_admin=admin
-    )
-    if not child:
-        raise HTTPException(status_code=500, detail="Failed to create subprocess session")
 
     now_iso = datetime.datetime.utcnow().isoformat() + "Z"
     parent_stack = [dict(f) for f in (getattr(parent_session, "navigation_stack", []) or [])]
@@ -996,17 +982,26 @@ def _create_child_session(
                 "entered_at": now_iso,
             }
         ]
-    new_frame = {
-        "session_id": child_id,
-        "parent_session_id": parent_id,
-        "element_id_in_parent": "",
-        "entered_at": now_iso,
-    }
-    child.bpmn_xml = child_xml
-    child.parent_session_id = parent_id
-    child.element_id_in_parent = element_id
-    child.navigation_stack = parent_stack + [new_frame]
-    session_repo.save(child, user_id=uid, org_id=oid, is_admin=admin)
+
+    navigation_stack = parent_stack + [
+        {
+            "session_id": "",
+            "parent_session_id": parent_id,
+            "element_id_in_parent": "",
+            "entered_at": now_iso,
+        }
+    ]
+
+    child = session_repo.find_or_create_child_session(
+        parent_session,
+        element_id,
+        child_xml,
+        navigation_stack,
+        title,
+        user_id=uid,
+        org_id=oid,
+        is_admin=admin,
+    )
     return child
 
 
