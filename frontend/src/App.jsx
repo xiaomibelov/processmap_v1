@@ -1634,6 +1634,13 @@ export default function App() {
     }
     if (bpmnXmlCacheRef.current && session?.bpmn_xml) {
       bpmnXmlCacheRef.current.set(sid, String(session.bpmn_xml));
+      // Child BPMN may have been synced back into the parent XML on the backend.
+      // Drop parent caches so that returning to the parent fetches the fresh XML.
+      const parentSid = String(draft?.parent_session_id || "").trim();
+      if (parentSid) {
+        bpmnXmlCacheRef.current.delete(parentSid);
+        sessionCacheRef.current?.delete(parentSid);
+      }
     }
     const source = String(session?._sync_source || session?._source || "session_sync");
     setDraftPersisted((prevDraft) => {

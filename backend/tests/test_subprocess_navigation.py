@@ -146,3 +146,52 @@ def test_navigate_to_embedded_subprocess_element():
     assert child.element_id_in_parent == "sub_1"
     assert "<bpmn:definitions" in (child.bpmn_xml or "")
     assert "bpmndi:BPMNShape" in (child.bpmn_xml or "")
+
+
+def test_child_bpmn_save_syncs_back_to_parent_subprocess():
+    from app._legacy_main import session_bpmn_save
+    from app.schemas.legacy_api import BpmnXmlIn
+
+    owner = "owner_sync_1"
+    org = "org_sync_1"
+    pid = project_repo.create_project("Test project", user_id=owner, org_id=org)
+    sid = session_repo.create(title="Root", project_id=pid, user_id=owner, org_id=org)
+    root = session_repo.load(sid, user_id=owner, org_id=org, is_admin=True)
+    root.bpmn_xml = BPMN_WITH_SUBPROCESS
+    session_repo.save(root, user_id=owner, org_id=org, is_admin=True)
+
+    req = _make_request(owner, org)
+    nav = navigate_to_subprocess(sid, "sub_1", request=req)
+    child_id = nav["subprocess_session_id"]
+
+    child = session_repo.load(child_id, user_id=owner, org_id=org, is_admin=True)
+    child_xml = child.bpmn_xml
+    assert child_xml
+
+    # Add a new task to the child XML.
+    import xml.etree.ElementTree as ET
+    BPMN_NS = "http://www.omg.org/spec/BPMN/20100524/MODEL"
+    ET.register_namespace("bpmn", BPMN_NS)
+    child_root = ET.fromstring(child_xml)
+    process = child_root.find(f".//{{{BPMN_NS}}}process")
+    assert process is not None
+    ET.SubElement(process, f"{{{BPMN_NS}}}task", {"id": "sub_new_task", "name": "New child task"})
+    modified_xml = ET.tostring(child_root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+
+    # Use an admin request so that _can_edit_workspace allows the save.
+    class AdminRequest:
+        state = type("S", (), {
+            "auth_user": {"id": owner, "is_admin": True},
+            "active_org_id": org,
+            "is_admin": True,
+        })()
+        headers = {}
+
+    result = session_bpmn_save(child_id, BpmnXmlIn(xml=modified_xml), request=AdminRequest())
+    assert result["ok"] is True
+    assert result.get("parent_synced") is True
+
+    parent = session_repo.load(sid, user_id=owner, org_id=org, is_admin=True)
+    assert 'id="sub_new_task"' in (parent.bpmn_xml or "")
+    # The parent subprocess still contains the original wrapper element.
+    assert '<subProcess id="sub_1"' in (parent.bpmn_xml or "") or '<bpmn:subProcess id="sub_1"' in (parent.bpmn_xml or "")

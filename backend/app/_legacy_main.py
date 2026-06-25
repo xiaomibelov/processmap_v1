@@ -7531,6 +7531,57 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
             import_note=import_note,
             diagram_state_version=current_diagram_state_version + 1,
         )
+
+        # Sync child BPMN back into the parent subprocess XML so that parent export
+        # does not contain a stale fragment.  This is best-effort: if the parent is
+        # being edited concurrently the update may be skipped, but the child save
+        # itself still succeeds.
+        parent_session_id = str(getattr(s, "parent_session_id", "") or "").strip()
+        element_id_in_parent = str(getattr(s, "element_id_in_parent", "") or "").strip()
+        parent_synced = False
+        if parent_session_id and element_id_in_parent:
+            try:
+                from app.services.bpmn_navigation import re_embed_child_xml_into_parent
+                parent = st.load(parent_session_id, user_id=user_id, org_id=oid_locked, is_admin=True)
+                if parent:
+                    parent_xml = str(getattr(parent, "bpmn_xml", "") or "")
+                    new_parent_xml = re_embed_child_xml_into_parent(parent_xml, element_id_in_parent, xml)
+                    if new_parent_xml and new_parent_xml != parent_xml:
+                        previous_parent_xml = parent_xml
+                        parent.bpmn_xml = new_parent_xml
+                        parent.bpmn_xml_version = int(getattr(parent, "version", 0) or 0)
+                        parent.bpmn_graph_fingerprint = _session_graph_fingerprint(parent)
+                        _mark_diagram_truth_write(
+                            parent,
+                            changed_keys=["bpmn_xml"],
+                            actor_user_id=user_id,
+                            actor_label=_resolve_actor_label_from_user(user, user_id),
+                        )
+                        st.save(parent, user_id=user_id, org_id=oid_locked, is_admin=True)
+                        _invalidate_session_caches(
+                            parent,
+                            session_id=parent.id,
+                            org_id=getattr(parent, "org_id", "") or get_default_org_id(),
+                        )
+                        parent_synced = True
+                        logger.info(
+                            "subprocess_parent_synced: child=%s parent=%s element=%s bytes_before=%d bytes_after=%d",
+                            session_id,
+                            parent_session_id,
+                            element_id_in_parent,
+                            len(previous_parent_xml),
+                            len(new_parent_xml),
+                        )
+            except Exception as exc:
+                logger.warning(
+                    "subprocess_parent_sync_failed: child=%s parent=%s element=%s error=%s",
+                    session_id,
+                    parent_session_id,
+                    element_id_in_parent,
+                    exc,
+                    exc_info=True,
+                )
+
         st.save(s, user_id=user_id, org_id=oid_locked, is_admin=True)
         try:
             invalidate_overlay(session_id)
@@ -7551,6 +7602,9 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
             "bytes": len(xml),
             "version": s.bpmn_xml_version,
             "diagram_state_version": int(getattr(s, "diagram_state_version", 0) or 0),
+            "parent_session_id": parent_session_id,
+            "element_id_in_parent": element_id_in_parent,
+            "parent_synced": parent_synced,
         }
         if bpmn_version_snapshot is not None:
             out["bpmn_version_snapshot"] = bpmn_version_snapshot

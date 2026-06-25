@@ -374,3 +374,60 @@ def resolve_target_element_id(xml_text: str, explicit_target_id: Optional[str] =
         if el is not None:
             return explicit_target_id
     return auto_target_element_id(xml_text)
+
+
+def re_embed_child_xml_into_parent(parent_xml: str, element_id: str, child_xml: str) -> Optional[str]:
+    """Replace the contents of a parent <subProcess> with the child process contents.
+
+    The parent element is identified by `element_id`.  The child XML is expected to
+    be a standalone BPMN document (as produced by `extract_subprocess_xml`) whose
+    first <process> contains the edited subprocess contents.
+
+    Returns the updated parent XML or None when:
+    - the parent element is not a <subProcess> (callActivity is intentionally skipped),
+    - the element cannot be found,
+    - parsing fails.
+    """
+    if not parent_xml or not child_xml or not element_id:
+        return None
+    try:
+        parent_root = ET.fromstring(parent_xml)
+    except Exception:
+        return None
+
+    parent_el = None
+    for el in parent_root.iter():
+        if _element_id(el) == element_id:
+            parent_el = el
+            break
+    if parent_el is None:
+        return None
+
+    if _local_tag(parent_el.tag) != "subprocess":
+        # callActivity references an external process; do not inline it.
+        return None
+
+    try:
+        child_root = ET.fromstring(child_xml)
+    except Exception:
+        return None
+
+    child_process = None
+    for el in child_root.iter():
+        if _local_tag(el.tag) == "process":
+            child_process = el
+            break
+    if child_process is None:
+        return None
+
+    child_name = str(child_process.attrib.get("name") or "").strip()
+    if child_name:
+        parent_el.attrib["name"] = child_name
+
+    # Replace semantic children of the parent subprocess with the child contents.
+    for child in list(parent_el):
+        parent_el.remove(child)
+    for child in child_process:
+        parent_el.append(child)
+
+    return ET.tostring(parent_root, encoding="utf-8", xml_declaration=True).decode("utf-8")
