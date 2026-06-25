@@ -108,13 +108,12 @@ jobs:
             bash /tmp/stage_smoke_analytics.sh
 
             echo "[deploy-stage-ref] verifying UI bundle includes new columns..."
-            PAGE=$(curl -fsS https://stage.processmap.ru/)
-            JS_SRC=$(printf '%s' "$PAGE" | grep -oE 'assets/index-[^"]+\.js' | head -1)
+            JS_SRC=$(curl -fsS https://stage.processmap.ru/ | grep -oE 'assets/index-[^"]+\.js' | head -1)
             test -n "$JS_SRC"
             JS_URL="https://stage.processmap.ru/${JS_SRC}"
-            JS=$(curl -fsS "$JS_URL")
-            printf '%s' "$JS" | grep -q 'BPMN Name' || { echo 'FAIL: BPMN Name not found in UI bundle'; exit 1; }
-            printf '%s' "$JS" | grep -q 'analyticsSessionBadge' || { echo 'FAIL: session badge class not found in UI bundle'; exit 1; }
+            echo "[deploy-stage-ref] checking JS bundle: ${JS_URL}"
+            curl -fsS "$JS_URL" | grep -q 'BPMN Name' || { echo 'FAIL: BPMN Name not found in UI bundle'; exit 1; }
+            curl -fsS "$JS_URL" | grep -q 'analyticsSessionBadge' || { echo 'FAIL: session badge class not found in UI bundle'; exit 1; }
             echo '[deploy-stage-ref] UI bundle OK'
 
             rm -f "${STAGE_FRESHNESS_SOURCE_FILE}"
