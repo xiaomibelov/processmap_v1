@@ -1178,6 +1178,55 @@ export default function App() {
     return result;
   }, [confirmLeaveIfUnsafe, draft?.session_id, openSession, projectId, projectRouteContext]);
 
+  const handleBreadcrumbNavigate = useCallback((targetSid, targetIndex) => {
+    const list = Array.isArray(subprocessBreadcrumbs) ? subprocessBreadcrumbs : [];
+    const index = typeof targetIndex === "number"
+      ? targetIndex
+      : list.findIndex((c) => String(c?.session_id || "").trim() === String(targetSid || "").trim());
+    if (index < 0 || index >= list.length) return;
+    const targetCrumb = list[index];
+    const targetSessionId = String(targetCrumb?.session_id || "").trim();
+    if (!targetSessionId) return;
+
+    const newStack = list.slice(0, index + 1);
+    setSubprocessBreadcrumbs(newStack);
+
+    const snapshot = parentViewportSnapshotRef.current?.get?.(targetSessionId) || null;
+    if (snapshot && setRestoreViewportSnapshot) {
+      setRestoreViewportSnapshot(snapshot);
+    }
+
+    const focusElementId = String(targetCrumb?.element_id || "").trim();
+    setFocusElementId(focusElementId);
+
+    const parentSessionId = index > 0 ? String(list[index - 1]?.session_id || "").trim() : "";
+
+    pushSessionSelectionToUrl({
+      projectId,
+      sessionId: targetSessionId,
+      parentSessionId,
+      focusElementId,
+      projectContext: projectRouteContext,
+    });
+
+    const cachedSession = sessionCacheRef.current?.get?.(targetSessionId) || null;
+    openSession(targetSessionId, {
+      source: "breadcrumb_navigation",
+      session: cachedSession,
+    });
+  }, [
+    subprocessBreadcrumbs,
+    parentViewportSnapshotRef,
+    setRestoreViewportSnapshot,
+    setFocusElementId,
+    setSubprocessBreadcrumbs,
+    pushSessionSelectionToUrl,
+    projectId,
+    projectRouteContext,
+    sessionCacheRef,
+    openSession,
+  ]);
+
   const { navigateToSubprocess, returnToParent } = useSubprocessNavigation({
     bpmnStageRef,
     sessionCacheRef,
@@ -3655,7 +3704,7 @@ export default function App() {
         onDismissSessionNavNotice={() => setSessionNavNotice(null)}
         onReturnToSessionList={() => returnToSessionList("banner_action")}
         subprocessBreadcrumbs={subprocessBreadcrumbs}
-        onBreadcrumbNavigate={(sid) => openSession(sid)}
+        onBreadcrumbNavigate={handleBreadcrumbNavigate}
         onReturnToParent={() => {
           const sid = sessionIdOf(draft);
           if (sid) returnToParent(sid);
