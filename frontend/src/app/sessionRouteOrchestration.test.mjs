@@ -221,6 +221,21 @@ test("pushSessionSelectionToUrl requires project and session ids", () => {
   assert.equal(win.calls.length, 0);
 });
 
+test("pushSessionSelectionToUrl supports replace for popstate parent restore", () => {
+  const win = makeWindow("https://processmap.local/app?project=p1");
+
+  const result = pushSessionSelectionToUrl({ projectId: "p1", sessionId: "s1", focusElementId: "el1" }, win, { replace: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.sessionAction, "replace");
+  assert.deepEqual(
+    win.calls.map((call) => [call.type, call.url]),
+    [
+      ["replace", "/app?project=p1&session=s1&focus=el1"],
+    ],
+  );
+});
+
 test("seedSessionParentHistoryToUrl seeds internal state on current session entry", () => {
   const win = makeWindow("https://processmap.local/app?project=p1&session=s1");
   const result = seedSessionParentHistoryToUrl({ projectId: "p1", sessionId: "s1" }, win);
