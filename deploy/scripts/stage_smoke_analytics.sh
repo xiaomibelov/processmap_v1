@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-API_URL="${API_URL:-https://stage.processmap.ru/api}"
+API_URL="${API_URL:-https://stage.processmap.ru}"
 API_CONTAINER="${API_CONTAINER:-processmap_stage-api-1}"
 SMOKE_USER_ID="${SMOKE_USER_ID:-0217a3f745ae4bb6b72a336dd356f0d8}"
 
@@ -10,7 +10,7 @@ echo "[stage-smoke] API_URL=${API_URL}"
 # Wait for API to be ready after deploy
 echo "[stage-smoke] waiting for API health..."
 for i in $(seq 1 30); do
-  if curl -fsS "${API_URL}/health" >/dev/null 2>&1; then
+  if curl -fsS "${API_URL}/api/health" >/dev/null 2>&1; then
     echo "[stage-smoke] API health OK"
     break
   fi
@@ -21,10 +21,22 @@ done
 # Generate a short-lived admin token inside the stage API container
 TOKEN_FILE=$(mktemp)
 cat > "${TOKEN_FILE}" <<'PY'
-from app.auth import create_access_token
-from app.storage import get_default_org_id, upsert_org_membership
+import time
+from app.auth import create_access_token, hash_password
+from app.storage import get_default_org_id, upsert_org_membership, get_auth_user_by_id, create_auth_user
 uid = "0217a3f745ae4bb6b72a336dd356f0d8"
 org_id = get_default_org_id()
+if not get_auth_user_by_id(uid):
+    create_auth_user({
+        "id": uid,
+        "email": "smoke@processmap.local",
+        "password_hash": hash_password("smoke-password"),
+        "is_active": True,
+        "is_admin": True,
+        "full_name": "Smoke User",
+        "job_title": "",
+        "created_at": int(time.time()),
+    })
 upsert_org_membership(org_id, uid, "admin")
 print(create_access_token(uid))
 PY
