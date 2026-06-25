@@ -58,6 +58,26 @@ function UsageBar({ count, max }) {
   );
 }
 
+function sessionCountLabel(n) {
+  const count = Number(n) || 0;
+  if (count === 1) return "1 сессия";
+  if (count >= 2 && count <= 4) return `${count} сессии`;
+  return `${count} сессий`;
+}
+
+function SessionCountBadge({ count }) {
+  const c = Number(count) || 0;
+  const multi = c > 1;
+  return (
+    <span
+      className={`analyticsSessionBadge ${multi ? "analyticsSessionBadge--multi" : "analyticsSessionBadge--single"}`}
+      title={`Использовано в ${sessionCountLabel(c)}`}
+    >
+      {sessionCountLabel(c)}
+    </span>
+  );
+}
+
 function JsonModal({ value, onClose }) {
   if (!value) return null;
   let pretty = value;
@@ -123,18 +143,20 @@ function ValueCell({ row }) {
 
 const COLUMNS = [
   { key: "select", label: "", width: "40px" },
+  { key: "bpmn_name", label: "BPMN Name", flex: "minmax(150px, 1.6fr)" },
   { key: "name", label: "Свойство", flex: "minmax(180px, 2fr)" },
   { key: "type", label: "Тип", flex: "minmax(100px, 1fr)" },
   { key: "category", label: "Категория", flex: "minmax(120px, 1.2fr)" },
   { key: "source", label: "Источник", flex: "minmax(140px, 1.5fr)" },
   { key: "usage_count", label: "Использований", flex: "minmax(110px, 1fr)" },
+  { key: "session_count", label: "Сессий", flex: "minmax(100px, 1fr)" },
   { key: "value", label: "Значение", flex: "minmax(160px, 1.5fr)" },
 ];
 
 const GRID_TEMPLATE = COLUMNS.map((c) => c.width || c.flex).join(" ");
 
 function HeaderCell({ col, sort, onSort }) {
-  const sortable = col.key === "name" || col.key === "usage_count";
+  const sortable = ["bpmn_name", "name", "usage_count", "session_count"].includes(col.key);
   const active = sort?.key === col.key;
   return (
     <div
@@ -166,6 +188,9 @@ function Row({ row, index, selectedRows, onToggleRow, maxUsage }) {
           aria-label={`Выбрать ${row.name || "строку"}`}
         />
       </div>
+      <div className="analyticsPropTableCell analyticsPropTableCell--bpmnName" title={toText(row.bpmn_name)}>
+        <span className="analyticsPropBpmnName">{toText(row.bpmn_name) || "—"}</span>
+      </div>
       <div className="analyticsPropTableCell analyticsPropTableCell--name" title={toText(row.name)}>
         <span className="analyticsPropName">{toText(row.name) || "—"}</span>
       </div>
@@ -181,6 +206,9 @@ function Row({ row, index, selectedRows, onToggleRow, maxUsage }) {
       <div className="analyticsPropTableCell analyticsPropTableCell--usage">
         <UsageBar count={row.usage_count || 0} max={maxUsage} />
       </div>
+      <div className="analyticsPropTableCell analyticsPropTableCell--sessions">
+        <SessionCountBadge count={row.session_count || 0} />
+      </div>
       <div className="analyticsPropTableCell analyticsPropTableCell--value">
         <ValueCell row={row} />
       </div>
@@ -195,7 +223,7 @@ export function usePropertyRowsProcessor(rows, { search, sort, valueTypeFilter, 
     if (search) {
       const q = search.toLowerCase();
       result = result.filter((r) =>
-        [r.name, r.value, r.category, r.source, r.type].some((field) =>
+        [r.bpmn_name, r.name, r.value, r.category, r.source, r.type].some((field) =>
           toText(field).toLowerCase().includes(q)
         )
       );
@@ -227,8 +255,14 @@ export function usePropertyRowsProcessor(rows, { search, sort, valueTypeFilter, 
         if (sort.key === "usage_count") {
           return dir * ((Number(a.usage_count) || 0) - (Number(b.usage_count) || 0));
         }
+        if (sort.key === "session_count") {
+          return dir * ((Number(a.session_count) || 0) - (Number(b.session_count) || 0));
+        }
         if (sort.key === "name") {
           return dir * toText(a.name).localeCompare(toText(b.name), "ru-RU");
+        }
+        if (sort.key === "bpmn_name") {
+          return dir * toText(a.bpmn_name).localeCompare(toText(b.bpmn_name), "ru-RU");
         }
         return 0;
       });
