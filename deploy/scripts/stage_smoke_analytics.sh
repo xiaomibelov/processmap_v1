@@ -8,7 +8,8 @@ SMOKE_USER_ID="${SMOKE_USER_ID:-0217a3f745ae4bb6b72a336dd356f0d8}"
 echo "[stage-smoke] API_URL=${API_URL}"
 
 # Generate a short-lived admin token inside the stage API container
-TOKEN_SCRIPT=$(cat <<'PY'
+TOKEN_FILE=$(mktemp)
+cat > "${TOKEN_FILE}" <<'PY'
 from app.auth import create_access_token
 from app.storage import get_default_org_id, upsert_org_membership
 uid = "0217a3f745ae4bb6b72a336dd356f0d8"
@@ -16,10 +17,11 @@ org_id = get_default_org_id()
 upsert_org_membership(org_id, uid, "admin")
 print(create_access_token(uid))
 PY
-)
 
 echo "[stage-smoke] generating admin token..."
-TOKEN=$(docker exec "${API_CONTAINER}" bash -c "cd /app/backend && PYTHONPATH=/app/backend python -u -c '${TOKEN_SCRIPT}'")
+docker cp "${TOKEN_FILE}" "${API_CONTAINER}:/tmp/stage_smoke_token.py"
+TOKEN=$(docker exec "${API_CONTAINER}" bash -c "cd /app/backend && PYTHONPATH=/app/backend python -u /tmp/stage_smoke_token.py")
+rm -f "${TOKEN_FILE}" "${TOKEN_FILE}"
 test -n "${TOKEN}"
 echo "[stage-smoke] token ok"
 
