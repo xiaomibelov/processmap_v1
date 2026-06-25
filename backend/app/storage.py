@@ -1349,6 +1349,14 @@ def _ensure_schema() -> None:
             con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_org_project ON sessions(org_id, project_id)")
             con.execute(
                 """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_parent_element_unique
+                ON sessions(org_id, project_id, parent_session_id, element_id_in_parent)
+                WHERE parent_session_id IS NOT NULL AND parent_session_id != ''
+                  AND element_id_in_parent IS NOT NULL AND element_id_in_parent != ''
+                """
+            )
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS session_presence (
                   session_id TEXT NOT NULL,
                   user_id TEXT NOT NULL,
@@ -1465,6 +1473,14 @@ def _ensure_schema() -> None:
             if not _column_exists(con, "sessions", "element_id_in_parent"):
                 con.execute("ALTER TABLE sessions ADD COLUMN element_id_in_parent TEXT")
             con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_parent_element ON sessions(parent_session_id, element_id_in_parent)")
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_parent_element_unique
+                ON sessions(org_id, project_id, parent_session_id, element_id_in_parent)
+                WHERE parent_session_id IS NOT NULL AND parent_session_id != ''
+                  AND element_id_in_parent IS NOT NULL AND element_id_in_parent != ''
+                """
+            )
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS note_comment_mentions (
@@ -3585,26 +3601,157 @@ class Storage:
             ).fetchone()
         return _session_row_to_model(row) if row else None
 
-    def find_by_parent_element(
+    def find_or_create_child_session(
         self,
-        parent_session_id: str,
-        element_id_in_parent: str,
+        parent_session: Session,
+        element_id: str,
+        child_xml: str,
+        navigation_stack: List[Dict[str, Any]],
+        title: str,
         *,
+        user_id: Optional[str] = None,
+        is_admin: Optional[bool] = None,
         org_id: Optional[str] = None,
-    ) -> Optional[Session]:
-        pid = str(parent_session_id or "").strip()
-        eid = str(element_id_in_parent or "").strip()
+    ) -> Session:
+        """Atomically create a child subprocess session or return the existing one.
+
+        Uses the unique partial index on
+        (org_id, project_id, parent_session_id, element_id_in_parent) to guard
+        against concurrent navigate_to_subprocess calls creating duplicates.
+        """
+        pid = str(getattr(parent_session, "id", "") or "").strip()
+        eid = str(element_id or "").strip()
         if not pid or not eid:
-            return None
-        org = _scope_org_id(org_id) or _default_org_id()
-        org_clause, org_params = _org_clause(org)
+            raise ValueError("parent session id and element id are required")
+
+        owner = _scope_user_id(user_id)
+        admin = _scope_is_admin(is_admin)
+        org = _scope_org_id(org_id) or getattr(parent_session, "org_id", None) or _default_org_id()
+        project_id = str(getattr(parent_session, "project_id", "") or "").strip()
+        now = _now_ts()
+        child_id = uuid.uuid4().hex[:10]
+        stack = [dict(f) for f in (navigation_stack or [])]
+        if stack and not str(stack[-1].get("session_id") or "").strip():
+            stack[-1]["session_id"] = child_id
+
+        child = Session(
+            id=child_id,
+            title=title,
+            roles=[],
+            project_id=project_id or None,
+            mode=getattr(parent_session, "mode", None),
+            notes="[]",
+            interview={},
+            nodes=[],
+            edges=[],
+            questions=[],
+            mermaid="",
+            mermaid_simple="",
+            mermaid_lanes="",
+            normalized={},
+            resources={},
+            analytics={},
+            ai_llm_state={},
+            bpmn_xml=str(child_xml or ""),
+            bpmn_xml_version=0,
+            diagram_state_version=0,
+            version=2,
+            owner_user_id=owner,
+            org_id=org,
+            created_by=owner,
+            updated_by=owner,
+            created_at=now,
+            updated_at=now,
+            navigation_stack=stack,
+            parent_session_id=pid,
+            element_id_in_parent=eid,
+        )
+
+        values = {
+            "id": child.id,
+            "title": child.title,
+            "roles_json": _json_dumps(child.roles, []),
+            "start_role": child.start_role,
+            "project_id": child.project_id,
+            "mode": child.mode,
+            "notes": child.notes,
+            "notes_by_element_json": _json_dumps(child.notes_by_element, {}),
+            "interview_json": _json_dumps(child.interview, {}),
+            "nodes_json": _json_dumps(child.nodes, []),
+            "edges_json": _json_dumps(child.edges, []),
+            "questions_json": _json_dumps(child.questions, []),
+            "mermaid": child.mermaid,
+            "mermaid_simple": child.mermaid_simple,
+            "mermaid_lanes": child.mermaid_lanes,
+            "normalized_json": _json_dumps(child.normalized, {}),
+            "resources_json": _json_dumps(child.resources, {}),
+            "analytics_json": _json_dumps(child.analytics, {}),
+            "ai_llm_state_json": _json_dumps(child.ai_llm_state, {}),
+            "bpmn_xml": child.bpmn_xml,
+            "bpmn_xml_version": int(child.bpmn_xml_version or 0),
+            "diagram_state_version": int(child.diagram_state_version or 0),
+            "diagram_last_write_actor_user_id": "",
+            "diagram_last_write_actor_label": "",
+            "diagram_last_write_at": 0,
+            "diagram_last_write_changed_keys_json": _json_dumps([], []),
+            "bpmn_graph_fingerprint": "",
+            "bpmn_meta_json": _json_dumps({}, {}),
+            "version": int(child.version or 0),
+            "owner_user_id": owner,
+            "org_id": org,
+            "created_by": owner,
+            "updated_by": owner,
+            "created_at": now,
+            "updated_at": now,
+            "navigation_stack": _json_dumps(child.navigation_stack, []),
+            "parent_session_id": pid,
+            "element_id_in_parent": eid,
+        }
+
         _ensure_schema()
         with _connect() as con:
+            con.execute(
+                """
+                INSERT INTO sessions (
+                  id, title, roles_json, start_role, project_id, mode, notes, notes_by_element_json,
+                  interview_json, nodes_json, edges_json, questions_json, mermaid, mermaid_simple, mermaid_lanes,
+                  normalized_json, resources_json, analytics_json, ai_llm_state_json,
+                  bpmn_xml, bpmn_xml_version, diagram_state_version,
+                  diagram_last_write_actor_user_id, diagram_last_write_actor_label, diagram_last_write_at,
+                  diagram_last_write_changed_keys_json, bpmn_graph_fingerprint, bpmn_meta_json, version,
+                  owner_user_id, org_id, created_by, updated_by, created_at, updated_at,
+                  navigation_stack, parent_session_id, element_id_in_parent
+                ) VALUES (
+                  :id, :title, :roles_json, :start_role, :project_id, :mode, :notes, :notes_by_element_json,
+                  :interview_json, :nodes_json, :edges_json, :questions_json, :mermaid, :mermaid_simple, :mermaid_lanes,
+                  :normalized_json, :resources_json, :analytics_json, :ai_llm_state_json,
+                  :bpmn_xml, :bpmn_xml_version, :diagram_state_version,
+                  :diagram_last_write_actor_user_id, :diagram_last_write_actor_label, :diagram_last_write_at,
+                  :diagram_last_write_changed_keys_json, :bpmn_graph_fingerprint, :bpmn_meta_json, :version,
+                  :owner_user_id, :org_id, :created_by, :updated_by, :created_at, :updated_at,
+                  :navigation_stack, :parent_session_id, :element_id_in_parent
+                )
+                ON CONFLICT (org_id, project_id, parent_session_id, element_id_in_parent)
+                WHERE parent_session_id IS NOT NULL AND parent_session_id != ''
+                  AND element_id_in_parent IS NOT NULL AND element_id_in_parent != ''
+                DO NOTHING
+                """,
+                values,
+            )
             row = con.execute(
-                f"SELECT * FROM sessions WHERE parent_session_id = ? AND element_id_in_parent = ? {org_clause} LIMIT 1",
-                [pid, eid, *org_params],
+                """
+                SELECT id FROM sessions
+                 WHERE org_id = ? AND project_id = ? AND parent_session_id = ? AND element_id_in_parent = ?
+                 LIMIT 1
+                """,
+                [org, project_id, pid, eid],
             ).fetchone()
-        return _session_row_to_model(row) if row else None
+            resolved_id = str(row["id"] if row else "").strip() or child_id
+
+        loaded = self.load(resolved_id, user_id=owner, org_id=org, is_admin=admin)
+        if loaded is None:
+            raise RuntimeError("failed to persist or load child subprocess session")
+        return loaded
 
     def save(
         self,
