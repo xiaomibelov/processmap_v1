@@ -101,6 +101,22 @@ jobs:
               --requested-ref "${DEPLOY_REF}" \
               --resolved-sha "${DEPLOY_SHA}"
 
+            # Smoke test: API/XLSX/CSV + UI bundle verification
+            echo "[deploy-stage-ref] running smoke tests..."
+            SMOKE_SCRIPT_URL="https://raw.githubusercontent.com/xiaomibelov/processmap_v1/${DEPLOY_REF}/deploy/scripts/stage_smoke_analytics.sh"
+            curl -fsS "${SMOKE_SCRIPT_URL}" -o /tmp/stage_smoke_analytics.sh
+            bash /tmp/stage_smoke_analytics.sh
+
+            echo "[deploy-stage-ref] verifying UI bundle includes new columns..."
+            PAGE=$(curl -fsS https://stage.processmap.ru/)
+            JS_SRC=$(printf '%s' "$PAGE" | grep -oE 'assets/index-[^"]+\.js' | head -1)
+            test -n "$JS_SRC"
+            JS_URL="https://stage.processmap.ru/${JS_SRC}"
+            JS=$(curl -fsS "$JS_URL")
+            printf '%s' "$JS" | grep -q 'BPMN Name' || { echo 'FAIL: BPMN Name not found in UI bundle'; exit 1; }
+            printf '%s' "$JS" | grep -q 'analyticsSessionBadge' || { echo 'FAIL: session badge class not found in UI bundle'; exit 1; }
+            echo '[deploy-stage-ref] UI bundle OK'
+
             rm -f "${STAGE_FRESHNESS_SOURCE_FILE}"
 
             echo "[deploy-stage-ref] done ref=${DEPLOY_REF} sha=${DEPLOY_SHA}"
