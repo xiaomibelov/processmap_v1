@@ -83,7 +83,7 @@ export default function useSubprocessNavigation({
     openSession(res.subprocessSessionId);
   }, [bpmnStageRef, sessionCacheRef, bpmnXmlCacheRef, parentViewportSnapshotRef, setSubprocessBreadcrumbs, setFocusElementId, setDiscussionLinkedElementFocusIntent, pushSessionSelectionToUrl, projectRouteContext, projectId, openSession, draft, logNav]);
 
-  const returnToParent = useCallback(async (sessionIdArg) => {
+  const returnToParent = useCallback(async (sessionIdArg, options = {}) => {
     const res = await apiReturnToParent(sessionIdArg);
     if (!res.ok) {
       console.error("return failed", res.error);
@@ -102,16 +102,23 @@ export default function useSubprocessNavigation({
     });
 
     setFocusElementId(res.elementIdInParent || "");
-    pushSessionSelectionToUrl({
-      projectId,
-      sessionId: res.parentSessionId,
-      focusElementId: res.elementIdInParent || "",
-      projectContext: projectRouteContext,
-    });
+
+    if (options?.skipHistoryPush !== true) {
+      pushSessionSelectionToUrl(
+        {
+          projectId,
+          sessionId: res.parentSessionId,
+          focusElementId: res.elementIdInParent || "",
+          projectContext: projectRouteContext,
+        },
+        undefined,
+        { replace: options?.replaceHistory === true },
+      );
+    }
 
     const cachedParentSession = parentSid ? sessionCacheRef.current?.get?.(parentSid) : null;
     openSession(res.parentSessionId, {
-      source: "subprocess_return",
+      source: options?.source || "subprocess_return",
       session: cachedParentSession || null,
     });
   }, [bpmnXmlCacheRef, parentViewportSnapshotRef, sessionCacheRef, setSubprocessBreadcrumbs, setFocusElementId, pushSessionSelectionToUrl, projectRouteContext, projectId, openSession, setRestoreViewportSnapshot]);
