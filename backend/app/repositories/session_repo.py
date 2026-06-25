@@ -6,6 +6,30 @@ from ..models import Session
 from ..storage import get_storage
 
 
+def find_or_create_child_session(
+    parent_session: Session,
+    element_id: str,
+    child_xml: str,
+    navigation_stack: List[Dict[str, Any]],
+    title: str,
+    *,
+    user_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    org_id: Optional[str] = None,
+) -> Session:
+    st = get_storage()
+    return st.find_or_create_child_session(
+        parent_session,
+        element_id,
+        child_xml,
+        navigation_stack,
+        title,
+        user_id=user_id,
+        is_admin=is_admin,
+        org_id=org_id,
+    )
+
+
 def create(
     title: str,
     roles: List[str] | None = None,
