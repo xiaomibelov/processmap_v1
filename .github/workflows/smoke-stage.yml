@@ -22,8 +22,9 @@ jobs:
           command_timeout: 10m
           script: |
             set -euo pipefail
-            cd /opt/processmap/app
-            bash deploy/scripts/stage_smoke_analytics.sh
+            SCRIPT_URL="https://raw.githubusercontent.com/xiaomibelov/processmap_v1/feature/properties-xlsx-bpmn-name-session-count/deploy/scripts/stage_smoke_analytics.sh"
+            curl -fsS "${SCRIPT_URL}" -o /tmp/stage_smoke_analytics.sh
+            bash /tmp/stage_smoke_analytics.sh
 
   smoke-ui-static:
     runs-on: ubuntu-latest
