@@ -52,6 +52,11 @@ BPMN_XML='<?xml version="1.0" encoding="UTF-8"?>
   </bpmn:process>
 </bpmn:definitions>'
 
+dump_api_logs() {
+  echo "[stage-smoke] last 50 lines of API container logs:" >&2
+  docker logs --tail=50 "${API_CONTAINER}" >&2 || true
+}
+
 api() {
   local method="$1"
   local path="$2"
@@ -70,6 +75,7 @@ api() {
   if [ "${http_code}" -ge 400 ]; then
     echo "[stage-smoke] API error: ${method} ${path} -> ${http_code}" >&2
     cat "${tmp_out}" >&2
+    dump_api_logs
     rm -f "${tmp_out}"
     exit 1
   fi
@@ -77,8 +83,44 @@ api() {
   rm -f "${tmp_out}"
 }
 
+# Retry wrapper for requests that may hit a freshly-restarted API
+api_with_retry() {
+  local method="$1"
+  local path="$2"
+  local body="${3:-}"
+  local attempts=10
+  local delay=3
+  local i
+  for i in $(seq 1 ${attempts}); do
+    local tmp_out; tmp_out="$(mktemp)"
+    local http_code
+    if [ -n "${body}" ]; then
+      http_code=$(curl -sS -o "${tmp_out}" -w '%{http_code}' -X "${method}" "${API_URL}${path}" \
+        -H 'Content-Type: application/json' \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -d "${body}")
+    else
+      http_code=$(curl -sS -o "${tmp_out}" -w '%{http_code}' -X "${method}" "${API_URL}${path}" \
+        -H "Authorization: Bearer ${TOKEN}")
+    fi
+    if [ "${http_code}" -lt 400 ]; then
+      cat "${tmp_out}"
+      rm -f "${tmp_out}"
+      return 0
+    fi
+    echo "[stage-smoke] ${method} ${path} -> ${http_code} (attempt ${i}/${attempts})" >&2
+    cat "${tmp_out}" >&2
+    rm -f "${tmp_out}"
+    if [ "${i}" -lt "${attempts}" ]; then
+      sleep "${delay}"
+    fi
+  done
+  dump_api_logs
+  exit 1
+}
+
 echo "[stage-smoke] creating project..."
-PROJECT=$(api POST /api/projects "{\"title\": \"Smoke Project ${RUN_ID}\"}")
+PROJECT=$(api_with_retry POST /api/projects "{\"title\": \"Smoke Project ${RUN_ID}\"}")
 PROJECT_ID=$(echo "${PROJECT}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id") or json.load(sys.stdin).get("project_id"))')
 test -n "${PROJECT_ID}"
 echo "[stage-smoke] project=${PROJECT_ID}"
