@@ -1,0 +1,43 @@
+name: Smoke Stage
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - "Deploy to Stage (Explicit Ref)"
+    types:
+      - completed
+
+jobs:
+  smoke-api-xlsx:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Run API/XLSX/CSV smoke on stage server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGE_HOST }}
+          username: ${{ secrets.STAGE_USER }}
+          key: ${{ secrets.STAGE_SSH_KEY }}
+          command_timeout: 10m
+          script: |
+            set -euo pipefail
+            cd /opt/processmap/app
+            bash deploy/scripts/stage_smoke_analytics.sh
+
+  smoke-ui-static:
+    runs-on: ubuntu-latest
+    needs: smoke-api-xlsx
+    steps:
+      - name: Verify UI bundle includes new columns
+        run: |
+          set -euo pipefail
+          PAGE=$(curl -fsS https://stage.processmap.ru/)
+          JS_SRC=$(printf '%s' "$PAGE" | grep -oE 'assets/index-[^"]+\.js' | head -1)
+          test -n "$JS_SRC"
+          JS_URL="https://stage.processmap.ru/${JS_SRC}"
+          echo "[smoke-ui] fetching ${JS_URL}"
+          JS=$(curl -fsS "$JS_URL")
+          printf '%s' "$JS" | grep -q 'BPMN Name' || { echo 'FAIL: BPMN Name not found in UI bundle'; exit 1; }
+          printf '%s' "$JS" | grep -q 'analyticsSessionBadge' || { echo 'FAIL: session badge class not found in UI bundle'; exit 1; }
+          echo '[smoke-ui] OK: new columns present in deployed bundle'
