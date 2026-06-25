@@ -22,7 +22,7 @@ export default function SubprocessBreadcrumbs({ breadcrumbs = [], onNavigate }) 
             ) : (
               <button
                 type="button"
-                onClick={() => onNavigate?.(crumb?.session_id)}
+                onClick={() => onNavigate?.(crumb?.session_id, idx)}
                 className="text-blue-600 dark:text-blue-400 hover:underline truncate max-w-[160px]"
               >
                 {crumb?.name || "..."}
