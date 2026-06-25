@@ -1346,6 +1346,7 @@ def _ensure_schema() -> None:
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_owner_updated ON sessions(owner_user_id, updated_at DESC)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_org_project ON sessions(org_id, project_id)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS session_presence (
