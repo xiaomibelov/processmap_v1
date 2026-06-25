@@ -143,10 +143,11 @@ SESSION_ID=$(echo "${SESSION}" | python3 -c 'import json,sys; print(json.load(sy
 test -n "${SESSION_ID}"
 echo "[stage-smoke] session=${SESSION_ID}"
 
-echo "[stage-smoke] uploading BPMN..."
+echo "[stage-smoke] uploading BPMN with camunda meta..."
 # JSON-escape BPMN for curl body
 BPMN_JSON=$(printf '%s' "${BPMN_XML}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
-api PUT "/api/sessions/${SESSION_ID}/bpmn" "{\"xml\": ${BPMN_JSON}, \"rev\": 0}"
+BPMN_META_JSON=$(python3 -c 'import json; print(json.dumps({"camunda_extensions_by_element_id": {"Activity_1": {"properties": {"extensionProperties": [{"name": "smokeProp", "value": "smokeValue"}]}}}}))')
+api PUT "/api/sessions/${SESSION_ID}/bpmn" "{\"xml\": ${BPMN_JSON}, \"rev\": 0, \"bpmn_meta\": ${BPMN_META_JSON}}"
 
 echo "[stage-smoke] recomputing analytics..."
 api POST "/api/sessions/${SESSION_ID}/recompute" '{}'
