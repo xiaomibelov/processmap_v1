@@ -112,8 +112,10 @@ jobs:
             test -n "$JS_SRC"
             JS_URL="https://stage.processmap.ru/${JS_SRC}"
             echo "[deploy-stage-ref] checking JS bundle: ${JS_URL}"
-            curl -fsS "$JS_URL" | grep -q 'BPMN Name' || { echo 'FAIL: BPMN Name not found in UI bundle'; exit 1; }
-            curl -fsS "$JS_URL" | grep -q 'analyticsSessionBadge' || { echo 'FAIL: session badge class not found in UI bundle'; exit 1; }
+            curl -fsS "$JS_URL" -o /tmp/stage_bundle.js
+            grep -q 'BPMN Name' /tmp/stage_bundle.js || { echo 'FAIL: BPMN Name not found in UI bundle'; exit 1; }
+            grep -q 'analyticsSessionBadge' /tmp/stage_bundle.js || { echo 'FAIL: session badge class not found in UI bundle'; exit 1; }
+            rm -f /tmp/stage_bundle.js
             echo '[deploy-stage-ref] UI bundle OK'
 
             rm -f "${STAGE_FRESHNESS_SOURCE_FILE}"
