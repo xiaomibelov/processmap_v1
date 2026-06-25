@@ -3308,8 +3308,12 @@ export default function App() {
   projectIdRef.current = projectId;
   const draftSessionIdRef = useRef(draft?.session_id);
   draftSessionIdRef.current = draft?.session_id;
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const openSessionRef = useRef(openSession);
   openSessionRef.current = openSession;
+  const returnToParentRef = useRef(returnToParent);
+  returnToParentRef.current = returnToParent;
   const confirmLeaveIfUnsafeRef = useRef(confirmLeaveIfUnsafe);
   confirmLeaveIfUnsafeRef.current = confirmLeaveIfUnsafe;
   const returnToSessionListRef = useRef(returnToSessionList);
@@ -3359,6 +3363,25 @@ export default function App() {
       if (leavesCurrentSession && !nextSessionId) {
         const historyRoute = window.history?.state?.[PROCESS_MAP_ROUTE_STATE_KEY];
         const parentSessionIdFromHistory = String(historyRoute?.parentSessionId || "").trim();
+        const currentParentSessionId = String(draftRef.current?.parent_session_id || "").trim();
+        const currentSessionProjectId = String(draftRef.current?.project_id || "").trim();
+        const targetParentSessionId = currentParentSessionId || parentSessionIdFromHistory;
+        // Only treat this as a subprocess return if we stay inside the same project.
+        const sameProjectForReturn = !nextProjectId || nextProjectId === currentSessionProjectId || nextProjectId === currentProjectId;
+        if (targetParentSessionId && returnToParentRef.current && sameProjectForReturn) {
+          logNav("popstate_return_to_parent", {
+            childSessionId: currentSessionId,
+            parentSessionId: targetParentSessionId,
+          });
+          if (nextProjectId && nextProjectId !== currentProjectId) {
+            setProjectIdRef.current(nextProjectId);
+          }
+          await returnToParentRef.current(currentSessionId, {
+            replaceHistory: true,
+            source: "popstate_navigation",
+          });
+          return;
+        }
         if (parentSessionIdFromHistory) {
           logNav("popstate_restore_parent_from_history", {
             parentSessionId: parentSessionIdFromHistory,
@@ -3384,6 +3407,35 @@ export default function App() {
           return;
         }
         return;
+      }
+      // Browser back landed directly on the parent session URL (common case when
+      // returning from a subprocess). Use returnToParent so that breadcrumbs,
+      // viewport snapshot and focus element are restored instead of a plain openSession.
+      if (
+        leavesCurrentSession
+        && nextSessionId
+        && returnToParentRef.current
+      ) {
+        const currentParentSessionId = String(draftRef.current?.parent_session_id || "").trim();
+        const currentSessionProjectId = String(draftRef.current?.project_id || "").trim();
+        const historyRoute = window.history?.state?.[PROCESS_MAP_ROUTE_STATE_KEY];
+        const parentSessionIdFromHistory = String(historyRoute?.parentSessionId || "").trim();
+        const expectedParentSessionId = currentParentSessionId || parentSessionIdFromHistory;
+        const sameProjectForReturn = nextProjectId === currentSessionProjectId || nextProjectId === currentProjectId;
+        if (nextSessionId === expectedParentSessionId && sameProjectForReturn) {
+          logNav("popstate_return_to_parent_by_session", {
+            childSessionId: currentSessionId,
+            parentSessionId: nextSessionId,
+          });
+          if (nextProjectId && nextProjectId !== currentProjectId) {
+            setProjectIdRef.current(nextProjectId);
+          }
+          await returnToParentRef.current(currentSessionId, {
+            replaceHistory: true,
+            source: "popstate_navigation",
+          });
+          return;
+        }
       }
       if (fromUrl.projectId && fromUrl.projectId !== currentProjectId) {
         rememberProjectRouteContextRef.current(nextProjectContext);

@@ -48,7 +48,7 @@ export function writeSelectionToUrl({ projectId, sessionId, parentSessionId, foc
   }
 }
 
-export function pushSessionSelectionToUrl({ projectId, sessionId, parentSessionId, focusElementId, projectContext }, win = typeof window !== "undefined" ? window : undefined) {
+export function pushSessionSelectionToUrl({ projectId, sessionId, parentSessionId, focusElementId, projectContext }, win = typeof window !== "undefined" ? window : undefined, options = {}) {
   if (!win) return { ok: false, action: "none", reason: "missing_window" };
   const pid = String(projectId || "").trim();
   const sid = String(sessionId || "").trim();
@@ -60,9 +60,12 @@ export function pushSessionSelectionToUrl({ projectId, sessionId, parentSessionI
     }
     // Preserve the current history entry (e.g. the parent session) so that the
     // browser back button can return to it. Only push the new session on top.
+    // `options.replace` is used by browser-back restore so that returning to the
+    // parent does not create an extra history entry on top of the popped one.
     const sessionResult = pushProcessMapHistory({ projectId: pid, sessionId: sid, parentSessionId, focusElementId, source: "internal", projectContext }, {
       win,
       baseSearch: win.location.search || "",
+      replace: options?.replace === true,
     });
     return {
       ok: true,
