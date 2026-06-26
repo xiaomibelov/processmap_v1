@@ -1,0 +1,34 @@
+{
+  "contour": "feature/analytics-dashboards-v2",
+  "type": "feature",
+  "phase": "planning",
+  "status": "ready_for_review",
+  "branch": "feature/analytics-dashboards-v2",
+  "baseline": "origin/main",
+  "baseline_sha": "d30f66da488f2a321d7637c6e04f10cbc6bb038e",
+  "head_sha": "d30f66da488f2a321d7637c6e04f10cbc6bb038e",
+  "artifacts": {
+    "PLAN.md": true,
+    "API.md": true,
+    "UI.md": true,
+    "TESTS.md": true,
+    "PR.md": true,
+    "RAG_PREFLIGHT.md": true
+  },
+  "gates": {
+    "rag_preflight": true,
+    "obsidian_context": true,
+    "plan_approved": false,
+    "implementation_done": false,
+    "tests_pass": false,
+    "runtime_proof": false,
+    "pr_created": false,
+    "user_approved": false
+  },
+  "risks": [
+    "Backend dashboard endpoint needs new computed sections.",
+    "No existing line-chart component; will implement lightweight SVG.",
+    "Some tiles may be empty for session scope."
+  ],
+  "next_action": "Wait for user approval of PLAN.md before implementation."
+}
