@@ -39,7 +39,19 @@ jobs:
               -p app \
               build api gateway
 
-            # Restart updated containers
+            # Remove the old gateway container and any attached volumes so stale statics cannot survive
+            docker compose \
+              --env-file /opt/processmap/env/prod.env \
+              -f docker-compose.yml \
+              -f docker-compose.prod.yml \
+              -f docker-compose.ssl.yml \
+              -f docker-compose.prod.gateway.yml \
+              -p app \
+              rm -fsv gateway frontend 2>/dev/null || true
+            # Drop any project named volume that could mask /usr/share/nginx/html
+            docker volume ls -q | grep '^app_' | xargs -r docker volume rm 2>/dev/null || true
+
+            # Start fresh containers (renew anonymous volumes to pull files from the new image)
             APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
               --env-file /opt/processmap/env/prod.env \
               -f docker-compose.yml \
@@ -47,6 +59,6 @@ jobs:
               -f docker-compose.ssl.yml \
               -f docker-compose.prod.gateway.yml \
               -p app \
-              up -d --no-deps api gateway
+              up -d --no-deps --force-recreate -V api gateway
 
             echo "[deploy-prod] done"
