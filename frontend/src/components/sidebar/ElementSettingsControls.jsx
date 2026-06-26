@@ -1147,20 +1147,9 @@ export function CamundaPropertiesSettings({
     [state],
   );
   const hasDictionarySchema = dictionaryEditorModel.hasSchema;
-  const propertyCount = useMemo(
-    () => countVisibleExtensionPropertyRows(state),
-    [state],
-  );
-  const duplicateLogicalKeys = Array.isArray(dictionaryEditorModel?.duplicateLogicalKeys)
-    ? dictionaryEditorModel.duplicateLogicalKeys
-    : [];
-  const hasDuplicateLogicalProperties = duplicateLogicalKeys.length > 0;
-  const rawPropertyRows = properties;
-  const additionalBpmnRows = (hasDuplicateLogicalProperties
-    ? rawPropertyRows
-    : (hasDictionarySchema
-      ? (Array.isArray(dictionaryEditorModel?.customRows) ? dictionaryEditorModel.customRows : [])
-      : visibleFallbackProperties))
+  const additionalBpmnRows = (hasDictionarySchema
+    ? (Array.isArray(dictionaryEditorModel?.customRows) ? dictionaryEditorModel.customRows : [])
+    : visibleFallbackProperties)
     .filter((row) => !isShowPropertiesFlagRow(row));
   const operationPropertiesCount = Array.isArray(dictionaryEditorModel?.schemaRows)
     ? dictionaryEditorModel.schemaRows.length
@@ -1682,11 +1671,9 @@ export function CamundaPropertiesSettings({
 
   const showSchemaHint = !hasDictionarySchema && !!normalizedOperationKey && !!dictionaryLoading && !dictionaryError;
   const showFallbackBlock = !hasDictionarySchema && (!normalizedOperationKey || !dictionaryLoading || !!dictionaryError);
-  const additionalBpmnCount = hasDuplicateLogicalProperties
-    ? additionalBpmnRows.length
-    : (hasDictionarySchema
-      ? (Array.isArray(dictionaryEditorModel?.customRows) ? dictionaryEditorModel.customRows.length : 0)
-      : (showFallbackBlock ? visibleFallbackProperties.length : 0));
+  const additionalBpmnCount = hasDictionarySchema
+    ? (Array.isArray(dictionaryEditorModel?.customRows) ? dictionaryEditorModel.customRows.length : 0)
+    : visibleFallbackProperties.length;
   const camundaIoCount = camundaInputRows.length + camundaOutputRows.length;
   const zeebeTaskHeadersCount = zeebeTaskHeaderRows.length;
   const propertySections = [
@@ -1969,11 +1956,6 @@ export function CamundaPropertiesSettings({
                   Подгружаю свойства операции <span className="font-medium text-fg">{operationDisplayLabel || normalizedOperationKey}</span>.
                 </div>
               ) : null}
-              {hasDictionarySchema && hasDuplicateLogicalProperties ? (
-                <div className="sidebarFieldHint">
-                  Обнаружены дублирующиеся BPMN-свойства: {duplicateLogicalKeys.join(", ")}. Поля операции выше показывают только первое видимое значение для каждого ключа. Полный сырой список строк доступен в блоке «Дополнительные BPMN-свойства».
-                </div>
-              ) : null}
               {hasDictionarySchema ? (
                 <>
                   <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
@@ -2029,68 +2011,7 @@ export function CamundaPropertiesSettings({
             />
           </div>
           {additionalBpmnOpen ? (
-            hasDuplicateLogicalProperties ? (
-              <>
-                <div className="sidebarFieldHint">
-                  Панель показывает сырой список `extensionProperties`, потому что найдены дублирующиеся ключи: {duplicateLogicalKeys.join(", ")}. Удаление строки с таким ключом очищает все записи этого ключа, чтобы после Save свойство не восстанавливалось логически.
-                </div>
-                <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
-                  <div className="sidebarPropertiesTableHead" role="presentation">
-                    <span>Свойство</span>
-                    <span>Значение</span>
-                    <span>Действие</span>
-                  </div>
-                  {additionalBpmnRows.map((row) => renderCustomPropertyRow(row))}
-                </div>
-                <div className="sidebarButtonRow">
-                  <button
-                    type="button"
-                    className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
-                    onClick={addPropertyRow}
-                    disabled={!!disabled || !!extensionStateBusy}
-                  >
-                    + Добавить BPMN-свойство
-                  </button>
-                  <button
-                    type="button"
-                    className="primaryBtn sidebarPropertiesActionBtn px-2.5"
-                    onClick={() => void onSaveExtensionState?.()}
-                    disabled={!!disabled || !!extensionStateBusy}
-                  >
-                    {extensionStateBusy ? "Сохраняю..." : "Сохранить"}
-                  </button>
-                </div>
-              </>
-            ) : hasDictionarySchema ? (
-              <>
-                <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
-                  <div className="sidebarPropertiesTableHead" role="presentation">
-                    <span>Свойство</span>
-                    <span>Значение</span>
-                    <span>Действие</span>
-                  </div>
-                  {additionalBpmnRows.map((row) => renderCustomPropertyRow(row))}
-                </div>
-                <div className="sidebarButtonRow">
-                  <button
-                    type="button"
-                    className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
-                    onClick={addPropertyRow}
-                    disabled={!!disabled || !!extensionStateBusy}
-                  >
-                    + Добавить BPMN-свойство
-                  </button>
-                  <button
-                    type="button"
-                    className="primaryBtn sidebarPropertiesActionBtn px-2.5"
-                    onClick={() => void onSaveExtensionState?.()}
-                    disabled={!!disabled || !!extensionStateBusy}
-                  >
-                    {extensionStateBusy ? "Сохраняю..." : "Сохранить"}
-                  </button>
-                </div>
-              </>
-            ) : showFallbackBlock ? (
+            hasDictionarySchema || showFallbackBlock ? (
               <>
                 <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
                   <div className="sidebarPropertiesTableHead" role="presentation">
