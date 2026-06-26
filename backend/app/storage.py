@@ -11478,12 +11478,15 @@ def _count_bpmn_activities(xml: str) -> int:
 
 def _session_to_explorer_dict(s: "Session", has_children: bool = False, children_count: int = 0) -> Dict[str, Any]:
     """Convert a Session model to the explorer-friendly dict shape."""
+    from .services.bpmn_navigation import find_subprocess_elements
+    subprocess_count = len(find_subprocess_elements(str(getattr(s, "bpmn_xml", "") or "")))
     return {
         "id": s.id,
         "title": s.title,
         "project_id": s.project_id or "",
         "parent_session_id": str(getattr(s, "parent_session_id", "") or ""),
         "element_id_in_parent": str(getattr(s, "element_id_in_parent", "") or ""),
+        "subprocesses_count": subprocess_count,
         "owner_user_id": s.owner_user_id,
         "org_id": s.org_id,
         "status": str((s.interview or {}).get("status", "draft") or "draft"),

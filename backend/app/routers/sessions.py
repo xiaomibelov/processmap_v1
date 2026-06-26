@@ -64,6 +64,18 @@ def get_session(session_id: str, request: Request = None):
 def get_session_meta(session_id: str, request: Request = None):
     return _svc.get_session_meta(session_id, request=request)
 
+@router.get('/api/sessions/{session_id}/subprocesses-count')
+def get_subprocesses_count(session_id: str, request: Request = None):
+    return {"total": _svc.get_subprocesses_count(session_id, request=request)}
+
+@router.post('/api/sessions/{session_id}/create-subprocesses')
+def create_subprocess_sessions(
+    session_id: str,
+    request: Request = None,
+    load_all: bool = Query(default=False),
+):
+    return _svc.create_subprocess_sessions(session_id, request=request, load_all=load_all)
+
 @router.get('/api/sessions/{session_id}/graph')
 def get_session_graph(session_id: str, request: Request = None):
     return _svc.get_session_graph(session_id, request=request)

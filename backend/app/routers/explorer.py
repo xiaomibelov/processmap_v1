@@ -259,6 +259,7 @@ def _session_item_from_row(row: Dict[str, Any]) -> SessionItem:
         project_id=row.get("project_id", ""),
         parent_session_id=str(row.get("parent_session_id") or ""),
         has_children=bool(row.get("has_children")),
+        children_count=int(row.get("children_count") or 0),
         activity_count=int(row.get("activity_count") or 0),
         owner=_owner_out(row.get("owner_user_id", "")),
         status=row.get("status", "draft"),
