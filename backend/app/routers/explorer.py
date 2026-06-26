@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -169,6 +169,8 @@ class SessionItem(BaseModel):
     id: str
     name: str
     project_id: str = ""
+    parent_session_id: str = ""
+    has_children: bool = False
     owner: Optional[OwnerOut] = None
     status: str = "draft"
     stage: str = ""
@@ -950,13 +952,18 @@ def move_project(
 
 @router.get("/api/projects/{project_id}/explorer", response_model=ProjectPage)
 def get_project_explorer(
-    project_id: str, request: Request, workspace_id: str = Query(...),
+    project_id: str,
+    request: Request,
+    workspace_id: str = Query(...),
+    root_only: Annotated[bool, Query()] = False,
+    include_children_meta: Annotated[bool, Query()] = False,
 ) -> ProjectPage:
     t0 = time.perf_counter()
     workspace = _resolve_workspace(request, workspace_id)
     oid = str(workspace.get("org_id") or "")
     wid = str(workspace.get("id") or "")
-    _require_org_access(request, oid)
+    user_id = _require_org_access(request, oid)
+    is_admin = request_is_admin(request)
     pid = str(project_id or "").strip()
 
     details = storage.get_project_workspace_details(oid, pid)
@@ -984,13 +991,21 @@ def get_project_explorer(
         updated_at=proj.updated_at,
     )
 
-    # Sessions: cache-aside
-    session_rows = _cached_project_sessions(oid, pid)
+    # Sessions: cache-aside only for the default flat list.
+    if root_only or include_children_meta:
+        session_rows = storage.list_project_sessions_for_explorer(
+            oid, pid, root_only=root_only, include_children_meta=include_children_meta
+        )
+    else:
+        session_rows = _cached_project_sessions(oid, pid)
+
     sessions = [
         SessionItem(
             id=s["id"],
             name=s.get("title", ""),
             project_id=s.get("project_id", ""),
+            parent_session_id=str(s.get("parent_session_id") or ""),
+            has_children=bool(s.get("has_children")),
             owner=_owner_out(s.get("owner_user_id", "")),
             status=s.get("status", "draft"),
             stage=s.get("stage", ""),
@@ -1003,9 +1018,60 @@ def get_project_explorer(
         for s in session_rows
     ]
 
-    logger.info("explorer /projects/%s org=%s workspace=%s sessions=%d total=%dms",
-                pid, oid, wid, len(sessions), _ms(t0))
+    logger.info("explorer /projects/%s org=%s workspace=%s root_only=%s meta=%s sessions=%d total=%dms",
+                pid, oid, wid, root_only, include_children_meta, len(sessions), _ms(t0))
     return ProjectPage(project=proj_item, sessions=sessions)
+
+
+@router.get("/api/sessions/{session_id}/children", response_model=List[SessionItem])
+def list_session_children(
+    session_id: str,
+    request: Request,
+) -> List[SessionItem]:
+    t0 = time.perf_counter()
+    oid = _resolve_selected_org(request)
+    user_id = _require_org_access(request, oid)
+    is_admin = request_is_admin(request)
+    sid = str(session_id or "").strip()
+
+    parent = storage.get_storage().load(sid, user_id=user_id, org_id=oid, is_admin=is_admin)
+    if not parent:
+        raise HTTPException(status_code=404, detail="session not found")
+
+    pid = str(getattr(parent, "project_id", "") or "").strip()
+    if not pid:
+        return []
+
+    child_rows = storage.list_session_children(
+        oid,
+        pid,
+        sid,
+        user_id=user_id,
+        is_admin=is_admin,
+    )
+
+    sessions = [
+        SessionItem(
+            id=s["id"],
+            name=s.get("title", ""),
+            project_id=s.get("project_id", ""),
+            parent_session_id=str(s.get("parent_session_id") or ""),
+            has_children=bool(s.get("has_children")),
+            owner=_owner_out(s.get("owner_user_id", "")),
+            status=s.get("status", "draft"),
+            stage=s.get("stage", ""),
+            dod_percent=s.get("dod_percent", 0),
+            attention_count=s.get("attention_count", 0),
+            reports_count=s.get("reports_count", 0),
+            updated_at=s.get("updated_at", 0),
+            created_at=s.get("created_at", 0),
+        )
+        for s in child_rows
+    ]
+
+    logger.info("explorer /sessions/%s/children org=%s project=%s count=%d total=%dms",
+                sid, oid, pid, len(sessions), _ms(t0))
+    return sessions
 
 
 # ─── POST /api/projects/{project_id}/explorer/sessions ────────────────────────
