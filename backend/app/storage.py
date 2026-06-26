@@ -3771,6 +3771,7 @@ class Storage:
             "parent_session_id": pid,
             "element_id_in_parent": eid,
             "activity_count": int(getattr(child, "activity_count", 0) or 0),
+            "deleted_at": int(getattr(child, "deleted_at", 0) or 0),
         }
 
         _ensure_schema()
@@ -11425,6 +11426,7 @@ def _session_to_explorer_dict(s: "Session", has_children: bool = False, children
         "title": s.title,
         "project_id": s.project_id or "",
         "parent_session_id": str(getattr(s, "parent_session_id", "") or ""),
+        "element_id_in_parent": str(getattr(s, "element_id_in_parent", "") or ""),
         "owner_user_id": s.owner_user_id,
         "org_id": s.org_id,
         "status": str((s.interview or {}).get("status", "draft") or "draft"),
@@ -11437,6 +11439,7 @@ def _session_to_explorer_dict(s: "Session", has_children: bool = False, children
         "has_children": bool(has_children),
         "children_count": int(children_count),
         "activity_count": int(getattr(s, "activity_count", 0) or 0),
+        "bpmn_xml": str(getattr(s, "bpmn_xml", "") or ""),
     }
 
 
