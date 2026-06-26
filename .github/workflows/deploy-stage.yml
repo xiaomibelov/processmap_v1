@@ -53,6 +53,20 @@ jobs:
               --requested-ref "${REQUESTED_REF}" \
               --resolved-sha "${DEPLOY_SHA}"
 
+            BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+            # Pass accurate build metadata to the API container so /version tells the truth
+            export BUILD_ID="${DEPLOY_SHA}"
+            export BUILD_BRANCH="${REQUESTED_REF}"
+            export BUILD_TIME="${BUILD_TIME}"
+            export BUILD_ENV="stage"
+
+            # Pass accurate build metadata to the frontend container so buildInfo.js is correct
+            export VITE_BUILD_ID="${DEPLOY_SHA}"
+            export VITE_BUILD_BRANCH="${REQUESTED_REF}"
+            export VITE_BUILD_TIME="${BUILD_TIME}"
+            export VITE_BUILD_ENV="stage"
+
             DEPLOY_FINGERPRINT="processmap-stage-deploy-sha:${DEPLOY_SHA}"
             export VITE_DEPLOY_FINGERPRINT="${DEPLOY_FINGERPRINT}"
             export VITE_DEPLOY_REQUESTED_REF="${REQUESTED_REF}"
