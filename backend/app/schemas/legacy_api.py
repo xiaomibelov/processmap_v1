@@ -288,6 +288,13 @@ class BpmnMetaPatchIn(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class SessionMetaPatchIn(BaseModel):
+    bpmn_meta_json: Optional[Dict[str, Any]] = None
+    base_diagram_state_version: Optional[int] = None
+    base_bpmn_xml_version: Optional[int] = None
+    model_config = ConfigDict(extra="allow")
+
+
 class InferRtiersIn(BaseModel):
     scopeStartId: Optional[str] = None
     successEndIds: Optional[List[str]] = None
