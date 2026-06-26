@@ -11,6 +11,7 @@ from fastapi import HTTPException, Request, Response
 
 from ..cache import session_cache
 from ..legacy.request_context import request_user_meta, request_active_org_id
+from ..redis_cache import explorer_invalidate_sessions
 from ..models import Session
 from ..repositories import session_repo
 from ..storage import get_storage, list_session_presence
@@ -165,6 +166,8 @@ def list_project_sessions(
     mode: Optional[str] = None,
     view: str = "full",
     *,
+    root_only: bool = False,
+    include_children_meta: bool = False,
     user_id: Optional[str] = None,
     org_id: Optional[str] = None,
     is_admin: Optional[bool] = None,
@@ -184,6 +187,15 @@ def list_project_sessions(
             org_id=ctx_org_id,
             is_admin=ctx_is_admin,
         )
+    if root_only or include_children_meta:
+        return session_repo.list_project_sessions(
+            project_id=project_id,
+            root_only=root_only,
+            include_children_meta=include_children_meta,
+            user_id=ctx_user_id,
+            org_id=ctx_org_id,
+            is_admin=ctx_is_admin,
+        )
     rows = session_repo.list_sessions(
         query=None,
         limit=500,
@@ -199,6 +211,21 @@ def list_project_sessions(
         if isinstance(row, dict):
             out.append(_lm._session_api_dump(Session.model_validate(row)))
     return out
+
+
+def list_session_children(
+    session_id: str,
+    *,
+    request: Optional[Any] = None,
+) -> List[Dict[str, Any]]:
+    """Return immediate child sessions of a parent session."""
+    ctx = _request_context(request)
+    return session_repo.list_session_children(
+        session_id,
+        user_id=ctx.get("user_id"),
+        org_id=ctx.get("org_id"),
+        is_admin=ctx.get("is_admin"),
+    )
 
 
 def delete_session_api(session_id: str, request: Any = None):
@@ -964,6 +991,7 @@ def _create_child_session(
     """Create and persist a new child subprocess session."""
     uid, oid, admin = _subprocess_request_context(request)
     parent_id = str(getattr(parent_session, "id", "") or "").strip()
+    project_id = str(getattr(parent_session, "project_id", "") or "").strip()
 
     parent_bpmn = str(getattr(parent_session, "bpmn_xml", "") or "").strip()
     called = called_element_id(parent_bpmn, element_id) if parent_bpmn else None
@@ -1002,6 +1030,11 @@ def _create_child_session(
         org_id=oid,
         is_admin=admin,
     )
+    if project_id:
+        try:
+            explorer_invalidate_sessions(project_id)
+        except Exception:
+            logger.exception("failed to invalidate explorer sessions cache for project %s", project_id)
     return child
 
 

@@ -14,6 +14,7 @@ _DEFAULT_FLAGS: Dict[str, str] = {
     "canvas_profiler_enabled": "0",
     "lightweightOverlays": "0",
     "useBpmnExtensionOverlays": "0",
+    "workspace_session_tree_view": "0",
 }
 
 

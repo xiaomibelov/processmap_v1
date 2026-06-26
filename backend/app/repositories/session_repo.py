@@ -123,6 +123,52 @@ def list_project_session_summaries(
     )
 
 
+def list_project_sessions(
+    project_id: str,
+    *,
+    root_only: bool = False,
+    include_children_meta: bool = False,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+) -> List[Dict[str, Any]]:
+    st = get_storage()
+    return st.list_project_sessions_for_explorer(
+        org_id=org_id or "",
+        project_id=project_id,
+        root_only=root_only,
+        include_children_meta=include_children_meta,
+    )
+
+
+def list_session_children(
+    session_id: str,
+    *,
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+) -> List[Dict[str, Any]]:
+    st = get_storage()
+    parent = st.load(
+        session_id,
+        user_id=user_id,
+        org_id=org_id,
+        is_admin=is_admin,
+    )
+    if not parent:
+        return []
+    project_id = str(getattr(parent, "project_id", "") or "").strip()
+    if not project_id:
+        return []
+    return st.list_session_children(
+        org_id=org_id or "",
+        project_id=project_id,
+        parent_session_id=session_id,
+        user_id=user_id,
+        is_admin=is_admin,
+    )
+
+
 def list_bpmn_versions(
     session_id: str,
     *,

@@ -1357,6 +1357,13 @@ def _ensure_schema() -> None:
             )
             con.execute(
                 """
+                CREATE INDEX IF NOT EXISTS idx_sessions_project_parent
+                ON sessions(project_id, parent_session_id)
+                WHERE parent_session_id IS NOT NULL AND parent_session_id != ''
+                """
+            )
+            con.execute(
+                """
                 CREATE TABLE IF NOT EXISTS session_presence (
                   session_id TEXT NOT NULL,
                   user_id TEXT NOT NULL,
@@ -1479,6 +1486,13 @@ def _ensure_schema() -> None:
                 ON sessions(org_id, project_id, parent_session_id, element_id_in_parent)
                 WHERE parent_session_id IS NOT NULL AND parent_session_id != ''
                   AND element_id_in_parent IS NOT NULL AND element_id_in_parent != ''
+                """
+            )
+            con.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_sessions_project_parent
+                ON sessions(project_id, parent_session_id)
+                WHERE parent_session_id IS NOT NULL AND parent_session_id != ''
                 """
             )
             con.execute(
@@ -11274,46 +11288,125 @@ def get_project_explorer_invalidation_targets(org_id: str, project_id: str) -> O
     }
 
 
-def list_project_sessions_for_explorer(org_id: str, project_id: str) -> List[Dict[str, Any]]:
+def _session_to_explorer_dict(s: "Session", has_children: bool = False) -> Dict[str, Any]:
+    """Convert a Session model to the explorer-friendly dict shape."""
+    return {
+        "id": s.id,
+        "title": s.title,
+        "project_id": s.project_id or "",
+        "parent_session_id": str(getattr(s, "parent_session_id", "") or ""),
+        "owner_user_id": s.owner_user_id,
+        "org_id": s.org_id,
+        "status": str((s.interview or {}).get("status", "draft") or "draft"),
+        "stage": str((s.interview or {}).get("stage", "") or ""),
+        "dod_percent": int((s.analytics or {}).get("dod_percent", 0) or 0),
+        "attention_count": int((s.analytics or {}).get("attention_count", 0) or 0),
+        "reports_count": int((s.analytics or {}).get("reports_count", 0) or 0),
+        "updated_at": s.updated_at,
+        "created_at": s.created_at,
+        "has_children": bool(has_children),
+    }
+
+
+def list_project_sessions_for_explorer(
+    org_id: str,
+    project_id: str,
+    root_only: bool = False,
+    include_children_meta: bool = False,
+) -> List[Dict[str, Any]]:
     """List sessions for a project, explorer-friendly format.
-    Falls back to no-org-filter when org_id mismatches legacy data."""
+
+    Falls back to no-org-filter when org_id mismatches legacy data.
+    When root_only=True only root sessions are returned.
+    When include_children_meta=True each item includes has_children.
+    """
     _ensure_schema()
     oid = str(org_id or "").strip()
     pid = str(project_id or "").strip()
-    with _connect() as con:
-        if oid:
-            rows = con.execute(
-                "SELECT * FROM sessions WHERE project_id = ? AND org_id = ? ORDER BY updated_at DESC",
-                [pid, oid],
-            ).fetchall()
-            if not rows:
-                # Fallback: legacy sessions may have wrong org_id
-                rows = con.execute(
-                    "SELECT * FROM sessions WHERE project_id = ? ORDER BY updated_at DESC",
-                    [pid],
-                ).fetchall()
-        else:
-            rows = con.execute(
-                "SELECT * FROM sessions WHERE project_id = ? ORDER BY updated_at DESC",
-                [pid],
-            ).fetchall()
+
+    base_filters = ["project_id = ?"]
+    params: List[Any] = [pid]
+    if oid:
+        base_filters.append("org_id = ?")
+        params.append(oid)
+
+    root_filter = " AND COALESCE(parent_session_id, '') = ''" if root_only else ""
+    has_children_sql = ""
+    if include_children_meta:
+        has_children_sql = ", EXISTS(SELECT 1 FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS has_children"
+
+    sql = f"""
+        SELECT s.*{has_children_sql}
+        FROM sessions s
+        WHERE {' AND '.join(base_filters)}{root_filter}
+        ORDER BY s.updated_at DESC
+    """
+
+    def _run_query(query: str, query_params: List[Any]) -> List[Any]:
+        with _connect() as con:
+            return con.execute(query, query_params).fetchall()
+
+    rows = _run_query(sql, params)
+    if oid and not rows:
+        # Fallback: legacy sessions may have wrong org_id
+        fallback_params = [pid]
+        fallback_sql = f"""
+            SELECT s.*{has_children_sql}
+            FROM sessions s
+            WHERE project_id = ?{root_filter}
+            ORDER BY s.updated_at DESC
+        """
+        rows = _run_query(fallback_sql, fallback_params)
+
     result = []
     for row in rows:
         s = _session_row_to_model(row)
-        result.append({
-            "id": s.id,
-            "title": s.title,
-            "project_id": s.project_id or "",
-            "owner_user_id": s.owner_user_id,
-            "org_id": s.org_id,
-            "status": str((s.interview or {}).get("status", "draft") or "draft"),
-            "stage": str((s.interview or {}).get("stage", "") or ""),
-            "dod_percent": int((s.analytics or {}).get("dod_percent", 0) or 0),
-            "attention_count": int((s.analytics or {}).get("attention_count", 0) or 0),
-            "reports_count": int((s.analytics or {}).get("reports_count", 0) or 0),
-            "updated_at": s.updated_at,
-            "created_at": s.created_at,
-        })
+        has_children = bool(row["has_children"]) if include_children_meta else False
+        result.append(_session_to_explorer_dict(s, has_children))
+    return result
+
+
+def list_session_children(
+    org_id: str,
+    project_id: str,
+    parent_session_id: str,
+    user_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+) -> List[Dict[str, Any]]:
+    """Return immediate child sessions of a parent session."""
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    psid = str(parent_session_id or "").strip()
+    if not psid:
+        return []
+
+    filters = ["project_id = ?", "parent_session_id = ?"]
+    params: List[Any] = [pid, psid]
+    if oid:
+        filters.append("org_id = ?")
+        params.append(oid)
+
+    scope_filters, scope_params = _session_read_scope_filters(user_id, is_admin, oid)
+    filters.extend(scope_filters)
+    params.extend(scope_params)
+
+    where = " AND ".join(filters)
+    sql = f"""
+        SELECT s.*,
+          EXISTS(SELECT 1 FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS has_children
+        FROM sessions s
+        WHERE {where}
+        ORDER BY s.updated_at DESC
+    """
+
+    with _connect() as con:
+        rows = con.execute(sql, params).fetchall()
+
+    result = []
+    for row in rows:
+        s = _session_row_to_model(row)
+        result.append(_session_to_explorer_dict(s, bool(row["has_children"])))
     return result
 
 
