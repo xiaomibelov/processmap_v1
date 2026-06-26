@@ -13,7 +13,8 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Set
+import xml.etree.ElementTree as ET
 
 from .db import get_db_runtime_config, redact_database_url
 from .models import Project, Session
@@ -26,6 +27,45 @@ except Exception:
     psycopg = None
     PsycopgIntegrityError = None
     ConnectionPool = None
+
+
+_BPMN_ACTIVITY_TAGS: Set[str] = {
+    "task",
+    "usertask",
+    "servicetask",
+    "manualtask",
+    "scripttask",
+    "businessruletask",
+    "sendtask",
+    "receivetask",
+    "callactivity",
+    "subprocess",
+}
+
+
+def _bpmn_local_name(tag: str) -> str:
+    if not tag:
+        return ""
+    if tag.startswith("{"):
+        return tag.split("}", 1)[-1].lower()
+    return tag.lower()
+
+
+def _count_bpmn_activities(xml_text: str) -> int:
+    """Count BPMN activity elements (tasks, callActivity, subProcess)."""
+    raw = str(xml_text or "").strip()
+    if not raw:
+        return 0
+    try:
+        root = ET.fromstring(raw)
+    except Exception:
+        return 0
+    count = 0
+    for el in root.iter():
+        if _bpmn_local_name(str(getattr(el, "tag", "") or "")) in _BPMN_ACTIVITY_TAGS:
+            count += 1
+    return count
+
 
 _REQ_USER_ID: ContextVar[str] = ContextVar("fpc_req_user_id", default="")
 _REQ_IS_ADMIN: ContextVar[bool] = ContextVar("fpc_req_is_admin", default=False)
@@ -1340,7 +1380,8 @@ def _ensure_schema() -> None:
                   updated_at INTEGER NOT NULL DEFAULT 0,
                   navigation_stack TEXT DEFAULT '[]',
                   parent_session_id TEXT,
-                  element_id_in_parent TEXT
+                  element_id_in_parent TEXT,
+                  activity_count INTEGER NOT NULL DEFAULT 0
                 )
                 """
             )
@@ -1479,6 +1520,8 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE sessions ADD COLUMN parent_session_id TEXT")
             if not _column_exists(con, "sessions", "element_id_in_parent"):
                 con.execute("ALTER TABLE sessions ADD COLUMN element_id_in_parent TEXT")
+            if not _column_exists(con, "sessions", "activity_count"):
+                con.execute("ALTER TABLE sessions ADD COLUMN activity_count INTEGER NOT NULL DEFAULT 0")
             con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_parent_element ON sessions(parent_session_id, element_id_in_parent)")
             con.execute(
                 """
@@ -3333,6 +3376,7 @@ def _session_row_to_model(row: sqlite3.Row) -> Session:
         ),
         "parent_session_id": str((row["parent_session_id"] if "parent_session_id" in keys else "") or ""),
         "element_id_in_parent": str((row["element_id_in_parent"] if "element_id_in_parent" in keys else "") or ""),
+        "activity_count": int((row["activity_count"] if "activity_count" in keys else 0) or 0),
     }
     return Session.model_validate(payload)
 
@@ -3679,6 +3723,7 @@ class Storage:
             navigation_stack=stack,
             parent_session_id=pid,
             element_id_in_parent=eid,
+            activity_count=_count_bpmn_activities(str(child_xml or "")),
         )
 
         values = {
@@ -3720,6 +3765,7 @@ class Storage:
             "navigation_stack": _json_dumps(child.navigation_stack, []),
             "parent_session_id": pid,
             "element_id_in_parent": eid,
+            "activity_count": int(getattr(child, "activity_count", 0) or 0),
         }
 
         _ensure_schema()
@@ -3734,7 +3780,7 @@ class Storage:
                   diagram_last_write_actor_user_id, diagram_last_write_actor_label, diagram_last_write_at,
                   diagram_last_write_changed_keys_json, bpmn_graph_fingerprint, bpmn_meta_json, version,
                   owner_user_id, org_id, created_by, updated_by, created_at, updated_at,
-                  navigation_stack, parent_session_id, element_id_in_parent
+                  navigation_stack, parent_session_id, element_id_in_parent, activity_count
                 ) VALUES (
                   :id, :title, :roles_json, :start_role, :project_id, :mode, :notes, :notes_by_element_json,
                   :interview_json, :nodes_json, :edges_json, :questions_json, :mermaid, :mermaid_simple, :mermaid_lanes,
@@ -3743,7 +3789,7 @@ class Storage:
                   :diagram_last_write_actor_user_id, :diagram_last_write_actor_label, :diagram_last_write_at,
                   :diagram_last_write_changed_keys_json, :bpmn_graph_fingerprint, :bpmn_meta_json, :version,
                   :owner_user_id, :org_id, :created_by, :updated_by, :created_at, :updated_at,
-                  :navigation_stack, :parent_session_id, :element_id_in_parent
+                  :navigation_stack, :parent_session_id, :element_id_in_parent, :activity_count
                 )
                 ON CONFLICT (org_id, project_id, parent_session_id, element_id_in_parent)
                 WHERE parent_session_id IS NOT NULL AND parent_session_id != ''
@@ -3849,6 +3895,7 @@ class Storage:
                 "navigation_stack": _json_dumps(getattr(s, "navigation_stack", []) or [], []),
                 "parent_session_id": str(getattr(s, "parent_session_id", "") or ""),
                 "element_id_in_parent": str(getattr(s, "element_id_in_parent", "") or ""),
+                "activity_count": int(getattr(s, "activity_count", 0) or 0),
             }
             con.execute(
                 """
@@ -3860,7 +3907,7 @@ class Storage:
                   diagram_last_write_actor_user_id, diagram_last_write_actor_label, diagram_last_write_at,
                   diagram_last_write_changed_keys_json, bpmn_graph_fingerprint, bpmn_meta_json, version,
                   owner_user_id, org_id, created_by, updated_by, created_at, updated_at,
-                  navigation_stack, parent_session_id, element_id_in_parent
+                  navigation_stack, parent_session_id, element_id_in_parent, activity_count
                 ) VALUES (
                   :id, :title, :roles_json, :start_role, :project_id, :mode, :notes, :notes_by_element_json,
                   :interview_json, :nodes_json, :edges_json, :questions_json, :mermaid, :mermaid_simple, :mermaid_lanes,
@@ -3869,7 +3916,7 @@ class Storage:
                   :diagram_last_write_actor_user_id, :diagram_last_write_actor_label, :diagram_last_write_at,
                   :diagram_last_write_changed_keys_json, :bpmn_graph_fingerprint, :bpmn_meta_json, :version,
                   :owner_user_id, :org_id, :created_by, :updated_by, :created_at, :updated_at,
-                  :navigation_stack, :parent_session_id, :element_id_in_parent
+                  :navigation_stack, :parent_session_id, :element_id_in_parent, :activity_count
                 )
                 ON CONFLICT(id) DO UPDATE SET
                   title=excluded.title,
@@ -3908,7 +3955,8 @@ class Storage:
                   updated_at=excluded.updated_at,
                   navigation_stack=excluded.navigation_stack,
                   parent_session_id=excluded.parent_session_id,
-                  element_id_in_parent=excluded.element_id_in_parent
+                  element_id_in_parent=excluded.element_id_in_parent,
+                  activity_count=excluded.activity_count
                 """,
                 values,
             )
@@ -11288,7 +11336,21 @@ def get_project_explorer_invalidation_targets(org_id: str, project_id: str) -> O
     }
 
 
-def _session_to_explorer_dict(s: "Session", has_children: bool = False) -> Dict[str, Any]:
+def _count_bpmn_activities(xml: str) -> int:
+    """Count BPMN flow nodes (tasks, events, gateways, subprocesses, call activities)."""
+    if not xml:
+        return 0
+    try:
+        return len(re.findall(
+            r"<bpmn:(task|userTask|serviceTask|sendTask|receiveTask|manualTask|businessRuleTask|scriptTask|startEvent|endEvent|intermediateThrowEvent|intermediateCatchEvent|boundaryEvent|exclusiveGateway|parallelGateway|inclusiveGateway|eventBasedGateway|complexGateway|subProcess|callActivity|adHocSubProcess|transaction)",
+            xml,
+            flags=re.IGNORECASE,
+        ))
+    except Exception:
+        return 0
+
+
+def _session_to_explorer_dict(s: "Session", has_children: bool = False, children_count: int = 0) -> Dict[str, Any]:
     """Convert a Session model to the explorer-friendly dict shape."""
     return {
         "id": s.id,
@@ -11305,6 +11367,8 @@ def _session_to_explorer_dict(s: "Session", has_children: bool = False) -> Dict[
         "updated_at": s.updated_at,
         "created_at": s.created_at,
         "has_children": bool(has_children),
+        "children_count": int(children_count),
+        "activity_count": int(getattr(s, "activity_count", 0) or 0),
     }
 
 
@@ -11331,12 +11395,14 @@ def list_project_sessions_for_explorer(
         params.append(oid)
 
     root_filter = " AND COALESCE(parent_session_id, '') = ''" if root_only else ""
-    has_children_sql = ""
+    children_meta_sql = ""
     if include_children_meta:
-        has_children_sql = ", EXISTS(SELECT 1 FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS has_children"
+        children_meta_sql = """,
+          EXISTS(SELECT 1 FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS has_children,
+          (SELECT COUNT(*) FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS children_count"""
 
     sql = f"""
-        SELECT s.*{has_children_sql}
+        SELECT s.*{children_meta_sql}
         FROM sessions s
         WHERE {' AND '.join(base_filters)}{root_filter}
         ORDER BY s.updated_at DESC
@@ -11351,7 +11417,7 @@ def list_project_sessions_for_explorer(
         # Fallback: legacy sessions may have wrong org_id
         fallback_params = [pid]
         fallback_sql = f"""
-            SELECT s.*{has_children_sql}
+            SELECT s.*{children_meta_sql}
             FROM sessions s
             WHERE project_id = ?{root_filter}
             ORDER BY s.updated_at DESC
@@ -11362,7 +11428,8 @@ def list_project_sessions_for_explorer(
     for row in rows:
         s = _session_row_to_model(row)
         has_children = bool(row["has_children"]) if include_children_meta else False
-        result.append(_session_to_explorer_dict(s, has_children))
+        children_count = int(row["children_count"] or 0) if include_children_meta else 0
+        result.append(_session_to_explorer_dict(s, has_children, children_count))
     return result
 
 
@@ -11394,7 +11461,8 @@ def list_session_children(
     where = " AND ".join(filters)
     sql = f"""
         SELECT s.*,
-          EXISTS(SELECT 1 FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS has_children
+          EXISTS(SELECT 1 FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS has_children,
+          (SELECT COUNT(*) FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS children_count
         FROM sessions s
         WHERE {where}
         ORDER BY s.updated_at DESC
@@ -11406,8 +11474,90 @@ def list_session_children(
     result = []
     for row in rows:
         s = _session_row_to_model(row)
-        result.append(_session_to_explorer_dict(s, bool(row["has_children"])))
+        result.append(_session_to_explorer_dict(s, bool(row["has_children"]), int(row["children_count"] or 0)))
     return result
+
+
+def get_project_session_tree(
+    org_id: str,
+    project_id: str,
+    *,
+    user_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    max_depth: int = 3,
+) -> List[Dict[str, Any]]:
+    """Return the full session tree for a project (roots + nested children).
+
+    Loads all accessible sessions in one query, then builds the tree in memory.
+    Depth is capped to avoid accidental deep recursion.
+    """
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    pid = str(project_id or "").strip()
+    if not pid:
+        return []
+
+    filters = ["s.project_id = ?"]
+    params: List[Any] = [pid]
+    if oid:
+        filters.append("s.org_id = ?")
+        params.append(oid)
+
+    scope_filters, scope_params = _session_read_scope_filters(user_id, is_admin, oid)
+    filters.extend(scope_filters)
+    params.extend(scope_params)
+
+    where = " AND ".join(filters)
+    sql = f"""
+        SELECT s.*,
+          EXISTS(SELECT 1 FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS has_children,
+          (SELECT COUNT(*) FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS children_count
+        FROM sessions s
+        WHERE {where}
+        ORDER BY s.updated_at DESC
+    """
+
+    with _connect() as con:
+        rows = con.execute(sql, params).fetchall()
+
+    if oid and not rows:
+        # Fallback for legacy org_id mismatches
+        fallback_params = [pid]
+        fallback_sql = f"""
+            SELECT s.*,
+              EXISTS(SELECT 1 FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS has_children,
+              (SELECT COUNT(*) FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS children_count
+            FROM sessions s
+            WHERE s.project_id = ?
+            ORDER BY s.updated_at DESC
+        """
+        rows = con.execute(fallback_sql, fallback_params).fetchall()
+
+    by_id: Dict[str, Dict[str, Any]] = {}
+    roots: List[Dict[str, Any]] = []
+    for row in rows:
+        s = _session_row_to_model(row)
+        item = _session_to_explorer_dict(s, bool(row["has_children"]), int(row["children_count"] or 0))
+        item["children"] = []
+        by_id[item["id"]] = item
+        if not item.get("parent_session_id"):
+            roots.append(item)
+
+    # Attach children (only if within max_depth; current implementation loads all,
+    # but nesting is limited by the recursive helper below).
+    def attach(parent: Dict[str, Any], depth: int) -> None:
+        if depth >= max_depth:
+            return
+        pid_local = parent["id"]
+        for item in by_id.values():
+            if item.get("parent_session_id") == pid_local:
+                parent["children"].append(item)
+                attach(item, depth + 1)
+
+    for root in roots:
+        attach(root, 1)
+
+    return roots
 
 
 def run_workspace_folder_backfill(*, force: bool = False) -> Dict[str, Any]:

@@ -83,12 +83,17 @@ export async function apiMoveProject(workspaceId, projectId, folderId) {
   });
 }
 
-export async function apiGetProjectPage(workspaceId, projectId, { rootOnly = false, includeChildrenMeta = false } = {}) {
+export async function apiGetProjectPage(
+  workspaceId,
+  projectId,
+  { rootOnly = false, includeChildrenMeta = false, tree = false } = {},
+) {
   return call(
     `/api/projects/${encodeURIComponent(projectId)}/explorer${q({
       workspace_id: workspaceId,
       root_only: rootOnly ? "true" : "",
       include_children_meta: includeChildrenMeta ? "true" : "",
+      tree: tree ? "true" : "",
     })}`
   );
 }

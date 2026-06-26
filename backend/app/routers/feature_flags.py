@@ -15,6 +15,7 @@ _DEFAULT_FLAGS: Dict[str, str] = {
     "lightweightOverlays": "0",
     "useBpmnExtensionOverlays": "0",
     "workspace_session_tree_view": "0",
+    "workspace_auto_expand_steps": "0",
 }
 
 
