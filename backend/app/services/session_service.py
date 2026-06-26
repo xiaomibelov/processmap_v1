@@ -484,7 +484,45 @@ def bpmn_save(
     # CROSS-DOMAIN: depends on _require_diagram_cas_or_409, _mark_diagram_truth_write,
     # _create_bpmn_revision_snapshot_if_needed, _resolve_base_diagram_state_version.
     import app._legacy_main as _lm
-    return _lm.session_bpmn_save(session_id, inp, request)
+    out = _lm.session_bpmn_save(session_id, inp, request)
+    if not out.get("ok"):
+        return out
+
+    # Hybrid auto-subprocess: create up to 10 children on save.
+    # If more exist, the frontend shows a "load remaining" button.
+    try:
+        xml = str(getattr(inp, "xml", "") or "")
+        elements = find_subprocess_elements(xml)
+        if elements:
+            s, oid, _scope = _lm._legacy_load_session_scoped(session_id, request)
+            if s:
+                summary = auto_create_subprocess_sessions(s, request, limit=10)
+                total = summary["total"]
+                created = len(summary["created"]) + len(summary["restored"])
+                has_more = created < total
+                meta = dict(getattr(s, "bpmn_meta", None) or {})
+                meta["subprocesses_total"] = total
+                meta["subprocesses_created"] = created
+                meta["subprocesses_has_more"] = has_more
+                s.bpmn_meta = meta
+                st = get_storage()
+                st.save(s, is_admin=True)
+                _lm._invalidate_session_caches(
+                    s,
+                    session_id=session_id,
+                    org_id=getattr(s, "org_id", "") or oid or "",
+                )
+                out["subprocesses_total"] = total
+                out["subprocesses_created"] = created
+                out["subprocesses_has_more"] = has_more
+    except Exception as exc:
+        logger.warning(
+            "bpmn_save_auto_subprocess_failed: session_id=%s error=%s",
+            session_id,
+            exc,
+            exc_info=True,
+        )
+    return out
 
 
 def bpmn_versions_list(
