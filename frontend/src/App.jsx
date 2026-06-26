@@ -30,6 +30,7 @@ import {
   apiCreateSession,
   apiGetSession,
   apiPatchSession,
+  apiPatchSessionMeta,
   apiPostNote,
   apiPreviewNotesExtraction,
   apiApplyNotesExtraction,
@@ -855,6 +856,7 @@ export default function App() {
   const [reloadKey, setReloadKey] = useState(0);
   const openSessionReqSeqRef = useRef(0);
   const sessionMetaConflictGuardRef = useRef(createSessionMetaConflictGuard());
+  const lastServerDiagramStateVersionRef = useRef(null);
   const suppressProjectAutoselectRef = useRef(false);
   const initialProjectSelectionConsumedRef = useRef(false);
   const {
@@ -1625,6 +1627,13 @@ export default function App() {
     if (!sid) return;
     const activeSid = String(activeSessionIdRef.current || "").trim();
     if (activeSid && sid !== activeSid) return;
+    const serverDiagramStateVersion = Number(session?.diagram_state_version ?? session?.diagramStateVersion ?? -1);
+    if (Number.isFinite(serverDiagramStateVersion) && serverDiagramStateVersion >= 0) {
+      lastServerDiagramStateVersionRef.current = Math.max(
+        lastServerDiagramStateVersionRef.current ?? 0,
+        serverDiagramStateVersion,
+      );
+    }
     // Keep caches fresh instead of invalidating; status changes and saves both
     // include the latest diagram, so subprocess return can stay zero-fetch.
     if (sessionCacheRef.current) {
@@ -2567,7 +2576,8 @@ export default function App() {
       execution_plans: currentExecutionPlans,
     };
     const baseDiagramStateVersion = Number(
-      draft?.diagram_state_version
+      lastServerDiagramStateVersionRef.current
+      ?? draft?.diagram_state_version
       ?? draft?.bpmn_xml_version
       ?? draft?.version
       ?? 0,
@@ -2576,10 +2586,13 @@ export default function App() {
       sessionIdRaw: sid,
       isLocal: isLocalSessionId(sid),
       currentXmlRaw: draft?.bpmn_xml,
+      currentMetaRaw: currentMeta,
       nextMetaRaw: optimisticMeta,
       nextCamundaExtensionsByElementIdRaw: nextCamundaExtensionsByElementId,
       baseDiagramStateVersionRaw: baseDiagramStateVersion,
+      lastServerDiagramStateVersionRef,
       apiPutBpmnXml,
+      apiPatchSessionMeta,
       apiGetSession,
       onSessionSync,
       backgroundSessionRefresh: options?.backgroundSessionRefresh === true,
@@ -2589,6 +2602,12 @@ export default function App() {
       onBackgroundSessionSyncError: options?.onBackgroundSessionSyncError,
       syncSource: "camunda_extensions_xml_boundary_save",
     });
+    if (persistResult?.ok && Number.isFinite(persistResult?.diagramStateVersion)) {
+      lastServerDiagramStateVersionRef.current = Math.max(
+        lastServerDiagramStateVersionRef.current ?? 0,
+        Number(persistResult.diagramStateVersion),
+      );
+    }
     if (!persistResult?.ok) {
       return { ok: false, error: String(persistResult?.error || "Не удалось сохранить Properties.") };
     }

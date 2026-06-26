@@ -14,6 +14,18 @@ function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
+function deepEqual(a, b) {
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return a === b;
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
 function isDiagramStateConflict(saveResult) {
   const status = Number(saveResult?.status || 0);
   if (status === 409) return true;
@@ -21,11 +33,33 @@ function isDiagramStateConflict(saveResult) {
   return marker.includes("DIAGRAM_STATE_CONFLICT");
 }
 
+function isLockFailure(saveResult) {
+  const status = Number(saveResult?.status || 0);
+  if (status === 423) return true;
+  const marker = `${String(saveResult?.error || "")} ${String(saveResult?.text || "")}`.toUpperCase();
+  return marker.includes("IS BEING UPDATED") || marker.includes("SESSION IS BEING UPDATED");
+}
+
 function pickDiagramStateBaseVersion(sessionLike) {
   const raw = sessionLike && typeof sessionLike === "object"
     ? sessionLike.diagram_state_version ?? sessionLike.bpmn_xml_version ?? sessionLike.version
     : null;
   return toNonNegativeIntOrNull(raw);
+}
+
+function extractServerVersionFromError(saveResult) {
+  const detail = saveResult?.data?.detail;
+  if (detail && typeof detail === "object") {
+    const v = Number(detail.server_current_version ?? detail.serverCurrentVersion ?? -1);
+    if (Number.isFinite(v) && v >= 0) return v;
+  }
+  return null;
+}
+
+function logCamundaExtSave(payload) {
+  const parts = Object.entries(payload).map(([k, v]) => `${k}=${v}`);
+  // eslint-disable-next-line no-console
+  console.log(`[CAMUNDA-EXT-SAVE] ${parts.join(" ")}`);
 }
 
 function buildRetryMeta({
@@ -90,11 +124,14 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
   sessionIdRaw,
   isLocal,
   currentXmlRaw,
+  currentMetaRaw,
   nextMetaRaw,
   nextCamundaExtensionsByElementIdRaw,
   baseDiagramStateVersionRaw,
+  lastServerDiagramStateVersionRef,
   buildCanonicalXml,
   apiPutBpmnXml,
+  apiPatchSessionMeta,
   apiGetSession,
   onSessionSync,
   backgroundSessionRefresh = false,
@@ -106,6 +143,7 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
 }) {
   const sid = toText(sessionIdRaw);
   const nextMeta = asObject(nextMetaRaw);
+  const currentMeta = asObject(currentMetaRaw);
   const {
     currentXml,
     nextXml,
@@ -116,10 +154,101 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
     buildCanonicalXml,
   });
 
+  const metaDiff = !deepEqual(nextMeta, currentMeta);
+
   if (!nextXml) {
+    logCamundaExtSave({ status: "error", error: "empty_xml", metaDiff });
     return { ok: false, status: 0, error: "Пустая BPMN XML: не удалось применить Properties." };
   }
+
+  let effectiveBaseVersion = toNonNegativeIntOrNull(baseDiagramStateVersionRaw);
+  const getBaseVersion = () => toNonNegativeIntOrNull(
+    lastServerDiagramStateVersionRef?.current ?? effectiveBaseVersion,
+  );
+
+  const updateLastServerVersion = (value) => {
+    const v = toNonNegativeIntOrNull(value);
+    if (v === null) return;
+    if (lastServerDiagramStateVersionRef?.current !== undefined) {
+      lastServerDiagramStateVersionRef.current = Math.max(lastServerDiagramStateVersionRef.current ?? 0, v);
+    }
+  };
+
   if (nextXml === currentXml) {
+    if (!metaDiff) {
+      logCamundaExtSave({ status: "skipped", xmlDiff: false, metaDiff: false });
+      return { ok: true, skipped: true, local: false };
+    }
+    if (typeof apiPatchSessionMeta === "function") {
+      // Meta-only PATCH path: XML unchanged, but bpmn_meta changed.
+      let patchRes;
+      let attempt = 0;
+      const maxAttempts = 3;
+      while (attempt < maxAttempts) {
+        attempt += 1;
+        const baseVersion = getBaseVersion();
+        logCamundaExtSave({ status: "meta_patch_attempt", attempt, baseVersion, serverVersion: lastServerDiagramStateVersionRef?.current ?? null });
+        patchRes = await apiPatchSessionMeta(sid, {
+          bpmn_meta_json: nextMeta,
+          base_diagram_state_version: baseVersion,
+        });
+        if (patchRes?.ok) {
+          const serverVersion = Number(patchRes?.session?.diagram_state_version ?? patchRes?.data?.diagram_state_version ?? -1);
+          updateLastServerVersion(serverVersion);
+          logCamundaExtSave({ status: "meta_patch_saved", baseVersion, serverVersion, xmlDiff: false, metaDiff: true });
+          const ack = {
+            ok: true,
+            status: Number(patchRes?.status || 200),
+            storedRev: Number(patchRes?.session?.bpmn_xml_version ?? patchRes?.data?.rev ?? 0),
+            diagramStateVersion: serverVersion,
+            nextXml: currentXml,
+            nextMeta,
+            nextCamundaExtensionsByElementId,
+            backgroundSessionRefresh: false,
+          };
+          onDurableSaveAck?.(ack);
+          onSessionSync?.(buildFallbackSessionPatch({
+            sid,
+            nextXml: currentXml,
+            nextMeta,
+            storedRev: ack.storedRev,
+            diagramStateVersion: ack.diagramStateVersion,
+            syncSource,
+          }));
+          return ack;
+        }
+        if (isDiagramStateConflict(patchRes)) {
+          const serverVersion = extractServerVersionFromError(patchRes);
+          updateLastServerVersion(serverVersion);
+          if (attempt >= maxAttempts) break;
+          if (typeof apiGetSession === "function") {
+            const latest = await apiGetSession(sid);
+            if (latest?.ok && latest.session) {
+              const latestVersion = pickDiagramStateBaseVersion(latest.session);
+              updateLastServerVersion(latestVersion);
+              if (latestVersion !== null) {
+                effectiveBaseVersion = latestVersion;
+              }
+            }
+          }
+          await sleep(100 * (2 ** (attempt - 1)));
+          continue;
+        }
+        if (isLockFailure(patchRes)) {
+          if (attempt >= maxAttempts) break;
+          await sleep(500);
+          continue;
+        }
+        break;
+      }
+      logCamundaExtSave({ status: "meta_patch_error", error: patchRes?.error || "unknown", xmlDiff: false, metaDiff: true });
+      return {
+        ok: false,
+        status: Number(patchRes?.status || 0),
+        error: String(patchRes?.error || "Не удалось сохранить Properties."),
+      };
+    }
+    logCamundaExtSave({ status: "error", error: "xml_unchanged_no_meta_endpoint", xmlDiff: false, metaDiff: true });
     return { ok: false, status: 0, error: "Изменения Properties не применились к BPMN XML." };
   }
 
@@ -136,6 +265,7 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
         }),
       });
     }
+    logCamundaExtSave({ status: "local", xmlDiff: true, metaDiff });
     return {
       ok: true,
       local: true,
@@ -151,48 +281,80 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
 
   let persistedXml = nextXml;
   let persistedMeta = nextMeta;
-  let saveRes = await apiPutBpmnXml(sid, nextXml, {
-    reason: "manual_save:camunda_extensions",
-    baseDiagramStateVersion: toNonNegativeIntOrNull(baseDiagramStateVersionRaw),
-    bpmnMeta: nextMeta,
-  });
+  let saveRes = null;
+  let attempt = 0;
+  const maxAttempts = 3;
 
-  if (!saveRes?.ok && isDiagramStateConflict(saveRes) && typeof apiGetSession === "function") {
-    const latest = await apiGetSession(sid);
-    if (latest?.ok && latest.session && typeof latest.session === "object") {
-      const retryMeta = buildRetryMeta({
-        latestMetaRaw: latest.session?.bpmn_meta,
-        previousMetaRaw: nextMeta,
-        nextCamundaExtensionsByElementId,
-      });
-      const rebased = buildCamundaExtensionsCanonicalXml({
-        currentXmlRaw: latest.session?.bpmn_xml,
-        nextCamundaExtensionsByElementIdRaw: nextCamundaExtensionsByElementId,
-        buildCanonicalXml,
-      });
-      if (rebased.nextXml && rebased.nextXml !== rebased.currentXml) {
-        const retryBaseVersion = pickDiagramStateBaseVersion(latest.session);
-        const retryRes = await apiPutBpmnXml(sid, rebased.nextXml, {
-          reason: "manual_save:camunda_extensions",
-          baseDiagramStateVersion: retryBaseVersion,
-          bpmnMeta: retryMeta,
-        });
-        if (retryRes?.ok) {
-          saveRes = retryRes;
-          persistedXml = rebased.nextXml;
-          persistedMeta = retryMeta;
+  while (attempt < maxAttempts) {
+    attempt += 1;
+    const baseVersion = getBaseVersion();
+    logCamundaExtSave({ status: "put_attempt", attempt, baseVersion, serverVersion: lastServerDiagramStateVersionRef?.current ?? null, xmlDiff: true, metaDiff });
+    saveRes = await apiPutBpmnXml(sid, persistedXml, {
+      reason: "manual_save:camunda_extensions",
+      baseDiagramStateVersion: baseVersion,
+      bpmnMeta: persistedMeta,
+    });
+
+    if (saveRes?.ok) {
+      updateLastServerVersion(saveRes.diagramStateVersion);
+      break;
+    }
+
+    if (isDiagramStateConflict(saveRes)) {
+      const serverVersion = extractServerVersionFromError(saveRes);
+      updateLastServerVersion(serverVersion);
+      if (attempt >= maxAttempts) break;
+      if (typeof apiGetSession === "function") {
+        const latest = await apiGetSession(sid);
+        if (latest?.ok && latest.session && typeof latest.session === "object") {
+          const retryMeta = buildRetryMeta({
+            latestMetaRaw: latest.session?.bpmn_meta,
+            previousMetaRaw: persistedMeta,
+            nextCamundaExtensionsByElementId,
+          });
+          const rebased = buildCamundaExtensionsCanonicalXml({
+            currentXmlRaw: latest.session?.bpmn_xml,
+            nextCamundaExtensionsByElementIdRaw: nextCamundaExtensionsByElementId,
+            buildCanonicalXml,
+          });
+          if (rebased.nextXml && rebased.nextXml !== rebased.currentXml) {
+            const retryBaseVersion = pickDiagramStateBaseVersion(latest.session);
+            updateLastServerVersion(retryBaseVersion);
+            if (retryBaseVersion !== null) {
+              effectiveBaseVersion = retryBaseVersion;
+            }
+            persistedXml = rebased.nextXml;
+            persistedMeta = retryMeta;
+            await sleep(100 * (2 ** (attempt - 1)));
+            continue;
+          }
+          // XML became identical after rebase — fall through to meta-only path on next iteration? Simpler: break and let caller handle.
+          saveRes = { ok: false, status: 409, error: "DIAGRAM_STATE_CONFLICT" };
+          break;
         }
       }
+      break;
     }
+
+    if (isLockFailure(saveRes)) {
+      if (attempt >= maxAttempts) break;
+      await sleep(500);
+      continue;
+    }
+
+    break;
   }
 
   if (!saveRes?.ok) {
+    logCamundaExtSave({ status: "error", error: saveRes?.error || "unknown", xmlDiff: true, metaDiff, baseVersion: getBaseVersion() });
     return {
       ok: false,
       status: Number(saveRes?.status || 0),
       error: String(saveRes?.error || "Не удалось сохранить Properties."),
     };
   }
+
+  logCamundaExtSave({ status: "saved", baseVersion: getBaseVersion(), serverVersion: saveRes.diagramStateVersion, xmlDiff: true, metaDiff });
 
   const durableAckPayload = {
     ok: true,
@@ -226,6 +388,7 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
         try {
           const fresh = await apiGetSession(sid);
           if (fresh?.ok && fresh.session && typeof fresh.session === "object") {
+            updateLastServerVersion(pickDiagramStateBaseVersion(fresh.session));
             const syncPayload = {
               ...fresh.session,
               _sync_source: syncSource,
@@ -265,6 +428,7 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
   if (typeof apiGetSession === "function") {
     const fresh = await apiGetSession(sid);
     if (fresh?.ok && fresh.session && typeof fresh.session === "object") {
+      updateLastServerVersion(pickDiagramStateBaseVersion(fresh.session));
       onSessionSync?.({
         ...fresh.session,
         _sync_source: syncSource,
