@@ -2736,7 +2736,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, projectId, treeEnabled, autoExpand, eagerTree]);
+  }, [workspaceId, projectId, treeEnabled, eagerTree]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
