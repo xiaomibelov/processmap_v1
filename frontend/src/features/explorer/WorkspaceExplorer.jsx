@@ -2376,7 +2376,7 @@ function SessionRow({
                 📝
               </span>
             ) : null}
-            {depth === 0 && Number(session?.subprocesses_count) > 0 && !session?.has_children ? (
+            {depth === 0 && Number(session?.subprocesses_count || 0) > Number(session?.children_count || 0) ? (
               <button
                 type="button"
                 disabled={creatingSubprocesses}
@@ -2384,24 +2384,11 @@ function SessionRow({
                   e.stopPropagation();
                   setCreatingSubprocesses(true);
                   try {
-                    const first = await apiCreateSubprocessSessions(session?.id || session?.session_id);
-                    if (!first?.ok) {
-                      window.alert?.(String(first?.error || "Не удалось создать подпроцессы"));
+                    const remaining = Number(session?.subprocesses_count || 0) - Number(session?.children_count || 0);
+                    const resp = await apiCreateSubprocessSessions(session?.id || session?.session_id, { loadAll: true });
+                    if (!resp?.ok) {
+                      window.alert?.(String(resp?.error || "Не удалось догрузить подпроцессы"));
                       return;
-                    }
-                    const firstData = first?.data || {};
-                    if (firstData?.has_more) {
-                      const remaining = Number(firstData?.total || 0) - Number(firstData?.created || 0);
-                      const confirmed = window.confirm?.(
-                        `Загружено ${firstData.created} из ${firstData.total}. Загрузить остальные ${remaining}?`
-                      );
-                      if (confirmed) {
-                        const rest = await apiCreateSubprocessSessions(session?.id || session?.session_id, { loadAll: true });
-                        if (!rest?.ok) {
-                          window.alert?.(String(rest?.error || "Не удалось догрузить подпроцессы"));
-                          return;
-                        }
-                      }
                     }
                     onReload?.();
                   } finally {
@@ -2411,7 +2398,9 @@ function SessionRow({
                 className="ml-2 inline-flex shrink-0 items-center rounded bg-blue-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                 data-stop-row-open="1"
               >
-                {creatingSubprocesses ? "Загрузка..." : `Загрузить ${session.subprocesses_count} подпроцессов`}
+                {creatingSubprocesses
+                  ? "Загрузка..."
+                  : `Загрузить остальные ${Number(session?.subprocesses_count || 0) - Number(session?.children_count || 0)}`}
               </button>
             ) : null}
           </div>
