@@ -171,6 +171,8 @@ class SessionItem(BaseModel):
     project_id: str = ""
     parent_session_id: str = ""
     has_children: bool = False
+    children_count: int = 0
+    activity_count: int = 0
     owner: Optional[OwnerOut] = None
     status: str = "draft"
     stage: str = ""
@@ -179,6 +181,7 @@ class SessionItem(BaseModel):
     reports_count: int = 0
     updated_at: int = 0
     created_at: int = 0
+    children: Optional[List[Any]] = None
 
 
 class ProjectPage(BaseModel):
@@ -247,6 +250,53 @@ def _owner_out(user_id: str) -> Optional[OwnerOut]:
     if not user_id:
         return None
     return OwnerOut(id=user_id, name=_lookup_user_name(user_id))
+
+
+def _session_item_from_row(row: Dict[str, Any]) -> SessionItem:
+    return SessionItem(
+        id=row["id"],
+        name=row.get("title", ""),
+        project_id=row.get("project_id", ""),
+        parent_session_id=str(row.get("parent_session_id") or ""),
+        has_children=bool(row.get("has_children")),
+        activity_count=int(row.get("activity_count") or 0),
+        owner=_owner_out(row.get("owner_user_id", "")),
+        status=row.get("status", "draft"),
+        stage=row.get("stage", ""),
+        dod_percent=row.get("dod_percent", 0),
+        attention_count=row.get("attention_count", 0),
+        reports_count=row.get("reports_count", 0),
+        updated_at=row.get("updated_at", 0),
+        created_at=row.get("created_at", 0),
+        children=[],
+    )
+
+
+def _build_session_tree(rows: List[Dict[str, Any]]) -> List[SessionItem]:
+    roots: List[SessionItem] = []
+    item_by_id: Dict[str, SessionItem] = {}
+    children_by_parent: Dict[str, List[SessionItem]] = {}
+    for row in rows:
+        item = _session_item_from_row(row)
+        item_by_id[item.id] = item
+        parent_id = str(row.get("parent_session_id") or "").strip()
+        if parent_id:
+            children_by_parent.setdefault(parent_id, []).append(item)
+    for row in rows:
+        parent_id = str(row.get("parent_session_id") or "").strip()
+        if not parent_id:
+            roots.append(item_by_id[row["id"]])
+    for parent_id, children in children_by_parent.items():
+        parent = item_by_id.get(parent_id)
+        if parent:
+            parent.children = children
+    return roots
+
+
+def _session_item_from_tree_node(node: Dict[str, Any]) -> SessionItem:
+    item = _session_item_from_row(node)
+    item.children = [_session_item_from_tree_node(c) for c in node.get("children") or []]
+    return item
 
 
 def _assignable_out(user_id: str) -> Optional[Dict[str, str]]:
@@ -957,6 +1007,7 @@ def get_project_explorer(
     workspace_id: str = Query(...),
     root_only: Annotated[bool, Query()] = False,
     include_children_meta: Annotated[bool, Query()] = False,
+    tree: Annotated[bool, Query()] = False,
 ) -> ProjectPage:
     t0 = time.perf_counter()
     workspace = _resolve_workspace(request, workspace_id)
@@ -992,34 +1043,20 @@ def get_project_explorer(
     )
 
     # Sessions: cache-aside only for the default flat list.
-    if root_only or include_children_meta:
+    if tree:
+        tree_rows = storage.get_project_session_tree(oid, pid, user_id=user_id, is_admin=is_admin)
+        sessions = [_session_item_from_tree_node(n) for n in tree_rows]
+    elif root_only or include_children_meta:
         session_rows = storage.list_project_sessions_for_explorer(
             oid, pid, root_only=root_only, include_children_meta=include_children_meta
         )
+        sessions = [_session_item_from_row(s) for s in session_rows]
     else:
         session_rows = _cached_project_sessions(oid, pid)
+        sessions = [_session_item_from_row(s) for s in session_rows]
 
-    sessions = [
-        SessionItem(
-            id=s["id"],
-            name=s.get("title", ""),
-            project_id=s.get("project_id", ""),
-            parent_session_id=str(s.get("parent_session_id") or ""),
-            has_children=bool(s.get("has_children")),
-            owner=_owner_out(s.get("owner_user_id", "")),
-            status=s.get("status", "draft"),
-            stage=s.get("stage", ""),
-            dod_percent=s.get("dod_percent", 0),
-            attention_count=s.get("attention_count", 0),
-            reports_count=s.get("reports_count", 0),
-            updated_at=s.get("updated_at", 0),
-            created_at=s.get("created_at", 0),
-        )
-        for s in session_rows
-    ]
-
-    logger.info("explorer /projects/%s org=%s workspace=%s root_only=%s meta=%s sessions=%d total=%dms",
-                pid, oid, wid, root_only, include_children_meta, len(sessions), _ms(t0))
+    logger.info("explorer /projects/%s org=%s workspace=%s root_only=%s meta=%s tree=%s sessions=%d total=%dms",
+                pid, oid, wid, root_only, include_children_meta, tree, len(sessions), _ms(t0))
     return ProjectPage(project=proj_item, sessions=sessions)
 
 
