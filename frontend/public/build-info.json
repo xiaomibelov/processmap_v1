@@ -1,9 +1,9 @@
 {
-  "branch": "fix/analytics-redis-cache-xlsx",
-  "sha": "3a893d840b37bdfbb6b40bf5bd5a9f85d47d1e8d",
-  "shaShort": "3a893d84",
-  "timestamp": "2026-06-24T21:24:09.563Z",
-  "contourId": "fix-analytics-redis-cache-xlsx",
+  "branch": "feature/auto-create-subprocess-sessions",
+  "sha": "cc734d5218f6c8a29749692e8ea23c2278bc47fd",
+  "shaShort": "cc734d52",
+  "timestamp": "2026-06-26T10:48:59.995Z",
+  "contourId": "feature-auto-create-subprocess-sessions",
   "dirty": true,
   "host": "clearvestnic.ru",
   "env": "dev"
