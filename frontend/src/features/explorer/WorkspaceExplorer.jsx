@@ -28,6 +28,7 @@ import {
   apiGetProjectPage,
   apiSearchExplorer,
   apiCreateSession,
+  apiGetSessionChildren,
 } from "./explorerApi.js";
 import { apiDeleteProject, apiDeleteSession, apiGetSession, apiListOrgAssignableUsers, apiPatchProject, apiPatchSession } from "../../lib/api";
 import {
@@ -36,6 +37,7 @@ import {
 } from "../workspace/workspacePermissions";
 import { getAllowedNextStatuses, normalizeManualSessionStatus } from "../workspace/sessionStatus.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
+import { useFeatureFlag } from "../config/featureFlagsContext.jsx";
 import { buildVisibleRows, hasFolderChildren } from "./work3TreeState.js";
 import { useWorkspaceExplorerController } from "./useWorkspaceExplorerController.js";
 import { buildFolderMoveTargets, buildProjectMoveTargets } from "./explorerMoveTargets.js";
@@ -2198,11 +2200,21 @@ function SessionRow({
   showSignalColumns = true,
   showDiscussionColumn = false,
   notesAggregate = null,
+  depth = 0,
+  treeMode = false,
+  isExpanded = false,
+  isLoadingChildren = false,
+  onToggleExpand,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [pendingStatus, setPendingStatus] = useState(String(session.status || "draft"));
   const sessionStatusMeta = getManualSessionStatusMeta(pendingStatus);
+  const hasChildren = Boolean(session?.has_children);
+  const showChevron = treeMode && hasChildren;
+  const titleSizeClass = treeMode ? (depth > 0 ? "text-sm" : "text-[15px]") : "text-sm";
+  const rowBgClass = treeMode && depth > 0 ? "bg-gray-50 border-l-2 border-gray-200" : "";
+  const leftPadding = treeMode ? 8 + depth * 18 : undefined;
   const normalizedSessionStatus = useMemo(
     () => normalizeManualSessionStatus(session.status, "draft"),
     [session.status],
@@ -2251,15 +2263,36 @@ function SessionRow({
   return (
     <>
       <tr
-        className={`group transition-colors cursor-pointer ${isOpening ? "bg-accentSoft/20" : "hover:bg-accentSoft/30"}`}
+        className={`group transition-colors cursor-pointer ${isOpening ? "bg-accentSoft/20" : "hover:bg-accentSoft/30"} ${rowBgClass}`}
         onClick={handleRowOpen}
         aria-busy={isOpening ? "true" : undefined}
       >
         <td className="px-3 py-2.5 w-5"><IcoSession className="text-muted" /></td>
-        <td className="px-2 py-2.5 text-sm font-medium text-fg">
-          <div className="min-w-0">
+        <td className={`px-2 py-2.5 font-medium text-fg ${titleSizeClass}`}>
+          <div className="min-w-0 flex items-center gap-1" style={{ paddingLeft: leftPadding }}>
+            {showChevron ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleExpand?.(session.id);
+                }}
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors hover:text-gray-600"
+                title={isExpanded ? "Свернуть" : "Развернуть"}
+                aria-label={isExpanded ? "Свернуть подпроцессы" : "Развернуть подпроцессы"}
+                data-stop-row-open="1"
+              >
+                {isLoadingChildren ? (
+                  <IcoSpinner className="h-4 w-4 animate-spin" />
+                ) : (
+                  <IcoChevron right={!isExpanded} className="h-4 w-4" />
+                )}
+              </button>
+            ) : treeMode ? (
+              <span className="inline-block h-6 w-6 shrink-0" aria-hidden />
+            ) : null}
             <AppRouteLink
-              className={`block min-w-0 ${isOpening ? "cursor-progress text-muted" : ""}`}
+              className={`block min-w-0 flex-1 ${isOpening ? "cursor-progress text-muted" : ""}`}
               href={sessionHref}
               onNavigate={() => openSession({ source: "workspace_explorer_session_title" })}
               title={session.name}
@@ -2435,6 +2468,116 @@ function SessionRow({
   );
 }
 
+// ─── Session Tree Rows ────────────────────────────────────────────────────────
+
+function SessionTreeRows({
+  sessions,
+  depth = 0,
+  sort = null,
+  expanded,
+  loadingChildren,
+  childrenCache,
+  childrenErrors,
+  onToggleExpand,
+  onReloadChildren,
+  onOpen,
+  isOpening,
+  onReload,
+  onSessionPatched,
+  canRename,
+  canDelete,
+  canChangeStatus,
+  showSignalColumns,
+  showDiscussionColumn,
+  noteAggregatesBySessionId,
+}) {
+  const sorted = useMemo(() => sortProjectSessions(sessions, sort), [sessions, sort]);
+  return sorted.map((session) => {
+    const sid = String(session?.id || "").trim();
+    const isExpanded = expanded.has(sid);
+    const isLoading = loadingChildren.has(sid);
+    const children = childrenCache[sid] || [];
+    const childError = childrenErrors[sid] || "";
+    const indent = 8 + (depth + 1) * 18;
+    return (
+      <React.Fragment key={`session-${sid}-depth-${depth}`}>
+        <SessionRow
+          session={session}
+          depth={depth}
+          treeMode
+          isExpanded={isExpanded}
+          isLoadingChildren={isLoading}
+          onToggleExpand={onToggleExpand}
+          onOpen={onOpen}
+          isOpening={isOpening === sid}
+          onReload={onReload}
+          onSessionPatched={onSessionPatched}
+          canRename={canRename}
+          canDelete={canDelete}
+          canChangeStatus={canChangeStatus}
+          showSignalColumns={showSignalColumns}
+          showDiscussionColumn={showDiscussionColumn}
+          notesAggregate={noteAggregatesBySessionId?.get(sid) || null}
+        />
+        {isExpanded ? (
+          isLoading ? (
+            <tr className="bg-gray-50/50 transition-opacity duration-200">
+              <td colSpan={99} className="px-2 py-2 text-sm text-gray-500">
+                <span className="inline-flex items-center gap-2" style={{ paddingLeft: indent }}>
+                  <IcoSpinner className="h-4 w-4 animate-spin" /> Загрузка…
+                </span>
+              </td>
+            </tr>
+          ) : childError ? (
+            <tr className="bg-gray-50/50 transition-opacity duration-200">
+              <td colSpan={99} className="px-2 py-2 text-sm text-red-600">
+                <span className="inline-flex items-center gap-2" style={{ paddingLeft: indent }}>
+                  Ошибка загрузки
+                  <button
+                    type="button"
+                    onClick={() => onReloadChildren(sid)}
+                    className="text-xs underline hover:text-red-700"
+                  >
+                    Повторить
+                  </button>
+                </span>
+              </td>
+            </tr>
+          ) : children.length === 0 ? (
+            <tr className="bg-gray-50/50 transition-opacity duration-200">
+              <td colSpan={99} className="px-2 py-2 text-sm text-gray-500">
+                <span style={{ paddingLeft: indent }}>Нет подпроцессов</span>
+              </td>
+            </tr>
+          ) : (
+            <SessionTreeRows
+              sessions={children}
+              depth={depth + 1}
+              sort={sort}
+              expanded={expanded}
+              loadingChildren={loadingChildren}
+              childrenCache={childrenCache}
+              childrenErrors={childrenErrors}
+              onToggleExpand={onToggleExpand}
+              onReloadChildren={onReloadChildren}
+              onOpen={onOpen}
+              isOpening={isOpening}
+              onReload={onReload}
+              onSessionPatched={onSessionPatched}
+              canRename={canRename}
+              canDelete={canDelete}
+              canChangeStatus={canChangeStatus}
+              showSignalColumns={showSignalColumns}
+              showDiscussionColumn={showDiscussionColumn}
+              noteAggregatesBySessionId={noteAggregatesBySessionId}
+            />
+          )
+        ) : null}
+      </React.Fragment>
+    );
+  });
+}
+
 // ─── Project Pane (sessions list) ─────────────────────────────────────────────
 
 function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumbBase, permissions, activeOrgId }) {
@@ -2448,12 +2591,20 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const [activeTab, setActiveTab] = useState("sessions");
   const openingSessionIdRef = useRef("");
 
+  const treeEnabled = useFeatureFlag("workspace_session_tree_view");
+  const [expandedSessionIds, setExpandedSessionIds] = useState(() => new Set());
+  const [sessionChildrenCache, setSessionChildrenCache] = useState({});
+  const [loadingSessionChildren, setLoadingSessionChildren] = useState(() => new Set());
+  const [sessionChildrenErrors, setSessionChildrenErrors] = useState({});
+
   const load = useCallback(async () => {
     if (!workspaceId || !projectId) return;
     setLoading(true);
     setError("");
     try {
-      const resp = await apiGetProjectPage(workspaceId, projectId);
+      const resp = treeEnabled
+        ? await apiGetProjectPage(workspaceId, projectId, { rootOnly: true, includeChildrenMeta: true })
+        : await apiGetProjectPage(workspaceId, projectId);
       if (!resp?.ok) throw new Error(resp?.error || "Ошибка загрузки");
       setPage(resp?.data || resp);
     } catch (e) {
@@ -2461,7 +2612,7 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, projectId]);
+  }, [workspaceId, projectId, treeEnabled]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -2489,6 +2640,53 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
     });
   }, []);
 
+  const loadSessionChildren = useCallback(async (sessionId) => {
+    const sid = String(sessionId || "").trim();
+    if (!sid || loadingSessionChildren.has(sid)) return;
+    setLoadingSessionChildren((prev) => new Set(prev).add(sid));
+    setSessionChildrenErrors((prev) => {
+      const next = { ...prev };
+      delete next[sid];
+      return next;
+    });
+    try {
+      const resp = await apiGetSessionChildren(sid);
+      if (!resp?.ok) throw new Error(resp?.error || "Ошибка загрузки");
+      setSessionChildrenCache((prev) => ({ ...prev, [sid]: resp?.data || [] }));
+    } catch (e) {
+      setSessionChildrenErrors((prev) => ({ ...prev, [sid]: String(e?.message || "Ошибка загрузки") }));
+    } finally {
+      setLoadingSessionChildren((prev) => {
+        const next = new Set(prev);
+        next.delete(sid);
+        return next;
+      });
+    }
+  }, [loadingSessionChildren]);
+
+  const toggleSessionExpand = useCallback((sessionId) => {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return;
+    setExpandedSessionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sid)) {
+        next.delete(sid);
+      } else {
+        next.add(sid);
+      }
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!treeEnabled) return;
+    expandedSessionIds.forEach((sid) => {
+      if (!sessionChildrenCache[sid] && !loadingSessionChildren.has(sid) && !sessionChildrenErrors[sid]) {
+        loadSessionChildren(sid);
+      }
+    });
+  }, [treeEnabled, expandedSessionIds, sessionChildrenCache, loadingSessionChildren, sessionChildrenErrors, loadSessionChildren]);
+
   const proj = page?.project;
   const sessions = page?.sessions || [];
   const sortedSessions = useMemo(
@@ -2498,10 +2696,25 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
   const handleSessionSort = useCallback((key) => {
     setSessionSort((prev) => toggleExplorerSort(prev, key));
   }, []);
-  const sessionAggregateIds = useMemo(
-    () => sessions.map((item) => item?.id || item?.session_id).filter(Boolean),
-    [sessions],
-  );
+  const sessionAggregateIds = useMemo(() => {
+    const rootIds = sessions.map((item) => item?.id || item?.session_id).filter(Boolean);
+    if (!treeEnabled) return rootIds;
+    const ids = new Set(rootIds);
+    function addCached(parentId) {
+      const list = sessionChildrenCache[parentId] || [];
+      list.forEach((child) => {
+        const cid = String(child?.id || child?.session_id || "").trim();
+        if (!cid) return;
+        ids.add(cid);
+        if (expandedSessionIds.has(cid)) addCached(cid);
+      });
+    }
+    sessions.forEach((s) => {
+      const sid = String(s?.id || "").trim();
+      if (sid && expandedSessionIds.has(sid)) addCached(sid);
+    });
+    return Array.from(ids);
+  }, [sessions, treeEnabled, sessionChildrenCache, expandedSessionIds]);
   const noteAggregatesBySessionId = useSessionNoteAggregates(sessionAggregateIds);
   const isEmpty = !loading && !error && sessions.length === 0;
   const sessionColumnProfile = EXPLORER_COLUMN_PROFILES.sessions;
@@ -2735,17 +2948,22 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
               </tr>
             </thead>
             <tbody className="divide-y divide-border/65">
-              {sortedSessions.map((s) => (
-                <SessionRow
-                  key={s.id}
-                  session={s}
-                  notesAggregate={noteAggregatesBySessionId.get(String(s?.id || s?.session_id || "").trim()) || null}
-                  isOpening={openingSessionId === String(s.id || s.session_id || "").trim()}
-                      onOpen={(sess, options) => handleOpenSessionRequest({
-                        ...sess,
-                        project_id: projectId,
-                        workspace_id: workspaceId,
-                      }, options)}
+              {treeEnabled ? (
+                <SessionTreeRows
+                  sessions={sortedSessions}
+                  sort={sessionSort}
+                  expanded={expandedSessionIds}
+                  loadingChildren={loadingSessionChildren}
+                  childrenCache={sessionChildrenCache}
+                  childrenErrors={sessionChildrenErrors}
+                  onToggleExpand={toggleSessionExpand}
+                  onReloadChildren={loadSessionChildren}
+                  onOpen={(sess, options) => handleOpenSessionRequest({
+                    ...sess,
+                    project_id: projectId,
+                    workspace_id: workspaceId,
+                  }, options)}
+                  isOpening={openingSessionId}
                   onReload={load}
                   onSessionPatched={handleSessionPatched}
                   canRename={!!permissions?.canRenameSession}
@@ -2753,8 +2971,30 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
                   canChangeStatus={!!permissions?.canChangeStatus}
                   showSignalColumns={sessionColumnProfile.showSignalColumns}
                   showDiscussionColumn={sessionColumnProfile.showDiscussionColumn}
+                  noteAggregatesBySessionId={noteAggregatesBySessionId}
                 />
-              ))}
+              ) : (
+                sortedSessions.map((s) => (
+                  <SessionRow
+                    key={s.id}
+                    session={s}
+                    notesAggregate={noteAggregatesBySessionId.get(String(s?.id || s?.session_id || "").trim()) || null}
+                    isOpening={openingSessionId === String(s.id || s.session_id || "").trim()}
+                        onOpen={(sess, options) => handleOpenSessionRequest({
+                          ...sess,
+                          project_id: projectId,
+                          workspace_id: workspaceId,
+                        }, options)}
+                    onReload={load}
+                    onSessionPatched={handleSessionPatched}
+                    canRename={!!permissions?.canRenameSession}
+                    canDelete={!!permissions?.canDeleteSession}
+                    canChangeStatus={!!permissions?.canChangeStatus}
+                    showSignalColumns={sessionColumnProfile.showSignalColumns}
+                    showDiscussionColumn={sessionColumnProfile.showDiscussionColumn}
+                  />
+                ))
+              )}
             </tbody>
           </table>
         </div>
