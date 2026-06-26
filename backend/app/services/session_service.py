@@ -16,6 +16,11 @@ from ..models import Session
 from ..repositories import session_repo
 from ..storage import get_storage, list_session_presence
 from ..utils.authz import session_access_from_request
+from .._legacy_main import (
+    _can_edit_workspace,
+    _org_role_for_request,
+    _request_auth_user,
+)
 from ..services.bpmn_navigation import (
     called_element_id,
     extract_subprocess_xml,
@@ -469,46 +474,11 @@ def bpmn_save(
     inp: Any,
     request: Any = None,
 ) -> Dict[str, Any]:
-    """Save BPMN XML to session and auto-create/soft-delete subprocess child sessions."""
+    """Save BPMN XML to session."""
     # CROSS-DOMAIN: depends on _require_diagram_cas_or_409, _mark_diagram_truth_write,
     # _create_bpmn_revision_snapshot_if_needed, _resolve_base_diagram_state_version.
     import app._legacy_main as _lm
-    result = _lm.session_bpmn_save(session_id, inp, request)
-    if not result.get("ok"):
-        return result
-
-    ctx = _request_context(request)
-    st = get_storage()
-    session = st.load(session_id, user_id=ctx.get("user_id"), org_id=ctx.get("org_id"), is_admin=True)
-    if session is None:
-        return result
-
-    elements = find_subprocess_elements(str(getattr(session, "bpmn_xml", "") or ""))
-    element_ids = [e["id"] for e in elements]
-
-    create_summary = auto_create_subprocess_sessions(session, request, limit=10)
-    delete_summary = soft_delete_removed_subprocess_sessions(session, element_ids, request)
-
-    async_pending = create_summary["total"] > 10 or len(delete_summary["soft_deleted"]) > 10
-    if create_summary["total"] > 10:
-        try:
-            from ..tasks import create_remaining_subprocess_sessions
-            create_remaining_subprocess_sessions.delay(
-                session_id,
-                elements[10:],
-                element_ids,
-            )
-        except Exception:
-            logger.exception("failed to enqueue create_remaining_subprocess_sessions for %s", session_id)
-
-    result["subprocess_creation"] = {
-        "created_count": len(create_summary["created"]),
-        "restored_count": len(create_summary["restored"]),
-        "soft_deleted_count": delete_summary["count"],
-        "total_count": create_summary["total"],
-        "async_pending": async_pending,
-    }
-    return result
+    return _lm.session_bpmn_save(session_id, inp, request)
 
 
 def bpmn_versions_list(
@@ -1175,6 +1145,46 @@ def soft_delete_removed_subprocess_sessions(
         is_admin=admin,
     )
     return {"soft_deleted": soft_deleted, "count": len(soft_deleted)}
+
+
+def get_subprocesses_count(session_id: str, request: Optional[Request] = None) -> int:
+    """Return the number of top-level subprocess elements in the session BPMN XML."""
+    sess, scope, err = session_access_from_request(request, session_id)
+    if err or sess is None:
+        raise HTTPException(status_code=404, detail="not found")
+    xml = str(getattr(sess, "bpmn_xml", "") or "")
+    return len(find_subprocess_elements(xml))
+
+
+def create_subprocess_sessions(
+    session_id: str,
+    request: Optional[Request] = None,
+    *,
+    load_all: bool = False,
+) -> Dict[str, Any]:
+    """Create child sessions for top-level subprocess elements on demand.
+
+    First call creates up to 10 children and reports whether more exist.
+    load_all=True creates all remaining children.
+    """
+    sess, scope, err = session_access_from_request(request, session_id)
+    if err or sess is None:
+        raise HTTPException(status_code=404, detail="not found")
+    role = _org_role_for_request(request, sess.org_id) if request is not None else ""
+    user = _request_auth_user(request) if request is not None else {}
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
+    if not _can_edit_workspace(role, is_admin=is_admin):
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    total = len(find_subprocess_elements(str(getattr(sess, "bpmn_xml", "") or "")))
+    if total == 0:
+        return {"created": 0, "total": 0, "has_more": False}
+
+    limit = total if load_all else min(10, total)
+    summary = auto_create_subprocess_sessions(sess, request, limit=limit)
+    created = len(summary["created"]) + len(summary["restored"])
+    has_more = created < total
+    return {"created": created, "total": total, "has_more": has_more}
 
 
 def _build_breadcrumbs(
