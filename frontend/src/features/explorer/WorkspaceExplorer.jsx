@@ -2341,6 +2341,9 @@ function SessionRow({
               aria-busy={isOpening ? "true" : undefined}
             >
               <span className="block truncate hover:underline">{session.name}</span>
+              {treeMode && depth > 0 && session?.element_id_in_parent ? (
+                <span className="block truncate text-[10px] text-gray-500">{session.element_id_in_parent}</span>
+              ) : null}
               <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-normal text-accent/75 transition-colors hover:text-accent">
                 <span>{isOpening ? "Открываем сессию" : "Открыть сессию"}</span>
                 <IcoChevron right className="text-[10px]" />
@@ -2352,6 +2355,22 @@ function SessionRow({
                 title="Элементов процесса"
               >
                 {session.activity_count}
+              </span>
+            ) : null}
+            {Number(session?.children_count) > 0 ? (
+              <span
+                className="ml-1.5 inline-flex shrink-0 items-center rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-600"
+                title={`${session.children_count} подпроцессов`}
+              >
+                {session.children_count}
+              </span>
+            ) : null}
+            {treeMode && depth > 0 && (!session?.bpmn_xml || String(session.bpmn_xml).length < 500) ? (
+              <span
+                className="ml-1.5 inline-flex shrink-0 items-center text-[10px] text-gray-400"
+                title="Пустой шаблон"
+              >
+                📝
               </span>
             ) : null}
           </div>
