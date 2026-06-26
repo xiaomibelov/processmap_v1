@@ -29,7 +29,7 @@ jobs:
             docker tag processmap-gateway:dev processmap-gateway:rollback 2>/dev/null || true
             docker tag app-api:latest app-api:rollback 2>/dev/null || true
 
-            # Rebuild api and gateway (frontend is baked into gateway image)
+            # Rebuild api (cached) and gateway without cache so fresh frontend statics are baked in
             APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
               --env-file /opt/processmap/env/prod.env \
               -f docker-compose.yml \
@@ -37,7 +37,15 @@ jobs:
               -f docker-compose.ssl.yml \
               -f docker-compose.prod.gateway.yml \
               -p app \
-              build api gateway
+              build api
+            APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
+              --env-file /opt/processmap/env/prod.env \
+              -f docker-compose.yml \
+              -f docker-compose.prod.yml \
+              -f docker-compose.ssl.yml \
+              -f docker-compose.prod.gateway.yml \
+              -p app \
+              build --no-cache gateway
 
             # Remove the old gateway container and any attached volumes so stale statics cannot survive
             docker compose \
