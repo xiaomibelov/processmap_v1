@@ -172,6 +172,7 @@ class SessionItem(BaseModel):
     parent_session_id: str = ""
     has_children: bool = False
     children_count: int = 0
+    subprocesses_count: int = 0
     activity_count: int = 0
     owner: Optional[OwnerOut] = None
     status: str = "draft"
@@ -260,6 +261,7 @@ def _session_item_from_row(row: Dict[str, Any]) -> SessionItem:
         parent_session_id=str(row.get("parent_session_id") or ""),
         has_children=bool(row.get("has_children")),
         children_count=int(row.get("children_count") or 0),
+        subprocesses_count=int(row.get("subprocesses_count") or 0),
         activity_count=int(row.get("activity_count") or 0),
         owner=_owner_out(row.get("owner_user_id", "")),
         status=row.get("status", "draft"),
