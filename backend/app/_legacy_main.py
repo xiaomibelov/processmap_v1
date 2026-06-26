@@ -32,6 +32,7 @@ from .glossary import normalize_kind, slugify_canon, upsert_term
 from .models import Node, Edge, Question, ReportVersion, Session, Project, CreateProjectIn, UpdateProjectIn
 from .analytics import compute_analytics
 from .analytics_read_model import refresh_analytics_for_session
+from .camunda_meta_utils import deduplicate_camunda_extension_properties
 from .normalizer import load_seed_glossary, normalize_nodes
 from .resources import build_resources_report
 from .storage import (
@@ -7661,6 +7662,7 @@ def session_meta_patch(session_id: str, inp: Any, request: Request = None) -> Di
         meta = getattr(inp, "bpmn_meta", None)
     if not isinstance(meta, dict):
         raise HTTPException(status_code=400, detail="bpmn_meta_json must be an object")
+    meta = deduplicate_camunda_extension_properties(meta)
     base_version_raw = getattr(inp, "base_diagram_state_version", None)
     if base_version_raw is None:
         raise HTTPException(
