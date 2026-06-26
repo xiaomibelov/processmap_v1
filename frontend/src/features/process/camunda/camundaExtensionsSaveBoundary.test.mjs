@@ -23,6 +23,49 @@ const NEXT_META = {
   },
 };
 
+const CURRENT_XML = "<xml>current</xml>";
+const NEXT_XML = "<xml>next</xml>";
+
+function createRef(initial = null) {
+  return { current: initial };
+}
+
+function buildStub(options = {}) {
+  const stub = {
+    putCalls: [],
+    patchCalls: [],
+    getCalls: [],
+    syncs: [],
+    acks: [],
+    putResult: options.putResult ?? { ok: true, status: 200, storedRev: 2, diagramStateVersion: 5 },
+    patchResult: options.patchResult ?? { ok: true, status: 200, session: { bpmn_xml_version: 2, diagram_state_version: 5 } },
+    getResults: options.getResults ?? [],
+    getIndex: 0,
+    async apiPutBpmnXml(sessionId, xml, opts) {
+      stub.putCalls.push({ sessionId, xml, opts });
+      const result = typeof stub.putResult === "function" ? stub.putResult(stub.putCalls.length) : stub.putResult;
+      return result;
+    },
+    async apiPatchSessionMeta(sessionId, patch) {
+      stub.patchCalls.push({ sessionId, patch });
+      const result = typeof stub.patchResult === "function" ? stub.patchResult(stub.patchCalls.length) : stub.patchResult;
+      return result;
+    },
+    async apiGetSession(sessionId) {
+      stub.getCalls.push({ sessionId });
+      const result = stub.getResults[stub.getIndex] ?? { ok: false };
+      stub.getIndex += 1;
+      return result;
+    },
+    onSessionSync(session) { stub.syncs.push(session); },
+    onDurableSaveAck(ack) { stub.acks.push(ack); },
+    buildCanonicalXml({ xmlText, camundaExtensionsByElementId }) {
+      return xmlText === CURRENT_XML ? NEXT_XML : `<xml>${JSON.stringify(camundaExtensionsByElementId)}</xml>`;
+    },
+  };
+  return stub;
+}
+
 test("buildCamundaExtensionsCanonicalXml mutates canonical BPMN XML through provided boundary builder", () => {
   const out = buildCamundaExtensionsCanonicalXml({
     currentXmlRaw: BASE_XML,
@@ -336,4 +379,210 @@ test("persistCamundaExtensionsViaCanonicalXmlBoundary does not acknowledge durab
   assert.equal(out.ok, false);
   assert.equal(out.status, 409);
   assert.equal(durableAcks.length, 0);
+});
+
+
+test("meta-only save uses PATCH when XML unchanged, meta changed, and apiPatchSessionMeta is available", async () => {
+  const stub = buildStub();
+  const ref = createRef(4);
+  const currentMeta = { version: 1, camunda_extensions_by_element_id: {} };
+  const nextMeta = { ...NEXT_META };
+
+  const result = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+    sessionIdRaw: "sess_1",
+    isLocal: false,
+    currentXmlRaw: CURRENT_XML,
+    currentMetaRaw: currentMeta,
+    nextMetaRaw: nextMeta,
+    nextCamundaExtensionsByElementIdRaw: NEXT_META.camunda_extensions_by_element_id,
+    baseDiagramStateVersionRaw: 4,
+    lastServerDiagramStateVersionRef: ref,
+    buildCanonicalXml: ({ xmlText }) => xmlText,
+    apiPutBpmnXml: stub.apiPutBpmnXml,
+    apiPatchSessionMeta: stub.apiPatchSessionMeta,
+    apiGetSession: stub.apiGetSession,
+    onSessionSync: stub.onSessionSync,
+    onDurableSaveAck: stub.onDurableSaveAck,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(stub.putCalls.length, 0);
+  assert.equal(stub.patchCalls.length, 1);
+  assert.equal(stub.patchCalls[0].patch.base_diagram_state_version, 4);
+  assert.equal(ref.current, 5);
+  assert.equal(stub.acks.length, 1);
+  assert.equal(stub.syncs.length, 1);
+});
+
+test("meta-only save skips when XML and meta unchanged", async () => {
+  const stub = buildStub();
+  const ref = createRef(4);
+  const meta = { version: 1, camunda_extensions_by_element_id: NEXT_META.camunda_extensions_by_element_id };
+
+  const result = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+    sessionIdRaw: "sess_1",
+    isLocal: false,
+    currentXmlRaw: CURRENT_XML,
+    currentMetaRaw: meta,
+    nextMetaRaw: meta,
+    nextCamundaExtensionsByElementIdRaw: NEXT_META.camunda_extensions_by_element_id,
+    baseDiagramStateVersionRaw: 4,
+    lastServerDiagramStateVersionRef: ref,
+    buildCanonicalXml: ({ xmlText }) => xmlText,
+    apiPutBpmnXml: stub.apiPutBpmnXml,
+    apiPatchSessionMeta: stub.apiPatchSessionMeta,
+    onSessionSync: stub.onSessionSync,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.skipped, true);
+  assert.equal(stub.putCalls.length, 0);
+  assert.equal(stub.patchCalls.length, 0);
+});
+
+test("meta-only save retries on 409 and updates lastServerDiagramStateVersionRef", async () => {
+  const stub = buildStub();
+  let calls = 0;
+  stub.patchResult = (n) => {
+    calls += 1;
+    if (n === 1) {
+      return { ok: false, status: 409, error: "DIAGRAM_STATE_CONFLICT", data: { detail: { server_current_version: 7 } } };
+    }
+    return { ok: true, status: 200, session: { bpmn_xml_version: 3, diagram_state_version: 8 } };
+  };
+  stub.getResults = [{ ok: true, session: { bpmn_xml: CURRENT_XML, bpmn_meta: { version: 2 }, diagram_state_version: 7 } }];
+
+  const ref = createRef(4);
+  const currentMeta = { version: 1, camunda_extensions_by_element_id: {} };
+
+  const result = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+    sessionIdRaw: "sess_1",
+    isLocal: false,
+    currentXmlRaw: CURRENT_XML,
+    currentMetaRaw: currentMeta,
+    nextMetaRaw: NEXT_META,
+    nextCamundaExtensionsByElementIdRaw: NEXT_META.camunda_extensions_by_element_id,
+    baseDiagramStateVersionRaw: 4,
+    lastServerDiagramStateVersionRef: ref,
+    buildCanonicalXml: ({ xmlText }) => xmlText,
+    apiPutBpmnXml: stub.apiPutBpmnXml,
+    apiPatchSessionMeta: stub.apiPatchSessionMeta,
+    apiGetSession: stub.apiGetSession,
+    onSessionSync: stub.onSessionSync,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(calls, 2);
+  assert.equal(stub.patchCalls.length, 2);
+  assert.equal(stub.patchCalls[1].patch.base_diagram_state_version, 7);
+  assert.equal(stub.getCalls.length, 1);
+  assert.equal(ref.current, 8);
+});
+
+test("XML-changed save uses PUT and updates lastServerDiagramStateVersionRef", async () => {
+  const stub = buildStub();
+  const ref = createRef(4);
+  const currentMeta = { version: 1, camunda_extensions_by_element_id: {} };
+
+  const result = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+    sessionIdRaw: "sess_1",
+    isLocal: false,
+    currentXmlRaw: CURRENT_XML,
+    currentMetaRaw: currentMeta,
+    nextMetaRaw: NEXT_META,
+    nextCamundaExtensionsByElementIdRaw: NEXT_META.camunda_extensions_by_element_id,
+    baseDiagramStateVersionRaw: 4,
+    lastServerDiagramStateVersionRef: ref,
+    buildCanonicalXml: stub.buildCanonicalXml,
+    apiPutBpmnXml: stub.apiPutBpmnXml,
+    apiPatchSessionMeta: stub.apiPatchSessionMeta,
+    apiGetSession: stub.apiGetSession,
+    onSessionSync: stub.onSessionSync,
+    onDurableSaveAck: stub.onDurableSaveAck,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(stub.putCalls.length, 1);
+  assert.equal(stub.patchCalls.length, 0);
+  assert.equal(stub.putCalls[0].opts.baseDiagramStateVersion, 4);
+  assert.equal(ref.current, 5);
+  assert.equal(stub.acks.length, 1);
+});
+
+test("XML-changed save retries on 409 by rebasing from apiGetSession", async () => {
+  const stub = buildStub();
+  let calls = 0;
+  stub.putResult = (n) => {
+    calls += 1;
+    if (n === 1) {
+      return { ok: false, status: 409, error: "DIAGRAM_STATE_CONFLICT", data: { detail: { server_current_version: 7 } } };
+    }
+    return { ok: true, status: 200, storedRev: 4, diagramStateVersion: 9 };
+  };
+  stub.getResults = [{ ok: true, session: { bpmn_xml: "<xml>server</xml>", bpmn_meta: { version: 2 }, diagram_state_version: 7 } }];
+
+  const ref = createRef(4);
+  const currentMeta = { version: 1, camunda_extensions_by_element_id: {} };
+
+  const result = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+    sessionIdRaw: "sess_1",
+    isLocal: false,
+    currentXmlRaw: CURRENT_XML,
+    currentMetaRaw: currentMeta,
+    nextMetaRaw: NEXT_META,
+    nextCamundaExtensionsByElementIdRaw: NEXT_META.camunda_extensions_by_element_id,
+    baseDiagramStateVersionRaw: 4,
+    lastServerDiagramStateVersionRef: ref,
+    buildCanonicalXml: ({ xmlText, camundaExtensionsByElementId }) => `${xmlText}:${Object.keys(camundaExtensionsByElementId).length}`,
+    apiPutBpmnXml: stub.apiPutBpmnXml,
+    apiPatchSessionMeta: stub.apiPatchSessionMeta,
+    apiGetSession: stub.apiGetSession,
+    onSessionSync: stub.onSessionSync,
+    onDurableSaveAck: stub.onDurableSaveAck,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(calls, 2);
+  assert.equal(stub.putCalls.length, 2);
+  assert.equal(stub.putCalls[1].xml, "<xml>server</xml>:1");
+  assert.equal(stub.putCalls[1].opts.baseDiagramStateVersion, 7);
+  assert.equal(ref.current, 9);
+});
+
+test("meta-only save retries on 423 lock failure", async () => {
+  const stub = buildStub();
+  let calls = 0;
+  stub.patchResult = (n) => {
+    calls += 1;
+    if (n === 1) {
+      return { ok: false, status: 423, error: "Session is being updated" };
+    }
+    return { ok: true, status: 200, session: { bpmn_xml_version: 3, diagram_state_version: 6 } };
+  };
+
+  const ref = createRef(4);
+  const currentMeta = { version: 1, camunda_extensions_by_element_id: {} };
+
+  const start = Date.now();
+  const result = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+    sessionIdRaw: "sess_1",
+    isLocal: false,
+    currentXmlRaw: CURRENT_XML,
+    currentMetaRaw: currentMeta,
+    nextMetaRaw: NEXT_META,
+    nextCamundaExtensionsByElementIdRaw: NEXT_META.camunda_extensions_by_element_id,
+    baseDiagramStateVersionRaw: 4,
+    lastServerDiagramStateVersionRef: ref,
+    buildCanonicalXml: ({ xmlText }) => xmlText,
+    apiPutBpmnXml: stub.apiPutBpmnXml,
+    apiPatchSessionMeta: stub.apiPatchSessionMeta,
+    apiGetSession: stub.apiGetSession,
+    onSessionSync: stub.onSessionSync,
+  });
+  const elapsed = Date.now() - start;
+
+  assert.equal(result.ok, true);
+  assert.equal(calls, 2);
+  assert.equal(stub.patchCalls.length, 2);
+  assert.ok(elapsed >= 450, `expected backoff ~500ms, got ${elapsed}ms`);
 });
