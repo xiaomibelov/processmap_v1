@@ -10,20 +10,15 @@ test("explorer API supports eager tree query param", () => {
   assert.match(apiSource, /tree:\s*tree\s*\?\s*"true"\s*:\s*""/);
 });
 
-test("ProjectPane reads workspace_auto_expand_steps feature flag", () => {
-  assert.match(explorerSource, /useFeatureFlag\("workspace_auto_expand_steps"\)/);
-  assert.match(explorerSource, /autoExpand/);
+test("ProjectPane uses lazy tree (no eager auto-expand)", () => {
+  assert.match(explorerSource, /const eagerTree = false;/);
 });
 
-test("ProjectPane computes eagerTree from tree and autoExpand flags", () => {
-  assert.match(explorerSource, /const eagerTree = treeEnabled && autoExpand;/);
+test("ProjectPane requests rootOnly children meta for lazy tree", () => {
+  assert.match(explorerSource, /await apiGetProjectPage\(workspaceId, projectId, \{\s*rootOnly:\s*true,\s*includeChildrenMeta:\s*true\s*\}\)/s);
 });
 
-test("ProjectPane requests eager tree when auto-expand is enabled", () => {
-  assert.match(explorerSource, /await apiGetProjectPage\(workspaceId, projectId, \{\s*tree:\s*true\s*\}\)/s);
-});
-
-test("SessionTreeRows renders eager children from session.children", () => {
+test("SessionTreeRows renders lazy children from childrenCache", () => {
   assert.match(explorerSource, /eagerTree\s*=/);
   assert.match(explorerSource, /const children = eagerTree\s*\?\s*\(session\?\.children \|\| \[\]\)\s*:\s*\(childrenCache\[sid\] \|\| \[\]\)/s);
 });
@@ -46,4 +41,10 @@ test("SessionRow displays element_id_in_parent label for child rows", () => {
 test("SessionRow shows empty template icon for child sessions with small BPMN XML", () => {
   assert.match(explorerSource, /session\?\.bpmn_xml/);
   assert.match(explorerSource, /title="Пустой шаблон"/);
+});
+
+test("SessionRow shows load subprocesses button for root sessions", () => {
+  assert.match(explorerSource, /session\?\.subprocesses_count/);
+  assert.match(explorerSource, /apiCreateSubprocessSessions/);
+  assert.match(explorerSource, /Загрузить .* подпроцессов/);
 });
