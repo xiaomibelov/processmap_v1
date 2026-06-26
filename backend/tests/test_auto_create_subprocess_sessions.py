@@ -7,6 +7,7 @@ from app.auth import create_access_token, create_user
 from app.schemas.legacy_api import BpmnXmlIn
 from app.services import session_service as svc
 from app.services.bpmn_navigation import find_subprocess_elements
+import app._legacy_main as _lm
 from app.storage import (
     create_org_record,
     get_storage,
@@ -146,8 +147,10 @@ class TestSubprocessSessionCreation(unittest.TestCase):
         )
 
     def _save_bpmn(self, sid, xml, user, org_id):
+        # Use the legacy save directly so tests for create_subprocess_sessions
+        # run in isolation from the hybrid auto-create-on-save behaviour.
         req = _DummyRequest(user, org_id)
-        return svc.session_bpmn_save(
+        return _lm.session_bpmn_save(
             sid,
             BpmnXmlIn(
                 xml=xml,
@@ -411,6 +414,73 @@ class TestSubprocessSessionCreation(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 403)
 
+    def _hybrid_save_bpmn(self, sid, xml, user, org_id):
+        req = _DummyRequest(user, org_id)
+        return svc.bpmn_save(
+            sid,
+            BpmnXmlIn(
+                xml=xml,
+                source_action="test",
+                bpmn_meta={},
+            ),
+            req,
+        )
 
+    def test_bpmn_save_hybrid_auto_creates_up_to_ten(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_hybrid_1@local", "editor_hybrid_1@local", "org_hybrid_1"
+        )
+        sid = self._create_session(str(owner["id"]), "org_hybrid_1", project_id="proj_1", title="root")
+        xml = self._bpmn_with_subprocesses([f"sub_{i}" for i in range(5)])
+        result = self._hybrid_save_bpmn(sid, xml, editor, "org_hybrid_1")
+
+        self.assertTrue(result.get("ok"))
+        self.assertEqual(result.get("subprocesses_total"), 5)
+        self.assertEqual(result.get("subprocesses_created"), 5)
+        self.assertFalse(result.get("subprocesses_has_more"))
+        children = list_session_children("org_hybrid_1", "proj_1", sid, user_id=str(editor["id"]))
+        self.assertEqual(len(children), 5)
+
+    def test_bpmn_save_hybrid_reports_has_more_when_more_than_ten(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_hybrid_2@local", "editor_hybrid_2@local", "org_hybrid_2"
+        )
+        sid = self._create_session(str(owner["id"]), "org_hybrid_2", project_id="proj_1", title="root")
+        xml = self._bpmn_with_subprocesses([f"sub_{i}" for i in range(15)])
+        result = self._hybrid_save_bpmn(sid, xml, editor, "org_hybrid_2")
+
+        self.assertTrue(result.get("ok"))
+        self.assertEqual(result.get("subprocesses_total"), 15)
+        self.assertEqual(result.get("subprocesses_created"), 10)
+        self.assertTrue(result.get("subprocesses_has_more"))
+        children = list_session_children("org_hybrid_2", "proj_1", sid, user_id=str(editor["id"]))
+        self.assertEqual(len(children), 10)
+
+        # Load the rest
+        rest = self._create_subprocesses(sid, editor, "org_hybrid_2", load_all=True)
+        self.assertEqual(rest["created"], 5)
+        self.assertEqual(rest["total"], 15)
+        self.assertFalse(rest["has_more"])
+        children = list_session_children("org_hybrid_2", "proj_1", sid, user_id=str(editor["id"]))
+        self.assertEqual(len(children), 15)
+
+    def test_bpmn_save_hybrid_no_button_when_ten_or_fewer(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_hybrid_3@local", "editor_hybrid_3@local", "org_hybrid_3"
+        )
+        sid = self._create_session(str(owner["id"]), "org_hybrid_3", project_id="proj_1", title="root")
+        xml = self._bpmn_with_subprocesses([f"sub_{i}" for i in range(10)])
+        result = self._hybrid_save_bpmn(sid, xml, editor, "org_hybrid_3")
+
+        self.assertTrue(result.get("ok"))
+        self.assertEqual(result.get("subprocesses_total"), 10)
+        self.assertEqual(result.get("subprocesses_created"), 10)
+        self.assertFalse(result.get("subprocesses_has_more"))
+        children = list_session_children("org_hybrid_3", "proj_1", sid, user_id=str(editor["id"]))
+        self.assertEqual(len(children), 10)
+
+
+if __name__ == "__main__":
+    unittest.main()
 if __name__ == "__main__":
     unittest.main()
