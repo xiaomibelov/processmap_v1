@@ -1,10 +1,10 @@
 {
   "branch": "feature/auto-create-subprocess-sessions",
-  "sha": "23e9fa623de3002cd517898a7b68ba75b3892f15",
-  "shaShort": "23e9fa62",
-  "timestamp": "2026-06-26T10:56:43.502Z",
+  "sha": "fc010d9e",
+  "shaShort": "fc010d9e",
+  "timestamp": "2026-06-26T10:56:56Z",
   "contourId": "feature-auto-create-subprocess-sessions",
   "dirty": true,
   "host": "clearvestnic.ru",
-  "env": "dev"
+  "env": "stage"
 }
