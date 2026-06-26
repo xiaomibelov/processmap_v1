@@ -1381,7 +1381,8 @@ def _ensure_schema() -> None:
                   navigation_stack TEXT DEFAULT '[]',
                   parent_session_id TEXT,
                   element_id_in_parent TEXT,
-                  activity_count INTEGER NOT NULL DEFAULT 0
+                  activity_count INTEGER NOT NULL DEFAULT 0,
+                  deleted_at INTEGER NOT NULL DEFAULT 0
                 )
                 """
             )
@@ -1522,7 +1523,10 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE sessions ADD COLUMN element_id_in_parent TEXT")
             if not _column_exists(con, "sessions", "activity_count"):
                 con.execute("ALTER TABLE sessions ADD COLUMN activity_count INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "sessions", "deleted_at"):
+                con.execute("ALTER TABLE sessions ADD COLUMN deleted_at INTEGER NOT NULL DEFAULT 0")
             con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_parent_element ON sessions(parent_session_id, element_id_in_parent)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_parent_active ON sessions(parent_session_id, deleted_at) WHERE parent_session_id IS NOT NULL AND parent_session_id != ''")
             con.execute(
                 """
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_parent_element_unique
@@ -3377,6 +3381,7 @@ def _session_row_to_model(row: sqlite3.Row) -> Session:
         "parent_session_id": str((row["parent_session_id"] if "parent_session_id" in keys else "") or ""),
         "element_id_in_parent": str((row["element_id_in_parent"] if "element_id_in_parent" in keys else "") or ""),
         "activity_count": int((row["activity_count"] if "activity_count" in keys else 0) or 0),
+        "deleted_at": int((row["deleted_at"] if "deleted_at" in keys else 0) or 0),
     }
     return Session.model_validate(payload)
 
