@@ -3785,7 +3785,7 @@ class Storage:
                   diagram_last_write_actor_user_id, diagram_last_write_actor_label, diagram_last_write_at,
                   diagram_last_write_changed_keys_json, bpmn_graph_fingerprint, bpmn_meta_json, version,
                   owner_user_id, org_id, created_by, updated_by, created_at, updated_at,
-                  navigation_stack, parent_session_id, element_id_in_parent, activity_count
+                  navigation_stack, parent_session_id, element_id_in_parent, activity_count, deleted_at
                 ) VALUES (
                   :id, :title, :roles_json, :start_role, :project_id, :mode, :notes, :notes_by_element_json,
                   :interview_json, :nodes_json, :edges_json, :questions_json, :mermaid, :mermaid_simple, :mermaid_lanes,
@@ -3794,7 +3794,7 @@ class Storage:
                   :diagram_last_write_actor_user_id, :diagram_last_write_actor_label, :diagram_last_write_at,
                   :diagram_last_write_changed_keys_json, :bpmn_graph_fingerprint, :bpmn_meta_json, :version,
                   :owner_user_id, :org_id, :created_by, :updated_by, :created_at, :updated_at,
-                  :navigation_stack, :parent_session_id, :element_id_in_parent, :activity_count
+                  :navigation_stack, :parent_session_id, :element_id_in_parent, :activity_count, :deleted_at
                 )
                 ON CONFLICT (org_id, project_id, parent_session_id, element_id_in_parent)
                 WHERE parent_session_id IS NOT NULL AND parent_session_id != ''
@@ -3962,6 +3962,7 @@ class Storage:
                 "parent_session_id": str(getattr(s, "parent_session_id", "") or ""),
                 "element_id_in_parent": str(getattr(s, "element_id_in_parent", "") or ""),
                 "activity_count": int(getattr(s, "activity_count", 0) or 0),
+                "deleted_at": int(getattr(s, "deleted_at", 0) or 0),
             }
             con.execute(
                 """
@@ -4022,7 +4023,8 @@ class Storage:
                   navigation_stack=excluded.navigation_stack,
                   parent_session_id=excluded.parent_session_id,
                   element_id_in_parent=excluded.element_id_in_parent,
-                  activity_count=excluded.activity_count
+                  activity_count=excluded.activity_count,
+                  deleted_at=excluded.deleted_at
                 """,
                 values,
             )
@@ -11464,8 +11466,8 @@ def list_project_sessions_for_explorer(
     children_meta_sql = ""
     if include_children_meta:
         children_meta_sql = """,
-          EXISTS(SELECT 1 FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS has_children,
-          (SELECT COUNT(*) FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS children_count"""
+          EXISTS(SELECT 1 FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id AND (c.deleted_at = 0 OR c.deleted_at IS NULL)) AS has_children,
+          (SELECT COUNT(*) FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id AND (c.deleted_at = 0 OR c.deleted_at IS NULL)) AS children_count"""
 
     sql = f"""
         SELECT s.*{children_meta_sql}
@@ -11514,7 +11516,7 @@ def list_session_children(
     if not psid:
         return []
 
-    filters = ["project_id = ?", "parent_session_id = ?"]
+    filters = ["project_id = ?", "parent_session_id = ?", "(s.deleted_at = 0 OR s.deleted_at IS NULL)"]
     params: List[Any] = [pid, psid]
     if oid:
         filters.append("org_id = ?")
@@ -11527,8 +11529,8 @@ def list_session_children(
     where = " AND ".join(filters)
     sql = f"""
         SELECT s.*,
-          EXISTS(SELECT 1 FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS has_children,
-          (SELECT COUNT(*) FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS children_count
+          EXISTS(SELECT 1 FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id AND (c.deleted_at = 0 OR c.deleted_at IS NULL)) AS has_children,
+          (SELECT COUNT(*) FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id AND (c.deleted_at = 0 OR c.deleted_at IS NULL)) AS children_count
         FROM sessions s
         WHERE {where}
         ORDER BY s.updated_at DESC
@@ -11563,7 +11565,7 @@ def get_project_session_tree(
     if not pid:
         return []
 
-    filters = ["s.project_id = ?"]
+    filters = ["s.project_id = ?", "(s.deleted_at = 0 OR s.deleted_at IS NULL)"]
     params: List[Any] = [pid]
     if oid:
         filters.append("s.org_id = ?")
@@ -11576,8 +11578,8 @@ def get_project_session_tree(
     where = " AND ".join(filters)
     sql = f"""
         SELECT s.*,
-          EXISTS(SELECT 1 FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS has_children,
-          (SELECT COUNT(*) FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS children_count
+          EXISTS(SELECT 1 FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id AND (c.deleted_at = 0 OR c.deleted_at IS NULL)) AS has_children,
+          (SELECT COUNT(*) FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id AND (c.deleted_at = 0 OR c.deleted_at IS NULL)) AS children_count
         FROM sessions s
         WHERE {where}
         ORDER BY s.updated_at DESC
@@ -11591,10 +11593,10 @@ def get_project_session_tree(
         fallback_params = [pid]
         fallback_sql = f"""
             SELECT s.*,
-              EXISTS(SELECT 1 FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS has_children,
-              (SELECT COUNT(*) FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id) AS children_count
+              EXISTS(SELECT 1 FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id AND (c.deleted_at = 0 OR c.deleted_at IS NULL)) AS has_children,
+              (SELECT COUNT(*) FROM sessions c WHERE c.parent_session_id = s.id AND c.project_id = s.project_id AND (c.deleted_at = 0 OR c.deleted_at IS NULL)) AS children_count
             FROM sessions s
-            WHERE s.project_id = ?
+            WHERE s.project_id = ? AND (s.deleted_at = 0 OR s.deleted_at IS NULL)
             ORDER BY s.updated_at DESC
         """
         rows = con.execute(fallback_sql, fallback_params).fetchall()
