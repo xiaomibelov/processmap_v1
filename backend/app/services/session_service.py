@@ -1182,8 +1182,9 @@ def create_subprocess_sessions(
 
     limit = total if load_all else min(10, total)
     summary = auto_create_subprocess_sessions(sess, request, limit=limit)
+    active_after = len(summary["created"]) + len(summary["restored"]) + len(summary["skipped_existing"])
     created = len(summary["created"]) + len(summary["restored"])
-    has_more = created < total
+    has_more = active_after < total
     return {"created": created, "total": total, "has_more": has_more}
 
 

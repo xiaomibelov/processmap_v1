@@ -102,6 +102,17 @@ export async function apiGetSessionChildren(sessionId) {
   return call(`/api/sessions/${encodeURIComponent(sessionId)}/children`);
 }
 
+export async function apiGetSubprocessesCount(sessionId) {
+  return call(`/api/sessions/${encodeURIComponent(sessionId)}/subprocesses-count`);
+}
+
+export async function apiCreateSubprocessSessions(sessionId, { loadAll = false } = {}) {
+  return call(
+    `/api/sessions/${encodeURIComponent(sessionId)}/create-subprocesses${q({ load_all: loadAll ? "true" : "" })}`,
+    { method: "POST" },
+  );
+}
+
 function itemIdOf(item) {
   return String(item?.id || "").trim();
 }
