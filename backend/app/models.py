@@ -104,6 +104,7 @@ class Session(BaseModel):
     navigation_stack: List[Dict[str, Any]] = Field(default_factory=list)
     parent_session_id: str = ""
     element_id_in_parent: str = ""
+    activity_count: int = 0
 # -----------------------------
 # Epic #1: Project (process passport)
 # -----------------------------

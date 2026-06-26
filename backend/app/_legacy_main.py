@@ -1995,6 +1995,36 @@ def _collect_sequence_flow_meta(xml_text: str) -> Dict[str, Any]:
     }
 
 
+_BPMN_ACTIVITY_TAGS: Set[str] = {
+    "task",
+    "usertask",
+    "servicetask",
+    "manualtask",
+    "scripttask",
+    "businessruletask",
+    "sendtask",
+    "receivetask",
+    "callactivity",
+    "subprocess",
+}
+
+
+def _count_bpmn_activities(xml_text: str) -> int:
+    """Count BPMN activity elements (tasks + callActivity + subProcess)."""
+    raw = str(xml_text or "").strip()
+    if not raw:
+        return 0
+    try:
+        root = ET.fromstring(raw)
+    except Exception:
+        return 0
+    count = 0
+    for el in root.iter():
+        if _ln_tag(str(getattr(el, "tag", "") or "")) in _BPMN_ACTIVITY_TAGS:
+            count += 1
+    return count
+
+
 _FLOW_TIERS: Set[str] = {"P0", "P1", "P2"}
 _R_FLOW_TIERS: Set[str] = {"R0", "R1", "R2"}
 _NODE_PATH_CODES: Tuple[str, ...] = ("P0", "P1", "P2")
@@ -7499,6 +7529,7 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
             raw_bpmn_meta = current_meta
         s.bpmn_xml = xml
         s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
+        s.activity_count = _count_bpmn_activities(xml)
         s.bpmn_graph_fingerprint = _session_graph_fingerprint(s)
         normalized_meta = _normalize_bpmn_meta(
             raw_bpmn_meta,
@@ -7550,6 +7581,7 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
                         previous_parent_xml = parent_xml
                         parent.bpmn_xml = new_parent_xml
                         parent.bpmn_xml_version = int(getattr(parent, "version", 0) or 0)
+                        parent.activity_count = _count_bpmn_activities(new_parent_xml)
                         parent.bpmn_graph_fingerprint = _session_graph_fingerprint(parent)
                         _mark_diagram_truth_write(
                             parent,
