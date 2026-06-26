@@ -8,6 +8,7 @@ services:
       dockerfile: Dockerfile.gateway.prod
     image: ${GATEWAY_IMAGE_TAG:-processmap-gateway:dev}
     networks:
+      - default
       - processmap_edge_net
 
 networks:
