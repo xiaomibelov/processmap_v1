@@ -25,11 +25,17 @@ jobs:
               docker-compose.yml docker-compose.prod.yml docker-compose.prod.gateway.yml \
               docker-compose.ssl.yml Dockerfile.gateway.prod
 
+            # Resolve git metadata for build fingerprint / freshness proof
+            GIT_SHA=$(git rev-parse HEAD)
+            GIT_REF=$(git rev-parse --abbrev-ref HEAD)
+            BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            DEPLOY_FINGERPRINT="processmap-prod-deploy-sha:${GIT_SHA}"
+
             # Save current images as rollback point before rebuilding
             docker tag processmap-gateway:dev processmap-gateway:rollback 2>/dev/null || true
             docker tag app-api:latest app-api:rollback 2>/dev/null || true
 
-            # Rebuild api (cached) and gateway without cache so fresh frontend statics are baked in
+            # Rebuild api (cached)
             APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
               --env-file /opt/processmap/env/prod.env \
               -f docker-compose.yml \
@@ -38,6 +44,8 @@ jobs:
               -f docker-compose.prod.gateway.yml \
               -p app \
               build api
+
+            # Rebuild gateway without cache so fresh frontend statics + fingerprint are baked in
             APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
               --env-file /opt/processmap/env/prod.env \
               -f docker-compose.yml \
@@ -45,7 +53,14 @@ jobs:
               -f docker-compose.ssl.yml \
               -f docker-compose.prod.gateway.yml \
               -p app \
-              build --no-cache gateway
+              build --no-cache \
+                --build-arg VITE_BUILD_ID="${GIT_SHA}" \
+                --build-arg VITE_BUILD_BRANCH="${GIT_REF}" \
+                --build-arg VITE_BUILD_TIME="${BUILD_TIME}" \
+                --build-arg VITE_DEPLOY_FINGERPRINT="${DEPLOY_FINGERPRINT}" \
+                --build-arg VITE_DEPLOY_REQUESTED_REF="${GIT_REF}" \
+                --build-arg VITE_DEPLOY_RESOLVED_SHA="${GIT_SHA}" \
+                gateway
 
             # Remove the old gateway container and any attached volumes so stale statics cannot survive
             docker compose \
@@ -68,5 +83,23 @@ jobs:
               -f docker-compose.prod.gateway.yml \
               -p app \
               up -d --no-deps --force-recreate -V api gateway
+
+            # Post-deploy freshness proof
+            echo "[deploy-prod] waiting for prod gateway to come up..."
+            sleep 15
+            echo "=== Prod /version ==="
+            curl -fsS https://processmap.ru/version | head -c 500 || echo "ERROR: /version unreachable"
+            echo
+            echo "=== Prod frontend fingerprint ==="
+            MAIN_JS=$(curl -fsS https://processmap.ru/ | grep -oE 'assets/index-[A-Za-z0-9]+\.js' | head -1)
+            if [ -n "${MAIN_JS}" ]; then
+              curl -fsS "https://processmap.ru/${MAIN_JS}" \
+                | grep -oE "processmap-prod-deploy-sha:[a-f0-9]+" \
+                | head -1 \
+                && echo " (fingerprint OK)" \
+                || echo "ERROR: fingerprint not found in ${MAIN_JS}"
+            else
+              echo "ERROR: could not locate main JS asset"
+            fi
 
             echo "[deploy-prod] done"

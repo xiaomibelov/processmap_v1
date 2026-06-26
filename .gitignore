@@ -67,3 +67,4 @@ vault/.git
 
 # Git worktrees
 .worktrees/
+frontend/public/build-info.json
