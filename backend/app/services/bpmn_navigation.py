@@ -1,6 +1,6 @@
 from __future__ import annotations
 import xml.etree.ElementTree as ET
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 
 BPMN_NS = "http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -43,6 +43,29 @@ def called_element_id(xml_text: str, element_id: str) -> Optional[str]:
         return None
     called = str(el.attrib.get("calledElement") or "").strip()
     return called or None
+
+
+def find_subprocess_elements(xml_text: str) -> List[Dict[str, Optional[str]]]:
+    """Return top-level bpmn:subProcess elements (not nested inside another subprocess)."""
+    if not xml_text:
+        return []
+    try:
+        root = ET.fromstring(xml_text)
+    except Exception:
+        return []
+    parent_map = {child: parent for parent in root.iter() for child in parent}
+    out = []
+    tag_subprocess = f"{{{BPMN_NS}}}subProcess"
+    for el in root.iter(tag_subprocess):
+        parent = parent_map.get(el)
+        if parent is not None and _local_tag(parent.tag) == "subprocess":
+            continue
+        element_id = _element_id(el)
+        if not element_id:
+            continue
+        name = str(el.attrib.get("name") or "").strip() or None
+        out.append({"id": element_id, "name": name})
+    return out
 
 
 def _ns(tag: str, ns: str = BPMN_NS) -> str:

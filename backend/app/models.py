@@ -105,6 +105,7 @@ class Session(BaseModel):
     parent_session_id: str = ""
     element_id_in_parent: str = ""
     activity_count: int = 0
+    deleted_at: int = Field(default=0, exclude=True)
 # -----------------------------
 # Epic #1: Project (process passport)
 # -----------------------------

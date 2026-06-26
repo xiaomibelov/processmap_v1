@@ -21,6 +21,7 @@ from ..services.bpmn_navigation import (
     extract_subprocess_xml,
     resolve_target_element_id,
     element_type,
+    find_subprocess_elements,
 )
 
 logger = logging.getLogger(__name__)
@@ -474,11 +475,46 @@ def bpmn_save(
     inp: Any,
     request: Any = None,
 ) -> Dict[str, Any]:
-    """Save BPMN XML to session."""
+    """Save BPMN XML to session and auto-create/soft-delete subprocess child sessions."""
     # CROSS-DOMAIN: depends on _require_diagram_cas_or_409, _mark_diagram_truth_write,
     # _create_bpmn_revision_snapshot_if_needed, _resolve_base_diagram_state_version.
     import app._legacy_main as _lm
-    return _lm.session_bpmn_save(session_id, inp, request)
+    result = _lm.session_bpmn_save(session_id, inp, request)
+    if not result.get("ok"):
+        return result
+
+    ctx = _request_context(request)
+    st = get_storage()
+    session = st.load(session_id, user_id=ctx.get("user_id"), org_id=ctx.get("org_id"), is_admin=True)
+    if session is None:
+        return result
+
+    elements = find_subprocess_elements(str(getattr(session, "bpmn_xml", "") or ""))
+    element_ids = [e["id"] for e in elements]
+
+    create_summary = auto_create_subprocess_sessions(session, request, limit=10)
+    delete_summary = soft_delete_removed_subprocess_sessions(session, element_ids, request)
+
+    async_pending = create_summary["total"] > 10 or len(delete_summary["soft_deleted"]) > 10
+    if create_summary["total"] > 10:
+        try:
+            from ..tasks import create_remaining_subprocess_sessions
+            create_remaining_subprocess_sessions.delay(
+                session_id,
+                elements[10:],
+                element_ids,
+            )
+        except Exception:
+            logger.exception("failed to enqueue create_remaining_subprocess_sessions for %s", session_id)
+
+    result["subprocess_creation"] = {
+        "created_count": len(create_summary["created"]),
+        "restored_count": len(create_summary["restored"]),
+        "soft_deleted_count": delete_summary["count"],
+        "total_count": create_summary["total"],
+        "async_pending": async_pending,
+    }
+    return result
 
 
 def bpmn_versions_list(
@@ -1048,6 +1084,109 @@ def _create_child_session(
         except Exception:
             logger.exception("failed to invalidate explorer sessions cache for project %s", project_id)
     return child
+
+
+def _build_child_navigation_stack(parent_session: Session, element_id: str) -> List[Dict[str, Any]]:
+    """Build the navigation stack for a top-level child subprocess session."""
+    parent_id = str(getattr(parent_session, "id", "") or "").strip()
+    now_iso = datetime.datetime.utcnow().isoformat() + "Z"
+    parent_stack = [dict(f) for f in (getattr(parent_session, "navigation_stack", []) or [])]
+    if parent_stack:
+        parent_stack[-1]["element_id_in_parent"] = element_id
+    else:
+        parent_stack = [
+            {
+                "session_id": parent_id,
+                "parent_session_id": "",
+                "element_id_in_parent": element_id,
+                "entered_at": now_iso,
+            }
+        ]
+    return parent_stack + [
+        {
+            "session_id": "",
+            "parent_session_id": parent_id,
+            "element_id_in_parent": "",
+            "entered_at": now_iso,
+        }
+    ]
+
+
+def auto_create_subprocess_sessions(
+    parent_session: Session,
+    request: Optional[Request] = None,
+    limit: int = 10,
+) -> Dict[str, Any]:
+    """Create or restore child sessions for top-level subprocess elements.
+
+    Returns a summary dict with created/restored/skipped ids and total element count.
+    """
+    xml = str(getattr(parent_session, "bpmn_xml", "") or "")
+    elements = find_subprocess_elements(xml)
+    if not elements:
+        return {"created": [], "restored": [], "skipped_existing": [], "total": 0}
+
+    uid, oid, admin = _subprocess_request_context(request)
+    created = []
+    restored = []
+    skipped = []
+
+    for element in elements[:limit]:
+        element_id = element["id"]
+        title = element["name"] or f"Подпроцесс: {element_id}"
+        child_xml = extract_subprocess_xml(xml, element_id) or ""
+        navigation_stack = _build_child_navigation_stack(parent_session, element_id)
+
+        existing = session_repo.find_by_parent_element(
+            parent_session.id,
+            element_id,
+            org_id=oid,
+        )
+        if existing:
+            if getattr(existing, "deleted_at", 0):
+                existing.deleted_at = 0
+                existing.updated_at = int(datetime.datetime.utcnow().timestamp())
+                session_repo.save(existing, user_id=uid, org_id=oid, is_admin=admin)
+                restored.append(str(existing.id))
+            else:
+                skipped.append(str(existing.id))
+            continue
+
+        child = session_repo.find_or_create_child_session(
+            parent_session,
+            element_id,
+            child_xml,
+            navigation_stack,
+            title,
+            user_id=uid,
+            org_id=oid,
+            is_admin=admin,
+        )
+        created.append(str(child.id))
+
+    return {
+        "created": created,
+        "restored": restored,
+        "skipped_existing": skipped,
+        "total": len(elements),
+    }
+
+
+def soft_delete_removed_subprocess_sessions(
+    parent_session: Session,
+    current_element_ids: List[str],
+    request: Optional[Request] = None,
+) -> Dict[str, Any]:
+    """Soft-delete active child sessions whose subprocess element no longer exists."""
+    uid, oid, admin = _subprocess_request_context(request)
+    soft_deleted = session_repo.soft_delete_children_by_parent(
+        parent_session.id,
+        current_element_ids,
+        user_id=uid,
+        org_id=oid,
+        is_admin=admin,
+    )
+    return {"soft_deleted": soft_deleted, "count": len(soft_deleted)}
 
 
 def _build_breadcrumbs(
