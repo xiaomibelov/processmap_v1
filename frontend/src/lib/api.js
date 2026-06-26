@@ -511,6 +511,22 @@ export async function apiPatchSessionMeta(sessionId, patch) {
     : r;
 }
 
+export async function apiPatchSessionProperties(sessionId, patch) {
+  const id = String(sessionId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.properties(id), { method: "PATCH", body: patch || {} }));
+  return r.ok
+    ? {
+        ok: true,
+        status: r.status,
+        session: {
+          ...(r.data && typeof r.data === "object" ? r.data : {}),
+          _sync_source: "patch_session_properties",
+        },
+      }
+    : r;
+}
+
 export async function apiPutSession(sessionId, body) {
   const id = String(sessionId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing session_id" };

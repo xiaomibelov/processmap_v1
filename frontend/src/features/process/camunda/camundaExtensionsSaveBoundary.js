@@ -132,8 +132,10 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
   buildCanonicalXml,
   apiPutBpmnXml,
   apiPatchSessionMeta,
+  apiPatchSessionProperties,
   apiGetSession,
   onSessionSync,
+  forceMetaPatch = false,
   backgroundSessionRefresh = false,
   onDurableSaveAck,
   onBackgroundSessionSyncStart,
@@ -174,34 +176,39 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
     }
   };
 
-  if (nextXml === currentXml) {
-    if (!metaDiff) {
+  const shouldUseMetaPatch = forceMetaPatch || nextXml === currentXml;
+  if (shouldUseMetaPatch) {
+    if (!metaDiff && !forceMetaPatch) {
       logCamundaExtSave({ status: "skipped", xmlDiff: false, metaDiff: false });
       return { ok: true, skipped: true, local: false };
     }
-    if (typeof apiPatchSessionMeta === "function") {
-      // Meta-only PATCH path: XML unchanged, but bpmn_meta changed.
+    const patchApi = apiPatchSessionProperties || apiPatchSessionMeta;
+    if (typeof patchApi === "function") {
+      // Meta-only PATCH path: for property-only saves we do not touch BPMN XML.
+      // With forceMetaPatch we still keep the locally-derived XML in the draft so
+      // the canvas stays consistent until the next full BPMN save.
+      const localXml = forceMetaPatch ? (nextXml || currentXml) : currentXml;
       let patchRes;
       let attempt = 0;
       const maxAttempts = 3;
       while (attempt < maxAttempts) {
         attempt += 1;
         const baseVersion = getBaseVersion();
-        logCamundaExtSave({ status: "meta_patch_attempt", attempt, baseVersion, serverVersion: lastServerDiagramStateVersionRef?.current ?? null });
-        patchRes = await apiPatchSessionMeta(sid, {
+        logCamundaExtSave({ status: "meta_patch_attempt", attempt, baseVersion, serverVersion: lastServerDiagramStateVersionRef?.current ?? null, forceMetaPatch });
+        patchRes = await patchApi(sid, {
           bpmn_meta_json: nextMeta,
           base_diagram_state_version: baseVersion,
         });
         if (patchRes?.ok) {
           const serverVersion = Number(patchRes?.session?.diagram_state_version ?? patchRes?.data?.diagram_state_version ?? -1);
           updateLastServerVersion(serverVersion);
-          logCamundaExtSave({ status: "meta_patch_saved", baseVersion, serverVersion, xmlDiff: false, metaDiff: true });
+          logCamundaExtSave({ status: "meta_patch_saved", baseVersion, serverVersion, xmlDiff: false, metaDiff: true, forceMetaPatch });
           const ack = {
             ok: true,
             status: Number(patchRes?.status || 200),
             storedRev: Number(patchRes?.session?.bpmn_xml_version ?? patchRes?.data?.rev ?? 0),
             diagramStateVersion: serverVersion,
-            nextXml: currentXml,
+            nextXml: localXml,
             nextMeta,
             nextCamundaExtensionsByElementId,
             backgroundSessionRefresh: false,
@@ -209,7 +216,7 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
           onDurableSaveAck?.(ack);
           onSessionSync?.(buildFallbackSessionPatch({
             sid,
-            nextXml: currentXml,
+            nextXml: localXml,
             nextMeta,
             storedRev: ack.storedRev,
             diagramStateVersion: ack.diagramStateVersion,
