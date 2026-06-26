@@ -32,3 +32,18 @@ test("SessionRow displays activity count badge", () => {
   assert.match(explorerSource, /session\?\.activity_count/);
   assert.match(explorerSource, /title="Элементов процесса"/);
 });
+
+test("SessionRow displays subprocess children count badge", () => {
+  assert.match(explorerSource, /session\?\.children_count/);
+  assert.match(explorerSource, /title=\{`\$\{session\.children_count\} подпроцессов`\}/);
+});
+
+test("SessionRow displays element_id_in_parent label for child rows", () => {
+  assert.match(explorerSource, /session\?\.element_id_in_parent/);
+  assert.match(explorerSource, /text-\[10px\] text-gray-500/);
+});
+
+test("SessionRow shows empty template icon for child sessions with small BPMN XML", () => {
+  assert.match(explorerSource, /session\?\.bpmn_xml/);
+  assert.match(explorerSource, /title="Пустой шаблон"/);
+});
