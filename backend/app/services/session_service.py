@@ -1128,9 +1128,7 @@ def auto_create_subprocess_sessions(
         existing = session_repo.find_by_parent_element(
             parent_session.id,
             element_id,
-            user_id=uid,
             org_id=oid,
-            is_admin=admin,
         )
         if existing:
             if getattr(existing, "deleted_at", 0):
