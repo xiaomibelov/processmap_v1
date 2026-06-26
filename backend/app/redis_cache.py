@@ -69,8 +69,9 @@ def session_open_cache_ttl_sec() -> int:
 def session_open_version_token(session_obj: Any) -> str:
     version = int(getattr(session_obj, "version", 0) or 0)
     bpmn_xml_version = int(getattr(session_obj, "bpmn_xml_version", 0) or 0)
+    diagram_state_version = int(getattr(session_obj, "diagram_state_version", 0) or 0)
     updated_at = int(getattr(session_obj, "updated_at", 0) or 0)
-    return f"{version}.{bpmn_xml_version}.{updated_at}"
+    return f"{version}.{bpmn_xml_version}.{diagram_state_version}.{updated_at}"
 
 
 def session_open_cache_key(session_id: str, version_token: str) -> str:

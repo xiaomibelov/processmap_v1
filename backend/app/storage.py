@@ -4125,6 +4125,69 @@ class Storage:
                 return None
         return self.load(sid, user_id=user_id, org_id=org_id, is_admin=admin)
 
+    def patch_session_meta_grace(
+        self,
+        session_id: str,
+        bpmn_meta: Dict[str, Any],
+        base_diagram_state_version: int,
+        grace_window: int = 0,
+        *,
+        user_id: Optional[str] = None,
+        is_admin: Optional[bool] = None,
+        org_id: Optional[str] = None,
+    ) -> Optional["Session"]:
+        """Atomically update only bpmn_meta_json and diagram_state_version with CAS grace window.
+
+        Accepts a stale client base version within ``grace_window`` versions of the current
+        server version. This prevents unnecessary 409 conflicts for property-only saves that
+        do not mutate BPMN XML.
+
+        Does not touch bpmn_xml. Returns the updated Session or None on CAS/scope failure.
+        """
+        sid = str(session_id or "").strip()
+        if not sid:
+            return None
+        meta_dict = bpmn_meta if isinstance(bpmn_meta, dict) else {}
+        base = int(base_diagram_state_version or 0)
+        grace = max(0, int(grace_window or 0))
+        owner = _scope_user_id(user_id)
+        admin = _scope_is_admin(is_admin)
+        org = _scope_org_id(org_id) or _default_org_id()
+        org_clause, org_params = _org_clause(org)
+        _ensure_schema()
+        with _connect() as con:
+            row = con.execute(
+                f"SELECT owner_user_id, diagram_state_version FROM sessions WHERE id = ? {org_clause} LIMIT 1",
+                [sid, *org_params],
+            ).fetchone()
+            if not row:
+                return None
+            existing_owner = str(row["owner_user_id"] or "")
+            if not admin and owner and existing_owner and existing_owner != owner:
+                raise PermissionError("session belongs to another user")
+            current_version = int(row["diagram_state_version"] or 0)
+            if abs(current_version - base) > grace:
+                return None
+            now = _now_ts()
+            next_version = current_version + 1
+            updated_by = owner or existing_owner or ""
+            cur = con.execute(
+                """
+                UPDATE sessions
+                   SET bpmn_meta_json = ?,
+                       diagram_state_version = ?,
+                       updated_at = ?,
+                       updated_by = ?
+                 WHERE id = ?
+                   AND diagram_state_version = ?
+                """,
+                [_json_dumps(meta_dict, {}), next_version, now, updated_by, sid, current_version],
+            )
+            con.commit()
+            if int(cur.rowcount or 0) == 0:
+                return None
+        return self.load(sid, user_id=user_id, org_id=org_id, is_admin=admin)
+
     def delete(
         self,
         session_id: str,

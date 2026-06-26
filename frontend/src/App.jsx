@@ -31,6 +31,7 @@ import {
   apiGetSession,
   apiPatchSession,
   apiPatchSessionMeta,
+  apiPatchSessionProperties,
   apiPostNote,
   apiPreviewNotesExtraction,
   apiApplyNotesExtraction,
@@ -929,6 +930,20 @@ export default function App() {
   const getSessionMetaBaseDiagramStateVersion = useCallback(() => Number(
     draft?.diagram_state_version ?? draft?.diagramStateVersion,
   ), [draft?.diagram_state_version, draft?.diagramStateVersion]);
+
+  // Seed the App-level monotonic version ref from the freshly loaded session.
+  // Without this, the first Camunda property save after opening a session falls
+  // back to draft.diagram_state_version, which can be stale and triggers a 409.
+  useEffect(() => {
+    const sid = draftSessionId;
+    const version = Number(draft?.diagram_state_version ?? draft?.diagramStateVersion ?? -1);
+    if (sid && Number.isFinite(version) && version >= 0) {
+      const current = lastServerDiagramStateVersionRef.current;
+      if (current === null || current < version) {
+        lastServerDiagramStateVersionRef.current = version;
+      }
+    }
+  }, [draftSessionId, draft?.diagram_state_version, draft?.diagramStateVersion]);
   const shortSessionMetaErr = useCallback((value) => (
     shortUserFacingError(value, 160, "Не удалось сохранить session meta.")
       || "Не удалось сохранить session meta."
@@ -2593,8 +2608,10 @@ export default function App() {
       lastServerDiagramStateVersionRef,
       apiPutBpmnXml,
       apiPatchSessionMeta,
+      apiPatchSessionProperties,
       apiGetSession,
       onSessionSync,
+      forceMetaPatch: true,
       backgroundSessionRefresh: options?.backgroundSessionRefresh === true,
       onDurableSaveAck: options?.onDurableSaveAck,
       onBackgroundSessionSyncStart: options?.onBackgroundSessionSyncStart,
