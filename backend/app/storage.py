@@ -3818,6 +3818,67 @@ class Storage:
             raise RuntimeError("failed to persist or load child subprocess session")
         return loaded
 
+    def soft_delete_children_by_parent(
+        self,
+        parent_session_id: str,
+        keep_element_ids: List[str],
+        *,
+        user_id: Optional[str] = None,
+        is_admin: Optional[bool] = None,
+        org_id: Optional[str] = None,
+    ) -> List[str]:
+        """Soft-delete active child sessions whose element_id_in_parent is not in keep_element_ids.
+
+        Returns the list of soft-deleted session ids.
+        """
+        pid = str(parent_session_id or "").strip()
+        if not pid:
+            return []
+        owner = _scope_user_id(user_id)
+        admin = _scope_is_admin(is_admin)
+        org = _scope_org_id(org_id) or _default_org_id()
+        org_clause, org_params = _org_clause(org)
+        keep = [str(e).strip() for e in (keep_element_ids or []) if str(e).strip()]
+        _ensure_schema()
+        now = _now_ts()
+        with _connect() as con:
+            if keep:
+                placeholders = ",".join("?" * len(keep))
+                rows = con.execute(
+                    f"""
+                    SELECT id FROM sessions
+                     WHERE parent_session_id = ?
+                       AND (deleted_at = 0 OR deleted_at IS NULL)
+                       AND element_id_in_parent NOT IN ({placeholders})
+                       {org_clause}
+                    """,
+                    [pid, *keep, *org_params],
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    f"""
+                    SELECT id FROM sessions
+                     WHERE parent_session_id = ?
+                       AND (deleted_at = 0 OR deleted_at IS NULL)
+                       {org_clause}
+                    """,
+                    [pid, *org_params],
+                ).fetchall()
+            ids = [str(r["id"]) for r in rows]
+            if ids:
+                ph = ",".join("?" * len(ids))
+                con.execute(
+                    f"""
+                    UPDATE sessions
+                       SET deleted_at = ?, updated_at = ?
+                     WHERE id IN ({ph})
+                       {org_clause}
+                    """,
+                    [now, now, *ids, *org_params],
+                )
+                con.commit()
+        return ids
+
     def save(
         self,
         s: Session,

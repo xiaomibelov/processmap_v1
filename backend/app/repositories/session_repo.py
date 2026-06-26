@@ -30,6 +30,24 @@ def find_or_create_child_session(
     )
 
 
+def soft_delete_children_by_parent(
+    parent_session_id: str,
+    keep_element_ids: List[str],
+    *,
+    user_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    org_id: Optional[str] = None,
+) -> List[str]:
+    st = get_storage()
+    return st.soft_delete_children_by_parent(
+        parent_session_id,
+        keep_element_ids,
+        user_id=user_id,
+        is_admin=is_admin,
+        org_id=org_id,
+    )
+
+
 def create(
     title: str,
     roles: List[str] | None = None,
