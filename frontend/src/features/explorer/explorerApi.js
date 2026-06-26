@@ -83,8 +83,23 @@ export async function apiMoveProject(workspaceId, projectId, folderId) {
   });
 }
 
-export async function apiGetProjectPage(workspaceId, projectId) {
-  return call(`/api/projects/${encodeURIComponent(projectId)}/explorer${q({ workspace_id: workspaceId })}`);
+export async function apiGetProjectPage(
+  workspaceId,
+  projectId,
+  { rootOnly = false, includeChildrenMeta = false, tree = false } = {},
+) {
+  return call(
+    `/api/projects/${encodeURIComponent(projectId)}/explorer${q({
+      workspace_id: workspaceId,
+      root_only: rootOnly ? "true" : "",
+      include_children_meta: includeChildrenMeta ? "true" : "",
+      tree: tree ? "true" : "",
+    })}`
+  );
+}
+
+export async function apiGetSessionChildren(sessionId) {
+  return call(`/api/sessions/${encodeURIComponent(sessionId)}/children`);
 }
 
 function itemIdOf(item) {

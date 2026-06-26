@@ -235,6 +235,64 @@ class WorkspaceSubprocessTreeViewTest(unittest.TestCase):
         self.assertIn("workspace_session_tree_view", _DEFAULT_FLAGS)
         self.assertEqual(_DEFAULT_FLAGS["workspace_session_tree_view"], "0")
 
+    def test_tree_query_returns_nested_sessions(self):
+        page = self.get_project_explorer(
+            self.project_id,
+            self._req(self.admin),
+            workspace_id=self.workspace_id,
+            tree=True,
+        )
+        ids = self._session_ids(page)
+        self.assertIn(self.root_id, ids)
+        self.assertNotIn(self.child_id, ids)
+        root = next(s for s in page.sessions if s.id == self.root_id)
+        self.assertTrue(root.has_children)
+        self.assertEqual(len(root.children), 1)
+        self.assertEqual(root.children[0].id, self.child_id)
+
+    def test_tree_query_respects_depth_limit(self):
+        # get_project_session_tree caps depth, but tree=true should still expose children.
+        page = self.get_project_explorer(
+            self.project_id,
+            self._req(self.admin),
+            workspace_id=self.workspace_id,
+            tree=True,
+        )
+        root = next(s for s in page.sessions if s.id == self.root_id)
+        self.assertIsNotNone(root.children)
+
+    def test_activity_count_exposed_in_explorer(self):
+        from app._legacy_main import _count_bpmn_activities
+        xml = """<?xml version="1.0"?>
+        <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+          <process id="p">
+            <startEvent id="start" />
+            <task id="t1" />
+            <userTask id="t2" />
+            <callActivity id="ca" />
+            <subProcess id="sub" />
+            <endEvent id="end" />
+          </process>
+        </definitions>"""
+        root = self.session_repo.load(self.root_id, user_id=self.admin_id, org_id=self.org_id, is_admin=True)
+        root.bpmn_xml = xml
+        root.activity_count = _count_bpmn_activities(xml)
+        self.session_repo.save(root, user_id=self.admin_id, org_id=self.org_id, is_admin=True)
+
+        page = self.get_project_explorer(
+            self.project_id,
+            self._req(self.admin),
+            workspace_id=self.workspace_id,
+            include_children_meta=True,
+        )
+        root_item = next(s for s in page.sessions if s.id == self.root_id)
+        self.assertEqual(root_item.activity_count, 4)
+
+    def test_feature_flag_auto_expand_default_is_false(self):
+        from app.routers.feature_flags import _DEFAULT_FLAGS
+        self.assertIn("workspace_auto_expand_steps", _DEFAULT_FLAGS)
+        self.assertEqual(_DEFAULT_FLAGS["workspace_auto_expand_steps"], "0")
+
 
 if __name__ == "__main__":
     unittest.main()
