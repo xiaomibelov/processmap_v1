@@ -117,6 +117,7 @@ export const apiRoutes = {
     create: () => "/api/sessions",
     item: (sessionId) => `/api/sessions/${encode(sessionId)}`,
     meta: (sessionId) => `/api/sessions/${encode(sessionId)}/meta`,
+    properties: (sessionId) => `/api/sessions/${encode(sessionId)}/properties`,
     graph: (sessionId) => `/api/sessions/${encode(sessionId)}/graph`,
     presence: (sessionId) => `/api/sessions/${encode(sessionId)}/presence`,
     nodes: (sessionId) => `/api/sessions/${encode(sessionId)}/nodes`,
