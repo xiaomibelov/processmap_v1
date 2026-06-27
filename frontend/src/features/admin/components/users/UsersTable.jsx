@@ -21,16 +21,16 @@ export function UsersTable({ users = [], onEdit, onDelete }) {
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border shadow-sm">
-      <table className="min-w-full divide-y divide-gray-200 text-left text-sm">
+    <div className="overflow-hidden rounded-lg border border-gray-200">
+      <table className="min-w-full divide-y divide-gray-200 text-left text-xs">
         <thead className="bg-gray-50">
           <tr>
-            <th className="px-4 py-3 font-medium text-gray-500">Пользователь</th>
-            <th className="px-4 py-3 font-medium text-gray-500">Должность</th>
-            <th className="px-4 py-3 font-medium text-gray-500">Статус</th>
-            <th className="px-4 py-3 font-medium text-gray-500">Доступ</th>
-            <th className="px-4 py-3 font-medium text-gray-500">Создан</th>
-            <th className="px-4 py-3 text-right font-medium text-gray-500">Действия</th>
+            <th className="px-3 py-2 font-medium text-gray-500">Пользователь</th>
+            <th className="px-3 py-2 font-medium text-gray-500">Должность</th>
+            <th className="px-3 py-2 font-medium text-gray-500">Статус</th>
+            <th className="px-3 py-2 font-medium text-gray-500">Доступ</th>
+            <th className="px-3 py-2 font-medium text-gray-500">Создан</th>
+            <th className="px-3 py-2 text-right font-medium text-gray-500">Действия</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-200 bg-white">
@@ -41,8 +41,8 @@ export function UsersTable({ users = [], onEdit, onDelete }) {
             const isActive = user?.is_active !== false;
             return (
               <tr key={user?.id || email} className="hover:bg-gray-50">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-2">
                     <AvatarInitials name={fullName} email={email} size="sm" />
                     <div>
                       <div className="font-medium text-gray-900">
@@ -52,23 +52,23 @@ export function UsersTable({ users = [], onEdit, onDelete }) {
                     </div>
                   </div>
                 </td>
-                <td className="px-4 py-3 text-gray-600">
+                <td className="px-3 py-2 text-gray-600">
                   {toText(user?.job_title || user?.jobTitle) || "—"}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-3 py-2">
                   {isActive ? (
-                    <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
+                    <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">
                       Активен
                     </span>
                   ) : (
-                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
+                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-700">
                       Неактивен
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-3 py-2">
                   {user?.is_admin ? (
-                    <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-1 text-xs font-medium text-purple-700">
+                    <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700">
                       Платформенный админ
                     </span>
                   ) : memberships.length === 0 ? (
@@ -81,20 +81,20 @@ export function UsersTable({ users = [], onEdit, onDelete }) {
                     </div>
                   )}
                 </td>
-                <td className="px-4 py-3 text-gray-500">{formatDateTime(user?.created_at)}</td>
-                <td className="px-4 py-3 text-right">
-                  <div className="flex items-center justify-end gap-2">
+                <td className="px-3 py-2 text-gray-500">{formatDateTime(user?.created_at)}</td>
+                <td className="px-3 py-2 text-right">
+                  <div className="flex items-center justify-end gap-1">
                     <button
                       type="button"
                       onClick={() => onEdit?.(user)}
-                      className="rounded-md px-2 py-1 text-indigo-600 hover:bg-indigo-50"
+                      className="rounded-md px-2 py-0.5 text-indigo-600 hover:bg-indigo-50"
                     >
                       Изменить
                     </button>
                     <button
                       type="button"
                       onClick={() => onDelete?.(user)}
-                      className="rounded-md px-2 py-1 text-red-600 hover:bg-red-50"
+                      className="rounded-md px-2 py-0.5 text-red-600 hover:bg-red-50"
                     >
                       Удалить
                     </button>
