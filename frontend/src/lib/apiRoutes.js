@@ -243,6 +243,11 @@ export const apiRoutes = {
     featureFlagsPatch: () => "/api/admin/feature-flags",
     agentRuns: () => "/api/admin/agent-runs",
     agentRun: (runId) => `/api/admin/agent-runs/${encodeURIComponent(String(runId || ""))}`,
+    permissions: (params = {}) => withQuery("/api/admin/permissions", params),
+    permissionEntities: (params = {}) => withQuery("/api/admin/permissions/entities", params),
+    permission: (entityType, entityId) => `/api/admin/permissions/${encodeURIComponent(String(entityType || ""))}/${encodeURIComponent(String(entityId || ""))}`,
+    permissionsBulk: () => "/api/admin/permissions/bulk",
+    invitePermissions: (inviteId) => `/api/admin/invites/${encodeURIComponent(String(inviteId || ""))}/permissions`,
   },
   featureFlags: {
     get: () => "/api/feature-flags",

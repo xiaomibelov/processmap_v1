@@ -13,15 +13,18 @@ test("AdminOrgsPage uses access-first information architecture with tabs", () =>
   assert.equal(pageSource.includes("<PageSectionNav"), false);
   assert.match(pageSource, /admin-access-users/);
   assert.match(pageSource, /admin-access-invites/);
+  assert.match(pageSource, /admin-access-permissions/);
   assert.match(pageSource, /admin-access-orgs/);
   assert.match(pageSource, /admin-access-git/);
   assert.match(pageSource, /admin-access-system/);
 
   assert.ok(pageSource.indexOf('id="admin-access-users"') < pageSource.indexOf('id="admin-access-invites"'));
-  assert.ok(pageSource.indexOf('id="admin-access-invites"') < pageSource.indexOf('id="admin-access-orgs"'));
+  assert.ok(pageSource.indexOf('id="admin-access-invites"') < pageSource.indexOf('id="admin-access-permissions"'));
+  assert.ok(pageSource.indexOf('id="admin-access-permissions"') < pageSource.indexOf('id="admin-access-orgs"'));
   assert.ok(pageSource.indexOf('id="admin-access-orgs"') < pageSource.indexOf('id="admin-access-git"'));
 
-  assert.match(pageSource, /<AdminTabs tabs=\{ORGS_TABS\}/);
+  assert.match(pageSource, /<AdminTabs tabs=\{visibleTabs\}/);
+  assert.match(pageSource, /AdminPermissionsPanel/);
 });
 
 test("AdminOrgsPage keeps existing admin actions while separating organizations and Git mirror", () => {

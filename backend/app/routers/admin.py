@@ -33,18 +33,26 @@ from ..storage import (
     count_audit_log,
     count_error_events,
     delete_org_membership,
+    delete_admin_entity_permission,
     get_error_event,
     get_project_storage,
     get_storage,
+    list_admin_entity_permissions,
     list_audit_log,
     list_error_events,
     list_org_invites,
     list_org_memberships,
     list_org_records,
+    list_org_workspace_folders,
+    list_org_workspaces,
     list_templates,
     list_user_org_memberships,
+    set_admin_invite_permissions,
+    get_admin_invite_permissions,
+    upsert_admin_entity_permission,
     upsert_org_membership,
     _connect,
+    _admin_entity_permission_defaults,
 )
 
 router = APIRouter()
@@ -2013,3 +2021,205 @@ async def admin_rag_patch_settings(request: Request) -> Any:
             "vector_search_enabled": False,
         },
     }
+
+
+# ── Admin Permissions (Organizations tab) ───────────────────────────────────
+
+class AdminPermissionUpdate(BaseModel):
+    role: str
+    permissions: Dict[str, bool] = Field(default_factory=dict)
+
+
+class AdminPermissionBulkItem(BaseModel):
+    entity_type: str
+    entity_id: str
+    role: str
+    permissions: Dict[str, bool] = Field(default_factory=dict)
+
+
+class AdminPermissionBulkBody(BaseModel):
+    updates: List[AdminPermissionBulkItem] = Field(default_factory=list)
+
+
+_ADMIN_PERMISSION_ROLES = ("org_owner", "org_admin", "editor", "project_manager", "org_viewer", "auditor")
+_ADMIN_PERMISSION_ENTITY_TYPES = ("users", "sessions", "folders", "workspaces", "analytics")
+
+
+def _admin_permission_allowed(role: Optional[str]) -> bool:
+    return _as_text(role).lower() in {"org_owner", "org_admin"}
+
+
+@router.get("/api/admin/permissions")
+def admin_permissions_list(
+    request: Request,
+    entity_type: Optional[str] = None,
+    entity_id: Optional[str] = None,
+):
+    uid, is_admin, oid, role, scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    if not _admin_permission_allowed(role) and not is_admin:
+        return _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
+
+    stored = list_admin_entity_permissions(oid, entity_type=entity_type, entity_id=entity_id)
+    defaults: Dict[str, Dict[str, Dict[str, bool]]] = {}
+    for etype in _ADMIN_PERMISSION_ENTITY_TYPES:
+        defaults[etype] = {}
+        for r in _ADMIN_PERMISSION_ROLES:
+            defaults[etype][r] = _admin_entity_permission_defaults(etype, r)
+
+    overrides: Dict[str, List[Dict[str, Any]]] = {}
+    for row in stored:
+        etype = _as_text(row.get("entity_type"))
+        overrides.setdefault(etype, []).append(row)
+
+    return {
+        "ok": True,
+        "defaults": defaults,
+        "overrides": overrides,
+        "items": stored,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+    }
+
+
+@router.get("/api/admin/permissions/entities")
+def admin_permissions_entities(
+    request: Request,
+    entity_type: str,
+    workspace_id: Optional[str] = None,
+):
+    uid, is_admin, oid, role, scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    if not _admin_permission_allowed(role) and not is_admin:
+        return _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
+
+    entities: List[Dict[str, Any]] = []
+    if entity_type == "workspaces":
+        entities = [{"id": r["id"], "name": r["name"]} for r in list_org_workspaces(oid)]
+    elif entity_type == "folders":
+        entities = [{"id": r["id"], "name": r["name"], "workspace_id": r.get("workspace_id", ""), "parent_id": r.get("parent_id", "")} for r in list_org_workspace_folders(oid, workspace_id=workspace_id)]
+    elif entity_type == "sessions":
+        rows = get_storage().list(limit=5000, org_id=oid, is_admin=True)
+        entities = [
+            {"id": _as_text(r.get("id")), "name": _as_text(r.get("title") or r.get("id")), "project_id": _as_text(r.get("project_id")), "workspace_id": _as_text(r.get("workspace_id", ""))}
+            for r in rows
+        ]
+    elif entity_type == "analytics":
+        entities = [{"id": "dk", "name": "Demand Knowledge"}, {"id": "fk", "name": "Food Knowledge"}]
+
+    stored = list_admin_entity_permissions(oid, entity_type=entity_type)
+    overrides = {(r["entity_id"], r["role"]): r["permissions"] for r in stored}
+
+    return {
+        "ok": True,
+        "entity_type": entity_type,
+        "entities": entities,
+        "overrides": overrides,
+    }
+
+
+@router.patch("/api/admin/permissions/{entity_type}/{entity_id}")
+def admin_permissions_patch(
+    request: Request,
+    entity_type: str,
+    entity_id: str,
+    body: AdminPermissionUpdate,
+):
+    uid, is_admin, oid, role, scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    if not _admin_permission_allowed(role) and not is_admin:
+        return _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
+
+    result = upsert_admin_entity_permission(
+        org_id=oid,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        role=body.role,
+        permissions=body.permissions,
+        updated_by=uid or "",
+    )
+    _legacy_main._audit_log_safe(
+        request,
+        org_id=oid,
+        action="admin.permissions.update",
+        entity_type=entity_type,
+        entity_id=entity_id,
+        meta={"role": body.role, "permissions": result["permissions"]},
+    )
+    return {"ok": True, "item": result}
+
+
+@router.post("/api/admin/permissions/bulk")
+def admin_permissions_bulk(
+    request: Request,
+    body: AdminPermissionBulkBody,
+):
+    uid, is_admin, oid, role, scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    if not _admin_permission_allowed(role) and not is_admin:
+        return _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
+
+    updated: List[Dict[str, Any]] = []
+    for item in body.updates:
+        result = upsert_admin_entity_permission(
+            org_id=oid,
+            entity_type=item.entity_type,
+            entity_id=item.entity_id,
+            role=item.role,
+            permissions=item.permissions,
+            updated_by=uid or "",
+        )
+        updated.append(result)
+
+    _legacy_main._audit_log_safe(
+        request,
+        org_id=oid,
+        action="admin.permissions.bulk_update",
+        entity_type="permissions",
+        entity_id="bulk",
+        meta={"count": len(updated)},
+    )
+    return {"ok": True, "updated": updated}
+
+
+@router.get("/api/admin/invites/{invite_id}/permissions")
+def admin_invite_permissions_get(request: Request, invite_id: str):
+    uid, is_admin, oid, role, scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    if not _admin_permission_allowed(role) and not is_admin:
+        return _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
+
+    permissions = get_admin_invite_permissions(invite_id)
+    return {"ok": True, "invite_id": invite_id, "permissions": permissions}
+
+
+@router.patch("/api/admin/invites/{invite_id}/permissions")
+def admin_invite_permissions_patch(
+    request: Request,
+    invite_id: str,
+    body: Dict[str, bool],
+):
+    uid, is_admin, oid, role, scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    if not _admin_permission_allowed(role) and not is_admin:
+        return _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
+
+    ok = set_admin_invite_permissions(invite_id, body)
+    if not ok:
+        return _legacy_main._enterprise_error(404, "not_found", "invite not found")
+
+    _legacy_main._audit_log_safe(
+        request,
+        org_id=oid,
+        action="admin.invite.permissions_update",
+        entity_type="invite",
+        entity_id=invite_id,
+        meta={"permissions": body},
+    )
+    return {"ok": True, "invite_id": invite_id}

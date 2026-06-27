@@ -2463,6 +2463,25 @@ def _ensure_schema() -> None:
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_analytics_metrics_scope ON analytics_metrics(scope_type, scope_id, metric_name)"
             )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS admin_entity_permissions (
+                  org_id TEXT NOT NULL,
+                  entity_type TEXT NOT NULL,
+                  entity_id TEXT NOT NULL,
+                  role TEXT NOT NULL,
+                  permissions_json TEXT NOT NULL DEFAULT '{}',
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  updated_by TEXT NOT NULL DEFAULT '',
+                  PRIMARY KEY (org_id, entity_type, entity_id, role)
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_admin_entity_permissions_org ON admin_entity_permissions(org_id)"
+            )
+            if not _column_exists(con, "org_invites", "permissions_json"):
+                con.execute("ALTER TABLE org_invites ADD COLUMN permissions_json TEXT NOT NULL DEFAULT '{}'")
             _SCHEMA_ENSURE_IN_PROGRESS = True
             try:
                 _seed_process_property_metadata(con)
@@ -5829,6 +5848,151 @@ def _normalize_membership_permissions(role: str, permissions_raw: Any) -> Dict[s
         else:
             out[key] = bool(parsed.get(key)) if key in parsed else template.get(key, False)
     return out
+
+
+def _admin_entity_permission_defaults(entity_type: str, role: str) -> Dict[str, bool]:
+    key = str(role or "").strip().lower()
+    owner_admin = key in {"org_owner", "org_admin"}
+    editor_pm = key in {"editor", "project_manager"}
+    if entity_type == "users":
+        return {"view": True, "edit": owner_admin or editor_pm, "manage": owner_admin, "admin": owner_admin}
+    if entity_type == "sessions":
+        return {"view": True, "edit": owner_admin or editor_pm, "manage": owner_admin}
+    if entity_type == "folders":
+        return {"view": True, "edit": owner_admin or editor_pm, "manage": owner_admin, "admin": owner_admin}
+    if entity_type == "workspaces":
+        return {"view": True, "edit": owner_admin or editor_pm, "manage": owner_admin, "admin": owner_admin}
+    if entity_type == "analytics":
+        return {
+            "dk_view": True,
+            "dk_export": owner_admin or editor_pm,
+            "fk_view": True,
+            "fk_export": owner_admin or editor_pm,
+            "manage_dashboards": owner_admin,
+        }
+    return {"view": True}
+
+
+def _normalize_admin_entity_permissions(entity_type: str, role: str, permissions_raw: Any) -> Dict[str, bool]:
+    template = _admin_entity_permission_defaults(entity_type, role)
+    parsed = permissions_raw if isinstance(permissions_raw, dict) else _json_loads(permissions_raw, {})
+    if not isinstance(parsed, dict):
+        parsed = {}
+    return {k: bool(parsed.get(k, template.get(k, False))) for k in template}
+
+
+def list_admin_entity_permissions(org_id: str, entity_type: Optional[str] = None, entity_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    params: List[Any] = [org_id]
+    where = "org_id = ?"
+    if entity_type:
+        where += " AND entity_type = ?"
+        params.append(entity_type)
+    if entity_id:
+        where += " AND entity_id = ?"
+        params.append(entity_id)
+    with _connect() as con:
+        rows = con.execute(f"SELECT * FROM admin_entity_permissions WHERE {where}", params).fetchall()
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        out.append({
+            "org_id": str(row["org_id"] or ""),
+            "entity_type": str(row["entity_type"] or ""),
+            "entity_id": str(row["entity_id"] or ""),
+            "role": str(row["role"] or ""),
+            "permissions": _normalize_admin_entity_permissions(str(row["entity_type"] or ""), str(row["role"] or ""), row["permissions_json"]),
+            "updated_at": int(row["updated_at"] or 0),
+            "updated_by": str(row["updated_by"] or ""),
+        })
+    return out
+
+
+def upsert_admin_entity_permission(
+    org_id: str,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    permissions: Dict[str, bool],
+    updated_by: str,
+) -> Dict[str, Any]:
+    normalized = _normalize_admin_entity_permissions(entity_type, role, permissions)
+    now = _now_ts()
+    with _connect() as con:
+        con.execute(
+            """
+            INSERT INTO admin_entity_permissions (org_id, entity_type, entity_id, role, permissions_json, updated_at, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (org_id, entity_type, entity_id, role)
+            DO UPDATE SET permissions_json=excluded.permissions_json, updated_at=excluded.updated_at, updated_by=excluded.updated_by
+            """,
+            (org_id, entity_type, entity_id, role, json.dumps(normalized), now, updated_by),
+        )
+        con.commit()
+    return {
+        "org_id": org_id,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "role": role,
+        "permissions": normalized,
+        "updated_at": now,
+        "updated_by": updated_by,
+    }
+
+
+def delete_admin_entity_permission(org_id: str, entity_type: str, entity_id: str, role: str) -> bool:
+    with _connect() as con:
+        cur = con.execute(
+            "DELETE FROM admin_entity_permissions WHERE org_id = ? AND entity_type = ? AND entity_id = ? AND role = ?",
+            (org_id, entity_type, entity_id, role),
+        )
+        con.commit()
+        return cur.rowcount > 0
+
+
+def list_org_workspaces(org_id: str) -> List[Dict[str, Any]]:
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT * FROM workspaces WHERE org_id = ? ORDER BY name",
+            (org_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_org_workspace_folders(org_id: str, workspace_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    params: List[Any] = [org_id]
+    where = "org_id = ?"
+    if workspace_id:
+        where += " AND workspace_id = ?"
+        params.append(workspace_id)
+    with _connect() as con:
+        rows = con.execute(
+            f"SELECT * FROM workspace_folders WHERE {where} ORDER BY name",
+            params,
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_admin_invite_permissions(invite_id: str) -> Dict[str, bool]:
+    with _connect() as con:
+        row = con.execute("SELECT permissions_json, role FROM org_invites WHERE id = ?", (invite_id,)).fetchone()
+    if not row:
+        return {}
+    role = str(row["role"] or "org_viewer")
+    return _normalize_admin_entity_permissions("invites", role, row["permissions_json"])
+
+
+def set_admin_invite_permissions(invite_id: str, permissions: Dict[str, bool]) -> bool:
+    with _connect() as con:
+        row = con.execute("SELECT role FROM org_invites WHERE id = ?", (invite_id,)).fetchone()
+        if not row:
+            return False
+        role = str(row["role"] or "org_viewer")
+        normalized = _normalize_admin_entity_permissions("invites", role, permissions)
+        con.execute(
+            "UPDATE org_invites SET permissions_json = ? WHERE id = ?",
+            (json.dumps(normalized), invite_id),
+        )
+        con.commit()
+    return True
 
 
 def _normalize_org_invite_role(raw: Any) -> str:
