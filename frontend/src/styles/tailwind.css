@@ -128,6 +128,10 @@
 }
 
 .analysisBSection[open] > summary {
+  flex: 0 0 auto;
+}
+
+.analysisBSection[open] > summary {
   margin-bottom: 8px;
 }
 
@@ -205,9 +209,17 @@
   padding: 8px;
   flex: 1 1 auto;
   min-height: 0;
-  height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.analysisStepBody {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  gap: 8px;
 }
 
 .analysisSelectedStepCard,
