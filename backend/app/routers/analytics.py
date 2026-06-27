@@ -78,7 +78,7 @@ def _load_snapshot(scope_type: str, scope_id: str, org_id: str) -> Dict[str, Any
         return {"scope_type": scope_type, "scope_id": scope_id, "computed_at": 0}
 
     if scope_type == "session":
-        return {
+        base = {
             "scope_type": scope_type,
             "scope_id": scope_id,
             "project_id": row["project_id"] or "",
@@ -96,8 +96,8 @@ def _load_snapshot(scope_type: str, scope_id: str, org_id: str) -> Dict[str, Any
             "projects_count": 0,
             "computed_at": row["computed_at"] or 0,
         }
-    if scope_type == "project":
-        return {
+    elif scope_type == "project":
+        base = {
             "scope_type": scope_type,
             "scope_id": scope_id,
             "workspace_id": row["workspace_id"] or "",
@@ -114,8 +114,8 @@ def _load_snapshot(scope_type: str, scope_id: str, org_id: str) -> Dict[str, Any
             "projects_count": 1,
             "computed_at": row["computed_at"] or 0,
         }
-    if scope_type == "workspace":
-        return {
+    elif scope_type == "workspace":
+        base = {
             "scope_type": scope_type,
             "scope_id": scope_id,
             "total_duration_min": int(round(row["avg_duration_min"] or 0)) * (row["sessions_count"] or 0),
@@ -131,7 +131,187 @@ def _load_snapshot(scope_type: str, scope_id: str, org_id: str) -> Dict[str, Any
             "projects_count": row["projects_count"] or 0,
             "computed_at": row["computed_at"] or 0,
         }
-    raise HTTPException(status_code=400, detail="invalid scope_type")
+    else:
+        raise HTTPException(status_code=400, detail="invalid scope_type")
+
+    base.update(_compute_dashboard_extras(scope_type, scope_id, org_id, base))
+    return base
+
+
+def _session_rows_for_scope(scope_type: str, scope_id: str, org_id: str) -> List[Dict[str, Any]]:
+    with _connect() as con:
+        if scope_type == "session":
+            rows = con.execute(
+                "SELECT id, title, project_id, created_at, updated_at FROM sessions WHERE id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchall()
+        elif scope_type == "project":
+            rows = con.execute(
+                "SELECT id, title, project_id, created_at, updated_at FROM sessions WHERE project_id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchall()
+        elif scope_type == "workspace":
+            rows = con.execute(
+                "SELECT s.id, s.title, s.project_id, s.created_at, s.updated_at "
+                "FROM sessions s JOIN projects p ON p.id=s.project_id "
+                "WHERE p.workspace_id=? AND s.org_id=?",
+                (scope_id, org_id),
+            ).fetchall()
+        else:
+            rows = []
+    return [dict(r) for r in rows]
+
+
+def _session_snapshots_for_scope(scope_type: str, scope_id: str, org_id: str) -> List[Dict[str, Any]]:
+    with _connect() as con:
+        if scope_type == "session":
+            rows = con.execute(
+                "SELECT session_id, total_duration_min, actions_total, actions_by_type_json, computed_at AS created_at "
+                "FROM analytics_session_snapshots WHERE session_id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchall()
+        elif scope_type == "project":
+            rows = con.execute(
+                "SELECT session_id, total_duration_min, actions_total, actions_by_type_json, computed_at AS created_at "
+                "FROM analytics_session_snapshots WHERE project_id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchall()
+        elif scope_type == "workspace":
+            rows = con.execute(
+                "SELECT session_id, total_duration_min, actions_total, actions_by_type_json, computed_at AS created_at "
+                "FROM analytics_session_snapshots WHERE workspace_id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchall()
+        else:
+            rows = []
+    return [dict(r) for r in rows]
+
+
+def _project_titles_for_scope(scope_type: str, scope_id: str, org_id: str) -> Dict[str, str]:
+    with _connect() as con:
+        if scope_type == "project":
+            row = con.execute(
+                "SELECT id, title FROM projects WHERE id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchone()
+            return {row["id"]: row["title"]} if row else {}
+        elif scope_type == "workspace":
+            rows = con.execute(
+                "SELECT id, title FROM projects WHERE workspace_id=? AND org_id=?",
+                (scope_id, org_id),
+            ).fetchall()
+            return {r["id"]: r["title"] for r in rows}
+    return {}
+
+
+def _compute_dashboard_extras(scope_type: str, scope_id: str, org_id: str, base: Dict[str, Any]) -> Dict[str, Any]:
+    sessions_count = int(base.get("sessions_count") or 0)
+    actions_total = int(base.get("actions_total") or 0)
+    avg_duration = (
+        int(base.get("total_duration_min") or 0)
+        if scope_type == "session"
+        else int(round(base.get("avg_duration_min") or 0))
+    )
+    projects_count = int(base.get("projects_count") or 0)
+    project_id = str(base.get("project_id") or "")
+
+    session_rows = _session_rows_for_scope(scope_type, scope_id, org_id)
+    now = int(time.time())
+    cutoff = now - 3600
+    active_now = sum(1 for s in session_rows if int(s.get("updated_at") or 0) >= cutoff)
+
+    if scope_type == "workspace":
+        unique_processes = projects_count
+    elif scope_type == "project":
+        unique_processes = 1
+    elif scope_type == "session" and project_id:
+        unique_processes = 1
+    else:
+        unique_processes = 0
+
+    kpi = {
+        "total_sessions": sessions_count,
+        "total_tasks": actions_total,
+        "active_now": active_now,
+        "avg_session_duration_min": avg_duration,
+        "unique_processes": unique_processes,
+    }
+
+    snapshots = _session_snapshots_for_scope(scope_type, scope_id, org_id)
+
+    by_type = base.get("actions_by_type") or {}
+    if not by_type:
+        for snap in snapshots:
+            snap_by_type = json.loads(snap.get("actions_by_type_json") or "{}")
+            for k, v in snap_by_type.items():
+                by_type[k] = by_type.get(k, 0) + int(v)
+    completed = int(by_type.get("step") or 0)
+    active = sum(int(by_type.get(k) or 0) for k in ("decision", "fork", "join"))
+    pending = sum(int(by_type.get(k) or 0) for k in ("timer", "message"))
+    failed = int(by_type.get("loss_event") or 0)
+    task_statuses = {
+        "completed": completed,
+        "active": active,
+        "failed": failed,
+        "pending": pending,
+    }
+
+    points_map: Dict[str, int] = {}
+    heatmap_hour = [0] * 24
+    heatmap_weekday = [0] * 7
+    for s in session_rows:
+        created_at = int(s.get("created_at") or 0)
+        updated_at = int(s.get("updated_at") or 0)
+        if created_at > 0:
+            day = time.strftime("%Y-%m-%d", time.gmtime(created_at))
+            points_map[day] = points_map.get(day, 0) + 1
+        if updated_at > 0:
+            t = time.gmtime(updated_at)
+            heatmap_hour[t.tm_hour] += 1
+            heatmap_weekday[t.tm_wday] += 1
+
+    points = [{"period": d, "sessions": points_map[d]} for d in sorted(points_map.keys())]
+    if scope_type == "session":
+        points = []
+
+    element_types = {"task": 0, "gateway": 0, "event": 0, "subprocess": 0}
+    for snap in snapshots:
+        snap_by_type = json.loads(snap.get("actions_by_type_json") or "{}")
+        element_types["task"] += int(snap_by_type.get("step") or 0)
+        element_types["gateway"] += sum(int(snap_by_type.get(k) or 0) for k in ("decision", "fork", "join"))
+        element_types["event"] += sum(int(snap_by_type.get(k) or 0) for k in ("loss_event", "timer", "message"))
+
+    project_titles = _project_titles_for_scope(scope_type, scope_id, org_id)
+    session_project_map = {s["id"]: s.get("project_id") or "" for s in session_rows}
+    process_durations: Dict[str, Dict[str, Any]] = {}
+    for snap in snapshots:
+        sid = snap.get("session_id")
+        pid = session_project_map.get(sid, "")
+        title = project_titles.get(pid) or snap.get("session_id") or "—"
+        info = process_durations.setdefault(title, {"durations": [], "sessions_count": 0})
+        info["durations"].append(int(snap.get("total_duration_min") or 0))
+        info["sessions_count"] += 1
+
+    process_duration_list = []
+    for title, info in process_durations.items():
+        durations = info["durations"]
+        avg = int(round(sum(durations) / max(len(durations), 1)))
+        process_duration_list.append({
+            "process_title": title,
+            "avg_duration_min": avg,
+            "sessions_count": info["sessions_count"],
+        })
+    process_duration_list.sort(key=lambda x: x["avg_duration_min"], reverse=True)
+    process_duration_list = process_duration_list[:5]
+
+    return {
+        "kpi": kpi,
+        "task_statuses": task_statuses,
+        "session_trend": {"granularity": "day", "points": points},
+        "bpmn_element_types": element_types,
+        "process_duration": process_duration_list,
+        "activity_heatmap": {"by_hour": heatmap_hour, "by_weekday": heatmap_weekday},
+    }
 
 
 @router.get("/dashboard")
