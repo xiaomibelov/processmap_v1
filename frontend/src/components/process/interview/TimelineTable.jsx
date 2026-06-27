@@ -1,19 +1,10 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import GatewayGroupRow from "./matrix/GatewayGroupRow";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import BranchStepsPanel from "./matrix/BranchStepsPanel";
+import TimelineRow from "./TimelineRow";
 import {
-  STEP_TYPES,
   toArray,
   toText,
   toNonNegativeInt,
-  annotationTitleFromText,
-  nodeKindIcon,
-  laneColor,
-  laneCellDisplay,
-  bpmnNodeKindShort,
-  typeLabel,
-  durationClass,
-  durationLabel,
 } from "./utils";
 import { measureInterviewPerf } from "./perf";
 import {
@@ -21,10 +12,17 @@ import {
   collectBranchMetrics,
   findFirstStepNodeId,
 } from "./matrix/gatewayUtils";
+import {
+  normalizeStepTimeUnit,
+  readStepDurationSeconds,
+  readStepWaitSeconds,
+  formatMinutesInputFromSeconds,
+  normalizeTier,
+} from "./timelineRowHelpers";
 
 const INITIAL_VISIBLE_ROWS = 80;
 const VISIBLE_ROWS_INCREMENT = 80;
-const VIRTUALIZE_ROWS_THRESHOLD = 200;
+const VIRTUALIZE_ROWS_THRESHOLD = 20;
 const VIRTUAL_ROW_HEIGHT = 72;
 const VIRTUAL_OVERSCAN = 8;
 const GATEWAY_UI_STORAGE_VERSION = 1;
@@ -34,147 +32,6 @@ function matrixGatewayUiKey(sessionIdRaw) {
   return `fpc.interview.matrix.gateway_ui.v${GATEWAY_UI_STORAGE_VERSION}:${sid}`;
 }
 
-function normalizeStepTimeUnit(raw) {
-  return String(raw || "").trim().toLowerCase() === "sec" ? "sec" : "min";
-}
-
-function readStepDurationMinutes(stepRaw) {
-  const sec = readStepDurationSeconds(stepRaw);
-  if (!Number.isFinite(sec) || sec <= 0) return 0;
-  return Math.round(sec / 60);
-}
-
-function readStepDurationSeconds(stepRaw) {
-  const step = stepRaw && typeof stepRaw === "object" ? stepRaw : {};
-  const candidates = [
-    step.work_duration_sec,
-    step.workDurationSec,
-    step.duration_sec,
-    step.durationSec,
-    step.step_time_sec,
-    step.stepTimeSec,
-  ];
-  for (let i = 0; i < candidates.length; i += 1) {
-    const raw = candidates[i];
-    if (raw === null || raw === undefined || (typeof raw === "string" && !raw.trim())) continue;
-    const num = Number(raw);
-    if (!Number.isFinite(num) || num < 0) continue;
-    return Math.round(num);
-  }
-  const minCandidates = [
-    step.duration_min,
-    step.durationMin,
-    step.step_time_min,
-    step.stepTimeMin,
-    step.duration,
-  ];
-  for (let i = 0; i < minCandidates.length; i += 1) {
-    const raw = minCandidates[i];
-    if (raw === null || raw === undefined || (typeof raw === "string" && !raw.trim())) continue;
-    const num = Number(raw);
-    if (!Number.isFinite(num) || num < 0) continue;
-    return Math.round(num * 60);
-  }
-  return 0;
-}
-
-function readStepWaitSeconds(stepRaw) {
-  const step = stepRaw && typeof stepRaw === "object" ? stepRaw : {};
-  const secCandidates = [
-    step.wait_duration_sec,
-    step.waitDurationSec,
-    step.wait_sec,
-    step.waitSec,
-  ];
-  for (let i = 0; i < secCandidates.length; i += 1) {
-    const raw = secCandidates[i];
-    if (raw === null || raw === undefined || (typeof raw === "string" && !raw.trim())) continue;
-    const num = Number(raw);
-    if (!Number.isFinite(num) || num < 0) continue;
-    return Math.round(num);
-  }
-  const mins = Number(step.wait_min ?? step.waitMin);
-  if (Number.isFinite(mins) && mins >= 0) return Math.round(mins * 60);
-  return 0;
-}
-
-function readStepWaitMinutes(stepRaw) {
-  const sec = readStepWaitSeconds(stepRaw);
-  if (!Number.isFinite(sec) || sec <= 0) return 0;
-  return Math.round(sec / 60);
-}
-
-function formatMinutesInputFromSeconds(secondsRaw) {
-  const sec = Number(secondsRaw || 0);
-  if (!Number.isFinite(sec) || sec <= 0) return "";
-  if (sec % 60 === 0) return String(Math.round(sec / 60));
-  return String(Math.round((sec / 60) * 10) / 10);
-}
-
-function formatTimelineDuration(secondsRaw) {
-  const sec = Math.max(0, Math.round(Number(secondsRaw || 0)));
-  if (!sec) return "0м";
-  if (sec < 60) return `${sec}с`;
-  if (sec % 60 === 0) return `${Math.round(sec / 60)}м`;
-  return `${Math.round((sec / 60) * 10) / 10}м`;
-}
-
-function mergeLaneLinks(primary, secondary) {
-  const byKey = {};
-  [...toArray(primary), ...toArray(secondary)].forEach((laneInfo) => {
-    const key = toText(laneInfo?.laneKey);
-    if (!key) return;
-    byKey[key] = laneInfo;
-  });
-  return Object.values(byKey).sort((a, b) => {
-    const ai = Number(a?.laneIdx);
-    const bi = Number(b?.laneIdx);
-    if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi;
-    return String(a?.laneName || "").localeCompare(String(b?.laneName || ""), "ru");
-  });
-}
-
-function normalizeLoose(value) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function normalizeTier(value) {
-  const tier = String(value || "").trim().toUpperCase();
-  if (tier === "P0" || tier === "P1" || tier === "P2") return tier;
-  return "None";
-}
-
-function splitAnnotationText(textRaw, titleRaw, index = 1) {
-  const text = String(textRaw || "");
-  const textTrimmed = toText(text);
-  const title = toText(titleRaw) || `Аннотация #${Math.max(1, Number(index) || 1)}`;
-  if (!textTrimmed) {
-    return {
-      title,
-      body: "—",
-      long: false,
-    };
-  }
-
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
-  const firstMeaningfulIndex = lines.findIndex((line) => toText(line));
-  const meaningfulLines = firstMeaningfulIndex >= 0 ? lines.slice(firstMeaningfulIndex) : lines;
-  const firstLine = toText(meaningfulLines[0]);
-  const sameAsTitle = !!firstLine && normalizeLoose(firstLine) === normalizeLoose(title);
-  const bodyLines = sameAsTitle ? meaningfulLines.slice(1) : meaningfulLines;
-  const body = toText(bodyLines.join("\n")) || textTrimmed;
-  const long = body.length > 180 || body.split("\n").length > 3;
-  const showTitle = !!title && normalizeLoose(body) !== normalizeLoose(title);
-
-  return {
-    title: showTitle ? title : "",
-    body,
-    long,
-  };
-}
 
 export default function TimelineTable({
   sessionId = "",
@@ -311,7 +168,7 @@ export default function TimelineTable({
     if (!hasStartEvent) return false;
     return toText(list[0]?.node_bind_kind || list[0]?.node_kind).toLowerCase() !== "startevent";
   }, [timelineView]);
-  const canVirtualize = displayedTimelineView.length > VIRTUALIZE_ROWS_THRESHOLD && !detailsStepId;
+  const canVirtualize = displayedTimelineView.length > VIRTUALIZE_ROWS_THRESHOLD;
   const virtualRange = useMemo(() => {
     if (!canVirtualize) {
       return {
@@ -841,16 +698,22 @@ export default function TimelineTable({
     }
   }, []);
 
-  function openStepDetails(stepId, select = true) {
+  const scheduleActivateStep = useCallback((stepId) => {
+    startActivationTransition(() => {
+      onActivateStep?.(stepId);
+    });
+  }, [onActivateStep]);
+
+  const openStepDetails = useCallback((stepId, select = true) => {
     const key = toText(stepId);
     if (!key) return;
-    onActivateStep?.(key);
+    scheduleActivateStep(key);
     setActiveInlineStepId(key);
     setDetailsStepId((prev) => (prev === key ? "" : key));
     if (select) onToggleStepSelection?.(key, true);
-  }
+  }, [scheduleActivateStep, onToggleStepSelection]);
 
-  function jumpToMatrixStep(stepIdRaw) {
+  const jumpToMatrixStep = useCallback((stepIdRaw) => {
     const stepId = toText(stepIdRaw);
     if (!stepId) return;
     openStepDetails(stepId, true);
@@ -858,14 +721,14 @@ export default function TimelineTable({
       const row = document.querySelector(`[data-step-id="${stepId}"]`);
       if (row && typeof row.scrollIntoView === "function") row.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }
+  }, [openStepDetails]);
 
-  function openBranchInDiagram(stepIdRaw) {
+  const openBranchInDiagram = useCallback((stepIdRaw) => {
     const stepId = toText(stepIdRaw);
     if (!stepId) return;
     onToggleStepSelection?.(stepId, true);
     onSetTimelineViewMode?.("diagram");
-  }
+  }, [onToggleStepSelection, onSetTimelineViewMode]);
 
   const openNestedBranchPanel = useCallback((payloadRaw) => {
     const payload = payloadRaw && typeof payloadRaw === "object" ? payloadRaw : {};
@@ -892,6 +755,147 @@ export default function TimelineTable({
       },
     });
   }, [branchStepsPanelState, firstStepIdByNodeId, branchStepMetaByNodeId]);
+
+
+  const rowCtx = useMemo(
+    () => ({
+      timelineLaneFilter,
+      laneLinksByNode,
+      xmlTextAnnotationsByStepId,
+      annotationSyncByStepId,
+      aiQuestionMetaByStepId,
+      nodeBindOptionsByStepId,
+      aiQuestionsDiagramSyncByStepId,
+      aiNoteStatus,
+      branchStepMetaByNodeId,
+      firstStepIdByNodeId,
+      snapshotStepMaps,
+      tierFilterSet,
+      normalizedStepTimeUnit,
+      showNodeCol,
+      compactColSpan,
+      displayedRowCount: toArray(displayedTimelineView).length,
+      orderMode,
+      graphOrderLocked,
+      isTimelineFiltering,
+      productActionCountByStepId,
+      scheduleActivateStep,
+      openStepDetails,
+      onToggleStepSelection,
+      patchStep,
+      queuePatchStepField,
+      flushPatchStepField,
+      queuePatchStepTime,
+      flushPatchStepTime,
+      queuePatchWaitTime,
+      flushPatchWaitTime,
+      applyTimePreset,
+      addStepAfter,
+      addTextAnnotation,
+      deleteStep,
+      addAiQuestions,
+      toggleAiQuestionDiagram,
+      deleteAiQuestion,
+      addAiQuestionsNote,
+      moveStep,
+      toggleSubprocessChildren,
+      toggleAnnotationDetails,
+      setAiCue,
+      toggleGatewayExpanded,
+      toggleGatewayShowIds,
+      setSelectedBranch,
+      copyGatewaySummary,
+      setRowMenuStepId,
+      setSelectedBranchByGatewayId,
+      setBranchStepsPanelState,
+      setExpandedGatewayById,
+    }),
+    [
+      timelineLaneFilter,
+      laneLinksByNode,
+      xmlTextAnnotationsByStepId,
+      annotationSyncByStepId,
+      aiQuestionMetaByStepId,
+      nodeBindOptionsByStepId,
+      aiQuestionsDiagramSyncByStepId,
+      aiNoteStatus,
+      branchStepMetaByNodeId,
+      firstStepIdByNodeId,
+      snapshotStepMaps,
+      tierFilterSet,
+      normalizedStepTimeUnit,
+      showNodeCol,
+      compactColSpan,
+      displayedTimelineView,
+      orderMode,
+      graphOrderLocked,
+      isTimelineFiltering,
+      productActionCountByStepId,
+      scheduleActivateStep,
+      openStepDetails,
+      onToggleStepSelection,
+      patchStep,
+      queuePatchStepField,
+      flushPatchStepField,
+      queuePatchStepTime,
+      flushPatchStepTime,
+      queuePatchWaitTime,
+      flushPatchWaitTime,
+      applyTimePreset,
+      addStepAfter,
+      addTextAnnotation,
+      deleteStep,
+      addAiQuestions,
+      toggleAiQuestionDiagram,
+      deleteAiQuestion,
+      addAiQuestionsNote,
+      moveStep,
+      toggleSubprocessChildren,
+      toggleAnnotationDetails,
+      setAiCue,
+      toggleGatewayExpanded,
+      toggleGatewayShowIds,
+      setSelectedBranch,
+      copyGatewaySummary,
+      setRowMenuStepId,
+      setSelectedBranchByGatewayId,
+      setBranchStepsPanelState,
+      setExpandedGatewayById,
+    ],
+  );
+
+  const rowUi = useMemo(
+    () => ({
+      selectedSet,
+      expandedGatewayById,
+      showGatewayIdsById,
+      selectedBranchByGatewayId,
+      collapsedSubprocessByStepId,
+      expandedLongAnnotationById,
+      detailsStepId,
+      activeInlineStepId,
+      rowMenuStepId,
+      stepFieldDrafts,
+      aiCue,
+      aiBusyStepId,
+      activeAnalysisStepId,
+    }),
+    [
+      selectedSet,
+      expandedGatewayById,
+      showGatewayIdsById,
+      selectedBranchByGatewayId,
+      collapsedSubprocessByStepId,
+      expandedLongAnnotationById,
+      detailsStepId,
+      activeInlineStepId,
+      rowMenuStepId,
+      stepFieldDrafts,
+      aiCue,
+      aiBusyStepId,
+      activeAnalysisStepId,
+    ],
+  );
 
   return (
     <div className="interviewTableWrap" ref={tableScrollRef}>
@@ -990,817 +994,14 @@ export default function TimelineTable({
             {renderedTimelineRows.map((step, idx) => {
               const absoluteIdx = canVirtualize ? virtualRange.startIndex + idx : idx;
               const stepId = toText(step?.id);
-              const stepLaneKey = toText(step?.lane_key) || toText(step?.lane_name);
-              const normalizedLaneFilter = toText(timelineLaneFilter);
-              const isLaneActive = !!(
-                normalizedLaneFilter &&
-                normalizedLaneFilter !== "all" &&
-                (stepLaneKey === normalizedLaneFilter || toText(step?.lane_name) === normalizedLaneFilter)
-              );
-              const laneAccent =
-                toText(step?.lane_color) ||
-                laneColor(stepLaneKey || stepId, Number(step?.lane_idx) || 0);
-              const stepAnnotations = toArray(xmlTextAnnotationsByStepId?.[stepId]).map((item, annIdx) => {
-                const annotationId = toText(item?.annotationId) || `${stepId}_annotation_${annIdx + 1}`;
-                const text = toText(item?.text);
-                const titleLine = toText(item?.titleLine) || annotationTitleFromText(text, annIdx + 1);
-                const annotationView = splitAnnotationText(text, titleLine, annIdx + 1);
-                return {
-                  ...item,
-                  annotationId,
-                  text,
-                  titleLine,
-                  viewTitle: annotationView.title,
-                  viewBody: annotationView.body,
-                  isLong: annotationView.long,
-                };
-              });
-              const annotationSync = annotationSyncByStepId?.[stepId] || { status: "empty", label: "нет аннотаций BPMN" };
-              const aiCueActive = aiCue?.stepId === step.id;
-              const aiCueStatus = toText(aiCue?.runStatus).toLowerCase() || (toText(aiCue?.error) ? "error" : "success");
-              const aiCueLoading = aiCueStatus === "opening" || aiCueStatus === "loading";
-              const aiCueProgressText = toText(aiCue?.progressText)
-                || (aiCueLoading ? "Генерирую вопросы..." : (aiCueStatus === "error" ? "Ошибка AI" : "Готово"));
-              const aiCueErrorText = toText(aiCue?.errorText || aiCue?.error);
-              const aiCueQuestions = toArray(aiCue?.questions);
-              const aiMeta = aiQuestionMetaByStepId?.[stepId] || { count: 0, hasAi: false };
-              const aiCount = Number(aiMeta?.count || 0);
-              const hasAi = aiCount > 0;
-              const menuOpen = rowMenuStepId === stepId;
-              const detailsOpen = detailsStepId === stepId;
-              const activeRow = activeInlineStepId === stepId;
-              const activeAnalysisRow = toText(activeAnalysisStepId) === stepId;
-              const inlineEditorVisible = detailsOpen;
-              const activateStepRow = () => {
-                onActivateStep?.(stepId);
-              };
-              const incomingLaneLinks = mergeLaneLinks(
-                laneLinksByNode?.incomingByNode?.[toText(step?.node_bind_id)],
-                laneLinksByNode?.incomingByStep?.[stepId],
-              );
-              const outgoingLaneLinks = mergeLaneLinks(
-                laneLinksByNode?.outgoingByNode?.[toText(step?.node_bind_id)],
-                laneLinksByNode?.outgoingByStep?.[stepId],
-              );
-              const transitionLaneLinks = [
-                ...incomingLaneLinks.map((laneInfo) => ({ ...laneInfo, direction: "in" })),
-                ...outgoingLaneLinks.map((laneInfo) => ({ ...laneInfo, direction: "out" })),
-              ];
-              const laneDisplay = laneCellDisplay(step.lane_idx, step.lane_name, transitionLaneLinks);
-              const nodeKind = toText(step?.node_bind_kind || step?.node_kind);
-              const nodeIcon = nodeKindIcon(nodeKind);
-              const stepSnapshot = snapshotStepMaps.byStepId[stepId] || snapshotStepMaps.byNodeId[toText(step?.node_bind_id || step?.node_id)] || null;
-              const stepTier = normalizeTier(stepSnapshot?.tier);
-              const stepOutgoingCount = toArray(stepSnapshot?.bpmn?.outgoingFlowIds).length;
-              const stepDepth = Math.max(0, Number(step?.depth) || 0);
-              const isSubprocessChild = stepDepth > 0 || !!step?.is_subprocess_child;
-              const gatewayMode = toText(step?.gateway_mode).toLowerCase();
-              const isDecisionGateway = gatewayMode === "decision";
-              const isParallelGateway = gatewayMode === "parallel" || !!step?.is_parallel_structural;
-              const betweenBranchesItem = step?.between_branches_item;
-              const betweenBranches = toArray(betweenBranchesItem?.branches);
-              const visibleBetweenBranches = betweenBranches.filter((branch) => tierFilterSet.has(normalizeTier(branch?.tier)));
-              const betweenSummary = betweenBranchesItem?.summary && typeof betweenBranchesItem.summary === "object"
-                ? betweenBranchesItem.summary
-                : {};
-              const betweenBranchCount = Number(visibleBetweenBranches.length || 0);
-              const betweenTierSummary = Array.from(
-                new Set(visibleBetweenBranches.map((branch) => normalizeTier(branch?.tier))),
-              ).join("/");
-              const betweenPrimaryLabel = toText(betweenSummary?.primaryLabel);
-              const betweenPrimaryTier = toText(betweenSummary?.primaryTier).toUpperCase();
-              const betweenPrimaryReasonLabel = toText(betweenSummary?.primaryReasonLabel);
-              const rawAction = toText(step.action) || "Без названия";
-              const stepActionTitle = isDecisionGateway
-                ? (rawAction.toLowerCase().startsWith("проверка:") ? rawAction : `Проверка: ${rawAction}`)
-                : (isParallelGateway ? `Параллельно: ${rawAction}` : rawAction);
-              const gatewayPrefsKey = toText(betweenBranchesItem?.anchorNodeId || step?.node_bind_id || stepId) || stepId;
-              const gatewayLabel = stepActionTitle;
-              const gatewaySubtitle = toText(betweenBranchesItem?.fromGraphNo) && toText(betweenBranchesItem?.toGraphNo)
-                ? `${toText(betweenBranchesItem?.fromGraphNo)} → ${toText(betweenBranchesItem?.toGraphNo)}`
-                : "";
-              const gatewayExpanded = !!expandedGatewayById[gatewayPrefsKey];
-              const gatewayShowIds = !!showGatewayIdsById[gatewayPrefsKey];
-              const resolveBranchKey = (branch, branchIdx) => toText(branch?.key) || String.fromCharCode(65 + (branchIdx % 26));
-              const branchMetricsByKey = {};
-              visibleBetweenBranches.forEach((branch, branchIdx) => {
-                const branchKey = resolveBranchKey(branch, branchIdx);
-                branchMetricsByKey[branchKey] = collectBranchMetrics(branch?.children, branchStepMetaByNodeId);
-              });
-              const selectedBranchKey = toText(selectedBranchByGatewayId[gatewayPrefsKey]
-                || resolveBranchKey(
-                  visibleBetweenBranches.find((branch) => !!branch?.isPrimary) || visibleBetweenBranches[0] || {},
-                  Math.max(0, visibleBetweenBranches.findIndex((branch) => !!branch?.isPrimary)),
-                ));
-              const openBranchPanel = (branchKeyRaw) => {
-                const branchKey = toText(branchKeyRaw);
-                const branch = visibleBetweenBranches.find((item, idx) => {
-                  const key = resolveBranchKey(item, idx);
-                  return key === branchKey;
-                });
-                if (!branch) return;
-                const metrics = branchMetricsByKey[branchKey] || collectBranchMetrics(branch?.children, branchStepMetaByNodeId);
-                const firstNodeId = toText(metrics?.firstStepNodeId || findFirstStepNodeId(branch?.children));
-                const firstStepId = toText(firstStepIdByNodeId[firstNodeId]);
-                setSelectedBranchByGatewayId((prev) => ({ ...prev, [gatewayPrefsKey]: branchKey }));
-                setBranchStepsPanelState({
-                  open: true,
-                  gatewayId: gatewayPrefsKey,
-                  branchKey,
-                  context: {
-                    gatewayId: gatewayPrefsKey,
-                    gatewayLabel,
-                    branchKey,
-                    branchLabel: toText(branch?.label) || branchKey,
-                    branchTier: normalizeTier(branch?.tier),
-                    nodes: toArray(branch?.children),
-                    metrics,
-                    outcomeLabel: branchOutcomeLabel(branch, metrics),
-                    firstStepId,
-                  },
-                });
-              };
-              const hasSubprocessChildren = Number(step?.subprocess_children_count || 0) > 0;
-              const subprocessCollapsed = !!collapsedSubprocessByStepId[stepId];
-              const stepDurationMinutes = readStepDurationMinutes(step);
-              const stepDurationSeconds = readStepDurationSeconds(step);
-              const stepWaitSeconds = readStepWaitSeconds(step);
-              const stepWaitMinutes = readStepWaitMinutes(step);
-              const stepDurationInput = normalizedStepTimeUnit === "sec"
-                ? String(stepDurationSeconds)
-                : String(stepDurationMinutes);
-              const stepWaitInput = formatMinutesInputFromSeconds(stepWaitSeconds);
-              const stepTimeLabel = toText(step?.step_time_label || step?.step_time_model?.label);
-              const cumulativeMainlineLabel = toText(step?.mainline_time_cumulative_label);
-              const totalMainlineLabel = toText(step?.mainline_time_total_label);
-              const actionValue = getStepFieldValue(step.id, "action", step.action);
-              const subprocessValue = getStepFieldValue(step.id, "subprocess", step.subprocess || "");
-              const areaValue = getStepFieldValue(step.id, "area", step.area || "");
-              const roleValue = getStepFieldValue(step.id, "role", step.role || "");
-              const outputValue = getStepFieldValue(step.id, "output", step.output || "");
-              const commentValue = getStepFieldValue(step.id, "comment", step.comment || "");
-              const nodeBindValue = getStepFieldValue(step.id, "node_id", step.node_bind_id || "");
-              const stepTimeDraftKey = draftKey(step.id, "__step_time_input__");
-              const stepTimeValue = Object.prototype.hasOwnProperty.call(stepFieldDrafts, stepTimeDraftKey)
-                ? String(stepFieldDrafts[stepTimeDraftKey] ?? "")
-                : stepDurationInput;
-              const stepWaitDraftKey = draftKey(step.id, "__wait_time_input__");
-              const stepWaitValue = Object.prototype.hasOwnProperty.call(stepFieldDrafts, stepWaitDraftKey)
-                ? String(stepFieldDrafts[stepWaitDraftKey] ?? "")
-                : stepWaitInput;
-
               return (
-                <Fragment key={stepId}>
-                  <tr
-                    className={[
-                      "interviewStepRow interviewStepRowCompact analysisStepListRow",
-                      isSubprocessChild ? "isSubprocessChild" : "",
-                      isParallelGateway ? "isParallelGatewayRow" : "",
-                      aiCueActive ? "hasAiCue" : "",
-                      isLaneActive ? "isLaneActive" : "",
-                      selectedSet.has(stepId) ? "isSelected" : "",
-                      activeRow ? "isActiveRow" : "",
-                      activeAnalysisRow ? "isAnalysisActive" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    style={{ "--lane-accent": laneAccent }}
-                    data-step-id={stepId}
-                    onMouseDown={activateStepRow}
-                    onFocusCapture={activateStepRow}
-                  >
-                    <td className="analysisStepListCell analysisStepListCell--select">
-                      <label className="interviewRowSelectCell">
-                        <input
-                          type="checkbox"
-                          data-testid="interview-step-select"
-                          checked={selectedSet.has(stepId)}
-                          onChange={(e) => {
-                            onActivateStep?.(step.id);
-                            onToggleStepSelection?.(step.id, !!e.target.checked);
-                          }}
-                        />
-                        <span>#{Number(step?._order_index || step?.order_index || absoluteIdx + 1)}</span>
-                      </label>
-                    </td>
-                    <td className="analysisStepListCell analysisStepListCell--lane">
-                      <div className="interviewLaneCell">
-                        <span
-                          className="interviewLaneBadge interviewLaneBadge--primary"
-                          data-testid="interview-lane-pill-primary"
-                          style={{ "--lane-accent": laneAccent }}
-                          title={laneDisplay.tooltip}
-                        >
-                          <span className="interviewLaneDot" />
-                          {laneDisplay.text}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="analysisStepListCell analysisStepListCell--step">
-                      <div className="analysisStepStepCell">
-                      <div className="analysisStepPrimaryCell">
-                      <div className="interviewStepTitleLine" style={{ "--step-depth": stepDepth }}>
-                        {isSubprocessChild ? <span className="interviewSubprocessChildArrow">↳</span> : null}
-                        <button
-                          type="button"
-                          className="interviewStepTitleBtn"
-                          onClick={() => openStepDetails(step.id)}
-                          title="Открыть детали шага"
-                        >
-                          {stepActionTitle}
-                        </button>
-                        {hasSubprocessChildren ? (
-                          <button
-                            type="button"
-                            className="interviewSubprocessToggleBtn"
-                            onClick={() => toggleSubprocessChildren(stepId)}
-                            title={subprocessCollapsed ? "Развернуть подпроцесс" : "Свернуть подпроцесс"}
-                          >
-                            {subprocessCollapsed ? `Развернуть (${step.subprocess_children_count})` : `Свернуть (${step.subprocess_children_count})`}
-                          </button>
-                        ) : null}
-                      </div>
-                      <div className="interviewStepMeta">
-                        <span>{typeLabel(step.type)}</span>
-                        {toText(step.subprocess) ? (
-                          <span className="interviewSubprocessTag interviewSubprocessTagInline">
-                            Подпроцесс: {step.subprocess}
-                          </span>
-                        ) : null}
-                        <span>· {toText(step.t_plus) || "T+—"}</span>
-                        {stepTimeLabel && stepTimeLabel !== "—" ? <span>· ⏱ {stepTimeLabel}</span> : null}
-                        {cumulativeMainlineLabel && cumulativeMainlineLabel !== "—"
-                          ? <span>· Σ {cumulativeMainlineLabel}{totalMainlineLabel && totalMainlineLabel !== "—" ? ` / ${totalMainlineLabel}` : ""}</span>
-                          : null}
-                      </div>
-                      </div>
-                      </div>
-                    </td>
-                    {showNodeCol ? (
-                      <td className="analysisStepListCell analysisStepListCell--node">
-                        {step.node_bound ? (
-                          <div className="interviewNodeCompact">
-                            <div className="interviewNodeMain">
-                              <span
-                                className="interviewNodeTypeIcon"
-                                data-testid="interview-node-type-icon"
-                                data-node-kind={nodeKind || "unknown"}
-                                title={`BPMN type: ${nodeKind || "unknown"}${toText(step.node_bind_title) ? ` · ${toText(step.node_bind_title)}` : ""}`}
-                              >
-                                {nodeIcon}
-                              </span>
-                              <span className="badge ok analysisStepNodeBadge" data-testid="interview-node-type-label">{bpmnNodeKindShort(nodeKind) || nodeKind || "node"}</span>
-                            </div>
-                            <span className="muted small font-mono" data-testid="interview-node-bind-id">{toText(step.node_bind_id)}</span>
-                          </div>
-                        ) : (
-                          <div className="interviewNodeCompact">
-                            <div className="interviewNodeMain">
-                              <span
-                                className="interviewNodeTypeIcon"
-                                data-testid="interview-node-type-icon"
-                                data-node-kind={nodeKind || "unknown"}
-                                title={`BPMN type: ${nodeKind || "unknown"}`}
-                              >
-                                {nodeIcon}
-                              </span>
-                              <span className="badge warn analysisStepNodeBadge">Не привязан</span>
-                            </div>
-                            <span className="muted small font-mono">{toText(step.node_bind_id) || "—"}</span>
-                          </div>
-                        )}
-                      </td>
-                    ) : null}
-                    <td className="analysisStepListCell analysisStepListCell--status">
-                      <div className="interviewRowStatus">
-                        {stepOutgoingCount <= 1 ? (
-                          stepTier !== "None" ? (
-                            <span className={`interviewGatewayPreviewTag tier tier-${stepTier.toLowerCase()}`} data-testid="interview-step-tier-chip">
-                              {stepTier}
-                            </span>
-                          ) : null
-                        ) : (
-                          <span className="interviewGatewayPreviewTag muted" data-testid="interview-step-branches-summary">
-                            Branches: {betweenTierSummary || "P0/P1/P2/None"}
-                          </span>
-                        )}
-                        {(() => {
-                          const productActionCount = Number(productActionCountByStepId?.[stepId] || 0);
-                          return productActionCount > 0 ? (
-                            <button
-                              type="button"
-                              className="interviewStepProductActionsBadge"
-                              data-testid="interview-step-product-actions-badge"
-                              onClick={() => {
-                                onActivateStep?.(stepId);
-                              }}
-                              title={`Действия с продуктом: ${productActionCount}`}
-                            >
-                              ПА {productActionCount}
-                            </button>
-                          ) : null;
-                        })()}
-                        {hasAi ? (
-                          <button
-                            type="button"
-                            className="interviewStepAiBadge on"
-                            data-testid="interview-step-ai-badge"
-                            onClick={() => {
-                              openStepDetails(step.id);
-                              addAiQuestions(step);
-                            }}
-                            title="Открыть AI-вопросы шага"
-                          >
-                            AI: {aiCount}
-                          </button>
-                        ) : null}
-                        {step.node_bound ? (
-                          <button
-                            type="button"
-                            className="interviewStepMetaStatusBtn ok"
-                            onClick={() => openStepDetails(step.id)}
-                            title={`Аннотации: ${stepAnnotations.length} · BPMN привязан`}
-                            data-testid="interview-step-bpmn-status"
-                          >
-                            {stepAnnotations.length > 0 ? `A:${stepAnnotations.length}` : "BPMN"}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className="interviewStepMetaStatusBtn warn"
-                            onClick={() => openStepDetails(step.id)}
-                            title="BPMN-узел не привязан"
-                            data-testid="interview-step-bpmn-status"
-                          >
-                            !BPMN
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    <td className="analysisStepListCell analysisStepListCell--actions">
-                      <div className="interviewRowActions">
-                        <button
-                          type="button"
-                          className="secondaryBtn smallBtn"
-                          onClick={() => openStepDetails(step.id)}
-                        >
-                          {detailsOpen ? "Свернуть" : "Детали"}
-                        </button>
-                        <div className="interviewRowMenu">
-                          <button
-                            type="button"
-                            className="secondaryBtn smallBtn interviewRowMenuBtn"
-                            data-testid="interview-step-more-actions"
-                            aria-expanded={menuOpen ? "true" : "false"}
-                            onClick={() => setRowMenuStepId((prev) => (prev === stepId ? "" : stepId))}
-                            title="Дополнительные действия шага"
-                          >
-                            ⋯
-                          </button>
-                          {menuOpen ? (
-                            <div className="interviewRowMenuList" data-testid="interview-step-actions-menu">
-                              <button
-                                type="button"
-                                className="interviewRowMenuItem"
-                                onClick={() => {
-                                  addAiQuestions(step);
-                                  setRowMenuStepId("");
-                                }}
-                                disabled={!!aiBusyStepId}
-                              >
-                                {aiBusyStepId === step.id ? "AI: генерация..." : "AI-вопросы"}
-                              </button>
-                              <button
-                                type="button"
-                                className="interviewRowMenuItem"
-                                onClick={() => {
-                                  moveStep(step.id, -1, { orderMode });
-                                  setRowMenuStepId("");
-                                }}
-                                disabled={graphOrderLocked || isTimelineFiltering || absoluteIdx === 0}
-                                title={graphOrderLocked ? "Порядок шагов берётся из BPMN-схемы" : isTimelineFiltering ? "Отключите фильтры, чтобы менять порядок вручную" : ""}
-                              >
-                                Сдвинуть вверх
-                              </button>
-                              <button
-                                type="button"
-                                className="interviewRowMenuItem"
-                                onClick={() => {
-                                  moveStep(step.id, 1, { orderMode });
-                                  setRowMenuStepId("");
-                                }}
-                                disabled={graphOrderLocked || isTimelineFiltering || absoluteIdx === displayedTimelineView.length - 1}
-                                title={graphOrderLocked ? "Порядок шагов берётся из BPMN-схемы" : isTimelineFiltering ? "Отключите фильтры, чтобы менять порядок вручную" : ""}
-                              >
-                                Сдвинуть вниз
-                              </button>
-                              <button
-                                type="button"
-                                className="interviewRowMenuItem"
-                                onClick={() => {
-                                  addStepAfter(step.id, step.type || "operation", "");
-                                  setRowMenuStepId("");
-                                }}
-                              >
-                                + Вставить шаг после
-                              </button>
-                              <button
-                                type="button"
-                                className="interviewRowMenuItem"
-                                disabled={!toText(step?.comment)}
-                                title={!toText(step?.comment) ? "Заполните поле аннотации в деталях шага" : "Добавить аннотацию в BPMN"}
-                                onClick={() => {
-                                  if (!toText(step?.comment)) return;
-                                  void addTextAnnotation(step);
-                                  setRowMenuStepId("");
-                                }}
-                              >
-                                + Аннотация BPMN
-                              </button>
-                              <button
-                                type="button"
-                                className="interviewRowMenuItem dangerBtn"
-                                data-testid="interview-step-delete-action"
-                                onClick={() => {
-                                  const ok = window.confirm(`Удалить шаг «${toText(step?.action) || stepId}»?`);
-                                  if (!ok) return;
-                                  deleteStep(step.id);
-                                  setRowMenuStepId("");
-                                }}
-                              >
-                                Удалить шаг
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                  {detailsOpen ? (
-                    <tr className="interviewStepDetailsRow" data-details-panel="true" data-step-id={stepId}>
-                      <td colSpan={compactColSpan} className="interviewStepDetailsTd">
-                        <div className="interviewStepDetailsPanel" data-testid="analysis-step-expanded-panel">
-                          <div className="interviewStepDetailsHeader" data-testid="analysis-step-expanded-header">
-                            <div className="interviewStepDetailsHeaderTitle">
-                              <span className="interviewStepDetailsHeaderSeq">#{absoluteIdx + 1}</span>
-                              <span className="interviewStepDetailsHeaderName">{toText(step.action) || "—"}</span>
-                            </div>
-                            <button
-                              type="button"
-                              className="secondaryBtn smallBtn interviewStepDetailsCollapseBtn"
-                              onClick={() => openStepDetails(step.id)}
-                            >
-                              Свернуть ↑
-                            </button>
-                          </div>
-                          <div className="interviewStepDetailsBody" data-testid="analysis-step-expanded-body">
-                          <div className="interviewStepDetailsGrid">
-                            <label className="interviewField">
-                              <span>Название шага</span>
-                              <input
-                                className="input"
-                                value={actionValue}
-                                onChange={(e) => queuePatchStepField(step.id, "action", e.target.value)}
-                                onBlur={() => flushPatchStepField(step.id, "action")}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter" && !e.shiftKey) {
-                                    e.preventDefault();
-                                    flushPatchStepField(step.id, "action");
-                                    addStepAfter(step.id, step.type || "operation", "");
-                                  }
-                                }}
-                                placeholder="Глагол + объект"
-                              />
-                            </label>
-                            <label className="interviewField">
-                              <span>Тип шага</span>
-                              <select className="select" value={step.type} onChange={(e) => patchStep(step.id, "type", e.target.value)}>
-                                {STEP_TYPES.map((x) => (
-                                  <option value={x.value} key={x.value}>{x.label}</option>
-                                ))}
-                              </select>
-                            </label>
-                            <label className="interviewField">
-                              <span>Подпроцесс</span>
-                              <input
-                                className="input"
-                                list="interviewSubprocesses"
-                                value={subprocessValue}
-                                onChange={(e) => queuePatchStepField(step.id, "subprocess", e.target.value)}
-                                onBlur={() => flushPatchStepField(step.id, "subprocess")}
-                                placeholder="Без подпроцесса"
-                              />
-                            </label>
-                            <label className="interviewField">
-                              <span>Цех/участок</span>
-                              <input
-                                className="input"
-                                value={areaValue}
-                                onChange={(e) => queuePatchStepField(step.id, "area", e.target.value)}
-                                onBlur={() => flushPatchStepField(step.id, "area")}
-                                placeholder="Цех/участок"
-                              />
-                            </label>
-                            <label className="interviewField">
-                              <span>Роль</span>
-                              <input
-                                className="input"
-                                value={roleValue}
-                                onChange={(e) => queuePatchStepField(step.id, "role", e.target.value)}
-                                onBlur={() => flushPatchStepField(step.id, "role")}
-                                placeholder="Роль"
-                              />
-                            </label>
-                            <label className="interviewField">
-                              <span>{`Работа (${normalizedStepTimeUnit === "sec" ? "сек" : "мин"})`}</span>
-                              <div className="interviewTimeCell">
-                                <input
-                                  className="input"
-                                  type="number"
-                                  min="0"
-                                  value={stepTimeValue}
-                                  onChange={(e) => queuePatchStepTime(step.id, e.target.value, normalizedStepTimeUnit)}
-                                  onBlur={() => flushPatchStepTime(step.id, normalizedStepTimeUnit, stepDurationInput)}
-                                />
-                                <span className={"interviewBadge dur " + durationClass(step.duration)}>{durationLabel(step.duration)}</span>
-                                <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyTimePreset(step.id, "work", 30, stepDurationSeconds)}>+30с</button>
-                                <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyTimePreset(step.id, "work", 60, stepDurationSeconds)}>+1м</button>
-                                <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyTimePreset(step.id, "work", 300, stepDurationSeconds)}>+5м</button>
-                              </div>
-                            </label>
-                            <label className="interviewField">
-                              <span>Ожидание (мин)</span>
-                              <div className="interviewTimeCell">
-                                <input
-                                  className="input"
-                                  type="number"
-                                  min="0"
-                                  step="0.5"
-                                  value={stepWaitValue}
-                                  onChange={(e) => queuePatchWaitTime(step.id, e.target.value)}
-                                  onBlur={() => flushPatchWaitTime(step.id, stepWaitInput)}
-                                />
-                                {stepWaitMinutes > 0 ? <span className="interviewBadge wait">⏳ {stepWaitMinutes}</span> : null}
-                                <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyTimePreset(step.id, "wait", 30, stepWaitSeconds)}>+30с</button>
-                                <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyTimePreset(step.id, "wait", 60, stepWaitSeconds)}>+1м</button>
-                                <button type="button" className="secondaryBtn tinyBtn" onClick={() => applyTimePreset(step.id, "wait", 300, stepWaitSeconds)}>+5м</button>
-                              </div>
-                            </label>
-                            <label className="interviewField">
-                              <span>Выход шага</span>
-                              <input
-                                className="input"
-                                value={outputValue}
-                                onChange={(e) => queuePatchStepField(step.id, "output", e.target.value)}
-                                onBlur={() => flushPatchStepField(step.id, "output")}
-                                placeholder="Что выходит"
-                              />
-                            </label>
-                            {showNodeCol ? (
-                              <label className="interviewField interviewStepDetailsNodeField">
-                                <span>Привязка BPMN узла</span>
-                                <select
-                                  className={"select interviewNodeBindSelect " + (step.node_bound ? "isBound" : "isMissing")}
-                                  value={nodeBindValue}
-                                  onChange={(e) => queuePatchStepField(step.id, "node_id", e.target.value, 60)}
-                                  onBlur={() => flushPatchStepField(step.id, "node_id")}
-                                >
-                                  <option value="">— авто по названию —</option>
-                                  {toArray(nodeBindOptionsByStepId?.[step.id]).map((opt) => (
-                                    <option key={opt.id} value={opt.id}>
-                                      {opt.label}
-                                    </option>
-                                  ))}
-                                </select>
-                                <span className={"interviewNodeBindHint " + (step.node_bound ? "ok" : "warn")}>
-                                  {step.node_bound
-                                    ? `↳ ${toText(step.node_bind_title) || step.node_bind_id}`
-                                    : step.node_bind_id
-                                      ? "узел не найден в текущей диаграмме"
-                                      : "свяжется автоматически при уникальном названии"}
-                                </span>
-                              </label>
-                            ) : null}
-                          </div>
-
-                          <div className="interviewAnnotationCell">
-                            <div className="interviewAnnotationMain">
-                              <input
-                                className="input"
-                                value={commentValue}
-                                onChange={(e) => queuePatchStepField(step.id, "comment", e.target.value)}
-                                onBlur={() => flushPatchStepField(step.id, "comment")}
-                                placeholder="Текст аннотации BPMN"
-                              />
-                              <button
-                                type="button"
-                                className="secondaryBtn smallBtn interviewAnnotationAddBtn"
-                                onClick={() => {
-                                  void addTextAnnotation(step);
-                                }}
-                                title="Добавить аннотацию в BPMN"
-                              >
-                                +
-                              </button>
-                            </div>
-                            <div className={`interviewAnnotationState ${annotationSync.status || "empty"}`}>
-                              {annotationSync.label}
-                            </div>
-                            <div className="interviewAnnotationSummary">
-                              <span className={"badge " + (stepAnnotations.length ? "ok" : "muted")}>
-                                Аннотации: {stepAnnotations.length}
-                              </span>
-                            </div>
-                            {stepAnnotations.length ? (
-                              <div className="interviewAnnotationList">
-                                {stepAnnotations.map((annotation, annIdx) => {
-                                  const expanded = !!expandedLongAnnotationById[annotation.annotationId];
-                                  const annotationTitle = toText(annotation?.viewTitle) || "";
-                                  const annotationBody = toText(annotation?.viewBody) || toText(annotation?.text) || "—";
-                                  const canExpand = !!annotation?.isLong;
-                                  return (
-                                    <div className="interviewAnnotationItem" key={`${annotation.annotationId}_${annIdx + 1}`}>
-                                      {annotationTitle ? <div className="interviewAnnotationItemTitle">{annotationTitle}</div> : null}
-                                      <div className={`interviewAnnotationBody ${expanded ? "expanded" : "collapsed"}`}>
-                                        <div className="interviewAnnotationText">{annotationBody}</div>
-                                      </div>
-                                      {canExpand ? (
-                                        <div className="interviewAnnotationItemActions">
-                                          <button
-                                            type="button"
-                                            className="secondaryBtn smallBtn interviewAnnotationToggleBtn"
-                                            onClick={() => toggleAnnotationDetails(annotation.annotationId)}
-                                          >
-                                            {expanded ? "Свернуть" : "Развернуть"}
-                                          </button>
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="muted small">Аннотаций пока нет.</div>
-                            )}
-                          </div>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : null}
-                  {aiCueActive ? (
-                    <tr className="interviewAiRow">
-                      <td colSpan={compactColSpan}>
-                        <div className={"interviewAiCue " + ((aiCueErrorText || aiCue.reused) ? "reused" : "added")}>
-                          <div className="interviewAiCueHead">
-                            <div className="interviewAiCueTitle">
-                              ✦ AI · шаг {aiCue.stepSeq || "?"} ({typeLabel(aiCue.stepType)})
-                            </div>
-                            <button type="button" className="iconBtn interviewAiCueClose" onClick={() => setAiCue(null)} title="Закрыть">
-                              ×
-                            </button>
-                          </div>
-                          <div className="interviewAiCueSub">{aiCue.stepTitle}</div>
-                          <div className={"interviewAiRunStatus " + aiCueStatus}>
-                            <span className={"interviewAiRunDot " + aiCueStatus} />
-                            <span className="interviewAiRunText">{aiCueProgressText}</span>
-                            {aiCueLoading ? <span className="interviewAiRunSpinner" aria-hidden="true">⏳</span> : null}
-                          </div>
-                          {aiCueErrorText ? (
-                            <>
-                              <div className="interviewAiCueMuted interviewAiCueErr">{aiCueErrorText}</div>
-                              <div className="interviewAiCueActions">
-                                <button
-                                  type="button"
-                                  className="secondaryBtn smallBtn"
-                                  onClick={() => addAiQuestions(step, { forceRefresh: true })}
-                                  disabled={aiBusyStepId === step.id}
-                                >
-                                  {aiBusyStepId === step.id ? "Повтор..." : "Повторить"}
-                                </button>
-                              </div>
-                            </>
-                          ) : aiCueLoading && !aiCueQuestions.length ? (
-                            <div className="interviewAiSkeleton">
-                              <div className="interviewAiSkeletonRow" />
-                              <div className="interviewAiSkeletonRow" />
-                              <div className="interviewAiSkeletonRow" />
-                            </div>
-                          ) : aiCueQuestions.length ? (
-                            <>
-                              <div className="interviewAiCueMuted">
-                                {aiCue.added > 0
-                                  ? `LLM добавил новых вопросов: ${aiCue.added}.`
-                                  : `LLM вернул вопросы по шагу: ${Number(aiCue.total || aiCueQuestions.length || 0)}.`}
-                              </div>
-                              <div className="interviewAiCueActions">
-                                {aiCue.canRebuild ? (
-                                  <button
-                                    type="button"
-                                    className="secondaryBtn smallBtn"
-                                    onClick={() => addAiQuestions(step, { forceRefresh: true })}
-                                    disabled={aiBusyStepId === step.id}
-                                    title="Запросить LLM и добрать список до 5 вопросов"
-                                  >
-                                    {aiBusyStepId === step.id ? "Пересобираю..." : "Пересобрать список"}
-                                  </button>
-                                ) : (
-                                  <span className="badge ok">Лимит достигнут: 5/5</span>
-                                )}
-                                <span className="muted small">Отметьте вопросы и привяжите их к выбранному BPMN-элементу.</span>
-                                <button
-                                  type="button"
-                                  className="secondaryBtn smallBtn"
-                                  onClick={() => {
-                                    void addAiQuestionsNote(step);
-                                  }}
-                                  disabled={aiCueLoading || !aiCueQuestions.some((q) => !!q?.on_diagram)}
-                                  title="Добавить отмеченные AI-вопросы к выбранному BPMN-элементу"
-                                >
-                                  Добавить к элементу
-                                </button>
-                              </div>
-                              <div className="interviewAiCueList">
-                                {aiCueQuestions.map((q) => (
-                                  <div key={`${q.id}_${q.text}`} className="interviewAiCueItem">
-                                    <label className="interviewAiCueCheck">
-                                      <input
-                                        type="checkbox"
-                                        checked={!!q.on_diagram}
-                                        onChange={(e) => toggleAiQuestionDiagram(step.id, q.id, e.target.checked)}
-                                      />
-                                      <span>{q.text}</span>
-                                    </label>
-                                    <button
-                                      type="button"
-                                      className="dangerBtn smallBtn"
-                                      onClick={() => deleteAiQuestion(step.id, q.id)}
-                                      title="Удалить вопрос из списка шага"
-                                    >
-                                      удалить
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                              {aiNoteStatus?.stepId === step.id ? (
-                                <div className={`interviewAiNoteStatus ${aiNoteStatus.status || "pending"}`}>
-                                  {aiNoteStatus.text}
-                                </div>
-                              ) : null}
-                              {aiQuestionsDiagramSyncByStepId?.[step.id] && aiNoteStatus?.stepId === step.id && aiNoteStatus?.status !== "ok" ? (
-                                <div className="interviewAiCueMuted">
-                                  Проверка: {Number(aiQuestionsDiagramSyncByStepId[step.id]?.presentCount || 0)}/{Number(aiQuestionsDiagramSyncByStepId[step.id]?.selectedCount || 0)} отмеченных вопросов привязаны к BPMN-элементам.
-                                </div>
-                              ) : null}
-                            </>
-                          ) : (
-                            <div className="interviewAiCueMuted">LLM не вернул вопросы для этого шага.</div>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ) : null}
-                  {betweenBranches.length ? (
-                    <tr className="interviewBetweenBranchesRow">
-                      <td colSpan={compactColSpan}>
-                        {visibleBetweenBranches.length ? (
-                          <GatewayGroupRow
-                            gatewayId={gatewayPrefsKey}
-                            gatewayLabel={gatewayLabel}
-                            gatewaySubtitle={gatewaySubtitle}
-                            branches={visibleBetweenBranches}
-                            metricsByBranchKey={branchMetricsByKey}
-                            expanded={gatewayExpanded}
-                            showIds={gatewayShowIds}
-                            selectedBranchKey={selectedBranchKey}
-                            onToggleExpanded={toggleGatewayExpanded}
-                            onToggleShowIds={toggleGatewayShowIds}
-                            onSelectBranch={(branchKey) => setSelectedBranch(gatewayPrefsKey, branchKey)}
-                            onOpenBranchSteps={openBranchPanel}
-                            onSetPrimaryBranch={null}
-                            onCollapseAllBranches={() => setExpandedGatewayById((prev) => ({ ...prev, [gatewayPrefsKey]: false }))}
-                            onExpandAllBranches={() => setExpandedGatewayById((prev) => ({ ...prev, [gatewayPrefsKey]: true }))}
-                            onCopySummary={(gatewayId) => {
-                              const summaryText = [
-                                `Gateway: ${gatewayLabel}`,
-                                `id: ${gatewayId}`,
-                                `branches: ${betweenBranchCount}`,
-                                betweenTierSummary ? `tiers: ${betweenTierSummary}` : "",
-                                betweenPrimaryLabel ? `primary: ${betweenPrimaryLabel} (${betweenPrimaryTier || "—"})` : "",
-                                betweenPrimaryReasonLabel ? `reason: ${betweenPrimaryReasonLabel}` : "",
-                              ].filter(Boolean).join("\n");
-                              void copyGatewaySummary(gatewayId, summaryText);
-                            }}
-                          />
-                        ) : (
-                          <div className="interviewGatewayEmptyHint muted small">
-                            По текущему фильтру tiers ветки скрыты.
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
+                <TimelineRow
+                  key={stepId}
+                  step={step}
+                  absoluteIdx={absoluteIdx}
+                  ctx={rowCtx}
+                  ui={rowUi}
+                />
               );
             })}
             </>
