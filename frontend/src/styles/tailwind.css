@@ -57,8 +57,12 @@
   --analysis-muted: hsl(var(--muted) / 0.82);
   --analysis-hint: hsl(var(--hint) / 0.76);
   --analysis-accent-soft: hsl(var(--accent) / 0.1);
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
   border-color: var(--analysis-border);
   background:
     linear-gradient(180deg, hsl(var(--panel) / 0.92), hsl(var(--panel2) / 0.74)),
@@ -110,13 +114,16 @@
 }
 
 .analysisBSection {
-  display: block;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--analysis-border-soft);
   border-radius: 12px;
   background: var(--analysis-card);
   padding: 8px;
+  height: 100%;
+  min-height: 0;
 }
 
 .analysisBSection[open] > summary {
@@ -197,6 +204,7 @@
   padding: 8px;
   flex: 1 1 auto;
   min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -7739,6 +7747,8 @@
     @apply w-full overflow-auto rounded-xl border border-border bg-panel2/35;
     flex: 1 1 auto;
     min-height: 0;
+    height: 100%;
+    contain: layout style paint;
   }
 
   .interviewTable {
@@ -7789,6 +7799,9 @@
     border-left: 3px solid color-mix(in srgb, var(--lane-accent, hsl(var(--accent2))) 72%, transparent);
     background: color-mix(in srgb, var(--lane-accent, hsl(var(--accent2))) 4%, transparent);
     transition: background-color 140ms ease, box-shadow 140ms ease;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 72px;
+    contain: layout style paint;
   }
 
   .interviewStepRow.isSubprocessChild {
