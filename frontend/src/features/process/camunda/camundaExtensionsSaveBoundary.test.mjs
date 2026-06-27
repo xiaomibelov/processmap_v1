@@ -586,3 +586,85 @@ test("meta-only save retries on 423 lock failure", async () => {
   assert.equal(stub.patchCalls.length, 2);
   assert.ok(elapsed >= 450, `expected backoff ~500ms, got ${elapsed}ms`);
 });
+
+test("property save with empty currentXml and forceMetaPatch uses PATCH without building XML", async () => {
+  const stub = buildStub();
+  const ref = createRef(3);
+  const currentMeta = { version: 1, camunda_extensions_by_element_id: {} };
+
+  const result = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+    sessionIdRaw: "sess_empty_xml",
+    isLocal: false,
+    currentXmlRaw: "",
+    currentMetaRaw: currentMeta,
+    nextMetaRaw: NEXT_META,
+    nextCamundaExtensionsByElementIdRaw: NEXT_META.camunda_extensions_by_element_id,
+    baseDiagramStateVersionRaw: 3,
+    lastServerDiagramStateVersionRef: ref,
+    buildCanonicalXml: () => "",
+    apiPutBpmnXml: stub.apiPutBpmnXml,
+    apiPatchSessionMeta: stub.apiPatchSessionMeta,
+    apiGetSession: stub.apiGetSession,
+    onSessionSync: stub.onSessionSync,
+    onDurableSaveAck: stub.onDurableSaveAck,
+    forceMetaPatch: true,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(stub.putCalls.length, 0);
+  assert.equal(stub.patchCalls.length, 1);
+  assert.equal(stub.patchCalls[0].patch.bpmn_meta_json.camunda_extensions_by_element_id.Task_1.properties.extensionProperties[0].name, "ingredient");
+  assert.equal(ref.current, 5);
+  assert.equal(stub.acks.length, 1);
+  assert.equal(stub.syncs.length, 1);
+});
+
+test("empty currentXml with metaDiff uses PATCH even without forceMetaPatch", async () => {
+  const stub = buildStub();
+  const ref = createRef(2);
+  const currentMeta = { version: 1, camunda_extensions_by_element_id: {} };
+
+  const result = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+    sessionIdRaw: "sess_empty_xml_no_force",
+    isLocal: false,
+    currentXmlRaw: "   ",
+    currentMetaRaw: currentMeta,
+    nextMetaRaw: NEXT_META,
+    nextCamundaExtensionsByElementIdRaw: NEXT_META.camunda_extensions_by_element_id,
+    baseDiagramStateVersionRaw: 2,
+    lastServerDiagramStateVersionRef: ref,
+    buildCanonicalXml: () => "",
+    apiPutBpmnXml: stub.apiPutBpmnXml,
+    apiPatchSessionMeta: stub.apiPatchSessionMeta,
+    apiGetSession: stub.apiGetSession,
+    onSessionSync: stub.onSessionSync,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(stub.putCalls.length, 0);
+  assert.equal(stub.patchCalls.length, 1);
+  assert.equal(ref.current, 5);
+});
+
+test("empty currentXml and no metaDiff skips save", async () => {
+  const stub = buildStub();
+  const meta = { version: 1, camunda_extensions_by_element_id: NEXT_META.camunda_extensions_by_element_id };
+
+  const result = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+    sessionIdRaw: "sess_empty_xml_no_diff",
+    isLocal: false,
+    currentXmlRaw: "",
+    currentMetaRaw: meta,
+    nextMetaRaw: meta,
+    nextCamundaExtensionsByElementIdRaw: NEXT_META.camunda_extensions_by_element_id,
+    baseDiagramStateVersionRaw: 1,
+    buildCanonicalXml: () => "",
+    apiPutBpmnXml: stub.apiPutBpmnXml,
+    apiPatchSessionMeta: stub.apiPatchSessionMeta,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.skipped, true);
+  assert.equal(stub.putCalls.length, 0);
+  assert.equal(stub.patchCalls.length, 0);
+});
