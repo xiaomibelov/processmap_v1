@@ -9737,6 +9737,7 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
             ttl_days=ttl_days,
             regenerate=(regenerate and not staged_regenerate),
             activate_now=(not staged_regenerate),
+            permissions=getattr(inp, "permissions", None),
         )
     except ValueError as exc:
         return _enterprise_error(422, "validation_error", str(exc))

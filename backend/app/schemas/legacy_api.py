@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AuthLoginIn(BaseModel):
@@ -61,6 +61,7 @@ class OrgInviteCreateIn(BaseModel):
     role: Optional[str] = "viewer"
     ttl_days: Optional[int] = 7
     regenerate: Optional[bool] = False
+    permissions: Optional[Dict[str, bool]] = Field(default_factory=dict)
     model_config = ConfigDict(extra="allow")
 
 
