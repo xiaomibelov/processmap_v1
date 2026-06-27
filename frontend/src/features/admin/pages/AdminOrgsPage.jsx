@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AdminPageContainer from "../layout/AdminPageContainer";
 import SectionCard from "../components/common/SectionCard";
 import AdminTabs from "../components/common/AdminTabs";
@@ -6,6 +6,7 @@ import OrgsSummaryRow from "../components/orgs/OrgsSummaryRow";
 import OrgsTable from "../components/orgs/OrgsTable";
 import AdminOrgInvitesPanel from "../components/orgs/AdminOrgInvitesPanel";
 import AdminUsersPanel from "../components/orgs/AdminUsersPanel";
+import AdminPermissionsPanel from "../components/permissions/AdminPermissionsPanel";
 import { ru } from "../../../shared/i18n/ru";
 import {
   apiCreateOrg,
@@ -14,9 +15,10 @@ import {
   apiPatchOrgGitMirrorConfig,
 } from "../../../lib/api";
 
-const ORGS_TABS = [
+const ALL_ORGS_TABS = [
   { id: "users", label: "Пользователи" },
   { id: "invites", label: "Инвайты" },
+  { id: "permissions", label: "Permissions" },
   { id: "organizations", label: "Организации" },
   { id: "gitMirror", label: "Git mirror" },
   { id: "system", label: "Система" },
@@ -351,6 +353,10 @@ function GitMirrorPanel({ activeOrgId = "", activeOrgRole = "", isAdmin = false,
   );
 }
 
+function _canManagePermissions(isAdmin, activeOrgRole) {
+  return isAdmin || ["org_owner", "org_admin"].includes(String(activeOrgRole || "").toLowerCase());
+}
+
 export default function AdminOrgsPage({
   payload = {},
   activeOrgId = "",
@@ -361,8 +367,38 @@ export default function AdminOrgsPage({
   recentInvite = null,
   onInviteCreated,
 }) {
-  const [activeTab, setActiveTab] = useState("users");
+  const canManagePermissions = useMemo(() => _canManagePermissions(isAdmin, activeOrgRole), [isAdmin, activeOrgRole]);
+  const visibleTabs = useMemo(
+    () => ALL_ORGS_TABS.filter((t) => t.id !== "permissions" || canManagePermissions),
+    [canManagePermissions]
+  );
+
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window === "undefined") return "users";
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    return tab && visibleTabs.some((t) => t.id === tab) ? tab : "users";
+  });
   const effectiveOrgId = activeOrgId || payload?.active_org_id;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") === activeTab) return;
+    if (activeTab === "users") {
+      params.delete("tab");
+    } else {
+      params.set("tab", activeTab);
+    }
+    const newUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}${window.location.hash}`;
+    window.history.replaceState(null, "", newUrl);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!visibleTabs.some((t) => t.id === activeTab)) {
+      setActiveTab("users");
+    }
+  }, [visibleTabs, activeTab]);
 
   function renderTabContent() {
     if (activeTab === "users") {
@@ -389,6 +425,13 @@ export default function AdminOrgsPage({
             recentInvite={recentInvite}
             onInviteCreated={onInviteCreated}
           />
+        </div>
+      );
+    }
+    if (activeTab === "permissions") {
+      return (
+        <div id="admin-access-permissions">
+          <AdminPermissionsPanel orgId={effectiveOrgId} />
         </div>
       );
     }
@@ -449,7 +492,7 @@ export default function AdminOrgsPage({
         />
       )}
     >
-      <AdminTabs tabs={ORGS_TABS} activeTab={activeTab} onChange={setActiveTab} />
+      <AdminTabs tabs={visibleTabs} activeTab={activeTab} onChange={setActiveTab} />
       {renderTabContent()}
     </AdminPageContainer>
   );
