@@ -1,5 +1,5 @@
 import { useCallback, useRef } from "react";
-import { apiGetSession, apiPatchSession } from "../../../../../lib/api.js";
+import { apiGetSession, apiChangeSessionStatus } from "../../../../../lib/api.js";
 
 export default function useSessionStatusOptimisticUpdate({
   canChangeStatus,
@@ -56,7 +56,7 @@ export default function useSessionStatusOptimisticUpdate({
       status,
       base_diagram_state_version: Math.round(baseDiagramStateVersion),
     };
-    const r = await apiPatchSession(sid, payload);
+    const r = await apiChangeSessionStatus(sid, payload);
     if (!r.ok) {
       setDraftPersisted((prev) => {
         const next = { ...prev };
