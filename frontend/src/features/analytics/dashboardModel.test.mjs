@@ -6,6 +6,12 @@ import {
   normalizeProjectAnalyticsCards,
   normalizeWorkspaceAnalyticsCards,
   computeBarChartMax,
+  dashboardDataToKpiCards,
+  dashboardDataToTaskStatusItems,
+  dashboardDataToBpmnElementItems,
+  dashboardDataToSessionTrendItems,
+  dashboardDataToProcessDurationItems,
+  hasActivityHeatmapData,
 } from "./dashboardModel.js";
 
 test("sessionAnalyticsToCards returns 4 metric cards", () => {
@@ -76,4 +82,74 @@ test("computeBarChartMax returns 1 for empty items", () => {
 
 test("computeBarChartMax returns max value", () => {
   assert.equal(computeBarChartMax([{ value: 5 }, { value: 10 }, { value: 3 }]), 10);
+});
+
+test("dashboardDataToKpiCards returns 5 KPI cards", () => {
+  const kpi = {
+    total_sessions: 10,
+    total_tasks: 120,
+    active_now: 2,
+    avg_session_duration_min: 45,
+    unique_processes: 3,
+  };
+  const cards = dashboardDataToKpiCards(kpi);
+  assert.equal(cards.length, 5);
+  assert.equal(cards[0].value, "10");
+  assert.equal(cards[1].value, "120");
+  assert.equal(cards[2].value, "2");
+  assert.equal(cards[3].value, "45 мин");
+  assert.equal(cards[4].value, "3");
+});
+
+test("dashboardDataToTaskStatusItems maps statuses and filters zero values", () => {
+  const items = dashboardDataToTaskStatusItems({
+    task_statuses: { completed: 5, active: 3, pending: 0, failed: 1 },
+  });
+  assert.equal(items.length, 3);
+  assert.equal(items[0].label, "Выполнено");
+  assert.equal(items[0].value, 5);
+  assert.equal(items[1].label, "Активно");
+  assert.equal(items[2].label, "Сбой");
+});
+
+test("dashboardDataToBpmnElementItems maps BPMN types", () => {
+  const items = dashboardDataToBpmnElementItems({
+    bpmn_element_types: { task: 10, gateway: 4, event: 2, subprocess: 0 },
+  });
+  assert.equal(items.length, 3);
+  assert.equal(items[0].label, "Задачи");
+  assert.equal(items[0].value, 10);
+  assert.equal(items[1].label, "Шлюзы");
+  assert.equal(items[2].label, "События");
+});
+
+test("dashboardDataToSessionTrendItems converts points", () => {
+  const items = dashboardDataToSessionTrendItems({
+    session_trend: {
+      points: [{ period: "2024-01-15", sessions: 3 }, { period: "2024-01-16", sessions: 5 }],
+    },
+  });
+  assert.equal(items.length, 2);
+  assert.equal(items[0].label, "01-15");
+  assert.equal(items[0].value, 3);
+  assert.equal(items[1].label, "01-16");
+});
+
+test("dashboardDataToProcessDurationItems converts process duration list", () => {
+  const items = dashboardDataToProcessDurationItems({
+    process_duration: [
+      { process_title: "Процесс А", avg_duration_min: 120, sessions_count: 5 },
+      { process_title: "Процесс Б", avg_duration_min: 80, sessions_count: 3 },
+    ],
+  });
+  assert.equal(items.length, 2);
+  assert.equal(items[0].label, "Процесс А");
+  assert.equal(items[0].value, 120);
+  assert.equal(items[0].sessions_count, 5);
+});
+
+test("hasActivityHeatmapData detects non-empty heatmap", () => {
+  assert.equal(hasActivityHeatmapData({}), false);
+  assert.equal(hasActivityHeatmapData({ activity_heatmap: { by_hour: [0, 1, 0], by_weekday: [0, 0, 0] } }), true);
+  assert.equal(hasActivityHeatmapData({ activity_heatmap: { by_hour: [0, 0, 0], by_weekday: [0, 0, 0] } }), false);
 });
