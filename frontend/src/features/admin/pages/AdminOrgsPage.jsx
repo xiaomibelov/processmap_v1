@@ -7,7 +7,7 @@ import AdminOrgInvitesPanel from "../components/orgs/AdminOrgInvitesPanel";
 import AdminUsersPanel from "../components/orgs/AdminUsersPanel";
 import AdminPermissionsPanel from "../components/permissions/AdminPermissionsPanel";
 import AdminGitMirrorPanel from "../components/gitMirror/AdminGitMirrorPanel";
-import { ru } from "../../../shared/i18n/ru";
+import AdminSystemPanel from "../components/system/AdminSystemPanel";
 
 const ALL_ORGS_TABS = [
   { id: "users", label: "Пользователи" },
@@ -17,18 +17,6 @@ const ALL_ORGS_TABS = [
   { id: "gitMirror", label: "Git mirror" },
   { id: "system", label: "Система" },
 ];
-
-function SystemStatusPanel() {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
-      <div className="font-semibold text-slate-800">{ru.admin.orgsPage.notesTitle || "Системное состояние и служебные заметки"}</div>
-      <div className="mt-2 space-y-2 text-xs text-slate-500">
-        <p>{ru.admin.orgsPage.notesBody}</p>
-        <p>Redis и runtime health остаются в операционной сводке; на этой странице они не конкурируют с управлением пользователями и доступом.</p>
-      </div>
-    </div>
-  );
-}
 
 function _canManagePermissions(isAdmin, activeOrgRole) {
   return isAdmin || ["org_owner", "org_admin"].includes(String(activeOrgRole || "").toLowerCase());
@@ -138,7 +126,11 @@ export default function AdminOrgsPage({
       );
     }
     if (activeTab === "system") {
-      return <div id="admin-access-system"><SystemStatusPanel /></div>;
+      return (
+        <div id="admin-access-system">
+          <AdminSystemPanel />
+        </div>
+      );
     }
     return null;
   }
