@@ -5,6 +5,7 @@ import test from "node:test";
 const pageSource = fs.readFileSync(new URL("./AdminOrgsPage.jsx", import.meta.url), "utf8");
 const orgsPanelSource = fs.readFileSync(new URL("../components/orgs/AdminOrgsPanel.jsx", import.meta.url), "utf8");
 const detailPanelSource = fs.readFileSync(new URL("../components/orgs/AdminOrgDetailPanel.jsx", import.meta.url), "utf8");
+const gitMirrorSource = fs.readFileSync(new URL("../components/gitMirror/AdminGitMirrorPanel.jsx", import.meta.url), "utf8");
 const ruSource = fs.readFileSync(new URL("../../../shared/i18n/ru.js", import.meta.url), "utf8");
 const topbarSource = fs.readFileSync(new URL("../layout/AdminTopbar.jsx", import.meta.url), "utf8");
 
@@ -29,7 +30,7 @@ test("AdminOrgsPage uses access-first information architecture with tabs", () =>
   assert.match(pageSource, /AdminPermissionsPanel/);
 });
 
-test("AdminOrgsPage delegates organizations tab to AdminOrgsPanel with detail panel", () => {
+test("AdminOrgsPage delegates organizations and git mirror tabs to dedicated panels", () => {
   assert.match(pageSource, /<AdminOrgsPanel/);
   assert.match(orgsPanelSource, /id="admin-access-orgs"/);
   assert.match(orgsPanelSource, /Создать организацию/);
@@ -38,9 +39,11 @@ test("AdminOrgsPage delegates organizations tab to AdminOrgsPanel with detail pa
   assert.match(orgsPanelSource, /<OrgsTable/);
   assert.match(orgsPanelSource, /<AdminOrgDetailPanel/);
   assert.match(pageSource, /<div id="admin-access-orgs"/);
-  assert.match(pageSource, /Git mirror \/ публикация/);
+  assert.match(pageSource, /<AdminGitMirrorPanel/);
   assert.match(pageSource, /<div id="admin-access-git"/);
-  assert.match(pageSource, /Сохранить Git mirror/);
+  assert.match(gitMirrorSource, /Git mirror \/ публикация/);
+  assert.match(gitMirrorSource, /Сохранить Git mirror/);
+  assert.match(gitMirrorSource, /Проверить конфигурацию/);
   assert.match(pageSource, /<AdminUsersPanel/);
   assert.match(pageSource, /<AdminOrgInvitesPanel/);
   assert.ok(pageSource.indexOf("<AdminUsersPanel") < pageSource.indexOf("<AdminOrgInvitesPanel"));
