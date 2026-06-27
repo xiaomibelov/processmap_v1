@@ -91,8 +91,6 @@ import { disableBpmnZoomScroll } from "../../features/process/bpmn/runtime/zoomS
 import extractCamundaZeebePropertyEntriesFromBusinessObject from "../../features/process/stage/search/extractCamundaZeebePropertyEntries";
 import { deriveElementProcessContext } from "../../features/process/stage/search/diagramSearchHierarchy";
 import { buildPropertiesOverlayPreview } from "../../features/process/camunda/propertyDictionaryModel";
-import * as propertyStateManager from "../../features/process/camunda/propertySave/propertyStateManager";
-import * as propertyOverlaySync from "../../features/process/camunda/propertySave/propertyOverlaySync";
 
 import "bpmn-js/dist/assets/diagram-js.css";
 import "bpmn-js/dist/assets/bpmn-js.css";
@@ -2226,27 +2224,72 @@ const BpmnStage = forwardRef(function BpmnStage({
     });
   }
 
+  function buildBpmnMetaWithCamundaExtensions(currentMetaRaw, camundaExtensionsByElementIdRaw) {
+    const currentMeta = asObject(currentMetaRaw);
+    return {
+      version: Number(currentMeta?.version) > 0 ? Number(currentMeta.version) : 1,
+      flow_meta: normalizeFlowTierMetaMap(currentMeta?.flow_meta),
+      node_path_meta: normalizeNodePathMetaMap(currentMeta?.node_path_meta),
+      robot_meta_by_element_id: normalizeRobotMetaMap(currentMeta?.robot_meta_by_element_id),
+      camunda_extensions_by_element_id: normalizeCamundaExtensionsMap(camundaExtensionsByElementIdRaw),
+      hybrid_layer_by_element_id: normalizeHybridLayerMap(currentMeta?.hybrid_layer_by_element_id),
+      hybrid_v2: currentMeta?.hybrid_v2,
+      drawio: currentMeta?.drawio,
+      execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
+    };
+  }
+
   function syncDraftCamundaExtensionsMap(nextMapRaw, source = "camunda_extensions_map_sync") {
-    return propertyStateManager.syncDraftCamundaExtensionsMap({
-      draftRef,
-      activeSessionIdRef: activeSessionRef,
-      sessionId,
-      nextMapRaw,
-      onSessionSync: onSessionSyncRef.current,
-      source,
-    });
+    const sid = String(activeSessionRef.current || sessionId || "").trim();
+    const currentDraft = asObject(draftRef.current);
+    const nextMeta = buildBpmnMetaWithCamundaExtensions(currentDraft.bpmn_meta, nextMapRaw);
+    draftRef.current = {
+      ...currentDraft,
+      bpmn_meta: nextMeta,
+    };
+    if (sid) {
+      onSessionSyncRef.current?.({
+        id: sid,
+        session_id: sid,
+        bpmn_meta: nextMeta,
+        _sync_source: source,
+      });
+    }
+    return nextMeta;
   }
 
   function refreshPropertiesOverlayPreviewFromCamundaMap(nextMapRaw, elementIdsRaw = []) {
-    return propertyOverlaySync.refreshPropertiesOverlayPreviewFromCamundaMap({
-      nextMapRaw,
-      elementIdsRaw,
-      propertiesOverlayAlwaysEnabledRef,
-      propertiesOverlayAlwaysPreviewByElementIdRef,
-      applyPropertiesOverlayDecor,
-      modelerRef,
-      viewerRef,
+    if (propertiesOverlayAlwaysEnabledRef.current !== true) return { ok: true, refreshed: 0, skipped: true };
+    const elementIds = Array.from(new Set(
+      asArray(elementIdsRaw)
+        .map((value) => toText(value))
+        .filter(Boolean),
+    ));
+    if (!elementIds.length) return { ok: true, refreshed: 0, reason: "empty_element_ids" };
+    const nextMap = normalizeCamundaExtensionsMap(nextMapRaw);
+    const nextPreviewMap = {
+      ...asObject(propertiesOverlayAlwaysPreviewByElementIdRef.current),
+    };
+    let refreshed = 0;
+    elementIds.forEach((elementId) => {
+      const preview = buildPropertiesOverlayPreview({
+        elementId,
+        extensionStateRaw: nextMap[elementId],
+        showPropertiesOverlay: true,
+      });
+      if (preview?.enabled && asArray(preview?.items).length) {
+        nextPreviewMap[elementId] = preview;
+        refreshed += 1;
+      } else if (Object.prototype.hasOwnProperty.call(nextPreviewMap, elementId)) {
+        delete nextPreviewMap[elementId];
+        refreshed += 1;
+      }
     });
+    if (!refreshed) return { ok: true, refreshed: 0, reason: "no_preview_changes" };
+    propertiesOverlayAlwaysPreviewByElementIdRef.current = nextPreviewMap;
+    applyPropertiesOverlayDecor(modelerRef.current, "editor");
+    applyPropertiesOverlayDecor(viewerRef.current, "viewer");
+    return { ok: true, refreshed };
   }
 
   function reconcileTemplateInsertCamundaStateFromXml(xmlText, preserveIdsRaw = []) {
