@@ -2,6 +2,20 @@ function toText(value) {
   return String(value || "").trim();
 }
 
+const META_ONLY_CHANGED_KEYS = new Set([
+  "bpmn_meta",
+  "status",
+  "title",
+  "roles",
+  "start_role",
+]);
+
+function isMetaOnlyChangedKeys(keys) {
+  const arr = Array.isArray(keys) ? keys : [];
+  if (arr.length === 0) return false;
+  return arr.every((key) => META_ONLY_CHANGED_KEYS.has(String(key || "").trim()));
+}
+
 export function resolveManualSaveOutcomeUi({
   primarySaveOk = false,
   primarySavePending = false,
@@ -10,11 +24,13 @@ export function resolveManualSaveOutcomeUi({
   saveInfo = "",
   publishInfo = "",
   staleRetryApplied = false,
+  staleRetryChangedKeys = [],
 } = {}) {
   const primaryErrorText = toText(primarySaveError);
   const companionErrorText = toText(companionError);
   const primaryInfoText = toText(publishInfo) || toText(saveInfo);
-  const staleRetryNotice = staleRetryApplied
+  const staleRetryMetaOnly = staleRetryApplied && isMetaOnlyChangedKeys(staleRetryChangedKeys);
+  const staleRetryNotice = (staleRetryApplied && !staleRetryMetaOnly)
     ? "Обнаружена более новая версия на сервере: сохранение автоматически повторено на актуальной версии."
     : "";
 

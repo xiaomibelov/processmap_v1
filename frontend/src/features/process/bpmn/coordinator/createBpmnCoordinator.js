@@ -13,6 +13,19 @@ function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
+function asArray(value) {
+  if (Array.isArray(value)) return value;
+  return [];
+}
+
+function readStaleConflictChangedKeys(errorDetails) {
+  const details = asObject(errorDetails);
+  const lastWrite = asObject(details.server_last_write || details.serverLastWrite);
+  return asArray(lastWrite.changed_keys || lastWrite.changedKeys)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+}
+
 function normalizeErrorDetails(value) {
   const details = asObject(value);
   return Object.keys(details).length ? details : null;
@@ -525,6 +538,7 @@ export default function createBpmnCoordinator(options = {}) {
     const staleConflictRetryEnabled = options?.staleConflictRetryEnabled !== false;
     const staleConflictRetryMaxAttempts = Math.max(0, asNumber(options?.staleConflictRetryMaxAttempts, 1));
     let staleRetryAttempts = 0;
+    let staleRetryChangedKeys = [];
     let persisted = await persistRaw(sid, xml, targetRev, reason);
     while (
       !persisted?.ok
@@ -533,6 +547,9 @@ export default function createBpmnCoordinator(options = {}) {
       && isStaleConflictFailure(persisted)
     ) {
       staleRetryAttempts += 1;
+      if (staleRetryChangedKeys.length === 0) {
+        staleRetryChangedKeys = readStaleConflictChangedKeys(persisted?.errorDetails);
+      }
       emit("SAVE_STALE_CONFLICT_RETRY", {
         sid,
         reason,
@@ -541,6 +558,7 @@ export default function createBpmnCoordinator(options = {}) {
         status: asNumber(persisted?.status, 0),
         error_code: normalizeErrorCode(persisted?.errorCode),
         error_details: normalizeErrorDetails(persisted?.errorDetails),
+        changed_keys: staleRetryChangedKeys,
       });
       persisted = await persistRaw(sid, xml, targetRev, reason);
     }
@@ -587,6 +605,7 @@ export default function createBpmnCoordinator(options = {}) {
       ms: Date.now() - startedAt,
       stale_retry_applied: staleRetryAttempts > 0 ? 1 : 0,
       stale_retry_attempts: staleRetryAttempts,
+      stale_retry_changed_keys: staleRetryChangedKeys,
     });
     return {
       ok: true,
@@ -597,6 +616,7 @@ export default function createBpmnCoordinator(options = {}) {
       xmlAlreadyTransformed: prepared.transformed,
       staleRetryApplied: staleRetryAttempts > 0,
       staleRetryAttempts,
+      staleRetryChangedKeys,
       bpmnVersionSnapshot: persisted?.bpmnVersionSnapshot && typeof persisted.bpmnVersionSnapshot === "object"
         ? persisted.bpmnVersionSnapshot
         : null,
