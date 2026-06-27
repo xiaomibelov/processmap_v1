@@ -142,3 +142,102 @@ export function computeBarChartMax(items = []) {
   if (!items.length) return 1;
   return Math.max(...items.map((i) => Number(i.value || 0)), 1);
 }
+
+const STATUS_LABELS = {
+  completed: "Выполнено",
+  active: "Активно",
+  pending: "Ожидает",
+  failed: "Сбой",
+};
+
+const BPMN_LABELS = {
+  task: "Задачи",
+  gateway: "Шлюзы",
+  event: "События",
+  subprocess: "Подпроцессы",
+};
+
+export function dashboardDataToKpiCards(kpi = {}) {
+  return [
+    { title: "Всего сессий", value: String(kpi.total_sessions ?? 0), testId: "kpi-total-sessions", tone: "blue" },
+    { title: "Всего задач", value: String(kpi.total_tasks ?? 0), testId: "kpi-total-tasks", tone: "teal" },
+    { title: "Активно сейчас", value: String(kpi.active_now ?? 0), testId: "kpi-active-now", tone: "success" },
+    {
+      title: "Средняя длительность",
+      value: `${kpi.avg_session_duration_min ?? 0} мин`,
+      testId: "kpi-avg-duration",
+      tone: "warning",
+    },
+    {
+      title: "Уникальных процессов",
+      value: String(kpi.unique_processes ?? 0),
+      testId: "kpi-unique-processes",
+      tone: "slate",
+    },
+  ];
+}
+
+export function dashboardDataToTaskStatusItems(data = {}) {
+  const statuses = data.task_statuses || {};
+  return Object.entries(STATUS_LABELS)
+    .map(([key, label], idx) => ({
+      label,
+      value: Number(statuses[key] || 0),
+      color: null,
+      order: idx,
+    }))
+    .filter((i) => i.value > 0)
+    .map((i, idx) => ({ ...i, color: defaultChartColor(idx) }));
+}
+
+export function dashboardDataToBpmnElementItems(data = {}) {
+  const types = data.bpmn_element_types || {};
+  return Object.entries(BPMN_LABELS)
+    .map(([key, label], idx) => ({
+      label,
+      value: Number(types[key] || 0),
+      color: null,
+      order: idx,
+    }))
+    .filter((i) => i.value > 0)
+    .map((i, idx) => ({ ...i, color: defaultChartColor(idx) }));
+}
+
+export function dashboardDataToSessionTrendItems(data = {}) {
+  const points = data.session_trend?.points || [];
+  return points.map((p, idx) => ({
+    label: p.period ? String(p.period).slice(5) : `${idx}`,
+    value: Number(p.sessions || 0),
+    color: defaultChartColor(idx),
+  }));
+}
+
+export function dashboardDataToProcessDurationItems(data = {}) {
+  const list = data.process_duration || [];
+  return list.map((p, idx) => ({
+    label: String(p.process_title || "—"),
+    value: Number(p.avg_duration_min || 0),
+    sessions_count: Number(p.sessions_count || 0),
+    color: defaultChartColor(idx),
+  }));
+}
+
+export function hasActivityHeatmapData(data = {}) {
+  const h = data.activity_heatmap;
+  if (!h) return false;
+  return (h.by_hour || []).some((v) => v > 0) || (h.by_weekday || []).some((v) => v > 0);
+}
+
+function defaultChartColor(idx) {
+  const colors = [
+    "#3b82f6",
+    "#10b981",
+    "#f59e0b",
+    "#ef4444",
+    "#8b5cf6",
+    "#06b6d4",
+    "#f97316",
+    "#64748b",
+  ];
+  return colors[idx % colors.length];
+}
