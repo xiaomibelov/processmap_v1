@@ -85,14 +85,20 @@
   display: grid;
   grid-template-columns: minmax(0, 1.52fr) minmax(270px, 0.48fr);
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
 .analysisStepMainColumn,
 .analysisStepCompanion {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   gap: 12px;
+  height: 100%;
+  min-height: 0;
 }
 
 .analysisStepCompanion {
@@ -189,6 +195,10 @@
 .analysisStepTableCard {
   overflow: hidden;
   padding: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .analysisSelectedStepCard,
@@ -7727,6 +7737,8 @@
 
   .interviewTableWrap {
     @apply w-full overflow-auto rounded-xl border border-border bg-panel2/35;
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
   .interviewTable {
