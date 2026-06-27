@@ -116,6 +116,7 @@ export const apiRoutes = {
     list: () => "/api/sessions",
     create: () => "/api/sessions",
     item: (sessionId) => `/api/sessions/${encode(sessionId)}`,
+    status: (sessionId) => `/api/sessions/${encode(sessionId)}/status`,
     meta: (sessionId) => `/api/sessions/${encode(sessionId)}/meta`,
     properties: (sessionId) => `/api/sessions/${encode(sessionId)}/properties`,
     graph: (sessionId) => `/api/sessions/${encode(sessionId)}/graph`,

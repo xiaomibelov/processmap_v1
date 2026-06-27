@@ -296,6 +296,13 @@ class SessionMetaPatchIn(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class StatusPatchIn(BaseModel):
+    status: str
+    base_diagram_state_version: Optional[int] = None
+    reason: Optional[str] = None
+    model_config = ConfigDict(extra="allow")
+
+
 class InferRtiersIn(BaseModel):
     scopeStartId: Optional[str] = None
     successEndIds: Optional[List[str]] = None
