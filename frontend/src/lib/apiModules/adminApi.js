@@ -237,3 +237,55 @@ export async function apiAdminRagPatchSettings(payload = {}) {
   }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
+
+// ------- Admin Permissions -------
+export async function apiAdminListPermissions(params = {}) {
+  const endpoint = apiRoutes.admin.permissions(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminListPermissionEntities(params = {}) {
+  const endpoint = apiRoutes.admin.permissionEntities(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminPatchPermission(entityType, entityId, payload = {}) {
+  const etype = String(entityType || "").trim();
+  const eid = String(entityId || "").trim();
+  if (!etype || !eid) return { ok: false, status: 0, error: "missing entity_type or entity_id" };
+  const r = okOrError(await request(apiRoutes.admin.permission(etype, eid), {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+    headers: { "Content-Type": "application/json" },
+  }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminBulkPermissions(updates = []) {
+  const r = okOrError(await request(apiRoutes.admin.permissionsBulk(), {
+    method: "POST",
+    body: JSON.stringify({ updates }),
+    headers: { "Content-Type": "application/json" },
+  }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminGetInvitePermissions(inviteId) {
+  const id = String(inviteId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing invite_id" };
+  const r = okOrError(await request(apiRoutes.admin.invitePermissions(id), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminPatchInvitePermissions(inviteId, permissions = {}) {
+  const id = String(inviteId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing invite_id" };
+  const r = okOrError(await request(apiRoutes.admin.invitePermissions(id), {
+    method: "PATCH",
+    body: JSON.stringify(permissions),
+    headers: { "Content-Type": "application/json" },
+  }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}

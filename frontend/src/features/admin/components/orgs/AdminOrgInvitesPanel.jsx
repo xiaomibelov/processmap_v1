@@ -1,11 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiCreateOrgInvite, apiListOrgInvites, apiRevokeOrgInvite } from "../../../../lib/api";
+import {
+  apiAdminGetInvitePermissions,
+  apiAdminPatchInvitePermissions,
+  apiCreateOrgInvite,
+  apiListOrgInvites,
+  apiRevokeOrgInvite,
+} from "../../../../lib/api";
 import { ru, trStatusInvite } from "../../../../shared/i18n/ru";
 import { formatRoleWithScope, toUserFacingRoleLabel } from "../../adminRoles";
 import SectionCard from "../common/SectionCard";
 import StatusPill from "../common/StatusPill";
 import { asArray, formatTs, toText } from "../../utils/adminFormat";
 import { INVITE_ROLE_OPTIONS } from "../../../../features/workspace/workspacePermissions";
+import AdminInvitePermissionEditor, {
+  AdminInvitePermissionSummary,
+  invitePermissionDefaults,
+} from "../permissions/AdminInvitePermissionEditor";
 
 function inviteTone(statusRaw) {
   const status = toText(statusRaw).toLowerCase();
@@ -77,11 +87,16 @@ export default function AdminOrgInvitesPanel({
   const [inviteJobTitle, setInviteJobTitle] = useState("");
   const [inviteRole, setInviteRole] = useState("editor");
   const [inviteTtl, setInviteTtl] = useState("7");
+  const [invitePermissions, setInvitePermissions] = useState({});
   const [lastInviteNotice, setLastInviteNotice] = useState("");
   const [lastCreatedInvite, setLastCreatedInvite] = useState(null);
   const [currentInvite, setCurrentInvite] = useState(null);
   const [copyState, setCopyState] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [editingInviteId, setEditingInviteId] = useState("");
+  const [editingPermissions, setEditingPermissions] = useState({});
+  const [savingPermissions, setSavingPermissions] = useState(false);
+
   const visibleCreatedInvite = useMemo(() => {
     const localInvite = lastCreatedInvite && toText(lastCreatedInvite.orgId) === oid ? lastCreatedInvite : null;
     if (localInvite) return localInvite;
@@ -89,6 +104,10 @@ export default function AdminOrgInvitesPanel({
     if (sharedInvite) return sharedInvite;
     return currentInvite && toText(currentInvite.orgId) === oid ? currentInvite : null;
   }, [lastCreatedInvite, recentInvite, currentInvite, oid]);
+
+  useEffect(() => {
+    setInvitePermissions({});
+  }, [inviteRole]);
 
   const loadInvites = useCallback(async () => {
     if (!oid) {
@@ -122,14 +141,25 @@ export default function AdminOrgInvitesPanel({
     setCopyState("");
     setLastInviteNotice("");
     setLastCreatedInvite(null);
-    const res = await apiCreateOrgInvite(oid, {
+
+    const payload = {
       email: inviteEmail,
       full_name: inviteFullName,
       job_title: inviteJobTitle,
       role: inviteRole,
       ttl_days: Number(inviteTtl || 7),
       regenerate: false,
-    });
+    };
+    const effectiveDefaults = invitePermissionDefaults(inviteRole);
+    const overrides = Object.entries(invitePermissions || {}).reduce((acc, [key, value]) => {
+      if (value !== effectiveDefaults[key]) acc[key] = value === true;
+      return acc;
+    }, {});
+    if (Object.keys(overrides).length > 0) {
+      payload.permissions = overrides;
+    }
+
+    const res = await apiCreateOrgInvite(oid, payload);
     if (!res.ok) {
       setError(toText(res.error || ru.org.createInviteFailed));
       return;
@@ -139,6 +169,7 @@ export default function AdminOrgInvitesPanel({
     setInviteJobTitle("");
     setInviteRole("editor");
     setInviteTtl("7");
+    setInvitePermissions({});
     if (toText(res.delivery) === "email") {
       setLastInviteNotice(ru.org.inviteForm.inviteSent);
     } else {
@@ -197,6 +228,7 @@ export default function AdminOrgInvitesPanel({
       setError(toText(res.error || ru.org.revokeInviteFailed));
       return;
     }
+    setEditingInviteId("");
     await loadInvites();
     onChanged?.();
   }
@@ -204,6 +236,43 @@ export default function AdminOrgInvitesPanel({
   async function handleCopy(value) {
     const ok = await copyInviteValue(value);
     setCopyState(ok ? "copied" : "");
+  }
+
+  async function startEditingPermissions(invite) {
+    const iid = toText(invite?.id);
+    if (!iid) return;
+    setEditingInviteId(iid);
+    setEditingPermissions({});
+    setSavingPermissions(true);
+    const res = await apiAdminGetInvitePermissions(iid);
+    setSavingPermissions(false);
+    if (res.ok && res.data?.permissions) {
+      setEditingPermissions(res.data.permissions);
+    } else if (invite?.permissions && typeof invite.permissions === "object") {
+      setEditingPermissions(invite.permissions);
+    } else {
+      setEditingPermissions(invitePermissionDefaults(invite?.role));
+    }
+  }
+
+  async function saveEditingPermissions() {
+    const iid = editingInviteId;
+    if (!iid) return;
+    setSavingPermissions(true);
+    const res = await apiAdminPatchInvitePermissions(iid, editingPermissions);
+    setSavingPermissions(false);
+    if (!res.ok) {
+      setError(toText(res.error || "Не удалось сохранить права инвайта"));
+      return;
+    }
+    setEditingInviteId("");
+    setEditingPermissions({});
+    await loadInvites();
+  }
+
+  function cancelEditingPermissions() {
+    setEditingInviteId("");
+    setEditingPermissions({});
   }
 
   return (
@@ -219,17 +288,17 @@ export default function AdminOrgInvitesPanel({
           {activeOrgLabel ? <StatusPill status={formatRoleWithScope(effectiveRole, { isAdmin })} tone="default" /> : null}
         </div>
 
-        {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
+        {error ? <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
         {busy ? <div className="text-sm text-slate-500">{ru.common.loading}</div> : null}
 
         {!oid ? (
-          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
             {ru.admin.orgsPage.invites.emptyOrg}
           </div>
         ) : null}
 
         {oid && canManageInvites ? (
-          <form className="grid grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-12" onSubmit={handleCreateInvite}>
+          <form className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3 md:grid-cols-12" onSubmit={handleCreateInvite}>
             <label className="md:col-span-3">
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Организация</div>
               <input className="input h-9 min-h-0 w-full py-1.5 text-sm" type="text" value={activeOrgLabel} disabled />
@@ -289,6 +358,14 @@ export default function AdminOrgInvitesPanel({
                 onChange={(event) => setInviteTtl(event.target.value)}
               />
             </label>
+            <div className="md:col-span-12">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Права доступа</div>
+              <AdminInvitePermissionEditor
+                role={inviteRole}
+                value={invitePermissions}
+                onChange={setInvitePermissions}
+              />
+            </div>
             <div className="md:col-span-2 flex items-end">
               <button type="submit" className="primaryBtn h-9 min-h-0 w-full px-3 py-0 text-sm">{ru.org.inviteForm.createButton}</button>
             </div>
@@ -299,19 +376,19 @@ export default function AdminOrgInvitesPanel({
         ) : null}
 
         {oid && !canManageInvites ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
             {ru.admin.orgsPage.invites.noRights}
           </div>
         ) : null}
 
         {lastInviteNotice ? (
-          <div className="rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-600">
+          <div className="rounded-lg border border-slate-200 px-4 py-3 text-sm text-slate-600">
             {lastInviteNotice}
           </div>
         ) : null}
 
         {visibleCreatedInvite && (toText(visibleCreatedInvite.key) || toText(visibleCreatedInvite.link)) ? (
-          <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+          <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
             {toText(visibleCreatedInvite.key) ? (
               <div className="space-y-2">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{ru.org.inviteForm.inviteKeyLabel}</div>
@@ -338,7 +415,7 @@ export default function AdminOrgInvitesPanel({
           </div>
         ) : null}
 
-        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
           <button
             type="button"
             className="secondaryBtn h-8 min-h-0 px-2.5 py-0 text-xs"
@@ -357,6 +434,7 @@ export default function AdminOrgInvitesPanel({
                     <th className="px-2.5 py-2">{ru.org.inviteTable.fullName}</th>
                     <th className="px-2.5 py-2">{ru.org.inviteTable.jobTitle}</th>
                     <th className="px-2.5 py-2">Роль</th>
+                    <th className="px-2.5 py-2">Права</th>
                     <th className="px-2.5 py-2">{ru.org.inviteTable.status}</th>
                     <th className="px-2.5 py-2">{ru.org.inviteTable.createdAt}</th>
                     <th className="px-2.5 py-2">{ru.org.inviteTable.expiresAt}</th>
@@ -367,7 +445,7 @@ export default function AdminOrgInvitesPanel({
                 <tbody>
                   {invites.length === 0 ? (
                     <tr>
-                      <td className="px-2.5 py-4 text-sm text-slate-500" colSpan={9}>{ru.org.inviteTable.empty}</td>
+                      <td className="px-2.5 py-4 text-sm text-slate-500" colSpan={10}>{ru.org.inviteTable.empty}</td>
                     </tr>
                   ) : null}
                   {invites.map((row) => {
@@ -381,6 +459,9 @@ export default function AdminOrgInvitesPanel({
                         <td className="px-2.5 py-2 text-slate-600">{toText(row?.job_title) || ru.common.unknown}</td>
                         <td className="px-2.5 py-2 text-slate-600">{toUserFacingRoleLabel(row?.role)}</td>
                         <td className="px-2.5 py-2">
+                          <AdminInvitePermissionSummary permissions={row?.permissions} role={row?.role} />
+                        </td>
+                        <td className="px-2.5 py-2">
                           <StatusPill status={trStatusInvite(status)} tone={inviteTone(status)} />
                         </td>
                         <td className="px-2.5 py-2 text-slate-500">{formatTs(row?.created_at)}</td>
@@ -391,6 +472,9 @@ export default function AdminOrgInvitesPanel({
                             <div className="flex flex-wrap items-center gap-1.5">
                               <button type="button" className="secondaryBtn h-7 min-h-0 px-2 py-0 text-xs" onClick={() => void handleRegenerateInvite(row)}>
                                 Перевыпустить
+                              </button>
+                              <button type="button" className="secondaryBtn h-7 min-h-0 px-2 py-0 text-xs" onClick={() => void startEditingPermissions(row)}>
+                                Права
                               </button>
                               <button type="button" className="secondaryBtn h-7 min-h-0 px-2 py-0 text-xs" onClick={() => void handleRevokeInvite(inviteId)}>
                                 {ru.common.revoke}
@@ -405,6 +489,25 @@ export default function AdminOrgInvitesPanel({
                   })}
                 </tbody>
               </table>
+              {editingInviteId ? (
+                <div className="border-t border-slate-200 bg-slate-50/70 p-3">
+                  <div className="mb-2 text-sm font-medium text-slate-800">Редактирование прав инвайта</div>
+                  <AdminInvitePermissionEditor
+                    role={invites.find((r) => toText(r?.id) === editingInviteId)?.role}
+                    value={editingPermissions}
+                    onChange={setEditingPermissions}
+                    disabled={savingPermissions}
+                  />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" className="primaryBtn h-8 min-h-0 px-3 py-0 text-xs" disabled={savingPermissions} onClick={() => void saveEditingPermissions()}>
+                      {savingPermissions ? "Сохранение…" : "Сохранить права"}
+                    </button>
+                    <button type="button" className="secondaryBtn h-8 min-h-0 px-3 py-0 text-xs" disabled={savingPermissions} onClick={cancelEditingPermissions}>
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>

@@ -14,10 +14,10 @@ export default function KpiCard({
       ? "border-emerald-200 bg-emerald-50"
       : "border-slate-200 bg-white";
   return (
-    <article className={`rounded-[22px] border p-4 shadow-sm ${toneClass}`}>
-      <div className="text-[10px] uppercase tracking-[0.22em] text-slate-400">{toText(title)}</div>
-      <div className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">{value}</div>
-      {toText(hint) ? <div className="mt-2 text-xs text-slate-500">{toText(hint)}</div> : null}
+    <article className={`rounded-lg border p-3 ${toneClass}`}>
+      <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400">{toText(title)}</div>
+      <div className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-950">{value}</div>
+      {toText(hint) ? <div className="mt-1 text-[11px] text-slate-500">{toText(hint)}</div> : null}
     </article>
   );
 }
