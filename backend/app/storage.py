@@ -5977,7 +5977,7 @@ def get_admin_invite_permissions(invite_id: str) -> Dict[str, bool]:
     if not row:
         return {}
     role = str(row["role"] or "org_viewer")
-    return _normalize_admin_entity_permissions("invites", role, row["permissions_json"])
+    return _normalize_membership_permissions(role, row["permissions_json"])
 
 
 def set_admin_invite_permissions(invite_id: str, permissions: Dict[str, bool]) -> bool:
@@ -5986,10 +5986,10 @@ def set_admin_invite_permissions(invite_id: str, permissions: Dict[str, bool]) -
         if not row:
             return False
         role = str(row["role"] or "org_viewer")
-        normalized = _normalize_admin_entity_permissions("invites", role, permissions)
+        normalized = _normalize_membership_permissions(role, permissions)
         con.execute(
             "UPDATE org_invites SET permissions_json = ? WHERE id = ?",
-            (json.dumps(normalized), invite_id),
+            (_json_dumps(normalized, {}), invite_id),
         )
         con.commit()
     return True
@@ -6023,12 +6023,13 @@ def _invite_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     def _col(name: str, default: Any = "") -> Any:
         return row[name] if name in keys else default
 
+    role = _normalize_org_invite_role(_col("role"))
     payload = {
         "id": str(_col("id") or ""),
         "org_id": str(_col("org_id") or ""),
         "org_name": str(_col("org_name") or _col("org_id") or ""),
         "email": _normalize_email(_col("email")),
-        "role": _normalize_org_invite_role(_col("role")),
+        "role": role,
         "full_name": str(_col("full_name") or "").strip(),
         "job_title": str(_col("job_title") or "").strip(),
         "team_name": str(_col("team_name") or "").strip(),
@@ -6044,6 +6045,8 @@ def _invite_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
         "accepted_by": str(_col("accepted_by") or "") if _col("accepted_by") is not None else None,
         "revoked_at": int(_col("revoked_at") or 0) if _col("revoked_at") is not None else None,
         "revoked_by": str(_col("revoked_by") or "") if _col("revoked_by") is not None else None,
+        "permissions_json": _json_loads(_col("permissions_json"), {}),
+        "permissions": _normalize_membership_permissions(role, _col("permissions_json")),
         "invite_mode": "one_time",
     }
     payload["status"] = _invite_status(payload)
@@ -7369,7 +7372,8 @@ def list_org_invites(
         rows = con.execute(
             """
             SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                   i.permissions_json
               FROM org_invites i
               LEFT JOIN orgs o ON o.id = i.org_id
              WHERE i.org_id = ?
@@ -7400,6 +7404,7 @@ def create_org_invite(
     ttl_days: int = 7,
     regenerate: bool = False,
     activate_now: bool = True,
+    permissions: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     em = _normalize_email(email)
@@ -7416,6 +7421,8 @@ def create_org_invite(
     if ttl <= 0:
         ttl = 7
     ttl = max(1, min(ttl, 60))
+    permissions_payload = _normalize_membership_permissions(normalized_role, permissions)
+    permissions_json = _json_dumps(permissions_payload, {})
     now = _now_ts()
     expires_at = now + ttl * 24 * 60 * 60
     invite_id = f"inv_{uuid.uuid4().hex[:12]}"
@@ -7452,8 +7459,8 @@ def create_org_invite(
                 """
                 INSERT INTO org_invites (
                   id, org_id, email, role, full_name, job_title, team_name, subgroup_name, invite_comment, invite_key, token_hash, expires_at, created_at, created_by,
-                  used_at, used_by_user_id, accepted_at, accepted_by, revoked_at, revoked_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
+                  used_at, used_by_user_id, accepted_at, accepted_by, revoked_at, revoked_by, permissions_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?, ?)
                 """,
                 [
                     invite_id,
@@ -7472,6 +7479,7 @@ def create_org_invite(
                     actor,
                     None if activate_immediately else now,
                     None if activate_immediately else "system_regenerate_pending",
+                    permissions_json,
                 ],
             )
         except Exception as exc:
@@ -7484,7 +7492,8 @@ def create_org_invite(
         row = con.execute(
             """
             SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                   i.permissions_json
               FROM org_invites i
               LEFT JOIN orgs o ON o.id = i.org_id
              WHERE i.id = ?
@@ -7527,7 +7536,8 @@ def get_org_invite_by_id(org_id: str, invite_id: str) -> Dict[str, Any]:
         row = con.execute(
             """
             SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                   i.permissions_json
               FROM org_invites i
               LEFT JOIN orgs o ON o.id = i.org_id
              WHERE i.org_id = ? AND i.id = ?
@@ -7616,7 +7626,8 @@ def preview_org_invite(
             row = con.execute(
                 """
                 SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                       i.permissions_json
                   FROM org_invites i
                   LEFT JOIN orgs o ON o.id = i.org_id
                  WHERE i.org_id = ? AND i.token_hash = ?
@@ -7629,7 +7640,8 @@ def preview_org_invite(
             row = con.execute(
                 """
                 SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                       i.permissions_json
                   FROM org_invites i
                   LEFT JOIN orgs o ON o.id = i.org_id
                  WHERE i.token_hash = ?
@@ -7672,7 +7684,8 @@ def accept_org_invite(
             row = con.execute(
                 """
                 SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                       i.permissions_json
                   FROM org_invites i
                   LEFT JOIN orgs o ON o.id = i.org_id
                  WHERE i.org_id = ? AND i.token_hash = ?
@@ -7685,7 +7698,8 @@ def accept_org_invite(
             row = con.execute(
                 """
                 SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                       i.permissions_json
                   FROM org_invites i
                   LEFT JOIN orgs o ON o.id = i.org_id
                  WHERE i.token_hash = ?
@@ -7709,13 +7723,14 @@ def accept_org_invite(
         if not actor_email or actor_email != invite_email:
             raise ValueError("invite_email_mismatch")
         role = _normalize_org_invite_role(invite.get("role"))
+        invite_permissions_json = _json_dumps(invite.get("permissions_json") or invite.get("permissions") or {}, {})
         con.execute(
             """
-            INSERT INTO org_memberships (org_id, user_id, role, created_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(org_id, user_id) DO UPDATE SET role = excluded.role
+            INSERT INTO org_memberships (org_id, user_id, role, permissions_json, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(org_id, user_id) DO UPDATE SET role = excluded.role, permissions_json = excluded.permissions_json
             """,
-            [oid, actor, role, now],
+            [oid, actor, role, invite_permissions_json, now],
         )
         _merge_auth_user_profile_with_connection(
             con,
@@ -7735,7 +7750,8 @@ def accept_org_invite(
         accepted_row = con.execute(
             """
             SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                   i.permissions_json
               FROM org_invites i
               LEFT JOIN orgs o ON o.id = i.org_id
              WHERE i.id = ?
