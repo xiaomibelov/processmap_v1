@@ -24,12 +24,13 @@ test("analysis row clicks own the step shown in the product companion panel", ()
 });
 
 test("timeline rows notify InterviewStage before the companion panel can become stale", () => {
-  const timeline = read("src/components/process/interview/TimelineTable.jsx");
+  const timeline = read("src/components/process/interview/TimelineTable.jsx")
+    + read("src/components/process/interview/TimelineRow.jsx");
   const styles = read("src/styles/tailwind.css");
   assert.match(timeline, /activeAnalysisStepId = ""/);
   assert.match(timeline, /onActivateStep/);
-  assert.match(timeline, /const activeAnalysisRow = toText\(activeAnalysisStepId\) === stepId;/);
-  assert.match(timeline, /const activateStepRow = \(\) => \{[\s\S]*onActivateStep\?\.\(stepId\);[\s\S]*\};/);
+  assert.match(timeline, /const activeAnalysisRow = toText\(ui\.activeAnalysisStepId\) === stepId;/);
+  assert.match(timeline, /const activateStepRow = useCallback\(\(\) => \{[\s\S]*ctx\.scheduleActivateStep\(stepId\);[\s\S]*\}, \[.*\]\);/);
   assert.match(timeline, /onMouseDown=\{activateStepRow\}/);
   assert.match(timeline, /onFocusCapture=\{activateStepRow\}/);
   assert.match(timeline, /activeAnalysisRow \? "isAnalysisActive" : ""/);
