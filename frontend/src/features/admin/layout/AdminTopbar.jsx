@@ -13,8 +13,8 @@ function ContextBadge({ label, value, tone = "default" }) {
           : "border-slate-200 bg-white text-slate-950"
   );
   return (
-    <div className={`inline-flex min-w-0 items-center gap-2 rounded-2xl border px-3 py-1.5 text-sm shadow-sm ${toneClass}`}>
-      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.18em] opacity-70">{label}</span>
+    <div className={`inline-flex min-w-0 items-center gap-1.5 rounded-md border-0 px-2 py-1 text-xs ${toneClass}`}>
+      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-70">{label}</span>
       <span className="min-w-0 truncate font-medium">{value}</span>
     </div>
   );
@@ -40,44 +40,39 @@ export default function AdminTopbar({
         : "ok"
   );
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50/95 px-4 py-4 backdrop-blur">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <ContextBadge label={ru.admin.topbar.org} value={currentOrgLabel} />
-          <ContextBadge label="Система" value={`Redis ${toText(redisMode) || "UNKNOWN"}`} tone={redisTone} />
-          <ContextBadge label={ru.admin.topbar.user} value={userLabel} />
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500" htmlFor="admin-org-context">
-            {ru.admin.topbar.orgContext}
-          </label>
-          <select
-            id="admin-org-context"
-            className="select h-11 min-h-0 rounded-2xl border-slate-200 bg-white px-3 text-sm"
-            value={toText(activeOrgId)}
-            onChange={(event) => onOrgChange?.(event.target.value)}
-            data-testid="admin-org-select"
-          >
-            {(Array.isArray(orgs) ? orgs : []).map((row, idx) => {
-              const id = toText(row?.org_id || row?.id);
-              const name = toText(row?.name || row?.org_name || id) || id;
-              const role = toText(row?.role);
-              return (
-                <option key={`${id}_${idx}`} value={id}>
-                  {name}{role ? ` · ${formatRoleWithScope(role, { isAdmin: role === "platform_admin" })}` : ""}
-                </option>
-              );
-            })}
-          </select>
-          <button
-            type="button"
-            className="secondaryBtn h-11 min-h-0 rounded-2xl px-4 py-0 text-sm"
-            onClick={() => onNavigate?.("/app")}
-            data-testid="admin-back-workspace"
-          >
-            {ru.admin.topbar.openWorkspace}
-          </button>
-        </div>
+    <header className="sticky top-0 z-20 flex h-12 items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/95 px-3 backdrop-blur">
+      <div className="flex min-w-0 items-center gap-2">
+        <ContextBadge label={ru.admin.topbar.org} value={currentOrgLabel} />
+        <ContextBadge label="Система" value={`Redis ${toText(redisMode) || "UNKNOWN"}`} tone={redisTone} />
+        <ContextBadge label={ru.admin.topbar.user} value={userLabel} />
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <select
+          id="admin-org-context"
+          className="select h-8 min-h-0 rounded-lg border-slate-200 bg-white px-2 text-xs"
+          value={toText(activeOrgId)}
+          onChange={(event) => onOrgChange?.(event.target.value)}
+          data-testid="admin-org-select"
+        >
+          {(Array.isArray(orgs) ? orgs : []).map((row, idx) => {
+            const id = toText(row?.org_id || row?.id);
+            const name = toText(row?.name || row?.org_name || id) || id;
+            const role = toText(row?.role);
+            return (
+              <option key={`${id}_${idx}`} value={id}>
+                {name}{role ? ` · ${formatRoleWithScope(role, { isAdmin: role === "platform_admin" })}` : ""}
+              </option>
+            );
+          })}
+        </select>
+        <button
+          type="button"
+          className="secondaryBtn h-8 min-h-0 rounded-lg px-3 py-0 text-xs"
+          onClick={() => onNavigate?.("/app")}
+          data-testid="admin-back-workspace"
+        >
+          {ru.admin.topbar.openWorkspace}
+        </button>
       </div>
     </header>
   );

@@ -2463,6 +2463,25 @@ def _ensure_schema() -> None:
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_analytics_metrics_scope ON analytics_metrics(scope_type, scope_id, metric_name)"
             )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS admin_entity_permissions (
+                  org_id TEXT NOT NULL,
+                  entity_type TEXT NOT NULL,
+                  entity_id TEXT NOT NULL,
+                  role TEXT NOT NULL,
+                  permissions_json TEXT NOT NULL DEFAULT '{}',
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  updated_by TEXT NOT NULL DEFAULT '',
+                  PRIMARY KEY (org_id, entity_type, entity_id, role)
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_admin_entity_permissions_org ON admin_entity_permissions(org_id)"
+            )
+            if not _column_exists(con, "org_invites", "permissions_json"):
+                con.execute("ALTER TABLE org_invites ADD COLUMN permissions_json TEXT NOT NULL DEFAULT '{}'")
             _SCHEMA_ENSURE_IN_PROGRESS = True
             try:
                 _seed_process_property_metadata(con)
@@ -5831,6 +5850,151 @@ def _normalize_membership_permissions(role: str, permissions_raw: Any) -> Dict[s
     return out
 
 
+def _admin_entity_permission_defaults(entity_type: str, role: str) -> Dict[str, bool]:
+    key = str(role or "").strip().lower()
+    owner_admin = key in {"org_owner", "org_admin"}
+    editor_pm = key in {"editor", "project_manager"}
+    if entity_type == "users":
+        return {"view": True, "edit": owner_admin or editor_pm, "manage": owner_admin, "admin": owner_admin}
+    if entity_type == "sessions":
+        return {"view": True, "edit": owner_admin or editor_pm, "manage": owner_admin}
+    if entity_type == "folders":
+        return {"view": True, "edit": owner_admin or editor_pm, "manage": owner_admin, "admin": owner_admin}
+    if entity_type == "workspaces":
+        return {"view": True, "edit": owner_admin or editor_pm, "manage": owner_admin, "admin": owner_admin}
+    if entity_type == "analytics":
+        return {
+            "dk_view": True,
+            "dk_export": owner_admin or editor_pm,
+            "fk_view": True,
+            "fk_export": owner_admin or editor_pm,
+            "manage_dashboards": owner_admin,
+        }
+    return {"view": True}
+
+
+def _normalize_admin_entity_permissions(entity_type: str, role: str, permissions_raw: Any) -> Dict[str, bool]:
+    template = _admin_entity_permission_defaults(entity_type, role)
+    parsed = permissions_raw if isinstance(permissions_raw, dict) else _json_loads(permissions_raw, {})
+    if not isinstance(parsed, dict):
+        parsed = {}
+    return {k: bool(parsed.get(k, template.get(k, False))) for k in template}
+
+
+def list_admin_entity_permissions(org_id: str, entity_type: Optional[str] = None, entity_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    params: List[Any] = [org_id]
+    where = "org_id = ?"
+    if entity_type:
+        where += " AND entity_type = ?"
+        params.append(entity_type)
+    if entity_id:
+        where += " AND entity_id = ?"
+        params.append(entity_id)
+    with _connect() as con:
+        rows = con.execute(f"SELECT * FROM admin_entity_permissions WHERE {where}", params).fetchall()
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        out.append({
+            "org_id": str(row["org_id"] or ""),
+            "entity_type": str(row["entity_type"] or ""),
+            "entity_id": str(row["entity_id"] or ""),
+            "role": str(row["role"] or ""),
+            "permissions": _normalize_admin_entity_permissions(str(row["entity_type"] or ""), str(row["role"] or ""), row["permissions_json"]),
+            "updated_at": int(row["updated_at"] or 0),
+            "updated_by": str(row["updated_by"] or ""),
+        })
+    return out
+
+
+def upsert_admin_entity_permission(
+    org_id: str,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    permissions: Dict[str, bool],
+    updated_by: str,
+) -> Dict[str, Any]:
+    normalized = _normalize_admin_entity_permissions(entity_type, role, permissions)
+    now = _now_ts()
+    with _connect() as con:
+        con.execute(
+            """
+            INSERT INTO admin_entity_permissions (org_id, entity_type, entity_id, role, permissions_json, updated_at, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (org_id, entity_type, entity_id, role)
+            DO UPDATE SET permissions_json=excluded.permissions_json, updated_at=excluded.updated_at, updated_by=excluded.updated_by
+            """,
+            (org_id, entity_type, entity_id, role, json.dumps(normalized), now, updated_by),
+        )
+        con.commit()
+    return {
+        "org_id": org_id,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "role": role,
+        "permissions": normalized,
+        "updated_at": now,
+        "updated_by": updated_by,
+    }
+
+
+def delete_admin_entity_permission(org_id: str, entity_type: str, entity_id: str, role: str) -> bool:
+    with _connect() as con:
+        cur = con.execute(
+            "DELETE FROM admin_entity_permissions WHERE org_id = ? AND entity_type = ? AND entity_id = ? AND role = ?",
+            (org_id, entity_type, entity_id, role),
+        )
+        con.commit()
+        return cur.rowcount > 0
+
+
+def list_org_workspaces(org_id: str) -> List[Dict[str, Any]]:
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT * FROM workspaces WHERE org_id = ? ORDER BY name",
+            (org_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_org_workspace_folders(org_id: str, workspace_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    params: List[Any] = [org_id]
+    where = "org_id = ?"
+    if workspace_id:
+        where += " AND workspace_id = ?"
+        params.append(workspace_id)
+    with _connect() as con:
+        rows = con.execute(
+            f"SELECT * FROM workspace_folders WHERE {where} ORDER BY name",
+            params,
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_admin_invite_permissions(invite_id: str) -> Dict[str, bool]:
+    with _connect() as con:
+        row = con.execute("SELECT permissions_json, role FROM org_invites WHERE id = ?", (invite_id,)).fetchone()
+    if not row:
+        return {}
+    role = str(row["role"] or "org_viewer")
+    return _normalize_membership_permissions(role, row["permissions_json"])
+
+
+def set_admin_invite_permissions(invite_id: str, permissions: Dict[str, bool]) -> bool:
+    with _connect() as con:
+        row = con.execute("SELECT role FROM org_invites WHERE id = ?", (invite_id,)).fetchone()
+        if not row:
+            return False
+        role = str(row["role"] or "org_viewer")
+        normalized = _normalize_membership_permissions(role, permissions)
+        con.execute(
+            "UPDATE org_invites SET permissions_json = ? WHERE id = ?",
+            (_json_dumps(normalized, {}), invite_id),
+        )
+        con.commit()
+    return True
+
+
 def _normalize_org_invite_role(raw: Any) -> str:
     role = _normalize_org_membership_role(raw)
     if role not in _ORG_INVITE_ROLES:
@@ -5859,12 +6023,13 @@ def _invite_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     def _col(name: str, default: Any = "") -> Any:
         return row[name] if name in keys else default
 
+    role = _normalize_org_invite_role(_col("role"))
     payload = {
         "id": str(_col("id") or ""),
         "org_id": str(_col("org_id") or ""),
         "org_name": str(_col("org_name") or _col("org_id") or ""),
         "email": _normalize_email(_col("email")),
-        "role": _normalize_org_invite_role(_col("role")),
+        "role": role,
         "full_name": str(_col("full_name") or "").strip(),
         "job_title": str(_col("job_title") or "").strip(),
         "team_name": str(_col("team_name") or "").strip(),
@@ -5880,6 +6045,8 @@ def _invite_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
         "accepted_by": str(_col("accepted_by") or "") if _col("accepted_by") is not None else None,
         "revoked_at": int(_col("revoked_at") or 0) if _col("revoked_at") is not None else None,
         "revoked_by": str(_col("revoked_by") or "") if _col("revoked_by") is not None else None,
+        "permissions_json": _json_loads(_col("permissions_json"), {}),
+        "permissions": _normalize_membership_permissions(role, _col("permissions_json")),
         "invite_mode": "one_time",
     }
     payload["status"] = _invite_status(payload)
@@ -7205,7 +7372,8 @@ def list_org_invites(
         rows = con.execute(
             """
             SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                   i.permissions_json
               FROM org_invites i
               LEFT JOIN orgs o ON o.id = i.org_id
              WHERE i.org_id = ?
@@ -7236,6 +7404,7 @@ def create_org_invite(
     ttl_days: int = 7,
     regenerate: bool = False,
     activate_now: bool = True,
+    permissions: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     em = _normalize_email(email)
@@ -7252,6 +7421,8 @@ def create_org_invite(
     if ttl <= 0:
         ttl = 7
     ttl = max(1, min(ttl, 60))
+    permissions_payload = _normalize_membership_permissions(normalized_role, permissions)
+    permissions_json = _json_dumps(permissions_payload, {})
     now = _now_ts()
     expires_at = now + ttl * 24 * 60 * 60
     invite_id = f"inv_{uuid.uuid4().hex[:12]}"
@@ -7288,8 +7459,8 @@ def create_org_invite(
                 """
                 INSERT INTO org_invites (
                   id, org_id, email, role, full_name, job_title, team_name, subgroup_name, invite_comment, invite_key, token_hash, expires_at, created_at, created_by,
-                  used_at, used_by_user_id, accepted_at, accepted_by, revoked_at, revoked_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
+                  used_at, used_by_user_id, accepted_at, accepted_by, revoked_at, revoked_by, permissions_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?, ?)
                 """,
                 [
                     invite_id,
@@ -7308,6 +7479,7 @@ def create_org_invite(
                     actor,
                     None if activate_immediately else now,
                     None if activate_immediately else "system_regenerate_pending",
+                    permissions_json,
                 ],
             )
         except Exception as exc:
@@ -7320,7 +7492,8 @@ def create_org_invite(
         row = con.execute(
             """
             SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                   i.permissions_json
               FROM org_invites i
               LEFT JOIN orgs o ON o.id = i.org_id
              WHERE i.id = ?
@@ -7363,7 +7536,8 @@ def get_org_invite_by_id(org_id: str, invite_id: str) -> Dict[str, Any]:
         row = con.execute(
             """
             SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                   i.permissions_json
               FROM org_invites i
               LEFT JOIN orgs o ON o.id = i.org_id
              WHERE i.org_id = ? AND i.id = ?
@@ -7452,7 +7626,8 @@ def preview_org_invite(
             row = con.execute(
                 """
                 SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                       i.permissions_json
                   FROM org_invites i
                   LEFT JOIN orgs o ON o.id = i.org_id
                  WHERE i.org_id = ? AND i.token_hash = ?
@@ -7465,7 +7640,8 @@ def preview_org_invite(
             row = con.execute(
                 """
                 SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                       i.permissions_json
                   FROM org_invites i
                   LEFT JOIN orgs o ON o.id = i.org_id
                  WHERE i.token_hash = ?
@@ -7508,7 +7684,8 @@ def accept_org_invite(
             row = con.execute(
                 """
                 SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                       i.permissions_json
                   FROM org_invites i
                   LEFT JOIN orgs o ON o.id = i.org_id
                  WHERE i.org_id = ? AND i.token_hash = ?
@@ -7521,7 +7698,8 @@ def accept_org_invite(
             row = con.execute(
                 """
                 SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                       i.permissions_json
                   FROM org_invites i
                   LEFT JOIN orgs o ON o.id = i.org_id
                  WHERE i.token_hash = ?
@@ -7545,13 +7723,14 @@ def accept_org_invite(
         if not actor_email or actor_email != invite_email:
             raise ValueError("invite_email_mismatch")
         role = _normalize_org_invite_role(invite.get("role"))
+        invite_permissions_json = _json_dumps(invite.get("permissions_json") or invite.get("permissions") or {}, {})
         con.execute(
             """
-            INSERT INTO org_memberships (org_id, user_id, role, created_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(org_id, user_id) DO UPDATE SET role = excluded.role
+            INSERT INTO org_memberships (org_id, user_id, role, permissions_json, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(org_id, user_id) DO UPDATE SET role = excluded.role, permissions_json = excluded.permissions_json
             """,
-            [oid, actor, role, now],
+            [oid, actor, role, invite_permissions_json, now],
         )
         _merge_auth_user_profile_with_connection(
             con,
@@ -7571,7 +7750,8 @@ def accept_org_invite(
         accepted_row = con.execute(
             """
             SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                   i.permissions_json
               FROM org_invites i
               LEFT JOIN orgs o ON o.id = i.org_id
              WHERE i.id = ?

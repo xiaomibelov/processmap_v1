@@ -86,13 +86,13 @@ export default function AdminSessionDetailPage({
   const audit = asObject(tabs?.audit);
 
   if (loading) {
-    return <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">Loading session diagnostics…</div>;
+    return <div className="rounded-lg border border-slate-200 bg-white px-3 py-4 text-sm text-slate-500">Loading session diagnostics…</div>;
   }
   if (toText(error)) {
-    return <div className="rounded-[24px] border border-rose-200 bg-rose-50 px-4 py-5 text-sm text-rose-700">{toText(error)}</div>;
+    return <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-4 text-sm text-rose-700">{toText(error)}</div>;
   }
   if (!toText(item?.session_id)) {
-    return <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">Session not found.</div>;
+    return <div className="rounded-lg border border-slate-200 bg-white px-3 py-4 text-sm text-slate-500">Session not found.</div>;
   }
 
   const pathsIssues = [
@@ -104,7 +104,7 @@ export default function AdminSessionDetailPage({
     <AdminPageContainer
       summary={<SessionSummaryHeader item={item} links={links} onBack={onBack} onNavigate={onNavigate} />}
       secondary={(
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid gap-3 xl:grid-cols-2">
           <SessionDiagnosticsSummary diagnostics={diagnostics} />
           <SessionAuditTable items={audit?.items || []} />
           <SessionRawDiagnosticsAccordion payload={diagnostics?.raw || {}} />
@@ -115,7 +115,7 @@ export default function AdminSessionDetailPage({
       <AdminTabs tabs={ADMIN_SESSION_TABS} activeTab={tab} onChange={setTab} />
 
       {tab === "overview" ? (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid gap-3 xl:grid-cols-2">
           <SessionWarningsPanel warnings={overview?.warnings_errors || {}} />
           <SectionCard title="Integrity Checks" subtitle="Primary consistency view across session data" eyebrow="Checks">
             <KeyValueGrid
@@ -140,17 +140,17 @@ export default function AdminSessionDetailPage({
             />
           </SectionCard>
           <SectionCard title="Quick Links" subtitle="Jump to related admin/editor surfaces" eyebrow="Navigation">
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className="secondaryBtn h-9 min-h-0 rounded-2xl px-3 py-0 text-xs" onClick={() => onNavigate?.(toText(links?.org))}>Open Org</button>
-              <button type="button" className="secondaryBtn h-9 min-h-0 rounded-2xl px-3 py-0 text-xs" onClick={() => onNavigate?.(toText(links?.project))}>Open Project</button>
-              <button type="button" className="primaryBtn h-9 min-h-0 rounded-2xl px-3 py-0 text-xs" onClick={() => onNavigate?.(toText(links?.editor))}>Open Editor</button>
+            <div className="flex flex-wrap gap-1.5">
+              <button type="button" className="secondaryBtn h-7 min-h-0 rounded-lg px-2.5 py-0 text-xs" onClick={() => onNavigate?.(toText(links?.org))}>Open Org</button>
+              <button type="button" className="secondaryBtn h-7 min-h-0 rounded-lg px-2.5 py-0 text-xs" onClick={() => onNavigate?.(toText(links?.project))}>Open Project</button>
+              <button type="button" className="primaryBtn h-7 min-h-0 rounded-lg px-2.5 py-0 text-xs" onClick={() => onNavigate?.(toText(links?.editor))}>Open Editor</button>
             </div>
           </SectionCard>
         </div>
       ) : null}
 
       {tab === "paths_bpmn" ? (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid gap-3 xl:grid-cols-2">
           <SectionCard title="Paths / BPMN Summary" subtitle="Counts and integrity gates currently derivable from payload" eyebrow="Graph">
             <KeyValueGrid
               items={[
@@ -174,19 +174,19 @@ export default function AdminSessionDetailPage({
                 { label: "Warnings", value: String(asArray(rawAutoPass?.warnings).length) },
               ]}
             />
-            <div className="mt-4 space-y-2">
+            <div className="mt-3 space-y-1.5">
               {pathsIssues.length ? pathsIssues.map((issue, idx) => (
-                <div key={`${issue}_${idx}`} className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                <div key={`${issue}_${idx}`} className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
                   {issue}
                 </div>
-              )) : <div className="text-sm text-slate-500">No explicit path/BPMN issues in current payload.</div>}
+              )) : <div className="text-xs text-slate-500">No explicit path/BPMN issues in current payload.</div>}
             </div>
           </SectionCard>
         </div>
       ) : null}
 
       {tab === "autopass" ? (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid gap-3 xl:grid-cols-2">
           <SectionCard title="AutoPass Run Summary" subtitle="Run-level semantics and visibility contract" eyebrow="Run">
             <KeyValueGrid
               items={[
@@ -198,13 +198,13 @@ export default function AdminSessionDetailPage({
                 { label: "Selected Variant", value: toText(variantDebug?.variantId) },
               ]}
             />
-            <div className="mt-4">
-              <label className="mb-2 block text-xs font-medium uppercase tracking-[0.16em] text-slate-400" htmlFor="admin-variant-select">
+            <div className="mt-3">
+              <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.14em] text-slate-400" htmlFor="admin-variant-select">
                 Variant Drill-down
               </label>
               <select
                 id="admin-variant-select"
-                className="select h-11 min-h-0 rounded-2xl border-slate-200 bg-white"
+                className="select h-8 min-h-0 rounded-lg border-slate-200 bg-white text-xs"
                 value={toText(variantDebug?.variantId)}
                 onChange={(event) => setSelectedVariantId(event.target.value)}
               >
@@ -235,22 +235,22 @@ export default function AdminSessionDetailPage({
             />
           </SectionCard>
           <SectionCard title="Gateway Choices" subtitle="Gateway decisions taken by selected variant" eyebrow="Choices">
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {variantDebug?.gatewayChoices?.length ? variantDebug.gatewayChoices.map((choice, idx) => (
-                <div key={`${toText(choice?.gateway_id)}_${idx}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                <div key={`${toText(choice?.gateway_id)}_${idx}`} className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs">
                   {toText(choice?.gateway_id)} → {toText(choice?.label || choice?.flow_id)}
                 </div>
-              )) : <div className="text-sm text-slate-500">No gateway choices for selected variant.</div>}
+              )) : <div className="text-xs text-slate-500">No gateway choices for selected variant.</div>}
             </div>
           </SectionCard>
           <SectionCard title="Counted Steps / Detail Rows" subtitle="Task, gateway, teleport, and end-event rows for selected variant" eyebrow="Flow">
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {variantDebug?.detailRows?.length ? variantDebug.detailRows.map((row, idx) => (
-                <div key={`${toText(row?.kind)}_${idx}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <div key={`${toText(row?.kind)}_${idx}`} className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700">
                   <strong className="text-slate-950">{toText(row?.kind)}</strong>{" "}
                   {toText(row?.name || row?.node_id || row?.label || row?.flow_id || `${row?.from || ""} → ${row?.to || ""}`)}
                 </div>
-              )) : <div className="text-sm text-slate-500">No detail rows available for selected variant.</div>}
+              )) : <div className="text-xs text-slate-500">No detail rows available for selected variant.</div>}
             </div>
           </SectionCard>
         </div>
@@ -270,41 +270,41 @@ export default function AdminSessionDetailPage({
       ) : null}
 
       {tab === "diagnostics" ? (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid gap-3 xl:grid-cols-2">
           <SectionCard title="Save / Retry History" subtitle="Persistence retries captured in diagnostics" eyebrow="Persist">
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {asArray(diagnostics?.save_retry_history).length ? asArray(diagnostics?.save_retry_history).map((row, idx) => (
-                <div key={`retry_${idx}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                <div key={`retry_${idx}`} className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs">
                   {typeof row === "object" ? JSON.stringify(row) : String(row)}
                 </div>
-              )) : <div className="text-sm text-slate-500">No save/retry history rows.</div>}
+              )) : <div className="text-xs text-slate-500">No save/retry history rows.</div>}
             </div>
           </SectionCard>
           <SectionCard title="Lock Busy History" subtitle="409/423 contention diagnostics" eyebrow="Contention">
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {asArray(diagnostics?.lock_busy_history).length ? asArray(diagnostics?.lock_busy_history).map((row, idx) => (
-                <div key={`lock_${idx}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                <div key={`lock_${idx}`} className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs">
                   {typeof row === "object" ? JSON.stringify(row) : String(row)}
                 </div>
-              )) : <div className="text-sm text-slate-500">No lock-busy history rows.</div>}
+              )) : <div className="text-xs text-slate-500">No lock-busy history rows.</div>}
             </div>
           </SectionCard>
           <SectionCard title="Draw.io Warnings" subtitle="Overlay warnings should not block BPMN-first flow" eyebrow="Overlay">
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {asArray(diagnostics?.drawio_warnings).length ? asArray(diagnostics?.drawio_warnings).map((row, idx) => (
-                <div key={`drawio_${idx}`} className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                <div key={`drawio_${idx}`} className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
                   {typeof row === "object" ? JSON.stringify(row) : String(row)}
                 </div>
-              )) : <div className="text-sm text-slate-500">No draw.io warnings.</div>}
+              )) : <div className="text-xs text-slate-500">No draw.io warnings.</div>}
             </div>
           </SectionCard>
           <SectionCard title="Template Warnings" subtitle="Template pack and apply warnings" eyebrow="Templates">
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {asArray(diagnostics?.template_apply_warnings).length ? asArray(diagnostics?.template_apply_warnings).map((row, idx) => (
-                <div key={`tpl_${idx}`} className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                <div key={`tpl_${idx}`} className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
                   {typeof row === "object" ? JSON.stringify(row) : String(row)}
                 </div>
-              )) : <div className="text-sm text-slate-500">No template warnings.</div>}
+              )) : <div className="text-xs text-slate-500">No template warnings.</div>}
             </div>
           </SectionCard>
         </div>

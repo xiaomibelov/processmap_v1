@@ -5,6 +5,7 @@ export default function StatusPill({
   status = "",
   tone = "",
   label = "",
+  compact = false,
 }) {
   const normalized = toText(status).toLowerCase();
   const meta = ADMIN_STATUS_META[normalized] || ADMIN_STATUS_META.unknown;
@@ -16,9 +17,12 @@ export default function StatusPill({
       : resolvedTone === "accent" || resolvedTone === "ok"
         ? "border-emerald-200 bg-emerald-50 text-emerald-700"
         : "border-slate-200 bg-slate-100 text-slate-700";
+  const compactCls = compact
+    ? "rounded border-0 px-1.5 py-0.5 text-[10px]"
+    : "rounded-full border px-2.5 py-1 text-[11px]";
   const text = toText(label) ? `${toText(label)}: ${toText(status || meta.label)}` : toText(status || meta.label || "—");
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${cls}`}>
+    <span className={`inline-flex items-center font-medium ${compactCls} ${cls}`}>
       {text}
     </span>
   );
