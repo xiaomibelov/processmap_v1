@@ -146,22 +146,9 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
   const sid = toText(sessionIdRaw);
   const nextMeta = asObject(nextMetaRaw);
   const currentMeta = asObject(currentMetaRaw);
-  const {
-    currentXml,
-    nextXml,
-    nextCamundaExtensionsByElementId,
-  } = buildCamundaExtensionsCanonicalXml({
-    currentXmlRaw,
-    nextCamundaExtensionsByElementIdRaw,
-    buildCanonicalXml,
-  });
-
   const metaDiff = !deepEqual(nextMeta, currentMeta);
-
-  if (!nextXml) {
-    logCamundaExtSave({ status: "error", error: "empty_xml", metaDiff });
-    return { ok: false, status: 0, error: "Пустая BPMN XML: не удалось применить Properties." };
-  }
+  const currentXml = toText(currentXmlRaw);
+  const nextCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(nextCamundaExtensionsByElementIdRaw);
 
   let effectiveBaseVersion = toNonNegativeIntOrNull(baseDiagramStateVersionRaw);
   const getBaseVersion = () => toNonNegativeIntOrNull(
@@ -176,7 +163,24 @@ export async function persistCamundaExtensionsViaCanonicalXmlBoundary({
     }
   };
 
-  const shouldUseMetaPatch = forceMetaPatch || nextXml === currentXml;
+  let nextXml = currentXml;
+  let shouldUseMetaPatch = forceMetaPatch || !currentXml;
+
+  if (!shouldUseMetaPatch) {
+    const built = buildCamundaExtensionsCanonicalXml({
+      currentXmlRaw,
+      nextCamundaExtensionsByElementIdRaw,
+      buildCanonicalXml,
+    });
+    nextXml = built.nextXml;
+    if (nextXml === currentXml) {
+      shouldUseMetaPatch = true;
+    }
+    if (!nextXml) {
+      logCamundaExtSave({ status: "error", error: "empty_xml", metaDiff });
+      return { ok: false, status: 0, error: "Пустая BPMN XML: не удалось применить Properties." };
+    }
+  }
   if (shouldUseMetaPatch) {
     if (!metaDiff && !forceMetaPatch) {
       logCamundaExtSave({ status: "skipped", xmlDiff: false, metaDiff: false });
