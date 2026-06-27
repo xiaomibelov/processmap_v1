@@ -7,10 +7,13 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const source = fs.readFileSync(path.join(__dirname, "App.jsx"), "utf8");
+const source = fs.readFileSync(
+  path.join(__dirname, "features/process/bpmn/stage/optimisticUpdate/useSessionStatusOptimisticUpdate.js"),
+  "utf8",
+);
 
-function hasChangeCurrentSessionStatusFunction(src) {
-  const start = src.indexOf("async function changeCurrentSessionStatus");
+function extractFunction(src, name) {
+  const start = src.indexOf(`const ${name} = useCallback(async`);
   if (start === -1) return "";
   let depth = 0;
   let end = start;
@@ -27,7 +30,7 @@ function hasChangeCurrentSessionStatusFunction(src) {
   return src.slice(start, end);
 }
 
-const fnText = hasChangeCurrentSessionStatusFunction(source);
+const fnText = extractFunction(source, "changeCurrentSessionStatus");
 
 test("changeCurrentSessionStatus reads base diagram state version from draft", () => {
   assert.equal(
@@ -38,35 +41,21 @@ test("changeCurrentSessionStatus reads base diagram state version from draft", (
 });
 
 test("changeCurrentSessionStatus falls back to apiGetSession when draft version is missing", () => {
-  assert.equal(
-    fnText.includes("apiGetSession(sid)"),
-    true,
-    "should fetch session snapshot when draft version is unavailable",
-  );
+  assert.equal(fnText.includes("apiGetSession(sid)"), true);
   assert.equal(
     /snapshot\?\.session\?\.diagram_state_version|\bsnapshot\?\.session\?\.diagramStateVersion/.test(fnText),
     true,
-    "should read diagram_state_version from fetched session snapshot",
   );
 });
 
-test("changeCurrentSessionStatus includes base_diagram_state_version in patch payload", () => {
-  assert.equal(
-    fnText.includes("base_diagram_state_version"),
-    true,
-    "should include base_diagram_state_version key",
-  );
-  assert.equal(
-    fnText.includes("apiPatchSession(sid, payload)"),
-    true,
-    "should call apiPatchSession with payload object",
-  );
+test("changeCurrentSessionStatus includes base_diagram_state_version in payload", () => {
+  assert.equal(fnText.includes("base_diagram_state_version"), true);
+});
+
+test("changeCurrentSessionStatus calls apiChangeSessionStatus", () => {
+  assert.equal(fnText.includes("apiChangeSessionStatus(sid, payload)"), true);
 });
 
 test("changeCurrentSessionStatus rounds finite base diagram state version", () => {
-  assert.equal(
-    fnText.includes("Math.round(baseDiagramStateVersion)"),
-    true,
-    "should round base diagram state version",
-  );
+  assert.equal(fnText.includes("Math.round(baseDiagramStateVersion)"), true);
 });

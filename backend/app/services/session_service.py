@@ -935,6 +935,18 @@ def get_session_analytics(session_id: str, request=None):
 
 def patch_session(session_id: str, inp, request=None):
     """Patch session metadata."""
+    data = inp.model_dump(exclude_unset=True) if hasattr(inp, "model_dump") else dict(inp or {})
+    if "status" in data:
+        if len(data) > 1:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "STATUS_ONLY_ENDPOINT",
+                    "message": "status changes must use PATCH /api/sessions/{id}/status",
+                },
+            )
+        from ..save_services.status_service import change_session_status
+        return change_session_status(session_id, inp, request)
     import app._legacy_main as _lm
     return _lm.patch_session(session_id, inp, request)
 
