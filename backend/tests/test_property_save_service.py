@@ -70,10 +70,10 @@ class CamundaExtensionPropertyDedupTests(unittest.TestCase):
 
 class MergeMetaTests(unittest.TestCase):
     def test_merge_overwrites_top_level_keys(self):
-        current = {"version": 1, "flow_meta": {"a": {"tier": 1}}}
-        incoming = {"flow_meta": {"b": {"tier": 2}}}
+        current = {"version": 1, "flow_meta": {"a": {"tier": "P1"}}}
+        incoming = {"flow_meta": {"b": {"tier": "P2"}}}
         merged = _merge_meta(current, incoming)
-        self.assertEqual(merged["flow_meta"], {"b": {"tier": 2}})
+        self.assertEqual(merged["flow_meta"], {"b": {"tier": "P2"}})
 
     def test_merge_deduplicates_camunda_extensions(self):
         current = {

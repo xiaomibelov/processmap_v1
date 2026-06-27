@@ -168,6 +168,12 @@ def patch_session_properties(
         org_id=str(getattr(updated, "org_id", "") or get_default_org_id()),
     )
 
+    from ..analytics_aggregator import publish_session_saved
+    publish_session_saved(
+        str(getattr(updated, "id", "") or session_id),
+        str(getattr(updated, "org_id", "") or oid or get_default_org_id()),
+    )
+
     return {
         "ok": True,
         "id": updated.id,
