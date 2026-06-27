@@ -6,7 +6,7 @@ const pageSource = fs.readFileSync(new URL("./AdminOrgsPage.jsx", import.meta.ur
 const ruSource = fs.readFileSync(new URL("../../../shared/i18n/ru.js", import.meta.url), "utf8");
 const topbarSource = fs.readFileSync(new URL("../layout/AdminTopbar.jsx", import.meta.url), "utf8");
 
-test("AdminOrgsPage uses access-first information architecture", () => {
+test("AdminOrgsPage uses access-first information architecture with tabs", () => {
   assert.equal(pageSource.includes("ACCESS_SECTION_NAV"), false);
   assert.equal(pageSource.includes("function PageSectionNav"), false);
   assert.equal(pageSource.includes("Разделы страницы пользователей и доступа"), false);
@@ -20,15 +20,17 @@ test("AdminOrgsPage uses access-first information architecture", () => {
   assert.ok(pageSource.indexOf('id="admin-access-users"') < pageSource.indexOf('id="admin-access-invites"'));
   assert.ok(pageSource.indexOf('id="admin-access-invites"') < pageSource.indexOf('id="admin-access-orgs"'));
   assert.ok(pageSource.indexOf('id="admin-access-orgs"') < pageSource.indexOf('id="admin-access-git"'));
+
+  assert.match(pageSource, /<AdminTabs tabs=\{ORGS_TABS\}/);
 });
 
 test("AdminOrgsPage keeps existing admin actions while separating organizations and Git mirror", () => {
   assert.match(pageSource, /Создать организацию/);
   assert.match(pageSource, /Переименовать активную организацию/);
   assert.match(pageSource, /<OrgsTable items=\{payload\?\.items \|\| \[\]\} \/>/);
-  assert.match(pageSource, /<details id="admin-access-orgs"/);
+  assert.match(pageSource, /<div id="admin-access-orgs"/);
   assert.match(pageSource, /Git mirror \/ публикация/);
-  assert.match(pageSource, /<details id="admin-access-git"/);
+  assert.match(pageSource, /<div id="admin-access-git"/);
   assert.match(pageSource, /Сохранить Git mirror/);
   assert.match(pageSource, /<AdminUsersPanel/);
   assert.match(pageSource, /<AdminOrgInvitesPanel/);
@@ -38,14 +40,14 @@ test("AdminOrgsPage keeps existing admin actions while separating organizations 
 test("AdminOrgsPage removes empty filters block and demotes system notes", () => {
   assert.equal(pageSource.includes("AdminFiltersBar"), false);
   assert.match(pageSource, /function SystemStatusPanel/);
-  assert.match(pageSource, /<details id="admin-access-system"/);
+  assert.match(pageSource, /<div id="admin-access-system"/);
   assert.match(pageSource, /Redis и runtime health остаются в операционной сводке/);
 });
 
 test("admin orgs route and nav use product access wording", () => {
   assert.match(ruSource, /orgs: "Пользователи и доступ"/);
   assert.match(ruSource, /title: "Пользователи и доступ"/);
-  assert.match(ruSource, /subtitle: "Управление пользователями, ролями, инвайтами и организациями\."/);
+  assert.ok(ruSource.includes('subtitle: "Управление пользователями, ролями, инвайтами и организациями."'));
   assert.match(ruSource, /title: "Организации"/);
 });
 

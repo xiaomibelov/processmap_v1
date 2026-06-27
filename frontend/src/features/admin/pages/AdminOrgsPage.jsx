@@ -367,30 +367,34 @@ export default function AdminOrgsPage({
   function renderTabContent() {
     if (activeTab === "users") {
       return (
-        <AdminUsersPanel
-          isAdmin={isAdmin}
-          activeOrgId={effectiveOrgId}
-          orgOptions={payload?.items || []}
-        />
+        <div id="admin-access-users">
+          <AdminUsersPanel
+            isAdmin={isAdmin}
+            activeOrgId={effectiveOrgId}
+            orgOptions={payload?.items || []}
+          />
+        </div>
       );
     }
     if (activeTab === "invites") {
       return (
-        <AdminOrgInvitesPanel
-          items={payload?.items || []}
-          activeOrgId={effectiveOrgId}
-          activeOrgName={activeOrgName}
-          activeOrgRole={activeOrgRole}
-          isAdmin={isAdmin}
-          onChanged={onRefresh}
-          recentInvite={recentInvite}
-          onInviteCreated={onInviteCreated}
-        />
+        <div id="admin-access-invites">
+          <AdminOrgInvitesPanel
+            items={payload?.items || []}
+            activeOrgId={effectiveOrgId}
+            activeOrgName={activeOrgName}
+            activeOrgRole={activeOrgRole}
+            isAdmin={isAdmin}
+            onChanged={onRefresh}
+            recentInvite={recentInvite}
+            onInviteCreated={onInviteCreated}
+          />
+        </div>
       );
     }
     if (activeTab === "organizations") {
       return (
-        <div className="space-y-3">
+        <div id="admin-access-orgs" className="space-y-3">
           <SectionIntro
             eyebrow="Организации"
             title="Организации"
@@ -417,16 +421,18 @@ export default function AdminOrgsPage({
     }
     if (activeTab === "gitMirror") {
       return (
-        <GitMirrorPanel
-          activeOrgId={effectiveOrgId}
-          activeOrgRole={activeOrgRole}
-          isAdmin={isAdmin}
-          onSaved={onRefresh}
-        />
+        <div id="admin-access-git">
+          <GitMirrorPanel
+            activeOrgId={effectiveOrgId}
+            activeOrgRole={activeOrgRole}
+            isAdmin={isAdmin}
+            onSaved={onRefresh}
+          />
+        </div>
       );
     }
     if (activeTab === "system") {
-      return <SystemStatusPanel />;
+      return <div id="admin-access-system"><SystemStatusPanel /></div>;
     }
     return null;
   }
