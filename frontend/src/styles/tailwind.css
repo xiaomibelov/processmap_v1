@@ -7515,7 +7515,10 @@
 
   .interviewBoundsPanel {
     @apply p-0;
-    overflow: clip;
+    overflow: auto;
+    max-height: 180px;
+    flex: 0 1 auto;
+    min-height: 0;
   }
 
   .interviewBoundsHead {
