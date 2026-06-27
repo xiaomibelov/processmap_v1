@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import AdminPageContainer from "../layout/AdminPageContainer";
 import SectionCard from "../components/common/SectionCard";
+import AdminTabs from "../components/common/AdminTabs";
 import OrgsSummaryRow from "../components/orgs/OrgsSummaryRow";
 import OrgsTable from "../components/orgs/OrgsTable";
 import AdminOrgInvitesPanel from "../components/orgs/AdminOrgInvitesPanel";
@@ -12,6 +13,14 @@ import {
   apiPatchOrg,
   apiPatchOrgGitMirrorConfig,
 } from "../../../lib/api";
+
+const ORGS_TABS = [
+  { id: "users", label: "Пользователи" },
+  { id: "invites", label: "Инвайты" },
+  { id: "organizations", label: "Организации" },
+  { id: "gitMirror", label: "Git mirror" },
+  { id: "system", label: "Система" },
+];
 
 function SectionIntro({ id, eyebrow, title, subtitle, children = null }) {
   return (
@@ -30,15 +39,13 @@ function SectionIntro({ id, eyebrow, title, subtitle, children = null }) {
 
 function SystemStatusPanel() {
   return (
-    <details id="admin-access-system" className="scroll-mt-20 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-      <summary className="cursor-pointer text-sm font-semibold text-slate-800">
-        Системное состояние и служебные заметки
-      </summary>
-      <div className="mt-3 space-y-2 text-sm text-slate-500">
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
+      <div className="font-semibold text-slate-800">{ru.admin.orgsPage.notesTitle || "Системное состояние и служебные заметки"}</div>
+      <div className="mt-2 space-y-2 text-xs text-slate-500">
         <p>{ru.admin.orgsPage.notesBody}</p>
         <p>Redis и runtime health остаются в операционной сводке; на этой странице они не конкурируют с управлением пользователями и доступом.</p>
       </div>
-    </details>
+    </div>
   );
 }
 
@@ -72,8 +79,8 @@ function CreateOrgPanel({ activeOrgRole, isAdmin = false, onCreated }) {
   return (
     <SectionCard eyebrow="Организации" title="Создать организацию" subtitle="Новая организация появится в общем списке; текущий пользователь станет org_owner.">
       <form className="flex flex-wrap items-end gap-2" onSubmit={handleSubmit}>
-        <div className="flex-1 min-w-[200px]">
-          <label className="block mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <div className="min-w-[200px] flex-1">
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
             Название организации
           </label>
           <input
@@ -89,8 +96,8 @@ function CreateOrgPanel({ activeOrgRole, isAdmin = false, onCreated }) {
         <button type="submit" className="primaryBtn h-9 min-h-0 px-3 py-0 text-sm" disabled={busy || !name.trim()}>
           {busy ? "Создание…" : "Создать"}
         </button>
-        {error ? <div className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
-        {success ? <div className="w-full rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</div> : null}
+        {error ? <div className="w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
+        {success ? <div className="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</div> : null}
       </form>
     </SectionCard>
   );
@@ -134,8 +141,8 @@ function ActiveOrgPanel({ activeOrgId, activeOrgName, activeOrgRole, isAdmin = f
   return (
     <SectionCard eyebrow="Организация" title="Переименовать активную организацию" subtitle="Изменяет название текущей организации без изменения ролей и доступов.">
       <form className="flex flex-wrap items-end gap-2" onSubmit={handleSubmit}>
-        <div className="flex-1 min-w-[200px]">
-          <label className="block mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <div className="min-w-[200px] flex-1">
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
             Название организации
           </label>
           <input
@@ -150,8 +157,8 @@ function ActiveOrgPanel({ activeOrgId, activeOrgName, activeOrgRole, isAdmin = f
         <button type="submit" className="secondaryBtn h-9 min-h-0 px-3 py-0 text-sm" disabled={busy || !String(name || "").trim()}>
           {busy ? "Сохранение…" : "Сохранить"}
         </button>
-        {error ? <div className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
-        {success ? <div className="w-full rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</div> : null}
+        {error ? <div className="w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
+        {success ? <div className="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</div> : null}
       </form>
     </SectionCard>
   );
@@ -251,7 +258,7 @@ function GitMirrorPanel({ activeOrgId = "", activeOrgRole = "", isAdmin = false,
   ];
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+    <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
       <div className="mb-3">
         <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400">Техническая публикация</div>
         <h3 className="mt-1 text-sm font-semibold text-slate-950">Git mirror / публикация</h3>
@@ -354,29 +361,24 @@ export default function AdminOrgsPage({
   recentInvite = null,
   onInviteCreated,
 }) {
-  return (
-    <AdminPageContainer
-      summary={(
-        <OrgsSummaryRow
-          items={payload?.items || []}
-          activeOrgId={activeOrgId || payload?.active_org_id}
-          activeOrgName={activeOrgName}
-          activeOrgRole={activeOrgRole}
-          isAdmin={isAdmin}
-        />
-      )}
-    >
-      <section id="admin-access-users" className="scroll-mt-20">
+  const [activeTab, setActiveTab] = useState("users");
+  const effectiveOrgId = activeOrgId || payload?.active_org_id;
+
+  function renderTabContent() {
+    if (activeTab === "users") {
+      return (
         <AdminUsersPanel
           isAdmin={isAdmin}
-          activeOrgId={activeOrgId || payload?.active_org_id}
+          activeOrgId={effectiveOrgId}
           orgOptions={payload?.items || []}
         />
-      </section>
-      <section id="admin-access-invites" className="scroll-mt-20">
+      );
+    }
+    if (activeTab === "invites") {
+      return (
         <AdminOrgInvitesPanel
           items={payload?.items || []}
-          activeOrgId={activeOrgId || payload?.active_org_id}
+          activeOrgId={effectiveOrgId}
           activeOrgName={activeOrgName}
           activeOrgRole={activeOrgRole}
           isAdmin={isAdmin}
@@ -384,14 +386,15 @@ export default function AdminOrgsPage({
           recentInvite={recentInvite}
           onInviteCreated={onInviteCreated}
         />
-      </section>
-      <details id="admin-access-orgs" className="scroll-mt-20 rounded-xl border border-slate-200 bg-white px-3 py-2">
-        <summary className="cursor-pointer text-sm font-semibold text-slate-900">Организации</summary>
-        <div className="mt-3 space-y-3">
+      );
+    }
+    if (activeTab === "organizations") {
+      return (
+        <div className="space-y-3">
           <SectionIntro
             eyebrow="Организации"
             title="Организации"
-            subtitle="Создание, переименование активной организации и обзор доступных организаций отделены от пользовательского доступа."
+            subtitle="Создание, переименование активной организации и обзор доступных организаций."
           >
             <div className="grid gap-3 lg:grid-cols-2">
               <CreateOrgPanel
@@ -400,7 +403,7 @@ export default function AdminOrgsPage({
                 onCreated={onRefresh}
               />
               <ActiveOrgPanel
-                activeOrgId={activeOrgId || payload?.active_org_id}
+                activeOrgId={effectiveOrgId}
                 activeOrgName={activeOrgName}
                 activeOrgRole={activeOrgRole}
                 isAdmin={isAdmin}
@@ -410,19 +413,38 @@ export default function AdminOrgsPage({
             <OrgsTable items={payload?.items || []} />
           </SectionIntro>
         </div>
-      </details>
-      <details id="admin-access-git" className="scroll-mt-20 rounded-xl border border-slate-200 bg-white px-3 py-2">
-        <summary className="cursor-pointer text-sm font-semibold text-slate-900">Git mirror / публикация</summary>
-        <div className="mt-3">
+      );
+    }
+    if (activeTab === "gitMirror") {
+      return (
         <GitMirrorPanel
-          activeOrgId={activeOrgId || payload?.active_org_id}
+          activeOrgId={effectiveOrgId}
           activeOrgRole={activeOrgRole}
           isAdmin={isAdmin}
           onSaved={onRefresh}
         />
-        </div>
-      </details>
-      <SystemStatusPanel />
+      );
+    }
+    if (activeTab === "system") {
+      return <SystemStatusPanel />;
+    }
+    return null;
+  }
+
+  return (
+    <AdminPageContainer
+      summary={(
+        <OrgsSummaryRow
+          items={payload?.items || []}
+          activeOrgId={effectiveOrgId}
+          activeOrgName={activeOrgName}
+          activeOrgRole={activeOrgRole}
+          isAdmin={isAdmin}
+        />
+      )}
+    >
+      <AdminTabs tabs={ORGS_TABS} activeTab={activeTab} onChange={setActiveTab} />
+      {renderTabContent()}
     </AdminPageContainer>
   );
 }
