@@ -94,6 +94,14 @@
   margin-bottom: 8px;
 }
 
+.analysisBStepsSection::details-content{
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .analysisBSection > summary{
   display: flex;
   align-items: center;
