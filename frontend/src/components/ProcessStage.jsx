@@ -6780,7 +6780,8 @@ function ProcessStage({
           </div>
         ) : (
           <div className="relative h-full min-h-0">
-            <div className={isInterview ? "absolute inset-0 opacity-0 pointer-events-none" : "absolute inset-0"}>
+            {!isInterview && (
+            <div className="absolute inset-0">
               <div
                 className={`bpmnStageHost h-full ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""}`}
                 ref={bpmnStageHostRef}
@@ -7122,6 +7123,7 @@ function ProcessStage({
                 ) : null}
               </div>
             </div>
+            )}
             <ProcessPanels
               section="attention"
               view={shellVm.panelsProps.attention}

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import GatewayGroupRow from "./matrix/GatewayGroupRow";
 import BranchStepsPanel from "./matrix/BranchStepsPanel";
 import {
@@ -24,7 +24,7 @@ import {
 
 const INITIAL_VISIBLE_ROWS = 80;
 const VISIBLE_ROWS_INCREMENT = 80;
-const VIRTUALIZE_ROWS_THRESHOLD = 200;
+const VIRTUALIZE_ROWS_THRESHOLD = 20;
 const VIRTUAL_ROW_HEIGHT = 72;
 const VIRTUAL_OVERSCAN = 8;
 const GATEWAY_UI_STORAGE_VERSION = 1;
@@ -311,7 +311,7 @@ export default function TimelineTable({
     if (!hasStartEvent) return false;
     return toText(list[0]?.node_bind_kind || list[0]?.node_kind).toLowerCase() !== "startevent";
   }, [timelineView]);
-  const canVirtualize = displayedTimelineView.length > VIRTUALIZE_ROWS_THRESHOLD && !detailsStepId;
+  const canVirtualize = displayedTimelineView.length > VIRTUALIZE_ROWS_THRESHOLD;
   const virtualRange = useMemo(() => {
     if (!canVirtualize) {
       return {
@@ -841,10 +841,16 @@ export default function TimelineTable({
     }
   }, []);
 
+  const scheduleActivateStep = useCallback((stepId) => {
+    startActivationTransition(() => {
+      onActivateStep?.(stepId);
+    });
+  }, [onActivateStep]);
+
   function openStepDetails(stepId, select = true) {
     const key = toText(stepId);
     if (!key) return;
-    onActivateStep?.(key);
+    scheduleActivateStep(key);
     setActiveInlineStepId(key);
     setDetailsStepId((prev) => (prev === key ? "" : key));
     if (select) onToggleStepSelection?.(key, true);
@@ -1032,7 +1038,7 @@ export default function TimelineTable({
               const activeAnalysisRow = toText(activeAnalysisStepId) === stepId;
               const inlineEditorVisible = detailsOpen;
               const activateStepRow = () => {
-                onActivateStep?.(stepId);
+                scheduleActivateStep(stepId);
               };
               const incomingLaneLinks = mergeLaneLinks(
                 laneLinksByNode?.incomingByNode?.[toText(step?.node_bind_id)],
@@ -1176,7 +1182,7 @@ export default function TimelineTable({
                           data-testid="interview-step-select"
                           checked={selectedSet.has(stepId)}
                           onChange={(e) => {
-                            onActivateStep?.(step.id);
+                            scheduleActivateStep(step.id);
                             onToggleStepSelection?.(step.id, !!e.target.checked);
                           }}
                         />
@@ -1292,7 +1298,7 @@ export default function TimelineTable({
                               className="interviewStepProductActionsBadge"
                               data-testid="interview-step-product-actions-badge"
                               onClick={() => {
-                                onActivateStep?.(stepId);
+                                scheduleActivateStep(stepId);
                               }}
                               title={`Действия с продуктом: ${productActionCount}`}
                             >

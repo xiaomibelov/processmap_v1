@@ -371,6 +371,7 @@
   border: 1px solid rgba(255,255,255,.10);
   border-radius: 12px;
   background: rgba(0,0,0,.16);
+  contain: layout style paint;
 }
 
 .interviewTable{
@@ -831,6 +832,8 @@
 
 .interviewStepRow{
   border-left: 3px solid color-mix(in srgb, var(--lane-accent, rgba(255,255,255,.22)) 74%, transparent);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 72px;
 }
 
 .interviewLaneBadge{
