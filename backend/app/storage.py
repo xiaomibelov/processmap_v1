@@ -4127,17 +4127,34 @@ class Storage:
             now = _now_ts()
             next_version = current_version + 1
             updated_by = owner or existing_owner or ""
+            actor_user_id = owner or existing_owner or ""
+            actor_label = actor_user_id
             cur = con.execute(
                 """
                 UPDATE sessions
                    SET bpmn_meta_json = ?,
                        diagram_state_version = ?,
                        updated_at = ?,
-                       updated_by = ?
+                       updated_by = ?,
+                       diagram_last_write_at = ?,
+                       diagram_last_write_actor_user_id = ?,
+                       diagram_last_write_actor_label = ?,
+                       diagram_last_write_changed_keys_json = ?
                  WHERE id = ?
                    AND diagram_state_version = ?
                 """,
-                [_json_dumps(meta_dict, {}), next_version, now, updated_by, sid, base],
+                [
+                    _json_dumps(meta_dict, {}),
+                    next_version,
+                    now,
+                    updated_by,
+                    now,
+                    actor_user_id,
+                    actor_label,
+                    _json_dumps(["bpmn_meta"], []),
+                    sid,
+                    base,
+                ],
             )
             con.commit()
             if int(cur.rowcount or 0) == 0:
@@ -4190,17 +4207,88 @@ class Storage:
             now = _now_ts()
             next_version = current_version + 1
             updated_by = owner or existing_owner or ""
+            actor_user_id = owner or existing_owner or ""
+            actor_label = actor_user_id
             cur = con.execute(
                 """
                 UPDATE sessions
                    SET bpmn_meta_json = ?,
                        diagram_state_version = ?,
                        updated_at = ?,
-                       updated_by = ?
+                       updated_by = ?,
+                       diagram_last_write_at = ?,
+                       diagram_last_write_actor_user_id = ?,
+                       diagram_last_write_actor_label = ?,
+                       diagram_last_write_changed_keys_json = ?
                  WHERE id = ?
                    AND diagram_state_version = ?
                 """,
-                [_json_dumps(meta_dict, {}), next_version, now, updated_by, sid, current_version],
+                [
+                    _json_dumps(meta_dict, {}),
+                    next_version,
+                    now,
+                    updated_by,
+                    now,
+                    actor_user_id,
+                    actor_label,
+                    _json_dumps(["bpmn_meta"], []),
+                    sid,
+                    current_version,
+                ],
+            )
+            con.commit()
+            if int(cur.rowcount or 0) == 0:
+                return None
+        return self.load(sid, user_id=user_id, org_id=org_id, is_admin=admin)
+
+    def patch_session_interview(
+        self,
+        session_id: str,
+        interview: Dict[str, Any],
+        *,
+        user_id: Optional[str] = None,
+        is_admin: Optional[bool] = None,
+        org_id: Optional[str] = None,
+    ) -> Optional["Session"]:
+        """Atomically update only interview_json (status, git-mirror, etc.).
+
+        Preserves diagram-truth columns (bpmn_xml, bpmn_xml_version,
+        diagram_state_version, diagram_last_write_*). This prevents status-only
+        transitions from clobbering concurrent diagram writes.
+
+        Returns the updated Session or None on scope/permission failure.
+        """
+        sid = str(session_id or "").strip()
+        if not sid:
+            return None
+        interview_dict = interview if isinstance(interview, dict) else {}
+        owner = _scope_user_id(user_id)
+        admin = _scope_is_admin(is_admin)
+        org = _scope_org_id(org_id) or _default_org_id()
+        org_clause, org_params = _org_clause(org)
+        _ensure_schema()
+        with _connect() as con:
+            row = con.execute(
+                f"SELECT owner_user_id FROM sessions WHERE id = ? {org_clause} LIMIT 1",
+                [sid, *org_params],
+            ).fetchone()
+            if not row:
+                return None
+            existing_owner = str(row["owner_user_id"] or "")
+            if not admin and owner and existing_owner and existing_owner != owner:
+                raise PermissionError("session belongs to another user")
+            now = _now_ts()
+            updated_by = owner or existing_owner or ""
+            cur = con.execute(
+                f"""
+                UPDATE sessions
+                   SET interview_json = ?,
+                       updated_at = ?,
+                       updated_by = ?
+                 WHERE id = ?
+                 {org_clause}
+                """,
+                [_json_dumps(interview_dict, {}), now, updated_by, sid, *org_params],
             )
             con.commit()
             if int(cur.rowcount or 0) == 0:

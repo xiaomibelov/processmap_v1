@@ -2331,6 +2331,7 @@ function ProcessStage({
         companionError,
         saveInfo,
         staleRetryApplied: saved?.staleRetryApplied === true,
+        staleRetryChangedKeys: saved?.staleRetryChangedKeys,
       });
       const outcomeMessage = toText(successOutcomeUi.genErr) || toText(successOutcomeUi.infoMsg);
       const outcomeTone = successOutcomeUi.genErr

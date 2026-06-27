@@ -72,6 +72,7 @@ class TestStatusService(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(((data.get("interview") or {}).get("status")), "in_progress")
+        self.assertEqual(self._load().diagram_state_version, base)
 
     def test_status_endpoint_requires_base_diagram_state_version(self):
         response = self._status(self.sid, {"status": "in_progress"}, self.owner_token)
@@ -122,6 +123,7 @@ class TestStatusService(unittest.TestCase):
         self.assertEqual(r1.status_code, 200)
 
         r1_data = r1.json() or {}
+        self.assertEqual(self._load().diagram_state_version, base)
         next_base = r1_data.get("diagram_state_version")
         if next_base is None:
             next_base = base
@@ -131,6 +133,38 @@ class TestStatusService(unittest.TestCase):
             self.editor_token,
         )
         self.assertEqual(r2.status_code, 403)
+
+    def test_status_transition_preserves_diagram_state_version(self):
+        sess = self._load()
+        base = int(getattr(sess, "diagram_state_version", 0) or 0)
+        response = self._status(
+            self.sid,
+            {"status": "in_progress", "base_diagram_state_version": base},
+            self.owner_token,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self._load().diagram_state_version, base)
+
+    def test_status_ready_transition_preserves_diagram_state_version(self):
+        sess = self._load()
+        base = int(getattr(sess, "diagram_state_version", 0) or 0)
+        r1 = self._status(
+            self.sid,
+            {"status": "in_progress", "base_diagram_state_version": base},
+            self.owner_token,
+        )
+        self.assertEqual(r1.status_code, 200)
+        self.assertEqual(self._load().diagram_state_version, base)
+
+        r2 = self._status(
+            self.sid,
+            {"status": "ready", "base_diagram_state_version": base},
+            self.owner_token,
+        )
+        self.assertEqual(r2.status_code, 200)
+        data = r2.json() or {}
+        self.assertEqual(((data.get("interview") or {}).get("status")), "ready")
+        self.assertEqual(self._load().diagram_state_version, base)
 
     def test_mixed_payload_with_status_rejected(self):
         sess = self._load()
