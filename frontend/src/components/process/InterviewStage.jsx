@@ -846,133 +846,135 @@ export default function InterviewStage({
                 <span>Шаги процесса</span>
                 <span>{filteredTimelineView.length}/{timelineView.length}</span>
               </summary>
-            <div className="analysisStepControlsCard">
-              <TimelineControls
-                quickStepDraft={quickStepDraft}
-                setQuickStepDraft={setQuickStepDraft}
-                addQuickStepFromInput={addQuickStepFromInput}
-                addStep={addStep}
-                subprocessDraft={subprocessDraft}
-                setSubprocessDraft={setSubprocessDraft}
-                addSubprocessLabel={addSubprocessLabel}
-                filteredTimelineCount={filteredTimelineView.length}
-                timelineCount={timelineView.length}
-                isTimelineFiltering={isTimelineFiltering}
-                resetTimelineFilters={resetTimelineFilters}
-                saveUiPrefs={saveUiPrefs}
-                uiPrefsSavedAt={uiPrefsSavedAt}
-                uiPrefsDirty={uiPrefsDirty}
-                showTimelineColsMenu={showTimelineColsMenu}
-                setShowTimelineColsMenu={setShowTimelineColsMenu}
-                resetTimelineColumns={resetTimelineColumns}
-                hiddenTimelineCols={hiddenTimelineCols}
-                toggleTimelineColumn={toggleTimelineColumn}
-                timelineFilters={timelineFilters}
-                patchTimelineFilter={patchTimelineFilter}
-                timelineLaneOptions={timelineLaneOptions}
-                timelineSubprocessOptions={timelineSubprocessOptions}
-                selectedStepCount={selectedTimelineStepIds.length}
-                onGroupSelectedSteps={handleGroupSelectedSteps}
-                orderMode={orderMode}
-                graphOrderLocked={graphOrderLocked}
-                bpmnOrderFallback={bpmnOrderFallback}
-                bpmnOrderHint={bpmnOrderHint}
-                onSetOrderMode={handleSetOrderMode}
-                onOpenBindingAssistant={() => {
-                  setBindingAssistantOpen(true);
-                  setBindingAssistantFeedback("");
-                }}
-                bindingIssueCount={bindingAssistant?.issueCount || 0}
-                statusCounts={timelineStatusCounts}
-                dodSnapshot={dodSnapshot}
-                timelineViewMode={timelineViewMode}
-                onSetTimelineViewMode={handleSetTimelineViewMode}
-                branchViewMode={branchViewMode}
-                onSetBranchViewMode={handleSetBranchViewMode}
-                onToggleCollapse={() => toggleBlock("timeline")}
-                devDebugEnabled={IS_DEV_BUILD}
-                onToggleDebug={() => setDebugOverlayOpen((prev) => !prev)}
-              />
-            </div>
-
-            {timelineOperationNotice ? (
-              <div className={`interviewAnnotationNotice ${timelineOperationNotice.type || "pending"}`}>
-                {timelineOperationNotice.text}
-              </div>
-            ) : null}
-            {isUiTransitionPending ? (
-              <div className="interviewAnnotationNotice pending">Обновляю представление…</div>
-            ) : null}
-            {IS_DEV_BUILD && Array.isArray(interviewVMWarnings) && interviewVMWarnings.length ? (
-              <div className="interviewAnnotationNotice warn" data-testid="interview-vm-warning">
-                Диагностика представления: {interviewVMWarnings[0]}
-              </div>
-            ) : null}
-            {annotationNotice ? (
-              <div className={`interviewAnnotationNotice ${annotationNotice.type || "pending"}`}>
-                {annotationNotice.text}
-              </div>
-            ) : null}
-            {IS_DEV_BUILD && debugOverlayOpen ? (
-              <InterviewDebugOverlay
-                debugData={interviewDebug}
-                sessionId={sid}
-                debugTab={debugOverlayTab}
-                onChangeTab={setDebugOverlayTab}
-                onClose={() => setDebugOverlayOpen(false)}
-              />
-            ) : null}
-
-            <div className="analysisStepTableCard" data-testid="analysis-step-table-card">
-              <Profiler id="InterviewTimelineTable" onRender={handleProfilerRender}>
-                <TimelineTable
-                  sessionId={sid}
+            <div className="analysisStepBody">
+              <div className="analysisStepControlsCard">
+                <TimelineControls
+                  quickStepDraft={quickStepDraft}
+                  setQuickStepDraft={setQuickStepDraft}
+                  addQuickStepFromInput={addQuickStepFromInput}
+                  addStep={addStep}
+                  subprocessDraft={subprocessDraft}
+                  setSubprocessDraft={setSubprocessDraft}
+                  addSubprocessLabel={addSubprocessLabel}
+                  filteredTimelineCount={filteredTimelineView.length}
+                  timelineCount={timelineView.length}
+                  isTimelineFiltering={isTimelineFiltering}
+                  resetTimelineFilters={resetTimelineFilters}
+                  saveUiPrefs={saveUiPrefs}
+                  uiPrefsSavedAt={uiPrefsSavedAt}
+                  uiPrefsDirty={uiPrefsDirty}
+                  showTimelineColsMenu={showTimelineColsMenu}
+                  setShowTimelineColsMenu={setShowTimelineColsMenu}
+                  resetTimelineColumns={resetTimelineColumns}
                   hiddenTimelineCols={hiddenTimelineCols}
-                  timelineLaneFilter={timelineFilters.lane}
-                  filteredTimelineView={filteredTimelineView}
-                  timelineView={timelineView}
-                  timelineColSpan={timelineColSpan}
-                  laneLinksByNode={laneLinksByNode}
-                  patchStep={patchStep}
-                  addTextAnnotation={handleAddTextAnnotation}
-                  annotationSyncByStepId={annotationSyncByStepId}
-                  xmlTextAnnotationsByStepId={xmlTextAnnotationsByStepId}
-                  nodeBindOptionsByStepId={nodeBindOptionsByStepId}
-                  addStepAfter={addStepAfter}
-                  aiCue={aiCue}
-                  setAiCue={setAiCue}
-                  aiBusyStepId={aiBusyStepId}
-                  aiQuestionMetaByStepId={aiQuestionMetaByStepId}
-                  addAiQuestions={addAiQuestions}
-                  toggleAiQuestionDiagram={toggleAiQuestionDiagram}
-                  deleteAiQuestion={deleteAiQuestion}
-                  addAiQuestionsNote={handleAddAiQuestionsNote}
-                  aiQuestionsDiagramSyncByStepId={aiQuestionsDiagramSyncByStepId}
-                  aiNoteStatus={aiNoteStatus}
-                  moveStep={moveStep}
+                  toggleTimelineColumn={toggleTimelineColumn}
+                  timelineFilters={timelineFilters}
+                  patchTimelineFilter={patchTimelineFilter}
+                  timelineLaneOptions={timelineLaneOptions}
+                  timelineSubprocessOptions={timelineSubprocessOptions}
+                  selectedStepCount={selectedTimelineStepIds.length}
+                  onGroupSelectedSteps={handleGroupSelectedSteps}
                   orderMode={orderMode}
                   graphOrderLocked={graphOrderLocked}
                   bpmnOrderFallback={bpmnOrderFallback}
                   bpmnOrderHint={bpmnOrderHint}
-                  isTimelineFiltering={isTimelineFiltering}
-                  deleteStep={deleteStep}
-                  subprocessCatalog={subprocessCatalog}
-                  activeAnalysisStepId={analysisContextStepIds[0] || ""}
-                  selectedStepIds={selectedTimelineStepIds}
-                  onActivateStep={handleActivateAnalysisStep}
-                  onToggleStepSelection={handleToggleStepSelection}
-                  onToggleAllStepSelection={handleToggleAllStepSelection}
-                  stepTimeUnit={stepTimeUnit}
+                  onSetOrderMode={handleSetOrderMode}
+                  onOpenBindingAssistant={() => {
+                    setBindingAssistantOpen(true);
+                    setBindingAssistantFeedback("");
+                  }}
+                  bindingIssueCount={bindingAssistant?.issueCount || 0}
+                  statusCounts={timelineStatusCounts}
                   dodSnapshot={dodSnapshot}
-                  tierFilters={timelineFilters?.tiers}
-                  branchViewMode={branchViewMode}
-                  branchExpandByGateway={branchExpandByGateway}
-                  onPatchBranchExpand={handlePatchBranchExpand}
+                  timelineViewMode={timelineViewMode}
                   onSetTimelineViewMode={handleSetTimelineViewMode}
-                  pathMetrics={pathMetrics}
-                  productActionCountByStepId={productActionCountByStepId}
+                  branchViewMode={branchViewMode}
+                  onSetBranchViewMode={handleSetBranchViewMode}
+                  onToggleCollapse={() => toggleBlock("timeline")}
+                  devDebugEnabled={IS_DEV_BUILD}
+                  onToggleDebug={() => setDebugOverlayOpen((prev) => !prev)}
                 />
-              </Profiler>
+              </div>
+
+              {timelineOperationNotice ? (
+                <div className={`interviewAnnotationNotice ${timelineOperationNotice.type || "pending"}`}>
+                  {timelineOperationNotice.text}
+                </div>
+              ) : null}
+              {isUiTransitionPending ? (
+                <div className="interviewAnnotationNotice pending">Обновляю представление…</div>
+              ) : null}
+              {IS_DEV_BUILD && Array.isArray(interviewVMWarnings) && interviewVMWarnings.length ? (
+                <div className="interviewAnnotationNotice warn" data-testid="interview-vm-warning">
+                  Диагностика представления: {interviewVMWarnings[0]}
+                </div>
+              ) : null}
+              {annotationNotice ? (
+                <div className={`interviewAnnotationNotice ${annotationNotice.type || "pending"}`}>
+                  {annotationNotice.text}
+                </div>
+              ) : null}
+              {IS_DEV_BUILD && debugOverlayOpen ? (
+                <InterviewDebugOverlay
+                  debugData={interviewDebug}
+                  sessionId={sid}
+                  debugTab={debugOverlayTab}
+                  onChangeTab={setDebugOverlayTab}
+                  onClose={() => setDebugOverlayOpen(false)}
+                />
+              ) : null}
+
+              <div className="analysisStepTableCard" data-testid="analysis-step-table-card">
+                <Profiler id="InterviewTimelineTable" onRender={handleProfilerRender}>
+                  <TimelineTable
+                    sessionId={sid}
+                    hiddenTimelineCols={hiddenTimelineCols}
+                    timelineLaneFilter={timelineFilters.lane}
+                    filteredTimelineView={filteredTimelineView}
+                    timelineView={timelineView}
+                    timelineColSpan={timelineColSpan}
+                    laneLinksByNode={laneLinksByNode}
+                    patchStep={patchStep}
+                    addTextAnnotation={handleAddTextAnnotation}
+                    annotationSyncByStepId={annotationSyncByStepId}
+                    xmlTextAnnotationsByStepId={xmlTextAnnotationsByStepId}
+                    nodeBindOptionsByStepId={nodeBindOptionsByStepId}
+                    addStepAfter={addStepAfter}
+                    aiCue={aiCue}
+                    setAiCue={setAiCue}
+                    aiBusyStepId={aiBusyStepId}
+                    aiQuestionMetaByStepId={aiQuestionMetaByStepId}
+                    addAiQuestions={addAiQuestions}
+                    toggleAiQuestionDiagram={toggleAiQuestionDiagram}
+                    deleteAiQuestion={deleteAiQuestion}
+                    addAiQuestionsNote={handleAddAiQuestionsNote}
+                    aiQuestionsDiagramSyncByStepId={aiQuestionsDiagramSyncByStepId}
+                    aiNoteStatus={aiNoteStatus}
+                    moveStep={moveStep}
+                    orderMode={orderMode}
+                    graphOrderLocked={graphOrderLocked}
+                    bpmnOrderFallback={bpmnOrderFallback}
+                    bpmnOrderHint={bpmnOrderHint}
+                    isTimelineFiltering={isTimelineFiltering}
+                    deleteStep={deleteStep}
+                    subprocessCatalog={subprocessCatalog}
+                    activeAnalysisStepId={analysisContextStepIds[0] || ""}
+                    selectedStepIds={selectedTimelineStepIds}
+                    onActivateStep={handleActivateAnalysisStep}
+                    onToggleStepSelection={handleToggleStepSelection}
+                    onToggleAllStepSelection={handleToggleAllStepSelection}
+                    stepTimeUnit={stepTimeUnit}
+                    dodSnapshot={dodSnapshot}
+                    tierFilters={timelineFilters?.tiers}
+                    branchViewMode={branchViewMode}
+                    branchExpandByGateway={branchExpandByGateway}
+                    onPatchBranchExpand={handlePatchBranchExpand}
+                    onSetTimelineViewMode={handleSetTimelineViewMode}
+                    pathMetrics={pathMetrics}
+                    productActionCountByStepId={productActionCountByStepId}
+                  />
+                </Profiler>
+              </div>
             </div>
             </details>
           </div>

@@ -25,7 +25,8 @@ const ROOT = path.resolve(__dirname, "../../../../");
 
 const css = readFileSync(path.join(ROOT, "src/styles/tailwind.css"), "utf-8");
 const appVersionSrc = readFileSync(path.join(ROOT, "src/config/appVersion.js"), "utf-8");
-const tableJsx = readFileSync(path.join(ROOT, "src/components/process/interview/TimelineTable.jsx"), "utf-8");
+const tableJsx = readFileSync(path.join(ROOT, "src/components/process/interview/TimelineTable.jsx"), "utf-8")
+  + readFileSync(path.join(ROOT, "src/components/process/interview/TimelineRow.jsx"), "utf-8");
 
 // --- JSX contract ---
 
@@ -74,10 +75,10 @@ test("JSX: More button still present (interview-step-more-actions)", () => {
   );
 });
 
-test("JSX: openStepDetails function still exists", () => {
+test("JSX: openStepDetails still exists", () => {
   assert.ok(
-    tableJsx.includes("function openStepDetails"),
-    "openStepDetails function must still exist",
+    tableJsx.includes("function openStepDetails") || tableJsx.includes("const openStepDetails = useCallback"),
+    "openStepDetails must still exist",
   );
 });
 

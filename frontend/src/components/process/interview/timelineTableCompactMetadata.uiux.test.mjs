@@ -29,7 +29,8 @@ const ROOT = path.resolve(__dirname, "../../../../");
 const css = readFileSync(path.join(ROOT, "src/styles/tailwind.css"), "utf-8");
 const appVersionSrc = readFileSync(path.join(ROOT, "src/config/appVersion.js"), "utf-8");
 const utilsSrc = readFileSync(path.join(ROOT, "src/components/process/interview/utils.js"), "utf-8");
-const tableJsx = readFileSync(path.join(ROOT, "src/components/process/interview/TimelineTable.jsx"), "utf-8");
+const tableJsx = readFileSync(path.join(ROOT, "src/components/process/interview/TimelineTable.jsx"), "utf-8")
+  + readFileSync(path.join(ROOT, "src/components/process/interview/TimelineRow.jsx"), "utf-8");
 
 function extractBlock(pattern) {
   const re = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*\\{([^}]*)\\}", "s");
@@ -74,14 +75,14 @@ test("JSX: laneLabelShort is imported in TimelineTable.jsx", () => {
 
 test("JSX: lane badge renders laneLabelShort (not laneLabel) as visible text", () => {
   assert.ok(
-    tableJsx.includes("{laneDisplay.text}"),
+    tableJsx.includes("laneDisplay.text"),
     "Lane badge visible text must use compact laneCellDisplay text",
   );
 });
 
 test("JSX: lane badge has title attribute with full laneLabel for tooltip", () => {
   assert.ok(
-    tableJsx.includes("title={laneDisplay.tooltip}"),
+    tableJsx.includes("title={laneData.laneDisplay.tooltip}") || tableJsx.includes("title={laneDisplay.tooltip}"),
     "Lane badge must have title= with full lane tooltip",
   );
 });

@@ -52,7 +52,8 @@ test("summary and reports frame output and hide diagnostics behind details", () 
 
 test("analysis step block is structured as primary workspace plus secondary scenarios", () => {
   const source = read("src/components/process/InterviewStage.jsx");
-  const timeline = read("src/components/process/interview/TimelineTable.jsx");
+  const timeline = read("src/components/process/interview/TimelineTable.jsx")
+    + read("src/components/process/interview/TimelineRow.jsx");
   const styles = read("src/styles/tailwind.css");
   assert.match(source, /data-testid="analysis-step-actions-section"/);
   assert.match(source, /data-testid="analysis-step-workspace"/);
