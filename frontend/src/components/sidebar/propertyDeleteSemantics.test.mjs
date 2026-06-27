@@ -2,35 +2,46 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { deleteExtensionPropertyRowsByDeleteAction } from "./propertyDeleteSemantics.js";
 
-test("delete removes only the row with the given id", () => {
+test("delete by id removes a single named row", () => {
   const rows = [
-    { id: "a1", name: "equipment", value: "Весы" },
-    { id: "a2", name: "equipment", value: "Миксер" },
-    { id: "b1", name: "container", value: "Лоток" },
+    { id: "p1", name: "ingredient", value: "salt" },
+    { id: "p2", name: "equipment", value: "pot" },
   ];
-  const result = deleteExtensionPropertyRowsByDeleteAction(rows, "a2");
-  assert.deepEqual(
-    result.map((row) => ({ id: row.id, name: row.name, value: row.value })),
-    [
-      { id: "a1", name: "equipment", value: "Весы" },
-      { id: "b1", name: "container", value: "Лоток" },
-    ],
-  );
+  const out = deleteExtensionPropertyRowsByDeleteAction(rows, "p1");
+  assert.deepEqual(out.map((r) => r.name), ["equipment"]);
 });
 
-test("delete with unknown id leaves rows unchanged", () => {
+test("delete by id removes all rows sharing the same logical name", () => {
   const rows = [
-    { id: "a1", name: "equipment", value: "Весы" },
+    { id: "p1", name: "ingredient", value: "salt" },
+    { id: "p2", name: "ingredient", value: "pepper" },
+    { id: "p3", name: "equipment", value: "pot" },
   ];
-  const result = deleteExtensionPropertyRowsByDeleteAction(rows, "unknown");
-  assert.equal(result.length, 1);
-  assert.equal(result[0].id, "a1");
+  const out = deleteExtensionPropertyRowsByDeleteAction(rows, "p1");
+  assert.deepEqual(out.map((r) => r.name), ["equipment"]);
 });
 
-test("delete with empty id leaves rows unchanged", () => {
+test("delete by generated prop_raw index removes the row at that index", () => {
   const rows = [
-    { id: "a1", name: "equipment", value: "Весы" },
+    { name: "ingredient", value: "salt" },
+    { name: "equipment", value: "pot" },
   ];
-  const result = deleteExtensionPropertyRowsByDeleteAction(rows, "");
-  assert.equal(result.length, 1);
+  const out = deleteExtensionPropertyRowsByDeleteAction(rows, "prop_raw_1");
+  assert.deepEqual(out.map((r) => r.name), ["equipment"]);
+});
+
+test("delete leaves unnamed rows intact except the target", () => {
+  const rows = [
+    { id: "p1", name: "", value: "x" },
+    { id: "p2", name: "", value: "y" },
+    { id: "p3", name: "equipment", value: "pot" },
+  ];
+  const out = deleteExtensionPropertyRowsByDeleteAction(rows, "p1");
+  assert.deepEqual(out.map((r) => r.id), ["p2", "p3"]);
+});
+
+test("delete with unknown id returns rows unchanged", () => {
+  const rows = [{ id: "p1", name: "ingredient", value: "salt" }];
+  const out = deleteExtensionPropertyRowsByDeleteAction(rows, "unknown");
+  assert.equal(out.length, 1);
 });

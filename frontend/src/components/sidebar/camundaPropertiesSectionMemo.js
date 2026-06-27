@@ -14,7 +14,13 @@ export function areCamundaPropertiesSectionPropsEqual(prevPropsRaw, nextPropsRaw
     const prevValue = prevProps[key];
     const nextValue = nextProps[key];
 
+    // Function props must be compared by identity. Many callbacks close over
+    // current draft state, so ignoring them causes the memoized panel to use
+    // stale handlers (e.g. saving with pre-deletion properties).
     if (isFn(prevValue) || isFn(nextValue)) {
+      if (prevValue !== nextValue) {
+        return false;
+      }
       continue;
     }
 
