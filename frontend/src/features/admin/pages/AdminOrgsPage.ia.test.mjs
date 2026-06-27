@@ -6,6 +6,7 @@ const pageSource = fs.readFileSync(new URL("./AdminOrgsPage.jsx", import.meta.ur
 const orgsPanelSource = fs.readFileSync(new URL("../components/orgs/AdminOrgsPanel.jsx", import.meta.url), "utf8");
 const detailPanelSource = fs.readFileSync(new URL("../components/orgs/AdminOrgDetailPanel.jsx", import.meta.url), "utf8");
 const gitMirrorSource = fs.readFileSync(new URL("../components/gitMirror/AdminGitMirrorPanel.jsx", import.meta.url), "utf8");
+const systemSource = fs.readFileSync(new URL("../components/system/AdminSystemPanel.jsx", import.meta.url), "utf8");
 const ruSource = fs.readFileSync(new URL("../../../shared/i18n/ru.js", import.meta.url), "utf8");
 const topbarSource = fs.readFileSync(new URL("../layout/AdminTopbar.jsx", import.meta.url), "utf8");
 
@@ -49,11 +50,17 @@ test("AdminOrgsPage delegates organizations and git mirror tabs to dedicated pan
   assert.ok(pageSource.indexOf("<AdminUsersPanel") < pageSource.indexOf("<AdminOrgInvitesPanel"));
 });
 
-test("AdminOrgsPage removes empty filters block and demotes system notes", () => {
+test("AdminOrgsPage removes empty filters block and uses AdminSystemPanel for system tab", () => {
   assert.equal(pageSource.includes("AdminFiltersBar"), false);
-  assert.match(pageSource, /function SystemStatusPanel/);
+  assert.equal(pageSource.includes("function SystemStatusPanel"), false);
+  assert.match(pageSource, /<AdminSystemPanel/);
   assert.match(pageSource, /<div id="admin-access-system"/);
-  assert.match(pageSource, /Redis и runtime health остаются в операционной сводке/);
+  assert.match(systemSource, /AdminTabs/);
+  assert.match(systemSource, /Заметки/);
+  assert.match(systemSource, /Runtime/);
+  assert.match(systemSource, /Аудит/);
+  assert.match(systemSource, /Feature flags/);
+  assert.match(systemSource, /Redis и runtime health остаются в операционной сводке/);
 });
 
 test("admin orgs route and nav use product access wording", () => {
