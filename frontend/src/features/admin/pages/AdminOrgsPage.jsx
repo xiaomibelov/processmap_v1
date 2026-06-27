@@ -1,17 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import AdminPageContainer from "../layout/AdminPageContainer";
-import SectionCard from "../components/common/SectionCard";
 import AdminTabs from "../components/common/AdminTabs";
 import OrgsSummaryRow from "../components/orgs/OrgsSummaryRow";
-import OrgsTable from "../components/orgs/OrgsTable";
+import AdminOrgsPanel from "../components/orgs/AdminOrgsPanel";
 import AdminOrgInvitesPanel from "../components/orgs/AdminOrgInvitesPanel";
 import AdminUsersPanel from "../components/orgs/AdminUsersPanel";
 import AdminPermissionsPanel from "../components/permissions/AdminPermissionsPanel";
 import { ru } from "../../../shared/i18n/ru";
 import {
-  apiCreateOrg,
   apiGetOrgGitMirrorConfig,
-  apiPatchOrg,
   apiPatchOrgGitMirrorConfig,
 } from "../../../lib/api";
 
@@ -24,21 +21,6 @@ const ALL_ORGS_TABS = [
   { id: "system", label: "Система" },
 ];
 
-function SectionIntro({ id, eyebrow, title, subtitle, children = null }) {
-  return (
-    <section id={id} className="scroll-mt-20 space-y-3">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">{eyebrow}</div>
-          <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-950">{title}</h2>
-          {subtitle ? <p className="mt-1 max-w-3xl text-sm text-slate-500">{subtitle}</p> : null}
-        </div>
-      </div>
-      {children}
-    </section>
-  );
-}
-
 function SystemStatusPanel() {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
@@ -48,121 +30,6 @@ function SystemStatusPanel() {
         <p>Redis и runtime health остаются в операционной сводке; на этой странице они не конкурируют с управлением пользователями и доступом.</p>
       </div>
     </div>
-  );
-}
-
-function CreateOrgPanel({ activeOrgRole, isAdmin = false, onCreated }) {
-  const canCreate = isAdmin || ["org_owner", "org_admin"].includes(String(activeOrgRole || "").toLowerCase());
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-
-  if (!canCreate) return null;
-
-  async function handleSubmit(event) {
-    event.preventDefault();
-    const orgName = name.trim();
-    if (!orgName) { setError("Введите название организации"); return; }
-    setBusy(true);
-    setError("");
-    setSuccess("");
-    const res = await apiCreateOrg(orgName);
-    setBusy(false);
-    if (!res.ok) {
-      setError(String(res.error || "Не удалось создать организацию"));
-      return;
-    }
-    setName("");
-    setSuccess(`Организация «${orgName}» создана.`);
-    onCreated?.();
-  }
-
-  return (
-    <SectionCard eyebrow="Организации" title="Создать организацию" subtitle="Новая организация появится в общем списке; текущий пользователь станет org_owner.">
-      <form className="flex flex-wrap items-end gap-2" onSubmit={handleSubmit}>
-        <div className="min-w-[200px] flex-1">
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Название организации
-          </label>
-          <input
-            className="input h-9 min-h-0 w-full py-1.5 text-sm"
-            type="text"
-            placeholder="Название новой организации"
-            value={name}
-            onChange={(e) => { setName(e.target.value); setError(""); setSuccess(""); }}
-            disabled={busy}
-            required
-          />
-        </div>
-        <button type="submit" className="primaryBtn h-9 min-h-0 px-3 py-0 text-sm" disabled={busy || !name.trim()}>
-          {busy ? "Создание…" : "Создать"}
-        </button>
-        {error ? <div className="w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
-        {success ? <div className="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</div> : null}
-      </form>
-    </SectionCard>
-  );
-}
-
-function ActiveOrgPanel({ activeOrgId, activeOrgName, activeOrgRole, isAdmin = false, onSaved }) {
-  const canEdit = isAdmin || ["org_owner", "org_admin"].includes(String(activeOrgRole || "").toLowerCase());
-  const [name, setName] = useState(activeOrgName || "");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-
-  useEffect(() => {
-    setName(activeOrgName || "");
-    setError("");
-    setSuccess("");
-  }, [activeOrgId, activeOrgName]);
-
-  if (!canEdit || !String(activeOrgId || "").trim()) return null;
-
-  async function handleSubmit(event) {
-    event.preventDefault();
-    const nextName = String(name || "").trim();
-    if (!nextName) {
-      setError("Введите название организации");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    setSuccess("");
-    const res = await apiPatchOrg(activeOrgId, { name: nextName });
-    setBusy(false);
-    if (!res.ok) {
-      setError(String(res.error || "Не удалось обновить организацию"));
-      return;
-    }
-    setSuccess("Название организации обновлено.");
-    onSaved?.();
-  }
-
-  return (
-    <SectionCard eyebrow="Организация" title="Переименовать активную организацию" subtitle="Изменяет название текущей организации без изменения ролей и доступов.">
-      <form className="flex flex-wrap items-end gap-2" onSubmit={handleSubmit}>
-        <div className="min-w-[200px] flex-1">
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Название организации
-          </label>
-          <input
-            className="input h-9 min-h-0 w-full py-1.5 text-sm"
-            type="text"
-            value={name}
-            onChange={(e) => { setName(e.target.value); setError(""); setSuccess(""); }}
-            disabled={busy}
-            required
-          />
-        </div>
-        <button type="submit" className="secondaryBtn h-9 min-h-0 px-3 py-0 text-sm" disabled={busy || !String(name || "").trim()}>
-          {busy ? "Сохранение…" : "Сохранить"}
-        </button>
-        {error ? <div className="w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
-        {success ? <div className="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</div> : null}
-      </form>
-    </SectionCard>
   );
 }
 
@@ -437,28 +304,14 @@ export default function AdminOrgsPage({
     }
     if (activeTab === "organizations") {
       return (
-        <div id="admin-access-orgs" className="space-y-3">
-          <SectionIntro
-            eyebrow="Организации"
-            title="Организации"
-            subtitle="Создание, переименование активной организации и обзор доступных организаций."
-          >
-            <div className="grid gap-3 lg:grid-cols-2">
-              <CreateOrgPanel
-                activeOrgRole={activeOrgRole}
-                isAdmin={isAdmin}
-                onCreated={onRefresh}
-              />
-              <ActiveOrgPanel
-                activeOrgId={effectiveOrgId}
-                activeOrgName={activeOrgName}
-                activeOrgRole={activeOrgRole}
-                isAdmin={isAdmin}
-                onSaved={onRefresh}
-              />
-            </div>
-            <OrgsTable items={payload?.items || []} />
-          </SectionIntro>
+        <div id="admin-access-orgs">
+          <AdminOrgsPanel
+            items={payload?.items || []}
+            activeOrgId={effectiveOrgId}
+            activeOrgRole={activeOrgRole}
+            isAdmin={isAdmin}
+            onRefresh={onRefresh}
+          />
         </div>
       );
     }

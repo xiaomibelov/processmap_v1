@@ -3,6 +3,8 @@ import fs from "node:fs";
 import test from "node:test";
 
 const pageSource = fs.readFileSync(new URL("./AdminOrgsPage.jsx", import.meta.url), "utf8");
+const orgsPanelSource = fs.readFileSync(new URL("../components/orgs/AdminOrgsPanel.jsx", import.meta.url), "utf8");
+const detailPanelSource = fs.readFileSync(new URL("../components/orgs/AdminOrgDetailPanel.jsx", import.meta.url), "utf8");
 const ruSource = fs.readFileSync(new URL("../../../shared/i18n/ru.js", import.meta.url), "utf8");
 const topbarSource = fs.readFileSync(new URL("../layout/AdminTopbar.jsx", import.meta.url), "utf8");
 
@@ -27,10 +29,14 @@ test("AdminOrgsPage uses access-first information architecture with tabs", () =>
   assert.match(pageSource, /AdminPermissionsPanel/);
 });
 
-test("AdminOrgsPage keeps existing admin actions while separating organizations and Git mirror", () => {
-  assert.match(pageSource, /Создать организацию/);
-  assert.match(pageSource, /Переименовать активную организацию/);
-  assert.match(pageSource, /<OrgsTable items=\{payload\?\.items \|\| \[\]\} \/>/);
+test("AdminOrgsPage delegates organizations tab to AdminOrgsPanel with detail panel", () => {
+  assert.match(pageSource, /<AdminOrgsPanel/);
+  assert.match(orgsPanelSource, /id="admin-access-orgs"/);
+  assert.match(orgsPanelSource, /Создать организацию/);
+  assert.match(detailPanelSource, /Детали организации/);
+  assert.match(detailPanelSource, /Сохранить название/);
+  assert.match(orgsPanelSource, /<OrgsTable/);
+  assert.match(orgsPanelSource, /<AdminOrgDetailPanel/);
   assert.match(pageSource, /<div id="admin-access-orgs"/);
   assert.match(pageSource, /Git mirror \/ публикация/);
   assert.match(pageSource, /<div id="admin-access-git"/);
