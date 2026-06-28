@@ -273,7 +273,7 @@ import { useAnalyticsRouteState } from "../features/analytics/useAnalyticsRouteS
 
 const DIAGRAM_UNDO_REDO_VISIBLE_POLL_MS = 5000;
 const BPMN_VERSION_HEADERS_LIMIT = 50;
-const REMOTE_SESSION_SYNC_POLL_MS = 15000;
+const REMOTE_SESSION_SYNC_POLL_MS = 30000;
 const SAVE_ACK_TOAST_HIDE_MS = 4000;
 
 function logDiscussionFocusDiag(event, payload = {}) {
