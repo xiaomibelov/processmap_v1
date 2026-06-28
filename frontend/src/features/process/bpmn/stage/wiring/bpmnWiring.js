@@ -184,6 +184,7 @@ export function createBpmnWiring(ctxBase, deps = {}) {
       store,
       getRuntime: () => refs.modelerRuntimeRef?.current,
       getSessionId: () => String(refs.activeSessionRef?.current || ""),
+      debounceMs: 10_000,
       persistence: {
         saveRaw: (sid, xmlText, rev, reason) => persistence.saveRaw(sid, xmlText, rev, reason),
         loadRaw: (sid, optionsForLoad) => persistence.loadRaw(sid, optionsForLoad),
