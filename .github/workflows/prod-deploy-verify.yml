@@ -1,0 +1,75 @@
+name: Prod Deploy Verify
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check celery-worker logs and task registration
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGE_HOST }}
+          username: ${{ secrets.STAGE_USER }}
+          key: ${{ secrets.STAGE_SSH_KEY }}
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            cd /opt/processmap/app
+
+            echo "=== celery-worker recent logs ==="
+            docker compose \
+              --env-file /opt/processmap/env/prod.env \
+              -f docker-compose.yml \
+              -f docker-compose.prod.yml \
+              -f docker-compose.ssl.yml \
+              -f docker-compose.prod.gateway.yml \
+              -p app \
+              logs --tail=50 celery-worker
+
+            echo "=== checking for 'unregistered task' errors ==="
+            if docker compose \
+                 --env-file /opt/processmap/env/prod.env \
+                 -f docker-compose.yml \
+                 -f docker-compose.prod.yml \
+                 -f docker-compose.ssl.yml \
+                 -f docker-compose.prod.gateway.yml \
+                 -p app \
+                 logs celery-worker | grep -iq "unregistered"; then
+              echo "ERROR: found 'unregistered task' in celery-worker logs"
+              exit 1
+            fi
+            echo "OK: no 'unregistered task' errors"
+
+            echo "=== checking task registration ==="
+            docker compose \
+              --env-file /opt/processmap/env/prod.env \
+              -f docker-compose.yml \
+              -f docker-compose.prod.yml \
+              -f docker-compose.ssl.yml \
+              -f docker-compose.prod.gateway.yml \
+              -p app \
+              exec -T celery-worker \
+                celery -A backend.app.celery_app inspect registered --timeout 10 | \
+              grep -q "refresh_session_analytics_task" || {
+                echo "ERROR: refresh_session_analytics_task not registered"
+                exit 1
+              }
+            echo "OK: refresh_session_analytics_task is registered"
+
+            echo "=== checking api logs for 500 on /api/admin/ai/prompts ==="
+            if docker compose \
+                 --env-file /opt/processmap/env/prod.env \
+                 -f docker-compose.yml \
+                 -f docker-compose.prod.yml \
+                 -f docker-compose.ssl.yml \
+                 -f docker-compose.prod.gateway.yml \
+                 -p app \
+                 logs api | grep -Ei '"GET /api/admin/ai/prompts.*500' ; then
+              echo "ERROR: found 500 responses on /api/admin/ai/prompts"
+              exit 1
+            fi
+            echo "OK: no 500 responses on /api/admin/ai/prompts in current logs"
+
+            echo "[prod-deploy-verify] done"
