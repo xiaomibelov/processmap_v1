@@ -459,3 +459,39 @@ def patch_note_thread(thread_id: str, body: PatchNoteThreadBody, request: Reques
     if not thread:
         raise HTTPException(status_code=404, detail="note thread not found")
     return {"thread": thread}
+
+
+@router.delete("/api/note-threads/{thread_id}")
+def delete_session_note_thread(thread_id: str, request: Request) -> Dict[str, Any]:
+    _thread, _sess, org_id, user_id = _load_thread_session_for_notes(request, thread_id, write=True)
+    result = storage.delete_note_thread(thread_id, actor_user_id=user_id, org_id=org_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="note thread not found")
+    return {"ok": True, "thread_id": thread_id, "deleted_at": result["deleted_at"], "deleted_by": result["deleted_by"]}
+
+
+@router.delete("/api/note-comments/{comment_id}")
+def delete_session_note_comment(comment_id: str, request: Request) -> Dict[str, Any]:
+    user_id = require_authenticated_user(request)
+    org_id = request_active_org_id(request)
+    require_org_member_for_enterprise(request, org_id)
+    comment = storage.get_note_comment(comment_id, org_id=org_id)
+    if not comment:
+        raise HTTPException(status_code=404, detail="note comment not found")
+    _thread, _sess, _org_id, _user_id = _load_thread_session_for_notes(
+        request,
+        str(comment.get("thread_id") or ""),
+        write=True,
+    )
+    if str(comment.get("author_user_id") or "").strip() != str(user_id or "").strip():
+        raise HTTPException(status_code=403, detail="forbidden")
+    result = storage.delete_note_comment(comment_id, actor_user_id=user_id, org_id=org_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="note comment not found")
+    return {
+        "ok": True,
+        "comment_id": comment_id,
+        "thread_id": result.get("thread_id") or comment.get("thread_id") or "",
+        "deleted_at": result["deleted_at"],
+        "deleted_by": result["deleted_by"],
+    }
