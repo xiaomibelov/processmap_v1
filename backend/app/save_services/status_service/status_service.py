@@ -13,8 +13,6 @@ from ..._legacy_main import (
     _can_manage_workspace,
     _invalidate_session_caches,
     _legacy_load_session_scoped,
-    _require_diagram_cas_or_409,
-    _resolve_base_diagram_state_version,
     _session_api_dump,
     get_default_org_id,
 )
@@ -49,13 +47,6 @@ def change_session_status(
 
     data = inp.model_dump(exclude_unset=True) if hasattr(inp, "model_dump") else dict(inp or {})
     next_status_raw = data.get("status")
-    client_base_version = _resolve_base_diagram_state_version(request=request, payload=data)
-    _require_diagram_cas_or_409(
-        sess=sess,
-        session_id=session_id,
-        request=request,
-        client_base_version=client_base_version,
-    )
 
     next_status = validate_session_status_transition(
         (sess.interview or {}).get("status"),

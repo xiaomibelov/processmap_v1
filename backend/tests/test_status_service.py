@@ -74,21 +74,11 @@ class TestStatusService(unittest.TestCase):
         self.assertEqual(((data.get("interview") or {}).get("status")), "in_progress")
         self.assertEqual(self._load().diagram_state_version, base)
 
-    def test_status_endpoint_requires_base_diagram_state_version(self):
+    def test_status_endpoint_works_without_base_diagram_state_version(self):
         response = self._status(self.sid, {"status": "in_progress"}, self.owner_token)
-        self.assertEqual(response.status_code, 409)
-        detail = response.json().get("detail") or {}
-        self.assertEqual(detail.get("code"), "DIAGRAM_STATE_BASE_VERSION_REQUIRED")
-
-    def test_status_endpoint_rejects_stale_base_version(self):
-        response = self._status(
-            self.sid,
-            {"status": "in_progress", "base_diagram_state_version": 999},
-            self.owner_token,
-        )
-        self.assertEqual(response.status_code, 409)
-        detail = response.json().get("detail") or {}
-        self.assertEqual(detail.get("code"), "DIAGRAM_STATE_CONFLICT")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(((data.get("interview") or {}).get("status")), "in_progress")
 
     def test_status_endpoint_rejects_invalid_transition(self):
         sess = self._load()
