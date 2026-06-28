@@ -166,6 +166,40 @@ class TestStatusService(unittest.TestCase):
         self.assertEqual(((data.get("interview") or {}).get("status")), "ready")
         self.assertEqual(self._load().diagram_state_version, base)
 
+    def _generic_patch(self, sid, payload, token):
+        return self.client.patch(
+            f"/api/sessions/{sid}",
+            json=payload,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    def test_generic_patch_delegates_valid_status_transition(self):
+        sess = self._load()
+        base = int(getattr(sess, "diagram_state_version", 0) or 0)
+        response = self._generic_patch(
+            self.sid,
+            {"status": "in_progress", "base_diagram_state_version": base},
+            self.owner_token,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self._load().interview.get("status"), "in_progress")
+        self.assertEqual(self._load().diagram_state_version, base)
+
+    def test_generic_patch_returns_409_for_invalid_transition(self):
+        sess = self._load()
+        base = int(getattr(sess, "diagram_state_version", 0) or 0)
+        # From draft "review" is not an allowed next status.
+        response = self._generic_patch(
+            self.sid,
+            {"status": "review", "base_diagram_state_version": base},
+            self.owner_token,
+        )
+        self.assertEqual(response.status_code, 409)
+        detail = response.json().get("detail") or {}
+        self.assertEqual(detail.get("code"), "STATUS_TRANSITION_INVALID")
+        self.assertIn("current", detail)
+        self.assertIn("next", detail)
+
     def test_mixed_payload_with_status_rejected(self):
         sess = self._load()
         base = int(getattr(sess, "diagram_state_version", 0) or 0)
