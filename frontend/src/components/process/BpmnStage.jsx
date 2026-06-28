@@ -32,6 +32,7 @@ import {
   bindViewerStageEvents,
 } from "../../features/process/bpmn/stage/orchestration/wireBpmnStageRuntimeEvents";
 import { bindSubprocessNavigationEvents } from "../../features/process/bpmn/stage/orchestration/bindSubprocessNavigationEvents";
+import { extractOverlaysFromBpmn } from "../../components/process/utils/bpmnOverlayParser";
 import {
   renderModelerDiagram,
   renderNewDiagramInModelerRuntime,
@@ -976,6 +977,11 @@ const BpmnStage = forwardRef(function BpmnStage({
   const modelerInitPromiseRef = useRef(null);
   const modelerRuntimeRef = useRef(null);
   const modelerDecorBoundInstanceRef = useRef(null);
+  const viewerDecorBoundInstanceRef = useRef(null);
+  const viewerStageEventsUnbindRef = useRef(null);
+  const modelerStageEventsUnbindRef = useRef(null);
+  const viewerSubprocessUnbindRef = useRef(null);
+  const modelerSubprocessUnbindRef = useRef(null);
   const bpmnStoreRef = useRef(null);
   const bpmnCoordinatorRef = useRef(null);
   const bpmnPersistenceRef = useRef(null);
@@ -1081,6 +1087,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const modelerReadyRef = useRef(false);
   const viewerReadyRef = useRef(false);
   const userViewportTouchedRef = useRef(false);
+  const prevOverlaySigRef = useRef({ viewer: "", editor: "" });
   const lastStoreEventRef = useRef({
     source: "",
     reason: "",
@@ -4072,6 +4079,16 @@ const BpmnStage = forwardRef(function BpmnStage({
     bpmnCoordinatorRef.current = null;
     bpmnStoreRef.current = null;
     modelerDecorBoundInstanceRef.current = null;
+    viewerDecorBoundInstanceRef.current = null;
+    try { viewerStageEventsUnbindRef.current?.(); } catch {}
+    viewerStageEventsUnbindRef.current = null;
+    try { viewerSubprocessUnbindRef.current?.(); } catch {}
+    viewerSubprocessUnbindRef.current = null;
+    try { modelerStageEventsUnbindRef.current?.(); } catch {}
+    modelerStageEventsUnbindRef.current = null;
+    try { modelerSubprocessUnbindRef.current?.(); } catch {}
+    modelerSubprocessUnbindRef.current = null;
+    prevOverlaySigRef.current = { viewer: "", editor: "" };
     const modelerRuntime = modelerRuntimeRef.current;
     modelerRuntimeRef.current = null;
     clearFocusDecor(viewerRef.current, "viewer");
@@ -4327,35 +4344,40 @@ const BpmnStage = forwardRef(function BpmnStage({
         // CULLING DISABLED — emergency fix for viewport-culling-regression-v1
         // viewport culling caused shapes to disappear permanently on pan.
         // viewerCullerRef.current = createViewportCuller(v, { ... });
-        bindViewerStageEvents({
-          eventBus,
-          inst: v,
-          isSelectableElement,
-          asArray,
-          selectionImportGuardRef,
-          traceSelectionContinuity,
-          clearSelectedDecor,
-          emitElementSelectionChange,
-          clearAiQuestionPanel,
-          setSelectedDecor,
-          buildInsertBetweenCandidate,
-          emitElementSelection,
-          syncAiQuestionPanelWithSelection,
-          suppressViewboxEventRef,
-          userViewportTouchedRef,
-          getCanvasSnapshot,
-          logViewAction,
-          view,
-          sessionId,
-          runtimeTokenRef,
-          emitViewboxChanged,
-          applyPropertiesOverlayDecorForZoomChange,
-          onDiagramContextMenuEvent: handleDiagramContextMenuEvent,
-          onDiagramContextMenuDismiss: emitDiagramContextMenuDismiss,
-          contextMenuInteractionRef,
-          viewportCuller: viewerCullerRef.current,
-        });
-        bindSubprocessNavigationEvents(v, onNavigateToSubprocessRef);
+        if (viewerDecorBoundInstanceRef.current !== v) {
+          viewerStageEventsUnbindRef.current?.();
+          viewerSubprocessUnbindRef.current?.();
+          viewerStageEventsUnbindRef.current = bindViewerStageEvents({
+            eventBus,
+            inst: v,
+            isSelectableElement,
+            asArray,
+            selectionImportGuardRef,
+            traceSelectionContinuity,
+            clearSelectedDecor,
+            emitElementSelectionChange,
+            clearAiQuestionPanel,
+            setSelectedDecor,
+            buildInsertBetweenCandidate,
+            emitElementSelection,
+            syncAiQuestionPanelWithSelection,
+            suppressViewboxEventRef,
+            userViewportTouchedRef,
+            getCanvasSnapshot,
+            logViewAction,
+            view,
+            sessionId,
+            runtimeTokenRef,
+            emitViewboxChanged,
+            applyPropertiesOverlayDecorForZoomChange,
+            onDiagramContextMenuEvent: handleDiagramContextMenuEvent,
+            onDiagramContextMenuDismiss: emitDiagramContextMenuDismiss,
+            contextMenuInteractionRef,
+            viewportCuller: viewerCullerRef.current,
+          });
+          viewerSubprocessUnbindRef.current = bindSubprocessNavigationEvents(v, onNavigateToSubprocessRef);
+          viewerDecorBoundInstanceRef.current = v;
+        }
         } catch {
         }
       viewerRef.current = v;
@@ -4423,7 +4445,9 @@ const BpmnStage = forwardRef(function BpmnStage({
             // CULLING DISABLED — emergency fix for viewport-culling-regression-v1
             // viewport culling caused shapes to disappear permanently on pan.
             // modelerCullerRef.current = createViewportCuller(m, { ... });
-          bindModelerStageEvents({
+          modelerStageEventsUnbindRef.current?.();
+          modelerSubprocessUnbindRef.current?.();
+          modelerStageEventsUnbindRef.current = bindModelerStageEvents({
             eventBus,
             inst: m,
             isSelectableElement,
@@ -4459,7 +4483,7 @@ const BpmnStage = forwardRef(function BpmnStage({
             applyShapeReplacePost,
             viewportCuller: modelerCullerRef.current,
           });
-          bindSubprocessNavigationEvents(m, onNavigateToSubprocessRef);
+          modelerSubprocessUnbindRef.current = bindSubprocessNavigationEvents(m, onNavigateToSubprocessRef);
           modelerDecorBoundInstanceRef.current = m;
         }
       } catch {
@@ -4577,12 +4601,15 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     if (!useExtensionOverlays) return;
     try {
-      if (viewerRef.current && hasDefinitionsLoaded(viewerRef.current)) {
-        overlayLifecycle.mountFromBpmn(viewerRef.current, "viewer");
-      }
-      if (modelerRef.current && hasDefinitionsLoaded(modelerRef.current)) {
-        overlayLifecycle.mountFromBpmn(modelerRef.current, "editor");
-      }
+      const maybeRemount = (inst, kind) => {
+        if (!inst || !hasDefinitionsLoaded(inst)) return;
+        const nextSig = JSON.stringify(extractOverlaysFromBpmn(inst, v2OverlaysEnabled));
+        if (prevOverlaySigRef.current[kind] === nextSig) return;
+        prevOverlaySigRef.current[kind] = nextSig;
+        overlayLifecycle.mountFromBpmn(inst, kind);
+      };
+      maybeRemount(viewerRef.current, "viewer");
+      maybeRemount(modelerRef.current, "editor");
     } catch {
       // Re-mount failures are non-critical.
     }

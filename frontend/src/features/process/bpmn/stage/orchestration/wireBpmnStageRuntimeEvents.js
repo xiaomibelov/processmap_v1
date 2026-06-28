@@ -17,19 +17,24 @@ import {
 
 function debounce(fn, ms) {
   let timer = 0;
-  return function (...args) {
+  const wrapped = function (...args) {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = 0;
       fn.apply(this, args);
     }, ms);
   };
+  wrapped.cancel = () => {
+    if (timer) clearTimeout(timer);
+    timer = 0;
+  };
+  return wrapped;
 }
 
 function throttle(fn, ms) {
   let lastArgs;
   let timer = 0;
-  return function (...args) {
+  const wrapped = function (...args) {
     lastArgs = args;
     if (timer) return;
     timer = setTimeout(() => {
@@ -37,13 +42,74 @@ function throttle(fn, ms) {
       fn.apply(this, lastArgs);
     }, ms);
   };
+  wrapped.cancel = () => {
+    if (timer) clearTimeout(timer);
+    timer = 0;
+    lastArgs = undefined;
+  };
+  return wrapped;
+}
+
+// Temporarily wrap eventBus.on so every subscription can be undone later.
+function recordEventBusListeners(eventBus) {
+  const unbinds = [];
+  const origOn = eventBus.on.bind(eventBus);
+  const wrappedOn = (event, priority, callback) => {
+    if (typeof priority === "function") {
+      callback = priority;
+      priority = undefined;
+    }
+    if (priority !== undefined) {
+      origOn(event, priority, callback);
+    } else {
+      origOn(event, callback);
+    }
+    unbinds.push(() => {
+      try {
+        eventBus.off(event, callback);
+      } catch {
+        // ignore
+      }
+    });
+  };
+  let active = true;
+  return {
+    install: () => {
+      if (!active) return;
+      eventBus.on = wrappedOn;
+    },
+    restore: () => {
+      if (!active) return;
+      eventBus.on = origOn;
+      active = false;
+    },
+    addNative: (target, type, listener, options) => {
+      unbinds.push(() => {
+        try {
+          target.removeEventListener(type, listener, options);
+        } catch {
+          // ignore
+        }
+      });
+    },
+    unbindAll: () => {
+      unbinds.forEach((fn) => {
+        try {
+          fn();
+        } catch {
+          // ignore
+        }
+      });
+      unbinds.length = 0;
+    },
+  };
 }
 
 function bindOverlayPanDebouncer({ eventBus, inst }) {
-  if (!eventBus || !inst) return;
+  if (!eventBus || !inst) return () => {};
   patchOverlaysInstance(inst);
   const overlays = inst.get("overlays");
-  if (!overlays) return;
+  if (!overlays) return () => {};
 
   const restoreUpdates = () => {
     setOverlaysUpdatePaused(overlays, false);
@@ -80,6 +146,10 @@ function bindOverlayPanDebouncer({ eventBus, inst }) {
   eventBus.on("canvas.viewbox.changed", 1300, () => {
     scheduleRestore();
   });
+
+  return () => {
+    scheduleRestore.cancel();
+  };
 }
 
 function setInteractionFlag(ref, key, active) {
@@ -155,7 +225,11 @@ function bindContextMenuRuntimeEvents({
   onDiagramContextMenuDismiss,
   contextMenuInteractionRef,
 }) {
-  if (!eventBus) return;
+  if (!eventBus) return () => {};
+  const recorder = recordEventBusListeners(eventBus);
+  recorder.install();
+  const cleanupFns = [];
+  try {
   const emitDismiss = (reason) => {
     if (typeof onDiagramContextMenuDismiss !== "function") return;
     onDiagramContextMenuDismiss({
@@ -244,6 +318,7 @@ function bindContextMenuRuntimeEvents({
       });
     };
     contextMenuOwner.addEventListener("contextmenu", onNativeContextMenu, true);
+    recorder.addNative(contextMenuOwner, "contextmenu", onNativeContextMenu, true);
     eventBus.on("canvas.destroy", 2200, () => {
       contextMenuOwner.removeEventListener("contextmenu", onNativeContextMenu, true);
     });
@@ -298,6 +373,19 @@ function bindContextMenuRuntimeEvents({
     emitDismiss("resize_start");
   });
   eventBus.on("resize.cleanup", 2300, () => setFlag("resizeInProgress", false));
+  } finally {
+    recorder.restore();
+  }
+  return () => {
+    cleanupFns.forEach((fn) => {
+      try {
+        fn();
+      } catch {
+        // ignore
+      }
+    });
+    recorder.unbindAll();
+  };
 }
 
 export function bindViewerStageEvents({
@@ -328,16 +416,21 @@ export function bindViewerStageEvents({
   contextMenuInteractionRef,
   viewportCuller,
 }) {
-  bindContextMenuRuntimeEvents({
+  if (!eventBus) return () => {};
+  const recorder = recordEventBusListeners(eventBus);
+  recorder.install();
+  const cleanupFns = [];
+  try {
+  cleanupFns.push(bindContextMenuRuntimeEvents({
     eventBus,
     inst,
     mode: "viewer",
     onDiagramContextMenuEvent,
     onDiagramContextMenuDismiss,
     contextMenuInteractionRef,
-  });
+  }));
 
-  bindOverlayPanDebouncer({ eventBus, inst });
+  cleanupFns.push(bindOverlayPanDebouncer({ eventBus, inst }));
 
   const applyPropertiesOverlayDecorForZoomChangeDebounced = debounce(
     applyPropertiesOverlayDecorForZoomChange,
@@ -406,6 +499,23 @@ export function bindViewerStageEvents({
     throttledViewboxChanged("viewer", suppressed);
     applyPropertiesOverlayDecorForZoomChangeDebounced(inst, "viewer");
   });
+  cleanupFns.push(() => {
+    applyPropertiesOverlayDecorForZoomChangeDebounced.cancel();
+    throttledViewboxChanged.cancel();
+  });
+  } finally {
+    recorder.restore();
+  }
+  return () => {
+    cleanupFns.forEach((fn) => {
+      try {
+        fn();
+      } catch {
+        // ignore
+      }
+    });
+    recorder.unbindAll();
+  };
 }
 
 export function bindModelerStageEvents({
@@ -444,16 +554,21 @@ export function bindModelerStageEvents({
   applyShapeReplacePost,
   viewportCuller,
 }) {
-  bindContextMenuRuntimeEvents({
+  if (!eventBus) return () => {};
+  const recorder = recordEventBusListeners(eventBus);
+  recorder.install();
+  const cleanupFns = [];
+  try {
+  cleanupFns.push(bindContextMenuRuntimeEvents({
     eventBus,
     inst,
     mode: "editor",
     onDiagramContextMenuEvent,
     onDiagramContextMenuDismiss,
     contextMenuInteractionRef,
-  });
+  }));
 
-  bindOverlayPanDebouncer({ eventBus, inst });
+  cleanupFns.push(bindOverlayPanDebouncer({ eventBus, inst }));
 
   const applyPropertiesOverlayDecorForZoomChangeDebounced = debounce(
     applyPropertiesOverlayDecorForZoomChange,
@@ -557,4 +672,21 @@ export function bindModelerStageEvents({
     throttledViewboxChanged("editor", suppressed);
     applyPropertiesOverlayDecorForZoomChangeDebounced(inst, "editor");
   });
+  cleanupFns.push(() => {
+    applyPropertiesOverlayDecorForZoomChangeDebounced.cancel();
+    throttledViewboxChanged.cancel();
+  });
+  } finally {
+    recorder.restore();
+  }
+  return () => {
+    cleanupFns.forEach((fn) => {
+      try {
+        fn();
+      } catch {
+        // ignore
+      }
+    });
+    recorder.unbindAll();
+  };
 }
