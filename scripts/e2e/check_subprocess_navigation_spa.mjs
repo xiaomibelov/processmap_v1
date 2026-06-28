@@ -90,7 +90,7 @@ async function createTestSession(page) {
 
   await page.evaluate(
     async ({ sessionId, xml, token }) => {
-      const res = await fetch(`/api/sessions/${sessionId}/bpmn-xml`, {
+      const res = await fetch(`/api/sessions/${sessionId}/bpmn`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ xml }),

@@ -1070,16 +1070,20 @@ def _create_child_session(
     called = called_element_id(parent_bpmn, element_id) if parent_bpmn else None
     title = f"Подпроцесс: {called or element_id}"
 
-    now_iso = datetime.datetime.utcnow().isoformat() + "Z"
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+    parent_title = str(getattr(parent_session, "title", "") or "").strip() or parent_id
+
     parent_stack = [dict(f) for f in (getattr(parent_session, "navigation_stack", []) or [])]
     if parent_stack:
         parent_stack[-1]["element_id_in_parent"] = element_id
+        parent_stack[-1].setdefault("name", parent_title)
     else:
         parent_stack = [
             {
                 "session_id": parent_id,
                 "parent_session_id": "",
                 "element_id_in_parent": element_id,
+                "name": parent_title,
                 "entered_at": now_iso,
             }
         ]
@@ -1089,6 +1093,7 @@ def _create_child_session(
             "session_id": "",
             "parent_session_id": parent_id,
             "element_id_in_parent": "",
+            "name": title,
             "entered_at": now_iso,
         }
     ]
@@ -1114,16 +1119,19 @@ def _create_child_session(
 def _build_child_navigation_stack(parent_session: Session, element_id: str) -> List[Dict[str, Any]]:
     """Build the navigation stack for a top-level child subprocess session."""
     parent_id = str(getattr(parent_session, "id", "") or "").strip()
-    now_iso = datetime.datetime.utcnow().isoformat() + "Z"
+    parent_title = str(getattr(parent_session, "title", "") or "").strip() or parent_id
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     parent_stack = [dict(f) for f in (getattr(parent_session, "navigation_stack", []) or [])]
     if parent_stack:
         parent_stack[-1]["element_id_in_parent"] = element_id
+        parent_stack[-1].setdefault("name", parent_title)
     else:
         parent_stack = [
             {
                 "session_id": parent_id,
                 "parent_session_id": "",
                 "element_id_in_parent": element_id,
+                "name": parent_title,
                 "entered_at": now_iso,
             }
         ]
@@ -1132,6 +1140,7 @@ def _build_child_navigation_stack(parent_session: Session, element_id: str) -> L
             "session_id": "",
             "parent_session_id": parent_id,
             "element_id_in_parent": "",
+            "name": "",
             "entered_at": now_iso,
         }
     ]
@@ -1170,7 +1179,7 @@ def auto_create_subprocess_sessions(
         if existing:
             if getattr(existing, "deleted_at", 0):
                 existing.deleted_at = 0
-                existing.updated_at = int(datetime.datetime.utcnow().timestamp())
+                existing.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
                 session_repo.save(existing, user_id=uid, org_id=oid, is_admin=admin)
                 restored.append(str(existing.id))
             else:
@@ -1269,10 +1278,16 @@ def _build_breadcrumbs(
         return str(getattr(sess, "title", "") or "").strip()
 
     breadcrumbs = [
-        {"session_id": f["session_id"], "name": "", "element_id": f.get("element_id_in_parent")}
+        {
+            "session_id": f["session_id"],
+            "name": str(f.get("name") or "").strip(),
+            "element_id": f.get("element_id_in_parent"),
+        }
         for f in (getattr(child_session, "navigation_stack", []) or [])
     ]
     for crumb in breadcrumbs:
+        if crumb["name"]:
+            continue
         crumb_sess = session_repo.load(
             crumb["session_id"],
             user_id=uid,

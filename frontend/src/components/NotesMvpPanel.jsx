@@ -4,6 +4,8 @@ import {
   apiAcknowledgeNoteThreadAttention,
   apiAddNoteThreadComment,
   apiCreateNoteThread,
+  apiDeleteNoteComment,
+  apiDeleteNoteThread,
   apiListMentionableUsers,
   apiListNoteThreads,
   apiMarkNoteThreadRead,
@@ -1744,6 +1746,42 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setBusy("");
   }
 
+  async function deleteSelectedThread() {
+    const threadId = text(selectedThread?.id);
+    if (!threadId || disabled || selectedThreadIsLegacyBridge) return;
+    if (!window.confirm("Удалить обсуждение? Это действие нельзя отменить.")) return;
+    setBusy(`delete:${threadId}`);
+    setError("");
+    const result = await apiDeleteNoteThread(threadId);
+    if (!result.ok) {
+      setError(errorText(result, "Не удалось удалить обсуждение."));
+      setBusy("");
+      return;
+    }
+    setSelectedThreadId("");
+    await fetchThreads();
+    emitNotesAggregateChanged(sid);
+    setBusy("");
+  }
+
+  async function deleteComment(comment) {
+    const commentId = text(comment?.id);
+    const threadId = text(selectedThread?.id);
+    if (!commentId || !threadId || disabled || selectedThreadIsLegacyBridge) return;
+    if (!window.confirm("Удалить сообщение? Это действие нельзя отменить.")) return;
+    setBusy(`delete-comment:${commentId}`);
+    setError("");
+    const result = await apiDeleteNoteComment(commentId);
+    if (!result.ok) {
+      setError(errorText(result, "Не удалось удалить сообщение."));
+      setBusy("");
+      return;
+    }
+    await fetchThreads({ preferredThreadId: threadId });
+    emitNotesAggregateChanged(sid);
+    setBusy("");
+  }
+
   if (!sid) return null;
 
   return (
@@ -2186,6 +2224,21 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                                     Закрыть обсуждение
                                   </button>
                                 )}
+                                <hr className="thread-actions-dropdown-separator" />
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  className="thread-actions-dropdown-item thread-actions-dropdown-item--danger"
+                                  onClick={() => {
+                                    deleteSelectedThread();
+                                    setThreadActionsOpen(false);
+                                  }}
+                                  disabled={busy.startsWith("delete:")}
+                                  data-testid="notes-thread-delete-action"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                                  Удалить обсуждение
+                                </button>
                               </div>
                             ) : null}
                           </div>
@@ -2259,6 +2312,17 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                                           data-testid="notes-comment-edit-action"
                                         >
                                           Редактировать
+                                        </button>
+                                      ) : null}
+                                      {canEditComment ? (
+                                        <button
+                                          type="button"
+                                          className="rounded-md border border-border/65 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-muted transition hover:border-danger/45 hover:bg-danger/10 hover:text-danger disabled:cursor-not-allowed disabled:opacity-60"
+                                          onClick={() => deleteComment(comment)}
+                                          disabled={disabled || busy.startsWith("delete-comment:") || busy.startsWith("edit:")}
+                                          data-testid="notes-comment-delete-action"
+                                        >
+                                          Удалить
                                         </button>
                                       ) : null}
                                     </div>
