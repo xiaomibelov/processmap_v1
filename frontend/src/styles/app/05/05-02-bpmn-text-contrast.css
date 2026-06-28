@@ -146,6 +146,16 @@
   fill: var(--bpmn-task-text) !important;
 }
 
+/* Light theme: BPMN icon paths (timer/message/signal/error inside events) must be dark.
+   The dark-theme stylesheet forces these paths to a light stroke globally; without an
+   override they disappear on the light canvas background. */
+.light .bpmnStage .djs-element:not(.djs-connection):not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual > path,
+.light .bpmnCanvas .djs-element:not(.djs-connection):not([data-element-id^="Participant"]):not([data-element-id^="Lane"]) .djs-visual > path,
+.light .bpmnStage .djs-shape .djs-visual > path,
+.light .bpmnCanvas .djs-shape .djs-visual > path {
+  stroke: var(--bpmn-task-stroke) !important;
+}
+
 .bpmnCanvas .djs-element[data-element-id^="Participant"] .djs-visual > rect {
   fill: var(--bpmn-pool-fill) !important;
   stroke: var(--bpmn-pool-stroke) !important;
