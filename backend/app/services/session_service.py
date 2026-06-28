@@ -983,16 +983,19 @@ def _create_child_session(
     if not child:
         raise HTTPException(status_code=500, detail="Failed to create subprocess session")
 
-    now_iso = datetime.datetime.utcnow().isoformat() + "Z"
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+    parent_title = str(getattr(parent_session, "title", "") or "").strip() or parent_id
     parent_stack = [dict(f) for f in (getattr(parent_session, "navigation_stack", []) or [])]
     if parent_stack:
         parent_stack[-1]["element_id_in_parent"] = element_id
+        parent_stack[-1].setdefault("name", parent_title)
     else:
         parent_stack = [
             {
                 "session_id": parent_id,
                 "parent_session_id": "",
                 "element_id_in_parent": element_id,
+                "name": parent_title,
                 "entered_at": now_iso,
             }
         ]
@@ -1000,6 +1003,7 @@ def _create_child_session(
         "session_id": child_id,
         "parent_session_id": parent_id,
         "element_id_in_parent": "",
+        "name": title,
         "entered_at": now_iso,
     }
     child.bpmn_xml = child_xml
@@ -1024,10 +1028,16 @@ def _build_breadcrumbs(
         return str(getattr(sess, "title", "") or "").strip()
 
     breadcrumbs = [
-        {"session_id": f["session_id"], "name": "", "element_id": f.get("element_id_in_parent")}
+        {
+            "session_id": f["session_id"],
+            "name": str(f.get("name") or "").strip(),
+            "element_id": f.get("element_id_in_parent"),
+        }
         for f in (getattr(child_session, "navigation_stack", []) or [])
     ]
     for crumb in breadcrumbs:
+        if crumb["name"]:
+            continue
         crumb_sess = session_repo.load(
             crumb["session_id"],
             user_id=uid,
