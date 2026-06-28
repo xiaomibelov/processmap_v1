@@ -44,6 +44,19 @@ jobs:
               echo "BUILD_ENV=prod"
             } >> "${ENV_FILE}"
 
+            # The API service reads its env_file from /opt/processmap/app/.env, so keep
+            # BUILD_* metadata in sync there as well.
+            APP_DOTENV="/opt/processmap/app/.env"
+            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d' "${APP_DOTENV}" 2>/dev/null || true
+            {
+              echo ""
+              echo "# Auto-injected by deploy-prod.yml at ${BUILD_TIME}"
+              echo "BUILD_ID=${GIT_SHA}"
+              echo "BUILD_TIME=${BUILD_TIME}"
+              echo "BUILD_BRANCH=${GIT_REF}"
+              echo "BUILD_ENV=prod"
+            } >> "${APP_DOTENV}"
+
             # Save current images as rollback point before rebuilding
             docker tag processmap-gateway:dev processmap-gateway:rollback 2>/dev/null || true
             docker tag app-api:latest app-api:rollback 2>/dev/null || true
