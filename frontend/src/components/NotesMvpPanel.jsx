@@ -237,7 +237,7 @@ function attentionMeta(thread) {
 }
 
 function discussionThreadRowClass({ active, attentionActive }) {
-  const base = "relative rounded-lg border px-3 py-3 pl-[9px] text-left transition duration-150 ease-in-out";
+  const base = "discussionThreadRow--compact relative rounded-lg border px-3 py-2.5 pl-[9px] text-left transition duration-150 ease-in-out";
   if (attentionActive) {
     return active
       ? `${base} border-l-[3px] border-l-warning/70 border-warning/50 bg-warning/10 shadow-sm`
@@ -467,6 +467,18 @@ function authorInitials(value) {
   const parts = label.split(/\s+/).filter(Boolean).slice(0, 2);
   if (!parts.length) return "A";
   return parts.map((part) => part[0]?.toUpperCase() || "").join("") || label[0]?.toUpperCase() || "A";
+}
+
+function AuthorAvatar({ label, sizeClass = "h-4 w-4 text-[8px]", className = "" }) {
+  return (
+    <div
+      className={`grid shrink-0 place-items-center rounded-full border border-border/60 bg-bg/30 font-semibold text-muted ${sizeClass} ${className}`}
+      aria-hidden="true"
+      title={text(label) || "Автор"}
+    >
+      {authorInitials(label)}
+    </div>
+  );
 }
 
 function errorText(result, fallback) {
@@ -1807,7 +1819,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       {open ? (
         <div
           ref={panelRef}
-          className={`fixed bottom-5 right-5 top-16 z-[100] flex flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-panel max-lg:bottom-3 max-lg:right-3 max-lg:w-[calc(100vw-1.5rem)] max-sm:top-14 lg:w-[var(--panel-width)] ${isResizing ? "transition-none" : "transition-all duration-200"} pointer-events-none`}
+          className={`discussionPanelCompact fixed bottom-5 right-5 top-16 z-[100] flex flex-col overflow-hidden rounded-lg border border-border bg-panel shadow-none max-lg:bottom-3 max-lg:right-3 max-lg:w-[calc(100vw-1.5rem)] max-sm:top-14 lg:w-[var(--panel-width)] ${isResizing ? "transition-none" : "transition-all duration-200"} pointer-events-none`}
           style={{ "--panel-width": isCollapsed ? `${COLLAPSED_WIDTH}px` : `${panelWidth}px` }}
         >
           {!isCollapsed ? (
@@ -2030,13 +2042,13 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                   </div>
                 </div>
               ) : selectedThread ? (
-                <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr_auto] overflow-hidden">
-                  <div className="border-b border-border/70 bg-panel/95 px-4 py-3 sm:px-5" data-testid="notes-thread-header">
-                    <div className="flex items-start justify-between gap-4 max-sm:flex-col">
+                <div className="discussionThreadDetail--compact grid min-h-0 flex-1 grid-rows-[auto_1fr_auto] overflow-hidden">
+                  <div className="thread-detail-header border-b border-border/70 bg-panel/95 px-3 py-2.5" data-testid="notes-thread-header">
+                    <div className="flex items-start justify-between gap-3 max-sm:flex-col">
                       <div className="min-w-0 flex-1">
                         <button
                           type="button"
-                          className="mb-2 inline-flex items-center gap-1 rounded px-2 py-1 text-[13px] font-medium text-fg transition hover:bg-[#f3f4f6]"
+                          className="mb-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-muted transition hover:bg-bg/60"
                           onClick={() => {
                             setPanelView("list");
                             setSelectedThreadId("");
@@ -2046,23 +2058,15 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                           ← Назад
                         </button>
                         {renderThreadBreadcrumb()}
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] leading-5 text-muted">
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] leading-5 text-muted">
                           <span>{scopeMeta(selectedThread).relation}</span>
                         </div>
-                        <div data-testid="notes-thread-header-meta" className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-5 text-muted">
+                        <div data-testid="notes-thread-header-meta" className="thread-detail-meta mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] leading-4 text-muted">
                           <span>Создал {threadCreatorLabel(selectedThread, authorLabelsById, viewerUserId)}</span>
                           <span aria-hidden="true">·</span>
                           <span>последний ответ {threadLastAuthorLabel(selectedThread, authorLabelsById, viewerUserId)}</span>
-                          {firstMentionLabel(selectedThread, authorLabelsById, viewerUserId) ? (
-                            <>
-                              <span aria-hidden="true">·</span>
-                              <span>адресат {firstMentionLabel(selectedThread, authorLabelsById, viewerUserId)}</span>
-                            </>
-                          ) : null}
                           <span aria-hidden="true">·</span>
-                          <span>{asArray(selectedThread.comments).length} сообщ.</span>
-                          <span aria-hidden="true">·</span>
-                          <span>{formatDate(threadUpdatedAt(selectedThread)) || "сейчас"}</span>
+                          <span>адресат {firstMentionLabel(selectedThread, authorLabelsById, viewerUserId)}</span>
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-muted">
                           <span className="font-medium text-fg/70">{scopeMeta(selectedThread).short}</span>
@@ -2279,23 +2283,21 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                               className={`rounded-lg border px-3 py-2.5 transition ${discussionMessageClass(commentFocused)}`}
                             >
                               <div className="flex items-start gap-2">
-                                <div className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border/65 bg-bg/20 text-[10px] font-semibold text-muted">
-                                  {authorInitials(author)}
-                                </div>
+                                <AuthorAvatar label={author} sizeClass="text-[10px]" className="mt-0.5 grid h-6 w-6 shrink-0" />
                                 <div className="min-w-0 flex-1">
                                   <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-                                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                                      <span className="text-[13px] font-semibold leading-5 text-fg">{author}</span>
-                                      <span className="text-[11px] text-muted">{formatDate(comment?.updated_at || comment?.created_at) || "только что"}</span>
+                                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                      <span className="comment-author text-[12px] font-semibold leading-4 text-fg">{author}</span>
+                                      <span className="comment-date text-[10px] text-muted">{formatDate(comment?.updated_at || comment?.created_at) || "только что"}</span>
                                       {numericTime(comment?.edited_at) ? (
-                                        <span className="text-[11px] font-semibold text-muted" data-testid="notes-comment-edited-marker">изменено</span>
+                                        <span className="text-[10px] font-medium text-muted" data-testid="notes-comment-edited-marker">изменено</span>
                                       ) : null}
                                     </div>
-                                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                                    <div className="comment-actions flex shrink-0 flex-wrap items-center gap-1">
                                       {commentId ? (
                                         <button
                                           type="button"
-                                          className="rounded-md border border-border/65 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-muted transition hover:border-info/45 hover:bg-info/10 hover:text-info disabled:cursor-not-allowed disabled:opacity-60"
+                                          className="rounded border border-border/60 bg-transparent px-1.5 py-0.5 text-[10px] font-medium text-muted transition hover:border-info/45 hover:bg-info/10 hover:text-info disabled:cursor-not-allowed disabled:opacity-60"
                                           onClick={() => startReply(comment, author)}
                                           disabled={disabled || busy.startsWith("comment:") || busy.startsWith("edit:")}
                                           data-testid="notes-comment-reply-action"
@@ -2306,7 +2308,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                                       {canEditComment ? (
                                         <button
                                           type="button"
-                                          className="rounded-md border border-border/65 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-muted transition hover:border-info/45 hover:bg-info/10 hover:text-info disabled:cursor-not-allowed disabled:opacity-60"
+                                          className="rounded border border-border/60 bg-transparent px-1.5 py-0.5 text-[10px] font-medium text-muted transition hover:border-info/45 hover:bg-info/10 hover:text-info disabled:cursor-not-allowed disabled:opacity-60"
                                           onClick={() => startEditComment(comment)}
                                           disabled={disabled || busy.startsWith("edit:")}
                                           data-testid="notes-comment-edit-action"
@@ -2376,12 +2378,14 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                                       </div>
                                     </div>
                                   ) : (
-                                    <NoteMarkdown>{comment?.body}</NoteMarkdown>
+                                    <div className="comment-body mt-0.5 text-[12px] leading-relaxed text-fg">
+                                      <NoteMarkdown>{comment?.body}</NoteMarkdown>
+                                    </div>
                                   )}
                                   {asArray(comment?.mentions).length ? (
-                                    <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] text-muted" data-testid="notes-comment-mentions">
+                                    <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-muted" data-testid="notes-comment-mentions">
                                       {asArray(comment.mentions).map((mention) => (
-                                        <span key={text(mention?.id) || text(mention?.mentioned_user_id)} className="rounded-full border border-info/45 bg-info/10 px-2 py-0.5 font-semibold text-info">
+                                        <span key={text(mention?.id) || text(mention?.mentioned_user_id)} className="rounded-full border border-info/45 bg-info/10 px-1.5 py-0 font-medium text-info">
                                           @{text(mention?.mentioned_label) || authorLabel(mention?.mentioned_user_id, authorLabelsById, viewerUserId)}
                                         </span>
                                       ))}
@@ -2437,10 +2441,10 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                       </div>
                     </div>
                   ) : (
-                    <div className="border-t border-border/70 bg-panel/98 px-4 py-3 shadow-[0_-10px_24px_rgba(15,23,42,0.06)] sm:px-5">
-                      <div className="mb-1.5 flex items-center justify-between gap-2">
-                        <div className="text-sm font-semibold text-fg">Ответить</div>
-                        <div className="text-[11px] text-muted">Сообщение добавится в текущее обсуждение.</div>
+                    <div className="discussionComposer--compact border-t border-border/70 bg-panel/98 px-3 py-2 sm:px-3">
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <div className="text-xs font-semibold text-fg">Ответить</div>
+                        <div className="text-[10px] text-muted">Сообщение добавится в текущее обсуждение.</div>
                       </div>
                       {replyTarget ? (
                         <div className="mb-2 flex items-start justify-between gap-3 rounded-lg border-l-2 border-info/45 bg-info/5 px-3 py-1.5 text-xs leading-relaxed" data-testid="notes-reply-preview">
@@ -2478,13 +2482,13 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                         />
                         {renderMentionSuggestions("reply", commentMentionComposer, commentMentionSuggestions, selectCommentMention, "above")}
                       </div>
-                      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-                        <div className="text-[11px] leading-relaxed text-muted">
+                      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-[10px] leading-relaxed text-muted">
                           {mentionUserIdsForSubmit(commentDraft, commentMentionComposer.selected).length
                             ? `Упоминаний: ${mentionUserIdsForSubmit(commentDraft, commentMentionComposer.selected).length}`
                             : "Поддерживается Markdown"}
                         </div>
-                        <button type="button" className="primaryBtn smallBtn" onClick={addComment} disabled={busy.startsWith("comment:") || !text(commentDraft)}>
+                        <button type="button" className="composer-submit primaryBtn smallBtn h-7 px-2.5 text-xs" onClick={addComment} disabled={busy.startsWith("comment:") || !text(commentDraft)}>
                           {busy.startsWith("comment:") ? "Отправляем..." : "Отправить"}
                         </button>
                       </div>
@@ -2702,29 +2706,36 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                             setPanelView("thread");
                           }}
                         >
-                          <div className="min-w-0">
-                            <div className="flex min-w-0 items-start justify-between gap-2">
-                              <div className="line-clamp-2 text-[14px] font-semibold leading-[1.3] text-[#1a1a2e]">{threadTitle(thread)}</div>
-                              {newMessagesCount > 0 ? (
-                                <span
-                                  className="shrink-0 rounded-full border border-info/55 bg-info/10 px-1.5 py-0.5 text-[10px] font-bold leading-4 tabular-nums text-info"
-                                  title={`Новые сообщения: ${newMessagesCount}`}
-                                  aria-label={`Новые сообщения: ${newMessagesCount}`}
-                                  data-testid="notes-thread-unread-badge"
-                                >
-                                  {newMessagesCount}
-                                </span>
-                              ) : null}
-                            </div>
-                            <div className="mt-1 line-clamp-2 text-[12px] leading-snug text-[#6b7280]">
-                              {commentBodyPreview(threadPreview(thread), "Без текста")}
-                            </div>
-                            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[#9ca3af]">
-                              <span>Создал {threadCreatorLabel(thread, authorLabelsById, viewerUserId)}</span>
-                              <span aria-hidden="true">·</span>
-                              <span>последний ответ {threadLastAuthorLabel(thread, authorLabelsById, viewerUserId)}</span>
-                              <span aria-hidden="true">·</span>
-                              <span>{formatDate(threadUpdatedAt(thread)) || "сейчас"}</span>
+                          <div className="flex items-start gap-2.5">
+                            <AuthorAvatar
+                              label={threadCreatorLabel(thread, authorLabelsById, viewerUserId)}
+                              sizeClass="h-7 w-7 text-[10px]"
+                              className="mt-0.5"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex min-w-0 items-start justify-between gap-2">
+                                <div className="thread-title line-clamp-2 text-[13px] font-semibold leading-tight text-fg">{threadTitle(thread)}</div>
+                                {newMessagesCount > 0 ? (
+                                  <span
+                                    className="shrink-0 rounded-full border border-info/55 bg-info/10 px-1.5 py-0.5 text-[10px] font-bold leading-4 tabular-nums text-info"
+                                    title={`Новые сообщения: ${newMessagesCount}`}
+                                    aria-label={`Новые сообщения: ${newMessagesCount}`}
+                                    data-testid="notes-thread-unread-badge"
+                                  >
+                                    {newMessagesCount}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="mt-1 line-clamp-2 text-[12px] leading-snug text-[#6b7280]">
+                                {commentBodyPreview(threadPreview(thread), "Без текста")}
+                              </div>
+                              <div className="thread-meta mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted">
+                                <span>Создал {threadCreatorLabel(thread, authorLabelsById, viewerUserId)}</span>
+                                <span aria-hidden="true">·</span>
+                                <span>последний ответ {threadLastAuthorLabel(thread, authorLabelsById, viewerUserId)}</span>
+                                <span aria-hidden="true">·</span>
+                                <span>адресат {firstMentionLabel(thread, authorLabelsById, viewerUserId)}</span>
+                              </div>
                             </div>
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-1 text-[10px]">
