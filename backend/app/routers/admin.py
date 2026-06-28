@@ -827,9 +827,6 @@ def admin_ai_modules(request: Request) -> Any:
     _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
     if err is not None:
         return err
-    seed_err = _seed_admin_ai_prompts_error()
-    if seed_err is not None:
-        return seed_err
     return ai_module_catalog_payload()
 
 
@@ -925,9 +922,6 @@ def admin_ai_prompts(
     _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
     if err is not None:
         return err
-    seed_err = _seed_admin_ai_prompts_error()
-    if seed_err is not None:
-        return seed_err
     try:
         return list_prompt_versions(
             module_id=module_id,
@@ -951,9 +945,6 @@ def admin_ai_active_prompt(
     _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
     if err is not None:
         return err
-    seed_err = _seed_admin_ai_prompts_error()
-    if seed_err is not None:
-        return seed_err
     try:
         item = get_active_prompt(module_id=module_id, scope_level=scope_level, scope_id=scope_id)
     except ValueError as exc:
@@ -961,6 +952,18 @@ def admin_ai_active_prompt(
     if not item:
         return _legacy_main._enterprise_error(404, "not_found", "not_found")
     return {"ok": True, "item": item}
+
+
+@router.post("/api/admin/ai/prompts/seed")
+def admin_seed_ai_prompts(request: Request) -> Any:
+    """Explicitly seed built-in AI prompts. Must not be called from GET endpoints."""
+    _uid, _is_admin, _oid, _role, _scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    seed_err = _seed_admin_ai_prompts_error()
+    if seed_err is not None:
+        return seed_err
+    return seed_existing_ai_prompts(actor_user_id=_uid or "admin_seed")
 
 
 @router.get("/api/admin/ai/prompts/{prompt_id}")
