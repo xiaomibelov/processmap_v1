@@ -937,7 +937,12 @@ def patch_session(session_id: str, inp, request=None):
     """Patch session metadata."""
     data = inp.model_dump(exclude_unset=True) if hasattr(inp, "model_dump") else dict(inp or {})
     if "status" in data:
-        if len(data) > 1:
+        # Status transitions are handled by the dedicated status service. Allow
+        # the same payload keys as the dedicated endpoint so existing callers
+        # (e.g. workspace inline selects) keep working without surfacing a raw
+        # STATUS_ONLY_ENDPOINT error.
+        status_only_keys = {"status", "base_diagram_state_version", "reason"}
+        if not set(data.keys()).issubset(status_only_keys):
             raise HTTPException(
                 status_code=422,
                 detail={
