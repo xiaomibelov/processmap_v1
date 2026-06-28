@@ -1037,8 +1037,12 @@ def _note_thread_row_to_dict(row: Any, *, attention_acknowledged_at: Any = 0) ->
         "created_by": str(_row_value(row, "created_by") or ""),
         "created_at": int(_row_value(row, "created_at") or 0),
         "updated_at": int(_row_value(row, "updated_at") or 0),
+        "updated_by": str(_row_value(row, "updated_by") or ""),
         "resolved_by": str(_row_value(row, "resolved_by") or ""),
         "resolved_at": int(_row_value(row, "resolved_at") or 0),
+        "deleted_at": int(_row_value(row, "deleted_at") or 0),
+        "deleted_by": str(_row_value(row, "deleted_by") or ""),
+        "is_deleted": bool(int(_row_value(row, "deleted_at") or 0)),
     }
 
 
@@ -1051,8 +1055,12 @@ def _note_comment_row_to_dict(row: Any) -> Dict[str, Any]:
         "reply_to_comment_id": str(_row_value(row, "reply_to_comment_id") or ""),
         "created_at": int(_row_value(row, "created_at") or 0),
         "updated_at": int(_row_value(row, "updated_at") or 0),
+        "updated_by": str(_row_value(row, "updated_by") or ""),
         "edited_at": int(_row_value(row, "edited_at") or 0),
         "edited_by_user_id": str(_row_value(row, "edited_by_user_id") or ""),
+        "deleted_at": int(_row_value(row, "deleted_at") or 0),
+        "deleted_by": str(_row_value(row, "deleted_by") or ""),
+        "is_deleted": bool(int(_row_value(row, "deleted_at") or 0)),
     }
 
 
@@ -1427,13 +1435,22 @@ def _ensure_schema() -> None:
                   created_by TEXT NOT NULL DEFAULT '',
                   created_at INTEGER NOT NULL DEFAULT 0,
                   updated_at INTEGER NOT NULL DEFAULT 0,
+                  updated_by TEXT NOT NULL DEFAULT '',
                   resolved_by TEXT NOT NULL DEFAULT '',
-                  resolved_at INTEGER NOT NULL DEFAULT 0
+                  resolved_at INTEGER NOT NULL DEFAULT 0,
+                  deleted_at INTEGER NOT NULL DEFAULT 0,
+                  deleted_by TEXT NOT NULL DEFAULT ''
                 )
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_session_status ON note_threads(session_id, org_id, status, updated_at DESC)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_project_status ON note_threads(project_id, org_id, status)")
+            if not _column_exists(con, "note_threads", "updated_by"):
+                con.execute("ALTER TABLE note_threads ADD COLUMN updated_by TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "note_threads", "deleted_at"):
+                con.execute("ALTER TABLE note_threads ADD COLUMN deleted_at INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "note_threads", "deleted_by"):
+                con.execute("ALTER TABLE note_threads ADD COLUMN deleted_by TEXT NOT NULL DEFAULT ''")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS note_comments (
@@ -1444,8 +1461,11 @@ def _ensure_schema() -> None:
                   reply_to_comment_id TEXT DEFAULT '',
                   created_at INTEGER NOT NULL DEFAULT 0,
                   updated_at INTEGER NOT NULL DEFAULT 0,
+                  updated_by TEXT NOT NULL DEFAULT '',
                   edited_at INTEGER DEFAULT 0,
-                  edited_by_user_id TEXT DEFAULT ''
+                  edited_by_user_id TEXT DEFAULT '',
+                  deleted_at INTEGER NOT NULL DEFAULT 0,
+                  deleted_by TEXT NOT NULL DEFAULT ''
                 )
                 """
             )
@@ -2032,13 +2052,22 @@ def _ensure_schema() -> None:
                   created_by TEXT NOT NULL DEFAULT '',
                   created_at INTEGER NOT NULL DEFAULT 0,
                   updated_at INTEGER NOT NULL DEFAULT 0,
+                  updated_by TEXT NOT NULL DEFAULT '',
                   resolved_by TEXT NOT NULL DEFAULT '',
-                  resolved_at INTEGER NOT NULL DEFAULT 0
+                  resolved_at INTEGER NOT NULL DEFAULT 0,
+                  deleted_at INTEGER NOT NULL DEFAULT 0,
+                  deleted_by TEXT NOT NULL DEFAULT ''
                 )
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_session_status ON note_threads(session_id, org_id, status, updated_at DESC)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_project_status ON note_threads(project_id, org_id, status)")
+            if not _column_exists(con, "note_threads", "updated_by"):
+                con.execute("ALTER TABLE note_threads ADD COLUMN updated_by TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "note_threads", "deleted_at"):
+                con.execute("ALTER TABLE note_threads ADD COLUMN deleted_at INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "note_threads", "deleted_by"):
+                con.execute("ALTER TABLE note_threads ADD COLUMN deleted_by TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "note_threads", "priority"):
                 con.execute("ALTER TABLE note_threads ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'")
             if not _column_exists(con, "note_threads", "requires_attention"):
@@ -2053,12 +2082,21 @@ def _ensure_schema() -> None:
                   reply_to_comment_id TEXT DEFAULT '',
                   created_at INTEGER NOT NULL DEFAULT 0,
                   updated_at INTEGER NOT NULL DEFAULT 0,
+                  updated_by TEXT NOT NULL DEFAULT '',
                   edited_at INTEGER DEFAULT 0,
-                  edited_by_user_id TEXT DEFAULT ''
+                  edited_by_user_id TEXT DEFAULT '',
+                  deleted_at INTEGER NOT NULL DEFAULT 0,
+                  deleted_by TEXT NOT NULL DEFAULT ''
                 )
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_comments_thread_created ON note_comments(thread_id, created_at ASC)")
+            if not _column_exists(con, "note_comments", "updated_by"):
+                con.execute("ALTER TABLE note_comments ADD COLUMN updated_by TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "note_comments", "deleted_at"):
+                con.execute("ALTER TABLE note_comments ADD COLUMN deleted_at INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "note_comments", "deleted_by"):
+                con.execute("ALTER TABLE note_comments ADD COLUMN deleted_by TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "note_comments", "reply_to_comment_id"):
                 con.execute("ALTER TABLE note_comments ADD COLUMN reply_to_comment_id TEXT DEFAULT ''")
             if not _column_exists(con, "note_comments", "edited_at"):
@@ -3543,7 +3581,7 @@ class Storage:
         if not sid:
             return 0
         oid = str(org_id or "").strip() or _default_org_id()
-        filters = ["session_id = ?"]
+        filters = ["session_id = ?", "deleted_at = 0"]
         params: List[Any] = [sid]
         if oid:
             filters.append("org_id = ?")
@@ -8886,8 +8924,8 @@ def create_note_thread(
             """
             INSERT INTO note_threads (
               id, org_id, workspace_id, project_id, session_id, scope_type, scope_ref_json,
-              status, priority, requires_attention, created_by, created_at, updated_at, resolved_by, resolved_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, '', 0)
+              status, priority, requires_attention, created_by, created_at, updated_at, updated_by, resolved_by, resolved_at, deleted_at, deleted_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, '', 0, 0, '')
             """,
             [
                 thread_id,
@@ -8902,14 +8940,15 @@ def create_note_thread(
                 actor,
                 now,
                 now,
+                actor,
             ],
         )
         con.execute(
             """
-            INSERT INTO note_comments (id, thread_id, author_user_id, body, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO note_comments (id, thread_id, author_user_id, body, created_at, updated_at, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            [comment_id, thread_id, actor, text, now, now],
+            [comment_id, thread_id, actor, text, now, now, actor],
         )
         _insert_note_comment_mentions(
             con,
@@ -8952,6 +8991,7 @@ def get_note_thread(
         filters.append("org_id = ?")
         params.append(oid)
     with _connect() as con:
+        filters.append("deleted_at = 0")
         thread_row = con.execute(
             f"SELECT * FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
             params,
@@ -8961,7 +9001,7 @@ def get_note_thread(
         row_org_id = str(_row_value(thread_row, "org_id") or "").strip()
         acknowledged_at = _thread_attention_acknowledged_at(con, tid, row_org_id, viewer_user_id)
         comment_rows = con.execute(
-            "SELECT * FROM note_comments WHERE thread_id = ? ORDER BY created_at ASC, id ASC",
+            "SELECT * FROM note_comments WHERE thread_id = ? AND deleted_at = 0 ORDER BY created_at ASC, id ASC",
             [tid],
         ).fetchall()
         comment_ids = [str(_row_value(row, "id") or "") for row in comment_rows]
@@ -9035,6 +9075,7 @@ def list_note_threads(
     if normalized_scope_type:
         filters.append("scope_type = ?")
         params.append(normalized_scope_type)
+    filters.append("deleted_at = 0")
     with _connect() as con:
         thread_rows = con.execute(
             f"SELECT * FROM note_threads WHERE {' AND '.join(filters)} ORDER BY updated_at DESC, created_at DESC",
@@ -9045,7 +9086,7 @@ def list_note_threads(
         if thread_ids:
             placeholders = ", ".join(["?"] * len(thread_ids))
             for row in con.execute(
-                f"SELECT * FROM note_comments WHERE thread_id IN ({placeholders}) ORDER BY created_at ASC, id ASC",
+                f"SELECT * FROM note_comments WHERE thread_id IN ({placeholders}) AND deleted_at = 0 ORDER BY created_at ASC, id ASC",
                 thread_ids,
             ).fetchall():
                 comment = _note_comment_row_to_dict(row)
@@ -9155,6 +9196,7 @@ def add_note_comment(
     reply_to_id = str(reply_to_comment_id or "").strip()
     now = _now_ts()
     comment_id = uuid.uuid4().hex[:12]
+    filters.append("deleted_at = 0")
     with _connect() as con:
         thread_row = con.execute(
             f"SELECT id, session_id, org_id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
@@ -9164,7 +9206,7 @@ def add_note_comment(
             return None
         if reply_to_id:
             reply_row = con.execute(
-                "SELECT id, thread_id FROM note_comments WHERE id = ? LIMIT 1",
+                "SELECT id, thread_id FROM note_comments WHERE id = ? AND deleted_at = 0 LIMIT 1",
                 [reply_to_id],
             ).fetchone()
             if not reply_row:
@@ -9173,10 +9215,10 @@ def add_note_comment(
                 raise ValueError("reply target must belong to the same thread")
         con.execute(
             """
-            INSERT INTO note_comments (id, thread_id, author_user_id, body, reply_to_comment_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO note_comments (id, thread_id, author_user_id, body, reply_to_comment_id, created_at, updated_at, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            [comment_id, tid, actor, text, reply_to_id, now, now],
+            [comment_id, tid, actor, text, reply_to_id, now, now, actor],
         )
         _insert_note_comment_mentions(
             con,
@@ -9195,7 +9237,7 @@ def add_note_comment(
             last_read_at=now,
             last_seen_comment_id=comment_id,
         )
-        con.execute("UPDATE note_threads SET updated_at = ? WHERE id = ?", [now, tid])
+        con.execute("UPDATE note_threads SET updated_at = ?, updated_by = ? WHERE id = ?", [now, actor, tid])
         con.commit()
     return get_note_thread(tid, org_id=oid or None, viewer_user_id=actor)
 
@@ -9218,6 +9260,8 @@ def get_note_comment(comment_id: str, *, org_id: Optional[str] = None) -> Option
             FROM note_comments c
             JOIN note_threads t ON t.id = c.thread_id
             WHERE {' AND '.join(filters)}
+              AND c.deleted_at = 0
+              AND t.deleted_at = 0
             LIMIT 1
             """,
             params,
@@ -9273,10 +9317,14 @@ def update_note_comment(
         con.execute(
             """
             UPDATE note_comments
-               SET body = ?, updated_at = ?, edited_at = ?, edited_by_user_id = ?
+               SET body = ?, updated_at = ?, updated_by = ?, edited_at = ?, edited_by_user_id = ?
              WHERE id = ?
             """,
-            [text, now, now, actor, cid],
+            [text, now, actor, now, actor, cid],
+        )
+        con.execute(
+            "UPDATE note_threads SET updated_at = ?, updated_by = ? WHERE id = ?",
+            [now, actor, tid],
         )
         if replace_mentions:
             con.execute("DELETE FROM note_comment_mentions WHERE comment_id = ? AND org_id = ?", [cid, thread_org_id])
@@ -9306,11 +9354,12 @@ def mark_note_thread_read(
     if not tid or not actor:
         return None
     oid = str(org_id or "").strip()
-    filters = ["id = ?"]
+    filters = ["id = ?", "deleted_at = 0"]
     params: List[Any] = [tid]
     if oid:
         filters.append("org_id = ?")
         params.append(oid)
+    filters.append("deleted_at = 0")
     with _connect() as con:
         thread_row = con.execute(
             f"SELECT id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
@@ -9319,7 +9368,7 @@ def mark_note_thread_read(
         if not thread_row:
             return None
         comment_rows = con.execute(
-            "SELECT * FROM note_comments WHERE thread_id = ? ORDER BY created_at ASC, id ASC",
+            "SELECT * FROM note_comments WHERE thread_id = ? AND deleted_at = 0 ORDER BY created_at ASC, id ASC",
             [tid],
         ).fetchall()
         comments = [_note_comment_row_to_dict(row) for row in comment_rows]
@@ -9379,8 +9428,8 @@ def patch_note_thread(
         params.append(oid)
     actor = str(actor_user_id or "").strip()
     now = _now_ts()
-    updates: List[str] = ["updated_at = ?"]
-    values: List[Any] = [now]
+    updates: List[str] = ["updated_at = ?", "updated_by = ?"]
+    values: List[Any] = [now, actor]
     if status is not None:
         next_status = _normalize_note_status(status)
         updates.extend(["status = ?", "resolved_by = ?", "resolved_at = ?"])
@@ -9432,7 +9481,7 @@ def acknowledge_note_thread_attention(
     if not tid or not actor:
         return None
     oid = str(org_id or "").strip()
-    filters = ["id = ?"]
+    filters = ["id = ?", "deleted_at = 0"]
     params: List[Any] = [tid]
     if oid:
         filters.append("org_id = ?")
@@ -9465,6 +9514,100 @@ def acknowledge_note_thread_attention(
     return get_note_thread(tid, org_id=oid or None, viewer_user_id=actor)
 
 
+def delete_note_thread(
+    thread_id: str,
+    *,
+    actor_user_id: str,
+    org_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    tid = str(thread_id or "").strip()
+    actor = str(actor_user_id or "").strip()
+    if not tid or not actor:
+        return None
+    oid = str(org_id or "").strip()
+    filters = ["id = ?", "deleted_at = 0"]
+    params: List[Any] = [tid]
+    if oid:
+        filters.append("org_id = ?")
+        params.append(oid)
+    now = _now_ts()
+    with _connect() as con:
+        thread_row = con.execute(
+            f"SELECT id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
+            params,
+        ).fetchone()
+        if not thread_row:
+            return None
+        con.execute(
+            """
+            UPDATE note_threads
+               SET updated_at = ?, updated_by = ?, deleted_at = ?, deleted_by = ?
+             WHERE id = ?
+            """,
+            [now, actor, now, actor, tid],
+        )
+        con.execute(
+            """
+            UPDATE note_comments
+               SET updated_at = ?, updated_by = ?, deleted_at = ?, deleted_by = ?
+             WHERE thread_id = ? AND deleted_at = 0
+            """,
+            [now, actor, now, actor, tid],
+        )
+        con.commit()
+    return {"thread_id": tid, "deleted_at": now, "deleted_by": actor}
+
+
+def delete_note_comment(
+    comment_id: str,
+    *,
+    actor_user_id: str,
+    org_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    cid = str(comment_id or "").strip()
+    actor = str(actor_user_id or "").strip()
+    if not cid or not actor:
+        return None
+    oid = str(org_id or "").strip()
+    filters = ["c.id = ?", "c.deleted_at = 0", "t.deleted_at = 0"]
+    params: List[Any] = [cid]
+    if oid:
+        filters.append("t.org_id = ?")
+        params.append(oid)
+    now = _now_ts()
+    with _connect() as con:
+        row = con.execute(
+            f"""
+            SELECT c.id, c.thread_id
+            FROM note_comments c
+            JOIN note_threads t ON t.id = c.thread_id
+            WHERE {' AND '.join(filters)}
+            LIMIT 1
+            """,
+            params,
+        ).fetchone()
+        if not row:
+            return None
+        tid = str(_row_value(row, "thread_id") or "").strip()
+        con.execute(
+            """
+            UPDATE note_comments
+               SET updated_at = ?, updated_by = ?, deleted_at = ?, deleted_by = ?
+             WHERE id = ? AND deleted_at = 0
+            """,
+            [now, actor, now, actor, cid],
+        )
+        if tid:
+            con.execute(
+                "UPDATE note_threads SET updated_at = ?, updated_by = ? WHERE id = ?",
+                [now, actor, tid],
+            )
+        con.commit()
+    return {"comment_id": cid, "thread_id": tid, "deleted_at": now, "deleted_by": actor}
+
+
 def list_active_note_mentions_for_user(
     user_id: str,
     *,
@@ -9481,6 +9624,8 @@ def list_active_note_mentions_for_user(
     if oid:
         filters.append("m.org_id = ?")
         params.append(oid)
+    filters.append("nt.deleted_at = 0")
+    filters.append("c.deleted_at = 0")
     lim = max(1, min(100, int(limit or 20)))
     with _connect() as con:
         rows = con.execute(
@@ -9494,7 +9639,7 @@ def list_active_note_mentions_for_user(
               c.body AS comment_body
             FROM note_comment_mentions m
             JOIN note_threads nt ON nt.id = m.thread_id AND nt.org_id = m.org_id
-            JOIN note_comments c ON c.id = m.comment_id
+            JOIN note_comments c ON c.id = m.comment_id AND c.deleted_at = 0
             WHERE {' AND '.join(filters)}
             ORDER BY m.created_at DESC, m.id DESC
             LIMIT ?
@@ -9545,6 +9690,7 @@ def list_note_notifications_for_user(
         placeholders = ", ".join(["?"] * len(allowed))
         filters.append(f"nt.project_id IN ({placeholders})")
         params.extend(allowed)
+    filters.append("nt.deleted_at = 0")
     where = f"WHERE {' AND '.join(filters)}" if filters else ""
 
     with _connect() as con:
@@ -9611,7 +9757,7 @@ def list_note_notifications_for_user(
                 (
                   SELECT COUNT(*)
                   FROM note_comments c
-                  WHERE c.thread_id = b.thread_id
+                  WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                     AND c.created_at > b.last_read_at
                     AND c.author_user_id != ?
                 ) AS unread_count,
@@ -9619,7 +9765,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.id
                     FROM note_comment_mentions m
-                    JOIN note_comments c ON c.id = m.comment_id
+                    JOIN note_comments c ON c.id = m.comment_id AND c.deleted_at = 0
                     WHERE m.thread_id = b.thread_id
                       AND m.org_id = b.org_id
                       AND m.mentioned_user_id = ?
@@ -9630,7 +9776,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.id
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                       AND c.created_at > b.last_read_at
                       AND c.author_user_id != ?
                     ORDER BY c.created_at DESC, c.id DESC
@@ -9639,7 +9785,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.id
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                     ORDER BY c.created_at DESC, c.id DESC
                     LIMIT 1
                   )
@@ -9648,7 +9794,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.body
                     FROM note_comment_mentions m
-                    JOIN note_comments c ON c.id = m.comment_id
+                    JOIN note_comments c ON c.id = m.comment_id AND c.deleted_at = 0
                     WHERE m.thread_id = b.thread_id
                       AND m.org_id = b.org_id
                       AND m.mentioned_user_id = ?
@@ -9659,7 +9805,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.body
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                       AND c.created_at > b.last_read_at
                       AND c.author_user_id != ?
                     ORDER BY c.created_at DESC, c.id DESC
@@ -9668,7 +9814,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.body
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                     ORDER BY c.created_at DESC, c.id DESC
                     LIMIT 1
                   ),
@@ -9678,7 +9824,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.author_user_id
                     FROM note_comment_mentions m
-                    JOIN note_comments c ON c.id = m.comment_id
+                    JOIN note_comments c ON c.id = m.comment_id AND c.deleted_at = 0
                     WHERE m.thread_id = b.thread_id
                       AND m.org_id = b.org_id
                       AND m.mentioned_user_id = ?
@@ -9689,7 +9835,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.author_user_id
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                       AND c.created_at > b.last_read_at
                       AND c.author_user_id != ?
                     ORDER BY c.created_at DESC, c.id DESC
@@ -9698,7 +9844,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.author_user_id
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                     ORDER BY c.created_at DESC, c.id DESC
                     LIMIT 1
                   ),
@@ -9708,7 +9854,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.created_at
                     FROM note_comment_mentions m
-                    JOIN note_comments c ON c.id = m.comment_id
+                    JOIN note_comments c ON c.id = m.comment_id AND c.deleted_at = 0
                     WHERE m.thread_id = b.thread_id
                       AND m.org_id = b.org_id
                       AND m.mentioned_user_id = ?
@@ -9719,7 +9865,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.created_at
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                       AND c.created_at > b.last_read_at
                       AND c.author_user_id != ?
                     ORDER BY c.created_at DESC, c.id DESC
@@ -9728,7 +9874,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.created_at
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                     ORDER BY c.created_at DESC, c.id DESC
                     LIMIT 1
                   ),
@@ -9739,7 +9885,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.created_at
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                     ORDER BY c.created_at DESC, c.id DESC
                     LIMIT 1
                   ),
@@ -9902,7 +10048,7 @@ def get_session_open_notes_aggregate(
     if not sid:
         return _notes_aggregate_payload(0)
     oid = str(org_id or "").strip()
-    filters = ["nt.session_id = ?"]
+    filters = ["nt.session_id = ?", "nt.deleted_at = 0"]
     params: List[Any] = [sid]
     if oid:
         filters.append("nt.org_id = ?")
@@ -9950,7 +10096,7 @@ def get_sessions_open_notes_aggregates(
         for sid in ids
     }
     placeholders = ", ".join(["?"] * len(ids))
-    filters = [f"nt.session_id IN ({placeholders})"]
+    filters = [f"nt.session_id IN ({placeholders})", "nt.deleted_at = 0"]
     params: List[Any] = [*ids]
     oid = str(org_id or "").strip()
     if oid:
@@ -9996,7 +10142,7 @@ def get_project_open_notes_aggregate(
     if not pid:
         return _notes_aggregate_payload(0)
     oid = str(org_id or "").strip()
-    filters = ["s.project_id = ?"]
+    filters = ["s.project_id = ?", "nt.deleted_at = 0"]
     params: List[Any] = [pid]
     if oid:
         filters.append("s.org_id = ?")
@@ -10074,6 +10220,7 @@ def get_folder_open_notes_aggregate(
             JOIN sessions s ON s.id = nt.session_id AND s.org_id = nt.org_id
             JOIN projects p ON p.id = s.project_id AND p.org_id = s.org_id
             WHERE nt.org_id = ?
+              AND nt.deleted_at = 0
               AND p.workspace_id = ?
               AND p.folder_id IN (SELECT id FROM folder_tree)
               {project_scope_sql}
