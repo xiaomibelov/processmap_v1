@@ -997,6 +997,31 @@ export async function apiPatchNoteThread(threadId, patch = {}) {
   return r.ok ? { ok: true, status: r.status, thread: r.data?.thread || null } : r;
 }
 
+export async function apiDeleteNoteThread(threadId) {
+  const tid = String(threadId || "").trim();
+  if (!tid) return { ok: false, status: 0, error: "missing thread_id" };
+  const r = okOrError(await request(apiRoutes.noteThreads.item(tid), { method: "DELETE" }));
+  return r.ok
+    ? { ok: true, status: r.status, threadId: tid, deletedAt: Number(r.data?.deleted_at || 0), deletedBy: String(r.data?.deleted_by || "") }
+    : r;
+}
+
+export async function apiDeleteNoteComment(commentId) {
+  const cid = String(commentId || "").trim();
+  if (!cid) return { ok: false, status: 0, error: "missing comment_id" };
+  const r = okOrError(await request(apiRoutes.noteComments.item(cid), { method: "DELETE" }));
+  return r.ok
+    ? {
+      ok: true,
+      status: r.status,
+      commentId: cid,
+      threadId: String(r.data?.thread_id || ""),
+      deletedAt: Number(r.data?.deleted_at || 0),
+      deletedBy: String(r.data?.deleted_by || ""),
+    }
+    : r;
+}
+
 export async function apiListMyNoteMentions(limit = 20) {
   const r = okOrError(await request(apiRoutes.noteMentions.list(limit)));
   if (!r.ok) return r;
