@@ -4,6 +4,7 @@ import RootApp from "./RootApp";
 import FrontendErrorBoundary from "./features/telemetry/FrontendErrorBoundary";
 import { installGlobalFrontendTelemetry } from "./features/telemetry/telemetryClient";
 import "./styles/tailwind.css";
+import "./styles/app.css";
 import "./styles/legacy/legacy_bpmn.css";
 
 // Reference the deploy fingerprint so it becomes part of the entry chunk
