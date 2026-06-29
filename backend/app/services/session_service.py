@@ -484,7 +484,45 @@ def bpmn_save(
     # CROSS-DOMAIN: depends on _require_diagram_cas_or_409, _mark_diagram_truth_write,
     # _create_bpmn_revision_snapshot_if_needed, _resolve_base_diagram_state_version.
     import app._legacy_main as _lm
-    return _lm.session_bpmn_save(session_id, inp, request)
+    out = _lm.session_bpmn_save(session_id, inp, request)
+    if not out.get("ok"):
+        return out
+
+    # Hybrid auto-subprocess: create up to 10 children on save.
+    # If more exist, the frontend shows a "load remaining" button.
+    try:
+        xml = str(getattr(inp, "xml", "") or "")
+        elements = find_subprocess_elements(xml)
+        if elements:
+            s, oid, _scope = _lm._legacy_load_session_scoped(session_id, request)
+            if s:
+                summary = auto_create_subprocess_sessions(s, request, limit=10)
+                total = summary["total"]
+                created = len(summary["created"]) + len(summary["restored"])
+                has_more = created < total
+                meta = dict(getattr(s, "bpmn_meta", None) or {})
+                meta["subprocesses_total"] = total
+                meta["subprocesses_created"] = created
+                meta["subprocesses_has_more"] = has_more
+                s.bpmn_meta = meta
+                st = get_storage()
+                st.save(s, is_admin=True)
+                _lm._invalidate_session_caches(
+                    s,
+                    session_id=session_id,
+                    org_id=getattr(s, "org_id", "") or oid or "",
+                )
+                out["subprocesses_total"] = total
+                out["subprocesses_created"] = created
+                out["subprocesses_has_more"] = has_more
+    except Exception as exc:
+        logger.warning(
+            "bpmn_save_auto_subprocess_failed: session_id=%s error=%s",
+            session_id,
+            exc,
+            exc_info=True,
+        )
+    return out
 
 
 def bpmn_versions_list(
@@ -897,6 +935,23 @@ def get_session_analytics(session_id: str, request=None):
 
 def patch_session(session_id: str, inp, request=None):
     """Patch session metadata."""
+    data = inp.model_dump(exclude_unset=True) if hasattr(inp, "model_dump") else dict(inp or {})
+    if "status" in data:
+        # Status transitions are handled by the dedicated status service. Allow
+        # the same payload keys as the dedicated endpoint so existing callers
+        # (e.g. workspace inline selects) keep working without surfacing a raw
+        # STATUS_ONLY_ENDPOINT error.
+        status_only_keys = {"status", "base_diagram_state_version", "reason"}
+        if not set(data.keys()).issubset(status_only_keys):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "STATUS_ONLY_ENDPOINT",
+                    "message": "status changes must use PATCH /api/sessions/{id}/status",
+                },
+            )
+        from ..save_services.status_service import change_session_status
+        return change_session_status(session_id, inp, request)
     import app._legacy_main as _lm
     return _lm.patch_session(session_id, inp, request)
 
@@ -1015,16 +1070,20 @@ def _create_child_session(
     called = called_element_id(parent_bpmn, element_id) if parent_bpmn else None
     title = f"Подпроцесс: {called or element_id}"
 
-    now_iso = datetime.datetime.utcnow().isoformat() + "Z"
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+    parent_title = str(getattr(parent_session, "title", "") or "").strip() or parent_id
+
     parent_stack = [dict(f) for f in (getattr(parent_session, "navigation_stack", []) or [])]
     if parent_stack:
         parent_stack[-1]["element_id_in_parent"] = element_id
+        parent_stack[-1].setdefault("name", parent_title)
     else:
         parent_stack = [
             {
                 "session_id": parent_id,
                 "parent_session_id": "",
                 "element_id_in_parent": element_id,
+                "name": parent_title,
                 "entered_at": now_iso,
             }
         ]
@@ -1034,6 +1093,7 @@ def _create_child_session(
             "session_id": "",
             "parent_session_id": parent_id,
             "element_id_in_parent": "",
+            "name": title,
             "entered_at": now_iso,
         }
     ]
@@ -1059,16 +1119,19 @@ def _create_child_session(
 def _build_child_navigation_stack(parent_session: Session, element_id: str) -> List[Dict[str, Any]]:
     """Build the navigation stack for a top-level child subprocess session."""
     parent_id = str(getattr(parent_session, "id", "") or "").strip()
-    now_iso = datetime.datetime.utcnow().isoformat() + "Z"
+    parent_title = str(getattr(parent_session, "title", "") or "").strip() or parent_id
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     parent_stack = [dict(f) for f in (getattr(parent_session, "navigation_stack", []) or [])]
     if parent_stack:
         parent_stack[-1]["element_id_in_parent"] = element_id
+        parent_stack[-1].setdefault("name", parent_title)
     else:
         parent_stack = [
             {
                 "session_id": parent_id,
                 "parent_session_id": "",
                 "element_id_in_parent": element_id,
+                "name": parent_title,
                 "entered_at": now_iso,
             }
         ]
@@ -1077,6 +1140,7 @@ def _build_child_navigation_stack(parent_session: Session, element_id: str) -> L
             "session_id": "",
             "parent_session_id": parent_id,
             "element_id_in_parent": "",
+            "name": "",
             "entered_at": now_iso,
         }
     ]
@@ -1115,7 +1179,7 @@ def auto_create_subprocess_sessions(
         if existing:
             if getattr(existing, "deleted_at", 0):
                 existing.deleted_at = 0
-                existing.updated_at = int(datetime.datetime.utcnow().timestamp())
+                existing.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
                 session_repo.save(existing, user_id=uid, org_id=oid, is_admin=admin)
                 restored.append(str(existing.id))
             else:
@@ -1214,10 +1278,16 @@ def _build_breadcrumbs(
         return str(getattr(sess, "title", "") or "").strip()
 
     breadcrumbs = [
-        {"session_id": f["session_id"], "name": "", "element_id": f.get("element_id_in_parent")}
+        {
+            "session_id": f["session_id"],
+            "name": str(f.get("name") or "").strip(),
+            "element_id": f.get("element_id_in_parent"),
+        }
         for f in (getattr(child_session, "navigation_stack", []) or [])
     ]
     for crumb in breadcrumbs:
+        if crumb["name"]:
+            continue
         crumb_sess = session_repo.load(
             crumb["session_id"],
             user_id=uid,

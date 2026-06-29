@@ -1,3 +1,21 @@
+const POSITIONAL_COMMANDS = new Set([
+  "shape.move",
+  "elements.move",
+  "spaceTool",
+  "lane.updaterefs",
+]);
+
+function asText(value) {
+  return String(value || "");
+}
+
+function isPositionalCommand(commandRaw) {
+  const command = asText(commandRaw).trim().toLowerCase();
+  if (!command) return false;
+  // These bpmn-js commands only change x/y/waypoints without adding/removing elements.
+  return POSITIONAL_COMMANDS.has(command);
+}
+
 export default function createLocalMutationStaging(options = {}) {
   const getStore = typeof options?.getStore === "function" ? options.getStore : () => null;
   const getRuntime = typeof options?.getRuntime === "function" ? options.getRuntime : () => null;
@@ -6,7 +24,8 @@ export default function createLocalMutationStaging(options = {}) {
   const cacheRaw = typeof options?.cacheRaw === "function" ? options.cacheRaw : null;
   const emit = typeof options?.emit === "function" ? options.emit : null;
   const requestAutosave = typeof options?.requestAutosave === "function" ? options.requestAutosave : null;
-  const asText = typeof options?.asText === "function" ? options.asText : (value) => String(value || "");
+  const getIsDragging = typeof options?.getIsDragging === "function" ? options.getIsDragging : () => false;
+  const asTextOption = typeof options?.asText === "function" ? options.asText : asText;
   const asNumber = typeof options?.asNumber === "function"
     ? options.asNumber
     : (value, fallback = 0) => {
@@ -15,7 +34,27 @@ export default function createLocalMutationStaging(options = {}) {
     };
 
   function currentSid() {
-    return asText(getSessionId?.() || "").trim();
+    return asTextOption(getSessionId?.() || "").trim();
+  }
+
+  function resolveCommand(ev) {
+    let command = asTextOption(ev?.command || ev?.context?.command || "").trim();
+    if (command) return command;
+    // The runtime event may not carry the command name, but bpmn-js keeps the
+    // executed command on the top of the commandStack internal stack.
+    try {
+      const runtime = getRuntime?.();
+      const instance = runtime?.getInstance?.();
+      if (instance) {
+        const commandStack = instance.get("commandStack");
+        const stack = commandStack?._stack;
+        const top = Array.isArray(stack) && stack.length > 0 ? stack[stack.length - 1] : null;
+        command = asTextOption(top?.command || top?.id || "").trim();
+      }
+    } catch {
+      // ignore
+    }
+    return command;
   }
 
   async function stageRuntimeChange(ev) {
@@ -28,7 +67,7 @@ export default function createLocalMutationStaging(options = {}) {
 
     const runtime = getRuntime();
     const status = runtime?.getStatus?.();
-    let nextXml = asText(store.getState?.()?.xml || "");
+    let nextXml = asTextOption(store.getState?.()?.xml || "");
     let xmlAuthority = "staged_local_store_fallback";
     let xmlExportMode = "store_fallback";
     if (status?.ready && status?.defs) {
@@ -37,7 +76,7 @@ export default function createLocalMutationStaging(options = {}) {
       // on the durable flush path.
       const xmlRes = await runtime.getXml({ format: false });
       if (xmlRes?.ok) {
-        nextXml = asText(xmlRes.xml);
+        nextXml = asTextOption(xmlRes.xml);
         xmlAuthority = "staged_local_runtime_snapshot";
         xmlExportMode = "runtime_unformatted";
       }
@@ -50,7 +89,30 @@ export default function createLocalMutationStaging(options = {}) {
       rev: asNumber(nextState?.rev, 0),
       reason: "runtime_change",
     });
-    requestAutosave?.("autosave");
+
+    const command = resolveCommand(ev);
+    let positional = isPositionalCommand(command);
+    let autosaveSkipped = positional;
+    let skipReason = positional ? "positional_command" : "";
+
+    // While the user is dragging the canvas, suppress autosave for every
+    // command — structural changes are coalesced and flushed after drag end.
+    if (!autosaveSkipped && getIsDragging()) {
+      positional = true;
+      autosaveSkipped = true;
+      skipReason = "drag_in_progress";
+    }
+
+    if (autosaveSkipped) {
+      emit?.("STAGE_POSITIONAL_CHANGE", {
+        sid,
+        command,
+        reason: skipReason,
+        autosaveSkipped: true,
+      });
+    } else {
+      requestAutosave?.("autosave");
+    }
 
     return {
       ok: true,
@@ -61,7 +123,9 @@ export default function createLocalMutationStaging(options = {}) {
       xmlExportMode,
       rev: asNumber(nextState?.rev, 0),
       dirty: nextState?.dirty === true,
-      autosaveRequested: true,
+      positional,
+      autosaveRequested: !autosaveSkipped,
+      skipReason,
     };
   }
 

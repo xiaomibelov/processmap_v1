@@ -20,6 +20,12 @@ import {
   apiAdminArchiveAiPrompt,
   apiAdminListAgentRuns,
   apiAdminGetAgentRun,
+  apiAdminListPermissions,
+  apiAdminListPermissionEntities,
+  apiAdminPatchPermission,
+  apiAdminBulkPermissions,
+  apiAdminGetInvitePermissions,
+  apiAdminPatchInvitePermissions,
 } from "../../../lib/api";
 
 export {
@@ -44,4 +50,10 @@ export {
   apiAdminArchiveAiPrompt,
   apiAdminListAgentRuns,
   apiAdminGetAgentRun,
+  apiAdminListPermissions,
+  apiAdminListPermissionEntities,
+  apiAdminPatchPermission,
+  apiAdminBulkPermissions,
+  apiAdminGetInvitePermissions,
+  apiAdminPatchInvitePermissions,
 };

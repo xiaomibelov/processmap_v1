@@ -35,3 +35,13 @@ test("AdminOrgInvitesPanel preserves invite API actions and statuses", () => {
   assert.match(source, /handleRevokeInvite/);
   assert.match(source, /trStatusInvite\(status\)/);
 });
+
+test("AdminOrgInvitesPanel includes permission editor and inline permission editing", () => {
+  assert.match(source, /AdminInvitePermissionEditor/);
+  assert.match(source, /AdminInvitePermissionSummary/);
+  assert.match(source, /apiAdminGetInvitePermissions/);
+  assert.match(source, /apiAdminPatchInvitePermissions/);
+  assert.match(source, /startEditingPermissions/);
+  assert.match(source, /saveEditingPermissions/);
+  assert.match(source, /Права/);
+});

@@ -42,7 +42,7 @@ export default function useSubprocessNavigation({
       const childCrumb = {
         session_id: res.subprocessSessionId,
         name: res.subprocessTitle || "Подпроцесс",
-        element_id: res.targetElementId || elementId,
+        element_id: elementId,
       };
       if (list.length === 0) {
         return [

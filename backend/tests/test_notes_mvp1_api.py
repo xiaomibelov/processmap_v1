@@ -35,6 +35,8 @@ class NotesMvp1ApiTest(unittest.TestCase):
             acknowledge_note_mention,
             acknowledge_note_thread_attention,
             create_session_note_thread,
+            delete_session_note_comment,
+            delete_session_note_thread,
             list_my_note_mentions,
             list_my_note_notifications,
             list_session_mentionable_users,
@@ -57,6 +59,8 @@ class NotesMvp1ApiTest(unittest.TestCase):
         self.acknowledge_note_mention = acknowledge_note_mention
         self.acknowledge_note_thread_attention = acknowledge_note_thread_attention
         self.create_session_note_thread = create_session_note_thread
+        self.delete_session_note_thread = delete_session_note_thread
+        self.delete_session_note_comment = delete_session_note_comment
         self.list_my_note_mentions = list_my_note_mentions
         self.list_my_note_notifications = list_my_note_notifications
         self.list_session_mentionable_users = list_session_mentionable_users
@@ -707,6 +711,92 @@ class NotesMvp1ApiTest(unittest.TestCase):
 
         reloaded = st.load(self.session_id, org_id=self.org_id, is_admin=True)
         self.assertEqual(reloaded.notes_by_element, {"Task_Legacy": {"summary": "legacy"}})
+
+    def test_note_thread_soft_delete_hides_from_feed(self):
+        created = self.create_session_note_thread(
+            self.session_id,
+            self.CreateNoteThreadBody(scope_type="session", scope_ref={}, body="Удаляемая тема"),
+            self._req(),
+        )["thread"]
+        thread_id = created["id"]
+
+        before = self.list_session_note_threads(self.session_id, self._req(), status="")["items"]
+        self.assertIn(thread_id, {item["id"] for item in before})
+
+        result = self.delete_session_note_thread(thread_id, self._req())
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["thread_id"], thread_id)
+        self.assertGreater(result["deleted_at"], 0)
+        self.assertEqual(result["deleted_by"], str(self.editor.get("id") or ""))
+
+        after = self.list_session_note_threads(self.session_id, self._req(), status="")["items"]
+        self.assertNotIn(thread_id, {item["id"] for item in after})
+
+    def test_note_comment_soft_delete_only_hides_comment_and_updates_thread(self):
+        created = self.create_session_note_thread(
+            self.session_id,
+            self.CreateNoteThreadBody(scope_type="session", scope_ref={}, body="Корневой комментарий"),
+            self._req(),
+        )["thread"]
+        thread_id = created["id"]
+        root_comment_id = created["comments"][0]["id"]
+
+        reply = self.add_note_thread_comment(
+            thread_id,
+            self.AddNoteCommentBody(body="Удаляемый ответ"),
+            self._req(),
+        )["thread"]
+        reply_comment_id = next(comment["id"] for comment in reply["comments"] if comment["id"] != root_comment_id)
+
+        result = self.delete_session_note_comment(reply_comment_id, self._req())
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["comment_id"], reply_comment_id)
+        self.assertEqual(result["thread_id"], thread_id)
+        self.assertGreater(result["deleted_at"], 0)
+        self.assertEqual(result["deleted_by"], str(self.editor.get("id") or ""))
+
+        thread = self.list_session_note_threads(self.session_id, self._req(), status="")["items"][0]
+        self.assertEqual(thread["id"], thread_id)
+        self.assertEqual(len(thread["comments"]), 1)
+        self.assertEqual(thread["comments"][0]["id"], root_comment_id)
+
+    def test_note_delete_endpoints_require_auth_and_permissions(self):
+        created = self.create_session_note_thread(
+            self.session_id,
+            self.CreateNoteThreadBody(scope_type="session", scope_ref={}, body="Охраняемая тема"),
+            self._req(),
+        )["thread"]
+        thread_id = created["id"]
+        comment_id = created["comments"][0]["id"]
+
+        with self.assertRaises(HTTPException) as unauthorized_thread:
+            self.delete_session_note_thread(thread_id, self._req({}))
+        self.assertEqual(unauthorized_thread.exception.status_code, 401)
+
+        with self.assertRaises(HTTPException) as forbidden_thread:
+            self.delete_session_note_thread(thread_id, self._req(self.viewer))
+        self.assertEqual(forbidden_thread.exception.status_code, 403)
+
+        with self.assertRaises(HTTPException) as unauthorized_comment:
+            self.delete_session_note_comment(comment_id, self._req({}))
+        self.assertEqual(unauthorized_comment.exception.status_code, 401)
+
+        with self.assertRaises(HTTPException) as forbidden_comment:
+            self.delete_session_note_comment(comment_id, self._req(self.viewer))
+        self.assertEqual(forbidden_comment.exception.status_code, 403)
+
+        peer = self.create_user(
+            "notes_delete_peer@local",
+            "editor",
+            is_admin=False,
+            full_name="Редактор Коллега",
+        )
+        self._insert_membership(self.org_id, str(peer.get("id") or ""), "editor")
+        self._add_project_member(peer, "editor")
+
+        with self.assertRaises(HTTPException) as foreign_comment:
+            self.delete_session_note_comment(comment_id, self._req(peer))
+        self.assertEqual(foreign_comment.exception.status_code, 403)
 
 
 if __name__ == "__main__":

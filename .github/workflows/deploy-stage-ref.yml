@@ -70,10 +70,44 @@ jobs:
             # Drop any project named volume that could be masking /usr/share/nginx/html
             docker volume ls -q | grep '^processmap_stage_frontend' | xargs -r docker volume rm 2>/dev/null || true
 
+            BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+            # Pass accurate build metadata to the API container so /version tells the truth
+            export BUILD_ID="${DEPLOY_SHA}"
+            export BUILD_BRANCH="${DEPLOY_REF}"
+            export BUILD_TIME="${BUILD_TIME}"
+            export BUILD_ENV="stage"
+
+            # Pass accurate build metadata to the frontend container so buildInfo.js is correct
+            export VITE_BUILD_ID="${DEPLOY_SHA}"
+            export VITE_BUILD_BRANCH="${DEPLOY_REF}"
+            export VITE_BUILD_TIME="${BUILD_TIME}"
+            export VITE_BUILD_ENV="stage"
+
             DEPLOY_FINGERPRINT="processmap-stage-deploy-sha:${DEPLOY_SHA}"
             export VITE_DEPLOY_FINGERPRINT="${DEPLOY_FINGERPRINT}"
             export VITE_DEPLOY_REQUESTED_REF="${DEPLOY_REF}"
             export VITE_DEPLOY_RESOLVED_SHA="${DEPLOY_SHA}"
+
+            # Persist accurate build metadata in the stage env file so the API
+            # container's runtime BUILD_* variables match the deployed SHA.
+            ENV_FILE=".env.stage"
+            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^VITE_BUILD_ID=/d; /^VITE_BUILD_TIME=/d; /^VITE_BUILD_BRANCH=/d; /^VITE_BUILD_ENV=/d; /^VITE_DEPLOY_FINGERPRINT=/d; /^VITE_DEPLOY_REQUESTED_REF=/d; /^VITE_DEPLOY_RESOLVED_SHA=/d' "${ENV_FILE}"
+            {
+              echo ""
+              echo "# Auto-injected by deploy-stage-ref.yml at ${BUILD_TIME}"
+              echo "BUILD_ID=${DEPLOY_SHA}"
+              echo "BUILD_TIME=${BUILD_TIME}"
+              echo "BUILD_BRANCH=${DEPLOY_REF}"
+              echo "BUILD_ENV=stage"
+              echo "VITE_BUILD_ID=${DEPLOY_SHA}"
+              echo "VITE_BUILD_TIME=${BUILD_TIME}"
+              echo "VITE_BUILD_BRANCH=${DEPLOY_REF}"
+              echo "VITE_BUILD_ENV=stage"
+              echo "VITE_DEPLOY_FINGERPRINT=${DEPLOY_FINGERPRINT}"
+              echo "VITE_DEPLOY_REQUESTED_REF=${DEPLOY_REF}"
+              echo "VITE_DEPLOY_RESOLVED_SHA=${DEPLOY_SHA}"
+            } >> "${ENV_FILE}"
 
             # Rebuild images (frontend is baked into frontend)
             APP_ENV_FILE=.env.stage docker compose \

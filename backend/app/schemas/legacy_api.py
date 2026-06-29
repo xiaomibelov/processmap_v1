@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AuthLoginIn(BaseModel):
@@ -61,6 +61,7 @@ class OrgInviteCreateIn(BaseModel):
     role: Optional[str] = "viewer"
     ttl_days: Optional[int] = 7
     regenerate: Optional[bool] = False
+    permissions: Optional[Dict[str, bool]] = Field(default_factory=dict)
     model_config = ConfigDict(extra="allow")
 
 
@@ -292,6 +293,13 @@ class SessionMetaPatchIn(BaseModel):
     bpmn_meta_json: Optional[Dict[str, Any]] = None
     base_diagram_state_version: Optional[int] = None
     base_bpmn_xml_version: Optional[int] = None
+    model_config = ConfigDict(extra="allow")
+
+
+class StatusPatchIn(BaseModel):
+    status: str
+    base_diagram_state_version: Optional[int] = None
+    reason: Optional[str] = None
     model_config = ConfigDict(extra="allow")
 
 

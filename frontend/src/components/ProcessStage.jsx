@@ -273,7 +273,7 @@ import { useAnalyticsRouteState } from "../features/analytics/useAnalyticsRouteS
 
 const DIAGRAM_UNDO_REDO_VISIBLE_POLL_MS = 5000;
 const BPMN_VERSION_HEADERS_LIMIT = 50;
-const REMOTE_SESSION_SYNC_POLL_MS = 15000;
+const REMOTE_SESSION_SYNC_POLL_MS = 30000;
 const SAVE_ACK_TOAST_HIDE_MS = 4000;
 
 function logDiscussionFocusDiag(event, payload = {}) {
@@ -2331,6 +2331,7 @@ function ProcessStage({
         companionError,
         saveInfo,
         staleRetryApplied: saved?.staleRetryApplied === true,
+        staleRetryChangedKeys: saved?.staleRetryChangedKeys,
       });
       const outcomeMessage = toText(successOutcomeUi.genErr) || toText(successOutcomeUi.infoMsg);
       const outcomeTone = successOutcomeUi.genErr
@@ -6780,7 +6781,8 @@ function ProcessStage({
           </div>
         ) : (
           <div className="relative h-full min-h-0">
-            <div className={isInterview ? "absolute inset-0 opacity-0 pointer-events-none" : "absolute inset-0"}>
+            {!isInterview && (
+            <div className="absolute inset-0">
               <div
                 className={`bpmnStageHost h-full ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""}`}
                 ref={bpmnStageHostRef}
@@ -7122,6 +7124,7 @@ function ProcessStage({
                 ) : null}
               </div>
             </div>
+            )}
             <ProcessPanels
               section="attention"
               view={shellVm.panelsProps.attention}

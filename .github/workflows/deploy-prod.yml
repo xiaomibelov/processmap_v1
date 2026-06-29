@@ -25,11 +25,37 @@ jobs:
               docker-compose.yml docker-compose.prod.yml docker-compose.prod.gateway.yml \
               docker-compose.ssl.yml Dockerfile.gateway.prod
 
-            # Resolve git metadata for build fingerprint / freshness proof
-            GIT_SHA=$(git rev-parse HEAD)
-            GIT_REF=$(git rev-parse --abbrev-ref HEAD)
+            # Resolve git metadata from origin/main (HEAD may be on a different branch)
+            GIT_SHA=$(git rev-parse origin/main)
+            GIT_REF="main"
             BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
             DEPLOY_FINGERPRINT="processmap-prod-deploy-sha:${GIT_SHA}"
+
+            # Persist build metadata in the prod env file so the API /version endpoint
+            # reports the deployed SHA instead of whatever the local repo HEAD was.
+            ENV_FILE="/opt/processmap/env/prod.env"
+            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d' "${ENV_FILE}" 2>/dev/null || true
+            {
+              echo ""
+              echo "# Auto-injected by deploy-prod.yml at ${BUILD_TIME}"
+              echo "BUILD_ID=${GIT_SHA}"
+              echo "BUILD_TIME=${BUILD_TIME}"
+              echo "BUILD_BRANCH=${GIT_REF}"
+              echo "BUILD_ENV=prod"
+            } >> "${ENV_FILE}"
+
+            # The API service reads its env_file from /opt/processmap/app/.env, so keep
+            # BUILD_* metadata in sync there as well.
+            APP_DOTENV="/opt/processmap/app/.env"
+            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d' "${APP_DOTENV}" 2>/dev/null || true
+            {
+              echo ""
+              echo "# Auto-injected by deploy-prod.yml at ${BUILD_TIME}"
+              echo "BUILD_ID=${GIT_SHA}"
+              echo "BUILD_TIME=${BUILD_TIME}"
+              echo "BUILD_BRANCH=${GIT_REF}"
+              echo "BUILD_ENV=prod"
+            } >> "${APP_DOTENV}"
 
             # Save current images as rollback point before rebuilding
             docker tag processmap-gateway:dev processmap-gateway:rollback 2>/dev/null || true
@@ -43,7 +69,27 @@ jobs:
               -f docker-compose.ssl.yml \
               -f docker-compose.prod.gateway.yml \
               -p app \
-              build api
+              build \
+                --build-arg BUILD_ID="${GIT_SHA}" \
+                --build-arg BUILD_TIME="${BUILD_TIME}" \
+                --build-arg BUILD_BRANCH="${GIT_REF}" \
+                --build-arg BUILD_ENV=prod \
+                api
+
+            # Rebuild celery-worker so new/updated task modules are registered
+            APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
+              --env-file /opt/processmap/env/prod.env \
+              -f docker-compose.yml \
+              -f docker-compose.prod.yml \
+              -f docker-compose.ssl.yml \
+              -f docker-compose.prod.gateway.yml \
+              -p app \
+              build \
+                --build-arg BUILD_ID="${GIT_SHA}" \
+                --build-arg BUILD_TIME="${BUILD_TIME}" \
+                --build-arg BUILD_BRANCH="${GIT_REF}" \
+                --build-arg BUILD_ENV=prod \
+                celery-worker
 
             # Rebuild gateway without cache so fresh frontend statics + fingerprint are baked in
             APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
@@ -84,22 +130,50 @@ jobs:
               -p app \
               up -d --no-deps --force-recreate -V api gateway
 
+            # Recreate celery-worker so it picks up the rebuilt image and registers new tasks
+            APP_ENV_FILE=/opt/processmap/env/prod.env docker compose \
+              --env-file /opt/processmap/env/prod.env \
+              -f docker-compose.yml \
+              -f docker-compose.prod.yml \
+              -f docker-compose.ssl.yml \
+              -f docker-compose.prod.gateway.yml \
+              -p app \
+              up -d --no-deps --force-recreate -V celery-worker
+
             # Post-deploy freshness proof
             echo "[deploy-prod] waiting for prod gateway to come up..."
             sleep 15
             echo "=== Prod /version ==="
-            curl -fsS https://processmap.ru/version | head -c 500 || echo "ERROR: /version unreachable"
+            VERSION_RESPONSE=$(curl -fsS https://processmap.ru/version || echo "ERROR")
+            echo "${VERSION_RESPONSE}" | head -c 500
             echo
+            if echo "${VERSION_RESPONSE}" | grep -q "\"commit\":\"${GIT_SHA}\""; then
+              echo "OK: /version commit matches ${GIT_SHA}"
+            else
+              echo "ERROR: /version commit does not match ${GIT_SHA}"
+              exit 1
+            fi
+
+            echo "=== Prod /api/health ==="
+            curl -fsS https://processmap.ru/api/health || echo "ERROR: /api/health unreachable"
+            echo
+
             echo "=== Prod frontend fingerprint ==="
-            MAIN_JS=$(curl -fsS https://processmap.ru/ | grep -oE 'assets/index-[A-Za-z0-9]+\.js' | head -1)
+            MAIN_JS=$(curl -fsS https://processmap.ru/ | grep -oE 'assets/index-[A-Za-z0-9]*\.js' | head -1)
             if [ -n "${MAIN_JS}" ]; then
-              curl -fsS "https://processmap.ru/${MAIN_JS}" \
+              FINGERPRINT=$(curl -fsS "https://processmap.ru/${MAIN_JS}" \
                 | grep -oE "processmap-prod-deploy-sha:[a-f0-9]+" \
-                | head -1 \
-                && echo " (fingerprint OK)" \
-                || echo "ERROR: fingerprint not found in ${MAIN_JS}"
+                | head -1)
+              echo "${FINGERPRINT}"
+              if echo "${FINGERPRINT}" | grep -q "${GIT_SHA}"; then
+                echo "OK: frontend fingerprint matches ${GIT_SHA}"
+              else
+                echo "ERROR: frontend fingerprint does not match ${GIT_SHA}"
+                exit 1
+              fi
             else
               echo "ERROR: could not locate main JS asset"
+              exit 1
             fi
 
             echo "[deploy-prod] done"

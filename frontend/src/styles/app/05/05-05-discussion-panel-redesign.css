@@ -1,0 +1,103 @@
+/* ===== Compact MVP-1 discussion panel redesign ===== */
+
+.discussionPanelCompact {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.discussionPanelCompact [data-testid="notes-panel-header"] {
+  padding: 10px 12px;
+}
+
+.discussionPanelCompact [data-testid="notes-panel-header"] .text-base {
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.discussionPanelCompact [data-testid="notes-summary-line"] {
+  font-size: 11px;
+}
+
+/* Thread list rows */
+.discussionThreadRow--compact {
+  gap: 8px;
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: none;
+}
+
+.discussionThreadRow--compact .thread-title {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.discussionThreadRow--compact .thread-preview {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.discussionThreadRow--compact .thread-meta {
+  font-size: 10px;
+  gap: 6px;
+}
+
+/* Thread detail */
+.discussionThreadDetail--compact .thread-detail-header {
+  padding: 10px 12px;
+}
+
+.discussionThreadDetail--compact .thread-detail-meta {
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+/* Comments */
+.discussionComment--compact {
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+.discussionComment--compact.is-reply {
+  margin-left: 12px;
+}
+
+.discussionComment--compact .comment-author {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.discussionComment--compact .comment-date {
+  font-size: 10px;
+}
+
+.discussionComment--compact .comment-body {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.discussionComment--compact .comment-body p {
+  margin: 0.25em 0;
+}
+
+.discussionComment--compact .comment-actions button {
+  font-size: 10px;
+  padding: 1px 6px;
+}
+
+/* Composer */
+.discussionComposer--compact {
+  padding: 8px 12px;
+  box-shadow: none;
+}
+
+.discussionComposer--compact textarea {
+  min-height: 44px;
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.discussionComposer--compact .composer-submit {
+  font-size: 11px;
+  height: 28px;
+  padding: 4px 10px;
+}

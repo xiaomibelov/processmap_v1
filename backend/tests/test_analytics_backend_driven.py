@@ -296,3 +296,66 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         self.assertEqual(r1.status_code, 200)
         self.assertEqual(r2.status_code, 200)
         self.assertEqual(r1.json()["data"], r2.json()["data"])
+
+    def test_dashboard_session_has_kpi_extras(self):
+        r = self.client.get(
+            f"/api/analytics/dashboard?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        data = r.json()["data"]
+        self.assertIn("kpi", data)
+        self.assertIn("task_statuses", data)
+        self.assertIn("activity_heatmap", data)
+        self.assertIn("bpmn_element_types", data)
+        self.assertEqual(data["kpi"]["total_sessions"], 1)
+        self.assertEqual(data["kpi"]["total_tasks"], 15)
+
+    def test_dashboard_project_has_trend_and_process_duration(self):
+        # Update session snapshot with realistic BPMN type keys so extras are populated.
+        with sqlite3.connect(str(self._db_path())) as con:
+            con.execute(
+                """
+                UPDATE analytics_session_snapshots
+                SET actions_by_type_json = ?,
+                    total_duration_min = ?
+                WHERE session_id = ?
+                """,
+                ('{"step": 5, "decision": 2, "fork": 1, "join": 1, "timer": 2, "message": 1, "loss_event": 1}', 75, self.session_id),
+            )
+            con.commit()
+
+        r = self.client.get(
+            f"/api/analytics/project/{self.project_id}/dashboard",
+            headers=self._headers(self.viewer_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        data = r.json()["data"]
+        self.assertEqual(data["scope_type"], "project")
+        self.assertIn("session_trend", data)
+        self.assertIn("process_duration", data)
+        self.assertIn("bpmn_element_types", data)
+        bpmn = data["bpmn_element_types"]
+        self.assertEqual(bpmn["task"], 5)
+        self.assertEqual(bpmn["gateway"], 4)
+        self.assertEqual(bpmn["event"], 4)
+        statuses = data["task_statuses"]
+        self.assertEqual(statuses["completed"], 5)
+        self.assertEqual(statuses["active"], 4)
+        self.assertEqual(statuses["pending"], 3)
+        self.assertEqual(statuses["failed"], 1)
+        self.assertEqual(len(data["activity_heatmap"]["by_hour"]), 24)
+        self.assertEqual(len(data["activity_heatmap"]["by_weekday"]), 7)
+        self.assertGreaterEqual(data["kpi"]["active_now"], 1)
+
+    def test_dashboard_workspace_returns_extras(self):
+        r = self.client.get(
+            f"/api/analytics/dashboard?scope=workspace&scope_id={self.workspace_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        data = r.json()["data"]
+        self.assertEqual(data["scope_type"], "workspace")
+        self.assertIn("kpi", data)
+        self.assertIn("session_trend", data)
+        self.assertEqual(data["kpi"]["unique_processes"], data["projects_count"])
