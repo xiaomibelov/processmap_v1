@@ -20,6 +20,7 @@ const POSITIONAL_COMMANDS = new Set([
   "shape.move",
   "elements.move",
   "spaceTool",
+  "lane.updaterefs",
 ]);
 
 function isPositionalCommand(commandRaw) {
