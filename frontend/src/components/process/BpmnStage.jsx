@@ -2362,17 +2362,14 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   function transformPersistedXml(xmlText) {
     const templateInsertGuardIds = readTemplateInsertCamundaClearGuardIds();
-    const xmlCamundaExtensionsByElementId = reconcileTemplateInsertCamundaStateFromXml(xmlText, templateInsertGuardIds);
+    const camundaExtensionsByElementId = reconcileTemplateInsertCamundaStateFromXml(xmlText, templateInsertGuardIds);
     // Merge authoritative meta camunda extensions so that property-only saves
     // (which update bpmn_meta but not the stored BPMN XML) are still reflected
     // on the canvas after reload.
     const metaCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(
       asObject(draftRef.current?.bpmn_meta).camunda_extensions_by_element_id,
     );
-    const camundaExtensionsByElementId = {
-      ...xmlCamundaExtensionsByElementId,
-      ...metaCamundaExtensionsByElementId,
-    };
+    Object.assign(camundaExtensionsByElementId, metaCamundaExtensionsByElementId);
     return finalizeCamundaExtensionsXml({
       xmlText,
       camundaExtensionsByElementId,
