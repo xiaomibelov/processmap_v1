@@ -1,156 +1,156 @@
 [
   {
-    "time": 1782732447485,
+    "time": 1782732676702,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/app?project=d3b9ae9fda&session=f1f727aee7"
   },
   {
-    "time": 1782732447533,
+    "time": 1782732676759,
     "method": "GET",
-    "url": "http://clearvestnic.ru:5177/assets/index-D0aGqiKo.js"
+    "url": "http://clearvestnic.ru:5177/assets/index-BhBN4UOE.js"
   },
   {
-    "time": 1782732447539,
+    "time": 1782732676759,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/assets/index-B-TWw5iD.css"
   },
   {
-    "time": 1782732447539,
+    "time": 1782732676760,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/env.js"
   },
   {
-    "time": 1782732447680,
+    "time": 1782732676900,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/feature-flags"
   },
   {
-    "time": 1782732447680,
+    "time": 1782732676901,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/auth/me"
   },
   {
-    "time": 1782732447733,
+    "time": 1782732676983,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/workspaces"
   },
   {
-    "time": 1782732447733,
+    "time": 1782732676983,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/feature-flags"
   },
   {
-    "time": 1782732447737,
+    "time": 1782732676988,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/meta"
   },
   {
-    "time": 1782732447742,
+    "time": 1782732677035,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/note-mentions?limit=20"
   },
   {
-    "time": 1782732447742,
+    "time": 1782732677035,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/note-notifications?limit=20&include_read=1"
   },
   {
-    "time": 1782732447742,
+    "time": 1782732677035,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/meta"
   },
   {
-    "time": 1782732447742,
+    "time": 1782732677035,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7"
   },
   {
-    "time": 1782732447837,
+    "time": 1782732677093,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/explorer?workspace_id=ws_org_default_main"
   },
   {
-    "time": 1782732447837,
+    "time": 1782732677094,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/projects"
   },
   {
-    "time": 1782732448256,
+    "time": 1782732677484,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/projects/d3b9ae9fda/sessions?view=summary"
   },
   {
-    "time": 1782732448268,
+    "time": 1782732677489,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/projects/d3b9ae9fda/explorer?workspace_id=ws_org_default_main&root_only=true&include_children_meta=true"
   },
   {
-    "time": 1782732448307,
+    "time": 1782732677571,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7"
   },
   {
-    "time": 1782732448403,
+    "time": 1782732677678,
     "method": "POST",
     "url": "http://clearvestnic.ru:5177/api/sessions/note-aggregates"
   },
   {
-    "time": 1782732448626,
+    "time": 1782732677956,
     "method": "GET",
-    "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/bpmn?raw=1&include_overlay=0&_ts=1782732448609"
+    "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/bpmn?raw=1&include_overlay=0&_ts=1782732677940"
   },
   {
-    "time": 1782732448626,
+    "time": 1782732677956,
     "method": "POST",
     "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/presence"
   },
   {
-    "time": 1782732448626,
+    "time": 1782732677956,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/bpmn/versions?limit=1"
   },
   {
-    "time": 1782732448626,
+    "time": 1782732677956,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/auto-pass/precheck"
   },
   {
-    "time": 1782732448626,
+    "time": 1782732677956,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/meta"
   },
   {
-    "time": 1782732448640,
+    "time": 1782732677966,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/mentionable-users"
   },
   {
-    "time": 1782732448640,
+    "time": 1782732677972,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/orgs/org_default/property-dictionary/operations"
   },
   {
-    "time": 1782732448646,
+    "time": 1782732677976,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/note-threads"
   },
   {
-    "time": 1782732448699,
+    "time": 1782732678017,
     "method": "GET",
-    "url": "http://clearvestnic.ru:5177/assets/Modeler-B9thhBrV.js"
+    "url": "http://clearvestnic.ru:5177/assets/Modeler-D_0zSLQ2.js"
   },
   {
-    "time": 1782732448699,
+    "time": 1782732678018,
     "method": "GET",
-    "url": "http://clearvestnic.ru:5177/assets/NavigatedViewer-CxWkTc-a.js"
+    "url": "http://clearvestnic.ru:5177/assets/NavigatedViewer-BamuPig0.js"
   },
   {
-    "time": 1782732448699,
+    "time": 1782732678018,
     "method": "GET",
-    "url": "http://clearvestnic.ru:5177/assets/index-CY-aTHkI.js"
+    "url": "http://clearvestnic.ru:5177/assets/index-xkGMJ8Po.js"
   },
   {
-    "time": 1782732449280,
+    "time": 1782732678714,
     "method": "GET",
     "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/note-aggregate"
   }
