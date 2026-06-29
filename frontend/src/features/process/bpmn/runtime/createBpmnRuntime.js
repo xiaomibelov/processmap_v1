@@ -176,8 +176,22 @@ export default function createBpmnRuntime(options = {}) {
       const eventBus = instance.get("eventBus");
       if (!eventBus || typeof eventBus.on !== "function") return;
       const onCommandChanged = (ev) => {
+        let command = asText(ev?.command || ev?.context?.command || "").trim();
+        // bpmn-js sometimes emits commandStack.changed without a command name on
+        // the event itself. The command that was just executed is on the top of
+        // the commandStack internal stack, so fall back to it for classification.
+        if (!command && instance) {
+          try {
+            const commandStack = instance.get("commandStack");
+            const stack = commandStack?._stack;
+            const top = Array.isArray(stack) && stack.length > 0 ? stack[stack.length - 1] : null;
+            command = asText(top?.command || top?.id || "").trim();
+          } catch {
+            // ignore
+          }
+        }
         notifyChange({
-          command: asText(ev?.command || ev?.context?.command || "").trim(),
+          command,
         });
       };
       eventBus.on("commandStack.changed", 1000, onCommandChanged);

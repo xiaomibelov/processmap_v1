@@ -170,3 +170,70 @@ test("stageRuntimeChange falls back to existing store xml when runtime xml is un
   assert.equal(store.getState().rev, 3);
   assert.equal(store.getState().dirty, true);
 });
+
+
+test("stageRuntimeChange skips autosave for lane.updateRefs", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"old\"/>",
+    rev: 5,
+    dirty: false,
+    lastSavedRev: 5,
+  });
+  const { staging, autosaveReasons, emitted } = makeStaging(store);
+
+  const result = await staging.stageRuntimeChange({ type: "commandStack.changed", command: "lane.updateRefs" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.positional, true);
+  assert.equal(result.autosaveRequested, false);
+  assert.deepEqual(autosaveReasons, []);
+  assert.ok(emitted.some((e) => e.event === "STAGE_POSITIONAL_CHANGE" && e.payload.command === "lane.updateRefs"));
+});
+
+test("stageRuntimeChange suppresses autosave while dragging", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"old\"/>",
+    rev: 5,
+    dirty: false,
+    lastSavedRev: 5,
+  });
+  const { staging, autosaveReasons, emitted } = makeStaging(store, { getIsDragging: () => true });
+
+  const result = await staging.stageRuntimeChange({ type: "commandStack.changed", command: "shape.create" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.positional, true);
+  assert.equal(result.autosaveRequested, false);
+  assert.equal(result.skipReason, "drag_in_progress");
+  assert.deepEqual(autosaveReasons, []);
+  assert.ok(emitted.some((e) => e.event === "STAGE_POSITIONAL_CHANGE" && e.payload.reason === "drag_in_progress"));
+});
+
+test("stageRuntimeCommand infers command from commandStack top when event command is missing", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"old\"/>",
+    rev: 5,
+    dirty: false,
+    lastSavedRev: 5,
+  });
+  const getRuntime = () => ({
+    getStatus: () => ({ ready: true, defs: true, token: 9 }),
+    getXml: async () => ({ ok: true, xml: "<bpmn:definitions id=\"new\"/>", token: 9 }),
+    getInstance: () => ({
+      get: (name) => {
+        if (name === "commandStack") {
+          return { _stack: [{ command: "lane.updateRefs" }] };
+        }
+        return null;
+      },
+    }),
+  });
+  const { staging, autosaveReasons } = makeStaging(store, { getRuntime });
+
+  const result = await staging.stageRuntimeChange({ type: "commandStack.changed" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.positional, true);
+  assert.equal(result.autosaveRequested, false);
+  assert.deepEqual(autosaveReasons, []);
+});

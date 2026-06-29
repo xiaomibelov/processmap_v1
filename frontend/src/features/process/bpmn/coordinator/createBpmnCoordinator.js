@@ -151,6 +151,7 @@ export default function createBpmnCoordinator(options = {}) {
     cacheRaw: (sid, xml, rev, reason) => cacheRaw(sid, xml, rev, reason),
     emit: (event, payload) => emit(event, payload),
     requestAutosave: (reason) => scheduleSave(reason),
+    getIsDragging,
     asText,
     asNumber,
   });
