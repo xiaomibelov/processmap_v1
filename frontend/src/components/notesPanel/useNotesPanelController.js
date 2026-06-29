@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getOrgPropertyDictionaryBundle,
   listOrgPropertyDictionaryOperations,
   upsertOrgPropertyDictionaryValue,
 } from "./notesApi.js";
+import {
+  isDiagramDragging,
+  onDiagramDragEnd,
+} from "../../features/process/bpmn/stage/diagramDragState.js";
 
 function toText(value) {
   return String(value || "").trim();
@@ -22,12 +26,26 @@ export default function useNotesPanelController({
   const [orgPropertyDictionaryLoading, setOrgPropertyDictionaryLoading] = useState(false);
   const [orgPropertyDictionaryErr, setOrgPropertyDictionaryErr] = useState("");
   const [orgPropertyDictionaryAddBusyKey, setOrgPropertyDictionaryAddBusyKey] = useState("");
+  const [dragFlushKey, setDragFlushKey] = useState(0);
+  const pendingOperationsRef = useRef(false);
+  const pendingBundleRef = useRef(false);
+
+  useEffect(() => {
+    const unsubscribe = onDiagramDragEnd(() => {
+      setDragFlushKey((k) => k + 1);
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     if (!selectedCamundaPropertiesEditable || !toText(activeOrgId)) {
       setOrgPropertyDictionaryOperations([]);
       setOrgPropertyDictionaryOperationsLoading(false);
       return;
+    }
+    if (isDiagramDragging()) {
+      pendingOperationsRef.current = true;
+      return () => {};
     }
     let cancelled = false;
     setOrgPropertyDictionaryOperationsLoading(true);
@@ -42,10 +60,11 @@ export default function useNotesPanelController({
       setOrgPropertyDictionaryOperations(Array.isArray(result.items) ? result.items : []);
       setOrgPropertyDictionaryOperationsLoading(false);
     })();
+    pendingOperationsRef.current = false;
     return () => {
       cancelled = true;
     };
-  }, [activeOrgId, selectedCamundaPropertiesEditable, orgPropertyDictionaryRevision]);
+  }, [activeOrgId, selectedCamundaPropertiesEditable, orgPropertyDictionaryRevision, dragFlushKey]);
 
   useEffect(() => {
     if (!selectedCamundaPropertiesEditable || !toText(activeOrgId) || !toText(selectedOperationKey)) {
@@ -54,6 +73,10 @@ export default function useNotesPanelController({
       setOrgPropertyDictionaryErr("");
       setOrgPropertyDictionaryAddBusyKey("");
       return;
+    }
+    if (isDiagramDragging()) {
+      pendingBundleRef.current = true;
+      return () => {};
     }
     let cancelled = false;
     setOrgPropertyDictionaryLoading(true);
@@ -70,10 +93,11 @@ export default function useNotesPanelController({
       setOrgPropertyDictionaryBundle(result.bundle || null);
       setOrgPropertyDictionaryLoading(false);
     })();
+    pendingBundleRef.current = false;
     return () => {
       cancelled = true;
     };
-  }, [activeOrgId, selectedCamundaPropertiesEditable, selectedOperationKey, orgPropertyDictionaryRevision]);
+  }, [activeOrgId, selectedCamundaPropertiesEditable, selectedOperationKey, orgPropertyDictionaryRevision, dragFlushKey]);
 
   const addDictionaryValueForSelectedElement = useCallback(async (propertyKey, optionValue) => {
     const oid = toText(activeOrgId);

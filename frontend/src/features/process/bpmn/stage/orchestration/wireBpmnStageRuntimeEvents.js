@@ -7,6 +7,9 @@ import {
   OVERLAY_PAN_DEBOUNCE_MS,
   VIEWBOX_EMIT_THROTTLE_MS,
 } from "../performance/stageRuntimePerformance.js";
+import {
+  setDiagramDragging,
+} from "../diagramDragState.js";
 
 // ── Overlay pan debounce ──
 // bpmn-js hides the overlay root on canvas.viewbox.changing and updates + shows
@@ -594,6 +597,33 @@ export function bindModelerStageEvents({
       viewportCuller.restoreAll();
     });
   }
+
+  // Drag lifecycle: notify the rest of the stage so autosave/sidebar can pause.
+  const dragStartEvents = [
+    "shape.move.start",
+    "create.start",
+    "connect.start",
+    "resize.start",
+    "replace.start",
+  ];
+  const dragEndEvents = [
+    "shape.move.end",
+    "shape.move.canceled",
+    "create.end",
+    "create.canceled",
+    "connect.end",
+    "connect.canceled",
+    "resize.end",
+    "resize.canceled",
+    "replace.end",
+    "replace.canceled",
+  ];
+  dragStartEvents.forEach((event) => {
+    eventBus.on(event, 4900, () => setDiagramDragging(true));
+  });
+  dragEndEvents.forEach((event) => {
+    eventBus.on(event, 4900, () => setDiagramDragging(false));
+  });
 
   eventBus.on("commandStack.shape.replace.preExecute", 2200, (ev) => {
     captureShapeReplacePre(ev, "commandStack.shape.replace.preExecute");

@@ -4,19 +4,13 @@ import assert from "node:assert/strict";
 import createBpmnStore from "../store/createBpmnStore.js";
 import createLocalMutationStaging from "./createLocalMutationStaging.js";
 
-test("stageRuntimeChange preserves current staging behavior and requests autosave", async () => {
-  const store = createBpmnStore({
-    xml: "<bpmn:definitions id=\"old\"/>",
-    rev: 5,
-    dirty: false,
-    lastSavedRev: 5,
-  });
+function makeStaging(store, overrides = {}) {
   const cacheCalls = [];
   const emitted = [];
   const autosaveReasons = [];
   let onRuntimeChangeCalls = 0;
   const getXmlCalls = [];
-
+  const getOnRuntimeChangeCalls = () => onRuntimeChangeCalls;
   const staging = createLocalMutationStaging({
     getStore: () => store,
     getRuntime: () => ({
@@ -39,9 +33,73 @@ test("stageRuntimeChange preserves current staging behavior and requests autosav
     requestAutosave: (reason) => {
       autosaveReasons.push(reason);
     },
+    ...overrides,
   });
+  return {
+    staging,
+    cacheCalls,
+    emitted,
+    autosaveReasons,
+    onRuntimeChangeCalls,
+    getXmlCalls,
+    getOnRuntimeChangeCalls,
+  };
+}
+
+test("stageRuntimeChange skips autosave for positional shape.move", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"old\"/>",
+    rev: 5,
+    dirty: false,
+    lastSavedRev: 5,
+  });
+  const { staging, autosaveReasons, emitted } = makeStaging(store);
 
   const result = await staging.stageRuntimeChange({ type: "commandStack.changed", command: "shape.move" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.positional, true);
+  assert.equal(result.autosaveRequested, false);
+  assert.equal(result.dirty, true);
+  assert.equal(store.getState().rev, 6);
+  assert.deepEqual(autosaveReasons, []);
+  assert.ok(emitted.some((e) => e.event === "STAGE_POSITIONAL_CHANGE"));
+});
+
+test("stageRuntimeChange requests autosave for structural commands", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"old\"/>",
+    rev: 5,
+    dirty: false,
+    lastSavedRev: 5,
+  });
+  const { staging, autosaveReasons } = makeStaging(store);
+
+  const result = await staging.stageRuntimeChange({ type: "commandStack.changed", command: "shape.create" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.positional, false);
+  assert.equal(result.autosaveRequested, true);
+  assert.deepEqual(autosaveReasons, ["autosave"]);
+});
+
+test("stageRuntimeChange preserves current staging behavior for unspecified commands", async () => {
+  const store = createBpmnStore({
+    xml: "<bpmn:definitions id=\"old\"/>",
+    rev: 5,
+    dirty: false,
+    lastSavedRev: 5,
+  });
+  const {
+    staging,
+    cacheCalls,
+    emitted,
+    autosaveReasons,
+    getOnRuntimeChangeCalls,
+    getXmlCalls,
+  } = makeStaging(store);
+
+  const result = await staging.stageRuntimeChange({ type: "commandStack.changed", command: "connection.create" });
 
   assert.equal(result.ok, true);
   assert.equal(result.sessionId, "sid_local_mutation_staging");
@@ -52,7 +110,7 @@ test("stageRuntimeChange preserves current staging behavior and requests autosav
   assert.equal(result.rev, 6);
   assert.equal(result.dirty, true);
   assert.equal(result.autosaveRequested, true);
-  assert.equal(onRuntimeChangeCalls, 1);
+  assert.equal(getOnRuntimeChangeCalls(), 1);
   assert.deepEqual(getXmlCalls, [{ format: false }]);
   assert.deepEqual(autosaveReasons, ["autosave"]);
   assert.equal(store.getState().xml, "<bpmn:definitions id=\"new\"/>");
