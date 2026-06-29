@@ -528,6 +528,51 @@ function emitElementNoteThreadsChanged(sessionId, threads) {
   }));
 }
 
+const NOTE_THREADS_CACHE_TTL_MS = 30_000;
+const noteThreadsCache = new Map();
+
+function noteThreadsCacheKey(sid, scopeFilter, elementFilterKey, statusFilter, notificationModeFlag = "0") {
+  return `${sid}|${scopeFilter}|${elementFilterKey}|${statusFilter}|${notificationModeFlag}`;
+}
+
+function getCachedNoteThreads(key) {
+  const entry = noteThreadsCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > NOTE_THREADS_CACHE_TTL_MS) {
+    noteThreadsCache.delete(key);
+    return null;
+  }
+  return entry.threads;
+}
+
+function setCachedNoteThreads(key, threads) {
+  noteThreadsCache.set(key, { ts: Date.now(), threads });
+}
+
+function invalidateNoteThreadsCache(sid) {
+  const prefix = `${sid}|`;
+  for (const key of noteThreadsCache.keys()) {
+    if (key.startsWith(prefix)) noteThreadsCache.delete(key);
+  }
+}
+
+const MENTIONABLE_USERS_CACHE_TTL_MS = 30_000;
+const mentionableUsersCache = new Map();
+
+function getCachedMentionableUsers(sid) {
+  const entry = mentionableUsersCache.get(sid);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > MENTIONABLE_USERS_CACHE_TTL_MS) {
+    mentionableUsersCache.delete(sid);
+    return null;
+  }
+  return entry.users;
+}
+
+function setCachedMentionableUsers(sid, users) {
+  mentionableUsersCache.set(sid, { ts: Date.now(), users });
+}
+
 const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   sessionId,
   sessionTitle = "",
@@ -594,6 +639,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const [threadActionsOpen, setThreadActionsOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("open");
   const [scopeFilter, setScopeFilter] = useState("all");
+  const elementFilterKey = scopeFilter === "selected_element" ? selectedElementId : "";
   const [participationFilter, setParticipationFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortOrder, setSortOrder] = useState("newest");
@@ -634,6 +680,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const editDraftRef = useRef(null);
   const threadActionsRef = useRef(null);
   const markReadInFlightRef = useRef(new Set());
+  const fetchThreadsDebounceRef = useRef(null);
 
   const createSubject = createSubjectByScope[createScope] || "";
   const createDetails = createDetailsByScope[createScope] || "";
@@ -1002,20 +1049,26 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   }
 
   const fetchMentionableUsers = useCallback(async () => {
-    if (!sid || !open) {
+    if (!sid) {
       setMentionableUsers([]);
+      return;
+    }
+    const cached = getCachedMentionableUsers(sid);
+    if (cached) {
+      setMentionableUsers(cached);
       return;
     }
     const result = await apiListMentionableUsers(sid);
     if (result?.ok) {
-      setMentionableUsers(asArray(result.items));
+      const users = asArray(result.items);
+      setCachedMentionableUsers(sid, users);
+      setMentionableUsers(users);
     }
-  }, [open, sid]);
+  }, [sid]);
 
   const fetchThreads = useCallback(async (options = {}) => {
     if (!sid) return;
-    if (open) setLoading(true);
-    setError("");
+    const force = Boolean(options?.force);
     const preferredThreadId = text(options?.preferredThreadId);
     let filters;
     if (!open) {
@@ -1034,6 +1087,24 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
         elementId: notificationMode ? "" : (scopeFilter === "selected_element" ? selectedElementId : ""),
       };
     }
+    const cacheKey = noteThreadsCacheKey(sid, scopeFilter, elementFilterKey, statusFilter, notificationMode ? "1" : "0");
+    if (!force) {
+      const cached = getCachedNoteThreads(cacheKey);
+      if (cached) {
+        setThreads(cached);
+        setSelectedThreadId((prev) => {
+          if (preferredThreadId && cached.some((item) => text(item?.id) === preferredThreadId)) {
+            return preferredThreadId;
+          }
+          if (cached.some((item) => text(item?.id) === prev)) return prev;
+          return "";
+        });
+        setLoading(false);
+        return;
+      }
+    }
+    if (open) setLoading(true);
+    setError("");
     const idsToLoad = descendantSessionIds.length ? descendantSessionIds : [sid];
     const results = await Promise.all(idsToLoad.map((id) => apiListNoteThreads(id, filters)));
     const nextThreads = [];
@@ -1050,6 +1121,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       }
     }
     nextThreads.sort((left, right) => threadUpdatedAt(right) - threadUpdatedAt(left));
+    setCachedNoteThreads(cacheKey, nextThreads);
     setThreads(nextThreads);
     if (loadError) {
       setError(loadError);
@@ -1062,11 +1134,22 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       return "";
     });
     setLoading(false);
-  }, [descendantSessionIds, notificationMode, open, scopeFilter, selectedElementId, sid, statusFilter]);
+  }, [descendantSessionIds, elementFilterKey, notificationMode, open, scopeFilter, selectedElementId, sid, statusFilter]);
 
   useEffect(() => {
-    if (!open) return;
-    void fetchThreads();
+    if (fetchThreadsDebounceRef.current) {
+      clearTimeout(fetchThreadsDebounceRef.current);
+    }
+    fetchThreadsDebounceRef.current = setTimeout(() => {
+      fetchThreadsDebounceRef.current = null;
+      void fetchThreads();
+    }, 0);
+    return () => {
+      if (fetchThreadsDebounceRef.current) {
+        clearTimeout(fetchThreadsDebounceRef.current);
+        fetchThreadsDebounceRef.current = null;
+      }
+    };
   }, [fetchThreads, open]);
 
   useEffect(() => {
@@ -1302,7 +1385,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       setBusy("");
       return;
     }
-    await fetchThreads({ preferredThreadId: threadId });
+    await fetchThreads({ force: true, preferredThreadId: threadId });
     emitNotesAggregateChanged(sid);
     setBusy("");
   }
@@ -1539,7 +1622,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setCreateOpen(false);
     setSelectedThreadId(nextThreadId);
     setPanelView("thread");
-    await fetchThreads({ preferredThreadId: nextThreadId });
+    await fetchThreads({ force: true, preferredThreadId: nextThreadId });
     emitNotesAggregateChanged(sid);
     emitNoteMentionsChanged();
     setCreateSubjectByScope((prev) => (prev[scopeKey] ? { ...prev, [scopeKey]: "" } : prev));
@@ -1629,7 +1712,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       setThreads((prev) => asArray(prev).map((thread) => (text(thread?.id) === text(nextThread.id) ? nextThread : thread)));
       setSelectedThreadId(text(nextThread.id));
     } else {
-      await fetchThreads({ preferredThreadId: text(selectedThread?.id) });
+      await fetchThreads({ force: true, preferredThreadId: text(selectedThread?.id) });
     }
     cancelEditComment(commentId);
     emitNoteMentionsChanged();
@@ -1657,7 +1740,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
     setCommentMentionByThread((prev) => ({ ...prev, [threadId]: emptyMentionComposer() }));
     clearReplyTarget(threadId);
     setSelectedThreadId(threadId);
-    await fetchThreads({ preferredThreadId: threadId });
+    await fetchThreads({ force: true, preferredThreadId: threadId });
     clearThreadUnread(threadId, result);
     emitNotesAggregateChanged(sid);
     emitNoteMentionsChanged();
@@ -1719,7 +1802,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       return;
     }
     setSelectedThreadId(threadId);
-    await fetchThreads({ preferredThreadId: threadId });
+    await fetchThreads({ force: true, preferredThreadId: threadId });
     emitNotesAggregateChanged(sid);
     setBusy("");
   }
@@ -1736,7 +1819,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       return;
     }
     setSelectedThreadId(threadId);
-    await fetchThreads({ preferredThreadId: threadId });
+    await fetchThreads({ force: true, preferredThreadId: threadId });
     emitNotesAggregateChanged(sid);
     setBusy("");
   }
@@ -1753,7 +1836,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       return;
     }
     setSelectedThreadId(threadId);
-    await fetchThreads({ preferredThreadId: threadId });
+    await fetchThreads({ force: true, preferredThreadId: threadId });
     emitNotesAggregateChanged(sid);
     setBusy("");
   }
@@ -1771,7 +1854,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       return;
     }
     setSelectedThreadId("");
-    await fetchThreads();
+    await fetchThreads({ force: true });
     emitNotesAggregateChanged(sid);
     setBusy("");
   }
@@ -1789,7 +1872,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
       setBusy("");
       return;
     }
-    await fetchThreads({ preferredThreadId: threadId });
+    await fetchThreads({ force: true, preferredThreadId: threadId });
     emitNotesAggregateChanged(sid);
     setBusy("");
   }
@@ -1915,7 +1998,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                     <span>{error}</span>
                     <button
                       type="button"
-                      onClick={() => void fetchThreads()}
+                      onClick={() => void fetchThreads({ force: true })}
                       disabled={loading}
                       className="shrink-0 rounded border border-red-400 bg-white px-2 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                       data-testid="notes-error-retry"
@@ -2522,7 +2605,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                     <button
                       type="button"
                       className="secondaryBtn tinyBtn h-7 px-2 text-[10px]"
-                      onClick={() => void fetchThreads()}
+                      onClick={() => void fetchThreads({ force: true })}
                       disabled={loading}
                     >
                       {loading ? "..." : "↻"}
@@ -2580,7 +2663,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
                 <button
                   type="button"
                   className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border/70 text-muted transition hover:border-info/55 hover:bg-info/10 hover:text-info disabled:opacity-60"
-                  onClick={() => void fetchThreads()}
+                  onClick={() => void fetchThreads({ force: true })}
                   disabled={loading}
                   aria-label="Обновить обсуждения"
                   title="Обновить"

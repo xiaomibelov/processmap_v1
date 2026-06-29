@@ -9,6 +9,34 @@ function toText(value) {
   return String(value || "").trim();
 }
 
+const DICTIONARY_CACHE_TTL_MS = 30_000;
+const dictionaryCache = new Map();
+
+function dictionaryCacheKey(orgId, type, extra = "") {
+  return `${type}|${orgId}|${extra}`;
+}
+
+function getCachedDictionary(key) {
+  const entry = dictionaryCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > DICTIONARY_CACHE_TTL_MS) {
+    dictionaryCache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function setCachedDictionary(key, value) {
+  dictionaryCache.set(key, { ts: Date.now(), value });
+}
+
+function invalidateDictionaryCache(orgId) {
+  const prefix = `|${orgId}|`;
+  for (const key of dictionaryCache.keys()) {
+    if (key.includes(prefix)) dictionaryCache.delete(key);
+  }
+}
+
 export default function useNotesPanelController({
   activeOrgId = "",
   selectedCamundaPropertiesEditable = false,
@@ -24,26 +52,43 @@ export default function useNotesPanelController({
   const [orgPropertyDictionaryAddBusyKey, setOrgPropertyDictionaryAddBusyKey] = useState("");
 
   useEffect(() => {
-    if (!selectedCamundaPropertiesEditable || !toText(activeOrgId)) {
+    if (!toText(activeOrgId)) {
       setOrgPropertyDictionaryOperations([]);
       setOrgPropertyDictionaryOperationsLoading(false);
       return;
     }
-    let cancelled = false;
-    setOrgPropertyDictionaryOperationsLoading(true);
-    void (async () => {
-      const result = await listOrgPropertyDictionaryOperations(activeOrgId, { includeInactive: false });
-      if (cancelled) return;
-      if (!result.ok) {
-        setOrgPropertyDictionaryOperations([]);
-        setOrgPropertyDictionaryOperationsLoading(false);
-        return;
+    const cacheKey = dictionaryCacheKey(activeOrgId, "operations", String(orgPropertyDictionaryRevision));
+    const cached = getCachedDictionary(cacheKey);
+    if (cached) {
+      if (selectedCamundaPropertiesEditable) {
+        setOrgPropertyDictionaryOperations(cached);
       }
-      setOrgPropertyDictionaryOperations(Array.isArray(result.items) ? result.items : []);
       setOrgPropertyDictionaryOperationsLoading(false);
-    })();
+      return;
+    }
+    let cancelled = false;
+    let timeoutId = setTimeout(() => {
+      if (cancelled) return;
+      if (selectedCamundaPropertiesEditable) setOrgPropertyDictionaryOperationsLoading(true);
+      void (async () => {
+        const result = await listOrgPropertyDictionaryOperations(activeOrgId, { includeInactive: false });
+        if (cancelled) return;
+        const items = Array.isArray(result.items) ? result.items : [];
+        setCachedDictionary(cacheKey, items);
+        if (!result.ok) {
+          if (selectedCamundaPropertiesEditable) setOrgPropertyDictionaryOperations([]);
+          if (selectedCamundaPropertiesEditable) setOrgPropertyDictionaryOperationsLoading(false);
+          return;
+        }
+        if (selectedCamundaPropertiesEditable) {
+          setOrgPropertyDictionaryOperations(items);
+          setOrgPropertyDictionaryOperationsLoading(false);
+        }
+      })();
+    }, 0);
     return () => {
       cancelled = true;
+      clearTimeout(timeoutId);
     };
   }, [activeOrgId, selectedCamundaPropertiesEditable, orgPropertyDictionaryRevision]);
 
@@ -55,23 +100,36 @@ export default function useNotesPanelController({
       setOrgPropertyDictionaryAddBusyKey("");
       return;
     }
-    let cancelled = false;
-    setOrgPropertyDictionaryLoading(true);
-    setOrgPropertyDictionaryErr("");
-    void (async () => {
-      const result = await getOrgPropertyDictionaryBundle(activeOrgId, selectedOperationKey, { includeInactive: false });
-      if (cancelled) return;
-      if (!result.ok) {
-        setOrgPropertyDictionaryBundle(null);
-        setOrgPropertyDictionaryErr(toText(result.error || "Не удалось загрузить словарь свойств."));
-        setOrgPropertyDictionaryLoading(false);
-        return;
-      }
-      setOrgPropertyDictionaryBundle(result.bundle || null);
+    const cacheKey = dictionaryCacheKey(activeOrgId, "bundle", `${selectedOperationKey}:${orgPropertyDictionaryRevision}`);
+    const cached = getCachedDictionary(cacheKey);
+    if (cached) {
+      setOrgPropertyDictionaryBundle(cached);
       setOrgPropertyDictionaryLoading(false);
-    })();
+      return;
+    }
+    let cancelled = false;
+    let timeoutId = setTimeout(() => {
+      if (cancelled) return;
+      setOrgPropertyDictionaryLoading(true);
+      setOrgPropertyDictionaryErr("");
+      void (async () => {
+        const result = await getOrgPropertyDictionaryBundle(activeOrgId, selectedOperationKey, { includeInactive: false });
+        if (cancelled) return;
+        if (!result.ok) {
+          setOrgPropertyDictionaryBundle(null);
+          setOrgPropertyDictionaryErr(toText(result.error || "Не удалось загрузить словарь свойств."));
+          setOrgPropertyDictionaryLoading(false);
+          return;
+        }
+        const bundle = result.bundle || null;
+        setCachedDictionary(cacheKey, bundle);
+        setOrgPropertyDictionaryBundle(bundle);
+        setOrgPropertyDictionaryLoading(false);
+      })();
+    }, 0);
     return () => {
       cancelled = true;
+      clearTimeout(timeoutId);
     };
   }, [activeOrgId, selectedCamundaPropertiesEditable, selectedOperationKey, orgPropertyDictionaryRevision]);
 

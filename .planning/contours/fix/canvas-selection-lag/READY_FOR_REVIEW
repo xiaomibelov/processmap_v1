@@ -1,0 +1,5 @@
+Contour: fix/canvas-selection-lag
+Commit: d7cb70a2
+Stage: http://clearvestnic.ru:5177
+
+All fixes implemented and verified. Ready for code review and user approval before merge/deploy.

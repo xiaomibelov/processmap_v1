@@ -1,0 +1,68 @@
+[
+  {
+    "index": 0,
+    "label": "Process",
+    "elementId": "Participant_66c0ec50",
+    "highlightMs": 103,
+    "settleMs": 204,
+    "mutations": 2,
+    "addedNodes": 1,
+    "removedNodes": 1,
+    "requests": []
+  },
+  {
+    "index": 1,
+    "label": "",
+    "elementId": "StartEvent_43aab225",
+    "highlightMs": 188,
+    "settleMs": 302,
+    "mutations": 589,
+    "addedNodes": 518,
+    "removedNodes": 71,
+    "requests": []
+  },
+  {
+    "index": 2,
+    "label": "Начало",
+    "elementId": "StartEvent_43aab225_label",
+    "highlightMs": 111,
+    "settleMs": 212,
+    "mutations": 28,
+    "addedNodes": 13,
+    "removedNodes": 15,
+    "requests": []
+  },
+  {
+    "index": 3,
+    "label": "Положить контейнер с борщом в микроволно",
+    "elementId": "Activity_92174620",
+    "highlightMs": 130,
+    "settleMs": 231,
+    "mutations": 60,
+    "addedNodes": 50,
+    "removedNodes": 10,
+    "requests": []
+  },
+  {
+    "index": 4,
+    "label": "Выставить время и мощность микроволновки",
+    "elementId": "Activity_fbaab374",
+    "highlightMs": 70,
+    "settleMs": 171,
+    "mutations": 0,
+    "addedNodes": 0,
+    "removedNodes": 0,
+    "requests": []
+  },
+  {
+    "index": 5,
+    "label": "Запустить разогрев",
+    "elementId": "Activity_69566b60",
+    "highlightMs": 61,
+    "settleMs": 162,
+    "mutations": 0,
+    "addedNodes": 0,
+    "removedNodes": 0,
+    "requests": []
+  }
+]
