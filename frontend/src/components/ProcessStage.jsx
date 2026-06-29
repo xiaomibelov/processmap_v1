@@ -38,6 +38,11 @@ import {
 import { buildManualSaveProjectionSyncPlan } from "../features/process/bpmn/save/manualSaveProjectionSync.js";
 import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
 import useBpmnSync from "../features/process/hooks/useBpmnSync";
+import {
+  extractCamundaExtensionsMapFromBpmnXml,
+  hydrateCamundaExtensionsFromBpmn,
+  normalizeCamundaExtensionsMap,
+} from "../features/process/camunda/camundaExtensions.js";
 import { useViewportResizeController } from "../features/process/bpmn/stage/viewport/useViewportResizeController";
 import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
 import useProcessWorkbenchController from "../features/process/hooks/useProcessWorkbenchController";
@@ -5989,6 +5994,40 @@ function ProcessStage({
         setGenErr(shortErr(imported.error || "Импорт не выполнен."));
         return;
       }
+
+      // Extract Camunda extension properties from the imported XML and persist
+      // them immediately so they are visible after the first import and survive
+      // reloads. Without this step the backend keeps stale bpmn_meta, which
+      // later session fetches can overwrite the locally hydrated state.
+      const currentMeta = asObject(draft?.bpmn_meta);
+      const currentCamunda = normalizeCamundaExtensionsMap(currentMeta.camunda_extensions_by_element_id);
+      const extractedCamunda = extractCamundaExtensionsMapFromBpmnXml(text);
+      const camundaHydration = hydrateCamundaExtensionsFromBpmn({
+        extractedMap: extractedCamunda,
+        sessionMetaMap: currentCamunda,
+        allowSeedFromBpmn: true,
+      });
+      const nextCamundaMap = normalizeCamundaExtensionsMap(camundaHydration?.nextSessionMetaMap);
+      if (Object.keys(nextCamundaMap).length > 0) {
+        const nextBpmnMeta = {
+          ...currentMeta,
+          camunda_extensions_by_element_id: nextCamundaMap,
+        };
+        onSessionSyncWithVersion?.({
+          ...(draft || {}),
+          id: sid,
+          session_id: sid,
+          bpmn_meta: nextBpmnMeta,
+          _sync_source: "import_bpmn_camunda_hydrate",
+        });
+        if (!isLocal) {
+          apiPatchSession(sid, { bpmn_meta: nextBpmnMeta }).catch((e) => {
+            // eslint-disable-next-line no-console
+            console.warn("[IMPORT_BPMN] failed to persist camunda meta", e);
+          });
+        }
+      }
+
       const replaceSeedInterview = isLikelySeedBpmnXml(draft?.bpmn_xml);
       const projected = parseAndProjectBpmnToInterview({
         xmlText: text,
