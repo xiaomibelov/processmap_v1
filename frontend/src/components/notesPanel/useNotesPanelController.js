@@ -26,7 +26,6 @@ export default function useNotesPanelController({
 
   useEffect(() => {
     if (!selectedCamundaPropertiesEditable || !toText(activeOrgId)) {
-      lastOperationsKeyRef.current = "";
       setOrgPropertyDictionaryOperations([]);
       setOrgPropertyDictionaryOperationsLoading(false);
       return () => {};
@@ -58,7 +57,6 @@ export default function useNotesPanelController({
 
   useEffect(() => {
     if (!selectedCamundaPropertiesEditable || !toText(activeOrgId) || !toText(selectedOperationKey)) {
-      lastBundleKeyRef.current = "";
       setOrgPropertyDictionaryBundle(null);
       setOrgPropertyDictionaryLoading(false);
       setOrgPropertyDictionaryErr("");
