@@ -1,3 +1,20 @@
+const POSITIONAL_COMMANDS = new Set([
+  "shape.move",
+  "elements.move",
+  "spaceTool",
+]);
+
+function asText(value) {
+  return String(value || "");
+}
+
+function isPositionalCommand(commandRaw) {
+  const command = asText(commandRaw).trim().toLowerCase();
+  if (!command) return false;
+  // These bpmn-js commands only change x/y/waypoints without adding/removing elements.
+  return POSITIONAL_COMMANDS.has(command);
+}
+
 export default function createLocalMutationStaging(options = {}) {
   const getStore = typeof options?.getStore === "function" ? options.getStore : () => null;
   const getRuntime = typeof options?.getRuntime === "function" ? options.getRuntime : () => null;
@@ -6,7 +23,7 @@ export default function createLocalMutationStaging(options = {}) {
   const cacheRaw = typeof options?.cacheRaw === "function" ? options.cacheRaw : null;
   const emit = typeof options?.emit === "function" ? options.emit : null;
   const requestAutosave = typeof options?.requestAutosave === "function" ? options.requestAutosave : null;
-  const asText = typeof options?.asText === "function" ? options.asText : (value) => String(value || "");
+  const asTextOption = typeof options?.asText === "function" ? options.asText : asText;
   const asNumber = typeof options?.asNumber === "function"
     ? options.asNumber
     : (value, fallback = 0) => {
@@ -15,7 +32,7 @@ export default function createLocalMutationStaging(options = {}) {
     };
 
   function currentSid() {
-    return asText(getSessionId?.() || "").trim();
+    return asTextOption(getSessionId?.() || "").trim();
   }
 
   async function stageRuntimeChange(ev) {
@@ -28,7 +45,7 @@ export default function createLocalMutationStaging(options = {}) {
 
     const runtime = getRuntime();
     const status = runtime?.getStatus?.();
-    let nextXml = asText(store.getState?.()?.xml || "");
+    let nextXml = asTextOption(store.getState?.()?.xml || "");
     let xmlAuthority = "staged_local_store_fallback";
     let xmlExportMode = "store_fallback";
     if (status?.ready && status?.defs) {
@@ -37,7 +54,7 @@ export default function createLocalMutationStaging(options = {}) {
       // on the durable flush path.
       const xmlRes = await runtime.getXml({ format: false });
       if (xmlRes?.ok) {
-        nextXml = asText(xmlRes.xml);
+        nextXml = asTextOption(xmlRes.xml);
         xmlAuthority = "staged_local_runtime_snapshot";
         xmlExportMode = "runtime_unformatted";
       }
@@ -50,7 +67,18 @@ export default function createLocalMutationStaging(options = {}) {
       rev: asNumber(nextState?.rev, 0),
       reason: "runtime_change",
     });
-    requestAutosave?.("autosave");
+
+    const command = asTextOption(ev?.command || "").trim();
+    const positional = isPositionalCommand(command);
+    if (!positional) {
+      requestAutosave?.("autosave");
+    } else {
+      emit?.("STAGE_POSITIONAL_CHANGE", {
+        sid,
+        command,
+        autosaveSkipped: true,
+      });
+    }
 
     return {
       ok: true,
@@ -61,7 +89,8 @@ export default function createLocalMutationStaging(options = {}) {
       xmlExportMode,
       rev: asNumber(nextState?.rev, 0),
       dirty: nextState?.dirty === true,
-      autosaveRequested: true,
+      positional,
+      autosaveRequested: !positional,
     };
   }
 

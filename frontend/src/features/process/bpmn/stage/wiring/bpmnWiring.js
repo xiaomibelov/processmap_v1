@@ -2,9 +2,29 @@ import createBpmnRuntimeDefault from "../../runtime/createBpmnRuntime.js";
 import createBpmnStoreDefault from "../../store/createBpmnStore.js";
 import createBpmnCoordinatorDefault from "../../coordinator/createBpmnCoordinator.js";
 import createBpmnPersistenceDefault from "../../persistence/createBpmnPersistence.js";
+import {
+  isDiagramDragging,
+  onDiagramDragStart,
+  onDiagramDragEnd,
+} from "../diagramDragState.js";
 
 function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
+}
+
+function asText(value) {
+  return String(value || "");
+}
+
+const POSITIONAL_COMMANDS = new Set([
+  "shape.move",
+  "elements.move",
+  "spaceTool",
+]);
+
+function isPositionalCommand(commandRaw) {
+  const command = asText(commandRaw).trim().toLowerCase();
+  return POSITIONAL_COMMANDS.has(command);
 }
 
 function resolveCtx(ctxBase) {
@@ -185,6 +205,9 @@ export function createBpmnWiring(ctxBase, deps = {}) {
       getRuntime: () => refs.modelerRuntimeRef?.current,
       getSessionId: () => String(refs.activeSessionRef?.current || ""),
       debounceMs: 10_000,
+      getIsDragging: () => isDiagramDragging(),
+      dragThrottleMs: 5000,
+      dragFinalDebounceMs: 500,
       persistence: {
         saveRaw: (sid, xmlText, rev, reason) => persistence.saveRaw(sid, xmlText, rev, reason),
         loadRaw: (sid, optionsForLoad) => persistence.loadRaw(sid, optionsForLoad),
@@ -201,6 +224,8 @@ export function createBpmnWiring(ctxBase, deps = {}) {
       onTrace: callbacks.onCoordinatorTrace,
       onRuntimeChange: (ev) => {
         if (refs.suppressCommandStackRef?.current > 0) return;
+        const command = String(ev?.command || "").trim();
+        const positional = isPositionalCommand(command);
         state.setXmlDirty?.(true);
         if (callbacks.shouldLogBpmnTrace?.()) {
           const runtime = refs.modelerRuntimeRef?.current;
@@ -208,20 +233,24 @@ export function createBpmnWiring(ctxBase, deps = {}) {
           const activeInst = runtime?.getInstance?.();
           // eslint-disable-next-line no-console
           console.debug(
-            `[BPMN] commandStack.changed sid=${String(values.sessionId || "-")} token=${Number(runtimeStatus?.token || 0)} ready=${runtimeStatus?.ready ? 1 : 0} defs=${runtimeStatus?.defs ? 1 : 0} active_modeler=${activeInst === refs.modelerRef?.current ? 1 : 0}`,
+            `[BPMN] commandStack.changed sid=${String(values.sessionId || "-")} command=${command} positional=${positional ? 1 : 0} token=${Number(runtimeStatus?.token || 0)} ready=${runtimeStatus?.ready ? 1 : 0} defs=${runtimeStatus?.defs ? 1 : 0} active_modeler=${activeInst === refs.modelerRef?.current ? 1 : 0}`,
           );
           callbacks.probeCanvas?.(activeInst || refs.modelerRef?.current, "after_command_change", {
             sid: String(values.sessionId || ""),
             tab: "diagram",
+            command,
+            positional,
             token: Number(runtimeStatus?.token || 0),
             reason: "commandStack.changed",
             cycleIndex: Number(refs.ensureVisibleCycleRef?.current || 0),
           });
         }
-        callbacks.emitDiagramMutation?.("diagram.change", {
-          eventName: "commandStack.changed",
-          command: String(ev?.command || "").trim(),
-        });
+        if (!positional) {
+          callbacks.emitDiagramMutation?.("diagram.change", {
+            eventName: "commandStack.changed",
+            command,
+          });
+        }
       },
       onRuntimeStatus: (runtimeStatus) => {
         refs.modelerReadyRef.current = !!runtimeStatus?.ready && !!runtimeStatus?.defs;
@@ -230,6 +259,8 @@ export function createBpmnWiring(ctxBase, deps = {}) {
       },
     });
     refs.bpmnCoordinatorRef.current = coordinator;
+    onDiagramDragStart(() => coordinator.notifyDragStart());
+    onDiagramDragEnd(() => coordinator.notifyDragEnd());
     return coordinator;
   }
 

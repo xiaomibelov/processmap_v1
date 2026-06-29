@@ -41,6 +41,10 @@ import NoteMarkdown from "../features/notes/markdownRenderer.js";
 import { readableBpmnText } from "../features/process/bpmn/bpmnIdentity";
 import NotesAggregateBadge from "./NotesAggregateBadge.jsx";
 import { useSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
+import {
+  isDiagramDragging,
+  onDiagramDragEnd,
+} from "../features/process/bpmn/stage/diagramDragState.js";
 
 const DEFAULT_PANEL_WIDTH = 480;
 const MIN_PANEL_WIDTH = 320;
@@ -625,6 +629,7 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   const [legacyDraftByThread, setLegacyDraftByThread] = useState({});
   const aggregate = useSessionNoteAggregate(sid);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [dragFlushKey, setDragFlushKey] = useState(0);
   const [mentionableUsers, setMentionableUsers] = useState([]);
   const [createMentionComposer, setCreateMentionComposer] = useState({ selected: [], active: null, highlightedIndex: 0 });
   const [commentMentionByThread, setCommentMentionByThread] = useState({});
@@ -1065,9 +1070,17 @@ const NotesMvpPanel = forwardRef(function NotesMvpPanel({
   }, [descendantSessionIds, notificationMode, open, scopeFilter, selectedElementId, sid, statusFilter]);
 
   useEffect(() => {
+    const unsubscribe = onDiagramDragEnd(() => {
+      setDragFlushKey((k) => k + 1);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
     if (!open) return;
+    if (isDiagramDragging()) return;
     void fetchThreads();
-  }, [fetchThreads, open]);
+  }, [fetchThreads, open, dragFlushKey]);
 
   useEffect(() => {
     emitElementNoteThreadsChanged(
