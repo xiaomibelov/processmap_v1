@@ -1,0 +1,12 @@
+[
+  {
+    "time": 1782732449268,
+    "type": "log",
+    "text": "[FPC-OVERLAY-V2] extension overlays found {count: 17}"
+  },
+  {
+    "time": 1782732449268,
+    "type": "log",
+    "text": "[FPC-OVERLAY-V2] overlays mounted {elements: 0, overlayNodes: 0}"
+  }
+]

@@ -1,0 +1,157 @@
+[
+  {
+    "time": 1782731767706,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/app?project=d3b9ae9fda&session=f1f727aee7"
+  },
+  {
+    "time": 1782731767749,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/assets/index-DoxRaH0B.js"
+  },
+  {
+    "time": 1782731767750,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/assets/index-B-TWw5iD.css"
+  },
+  {
+    "time": 1782731767750,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/env.js"
+  },
+  {
+    "time": 1782731767886,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/feature-flags"
+  },
+  {
+    "time": 1782731767886,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/auth/me"
+  },
+  {
+    "time": 1782731767957,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/workspaces"
+  },
+  {
+    "time": 1782731767960,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/feature-flags"
+  },
+  {
+    "time": 1782731767962,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/meta"
+  },
+  {
+    "time": 1782731767964,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/note-mentions?limit=20"
+  },
+  {
+    "time": 1782731767964,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/note-notifications?limit=20&include_read=1"
+  },
+  {
+    "time": 1782731767977,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/meta"
+  },
+  {
+    "time": 1782731767977,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7"
+  },
+  {
+    "time": 1782731768041,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/explorer?workspace_id=ws_org_default_main"
+  },
+  {
+    "time": 1782731768065,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/projects"
+  },
+  {
+    "time": 1782731768450,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/projects/d3b9ae9fda/sessions?view=summary"
+  },
+  {
+    "time": 1782731768453,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/projects/d3b9ae9fda/explorer?workspace_id=ws_org_default_main&root_only=true&include_children_meta=true"
+  },
+  {
+    "time": 1782731768521,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7"
+  },
+  {
+    "time": 1782731768602,
+    "method": "POST",
+    "url": "http://clearvestnic.ru:5177/api/sessions/note-aggregates"
+  },
+  {
+    "time": 1782731768901,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/bpmn?raw=1&include_overlay=0&_ts=1782731768874"
+  },
+  {
+    "time": 1782731768901,
+    "method": "POST",
+    "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/presence"
+  },
+  {
+    "time": 1782731768901,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/bpmn/versions?limit=1"
+  },
+  {
+    "time": 1782731768901,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/auto-pass/precheck"
+  },
+  {
+    "time": 1782731768901,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/meta"
+  },
+  {
+    "time": 1782731768936,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/assets/Modeler-D6ke1rsx.js"
+  },
+  {
+    "time": 1782731768936,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/assets/NavigatedViewer-miLM4RGO.js"
+  },
+  {
+    "time": 1782731768936,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/assets/index-DKh-SRhJ.js"
+  },
+  {
+    "time": 1782731769581,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/note-aggregate"
+  },
+  {
+    "time": 1782731773177,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/mentionable-users"
+  },
+  {
+    "time": 1782731773280,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/note-threads"
+  },
+  {
+    "time": 1782731773652,
+    "method": "GET",
+    "url": "http://clearvestnic.ru:5177/api/orgs/org_default/property-dictionary/operations"
+  }
+]

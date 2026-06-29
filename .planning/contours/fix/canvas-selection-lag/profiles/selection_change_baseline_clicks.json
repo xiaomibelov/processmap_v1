@@ -1,0 +1,76 @@
+[
+  {
+    "index": 0,
+    "label": "Process",
+    "elementId": "Participant_66c0ec50",
+    "selectionMs": 416,
+    "mutations": 10,
+    "addedNodes": 5,
+    "removedNodes": 5,
+    "requests": [
+      {
+        "method": "GET",
+        "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/mentionable-users"
+      },
+      {
+        "method": "GET",
+        "url": "http://clearvestnic.ru:5177/api/sessions/f1f727aee7/note-threads"
+      }
+    ]
+  },
+  {
+    "index": 1,
+    "label": "",
+    "elementId": "StartEvent_43aab225",
+    "selectionMs": 509,
+    "mutations": 589,
+    "addedNodes": 518,
+    "removedNodes": 71,
+    "requests": [
+      {
+        "method": "GET",
+        "url": "http://clearvestnic.ru:5177/api/orgs/org_default/property-dictionary/operations"
+      }
+    ]
+  },
+  {
+    "index": 2,
+    "label": "Начало",
+    "elementId": "StartEvent_43aab225_label",
+    "selectionMs": 411,
+    "mutations": 28,
+    "addedNodes": 13,
+    "removedNodes": 15,
+    "requests": []
+  },
+  {
+    "index": 3,
+    "label": "Положить контейнер с борщом в микроволно",
+    "elementId": "Activity_92174620",
+    "selectionMs": 447,
+    "mutations": 60,
+    "addedNodes": 50,
+    "removedNodes": 10,
+    "requests": []
+  },
+  {
+    "index": 4,
+    "label": "Выставить время и мощность микроволновки",
+    "elementId": "Activity_fbaab374",
+    "selectionMs": 388,
+    "mutations": 0,
+    "addedNodes": 0,
+    "removedNodes": 0,
+    "requests": []
+  },
+  {
+    "index": 5,
+    "label": "Запустить разогрев",
+    "elementId": "Activity_69566b60",
+    "selectionMs": 401,
+    "mutations": 0,
+    "addedNodes": 0,
+    "removedNodes": 0,
+    "requests": []
+  }
+]
