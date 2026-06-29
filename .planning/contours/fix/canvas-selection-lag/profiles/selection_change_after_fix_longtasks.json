@@ -2,8 +2,26 @@
   {
     "name": "self",
     "entryType": "longtask",
-    "startTime": 5844.099999964237,
-    "duration": 52,
+    "startTime": 6161.800000011921,
+    "duration": 56,
+    "attribution": [
+      {
+        "name": "unknown",
+        "entryType": "taskattribution",
+        "startTime": 0,
+        "duration": 0,
+        "containerType": "window",
+        "containerSrc": "",
+        "containerId": "",
+        "containerName": ""
+      }
+    ]
+  },
+  {
+    "name": "self",
+    "entryType": "longtask",
+    "startTime": 7374.800000011921,
+    "duration": 58,
     "attribution": [
       {
         "name": "unknown",
