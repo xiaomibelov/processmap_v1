@@ -17,6 +17,7 @@ const workspaceSource = read("WorkspaceAnalyticsDashboard.jsx");
 const cardSource = read("DashboardMetricCard.jsx");
 const chartSource = read("DashboardBarChart.jsx");
 const modelSource = read("dashboardModel.js");
+const panelSource = read("AnalyticsDashboardsPanel.jsx");
 
 test("AnalyticsDashboards renders session scope without crash", () => {
   assert.match(source, /sessionId\s*\?/);
@@ -89,4 +90,23 @@ test("All new components have data-testid attributes", () => {
   assert.match(workspaceSource, /data-testid=/);
   assert.match(cardSource, /data-testid=/);
   assert.match(chartSource, /data-testid=/);
+});
+
+test("dashboardModel exports dashboard v2 helpers", () => {
+  assert.match(modelSource, /dashboardDataToKpiCards/);
+  assert.match(modelSource, /dashboardDataToTaskStatusItems/);
+  assert.match(modelSource, /dashboardDataToBpmnElementItems/);
+  assert.match(modelSource, /dashboardDataToSessionTrendItems/);
+  assert.match(modelSource, /dashboardDataToProcessDurationItems/);
+  assert.match(modelSource, /hasActivityHeatmapData/);
+});
+
+test("AnalyticsDashboardsPanel renders v2 tiles", () => {
+  assert.match(panelSource, /analytics-kpi-metrics/);
+  assert.match(panelSource, /Статусы задач/);
+  assert.match(panelSource, /Типы BPMN-элементов/);
+  assert.match(panelSource, /Динамика сессий/);
+  assert.match(panelSource, /Длительность по процессам/);
+  assert.match(panelSource, /Heatmap активности/);
+  assert.match(panelSource, /Топ-5 используемых свойств/);
 });

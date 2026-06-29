@@ -64,6 +64,28 @@ test("badge surfaces deterministic stale auto-retry persisted path", () => {
   assert.match(badge.title, /автоматически повторено/i);
 });
 
+test("badge suppresses alarming stale retry UI for meta-only conflicts", () => {
+  const event = normalizeBpmnSaveLifecycleEvent({
+    event: "SAVE_PERSIST_DONE",
+    payload: {
+      sid: "sid_meta_retry",
+      status: 200,
+      stale_retry_applied: 1,
+      stale_retry_attempts: 1,
+      stale_retry_changed_keys: ["bpmn_meta"],
+    },
+  });
+
+  assert.equal(event.stage, "persisted");
+  assert.equal(event.staleRetryApplied, true);
+  assert.deepEqual(event.staleRetryChangedKeys, ["bpmn_meta"]);
+  assert.equal(event.staleRetryMetaOnly, true);
+
+  const badge = buildSaveUploadStatusBadge(event);
+  assert.equal(badge.visible, false);
+  assert.equal(badge.title, "");
+});
+
 test("badge shows failed status with http code when available", () => {
   const badge = buildSaveUploadStatusBadge({
     stage: "failed",

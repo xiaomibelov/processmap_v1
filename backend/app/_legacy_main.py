@@ -32,6 +32,7 @@ from .glossary import normalize_kind, slugify_canon, upsert_term
 from .models import Node, Edge, Question, ReportVersion, Session, Project, CreateProjectIn, UpdateProjectIn
 from .analytics import compute_analytics
 from .analytics_read_model import refresh_analytics_for_session
+from .camunda_meta_utils import deduplicate_camunda_extension_properties
 from .normalizer import load_seed_glossary, normalize_nodes
 from .resources import build_resources_report
 from .storage import (
@@ -881,7 +882,7 @@ def _user_is_member_of_org(user_id: str, org_id: str, *, is_admin: bool = False)
     return False
 
 
-_DIAGRAM_TRUTH_PATCH_KEYS = {"bpmn_meta", "interview", "nodes", "edges", "questions", "status"}
+_DIAGRAM_TRUTH_PATCH_KEYS = {"bpmn_meta", "interview", "nodes", "edges", "questions"}
 _DIAGRAM_TRUTH_PUT_CHANGED_KEYS = ["interview", "nodes", "edges", "questions", "bpmn_meta"]
 
 
@@ -4076,6 +4077,10 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
     role = _org_role_for_request(request, oid) if request is not None and oid else ("org_admin" if effective_is_admin else "")
 
     data = inp.model_dump(exclude_unset=True)
+    if "status" in data:
+        from .save_services.status_service import change_session_status
+        return change_session_status(session_id, inp, request)
+
     diagram_changed_keys = sorted({key for key in data.keys() if key in _DIAGRAM_TRUTH_PATCH_KEYS})
     diagram_write_requested = len(diagram_changed_keys) > 0
     client_base_diagram_state_version = _resolve_base_diagram_state_version(request=request, payload=data)
@@ -4089,7 +4094,6 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
 
     handled = False
     need_recompute = False
-    publish_requested = False
     auto_pass_state_write_requested = False
 
     if "title" in data and data["title"] is not None:
@@ -4150,17 +4154,6 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
         if not _can_edit_workspace(role, is_admin=effective_is_admin):
             raise HTTPException(status_code=403, detail="forbidden")
         sess.interview = _merge_interview_with_server_fields(sess.interview, data.get("interview"))
-        handled = True
-
-    if "status" in data:
-        next_status = _validate_session_status_transition(
-            (sess.interview or {}).get("status"),
-            data.get("status"),
-            role_raw=role,
-            is_admin=effective_is_admin,
-        )
-        sess.interview = {**(sess.interview or {}), "status": next_status}
-        publish_requested = next_status == "ready"
         handled = True
 
     if "nodes" in data:
@@ -4269,32 +4262,6 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
             user_id=user_id,
         )
 
-    if publish_requested:
-        interview_pending = dict(getattr(sess, "interview", {}) or {})
-        mirror_pending = interview_pending.get("git_mirror_publish")
-        if not isinstance(mirror_pending, dict):
-            mirror_pending = {}
-        mirror_pending = {
-            **mirror_pending,
-            "schema_version": "git_mirror_publish_v1",
-            "mirror_state": "pending",
-            "last_attempt_at": int(time.time()),
-            "last_error": None,
-        }
-        interview_pending["git_mirror_publish"] = mirror_pending
-        sess.interview = interview_pending
-        st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
-
-        mirror_result = execute_git_mirror_publish(
-            sess,
-            org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
-            user_id=user_id,
-        )
-        next_interview = mirror_result.get("interview")
-        if isinstance(next_interview, dict):
-            sess.interview = next_interview
-            st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
-
     _audit_log_safe(
         request,
         org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
@@ -4306,10 +4273,11 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
         meta={"keys": sorted(list(data.keys()))},
     )
     _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
-    try:
-        refresh_analytics_for_session(str(getattr(sess, "id", "") or session_id), oid or str(getattr(sess, "org_id", "") or get_default_org_id()))
-    except Exception:
-        pass
+    from .save_services.analytics_aggregator import publish_session_saved
+    publish_session_saved(
+        str(getattr(sess, "id", "") or session_id),
+        oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
+    )
     return _session_api_dump(sess)
 
 
@@ -4478,10 +4446,11 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
         meta={"put": True},
     )
     _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
-    try:
-        refresh_analytics_for_session(str(getattr(sess, "id", "") or session_id), oid or str(getattr(sess, "org_id", "") or get_default_org_id()))
-    except Exception:
-        pass
+    from .save_services.analytics_aggregator import publish_session_saved
+    publish_session_saved(
+        str(getattr(sess, "id", "") or session_id),
+        oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
+    )
     return _session_api_dump(sess)
 
 @app.post("/api/sessions/{session_id}/recompute")
@@ -7661,6 +7630,7 @@ def session_meta_patch(session_id: str, inp: Any, request: Request = None) -> Di
         meta = getattr(inp, "bpmn_meta", None)
     if not isinstance(meta, dict):
         raise HTTPException(status_code=400, detail="bpmn_meta_json must be an object")
+    meta = deduplicate_camunda_extension_properties(meta)
     base_version_raw = getattr(inp, "base_diagram_state_version", None)
     if base_version_raw is None:
         raise HTTPException(
@@ -9735,6 +9705,7 @@ def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Req
             ttl_days=ttl_days,
             regenerate=(regenerate and not staged_regenerate),
             activate_now=(not staged_regenerate),
+            permissions=getattr(inp, "permissions", None),
         )
     except ValueError as exc:
         return _enterprise_error(422, "validation_error", str(exc))

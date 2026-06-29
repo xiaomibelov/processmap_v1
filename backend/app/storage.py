@@ -1077,8 +1077,12 @@ def _note_thread_row_to_dict(row: Any, *, attention_acknowledged_at: Any = 0) ->
         "created_by": str(_row_value(row, "created_by") or ""),
         "created_at": int(_row_value(row, "created_at") or 0),
         "updated_at": int(_row_value(row, "updated_at") or 0),
+        "updated_by": str(_row_value(row, "updated_by") or ""),
         "resolved_by": str(_row_value(row, "resolved_by") or ""),
         "resolved_at": int(_row_value(row, "resolved_at") or 0),
+        "deleted_at": int(_row_value(row, "deleted_at") or 0),
+        "deleted_by": str(_row_value(row, "deleted_by") or ""),
+        "is_deleted": bool(int(_row_value(row, "deleted_at") or 0)),
     }
 
 
@@ -1091,8 +1095,12 @@ def _note_comment_row_to_dict(row: Any) -> Dict[str, Any]:
         "reply_to_comment_id": str(_row_value(row, "reply_to_comment_id") or ""),
         "created_at": int(_row_value(row, "created_at") or 0),
         "updated_at": int(_row_value(row, "updated_at") or 0),
+        "updated_by": str(_row_value(row, "updated_by") or ""),
         "edited_at": int(_row_value(row, "edited_at") or 0),
         "edited_by_user_id": str(_row_value(row, "edited_by_user_id") or ""),
+        "deleted_at": int(_row_value(row, "deleted_at") or 0),
+        "deleted_by": str(_row_value(row, "deleted_by") or ""),
+        "is_deleted": bool(int(_row_value(row, "deleted_at") or 0)),
     }
 
 
@@ -1485,13 +1493,22 @@ def _ensure_schema() -> None:
                   created_by TEXT NOT NULL DEFAULT '',
                   created_at INTEGER NOT NULL DEFAULT 0,
                   updated_at INTEGER NOT NULL DEFAULT 0,
+                  updated_by TEXT NOT NULL DEFAULT '',
                   resolved_by TEXT NOT NULL DEFAULT '',
-                  resolved_at INTEGER NOT NULL DEFAULT 0
+                  resolved_at INTEGER NOT NULL DEFAULT 0,
+                  deleted_at INTEGER NOT NULL DEFAULT 0,
+                  deleted_by TEXT NOT NULL DEFAULT ''
                 )
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_session_status ON note_threads(session_id, org_id, status, updated_at DESC)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_project_status ON note_threads(project_id, org_id, status)")
+            if not _column_exists(con, "note_threads", "updated_by"):
+                con.execute("ALTER TABLE note_threads ADD COLUMN updated_by TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "note_threads", "deleted_at"):
+                con.execute("ALTER TABLE note_threads ADD COLUMN deleted_at INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "note_threads", "deleted_by"):
+                con.execute("ALTER TABLE note_threads ADD COLUMN deleted_by TEXT NOT NULL DEFAULT ''")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS note_comments (
@@ -1502,8 +1519,11 @@ def _ensure_schema() -> None:
                   reply_to_comment_id TEXT DEFAULT '',
                   created_at INTEGER NOT NULL DEFAULT 0,
                   updated_at INTEGER NOT NULL DEFAULT 0,
+                  updated_by TEXT NOT NULL DEFAULT '',
                   edited_at INTEGER DEFAULT 0,
-                  edited_by_user_id TEXT DEFAULT ''
+                  edited_by_user_id TEXT DEFAULT '',
+                  deleted_at INTEGER NOT NULL DEFAULT 0,
+                  deleted_by TEXT NOT NULL DEFAULT ''
                 )
                 """
             )
@@ -2110,13 +2130,22 @@ def _ensure_schema() -> None:
                   created_by TEXT NOT NULL DEFAULT '',
                   created_at INTEGER NOT NULL DEFAULT 0,
                   updated_at INTEGER NOT NULL DEFAULT 0,
+                  updated_by TEXT NOT NULL DEFAULT '',
                   resolved_by TEXT NOT NULL DEFAULT '',
-                  resolved_at INTEGER NOT NULL DEFAULT 0
+                  resolved_at INTEGER NOT NULL DEFAULT 0,
+                  deleted_at INTEGER NOT NULL DEFAULT 0,
+                  deleted_by TEXT NOT NULL DEFAULT ''
                 )
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_session_status ON note_threads(session_id, org_id, status, updated_at DESC)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_threads_project_status ON note_threads(project_id, org_id, status)")
+            if not _column_exists(con, "note_threads", "updated_by"):
+                con.execute("ALTER TABLE note_threads ADD COLUMN updated_by TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "note_threads", "deleted_at"):
+                con.execute("ALTER TABLE note_threads ADD COLUMN deleted_at INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "note_threads", "deleted_by"):
+                con.execute("ALTER TABLE note_threads ADD COLUMN deleted_by TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "note_threads", "priority"):
                 con.execute("ALTER TABLE note_threads ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'")
             if not _column_exists(con, "note_threads", "requires_attention"):
@@ -2131,12 +2160,21 @@ def _ensure_schema() -> None:
                   reply_to_comment_id TEXT DEFAULT '',
                   created_at INTEGER NOT NULL DEFAULT 0,
                   updated_at INTEGER NOT NULL DEFAULT 0,
+                  updated_by TEXT NOT NULL DEFAULT '',
                   edited_at INTEGER DEFAULT 0,
-                  edited_by_user_id TEXT DEFAULT ''
+                  edited_by_user_id TEXT DEFAULT '',
+                  deleted_at INTEGER NOT NULL DEFAULT 0,
+                  deleted_by TEXT NOT NULL DEFAULT ''
                 )
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_note_comments_thread_created ON note_comments(thread_id, created_at ASC)")
+            if not _column_exists(con, "note_comments", "updated_by"):
+                con.execute("ALTER TABLE note_comments ADD COLUMN updated_by TEXT NOT NULL DEFAULT ''")
+            if not _column_exists(con, "note_comments", "deleted_at"):
+                con.execute("ALTER TABLE note_comments ADD COLUMN deleted_at INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "note_comments", "deleted_by"):
+                con.execute("ALTER TABLE note_comments ADD COLUMN deleted_by TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "note_comments", "reply_to_comment_id"):
                 con.execute("ALTER TABLE note_comments ADD COLUMN reply_to_comment_id TEXT DEFAULT ''")
             if not _column_exists(con, "note_comments", "edited_at"):
@@ -2463,6 +2501,25 @@ def _ensure_schema() -> None:
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_analytics_metrics_scope ON analytics_metrics(scope_type, scope_id, metric_name)"
             )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS admin_entity_permissions (
+                  org_id TEXT NOT NULL,
+                  entity_type TEXT NOT NULL,
+                  entity_id TEXT NOT NULL,
+                  role TEXT NOT NULL,
+                  permissions_json TEXT NOT NULL DEFAULT '{}',
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  updated_by TEXT NOT NULL DEFAULT '',
+                  PRIMARY KEY (org_id, entity_type, entity_id, role)
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_admin_entity_permissions_org ON admin_entity_permissions(org_id)"
+            )
+            if not _column_exists(con, "org_invites", "permissions_json"):
+                con.execute("ALTER TABLE org_invites ADD COLUMN permissions_json TEXT NOT NULL DEFAULT '{}'")
             _SCHEMA_ENSURE_IN_PROGRESS = True
             try:
                 _seed_process_property_metadata(con)
@@ -3623,7 +3680,7 @@ class Storage:
         if not sid:
             return 0
         oid = str(org_id or "").strip() or _default_org_id()
-        filters = ["session_id = ?"]
+        filters = ["session_id = ?", "deleted_at = 0"]
         params: List[Any] = [sid]
         if oid:
             filters.append("org_id = ?")
@@ -4108,17 +4165,168 @@ class Storage:
             now = _now_ts()
             next_version = current_version + 1
             updated_by = owner or existing_owner or ""
+            actor_user_id = owner or existing_owner or ""
+            actor_label = actor_user_id
             cur = con.execute(
                 """
                 UPDATE sessions
                    SET bpmn_meta_json = ?,
                        diagram_state_version = ?,
                        updated_at = ?,
-                       updated_by = ?
+                       updated_by = ?,
+                       diagram_last_write_at = ?,
+                       diagram_last_write_actor_user_id = ?,
+                       diagram_last_write_actor_label = ?,
+                       diagram_last_write_changed_keys_json = ?
                  WHERE id = ?
                    AND diagram_state_version = ?
                 """,
-                [_json_dumps(meta_dict, {}), next_version, now, updated_by, sid, base],
+                [
+                    _json_dumps(meta_dict, {}),
+                    next_version,
+                    now,
+                    updated_by,
+                    now,
+                    actor_user_id,
+                    actor_label,
+                    _json_dumps(["bpmn_meta"], []),
+                    sid,
+                    base,
+                ],
+            )
+            con.commit()
+            if int(cur.rowcount or 0) == 0:
+                return None
+        return self.load(sid, user_id=user_id, org_id=org_id, is_admin=admin)
+
+    def patch_session_meta_grace(
+        self,
+        session_id: str,
+        bpmn_meta: Dict[str, Any],
+        base_diagram_state_version: int,
+        grace_window: int = 0,
+        *,
+        user_id: Optional[str] = None,
+        is_admin: Optional[bool] = None,
+        org_id: Optional[str] = None,
+    ) -> Optional["Session"]:
+        """Atomically update only bpmn_meta_json and diagram_state_version with CAS grace window.
+
+        Accepts a stale client base version within ``grace_window`` versions of the current
+        server version. This prevents unnecessary 409 conflicts for property-only saves that
+        do not mutate BPMN XML.
+
+        Does not touch bpmn_xml. Returns the updated Session or None on CAS/scope failure.
+        """
+        sid = str(session_id or "").strip()
+        if not sid:
+            return None
+        meta_dict = bpmn_meta if isinstance(bpmn_meta, dict) else {}
+        base = int(base_diagram_state_version or 0)
+        grace = max(0, int(grace_window or 0))
+        owner = _scope_user_id(user_id)
+        admin = _scope_is_admin(is_admin)
+        org = _scope_org_id(org_id) or _default_org_id()
+        org_clause, org_params = _org_clause(org)
+        _ensure_schema()
+        with _connect() as con:
+            row = con.execute(
+                f"SELECT owner_user_id, diagram_state_version FROM sessions WHERE id = ? {org_clause} LIMIT 1",
+                [sid, *org_params],
+            ).fetchone()
+            if not row:
+                return None
+            existing_owner = str(row["owner_user_id"] or "")
+            if not admin and owner and existing_owner and existing_owner != owner:
+                raise PermissionError("session belongs to another user")
+            current_version = int(row["diagram_state_version"] or 0)
+            if abs(current_version - base) > grace:
+                return None
+            now = _now_ts()
+            next_version = current_version + 1
+            updated_by = owner or existing_owner or ""
+            actor_user_id = owner or existing_owner or ""
+            actor_label = actor_user_id
+            cur = con.execute(
+                """
+                UPDATE sessions
+                   SET bpmn_meta_json = ?,
+                       diagram_state_version = ?,
+                       updated_at = ?,
+                       updated_by = ?,
+                       diagram_last_write_at = ?,
+                       diagram_last_write_actor_user_id = ?,
+                       diagram_last_write_actor_label = ?,
+                       diagram_last_write_changed_keys_json = ?
+                 WHERE id = ?
+                   AND diagram_state_version = ?
+                """,
+                [
+                    _json_dumps(meta_dict, {}),
+                    next_version,
+                    now,
+                    updated_by,
+                    now,
+                    actor_user_id,
+                    actor_label,
+                    _json_dumps(["bpmn_meta"], []),
+                    sid,
+                    current_version,
+                ],
+            )
+            con.commit()
+            if int(cur.rowcount or 0) == 0:
+                return None
+        return self.load(sid, user_id=user_id, org_id=org_id, is_admin=admin)
+
+    def patch_session_interview(
+        self,
+        session_id: str,
+        interview: Dict[str, Any],
+        *,
+        user_id: Optional[str] = None,
+        is_admin: Optional[bool] = None,
+        org_id: Optional[str] = None,
+    ) -> Optional["Session"]:
+        """Atomically update only interview_json (status, git-mirror, etc.).
+
+        Preserves diagram-truth columns (bpmn_xml, bpmn_xml_version,
+        diagram_state_version, diagram_last_write_*). This prevents status-only
+        transitions from clobbering concurrent diagram writes.
+
+        Returns the updated Session or None on scope/permission failure.
+        """
+        sid = str(session_id or "").strip()
+        if not sid:
+            return None
+        interview_dict = interview if isinstance(interview, dict) else {}
+        owner = _scope_user_id(user_id)
+        admin = _scope_is_admin(is_admin)
+        org = _scope_org_id(org_id) or _default_org_id()
+        org_clause, org_params = _org_clause(org)
+        _ensure_schema()
+        with _connect() as con:
+            row = con.execute(
+                f"SELECT owner_user_id FROM sessions WHERE id = ? {org_clause} LIMIT 1",
+                [sid, *org_params],
+            ).fetchone()
+            if not row:
+                return None
+            existing_owner = str(row["owner_user_id"] or "")
+            if not admin and owner and existing_owner and existing_owner != owner:
+                raise PermissionError("session belongs to another user")
+            now = _now_ts()
+            updated_by = owner or existing_owner or ""
+            cur = con.execute(
+                f"""
+                UPDATE sessions
+                   SET interview_json = ?,
+                       updated_at = ?,
+                       updated_by = ?
+                 WHERE id = ?
+                 {org_clause}
+                """,
+                [_json_dumps(interview_dict, {}), now, updated_by, sid, *org_params],
             )
             con.commit()
             if int(cur.rowcount or 0) == 0:
@@ -5768,6 +5976,151 @@ def _normalize_membership_permissions(role: str, permissions_raw: Any) -> Dict[s
     return out
 
 
+def _admin_entity_permission_defaults(entity_type: str, role: str) -> Dict[str, bool]:
+    key = str(role or "").strip().lower()
+    owner_admin = key in {"org_owner", "org_admin"}
+    editor_pm = key in {"editor", "project_manager"}
+    if entity_type == "users":
+        return {"view": True, "edit": owner_admin or editor_pm, "manage": owner_admin, "admin": owner_admin}
+    if entity_type == "sessions":
+        return {"view": True, "edit": owner_admin or editor_pm, "manage": owner_admin}
+    if entity_type == "folders":
+        return {"view": True, "edit": owner_admin or editor_pm, "manage": owner_admin, "admin": owner_admin}
+    if entity_type == "workspaces":
+        return {"view": True, "edit": owner_admin or editor_pm, "manage": owner_admin, "admin": owner_admin}
+    if entity_type == "analytics":
+        return {
+            "dk_view": True,
+            "dk_export": owner_admin or editor_pm,
+            "fk_view": True,
+            "fk_export": owner_admin or editor_pm,
+            "manage_dashboards": owner_admin,
+        }
+    return {"view": True}
+
+
+def _normalize_admin_entity_permissions(entity_type: str, role: str, permissions_raw: Any) -> Dict[str, bool]:
+    template = _admin_entity_permission_defaults(entity_type, role)
+    parsed = permissions_raw if isinstance(permissions_raw, dict) else _json_loads(permissions_raw, {})
+    if not isinstance(parsed, dict):
+        parsed = {}
+    return {k: bool(parsed.get(k, template.get(k, False))) for k in template}
+
+
+def list_admin_entity_permissions(org_id: str, entity_type: Optional[str] = None, entity_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    params: List[Any] = [org_id]
+    where = "org_id = ?"
+    if entity_type:
+        where += " AND entity_type = ?"
+        params.append(entity_type)
+    if entity_id:
+        where += " AND entity_id = ?"
+        params.append(entity_id)
+    with _connect() as con:
+        rows = con.execute(f"SELECT * FROM admin_entity_permissions WHERE {where}", params).fetchall()
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        out.append({
+            "org_id": str(row["org_id"] or ""),
+            "entity_type": str(row["entity_type"] or ""),
+            "entity_id": str(row["entity_id"] or ""),
+            "role": str(row["role"] or ""),
+            "permissions": _normalize_admin_entity_permissions(str(row["entity_type"] or ""), str(row["role"] or ""), row["permissions_json"]),
+            "updated_at": int(row["updated_at"] or 0),
+            "updated_by": str(row["updated_by"] or ""),
+        })
+    return out
+
+
+def upsert_admin_entity_permission(
+    org_id: str,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    permissions: Dict[str, bool],
+    updated_by: str,
+) -> Dict[str, Any]:
+    normalized = _normalize_admin_entity_permissions(entity_type, role, permissions)
+    now = _now_ts()
+    with _connect() as con:
+        con.execute(
+            """
+            INSERT INTO admin_entity_permissions (org_id, entity_type, entity_id, role, permissions_json, updated_at, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (org_id, entity_type, entity_id, role)
+            DO UPDATE SET permissions_json=excluded.permissions_json, updated_at=excluded.updated_at, updated_by=excluded.updated_by
+            """,
+            (org_id, entity_type, entity_id, role, json.dumps(normalized), now, updated_by),
+        )
+        con.commit()
+    return {
+        "org_id": org_id,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "role": role,
+        "permissions": normalized,
+        "updated_at": now,
+        "updated_by": updated_by,
+    }
+
+
+def delete_admin_entity_permission(org_id: str, entity_type: str, entity_id: str, role: str) -> bool:
+    with _connect() as con:
+        cur = con.execute(
+            "DELETE FROM admin_entity_permissions WHERE org_id = ? AND entity_type = ? AND entity_id = ? AND role = ?",
+            (org_id, entity_type, entity_id, role),
+        )
+        con.commit()
+        return cur.rowcount > 0
+
+
+def list_org_workspaces(org_id: str) -> List[Dict[str, Any]]:
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT * FROM workspaces WHERE org_id = ? ORDER BY name",
+            (org_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_org_workspace_folders(org_id: str, workspace_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    params: List[Any] = [org_id]
+    where = "org_id = ?"
+    if workspace_id:
+        where += " AND workspace_id = ?"
+        params.append(workspace_id)
+    with _connect() as con:
+        rows = con.execute(
+            f"SELECT * FROM workspace_folders WHERE {where} ORDER BY name",
+            params,
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_admin_invite_permissions(invite_id: str) -> Dict[str, bool]:
+    with _connect() as con:
+        row = con.execute("SELECT permissions_json, role FROM org_invites WHERE id = ?", (invite_id,)).fetchone()
+    if not row:
+        return {}
+    role = str(row["role"] or "org_viewer")
+    return _normalize_membership_permissions(role, row["permissions_json"])
+
+
+def set_admin_invite_permissions(invite_id: str, permissions: Dict[str, bool]) -> bool:
+    with _connect() as con:
+        row = con.execute("SELECT role FROM org_invites WHERE id = ?", (invite_id,)).fetchone()
+        if not row:
+            return False
+        role = str(row["role"] or "org_viewer")
+        normalized = _normalize_membership_permissions(role, permissions)
+        con.execute(
+            "UPDATE org_invites SET permissions_json = ? WHERE id = ?",
+            (_json_dumps(normalized, {}), invite_id),
+        )
+        con.commit()
+    return True
+
+
 def _normalize_org_invite_role(raw: Any) -> str:
     role = _normalize_org_membership_role(raw)
     if role not in _ORG_INVITE_ROLES:
@@ -5796,12 +6149,13 @@ def _invite_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     def _col(name: str, default: Any = "") -> Any:
         return row[name] if name in keys else default
 
+    role = _normalize_org_invite_role(_col("role"))
     payload = {
         "id": str(_col("id") or ""),
         "org_id": str(_col("org_id") or ""),
         "org_name": str(_col("org_name") or _col("org_id") or ""),
         "email": _normalize_email(_col("email")),
-        "role": _normalize_org_invite_role(_col("role")),
+        "role": role,
         "full_name": str(_col("full_name") or "").strip(),
         "job_title": str(_col("job_title") or "").strip(),
         "team_name": str(_col("team_name") or "").strip(),
@@ -5817,6 +6171,8 @@ def _invite_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
         "accepted_by": str(_col("accepted_by") or "") if _col("accepted_by") is not None else None,
         "revoked_at": int(_col("revoked_at") or 0) if _col("revoked_at") is not None else None,
         "revoked_by": str(_col("revoked_by") or "") if _col("revoked_by") is not None else None,
+        "permissions_json": _json_loads(_col("permissions_json"), {}),
+        "permissions": _normalize_membership_permissions(role, _col("permissions_json")),
         "invite_mode": "one_time",
     }
     payload["status"] = _invite_status(payload)
@@ -7142,7 +7498,8 @@ def list_org_invites(
         rows = con.execute(
             """
             SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                   i.permissions_json
               FROM org_invites i
               LEFT JOIN orgs o ON o.id = i.org_id
              WHERE i.org_id = ?
@@ -7173,6 +7530,7 @@ def create_org_invite(
     ttl_days: int = 7,
     regenerate: bool = False,
     activate_now: bool = True,
+    permissions: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     em = _normalize_email(email)
@@ -7189,6 +7547,8 @@ def create_org_invite(
     if ttl <= 0:
         ttl = 7
     ttl = max(1, min(ttl, 60))
+    permissions_payload = _normalize_membership_permissions(normalized_role, permissions)
+    permissions_json = _json_dumps(permissions_payload, {})
     now = _now_ts()
     expires_at = now + ttl * 24 * 60 * 60
     invite_id = f"inv_{uuid.uuid4().hex[:12]}"
@@ -7225,8 +7585,8 @@ def create_org_invite(
                 """
                 INSERT INTO org_invites (
                   id, org_id, email, role, full_name, job_title, team_name, subgroup_name, invite_comment, invite_key, token_hash, expires_at, created_at, created_by,
-                  used_at, used_by_user_id, accepted_at, accepted_by, revoked_at, revoked_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
+                  used_at, used_by_user_id, accepted_at, accepted_by, revoked_at, revoked_by, permissions_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?, ?)
                 """,
                 [
                     invite_id,
@@ -7245,6 +7605,7 @@ def create_org_invite(
                     actor,
                     None if activate_immediately else now,
                     None if activate_immediately else "system_regenerate_pending",
+                    permissions_json,
                 ],
             )
         except Exception as exc:
@@ -7257,7 +7618,8 @@ def create_org_invite(
         row = con.execute(
             """
             SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                   i.permissions_json
               FROM org_invites i
               LEFT JOIN orgs o ON o.id = i.org_id
              WHERE i.id = ?
@@ -7300,7 +7662,8 @@ def get_org_invite_by_id(org_id: str, invite_id: str) -> Dict[str, Any]:
         row = con.execute(
             """
             SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                   i.permissions_json
               FROM org_invites i
               LEFT JOIN orgs o ON o.id = i.org_id
              WHERE i.org_id = ? AND i.id = ?
@@ -7389,7 +7752,8 @@ def preview_org_invite(
             row = con.execute(
                 """
                 SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                       i.permissions_json
                   FROM org_invites i
                   LEFT JOIN orgs o ON o.id = i.org_id
                  WHERE i.org_id = ? AND i.token_hash = ?
@@ -7402,7 +7766,8 @@ def preview_org_invite(
             row = con.execute(
                 """
                 SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                       i.permissions_json
                   FROM org_invites i
                   LEFT JOIN orgs o ON o.id = i.org_id
                  WHERE i.token_hash = ?
@@ -7445,7 +7810,8 @@ def accept_org_invite(
             row = con.execute(
                 """
                 SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                       i.permissions_json
                   FROM org_invites i
                   LEFT JOIN orgs o ON o.id = i.org_id
                  WHERE i.org_id = ? AND i.token_hash = ?
@@ -7458,7 +7824,8 @@ def accept_org_invite(
             row = con.execute(
                 """
                 SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                       i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                       i.permissions_json
                   FROM org_invites i
                   LEFT JOIN orgs o ON o.id = i.org_id
                  WHERE i.token_hash = ?
@@ -7482,13 +7849,14 @@ def accept_org_invite(
         if not actor_email or actor_email != invite_email:
             raise ValueError("invite_email_mismatch")
         role = _normalize_org_invite_role(invite.get("role"))
+        invite_permissions_json = _json_dumps(invite.get("permissions_json") or invite.get("permissions") or {}, {})
         con.execute(
             """
-            INSERT INTO org_memberships (org_id, user_id, role, created_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(org_id, user_id) DO UPDATE SET role = excluded.role
+            INSERT INTO org_memberships (org_id, user_id, role, permissions_json, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(org_id, user_id) DO UPDATE SET role = excluded.role, permissions_json = excluded.permissions_json
             """,
-            [oid, actor, role, now],
+            [oid, actor, role, invite_permissions_json, now],
         )
         _merge_auth_user_profile_with_connection(
             con,
@@ -7508,7 +7876,8 @@ def accept_org_invite(
         accepted_row = con.execute(
             """
             SELECT i.id, i.org_id, o.name AS org_name, i.email, i.role, i.full_name, i.job_title, i.team_name, i.subgroup_name, i.invite_comment,
-                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by
+                   i.invite_key, i.token_hash, i.expires_at, i.created_at, i.created_by, i.used_at, i.used_by_user_id, i.accepted_at, i.accepted_by, i.revoked_at, i.revoked_by,
+                   i.permissions_json
               FROM org_invites i
               LEFT JOIN orgs o ON o.id = i.org_id
              WHERE i.id = ?
@@ -9222,8 +9591,8 @@ def create_note_thread(
             """
             INSERT INTO note_threads (
               id, org_id, workspace_id, project_id, session_id, scope_type, scope_ref_json,
-              status, priority, requires_attention, created_by, created_at, updated_at, resolved_by, resolved_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, '', 0)
+              status, priority, requires_attention, created_by, created_at, updated_at, updated_by, resolved_by, resolved_at, deleted_at, deleted_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, '', 0, 0, '')
             """,
             [
                 thread_id,
@@ -9238,14 +9607,15 @@ def create_note_thread(
                 actor,
                 now,
                 now,
+                actor,
             ],
         )
         con.execute(
             """
-            INSERT INTO note_comments (id, thread_id, author_user_id, body, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO note_comments (id, thread_id, author_user_id, body, created_at, updated_at, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            [comment_id, thread_id, actor, text, now, now],
+            [comment_id, thread_id, actor, text, now, now, actor],
         )
         _insert_note_comment_mentions(
             con,
@@ -9288,6 +9658,7 @@ def get_note_thread(
         filters.append("org_id = ?")
         params.append(oid)
     with _connect() as con:
+        filters.append("deleted_at = 0")
         thread_row = con.execute(
             f"SELECT * FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
             params,
@@ -9297,7 +9668,7 @@ def get_note_thread(
         row_org_id = str(_row_value(thread_row, "org_id") or "").strip()
         acknowledged_at = _thread_attention_acknowledged_at(con, tid, row_org_id, viewer_user_id)
         comment_rows = con.execute(
-            "SELECT * FROM note_comments WHERE thread_id = ? ORDER BY created_at ASC, id ASC",
+            "SELECT * FROM note_comments WHERE thread_id = ? AND deleted_at = 0 ORDER BY created_at ASC, id ASC",
             [tid],
         ).fetchall()
         comment_ids = [str(_row_value(row, "id") or "") for row in comment_rows]
@@ -9371,6 +9742,7 @@ def list_note_threads(
     if normalized_scope_type:
         filters.append("scope_type = ?")
         params.append(normalized_scope_type)
+    filters.append("deleted_at = 0")
     with _connect() as con:
         thread_rows = con.execute(
             f"SELECT * FROM note_threads WHERE {' AND '.join(filters)} ORDER BY updated_at DESC, created_at DESC",
@@ -9381,7 +9753,7 @@ def list_note_threads(
         if thread_ids:
             placeholders = ", ".join(["?"] * len(thread_ids))
             for row in con.execute(
-                f"SELECT * FROM note_comments WHERE thread_id IN ({placeholders}) ORDER BY created_at ASC, id ASC",
+                f"SELECT * FROM note_comments WHERE thread_id IN ({placeholders}) AND deleted_at = 0 ORDER BY created_at ASC, id ASC",
                 thread_ids,
             ).fetchall():
                 comment = _note_comment_row_to_dict(row)
@@ -9491,6 +9863,7 @@ def add_note_comment(
     reply_to_id = str(reply_to_comment_id or "").strip()
     now = _now_ts()
     comment_id = uuid.uuid4().hex[:12]
+    filters.append("deleted_at = 0")
     with _connect() as con:
         thread_row = con.execute(
             f"SELECT id, session_id, org_id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
@@ -9500,7 +9873,7 @@ def add_note_comment(
             return None
         if reply_to_id:
             reply_row = con.execute(
-                "SELECT id, thread_id FROM note_comments WHERE id = ? LIMIT 1",
+                "SELECT id, thread_id FROM note_comments WHERE id = ? AND deleted_at = 0 LIMIT 1",
                 [reply_to_id],
             ).fetchone()
             if not reply_row:
@@ -9509,10 +9882,10 @@ def add_note_comment(
                 raise ValueError("reply target must belong to the same thread")
         con.execute(
             """
-            INSERT INTO note_comments (id, thread_id, author_user_id, body, reply_to_comment_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO note_comments (id, thread_id, author_user_id, body, reply_to_comment_id, created_at, updated_at, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            [comment_id, tid, actor, text, reply_to_id, now, now],
+            [comment_id, tid, actor, text, reply_to_id, now, now, actor],
         )
         _insert_note_comment_mentions(
             con,
@@ -9531,7 +9904,7 @@ def add_note_comment(
             last_read_at=now,
             last_seen_comment_id=comment_id,
         )
-        con.execute("UPDATE note_threads SET updated_at = ? WHERE id = ?", [now, tid])
+        con.execute("UPDATE note_threads SET updated_at = ?, updated_by = ? WHERE id = ?", [now, actor, tid])
         con.commit()
     return get_note_thread(tid, org_id=oid or None, viewer_user_id=actor)
 
@@ -9554,6 +9927,8 @@ def get_note_comment(comment_id: str, *, org_id: Optional[str] = None) -> Option
             FROM note_comments c
             JOIN note_threads t ON t.id = c.thread_id
             WHERE {' AND '.join(filters)}
+              AND c.deleted_at = 0
+              AND t.deleted_at = 0
             LIMIT 1
             """,
             params,
@@ -9609,10 +9984,14 @@ def update_note_comment(
         con.execute(
             """
             UPDATE note_comments
-               SET body = ?, updated_at = ?, edited_at = ?, edited_by_user_id = ?
+               SET body = ?, updated_at = ?, updated_by = ?, edited_at = ?, edited_by_user_id = ?
              WHERE id = ?
             """,
-            [text, now, now, actor, cid],
+            [text, now, actor, now, actor, cid],
+        )
+        con.execute(
+            "UPDATE note_threads SET updated_at = ?, updated_by = ? WHERE id = ?",
+            [now, actor, tid],
         )
         if replace_mentions:
             con.execute("DELETE FROM note_comment_mentions WHERE comment_id = ? AND org_id = ?", [cid, thread_org_id])
@@ -9642,11 +10021,12 @@ def mark_note_thread_read(
     if not tid or not actor:
         return None
     oid = str(org_id or "").strip()
-    filters = ["id = ?"]
+    filters = ["id = ?", "deleted_at = 0"]
     params: List[Any] = [tid]
     if oid:
         filters.append("org_id = ?")
         params.append(oid)
+    filters.append("deleted_at = 0")
     with _connect() as con:
         thread_row = con.execute(
             f"SELECT id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
@@ -9655,7 +10035,7 @@ def mark_note_thread_read(
         if not thread_row:
             return None
         comment_rows = con.execute(
-            "SELECT * FROM note_comments WHERE thread_id = ? ORDER BY created_at ASC, id ASC",
+            "SELECT * FROM note_comments WHERE thread_id = ? AND deleted_at = 0 ORDER BY created_at ASC, id ASC",
             [tid],
         ).fetchall()
         comments = [_note_comment_row_to_dict(row) for row in comment_rows]
@@ -9715,8 +10095,8 @@ def patch_note_thread(
         params.append(oid)
     actor = str(actor_user_id or "").strip()
     now = _now_ts()
-    updates: List[str] = ["updated_at = ?"]
-    values: List[Any] = [now]
+    updates: List[str] = ["updated_at = ?", "updated_by = ?"]
+    values: List[Any] = [now, actor]
     if status is not None:
         next_status = _normalize_note_status(status)
         updates.extend(["status = ?", "resolved_by = ?", "resolved_at = ?"])
@@ -9768,7 +10148,7 @@ def acknowledge_note_thread_attention(
     if not tid or not actor:
         return None
     oid = str(org_id or "").strip()
-    filters = ["id = ?"]
+    filters = ["id = ?", "deleted_at = 0"]
     params: List[Any] = [tid]
     if oid:
         filters.append("org_id = ?")
@@ -9801,6 +10181,100 @@ def acknowledge_note_thread_attention(
     return get_note_thread(tid, org_id=oid or None, viewer_user_id=actor)
 
 
+def delete_note_thread(
+    thread_id: str,
+    *,
+    actor_user_id: str,
+    org_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    tid = str(thread_id or "").strip()
+    actor = str(actor_user_id or "").strip()
+    if not tid or not actor:
+        return None
+    oid = str(org_id or "").strip()
+    filters = ["id = ?", "deleted_at = 0"]
+    params: List[Any] = [tid]
+    if oid:
+        filters.append("org_id = ?")
+        params.append(oid)
+    now = _now_ts()
+    with _connect() as con:
+        thread_row = con.execute(
+            f"SELECT id FROM note_threads WHERE {' AND '.join(filters)} LIMIT 1",
+            params,
+        ).fetchone()
+        if not thread_row:
+            return None
+        con.execute(
+            """
+            UPDATE note_threads
+               SET updated_at = ?, updated_by = ?, deleted_at = ?, deleted_by = ?
+             WHERE id = ?
+            """,
+            [now, actor, now, actor, tid],
+        )
+        con.execute(
+            """
+            UPDATE note_comments
+               SET updated_at = ?, updated_by = ?, deleted_at = ?, deleted_by = ?
+             WHERE thread_id = ? AND deleted_at = 0
+            """,
+            [now, actor, now, actor, tid],
+        )
+        con.commit()
+    return {"thread_id": tid, "deleted_at": now, "deleted_by": actor}
+
+
+def delete_note_comment(
+    comment_id: str,
+    *,
+    actor_user_id: str,
+    org_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    _ensure_schema()
+    cid = str(comment_id or "").strip()
+    actor = str(actor_user_id or "").strip()
+    if not cid or not actor:
+        return None
+    oid = str(org_id or "").strip()
+    filters = ["c.id = ?", "c.deleted_at = 0", "t.deleted_at = 0"]
+    params: List[Any] = [cid]
+    if oid:
+        filters.append("t.org_id = ?")
+        params.append(oid)
+    now = _now_ts()
+    with _connect() as con:
+        row = con.execute(
+            f"""
+            SELECT c.id, c.thread_id
+            FROM note_comments c
+            JOIN note_threads t ON t.id = c.thread_id
+            WHERE {' AND '.join(filters)}
+            LIMIT 1
+            """,
+            params,
+        ).fetchone()
+        if not row:
+            return None
+        tid = str(_row_value(row, "thread_id") or "").strip()
+        con.execute(
+            """
+            UPDATE note_comments
+               SET updated_at = ?, updated_by = ?, deleted_at = ?, deleted_by = ?
+             WHERE id = ? AND deleted_at = 0
+            """,
+            [now, actor, now, actor, cid],
+        )
+        if tid:
+            con.execute(
+                "UPDATE note_threads SET updated_at = ?, updated_by = ? WHERE id = ?",
+                [now, actor, tid],
+            )
+        con.commit()
+    return {"comment_id": cid, "thread_id": tid, "deleted_at": now, "deleted_by": actor}
+
+
 def list_active_note_mentions_for_user(
     user_id: str,
     *,
@@ -9817,6 +10291,8 @@ def list_active_note_mentions_for_user(
     if oid:
         filters.append("m.org_id = ?")
         params.append(oid)
+    filters.append("nt.deleted_at = 0")
+    filters.append("c.deleted_at = 0")
     lim = max(1, min(100, int(limit or 20)))
     with _connect() as con:
         rows = con.execute(
@@ -9830,7 +10306,7 @@ def list_active_note_mentions_for_user(
               c.body AS comment_body
             FROM note_comment_mentions m
             JOIN note_threads nt ON nt.id = m.thread_id AND nt.org_id = m.org_id
-            JOIN note_comments c ON c.id = m.comment_id
+            JOIN note_comments c ON c.id = m.comment_id AND c.deleted_at = 0
             WHERE {' AND '.join(filters)}
             ORDER BY m.created_at DESC, m.id DESC
             LIMIT ?
@@ -9881,6 +10357,7 @@ def list_note_notifications_for_user(
         placeholders = ", ".join(["?"] * len(allowed))
         filters.append(f"nt.project_id IN ({placeholders})")
         params.extend(allowed)
+    filters.append("nt.deleted_at = 0")
     where = f"WHERE {' AND '.join(filters)}" if filters else ""
 
     with _connect() as con:
@@ -9947,7 +10424,7 @@ def list_note_notifications_for_user(
                 (
                   SELECT COUNT(*)
                   FROM note_comments c
-                  WHERE c.thread_id = b.thread_id
+                  WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                     AND c.created_at > b.last_read_at
                     AND c.author_user_id != ?
                 ) AS unread_count,
@@ -9955,7 +10432,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.id
                     FROM note_comment_mentions m
-                    JOIN note_comments c ON c.id = m.comment_id
+                    JOIN note_comments c ON c.id = m.comment_id AND c.deleted_at = 0
                     WHERE m.thread_id = b.thread_id
                       AND m.org_id = b.org_id
                       AND m.mentioned_user_id = ?
@@ -9966,7 +10443,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.id
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                       AND c.created_at > b.last_read_at
                       AND c.author_user_id != ?
                     ORDER BY c.created_at DESC, c.id DESC
@@ -9975,7 +10452,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.id
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                     ORDER BY c.created_at DESC, c.id DESC
                     LIMIT 1
                   )
@@ -9984,7 +10461,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.body
                     FROM note_comment_mentions m
-                    JOIN note_comments c ON c.id = m.comment_id
+                    JOIN note_comments c ON c.id = m.comment_id AND c.deleted_at = 0
                     WHERE m.thread_id = b.thread_id
                       AND m.org_id = b.org_id
                       AND m.mentioned_user_id = ?
@@ -9995,7 +10472,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.body
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                       AND c.created_at > b.last_read_at
                       AND c.author_user_id != ?
                     ORDER BY c.created_at DESC, c.id DESC
@@ -10004,7 +10481,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.body
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                     ORDER BY c.created_at DESC, c.id DESC
                     LIMIT 1
                   ),
@@ -10014,7 +10491,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.author_user_id
                     FROM note_comment_mentions m
-                    JOIN note_comments c ON c.id = m.comment_id
+                    JOIN note_comments c ON c.id = m.comment_id AND c.deleted_at = 0
                     WHERE m.thread_id = b.thread_id
                       AND m.org_id = b.org_id
                       AND m.mentioned_user_id = ?
@@ -10025,7 +10502,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.author_user_id
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                       AND c.created_at > b.last_read_at
                       AND c.author_user_id != ?
                     ORDER BY c.created_at DESC, c.id DESC
@@ -10034,7 +10511,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.author_user_id
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                     ORDER BY c.created_at DESC, c.id DESC
                     LIMIT 1
                   ),
@@ -10044,7 +10521,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.created_at
                     FROM note_comment_mentions m
-                    JOIN note_comments c ON c.id = m.comment_id
+                    JOIN note_comments c ON c.id = m.comment_id AND c.deleted_at = 0
                     WHERE m.thread_id = b.thread_id
                       AND m.org_id = b.org_id
                       AND m.mentioned_user_id = ?
@@ -10055,7 +10532,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.created_at
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                       AND c.created_at > b.last_read_at
                       AND c.author_user_id != ?
                     ORDER BY c.created_at DESC, c.id DESC
@@ -10064,7 +10541,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.created_at
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                     ORDER BY c.created_at DESC, c.id DESC
                     LIMIT 1
                   ),
@@ -10075,7 +10552,7 @@ def list_note_notifications_for_user(
                   (
                     SELECT c.created_at
                     FROM note_comments c
-                    WHERE c.thread_id = b.thread_id
+                    WHERE c.thread_id = b.thread_id AND c.deleted_at = 0
                     ORDER BY c.created_at DESC, c.id DESC
                     LIMIT 1
                   ),
@@ -10238,7 +10715,7 @@ def get_session_open_notes_aggregate(
     if not sid:
         return _notes_aggregate_payload(0)
     oid = str(org_id or "").strip()
-    filters = ["nt.session_id = ?"]
+    filters = ["nt.session_id = ?", "nt.deleted_at = 0"]
     params: List[Any] = [sid]
     if oid:
         filters.append("nt.org_id = ?")
@@ -10286,7 +10763,7 @@ def get_sessions_open_notes_aggregates(
         for sid in ids
     }
     placeholders = ", ".join(["?"] * len(ids))
-    filters = [f"nt.session_id IN ({placeholders})"]
+    filters = [f"nt.session_id IN ({placeholders})", "nt.deleted_at = 0"]
     params: List[Any] = [*ids]
     oid = str(org_id or "").strip()
     if oid:
@@ -10332,7 +10809,7 @@ def get_project_open_notes_aggregate(
     if not pid:
         return _notes_aggregate_payload(0)
     oid = str(org_id or "").strip()
-    filters = ["s.project_id = ?"]
+    filters = ["s.project_id = ?", "nt.deleted_at = 0"]
     params: List[Any] = [pid]
     if oid:
         filters.append("s.org_id = ?")
@@ -10410,6 +10887,7 @@ def get_folder_open_notes_aggregate(
             JOIN sessions s ON s.id = nt.session_id AND s.org_id = nt.org_id
             JOIN projects p ON p.id = s.project_id AND p.org_id = s.org_id
             WHERE nt.org_id = ?
+              AND nt.deleted_at = 0
               AND p.workspace_id = ?
               AND p.folder_id IN (SELECT id FROM folder_tree)
               {project_scope_sql}

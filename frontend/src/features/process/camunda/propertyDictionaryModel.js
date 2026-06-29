@@ -58,12 +58,12 @@ function rawExtensionPropertyRows(stateRaw) {
 function dedupeLogicalPropertyRows(rawRows) {
   const ordered = [];
   const byLogicalKey = new Map();
-  const duplicateLogicalKeys = new Set();
+  let unnamedCounter = 0;
 
-  asArray(rawRows).forEach((rowRaw, index) => {
+  asArray(rawRows).forEach((rowRaw) => {
     const row = asObject(rowRaw);
     const normalized = {
-      id: asText(row.id) || `prop_raw_${index + 1}`,
+      id: asText(row.id) || `prop_raw_${(unnamedCounter += 1)}`,
       name: String(row.name ?? ""),
       value: String(row.value ?? ""),
     };
@@ -78,21 +78,10 @@ function dedupeLogicalPropertyRows(rawRows) {
       ordered.push(normalized);
       return;
     }
-    duplicateLogicalKeys.add(logicalKey);
-    const prev = ordered[prevIndex];
-    if (!asText(prev?.value) && asText(normalized.value)) {
-      ordered[prevIndex] = {
-        ...prev,
-        ...normalized,
-        name: prev.name,
-      };
-    }
+    ordered[prevIndex] = normalized;
   });
 
-  return {
-    rows: ordered,
-    duplicateLogicalKeys: Array.from(duplicateLogicalKeys),
-  };
+  return { rows: ordered };
 }
 
 export function buildVisibleExtensionPropertyRows(extensionStateRaw) {
@@ -202,12 +191,11 @@ export function buildPropertyDictionaryEditorModel({ extensionStateRaw, dictiona
   const bundle = normalizeOrgPropertyDictionaryBundle(dictionaryBundleRaw);
   const rawRows = rawExtensionPropertyRows(extensionState);
   const deduped = dedupeLogicalPropertyRows(rawRows);
-  const firstByLogicalKey = new Map();
-  const duplicateLogicalKeys = new Set(deduped.duplicateLogicalKeys);
+  const rowByLogicalKey = new Map();
   deduped.rows.forEach((row) => {
     const logicalKey = normalizeLogicalKey(row.name);
     if (!logicalKey) return;
-    firstByLogicalKey.set(logicalKey, row);
+    rowByLogicalKey.set(logicalKey, row);
   });
 
   if (!bundle.properties.length) {
@@ -216,9 +204,8 @@ export function buildPropertyDictionaryEditorModel({ extensionStateRaw, dictiona
       operationKey: bundle.operationKey,
       operationLabel: bundle.operationLabel,
       schemaRows: [],
-      customRows: rawRows,
+      customRows: deduped.rows,
       visibleRows: deduped.rows,
-      duplicateLogicalKeys: deduped.duplicateLogicalKeys,
     };
     if (extensionStateCacheKey) {
       const cacheEntry = propertyDictionaryEditorModelCache.get(extensionStateCacheKey);
@@ -231,7 +218,7 @@ export function buildPropertyDictionaryEditorModel({ extensionStateRaw, dictiona
   const schemaKeySet = new Set(bundle.properties.map((item) => normalizeLogicalKey(item.propertyKey)));
   const schemaRows = bundle.properties.map((property) => {
     const logicalKey = normalizeLogicalKey(property.propertyKey);
-    const matched = firstByLogicalKey.get(logicalKey) || null;
+    const matched = rowByLogicalKey.get(logicalKey) || null;
     return {
       ...property,
       id: matched?.id || `prop_schema_${property.propertyKey}`,
@@ -241,21 +228,10 @@ export function buildPropertyDictionaryEditorModel({ extensionStateRaw, dictiona
     };
   });
 
-  const customRows = [];
-  const seenCustomKeys = new Set();
-  rawRows.forEach((row) => {
+  const customRows = deduped.rows.filter((row) => {
     const logicalKey = normalizeLogicalKey(row.name);
-    if (!logicalKey) {
-      customRows.push({ ...row, isDraft: true });
-      return;
-    }
-    if (schemaKeySet.has(logicalKey)) return;
-    if (seenCustomKeys.has(logicalKey)) {
-      duplicateLogicalKeys.add(logicalKey);
-      return;
-    }
-    seenCustomKeys.add(logicalKey);
-    customRows.push({ ...row, isDraft: false });
+    if (!logicalKey) return true;
+    return !schemaKeySet.has(logicalKey);
   });
 
   const result = {
@@ -265,7 +241,6 @@ export function buildPropertyDictionaryEditorModel({ extensionStateRaw, dictiona
     schemaRows,
     customRows,
     visibleRows: deduped.rows,
-    duplicateLogicalKeys: Array.from(duplicateLogicalKeys),
   };
   if (extensionStateCacheKey) {
     const cacheEntry = propertyDictionaryEditorModelCache.get(extensionStateCacheKey);

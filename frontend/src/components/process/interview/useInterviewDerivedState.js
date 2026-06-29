@@ -269,7 +269,7 @@ export default function useInterviewDerivedState({
       })),
     [timelineBaseView, interviewGraph, nodeMetaById, graphOrderLocked, graphNodeRank, xmlTextAnnotationsByNode],
   );
-  const interviewFeatureFlags = getInterviewFeatureFlags();
+  const interviewFeatureFlags = useMemo(() => getInterviewFeatureFlags(), []);
 
   const interviewRenderState = useMemo(
     () =>

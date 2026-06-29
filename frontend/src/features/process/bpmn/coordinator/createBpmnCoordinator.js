@@ -13,6 +13,19 @@ function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
+function asArray(value) {
+  if (Array.isArray(value)) return value;
+  return [];
+}
+
+function readStaleConflictChangedKeys(errorDetails) {
+  const details = asObject(errorDetails);
+  const lastWrite = asObject(details.server_last_write || details.serverLastWrite);
+  return asArray(lastWrite.changed_keys || lastWrite.changedKeys)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+}
+
 function normalizeErrorDetails(value) {
   const details = asObject(value);
   return Object.keys(details).length ? details : null;
@@ -107,6 +120,9 @@ export default function createBpmnCoordinator(options = {}) {
     ? options.persistence
     : {};
   const debounceMs = asNumber(options?.debounceMs, 600);
+  const getIsDragging = typeof options?.getIsDragging === "function" ? options.getIsDragging : () => false;
+  const dragThrottleMs = Math.max(0, asNumber(options?.dragThrottleMs, 5000));
+  const dragFinalDebounceMs = Math.max(0, asNumber(options?.dragFinalDebounceMs, 500));
   const onTrace = typeof options?.onTrace === "function" ? options.onTrace : null;
   const onRuntimeChange = typeof options?.onRuntimeChange === "function" ? options.onRuntimeChange : null;
   const onRuntimeStatus = typeof options?.onRuntimeStatus === "function" ? options.onRuntimeStatus : null;
@@ -117,6 +133,10 @@ export default function createBpmnCoordinator(options = {}) {
   let pendingReplayTimer = 0;
   let pendingSave = null;
   let saveInFlight = false;
+  let dragThrottleTimer = 0;
+  let dragFinalTimer = 0;
+  let dragPendingStructural = false;
+  let lastDragSaveAt = 0;
   let saveQueuedRev = 0;
   let conflictReplayReason = "";
   let flushPromise = null;
@@ -131,6 +151,7 @@ export default function createBpmnCoordinator(options = {}) {
     cacheRaw: (sid, xml, rev, reason) => cacheRaw(sid, xml, rev, reason),
     emit: (event, payload) => emit(event, payload),
     requestAutosave: (reason) => scheduleSave(reason),
+    getIsDragging,
     asText,
     asNumber,
   });
@@ -150,6 +171,17 @@ export default function createBpmnCoordinator(options = {}) {
     saveTimer = 0;
   }
 
+  function clearDragTimers() {
+    if (dragThrottleTimer) {
+      window.clearTimeout(dragThrottleTimer);
+      dragThrottleTimer = 0;
+    }
+    if (dragFinalTimer) {
+      window.clearTimeout(dragFinalTimer);
+      dragFinalTimer = 0;
+    }
+  }
+
   function clearPendingReplayTimer() {
     if (!pendingReplayTimer) return;
     window.clearTimeout(pendingReplayTimer);
@@ -159,6 +191,10 @@ export default function createBpmnCoordinator(options = {}) {
   function clearPendingSave() {
     pendingSave = null;
     clearPendingReplayTimer();
+  }
+
+  function clearDragPending() {
+    dragPendingStructural = false;
   }
 
   function clearConflictReplayReason() {
@@ -525,6 +561,7 @@ export default function createBpmnCoordinator(options = {}) {
     const staleConflictRetryEnabled = options?.staleConflictRetryEnabled !== false;
     const staleConflictRetryMaxAttempts = Math.max(0, asNumber(options?.staleConflictRetryMaxAttempts, 1));
     let staleRetryAttempts = 0;
+    let staleRetryChangedKeys = [];
     let persisted = await persistRaw(sid, xml, targetRev, reason);
     while (
       !persisted?.ok
@@ -533,6 +570,9 @@ export default function createBpmnCoordinator(options = {}) {
       && isStaleConflictFailure(persisted)
     ) {
       staleRetryAttempts += 1;
+      if (staleRetryChangedKeys.length === 0) {
+        staleRetryChangedKeys = readStaleConflictChangedKeys(persisted?.errorDetails);
+      }
       emit("SAVE_STALE_CONFLICT_RETRY", {
         sid,
         reason,
@@ -541,6 +581,7 @@ export default function createBpmnCoordinator(options = {}) {
         status: asNumber(persisted?.status, 0),
         error_code: normalizeErrorCode(persisted?.errorCode),
         error_details: normalizeErrorDetails(persisted?.errorDetails),
+        changed_keys: staleRetryChangedKeys,
       });
       persisted = await persistRaw(sid, xml, targetRev, reason);
     }
@@ -587,6 +628,7 @@ export default function createBpmnCoordinator(options = {}) {
       ms: Date.now() - startedAt,
       stale_retry_applied: staleRetryAttempts > 0 ? 1 : 0,
       stale_retry_attempts: staleRetryAttempts,
+      stale_retry_changed_keys: staleRetryChangedKeys,
     });
     return {
       ok: true,
@@ -597,6 +639,7 @@ export default function createBpmnCoordinator(options = {}) {
       xmlAlreadyTransformed: prepared.transformed,
       staleRetryApplied: staleRetryAttempts > 0,
       staleRetryAttempts,
+      staleRetryChangedKeys,
       bpmnVersionSnapshot: persisted?.bpmnVersionSnapshot && typeof persisted.bpmnVersionSnapshot === "object"
         ? persisted.bpmnVersionSnapshot
         : null,
@@ -641,11 +684,63 @@ export default function createBpmnCoordinator(options = {}) {
       queued_rev: saveQueuedRev,
       save_in_flight: saveInFlight ? 1 : 0,
     });
+
+    const isAutosave = asText(reason || "").toLowerCase() === "autosave";
+    const dragging = isAutosave && getIsDragging();
+
+    if (dragging) {
+      // While the user is dragging, throttle structural autosaves and coalesce
+      // positional/structural changes into at most one PUT per dragThrottleMs.
+      dragPendingStructural = true;
+      if (!dragThrottleTimer && !dragFinalTimer) {
+        const sinceLast = lastDragSaveAt ? Date.now() - lastDragSaveAt : 0;
+        const delay = Math.max(0, dragThrottleMs - sinceLast);
+        dragThrottleTimer = window.setTimeout(() => {
+          dragThrottleTimer = 0;
+          lastDragSaveAt = Date.now();
+          const hadPending = dragPendingStructural;
+          dragPendingStructural = false;
+          if (hadPending) {
+            void flushSave("autosave");
+          }
+        }, delay);
+      }
+      return;
+    }
+
     clearSaveTimer();
     saveTimer = window.setTimeout(() => {
       saveTimer = 0;
       void flushSave(reason);
     }, debounceMs);
+  }
+
+  function notifyDragStart() {
+    if (!store) return;
+    // A pending normal autosave should not fire mid-drag; convert it to the
+    // drag-throttle queue so it obeys the throttle/final-debounce rules.
+    if (saveTimer) {
+      clearSaveTimer();
+      dragPendingStructural = true;
+    }
+  }
+
+  function notifyDragEnd() {
+    if (!store) return;
+    // Cancel any in-flight drag throttle; the user has released the mouse.
+    if (dragThrottleTimer) {
+      window.clearTimeout(dragThrottleTimer);
+      dragThrottleTimer = 0;
+    }
+    // If there are structural changes that never got flushed during the drag,
+    // schedule one final debounced save shortly after mouseup.
+    if (dragPendingStructural && !dragFinalTimer && !saveInFlight) {
+      dragFinalTimer = window.setTimeout(() => {
+        dragFinalTimer = 0;
+        dragPendingStructural = false;
+        void flushSave("autosave");
+      }, dragFinalDebounceMs);
+    }
   }
 
   async function flushSave(reason = "manual", options = {}) {
@@ -1030,9 +1125,10 @@ export default function createBpmnCoordinator(options = {}) {
 
   function clearPendingWork(reason = "manual_clear") {
     clearSaveTimer();
-    clearPendingReplayTimer();
+    clearDragTimers();
     clearPendingSave();
     clearConflictReplayReason();
+    clearDragPending();
     const lastSavedRev = asNumber(store?.getState?.()?.lastSavedRev, 0);
     saveQueuedRev = Math.max(saveQueuedRev, lastSavedRev);
     emit("SAVE_QUEUE_CLEARED", {
@@ -1047,6 +1143,7 @@ export default function createBpmnCoordinator(options = {}) {
     flushPromise = null;
     saveInFlight = false;
     saveQueuedRev = 0;
+    lastDragSaveAt = 0;
     clearConflictReplayReason();
     clearSingleWriter("destroy");
   }
@@ -1059,6 +1156,8 @@ export default function createBpmnCoordinator(options = {}) {
     bindRuntime,
     unbindRuntime,
     scheduleSave,
+    notifyDragStart,
+    notifyDragEnd,
     setDiagramMutationSaveActive,
     flushSave,
     persistExplicitXml,

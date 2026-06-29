@@ -41,7 +41,7 @@ export default function AdminTablePagination({
   const pageItems = renderPages(currentPage, totalPages);
 
   return (
-    <div className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 ${className}`.trim()}>
+    <div className={`mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 ${className}`.trim()}>
       <div className="text-xs text-slate-600">
         {`Показано ${from}-${to} из ${totalItems}`}
       </div>
@@ -50,7 +50,7 @@ export default function AdminTablePagination({
           <span>Размер</span>
           <select
             id={`${testIdPrefix}-size`}
-            className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700"
+            className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700"
             value={String(size)}
             onChange={(event) => onPageSizeChange?.(Number(event.target.value || size))}
             data-testid={`${testIdPrefix}-size`}
@@ -62,7 +62,7 @@ export default function AdminTablePagination({
         </label>
         <button
           type="button"
-          className="secondaryBtn h-8 min-h-0 rounded-xl px-3 py-0 text-xs"
+          className="secondaryBtn h-7 min-h-0 rounded-lg px-3 py-0 text-xs"
           disabled={currentPage <= 1}
           onClick={() => onPageChange?.(currentPage - 1)}
           data-testid={`${testIdPrefix}-prev`}
@@ -77,7 +77,7 @@ export default function AdminTablePagination({
               <button
                 key={`page_${item}`}
                 type="button"
-                className={`h-8 min-h-0 rounded-lg border px-2 text-xs ${item === currentPage ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700"}`}
+                className={`h-7 min-h-0 rounded-lg border px-2 text-xs ${item === currentPage ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700"}`}
                 onClick={() => onPageChange?.(item)}
                 data-testid={`${testIdPrefix}-page-${item}`}
               >
@@ -88,7 +88,7 @@ export default function AdminTablePagination({
         </div>
         <button
           type="button"
-          className="secondaryBtn h-8 min-h-0 rounded-xl px-3 py-0 text-xs"
+          className="secondaryBtn h-7 min-h-0 rounded-lg px-3 py-0 text-xs"
           disabled={currentPage >= totalPages}
           onClick={() => onPageChange?.(currentPage + 1)}
           data-testid={`${testIdPrefix}-next`}

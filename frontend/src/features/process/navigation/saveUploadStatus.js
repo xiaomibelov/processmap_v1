@@ -27,6 +27,20 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+const META_ONLY_CHANGED_KEYS = new Set([
+  "bpmn_meta",
+  "status",
+  "title",
+  "roles",
+  "start_role",
+]);
+
+function isMetaOnlyChangedKeys(keys) {
+  const arr = asArray(keys);
+  if (arr.length === 0) return false;
+  return arr.every((key) => META_ONLY_CHANGED_KEYS.has(String(key || "").trim()));
+}
+
 function parseObjectJson(raw) {
   const text = toText(raw);
   if (!text) return {};
@@ -225,6 +239,22 @@ export function normalizeBpmnSaveLifecycleEvent(raw = null) {
         0,
       ),
     ),
+    staleRetryChangedKeys: asArray(
+      payload.stale_retry_changed_keys
+      ?? value.staleRetryChangedKeys
+      ?? [],
+    )
+      .map((item) => toText(item))
+      .filter(Boolean),
+    staleRetryMetaOnly: isMetaOnlyChangedKeys(
+      asArray(
+        payload.stale_retry_changed_keys
+        ?? value.staleRetryChangedKeys
+        ?? [],
+      )
+        .map((item) => toText(item))
+        .filter(Boolean),
+    ),
   };
 }
 
@@ -265,9 +295,20 @@ export function buildSaveUploadStatusBadge(raw = null) {
   if (stage === "persisted") {
     const staleRetryApplied = event.staleRetryApplied === true;
     const staleRetryAttempts = Math.max(0, toNumber(event.staleRetryAttempts, 0));
+    const staleRetryMetaOnly = event.staleRetryMetaOnly === true;
     const staleSuffix = staleRetryApplied
       ? (staleRetryAttempts > 0 ? ` (retry ${staleRetryAttempts})` : "")
       : "";
+    if (staleRetryApplied && staleRetryMetaOnly) {
+      return {
+        visible: false,
+        tone: "ok",
+        label: `Сессия синхронизирована с актуальной версией${staleSuffix}`,
+        title: "",
+        state,
+        conflict: null,
+      };
+    }
     return {
       visible: staleRetryApplied,
       tone: "ok",

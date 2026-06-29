@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getOrgPropertyDictionaryBundle,
   listOrgPropertyDictionaryOperations,
@@ -22,13 +22,19 @@ export default function useNotesPanelController({
   const [orgPropertyDictionaryLoading, setOrgPropertyDictionaryLoading] = useState(false);
   const [orgPropertyDictionaryErr, setOrgPropertyDictionaryErr] = useState("");
   const [orgPropertyDictionaryAddBusyKey, setOrgPropertyDictionaryAddBusyKey] = useState("");
+  const lastOperationsKeyRef = useRef("");
 
   useEffect(() => {
     if (!selectedCamundaPropertiesEditable || !toText(activeOrgId)) {
       setOrgPropertyDictionaryOperations([]);
       setOrgPropertyDictionaryOperationsLoading(false);
-      return;
+      return () => {};
     }
+    const key = `${toText(activeOrgId)}:${selectedCamundaPropertiesEditable ? 1 : 0}:${orgPropertyDictionaryRevision}`;
+    if (key === lastOperationsKeyRef.current) {
+      return () => {};
+    }
+    lastOperationsKeyRef.current = key;
     let cancelled = false;
     setOrgPropertyDictionaryOperationsLoading(true);
     void (async () => {
@@ -47,14 +53,21 @@ export default function useNotesPanelController({
     };
   }, [activeOrgId, selectedCamundaPropertiesEditable, orgPropertyDictionaryRevision]);
 
+  const lastBundleKeyRef = useRef("");
+
   useEffect(() => {
     if (!selectedCamundaPropertiesEditable || !toText(activeOrgId) || !toText(selectedOperationKey)) {
       setOrgPropertyDictionaryBundle(null);
       setOrgPropertyDictionaryLoading(false);
       setOrgPropertyDictionaryErr("");
       setOrgPropertyDictionaryAddBusyKey("");
-      return;
+      return () => {};
     }
+    const key = `${toText(activeOrgId)}:${selectedCamundaPropertiesEditable ? 1 : 0}:${toText(selectedOperationKey)}:${orgPropertyDictionaryRevision}`;
+    if (key === lastBundleKeyRef.current) {
+      return () => {};
+    }
+    lastBundleKeyRef.current = key;
     let cancelled = false;
     setOrgPropertyDictionaryLoading(true);
     setOrgPropertyDictionaryErr("");

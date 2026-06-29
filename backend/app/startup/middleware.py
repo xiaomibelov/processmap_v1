@@ -50,10 +50,6 @@ DEPRECATED_ALIAS_RULES = (
         "/api/reports/{report_id}",
     ),
     (
-        re.compile(r"^/api/sessions/(?P<session_id>[^/]+)/meta/?$"),
-        "/api/sessions/{session_id}/bpmn_meta",
-    ),
-    (
         re.compile(r"^/api/sessions/(?P<session_id>[^/]+)/bpmn/meta/?$"),
         "/api/sessions/{session_id}/bpmn_meta",
     ),

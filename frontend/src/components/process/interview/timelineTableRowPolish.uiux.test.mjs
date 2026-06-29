@@ -22,7 +22,8 @@ const ROOT = path.resolve(__dirname, "../../../../");
 const css = readFileSync(path.join(ROOT, "src/styles/tailwind.css"), "utf-8");
 const appVersionSrc = readFileSync(path.join(ROOT, "src/config/appVersion.js"), "utf-8");
 const utilsSrc = readFileSync(path.join(ROOT, "src/components/process/interview/utils.js"), "utf-8");
-const tableJsx = readFileSync(path.join(ROOT, "src/components/process/interview/TimelineTable.jsx"), "utf-8");
+const tableJsx = readFileSync(path.join(ROOT, "src/components/process/interview/TimelineTable.jsx"), "utf-8")
+  + readFileSync(path.join(ROOT, "src/components/process/interview/TimelineRow.jsx"), "utf-8");
 
 // --- bpmnNodeKindShort utils contract ---
 
@@ -76,7 +77,8 @@ test("JSX: bpmnNodeKindShort is imported in TimelineTable.jsx", () => {
 
 test("JSX: BPMN badge uses bpmnNodeKindShort as primary label with raw fallback", () => {
   assert.ok(
-    tableJsx.includes("bpmnNodeKindShort(nodeKind) || nodeKind || \"node\""),
+    tableJsx.includes("bpmnNodeKindShort(nodeData.nodeKind) || nodeData.nodeKind || \"node\"")
+      || tableJsx.includes("bpmnNodeKindShort(nodeKind) || nodeKind || \"node\""),
     "BPMN badge must use bpmnNodeKindShort with raw nodeKind fallback",
   );
 });
