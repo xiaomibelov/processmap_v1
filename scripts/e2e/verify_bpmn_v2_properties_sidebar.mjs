@@ -3,7 +3,7 @@ import { chromium } from "playwright-core";
 const BASE_URL = process.env.TEST_BASE_URL || "http://clearvestnic.ru:5177";
 const EMAIL = process.env.TEST_EMAIL || "admin@local";
 const PASSWORD = process.env.TEST_PASSWORD || "admin";
-const PROJECT_ID = process.env.TEST_PROJECT_ID || "07158111eb7";
+const PROJECT_ID = process.env.TEST_PROJECT_ID || "0715811eb7";
 
 const BPMN_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
