@@ -8,6 +8,7 @@ import ProjectWizardModal from "./components/ProjectWizardModal";
 import SessionFlowModal from "./components/SessionFlowModal";
 import OrgSettingsModal from "./components/org/OrgSettingsModal";
 import Modal from "./shared/ui/Modal";
+import DeploymentNoticeModal from "./features/deployment-notices/components/DeploymentNoticeModal";
 import useSessionStore from "./features/sessions/hooks/useSessionStore";
 import {
   normalizeElementNotesMap,
@@ -3811,6 +3812,8 @@ export default function App() {
         onClose={() => setSessionFlowOpen(false)}
         onSubmit={runSessionFlow}
       />
+
+      <DeploymentNoticeModal />
 
       <Modal
         open={!!renameDialog.open}
