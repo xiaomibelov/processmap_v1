@@ -123,6 +123,32 @@ services:
     environment:
       - PLUGIN_INSTALLER=true
 
+
+  notifications:
+    build:
+      context: ./backend/services/notifications
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://fpc:fpc@postgres:5432/processmap}
+      - JWT_SECRET=${JWT_SECRET:-dev-insecure-change-me}
+      - NOTIFICATIONS_DEBUG=${NOTIFICATIONS_DEBUG:-false}
+      - NOTIFICATIONS_LOG_LEVEL=${NOTIFICATIONS_LOG_LEVEL:-info}
+    ports:
+      - "${NOTIFICATIONS_HOST_PORT:-8008}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 10s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 volumes:
   postgres_data:
   kanboard_data:

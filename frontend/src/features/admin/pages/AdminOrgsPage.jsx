@@ -8,12 +8,14 @@ import AdminUsersPanel from "../components/orgs/AdminUsersPanel";
 import AdminPermissionsPanel from "../components/permissions/AdminPermissionsPanel";
 import AdminGitMirrorPanel from "../components/gitMirror/AdminGitMirrorPanel";
 import AdminSystemPanel from "../components/system/AdminSystemPanel";
+import AdminGroupsPanel from "../components/groups/AdminGroupsPanel";
 
 const ALL_ORGS_TABS = [
   { id: "users", label: "Пользователи" },
   { id: "invites", label: "Инвайты" },
   { id: "permissions", label: "Permissions" },
   { id: "organizations", label: "Организации" },
+  { id: "groups", label: "Группы" },
   { id: "gitMirror", label: "Git mirror" },
   { id: "system", label: "Система" },
 ];
@@ -109,6 +111,17 @@ export default function AdminOrgsPage({
             activeOrgRole={activeOrgRole}
             isAdmin={isAdmin}
             onRefresh={onRefresh}
+          />
+        </div>
+      );
+    }
+    if (activeTab === "groups") {
+      return (
+        <div id="admin-access-groups">
+          <AdminGroupsPanel
+            activeOrgId={effectiveOrgId}
+            activeOrgRole={activeOrgRole}
+            isAdmin={isAdmin}
           />
         </div>
       );

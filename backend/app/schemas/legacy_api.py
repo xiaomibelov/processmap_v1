@@ -22,6 +22,7 @@ class AuthMeOut(BaseModel):
     active_org_id: str = ""
     default_org_id: str = ""
     orgs: List[Dict[str, Any]] = []
+    groups: List[Dict[str, Any]] = []
 
 
 class OrgCreateIn(BaseModel):

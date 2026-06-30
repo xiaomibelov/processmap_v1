@@ -137,6 +137,22 @@ export function UserDrawer({ user, orgOptions, fallbackOrgId, onClose, onSave, s
               </label>
             </div>
 
+            {user?.groups && Array.isArray(user.groups) && user.groups.length > 0 && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Группы</label>
+                <div className="flex flex-wrap gap-1">
+                  {user.groups.map((g, idx) => (
+                    <span
+                      key={`${g?.id || idx}_${idx}`}
+                      className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700"
+                    >
+                      {toText(g?.name || g?.group_name || g?.id)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {!form.isPlatformAdmin && (
               <div className="space-y-4 rounded-lg border p-4">
                 <div className="flex items-center justify-between">

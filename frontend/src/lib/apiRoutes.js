@@ -59,6 +59,10 @@ export const apiRoutes = {
     },
     gitMirror: (orgId) => `/api/orgs/${encode(orgId)}/git-mirror`,
     gitMirrorValidate: (orgId) => `/api/orgs/${encode(orgId)}/git-mirror/validate`,
+    groups: (orgId) => `/api/orgs/${encode(orgId)}/groups`,
+    group: (orgId, groupId) => `/api/orgs/${encode(orgId)}/groups/${encode(groupId)}`,
+    groupMembers: (orgId, groupId) => `/api/orgs/${encode(orgId)}/groups/${encode(groupId)}/members`,
+    groupMember: (orgId, groupId, userId) => `/api/orgs/${encode(orgId)}/groups/${encode(groupId)}/members/${encode(userId)}`,
     reportBuild: (orgId, sessionId) => `/api/orgs/${encode(orgId)}/sessions/${encode(sessionId)}/reports/build`,
     reportVersions: (orgId, sessionId, pathId = "", stepsHash = "") => withQuery(
       `/api/orgs/${encode(orgId)}/sessions/${encode(sessionId)}/reports/versions`,
@@ -248,6 +252,11 @@ export const apiRoutes = {
     permissionEntities: (params = {}) => withQuery("/api/admin/permissions/entities", params),
     permission: (entityType, entityId) => `/api/admin/permissions/${encodeURIComponent(String(entityType || ""))}/${encodeURIComponent(String(entityId || ""))}`,
     permissionsBulk: () => "/api/admin/permissions/bulk",
+    permissionsMatrix: (params = {}) => withQuery("/api/admin/permissions/matrix", params),
+    permissionsMatrixItem: (principalType, principalId, entityType, entityId) =>
+      `/api/admin/permissions/matrix/${encodeURIComponent(String(principalType || ""))}/${encodeURIComponent(String(principalId || ""))}/${encodeURIComponent(String(entityType || ""))}/${encodeURIComponent(String(entityId || ""))}`,
+    permissionsMatrixBulk: () => "/api/admin/permissions/matrix/bulk",
+    permissionPrincipals: () => "/api/admin/permissions/principals",
     invitePermissions: (inviteId) => `/api/admin/invites/${encodeURIComponent(String(inviteId || ""))}/permissions`,
   },
   featureFlags: {

@@ -40,6 +40,7 @@ from .storage import (
     get_storage,
     get_project_storage,
     list_user_org_memberships,
+    list_user_groups,
     resolve_active_org_id,
     get_user_org_role,
     get_default_org_id,
@@ -3641,6 +3642,7 @@ def auth_me(request: Request):
     memberships = list_user_org_memberships(user_id, is_admin=is_admin)
     requested_org_id = _extract_org_from_headers(request)
     active_org_id = resolve_active_org_id(user_id, requested_org_id=requested_org_id, is_admin=is_admin)
+    groups = list_user_groups(user_id, org_id=active_org_id)
     return build_auth_me_payload(
         user_id=user_id,
         email=str(user.get("email") or ""),
@@ -3648,6 +3650,7 @@ def auth_me(request: Request):
         active_org_id=active_org_id,
         default_org_id=get_default_org_id(),
         orgs=memberships,
+        groups=groups,
     )
 
 

@@ -11,6 +11,15 @@ function MembershipBadge({ membership }) {
   );
 }
 
+function GroupBadge({ group }) {
+  const name = toText(group?.name || group?.group_name || group?.id);
+  return (
+    <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+      {name}
+    </span>
+  );
+}
+
 export function UsersTable({ users = [], onEdit, onDelete }) {
   if (users.length === 0) {
     return (
@@ -29,6 +38,7 @@ export function UsersTable({ users = [], onEdit, onDelete }) {
             <th className="px-3 py-2 font-medium text-gray-500">Должность</th>
             <th className="px-3 py-2 font-medium text-gray-500">Статус</th>
             <th className="px-3 py-2 font-medium text-gray-500">Доступ</th>
+            <th className="px-3 py-2 font-medium text-gray-500">Группы</th>
             <th className="px-3 py-2 font-medium text-gray-500">Создан</th>
             <th className="px-3 py-2 text-right font-medium text-gray-500">Действия</th>
           </tr>
@@ -80,6 +90,19 @@ export function UsersTable({ users = [], onEdit, onDelete }) {
                       ))}
                     </div>
                   )}
+                </td>
+                <td className="px-3 py-2">
+                  {(() => {
+                    const groups = Array.isArray(user?.groups) ? user.groups : [];
+                    if (groups.length === 0) return <span className="text-gray-400">—</span>;
+                    return (
+                      <div className="flex max-w-xs flex-wrap gap-1">
+                        {groups.map((g, idx) => (
+                          <GroupBadge key={`${g?.id || idx}_${idx}`} group={g} />
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </td>
                 <td className="px-3 py-2 text-gray-500">{formatDateTime(user?.created_at)}</td>
                 <td className="px-3 py-2 text-right">
