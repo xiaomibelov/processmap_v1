@@ -1,0 +1,10 @@
+{
+  "contour_id": "feat/admin-redesign-v1",
+  "phase": "phase_1_caching",
+  "planner_status": "complete",
+  "worker_status": "in_progress",
+  "reviewer_status": "pending",
+  "approved_by_user": true,
+  "next_action": "install_tanstack_react_query_and_create_provider",
+  "notes": "Unrelated working-tree changes isolated to .untracked-backup/ and git stash."
+}

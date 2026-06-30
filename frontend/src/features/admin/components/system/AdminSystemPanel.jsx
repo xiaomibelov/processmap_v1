@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import AdminTabs from "../common/AdminTabs";
 import RedisHealthWidget from "../dashboard/RedisHealthWidget";
 import JobsThroughputWidget from "../dashboard/JobsThroughputWidget";
@@ -6,6 +6,7 @@ import RecentAuditWidget from "../dashboard/RecentAuditWidget";
 import FeatureFlagsWidget from "../dashboard/FeatureFlagsWidget";
 import { apiAdminGetDashboard } from "../../../../lib/api";
 import { ru } from "../../../../shared/i18n/ru";
+import { useAdminQuery } from "../../hooks/useAdminQuery";
 
 const SYSTEM_TABS = [
   { id: "notes", label: "Заметки" },
@@ -43,27 +44,22 @@ function FlagsTab() {
   return <FeatureFlagsWidget />;
 }
 
+const fetchDashboard = async () => {
+  const res = await apiAdminGetDashboard({ limit: 50 });
+  if (!res.ok) {
+    throw new Error(res.error || "Не удалось загрузить системные данные.");
+  }
+  return res.data || {};
+};
+
 export default function AdminSystemPanel() {
   const [activeTab, setActiveTab] = useState("notes");
-  const [payload, setPayload] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    const res = await apiAdminGetDashboard({ limit: 50 });
-    setLoading(false);
-    if (!res.ok) {
-      setError(String(res.error || "Не удалось загрузить системные данные."));
-      return;
-    }
-    setPayload(res.data || {});
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const { data: payload, isLoading: loading, error: queryError } = useAdminQuery({
+    queryKey: ["adminDashboard"],
+    fetcher: fetchDashboard,
+    enabled: true,
+  });
+  const error = queryError ? queryError.message : "";
 
   return (
     <div id="admin-access-system" className="space-y-3">

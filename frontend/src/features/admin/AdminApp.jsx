@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import ErrorState from "./components/common/ErrorState";
 import LoadingBlock from "./components/common/LoadingBlock";
+import { AdminQueryProvider } from "./providers/AdminQueryProvider";
 import { getAdminRouteMeta } from "./constants/adminRoutes.constants";
 import AdminShell from "./layout/AdminShell";
 import { buildAdminBreadcrumbs, canAccessAdminConsole, parseAdminRoute, toText } from "./adminUtils";
@@ -412,24 +413,26 @@ export default function AdminApp({
   ];
 
   return (
-    <AdminShell
-      section={route.section}
-      orgs={orgs}
-      activeOrgId={activeOrgId}
-      onOrgChange={(nextOrgId) => {
-        const next = toText(nextOrgId);
-        if (!next || next === toText(activeOrgId)) return;
-        void switchOrg(next, { refreshMe: false });
-      }}
-      breadcrumbs={breadcrumbs}
-      onNavigate={onNavigate}
-      user={user}
-      redisMode={redisMode}
-      pageTitle={meta.title}
-      pageSubtitle={meta.subtitle}
-      pageBadges={pageBadges}
-    >
-      {renderPage()}
-    </AdminShell>
+    <AdminQueryProvider>
+      <AdminShell
+        section={route.section}
+        orgs={orgs}
+        activeOrgId={activeOrgId}
+        onOrgChange={(nextOrgId) => {
+          const next = toText(nextOrgId);
+          if (!next || next === toText(activeOrgId)) return;
+          void switchOrg(next, { refreshMe: false });
+        }}
+        breadcrumbs={breadcrumbs}
+        onNavigate={onNavigate}
+        user={user}
+        redisMode={redisMode}
+        pageTitle={meta.title}
+        pageSubtitle={meta.subtitle}
+        pageBadges={pageBadges}
+      >
+        {renderPage()}
+      </AdminShell>
+    </AdminQueryProvider>
   );
 }

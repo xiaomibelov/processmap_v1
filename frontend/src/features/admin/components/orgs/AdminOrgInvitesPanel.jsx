@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   apiAdminGetInvitePermissions,
   apiAdminPatchInvitePermissions,
@@ -16,6 +16,8 @@ import AdminInvitePermissionEditor, {
   AdminInvitePermissionSummary,
   invitePermissionDefaults,
 } from "../permissions/AdminInvitePermissionEditor";
+import { useAdminMutation } from "../../hooks/useAdminMutation";
+import { useAdminQuery } from "../../hooks/useAdminQuery";
 
 function inviteTone(statusRaw) {
   const status = toText(statusRaw).toLowerCase();
@@ -59,6 +61,17 @@ function normalizeCurrentInvite(rowRaw, orgId) {
   };
 }
 
+async function fetchOrgInvites(orgId) {
+  const res = await apiListOrgInvites(orgId);
+  if (!res.ok) {
+    throw new Error(res.error || ru.org.invitesLoadFailed);
+  }
+  return {
+    items: Array.isArray(res.items) ? res.items : [],
+    current_invite: res.current_invite || null,
+  };
+}
+
 export default function AdminOrgInvitesPanel({
   activeOrgId = "",
   activeOrgName = "",
@@ -79,9 +92,7 @@ export default function AdminOrgInvitesPanel({
   const effectiveRole = toText(activeOrgRole || activeOrg?.role).toLowerCase();
   const canManageInvites = isAdmin || ["org_owner", "org_admin"].includes(effectiveRole);
 
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [invites, setInvites] = useState([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteFullName, setInviteFullName] = useState("");
   const [inviteJobTitle, setInviteJobTitle] = useState("");
@@ -90,12 +101,33 @@ export default function AdminOrgInvitesPanel({
   const [invitePermissions, setInvitePermissions] = useState({});
   const [lastInviteNotice, setLastInviteNotice] = useState("");
   const [lastCreatedInvite, setLastCreatedInvite] = useState(null);
-  const [currentInvite, setCurrentInvite] = useState(null);
   const [copyState, setCopyState] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [editingInviteId, setEditingInviteId] = useState("");
   const [editingPermissions, setEditingPermissions] = useState({});
   const [savingPermissions, setSavingPermissions] = useState(false);
+
+  // Reset custom invite permissions when the base role changes.
+  const previousRoleRef = useRef(inviteRole);
+  useEffect(() => {
+    if (previousRoleRef.current !== inviteRole) {
+      setInvitePermissions({});
+      previousRoleRef.current = inviteRole;
+    }
+  }, [inviteRole]);
+
+  const {
+    data: invitesData,
+    isLoading: busy,
+    error: queryError,
+  } = useAdminQuery({
+    queryKey: ["orgInvites", oid],
+    fetcher: () => fetchOrgInvites(oid),
+    enabled: Boolean(oid),
+  });
+
+  const invites = invitesData?.items || [];
+  const currentInvite = normalizeCurrentInvite(invitesData?.current_invite || null, oid);
 
   const visibleCreatedInvite = useMemo(() => {
     const localInvite = lastCreatedInvite && toText(lastCreatedInvite.orgId) === oid ? lastCreatedInvite : null;
@@ -105,34 +137,96 @@ export default function AdminOrgInvitesPanel({
     return currentInvite && toText(currentInvite.orgId) === oid ? currentInvite : null;
   }, [lastCreatedInvite, recentInvite, currentInvite, oid]);
 
-  useEffect(() => {
-    setInvitePermissions({});
-  }, [inviteRole]);
+  const createInviteMutation = useAdminMutation({
+    mutationFn: async (payload) => {
+      const res = await apiCreateOrgInvite(oid, payload);
+      if (!res.ok) throw new Error(res.error || ru.org.createInviteFailed);
+      return res;
+    },
+    invalidateKeys: [["orgInvites", oid]],
+    onSuccess: (res) => {
+      setInviteEmail("");
+      setInviteFullName("");
+      setInviteJobTitle("");
+      setInviteRole("editor");
+      setInviteTtl("7");
+      setInvitePermissions({});
+      if (toText(res.delivery) === "email") {
+        setLastInviteNotice(ru.org.inviteForm.inviteSent);
+      } else {
+        setLastInviteNotice(ru.org.inviteForm.inviteCreated);
+      }
+      const createdInvite = {
+        orgId: oid,
+        key: toText(res.invite_token || res.invite_key),
+        link: toText(res.invite_link),
+      };
+      setLastCreatedInvite(createdInvite);
+      onInviteCreated?.(createdInvite);
+      onChanged?.();
+    },
+    onError: (err) => setError(toText(err.message || ru.org.createInviteFailed)),
+  });
 
-  const loadInvites = useCallback(async () => {
-    if (!oid) {
-      setInvites([]);
-      setCurrentInvite(null);
-      return;
-    }
-    setBusy(true);
-    setError("");
-    const res = await apiListOrgInvites(oid);
-    if (!res.ok) {
-      setInvites([]);
-      setCurrentInvite(null);
-      setError(toText(res.error || ru.org.invitesLoadFailed));
-      setBusy(false);
-      return;
-    }
-    setInvites(Array.isArray(res.items) ? res.items : []);
-    setCurrentInvite(normalizeCurrentInvite(res.current_invite || null, oid));
-    setBusy(false);
-  }, [oid]);
+  const regenerateInviteMutation = useAdminMutation({
+    mutationFn: async (row) => {
+      const email = toText(row?.email).toLowerCase();
+      if (!email) throw new Error("missing email");
+      const res = await apiCreateOrgInvite(oid, {
+        email,
+        full_name: toText(row?.full_name),
+        job_title: toText(row?.job_title),
+        role: toText(row?.role) || "viewer",
+        ttl_days: inviteTtlDaysFromRow(row),
+        regenerate: true,
+      });
+      if (!res.ok) throw new Error(res.error || ru.org.createInviteFailed);
+      return res;
+    },
+    invalidateKeys: [["orgInvites", oid]],
+    onSuccess: (res) => {
+      setLastInviteNotice("Инвайт перевыпущен.");
+      const createdInvite = {
+        orgId: oid,
+        key: toText(res.invite_token || res.invite_key),
+        link: toText(res.invite_link),
+      };
+      setLastCreatedInvite(createdInvite);
+      onInviteCreated?.(createdInvite);
+      onChanged?.();
+    },
+    onError: (err) => setError(toText(err.message || ru.org.createInviteFailed)),
+  });
 
-  useEffect(() => {
-    void loadInvites();
-  }, [loadInvites]);
+  const revokeInviteMutation = useAdminMutation({
+    mutationFn: async (inviteId) => {
+      const iid = toText(inviteId);
+      if (!iid) throw new Error("missing invite_id");
+      const res = await apiRevokeOrgInvite(oid, iid);
+      if (!res.ok) throw new Error(res.error || ru.org.revokeInviteFailed);
+      return res;
+    },
+    invalidateKeys: [["orgInvites", oid]],
+    onSuccess: () => {
+      setEditingInviteId("");
+      onChanged?.();
+    },
+    onError: (err) => setError(toText(err.message || ru.org.revokeInviteFailed)),
+  });
+
+  const patchInvitePermissionsMutation = useAdminMutation({
+    mutationFn: async ({ inviteId, permissions }) => {
+      const res = await apiAdminPatchInvitePermissions(inviteId, permissions);
+      if (!res.ok) throw new Error(res.error || "Не удалось сохранить права инвайта");
+      return res;
+    },
+    invalidateKeys: [["orgInvites", oid]],
+    onSuccess: () => {
+      setEditingInviteId("");
+      setEditingPermissions({});
+    },
+    onError: (err) => setError(toText(err.message || "Не удалось сохранить права инвайта")),
+  });
 
   async function handleCreateInvite(event) {
     event.preventDefault();
@@ -159,78 +253,22 @@ export default function AdminOrgInvitesPanel({
       payload.permissions = overrides;
     }
 
-    const res = await apiCreateOrgInvite(oid, payload);
-    if (!res.ok) {
-      setError(toText(res.error || ru.org.createInviteFailed));
-      return;
-    }
-    setInviteEmail("");
-    setInviteFullName("");
-    setInviteJobTitle("");
-    setInviteRole("editor");
-    setInviteTtl("7");
-    setInvitePermissions({});
-    if (toText(res.delivery) === "email") {
-      setLastInviteNotice(ru.org.inviteForm.inviteSent);
-    } else {
-      setLastInviteNotice(ru.org.inviteForm.inviteCreated);
-    }
-    const createdInvite = {
-      orgId: oid,
-      key: toText(res.invite_token || res.invite_key),
-      link: toText(res.invite_link),
-    };
-    setLastCreatedInvite(createdInvite);
-    onInviteCreated?.(createdInvite);
-    await loadInvites();
-    onChanged?.();
+    await createInviteMutation.mutateAsync(payload);
   }
 
   async function handleRegenerateInvite(row) {
     if (!canManageInvites || !oid) return;
-    const email = toText(row?.email).toLowerCase();
-    if (!email) return;
     if (typeof window !== "undefined" && !window.confirm("Перевыпустить текущий инвайт для этого email?")) return;
     setError("");
     setCopyState("");
-    const res = await apiCreateOrgInvite(oid, {
-      email,
-      full_name: toText(row?.full_name),
-      job_title: toText(row?.job_title),
-      role: toText(row?.role) || "viewer",
-      ttl_days: inviteTtlDaysFromRow(row),
-      regenerate: true,
-    });
-    if (!res.ok) {
-      setError(toText(res.error || ru.org.createInviteFailed));
-      return;
-    }
-    setLastInviteNotice("Инвайт перевыпущен.");
-    const createdInvite = {
-      orgId: oid,
-      key: toText(res.invite_token || res.invite_key),
-      link: toText(res.invite_link),
-    };
-    setLastCreatedInvite(createdInvite);
-    onInviteCreated?.(createdInvite);
-    await loadInvites();
-    onChanged?.();
+    await regenerateInviteMutation.mutateAsync(row);
   }
 
   async function handleRevokeInvite(inviteId) {
     if (!canManageInvites || !oid) return;
-    const iid = toText(inviteId);
-    if (!iid) return;
     if (typeof window !== "undefined" && !window.confirm(ru.org.revokeConfirm)) return;
     setError("");
-    const res = await apiRevokeOrgInvite(oid, iid);
-    if (!res.ok) {
-      setError(toText(res.error || ru.org.revokeInviteFailed));
-      return;
-    }
-    setEditingInviteId("");
-    await loadInvites();
-    onChanged?.();
+    await revokeInviteMutation.mutateAsync(inviteId);
   }
 
   async function handleCopy(value) {
@@ -256,18 +294,11 @@ export default function AdminOrgInvitesPanel({
   }
 
   async function saveEditingPermissions() {
-    const iid = editingInviteId;
-    if (!iid) return;
-    setSavingPermissions(true);
-    const res = await apiAdminPatchInvitePermissions(iid, editingPermissions);
+    await patchInvitePermissionsMutation.mutateAsync({
+      inviteId: editingInviteId,
+      permissions: editingPermissions,
+    });
     setSavingPermissions(false);
-    if (!res.ok) {
-      setError(toText(res.error || "Не удалось сохранить права инвайта"));
-      return;
-    }
-    setEditingInviteId("");
-    setEditingPermissions({});
-    await loadInvites();
   }
 
   function cancelEditingPermissions() {
@@ -289,6 +320,7 @@ export default function AdminOrgInvitesPanel({
         </div>
 
         {error ? <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
+        {queryError ? <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{queryError.message}</div> : null}
         {busy ? <div className="text-sm text-slate-500">{ru.common.loading}</div> : null}
 
         {!oid ? (
@@ -367,7 +399,9 @@ export default function AdminOrgInvitesPanel({
               />
             </div>
             <div className="md:col-span-2 flex items-end">
-              <button type="submit" className="primaryBtn h-9 min-h-0 w-full px-3 py-0 text-sm">{ru.org.inviteForm.createButton}</button>
+              <button type="submit" className="primaryBtn h-9 min-h-0 w-full px-3 py-0 text-sm" disabled={createInviteMutation.isPending || !inviteEmail.trim()}>
+                {createInviteMutation.isPending ? "Создание…" : ru.org.inviteForm.createButton}
+              </button>
             </div>
             <div className="md:col-span-12 text-xs text-slate-500">
               {ru.org.noInviteCreateHint}
@@ -470,13 +504,13 @@ export default function AdminOrgInvitesPanel({
                         <td className="px-2.5 py-2">
                           {canManageInvites && isPending ? (
                             <div className="flex flex-wrap items-center gap-1.5">
-                              <button type="button" className="secondaryBtn h-7 min-h-0 px-2 py-0 text-xs" onClick={() => void handleRegenerateInvite(row)}>
+                              <button type="button" className="secondaryBtn h-7 min-h-0 px-2 py-0 text-xs" onClick={() => void handleRegenerateInvite(row)} disabled={regenerateInviteMutation.isPending}>
                                 Перевыпустить
                               </button>
-                              <button type="button" className="secondaryBtn h-7 min-h-0 px-2 py-0 text-xs" onClick={() => void startEditingPermissions(row)}>
+                              <button type="button" className="secondaryBtn h-7 min-h-0 px-2 py-0 text-xs" onClick={() => void startEditingPermissions(row)} disabled={savingPermissions}>
                                 Права
                               </button>
-                              <button type="button" className="secondaryBtn h-7 min-h-0 px-2 py-0 text-xs" onClick={() => void handleRevokeInvite(inviteId)}>
+                              <button type="button" className="secondaryBtn h-7 min-h-0 px-2 py-0 text-xs" onClick={() => void handleRevokeInvite(inviteId)} disabled={revokeInviteMutation.isPending}>
                                 {ru.common.revoke}
                               </button>
                             </div>
@@ -496,13 +530,13 @@ export default function AdminOrgInvitesPanel({
                     role={invites.find((r) => toText(r?.id) === editingInviteId)?.role}
                     value={editingPermissions}
                     onChange={setEditingPermissions}
-                    disabled={savingPermissions}
+                    disabled={savingPermissions || patchInvitePermissionsMutation.isPending}
                   />
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <button type="button" className="primaryBtn h-8 min-h-0 px-3 py-0 text-xs" disabled={savingPermissions} onClick={() => void saveEditingPermissions()}>
-                      {savingPermissions ? "Сохранение…" : "Сохранить права"}
+                    <button type="button" className="primaryBtn h-8 min-h-0 px-3 py-0 text-xs" disabled={savingPermissions || patchInvitePermissionsMutation.isPending} onClick={() => void saveEditingPermissions()}>
+                      {patchInvitePermissionsMutation.isPending ? "Сохранение…" : "Сохранить права"}
                     </button>
-                    <button type="button" className="secondaryBtn h-8 min-h-0 px-3 py-0 text-xs" disabled={savingPermissions} onClick={cancelEditingPermissions}>
+                    <button type="button" className="secondaryBtn h-8 min-h-0 px-3 py-0 text-xs" disabled={patchInvitePermissionsMutation.isPending} onClick={cancelEditingPermissions}>
                       Отмена
                     </button>
                   </div>
