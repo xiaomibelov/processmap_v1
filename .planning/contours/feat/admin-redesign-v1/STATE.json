@@ -2,9 +2,9 @@
   "contour_id": "feat/admin-redesign-v1",
   "phase": "phase_1_caching",
   "planner_status": "complete",
-  "worker_status": "in_progress",
+  "worker_status": "complete",
   "reviewer_status": "pending",
   "approved_by_user": true,
-  "next_action": "install_tanstack_react_query_and_create_provider",
-  "notes": "Unrelated working-tree changes isolated to .untracked-backup/ and git stash."
+  "next_action": "request_user_approval_for_phase_2_redesign",
+  "notes": "Phase 1 deployed to clearvestnic.ru:5177 and verified: switching between Invites/Organizations/System tabs serves cached data with no duplicate admin/orgs, dashboard, or invites requests. Two runtime fixes applied: AdminQueryProvider now wraps AdminAppInner, and undefined 'busy' replaced with mutation pending state."
 }
