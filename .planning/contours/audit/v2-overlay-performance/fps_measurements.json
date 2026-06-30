@@ -1,5 +1,5 @@
 {
-  "url": "http://clearvestnic.ru:5177/app?project=0715811eb7&session=665d56a12f",
+  "url": "http://clearvestnic.ru:5177/app?project=0715811eb7&session=fbc77624a3",
   "elementCount": 200,
   "overlayCount": 200,
   "expandedCount": 200,
@@ -7,65 +7,65 @@
     {
       "label": "pan_overlays_off",
       "frames": 299,
-      "duration": 5002.799999999999,
-      "avgDelta": 16.777852348993285,
-      "avgFps": 59.602384095363824,
-      "minFps": 29.94011976047937,
-      "maxDelta": 33.399999999999636
+      "duration": 5008.89999998808,
+      "avgDelta": 16.777852348993292,
+      "avgFps": 59.6023840953638,
+      "minFps": 30.030030030029867,
+      "maxDelta": 33.30000000000018
     },
     {
       "label": "pan_v2_on",
-      "frames": 300,
-      "duration": 5001.199999964236,
-      "avgDelta": 16.72173913043478,
-      "avgFps": 59.802392095683835,
-      "minFps": 30.030030030030687,
-      "maxDelta": 33.29999999999927
+      "frames": 296,
+      "duration": 5010.000000011922,
+      "avgDelta": 16.94847457627119,
+      "avgFps": 59.002360094403755,
+      "minFps": 20.040080160320787,
+      "maxDelta": 49.899999999999636
     },
     {
       "label": "drag_task_v2_on",
-      "frames": 266,
-      "duration": 5007.5999999999985,
-      "avgDelta": 18.99283018867924,
-      "avgFps": 52.651447418092246,
-      "minFps": 5,
-      "maxDelta": 200
+      "frames": 280,
+      "duration": 5015.800000023843,
+      "avgDelta": 17.920071684587818,
+      "avgFps": 55.80334820089204,
+      "minFps": 3.7495313085864166,
+      "maxDelta": 266.7000000000007
     },
     {
       "label": "scroll_zoom_v2_on",
-      "frames": 301,
-      "duration": 5016.300000011921,
-      "avgDelta": 16.776999999999994,
-      "avgFps": 59.605412171425186,
-      "minFps": 30.030030030030687,
-      "maxDelta": 33.29999999999927
+      "frames": 198,
+      "duration": 5005.099999976159,
+      "avgDelta": 25.37969543147208,
+      "avgFps": 39.401576063042526,
+      "minFps": 19.960079840319942,
+      "maxDelta": 50.099999999998545
     },
     {
       "label": "pan_v2_expanded",
-      "frames": 288,
-      "duration": 5008.600000011924,
-      "avgDelta": 17.420905923344957,
-      "avgFps": 57.402296091843645,
-      "minFps": 5.452562704471058,
-      "maxDelta": 183.40000000000146
+      "frames": 285,
+      "duration": 5005.4000000119195,
+      "avgDelta": 17.604929577464787,
+      "avgFps": 56.80227209088364,
+      "minFps": 10,
+      "maxDelta": 100
     },
     {
       "label": "drag_task_v2_expanded",
-      "frames": 276,
-      "duration": 5012.5999999880805,
-      "avgDelta": 18.30218181818181,
-      "avgFps": 54.638294490473086,
-      "minFps": 6.666666666666667,
-      "maxDelta": 150
+      "frames": 271,
+      "duration": 5001.399999976158,
+      "avgDelta": 18.641111111111105,
+      "avgFps": 53.644870954282666,
+      "minFps": 5.455537370430901,
+      "maxDelta": 183.3000000000029
     },
     {
       "label": "scroll_zoom_v2_expanded",
-      "frames": 301,
-      "duration": 5003.200000011922,
-      "avgDelta": 16.66600000000001,
-      "avgFps": 60.002400096003804,
-      "minFps": 59.523809523799216,
-      "maxDelta": 16.80000000000291
+      "frames": 300,
+      "duration": 5003.600000023842,
+      "avgDelta": 16.72173913043479,
+      "avgFps": 59.80239209568379,
+      "minFps": 30.030030030027405,
+      "maxDelta": 33.30000000000291
     }
   ]
 }
