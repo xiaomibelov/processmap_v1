@@ -39,7 +39,7 @@ import {
 import { mergeSearchParams, pageToOffset, parsePage, parsePageSize, rangeToTsFrom } from "./utils/adminQuery";
 import { ru } from "../../shared/i18n/ru";
 
-export default function AdminApp({
+function AdminAppInner({
   pathname = "/admin/dashboard",
   search = "",
   onNavigate,
@@ -413,26 +413,32 @@ export default function AdminApp({
   ];
 
   return (
+    <AdminShell
+      section={route.section}
+      orgs={orgs}
+      activeOrgId={activeOrgId}
+      onOrgChange={(nextOrgId) => {
+        const next = toText(nextOrgId);
+        if (!next || next === toText(activeOrgId)) return;
+        void switchOrg(next, { refreshMe: false });
+      }}
+      breadcrumbs={breadcrumbs}
+      onNavigate={onNavigate}
+      user={user}
+      redisMode={redisMode}
+      pageTitle={meta.title}
+      pageSubtitle={meta.subtitle}
+      pageBadges={pageBadges}
+    >
+      {renderPage()}
+    </AdminShell>
+  );
+}
+
+export default function AdminApp(props) {
+  return (
     <AdminQueryProvider>
-      <AdminShell
-        section={route.section}
-        orgs={orgs}
-        activeOrgId={activeOrgId}
-        onOrgChange={(nextOrgId) => {
-          const next = toText(nextOrgId);
-          if (!next || next === toText(activeOrgId)) return;
-          void switchOrg(next, { refreshMe: false });
-        }}
-        breadcrumbs={breadcrumbs}
-        onNavigate={onNavigate}
-        user={user}
-        redisMode={redisMode}
-        pageTitle={meta.title}
-        pageSubtitle={meta.subtitle}
-        pageBadges={pageBadges}
-      >
-        {renderPage()}
-      </AdminShell>
+      <AdminAppInner {...props} />
     </AdminQueryProvider>
   );
 }
