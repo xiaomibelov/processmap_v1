@@ -54,7 +54,7 @@ async function login(page) {
   await page.goto(`${BASE_URL}/login`);
   await page.fill('input[type="email"]', EMAIL);
   await page.fill('input[type="password"]', PASSWORD);
-  await page.click('button[type="submit"]', { timeout: 15000 });
+  await page.click('button[type="submit"]');
   await page.waitForURL(/\/app/, { timeout: 15000 });
   try {
     await page.waitForSelector('h1:has-text("Выберите организацию")', { timeout: 5000 });
@@ -88,22 +88,61 @@ async function createTestSession(page) {
     },
     { projectId: PROJECT_ID, token: accessToken },
   );
-  if (!createRes?.session?.id) throw new Error(`session create failed: ${JSON.stringify(createRes)}`);
-  const sessionId = createRes.session.id;
+  const sessionId = createRes?.session?.id || createRes?.id;
+  if (!sessionId) throw new Error(`session create failed: ${JSON.stringify(createRes)}`);
 
-  await page.evaluate(
-    async ({ sessionId: sid, xml, token }) => {
+  const sessionBefore = await page.evaluate(
+    async ({ sid, token }) => {
+      const res = await fetch(`/api/sessions/${sid}`, { headers: { Authorization: `Bearer ${token}` } });
+      return res.json();
+    },
+    { sid: sessionId, token: accessToken },
+  );
+  const baseVersion = sessionBefore?.diagram_state_version ?? sessionBefore?.bpmn_xml_version ?? 0;
+
+  const putRes = await page.evaluate(
+    async ({ sessionId: sid, xml, token, version }) => {
       const res = await fetch(`/api/sessions/${sid}/bpmn`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ xml }),
+        body: JSON.stringify({ xml, base_diagram_state_version: version }),
       });
-      return res.json();
+      return { status: res.status, body: await res.json().catch(() => ({})) };
     },
-    { sessionId, xml: BPMN_XML, token: accessToken },
+    { sessionId, xml: BPMN_XML, token: accessToken, version: baseVersion },
   );
+  if (putRes.status >= 400) throw new Error(`BPMN PUT failed: ${putRes.status} ${JSON.stringify(putRes.body)}`);
   console.log("[verify] BPMN saved to session", sessionId);
   return sessionId;
+}
+
+async function ensureSidebarOpen(page) {
+  const handle = page.locator('[data-testid="left-sidebar-handle"]');
+  if (await handle.isVisible().catch(() => false)) {
+    await handle.locator(".leftSidebarHandleOpenBtn").first().click();
+    await page.waitForTimeout(300);
+  }
+}
+
+async function expandCamundaPropertiesGroup(page, groupSelector) {
+  await page.evaluate((sel) => {
+    const group = document.querySelector(sel);
+    if (!group) return;
+    const accordion = group.closest(".sidebarAccordion");
+    const head = accordion?.querySelector(":scope > .sidebarAccordionHead");
+    if (head && head.getAttribute("aria-expanded") !== "true") head.click();
+  }, groupSelector);
+  await page.waitForTimeout(400);
+
+  const innerToggle = page.locator(`${groupSelector} .sidebarPropertiesBlockToggle`).filter({
+    has: page.locator('.sidebarPropertiesBlockTitle:has-text("Дополнительные BPMN-свойства")'),
+  });
+  if (await innerToggle.isVisible().catch(() => false)) {
+    if ((await innerToggle.getAttribute("aria-expanded")) !== "true") {
+      await innerToggle.click({ force: true });
+      await page.waitForTimeout(400);
+    }
+  }
 }
 
 async function run() {
@@ -126,12 +165,19 @@ async function run() {
   const taskSelector = '[data-element-id="Task_verify"]';
   await page.waitForSelector(taskSelector, { timeout: 15000 });
   console.log("[verify] task element found on canvas");
-  await page.locator(taskSelector).first().click();
-  await page.waitForTimeout(500);
+  await page.locator(taskSelector).first().click({ force: true });
+  await page.waitForTimeout(800);
+
+  await ensureSidebarOpen(page);
 
   const groupSelector = '[data-testid="camunda-properties-group"]';
-  await page.waitForSelector(groupSelector, { timeout: 10000 });
+  await page.waitForSelector(groupSelector, { timeout: 10000, state: "visible" });
   console.log("[verify] camunda properties group visible");
+
+  await expandCamundaPropertiesGroup(page, groupSelector);
+
+  const groupText = await page.locator(groupSelector).innerText();
+  console.log("[verify] camunda properties group text:\n" + groupText);
 
   const propertyItem = await page.locator(`${groupSelector} .sidebarBpmnPropertyItem`).filter({
     has: page.locator('.sidebarBpmnPropertyPreviewKey:has-text("fromXmlProp")'),
@@ -144,14 +190,16 @@ async function run() {
   const value = await propertyItem.locator(".sidebarBpmnPropertyPreviewValue").textContent();
   console.log("[verify] property visible in sidebar:", value?.trim());
 
-  // Full page reload should still show the XML-originated property (C path).
+  // Full page reload should still show the XML-originated property.
   console.log("[verify] full reload");
   await page.reload();
   await page.waitForSelector(".bpmnStageHost", { timeout: 20000 });
   await page.waitForTimeout(1500);
-  await page.locator(taskSelector).first().click();
-  await page.waitForTimeout(500);
-  await page.waitForSelector(groupSelector, { timeout: 10000 });
+  await page.locator(taskSelector).first().click({ force: true });
+  await page.waitForTimeout(800);
+  await ensureSidebarOpen(page);
+  await page.waitForSelector(groupSelector, { timeout: 10000, state: "visible" });
+  await expandCamundaPropertiesGroup(page, groupSelector);
 
   const propertyItemAfterReload = await page.locator(`${groupSelector} .sidebarBpmnPropertyItem`).filter({
     has: page.locator('.sidebarBpmnPropertyPreviewKey:has-text("fromXmlProp")'),
