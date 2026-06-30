@@ -1,0 +1,18 @@
+services:
+  notifications:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./notifications.db}
+      - JWT_SECRET=${JWT_SECRET:-dev-secret}
+      - NOTIFICATIONS_DEBUG=${NOTIFICATIONS_DEBUG:-true}
+      - NOTIFICATIONS_LOG_LEVEL=${NOTIFICATIONS_LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s

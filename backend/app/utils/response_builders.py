@@ -23,6 +23,7 @@ def build_auth_me_payload(
     active_org_id: str,
     default_org_id: str,
     orgs: List[Dict[str, Any]],
+    groups: List[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     return {
         "id": str(user_id or ""),
@@ -31,6 +32,7 @@ def build_auth_me_payload(
         "active_org_id": str(active_org_id or ""),
         "default_org_id": str(default_org_id or ""),
         "orgs": list(orgs or []),
+        "groups": list(groups or []),
     }
 
 

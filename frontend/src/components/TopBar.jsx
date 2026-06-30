@@ -829,6 +829,19 @@ export default function TopBar({
                   {shortLabel(userTitleFrom(user), 46)}
                 </div>
                 <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Аккаунт</div>
+                {user?.groups && Array.isArray(user.groups) && user.groups.length > 0 ? (
+                  <div className="mt-2 flex min-w-0 flex-wrap gap-1" data-testid="topbar-account-groups">
+                    {user.groups.map((g, idx) => (
+                      <span
+                        key={`${g?.id || idx}_${idx}`}
+                        className="inline-flex items-center rounded-full bg-info/15 px-2 py-0.5 text-[10px] font-medium text-info"
+                        title={String(g?.description || "").trim() || undefined}
+                      >
+                        {String(g?.name || g?.group_name || g?.id || "Группа").trim()}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
               <div className="min-w-0 border-b border-border/70 px-4 py-3" data-testid="topbar-mentions-menu">
                 <div className="flex min-w-0 items-start justify-between gap-3">

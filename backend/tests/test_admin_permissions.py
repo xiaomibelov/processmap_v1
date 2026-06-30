@@ -29,23 +29,37 @@ class AdminPermissionsApiTest(unittest.TestCase):
             admin_permissions_entities,
             admin_permissions_patch,
             admin_permissions_bulk,
+            admin_permissions_matrix,
+            admin_permissions_matrix_patch,
+            admin_permissions_matrix_bulk,
+            admin_permissions_principals,
             admin_invite_permissions_get,
             admin_invite_permissions_patch,
             AdminPermissionUpdate,
             AdminPermissionBulkBody,
+            AdminMatrixPermissionUpdate,
+            AdminMatrixBulkBody,
         )
-        from app.storage import create_org_record, get_storage, upsert_org_membership, _now_ts
+        from app.storage import create_org_record, get_storage, upsert_org_membership, _now_ts, create_org_group, add_group_member
 
         self.admin_permissions_list = admin_permissions_list
         self.admin_permissions_entities = admin_permissions_entities
         self.admin_permissions_patch = admin_permissions_patch
         self.admin_permissions_bulk = admin_permissions_bulk
+        self.admin_permissions_matrix = admin_permissions_matrix
+        self.admin_permissions_matrix_patch = admin_permissions_matrix_patch
+        self.admin_permissions_matrix_bulk = admin_permissions_matrix_bulk
+        self.admin_permissions_principals = admin_permissions_principals
         self.admin_invite_permissions_get = admin_invite_permissions_get
         self.admin_invite_permissions_patch = admin_invite_permissions_patch
         self.AdminPermissionUpdate = AdminPermissionUpdate
         self.AdminPermissionBulkBody = AdminPermissionBulkBody
+        self.AdminMatrixPermissionUpdate = AdminMatrixPermissionUpdate
+        self.AdminMatrixBulkBody = AdminMatrixBulkBody
         self.get_storage = get_storage
         self.upsert_org_membership = upsert_org_membership
+        self.create_org_group = create_org_group
+        self.add_group_member = add_group_member
         self._now_ts = _now_ts
 
         org = create_org_record("Test Org Perms", created_by="admin")
@@ -154,6 +168,49 @@ class AdminPermissionsApiTest(unittest.TestCase):
         result = self.admin_invite_permissions_patch(patch_req, invite_id, {"sessions_view": True, "sessions_edit": True})
         body = self._body(result)
         self.assertEqual(body.get("status_code") if isinstance(body, dict) and "status_code" in body else getattr(result, "status_code", 200), 200)
+
+
+    def test_matrix_principals_returns_users_groups_roles(self):
+        group = self.create_org_group(self.org_id, "Matrix Group")
+        self.add_group_member(self.org_id, group["id"], self.editor_user["id"])
+        req = self._request(self.owner_user, "org_owner")
+        result = self.admin_permissions_principals(req)
+        body = self._body(result)
+        self.assertTrue(body.get("ok"))
+        items = body.get("items", [])
+        roles = [p for p in items if p["principal_type"] == "role"]
+        users = [p for p in items if p["principal_type"] == "user"]
+        groups = [p for p in items if p["principal_type"] == "group"]
+        self.assertEqual(len(roles), 6)
+        self.assertTrue(any(p["principal_id"] == self.owner_user["id"] for p in users))
+        self.assertTrue(any(p["principal_id"] == group["id"] for p in groups))
+
+    def test_matrix_patch_user_override(self):
+        req = self._request(self.owner_user, "org_owner")
+        update = self.AdminMatrixPermissionUpdate(permissions={"view": True, "edit": True, "manage": True})
+        result = self.admin_permissions_matrix_patch(req, "user", self.editor_user["id"], "sessions", "*", update)
+        body = self._body(result)
+        self.assertTrue(body.get("ok"))
+        self.assertTrue(body["item"]["permissions"]["manage"])
+        self.assertEqual(body["item"]["principal_type"], "user")
+
+        list_req = self._request(self.owner_user, "org_owner")
+        result = self.admin_permissions_matrix(list_req, principal_type="user", principal_id=self.editor_user["id"], entity_type="sessions", entity_id="*")
+        body = self._body(result)
+        self.assertTrue(body.get("ok"))
+        self.assertTrue(body["permissions"]["sessions"]["manage"])
+
+    def test_matrix_bulk_user_and_group(self):
+        group = self.create_org_group(self.org_id, "Bulk Group")
+        req = self._request(self.owner_user, "org_owner")
+        bulk = self.AdminMatrixBulkBody(updates=[
+            {"principal_type": "user", "principal_id": self.editor_user["id"], "entity_type": "folders", "entity_id": "*", "permissions": {"view": True, "edit": True}},
+            {"principal_type": "group", "principal_id": group["id"], "entity_type": "workspaces", "entity_id": "*", "permissions": {"view": True, "admin": True}},
+        ])
+        result = self.admin_permissions_matrix_bulk(req, bulk)
+        body = self._body(result)
+        self.assertTrue(body.get("ok"))
+        self.assertEqual(len(body.get("updated", [])), 2)
 
 
 if __name__ == "__main__":

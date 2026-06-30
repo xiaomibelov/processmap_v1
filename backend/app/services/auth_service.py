@@ -16,6 +16,7 @@ from ..storage import (
     accept_org_invite,
     count_org_records,
     get_default_org_id,
+    list_user_groups,
     list_user_org_memberships,
     preview_org_invite,
     resolve_active_org_id,
@@ -126,6 +127,7 @@ def me(
         requested_org_id=requested_org_id,
         is_admin=is_admin,
     )
+    groups = list_user_groups(user_id, org_id=active_org_id)
     return build_auth_me_payload(
         user_id=user_id,
         email=str(user.get("email") or ""),
@@ -133,6 +135,7 @@ def me(
         active_org_id=active_org_id,
         default_org_id=get_default_org_id(),
         orgs=memberships,
+        groups=groups,
     )
 
 
