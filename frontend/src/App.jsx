@@ -409,12 +409,10 @@ function sessionToDraft(sid, session) {
   const hasSessionRobotMeta = Object.keys(normalizeRobotMetaMap(sessionMeta.robot_meta_by_element_id)).length > 0;
   const hasXmlRobotMeta = Object.keys(xmlRobotMeta).length > 0;
   let effectiveRobotMeta = normalizedMeta.robot_meta_by_element_id;
-  const rawBpmnMetaCamunda = ensureObject(next.bpmn_meta).camunda_extensions_by_element_id;
-  const camundaFieldIsPresent = rawBpmnMetaCamunda !== null && rawBpmnMetaCamunda !== undefined;
   const camundaHydration = hydrateCamundaExtensionsFromBpmn({
     extractedMap: xmlCamundaExtensions,
     sessionMetaMap: normalizedMeta.camunda_extensions_by_element_id,
-    allowSeedFromBpmn: !camundaFieldIsPresent,
+    allowSeedFromBpmn: true,
   });
   let effectiveCamundaExtensions = normalizeCamundaExtensionsMap(camundaHydration.nextSessionMetaMap);
   if (!Object.keys(effectiveRobotMeta).length && hasXmlRobotMeta) {
@@ -3265,6 +3263,11 @@ export default function App() {
         onShowV2OverlaysChange={setV2OverlaysEnabled}
         v2OverlaysExpanded={v2OverlaysExpanded}
         onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
+        getElementCamundaExtensionsFromModeler={(elementId) => {
+          const api = bpmnStageRef.current;
+          if (!api || typeof api.getElementCamundaExtensionState !== "function") return null;
+          return api.getElementCamundaExtensionState(elementId);
+        }}
         onGoToDiagram={() => {
           const sid = String(draft?.session_id || "").trim();
           if (!sid) return;
