@@ -3150,6 +3150,7 @@ export default function WorkspaceExplorer({
   const { user, orgs } = useAuth();
   const {
     currentOrgName,
+    currentOrgActive,
     permissions,
     workspaces,
     wsLoading,
@@ -3193,8 +3194,15 @@ export default function WorkspaceExplorer({
   }
 
   return (
-    <div className="h-full flex flex-row min-h-0 bg-bg font-sans">
-      {/* Left sidebar — Workspaces */}
+    <div className="h-full flex flex-col min-h-0 bg-bg font-sans">
+      {!currentOrgActive ? (
+        <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+          <strong>Организация деактивирована.</strong>{" "}
+          Создание и редактирование сессий недоступно. Обратитесь к администратору.
+        </div>
+      ) : null}
+      <div className="h-full flex flex-row min-h-0 font-sans">
+        {/* Left sidebar — Workspaces */}
       <div className="w-48 shrink-0">
         <WorkspaceSidebar
           organizationName={currentOrgName}
@@ -3255,6 +3263,7 @@ export default function WorkspaceExplorer({
           </>
         )}
       </div>
+    </div>
     </div>
   );
 }

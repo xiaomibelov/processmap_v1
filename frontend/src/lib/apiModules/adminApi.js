@@ -23,6 +23,17 @@ export async function apiAdminListOrgs() {
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
 
+export async function apiAdminPatchOrgStatus(orgId, isActive) {
+  const id = String(orgId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing org_id" };
+  const r = okOrError(await request(apiRoutes.admin.orgStatus(id), {
+    method: "PATCH",
+    body: JSON.stringify({ is_active: Boolean(isActive) }),
+    headers: { "Content-Type": "application/json" },
+  }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
 export async function apiAdminListUsers() {
   const r = okOrError(await request(apiRoutes.admin.users(), { method: "GET" }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;

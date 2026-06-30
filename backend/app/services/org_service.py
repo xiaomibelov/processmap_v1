@@ -318,6 +318,7 @@ def list_org_project_sessions(org_id: str, project_id: str, request: Request, mo
 
 def create_org_project_session(org_id: str, project_id: str, inp, request=None, mode=None):
     import app._legacy_main as _lm
+    _lm._require_org_active_for_writes(request, org_id)
     return _lm.create_org_project_session(org_id, project_id, inp, request, mode)
 
 

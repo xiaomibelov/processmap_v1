@@ -275,6 +275,11 @@ def list_org_memberships_payload(request: Request) -> Dict[str, Any]:
         or resolve_active_org_id(user_id, is_admin=is_admin)
     )
     items = list_user_org_memberships(user_id, is_admin=is_admin)
+    if not is_admin:
+        items = [
+            item for item in items
+            if bool(item.get("is_active", True)) or str(item.get("org_id") or "") == active_org_id
+        ]
     return build_items_payload(
         items,
         active_org_id=active_org_id,
