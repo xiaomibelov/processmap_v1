@@ -272,6 +272,42 @@ export async function apiAdminBulkPermissions(updates = []) {
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
 
+export async function apiAdminListPermissionPrincipals() {
+  const r = okOrError(await request(apiRoutes.admin.permissionPrincipals(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminListMatrixPermissions(params = {}) {
+  const endpoint = apiRoutes.admin.permissionsMatrix(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminPatchMatrixPermission(principalType, principalId, entityType, entityId, payload = {}) {
+  const ptype = String(principalType || "").trim();
+  const pid = String(principalId || "").trim();
+  const etype = String(entityType || "").trim();
+  const eid = String(entityId || "").trim();
+  if (!ptype || !pid || !etype || !eid) {
+    return { ok: false, status: 0, error: "missing principal or entity" };
+  }
+  const r = okOrError(await request(apiRoutes.admin.permissionsMatrixItem(ptype, pid, etype, eid), {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+    headers: { "Content-Type": "application/json" },
+  }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminBulkMatrixPermissions(updates = []) {
+  const r = okOrError(await request(apiRoutes.admin.permissionsMatrixBulk(), {
+    method: "POST",
+    body: JSON.stringify({ updates }),
+    headers: { "Content-Type": "application/json" },
+  }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
 export async function apiAdminGetInvitePermissions(inviteId) {
   const id = String(inviteId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing invite_id" };

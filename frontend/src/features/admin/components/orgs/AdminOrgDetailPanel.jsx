@@ -3,6 +3,7 @@ import { apiPatchOrg } from "../../../../lib/api";
 import StatusPill from "../common/StatusPill";
 import { formatRoleWithScope } from "../../adminRoles";
 import { toText } from "../../utils/adminFormat";
+import { useAdminMutation } from "../../hooks/useAdminMutation";
 
 function CountItem({ label, value }) {
   return (
@@ -43,6 +44,20 @@ export default function AdminOrgDetailPanel({
     );
   }
 
+  const patchOrgMutation = useAdminMutation({
+    mutationFn: async (nextName) => {
+      const res = await apiPatchOrg(orgId, { name: nextName });
+      if (!res.ok) throw new Error(res.error || "Не удалось обновить организацию");
+      return res;
+    },
+    invalidateKeys: [["adminOrgs"]],
+    onSuccess: () => {
+      setSuccess("Название организации обновлено.");
+      onSaved?.();
+    },
+    onError: (err) => setError(String(err.message || "Не удалось обновить организацию")),
+  });
+
   async function handleSave(event) {
     event?.preventDefault?.();
     const nextName = String(name || "").trim();
@@ -50,17 +65,9 @@ export default function AdminOrgDetailPanel({
       setError("Введите название организации");
       return;
     }
-    setBusy(true);
     setError("");
     setSuccess("");
-    const res = await apiPatchOrg(orgId, { name: nextName });
-    setBusy(false);
-    if (!res.ok) {
-      setError(String(res.error || "Не удалось обновить организацию"));
-      return;
-    }
-    setSuccess("Название организации обновлено.");
-    onSaved?.();
+    await patchOrgMutation.mutateAsync(nextName);
   }
 
   return (
@@ -99,8 +106,8 @@ export default function AdminOrgDetailPanel({
         {error ? <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
         {success ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</div> : null}
         {canEdit ? (
-          <button type="submit" className="secondaryBtn h-9 min-h-0 px-3 py-0 text-sm" disabled={busy || !String(name || "").trim()}>
-            {busy ? "Сохранение…" : "Сохранить название"}
+          <button type="submit" className="secondaryBtn h-9 min-h-0 px-3 py-0 text-sm" disabled={patchOrgMutation.isPending || !String(name || "").trim()}>
+            {patchOrgMutation.isPending ? "Сохранение…" : "Сохранить название"}
           </button>
         ) : (
           <div className="text-xs text-slate-500">Недостаточно прав для изменения названия.</div>

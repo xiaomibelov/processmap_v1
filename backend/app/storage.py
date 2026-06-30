@@ -999,6 +999,14 @@ def _column_exists(con: Any, table: str, column: str) -> bool:
     return False
 
 
+def _table_exists(con: Any, table: str) -> bool:
+    try:
+        con.execute(f"SELECT 1 FROM {table} LIMIT 1")
+        return True
+    except Exception:
+        return False
+
+
 def _normalize_git_mirror_provider(value: Any) -> str:
     provider = str(value or "").strip().lower()
     return provider if provider in _GIT_MIRROR_PROVIDERS else ""
@@ -1638,6 +1646,43 @@ def _ensure_schema() -> None:
                 """
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_org_memberships_user ON org_memberships(user_id)")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS groups (
+                  id TEXT PRIMARY KEY,
+                  org_id TEXT NOT NULL,
+                  name TEXT NOT NULL,
+                  description TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0,
+                  created_by TEXT NOT NULL DEFAULT '',
+                  updated_by TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            con.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_org_name ON groups(org_id, name)"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_groups_org ON groups(org_id)"
+            )
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS group_memberships (
+                  group_id TEXT NOT NULL,
+                  user_id TEXT NOT NULL,
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  created_by TEXT NOT NULL DEFAULT '',
+                  PRIMARY KEY (group_id, user_id)
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_group_memberships_user ON group_memberships(user_id)"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_group_memberships_group ON group_memberships(group_id)"
+            )
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS project_memberships (
@@ -2501,22 +2546,53 @@ def _ensure_schema() -> None:
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_analytics_metrics_scope ON analytics_metrics(scope_type, scope_id, metric_name)"
             )
+            # Migrate legacy role-only admin_entity_permissions to principal model.
+            if _table_exists(con, "admin_entity_permissions") and not _column_exists(con, "admin_entity_permissions", "principal_type"):
+                con.execute(
+                    """
+                    CREATE TABLE admin_entity_permissions_new (
+                      org_id TEXT NOT NULL,
+                      principal_type TEXT NOT NULL,
+                      principal_id TEXT NOT NULL,
+                      entity_type TEXT NOT NULL,
+                      entity_id TEXT NOT NULL,
+                      permissions_json TEXT NOT NULL DEFAULT '{}',
+                      updated_at INTEGER NOT NULL DEFAULT 0,
+                      updated_by TEXT NOT NULL DEFAULT '',
+                      PRIMARY KEY (org_id, principal_type, principal_id, entity_type, entity_id)
+                    )
+                    """
+                )
+                con.execute(
+                    """
+                    INSERT INTO admin_entity_permissions_new
+                      (org_id, principal_type, principal_id, entity_type, entity_id, permissions_json, updated_at, updated_by)
+                    SELECT org_id, 'role', role, entity_type, entity_id, permissions_json, updated_at, updated_by
+                    FROM admin_entity_permissions
+                    """
+                )
+                con.execute("DROP TABLE admin_entity_permissions")
+                con.execute("ALTER TABLE admin_entity_permissions_new RENAME TO admin_entity_permissions")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS admin_entity_permissions (
                   org_id TEXT NOT NULL,
+                  principal_type TEXT NOT NULL,
+                  principal_id TEXT NOT NULL,
                   entity_type TEXT NOT NULL,
                   entity_id TEXT NOT NULL,
-                  role TEXT NOT NULL,
                   permissions_json TEXT NOT NULL DEFAULT '{}',
                   updated_at INTEGER NOT NULL DEFAULT 0,
                   updated_by TEXT NOT NULL DEFAULT '',
-                  PRIMARY KEY (org_id, entity_type, entity_id, role)
+                  PRIMARY KEY (org_id, principal_type, principal_id, entity_type, entity_id)
                 )
                 """
             )
             con.execute(
                 "CREATE INDEX IF NOT EXISTS idx_admin_entity_permissions_org ON admin_entity_permissions(org_id)"
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_admin_entity_permissions_principal ON admin_entity_permissions(principal_type, principal_id)"
             )
             if not _column_exists(con, "org_invites", "permissions_json"):
                 con.execute("ALTER TABLE org_invites ADD COLUMN permissions_json TEXT NOT NULL DEFAULT '{}'")
@@ -5999,15 +6075,35 @@ def _admin_entity_permission_defaults(entity_type: str, role: str) -> Dict[str, 
     return {"view": True}
 
 
-def _normalize_admin_entity_permissions(entity_type: str, role: str, permissions_raw: Any) -> Dict[str, bool]:
-    template = _admin_entity_permission_defaults(entity_type, role)
+def _admin_entity_permission_keys(entity_type: str) -> Tuple[str, ...]:
+    if entity_type == "analytics":
+        return ("dk_view", "dk_export", "fk_view", "fk_export", "manage_dashboards")
+    if entity_type in {"users", "folders", "workspaces"}:
+        return ("view", "edit", "manage", "admin")
+    if entity_type == "sessions":
+        return ("view", "edit", "manage")
+    return ("view",)
+
+
+def _normalize_admin_entity_permissions(entity_type: str, principal_type: str, principal_id: str, permissions_raw: Any) -> Dict[str, bool]:
+    keys = _admin_entity_permission_keys(entity_type)
+    if principal_type == "role":
+        template = _admin_entity_permission_defaults(entity_type, principal_id)
+    else:
+        template = {k: False for k in keys}
     parsed = permissions_raw if isinstance(permissions_raw, dict) else _json_loads(permissions_raw, {})
     if not isinstance(parsed, dict):
         parsed = {}
-    return {k: bool(parsed.get(k, template.get(k, False))) for k in template}
+    return {k: bool(parsed.get(k, template.get(k, False))) for k in keys}
 
 
-def list_admin_entity_permissions(org_id: str, entity_type: Optional[str] = None, entity_id: Optional[str] = None) -> List[Dict[str, Any]]:
+def list_admin_entity_permissions(
+    org_id: str,
+    entity_type: Optional[str] = None,
+    entity_id: Optional[str] = None,
+    principal_type: Optional[str] = None,
+    principal_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     params: List[Any] = [org_id]
     where = "org_id = ?"
     if entity_type:
@@ -6016,16 +6112,27 @@ def list_admin_entity_permissions(org_id: str, entity_type: Optional[str] = None
     if entity_id:
         where += " AND entity_id = ?"
         params.append(entity_id)
+    if principal_type:
+        where += " AND principal_type = ?"
+        params.append(principal_type)
+    if principal_id:
+        where += " AND principal_id = ?"
+        params.append(principal_id)
     with _connect() as con:
         rows = con.execute(f"SELECT * FROM admin_entity_permissions WHERE {where}", params).fetchall()
     out: List[Dict[str, Any]] = []
     for row in rows:
+        ptype = str(row["principal_type"] or "")
+        pid = str(row["principal_id"] or "")
+        etype = str(row["entity_type"] or "")
         out.append({
             "org_id": str(row["org_id"] or ""),
-            "entity_type": str(row["entity_type"] or ""),
+            "principal_type": ptype,
+            "principal_id": pid,
+            "entity_type": etype,
             "entity_id": str(row["entity_id"] or ""),
-            "role": str(row["role"] or ""),
-            "permissions": _normalize_admin_entity_permissions(str(row["entity_type"] or ""), str(row["role"] or ""), row["permissions_json"]),
+            "role": pid if ptype == "role" else "",
+            "permissions": _normalize_admin_entity_permissions(etype, ptype, pid, row["permissions_json"]),
             "updated_at": int(row["updated_at"] or 0),
             "updated_by": str(row["updated_by"] or ""),
         })
@@ -6036,42 +6143,76 @@ def upsert_admin_entity_permission(
     org_id: str,
     entity_type: str,
     entity_id: str,
-    role: str,
     permissions: Dict[str, bool],
     updated_by: str,
+    principal_type: Optional[str] = None,
+    principal_id: Optional[str] = None,
+    role: Optional[str] = None,
 ) -> Dict[str, Any]:
-    normalized = _normalize_admin_entity_permissions(entity_type, role, permissions)
+    ptype = str(principal_type or "role").strip()
+    pid = str(principal_id or role or "").strip()
+    if not ptype or not pid:
+        raise ValueError("principal_type/principal_id or role is required")
+    normalized = _normalize_admin_entity_permissions(entity_type, ptype, pid, permissions)
     now = _now_ts()
     with _connect() as con:
         con.execute(
             """
-            INSERT INTO admin_entity_permissions (org_id, entity_type, entity_id, role, permissions_json, updated_at, updated_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (org_id, entity_type, entity_id, role)
+            INSERT INTO admin_entity_permissions (org_id, principal_type, principal_id, entity_type, entity_id, permissions_json, updated_at, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (org_id, principal_type, principal_id, entity_type, entity_id)
             DO UPDATE SET permissions_json=excluded.permissions_json, updated_at=excluded.updated_at, updated_by=excluded.updated_by
             """,
-            (org_id, entity_type, entity_id, role, json.dumps(normalized), now, updated_by),
+            (org_id, ptype, pid, entity_type, entity_id, json.dumps(normalized), now, updated_by),
         )
         con.commit()
     return {
         "org_id": org_id,
+        "principal_type": ptype,
+        "principal_id": pid,
         "entity_type": entity_type,
         "entity_id": entity_id,
-        "role": role,
+        "role": pid if ptype == "role" else "",
         "permissions": normalized,
         "updated_at": now,
         "updated_by": updated_by,
     }
 
 
-def delete_admin_entity_permission(org_id: str, entity_type: str, entity_id: str, role: str) -> bool:
+def upsert_admin_entity_permission_by_role(
+    org_id: str,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    permissions: Dict[str, bool],
+    updated_by: str,
+) -> Dict[str, Any]:
+    return upsert_admin_entity_permission(org_id, entity_type, entity_id, permissions, updated_by, principal_type="role", principal_id=role)
+
+
+def delete_admin_entity_permission(
+    org_id: str,
+    entity_type: str,
+    entity_id: str,
+    principal_type: Optional[str] = None,
+    principal_id: Optional[str] = None,
+    role: Optional[str] = None,
+) -> bool:
+    ptype = str(principal_type or "role").strip()
+    pid = str(principal_id or role or "").strip()
+    if not ptype or not pid:
+        raise ValueError("principal_type/principal_id or role is required")
     with _connect() as con:
         cur = con.execute(
-            "DELETE FROM admin_entity_permissions WHERE org_id = ? AND entity_type = ? AND entity_id = ? AND role = ?",
-            (org_id, entity_type, entity_id, role),
+            "DELETE FROM admin_entity_permissions WHERE org_id = ? AND principal_type = ? AND principal_id = ? AND entity_type = ? AND entity_id = ?",
+            (org_id, ptype, pid, entity_type, entity_id),
         )
         con.commit()
         return cur.rowcount > 0
+
+
+def delete_admin_entity_permission_by_role(org_id: str, entity_type: str, entity_id: str, role: str) -> bool:
+    return delete_admin_entity_permission(org_id, entity_type, entity_id, principal_type="role", principal_id=role)
 
 
 def list_org_workspaces(org_id: str) -> List[Dict[str, Any]]:
@@ -6486,6 +6627,381 @@ def delete_org_membership(org_id: str, user_id: str) -> bool:
         )
         con.commit()
     return int(cur.rowcount or 0) > 0
+
+
+# ── Groups ─────────────────────────────────────────────────────────
+
+def _group_row_to_dict(row: Any) -> Dict[str, Any]:
+    return {
+        "id": str(row["id"] or ""),
+        "org_id": str(row["org_id"] or ""),
+        "name": str(row["name"] or ""),
+        "description": str(row["description"] or ""),
+        "created_at": int(row["created_at"] or 0),
+        "updated_at": int(row["updated_at"] or 0),
+        "created_by": str(row["created_by"] or ""),
+        "updated_by": str(row["updated_by"] or ""),
+    }
+
+
+def _group_member_user_row(row: Any) -> Dict[str, Any]:
+    return {
+        "user_id": str(row["user_id"] or ""),
+        "email": str(row["email"] or "").lower(),
+        "full_name": str(row["full_name"] or ""),
+        "job_title": str(row["job_title"] or ""),
+        "created_at": int(row["created_at"] or 0),
+        "created_by": str(row["created_by"] or ""),
+    }
+
+
+def list_org_groups(org_id: str) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return []
+    _ensure_schema()
+    with _connect() as con:
+        rows = con.execute(
+            """
+            SELECT
+              g.id,
+              g.org_id,
+              g.name,
+              g.description,
+              g.created_at,
+              g.updated_at,
+              g.created_by,
+              g.updated_by,
+              COUNT(m.user_id) AS members_count
+            FROM groups g
+            LEFT JOIN group_memberships m ON m.group_id = g.id
+            WHERE g.org_id = ?
+            GROUP BY g.id, g.org_id, g.name, g.description,
+                     g.created_at, g.updated_at, g.created_by, g.updated_by
+            ORDER BY g.name ASC, g.id ASC
+            """,
+            [oid],
+        ).fetchall()
+    return [{**_group_row_to_dict(row), "members_count": int(row["members_count"] or 0)} for row in rows]
+
+
+def get_org_group(org_id: str, group_id: str) -> Optional[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    gid = str(group_id or "").strip()
+    if not oid or not gid:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT
+              g.id,
+              g.org_id,
+              g.name,
+              g.description,
+              g.created_at,
+              g.updated_at,
+              g.created_by,
+              g.updated_by,
+              COUNT(m.user_id) AS members_count
+            FROM groups g
+            LEFT JOIN group_memberships m ON m.group_id = g.id
+            WHERE g.org_id = ? AND g.id = ?
+            GROUP BY g.id, g.org_id, g.name, g.description,
+                     g.created_at, g.updated_at, g.created_by, g.updated_by
+            """,
+            [oid, gid],
+        ).fetchone()
+    if not row:
+        return None
+    return {**_group_row_to_dict(row), "members_count": int(row["members_count"] or 0)}
+
+
+def create_org_group(
+    org_id: str,
+    name: str,
+    description: str = "",
+    created_by: str = "",
+) -> Dict[str, Any]:
+    oid = str(org_id or "").strip()
+    gname = " ".join(str(name or "").split()).strip()
+    if not oid:
+        raise ValueError("org_id is required")
+    if not gname:
+        raise ValueError("name is required")
+    now = _now_ts()
+    gid = uuid.uuid4().hex
+    _ensure_schema()
+    try:
+        with _connect() as con:
+            con.execute(
+                """
+                INSERT INTO groups (id, org_id, name, description, created_at, updated_at, created_by, updated_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [gid, oid, gname, str(description or ""), now, now, str(created_by or ""), ""],
+            )
+            con.commit()
+    except Exception as exc:
+        marker = str(exc).lower()
+        if "unique" in marker:
+            raise ValueError("group name already exists") from exc
+        raise
+    return {
+        "id": gid,
+        "org_id": oid,
+        "name": gname,
+        "description": str(description or ""),
+        "created_at": now,
+        "updated_at": now,
+        "created_by": str(created_by or ""),
+        "updated_by": "",
+        "members_count": 0,
+    }
+
+
+def update_org_group(
+    org_id: str,
+    group_id: str,
+    *,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    updated_by: str = "",
+) -> Optional[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    gid = str(group_id or "").strip()
+    if not oid or not gid:
+        return None
+    _ensure_schema()
+    with _connect() as con:
+        row = con.execute(
+            "SELECT id, org_id, name, description, created_at, updated_at, created_by, updated_by FROM groups WHERE org_id = ? AND id = ? LIMIT 1",
+            [oid, gid],
+        ).fetchone()
+        if not row:
+            raise ValueError("group not found")
+        current = _group_row_to_dict(row)
+        next_name = current["name"]
+        next_description = current["description"]
+        changed = False
+        if name is not None:
+            normalized = " ".join(str(name).split()).strip()
+            if not normalized:
+                raise ValueError("name is required")
+            if normalized != next_name:
+                next_name = normalized
+                changed = True
+        if description is not None and str(description) != next_description:
+            next_description = str(description)
+            changed = True
+        if changed:
+            now = _now_ts()
+            try:
+                con.execute(
+                    """
+                    UPDATE groups
+                       SET name = ?,
+                           description = ?,
+                           updated_at = ?,
+                           updated_by = ?
+                     WHERE org_id = ? AND id = ?
+                    """,
+                    [next_name, next_description, now, str(updated_by or ""), oid, gid],
+                )
+                con.commit()
+            except Exception as exc:
+                marker = str(exc).lower()
+                if "unique" in marker:
+                    raise ValueError("group name already exists") from exc
+                raise
+            return get_org_group(oid, gid)
+        return current
+
+
+def delete_org_group(org_id: str, group_id: str) -> bool:
+    oid = str(org_id or "").strip()
+    gid = str(group_id or "").strip()
+    if not oid or not gid:
+        return False
+    _ensure_schema()
+    with _connect() as con:
+        con.execute("DELETE FROM group_memberships WHERE group_id = ?", [gid])
+        cur = con.execute("DELETE FROM groups WHERE org_id = ? AND id = ?", [oid, gid])
+        con.commit()
+    return int(cur.rowcount or 0) > 0
+
+
+def list_group_members(org_id: str, group_id: str) -> List[Dict[str, Any]]:
+    oid = str(org_id or "").strip()
+    gid = str(group_id or "").strip()
+    if not oid or not gid:
+        return []
+    _ensure_schema()
+    with _connect() as con:
+        rows = con.execute(
+            """
+            SELECT
+              m.user_id,
+              u.email,
+              u.full_name,
+              u.job_title,
+              m.created_at,
+              m.created_by
+            FROM group_memberships m
+            JOIN users u ON u.id = m.user_id
+            JOIN groups g ON g.id = m.group_id AND g.org_id = ?
+            WHERE m.group_id = ?
+            ORDER BY u.full_name ASC, u.email ASC, m.user_id ASC
+            """,
+            [oid, gid],
+        ).fetchall()
+    return [_group_member_user_row(row) for row in rows]
+
+
+def add_group_member(
+    org_id: str,
+    group_id: str,
+    user_id: str,
+    created_by: str = "",
+) -> bool:
+    oid = str(org_id or "").strip()
+    gid = str(group_id or "").strip()
+    uid = str(user_id or "").strip()
+    if not oid or not gid or not uid:
+        return False
+    _ensure_schema()
+    now = _now_ts()
+    with _connect() as con:
+        group = con.execute(
+            "SELECT id FROM groups WHERE org_id = ? AND id = ? LIMIT 1", [oid, gid]
+        ).fetchone()
+        if not group:
+            raise ValueError("group not found")
+        user = con.execute("SELECT id FROM users WHERE id = ? LIMIT 1", [uid]).fetchone()
+        if not user:
+            raise ValueError("user not found")
+        con.execute(
+            """
+            INSERT INTO group_memberships (group_id, user_id, created_at, created_by)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(group_id, user_id) DO NOTHING
+            """,
+            [gid, uid, now, str(created_by or "")],
+        )
+        con.commit()
+    return True
+
+
+def remove_group_member(org_id: str, group_id: str, user_id: str) -> bool:
+    oid = str(org_id or "").strip()
+    gid = str(group_id or "").strip()
+    uid = str(user_id or "").strip()
+    if not oid or not gid or not uid:
+        return False
+    _ensure_schema()
+    with _connect() as con:
+        cur = con.execute(
+            """
+            DELETE FROM group_memberships
+             WHERE group_id = ? AND user_id = ?
+               AND group_id IN (SELECT id FROM groups WHERE org_id = ? AND id = ?)
+            """,
+            [gid, uid, oid, gid],
+        )
+        con.commit()
+    return int(cur.rowcount or 0) > 0
+
+
+def list_user_groups(user_id: str, org_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    uid = str(user_id or "").strip()
+    if not uid:
+        return []
+    oid = str(org_id or "").strip()
+    _ensure_schema()
+    with _connect() as con:
+        params = [uid]
+        where = "m.user_id = ?"
+        if oid:
+            where += " AND g.org_id = ?"
+            params.append(oid)
+        rows = con.execute(
+            f"""
+            SELECT
+              g.id,
+              g.org_id,
+              g.name,
+              g.description,
+              g.created_at,
+              g.updated_at,
+              g.created_by,
+              g.updated_by
+            FROM groups g
+            JOIN group_memberships m ON m.group_id = g.id
+            WHERE {where}
+            ORDER BY g.org_id ASC, g.name ASC, g.id ASC
+            """,
+            params,
+        ).fetchall()
+    return [_group_row_to_dict(row) for row in rows]
+
+
+def list_users_group_memberships(
+    user_ids: Iterable[str],
+    org_id: Optional[str] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
+    ids = [str(uid or "").strip() for uid in user_ids if str(uid or "").strip()]
+    if not ids:
+        return {}
+    oid = str(org_id or "").strip()
+    _ensure_schema()
+    placeholders = ", ".join(["?"] * len(ids))
+    with _connect() as con:
+        if oid:
+            rows = con.execute(
+                f"""
+                SELECT
+                  m.user_id,
+                  g.id,
+                  g.org_id,
+                  g.name,
+                  g.description,
+                  g.created_at,
+                  g.updated_at,
+                  g.created_by,
+                  g.updated_by
+                FROM group_memberships m
+                JOIN groups g ON g.id = m.group_id
+                WHERE m.user_id IN ({placeholders}) AND g.org_id = ?
+                ORDER BY g.name ASC, g.id ASC
+                """,
+                [*ids, oid],
+            ).fetchall()
+        else:
+            rows = con.execute(
+                f"""
+                SELECT
+                  m.user_id,
+                  g.id,
+                  g.org_id,
+                  g.name,
+                  g.description,
+                  g.created_at,
+                  g.updated_at,
+                  g.created_by,
+                  g.updated_by
+                FROM group_memberships m
+                JOIN groups g ON g.id = m.group_id
+                WHERE m.user_id IN ({placeholders})
+                ORDER BY g.org_id ASC, g.name ASC, g.id ASC
+                """,
+                ids,
+            ).fetchall()
+    out: Dict[str, List[Dict[str, Any]]] = {uid: [] for uid in ids}
+    for row in rows:
+        uid = str(row["user_id"] or "").strip()
+        if uid in out:
+            out[uid].append(_group_row_to_dict(row))
+    return out
 
 
 def _normalize_template_scope(raw: Any) -> str:
@@ -8978,6 +9494,68 @@ def cleanup_error_events(*, retention_days: int = 30, now_ts: Optional[int] = No
         con.commit()
         return int(cur.rowcount or 0)
 
+
+
+
+def update_error_event(
+    event_id: str,
+    *,
+    severity: Optional[str] = None,
+    message: Optional[str] = None,
+    context_json: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Update selected mutable fields of an error event and return the updated row."""
+    eid = str(event_id or "").strip()
+    if not eid:
+        return None
+
+    updates: Dict[str, Any] = {}
+    if severity is not None:
+        sev = str(severity or "").strip().lower() or "error"
+        updates["severity"] = sev
+    if message is not None:
+        msg = str(message or "").strip()
+        if not msg:
+            raise ValueError("message cannot be empty")
+        updates["message"] = msg
+    if context_json is not None:
+        updates["context_json"] = _json_dumps(context_json if isinstance(context_json, dict) else {}, {})
+
+    if not updates:
+        return get_error_event(eid)
+
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    params = list(updates.values()) + [eid]
+    _ensure_schema()
+    with _connect() as con:
+        con.execute(f"UPDATE error_events SET {set_clause} WHERE id = ?", params)
+        con.commit()
+        row = con.execute(
+            """
+            SELECT id, schema_version, occurred_at, ingested_at, source, event_type, severity, message,
+                   user_id, org_id, session_id, project_id, route, runtime_id, tab_id, request_id,
+                   correlation_id, app_version, git_sha, fingerprint, context_json
+              FROM error_events
+             WHERE id = ?
+             LIMIT 1
+            """,
+            [eid],
+        ).fetchone()
+    if not row:
+        return None
+    return _error_event_row_to_dict(row)
+
+
+def delete_error_event(event_id: str) -> bool:
+    """Delete an error event by id. Returns True if a row was deleted."""
+    eid = str(event_id or "").strip()
+    if not eid:
+        return False
+    _ensure_schema()
+    with _connect() as con:
+        cur = con.execute("DELETE FROM error_events WHERE id = ?", [eid])
+        con.commit()
+        return int(cur.rowcount or 0) > 0
 
 def get_effective_project_scope(
     user_id: str,

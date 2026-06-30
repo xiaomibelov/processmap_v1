@@ -25,7 +25,7 @@ from ..ai.prompt_registry import (
     seed_existing_ai_prompts,
 )
 from ..auto_pass_jobs import redis_queue_enabled
-from ..auth import AuthError, create_user, list_users as list_auth_users, update_user
+from ..auth import AuthError, create_user, find_user_by_id, list_users as list_auth_users, update_user
 from ..error_events import redact_context_json
 from ..redis_client import get_client, runtime_status
 from ..settings import load_llm_settings, save_llm_settings, verify_llm_settings
@@ -37,9 +37,11 @@ from ..storage import (
     get_error_event,
     get_project_storage,
     get_storage,
+    get_user_org_role,
     list_admin_entity_permissions,
     list_audit_log,
     list_error_events,
+    list_org_groups,
     list_org_invites,
     list_org_memberships,
     list_org_records,
@@ -47,12 +49,14 @@ from ..storage import (
     list_org_workspaces,
     list_templates,
     list_user_org_memberships,
+    list_users_group_memberships,
     set_admin_invite_permissions,
     get_admin_invite_permissions,
     upsert_admin_entity_permission,
     upsert_org_membership,
     _connect,
     _admin_entity_permission_defaults,
+    _admin_entity_permission_keys,
 )
 
 router = APIRouter()
@@ -344,10 +348,11 @@ def _membership_payload_for_user(user_id: str, *, org_name_by_id: Dict[str, str]
     return items
 
 
-def _user_payload(row: Dict[str, Any], *, org_name_by_id: Dict[str, str]) -> Dict[str, Any]:
+def _user_payload(row: Dict[str, Any], *, org_name_by_id: Dict[str, str], groups_by_user: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> Dict[str, Any]:
     user = _as_dict(row)
     user_id = _as_text(user.get("id"))
     memberships = _membership_payload_for_user(user_id, org_name_by_id=org_name_by_id)
+    groups = list(groups_by_user.get(user_id, [])) if groups_by_user else []
     return {
         "id": user_id,
         "email": _as_text(user.get("email")).lower(),
@@ -357,6 +362,7 @@ def _user_payload(row: Dict[str, Any], *, org_name_by_id: Dict[str, str]) -> Dic
         "is_admin": bool(user.get("is_admin", False)),
         "created_at": _as_int(user.get("created_at"), 0),
         "memberships": memberships,
+        "groups": groups,
     }
 
 
@@ -1036,7 +1042,10 @@ def admin_users(request: Request) -> Any:
     if err is not None:
         return err
     org_name_by_id = _org_name_by_id()
-    items = [_user_payload(row, org_name_by_id=org_name_by_id) for row in list_auth_users()]
+    users = list_auth_users()
+    user_ids = [_as_text(row.get("id")) for row in users if _as_text(row.get("id"))]
+    groups_by_user = list_users_group_memberships(user_ids)
+    items = [_user_payload(row, org_name_by_id=org_name_by_id, groups_by_user=groups_by_user) for row in users]
     return {
         "ok": True,
         "items": items,
@@ -1072,9 +1081,10 @@ def admin_create_user(body: AdminUserCreateBody, request: Request) -> Any:
         entity_id=_as_text(created.get("id")),
         meta={"email": _as_text(created.get("email")), "actor_user_id": actor_id, "is_admin": bool(created.get("is_admin"))},
     )
+    created_groups = list_users_group_memberships([_as_text(created.get("id"))])
     return {
         "ok": True,
-        "item": _user_payload(created, org_name_by_id=_org_name_by_id()),
+        "item": _user_payload(created, org_name_by_id=_org_name_by_id(), groups_by_user=created_groups),
     }
 
 
@@ -1118,9 +1128,10 @@ def admin_patch_user(user_id: str, body: AdminUserPatchBody, request: Request) -
         entity_id=uid,
         meta={"actor_user_id": actor_id, "is_admin": bool(updated.get("is_admin"))},
     )
+    updated_groups = list_users_group_memberships([_as_text(updated.get("id"))])
     return {
         "ok": True,
-        "item": _user_payload(updated, org_name_by_id=_org_name_by_id()),
+        "item": _user_payload(updated, org_name_by_id=_org_name_by_id(), groups_by_user=updated_groups),
     }
 
 
@@ -2182,6 +2193,238 @@ def admin_permissions_bulk(
         request,
         org_id=oid,
         action="admin.permissions.bulk_update",
+        entity_type="permissions",
+        entity_id="bulk",
+        meta={"count": len(updated)},
+    )
+    return {"ok": True, "updated": updated}
+
+
+class AdminMatrixPermissionUpdate(BaseModel):
+    permissions: Dict[str, bool] = Field(default_factory=dict)
+
+
+class AdminMatrixBulkItem(BaseModel):
+    principal_type: str
+    principal_id: str
+    entity_type: str
+    entity_id: str
+    permissions: Dict[str, bool] = Field(default_factory=dict)
+
+
+class AdminMatrixBulkBody(BaseModel):
+    updates: List[AdminMatrixBulkItem] = Field(default_factory=list)
+
+
+_MATRIX_ENTITY_TYPES = ("users", "sessions", "folders", "workspaces", "analytics")
+_MATRIX_ROLES = ("org_owner", "org_admin", "editor", "project_manager", "org_viewer", "auditor")
+
+
+def _effective_matrix_permissions(org_id: str, principal_type: str, principal_id: str, entity_type: str, entity_id: str) -> Dict[str, bool]:
+    keys = _admin_entity_permission_keys(entity_type)
+    stored = list_admin_entity_permissions(
+        org_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        principal_type=principal_type,
+        principal_id=principal_id,
+    )
+    override = stored[0]["permissions"] if stored else {}
+    if principal_type == "role":
+        template = _admin_entity_permission_defaults(entity_type, principal_id)
+        return {k: bool(override.get(k, template.get(k, False))) for k in keys}
+    if override:
+        return {k: bool(override.get(k, False)) for k in keys}
+    # For users with no override, fall back to their org role default.
+    if principal_type == "user":
+        role = str(get_user_org_role(principal_id, org_id) or "org_viewer").strip()
+        template = _admin_entity_permission_defaults(entity_type, role)
+        return {k: bool(template.get(k, False)) for k in keys}
+    return {k: False for k in keys}
+
+
+def _matrix_principals(org_id: str) -> List[Dict[str, Any]]:
+    principals: List[Dict[str, Any]] = []
+    seen_users: Set[str] = set()
+    for role in _MATRIX_ROLES:
+        principals.append({
+            "principal_type": "role",
+            "principal_id": role,
+            "name": role.replace("org_", "").replace("_", " ").title(),
+            "email": "",
+            "kind": "role",
+        })
+    for group in list_org_groups(org_id):
+        principals.append({
+            "principal_type": "group",
+            "principal_id": str(group.get("id") or ""),
+            "name": str(group.get("name") or ""),
+            "email": "",
+            "kind": "group",
+        })
+    for membership in list_org_memberships(org_id):
+        user_id = str(membership.get("user_id") or "").strip()
+        if not user_id or user_id in seen_users:
+            continue
+        user = find_user_by_id(user_id) or {}
+        if not user:
+            continue
+        seen_users.add(user_id)
+        principals.append({
+            "principal_type": "user",
+            "principal_id": user_id,
+            "name": str(user.get("full_name") or "").strip() or user_id,
+            "email": str(user.get("email") or "").strip(),
+            "kind": "user",
+            "role": str(membership.get("role") or "").strip(),
+        })
+    return principals
+
+
+@router.get("/api/admin/permissions/principals")
+def admin_permissions_principals(request: Request):
+    uid, is_admin, oid, role, scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    if not _admin_permission_allowed(role) and not is_admin:
+        return _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
+    return {"ok": True, "items": _matrix_principals(oid)}
+
+
+def _matrix_entities(org_id: str, entity_type: str) -> List[Dict[str, Any]]:
+    if entity_type == "workspaces":
+        return [{"id": r["id"], "name": r["name"]} for r in list_org_workspaces(org_id)]
+    if entity_type == "folders":
+        return [{"id": r["id"], "name": r["name"]} for r in list_org_workspace_folders(org_id)]
+    if entity_type == "sessions":
+        rows = get_storage().list(limit=100, org_id=org_id, is_admin=True)
+        return [
+            {"id": _as_text(r.get("id")), "name": _as_text(r.get("title") or r.get("id"))}
+            for r in rows
+        ]
+    if entity_type == "analytics":
+        return [{"id": "dk", "name": "Demand Knowledge"}, {"id": "fk", "name": "Food Knowledge"}]
+    return []
+
+
+@router.get("/api/admin/permissions/matrix")
+def admin_permissions_matrix(
+    request: Request,
+    principal_type: Optional[str] = None,
+    principal_id: Optional[str] = None,
+    entity_type: Optional[str] = None,
+    entity_id: Optional[str] = None,
+):
+    uid, is_admin, oid, role, scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    if not _admin_permission_allowed(role) and not is_admin:
+        return _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
+
+    if principal_type and principal_id:
+        entity_types = [entity_type] if entity_type else list(_MATRIX_ENTITY_TYPES)
+        eid = entity_id or "*"
+        perms = {}
+        for etype in entity_types:
+            perms[etype] = _effective_matrix_permissions(oid, principal_type, principal_id, etype, eid)
+        return {
+            "ok": True,
+            "principal_type": principal_type,
+            "principal_id": principal_id,
+            "entity_id": eid,
+            "permissions": perms,
+        }
+
+    principals = _matrix_principals(oid)
+
+    # Advanced view: list all entity instances for one entity type.
+    if entity_type and not entity_id:
+        entities = [{"id": "*", "name": "Default"}, *_matrix_entities(oid, entity_type)]
+        items = []
+        for p in principals:
+            perms = {}
+            for e in entities:
+                perms[e["id"]] = _effective_matrix_permissions(oid, p["principal_type"], p["principal_id"], entity_type, e["id"])
+            items.append({**p, "permissions": perms})
+        return {
+            "ok": True,
+            "entity_type": entity_type,
+            "entities": entities,
+            "items": items,
+            "count": len(items),
+        }
+
+    # Simplified view: entity-type-level defaults (entity_id='*').
+    entity_types = list(_MATRIX_ENTITY_TYPES)
+    items = []
+    for p in principals:
+        perms = {}
+        for etype in entity_types:
+            perms[etype] = _effective_matrix_permissions(oid, p["principal_type"], p["principal_id"], etype, "*")
+        items.append({**p, "permissions": perms})
+    return {"ok": True, "entity_id": "*", "items": items, "count": len(items)}
+
+
+@router.patch("/api/admin/permissions/matrix/{principal_type}/{principal_id}/{entity_type}/{entity_id}")
+def admin_permissions_matrix_patch(
+    request: Request,
+    principal_type: str,
+    principal_id: str,
+    entity_type: str,
+    entity_id: str,
+    body: AdminMatrixPermissionUpdate,
+):
+    uid, is_admin, oid, role, scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    if not _admin_permission_allowed(role) and not is_admin:
+        return _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
+
+    result = upsert_admin_entity_permission(
+        org_id=oid,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        permissions=body.permissions,
+        updated_by=uid or "",
+        principal_type=principal_type,
+        principal_id=principal_id,
+    )
+    _legacy_main._audit_log_safe(
+        request,
+        org_id=oid,
+        action="admin.permissions.matrix.update",
+        entity_type=entity_type,
+        entity_id=entity_id,
+        meta={"principal_type": principal_type, "principal_id": principal_id, "permissions": result["permissions"]},
+    )
+    return {"ok": True, "item": result}
+
+
+@router.post("/api/admin/permissions/matrix/bulk")
+def admin_permissions_matrix_bulk(request: Request, body: AdminMatrixBulkBody):
+    uid, is_admin, oid, role, scope, err = _admin_context(request)
+    if err is not None:
+        return err
+    if not _admin_permission_allowed(role) and not is_admin:
+        return _legacy_main._enterprise_error(403, "forbidden", "insufficient_permissions")
+
+    updated: List[Dict[str, Any]] = []
+    for item in body.updates:
+        result = upsert_admin_entity_permission(
+            org_id=oid,
+            entity_type=item.entity_type,
+            entity_id=item.entity_id,
+            permissions=item.permissions,
+            updated_by=uid or "",
+            principal_type=item.principal_type,
+            principal_id=item.principal_id,
+        )
+        updated.append(result)
+
+    _legacy_main._audit_log_safe(
+        request,
+        org_id=oid,
+        action="admin.permissions.matrix.bulk_update",
         entity_type="permissions",
         entity_id="bulk",
         meta={"count": len(updated)},

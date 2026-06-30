@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import ErrorState from "./components/common/ErrorState";
 import LoadingBlock from "./components/common/LoadingBlock";
+import { AdminQueryProvider } from "./providers/AdminQueryProvider";
 import { getAdminRouteMeta } from "./constants/adminRoutes.constants";
 import AdminShell from "./layout/AdminShell";
 import { buildAdminBreadcrumbs, canAccessAdminConsole, parseAdminRoute, toText } from "./adminUtils";
@@ -38,7 +39,7 @@ import {
 import { mergeSearchParams, pageToOffset, parsePage, parsePageSize, rangeToTsFrom } from "./utils/adminQuery";
 import { ru } from "../../shared/i18n/ru";
 
-export default function AdminApp({
+function AdminAppInner({
   pathname = "/admin/dashboard",
   search = "",
   onNavigate,
@@ -431,5 +432,13 @@ export default function AdminApp({
     >
       {renderPage()}
     </AdminShell>
+  );
+}
+
+export default function AdminApp(props) {
+  return (
+    <AdminQueryProvider>
+      <AdminAppInner {...props} />
+    </AdminQueryProvider>
   );
 }

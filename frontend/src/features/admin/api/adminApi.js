@@ -24,6 +24,10 @@ import {
   apiAdminListPermissionEntities,
   apiAdminPatchPermission,
   apiAdminBulkPermissions,
+  apiAdminListPermissionPrincipals,
+  apiAdminListMatrixPermissions,
+  apiAdminPatchMatrixPermission,
+  apiAdminBulkMatrixPermissions,
   apiAdminGetInvitePermissions,
   apiAdminPatchInvitePermissions,
 } from "../../../lib/api";
@@ -54,6 +58,10 @@ export {
   apiAdminListPermissionEntities,
   apiAdminPatchPermission,
   apiAdminBulkPermissions,
+  apiAdminListPermissionPrincipals,
+  apiAdminListMatrixPermissions,
+  apiAdminPatchMatrixPermission,
+  apiAdminBulkMatrixPermissions,
   apiAdminGetInvitePermissions,
   apiAdminPatchInvitePermissions,
 };
