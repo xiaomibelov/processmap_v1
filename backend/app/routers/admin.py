@@ -52,6 +52,7 @@ from ..storage import (
     list_users_group_memberships,
     set_admin_invite_permissions,
     get_admin_invite_permissions,
+    set_org_active,
     upsert_admin_entity_permission,
     upsert_org_membership,
     _connect,
@@ -435,6 +436,7 @@ def _org_aggregate_item(
         "active_sessions_count": sum(1 for item in sessions if _as_text(_as_dict(item).get("status")).lower() == "in_progress"),
         "pending_invites_count": len(pending_invites),
         "is_active_context": org_id == _as_text(active_org_id),
+        "is_active": bool(org_row.get("is_active", True)),
     }
 
 
@@ -805,6 +807,10 @@ def admin_dashboard(request: Request) -> Any:
     }
 
 
+class OrgStatusPatchIn(BaseModel):
+    is_active: bool
+
+
 @router.get("/api/admin/orgs")
 def admin_orgs(request: Request) -> Any:
     uid, is_admin, oid, role, _scope, err = _admin_context(request)
@@ -826,6 +832,18 @@ def admin_orgs(request: Request) -> Any:
         "items": items,
         "count": len(items),
     }
+
+
+@router.patch("/api/admin/orgs/{org_id}/status")
+def admin_patch_org_status(org_id: str, body: OrgStatusPatchIn, request: Request) -> Any:
+    uid, _oid, err = _platform_admin_context(request)
+    if err is not None:
+        return err
+    try:
+        org = set_org_active(org_id, body.is_active)
+    except ValueError as e:
+        return _legacy_main._enterprise_error(404, "not_found", str(e))
+    return {"ok": True, "item": org}
 
 
 @router.get("/api/admin/ai/modules")

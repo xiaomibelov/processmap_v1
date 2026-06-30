@@ -37,11 +37,12 @@ export default function OrgsTable({
               const orgId = toText(row?.org_id || row?.id);
               const isExpanded = orgId && orgId === toText(expandedOrgId);
               const isActive = row?.is_active_context === true;
+              const orgActive = row?.is_active !== false;
               return (
                 <>
                   <tr
                     key={`${orgId}_${idx}`}
-                    className={`cursor-pointer border-t border-slate-100 transition ${isExpanded ? "bg-emerald-50/60" : "hover:bg-slate-50"}`}
+                    className={`cursor-pointer border-t border-slate-100 transition ${isExpanded ? "bg-emerald-50/60" : "hover:bg-slate-50"} ${orgActive ? "" : "bg-slate-50/50 text-slate-400"}`}
                     onClick={() => onToggleExpand?.(orgId)}
                   >
                     <td className="px-2 py-2">
@@ -54,10 +55,11 @@ export default function OrgsTable({
                         {isExpanded ? "−" : "+"}
                       </button>
                     </td>
-                    <td className="px-2 py-2 font-medium text-slate-950">
+                    <td className={`px-2 py-2 font-medium ${orgActive ? "text-slate-950" : "text-slate-400 line-through"}`}>
                       <div className="flex items-center gap-2">
                         <span className={`inline-block h-2 w-2 rounded-full ${isActive ? "bg-emerald-500" : "bg-slate-300"}`} />
                         {toText(row?.name || row?.org_name || orgId)}
+                        {!orgActive ? <StatusPill status="Inactive" tone="default" compact /> : null}
                       </div>
                     </td>
                     <td className="px-2 py-2 text-slate-600">{formatRoleWithScope(row?.role, { isAdmin: toText(row?.role) === "platform_admin" })}</td>
