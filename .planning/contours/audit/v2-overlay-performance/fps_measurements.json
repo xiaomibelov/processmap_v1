@@ -1,0 +1,71 @@
+{
+  "url": "http://clearvestnic.ru:5177/app?project=0715811eb7&session=665d56a12f",
+  "elementCount": 200,
+  "overlayCount": 200,
+  "expandedCount": 200,
+  "measurements": [
+    {
+      "label": "pan_overlays_off",
+      "frames": 299,
+      "duration": 5002.799999999999,
+      "avgDelta": 16.777852348993285,
+      "avgFps": 59.602384095363824,
+      "minFps": 29.94011976047937,
+      "maxDelta": 33.399999999999636
+    },
+    {
+      "label": "pan_v2_on",
+      "frames": 300,
+      "duration": 5001.199999964236,
+      "avgDelta": 16.72173913043478,
+      "avgFps": 59.802392095683835,
+      "minFps": 30.030030030030687,
+      "maxDelta": 33.29999999999927
+    },
+    {
+      "label": "drag_task_v2_on",
+      "frames": 266,
+      "duration": 5007.5999999999985,
+      "avgDelta": 18.99283018867924,
+      "avgFps": 52.651447418092246,
+      "minFps": 5,
+      "maxDelta": 200
+    },
+    {
+      "label": "scroll_zoom_v2_on",
+      "frames": 301,
+      "duration": 5016.300000011921,
+      "avgDelta": 16.776999999999994,
+      "avgFps": 59.605412171425186,
+      "minFps": 30.030030030030687,
+      "maxDelta": 33.29999999999927
+    },
+    {
+      "label": "pan_v2_expanded",
+      "frames": 288,
+      "duration": 5008.600000011924,
+      "avgDelta": 17.420905923344957,
+      "avgFps": 57.402296091843645,
+      "minFps": 5.452562704471058,
+      "maxDelta": 183.40000000000146
+    },
+    {
+      "label": "drag_task_v2_expanded",
+      "frames": 276,
+      "duration": 5012.5999999880805,
+      "avgDelta": 18.30218181818181,
+      "avgFps": 54.638294490473086,
+      "minFps": 6.666666666666667,
+      "maxDelta": 150
+    },
+    {
+      "label": "scroll_zoom_v2_expanded",
+      "frames": 301,
+      "duration": 5003.200000011922,
+      "avgDelta": 16.66600000000001,
+      "avgFps": 60.002400096003804,
+      "minFps": 59.523809523799216,
+      "maxDelta": 16.80000000000291
+    }
+  ]
+}

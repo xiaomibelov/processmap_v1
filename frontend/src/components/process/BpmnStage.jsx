@@ -4603,7 +4603,10 @@ const BpmnStage = forwardRef(function BpmnStage({
     try {
       const maybeRemount = (inst, kind) => {
         if (!inst || !hasDefinitionsLoaded(inst)) return;
-        const nextSig = JSON.stringify(extractOverlaysFromBpmn(inst, v2OverlaysEnabled));
+        const nextSig = JSON.stringify({
+          enabled: v2OverlaysEnabled,
+          overlays: extractOverlaysFromBpmn(inst, v2OverlaysEnabled),
+        });
         if (prevOverlaySigRef.current[kind] === nextSig) return;
         prevOverlaySigRef.current[kind] = nextSig;
         overlayLifecycle.mountFromBpmn(inst, kind);
