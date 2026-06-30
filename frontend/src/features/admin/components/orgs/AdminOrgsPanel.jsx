@@ -2,9 +2,9 @@ import { useMemo, useState } from "react";
 import { apiCreateOrg } from "../../../../lib/api";
 import SectionCard from "../common/SectionCard";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
-import OrgsTable from "./OrgsTable";
-import AdminOrgDetailPanel from "./AdminOrgDetailPanel";
 import { toText } from "../../utils/adminFormat";
+import OrgsTable from "./OrgsTable";
+import OrgDetailTabs from "./OrgDetailTabs";
 
 function CreateOrgCard({ activeOrgRole, isAdmin = false, onCreated }) {
   const canCreate = isAdmin || ["org_owner", "org_admin"].includes(String(activeOrgRole || "").toLowerCase());
@@ -21,10 +21,14 @@ function CreateOrgCard({ activeOrgRole, isAdmin = false, onCreated }) {
     invalidateKeys: [["adminOrgs"]],
     onSuccess: (_, orgName) => {
       setName("");
+      setError("");
       setSuccess(`Организация «${orgName}» создана.`);
       onCreated?.();
     },
-    onError: (err) => setError(String(err.message || "Не удалось создать организацию")),
+    onError: (err) => {
+      setError(String(err.message || "Не удалось создать организацию"));
+      setSuccess("");
+    },
   });
 
   if (!canCreate) return null;
@@ -42,11 +46,9 @@ function CreateOrgCard({ activeOrgRole, isAdmin = false, onCreated }) {
     <SectionCard eyebrow="Организации" title="Создать организацию" subtitle="Новая организация появится в общем списке; текущий пользователь станет org_owner.">
       <form className="flex flex-wrap items-end gap-2" onSubmit={handleSubmit}>
         <div className="min-w-[200px] flex-1">
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Название организации
-          </label>
+          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Название организации</label>
           <input
-            className="input h-9 min-h-0 w-full py-1.5 text-sm"
+            className="input h-8 min-h-0 w-full py-1 text-xs"
             type="text"
             placeholder="Название новой организации"
             value={name}
@@ -55,12 +57,12 @@ function CreateOrgCard({ activeOrgRole, isAdmin = false, onCreated }) {
             required
           />
         </div>
-        <button type="submit" className="primaryBtn h-9 min-h-0 px-3 py-0 text-sm" disabled={createOrgMutation.isPending || !name.trim()}>
+        <button type="submit" className="primaryBtn h-8 min-h-0 rounded-lg px-3 py-0 text-xs" disabled={createOrgMutation.isPending || !name.trim()}>
           {createOrgMutation.isPending ? "Создание…" : "Создать"}
         </button>
-        {error ? <div className="w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
-        {success ? <div className="w-full rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</div> : null}
       </form>
+      {error ? <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div> : null}
+      {success ? <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{success}</div> : null}
     </SectionCard>
   );
 }
@@ -73,32 +75,41 @@ export default function AdminOrgsPanel({
   onRefresh,
 }) {
   const rows = items || [];
-  const [selectedOrgId, setSelectedOrgId] = useState(() => {
+  const [expandedOrgId, setExpandedOrgId] = useState(() => {
     const active = rows.find((r) => toText(r?.org_id || r?.id) === toText(activeOrgId));
     return active ? toText(activeOrgId) : "";
   });
 
-  const selectedOrg = useMemo(() => {
-    return rows.find((r) => toText(r?.org_id || r?.id) === toText(selectedOrgId)) || null;
-  }, [rows, selectedOrgId]);
+  function handleToggleExpand(orgId) {
+    setExpandedOrgId((current) => (toText(current) === toText(orgId) ? "" : toText(orgId)));
+  }
+
+  const expandedOrg = useMemo(() => {
+    return rows.find((r) => toText(r?.org_id || r?.id) === toText(expandedOrgId)) || null;
+  }, [rows, expandedOrgId]);
 
   return (
     <div id="admin-access-orgs" className="space-y-3">
-      <div className="grid gap-3 lg:grid-cols-3">
-        <div className="space-y-3 lg:col-span-2">
-          <CreateOrgCard activeOrgRole={activeOrgRole} isAdmin={isAdmin} onCreated={onRefresh} />
-          <OrgsTable items={rows} selectedOrgId={selectedOrgId} onSelect={(row) => setSelectedOrgId(toText(row?.org_id || row?.id))} />
-        </div>
-        <div className="lg:col-span-1">
-          <AdminOrgDetailPanel
-            org={selectedOrg}
+      <CreateOrgCard activeOrgRole={activeOrgRole} isAdmin={isAdmin} onCreated={onRefresh} />
+      <OrgsTable
+        items={rows}
+        expandedOrgId={expandedOrgId}
+        onToggleExpand={handleToggleExpand}
+        renderExpanded={(row) => (
+          <OrgDetailTabs
+            org={row}
             activeOrgId={activeOrgId}
             activeOrgRole={activeOrgRole}
             isAdmin={isAdmin}
             onSaved={onRefresh}
           />
+        )}
+      />
+      {!expandedOrg && rows.length > 0 ? (
+        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-500">
+          Выберите организацию в таблице, чтобы увидеть детали.
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }
