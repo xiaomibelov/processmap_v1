@@ -51,7 +51,7 @@ function CreateOrgCard({ activeOrgRole, isAdmin = false, onCreated }) {
             placeholder="Название новой организации"
             value={name}
             onChange={(e) => { setName(e.target.value); setError(""); setSuccess(""); }}
-            disabled={busy}
+            disabled={createOrgMutation.isPending}
             required
           />
         </div>
