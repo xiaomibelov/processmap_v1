@@ -906,6 +906,10 @@ def delete_org_session_report_version(org_id: str, session_id: str, version_id: 
 def create_project_session(project_id: str, inp, mode: str = "quick_skeleton", request=None):
     """Create a session inside a project."""
     import app._legacy_main as _lm
+    proj, oid, _ = _lm._legacy_load_project_scoped(project_id, request)
+    if proj is None:
+        raise HTTPException(status_code=404, detail="project not found")
+    _lm._require_org_active_for_writes(request, oid)
     return _lm.create_project_session(project_id, inp, mode, request)
 
 

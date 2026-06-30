@@ -43,13 +43,17 @@ export function useWorkspaceExplorerController({
     [orgs, activeOrgId]
   );
   const currentOrgName = String(currentOrg?.name || currentOrg?.org_name || activeOrgId || "").trim();
+  const currentOrgActive = currentOrg?.is_active !== false;
   const activeWorkspace = useMemo(
     () => workspaces.find((item) => String(item?.id || "") === String(activeWorkspaceId || "")) || null,
     [workspaces, activeWorkspaceId]
   );
   const permissions = useMemo(
-    () => buildWorkspacePermissions(activeWorkspace?.role || "", Boolean(isAdmin)),
-    [activeWorkspace?.role, isAdmin]
+    () => {
+      const base = buildWorkspacePermissions(activeWorkspace?.role || "", Boolean(isAdmin));
+      return { ...base, canCreate: base.canCreate && currentOrgActive };
+    },
+    [activeWorkspace?.role, isAdmin, currentOrgActive]
   );
   const normalizedRequestProjectContext = useMemo(() => {
     const context = requestProjectContext && typeof requestProjectContext === "object" ? requestProjectContext : {};
@@ -314,6 +318,7 @@ export function useWorkspaceExplorerController({
 
   return {
     currentOrgName,
+    currentOrgActive,
     permissions,
     workspaces,
     wsLoading,

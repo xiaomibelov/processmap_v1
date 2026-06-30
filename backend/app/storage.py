@@ -172,6 +172,9 @@ class _RowCompat:
             return self._values[key]
         return self._mapping[str(key)]
 
+    def get(self, key: Any, default: Any = None) -> Any:
+        return self._mapping.get(str(key), default)
+
     def keys(self) -> List[str]:
         return list(self._columns)
 
@@ -1621,6 +1624,7 @@ def _ensure_schema() -> None:
                   name TEXT NOT NULL,
                   created_at INTEGER NOT NULL DEFAULT 0,
                   created_by TEXT NOT NULL DEFAULT '',
+                  is_active INTEGER NOT NULL DEFAULT 1,
                   git_mirror_enabled INTEGER NOT NULL DEFAULT 0,
                   git_provider TEXT NOT NULL DEFAULT '',
                   git_repository TEXT NOT NULL DEFAULT '',
@@ -1633,6 +1637,8 @@ def _ensure_schema() -> None:
                 )
                 """
             )
+            if not _column_exists(con, "orgs", "is_active"):
+                con.execute("ALTER TABLE orgs ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS org_memberships (
@@ -5453,6 +5459,7 @@ def list_org_records() -> List[Dict[str, Any]]:
               name,
               created_at,
               created_by,
+              is_active,
               git_mirror_enabled,
               git_provider,
               git_repository,
@@ -5474,6 +5481,7 @@ def list_org_records() -> List[Dict[str, Any]]:
             "name": str(row["name"] or row["id"] or ""),
             "created_at": int(row["created_at"] or 0),
             "created_by": str(row["created_by"] or ""),
+            "is_active": bool(dict(row).get("is_active", 1)),
         }
         item.update(_org_git_mirror_payload(row))
         out.append(item)
@@ -5518,6 +5526,7 @@ def read_user_org_memberships_fast(user_id: str, *, is_admin: Optional[bool] = N
                     "org_id": org_id,
                     "name": str(row.get("name") or org_id),
                     "role": str(current.get("role") or "platform_admin"),
+                    "is_active": bool(dict(row).get("is_active", 1)),
                     "created_at": int(current.get("created_at") or row.get("created_at") or 0),
                 }
             )
@@ -5530,6 +5539,7 @@ def read_user_org_memberships_fast(user_id: str, *, is_admin: Optional[bool] = N
               o.name AS org_name,
               m.role AS role,
               m.created_at AS created_at,
+              o.is_active AS is_active,
               o.git_mirror_enabled AS git_mirror_enabled,
               o.git_provider AS git_provider,
               o.git_repository AS git_repository,
@@ -5552,6 +5562,7 @@ def read_user_org_memberships_fast(user_id: str, *, is_admin: Optional[bool] = N
             "org_id": str(row["org_id"] or ""),
             "name": str(row["org_name"] or row["org_id"] or ""),
             "role": str(row["role"] or "org_viewer"),
+            "is_active": bool(dict(row).get("is_active", 1)),
             "created_at": int(row["created_at"] or 0),
         }
         item.update(_org_git_mirror_payload(row))
@@ -5592,6 +5603,7 @@ def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) 
               m.role AS role,
               m.permissions_json AS permissions_json,
               m.created_at AS created_at,
+              o.is_active AS is_active,
               o.git_mirror_enabled AS git_mirror_enabled,
               o.git_provider AS git_provider,
               o.git_repository AS git_repository,
@@ -5616,6 +5628,7 @@ def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) 
             "name": str(row["org_name"] or row["org_id"] or ""),
             "role": role,
             "permissions": _normalize_membership_permissions(role, row["permissions_json"]),
+            "is_active": bool(dict(row).get("is_active", 1)),
             "created_at": int(row["created_at"] or 0),
         }
         item.update(_org_git_mirror_payload(row))
@@ -5633,6 +5646,7 @@ def list_user_org_memberships(user_id: str, *, is_admin: Optional[bool] = None) 
                 "name": str(row.get("name") or org_id),
                 "role": "platform_admin",
                 "permissions": _permission_template_for_role("org_admin"),
+                "is_active": bool(dict(row).get("is_active", 1)),
                 "created_at": int(row.get("created_at") or 0),
                 "git_mirror_enabled": bool(row.get("git_mirror_enabled")),
                 "git_provider": row.get("git_provider"),
@@ -5850,6 +5864,7 @@ def create_org_record(name: str, *, created_by: str, org_id: Optional[str] = Non
               name,
               created_at,
               created_by,
+              is_active,
               git_mirror_enabled,
               git_provider,
               git_repository,
@@ -5870,6 +5885,7 @@ def create_org_record(name: str, *, created_by: str, org_id: Optional[str] = Non
             "name": title,
             "created_at": now,
             "created_by": actor,
+            "is_active": True,
             **_org_git_mirror_payload({}),
         }
     out = {
@@ -5877,9 +5893,72 @@ def create_org_record(name: str, *, created_by: str, org_id: Optional[str] = Non
         "name": str(row["name"] or ""),
         "created_at": int(row["created_at"] or 0),
         "created_by": str(row["created_by"] or ""),
+        "is_active": bool(row.get("is_active", 1)),
     }
     out.update(_org_git_mirror_payload(row))
     return out
+
+
+def set_org_active(org_id: str, is_active: bool) -> Dict[str, Any]:
+    _ensure_schema()
+    oid = str(org_id or "").strip()
+    if not oid:
+        raise ValueError("org_id required")
+    with _connect() as con:
+        cur = con.execute(
+            "UPDATE orgs SET is_active = ? WHERE id = ?",
+            [1 if is_active else 0, oid],
+        )
+        con.commit()
+        if int(cur.rowcount or 0) <= 0:
+            raise ValueError("org not found")
+        row = con.execute(
+            """
+            SELECT
+              id,
+              name,
+              created_at,
+              created_by,
+              is_active,
+              git_mirror_enabled,
+              git_provider,
+              git_repository,
+              git_branch,
+              git_base_path,
+              git_health_status,
+              git_health_message,
+              git_updated_at,
+              git_updated_by
+            FROM orgs
+            WHERE id = ? LIMIT 1
+            """,
+            [oid],
+        ).fetchone()
+    if not row:
+        raise ValueError("org not found")
+    out = {
+        "id": str(row["id"] or ""),
+        "name": str(row["name"] or ""),
+        "created_at": int(row["created_at"] or 0),
+        "created_by": str(row["created_by"] or ""),
+        "is_active": bool(row.get("is_active", 1)),
+    }
+    out.update(_org_git_mirror_payload(row))
+    return out
+
+
+def is_org_active(org_id: str) -> bool:
+    oid = str(org_id or "").strip()
+    if not oid:
+        return False
+    try:
+        with _connect() as con:
+            row = con.execute(
+                "SELECT is_active FROM orgs WHERE id = ? LIMIT 1", [oid]
+            ).fetchone()
+    except Exception:
+        return False
+    return bool(row["is_active"]) if row else False
 
 
 def rename_org_record(org_id: str, name: str) -> Dict[str, Any]:
@@ -5911,6 +5990,7 @@ def rename_org_record(org_id: str, name: str) -> Dict[str, Any]:
               name,
               created_at,
               created_by,
+              is_active,
               git_mirror_enabled,
               git_provider,
               git_repository,
@@ -5932,6 +6012,7 @@ def rename_org_record(org_id: str, name: str) -> Dict[str, Any]:
         "name": str(row["name"] or ""),
         "created_at": int(row["created_at"] or 0),
         "created_by": str(row["created_by"] or ""),
+        "is_active": bool(row.get("is_active", 1)),
     }
     out.update(_org_git_mirror_payload(row))
     return out

@@ -32,12 +32,23 @@ from ..schemas.legacy_api import (
 router = APIRouter()
 
 @router.post('/api/sessions')
-def create_session(inp: CreateSessionIn):
+def create_session(inp: CreateSessionIn, request: Request):
+    from ..legacy.request_context import request_active_org_id, request_user_meta
+    from ..storage import is_org_active
+    oid = str(request_active_org_id(request) or "").strip()
+    if oid:
+        _uid, is_admin = request_user_meta(request)
+        if not is_admin and not is_org_active(oid):
+            raise HTTPException(status_code=403, detail="organization_inactive")
+    user_id, is_admin = request_user_meta(request)
     return _svc.create_session(
         title=str(getattr(inp, "title", "") or "").strip() or "process",
         roles=getattr(inp, "roles", None),
         start_role=getattr(inp, "start_role", None),
         prep_questions=getattr(inp, "ai_prep_questions", None),
+        org_id=oid or None,
+        is_admin=is_admin,
+        user_id=user_id,
     )
 
 @router.get('/api/projects/{project_id}/sessions')
