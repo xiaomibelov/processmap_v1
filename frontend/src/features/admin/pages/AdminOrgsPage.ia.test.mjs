@@ -4,7 +4,7 @@ import test from "node:test";
 
 const pageSource = fs.readFileSync(new URL("./AdminOrgsPage.jsx", import.meta.url), "utf8");
 const orgsPanelSource = fs.readFileSync(new URL("../components/orgs/AdminOrgsPanel.jsx", import.meta.url), "utf8");
-const detailPanelSource = fs.readFileSync(new URL("../components/orgs/AdminOrgDetailPanel.jsx", import.meta.url), "utf8");
+const orgDetailTabsSource = fs.readFileSync(new URL("../components/orgs/OrgDetailTabs.jsx", import.meta.url), "utf8");
 const gitMirrorSource = fs.readFileSync(new URL("../components/gitMirror/AdminGitMirrorPanel.jsx", import.meta.url), "utf8");
 const systemSource = fs.readFileSync(new URL("../components/system/AdminSystemPanel.jsx", import.meta.url), "utf8");
 const ruSource = fs.readFileSync(new URL("../../../shared/i18n/ru.js", import.meta.url), "utf8");
@@ -35,16 +35,16 @@ test("AdminOrgsPage delegates organizations and git mirror tabs to dedicated pan
   assert.match(pageSource, /<AdminOrgsPanel/);
   assert.match(orgsPanelSource, /id="admin-access-orgs"/);
   assert.match(orgsPanelSource, /Создать организацию/);
-  assert.match(detailPanelSource, /Детали организации/);
-  assert.match(detailPanelSource, /Сохранить название/);
+  assert.match(orgDetailTabsSource, /Детали организации/);
+  assert.match(orgDetailTabsSource, /Сохранить название/);
   assert.match(orgsPanelSource, /<OrgsTable/);
-  assert.match(orgsPanelSource, /<AdminOrgDetailPanel/);
+  assert.match(orgsPanelSource, /<OrgDetailTabs/);
   assert.match(pageSource, /<div id="admin-access-orgs"/);
   assert.match(pageSource, /<AdminGitMirrorPanel/);
   assert.match(pageSource, /<div id="admin-access-git"/);
-  assert.match(gitMirrorSource, /Git mirror \/ публикация/);
-  assert.match(gitMirrorSource, /Сохранить Git mirror/);
-  assert.match(gitMirrorSource, /Проверить конфигурацию/);
+  assert.match(gitMirrorSource, /Git mirror/);
+  assert.match(gitMirrorSource, /Статус/);
+  assert.match(gitMirrorSource, /OrgGitMirrorForm/);
   assert.match(pageSource, /<AdminUsersPanel/);
   assert.match(pageSource, /<AdminOrgInvitesPanel/);
   assert.ok(pageSource.indexOf("<AdminUsersPanel") < pageSource.indexOf("<AdminOrgInvitesPanel"));
@@ -56,10 +56,10 @@ test("AdminOrgsPage removes empty filters block and uses AdminSystemPanel for sy
   assert.match(pageSource, /<AdminSystemPanel/);
   assert.match(pageSource, /<div id="admin-access-system"/);
   assert.match(systemSource, /AdminTabs/);
-  assert.match(systemSource, /Заметки/);
-  assert.match(systemSource, /Runtime/);
-  assert.match(systemSource, /Аудит/);
-  assert.match(systemSource, /Feature flags/);
+  assert.match(systemSource, /Notes/);
+  assert.match(systemSource, /Logs/);
+  assert.match(systemSource, /Settings/);
+  assert.match(systemSource, /Maintenance/);
   assert.match(systemSource, /Redis и runtime health остаются в операционной сводке/);
 });
 
