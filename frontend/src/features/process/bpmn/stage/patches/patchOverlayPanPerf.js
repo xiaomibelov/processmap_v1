@@ -21,27 +21,39 @@ export function getShowOverlaysDuringPan() {
   return showOverlaysDuringPan === true;
 }
 
+const OVERLAY_VISIBILITY_THROTTLE_MS = 16;
+const overlayUpdateLastRun = new WeakMap();
+
 function createPatchedUpdate(original) {
   let skipped = 0;
   let total = 0;
   let lastLog = 0;
   return function (viewbox) {
     total += 1;
-    // When the user has enabled "show overlays while panning", allow the
-    // expensive per-overlay visibility/scale pass to run on every frame.
-    // Otherwise (default) throttle it by skipping calls while the viewbox is
-    // actively changing.
-    if (this.__fpcOverlayUpdatesPaused && !showOverlaysDuringPan) {
-      skipped += 1;
-      const now = performance.now();
-      if (now - lastLog > 5000) {
-        // eslint-disable-next-line no-console
-        console.debug(`[OverlayPanPatch] skipped ${skipped}/${total} _updateOverlaysVisibilty calls in last 5s`);
-        skipped = 0;
-        total = 0;
-        lastLog = now;
+    // When the viewbox is actively changing, skip the expensive per-overlay
+    // visibility/scale pass unless the user explicitly wants overlays visible
+    // during pan/zoom. In that case throttle the pass to ~60 fps instead of
+    // running it on every micro-event.
+    if (this.__fpcOverlayUpdatesPaused) {
+      if (!showOverlaysDuringPan) {
+        skipped += 1;
+        const now = performance.now();
+        if (now - lastLog > 5000) {
+          // eslint-disable-next-line no-console
+          console.debug(`[OverlayPanPatch] skipped ${skipped}/${total} _updateOverlaysVisibilty calls in last 5s`);
+          skipped = 0;
+          total = 0;
+          lastLog = now;
+        }
+        return;
       }
-      return;
+      const now = performance.now();
+      const lastRun = overlayUpdateLastRun.get(this) || 0;
+      if (now - lastRun < OVERLAY_VISIBILITY_THROTTLE_MS) {
+        skipped += 1;
+        return;
+      }
+      overlayUpdateLastRun.set(this, now);
     }
     return original.call(this, viewbox);
   };
