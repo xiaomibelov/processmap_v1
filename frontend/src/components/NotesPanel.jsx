@@ -25,6 +25,7 @@ import {
 } from "../features/process/robotmeta/robotMeta";
 import {
   createEmptyCamundaExtensionState,
+  hydrateCamundaExtensionsFromBpmn,
   normalizeCamundaExtensionsMap,
   normalizeCamundaExtensionState,
 } from "../features/process/camunda/camundaExtensions";
@@ -92,6 +93,37 @@ function buildCamundaPropertiesDraftKey(sessionIdRaw, elementIdRaw) {
   const elementId = str(elementIdRaw);
   if (!sessionId || !elementId) return "";
   return `${sessionId}:${elementId}:camunda-properties`;
+}
+
+function mergeModelerOnlyPropertiesIntoDraft(draftRaw, baselineRaw) {
+  const draft = draftRaw && typeof draftRaw === "object" ? draftRaw : createEmptyCamundaExtensionState();
+  const baseline = baselineRaw && typeof baselineRaw === "object" ? baselineRaw : createEmptyCamundaExtensionState();
+  const draftRows = Array.isArray(draft?.properties?.extensionProperties)
+    ? draft.properties.extensionProperties
+    : [];
+  const baselineRows = Array.isArray(baseline?.properties?.extensionProperties)
+    ? baseline.properties.extensionProperties
+    : [];
+  const existingNames = new Set(
+    draftRows
+      .map((row) => String(row?.name || "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const addedRows = baselineRows.filter((row) => {
+    const name = String(row?.name || "").trim().toLowerCase();
+    return name && !existingNames.has(name);
+  });
+  if (!addedRows.length) return draft;
+  return {
+    ...draft,
+    properties: {
+      ...(draft.properties || {}),
+      extensionProperties: [...draftRows, ...addedRows],
+      extensionListeners: Array.isArray(draft?.properties?.extensionListeners)
+        ? draft.properties.extensionListeners
+        : [],
+    },
+  };
 }
 
 function normalizeFlowTier(raw) {
@@ -966,6 +998,7 @@ export default function NotesPanel({
   onSetNodePathAssignments,
   onSetElementRobotMeta,
   onSetElementCamundaExtensions,
+  getElementCamundaExtensionsFromModeler,
   activeOrgId = "",
   reviewStatus = "draft",
   reviewComments = [],
@@ -1369,10 +1402,28 @@ export default function NotesPanel({
     () => normalizeRobotMetaV1(bpmnRobotMetaByElementId[selectedElementId] || createDefaultRobotMetaV1()),
     [bpmnRobotMetaByElementId, selectedElementId],
   );
-  const selectedCamundaExtensionEntry = useMemo(
-    () => normalizeCamundaExtensionState(bpmnCamundaExtensionsByElementId[selectedElementId] || createEmptyCamundaExtensionState()),
-    [bpmnCamundaExtensionsByElementId, selectedElementId],
-  );
+  const modelerExtensionState = useMemo(() => {
+    if (!selectedElementId || typeof getElementCamundaExtensionsFromModeler !== "function") {
+      return createEmptyCamundaExtensionState();
+    }
+    return normalizeCamundaExtensionState(getElementCamundaExtensionsFromModeler(selectedElementId));
+  }, [getElementCamundaExtensionsFromModeler, selectedElementId]);
+
+  const selectedCamundaExtensionEntry = useMemo(() => {
+    const metaState = normalizeCamundaExtensionState(
+      bpmnCamundaExtensionsByElementId[selectedElementId] || createEmptyCamundaExtensionState(),
+    );
+    const modelerMap = normalizeCamundaExtensionsMap({ [selectedElementId]: modelerExtensionState });
+    const metaMap = normalizeCamundaExtensionsMap({ [selectedElementId]: metaState });
+    const hydration = hydrateCamundaExtensionsFromBpmn({
+      extractedMap: modelerMap,
+      sessionMetaMap: metaMap,
+      allowSeedFromBpmn: true,
+    });
+    return normalizeCamundaExtensionState(
+      hydration?.nextSessionMetaMap?.[selectedElementId] || createEmptyCamundaExtensionState(),
+    );
+  }, [bpmnCamundaExtensionsByElementId, modelerExtensionState, selectedElementId]);
   const selectedOperationKey = useMemo(
     () => getOperationKeyFromRobotMeta(
       selectedRobotMetaEditable ? robotMetaDraft : selectedRobotMetaEntry,
@@ -1731,20 +1782,28 @@ export default function NotesPanel({
       setCamundaPropertiesInfo("");
       return;
     }
-    const cachedDraft = camundaPropertiesDraftKey
+    const cachedDraftRaw = camundaPropertiesDraftKey
       ? camundaPropertiesDraftCacheRef.current.get(camundaPropertiesDraftKey)
       : null;
+    let cachedDraft = cachedDraftRaw && typeof cachedDraftRaw === "object" ? cachedDraftRaw : null;
+    if (cachedDraft) {
+      cachedDraft = mergeModelerOnlyPropertiesIntoDraft(cachedDraft, selectedCamundaExtensionEntry);
+      camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, cachedDraft);
+    }
     setCamundaPropertiesDraft(
-      cachedDraft && typeof cachedDraft === "object"
-        ? cachedDraft
-        : selectedCamundaExtensionEntry,
+      cachedDraft && typeof cachedDraft === "object" ? cachedDraft : selectedCamundaExtensionEntry,
     );
     setCamundaExtensionSaveFailed(false);
     setCamundaExtensionLastAction("save");
     setCamundaExtensionSavePhase("idle");
     setCamundaPropertiesErr("");
     setCamundaPropertiesInfo("");
-  }, [camundaPropertiesDraftKey, selectedCamundaPropertiesEditable, selectedCamundaExtensionEntry]);
+  }, [
+    camundaPropertiesDraftKey,
+    selectedCamundaPropertiesEditable,
+    selectedCamundaExtensionEntry,
+    modelerExtensionState,
+  ]);
 
   useEffect(() => {
     const nextRows = normalizeDocumentationRows(selectedBpmnDocumentationRows);
