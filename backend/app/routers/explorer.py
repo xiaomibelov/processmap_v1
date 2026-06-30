@@ -53,6 +53,14 @@ from ..services.org_workspace import (
     validate_org_user_assignable,
 )
 
+
+def _require_org_active_for_writes(request: Request, org_id: str) -> None:
+    """Block non-admin writes for inactive organizations."""
+    if request_is_admin(request):
+        return
+    if not storage.is_org_active(org_id):
+        raise HTTPException(status_code=403, detail="organization_inactive")
+
 router = APIRouter(tags=["explorer"])
 logger = logging.getLogger(__name__)
 
@@ -1128,6 +1136,7 @@ def create_session_in_project(
     user_id = _require_org_access(request, oid)
     if not can_edit_workspace(request, oid):
         raise HTTPException(status_code=403, detail="forbidden")
+    _require_org_active_for_writes(request, oid)
     pid = str(project_id or "").strip()
 
     details = storage.get_project_workspace_details(oid, pid)

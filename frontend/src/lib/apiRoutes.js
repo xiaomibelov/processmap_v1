@@ -222,6 +222,7 @@ export const apiRoutes = {
   admin: {
     dashboard: (params = {}) => withQuery("/api/admin/dashboard", params),
     orgs: () => "/api/admin/orgs",
+    orgStatus: (orgId) => `/api/admin/orgs/${encodeURIComponent(String(orgId || ""))}/status`,
     users: () => "/api/admin/users",
     user: (userId) => `/api/admin/users/${encode(userId)}`,
     organizationInvites: (orgId) => `/api/admin/organizations/${encode(orgId)}/invites`,

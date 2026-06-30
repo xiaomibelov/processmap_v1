@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiPatchOrg } from "../../../../lib/api";
+import { apiAdminPatchOrgStatus } from "../../../../lib/apiModules/adminApi";
 import AdminTabs from "../common/AdminTabs";
 import SectionCard from "../common/SectionCard";
 import StatusPill from "../common/StatusPill";
@@ -28,6 +29,7 @@ function CountItem({ label, value }) {
 function DetailTab({ org, isAdmin, activeOrgRole, isActive, onSaved }) {
   const orgId = toText(org?.org_id || org?.id);
   const canEdit = isAdmin || ["org_owner", "org_admin"].includes(String(activeOrgRole || "").toLowerCase());
+  const orgActive = org?.is_active !== false;
 
   const [name, setName] = useState("");
   useEffect(() => {
@@ -41,6 +43,16 @@ function DetailTab({ org, isAdmin, activeOrgRole, isActive, onSaved }) {
       return res;
     },
     invalidateKeys: [["adminOrgs"]],
+    onSuccess: () => { onSaved?.(); },
+  });
+
+  const statusMutation = useAdminMutation({
+    mutationFn: async (nextActive) => {
+      const res = await apiAdminPatchOrgStatus(orgId, nextActive);
+      if (!res.ok) throw new Error(res.error || "Не удалось изменить статус организации");
+      return res;
+    },
+    invalidateKeys: [["adminOrgs"], ["authMe"], ["orgs"]],
     onSuccess: () => { onSaved?.(); },
   });
 
@@ -68,6 +80,27 @@ function DetailTab({ org, isAdmin, activeOrgRole, isActive, onSaved }) {
         <CountItem label="Проекты" value={org?.projects_count} />
         <CountItem label="Активные сессии" value={org?.active_sessions_count} />
         <CountItem label="Инвайты" value={org?.pending_invites_count} />
+      </div>
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+        <span className="text-xs font-medium text-slate-600">Статус организации</span>
+        {isAdmin ? (
+          <button
+            type="button"
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${orgActive ? "bg-emerald-500" : "bg-slate-300"}`}
+            onClick={() => statusMutation.mutate(!orgActive)}
+            disabled={statusMutation.isPending}
+            aria-pressed={orgActive}
+          >
+            <span
+              className="inline-block h-3.5 w-3.5 rounded-full bg-white transition"
+              style={{ transform: orgActive ? "translateX(16px)" : "translateX(2px)" }}
+            />
+          </button>
+        ) : null}
+        <span className={`text-xs font-medium ${orgActive ? "text-emerald-700" : "text-slate-500"}`}>
+          {orgActive ? "Активна" : "Неактивна"}
+        </span>
+        {statusMutation.isPending ? <span className="text-xs text-slate-400">Сохранение…</span> : null}
       </div>
       <form className="space-y-2" onSubmit={handleSubmit}>
         <label>

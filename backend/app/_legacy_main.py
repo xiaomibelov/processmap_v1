@@ -47,6 +47,7 @@ from .storage import (
     count_org_records,
     create_org_record,
     get_org_git_mirror_config,
+    is_org_active,
     list_project_memberships,
     upsert_project_membership,
     delete_project_membership,
@@ -351,6 +352,17 @@ def _can_manage_workspace(role_raw: Any, is_admin: bool = False) -> bool:
   # DEPRECATED: moved to utils/authz.py
 def _can_edit_workspace(role_raw: Any, is_admin: bool = False) -> bool:
     return _practical_role_for_org(role_raw, is_admin=is_admin) in {"admin", "editor"}
+
+
+def _require_org_active_for_writes(request: Optional[Request], org_id: str) -> None:
+    if not org_id:
+        return
+    user = _request_auth_user(request) if request is not None else {}
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
+    if is_admin:
+        return
+    if not is_org_active(org_id):
+        raise HTTPException(status_code=403, detail="organization_inactive")
 
 
   # DEPRECATED: moved to utils/authz.py
@@ -3832,6 +3844,7 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
     role = _org_role_for_request(request, oid) if request is not None and oid else ""
     if not _can_edit_workspace(role, is_admin=is_admin):
         raise HTTPException(status_code=403, detail="forbidden")
+    _require_org_active_for_writes(request, oid)
 
     st = get_storage()
     title = _clean_name(getattr(inp, "title", None) or "process") or "process"
@@ -4079,6 +4092,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
     if not sess:
         return {"error": "not found"}
     role = _org_role_for_request(request, oid) if request is not None and oid else ("org_admin" if effective_is_admin else "")
+    _require_org_active_for_writes(request, oid)
 
     data = inp.model_dump(exclude_unset=True)
     if "status" in data:
@@ -4367,6 +4381,7 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
     sess, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
         return {"error": "not found"}
+    _require_org_active_for_writes(request, oid)
 
     data = inp.model_dump()
     client_base_diagram_state_version = _resolve_base_diagram_state_version(request=request, payload=data)
