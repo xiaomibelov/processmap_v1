@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { toText } from "../../adminUtils";
 
 const PERMISSION_LABELS = {
   view: "Просмотр",
@@ -22,7 +23,7 @@ export function invitePermissionDefaults(role) {
   return { view: true, create: false, edit: false, export: false, delete: false, manage_users: false };
 }
 
-export default function AdminInvitePermissionEditor({ role = "", value = {}, onChange, disabled = false }) {
+export default function AdminInvitePermissionEditor({ role = "", value = {}, onChange, disabled = false, compact = false }) {
   const effective = useMemo(() => {
     const defaults = invitePermissionDefaults(role);
     const merged = { ...defaults };
@@ -40,14 +41,14 @@ export default function AdminInvitePermissionEditor({ role = "", value = {}, onC
   }
 
   return (
-    <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+    <div className={`grid grid-cols-2 gap-2 md:grid-cols-3 ${compact ? "md:grid-cols-6" : ""}`}>
       {PERMISSION_KEYS.map((key) => {
         const checked = effective[key] === true;
         const isView = key === "view";
         return (
           <label
             key={key}
-            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${disabled || isView ? "cursor-default bg-slate-50 text-slate-500" : "cursor-pointer bg-white text-slate-700 hover:bg-slate-50"}`}
+            className={`flex items-center gap-2 rounded-lg border ${compact ? "px-2 py-1.5 text-xs" : "px-3 py-2 text-sm"} ${disabled || isView ? "cursor-default bg-slate-50 text-slate-500" : "cursor-pointer bg-white text-slate-700 hover:bg-slate-50"}`}
           >
             <input
               type="checkbox"

@@ -192,6 +192,119 @@ export async function apiPatchOrgMember(orgId, userId, role) {
   return r.ok ? { ok: true, status: r.status, item: r.data || {} } : r;
 }
 
+// ------- Groups -------
+
+function normalizeGroup(raw = {}) {
+  const data = raw && typeof raw === "object" ? raw : {};
+  return {
+    id: String(data.id || "").trim(),
+    org_id: String(data.org_id || "").trim(),
+    name: String(data.name || "").trim(),
+    description: String(data.description || "").trim(),
+    created_at: Number(data.created_at || 0),
+    updated_at: Number(data.updated_at || 0),
+    created_by: String(data.created_by || "").trim(),
+    updated_by: String(data.updated_by || "").trim(),
+    members_count: Number(data.members_count || 0),
+  };
+}
+
+export async function apiListOrgGroups(orgId) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  const r = okOrError(await request(apiRoutes.orgs.groups(oid), { method: "GET" }));
+  if (!r.ok && Number(r.status || 0) === 404) {
+    return { ok: true, status: r.status, items: [], count: 0 };
+  }
+  const items = Array.isArray(r?.data?.items) ? r.data.items : [];
+  return r.ok
+    ? { ok: true, status: r.status, items: items.map(normalizeGroup), count: Number(r?.data?.count || items.length || 0) }
+    : r;
+}
+
+export async function apiCreateOrgGroup(orgId, payload = {}) {
+  const oid = String(orgId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  const name = String(payload?.name || "").trim();
+  if (!name) return { ok: false, status: 0, error: "name is required" };
+  const body = {
+    name,
+    description: String(payload?.description || "").trim(),
+  };
+  const r = okOrError(await request(apiRoutes.orgs.groups(oid), { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, item: normalizeGroup(r.data?.item || {}) } : r;
+}
+
+export async function apiUpdateOrgGroup(orgId, groupId, payload = {}) {
+  const oid = String(orgId || "").trim();
+  const gid = String(groupId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!gid) return { ok: false, status: 0, error: "missing group_id" };
+  const body = {};
+  if (payload && Object.prototype.hasOwnProperty.call(payload, "name")) body.name = String(payload.name || "").trim();
+  if (payload && Object.prototype.hasOwnProperty.call(payload, "description")) body.description = String(payload.description || "").trim();
+  const r = okOrError(await request(apiRoutes.orgs.group(oid, gid), { method: "PATCH", body }));
+  return r.ok ? { ok: true, status: r.status, item: normalizeGroup(r.data?.item || {}) } : r;
+}
+
+export async function apiDeleteOrgGroup(orgId, groupId) {
+  const oid = String(orgId || "").trim();
+  const gid = String(groupId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!gid) return { ok: false, status: 0, error: "missing group_id" };
+  const r = okOrError(await request(apiRoutes.orgs.group(oid, gid), { method: "DELETE" }));
+  return r.ok ? { ok: true, status: r.status } : r;
+}
+
+function normalizeGroupMember(raw = {}) {
+  const data = raw && typeof raw === "object" ? raw : {};
+  return {
+    user_id: String(data.user_id || "").trim(),
+    email: String(data.email || "").trim().toLowerCase(),
+    full_name: String(data.full_name || "").trim(),
+    job_title: String(data.job_title || "").trim(),
+    created_at: Number(data.created_at || 0),
+    created_by: String(data.created_by || "").trim(),
+  };
+}
+
+export async function apiListGroupMembers(orgId, groupId) {
+  const oid = String(orgId || "").trim();
+  const gid = String(groupId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!gid) return { ok: false, status: 0, error: "missing group_id" };
+  const r = okOrError(await request(apiRoutes.orgs.groupMembers(oid, gid), { method: "GET" }));
+  const items = Array.isArray(r?.data?.items) ? r.data.items : [];
+  return r.ok
+    ? { ok: true, status: r.status, items: items.map(normalizeGroupMember), count: Number(r?.data?.count || items.length || 0) }
+    : r;
+}
+
+export async function apiAddGroupMember(orgId, groupId, userId) {
+  const oid = String(orgId || "").trim();
+  const gid = String(groupId || "").trim();
+  const uid = String(userId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!gid) return { ok: false, status: 0, error: "missing group_id" };
+  if (!uid) return { ok: false, status: 0, error: "missing user_id" };
+  const r = okOrError(await request(apiRoutes.orgs.groupMembers(oid, gid), { method: "POST", body: { user_id: uid } }));
+  const items = Array.isArray(r?.data?.items) ? r.data.items : [];
+  return r.ok
+    ? { ok: true, status: r.status, items: items.map(normalizeGroupMember), count: Number(r?.data?.count || items.length || 0) }
+    : r;
+}
+
+export async function apiRemoveGroupMember(orgId, groupId, userId) {
+  const oid = String(orgId || "").trim();
+  const gid = String(groupId || "").trim();
+  const uid = String(userId || "").trim();
+  if (!oid) return { ok: false, status: 0, error: "missing org_id" };
+  if (!gid) return { ok: false, status: 0, error: "missing group_id" };
+  if (!uid) return { ok: false, status: 0, error: "missing user_id" };
+  const r = okOrError(await request(apiRoutes.orgs.groupMember(oid, gid, uid), { method: "DELETE" }));
+  return r.ok ? { ok: true, status: r.status } : r;
+}
+
 export async function apiPatchOrg(orgId, payload = {}) {
   const oid = String(orgId || "").trim();
   if (!oid) return { ok: false, status: 0, error: "missing org_id" };

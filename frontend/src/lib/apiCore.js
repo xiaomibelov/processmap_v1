@@ -498,6 +498,7 @@ export async function apiAuthMe() {
   const r = okOrError(await request(apiRoutes.auth.me(), { method: "GET", retryAuth: true }));
   if (!r.ok) return r;
   const orgs = Array.isArray(r.data?.orgs) ? r.data.orgs : [];
+  const groups = Array.isArray(r.data?.groups) ? r.data.groups : [];
   const active_org_id = String(r.data?.active_org_id || r.data?.default_org_id || "").trim();
   const default_org_id = String(r.data?.default_org_id || "").trim();
   if (active_org_id) setActiveOrgId(active_org_id);
@@ -511,6 +512,7 @@ export async function apiAuthMe() {
       active_org_id,
       default_org_id,
       orgs,
+      groups,
     },
   };
 }

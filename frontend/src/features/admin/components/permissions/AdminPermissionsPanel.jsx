@@ -7,7 +7,8 @@ import {
   apiAdminPatchPermission,
   apiAdminBulkPermissions,
 } from "../../api/adminApi";
-import { AdminPermissionToggles, AdminPermissionSummary, formatPermissionKey, usePermissionKeys } from "./AdminPermissionToggles";
+import { AdminPermissionToggles, AdminPermissionSummary, usePermissionKeys } from "./AdminPermissionToggles";
+import AdminPermissionsMatrix from "./AdminPermissionsMatrix";
 import { toText } from "../../adminUtils";
 
 const ENTITY_TABS = [
@@ -129,32 +130,7 @@ export default function AdminPermissionsPanel({ orgId = "" }) {
       {loading ? <div className="text-xs text-slate-500">Загрузка…</div> : null}
 
       {activeTab === "matrix" ? (
-        <SectionCard title="Permission Matrix" subtitle="Default access by entity type and role" eyebrow="Access">
-          <div className="overflow-auto">
-            <table className="w-full border-collapse text-xs">
-              <thead className="sticky top-0 z-10 bg-white text-left text-[10px] uppercase tracking-[0.14em] text-slate-400">
-                <tr>
-                  <th className="px-2 py-1.5 font-medium">Entity</th>
-                  <th className="px-2 py-1.5 font-medium">Permissions by role</th>
-                </tr>
-              </thead>
-              <tbody>
-                {matrixData.map((row) => (
-                  <tr key={row.entity_type} className="border-t border-slate-100 hover:bg-slate-50">
-                    <td className="px-2 py-2 font-medium capitalize text-slate-950">{row.entity_type}</td>
-                    <td className="px-2 py-2">
-                      <AdminPermissionToggles
-                        entityType={row.entity_type}
-                        rolePermissions={row.rolePermissions}
-                        onChange={(role, perms) => handleDefaultChange(row.entity_type, role, perms)}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </SectionCard>
+        <AdminPermissionsMatrix orgId={orgId} />
       ) : (
         <AdminPermissionsEntitySection
           entityType={activeTab}

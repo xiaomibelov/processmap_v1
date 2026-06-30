@@ -3,27 +3,30 @@ import fs from "node:fs";
 import test from "node:test";
 
 const source = fs.readFileSync(new URL("./AdminGitMirrorPanel.jsx", import.meta.url), "utf8");
+const formSource = fs.readFileSync(new URL("./OrgGitMirrorForm.jsx", import.meta.url), "utf8");
 
-test("AdminGitMirrorPanel renders config form and detail panel", () => {
-  assert.match(source, /Git mirror \/ публикация/);
-  assert.match(source, /Включить Git mirror/);
-  assert.match(source, /Provider/);
-  assert.match(source, /Repository \/ Project/);
-  assert.match(source, /Branch/);
-  assert.match(source, /Base path/);
-  assert.match(source, /Сохранить Git mirror/);
+test("AdminGitMirrorPanel renders dense status table with expandable detail", () => {
+  assert.match(source, /Git mirror/);
+  assert.match(source, /w-full border-collapse text-xs/);
+  assert.match(source, /expanded/);
+  assert.match(source, /setExpanded/);
+  assert.match(source, /OrgGitMirrorForm/);
 });
 
-test("AdminGitMirrorPanel shows health status and target summary in detail panel", () => {
-  assert.match(source, /Состояние публикации/);
-  assert.match(source, /Статус:/);
-  assert.match(source, /Цель публикации/);
-  assert.match(source, /apiGetOrgGitMirrorConfig/);
-  assert.match(source, /apiPatchOrgGitMirrorConfig/);
+test("OrgGitMirrorForm renders config form and status panel", () => {
+  assert.match(formSource, /Включить Git mirror/);
+  assert.match(formSource, /Provider/);
+  assert.match(formSource, /Repository/);
+  assert.match(formSource, /Branch/);
+  assert.match(formSource, /Base path/);
+  assert.match(formSource, /Сохранить Git mirror/);
+  assert.match(formSource, /Состояние публикации/);
+  assert.match(formSource, /Статус:/);
+  assert.match(formSource, /apiGetOrgGitMirrorConfig/);
+  assert.match(formSource, /apiPatchOrgGitMirrorConfig/);
 });
 
-test("AdminGitMirrorPanel supports validate action", () => {
-  assert.match(source, /Проверить конфигурацию/);
-  assert.match(source, /apiValidateOrgGitMirrorConfig/);
-  assert.match(source, /handleValidate/);
+test("OrgGitMirrorForm supports validate action", () => {
+  assert.match(formSource, /Проверить конфигурацию/);
+  assert.match(formSource, /apiValidateOrgGitMirrorConfig/);
 });

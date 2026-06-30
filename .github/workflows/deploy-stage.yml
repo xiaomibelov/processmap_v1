@@ -33,7 +33,7 @@ jobs:
             # Ensure frontend source files are really updated even if marked assume-unchanged/skip-worktree
             git update-index --no-assume-unchanged -- frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
             git update-index --no-skip-worktree -- frontend/src/App.jsx frontend/src/components/NotesMvpPanel.jsx 2>/dev/null || true
-            git checkout -f "${DEPLOY_SHA}" -- backend frontend Dockerfile deploy docker-compose.yml docker-compose.stage.yml
+            git checkout -f "${DEPLOY_SHA}" -- backend backend/services/notifications frontend Dockerfile deploy docker-compose.yml docker-compose.stage.yml
 
             echo "[deploy-stage] source diagnostics:"
             git status --short
@@ -98,7 +98,7 @@ jobs:
               -f docker-compose.yml \
               -f docker-compose.stage.yml \
               -p processmap_stage \
-              build --no-cache api frontend
+              build --no-cache api frontend notifications
 
             # Diagnostics: show current frontend mounts/assets before recreate
             echo "[deploy-stage] current frontend mounts:"
@@ -117,7 +117,7 @@ jobs:
               -f docker-compose.yml \
               -f docker-compose.stage.yml \
               -p processmap_stage \
-              up -d --no-deps --force-recreate -V api frontend
+              up -d --no-deps --force-recreate -V api frontend notifications
 
             # Diagnostics after recreate
             echo "[deploy-stage] new frontend mounts:"
