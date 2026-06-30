@@ -339,106 +339,221 @@ function computeSequenceFlowMidpoint(waypoints) {
 }
 
 export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExtensionOverlays }) {
-  const lightweightOverlayStateRef = { current: { viewer: [], editor: [] } };
+  const elementOverlayMapRef = { current: { viewer: new Map(), editor: new Map() } };
 
   function clear(inst, kind) {
     if (!inst) return;
     try {
       const overlays = inst.get("overlays");
-      asArray(lightweightOverlayStateRef.current[kind]).forEach((id) => {
-        try { overlays.remove(id); } catch {}
+      const map = elementOverlayMapRef.current[kind];
+      map.forEach((entry) => {
+        try { overlays.remove(entry.overlayId); } catch {}
       });
-      lightweightOverlayStateRef.current[kind] = [];
+      map.clear();
     } catch {}
+  }
+
+  function isElementInViewport(el, viewbox) {
+    if (!viewbox || !Number.isFinite(viewbox.x)) return true;
+    const vx = viewbox.x;
+    const vy = viewbox.y;
+    const vw = viewbox.width;
+    const vh = viewbox.height;
+    const isSequenceFlow = Array.isArray(el.waypoints) && String(el.type).toLowerCase() === "bpmn:sequenceflow";
+    if (isSequenceFlow) {
+      const mid = computeSequenceFlowMidpoint(el.waypoints);
+      if (!mid) return true;
+      return mid.x >= vx && mid.x <= vx + vw && mid.y >= vy && mid.y <= vy + vh;
+    }
+    const ex = Number(el.x || 0);
+    const ey = Number(el.y || 0);
+    const ew = Number(el.width || 0);
+    const eh = Number(el.height || 0);
+    return ex + ew >= vx && ex <= vx + vw && ey + eh >= vy && ey <= vy + vh;
+  }
+
+  function computeContentSig(ovl, el) {
+    const isSequenceFlow = Array.isArray(el.waypoints) && String(el.type).toLowerCase() === "bpmn:sequenceflow";
+    const geo = isSequenceFlow ? el.waypoints : { x: el.x, y: el.y, width: el.width, height: el.height };
+    return JSON.stringify({ ovl, geo });
+  }
+
+  function createV2HostForElement(ovl, el) {
+    const isSequenceFlow = Array.isArray(el.waypoints) && String(el.type).toLowerCase() === "bpmn:sequenceflow";
+    const elWidth = Number(el.width || 0);
+    const elHeight = Number(el.height || 0);
+    const MIN_ELEMENT_SIZE = 20;
+    if (!isSequenceFlow && (elWidth < MIN_ELEMENT_SIZE || elHeight < MIN_ELEMENT_SIZE)) return null;
+
+    const properties = Array.isArray(ovl.properties) ? ovl.properties : [];
+    const realProps = properties.filter((prop) => {
+      const name = String(prop.name ?? "").trim();
+      return !!name && !isOverlayMetaProperty(name);
+    });
+
+    const titleText = String(ovl.text || ovl.meta?.title || el.businessObject?.name || el.name || "").trim();
+    const hasProps = realProps.length > 0;
+    const v2Enabled = enabledRef.current;
+    if (!hasProps && (!v2Enabled || !titleText)) return null;
+    if (!v2Enabled) return null;
+
+    const colorKey = String(ovl.colorKey || ovl.meta?.type || ovl.type || "").trim();
+    const colorModel = overlayPropertyColorByKey(colorKey || "property");
+    const v2Expanded = expandedRef.current;
+    const SEQUENCE_OVERLAY_MAX_WIDTH = 160;
+    const v2HostWidth = isSequenceFlow
+      ? Math.min(Number(el.width || 0) || SEQUENCE_OVERLAY_MAX_WIDTH, SEQUENCE_OVERLAY_MAX_WIDTH)
+      : elWidth;
+    const v2Host = createV2Overlay(ovl, realProps, colorModel, titleText, el.id, v2HostWidth, v2Expanded, {
+      isSequenceFlow,
+    });
+    let v2Position = { top: -20, left: 0 };
+    if (isSequenceFlow) {
+      const mid = computeSequenceFlowMidpoint(el.waypoints);
+      if (mid) {
+        v2Host.style.top = `${mid.y - el.y - 20}px`;
+        v2Host.style.left = `${mid.x - el.x - v2HostWidth / 2}px`;
+        v2Position = { top: 0, left: 0 };
+      }
+    }
+    return { host: v2Host, position: v2Position };
   }
 
   function mount(inst, kind, overlayList = []) {
     if (!inst || typeof window === "undefined") return;
     if (!useExtensionOverlays) return;
-    clear(inst, kind);
     const overlaysToRender = Array.isArray(overlayList) ? overlayList : [];
-    let elementOverlaysAdded = 0;
-    let overlayNodesAdded = 0;
+    const map = elementOverlayMapRef.current[kind];
+
+    let removedCount = 0;
+    let addedCount = 0;
+    let updatedCount = 0;
+    let keptCount = 0;
 
     try {
       // eslint-disable-next-line no-console
-      console.log("[FPC-OVERLAY-V2] extension overlays found", {
-        count: overlaysToRender.length,
-      });
+      console.log("[FPC-OVERLAY-V2] extension overlays found", { count: overlaysToRender.length });
+
+      const overlays = inst.get("overlays");
+      const registry = inst.get("elementRegistry");
+      const canvas = inst.get("canvas");
+      const viewbox = canvas?.viewbox ? canvas.viewbox() : null;
 
       if (overlaysToRender.length > 0) {
         installOverlayBadgeTooltipListener();
         installOverlayCardHoverListeners(inst, expandedRef);
-        const overlays = inst.get("overlays");
-        const registry = inst.get("elementRegistry");
-        const MIN_ELEMENT_SIZE = 20;
-
-        const v2Enabled = enabledRef.current;
-
-        overlaysToRender.forEach((ovl) => {
-          const nodeId = String(ovl.node_id || ovl.nodeId || "").trim();
-          const el = nodeId ? registry.get(nodeId) : null;
-          if (!el) return;
-
-          const isSequenceFlow = Array.isArray(el.waypoints) && String(el.type).toLowerCase() === "bpmn:sequenceflow";
-
-          const elWidth = Number(el.width || 0);
-          const elHeight = Number(el.height || 0);
-          if (!isSequenceFlow && (elWidth < MIN_ELEMENT_SIZE || elHeight < MIN_ELEMENT_SIZE)) return;
-
-          const properties = Array.isArray(ovl.properties) ? ovl.properties : [];
-
-          const realProps = properties.filter((prop) => {
-            const name = String(prop.name ?? "").trim();
-            return !!name && !isOverlayMetaProperty(name);
-          });
-
-          const titleText = String(ovl.text || ovl.meta?.title || el.businessObject?.name || el.name || "").trim();
-          const hasProps = realProps.length > 0;
-          if (!hasProps && (!v2Enabled || !titleText)) return;
-
-          const colorKey = String(
-            ovl.colorKey || ovl.meta?.type || ovl.type || ""
-          ).trim();
-          const colorModel = overlayPropertyColorByKey(colorKey || "property");
-
-          if (!v2Enabled) {
-            return;
-          }
-
-          const v2Expanded = expandedRef.current;
-          const SEQUENCE_OVERLAY_MAX_WIDTH = 160;
-          const v2HostWidth = isSequenceFlow
-            ? Math.min(Number(el.width || 0) || SEQUENCE_OVERLAY_MAX_WIDTH, SEQUENCE_OVERLAY_MAX_WIDTH)
-            : elWidth;
-          const v2Host = createV2Overlay(ovl, realProps, colorModel, titleText, el.id, v2HostWidth, v2Expanded, {
-            isSequenceFlow,
-          });
-          let v2Position = { top: -20, left: 0 };
-          if (isSequenceFlow) {
-            const mid = computeSequenceFlowMidpoint(el.waypoints);
-            if (mid) {
-              v2Host.style.top = `${mid.y - el.y - 20}px`;
-              v2Host.style.left = `${mid.x - el.x - v2HostWidth / 2}px`;
-              v2Position = { top: 0, left: 0 };
-            }
-          }
-          const v2Oid = overlays.add(el.id, {
-            position: v2Position,
-            html: v2Host,
-          });
-          lightweightOverlayStateRef.current[kind].push(v2Oid);
-          overlayNodesAdded += 1;
-
-          elementOverlaysAdded += 1;
-        });
       }
 
-      // eslint-disable-next-line no-console
-      console.log("[FPC-OVERLAY-V2] overlays mounted", {
-        elements: elementOverlaysAdded,
-        overlayNodes: overlayNodesAdded,
+      // Build desired set keyed by element id.
+      let desired = new Map();
+      overlaysToRender.forEach((ovl) => {
+        const nodeId = String(ovl.node_id || ovl.nodeId || "").trim();
+        const el = nodeId ? registry.get(nodeId) : null;
+        if (!el) return;
+        desired.set(nodeId, { ovl, el });
       });
+
+      // Apply viewport culling only when the current viewbox does NOT show the
+      // whole diagram. This avoids hiding overlays on the initial fit-to-viewport
+      // while still reducing DOM count when the user zooms in.
+      if (viewbox && Number.isFinite(viewbox.x) && desired.size > 0) {
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        desired.forEach(({ el }) => {
+          const isSequenceFlow = Array.isArray(el.waypoints) && String(el.type).toLowerCase() === "bpmn:sequenceflow";
+          if (isSequenceFlow) {
+            const mid = computeSequenceFlowMidpoint(el.waypoints);
+            const px = mid ? mid.x : Number(el.x || 0);
+            const py = mid ? mid.y : Number(el.y || 0);
+            minX = Math.min(minX, px);
+            minY = Math.min(minY, py);
+            maxX = Math.max(maxX, px);
+            maxY = Math.max(maxY, py);
+          } else {
+            const ex = Number(el.x || 0);
+            const ey = Number(el.y || 0);
+            const ew = Number(el.width || 0);
+            const eh = Number(el.height || 0);
+            minX = Math.min(minX, ex);
+            minY = Math.min(minY, ey);
+            maxX = Math.max(maxX, ex + ew);
+            maxY = Math.max(maxY, ey + eh);
+          }
+        });
+        const bboxContained =
+          minX <= maxX &&
+          minY <= maxY &&
+          viewbox.x <= minX &&
+          viewbox.y <= minY &&
+          viewbox.x + viewbox.width >= maxX &&
+          viewbox.y + viewbox.height >= maxY;
+        if (!bboxContained) {
+          const culled = new Map();
+          for (const [nodeId, { ovl, el }] of desired.entries()) {
+            if (isElementInViewport(el, viewbox)) {
+              culled.set(nodeId, { ovl, el });
+            }
+          }
+          desired = culled;
+        }
+      }
+
+      // Remove overlays for elements that are no longer desired.
+      const toRemove = [];
+      for (const [elementId] of map.entries()) {
+        if (!desired.has(elementId)) {
+          toRemove.push(elementId);
+        }
+      }
+      toRemove.forEach((elementId) => {
+        const entry = map.get(elementId);
+        if (entry) {
+          try { overlays.remove(entry.overlayId); } catch {}
+          map.delete(elementId);
+          removedCount += 1;
+        }
+      });
+
+      const v2Expanded = expandedRef.current;
+
+      // Add new overlays and update existing ones.
+      for (const [elementId, { ovl, el }] of desired.entries()) {
+        const contentSig = computeContentSig(ovl, el);
+        const existing = map.get(elementId);
+        if (existing) {
+          if (existing.contentSig !== contentSig) {
+            // Content changed: remove old host and recreate.
+            try { overlays.remove(existing.overlayId); } catch {}
+            const created = createV2HostForElement(ovl, el);
+            if (created) {
+              const overlayId = overlays.add(el.id, { position: created.position, html: created.host });
+              map.set(elementId, { overlayId, contentSig, host: created.host, expanded: v2Expanded });
+              updatedCount += 1;
+            } else {
+              map.delete(elementId);
+              removedCount += 1;
+            }
+          } else if (existing.expanded !== v2Expanded) {
+            // Only expanded state changed: toggle CSS class.
+            existing.host.classList.toggle("fpc-overlay-v2-host--expanded", v2Expanded);
+            existing.expanded = v2Expanded;
+            keptCount += 1;
+          } else {
+            keptCount += 1;
+          }
+        } else {
+          const created = createV2HostForElement(ovl, el);
+          if (created) {
+            const overlayId = overlays.add(el.id, { position: created.position, html: created.host });
+            map.set(elementId, { overlayId, contentSig, host: created.host, expanded: v2Expanded });
+            addedCount += 1;
+          }
+        }
+      }
+
+
     } catch {
       // Overlay mount failures are non-critical; keep the diagram usable.
     }
