@@ -258,6 +258,8 @@ export const apiRoutes = {
     permissionsMatrixBulk: () => "/api/admin/permissions/matrix/bulk",
     permissionPrincipals: () => "/api/admin/permissions/principals",
     invitePermissions: (inviteId) => `/api/admin/invites/${encodeURIComponent(String(inviteId || ""))}/permissions`,
+    deploymentNotices: () => "/api/admin/deployment-notices",
+    deploymentNotice: (noticeId) => `/api/admin/deployment-notices/${encodeURIComponent(String(noticeId || ""))}`,
   },
   featureFlags: {
     get: () => "/api/feature-flags",
@@ -274,6 +276,7 @@ export const apiRoutes = {
     productActionsIndex: () => "/api/rag/product-actions/index",
   },
   misc: {
+    deploymentNotice: () => "/api/deployment-notice",
     meta: () => "/api/meta",
     glossaryAdd: () => "/api/glossary/add",
     inviteAccept: () => "/api/invites/accept",

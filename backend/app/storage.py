@@ -2596,6 +2596,22 @@ def _ensure_schema() -> None:
             )
             if not _column_exists(con, "org_invites", "permissions_json"):
                 con.execute("ALTER TABLE org_invites ADD COLUMN permissions_json TEXT NOT NULL DEFAULT '{}'")
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS deployment_notices (
+                  id TEXT PRIMARY KEY,
+                  message TEXT NOT NULL DEFAULT '',
+                  scheduled_at INTEGER NOT NULL DEFAULT 0,
+                  display_duration_minutes INTEGER NOT NULL DEFAULT 0,
+                  is_active INTEGER NOT NULL DEFAULT 1,
+                  created_by TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_deployment_notices_active ON deployment_notices(is_active, scheduled_at)"
+            )
             _SCHEMA_ENSURE_IN_PROGRESS = True
             try:
                 _seed_process_property_metadata(con)
@@ -2671,6 +2687,108 @@ def set_feature_flag(key: str, value: str) -> None:
             [str(key or ""), str(value or ""), int(time.time())],
         )
         con.commit()
+
+
+def create_deployment_notice(
+    message: str,
+    scheduled_at: int,
+    display_duration_minutes: int,
+    created_by: str,
+) -> dict:
+    notice_id = f"dn_{uuid.uuid4().hex}"
+    now = _now_ts()
+    with _connect() as con:
+        con.execute(
+            """
+            INSERT INTO deployment_notices (id, message, scheduled_at, display_duration_minutes, is_active, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                notice_id,
+                str(message or ""),
+                int(scheduled_at or 0),
+                int(display_duration_minutes or 0),
+                1,
+                str(created_by or ""),
+                now,
+            ],
+        )
+        con.commit()
+    return get_deployment_notice(notice_id)
+
+
+def get_deployment_notice(notice_id: str) -> dict | None:
+    try:
+        with _connect() as con:
+            row = con.execute(
+                "SELECT * FROM deployment_notices WHERE id = ? LIMIT 1", [str(notice_id or "")]
+            ).fetchone()
+    except Exception:
+        return None
+    if not row:
+        return None
+    d = dict(row)
+    return _format_deployment_notice_row(d)
+
+
+def list_deployment_notices(limit: int = 100) -> list[dict]:
+    try:
+        with _connect() as con:
+            rows = con.execute(
+                """
+                SELECT * FROM deployment_notices
+                ORDER BY scheduled_at DESC
+                LIMIT ?
+                """,
+                [max(1, int(limit or 100))],
+            ).fetchall()
+    except Exception:
+        return []
+    return [_format_deployment_notice_row(dict(r)) for r in rows]
+
+
+def get_active_deployment_notice(now: int | None = None) -> dict | None:
+    now = int(now or _now_ts())
+    try:
+        with _connect() as con:
+            row = con.execute(
+                """
+                SELECT * FROM deployment_notices
+                WHERE is_active = 1
+                  AND scheduled_at <= ?
+                  AND (display_duration_minutes = 0 OR scheduled_at + (display_duration_minutes * 60) >= ?)
+                ORDER BY scheduled_at DESC
+                LIMIT 1
+                """,
+                [now, now],
+            ).fetchone()
+    except Exception:
+        return None
+    if not row:
+        return None
+    return _format_deployment_notice_row(dict(row))
+
+
+def cancel_deployment_notice(notice_id: str) -> bool:
+    with _connect() as con:
+        cur = con.execute(
+            "UPDATE deployment_notices SET is_active = 0 WHERE id = ?",
+            [str(notice_id or "")],
+        )
+        con.commit()
+    return cur.rowcount > 0
+
+
+def _format_deployment_notice_row(d: dict) -> dict:
+    return {
+        "id": str(d.get("id") or ""),
+        "message": str(d.get("message") or ""),
+        "scheduled_at": int(d.get("scheduled_at") or 0),
+        "display_duration_minutes": int(d.get("display_duration_minutes") or 0),
+        "is_active": bool(d.get("is_active", 1)),
+        "created_by": str(d.get("created_by") or ""),
+        "created_at": int(d.get("created_at") or 0),
+    }
 
 
 def _meta_get(con: sqlite3.Connection, key: str) -> str:

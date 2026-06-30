@@ -325,3 +325,35 @@ export async function apiAdminPatchInvitePermissions(inviteId, permissions = {})
   }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
+
+export async function apiGetDeploymentNotice() {
+  const r = okOrError(await request(apiRoutes.misc.deploymentNotice(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : null } : r;
+}
+
+export async function apiAdminListDeploymentNotices() {
+  const r = okOrError(await request(apiRoutes.admin.deploymentNotices(), { method: "GET" }));
+  const items = Array.isArray(r.data) ? r.data : [];
+  return r.ok ? { ok: true, status: r.status, items, count: items.length } : r;
+}
+
+export async function apiAdminCreateDeploymentNotice(payload = {}) {
+  const body = {
+    message: String(payload?.message || "").trim(),
+    scheduled_at: Math.floor(new Date(payload?.scheduled_at || Date.now()).getTime() / 1000),
+    display_duration_minutes: Math.max(0, Number(payload?.display_duration_minutes || 0)),
+  };
+  const r = okOrError(await request(apiRoutes.admin.deploymentNotices(), {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminCancelDeploymentNotice(noticeId) {
+  const id = String(noticeId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing notice_id" };
+  const r = okOrError(await request(apiRoutes.admin.deploymentNotice(id), { method: "DELETE" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}

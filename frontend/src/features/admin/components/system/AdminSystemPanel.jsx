@@ -3,6 +3,7 @@ import AdminTabs from "../common/AdminTabs";
 import SectionCard from "../common/SectionCard";
 import StatusPill from "../common/StatusPill";
 import FeatureFlagsWidget from "../dashboard/FeatureFlagsWidget";
+import DeploymentNoticesTab from "./DeploymentNoticesTab";
 import { apiAdminGetDashboard } from "../../../../lib/api";
 import { ru } from "../../../../shared/i18n/ru";
 import { formatDurationSeconds, formatTs, toInt, toText } from "../../utils/adminFormat";
@@ -12,6 +13,7 @@ const SYSTEM_TABS = [
   { id: "notes", label: "Notes" },
   { id: "logs", label: "Logs" },
   { id: "settings", label: "Settings" },
+  { id: "deploy", label: "Deploy" },
   { id: "maintenance", label: "Maintenance" },
 ];
 
@@ -162,6 +164,7 @@ export default function AdminSystemPanel() {
       {activeTab === "notes" ? <NotesTab /> : null}
       {activeTab === "logs" ? <LogsTab payload={payload} /> : null}
       {activeTab === "settings" ? <SettingsTab /> : null}
+      {activeTab === "deploy" ? <DeploymentNoticesTab /> : null}
       {activeTab === "maintenance" ? <MaintenanceTab payload={payload} /> : null}
     </div>
   );

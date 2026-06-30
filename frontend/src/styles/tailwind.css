@@ -13903,3 +13903,57 @@
   font-size: 13px;
   font-weight: 600;
 }
+
+
+.deploymentNoticeModalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 16px;
+  backdrop-filter: blur(8px);
+}
+
+.deploymentNoticeModalCard {
+  width: min(520px, 96vw);
+  max-height: min(80vh, 600px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #1a1f2e;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+}
+
+.deploymentNoticeModalCard .modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+}
+
+.deploymentNoticeModalCard .modalTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f0f8ff;
+}
+
+.deploymentNoticeModalCard .modalBody {
+  padding: 18px;
+}
+
+.deploymentNoticeModalCard .modalFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
