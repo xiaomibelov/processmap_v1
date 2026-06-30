@@ -239,6 +239,7 @@ AUTH_PUBLIC_PATHS = {
     "/api/health",
     "/api/meta",
     "/api/feature-flags",
+    "/api/deployment-notice",
 }
 
 _ORG_WRITE_ROLES = {"org_owner", "org_admin"}
