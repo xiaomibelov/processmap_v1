@@ -184,12 +184,12 @@ export default function BpmnVersionDiffOverlay({
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-[220px_1fr] gap-3 p-3">
-        <div className="flex flex-col gap-2 overflow-hidden">
-          <div className="flex-1 min-h-0">
-            <BpmnVersionPreview xml={previousXml} label={previousLabel} size={previousXml?.length} />
+        <div className="flex h-full flex-col gap-2 overflow-hidden">
+          <div className="h-1/2 overflow-hidden">
+            <BpmnVersionPreview xml={previousXml} label={previousLabel} size={previousXml?.length} compact />
           </div>
-          <div className="flex-1 min-h-0">
-            <BpmnVersionPreview xml={nextXml} label={nextLabel} size={nextXml?.length} />
+          <div className="h-1/2 overflow-hidden">
+            <BpmnVersionPreview xml={nextXml} label={nextLabel} size={nextXml?.length} compact />
           </div>
         </div>
 
