@@ -1,35 +1,9 @@
-export function ProcessDiagramModeSwitch({
-  diagramMode,
-  applyDiagramMode,
-  className = "seg hidden lg:inline-flex",
-  testId = "diagram-mode-switch-inline",
-}) {
-  return (
-    <div className={className} data-testid={testId}>
-      {[
-        { id: "normal", label: "Normal" },
-        { id: "interview", label: "Interview" },
-        { id: "quality", label: "Quality" },
-        { id: "coverage", label: "Coverage" },
-      ].map((mode) => (
-        <button
-          key={mode.id}
-          type="button"
-          className={`segBtn px-2 py-1 text-[11px] ${diagramMode === mode.id ? "on" : ""}`}
-          onClick={() => applyDiagramMode(mode.id)}
-        >
-          {mode.label}
-        </button>
-      ))}
-    </div>
-  );
-}
+import DiagramToolbarOverflowMenu from "./DiagramToolbarOverflowMenu";
 
 export default function ProcessPanels({ section = "top", view = {} }) {
   const {
     toolbarMenuOpen,
     toolbarMenuRef,
-    diagramMode,
     applyDiagramMode,
     commandModeEnabled,
     setCommandModeEnabled,
@@ -53,19 +27,9 @@ export default function ProcessPanels({ section = "top", view = {} }) {
     aiGenerateGate,
     aiQuestionsBusy,
     aiQuestionsStatus,
-    templatesEnabled,
-    setTemplatesEnabled,
-    selectedBpmnElementIds,
-    suggestedTemplates,
-    applyTemplate,
-    commandInput,
-    setCommandInput,
-    commandBusy,
-    runAiCommand,
-    commandStatus,
-    commandHistory,
     runToolbarReset,
     runToolbarClear,
+    openTemplatesPicker,
     isQualityMode,
     qualitySummary,
     qualityProfile,
@@ -211,254 +175,35 @@ export default function ProcessPanels({ section = "top", view = {} }) {
   return (
     <>
       {toolbarMenuOpen ? (
-        <div ref={toolbarMenuRef} className="diagramToolbarOverlay" data-testid="diagram-toolbar-overlay">
-          <div className="diagramToolbarOverlaySection">
-            <div className="diagramToolbarOverlayTitle">Режимы</div>
-            <div className="diagramToolbarOverlayRow">
-              <span>Отображение</span>
-              <div className="seg p-0.5" data-testid="diagram-mode-switch">
-                {[
-                  { id: "normal", label: "Normal" },
-                  { id: "interview", label: "Interview" },
-                  { id: "quality", label: "Quality" },
-                  { id: "coverage", label: "Coverage" },
-                ].map((mode) => (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    className={`segBtn px-2 py-1 text-[11px] ${diagramMode === mode.id ? "on" : ""}`}
-                    onClick={() => applyDiagramMode(mode.id)}
-                  >
-                    {mode.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="diagramToolbarOverlayRow">
-              <span>Команды</span>
-              <div className="flex items-center gap-2">
-                <span className={`badge text-[10px] ${commandModeEnabled ? "ok" : ""}`}>{commandModeEnabled ? "ON" : "OFF"}</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={commandModeEnabled ? "true" : "false"}
-                  className={`toolbarSwitch ${commandModeEnabled ? "on" : ""}`}
-                  onClick={() => setCommandModeEnabled((prev) => !prev)}
-                  data-testid="ai-command-toggle"
-                >
-                  <span className="toolbarSwitchKnob" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="diagramToolbarOverlaySection">
-            <div className="diagramToolbarOverlayTitle">Файл и версии</div>
-            <div className="diagramToolbarOverlayActions">
-              <button
-                type="button"
-                className="secondaryBtn h-7 px-2 text-[11px]"
-                onClick={() => {
-                  openImportDialog();
-                  closeToolbarMenu();
-                }}
-                disabled={!hasSession || !isBpmnTab}
-                title={workbench.importTooltip}
-              >
-                {workbench.labels.importBpmn}
-              </button>
-              <button
-                type="button"
-                className="secondaryBtn h-7 px-2 text-[11px]"
-                onClick={() => {
-                  void exportBpmn();
-                  closeToolbarMenu();
-                }}
-                disabled={!hasSession}
-                title={workbench.labels.exportBpmn}
-                data-testid="bpmn-export-button"
-              >
-                {workbench.labels.exportBpmn}
-              </button>
-              <button
-                type="button"
-                className="secondaryBtn h-7 px-2 text-[11px]"
-                onClick={() => {
-                  void openVersionsModal();
-                  closeToolbarMenu();
-                }}
-                disabled={!hasSession}
-                data-testid="bpmn-versions-open"
-              >
-                Версии
-              </button>
-            </div>
-          </div>
-
-          <div className="diagramToolbarOverlaySection">
-            <div className="diagramToolbarOverlayTitle">Контекст</div>
-            {selectedElementId ? (
-              <div className="diagramToolbarOverlayActions">
-                <button
-                  type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={() => {
-                    openInsertBetweenModal();
-                    closeToolbarMenu();
-                  }}
-                  disabled={insertBetweenBusy || !selectedInsertBetween || !canInsertBetween}
-                  title={!selectedInsertBetween ? "Выберите шаг/переход" : (!canInsertBetween ? insertBetweenErrorMessage(selectedInsertBetween?.error) : "Вставить шаг между")}
-                  data-testid="diagram-insert-between-open"
-                >
-                  Вставить между
-                </button>
-                <button
-                  type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={() => {
-                    onOpenElementNotes?.(selectedBpmnElement, "selected_element_notes_open");
-                    closeToolbarMenu();
-                  }}
-                  title="Открыть заметки выбранного элемента"
-                >
-                  Открыть заметки
-                </button>
-                <button
-                  type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={() => {
-                    void generateAiQuestionsForSelectedElement();
-                    closeToolbarMenu();
-                  }}
-                  disabled={!canGenerateAiQuestions}
-                  data-testid="diagram-ai-generate-questions"
-                  title={canGenerateAiQuestions ? "Сгенерировать AI-вопросы для выбранного элемента" : aiGenerateGate.reasonText}
-                >
-                  {aiQuestionsBusy ? "AI работает…" : "Сгенерировать вопросы"}
-                </button>
-              </div>
-            ) : (
-              <div className="muted small">Выберите элемент/переход на диаграмме, чтобы открыть контекстные действия.</div>
-            )}
-            {aiQuestionsStatus?.text ? (
-              <div
-                className={`mt-2 rounded-md border px-2 py-1 text-[11px] ${
-                  aiQuestionsStatus.kind === "error"
-                    ? "border-danger/50 bg-danger/10 text-danger"
-                    : (aiQuestionsStatus.kind === "warn" ? "border-warning/40 bg-warning/10 text-warning" : "border-success/40 bg-success/10 text-success")
-                }`}
-                data-testid="diagram-ai-questions-status"
-              >
-                {aiQuestionsStatus.text}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="diagramToolbarOverlaySection">
-            <div className="diagramToolbarOverlayTitle">Шаблоны</div>
-            <div className="diagramToolbarOverlayActions">
-              <button
-                type="button"
-                className={`${templatesEnabled ? "primaryBtn" : "secondaryBtn"} h-7 px-2 text-[11px]`}
-                onClick={() => setTemplatesEnabled((prev) => !prev)}
-                disabled={!hasSession}
-                data-testid="template-pack-toggle"
-              >
-                Шаблоны: {templatesEnabled ? "ON" : "OFF"}
-              </button>
-            </div>
-            {templatesEnabled && selectedBpmnElementIds.length > 0 && suggestedTemplates.length > 0 ? (
-              <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-panel2/45 px-2 py-1 text-[11px] text-muted">
-                <span className="text-fg">Подходит:</span>
-                {suggestedTemplates.slice(0, 3).map((template) => (
-                  <button
-                    key={String(template?.id || "")}
-                    type="button"
-                    className="secondaryBtn h-7 px-2 text-[11px]"
-                    onClick={() => void applyTemplate(template)}
-                    title={`score=${Number(template?.score || 0).toFixed(2)}`}
-                    data-testid="template-pack-suggest-item"
-                  >
-                    {String(template?.title || "Шаблон")}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-
-          {commandModeEnabled ? (
-            <div className="diagramToolbarOverlaySection" data-testid="ai-command-panel">
-              <div className="diagramToolbarOverlayTitle">Командный режим</div>
-              <div className="mb-2 flex items-center gap-2">
-                <input
-                  type="text"
-                  className="input h-8 min-h-0 flex-1 px-3 py-0 text-xs"
-                  placeholder="Команда BPMN: добавь шаг Проверить температуру после Start"
-                  value={commandInput}
-                  onChange={(e) => setCommandInput(String(e.target.value || ""))}
-                  disabled={commandBusy}
-                  data-testid="ai-command-input"
-                  onKeyDown={(e) => {
-                    if (e.key !== "Enter") return;
-                    e.preventDefault();
-                    void runAiCommand(commandInput);
-                  }}
-                />
-                <button
-                  type="button"
-                  className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-                  disabled={commandBusy || !String(commandInput || "").trim()}
-                  onClick={() => void runAiCommand(commandInput)}
-                  data-testid="ai-command-run"
-                >
-                  {commandBusy ? "AI работает…" : "Применить"}
-                </button>
-              </div>
-              {commandStatus?.text ? (
-                <div
-                  className={`mb-2 rounded-md border px-2 py-1 text-xs ${
-                    commandStatus.kind === "error"
-                      ? "border-danger/50 bg-danger/10 text-danger"
-                      : (commandStatus.kind === "warn"
-                        ? "border-warning/40 bg-warning/10 text-warning"
-                        : "border-success/50 bg-success/10 text-success")
-                  }`}
-                  data-testid="ai-command-status"
-                >
-                  {commandStatus.text}
-                </div>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
-                <span>История:</span>
-                {commandHistory.length === 0 ? <span>пока пусто</span> : null}
-                {commandHistory.slice(0, 5).map((item, idx) => (
-                  <button
-                    key={`cmd_${idx}_${item?.ts || 0}`}
-                    type="button"
-                    className="secondaryBtn h-7 max-w-[220px] truncate px-2 text-[11px]"
-                    title={String(item?.text || "")}
-                    onClick={() => setCommandInput(String(item?.text || ""))}
-                    data-testid="ai-command-history-item"
-                  >
-                    {String(item?.text || "")}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          <div className="diagramToolbarOverlaySection">
-            <div className="diagramToolbarOverlayTitle">Редкие действия</div>
-            <div className="diagramToolbarOverlayActions">
-              <button type="button" className="secondaryBtn h-7 px-2 text-[11px]" onClick={runToolbarReset} title={workbench.labels.reset}>
-                {workbench.labels.reset}
-              </button>
-              <button type="button" className="secondaryBtn h-7 px-2 text-[11px]" onClick={runToolbarClear} title={workbench.clearTooltip}>
-                {workbench.labels.clear}
-              </button>
-            </div>
-          </div>
-        </div>
+        <DiagramToolbarOverflowMenu
+          toolbarMenuRef={toolbarMenuRef}
+          closeToolbarMenu={closeToolbarMenu}
+          applyDiagramMode={applyDiagramMode}
+          commandModeEnabled={commandModeEnabled}
+          setCommandModeEnabled={setCommandModeEnabled}
+          openImportDialog={openImportDialog}
+          exportBpmn={exportBpmn}
+          openVersionsModal={openVersionsModal}
+          selectedElementId={selectedElementId}
+          openInsertBetweenModal={openInsertBetweenModal}
+          insertBetweenBusy={insertBetweenBusy}
+          selectedInsertBetween={selectedInsertBetween}
+          canInsertBetween={canInsertBetween}
+          insertBetweenErrorMessage={insertBetweenErrorMessage}
+          onOpenElementNotes={onOpenElementNotes}
+          selectedBpmnElement={selectedBpmnElement}
+          generateAiQuestionsForSelectedElement={generateAiQuestionsForSelectedElement}
+          canGenerateAiQuestions={canGenerateAiQuestions}
+          aiGenerateGate={aiGenerateGate}
+          aiQuestionsBusy={aiQuestionsBusy}
+          aiQuestionsStatus={aiQuestionsStatus}
+          runToolbarReset={runToolbarReset}
+          runToolbarClear={runToolbarClear}
+          openTemplatesPicker={openTemplatesPicker}
+          hasSession={hasSession}
+          isBpmnTab={isBpmnTab}
+          workbench={workbench}
+        />
       ) : null}
 
       {isBpmnTab && isQualityMode ? (
