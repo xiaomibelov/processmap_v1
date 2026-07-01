@@ -183,7 +183,7 @@ export default function BpmnVersionDiffOverlay({
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[220px_1fr] gap-3 p-3">
+      <div className="grid h-full min-h-0 flex-1 grid-cols-[220px_1fr] gap-3 p-3">
         <div className="flex h-full flex-col gap-2 overflow-hidden">
           <div className="h-1/2 overflow-hidden">
             <BpmnVersionPreview xml={previousXml} label={previousLabel} size={previousXml?.length} compact />
@@ -193,7 +193,7 @@ export default function BpmnVersionDiffOverlay({
           </div>
         </div>
 
-        <div className="relative min-h-0 overflow-hidden rounded-lg border border-border bg-panel">
+        <div className="relative h-full min-h-0 overflow-hidden rounded-lg border border-border bg-panel">
           {status === "loading" ? (
             <div className="grid h-full place-items-center" data-testid="bpmn-diff-overlay-loading">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
