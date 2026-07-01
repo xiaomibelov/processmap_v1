@@ -1,37 +1,9 @@
 import DiagramToolbarOverflowMenu from "./DiagramToolbarOverflowMenu";
 
-export function ProcessDiagramModeSwitch({
-  diagramMode,
-  applyDiagramMode,
-  className = "seg hidden lg:inline-flex",
-  testId = "diagram-mode-switch-inline",
-}) {
-  return (
-    <div className={className} data-testid={testId}>
-      {[
-        { id: "normal", label: "Normal" },
-        { id: "interview", label: "Interview" },
-        { id: "quality", label: "Quality" },
-        { id: "coverage", label: "Coverage" },
-      ].map((mode) => (
-        <button
-          key={mode.id}
-          type="button"
-          className={`segBtn px-2 py-1 text-[11px] ${diagramMode === mode.id ? "on" : ""}`}
-          onClick={() => applyDiagramMode(mode.id)}
-        >
-          {mode.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export default function ProcessPanels({ section = "top", view = {} }) {
   const {
     toolbarMenuOpen,
     toolbarMenuRef,
-    diagramMode,
     applyDiagramMode,
     commandModeEnabled,
     setCommandModeEnabled,
@@ -206,7 +178,6 @@ export default function ProcessPanels({ section = "top", view = {} }) {
         <DiagramToolbarOverflowMenu
           toolbarMenuRef={toolbarMenuRef}
           closeToolbarMenu={closeToolbarMenu}
-          diagramMode={diagramMode}
           applyDiagramMode={applyDiagramMode}
           commandModeEnabled={commandModeEnabled}
           setCommandModeEnabled={setCommandModeEnabled}
