@@ -72,7 +72,7 @@ export default function BpmnVersionActions({
         ) : null}
         <button
           type="button"
-          className="neutralBtn h-9 px-3 text-xs"
+          className="secondaryBtn h-9 px-3 text-xs"
           onClick={onClose}
           disabled={busy}
         >
