@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { ProcessDiagramModeSwitch } from "./ProcessPanels";
 
 function MenuIcon({ children }) {
   return (
@@ -68,8 +67,6 @@ function MenuSection({ title, children }) {
 export default function DiagramToolbarOverflowMenu({
   toolbarMenuRef,
   closeToolbarMenu,
-  diagramMode,
-  applyDiagramMode,
   commandModeEnabled,
   setCommandModeEnabled,
   openImportDialog,
@@ -117,14 +114,6 @@ export default function DiagramToolbarOverflowMenu({
   return (
     <div ref={toolbarMenuRef} className="diagramToolbarOverlay" data-testid="diagram-toolbar-overlay" role="menu">
       <MenuSection>
-        <div className="diagramToolbarMenuModeRow lg:hidden">
-          <ProcessDiagramModeSwitch
-            diagramMode={diagramMode}
-            applyDiagramMode={applyDiagramMode}
-            className="seg"
-            testId="diagram-mode-switch-menu"
-          />
-        </div>
         <MenuItem
           role="menuitemcheckbox"
           label="AI Команды"

@@ -1,4 +1,4 @@
-import ProcessPanels, { ProcessDiagramModeSwitch } from "./ProcessPanels";
+import ProcessPanels from "./ProcessPanels";
 import BpmnFpsMeter from "../../../../components/process/BpmnFpsMeter";
 import { getFirstPickedFile } from "./fileInputEvent.js";
 import { resolvePublishedRevisionBadgeView } from "./revisionBadgePolicy.js";
@@ -45,8 +45,6 @@ export default function ProcessStageHeader({ view = {} }) {
     topPanelsView,
     sessionPresenceView,
     featureFlags,
-    diagramMode,
-    applyDiagramMode,
   } = view;
   const publishedRevisionBadge = resolvePublishedRevisionBadgeView(sessionRevisionHistorySnapshot);
   const latestPublishedRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestPublishedRevisionNumber || 0);
@@ -168,12 +166,6 @@ export default function ProcessStageHeader({ view = {} }) {
             );
           })}
         </div>
-        <ProcessDiagramModeSwitch
-          diagramMode={diagramMode}
-          applyDiagramMode={applyDiagramMode}
-          className="seg ml-3 hidden lg:inline-flex"
-          testId="diagram-mode-switch-header"
-        />
       </div>
 
       <div className="diagramToolbarSlot diagramToolbarSlot--right">
