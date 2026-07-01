@@ -96,7 +96,7 @@ export default function BpmnVersionPreview({
         </div>
       </div>
 
-      <div className="relative min-h-0 flex-1 bg-panel">
+      <div className="relative min-h-[200px] flex-1 bg-panel">
         {status === "loading" ? (
           <div className="grid h-full place-items-center" data-testid="bpmn-version-preview-loading">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
