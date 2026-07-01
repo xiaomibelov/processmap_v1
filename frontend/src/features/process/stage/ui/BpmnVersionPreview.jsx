@@ -54,6 +54,7 @@ export default function BpmnVersionPreview({
         } else {
           viewer = viewerRef.current;
         }
+        if (cancelled) return;
         await viewer.importXML(xmlText);
         if (cancelled) return;
         viewer.get("canvas").zoom("fit-viewport");

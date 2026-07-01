@@ -35,6 +35,10 @@ import { createAiInputHash, executeAi } from "../features/ai/aiExecutor";
 import {
   shortSnapshotHash,
 } from "../features/process/bpmn/snapshots/bpmnSnapshots";
+import {
+  buildSemanticBpmnDiff,
+  summarizeSemanticDiff,
+} from "../features/process/bpmn/diff/semanticDiff.js";
 import { buildManualSaveProjectionSyncPlan } from "../features/process/bpmn/save/manualSaveProjectionSync.js";
 import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
 import useBpmnSync from "../features/process/hooks/useBpmnSync";
@@ -305,6 +309,20 @@ function snapshotLabel(item) {
   if (revisionNumber > 0) return `Версия ${revisionNumber}`;
   if (item?.pinned) return defaultCheckpointLabel(item?.ts);
   return "Без названия";
+}
+
+function formatSemanticDiffSummary(summary = {}) {
+  const parts = [];
+  const added = summary?.added || {};
+  const removed = summary?.removed || {};
+  const changed = summary?.changed || {};
+  const addedTotal = Number(added.tasks || 0) + Number(added.flows || 0) + Number(added.lanes || 0) + Number(added.subprocess || 0) + Number(added.conditions || 0);
+  const removedTotal = Number(removed.tasks || 0) + Number(removed.flows || 0) + Number(removed.lanes || 0) + Number(removed.subprocess || 0) + Number(removed.conditions || 0);
+  const changedTotal = Number(changed.tasks || 0) + Number(changed.flows || 0) + Number(changed.lanes || 0) + Number(changed.subprocess || 0) + Number(changed.conditions || 0);
+  if (addedTotal > 0) parts.push(`+${addedTotal}`);
+  if (removedTotal > 0) parts.push(`−${removedTotal}`);
+  if (changedTotal > 0) parts.push(`Δ${changedTotal}`);
+  return parts.join(" · ") || "";
 }
 
 function normalizeBpmnVersionListItem(itemRaw) {
@@ -4403,6 +4421,37 @@ function ProcessStage({
     });
   }, [diffBaseSnapshotId, diffTargetSnapshotId, versionsList]);
 
+  const currentBpmnVersionId = useMemo(() => {
+    const currentHash = String(bpmnVersionTruthState?.currentSessionPayloadHash || "").trim();
+    const matching = currentHash
+      ? asArray(versionsList).find((item) => String(item?.sessionPayloadHash || "") === currentHash)
+      : null;
+    if (matching?.id) return matching.id;
+    return latestBpmnVersionHead?.id || "";
+  }, [bpmnVersionTruthState, versionsList, latestBpmnVersionHead]);
+
+  const diffBaseSnapshot = useMemo(
+    () => asArray(versionsList).find((item) => String(item?.id || "") === String(diffBaseSnapshotId || "")) || null,
+    [versionsList, diffBaseSnapshotId],
+  );
+  const diffTargetSnapshot = useMemo(
+    () => asArray(versionsList).find((item) => String(item?.id || "") === String(diffTargetSnapshotId || "")) || null,
+    [versionsList, diffTargetSnapshotId],
+  );
+
+  const versionsListWithDiffSummaries = useMemo(() => {
+    return asArray(versionsList).map((item, idx) => {
+      const xml = String(item?.xml || "").trim();
+      if (!xml) return item;
+      const older = asArray(versionsList).slice(idx + 1).find((candidate) => String(candidate?.xml || "").trim());
+      if (!older) return item;
+      const diff = buildSemanticBpmnDiff(String(older.xml || ""), xml);
+      if (!diff?.ok) return item;
+      const summaryText = formatSemanticDiffSummary(diff.summary);
+      return summaryText ? { ...item, diffSummary: summaryText } : item;
+    });
+  }, [versionsList]);
+
   const refreshSnapshotVersions = useCallback(async (options = {}) => {
     if (!sid) {
       setVersionsList([]);
@@ -6507,7 +6556,7 @@ function ProcessStage({
     refreshSnapshotVersions,
     versionsBusy,
     hasSession,
-    versionsList,
+    versionsList: versionsListWithDiffSummaries,
     versionsLoadState,
     versionsLoadError,
     versionsUserFacingCount,
@@ -6536,6 +6585,9 @@ function ProcessStage({
     diffBaseSnapshotId,
     diffTargetSnapshotId,
     semanticDiffView,
+    currentBpmnVersionId,
+    diffBaseSnapshot,
+    diffTargetSnapshot,
   });
   const shellVm = useProcessStageShellController({
     hasSession,

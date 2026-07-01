@@ -249,6 +249,9 @@ export function buildDialogsView({
   diffBaseSnapshotId,
   diffTargetSnapshotId,
   semanticDiffView,
+  currentBpmnVersionId,
+  diffBaseSnapshot,
+  diffTargetSnapshot,
 } = {}) {
   return {
     qualityAutoFixOpen,
@@ -319,6 +322,9 @@ export function buildDialogsView({
     diffBaseSnapshotId,
     diffTargetSnapshotId,
     semanticDiffView,
+    currentBpmnVersionId,
+    diffBaseSnapshot,
+    diffTargetSnapshot,
   };
 }
 
