@@ -418,6 +418,7 @@ export function bindViewerStageEvents({
   onDiagramContextMenuDismiss,
   contextMenuInteractionRef,
   viewportCuller,
+  onViewboxChangedForOverlays,
 }) {
   if (!eventBus) return () => {};
   const recorder = recordEventBusListeners(eventBus);
@@ -491,6 +492,9 @@ export function bindViewerStageEvents({
     if (viewportCuller) {
       viewportCuller.scheduleCull();
     }
+    if (typeof onViewboxChangedForOverlays === "function") {
+      onViewboxChangedForOverlays(inst, mode);
+    }
   }, VIEWBOX_EMIT_THROTTLE_MS);
 
   eventBus.on("canvas.viewbox.changed", 1200, () => {
@@ -556,6 +560,7 @@ export function bindModelerStageEvents({
   captureShapeReplacePre,
   applyShapeReplacePost,
   viewportCuller,
+  onViewboxChangedForOverlays,
 }) {
   if (!eventBus) return () => {};
   const recorder = recordEventBusListeners(eventBus);
@@ -690,6 +695,9 @@ export function bindModelerStageEvents({
     });
     if (viewportCuller) {
       viewportCuller.scheduleCull();
+    }
+    if (typeof onViewboxChangedForOverlays === "function") {
+      onViewboxChangedForOverlays(inst, mode);
     }
   }, VIEWBOX_EMIT_THROTTLE_MS);
 

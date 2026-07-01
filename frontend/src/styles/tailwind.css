@@ -2564,6 +2564,96 @@
     @apply flex flex-wrap items-center gap-1.5;
   }
 
+  .diagramToolbarMenuSection {
+    @apply rounded-lg border border-border/70 bg-panel2/40 p-2;
+  }
+
+  .diagramToolbarMenuSection + .diagramToolbarMenuSection {
+    margin-top: 8px;
+  }
+
+  .diagramToolbarMenuSectionTitle {
+    @apply mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted;
+  }
+
+  .diagramToolbarMenuSectionHeader {
+    @apply flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-fg transition-colors hover:bg-accentSoft/40;
+  }
+
+  .diagramToolbarMenuItem {
+    @apply flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-fg transition-colors hover:bg-accentSoft/40;
+  }
+
+  .diagramToolbarMenuItem--active {
+    @apply bg-accentSoft/30;
+  }
+
+  .diagramToolbarMenuItem--disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
+  .diagramToolbarMenuIcon {
+    @apply inline-flex h-4 w-4 shrink-0 items-center justify-center text-muted;
+  }
+
+  .diagramToolbarMenuIcon svg {
+    @apply h-4 w-4;
+  }
+
+  .diagramToolbarMenuChevron {
+    @apply ml-auto h-3.5 w-3.5 shrink-0 text-muted transition-transform;
+  }
+
+  .diagramToolbarMenuChevron.isOpen {
+    transform: rotate(180deg);
+  }
+
+  .diagramToolbarMenuLabel {
+    @apply flex-1;
+  }
+
+  .diagramToolbarMenuMeta {
+    @apply text-[10px] font-semibold uppercase text-muted;
+  }
+
+  .diagramToolbarMenuSubmenu {
+    @apply mt-1 flex flex-col gap-0.5 border-l-2 border-border/40 pl-2;
+  }
+
+  .diagramToolbarMenuEmpty {
+    @apply rounded-md px-2 py-1.5 text-[11px] text-muted;
+  }
+
+  .diagramToolbarMenuModeRow {
+    @apply mb-2 flex items-center justify-center;
+  }
+
+  .diagramToolbarMenuRare {
+    @apply flex flex-wrap gap-1.5;
+  }
+
+  .diagramToolbarOverlay {
+    @apply absolute right-2 top-[calc(100%+8px)] z-[135] w-[min(320px,calc(100vw-48px))] max-h-[68vh] overflow-auto rounded-xl border border-border bg-panel p-2 shadow-panel backdrop-blur;
+    background-color: hsl(var(--panel) / 0.97);
+    box-shadow:
+      inset 0 1px 0 hsl(var(--border) / 0.24),
+      0 16px 34px hsl(var(--bg) / 0.34);
+    animation: diagramToolbarOverlayIn 150ms ease-out;
+  }
+
+  @media (max-width: 640px) {
+    .diagramToolbarOverlay {
+      position: fixed;
+      right: 0.5rem;
+      left: 0.5rem;
+      top: auto;
+      bottom: 0.5rem;
+      width: auto;
+      max-height: 80vh;
+      border-radius: 1rem 1rem 0.75rem 0.75rem;
+    }
+  }
+
   .toolbarSwitch {
     @apply relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border border-border/70 bg-panel2/70 p-0 transition-colors;
   }

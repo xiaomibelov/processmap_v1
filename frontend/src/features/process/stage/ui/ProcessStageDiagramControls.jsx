@@ -1949,67 +1949,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
                 }}
               />
             </div>
-            <div className="diagramActionOverflowSection">
-              <div className="diagramActionOverflowSectionTitle">Контекст и редактирование</div>
-              <OverflowMenuItem
-                icon={
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="10" height="10" rx="1" />
-                    <path d="M8 5v6" />
-                    <path d="M5 8h6" />
-                  </svg>
-                }
-                label={`Добавить шаблон${templateSelectionCount > 0 ? ` (${templateSelectionCount})` : ""}`}
-                disabled={!canCreateTemplateFromSelection}
-                onClick={() => {
-                  closeDiagramPopovers();
-                  openCreateTemplateModal();
-                }}
-              />
-              <OverflowMenuItem
-                icon={
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 4h8v9l-4-2-4 2V4z" />
-                  </svg>
-                }
-                label="Заметки"
-                disabled={!canUseElementContextActions}
-                onClick={() => {
-                  closeDiagramPopovers();
-                  openSelectedElementNotes();
-                }}
-              />
-              <OverflowMenuItem
-                icon={
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M8 2l1.5 3.5L13 7l-3.5 1.5L8 12l-1.5-3.5L3 7l3.5-1.5L8 2z" />
-                  </svg>
-                }
-                label="AI"
-                disabled={!canUseElementContextActions}
-                onClick={() => {
-                  closeDiagramPopovers();
-                  openSelectedElementAi();
-                }}
-              />
-              {selectedInsertBetween ? (
-                <OverflowMenuItem
-                  icon={
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M3 8h4" />
-                      <path d="M9 8h4" />
-                      <circle cx="8" cy="8" r="1.5" />
-                    </svg>
-                  }
-                  label="Вставить между"
-                  disabled={insertBetweenBusy || !canInsertBetween}
-                  onClick={() => {
-                    closeDiagramPopovers();
-                    openInsertBetweenModal();
-                  }}
-                />
-              ) : null}
-            </div>
+
           </div>
         </div>
       ) : null}
