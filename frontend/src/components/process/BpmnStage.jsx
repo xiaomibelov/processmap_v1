@@ -1253,8 +1253,6 @@ const BpmnStage = forwardRef(function BpmnStage({
   });
 
   const handleViewboxChangedForOverlays = useCallback((inst, mode) => {
-    // eslint-disable-next-line no-console
-    console.log("[FPC-OVERLAY-V2] viewbox callback", { useExtensionOverlays, enabled: v2OverlayState.enabledRef.current, hasDefs: hasDefinitionsLoaded(inst), mode });
     if (!useExtensionOverlays) return;
     if (!v2OverlayState.enabledRef.current) return;
     if (!inst || !hasDefinitionsLoaded(inst)) return;
