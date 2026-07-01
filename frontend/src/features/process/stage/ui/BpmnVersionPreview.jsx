@@ -15,6 +15,7 @@ export default function BpmnVersionPreview({
   size,
   onDownload,
   downloadLabel = "Скачать .bpmn",
+  compact = false,
 }) {
   const containerRef = useRef(null);
   const viewerRef = useRef(null);
@@ -78,7 +79,7 @@ export default function BpmnVersionPreview({
   }, [xml]);
 
   return (
-    <div className="flex min-h-[320px] flex-col overflow-hidden rounded-xl border border-border bg-panel2/35">
+    <div className={`flex flex-col overflow-hidden rounded-xl border border-border bg-panel2/35 ${compact ? "min-h-0 h-full" : "min-h-[320px]"}`}>
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div className="text-xs text-muted">
           {label ? `Предпросмотр · ${label}` : "Выберите версию слева"}
