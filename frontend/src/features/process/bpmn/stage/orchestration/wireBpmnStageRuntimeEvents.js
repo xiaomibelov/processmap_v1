@@ -676,8 +676,6 @@ export function bindModelerStageEvents({
     syncAiQuestionPanelWithSelection(inst, "editor", selected, "editor.selection_changed");
   });
   const throttledViewboxChanged = throttle((mode, suppressed) => {
-    // eslint-disable-next-line no-console
-    console.log("[FPC-OVERLAY-V2] throttled viewbox", { mode, suppressed, hasCallback: typeof onViewboxChangedForOverlays === "function" });
     const snap = getCanvasSnapshot(inst);
     logViewAction(
       "viewbox.changed",
@@ -704,8 +702,6 @@ export function bindModelerStageEvents({
   }, VIEWBOX_EMIT_THROTTLE_MS);
 
   eventBus.on("canvas.viewbox.changed", 1200, () => {
-    // eslint-disable-next-line no-console
-    console.log("[FPC-OVERLAY-V2] raw viewbox changed editor");
     if (typeof onDiagramContextMenuDismiss === "function") {
       onDiagramContextMenuDismiss({ mode: "editor", reason: "viewbox_changed" });
     }
