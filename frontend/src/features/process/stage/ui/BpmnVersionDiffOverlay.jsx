@@ -193,7 +193,7 @@ export default function BpmnVersionDiffOverlay({
           </div>
         </div>
 
-        <div className="relative h-full min-h-0 overflow-hidden rounded-lg border border-border bg-panel">
+        <div className="relative h-full min-h-[200px] overflow-hidden rounded-lg border border-border bg-panel">
           {status === "loading" ? (
             <div className="grid h-full place-items-center" data-testid="bpmn-diff-overlay-loading">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
@@ -203,7 +203,7 @@ export default function BpmnVersionDiffOverlay({
               <div className="text-sm text-danger">{error}</div>
             </div>
           ) : (
-            <div ref={mainRef} className="h-full w-full" data-testid="bpmn-diff-overlay-canvas" />
+            <div ref={mainRef} className="h-full min-h-[200px] w-full" data-testid="bpmn-diff-overlay-canvas" />
           )}
         </div>
       </div>
