@@ -176,7 +176,7 @@ export default function BpmnVersionDiffOverlay({
           <span className="rounded bg-rose-500/15 px-1.5 py-0.5 text-rose-600">−{diff.removed.length}</span>
           <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-600">Δ{diff.changed.length}</span>
           {onClose ? (
-            <button type="button" className="neutralBtn ml-2 h-7 px-2 text-[11px]" onClick={onClose}>
+            <button type="button" className="secondaryBtn ml-2 h-7 px-2 text-[11px]" onClick={onClose}>
               Закрыть
             </button>
           ) : null}
@@ -194,17 +194,16 @@ export default function BpmnVersionDiffOverlay({
         </div>
 
         <div className="relative h-full min-h-[200px] overflow-hidden rounded-lg border border-border bg-panel">
+          <div ref={mainRef} className="h-full min-h-[200px] w-full" data-testid="bpmn-diff-overlay-canvas" />
           {status === "loading" ? (
-            <div className="grid h-full place-items-center" data-testid="bpmn-diff-overlay-loading">
+            <div className="absolute inset-0 grid place-items-center bg-panel/80" data-testid="bpmn-diff-overlay-loading">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
             </div>
           ) : status === "error" ? (
-            <div className="grid h-full place-items-center px-4 text-center" data-testid="bpmn-diff-overlay-error">
+            <div className="absolute inset-0 grid place-items-center px-4 text-center bg-panel/90" data-testid="bpmn-diff-overlay-error">
               <div className="text-sm text-danger">{error}</div>
             </div>
-          ) : (
-            <div ref={mainRef} className="h-full min-h-[200px] w-full" data-testid="bpmn-diff-overlay-canvas" />
-          )}
+          ) : null}
         </div>
       </div>
 

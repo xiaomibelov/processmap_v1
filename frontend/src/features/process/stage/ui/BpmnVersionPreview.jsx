@@ -97,19 +97,18 @@ export default function BpmnVersionPreview({
       </div>
 
       <div className="relative min-h-[200px] flex-1 bg-panel">
+        <div ref={containerRef} className="h-full w-full" data-testid="bpmn-version-preview-canvas" />
         {status === "loading" ? (
-          <div className="grid h-full place-items-center" data-testid="bpmn-version-preview-loading">
+          <div className="absolute inset-0 grid place-items-center bg-panel/80" data-testid="bpmn-version-preview-loading">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
           </div>
         ) : status === "error" ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center" data-testid="bpmn-version-preview-error">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4 text-center bg-panel/90" data-testid="bpmn-version-preview-error">
             <div className="text-sm text-danger">{error}</div>
             <button type="button" className="secondaryBtn h-8 px-2 text-xs" onClick={onDownload}>
               Скачать XML для диагностики
             </button>
           </div>
-        ) : status === "ready" || status === "idle" ? (
-          <div ref={containerRef} className="h-full w-full" data-testid="bpmn-version-preview-canvas" />
         ) : null}
       </div>
 
