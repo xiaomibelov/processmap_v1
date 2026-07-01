@@ -519,21 +519,23 @@ export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExte
       const v2Expanded = expandedRef.current;
 
       // Add new overlays and update existing ones.
+      const v2Enabled = enabledRef.current;
       for (const [elementId, { ovl, el }] of desired.entries()) {
         const contentSig = computeContentSig(ovl, el);
         const existing = map.get(elementId);
         if (existing) {
-          if (existing.contentSig !== contentSig) {
-            // Content changed: remove old host and recreate.
+          if (!v2Enabled || existing.contentSig !== contentSig) {
+            // V2 disabled or content changed: remove old host and (re)create if still enabled.
             try { overlays.remove(existing.overlayId); } catch {}
-            const created = createV2HostForElement(ovl, el);
-            if (created) {
-              const overlayId = overlays.add(el.id, { position: created.position, html: created.host });
-              map.set(elementId, { overlayId, contentSig, host: created.host, expanded: v2Expanded });
-              updatedCount += 1;
-            } else {
-              map.delete(elementId);
-              removedCount += 1;
+            map.delete(elementId);
+            removedCount += 1;
+            if (v2Enabled) {
+              const created = createV2HostForElement(ovl, el);
+              if (created) {
+                const overlayId = overlays.add(el.id, { position: created.position, html: created.host });
+                map.set(elementId, { overlayId, contentSig, host: created.host, expanded: v2Expanded });
+                updatedCount += 1;
+              }
             }
           } else if (existing.expanded !== v2Expanded) {
             // Only expanded state changed: toggle CSS class.
@@ -543,7 +545,7 @@ export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExte
           } else {
             keptCount += 1;
           }
-        } else {
+        } else if (v2Enabled) {
           const created = createV2HostForElement(ovl, el);
           if (created) {
             const overlayId = overlays.add(el.id, { position: created.position, html: created.host });

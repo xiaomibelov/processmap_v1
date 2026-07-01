@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useFeatureFlag } from "../../features/config/featureFlagsContext";
 import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bpmnApi";
 
@@ -1251,6 +1251,18 @@ const BpmnStage = forwardRef(function BpmnStage({
     v2ExpandedRef: v2OverlayState.expandedRef,
     useExtensionOverlays,
   });
+
+  const handleViewboxChangedForOverlays = useCallback((inst, mode) => {
+    if (!useExtensionOverlays) return;
+    if (!v2OverlayState.enabledRef.current) return;
+    if (!inst || !hasDefinitionsLoaded(inst)) return;
+    const kind = mode === "viewer" ? "viewer" : "editor";
+    try {
+      overlayLifecycle.mountFromBpmn(inst, kind);
+    } catch {
+      // Overlay remount failures are non-critical.
+    }
+  }, [useExtensionOverlays, overlayLifecycle, v2OverlayState.enabledRef]);
 
   useViewportResizeController({
     viewerContainerRef: viewerEl,
@@ -4088,6 +4100,8 @@ const BpmnStage = forwardRef(function BpmnStage({
     modelerStageEventsUnbindRef.current = null;
     try { modelerSubprocessUnbindRef.current?.(); } catch {}
     modelerSubprocessUnbindRef.current = null;
+    try { overlayLifecycle.uninstall(viewerRef.current); } catch {}
+    try { overlayLifecycle.uninstall(modelerRef.current); } catch {}
     prevOverlaySigRef.current = { viewer: "", editor: "" };
     const modelerRuntime = modelerRuntimeRef.current;
     modelerRuntimeRef.current = null;
@@ -4374,6 +4388,7 @@ const BpmnStage = forwardRef(function BpmnStage({
             onDiagramContextMenuDismiss: emitDiagramContextMenuDismiss,
             contextMenuInteractionRef,
             viewportCuller: viewerCullerRef.current,
+            onViewboxChangedForOverlays: handleViewboxChangedForOverlays,
           });
           viewerSubprocessUnbindRef.current = bindSubprocessNavigationEvents(v, onNavigateToSubprocessRef);
           viewerDecorBoundInstanceRef.current = v;
@@ -4482,6 +4497,7 @@ const BpmnStage = forwardRef(function BpmnStage({
             captureShapeReplacePre,
             applyShapeReplacePost,
             viewportCuller: modelerCullerRef.current,
+            onViewboxChangedForOverlays: handleViewboxChangedForOverlays,
           });
           modelerSubprocessUnbindRef.current = bindSubprocessNavigationEvents(m, onNavigateToSubprocessRef);
           modelerDecorBoundInstanceRef.current = m;
