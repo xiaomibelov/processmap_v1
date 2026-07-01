@@ -5,12 +5,24 @@ export default function BpmnVersionActions({
   onDiffWithCurrent,
   onDiffAB,
   onClose,
+  onRefresh,
   busy,
   isCurrent,
 }) {
   return (
     <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3">
       <div className="flex items-center gap-2">
+        {onRefresh ? (
+          <button
+            type="button"
+            className="secondaryBtn h-9 px-3 text-xs"
+            onClick={onRefresh}
+            disabled={busy}
+            data-testid="bpmn-versions-footer-refresh"
+          >
+            Обновить
+          </button>
+        ) : null}
         <button
           type="button"
           className="secondaryBtn h-9 px-3 text-xs"
