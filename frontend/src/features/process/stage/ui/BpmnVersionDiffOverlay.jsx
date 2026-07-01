@@ -1,62 +1,49 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import pmModdleDescriptor from "../../robotmeta/pmModdleDescriptor";
 import camundaModdleDescriptor from "../../camunda/camundaModdleDescriptor";
+import { buildSemanticBpmnDiff } from "../../bpmn/diff/semanticDiff.js";
 import BpmnVersionPreview from "./BpmnVersionPreview";
 
-const BPMN_NS = "http://www.omg.org/spec/BPMN/20100524/MODEL";
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
 
-const INTERESTING_LOCAL_NAMES = new Set([
-  "task", "userTask", "serviceTask", "sendTask", "receiveTask", "manualTask",
-  "businessRuleTask", "scriptTask",
-  "exclusiveGateway", "parallelGateway", "inclusiveGateway", "eventBasedGateway", "complexGateway",
-  "startEvent", "endEvent", "intermediateThrowEvent", "intermediateCatchEvent", "boundaryEvent",
-  "subProcess", "callActivity", "adHocSubProcess",
-  "sequenceFlow", "messageFlow", "association",
-  "participant", "lane", "laneSet",
-  "dataObjectReference", "dataStoreReference",
-  "group", "textAnnotation",
-]);
+function pickName(item, fallback = "") {
+  return String(item?.name || item?.after?.name || item?.before?.name || fallback).trim();
+}
 
-function parseBpmnIndex(xmlText) {
-  const map = new Map();
-  if (!xmlText) return map;
-  const doc = new DOMParser().parseFromString(xmlText, "application/xml");
-  const parseError = doc.querySelector("parsererror");
-  if (parseError) return map;
-  const all = doc.getElementsByTagNameNS(BPMN_NS, "*");
-  for (let i = 0; i < all.length; i++) {
-    const el = all[i];
-    const local = el.localName;
-    if (!INTERESTING_LOCAL_NAMES.has(local)) continue;
-    const id = el.getAttribute("id");
-    if (!id) continue;
-    const name = String(el.getAttribute("name") || "").trim();
-    map.set(id, { id, type: local, name });
-  }
-  return map;
+function pickType(item) {
+  return String(item?.type || item?.after?.type || item?.before?.type || item?.entity || "").trim();
 }
 
 function computeDiff(previousXml, nextXml) {
-  const previous = parseBpmnIndex(previousXml);
-  const next = parseBpmnIndex(nextXml);
+  const diff = buildSemanticBpmnDiff(String(previousXml || ""), String(nextXml || ""));
+  if (!diff.ok) {
+    return { added: [], removed: [], changed: [], summary: null, ok: false, error: diff.error };
+  }
+  const { details, summary } = diff;
   const added = [];
   const removed = [];
   const changed = [];
 
-  next.forEach((nItem) => {
-    const pItem = previous.get(nItem.id);
-    if (!pItem) {
-      added.push(nItem);
-    } else if (pItem.type !== nItem.type || pItem.name !== nItem.name) {
-      changed.push({ ...nItem, previousName: pItem.name, previousType: pItem.type });
-    }
+  ["tasks", "flows", "lanes", "subprocess"].forEach((key) => {
+    asArray(details?.[key]?.added).forEach((item) => {
+      added.push({ id: item.id, name: pickName(item), type: pickType(item) });
+    });
+    asArray(details?.[key]?.removed).forEach((item) => {
+      removed.push({ id: item.id, name: pickName(item), type: pickType(item) });
+    });
+    asArray(details?.[key]?.changed).forEach((item) => {
+      changed.push({
+        id: item.id,
+        name: pickName(item),
+        type: pickType(item),
+        previousName: String(item?.before?.name || "").trim(),
+      });
+    });
   });
 
-  previous.forEach((pItem) => {
-    if (!next.has(pItem.id)) removed.push(pItem);
-  });
-
-  return { added, removed, changed };
+  return { added, removed, changed, summary, ok: true };
 }
 
 function classForDiff(kind) {
