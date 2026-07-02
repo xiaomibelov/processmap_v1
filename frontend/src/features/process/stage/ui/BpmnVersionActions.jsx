@@ -6,12 +6,14 @@ export default function BpmnVersionActions({
   onDiffAB,
   onClose,
   onRefresh,
+  onToggleXml,
   busy,
   isCurrent,
+  hasEnoughForDiff,
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3">
-      <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2">
         {onRefresh ? (
           <button
             type="button"
@@ -27,7 +29,8 @@ export default function BpmnVersionActions({
           type="button"
           className="secondaryBtn h-9 px-3 text-xs"
           onClick={onDiffAB}
-          disabled={busy}
+          disabled={busy || !hasEnoughForDiff}
+          title={hasEnoughForDiff ? "" : "Нужно минимум 2 версии для сравнения"}
           data-testid="bpmn-versions-footer-diff"
         >
           Сравнить А/В
@@ -46,7 +49,17 @@ export default function BpmnVersionActions({
         ) : null}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {selected ? (
+          <button
+            type="button"
+            className="text-[11px] text-accent hover:underline"
+            onClick={onToggleXml}
+            data-testid="bpmn-versions-footer-toggle-xml"
+          >
+            Предпросмотр XML
+          </button>
+        ) : null}
         {selected ? (
           <button
             type="button"
@@ -55,7 +68,7 @@ export default function BpmnVersionActions({
             disabled={busy}
             data-testid="bpmn-versions-footer-download"
           >
-            Скачать
+            Скачать .bpmn
           </button>
         ) : null}
         {selected ? (
@@ -67,7 +80,7 @@ export default function BpmnVersionActions({
             title={isCurrent ? "Уже текущая версия" : ""}
             data-testid="bpmn-versions-footer-restore"
           >
-            Восстановить
+            Восстановить эту версию
           </button>
         ) : null}
         <button

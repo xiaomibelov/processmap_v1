@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import pmModdleDescriptor from "../../robotmeta/pmModdleDescriptor";
 import camundaModdleDescriptor from "../../camunda/camundaModdleDescriptor";
-import { buildSemanticBpmnDiff } from "../../bpmn/diff/semanticDiff.js";
+import { buildSemanticBpmnDiff, buildBpmnPositionDiff } from "../../bpmn/diff/semanticDiff.js";
 import BpmnVersionPreview from "./BpmnVersionPreview";
 
 function asArray(value) {
@@ -64,10 +64,16 @@ export default function BpmnVersionDiffOverlay({
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
   const [badgeSummary, setBadgeSummary] = useState({ added: 0, changed: 0 });
+  const [showPositionChanges, setShowPositionChanges] = useState(false);
 
   const diff = useMemo(
     () => computeDiff(previousXml, nextXml),
-    [previousXml, nextXml]
+    [previousXml, nextXml],
+  );
+
+  const positionDiff = useMemo(
+    () => buildBpmnPositionDiff(String(previousXml || ""), String(nextXml || "")),
+    [previousXml, nextXml],
   );
 
   useEffect(() => {
@@ -132,6 +138,25 @@ export default function BpmnVersionDiffOverlay({
           } catch {}
         });
 
+        if (showPositionChanges) {
+          positionDiff.moved.forEach(({ id }) => {
+            try {
+              overlays.add(id, {
+                position: { top: -10, left: -10 },
+                html: `<div class="pointer-events-none rounded-full bg-blue-500 text-white h-5 w-5 flex items-center justify-center text-[10px] font-bold shadow" title="Позиция изменена">↔</div>`,
+              });
+            } catch {}
+          });
+          positionDiff.resized.forEach(({ id }) => {
+            try {
+              overlays.add(id, {
+                position: { bottom: -10, right: -10 },
+                html: `<div class="pointer-events-none rounded-full bg-indigo-500 text-white h-5 w-5 flex items-center justify-center text-[10px] font-bold shadow" title="Размер изменён">⛶</div>`,
+              });
+            } catch {}
+          });
+        }
+
         if (!cancelled) {
           setBadgeSummary({ added: addedCount, changed: changedCount });
           setStatus("ready");
@@ -152,7 +177,7 @@ export default function BpmnVersionDiffOverlay({
         viewerRef.current = null;
       }
     };
-  }, [nextXml, diff]);
+  }, [nextXml, diff, showPositionChanges, positionDiff]);
 
   return (
     <div className="flex h-[70vh] flex-col rounded-xl border border-border bg-panel2/35" data-testid="bpmn-diff-overlay">
@@ -162,12 +187,28 @@ export default function BpmnVersionDiffOverlay({
           <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-emerald-600">+{diff.added.length}</span>
           <span className="rounded bg-rose-500/15 px-1.5 py-0.5 text-rose-600">−{diff.removed.length}</span>
           <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-600">Δ{diff.changed.length}</span>
+          {positionDiff.count > 0 ? (
+            <span className="rounded bg-blue-500/15 px-1.5 py-0.5 text-blue-600">⇄{positionDiff.count}</span>
+          ) : null}
           {onClose ? (
             <button type="button" className="secondaryBtn ml-2 h-7 px-2 text-[11px]" onClick={onClose}>
               Закрыть
             </button>
           ) : null}
         </div>
+      </div>
+
+      <div className="border-b border-border px-4 py-2">
+        <label className="flex cursor-pointer items-center gap-2 text-xs text-muted">
+          <input
+            type="checkbox"
+            className="h-3.5 w-3.5 accent-accent"
+            checked={showPositionChanges}
+            onChange={(e) => setShowPositionChanges(e.target.checked)}
+            data-testid="bpmn-diff-show-position"
+          />
+          Показывать позиционные изменения
+        </label>
       </div>
 
       <div className="grid h-full min-h-0 flex-1 grid-cols-[220px_1fr] gap-3 p-3">
@@ -194,7 +235,7 @@ export default function BpmnVersionDiffOverlay({
         </div>
       </div>
 
-      <div className="grid max-h-[140px] grid-cols-3 gap-2 overflow-auto border-t border-border px-3 py-2 text-xs">
+      <div className="grid max-h-[160px] grid-cols-4 gap-2 overflow-auto border-t border-border px-3 py-2 text-xs">
         <div>
           <div className="mb-1 font-semibold text-emerald-600">Добавлено ({diff.added.length})</div>
           <ul className="space-y-0.5 text-muted">
@@ -222,10 +263,28 @@ export default function BpmnVersionDiffOverlay({
             {diff.changed.length > 20 ? <li className="text-muted">…и ещё {diff.changed.length - 20}</li> : null}
           </ul>
         </div>
+        {showPositionChanges ? (
+          <div>
+            <div className="mb-1 font-semibold text-blue-600">Позиционные ({positionDiff.count})</div>
+            <ul className="space-y-0.5 text-muted">
+              {positionDiff.moved.slice(0, 10).map((x) => (
+                <li key={`m_${x.id}`} className="truncate" title={x.id}>{x.id} (сдвиг)</li>
+              ))}
+              {positionDiff.resized.slice(0, 10).map((x) => (
+                <li key={`r_${x.id}`} className="truncate" title={x.id}>{x.id} (размер)</li>
+              ))}
+              {positionDiff.waypointsChanged.slice(0, 10).map((x) => (
+                <li key={`w_${x.id}`} className="truncate" title={x.id}>{x.id} (маршрут)</li>
+              ))}
+              {positionDiff.count > 30 ? <li className="text-muted">…и ещё {positionDiff.count - 30}</li> : null}
+            </ul>
+          </div>
+        ) : null}
       </div>
 
       <div className="border-t border-border px-3 py-2 text-[11px] text-muted">
         Наложено маркеров: добавлено {badgeSummary.added}, изменено {badgeSummary.changed}. Маркеры «удалено» не отображаются на целевой диаграмме — см. список слева.
+        {showPositionChanges && positionDiff.count > 0 ? ` Позиционные изменения: ${positionDiff.count}.` : ""}
       </div>
     </div>
   );
