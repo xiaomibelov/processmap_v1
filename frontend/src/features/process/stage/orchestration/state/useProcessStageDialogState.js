@@ -4,9 +4,11 @@ export default function useProcessStageDialogState() {
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [versionsBusy, setVersionsBusy] = useState(false);
   const [versionsList, setVersionsList] = useState([]);
+  const [versionsListAll, setVersionsListAll] = useState([]);
   const [versionsLoadState, setVersionsLoadState] = useState("idle");
   const [versionsLoadError, setVersionsLoadError] = useState("");
   const [previewSnapshotId, setPreviewSnapshotId] = useState("");
+  const [showTechnicalVersions, setShowTechnicalVersions] = useState(false);
   const [diffOpen, setDiffOpen] = useState(false);
   const [diffBaseSnapshotId, setDiffBaseSnapshotId] = useState("");
   const [diffTargetSnapshotId, setDiffTargetSnapshotId] = useState("");
@@ -21,9 +23,11 @@ export default function useProcessStageDialogState() {
     setVersionsOpen(false);
     setVersionsBusy(false);
     setVersionsList([]);
+    setVersionsListAll([]);
     setVersionsLoadState("idle");
     setVersionsLoadError("");
     setPreviewSnapshotId("");
+    setShowTechnicalVersions(false);
     setDiffOpen(false);
     setDiffBaseSnapshotId("");
     setDiffTargetSnapshotId("");
@@ -42,12 +46,16 @@ export default function useProcessStageDialogState() {
     setVersionsBusy,
     versionsList,
     setVersionsList,
+    versionsListAll,
+    setVersionsListAll,
     versionsLoadState,
     setVersionsLoadState,
     versionsLoadError,
     setVersionsLoadError,
     previewSnapshotId,
     setPreviewSnapshotId,
+    showTechnicalVersions,
+    setShowTechnicalVersions,
     diffOpen,
     setDiffOpen,
     diffBaseSnapshotId,

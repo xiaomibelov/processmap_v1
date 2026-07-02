@@ -1,3 +1,4 @@
+import { useState } from "react";
 import Modal from "../../../../shared/ui/Modal";
 import CreateTemplateModal from "../../../templates/ui/CreateTemplateModal";
 import { resolveRevisionHistoryEmptyState } from "./revisionHistoryUiModel";
@@ -7,6 +8,7 @@ import BpmnVersionActions from "./BpmnVersionActions";
 import BpmnVersionDiffOverlay from "./BpmnVersionDiffOverlay";
 
 export default function ProcessDialogs({ view = {} }) {
+  const [showPreviewXml, setShowPreviewXml] = useState(false);
   const {
     qualityAutoFixOpen,
     qualityAutoFixBusy,
@@ -53,6 +55,10 @@ export default function ProcessDialogs({ view = {} }) {
     versionsUserFacingCount,
     versionsServerEntriesCount,
     versionsTechnicalEntriesCount,
+    isAdmin,
+    showTechnicalVersions,
+    setShowTechnicalVersions,
+    saveSessionFromVersionsModal,
     setGenErr,
     setDiffTargetSnapshotId,
     setDiffBaseSnapshotId,
@@ -238,6 +244,7 @@ export default function ProcessDialogs({ view = {} }) {
         open={versionsOpen}
         title="История версий BPMN"
         onClose={closeVersionsDialog}
+        cardClassName="w-[calc(100vw-32px)] max-w-[1200px] min-w-[900px]"
         footer={(
           <BpmnVersionActions
             selected={previewSnapshot}
@@ -258,44 +265,39 @@ export default function ProcessDialogs({ view = {} }) {
             }}
             onRefresh={() => void refreshSnapshotVersions()}
             onClose={closeVersionsDialog}
+            onToggleXml={() => setShowPreviewXml((prev) => !prev)}
             busy={versionsBusy}
             isCurrent={String(previewSnapshot?.id || "") === String(currentBpmnVersionId || "")}
+            hasEnoughForDiff={asArray(versionsList).length >= 2}
           />
         )}
         footerClassName="!border-t-0 !p-0"
       >
-        <div className="grid gap-3 lg:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]" data-testid="bpmn-versions-modal">
-          <BpmnVersionList
-            versions={versionsList}
-            selectedId={previewSnapshotId}
-            currentVersionId={currentBpmnVersionId}
-            busy={versionsBusy}
-            loadState={versionsLoadState}
-            loadError={versionsLoadError}
-            emptyMessage={revisionEmptyState.message}
-            onSelect={previewSnapshotVersion}
-            onDownload={downloadSnapshot}
-            onRestore={restoreSnapshot}
-            onDiffWithCurrent={openDiffForSnapshot}
-            onDiffAB={() => {
-              const list = asArray(versionsList);
-              const latestId = String(list[0]?.id || "");
-              const prevId = String(list[1]?.id || "");
-              if (!latestId || !prevId) {
-                setGenErr("Для сравнения нужно минимум две версии.");
-                return;
-              }
-              setDiffTargetSnapshotId(latestId);
-              setDiffBaseSnapshotId(prevId);
-              openDiffDialog();
-            }}
-          />
+        <div className="grid h-[65vh] min-h-[480px] gap-3 overflow-hidden md:grid-cols-[280px_1fr] lg:grid-cols-[minmax(260px,30%)_minmax(0,70%)]" data-testid="bpmn-versions-modal">
+          <div className="flex min-h-0 flex-col">
+            <BpmnVersionList
+              versions={versionsList}
+              selectedId={previewSnapshotId}
+              currentVersionId={currentBpmnVersionId}
+              busy={versionsBusy}
+              loadState={versionsLoadState}
+              loadError={versionsLoadError}
+              emptyMessage={revisionEmptyState.message}
+              onSelect={previewSnapshotVersion}
+              onSaveSession={saveSessionFromVersionsModal}
+              isAdmin={isAdmin}
+              showTechnical={showTechnicalVersions}
+              onToggleTechnical={setShowTechnicalVersions}
+            />
+          </div>
           <BpmnVersionPreview
             xml={previewSnapshot?.xml}
             label={previewSnapshot ? snapshotLabel(previewSnapshot) : ""}
             size={previewSnapshot?.len}
             onDownload={() => previewSnapshot && downloadSnapshot(previewSnapshot)}
             downloadLabel="Скачать .bpmn"
+            showXml={showPreviewXml}
+            onToggleXml={setShowPreviewXml}
           />
         </div>
       </Modal>

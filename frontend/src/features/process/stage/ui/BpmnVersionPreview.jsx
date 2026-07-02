@@ -4,9 +4,19 @@ import camundaModdleDescriptor from "../../camunda/camundaModdleDescriptor";
 
 function formatBytes(bytes) {
   const n = Number(bytes || 0);
-  if (n === 0) return "0 B";
+  if (!n || n <= 0) return null;
   const kb = n / 1024;
   return `${kb < 1 ? n.toFixed(0) : kb.toFixed(1)} ${kb < 1 ? "B" : "KB"}`;
+}
+
+function Skeleton() {
+  return (
+    <div className="flex h-full w-full flex-col gap-3 p-4" data-testid="bpmn-version-preview-skeleton">
+      <div className="h-4 w-1/3 rounded bg-fg/10" />
+      <div className="flex-1 rounded-lg bg-fg/5" />
+      <div className="h-3 w-1/2 rounded bg-fg/10" />
+    </div>
+  );
 }
 
 export default function BpmnVersionPreview({
@@ -16,26 +26,43 @@ export default function BpmnVersionPreview({
   onDownload,
   downloadLabel = "Скачать .bpmn",
   compact = false,
+  showXml: showXmlProp,
+  onToggleXml,
 }) {
   const containerRef = useRef(null);
   const viewerRef = useRef(null);
   const [status, setStatus] = useState("idle"); // idle | loading | ready | error
   const [error, setError] = useState("");
-  const [showXml, setShowXml] = useState(false);
+  const [showXmlInternal, setShowXmlInternal] = useState(false);
+  const [showSkeleton, setShowSkeleton] = useState(false);
+  const isControlled = showXmlProp !== undefined;
+  const showXml = isControlled ? showXmlProp : showXmlInternal;
+  const setShowXml = (value) => {
+    if (isControlled) {
+      onToggleXml?.(value);
+    } else {
+      setShowXmlInternal(value);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
     let viewer = null;
+    let skeletonTimer = null;
 
     async function render() {
       if (!containerRef.current) return;
       const xmlText = String(xml || "").trim();
       if (!xmlText) {
         setStatus("idle");
+        setShowSkeleton(false);
         return;
       }
       setStatus("loading");
       setError("");
+      skeletonTimer = window.setTimeout(() => {
+        if (!cancelled) setShowSkeleton(true);
+      }, 3000);
 
       try {
         if (!viewerRef.current) {
@@ -46,9 +73,7 @@ export default function BpmnVersionPreview({
             moddleExtensions: { pm: pmModdleDescriptor, camunda: camundaModdleDescriptor },
           });
           if (cancelled) {
-            try {
-              viewer.destroy();
-            } catch {}
+            try { viewer.destroy(); } catch {}
             return;
           }
           viewerRef.current = viewer;
@@ -59,11 +84,17 @@ export default function BpmnVersionPreview({
         await viewer.importXML(xmlText);
         if (cancelled) return;
         viewer.get("canvas").zoom("fit-viewport");
-        setStatus("ready");
+        if (!cancelled) {
+          setStatus("ready");
+          setShowSkeleton(false);
+        }
       } catch (err) {
         if (cancelled) return;
         setStatus("error");
         setError(String(err?.message || err || "Не удалось загрузить версию. XML повреждён или невалиден."));
+        setShowSkeleton(false);
+      } finally {
+        if (skeletonTimer) window.clearTimeout(skeletonTimer);
       }
     }
 
@@ -71,6 +102,7 @@ export default function BpmnVersionPreview({
 
     return () => {
       cancelled = true;
+      if (skeletonTimer) window.clearTimeout(skeletonTimer);
       if (viewerRef.current) {
         try { viewerRef.current.destroy(); } catch {}
         viewerRef.current = null;
@@ -78,29 +110,35 @@ export default function BpmnVersionPreview({
     };
   }, [xml]);
 
+  const sizeLabel = formatBytes(size);
+
   return (
-    <div className={`flex flex-col overflow-hidden rounded-xl border border-border bg-panel2/35 ${compact ? "min-h-0 h-full" : "min-h-[320px]"}`}>
+    <div className={`flex flex-col overflow-hidden rounded-xl border border-border bg-panel2/35 ${compact ? "min-h-0 h-full" : "min-h-[320px] h-full"}`}>
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div className="text-xs text-muted">
           {label ? `Предпросмотр · ${label}` : "Выберите версию слева"}
         </div>
-        <div className="flex items-center gap-2">
-          {size ? <span className="text-[11px] text-muted">{formatBytes(size)}</span> : null}
+        <div className="flex items-center gap-3">
+          {sizeLabel ? <span className="text-[11px] text-muted">{sizeLabel}</span> : null}
           <button
             type="button"
             className="text-[11px] text-accent hover:underline"
-            onClick={() => setShowXml((prev) => !prev)}
+            onClick={() => setShowXml(!showXml)}
           >
             {showXml ? "Скрыть XML" : "XML"}
           </button>
         </div>
       </div>
 
-      <div className="relative min-h-[200px] flex-1 bg-panel">
+      <div className="relative min-h-0 flex-1 bg-panel">
         <div ref={containerRef} className="h-full w-full" data-testid="bpmn-version-preview-canvas" />
-        {status === "loading" ? (
-          <div className="absolute inset-0 grid place-items-center bg-panel/80" data-testid="bpmn-version-preview-loading">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+        {status === "idle" ? (
+          <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-sm text-muted" data-testid="bpmn-version-preview-idle">
+            Выберите версию слева, чтобы увидеть диаграмму
+          </div>
+        ) : status === "loading" && showSkeleton ? (
+          <div className="absolute inset-0 bg-panel/90">
+            <Skeleton />
           </div>
         ) : status === "error" ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4 text-center bg-panel/90" data-testid="bpmn-version-preview-error">
