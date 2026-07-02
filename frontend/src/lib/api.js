@@ -1498,6 +1498,8 @@ function _bpmnVersionsKey(sessionId, options = {}) {
   return [
     String(sessionId || "").trim(),
     String(options.limit || "").trim(),
+    String(options.offset || "").trim(),
+    options.includeTechnical === true ? "1" : "0",
     options.includeXml === true ? "1" : "0",
   ].join("|");
 }
@@ -1515,13 +1517,21 @@ export async function apiGetBpmnVersions(sessionId, options = {}) {
     const r = okOrError(await request(url));
     if (!r.ok) return r;
     const payload = r.data && typeof r.data === "object" ? r.data : {};
-    const items = Array.isArray(payload.items) ? payload.items : [];
+    const items = Array.isArray(payload.versions)
+      ? payload.versions
+      : Array.isArray(payload.items)
+        ? payload.items
+        : [];
     return {
       ok: true,
       status: r.status,
       versions: items,
       items,
-      count: Number(payload.count || items.length || 0),
+      count: Number(payload.count ?? payload.total_count ?? items.length ?? 0),
+      totalCount: Number(payload.total_count ?? payload.count ?? items.length ?? 0),
+      hasMore: payload.has_more === true,
+      offset: Number(payload.offset ?? options?.offset ?? 0),
+      limit: Number(payload.limit ?? options?.limit ?? 10),
       user_facing_count: Number(payload.user_facing_count || 0),
       userFacingCount: Number(payload.user_facing_count || payload.userFacingCount || 0),
       latest_user_facing_revision_number: Number(payload.latest_user_facing_revision_number || 0),

@@ -953,6 +953,39 @@ class BpmnMetaApiTests(unittest.TestCase):
         persisted = self.session_bpmn_meta_get(sid)
         self.assertEqual(persisted.get("flow_meta", {}).get("Flow_02mqvh5", {}).get("rtier"), "R2")
 
+    def test_bpmn_versions_endpoint_paginates_and_filters_technical_versions(self):
+        st = self.get_storage()
+        # Create 12 user-facing + 8 technical versions for a total of 20.
+        for index in range(1, 13):
+            st.create_bpmn_version_snapshot(
+                self.sid,
+                bpmn_xml=f"{XOR_BPMN_XML}\n<!-- user {index} -->",
+                source_action="publish_manual_save",
+            )
+        for index in range(1, 9):
+            st.create_bpmn_version_snapshot(
+                self.sid,
+                bpmn_xml=f"{XOR_BPMN_XML}\n<!-- tech {index} -->",
+                source_action="manual_save",
+            )
+
+        page1 = self.session_bpmn_versions_list(self.sid, limit=10, offset=0, include_xml=0, include_technical=False)
+        self.assertEqual(page1.get("ok"), True)
+        self.assertEqual(len(page1.get("versions") or []), 10)
+        self.assertEqual(int(page1.get("total_count") or 0), 12)
+        self.assertEqual(page1.get("has_more"), True)
+        self.assertEqual(int(page1.get("offset") or 0), 0)
+
+        page2 = self.session_bpmn_versions_list(self.sid, limit=10, offset=10, include_xml=0, include_technical=False)
+        self.assertEqual(len(page2.get("versions") or []), 2)
+        self.assertEqual(int(page2.get("total_count") or 0), 12)
+        self.assertEqual(page2.get("has_more"), False)
+
+        all_technical = self.session_bpmn_versions_list(self.sid, limit=100, offset=0, include_xml=0, include_technical=True)
+        # setUp already seeds one technical version via session_bpmn_save.
+        self.assertEqual(int(all_technical.get("total_count") or 0), 21)
+        self.assertEqual(len(all_technical.get("versions") or []), 21)
+
 
 if __name__ == "__main__":
     unittest.main()

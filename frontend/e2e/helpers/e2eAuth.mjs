@@ -110,6 +110,7 @@ export async function apiLogin(request, options = {}) {
     );
   }
   let activeOrgId = "";
+  let userId = "";
   try {
     const meRes = await request.get(`${apiBase}/api/auth/me`, {
       headers: withAuthHeaders(accessToken),
@@ -121,9 +122,11 @@ export async function apiLogin(request, options = {}) {
         ? meBody.user
         : (meBody && typeof meBody === "object" ? meBody : {});
       activeOrgId = String(user?.active_org_id || user?.default_org_id || "").trim();
+      userId = String(user?.id || "").trim();
     }
   } catch {
     activeOrgId = "";
+    userId = "";
   }
   const setCookieHeader = res.headers()?.["set-cookie"] ?? "";
   const refreshCookie = parseSetCookie(setCookieHeader);
@@ -138,6 +141,7 @@ export async function apiLogin(request, options = {}) {
     headers: withAuthHeaders(accessToken, activeOrgId ? { "X-Org-Id": activeOrgId } : {}),
     email,
     activeOrgId,
+    userId,
   };
 }
 
