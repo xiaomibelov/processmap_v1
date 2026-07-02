@@ -4775,10 +4775,10 @@ function ProcessStage({
       });
       const nonMeaningfulSorted = [...technicalList, ...unknownList].sort((a, b) => Number(b?.ts || 0) - Number(a?.ts || 0));
       const allWithDisplayNumbers = [
-        ...asArray(meaningfulWithNumbers),
+        ...asArray(listWithUserFacingNumbers),
         ...nonMeaningfulSorted,
       ];
-      setLatestBpmnVersionHead(asArray(meaningfulWithNumbers)[0] || null);
+      setLatestBpmnVersionHead(asArray(listWithUserFacingNumbers)[0] || null);
       if (trackHeadStatus) setLatestBpmnVersionHeadStatus("ready");
       if (!updateList) return;
       // eslint-disable-next-line no-console
@@ -6864,7 +6864,6 @@ function ProcessStage({
     versionsList: versionsListWithDiffSummaries,
     versionsLoadState,
     versionsLoadError,
-    isAdmin: Boolean(user?.is_admin),
     showTechnicalVersions,
     setShowTechnicalVersions,
     saveSessionFromVersionsModal,

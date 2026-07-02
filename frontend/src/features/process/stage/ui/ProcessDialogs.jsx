@@ -72,6 +72,7 @@ export default function ProcessDialogs({ view = {} }) {
     previewSnapshotVersion,
     formatSnapshotTs,
     snapshotLabel,
+    shortSnapshotHash,
     downloadSnapshot,
     editSnapshotLabel,
     togglePinSnapshot,
