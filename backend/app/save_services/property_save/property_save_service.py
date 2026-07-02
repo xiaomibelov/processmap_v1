@@ -28,37 +28,14 @@ PROPERTY_SAVE_GRACE_WINDOW = 1
 
 
 def _deduplicate_camunda_extension_properties(camunda_map: Any) -> Dict[str, Any]:
-    """Keep the last value for each property name per element.
+    """Preserve all property rows, including duplicate names.
 
-    This prevents duplicate ``camunda:property`` rows when the frontend sends
-    repeated property names.
+    The importer stores every ``camunda:property`` row as an array entry, so
+    this helper no longer collapses repeated names. It still validates that the
+    input is a dict and returns a shallow copy.
     """
     src = camunda_map if isinstance(camunda_map, dict) else {}
-    out: Dict[str, Any] = {}
-    for element_id_raw, state_raw in src.items():
-        element_id = str(element_id_raw or "").strip()
-        if not element_id or not isinstance(state_raw, dict):
-            continue
-        state = dict(state_raw)
-        properties = state.get("properties")
-        if isinstance(properties, dict):
-            rows = properties.get("extensionProperties")
-            if isinstance(rows, list):
-                seen: Dict[str, Dict[str, Any]] = {}
-                for row in reversed(rows):
-                    if not isinstance(row, dict):
-                        continue
-                    name = str(row.get("name") or "").strip()
-                    if not name:
-                        continue
-                    if name not in seen:
-                        seen[name] = row
-                state["properties"] = {
-                    **properties,
-                    "extensionProperties": list(reversed(seen.values())),
-                }
-        out[element_id] = state
-    return out
+    return dict(src)
 
 
 def _extract_user_context(request: Optional[Request]) -> Dict[str, Any]:
