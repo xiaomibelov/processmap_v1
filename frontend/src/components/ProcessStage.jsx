@@ -590,6 +590,10 @@ function ProcessStage({
   const [mergePanelServerVersion, setMergePanelServerVersion] = useState(0);
   const [mergePanelActorLabel, setMergePanelActorLabel] = useState("");
   const [mergeDiffOpen, setMergeDiffOpen] = useState(false);
+  const [historyDiffOpen, setHistoryDiffOpen] = useState(false);
+  const [historyDiffLocalXml, setHistoryDiffLocalXml] = useState("");
+  const [historyDiffVersionXml, setHistoryDiffVersionXml] = useState("");
+  const [historyDiffVersionLabel, setHistoryDiffVersionLabel] = useState("");
   const [latestBpmnVersionHead, setLatestBpmnVersionHead] = useState(null);
   const [latestBpmnVersionHeadStatus, setLatestBpmnVersionHeadStatus] = useState("idle");
   const [bpmnVersionTruthState, setBpmnVersionTruthState] = useState({
@@ -5024,6 +5028,41 @@ function ProcessStage({
     ]);
   }
 
+  const closeHistoryDiff = useCallback(() => {
+    setHistoryDiffOpen(false);
+    setHistoryDiffLocalXml("");
+    setHistoryDiffVersionXml("");
+    setHistoryDiffVersionLabel("");
+  }, []);
+
+  async function handleCompareVersionWithCurrent(item) {
+    const versionId = String(item?.id || "").trim();
+    if (!versionId) return;
+    const localXml = toText(draft?.bpmn_xml || bpmnRef.current?.getXmlDraft?.() || "");
+    if (!localXml) {
+      setGenErr("Текущая диаграмма недоступна для сравнения.");
+      return;
+    }
+    setHistoryDiffLocalXml(localXml);
+    setHistoryDiffVersionLabel(toText(item?.label || item?.displayLabel || `Версия ${item?.versionNumber || item?.id}`));
+    setHistoryDiffOpen(true);
+    try {
+      const loaded = await apiGetBpmnVersion(sid, versionId);
+      if (!loaded?.ok) {
+        setGenErr(toText(loaded?.error) || "Не удалось загрузить выбранную версию для сравнения.");
+        return;
+      }
+      const versionXml = toText(loaded?.item?.bpmn_xml || loaded?.item?.xml || loaded?.bpmn_xml || loaded?.xml || "");
+      if (!versionXml) {
+        setGenErr("Выбранная версия не содержит XML.");
+        return;
+      }
+      setHistoryDiffVersionXml(versionXml);
+    } catch (error) {
+      setGenErr(shortErr(error?.message || error || "Не удалось загрузить выбранную версию для сравнения."));
+    }
+  }
+
   function pushCommandHistory(commandText) {
     const text = String(commandText || "").trim();
     if (!text || !sid) return;
@@ -6767,7 +6806,9 @@ function ProcessStage({
     editSnapshotLabel,
     togglePinSnapshot,
     openDiffForSnapshot,
+    compareVersionWithCurrent: handleCompareVersionWithCurrent,
     restoreSnapshot,
+    canRestoreVersion: true,
     previewSnapshot,
     diffOpen,
     closeDiffDialog: stageActions.closeDiffDialog,
@@ -6777,6 +6818,11 @@ function ProcessStage({
     currentBpmnVersionId,
     diffBaseSnapshot,
     diffTargetSnapshot,
+    historyDiffOpen,
+    historyDiffLocalXml,
+    historyDiffVersionXml,
+    historyDiffVersionLabel,
+    closeHistoryDiff,
   });
   const shellVm = useProcessStageShellController({
     hasSession,
