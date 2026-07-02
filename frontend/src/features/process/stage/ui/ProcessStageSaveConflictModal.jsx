@@ -11,6 +11,7 @@ export default function ProcessStageSaveConflictModal({
   onRefreshSession = null,
   onStay = null,
   onDiscardLocalChanges = null,
+  onCompare = null,
 }) {
   const resolvedView = view && typeof view === "object" ? view : {};
   const contextLines = Array.isArray(resolvedView.contextLines) ? resolvedView.contextLines : [];
@@ -57,6 +58,16 @@ export default function ProcessStageSaveConflictModal({
             title={toText(actions.discardHint)}
           >
             {toText(actions.discardLabel) || "Отбросить локальные изменения"}
+          </button>
+          <button
+            type="button"
+            className="secondaryBtn h-9 px-3 text-xs"
+            onClick={onCompare}
+            disabled={busy === true}
+            data-testid="diagram-save-conflict-modal-compare"
+            title={toText(actions.compareHint)}
+          >
+            {toText(actions.compareLabel) || "Сравнить и выбрать"}
           </button>
         </>
       )}

@@ -113,9 +113,18 @@ async function createFixture(request, runId, authHeaders) {
   const sessionId = String(session.id || session.session_id || "").trim();
   expect(sessionId).not.toBe("");
 
+  const metaRes = await request.get(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/meta`, {
+    headers: authHeaders,
+  });
+  const meta = await apiJson(metaRes, "get session meta");
+  const baseDiagramStateVersion = Number(meta?.diagram_state_version ?? 0);
+
   const putRes = await request.put(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/bpmn`, {
     headers: authHeaders,
-    data: { xml: seedBpmnXml(`Seed ${runId}`) },
+    data: {
+      xml: seedBpmnXml(`Seed ${runId}`),
+      base_diagram_state_version: baseDiagramStateVersion,
+    },
   });
   await apiJson(putRes, "seed bpmn");
   return { projectId, sessionId };
