@@ -371,8 +371,19 @@ export function buildDiagramHeaderView({
   publishGitMirrorSnapshot,
   sessionPresenceView,
   remoteSaveHighlightView,
+  diagramStateVersion = 0,
+  saveUploadStatus,
   asArray,
 } = {}) {
+  const localDiagramStateVersion = Number.isFinite(Number(diagramStateVersion))
+    ? Math.max(0, Number(diagramStateVersion))
+    : 0;
+  const serverVersion = Number.isFinite(Number(remoteSaveHighlightView?.serverVersion))
+    ? Math.max(0, Number(remoteSaveHighlightView?.serverVersion))
+    : 0;
+  const saveUploadState = saveUploadStatus && typeof saveUploadStatus === "object" ? saveUploadStatus : {};
+  const isConflictFromSave = String(saveUploadState.state || "").toLowerCase() === "conflict";
+  const isConflictFromRemote = serverVersion > 0 && serverVersion > localDiagramStateVersion;
   return {
     ...shellProps,
     featureFlags,
@@ -407,7 +418,10 @@ export function buildDiagramHeaderView({
     topPanelsView,
     publishGitMirrorSnapshot,
     sessionPresenceView,
-    remoteSaveHighlightView,
+    diagramStateVersion: localDiagramStateVersion,
+    diagramStateConflict: isConflictFromSave || isConflictFromRemote,
+    diagramStateConflictServerVersion: serverVersion,
+    diagramStateConflictActorLabel: String(remoteSaveHighlightView?.actorLabel || "").trim(),
     asArray,
   };
 }

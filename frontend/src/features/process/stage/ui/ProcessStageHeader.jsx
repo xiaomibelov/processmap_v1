@@ -44,6 +44,10 @@ export default function ProcessStageHeader({ view = {} }) {
     handleDrawioImportFile,
     topPanelsView,
     sessionPresenceView,
+    diagramStateVersion,
+    diagramStateConflict,
+    diagramStateConflictServerVersion,
+    diagramStateConflictActorLabel,
     featureFlags,
   } = view;
   const publishedRevisionBadge = resolvePublishedRevisionBadgeView(sessionRevisionHistorySnapshot);
@@ -56,6 +60,21 @@ export default function ProcessStageHeader({ view = {} }) {
   const versionChipTitle = resolvedVersionNumber > 0
     ? `Текущая версия: ${resolvedVersionNumber}`
     : (publishedRevisionBadge.title || "Версия пока не создана.");
+  const localDiagramStateVersion = Number.isFinite(Number(diagramStateVersion))
+    ? Math.max(0, Number(diagramStateVersion))
+    : 0;
+  const serverVersion = Number.isFinite(Number(diagramStateConflictServerVersion))
+    ? Math.max(0, Number(diagramStateConflictServerVersion))
+    : 0;
+  const isDiagramStateConflict = diagramStateConflict === true
+    || toText(saveUploadStatus?.state) === "conflict"
+    || (serverVersion > 0 && serverVersion > localDiagramStateVersion);
+  const diagramStateVersionChipLabel = localDiagramStateVersion > 0
+    ? `Rev. ${localDiagramStateVersion}`
+    : "Rev. —";
+  const diagramStateVersionChipTitle = isDiagramStateConflict && serverVersion > localDiagramStateVersion
+    ? `Текущая версия диаграммы: ${localDiagramStateVersion}. Есть более новая версия: ${serverVersion} от ${toText(diagramStateConflictActorLabel) || "другого пользователя"}.`
+    : `Текущая версия диаграммы: ${localDiagramStateVersion}`;
   const resolvedSaveActionText = toText(saveActionText) || "Сохранить сессию";
   const resolvedCreateRevisionActionText = toText(createRevisionActionText) || "Создать версию BPMN";
   const isConflictState = toText(saveUploadStatus?.state) === "conflict";
@@ -88,6 +107,15 @@ export default function ProcessStageHeader({ view = {} }) {
               title={versionChipTitle}
             >
               {versionChipLabel}
+            </span>
+          ) : null}
+          {hasSession ? (
+            <span
+              className={`badge text-[11px] ${isDiagramStateConflict ? "err animate-pulse" : "info"}`}
+              data-testid="diagram-toolbar-diagram-state-version-chip"
+              title={diagramStateVersionChipTitle}
+            >
+              {diagramStateVersionChipLabel}
             </span>
           ) : null}
           {hasSession ? (

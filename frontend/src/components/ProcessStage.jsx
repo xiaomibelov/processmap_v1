@@ -6694,6 +6694,11 @@ function ProcessStage({
     publishGitMirrorSnapshot,
     sessionPresenceView,
     remoteSaveHighlightView,
+    saveUploadStatus,
+    diagramStateVersion: Number(getBaseDiagramStateVersion()
+      ?? draft?.diagram_state_version
+      ?? draft?.diagramStateVersion
+      ?? 0),
     asArray,
   });
 
