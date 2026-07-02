@@ -390,9 +390,69 @@ test("hydrateCamundaExtensionsFromBpmn keeps session values and appends missing 
     next.properties.extensionProperties.map((item) => ({ name: item.name, value: item.value })),
     [
       { name: "ingredient", value: "Креветки" },
+      { name: "ingredient", value: "Шампиньон" },
       { name: "equipment", value: "Весы" },
       { name: "value", value: "1" },
     ],
+  );
+}));
+
+test("hydrateCamundaExtensionsFromBpmn preserves multiple camunda:property rows with the same name and different values", () => withDom(() => {
+  const extracted = {
+    Task_1: {
+      properties: {
+        extensionProperties: [
+          { id: "prop_xml_1", name: "container_tara", value: "дежа" },
+          { id: "prop_xml_2", name: "container_tara", value: "бункер" },
+        ],
+        extensionListeners: [],
+      },
+      preservedExtensionElements: [],
+    },
+  };
+
+  const hydrated = hydrateCamundaExtensionsFromBpmn({
+    extractedMap: extracted,
+    sessionMetaMap: {},
+    allowSeedFromBpmn: true,
+  });
+  const next = normalizeCamundaExtensionState(hydrated.nextSessionMetaMap.Task_1);
+  assert.equal(hydrated.adoptedFromBpmn, true);
+  assert.deepEqual(
+    next.properties.extensionProperties.map((item) => ({ name: item.name, value: item.value })),
+    [
+      { name: "container_tara", value: "дежа" },
+      { name: "container_tara", value: "бункер" },
+    ],
+  );
+}));
+
+test("hydrateCamundaExtensionsFromBpmn skips exact name+value duplicates when merging", () => withDom(() => {
+  const extracted = {
+    Task_1: {
+      properties: {
+        extensionProperties: [
+          { id: "prop_xml_1", name: "container_tara", value: "дежа" },
+          { id: "prop_xml_2", name: "container_tara", value: "дежа" },
+        ],
+        extensionListeners: [],
+      },
+      preservedExtensionElements: [],
+    },
+  };
+
+  const hydrated = hydrateCamundaExtensionsFromBpmn({
+    extractedMap: extracted,
+    sessionMetaMap: {},
+    allowSeedFromBpmn: true,
+  });
+  const next = normalizeCamundaExtensionState(hydrated.nextSessionMetaMap.Task_1);
+  assert.equal(hydrated.adoptedFromBpmn, true);
+  assert.equal(hydrated.addedProperties, 1);
+  assert.equal(next.properties.extensionProperties.length, 1);
+  assert.deepEqual(
+    next.properties.extensionProperties.map((item) => ({ name: item.name, value: item.value })),
+    [{ name: "container_tara", value: "дежа" }],
   );
 }));
 

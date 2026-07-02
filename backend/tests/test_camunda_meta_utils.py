@@ -4,7 +4,7 @@ from app.camunda_meta_utils import deduplicate_camunda_extension_properties
 
 
 class TestDeduplicateCamundaExtensionProperties(unittest.TestCase):
-    def test_keep_last_property_per_key(self):
+    def test_preserves_duplicate_property_names(self):
         meta = {
             "camunda_extensions_by_element_id": {
                 "Activity_1": {
@@ -24,12 +24,14 @@ class TestDeduplicateCamundaExtensionProperties(unittest.TestCase):
         self.assertEqual(
             props,
             [
+                {"name": "equipment", "value": "Весы"},
+                {"name": "equipment", "value": "Миксер"},
                 {"name": "equipment", "value": "Плита"},
                 {"name": "container", "value": "Лоток"},
             ],
         )
 
-    def test_case_insensitive_key_dedup(self):
+    def test_preserves_case_differences(self):
         meta = {
             "camunda_extensions_by_element_id": {
                 "Activity_1": {
@@ -44,7 +46,13 @@ class TestDeduplicateCamundaExtensionProperties(unittest.TestCase):
         }
         result = deduplicate_camunda_extension_properties(meta)
         props = result["camunda_extensions_by_element_id"]["Activity_1"]["properties"]["extensionProperties"]
-        self.assertEqual(props, [{"name": "EQUIPMENT", "value": "B"}])
+        self.assertEqual(
+            props,
+            [
+                {"name": "Equipment", "value": "A"},
+                {"name": "EQUIPMENT", "value": "B"},
+            ],
+        )
 
     def test_empty_and_missing_names_preserved(self):
         meta = {
@@ -65,6 +73,7 @@ class TestDeduplicateCamundaExtensionProperties(unittest.TestCase):
         self.assertEqual(
             props,
             [
+                {"name": "equipment", "value": "A"},
                 {"name": "", "value": "blank"},
                 {"name": "equipment", "value": "B"},
             ],

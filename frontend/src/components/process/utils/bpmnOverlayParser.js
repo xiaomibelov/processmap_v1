@@ -114,7 +114,7 @@ export function extractOverlayProperties(businessObject) {
       });
     }
   });
-  return dedupePropertiesByName(props, { keep: "first" });
+  return props;
 }
 
 /**

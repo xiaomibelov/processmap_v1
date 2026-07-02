@@ -76,7 +76,7 @@ test("single-instance property delete persists after save and reload", () => wit
   );
 }));
 
-test("duplicate-name property delete removes logical key and does not restore after save+reload", () => withDom(() => {
+test("duplicate-name property delete removes only the targeted row and keeps siblings", () => withDom(() => {
   const beforeRows = [
     { id: "p1", name: "ingredient", value: "salt" },
     { id: "p2", name: "ingredient", value: "pepper" },
@@ -85,18 +85,21 @@ test("duplicate-name property delete removes logical key and does not restore af
   const afterDeleteRows = deleteExtensionPropertyRowsByDeleteAction(beforeRows, "p1");
   const { extracted } = saveThenExtract(toMapForTask(afterDeleteRows));
   const task = taskStateFromMap(extracted);
-  assert.equal(
-    task.properties.extensionProperties.some((row) => String(row?.name || "").trim() === "ingredient"),
-    false,
+  assert.deepEqual(
+    task.properties.extensionProperties.map((row) => ({ name: row.name, value: row.value })),
+    [
+      { name: "ingredient", value: "pepper" },
+      { name: "equipment", value: "pot" },
+    ],
   );
   const visible = buildVisibleExtensionPropertyRows(task);
   assert.deepEqual(
     visible.rows.map((row) => row.name),
-    ["equipment"],
+    ["ingredient", "equipment"],
   );
 }));
 
-test("repeat save after deletion stays idempotent (no duplicate-key comeback)", () => withDom(() => {
+test("repeat save after row-level deletion stays idempotent", () => withDom(() => {
   const beforeRows = [
     { id: "p1", name: "ingredient", value: "salt" },
     { id: "p2", name: "ingredient", value: "pepper" },
@@ -106,14 +109,16 @@ test("repeat save after deletion stays idempotent (no duplicate-key comeback)", 
   const first = saveThenExtract(toMapForTask(afterDeleteRows));
   const second = saveThenExtract(first.extracted, first.xmlAfterSave);
   const task = taskStateFromMap(second.extracted);
-  assert.equal(
-    task.properties.extensionProperties.some((row) => String(row?.name || "").trim() === "ingredient"),
-    false,
+  assert.deepEqual(
+    task.properties.extensionProperties.map((row) => ({ name: row.name, value: row.value })),
+    [
+      { name: "ingredient", value: "pepper" },
+      { name: "equipment", value: "pot" },
+    ],
   );
-  assert.equal(task.properties.extensionProperties.length, 1);
 }));
 
-test("reopen hydrate from saved XML does not restore deleted logical key", () => withDom(() => {
+test("reopen hydrate from saved XML keeps sibling rows after row-level delete", () => withDom(() => {
   const beforeRows = [
     { id: "p1", name: "ingredient", value: "salt" },
     { id: "p2", name: "ingredient", value: "pepper" },
@@ -127,13 +132,16 @@ test("reopen hydrate from saved XML does not restore deleted logical key", () =>
   });
   const hydrated = normalizeCamundaExtensionsMap(reopened.nextSessionMetaMap);
   const task = taskStateFromMap(hydrated);
-  assert.equal(
-    task.properties.extensionProperties.some((row) => String(row?.name || "").trim() === "ingredient"),
-    false,
+  assert.deepEqual(
+    task.properties.extensionProperties.map((row) => ({ name: row.name, value: row.value })),
+    [
+      { name: "ingredient", value: "pepper" },
+      { name: "equipment", value: "pot" },
+    ],
   );
 }));
 
-test("deleting duplicated property key does not over-delete other categories", () => withDom(() => {
+test("deleting one duplicated property row does not delete sibling rows or other categories", () => withDom(() => {
   const beforeRows = [
     { id: "p1", name: "ingredient", value: "salt" },
     { id: "p2", name: "ingredient", value: "pepper" },
@@ -147,7 +155,7 @@ test("deleting duplicated property key does not over-delete other categories", (
   const task = taskStateFromMap(extracted);
   assert.deepEqual(
     task.properties.extensionProperties.map((row) => row.name),
-    ["equipment"],
+    ["ingredient", "equipment"],
   );
   assert.deepEqual(
     task.properties.extensionListeners.map((row) => ({ event: row.event, type: row.type, value: row.value })),

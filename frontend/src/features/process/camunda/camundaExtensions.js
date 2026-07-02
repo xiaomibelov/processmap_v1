@@ -48,6 +48,18 @@ function asText(value) {
   return String(value ?? "").trim();
 }
 
+function dedupeExactPropertyRows(rows) {
+  const seen = new Set();
+  return asArray(rows).filter((item) => {
+    const name = asText(item?.name);
+    if (!name) return true;
+    const signature = `${name}\u0000${asText(item?.value)}`;
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+}
+
 function fnv1aHex(input) {
   const src = String(input || "");
   let hash = 0x811c9dc5;
@@ -1296,22 +1308,34 @@ export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap,
         addedPreserved: 0,
       };
     }
+    // Seed directly from BPMN, but collapse truly identical name+value rows.
+    const seededExtracted = {};
+    extractedKeys.forEach((elementId) => {
+      const entry = normalizeCamundaExtensionState(extracted[elementId]);
+      seededExtracted[elementId] = normalizeCamundaExtensionState({
+        ...entry,
+        properties: {
+          ...entry.properties,
+          extensionProperties: dedupeExactPropertyRows(entry.properties.extensionProperties),
+        },
+      });
+    });
     return {
-      nextSessionMetaMap: extracted,
+      nextSessionMetaMap: seededExtracted,
       conflicts: [],
-      adoptedFromBpmn: Object.keys(extracted).length > 0,
+      adoptedFromBpmn: Object.keys(seededExtracted).length > 0,
       source: "bpmn_seed",
       addedElements: extractedKeys.length,
       addedProperties: extractedKeys.reduce((acc, elementId) => {
-        const entry = normalizeCamundaExtensionState(extracted[elementId]);
+        const entry = seededExtracted[elementId];
         return acc + entry.properties.extensionProperties.length;
       }, 0),
       addedListeners: extractedKeys.reduce((acc, elementId) => {
-        const entry = normalizeCamundaExtensionState(extracted[elementId]);
+        const entry = seededExtracted[elementId];
         return acc + entry.properties.extensionListeners.length;
       }, 0),
       addedPreserved: extractedKeys.reduce((acc, elementId) => {
-        const entry = normalizeCamundaExtensionState(extracted[elementId]);
+        const entry = seededExtracted[elementId];
         return acc + entry.preservedExtensionElements.length;
       }, 0),
     };
@@ -1331,11 +1355,21 @@ export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap,
       if (!allowSeedFromBpmn) {
         return;
       }
-      next[elementId] = extractedEntry;
+      // Seed from BPMN but collapse truly identical name+value rows so a
+      // repeated property does not create noise.
+      const seededProperties = dedupeExactPropertyRows(extractedEntry.properties.extensionProperties);
+      const seededEntry = normalizeCamundaExtensionState({
+        ...extractedEntry,
+        properties: {
+          ...extractedEntry.properties,
+          extensionProperties: seededProperties,
+        },
+      });
+      next[elementId] = seededEntry;
       addedElements += 1;
-      addedProperties += extractedEntry.properties.extensionProperties.length;
-      addedListeners += extractedEntry.properties.extensionListeners.length;
-      addedPreserved += extractedEntry.preservedExtensionElements.length;
+      addedProperties += seededEntry.properties.extensionProperties.length;
+      addedListeners += seededEntry.properties.extensionListeners.length;
+      addedPreserved += seededEntry.preservedExtensionElements.length;
       return;
     }
 
@@ -1355,15 +1389,20 @@ export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap,
       : [];
 
     if (shouldMergeManagedFromBpmn) {
-      const propertyByName = new Set(
+      // Preserve duplicate property names as long as their values differ.
+      // Only skip exact name+value duplicates so re-importing the same BPMN
+      // does not create noise.
+      const propertySignatures = new Set(
         nextProperties
-          .map((item) => String(item?.name || "").trim())
-          .filter(Boolean),
+          .map((item) => `${String(item?.name || "").trim()}\u0000${String(item?.value || "").trim()}`)
+          .filter((sig) => sig.split("\u0000")[0]),
       );
       extractedEntry.properties.extensionProperties.forEach((item) => {
         const name = String(item?.name || "").trim();
-        if (!name || propertyByName.has(name)) return;
-        propertyByName.add(name);
+        if (!name) return;
+        const signature = `${name}\u0000${String(item?.value || "").trim()}`;
+        if (propertySignatures.has(signature)) return;
+        propertySignatures.add(signature);
         nextProperties.push(item);
         addedProperties += 1;
       });

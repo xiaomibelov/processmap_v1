@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { deleteExtensionPropertyRowsByDeleteAction } from "./propertyDeleteSemantics.js";
 
-test("delete by row id removes all sibling rows for the same logical property key", () => {
+test("delete by row id removes only the targeted row", () => {
   const rows = [
     { id: "r1", name: "ingredient", value: "salt" },
     { id: "r2", name: "ingredient", value: "pepper" },
@@ -12,7 +12,7 @@ test("delete by row id removes all sibling rows for the same logical property ke
   const next = deleteExtensionPropertyRowsByDeleteAction(rows, "r1");
   assert.deepEqual(
     next.map((row) => row.id),
-    ["r3"],
+    ["r2", "r3"],
   );
 });
 

@@ -55,37 +55,23 @@ function rawExtensionPropertyRows(stateRaw) {
   });
 }
 
-function dedupeLogicalPropertyRows(rawRows) {
-  const ordered = [];
-  const byLogicalKey = new Map();
+function normalizePropertyRows(rawRows) {
   let unnamedCounter = 0;
 
-  asArray(rawRows).forEach((rowRaw) => {
+  const rows = asArray(rawRows).map((rowRaw) => {
     const row = asObject(rowRaw);
-    const normalized = {
+    return {
       id: asText(row.id) || `prop_raw_${(unnamedCounter += 1)}`,
       name: String(row.name ?? ""),
       value: String(row.value ?? ""),
     };
-    const logicalKey = normalizeLogicalKey(normalized.name);
-    if (!logicalKey) {
-      ordered.push(normalized);
-      return;
-    }
-    const prevIndex = byLogicalKey.get(logicalKey);
-    if (prevIndex === undefined) {
-      byLogicalKey.set(logicalKey, ordered.length);
-      ordered.push(normalized);
-      return;
-    }
-    ordered[prevIndex] = normalized;
   });
 
-  return { rows: ordered };
+  return { rows };
 }
 
 export function buildVisibleExtensionPropertyRows(extensionStateRaw) {
-  return dedupeLogicalPropertyRows(rawExtensionPropertyRows(extensionStateRaw));
+  return normalizePropertyRows(rawExtensionPropertyRows(extensionStateRaw));
 }
 
 export function countVisibleExtensionPropertyRows(extensionStateRaw) {
@@ -190,9 +176,9 @@ export function buildPropertyDictionaryEditorModel({ extensionStateRaw, dictiona
   const extensionState = asObject(extensionStateRaw);
   const bundle = normalizeOrgPropertyDictionaryBundle(dictionaryBundleRaw);
   const rawRows = rawExtensionPropertyRows(extensionState);
-  const deduped = dedupeLogicalPropertyRows(rawRows);
+  const normalizedRows = normalizePropertyRows(rawRows);
   const rowByLogicalKey = new Map();
-  deduped.rows.forEach((row) => {
+  normalizedRows.rows.forEach((row) => {
     const logicalKey = normalizeLogicalKey(row.name);
     if (!logicalKey) return;
     rowByLogicalKey.set(logicalKey, row);
@@ -204,8 +190,8 @@ export function buildPropertyDictionaryEditorModel({ extensionStateRaw, dictiona
       operationKey: bundle.operationKey,
       operationLabel: bundle.operationLabel,
       schemaRows: [],
-      customRows: deduped.rows,
-      visibleRows: deduped.rows,
+      customRows: normalizedRows.rows,
+      visibleRows: normalizedRows.rows,
     };
     if (extensionStateCacheKey) {
       const cacheEntry = propertyDictionaryEditorModelCache.get(extensionStateCacheKey);
@@ -228,7 +214,7 @@ export function buildPropertyDictionaryEditorModel({ extensionStateRaw, dictiona
     };
   });
 
-  const customRows = deduped.rows.filter((row) => {
+  const customRows = normalizedRows.rows.filter((row) => {
     const logicalKey = normalizeLogicalKey(row.name);
     if (!logicalKey) return true;
     return !schemaKeySet.has(logicalKey);
@@ -240,7 +226,7 @@ export function buildPropertyDictionaryEditorModel({ extensionStateRaw, dictiona
     operationLabel: bundle.operationLabel,
     schemaRows,
     customRows,
-    visibleRows: deduped.rows,
+    visibleRows: normalizedRows.rows,
   };
   if (extensionStateCacheKey) {
     const cacheEntry = propertyDictionaryEditorModelCache.get(extensionStateCacheKey);

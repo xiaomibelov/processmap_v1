@@ -153,7 +153,7 @@ test("custom property coexists with schema-backed rows in schema mode", () => {
   );
 });
 
-test("duplicate logical properties keep the last visible row", () => {
+test("duplicate logical properties keep all rows", () => {
   const model = buildPropertyDictionaryEditorModel({
     extensionStateRaw: {
       properties: {
@@ -179,9 +179,13 @@ test("duplicate logical properties keep the last visible row", () => {
       { key: "equipment", value: "Весы высокочные" },
     ],
   );
+  assert.deepEqual(
+    model.customRows.map((row) => ({ name: row.name, value: row.value })),
+    [],
+  );
 });
 
-test("duplicate logical properties use the last value for visible dedupe", () => {
+test("duplicate logical properties keep every visible row", () => {
   const visible = buildVisibleExtensionPropertyRows({
     properties: {
       extensionProperties: [
@@ -194,13 +198,14 @@ test("duplicate logical properties use the last value for visible dedupe", () =>
   assert.deepEqual(
     visible.rows.map((row) => ({ name: row.name, value: row.value })),
     [
+      { name: "ingredient", value: "" },
       { name: "ingredient", value: "Картошка" },
       { name: "equipment", value: "Весы" },
     ],
   );
 });
 
-test("visible property count uses logical dedupe instead of raw duplicate entries", () => {
+test("visible property count keeps all raw duplicate entries", () => {
   assert.equal(
     countVisibleExtensionPropertyRows({
       properties: {
@@ -214,11 +219,11 @@ test("visible property count uses logical dedupe instead of raw duplicate entrie
         ],
       },
     }),
-    3,
+    6,
   );
 });
 
-test("session 5801aa69ee style mixed-property input resolves to three visible logical rows", () => {
+test("session 5801aa69ee style mixed-property input keeps all raw rows", () => {
   const model = buildPropertyDictionaryEditorModel({
     extensionStateRaw: {
       properties: {
@@ -250,6 +255,7 @@ test("session 5801aa69ee style mixed-property input resolves to three visible lo
       { key: "value", value: "1" },
     ],
   );
+  assert.equal(model.visibleRows.length, 6);
 });
 
 test("finalize drops empty schema values and blank custom drafts", () => {
@@ -435,6 +441,7 @@ test("properties overlay preview includes imported BPMN properties in fallback m
     [
       { label: "container", value: "Лоток 150x55" },
       { label: "value", value: "0,250 кг" },
+      { label: "container", value: "Лоток 150x55" },
     ],
   );
 });
@@ -570,7 +577,7 @@ test("properties overlay preview includes Camunda IO rows without row-level show
 }));
 
 
-test("visible deduplication keeps the last occurrence of a duplicate key", () => {
+test("visible rows keep every occurrence of a duplicate key", () => {
   const visible = buildVisibleExtensionPropertyRows({
     properties: {
       extensionProperties: [
@@ -584,13 +591,15 @@ test("visible deduplication keeps the last occurrence of a duplicate key", () =>
   assert.deepEqual(
     visible.rows.map((row) => ({ name: row.name, value: row.value })),
     [
+      { name: "equipment", value: "Весы" },
+      { name: "equipment", value: "Миксер" },
       { name: "equipment", value: "Плита" },
       { name: "container", value: "Лоток" },
     ],
   );
 });
 
-test("editor model without schema exposes deduplicated rows as customRows", () => {
+test("editor model without schema exposes all rows as customRows", () => {
   const model = buildPropertyDictionaryEditorModel({
     extensionStateRaw: {
       properties: {
@@ -607,6 +616,7 @@ test("editor model without schema exposes deduplicated rows as customRows", () =
   assert.deepEqual(
     model.customRows.map((row) => ({ name: row.name, value: row.value })),
     [
+      { name: "equipment", value: "Весы" },
       { name: "equipment", value: "Миксер" },
       { name: "container", value: "Лоток" },
     ],
