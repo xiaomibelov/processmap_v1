@@ -17,13 +17,7 @@ export function deleteExtensionPropertyRowsByDeleteAction(rowsRaw, rowIdRaw) {
     return rows;
   }
 
-  const targetKey = String(rows[targetIndex]?.name || "").trim().toLowerCase();
-  if (!targetKey) {
-    // Unnamed rows cannot be merged by logical key; delete the single target row.
-    return rows.filter((_, i) => i !== targetIndex);
-  }
-
-  // The visible UI collapses duplicate names into one logical property.
-  // Deleting any row of that logical key removes the whole key.
-  return rows.filter((row) => String(row?.name || "").trim().toLowerCase() !== targetKey);
+  // Delete only the targeted row so duplicate property names can be managed
+  // independently in the UI.
+  return rows.filter((_, i) => i !== targetIndex);
 }
