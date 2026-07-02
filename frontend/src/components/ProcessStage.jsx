@@ -524,6 +524,8 @@ function ProcessStage({
   const { user, activeOrgId } = useAuth();
   const localBpmnRef = useRef(null);
   const bpmnRef = bpmnStageRef || localBpmnRef;
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const importInputRef = useRef(null);
   const processBodyRef = useRef(null);
   const toolbarMenuRef = useRef(null);
