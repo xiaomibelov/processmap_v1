@@ -158,7 +158,7 @@ describe("bpmnOverlayParser", () => {
     assert.strictEqual(props[0].name, "region");
   });
 
-  it("deduplicates repeated property names (first occurrence wins)", () => {
+  it("preserves repeated property names in V2 overlay properties", () => {
     const bo = {
       extensionElements: {
         values: [
@@ -174,10 +174,11 @@ describe("bpmnOverlayParser", () => {
       },
     };
     const props = extractOverlayProperties(bo);
-    assert.strictEqual(props.length, 2);
+    assert.strictEqual(props.length, 3);
     assert.deepStrictEqual(props, [
       { name: "equipment_mode", value: "Об\\мин 40" },
       { name: "equipment_accessory", value: "Венчик" },
+      { name: "equipment_mode", value: "150 об мин" },
     ]);
   });
 });

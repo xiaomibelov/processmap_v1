@@ -11,14 +11,14 @@ test("delete by id removes a single named row", () => {
   assert.deepEqual(out.map((r) => r.name), ["equipment"]);
 });
 
-test("delete by id removes all rows sharing the same logical name", () => {
+test("delete by id removes only the targeted row even when names duplicate", () => {
   const rows = [
     { id: "p1", name: "ingredient", value: "salt" },
     { id: "p2", name: "ingredient", value: "pepper" },
     { id: "p3", name: "equipment", value: "pot" },
   ];
   const out = deleteExtensionPropertyRowsByDeleteAction(rows, "p1");
-  assert.deepEqual(out.map((r) => r.name), ["equipment"]);
+  assert.deepEqual(out.map((r) => r.name), ["ingredient", "equipment"]);
 });
 
 test("delete by generated prop_raw index removes the row at that index", () => {
