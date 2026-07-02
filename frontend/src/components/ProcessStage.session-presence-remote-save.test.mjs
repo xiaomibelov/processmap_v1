@@ -77,7 +77,7 @@ test("passive remote-save notice is queued from head and full refresh is explici
   );
 });
 
-test("remote update toast uses version head actor, preserves refresh action, and dedupes by key", () => {
+test("remote update toast uses version head actor, opens merge panel, and dedupes by key", () => {
   const source = readSource();
   assert.equal(
     source.includes("deriveRemoteVersionActor(versionHeadItem, currentUserId)"),
@@ -100,11 +100,11 @@ test("remote update toast uses version head actor, preserves refresh action, and
     true,
   );
   assert.equal(
-    source.includes("actionLabel: \"Обновить сессию\""),
+    source.includes("actionLabel: \"Посмотреть изменения\""),
     true,
   );
   assert.equal(
-    source.includes("description: \"Обновите сессию, чтобы увидеть актуальную версию.\""),
+    source.includes("description: \"Откройте сравнение версий, чтобы выбрать, какую сохранить.\""),
     true,
   );
   assert.equal(
@@ -117,7 +117,7 @@ test("remote update toast uses version head actor, preserves refresh action, and
     true,
   );
   assert.equal(
-    source.includes("void applyPendingRemoteSaveRefresh();"),
+    source.includes('void openMergePanel("remote_toast");'),
     true,
   );
 });

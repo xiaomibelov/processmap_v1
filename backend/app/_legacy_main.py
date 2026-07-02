@@ -4008,6 +4008,7 @@ def touch_session_presence_api(
         "session_id": sid,
         "ttl_seconds": _SESSION_PRESENCE_TTL_SECONDS,
         "active_users": active_users,
+        "diagram_state_version": int(getattr(sess, "diagram_state_version", 0) or 0),
     }
 
 
@@ -10569,6 +10570,7 @@ def touch_session_presence_api(
         "session_id": sid,
         "ttl_seconds": _SESSION_PRESENCE_TTL_SECONDS,
         "active_users": active_users,
+        "diagram_state_version": int(getattr(sess, "diagram_state_version", 0) or 0),
     }
 
 

@@ -80,6 +80,9 @@ export default function BpmnVersionList({
   emptyMessage,
   onSelect,
   onSaveSession,
+  onCompareWithCurrent = null,
+  onRestore = null,
+  canRestore = true,
   isAdmin = false,
   showTechnical = false,
   onToggleTechnical,
@@ -224,6 +227,36 @@ export default function BpmnVersionList({
                       {item?.reason ? ` · ${String(item.reason)}` : null}
                     </div>
                   ) : null}
+
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {typeof onCompareWithCurrent === "function" ? (
+                      <button
+                        type="button"
+                        className="secondaryBtn h-7 px-2 text-[11px]"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCompareWithCurrent(item);
+                        }}
+                        data-testid="bpmn-version-compare"
+                      >
+                        Сравнить
+                      </button>
+                    ) : null}
+                    {typeof onRestore === "function" && canRestore ? (
+                      <button
+                        type="button"
+                        className="secondaryBtn h-7 px-2 text-[11px]"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRestore(item);
+                        }}
+                        disabled={busy === true}
+                        data-testid="bpmn-version-restore"
+                      >
+                        Восстановить
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </button>
             );

@@ -408,6 +408,21 @@ def get_session_meta(
 
     version_items = versions_payload.get("items") or []
     latest_version = version_items[0] if version_items else None
+
+    # Prefer the live session row for last-modified actor/timestamp; fall back to
+    # the latest stored BPMN version snapshot if the row does not carry it.
+    last_modified_by = str(
+        row.get("diagram_last_write_actor_label")
+        or row.get("diagram_last_write_actor_user_id")
+        or (latest_version.get("created_by") if latest_version else "")
+        or ""
+    ).strip()
+    last_modified_at = int(
+        row.get("diagram_last_write_at")
+        or (latest_version.get("created_at") if latest_version else 0)
+        or 0
+    )
+
     meta = {
         "session_id": sid,
         "versions_count": versions_count,
@@ -418,6 +433,8 @@ def get_session_meta(
         "bpmn_xml_version": projection.get("bpmn_xml_version"),
         "diagram_state_version": projection.get("diagram_state_version"),
         "version": projection.get("version"),
+        "last_modified_by": last_modified_by,
+        "last_modified_at": last_modified_at,
         "versions": version_items,
         "items": version_items,
         "count": versions_payload.get("count") or versions_count,
