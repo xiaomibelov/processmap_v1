@@ -73,9 +73,16 @@ export default function ProcessDialogs({ view = {} }) {
     editSnapshotLabel,
     togglePinSnapshot,
     openDiffForSnapshot,
+    compareVersionWithCurrent,
     restoreSnapshot,
+    canRestoreVersion,
     previewSnapshot,
     diffOpen,
+    historyDiffOpen,
+    historyDiffLocalXml,
+    historyDiffVersionXml,
+    historyDiffVersionLabel,
+    closeHistoryDiff,
     closeDiffDialog,
     diffBaseSnapshotId,
     setDiffBaseSnapshotId: setDiffBaseId,
@@ -285,6 +292,9 @@ export default function ProcessDialogs({ view = {} }) {
               emptyMessage={revisionEmptyState.message}
               onSelect={previewSnapshotVersion}
               onSaveSession={saveSessionFromVersionsModal}
+              onCompareWithCurrent={compareVersionWithCurrent}
+              onRestore={restoreSnapshot}
+              canRestore={canRestoreVersion !== false}
               isAdmin={isAdmin}
               showTechnical={showTechnicalVersions}
               onToggleTechnical={setShowTechnicalVersions}
@@ -367,6 +377,33 @@ export default function ProcessDialogs({ view = {} }) {
           ) : (
             <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted">
               Выберите две версии для сравнения.
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={historyDiffOpen}
+        title="Сравнение с текущей диаграммой"
+        onClose={closeHistoryDiff}
+        footer={(
+          <button type="button" className="secondaryBtn" onClick={closeHistoryDiff}>
+            Закрыть
+          </button>
+        )}
+      >
+        <div className="space-y-3" data-testid="bpmn-history-diff-modal">
+          {historyDiffVersionXml && historyDiffLocalXml ? (
+            <BpmnVersionDiffOverlay
+              previousXml={String(historyDiffVersionXml || "")}
+              nextXml={String(historyDiffLocalXml || "")}
+              previousLabel={String(historyDiffVersionLabel || "Выбранная версия")}
+              nextLabel="Текущая диаграмма"
+              onClose={closeHistoryDiff}
+            />
+          ) : (
+            <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted">
+              {historyDiffVersionXml ? "Загрузка текущей диаграммы..." : "Загрузка версии для сравнения..."}
             </div>
           )}
         </div>

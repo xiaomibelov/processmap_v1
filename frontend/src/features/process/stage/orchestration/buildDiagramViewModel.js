@@ -246,7 +246,9 @@ export function buildDialogsView({
   editSnapshotLabel,
   togglePinSnapshot,
   openDiffForSnapshot,
+  compareVersionWithCurrent,
   restoreSnapshot,
+  canRestoreVersion = true,
   previewSnapshot,
   diffOpen,
   closeDiffDialog,
@@ -256,6 +258,11 @@ export function buildDialogsView({
   currentBpmnVersionId,
   diffBaseSnapshot,
   diffTargetSnapshot,
+  historyDiffOpen,
+  historyDiffLocalXml,
+  historyDiffVersionXml,
+  historyDiffVersionLabel,
+  closeHistoryDiff,
 } = {}) {
   return {
     qualityAutoFixOpen,
@@ -323,7 +330,9 @@ export function buildDialogsView({
     editSnapshotLabel,
     togglePinSnapshot,
     openDiffForSnapshot,
+    compareVersionWithCurrent,
     restoreSnapshot,
+    canRestoreVersion,
     previewSnapshot,
     diffOpen,
     closeDiffDialog,
@@ -333,6 +342,11 @@ export function buildDialogsView({
     currentBpmnVersionId,
     diffBaseSnapshot,
     diffTargetSnapshot,
+    historyDiffOpen,
+    historyDiffLocalXml,
+    historyDiffVersionXml,
+    historyDiffVersionLabel,
+    closeHistoryDiff,
   };
 }
 
