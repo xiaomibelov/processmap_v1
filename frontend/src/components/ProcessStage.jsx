@@ -1778,6 +1778,51 @@ function ProcessStage({
     };
   }, [applyPendingRemoteSaveRefresh, remoteSaveHighlightBadge, remoteSaveHighlightBusy, toText]);
 
+  const openMergePanel = useCallback(async (source = "") => {
+    if (!sid) return;
+    setMergePanelSource(toText(source) || "unknown");
+    setMergePanelBusy(true);
+    setSaveConflictNoticeDismissed(true);
+    setGenErr("");
+
+    const localXml = toText(bpmnRef.current?.getXmlDraft?.() || draftRef.current?.bpmn_xml || "");
+    setMergePanelLocalXml(localXml);
+
+    const conflict = asObject(saveUploadStatus?.conflict);
+    const serverVersionFromConflict = toNonNegativeVersion(
+      conflict?.serverCurrentVersion ?? remoteSaveHighlightBadge?.serverVersion,
+    );
+    const actorLabel = toText(
+      conflict?.actorLabel
+      ?? remoteSaveHighlightBadge?.actorLabel
+      ?? remoteSaveHighlightBadge?.remoteToastActorLabel,
+    );
+    setMergePanelServerVersion(serverVersionFromConflict);
+    setMergePanelActorLabel(actorLabel);
+
+    try {
+      const fetched = await apiGetSession(sid);
+      if (fetched?.ok && fetched?.session && typeof fetched.session === "object") {
+        setMergePanelServerXml(toText(fetched.session.bpmn_xml || fetched.session.bpmnXml || ""));
+      } else {
+        setGenErr("Не удалось загрузить серверную версию для сравнения.");
+      }
+    } catch (error) {
+      setGenErr(shortErr(error?.message || error || "Не удалось загрузить серверную версию для сравнения."));
+    } finally {
+      setMergePanelOpen(true);
+      setMergePanelBusy(false);
+    }
+  }, [
+    sid,
+    bpmnRef,
+    draftRef,
+    saveUploadStatus?.conflict,
+    remoteSaveHighlightBadge?.serverVersion,
+    remoteSaveHighlightBadge?.actorLabel,
+    remoteSaveHighlightBadge?.remoteToastActorLabel,
+  ]);
+
   useEffect(() => {
     if (remoteSaveHighlightView?.visible !== true) return;
     const remoteToastKey = toText(remoteSaveHighlightView?.remoteToastKey)
@@ -2097,51 +2142,6 @@ function ProcessStage({
   const handleSaveConflictDiscardLocal = useCallback(() => {
     void reloadSessionAfterSaveConflict({ discardLocal: true });
   }, [reloadSessionAfterSaveConflict]);
-
-  const openMergePanel = useCallback(async (source = "") => {
-    if (!sid) return;
-    setMergePanelSource(toText(source) || "unknown");
-    setMergePanelBusy(true);
-    setSaveConflictNoticeDismissed(true);
-    setGenErr("");
-
-    const localXml = toText(bpmnRef.current?.getXmlDraft?.() || draftRef.current?.bpmn_xml || "");
-    setMergePanelLocalXml(localXml);
-
-    const conflict = asObject(saveUploadStatus?.conflict);
-    const serverVersionFromConflict = toNonNegativeVersion(
-      conflict?.serverCurrentVersion ?? remoteSaveHighlightBadge?.serverVersion,
-    );
-    const actorLabel = toText(
-      conflict?.actorLabel
-      ?? remoteSaveHighlightBadge?.actorLabel
-      ?? remoteSaveHighlightBadge?.remoteToastActorLabel,
-    );
-    setMergePanelServerVersion(serverVersionFromConflict);
-    setMergePanelActorLabel(actorLabel);
-
-    try {
-      const fetched = await apiGetSession(sid);
-      if (fetched?.ok && fetched?.session && typeof fetched.session === "object") {
-        setMergePanelServerXml(toText(fetched.session.bpmn_xml || fetched.session.bpmnXml || ""));
-      } else {
-        setGenErr("Не удалось загрузить серверную версию для сравнения.");
-      }
-    } catch (error) {
-      setGenErr(shortErr(error?.message || error || "Не удалось загрузить серверную версию для сравнения."));
-    } finally {
-      setMergePanelOpen(true);
-      setMergePanelBusy(false);
-    }
-  }, [
-    sid,
-    bpmnRef,
-    draftRef,
-    saveUploadStatus?.conflict,
-    remoteSaveHighlightBadge?.serverVersion,
-    remoteSaveHighlightBadge?.actorLabel,
-    remoteSaveHighlightBadge?.remoteToastActorLabel,
-  ]);
 
   const closeMergePanel = useCallback(() => {
     setMergePanelOpen(false);
