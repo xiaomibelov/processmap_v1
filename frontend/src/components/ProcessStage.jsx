@@ -28,6 +28,7 @@ import {
   apiGetBpmnVersion,
   apiGetBpmnXml,
   apiGetBpmnVersions,
+  apiPutBpmnXml,
   apiRestoreBpmnVersion,
 } from "../lib/api/bpmnApi";
 import { apiAiQuestions } from "../lib/api/interviewApi";
@@ -149,6 +150,9 @@ import {
 import ProcessStageDiagramControls from "../features/process/stage/ui/ProcessStageDiagramControls";
 import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDiagramOverlayLayers";
 import ProcessStageSaveConflictModal from "../features/process/stage/ui/ProcessStageSaveConflictModal";
+import BpmnMergePanel from "../features/process/stage/ui/BpmnMergePanel";
+import { buildMergePanelView } from "../features/process/stage/ui/BpmnMergePanel.model.js";
+import BpmnVersionDiffOverlay from "../features/process/stage/ui/BpmnVersionDiffOverlay";
 import BottomViewportScrubber from "../features/process/stage/scrubber/BottomViewportScrubber";
 import BpmnPropertiesOverlayModal from "../features/process/bpmn/context-menu/properties-overlay/BpmnPropertiesOverlayModal";
 import { buildSaveConflictModalView } from "../features/process/stage/ui/saveConflictModalModel";
@@ -442,6 +446,11 @@ function readServerLastWriteFromSession(sessionLikeRaw = null) {
   };
 }
 
+function toNonNegativeVersion(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
+}
+
 function ProcessStage({
   sessionId,
   activeProjectId,
@@ -573,6 +582,14 @@ function ProcessStage({
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
   const [saveConflictNoticeDismissed, setSaveConflictNoticeDismissed] = useState(false);
   const [saveConflictActionBusy, setSaveConflictActionBusy] = useState(false);
+  const [mergePanelOpen, setMergePanelOpen] = useState(false);
+  const [mergePanelBusy, setMergePanelBusy] = useState(false);
+  const [mergePanelSource, setMergePanelSource] = useState("");
+  const [mergePanelLocalXml, setMergePanelLocalXml] = useState("");
+  const [mergePanelServerXml, setMergePanelServerXml] = useState("");
+  const [mergePanelServerVersion, setMergePanelServerVersion] = useState(0);
+  const [mergePanelActorLabel, setMergePanelActorLabel] = useState("");
+  const [mergeDiffOpen, setMergeDiffOpen] = useState(false);
   const [latestBpmnVersionHead, setLatestBpmnVersionHead] = useState(null);
   const [latestBpmnVersionHeadStatus, setLatestBpmnVersionHeadStatus] = useState("idle");
   const [bpmnVersionTruthState, setBpmnVersionTruthState] = useState({
@@ -1771,10 +1788,10 @@ function ProcessStage({
     const message = buildRemoteUpdateToastMessage(remoteSaveHighlightView?.remoteToastActorLabel);
     showSaveAckToast(message, "warning", "remote_user", {
       resolveMessage: false,
-      description: "Обновите сессию, чтобы увидеть актуальную версию.",
-      actionLabel: "Обновить сессию",
+      description: "Откройте сравнение версий, чтобы выбрать, какую сохранить.",
+      actionLabel: "Посмотреть изменения",
       onAction: () => {
-        void applyPendingRemoteSaveRefresh();
+        void openMergePanel("remote_toast");
       },
       persistent: true,
       kind: "remote_update",
@@ -1789,7 +1806,7 @@ function ProcessStage({
       },
     });
   }, [
-    applyPendingRemoteSaveRefresh,
+    openMergePanel,
     remoteSaveHighlightView?.remoteToastActorLabel,
     remoteSaveHighlightView?.remoteToastKey,
     remoteSaveHighlightView?.serverVersion,
@@ -2076,6 +2093,150 @@ function ProcessStage({
   const handleSaveConflictDiscardLocal = useCallback(() => {
     void reloadSessionAfterSaveConflict({ discardLocal: true });
   }, [reloadSessionAfterSaveConflict]);
+
+  const openMergePanel = useCallback(async (source = "") => {
+    if (!sid) return;
+    setMergePanelSource(toText(source) || "unknown");
+    setMergePanelBusy(true);
+    setSaveConflictNoticeDismissed(true);
+    setGenErr("");
+
+    const localXml = toText(bpmnRef.current?.getXmlDraft?.() || draftRef.current?.bpmn_xml || "");
+    setMergePanelLocalXml(localXml);
+
+    const conflict = asObject(saveUploadStatus?.conflict);
+    const serverVersionFromConflict = toNonNegativeVersion(
+      conflict?.serverCurrentVersion ?? remoteSaveHighlightBadge?.serverVersion,
+    );
+    const actorLabel = toText(
+      conflict?.actorLabel
+      ?? remoteSaveHighlightBadge?.actorLabel
+      ?? remoteSaveHighlightBadge?.remoteToastActorLabel,
+    );
+    setMergePanelServerVersion(serverVersionFromConflict);
+    setMergePanelActorLabel(actorLabel);
+
+    try {
+      const fetched = await apiGetSession(sid);
+      if (fetched?.ok && fetched?.session && typeof fetched.session === "object") {
+        setMergePanelServerXml(toText(fetched.session.bpmn_xml || fetched.session.bpmnXml || ""));
+      } else {
+        setGenErr("Не удалось загрузить серверную версию для сравнения.");
+      }
+    } catch (error) {
+      setGenErr(shortErr(error?.message || error || "Не удалось загрузить серверную версию для сравнения."));
+    } finally {
+      setMergePanelOpen(true);
+      setMergePanelBusy(false);
+    }
+  }, [
+    sid,
+    bpmnRef,
+    draftRef,
+    saveUploadStatus?.conflict,
+    remoteSaveHighlightBadge?.serverVersion,
+    remoteSaveHighlightBadge?.actorLabel,
+    remoteSaveHighlightBadge?.remoteToastActorLabel,
+  ]);
+
+  const closeMergePanel = useCallback(() => {
+    setMergePanelOpen(false);
+    setMergePanelBusy(false);
+    setMergePanelSource("");
+    setMergePanelLocalXml("");
+    setMergePanelServerXml("");
+    setMergePanelServerVersion(0);
+    setMergePanelActorLabel("");
+  }, []);
+
+  const handleMergeAcceptLatest = useCallback(async () => {
+    setMergePanelBusy(true);
+    const result = await reloadSessionAfterSaveConflict({ discardLocal: false });
+    if (result?.ok !== false) {
+      closeMergePanel();
+    }
+    setMergePanelBusy(false);
+  }, [closeMergePanel, reloadSessionAfterSaveConflict]);
+
+  const handleMergeKeepMine = useCallback(async () => {
+    if (!sid) return;
+    const localXml = mergePanelLocalXml || toText(bpmnRef.current?.getXmlDraft?.() || draftRef.current?.bpmn_xml || "");
+    if (!localXml) {
+      setGenErr("Не удалось определить локальный XML для сохранения.");
+      return;
+    }
+    const serverVersion = mergePanelServerVersion || toNonNegativeVersion(
+      saveUploadStatus?.conflict?.serverCurrentVersion
+      ?? remoteSaveHighlightBadge?.serverVersion,
+    );
+    if (serverVersion <= 0) {
+      setGenErr("Не удалось определить серверную версию для force-save.");
+      return;
+    }
+    setMergePanelBusy(true);
+    try {
+      const saved = await apiPutBpmnXml(sid, localXml, {
+        baseDiagramStateVersion: serverVersion,
+        reason: "manual_save",
+      });
+      if (!saved?.ok) {
+        const status = Number(saved?.status || 0);
+        if (status === 409) {
+          setSaveUploadLifecycleEvent((prev) => ({
+            ...prev,
+            payload: {
+              ...(prev?.payload || {}),
+              status: 409,
+              error_code: "DIAGRAM_STATE_CONFLICT",
+              error_details: saved?.data || saved,
+            },
+          }));
+          setSaveConflictNoticeDismissed(false);
+          setGenErr("Конфликт обновился. Повторите выбор.");
+          closeMergePanel();
+        } else {
+          setGenErr(shortErr(saved?.error || "Не удалось сохранить версию поверх серверной."));
+        }
+        return;
+      }
+      if (saved?.diagramStateVersion) {
+        rememberDiagramStateVersion(saved.diagramStateVersion, { sessionId: sid });
+      }
+      await bpmnSync.resetBackend();
+      setSaveDirtyHint(false);
+      setSaveUploadLifecycleEvent(IDLE_SAVE_UPLOAD_EVENT);
+      setInfoMsg("Ваша версия сохранена поверх серверной. Создана новая версия в истории.");
+      closeMergePanel();
+    } catch (error) {
+      setGenErr(shortErr(error?.message || error || "Не удалось сохранить версию поверх серверной."));
+    } finally {
+      setMergePanelBusy(false);
+    }
+  }, [
+    sid,
+    mergePanelLocalXml,
+    mergePanelServerVersion,
+    bpmnRef,
+    draftRef,
+    saveUploadStatus?.conflict,
+    remoteSaveHighlightBadge?.serverVersion,
+    apiPutBpmnXml,
+    rememberDiagramStateVersion,
+    bpmnSync,
+    closeMergePanel,
+    setGenErr,
+    setInfoMsg,
+  ]);
+
+  const handleMergeCompare = useCallback(() => {
+    if (mergePanelLocalXml && mergePanelServerXml) {
+      setMergeDiffOpen(true);
+    }
+  }, [mergePanelLocalXml, mergePanelServerXml]);
+
+  const handleMergeCancel = useCallback(() => {
+    closeMergePanel();
+  }, [closeMergePanel]);
 
   const applyDiagramMode = useCallback((nextModeRaw) => {
     const nextMode = normalizeDiagramMode(nextModeRaw);
@@ -7261,7 +7422,36 @@ function ProcessStage({
         onRefreshSession={handleSaveConflictRefresh}
         onStay={dismissSaveConflictNotice}
         onDiscardLocalChanges={handleSaveConflictDiscardLocal}
+        onCompare={() => void openMergePanel("save_conflict_modal")}
       />
+      <BpmnMergePanel
+        open={mergePanelOpen}
+        busy={mergePanelBusy}
+        localXml={mergePanelLocalXml}
+        serverXml={mergePanelServerXml}
+        localVersion={Number(getBaseDiagramStateVersion()
+          ?? draft?.diagram_state_version
+          ?? draft?.diagramStateVersion
+          ?? 0)}
+        serverVersion={mergePanelServerVersion}
+        serverActorLabel={mergePanelActorLabel}
+        currentUserId={toText(user?.id || user?.user_id || user?.email)}
+        canEdit
+        source={mergePanelSource}
+        onAcceptLatest={handleMergeAcceptLatest}
+        onKeepMine={handleMergeKeepMine}
+        onCompare={handleMergeCompare}
+        onCancel={handleMergeCancel}
+      />
+      {mergeDiffOpen ? (
+        <BpmnVersionDiffOverlay
+          previousXml={mergePanelLocalXml}
+          nextXml={mergePanelServerXml}
+          previousLabel="Ваша версия"
+          nextLabel="Последняя версия сервера"
+          onClose={() => setMergeDiffOpen(false)}
+        />
+      ) : null}
     </ProcessStageShell>
   );
 }
