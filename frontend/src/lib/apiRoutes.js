@@ -155,6 +155,8 @@ export const apiRoutes = {
     }),
     bpmnVersions: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/bpmn/versions`, {
       limit: String(options?.limit || "").trim(),
+      offset: String(options?.offset || "").trim(),
+      include_technical: options?.includeTechnical === true ? "1" : "",
       include_xml: options?.includeXml === true ? "1" : "",
     }),
     bpmnVersion: (sessionId, versionId) => `/api/sessions/${encode(sessionId)}/bpmn/versions/${encode(versionId)}`,

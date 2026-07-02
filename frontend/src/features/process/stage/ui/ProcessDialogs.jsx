@@ -55,10 +55,13 @@ export default function ProcessDialogs({ view = {} }) {
     versionsUserFacingCount,
     versionsServerEntriesCount,
     versionsTechnicalEntriesCount,
+    versionsTotalCount,
+    versionsHasMore,
+    versionsLoadingMore,
+    versionsIncludeTechnical,
+    loadMoreSnapshotVersions,
+    toggleVersionsIncludeTechnical,
     isAdmin,
-    showTechnicalVersions,
-    setShowTechnicalVersions,
-    saveSessionFromVersionsModal,
     setGenErr,
     setDiffTargetSnapshotId,
     setDiffBaseSnapshotId,
@@ -280,25 +283,181 @@ export default function ProcessDialogs({ view = {} }) {
         )}
         footerClassName="!border-t-0 !p-0"
       >
-        <div className="grid h-[65vh] min-h-[480px] gap-3 overflow-hidden md:grid-cols-[280px_1fr] lg:grid-cols-[minmax(260px,30%)_minmax(0,70%)]" data-testid="bpmn-versions-modal">
-          <div className="flex min-h-0 flex-col">
-            <BpmnVersionList
-              versions={versionsList}
-              selectedId={previewSnapshotId}
-              currentVersionId={currentBpmnVersionId}
-              busy={versionsBusy}
-              loadState={versionsLoadState}
-              loadError={versionsLoadError}
-              emptyMessage={revisionEmptyState.message}
-              onSelect={previewSnapshotVersion}
-              onSaveSession={saveSessionFromVersionsModal}
-              onCompareWithCurrent={compareVersionWithCurrent}
-              onRestore={restoreSnapshot}
-              canRestore={canRestoreVersion !== false}
-              isAdmin={isAdmin}
-              showTechnical={showTechnicalVersions}
-              onToggleTechnical={setShowTechnicalVersions}
-            />
+        <div className="grid gap-3 lg:grid-cols-[minmax(320px,460px)_minmax(0,1fr)]" data-testid="bpmn-versions-modal">
+          <div className="rounded-xl border border-border bg-panel2/45 p-2">
+            <div className="mb-2 px-1 text-xs text-muted" data-testid="bpmn-versions-count">
+              <div className="flex items-center justify-between gap-2">
+                <span data-testid="bpmn-versions-shown-count">
+                  Показано {asArray(versionsList).length} из {Math.max(versionsTotalCount || 0, asArray(versionsList).length)} версий
+                </span>
+                {isAdmin ? (
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px]">
+                    <input
+                      type="checkbox"
+                      checked={!!versionsIncludeTechnical}
+                      onChange={() => void toggleVersionsIncludeTechnical?.()}
+                      disabled={versionsBusy || versionsLoadingMore}
+                      data-testid="bpmn-versions-show-technical"
+                    />
+                    Показать технические
+                  </label>
+                ) : null}
+              </div>
+              <div className="mt-1 text-[11px] text-muted">
+                Текущий BPMN сохраняется отдельно от опубликованных версий. Пустая история не означает, что черновик не сохранён.
+                Новая версия BPMN создаётся, когда изменилось состояние сессии: схема, свойства, документы или связанные данные.
+                Чтобы понять, кто и что изменил, используйте compare-first: «Сравнить A/B» или «Сравнить» у нужной версии.
+              </div>
+            </div>
+            <div className="max-h-[52vh] space-y-2 overflow-auto pr-1">
+              {versionsLoadState === "loading" ? (
+                <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted" data-testid="bpmn-versions-loading">
+                  Загружаем историю версий...
+                </div>
+              ) : versionsLoadState === "failed" ? (
+                <div className="rounded-lg border border-red-500/35 bg-red-500/10 px-3 py-2 text-sm text-red-200" data-testid="bpmn-versions-error">
+                  Не удалось загрузить историю версий: {String(versionsLoadError || "ошибка загрузки")}
+                </div>
+              ) : versionsLoadState === "empty" || (versionsLoadState === "ready" && versionsList.length === 0) ? (
+                <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted" data-testid="bpmn-versions-empty">
+                  {String(revisionEmptyState.message || "Версий пока нет. Текущий BPMN может быть сохранён как черновик; новая версия создаётся отдельным действием.")}
+                </div>
+              ) : versionsList.length === 0 ? (
+                <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted" data-testid="bpmn-versions-idle">
+                  История версий ещё не загружена.
+                </div>
+              ) : (
+                <>
+                {versionsList.map((item) => {
+                  const id = String(item?.id || "");
+                  const active = id === String(previewSnapshotId || "");
+                  const isLatest = id === String(asArray(versionsList)[0]?.id || "");
+                  return (
+                    <div
+                      key={id}
+                      className={"rounded-lg border px-2.5 py-2 " + (active ? "border-accent bg-accentSoft/35" : "border-border bg-panel")}
+                      data-testid="bpmn-version-item"
+                      data-snapshot-id={id}
+                    >
+                      <div className="mb-1 flex items-center justify-between gap-2 text-xs text-muted">
+                        <span>{formatSnapshotTs(item?.ts)}</span>
+                        <span>{String(item?.reasonLabel || item?.reason || "Импорт BPMN")}</span>
+                      </div>
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <span className="truncate text-sm font-semibold text-fg" data-testid="bpmn-version-label">
+                          {snapshotLabel(item)}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {isLatest ? (
+                            <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-emerald-300">
+                              последняя
+                            </span>
+                          ) : null}
+                          <span className="rounded-full border border-accent/40 bg-accentSoft/20 px-2 py-0.5 text-[10px] uppercase tracking-wide text-accent">
+                            {Number(item?.revisionNumber || item?.rev || 0) > 0
+                              ? `версия ${Number(item?.revisionNumber || item?.rev || 0)}`
+                              : "без номера версии"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="mb-1 text-xs text-muted">
+                        кто изменил: {String(item?.authorLabel || item?.authorName || item?.authorEmail || item?.authorId || "Автор не указан")}
+                      </div>
+                      <div className="mb-2 text-xs text-muted">
+                        комментарий: {String(item?.comment || "—")}
+                      </div>
+                      <div className="mb-2 text-xs text-muted">
+                        что изменилось: откройте «Сравнить» для diff с соседней версией.
+                      </div>
+                      <div className="mb-2 text-xs text-muted">
+                        хэш: <span className="font-mono text-fg">{shortSnapshotHash(item?.hash || item?.xml || "")}</span> · размер: {Number(item?.len || String(item?.xml || "").length)}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          className="secondaryBtn h-7 px-2 text-[11px]"
+                          onClick={() => void (previewSnapshotVersion ? previewSnapshotVersion(item) : setPreviewSnapshotId(id))}
+                          data-testid="bpmn-version-preview"
+                        >
+                          Предпросмотр XML
+                        </button>
+                        <button type="button" className="secondaryBtn h-7 px-2 text-[11px]" onClick={() => void downloadSnapshot(item)}>
+                          Скачать .bpmn
+                        </button>
+                        <button
+                          type="button"
+                          className="secondaryBtn h-7 px-2 text-[11px]"
+                          onClick={() => void openDiffForSnapshot(item)}
+                          disabled={versionsBusy || versionsList.length < 2}
+                          data-testid="bpmn-version-diff"
+                        >
+                          Сравнить
+                        </button>
+                        <button
+                          type="button"
+                          className="primaryBtn h-7 px-2 text-[11px]"
+                          onClick={() => void restoreSnapshot(item)}
+                          disabled={versionsBusy}
+                          data-testid="bpmn-version-restore"
+                        >
+                          Восстановить
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {versionsLoadState === "ready" && versionsList.length > 0 ? (
+                  <div className="flex items-center justify-center gap-2 pt-2">
+                    {versionsHasMore ? (
+                      <button
+                        type="button"
+                        className="secondaryBtn h-8 px-3 text-xs"
+                        onClick={() => void loadMoreSnapshotVersions?.()}
+                        disabled={versionsBusy || versionsLoadingMore}
+                        data-testid="bpmn-versions-load-more"
+                      >
+                        {versionsLoadingMore ? "Загрузка..." : "Загрузить ещё 10"}
+                      </button>
+                    ) : (
+                      <span className="text-[11px] text-muted">Все версии загружены</span>
+                    )}
+                  </div>
+                ) : null}
+                {versionsLoadState === "failed" ? (
+                  <div className="flex items-center justify-center gap-2 pt-2">
+                    <button
+                      type="button"
+                      className="secondaryBtn h-8 px-3 text-xs"
+                      onClick={() => void refreshSnapshotVersions?.()}
+                      disabled={versionsBusy || versionsLoadingMore}
+                      data-testid="bpmn-versions-retry"
+                    >
+                      Обновить список версий
+                    </button>
+                  </div>
+                ) : null}
+                </>
+              )}
+            </div>
+          </div>
+          <div className="flex min-h-[300px] flex-col overflow-hidden rounded-xl border border-border bg-panel2/35">
+            <div className="border-b border-border px-3 py-2 text-xs text-muted">
+              {previewSnapshot ? `XML предпросмотр · ${formatSnapshotTs(previewSnapshot.ts)}` : "Выберите версию слева"}
+            </div>
+            <div className="min-h-0 flex-1 p-3">
+              {previewSnapshot && !String(previewSnapshot?.xml || "").trim() ? (
+                <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted" data-testid="bpmn-version-preview-lazy">
+                  XML этой версии подгружается по требованию. Нажмите «Предпросмотр XML», если загрузка ещё не началась.
+                </div>
+              ) : (
+                <textarea
+                  className="xmlEditorTextarea h-full min-h-[44vh] w-full"
+                  value={String(previewSnapshot?.xml || "")}
+                  readOnly
+                  data-testid="bpmn-version-preview-xml"
+                />
+              )}
+            </div>
           </div>
           <BpmnVersionPreview
             xml={previewSnapshot?.xml}

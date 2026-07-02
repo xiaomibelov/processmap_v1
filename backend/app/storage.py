@@ -43,6 +43,18 @@ _BPMN_ACTIVITY_TAGS: Set[str] = {
 }
 
 
+_USER_FACING_BPMN_VERSION_ACTIONS: Set[str] = {
+    "publish_manual_save",
+    "manual_publish",
+    "manual_publish_revision",
+    "import_bpmn",
+    "restore_bpmn",
+    "restore_revision",
+    "restore_bpmn_version",
+    "session.bpmn_restore",
+}
+
+
 def _bpmn_local_name(tag: str) -> str:
     if not tag:
         return ""
@@ -3849,6 +3861,7 @@ class Storage:
         session_id: str,
         *,
         org_id: Optional[str] = None,
+        source_actions: Optional[Iterable[str]] = None,
     ) -> int:
         sid = str(session_id or "").strip()
         if not sid:
@@ -3863,9 +3876,21 @@ class Storage:
             oid = scope_org or session_org
             if oid != session_org:
                 return 0
+            filters = ["session_id = ?", "org_id = ?"]
+            params: List[Any] = [sid, oid]
+            actions = [
+                str(action or "").strip().lower()
+                for action in (source_actions or [])
+                if str(action or "").strip()
+            ]
+            if actions:
+                placeholders = ", ".join(["?"] * len(actions))
+                filters.append(f"lower(source_action) IN ({placeholders})")
+                params.extend(actions)
+            where = f"WHERE {' AND '.join(filters)}"
             row = con.execute(
-                "SELECT COUNT(*) AS cnt FROM bpmn_versions WHERE session_id = ? AND org_id = ?",
-                [sid, oid],
+                f"SELECT COUNT(*) AS cnt FROM bpmn_versions {where}",
+                params,
             ).fetchone()
         return int((dict(row) if row else {}).get("cnt") or 0)
 
@@ -5028,7 +5053,9 @@ class Storage:
         *,
         org_id: Optional[str] = None,
         limit: int = 100,
+        offset: int = 0,
         include_xml: bool = False,
+        include_technical: bool = True,
     ) -> List[Dict[str, Any]]:
         _ensure_schema()
         sid = str(session_id or "").strip()
@@ -5040,6 +5067,11 @@ class Storage:
         except Exception:
             lim = 100
         lim = min(max(lim, 1), 1000)
+        try:
+            off = int(offset)
+        except Exception:
+            off = 0
+        off = max(off, 0)
 
         with _connect() as con:
             sess_row = con.execute("SELECT org_id FROM sessions WHERE id = ? LIMIT 1", [sid]).fetchone()
@@ -5049,6 +5081,13 @@ class Storage:
             oid = scope_org or session_org
             if oid != session_org:
                 return []
+            filters = ["session_id = ?", "org_id = ?"]
+            params: List[Any] = [sid, oid]
+            if not include_technical:
+                placeholders = ", ".join(["?"] * len(_USER_FACING_BPMN_VERSION_ACTIONS))
+                filters.append(f"lower(source_action) IN ({placeholders})")
+                params.extend(_USER_FACING_BPMN_VERSION_ACTIONS)
+            where = f"WHERE {' AND '.join(filters)}"
             columns = (
                 "id, session_id, org_id, version_number, diagram_state_version, bpmn_xml, session_payload_hash, session_version, session_updated_at, source_action, import_note, created_at, created_by"
                 if include_xml
@@ -5058,12 +5097,12 @@ class Storage:
                 f"""
                 SELECT {columns}
                   FROM bpmn_versions
-                 WHERE session_id = ?
-                   AND org_id = ?
+                 {where}
                  ORDER BY version_number DESC
                  LIMIT ?
+                 OFFSET ?
                 """,
-                [sid, oid, lim],
+                [*params, lim, off],
             ).fetchall()
 
         out: List[Dict[str, Any]] = []

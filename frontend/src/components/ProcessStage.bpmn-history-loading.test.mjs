@@ -15,7 +15,8 @@ test("BPMN history head check uses one headers-only version instead of initial l
   const source = readSource();
   assert.equal(source.includes("const refreshLatestBpmnRevisionHead = useCallback(async () => {"), true);
   assert.equal(source.includes("limit: 1,\n      updateList: false,\n      trackHeadStatus: true,"), true);
-  assert.equal(source.includes("const fallbackLimit = BPMN_VERSION_HEADERS_LIMIT;"), true);
+  assert.equal(source.includes("const defaultLimit = trackHeadStatus ? 1 : 10;"), true);
+  assert.equal(source.includes("const fallbackLimit = BPMN_VERSION_HEADERS_LIMIT;"), false);
   assert.equal(source.includes("const fallbackLimit = includeXml ? 200 : BPMN_VERSION_HEADERS_LIMIT;"), false);
 });
 
@@ -36,7 +37,7 @@ test("opening BPMN history modal relies on one effect-driven headers list fetch"
 test("BPMN history list requests are deduped and stale responses are ignored", () => {
   const source = readSource();
   assert.equal(source.includes("const bpmnVersionsListRequestRef = useRef({ key: \"\", promise: null });"), true);
-  assert.equal(source.includes("const requestKey = `${requestSid}|limit=${limit}|includeXml=${includeXml ? \"1\" : \"0\"}|updateList=${updateList ? \"1\" : \"0\"}|trackHead=${trackHeadStatus ? \"1\" : \"0\"}`;"), true);
+  assert.equal(source.includes("const requestKey = `${requestSid}|offset=${offset}|limit=${limit}|includeTechnical=${includeTechnical ? \"1\" : \"0\"}|includeXml=${includeXml ? \"1\" : \"0\"}|updateList=${updateList ? \"1\" : \"0\"}|trackHead=${trackHeadStatus ? \"1\" : \"0\"}`;"), true);
   assert.equal(source.includes("return bpmnVersionsListRequestRef.current.promise;"), true);
   assert.equal(source.includes("if (bpmnVersionsActiveSessionRef.current !== requestSid) return;"), true);
   assert.equal(source.includes("if (updateList && !bpmnVersionsOpenRef.current) return;"), true);
