@@ -148,8 +148,22 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None):
     return _svc.session_bpmn_save(session_id, inp, request)
 
 @router.get('/api/sessions/{session_id}/bpmn/versions')
-def session_bpmn_versions_list(session_id: str, limit: int = Query(100), include_xml: int = Query(0), request: Request = None):
-    return _svc.bpmn_versions_list(session_id, request=request, limit=limit, include_xml=include_xml)
+def session_bpmn_versions_list(
+    session_id: str,
+    limit: int = Query(10),
+    offset: int = Query(0),
+    include_xml: int = Query(0),
+    include_technical: bool = Query(False),
+    request: Request = None,
+):
+    return _svc.bpmn_versions_list(
+        session_id,
+        request=request,
+        limit=limit,
+        offset=offset,
+        include_xml=include_xml,
+        include_technical=include_technical,
+    )
 
 @router.get('/api/sessions/{session_id}/bpmn/versions/{version_id}')
 def session_bpmn_version_detail(session_id: str, version_id: str, request: Request = None):
