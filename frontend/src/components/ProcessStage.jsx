@@ -606,6 +606,10 @@ function ProcessStage({
   const [versionsUserFacingCount, setVersionsUserFacingCount] = useState(0);
   const [versionsServerEntriesCount, setVersionsServerEntriesCount] = useState(0);
   const [versionsTechnicalEntriesCount, setVersionsTechnicalEntriesCount] = useState(0);
+  const [versionsTotalCount, setVersionsTotalCount] = useState(0);
+  const [versionsHasMore, setVersionsHasMore] = useState(false);
+  const [versionsLoadingMore, setVersionsLoadingMore] = useState(false);
+  const [versionsIncludeTechnical, setVersionsIncludeTechnical] = useState(false);
   const [diagramUndoRedoState, setDiagramUndoRedoState] = useState({ canUndo: false, canRedo: false, ready: false });
   const [diagramSearchMutationVersion, setDiagramSearchMutationVersion] = useState(0);
   const [remoteSaveHighlightBadge, setRemoteSaveHighlightBadge] = useState(null);
@@ -4638,6 +4642,9 @@ function ProcessStage({
       setVersionsUserFacingCount(0);
       setVersionsServerEntriesCount(0);
       setVersionsTechnicalEntriesCount(0);
+      setVersionsTotalCount(0);
+      setVersionsHasMore(false);
+      setVersionsLoadingMore(false);
       setLatestBpmnVersionHead(null);
       setBpmnVersionTruthState({
         currentSessionPayloadHash: "",
@@ -4651,24 +4658,39 @@ function ProcessStage({
     const includeXml = options?.includeXml === true;
     const updateList = options?.updateList !== false;
     const trackHeadStatus = options?.trackHeadStatus === true;
-    const fallbackLimit = BPMN_VERSION_HEADERS_LIMIT;
-    const requestedLimit = Number(options?.limit || fallbackLimit);
+    const loadMore = options?.loadMore === true;
+    const includeTechnical = options?.includeTechnical ?? versionsIncludeTechnical ?? false;
+    const defaultLimit = trackHeadStatus ? 1 : 10;
+    const requestedLimit = Number(options?.limit || defaultLimit);
     const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
       ? Math.min(Math.round(requestedLimit), BPMN_VERSION_HEADERS_LIMIT)
-      : fallbackLimit;
-    const requestKey = `${requestSid}|limit=${limit}|includeXml=${includeXml ? "1" : "0"}|updateList=${updateList ? "1" : "0"}|trackHead=${trackHeadStatus ? "1" : "0"}`;
+      : defaultLimit;
+    const requestedOffset = loadMore
+      ? Number(options?.offset || 0)
+      : Number(options?.offset || 0);
+    const offset = Number.isFinite(requestedOffset) && requestedOffset >= 0 ? Math.round(requestedOffset) : 0;
+    const requestKey = `${requestSid}|offset=${offset}|limit=${limit}|includeTechnical=${includeTechnical ? "1" : "0"}|includeXml=${includeXml ? "1" : "0"}|updateList=${updateList ? "1" : "0"}|trackHead=${trackHeadStatus ? "1" : "0"}`;
     if (updateList && bpmnVersionsListRequestRef.current?.key === requestKey && bpmnVersionsListRequestRef.current?.promise) {
       return bpmnVersionsListRequestRef.current.promise;
     }
     const runRequest = async () => {
       if (trackHeadStatus) setLatestBpmnVersionHeadStatus("loading");
       if (updateList) {
-        setVersionsLoadState("loading");
+        if (loadMore) {
+          setVersionsLoadingMore(true);
+        } else {
+          setVersionsLoadState("loading");
+        }
         setVersionsLoadError("");
       }
       let loaded = null;
       try {
-        loaded = await apiGetBpmnVersions(sid, { limit, includeXml });
+        loaded = await apiGetBpmnVersions(sid, {
+          limit,
+          offset,
+          includeXml,
+          includeTechnical,
+        });
       } catch (error) {
         loaded = { ok: false, error: error?.message || error || "Не удалось загрузить BPMN версии." };
       }
@@ -4676,19 +4698,25 @@ function ProcessStage({
       if (updateList && !bpmnVersionsOpenRef.current) return;
       if (!loaded?.ok) {
         if (updateList) {
-          setVersionsList([]);
-          setVersionsListAll([]);
-          setPreviewSnapshotId("");
-          setVersionsLoadState("failed");
-          setVersionsLoadError(shortErr(loaded?.error || "Не удалось загрузить BPMN версии."));
-          setVersionsUserFacingCount(0);
-          setVersionsServerEntriesCount(0);
-          setVersionsTechnicalEntriesCount(0);
-          setBpmnVersionTruthState({
-            currentSessionPayloadHash: "",
-            latestUserVersionSessionPayloadHash: "",
-            hasSessionChangesSinceLatestBpmnVersion: false,
-          });
+          if (loadMore) {
+            setVersionsLoadError(shortErr(loaded?.error || "Не удалось подгрузить BPMN версии."));
+          } else {
+            setVersionsList([]);
+            setVersionsListAll([]);
+            setPreviewSnapshotId("");
+            setVersionsLoadState("failed");
+            setVersionsLoadError(shortErr(loaded?.error || "Не удалось загрузить BPMN версии."));
+            setVersionsUserFacingCount(0);
+            setVersionsServerEntriesCount(0);
+            setVersionsTechnicalEntriesCount(0);
+            setVersionsTotalCount(0);
+            setVersionsHasMore(false);
+            setBpmnVersionTruthState({
+              currentSessionPayloadHash: "",
+              latestUserVersionSessionPayloadHash: "",
+              hasSessionChangesSinceLatestBpmnVersion: false,
+            });
+          }
         }
         if (trackHeadStatus) setLatestBpmnVersionHeadStatus("failed");
         return;
@@ -4724,6 +4752,14 @@ function ProcessStage({
         || loaded?.latest_user_facing_revision_number
         || 0,
       );
+      const totalCount = Number(
+        loaded?.totalCount
+        || loaded?.total_count
+        || userFacingCount
+        || serverEntriesCount
+        || 0,
+      );
+      const hasMore = loaded?.hasMore === true || loaded?.has_more === true;
       const meaningfulWithNumbers = applyUserFacingRevisionNumbers({
         meaningfulRevisionsRaw: list,
         revisionHistorySnapshotRaw: {
@@ -4749,22 +4785,44 @@ function ProcessStage({
       // eslint-disable-next-line no-console
       console.debug(
         `UI_VERSIONS_LOAD sid=${sid} key="${snapshotScopeKey(snapshotProjectId, sid)}" `
-        + `meaningful_count=${asArray(list).length} technical_count=${technicalList.length} unknown_count=${unknownList.length}`,
+        + `offset=${offset} limit=${limit} includeTechnical=${includeTechnical} `
+        + `meaningful_count=${asArray(list).length} technical_count=${technicalList.length} unknown_count=${unknownList.length} total=${totalCount} hasMore=${hasMore}`,
       );
       setVersionsUserFacingCount(Math.max(0, Math.round(Number(userFacingCount || 0))));
       setVersionsServerEntriesCount(serverEntriesCount);
       setVersionsTechnicalEntriesCount(hiddenNonMeaningfulList.length);
-      setVersionsList(asArray(meaningfulWithNumbers));
-      setVersionsListAll(allWithDisplayNumbers);
-      setVersionsLoadState(asArray(meaningfulWithNumbers).length > 0 ? "ready" : "empty");
+      setVersionsTotalCount(Math.max(0, Math.round(Number(totalCount || 0))));
+      setVersionsHasMore(hasMore);
+      if (loadMore) {
+        setVersionsList((prev) => {
+          const current = asArray(prev);
+          const newItems = asArray(meaningfulWithNumbers).filter(
+            (item) => !current.some((existing) => String(existing?.id || "") === String(item?.id || "")),
+          );
+          return [...current, ...newItems];
+        });
+        setVersionsListAll((prev) => {
+          const current = asArray(prev);
+          const newItems = allWithDisplayNumbers.filter(
+            (item) => !current.some((existing) => String(existing?.id || "") === String(item?.id || "")),
+          );
+          return [...current, ...newItems];
+        });
+        setPreviewSnapshotId((prev) => (prev || asArray(meaningfulWithNumbers)[0]?.id || ""));
+      } else {
+        setVersionsList(asArray(meaningfulWithNumbers));
+        setVersionsListAll(allWithDisplayNumbers);
+        setVersionsLoadState(asArray(meaningfulWithNumbers).length > 0 ? "ready" : "empty");
+        setPreviewSnapshotId((prev) => {
+          const exists = asArray(meaningfulWithNumbers).some((item) => String(item?.id || "") === String(prev || ""));
+          if (exists) return prev;
+          return asArray(meaningfulWithNumbers)[0]?.id || "";
+        });
+      }
       setVersionsLoadError("");
-      setPreviewSnapshotId((prev) => {
-        const exists = asArray(meaningfulWithNumbers).some((item) => String(item?.id || "") === String(prev || ""));
-        if (exists) return prev;
-        return asArray(meaningfulWithNumbers)[0]?.id || "";
-      });
     };
     const promise = runRequest().finally(() => {
+      setVersionsLoadingMore(false);
       if (bpmnVersionsListRequestRef.current?.key === requestKey) {
         bpmnVersionsListRequestRef.current = { key: "", promise: null };
       }
@@ -4773,7 +4831,34 @@ function ProcessStage({
       bpmnVersionsListRequestRef.current = { key: requestKey, promise };
     }
     return promise;
-  }, [applyUserFacingRevisionNumbers, normalizeBpmnVersionListItem, sessionRevisionHistorySnapshot, sid, snapshotProjectId]);
+  }, [applyUserFacingRevisionNumbers, normalizeBpmnVersionListItem, sessionRevisionHistorySnapshot, sid, snapshotProjectId, versionsIncludeTechnical]);
+
+  const loadMoreSnapshotVersions = useCallback(async () => {
+    if (!sid || !versionsHasMore || versionsLoadingMore) return;
+    const nextOffset = asArray(versionsList).length;
+    await refreshSnapshotVersions({
+      loadMore: true,
+      offset: nextOffset,
+      limit: 10,
+      includeTechnical: versionsIncludeTechnical,
+    });
+  }, [sid, versionsHasMore, versionsLoadingMore, versionsList, versionsIncludeTechnical, refreshSnapshotVersions]);
+
+  const toggleVersionsIncludeTechnical = useCallback(async () => {
+    const next = !versionsIncludeTechnical;
+    setVersionsIncludeTechnical(next);
+    setVersionsList([]);
+    setVersionsListAll([]);
+    setVersionsTotalCount(0);
+    setVersionsHasMore(false);
+    setVersionsLoadState("loading");
+    setVersionsLoadError("");
+    await refreshSnapshotVersions({
+      offset: 0,
+      limit: 10,
+      includeTechnical: next,
+    });
+  }, [versionsIncludeTechnical, refreshSnapshotVersions]);
 
   const saveSessionFromVersionsModal = useCallback(async () => {
     await runManualSaveAction({ createRevision: true });
@@ -5645,6 +5730,10 @@ function ProcessStage({
     if (!versionsOpen || !sid) return;
     void refreshSnapshotVersions();
   }, [versionsOpen, sid, draft?.bpmn_xml_version, draft?.updated_at, draft?.version, refreshSnapshotVersions]);
+
+  useEffect(() => {
+    setVersionsIncludeTechnical(false);
+  }, [sid]);
 
   useEffect(() => {
     if (!sid) {
@@ -6792,6 +6881,12 @@ function ProcessStage({
     versionsUserFacingCount,
     versionsServerEntriesCount,
     versionsTechnicalEntriesCount,
+    versionsTotalCount,
+    versionsHasMore,
+    versionsLoadingMore,
+    versionsIncludeTechnical,
+    loadMoreSnapshotVersions,
+    toggleVersionsIncludeTechnical,
     revisionHistorySnapshot: revisionHistoryUiSnapshot,
     setGenErr,
     setDiffTargetSnapshotId,
