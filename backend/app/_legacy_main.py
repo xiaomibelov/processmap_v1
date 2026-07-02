@@ -7712,22 +7712,40 @@ def session_meta_patch(session_id: str, inp: Any, request: Request = None) -> Di
 def session_bpmn_versions_list(
     session_id: str,
     request: Request = None,
-    limit: int = Query(100, description="Max versions to return"),
+    limit: int = Query(10, description="Max versions to return"),
+    offset: int = Query(0, description="Offset for pagination"),
     include_xml: int = Query(0, description="1 = include bpmn_xml payload"),
+    include_technical: bool = Query(False, description="Include technical versions"),
 ) -> Dict[str, Any]:
     sess, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
         return {"error": "not found"}
+    try:
+        limit = int(limit)
+    except Exception:
+        limit = 10
+    try:
+        offset = int(offset)
+    except Exception:
+        offset = 0
+    try:
+        include_xml = int(include_xml)
+    except Exception:
+        include_xml = 0
+    include_technical = bool(include_technical)
     st = get_storage()
-    include_xml_mode = int(include_xml or 0) == 1
+    sid = str(getattr(sess, "id", "") or session_id)
+    include_xml_mode = include_xml == 1
     rows = st.list_bpmn_versions(
-        str(getattr(sess, "id", "") or session_id),
+        sid,
         org_id=oid,
         limit=limit,
+        offset=offset,
         include_xml=include_xml_mode,
+        include_technical=include_technical,
     )
     user_facing_version_numbers = st.list_bpmn_version_numbers_by_source_actions(
-        str(getattr(sess, "id", "") or session_id),
+        sid,
         org_id=oid,
         source_actions=_USER_FACING_BPMN_VERSION_ACTIONS,
     )
@@ -7767,20 +7785,38 @@ def session_bpmn_versions_list(
         if include_xml_mode:
             item["bpmn_xml"] = str(row.get("bpmn_xml") or "")
         items.append(item)
+
+    if include_technical:
+        total_count = st.count_bpmn_versions(sid, org_id=oid)
+        user_facing_count = len(user_facing_version_numbers)
+    else:
+        total_count = st.count_bpmn_versions(
+            sid,
+            org_id=oid,
+            source_actions=_USER_FACING_BPMN_VERSION_ACTIONS,
+        )
+        user_facing_count = total_count
+
+    current_offset = max(0, offset)
+    has_more = (current_offset + len(items)) < total_count
+
     current_session_payload_hash = session_version_payload_hash(sess)
     latest_user_version = _latest_user_facing_bpmn_version(
         st,
-        str(getattr(sess, "id", "") or session_id),
+        sid,
         org_id=oid,
         include_xml=False,
     )
     latest_session_payload_hash = str((latest_user_version or {}).get("session_payload_hash") or "").strip()
     return {
         "ok": True,
-        "session_id": str(getattr(sess, "id", "") or session_id),
+        "session_id": sid,
         "count": len(items),
-        "user_facing_count": len(user_facing_version_numbers),
-        "latest_user_facing_revision_number": len(user_facing_version_numbers),
+        "total_count": total_count,
+        "has_more": has_more,
+        "offset": current_offset,
+        "user_facing_count": user_facing_count,
+        "latest_user_facing_revision_number": user_facing_count,
         "current_session_payload_hash": current_session_payload_hash,
         "current_session_version": int(getattr(sess, "version", 0) or 0),
         "current_session_updated_at": int(getattr(sess, "updated_at", 0) or 0),

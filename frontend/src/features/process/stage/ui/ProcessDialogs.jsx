@@ -55,6 +55,12 @@ export default function ProcessDialogs({ view = {} }) {
     versionsUserFacingCount,
     versionsServerEntriesCount,
     versionsTechnicalEntriesCount,
+    versionsTotalCount,
+    versionsHasMore,
+    versionsLoadingMore,
+    versionsIncludeTechnical,
+    loadMoreSnapshotVersions,
+    toggleVersionsIncludeTechnical,
     isAdmin,
     showTechnicalVersions,
     setShowTechnicalVersions,
@@ -298,6 +304,10 @@ export default function ProcessDialogs({ view = {} }) {
               isAdmin={isAdmin}
               showTechnical={showTechnicalVersions}
               onToggleTechnical={setShowTechnicalVersions}
+              versionsTotalCount={versionsTotalCount}
+              versionsHasMore={versionsHasMore}
+              versionsLoadingMore={versionsLoadingMore}
+              loadMoreSnapshotVersions={loadMoreSnapshotVersions}
             />
           </div>
           <BpmnVersionPreview

@@ -86,6 +86,10 @@ export default function BpmnVersionList({
   isAdmin = false,
   showTechnical = false,
   onToggleTechnical,
+  versionsTotalCount = 0,
+  versionsHasMore = false,
+  versionsLoadingMore = false,
+  loadMoreSnapshotVersions = null,
 }) {
   const list = Array.isArray(versions) ? versions : [];
   const latestId = String(list[0]?.id || "");
@@ -125,7 +129,9 @@ export default function BpmnVersionList({
   return (
     <div className="flex h-full flex-col gap-3">
       <div className="flex items-center justify-between px-1">
-        <span className="text-xs text-muted">Версии: {list.length}</span>
+        <span className="text-xs text-muted" data-testid="bpmn-versions-shown-count">
+          Показано {list.length} из {Math.max(versionsTotalCount || 0, list.length)} версий
+        </span>
         {isAdmin ? (
           <AdminTechnicalToggle checked={showTechnical} onChange={onToggleTechnical} count={technicalCount} />
         ) : null}
@@ -263,6 +269,38 @@ export default function BpmnVersionList({
           })}
         </div>
       </div>
+
+      {loadState === "ready" && list.length > 0 ? (
+        <div className="flex items-center justify-center gap-2 pt-2">
+          {versionsHasMore ? (
+            <button
+              type="button"
+              className="secondaryBtn h-8 px-3 text-xs"
+              onClick={() => void loadMoreSnapshotVersions?.()}
+              disabled={busy || versionsLoadingMore}
+              data-testid="bpmn-versions-load-more"
+            >
+              {versionsLoadingMore ? "Загрузка..." : "Загрузить ещё 10"}
+            </button>
+          ) : (
+            <span className="text-[11px] text-muted">Все версии загружены</span>
+          )}
+        </div>
+      ) : null}
+
+      {loadState === "failed" && loadError ? (
+        <div className="flex items-center justify-center gap-2 pt-2">
+          <button
+            type="button"
+            className="secondaryBtn h-8 px-3 text-xs"
+            onClick={() => void loadMoreSnapshotVersions?.()}
+            disabled={busy || versionsLoadingMore}
+            data-testid="bpmn-versions-retry"
+          >
+            Обновить список версий
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
