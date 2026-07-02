@@ -48,12 +48,12 @@ function extractOpenTags(xml, tagNames = []) {
 function extractLaneInfo(xml) {
   const lanes = [];
   const laneByNodeId = {};
-  const re = /<\s*(?!\/)(?:[\w.-]+:)?lane\b([^>]*)>([\s\S]*?)<\s*\/\s*(?:[\w.-]+:)?lane\s*>/gi;
+  const re = /<\s*(?!\/)((?:[\w.-]+:)?lane)\b([^>]*)>([\s\S]*?)<\s*\/\s*((?:[\w.-]+:)?lane)\s*>/gi;
   let m = re.exec(xml);
   let order = 0;
   while (m) {
-    const attrs = parseAttributes(m[1]);
-    const body = asText(m[2]);
+    const attrs = parseAttributes(m[2]);
+    const body = asText(m[3]);
     const id = normalizeText(attrs.id);
     const name = normalizeText(attrs.name || attrs.id);
     if (id || name) {
@@ -64,10 +64,10 @@ function extractLaneInfo(xml) {
       });
       order += 1;
     }
-    const refsRe = /<\s*(?!\/)(?:[\w.-]+:)?flowNodeRef\b[^>]*>([^<]+)<\s*\/\s*(?:[\w.-]+:)?flowNodeRef\s*>/gi;
+    const refsRe = /<\s*(?!\/)((?:[\w.-]+:)?flowNodeRef)\b[^>]*>([^<]+)<\s*\/\s*((?:[\w.-]+:)?flowNodeRef)\s*>/gi;
     let ref = refsRe.exec(body);
     while (ref) {
-      const nodeId = normalizeText(ref[1]);
+      const nodeId = normalizeText(ref[2]);
       if (nodeId) laneByNodeId[nodeId] = id || name;
       ref = refsRe.exec(body);
     }
@@ -339,8 +339,106 @@ function buildSemanticBpmnDiff(previousXml, nextXml) {
   };
 }
 
+function extractPositionModel(xml) {
+  const src = asText(xml);
+  const shapes = [];
+  const edges = [];
+
+  const shapeRe = /<\s*(?!\/)((?:[\w.-]+:)?BPMNShape)\b([^>]*)>([\s\S]*?)<\s*\/\s*((?:[\w.-]+:)?BPMNShape)\s*>/gi;
+  let m;
+  while ((m = shapeRe.exec(src))) {
+    const attrs = parseAttributes(m[2]);
+    const id = normalizeText(attrs.bpmnElement || attrs.id);
+    if (!id) continue;
+    const boundsMatch = m[3].match(/<\s*(?:[\w.-]+:)?Bounds\b([^>]*)>/i);
+    const bounds = boundsMatch ? parseAttributes(boundsMatch[1]) : {};
+    shapes.push({
+      id,
+      x: Number(bounds.x || 0),
+      y: Number(bounds.y || 0),
+      width: Number(bounds.width || 0),
+      height: Number(bounds.height || 0),
+    });
+  }
+
+  const edgeRe = /<\s*(?!\/)((?:[\w.-]+:)?BPMNEdge)\b([^>]*)>([\s\S]*?)<\s*\/\s*((?:[\w.-]+:)?BPMNEdge)\s*>/gi;
+  while ((m = edgeRe.exec(src))) {
+    const attrs = parseAttributes(m[2]);
+    const id = normalizeText(attrs.bpmnElement || attrs.id);
+    if (!id) continue;
+    const waypoints = [];
+    const wpRe = /<\s*(?:[\w.-]+:)?waypoint\b([^>]*)>/gi;
+    let wp;
+    while ((wp = wpRe.exec(m[3]))) {
+      const wpAttrs = parseAttributes(wp[1]);
+      waypoints.push({
+        x: Number(wpAttrs.x || 0),
+        y: Number(wpAttrs.y || 0),
+      });
+    }
+    edges.push({ id, waypoints });
+  }
+
+  return { shapes, edges };
+}
+
+function waypointsEqual(a, b) {
+  if (a.length !== b.length) return false;
+  return a.every((pt, idx) => {
+    const other = b[idx];
+    return Math.abs(Number(pt.x) - Number(other.x)) <= 1 && Math.abs(Number(pt.y) - Number(other.y)) <= 1;
+  });
+}
+
+function buildBpmnPositionDiff(previousXml, nextXml) {
+  const previous = extractPositionModel(previousXml);
+  const next = extractPositionModel(nextXml);
+
+  const prevShapes = mapBy(previous.shapes, (s) => s.id);
+  const nextShapes = mapBy(next.shapes, (s) => s.id);
+  const moved = [];
+  const resized = [];
+
+  Object.keys(nextShapes).forEach((id) => {
+    const a = prevShapes[id];
+    const b = nextShapes[id];
+    if (!a) return;
+    const dx = Math.abs(Number(a.x) - Number(b.x));
+    const dy = Math.abs(Number(a.y) - Number(b.y));
+    if (dx > 1 || dy > 1) {
+      moved.push({ id, from: { x: a.x, y: a.y }, to: { x: b.x, y: b.y } });
+    }
+    const dw = Math.abs(Number(a.width) - Number(b.width));
+    const dh = Math.abs(Number(a.height) - Number(b.height));
+    if (dw > 1 || dh > 1) {
+      resized.push({ id, from: { width: a.width, height: a.height }, to: { width: b.width, height: b.height } });
+    }
+  });
+
+  const prevEdges = mapBy(previous.edges, (e) => e.id);
+  const nextEdges = mapBy(next.edges, (e) => e.id);
+  const waypointsChanged = [];
+
+  Object.keys(nextEdges).forEach((id) => {
+    const a = prevEdges[id];
+    const b = nextEdges[id];
+    if (!a) return;
+    if (!waypointsEqual(a.waypoints, b.waypoints)) {
+      waypointsChanged.push({ id, fromCount: a.waypoints.length, toCount: b.waypoints.length });
+    }
+  });
+
+  return {
+    moved,
+    resized,
+    waypointsChanged,
+    count: moved.length + resized.length + waypointsChanged.length,
+  };
+}
+
 export {
   buildBpmnGraphModel,
   buildSemanticBpmnDiff,
+  buildBpmnPositionDiff,
   summarizeSemanticDiff,
 };

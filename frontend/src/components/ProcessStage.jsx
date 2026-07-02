@@ -831,12 +831,16 @@ function ProcessStage({
     setVersionsBusy,
     versionsList,
     setVersionsList,
+    versionsListAll,
+    setVersionsListAll,
     versionsLoadState,
     setVersionsLoadState,
     versionsLoadError,
     setVersionsLoadError,
     previewSnapshotId,
     setPreviewSnapshotId,
+    showTechnicalVersions,
+    setShowTechnicalVersions,
     diffOpen,
     setDiffOpen,
     diffBaseSnapshotId,
@@ -4407,19 +4411,19 @@ function ProcessStage({
     return seq ? `${tier} · ${seq}` : tier;
   }, [pathHighlightTier, pathHighlightSequenceKey]);
   const snapshotProjectId = String(draft?.project_id || draft?.projectId || activeProjectId || "").trim();
-  const previewSnapshot = useMemo(
-    () => asArray(versionsList).find((item) => String(item?.id || "") === String(previewSnapshotId || "")) || null,
-    [versionsList, previewSnapshotId],
-  );
 
+  const displayVersionsList = useMemo(
+    () => (showTechnicalVersions ? asArray(versionsListAll) : asArray(versionsList)),
+    [showTechnicalVersions, versionsListAll, versionsList],
+  );
 
   const semanticDiffView = useMemo(() => {
     return buildRevisionDiffView({
-      revisions: asArray(versionsList),
+      revisions: asArray(displayVersionsList),
       baseRevisionId: diffBaseSnapshotId,
       targetRevisionId: diffTargetSnapshotId,
     });
-  }, [diffBaseSnapshotId, diffTargetSnapshotId, versionsList]);
+  }, [diffBaseSnapshotId, diffTargetSnapshotId, displayVersionsList]);
 
   const currentBpmnVersionId = useMemo(() => {
     const currentHash = String(bpmnVersionTruthState?.currentSessionPayloadHash || "").trim();
@@ -4430,31 +4434,37 @@ function ProcessStage({
     return latestBpmnVersionHead?.id || "";
   }, [bpmnVersionTruthState, versionsList, latestBpmnVersionHead]);
 
+  const previewSnapshot = useMemo(
+    () => asArray(displayVersionsList).find((item) => String(item?.id || "") === String(previewSnapshotId || "")) || null,
+    [displayVersionsList, previewSnapshotId],
+  );
+
   const diffBaseSnapshot = useMemo(
-    () => asArray(versionsList).find((item) => String(item?.id || "") === String(diffBaseSnapshotId || "")) || null,
-    [versionsList, diffBaseSnapshotId],
+    () => asArray(displayVersionsList).find((item) => String(item?.id || "") === String(diffBaseSnapshotId || "")) || null,
+    [displayVersionsList, diffBaseSnapshotId],
   );
   const diffTargetSnapshot = useMemo(
-    () => asArray(versionsList).find((item) => String(item?.id || "") === String(diffTargetSnapshotId || "")) || null,
-    [versionsList, diffTargetSnapshotId],
+    () => asArray(displayVersionsList).find((item) => String(item?.id || "") === String(diffTargetSnapshotId || "")) || null,
+    [displayVersionsList, diffTargetSnapshotId],
   );
 
   const versionsListWithDiffSummaries = useMemo(() => {
-    return asArray(versionsList).map((item, idx) => {
+    return asArray(displayVersionsList).map((item, idx) => {
       const xml = String(item?.xml || "").trim();
       if (!xml) return item;
-      const older = asArray(versionsList).slice(idx + 1).find((candidate) => String(candidate?.xml || "").trim());
+      const older = asArray(displayVersionsList).slice(idx + 1).find((candidate) => String(candidate?.xml || "").trim());
       if (!older) return item;
       const diff = buildSemanticBpmnDiff(String(older.xml || ""), xml);
       if (!diff?.ok) return item;
       const summaryText = formatSemanticDiffSummary(diff.summary);
       return summaryText ? { ...item, diffSummary: summaryText } : item;
     });
-  }, [versionsList]);
+  }, [displayVersionsList]);
 
   const refreshSnapshotVersions = useCallback(async (options = {}) => {
     if (!sid) {
       setVersionsList([]);
+      setVersionsListAll([]);
       setPreviewSnapshotId("");
       setVersionsLoadState("idle");
       setVersionsLoadError("");
@@ -4500,6 +4510,7 @@ function ProcessStage({
       if (!loaded?.ok) {
         if (updateList) {
           setVersionsList([]);
+          setVersionsListAll([]);
           setPreviewSnapshotId("");
           setVersionsLoadState("failed");
           setVersionsLoadError(shortErr(loaded?.error || "Не удалось загрузить BPMN версии."));
@@ -4546,7 +4557,7 @@ function ProcessStage({
         || loaded?.latest_user_facing_revision_number
         || 0,
       );
-      const listWithUserFacingNumbers = applyUserFacingRevisionNumbers({
+      const meaningfulWithNumbers = applyUserFacingRevisionNumbers({
         meaningfulRevisionsRaw: list,
         revisionHistorySnapshotRaw: {
           ...asObject(sessionRevisionHistorySnapshot),
@@ -4560,7 +4571,12 @@ function ProcessStage({
         },
         totalCount: userFacingCount,
       });
-      setLatestBpmnVersionHead(asArray(listWithUserFacingNumbers)[0] || null);
+      const nonMeaningfulSorted = [...technicalList, ...unknownList].sort((a, b) => Number(b?.ts || 0) - Number(a?.ts || 0));
+      const allWithDisplayNumbers = [
+        ...asArray(meaningfulWithNumbers),
+        ...nonMeaningfulSorted,
+      ];
+      setLatestBpmnVersionHead(asArray(meaningfulWithNumbers)[0] || null);
       if (trackHeadStatus) setLatestBpmnVersionHeadStatus("ready");
       if (!updateList) return;
       // eslint-disable-next-line no-console
@@ -4571,13 +4587,14 @@ function ProcessStage({
       setVersionsUserFacingCount(Math.max(0, Math.round(Number(userFacingCount || 0))));
       setVersionsServerEntriesCount(serverEntriesCount);
       setVersionsTechnicalEntriesCount(hiddenNonMeaningfulList.length);
-      setVersionsList(asArray(listWithUserFacingNumbers));
-      setVersionsLoadState(asArray(listWithUserFacingNumbers).length > 0 ? "ready" : "empty");
+      setVersionsList(asArray(meaningfulWithNumbers));
+      setVersionsListAll(allWithDisplayNumbers);
+      setVersionsLoadState(asArray(meaningfulWithNumbers).length > 0 ? "ready" : "empty");
       setVersionsLoadError("");
       setPreviewSnapshotId((prev) => {
-        const exists = asArray(listWithUserFacingNumbers).some((item) => String(item?.id || "") === String(prev || ""));
+        const exists = asArray(meaningfulWithNumbers).some((item) => String(item?.id || "") === String(prev || ""));
         if (exists) return prev;
-        return asArray(listWithUserFacingNumbers)[0]?.id || "";
+        return asArray(meaningfulWithNumbers)[0]?.id || "";
       });
     };
     const promise = runRequest().finally(() => {
@@ -4590,6 +4607,11 @@ function ProcessStage({
     }
     return promise;
   }, [applyUserFacingRevisionNumbers, normalizeBpmnVersionListItem, sessionRevisionHistorySnapshot, sid, snapshotProjectId]);
+
+  const saveSessionFromVersionsModal = useCallback(async () => {
+    await runManualSaveAction({ createRevision: true });
+    await refreshSnapshotVersions();
+  }, [refreshSnapshotVersions]);
 
   const ensureBpmnVersionXml = useCallback(async (versionOrId) => {
     const versionId = String(
@@ -4619,9 +4641,11 @@ function ProcessStage({
           return null;
         }
         const normalized = normalizeBpmnVersionListItem(loaded?.item || loaded?.version || {});
-        setVersionsList((prev) => asArray(prev).map((item) => (
+        const updater = (prev) => asArray(prev).map((item) => (
           String(item?.id || "") === versionId ? { ...item, ...normalized, hasXml: true } : item
-        )));
+        ));
+        setVersionsList(updater);
+        setVersionsListAll(updater);
         return normalized;
       } finally {
         setVersionsBusy(false);
@@ -6559,6 +6583,10 @@ function ProcessStage({
     versionsList: versionsListWithDiffSummaries,
     versionsLoadState,
     versionsLoadError,
+    isAdmin: Boolean(user?.is_admin),
+    showTechnicalVersions,
+    setShowTechnicalVersions,
+    saveSessionFromVersionsModal,
     versionsUserFacingCount,
     versionsServerEntriesCount,
     versionsTechnicalEntriesCount,
