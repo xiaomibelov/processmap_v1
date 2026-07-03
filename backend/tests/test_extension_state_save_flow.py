@@ -6,12 +6,7 @@ from types import SimpleNamespace
 from app.auth import create_access_token, create_user
 from app.schemas.legacy_api import BpmnXmlIn
 from app.services import session_service as svc
-from app.storage import (
-    create_org_record,
-    get_storage,
-    upsert_org_membership,
-    upsert_project_membership,
-)
+from app.storage import get_storage
 
 
 BPMN_WITH_SUBPROCESS = """<?xml version="1.0" encoding="UTF-8"?>
@@ -27,10 +22,23 @@ BPMN_WITH_SUBPROCESS = """<?xml version="1.0" encoding="UTF-8"?>
 </bpmn:definitions>"""
 
 
-class _DummyRequest:
-    def __init__(self, user, active_org_id):
-        self.state = SimpleNamespace(auth_user=user, active_org_id=active_org_id)
-        self.headers = {}
+BPMN_WITH_CAMUNDA_PROPERTY = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_1">
+  <bpmn:process id="Process_1" isExecutable="false">
+    <bpmn:startEvent id="StartEvent_1">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="owner" value="ops" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:startEvent>
+    <bpmn:subProcess id="Sub_1" name="Subprocess A">
+      <bpmn:startEvent id="Start_Sub_1" />
+      <bpmn:endEvent id="End_Sub_1" />
+    </bpmn:subProcess>
+    <bpmn:endEvent id="EndEvent_1" />
+  </bpmn:process>
+</bpmn:definitions>"""
 
 
 class _BaseTestCase(unittest.TestCase):
@@ -71,66 +79,29 @@ class TestExtensionStateSaveFlow(_BaseTestCase):
         else:
             os.environ.pop("PROJECT_STORAGE_DIR", None)
 
-    def _make_user(self, email, is_admin=False):
-        return create_user(email, "password", is_admin=is_admin)
-
-    def _setup_org(self, owner_email, editor_email, org_id):
-        owner = self._make_user(owner_email)
-        editor = self._make_user(editor_email)
-        create_org_record("Extension State Org", created_by=str(owner["id"]), org_id=org_id)
-        upsert_org_membership(org_id, str(editor["id"]), "editor")
-        upsert_project_membership(org_id, "proj_1", str(editor["id"]), "editor")
-        return owner, editor
-
-    def test_bpmn_save_then_extension_meta_patch_succeeds(self):
-        owner, editor = self._setup_org(
-            "owner_ext_save@local", "editor_ext_save@local", "org_ext_save"
-        )
+    def test_bpmn_save_extracts_camunda_property_into_meta(self):
+        admin = create_user("admin_ext_save@local", "password", is_admin=True)
         sid = self.st.create(
             title="ext-save-test",
-            user_id=str(owner["id"]),
-            org_id="org_ext_save",
-            project_id="proj_1",
+            user_id=str(admin["id"]),
         )
-        req = _DummyRequest(editor, "org_ext_save")
 
         save_out = svc.bpmn_save(
             sid,
-            BpmnXmlIn(xml=BPMN_WITH_SUBPROCESS, source_action="manual_save"),
-            request=req,
+            BpmnXmlIn(xml=BPMN_WITH_CAMUNDA_PROPERTY, source_action="manual_save"),
+            request=None,
         )
         self.assertTrue(save_out.get("ok"), save_out)
         base_version = int(save_out.get("diagram_state_version") or 0)
         self.assertGreater(base_version, 0)
 
-        next_meta = {
-            "version": 1,
-            "flow_meta": {},
-            "node_path_meta": {},
-            "robot_meta_by_element_id": {},
-            "camunda_extensions_by_element_id": {
-                "StartEvent_1": {
-                    "properties": [
-                        {"key": "owner", "value": "ops"},
-                    ],
-                },
-            },
-            "presentation_by_element_id": {},
-            "hybrid_layer_by_element_id": {},
-            "execution_plans": [],
-        }
-        patch_out = svc.patch_session_meta(
-            sid,
-            type("SessionMetaPatchIn", (), {
-                "bpmn_meta_json": next_meta,
-                "bpmn_meta": None,
-                "base_diagram_state_version": base_version,
-                "base_bpmn_xml_version": None,
-            })(),
-            request=req,
-        )
-        self.assertTrue(patch_out.get("ok"), patch_out)
-        self.assertGreater(int(patch_out.get("diagram_state_version") or 0), base_version)
+        sess = self.st.load(sid, is_admin=True)
+        camunda_map = (sess.bpmn_meta or {}).get("camunda_extensions_by_element_id") or {}
+        start_event = camunda_map.get("StartEvent_1") or {}
+        properties = (start_event.get("properties") or {}).get("extensionProperties") or []
+        self.assertEqual(len(properties), 1)
+        self.assertEqual(properties[0].get("name"), "owner")
+        self.assertEqual(properties[0].get("value"), "ops")
 
 
 class TestExtensionStateSaveHttpFlow(_BaseTestCase):
@@ -177,30 +148,18 @@ class TestExtensionStateSaveHttpFlow(_BaseTestCase):
         if self._orig_database_url is not None:
             os.environ["DATABASE_URL"] = self._orig_database_url
 
-    def _make_user(self, email, is_admin=False):
-        return create_user(email, "password", is_admin=is_admin)
+    def _headers(self, token):
+        return {"Authorization": f"Bearer {token}"}
 
-    def _headers(self, token, org_id=None):
-        h = {"Authorization": f"Bearer {token}"}
-        if org_id:
-            h["X-Active-Org-Id"] = org_id
-        return h
-
-    def test_patch_session_meta_via_http_after_bpmn_save(self):
-        owner = self._make_user("owner_ext_http@local")
-        editor = self._make_user("editor_ext_http@local")
-        org_id = "org_ext_http"
-        create_org_record("Extension State HTTP Org", created_by=str(owner["id"]), org_id=org_id)
-        upsert_org_membership(org_id, str(editor["id"]), "editor")
-        upsert_project_membership(org_id, "proj_1", str(editor["id"]), "editor")
-
-        token = create_access_token(str(editor["id"]))
+    def test_put_bpmn_xml_extracts_camunda_property(self):
+        admin = create_user("admin_ext_http@local", "password", is_admin=True)
+        token = create_access_token(str(admin["id"]))
 
         # Create session via HTTP
         r = self.client.post(
             "/api/sessions",
-            json={"title": "ext-http-test", "project_id": "proj_1"},
-            headers=self._headers(token, org_id),
+            json={"title": "ext-http-test"},
+            headers=self._headers(token),
         )
         self.assertEqual(r.status_code, 200, r.text)
         sid = r.json()["id"]
@@ -209,46 +168,24 @@ class TestExtensionStateSaveHttpFlow(_BaseTestCase):
         r = self.client.put(
             f"/api/sessions/{sid}/bpmn",
             json={
-                "xml": BPMN_WITH_SUBPROCESS,
-                "source_action": "manual_save",
+                "xml": BPMN_WITH_CAMUNDA_PROPERTY,
+                "source_action": "property_update",
                 "base_diagram_state_version": 0,
             },
-            headers=self._headers(token, org_id),
+            headers=self._headers(token),
         )
         self.assertEqual(r.status_code, 200, r.text)
         save_body = r.json()
         self.assertTrue(save_body.get("ok"), save_body)
-        base_version = int(save_body.get("diagram_state_version") or 0)
-        self.assertGreater(base_version, 0)
+        self.assertIsNone(save_body.get("bpmn_version_snapshot"))
+        self.assertGreater(int(save_body.get("diagram_state_version") or 0), 0)
 
-        # Patch extension-state meta via HTTP
-        r = self.client.patch(
-            f"/api/sessions/{sid}/meta",
-            json={
-                "bpmn_meta_json": {
-                    "version": 1,
-                    "flow_meta": {},
-                    "node_path_meta": {},
-                    "robot_meta_by_element_id": {},
-                    "camunda_extensions_by_element_id": {
-                        "StartEvent_1": {
-                            "properties": [
-                                {"key": "owner", "value": "ops"},
-                            ],
-                        },
-                    },
-                    "presentation_by_element_id": {},
-                    "hybrid_layer_by_element_id": {},
-                    "execution_plans": [],
-                },
-                "base_diagram_state_version": base_version,
-            },
-            headers=self._headers(token, org_id),
-        )
-        self.assertEqual(r.status_code, 200, r.text)
-        patch_body = r.json()
-        self.assertTrue(patch_body.get("ok"), patch_body)
-        self.assertGreater(int(patch_body.get("diagram_state_version") or 0), base_version)
+        sess = self.st.load(sid, is_admin=True)
+        camunda_map = (sess.bpmn_meta or {}).get("camunda_extensions_by_element_id") or {}
+        start_event = camunda_map.get("StartEvent_1") or {}
+        properties = (start_event.get("properties") or {}).get("extensionProperties") or []
+        self.assertEqual(len(properties), 1)
+        self.assertEqual(properties[0].get("name"), "owner")
 
 
 if __name__ == "__main__":
