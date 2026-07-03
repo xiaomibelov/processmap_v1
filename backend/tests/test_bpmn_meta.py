@@ -637,46 +637,20 @@ class BpmnMetaApiTests(unittest.TestCase):
         self.assertEqual(len(hybrid.get("elements", [])), 1)
 
     def test_patch_session_partial_bpmn_meta_preserves_camunda_and_presentation(self):
-        xml_with_property = """<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
-  <bpmn:process id="Process_1" isExecutable="false">
-    <bpmn:startEvent id="StartEvent_1">
-      <bpmn:outgoing>Flow_start_gateway</bpmn:outgoing>
-    </bpmn:startEvent>
-    <bpmn:exclusiveGateway id="Gateway_1" default="Flow_no">
-      <bpmn:incoming>Flow_start_gateway</bpmn:incoming>
-      <bpmn:outgoing>Flow_yes</bpmn:outgoing>
-      <bpmn:outgoing>Flow_no</bpmn:outgoing>
-    </bpmn:exclusiveGateway>
-    <bpmn:task id="Task_yes">
-      <bpmn:extensionElements>
-        <camunda:properties>
-          <camunda:property name="ingredient" value="Картошка" />
-        </camunda:properties>
-      </bpmn:extensionElements>
-      <bpmn:incoming>Flow_yes</bpmn:incoming>
-      <bpmn:outgoing>Flow_yes_end</bpmn:outgoing>
-    </bpmn:task>
-    <bpmn:task id="Task_no">
-      <bpmn:incoming>Flow_no</bpmn:incoming>
-      <bpmn:outgoing>Flow_no_end</bpmn:outgoing>
-    </bpmn:task>
-    <bpmn:endEvent id="End_1">
-      <bpmn:incoming>Flow_yes_end</bpmn:incoming>
-      <bpmn:incoming>Flow_no_end</bpmn:incoming>
-    </bpmn:endEvent>
-    <bpmn:sequenceFlow id="Flow_start_gateway" sourceRef="StartEvent_1" targetRef="Gateway_1" />
-    <bpmn:sequenceFlow id="Flow_yes" sourceRef="Gateway_1" targetRef="Task_yes" />
-    <bpmn:sequenceFlow id="Flow_no" sourceRef="Gateway_1" targetRef="Task_no" />
-    <bpmn:sequenceFlow id="Flow_yes_end" sourceRef="Task_yes" targetRef="End_1" />
-    <bpmn:sequenceFlow id="Flow_no_end" sourceRef="Task_no" targetRef="End_1" />
-  </bpmn:process>
-</bpmn:definitions>
-"""
-        self.session_bpmn_save(self.sid, self.BpmnXmlIn(xml=xml_with_property))
         self._seed_raw_bpmn_meta(
             {
                 "version": 4,
+                "camunda_extensions_by_element_id": {
+                    "Task_yes": {
+                        "properties": {
+                            "extensionProperties": [
+                                {"id": "prop_1", "name": "ingredient", "value": "Картошка"},
+                            ],
+                            "extensionListeners": [],
+                        },
+                        "preservedExtensionElements": [],
+                    }
+                },
                 "presentation_by_element_id": {
                     "Task_yes": {"showPropertiesOverlay": True, "show_properties_overlay": True}
                 },
@@ -697,9 +671,7 @@ class BpmnMetaApiTests(unittest.TestCase):
             ),
         )
 
-        st = self.get_storage()
-        sess = st.load(self.sid, is_admin=True)
-        meta = getattr(sess, "bpmn_meta", {}) or {}
+        meta = patched.get("bpmn_meta", {})
         self.assertEqual(
             meta.get("camunda_extensions_by_element_id", {})
             .get("Task_yes", {})
@@ -718,45 +690,20 @@ class BpmnMetaApiTests(unittest.TestCase):
         self.assertEqual(meta.get("drawio", {}).get("enabled"), True)
 
     def test_bpmn_save_partial_bpmn_meta_preserves_camunda_and_presentation(self):
-        xml_with_property = """<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
-  <bpmn:process id="Process_1" isExecutable="false">
-    <bpmn:startEvent id="StartEvent_1">
-      <bpmn:outgoing>Flow_start_gateway</bpmn:outgoing>
-    </bpmn:startEvent>
-    <bpmn:exclusiveGateway id="Gateway_1" default="Flow_no">
-      <bpmn:incoming>Flow_start_gateway</bpmn:incoming>
-      <bpmn:outgoing>Flow_yes</bpmn:outgoing>
-      <bpmn:outgoing>Flow_no</bpmn:outgoing>
-    </bpmn:exclusiveGateway>
-    <bpmn:task id="Task_yes">
-      <bpmn:extensionElements>
-        <camunda:properties>
-          <camunda:property name="equipment" value="Весы" />
-        </camunda:properties>
-      </bpmn:extensionElements>
-      <bpmn:incoming>Flow_yes</bpmn:incoming>
-      <bpmn:outgoing>Flow_yes_end</bpmn:outgoing>
-    </bpmn:task>
-    <bpmn:task id="Task_no">
-      <bpmn:incoming>Flow_no</bpmn:incoming>
-      <bpmn:outgoing>Flow_no_end</bpmn:outgoing>
-    </bpmn:task>
-    <bpmn:endEvent id="End_1">
-      <bpmn:incoming>Flow_yes_end</bpmn:incoming>
-      <bpmn:incoming>Flow_no_end</bpmn:incoming>
-    </bpmn:endEvent>
-    <bpmn:sequenceFlow id="Flow_start_gateway" sourceRef="StartEvent_1" targetRef="Gateway_1" />
-    <bpmn:sequenceFlow id="Flow_yes" sourceRef="Gateway_1" targetRef="Task_yes" />
-    <bpmn:sequenceFlow id="Flow_no" sourceRef="Gateway_1" targetRef="Task_no" />
-    <bpmn:sequenceFlow id="Flow_yes_end" sourceRef="Task_yes" targetRef="End_1" />
-    <bpmn:sequenceFlow id="Flow_no_end" sourceRef="Task_no" targetRef="End_1" />
-  </bpmn:process>
-</bpmn:definitions>
-"""
         self._seed_raw_bpmn_meta(
             {
                 "version": 5,
+                "camunda_extensions_by_element_id": {
+                    "Task_yes": {
+                        "properties": {
+                            "extensionProperties": [
+                                {"id": "prop_1", "name": "equipment", "value": "Весы"},
+                            ],
+                            "extensionListeners": [],
+                        },
+                        "preservedExtensionElements": [],
+                    }
+                },
                 "presentation_by_element_id": {
                     "Task_yes": {"showPropertiesOverlay": True, "show_properties_overlay": True}
                 },
@@ -767,7 +714,7 @@ class BpmnMetaApiTests(unittest.TestCase):
         saved = self.session_bpmn_save(
             self.sid,
             self.BpmnXmlIn(
-                xml=xml_with_property,
+                xml=XOR_BPMN_XML,
                 bpmn_meta={
                     "drawio": {
                         "enabled": True,
@@ -777,9 +724,7 @@ class BpmnMetaApiTests(unittest.TestCase):
             ),
         )
         self.assertEqual(saved.get("ok"), True)
-        st = self.get_storage()
-        sess = st.load(self.sid, is_admin=True)
-        meta = getattr(sess, "bpmn_meta", {}) or {}
+        meta = self.session_bpmn_meta_get(self.sid)
         self.assertEqual(
             meta.get("camunda_extensions_by_element_id", {})
             .get("Task_yes", {})

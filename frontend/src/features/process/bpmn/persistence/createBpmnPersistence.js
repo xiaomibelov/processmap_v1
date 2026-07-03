@@ -311,7 +311,7 @@ export default function createBpmnPersistence(options = {}) {
     return asText(draft?.project_id || draft?.projectId || "").trim();
   }
 
-  async function maybeSaveSnapshot(sessionId, xmlText, reason, rev, force = false, options = {}) {
+  async function maybeSaveSnapshot(sessionId, xmlText, reason, rev, force = false) {
     if (typeof saveSnapshot !== "function") return { ok: false, reason: "read_fail" };
     const sid = asText(sessionId).trim();
     const xml = asText(xmlText);
@@ -342,7 +342,6 @@ export default function createBpmnPersistence(options = {}) {
         reason,
         rev: snapshotRev,
         force: force === true,
-        limit: options?.limit,
       });
       const decisionReason = asText(
         decision?.decisionReason
@@ -687,7 +686,7 @@ export default function createBpmnPersistence(options = {}) {
       // no-op
     }
     writeRuntimeCache(sid, xml, storedRev, reason);
-    await maybeSaveSnapshot(sid, xml, "persist_ok", storedRev, true, { limit: 1 });
+    await maybeSaveSnapshot(sid, xml, reason, storedRev, false);
     return {
       ok: true,
       status: asNumber(saved?.status, 200),

@@ -2176,18 +2176,8 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   function getCamundaExtensionsMap() {
-    // Derive the authoritative Camunda extension map from the BPMN XML (the same
-    // source the backend uses). Reading from draft.bpmn_meta is unsafe here
-    // because meta can lag behind the XML after a property-only save, causing
-    // syncCamundaExtensionsToModeler to replay stale managed entries onto the
-    // modeler and overwrite the server-side deletion.
-    const storeXml = String(bpmnStoreRef.current?.getState?.()?.xml || "");
-    const draftXml = String(draftRef.current?.bpmn_xml || "");
-    const xml = storeXml.trim() ? storeXml : draftXml;
-    if (xml.trim()) {
-      return normalizeCamundaExtensionsMap(extractCamundaExtensionsMapFromBpmnXml(xml));
-    }
-    const meta = asObject(draftRef.current?.bpmn_meta);
+    const d = asObject(draftRef.current);
+    const meta = asObject(d.bpmn_meta);
     return normalizeCamundaExtensionsMap(meta.camunda_extensions_by_element_id);
   }
 
@@ -2455,19 +2445,11 @@ const BpmnStage = forwardRef(function BpmnStage({
         .map((value) => toText(value))
         .filter(Boolean),
     ));
-    if (shouldLogBpmnTrace()) {
-      // eslint-disable-next-line no-console
-      console.debug(`[CAMUNDA_EXT] sync_to_modeler mapKeys=${JSON.stringify(Object.keys(getCamundaExtensionsMap()))} preserve=${JSON.stringify(preserveManagedForElementIds)}`);
-    }
     const syncResult = syncCamundaExtensionsToBpmn({
       modeler: inst,
       camundaExtensionsByElementId: getCamundaExtensionsMap(),
       preserveManagedForElementIds,
     });
-    if (shouldLogBpmnTrace()) {
-      // eslint-disable-next-line no-console
-      console.debug(`[CAMUNDA_EXT] sync_to_modeler_result`, syncResult);
-    }
     const importGuardWasUsed = importPreserveGuardIds.length > 0;
     const syncCompleted = Boolean(syncResult?.ok) && !Boolean(syncResult?.skipped);
     if (
@@ -2761,11 +2743,9 @@ const BpmnStage = forwardRef(function BpmnStage({
       drawio: currentMeta?.drawio,
       execution_plans: normalizeExecutionPlanVersionList(currentMeta?.execution_plans),
     };
-    // Always reset the import preserve guard to the ids that actually have
-    // managed Camunda data in the freshly imported XML. If the new XML removed
-    // managed data for an element, the old guard must not block the modeler
-    // from being synchronized to the empty state.
-    primeImportCamundaPreserveGuard(extractedElementIds);
+    if (extractedElementIds.length) {
+      primeImportCamundaPreserveGuard(extractedElementIds);
+    }
     draftRef.current = {
       ...currentDraft,
       bpmn_meta: nextMeta,
@@ -4919,10 +4899,6 @@ const BpmnStage = forwardRef(function BpmnStage({
         try {
           const probeOut = await activeModeler.saveXML({ format: true });
           preFlushXml = String(probeOut?.xml || "");
-          if (shouldLogBpmnTrace()) {
-            // eslint-disable-next-line no-console
-            console.debug(`[CAMUNDA_EXT] pre_flush_xml len=${preFlushXml.length} prop=${preFlushXml.includes("fromXmlProp")} activeSameRef=${activeModeler === modelerRef.current}`);
-          }
           publishE2ESaveProbe({
             sid,
             source,
@@ -5509,12 +5485,6 @@ const BpmnStage = forwardRef(function BpmnStage({
     if ((xml && xml.trim()) || !fromDraft.trim()) return;
     applyXmlSnapshot(fromDraft, srcHint || "draft");
   }, [draft?.bpmn_xml, xml, srcHint, xmlDirty]);
-
-  useEffect(() => {
-    const authoritativeXml = String(draft?._apply_bpmn_xml ? draft?.bpmn_xml || "" : "");
-    if (!authoritativeXml.trim()) return;
-    applyXmlSnapshot(authoritativeXml, String(draft?._sync_source || "saveBpmnState"));
-  }, [draft?._apply_bpmn_xml, draft?.bpmn_xml]);
 
   useEffect(() => {
     const prev = String(prevViewRef.current || "");
