@@ -1785,11 +1785,7 @@ export default function NotesPanel({
     const cachedDraftRaw = camundaPropertiesDraftKey
       ? camundaPropertiesDraftCacheRef.current.get(camundaPropertiesDraftKey)
       : null;
-    let cachedDraft = cachedDraftRaw && typeof cachedDraftRaw === "object" ? cachedDraftRaw : null;
-    if (cachedDraft) {
-      cachedDraft = mergeModelerOnlyPropertiesIntoDraft(cachedDraft, selectedCamundaExtensionEntry);
-      camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, cachedDraft);
-    }
+    const cachedDraft = cachedDraftRaw && typeof cachedDraftRaw === "object" ? cachedDraftRaw : null;
     setCamundaPropertiesDraft(
       cachedDraft && typeof cachedDraft === "object" ? cachedDraft : selectedCamundaExtensionEntry,
     );
