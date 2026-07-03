@@ -495,38 +495,6 @@ export async function apiPatchSession(sessionId, patch) {
     : r;
 }
 
-export async function apiPatchSessionMeta(sessionId, patch) {
-  const id = String(sessionId || "").trim();
-  if (!id) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(apiRoutes.sessions.meta(id), { method: "PATCH", body: patch || {} }));
-  return r.ok
-    ? {
-        ok: true,
-        status: r.status,
-        session: {
-          ...(r.data && typeof r.data === "object" ? r.data : {}),
-          _sync_source: "patch_session_meta",
-        },
-      }
-    : r;
-}
-
-export async function apiPatchSessionProperties(sessionId, patch) {
-  const id = String(sessionId || "").trim();
-  if (!id) return { ok: false, status: 0, error: "missing session_id" };
-  const r = okOrError(await request(apiRoutes.sessions.properties(id), { method: "PATCH", body: patch || {} }));
-  return r.ok
-    ? {
-        ok: true,
-        status: r.status,
-        session: {
-          ...(r.data && typeof r.data === "object" ? r.data : {}),
-          _sync_source: "patch_session_properties",
-        },
-      }
-    : r;
-}
-
 export async function apiChangeSessionStatus(sessionId, patch) {
   const id = String(sessionId || "").trim();
   if (!id) return { ok: false, status: 0, error: "missing session_id" };
@@ -1634,14 +1602,19 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
     body.base_diagram_state_version = Math.round(baseDiagramStateVersion);
   }
-  const reason = String(options?.reason || "").trim().toLowerCase();
+  const explicitSourceAction = String(options?.sourceAction || options?.source_action || "").trim().toLowerCase();
   let sourceAction = "";
-  if (reason === "import_bpmn") {
-    sourceAction = "import_bpmn";
-  } else if (reason === "manual_save" || reason.startsWith("manual_save:")) {
-    sourceAction = "manual_save";
-  } else if (reason === "publish_manual_save" || reason.startsWith("publish_manual_save:")) {
-    sourceAction = "publish_manual_save";
+  if (explicitSourceAction) {
+    sourceAction = explicitSourceAction;
+  } else {
+    const reason = String(options?.reason || "").trim().toLowerCase();
+    if (reason === "import_bpmn") {
+      sourceAction = "import_bpmn";
+    } else if (reason === "manual_save" || reason.startsWith("manual_save:")) {
+      sourceAction = "manual_save";
+    } else if (reason === "publish_manual_save" || reason.startsWith("publish_manual_save:")) {
+      sourceAction = "publish_manual_save";
+    }
   }
   if (sourceAction) {
     body.source_action = sourceAction;

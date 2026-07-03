@@ -413,6 +413,21 @@ export async function getLatestBpmnSnapshot({ projectId, sessionId }) {
   return list.length ? list[0] : null;
 }
 
+export async function overwriteBpmnSnapshot(payload = {}) {
+  /**
+   * Replace the snapshot record with a single latest snapshot.
+   *
+   * Used by the unified save pipeline: after a successful server PUT the local
+   * snapshot must match the server XML and version, not accumulate stale entries.
+   */
+  return saveBpmnSnapshot({
+    ...payload,
+    force: true,
+    limit: 1,
+    reason: payload?.reason || "persist_ok",
+  });
+}
+
 export async function saveBpmnSnapshot(payload = {}) {
   const sid = asText(payload?.sessionId).trim();
   const xml = asText(payload?.xml);

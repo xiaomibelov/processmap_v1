@@ -31,8 +31,6 @@ import {
   apiCreateSession,
   apiGetSession,
   apiPatchSession,
-  apiPatchSessionMeta,
-  apiPatchSessionProperties,
   apiPostNote,
   apiPreviewNotesExtraction,
   apiApplyNotesExtraction,
@@ -50,6 +48,7 @@ import {
 import {
   getLatestBpmnSnapshot,
   shouldAutoRestoreFromSnapshot,
+  overwriteBpmnSnapshot,
 } from "./features/process/bpmn/snapshots/bpmnSnapshots";
 import {
   canonicalRobotMetaMapString,
@@ -66,7 +65,7 @@ import {
   removeCamundaExtensionStateByElementId,
   upsertCamundaExtensionStateByElementId,
 } from "./features/process/camunda/camundaExtensions";
-import { persistCamundaExtensionsViaCanonicalXmlBoundary } from "./features/process/camunda/camundaExtensionsSaveBoundary";
+import { saveBpmnState } from "./features/process/save/saveBpmnState";
 import {
   normalizeCamundaPresentationMap,
   removeCamundaPresentationByElementId,
@@ -2601,34 +2600,33 @@ export default function App() {
       ?? draft?.version
       ?? 0,
     );
-    const persistResult = await persistCamundaExtensionsViaCanonicalXmlBoundary({
-      sessionIdRaw: sid,
+    const operation = shouldRemove
+      ? "property_delete"
+      : (currentCamundaExtensionsByElementId[elementId] ? "property_update" : "property_add");
+    const persistResult = await saveBpmnState({
+      operation,
+      sessionId: sid,
       isLocal: isLocalSessionId(sid),
-      currentXmlRaw: draft?.bpmn_xml,
-      currentMetaRaw: currentMeta,
-      nextMetaRaw: optimisticMeta,
-      nextCamundaExtensionsByElementIdRaw: nextCamundaExtensionsByElementId,
-      baseDiagramStateVersionRaw: baseDiagramStateVersion,
+      baseDiagramStateVersion,
       lastServerDiagramStateVersionRef,
+      projectId: draft?.project_id,
+      elementId,
+      currentCamundaExtensionsByElementId,
+      nextCamundaExtensionsByElementId,
+      currentMeta,
+      nextMeta: optimisticMeta,
+      currentXml: draft?.bpmn_xml,
       apiPutBpmnXml,
-      apiPatchSessionMeta,
-      apiPatchSessionProperties,
       apiGetSession,
       onSessionSync,
-      forceMetaPatch: false,
+      overwriteBpmnSnapshot,
       backgroundSessionRefresh: options?.backgroundSessionRefresh === true,
       onDurableSaveAck: options?.onDurableSaveAck,
       onBackgroundSessionSyncStart: options?.onBackgroundSessionSyncStart,
       onBackgroundSessionSyncComplete: options?.onBackgroundSessionSyncComplete,
       onBackgroundSessionSyncError: options?.onBackgroundSessionSyncError,
-      syncSource: "camunda_extensions_xml_boundary_save",
+      syncSource: "saveBpmnState:camunda_extensions",
     });
-    if (persistResult?.ok && Number.isFinite(persistResult?.diagramStateVersion)) {
-      lastServerDiagramStateVersionRef.current = Math.max(
-        lastServerDiagramStateVersionRef.current ?? 0,
-        Number(persistResult.diagramStateVersion),
-      );
-    }
     if (!persistResult?.ok) {
       return { ok: false, error: String(persistResult?.error || "Не удалось сохранить Properties.") };
     }
