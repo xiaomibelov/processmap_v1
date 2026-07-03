@@ -86,6 +86,9 @@ export default function DiagramToolbarOverflowMenu({
   aiQuestionsBusy,
   aiQuestionsStatus,
   openTemplatesPicker,
+  openCreateTemplateModal,
+  canCreateTemplateFromSelection,
+  templateSelectionCount,
   runToolbarReset,
   runToolbarClear,
   hasSession,
@@ -279,6 +282,18 @@ export default function DiagramToolbarOverflowMenu({
       </MenuSection>
 
       <MenuSection title="Шаблоны">
+        <MenuItem
+          label={`Добавить шаблон${templateSelectionCount > 0 ? ` (${templateSelectionCount})` : ""}`}
+          disabled={!canCreateTemplateFromSelection}
+          onClick={closeAfter(() => void openCreateTemplateModal?.())}
+          data-testid="diagram-add-template"
+          icon={
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 2v12" />
+              <path d="M2 8h12" />
+            </svg>
+          }
+        />
         <MenuItem
           label="Открыть шаблоны"
           disabled={!hasSession}
