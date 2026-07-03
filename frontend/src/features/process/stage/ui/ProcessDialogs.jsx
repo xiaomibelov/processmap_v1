@@ -2,8 +2,6 @@ import { useState } from "react";
 import Modal from "../../../../shared/ui/Modal";
 import CreateTemplateModal from "../../../templates/ui/CreateTemplateModal";
 import { resolveRevisionHistoryEmptyState } from "./revisionHistoryUiModel";
-import BpmnVersionList from "./BpmnVersionList";
-import BpmnVersionPreview from "./BpmnVersionPreview";
 import BpmnVersionActions from "./BpmnVersionActions";
 import BpmnVersionDiffOverlay from "./BpmnVersionDiffOverlay";
 
@@ -283,8 +281,8 @@ export default function ProcessDialogs({ view = {} }) {
         )}
         footerClassName="!border-t-0 !p-0"
       >
-        <div className="grid gap-3 lg:grid-cols-[minmax(320px,460px)_minmax(0,1fr)]" data-testid="bpmn-versions-modal">
-          <div className="rounded-xl border border-border bg-panel2/45 p-2">
+        <div className="grid h-[65vh] min-h-[480px] gap-3 overflow-hidden md:grid-cols-[280px_1fr] lg:grid-cols-[minmax(260px,30%)_minmax(0,70%)]" data-testid="bpmn-versions-modal">
+          <div className="flex min-h-0 flex-col">
             <div className="mb-2 px-1 text-xs text-muted" data-testid="bpmn-versions-count">
               <div className="flex items-center justify-between gap-2">
                 <span data-testid="bpmn-versions-shown-count">
@@ -307,7 +305,7 @@ export default function ProcessDialogs({ view = {} }) {
                 Чтобы понять, кто и что изменил, используйте compare-first: «Сравнить A/B» или «Сравнить» у нужной версии.
               </div>
             </div>
-            <div className="max-h-[52vh] space-y-2 overflow-auto pr-1">
+            <div className="min-h-0 flex-1 space-y-2 overflow-auto pr-1">
               {versionsLoadState === "loading" ? (
                 <div className="rounded-lg border border-border bg-panel px-3 py-2 text-sm text-muted" data-testid="bpmn-versions-loading">
                   Загружаем историю версий...
@@ -438,7 +436,7 @@ export default function ProcessDialogs({ view = {} }) {
               )}
             </div>
           </div>
-          <div className="flex min-h-[300px] flex-col overflow-hidden rounded-xl border border-border bg-panel2/35">
+          <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-panel2/35">
             <div className="border-b border-border px-3 py-2 text-xs text-muted">
               {previewSnapshot ? `XML предпросмотр · ${formatSnapshotTs(previewSnapshot.ts)}` : "Выберите версию слева"}
             </div>
@@ -457,15 +455,7 @@ export default function ProcessDialogs({ view = {} }) {
               )}
             </div>
           </div>
-          <BpmnVersionPreview
-            xml={previewSnapshot?.xml}
-            label={previewSnapshot ? snapshotLabel(previewSnapshot) : ""}
-            size={previewSnapshot?.len}
-            onDownload={() => previewSnapshot && downloadSnapshot(previewSnapshot)}
-            downloadLabel="Скачать .bpmn"
-            showXml={showPreviewXml}
-            onToggleXml={setShowPreviewXml}
-          />
+
         </div>
       </Modal>
 
