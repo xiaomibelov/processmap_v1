@@ -227,7 +227,7 @@ def session_bpmn_version_detail(session_id: str, version_id: str, request: Reque
 
 @router.post('/api/sessions/{session_id}/bpmn/restore/{version_id}')
 def session_bpmn_restore(session_id: str, version_id: str, inp: BpmnRestoreIn | None = None, request: Request = None):
-    return _svc.bpmn_restore(session_id, version_id, request)
+    return _svc.bpmn_restore(session_id, version_id, inp=inp, request=request)
 
 @router.delete('/api/sessions/{session_id}/bpmn')
 def session_bpmn_clear(session_id: str, request: Request = None):
