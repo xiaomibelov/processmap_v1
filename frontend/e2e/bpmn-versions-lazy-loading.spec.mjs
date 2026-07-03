@@ -110,6 +110,64 @@ async function createFixture(request, runId, headers = {}) {
   return { projectId, sessionId, orgId };
 }
 
+async function createMixedFixture(request, runId, headers = {}) {
+  const projectRes = await request.post(`${API_BASE}/api/projects`, {
+    headers,
+    data: { title: `E2E mixed versions ${runId}`, passport: {} },
+  });
+  const project = await apiJson(projectRes, "create project");
+  const projectId = String(project.id || project.project_id || "").trim();
+  const orgId = String(project.org_id || "").trim();
+  expect(projectId).not.toBe("");
+
+  const sessionRes = await request.post(
+    `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/sessions?mode=quick_skeleton`,
+    {
+      headers,
+      data: {
+        title: `E2E mixed versions session ${runId}`,
+        roles: ["Линия A"],
+        start_role: "Линия A",
+      },
+    },
+  );
+  const session = await apiJson(sessionRes, "create session");
+  const sessionId = String(session.id || session.session_id || "").trim();
+  expect(sessionId).not.toBe("");
+
+  let version = 1;
+  // 2 user-facing versions
+  for (let i = 1; i <= 2; i += 1) {
+    const putRes = await request.put(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/bpmn`, {
+      headers,
+      data: {
+        xml: seedXml(`User version ${i}`, `u${i}`),
+        source_action: "publish_manual_save",
+        base_diagram_state_version: version - 1,
+        base_bpmn_xml_version: version - 1,
+      },
+    });
+    await apiJson(putRes, `seed user version ${i}`);
+    version += 1;
+  }
+  // 3 technical versions
+  for (let i = 1; i <= 3; i += 1) {
+    const putRes = await request.put(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/bpmn`, {
+      headers,
+      data: {
+        xml: seedXml(`Technical version ${i}`, `t${i}`),
+        source_action: "manual_save",
+        base_diagram_state_version: version - 1,
+        base_bpmn_xml_version: version - 1,
+      },
+    });
+    await apiJson(putRes, `seed technical version ${i}`);
+    version += 1;
+  }
+
+  return { projectId, sessionId, orgId };
+}
+
 async function openFixture(page, fixture) {
   await page.goto(`/app?project=${encodeURIComponent(fixture.projectId)}&session=${encodeURIComponent(fixture.sessionId)}`);
   await page.waitForLoadState("domcontentloaded");
@@ -202,4 +260,46 @@ test("BPMN version history modal lazy loads paginated versions", async ({ page, 
   // Close modal and verify there is no raw "not found" toast/notification.
   await page.getByRole("button", { name: "Закрыть" }).click();
   await expect(page.getByTestId("bpmn-versions-modal")).not.toBeVisible();
+});
+
+test("BPMN version history modal shows technical versions when toggle is enabled", async ({ page, request }) => {
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const auth = await apiLogin(request, { apiBase: API_BASE });
+  const fixture = await createMixedFixture(request, runId, auth.headers);
+
+  await page.addInitScript(() => {
+    window.__FPC_E2E__ = true;
+  });
+
+  await setUiToken(page, auth.accessToken, {
+    activeOrgId: auth.activeOrgId,
+    refreshToken: auth.refreshToken,
+    refreshCookie: auth.refreshCookie,
+  });
+
+  if (auth.userId) {
+    await page.addInitScript((uid) => {
+      window.sessionStorage.setItem(`fpc_org_choice_done:${uid}`, "1");
+    }, auth.userId);
+  }
+
+  await openFixture(page, fixture);
+  await waitForDiagramReady(page);
+  await openVersionsModal(page);
+
+  const shownCount = page.getByTestId("bpmn-versions-shown-count");
+  const versionItems = page.getByTestId("bpmn-version-item");
+
+  // Without technical versions: only 2 user-facing versions are shown.
+  await expect(shownCount).toContainText(/Показано 2 из 2/);
+  await expect(versionItems).toHaveCount(2);
+
+  // Enable technical versions.
+  const technicalToggle = page.getByTestId("bpmn-versions-show-technical");
+  await expect(technicalToggle).toBeVisible();
+  await technicalToggle.click();
+
+  // All 5 versions (2 user-facing + 3 technical) are shown in storage order.
+  await expect(shownCount).toContainText(/Показано 5 из 5/);
+  await expect(versionItems).toHaveCount(5);
 });
