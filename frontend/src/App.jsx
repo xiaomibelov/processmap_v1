@@ -896,6 +896,11 @@ export default function App() {
   const [isChangingSessionStatus, setIsChangingSessionStatus] = useState(false);
   const [restoreViewportSnapshot, setRestoreViewportSnapshot] = useState(null);
   const bpmnStageRef = useRef(null);
+  const getElementCamundaExtensionsFromModeler = useCallback((elementId) => {
+    const api = bpmnStageRef.current;
+    if (!api || typeof api.getElementCamundaExtensionState !== "function") return null;
+    return api.getElementCamundaExtensionState(elementId);
+  }, []);
   const parentViewportSnapshotRef = useRef(new Map());
   const sessionCacheRef = useRef(new Map());
   const bpmnXmlCacheRef = useBpmnXmlCache();
@@ -2610,7 +2615,7 @@ export default function App() {
       apiPatchSessionProperties,
       apiGetSession,
       onSessionSync,
-      forceMetaPatch: true,
+      forceMetaPatch: false,
       backgroundSessionRefresh: options?.backgroundSessionRefresh === true,
       onDurableSaveAck: options?.onDurableSaveAck,
       onBackgroundSessionSyncStart: options?.onBackgroundSessionSyncStart,
@@ -3264,11 +3269,7 @@ export default function App() {
         onShowV2OverlaysChange={setV2OverlaysEnabled}
         v2OverlaysExpanded={v2OverlaysExpanded}
         onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
-        getElementCamundaExtensionsFromModeler={(elementId) => {
-          const api = bpmnStageRef.current;
-          if (!api || typeof api.getElementCamundaExtensionState !== "function") return null;
-          return api.getElementCamundaExtensionState(elementId);
-        }}
+        getElementCamundaExtensionsFromModeler={getElementCamundaExtensionsFromModeler}
         onGoToDiagram={() => {
           const sid = String(draft?.session_id || "").trim();
           if (!sid) return;
