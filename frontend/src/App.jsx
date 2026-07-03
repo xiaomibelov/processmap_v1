@@ -2661,7 +2661,7 @@ export default function App() {
         error: String(persistResult?.error || "Не удалось сохранить Properties."),
       };
     }
-    emitPropertySaveEvent({ type: "success", operation, elementId, sid });
+    emitPropertySaveEvent({ type: "success", operation, elementId, sid, local: persistResult?.local === true });
     markOk(sid && !isLocalSessionId(sid)
       ? (shouldRemove ? "Properties удалены." : "Properties сохранены.")
       : (shouldRemove ? "Properties удалены локально." : "Properties сохранены локально."));
