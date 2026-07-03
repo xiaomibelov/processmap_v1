@@ -4965,6 +4965,11 @@ function ProcessStage({
     try {
       let restoreBaseDiagramStateVersion = Number(getBaseDiagramStateVersion());
       if (!Number.isFinite(restoreBaseDiagramStateVersion) || restoreBaseDiagramStateVersion < 0) {
+        restoreBaseDiagramStateVersion = Number(
+          draft?.diagram_state_version ?? draft?.diagramStateVersion ?? NaN,
+        );
+      }
+      if (!Number.isFinite(restoreBaseDiagramStateVersion) || restoreBaseDiagramStateVersion < 0) {
         const fetched = await apiGetSession(sid);
         if (fetched?.ok) {
           onSessionSyncWithVersion?.(fetched.session);
@@ -4975,6 +4980,9 @@ function ProcessStage({
             ?? fetched?.session?.diagram_state_version
             ?? fetched?.session?.diagramStateVersion,
           );
+        } else if (process.env.NODE_ENV !== "production" || window.__FPC_DEBUG_BPMN__) {
+          // eslint-disable-next-line no-console
+          console.warn("[bpmn_restore] failed to fetch session for base version", { sid, error: fetched?.error });
         }
       }
       if (!Number.isFinite(restoreBaseDiagramStateVersion) || restoreBaseDiagramStateVersion < 0) {
