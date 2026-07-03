@@ -49,6 +49,15 @@ const BPMN_XML = `<?xml version="1.0" encoding="UTF-8"?>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>`;
 
+function buildConflictingXml(baseXml) {
+  // Add a second property so the server version bumps and the UI's stale base
+  // version is rejected with HTTP 409.
+  return baseXml.replace(
+    '<camunda:property name="fromXmlProp" value="xml-value-42" />',
+    '<camunda:property name="fromXmlProp" value="xml-value-42" />\n          <camunda:property name="conflictProp" value="conflict-value" />',
+  );
+}
+
 async function login(page) {
   console.log("[e2e] login");
   await page.goto(`${BASE_URL}/login`);
@@ -67,13 +76,7 @@ async function login(page) {
 }
 
 async function createTestSession(page) {
-  const accessToken = await page.evaluate(() => {
-    try {
-      return String(window.localStorage?.getItem("fpc_auth_access_token") || "").trim();
-    } catch {
-      return "";
-    }
-  });
+  const accessToken = await page.evaluate(() => String(window.localStorage?.getItem("fpc_auth_access_token") || "").trim());
   if (!accessToken) throw new Error("access token not found in localStorage");
 
   console.log("[e2e] creating test session");
@@ -82,7 +85,7 @@ async function createTestSession(page) {
       const res = await fetch(`/api/projects/${projectId}/sessions?mode=quick_skeleton`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ title: `save-pipeline e2e ${Date.now()}` }),
+        body: JSON.stringify({ title: `save-pipeline-conflict e2e ${Date.now()}` }),
       });
       return res.json();
     },
@@ -112,8 +115,7 @@ async function createTestSession(page) {
     { sessionId, xml: BPMN_XML, token: accessToken, version: baseVersion },
   );
   if (putRes.status >= 400) throw new Error(`BPMN PUT failed: ${putRes.status} ${JSON.stringify(putRes.body)}`);
-  console.log("[e2e] BPMN PUT response", putRes.status, JSON.stringify(putRes.body).slice(0, 400));
-  console.log("[e2e] BPMN saved to session", sessionId);
+  console.log("[e2e] seeded session", sessionId, "status", putRes.status);
   return sessionId;
 }
 
@@ -133,7 +135,6 @@ async function selectTask(page) {
   if (!box) {
     await page.locator(taskSelector).first().click({ force: true });
   } else {
-    // Click the upper-left quadrant to avoid the horizontal sequence flow line.
     await page.mouse.click(box.x + box.width * 0.25, box.y + box.height * 0.25);
   }
   await page.waitForTimeout(800);
@@ -150,7 +151,6 @@ async function ensureSidebarOpen(page) {
 async function expandCamundaPropertiesGroup(page) {
   const groupSelector = '[data-testid="camunda-properties-group"]';
   await page.waitForSelector(groupSelector, { timeout: 10000, state: "visible" });
-
   await page.evaluate((sel) => {
     const group = document.querySelector(sel);
     if (!group) return;
@@ -172,9 +172,6 @@ async function expandCamundaPropertiesGroup(page) {
 }
 
 function additionalPropertiesBlock(page) {
-  // The "additional properties" block is the one that contains the add-property
-  // button. Relying on the title is brittle because the block may be hidden when
-  // it has no rows after a delete/reload.
   return page.locator('[data-testid="camunda-properties-group"] .sidebarPropertiesBlock--secondary, [data-testid="camunda-properties-group"] .sidebarPropertiesBlock').filter({
     has: page.locator('text=+ Добавить BPMN-свойство'),
   });
@@ -184,19 +181,6 @@ function propertyRowLocator(page, key) {
   return additionalPropertiesBlock(page).locator(".sidebarBpmnPropertyItem").filter({
     has: page.locator(`.sidebarBpmnPropertyPreviewKey:has-text("${key}")`),
   });
-}
-
-async function waitForSaveToast(page) {
-  try {
-    const toast = page.locator('[data-testid="process-save-ack-toast"]');
-    await toast.waitFor({ state: "visible", timeout: 5000 });
-    const text = await toast.locator('[data-testid="process-save-ack-toast-description"]').textContent()
-      .catch(() => toast.textContent());
-    console.log("[e2e] toast:", text?.trim());
-    return text?.trim() || "";
-  } catch {
-    return "";
-  }
 }
 
 async function verifyPropertyVisible(page, key, value) {
@@ -227,28 +211,6 @@ async function deleteProperty(page, key) {
   console.log(`[e2e] clicked delete for ${key}`);
 }
 
-async function addProperty(page, key, value) {
-  const block = additionalPropertiesBlock(page);
-  const addBtn = block.locator(".secondaryBtn.sidebarPropertiesActionBtn").filter({
-    has: page.locator('text=+ Добавить BPMN-свойство'),
-  });
-  await addBtn.click();
-  await page.waitForTimeout(300);
-
-  const rows = block.locator(".sidebarBpmnPropertyItem");
-  await rows.last().waitFor({ state: "visible", timeout: 5000 });
-  const lastRow = rows.last();
-  const editBtn = lastRow.locator(".sidebarBpmnPropertyEditBtn");
-  if (await editBtn.isVisible().catch(() => false)) {
-    await editBtn.click();
-    await page.waitForTimeout(200);
-  }
-  const inputs = lastRow.locator(".sidebarBpmnPropertyEditor input");
-  await inputs.nth(0).fill(key);
-  await inputs.nth(1).fill(value);
-  console.log(`[e2e] filled new property ${key}=${value}`);
-}
-
 async function clickSaveProperties(page) {
   const block = additionalPropertiesBlock(page);
   const saveBtn = block.locator(".primaryBtn.sidebarPropertiesActionBtn").filter({
@@ -256,14 +218,24 @@ async function clickSaveProperties(page) {
   });
   await saveBtn.click();
   console.log("[e2e] clicked save properties");
-  try {
-    await saveBtn.locator('text=Сохраняю...').waitFor({ state: "visible", timeout: 5000 });
-    console.log("[e2e] save in progress");
-  } catch {
-    // may be too fast
-  }
-  await saveBtn.locator('text=Сохранить').waitFor({ state: "visible", timeout: 30000 });
-  console.log("[e2e] save button ready again");
+}
+
+async function bumpServerVersion(sessionId, token) {
+  const session = await (await fetch(`${BASE_URL}/api/sessions/${sessionId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })).json();
+  const currentXml = session?.bpmn_xml || "";
+  const currentVersion = session?.diagram_state_version ?? session?.bpmn_xml_version ?? 0;
+  const newXml = buildConflictingXml(currentXml || BPMN_XML);
+  const res = await fetch(`${BASE_URL}/api/sessions/${sessionId}/bpmn`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ xml: newXml, base_diagram_state_version: currentVersion }),
+  });
+  const body = await res.json().catch(() => ({}));
+  console.log("[e2e] bumped server version", res.status, "new", body?.diagram_state_version ?? body?.stored_diagram_state_version ?? "?");
+  if (res.status >= 400) throw new Error(`bump failed: ${res.status} ${JSON.stringify(body)}`);
+  return body;
 }
 
 async function run() {
@@ -276,23 +248,16 @@ async function run() {
     window.__FPC_DEBUG_BPMN__ = true;
     try { window.localStorage?.setItem("fpc_debug_bpmn", "1"); } catch {}
   });
-  let putIndex = 0;
+  let lastPutStatus = 0;
   await page.route(/\/api\/sessions\/[^/]+\/bpmn/, async (route) => {
     const request = route.request();
     const body = request.postData() || "";
     console.log(`[route] ${request.method()} ${request.url()} body bytes=${body.length}`);
     if (request.method() === "PUT") {
-      putIndex += 1;
-      const fs = await import("fs");
-      fs.writeFileSync(`/tmp/put_${putIndex}.json`, body);
-      try {
-        const parsed = JSON.parse(body);
-        console.log(`[route] PUT #${putIndex} source_action=${parsed.source_action || "(none)"}`);
-      } catch {}
       const response = await route.fetch();
-      const respBody = await response.text().catch(() => "");
-      console.log(`[route] PUT #${putIndex} response status=${response.status()} body=${respBody.slice(0, 200)}`);
-      await route.fulfill({ response, body: respBody });
+      lastPutStatus = response.status();
+      console.log(`[route] PUT response status=${lastPutStatus}`);
+      await route.fulfill({ response });
       return;
     }
     await route.continue();
@@ -300,22 +265,8 @@ async function run() {
   page.on("console", (msg) => console.log(`[console ${msg.type()}]`, msg.text()));
   page.on("pageerror", (err) => console.error("[page error]", err));
 
-
   await login(page);
   const sessionId = await createTestSession(page);
-
-  const accessToken2 = await page.evaluate(() => String(window.localStorage?.getItem("fpc_auth_access_token") || ""));
-  const sessionCheck = await page.evaluate(
-    async ({ sid, token }) => {
-      const res = await fetch(`/api/sessions/${sid}`, { headers: { Authorization: `Bearer ${token}` } });
-      return res.json();
-    },
-    { sid: sessionId, token: accessToken2 },
-  );
-  console.log("[e2e] session diagram_state_version", sessionCheck?.diagram_state_version);
-  console.log("[e2e] bpmn_xml length", (sessionCheck?.bpmn_xml || "").length);
-  console.log("[e2e] bpmn_xml contains prop", (sessionCheck?.bpmn_xml || "").includes('fromXmlProp'));
-  console.log("[e2e] camunda ext keys", Object.keys(sessionCheck?.camunda_extensions_by_element_id || {}));
 
   await openSession(page, sessionId);
   await page.waitForTimeout(2500);
@@ -324,134 +275,51 @@ async function run() {
   await ensureSidebarOpen(page);
   await expandCamundaPropertiesGroup(page);
 
-  const debugState = await page.evaluate(() => ({
-    selectedElementId: window.__FPC_E2E_SELECTED_ELEMENT_ID__,
-    draftCamundaKeys: Object.keys(window.__FPC_E2E_DRAFT__?.bpmn_meta?.camunda_extensions_by_element_id || {}),
-    draftXmlLen: (window.__FPC_E2E_DRAFT__?.bpmn_xml || "").length,
-    draftXmlHasProp: (window.__FPC_E2E_DRAFT__?.bpmn_xml || "").includes("fromXmlProp"),
-  }));
-  console.log("[e2e] debug state:", JSON.stringify(debugState));
-
-  const groupText = await page.locator('[data-testid="camunda-properties-group"]').innerText();
-  console.log("[e2e] group text:\n" + groupText);
-
-  await page.screenshot({ path: "/tmp/e2e_before_verify.png" });
-  console.log("[e2e] screenshot /tmp/e2e_before_verify.png");
-
-  // 1. Initial property from XML is visible.
   await verifyPropertyVisible(page, "fromXmlProp", "xml-value-42");
 
-  // 2. Delete property and save.
+  // Delete the property in the UI but do not save yet.
   await deleteProperty(page, "fromXmlProp");
-  const afterDeleteCount = await additionalPropertiesBlock(page).locator(".sidebarBpmnPropertyItem").count();
-  console.log("[e2e] additional property row count after delete:", afterDeleteCount);
-  await page.waitForTimeout(500);
-  await clickSaveProperties(page);
-  await page.waitForTimeout(1000);
-  const afterSaveText = await page.locator('[data-testid="camunda-properties-group"]').innerText();
-  console.log("[e2e] group text after save:\n" + afterSaveText);
-  const debugAfterSave = await page.evaluate(() => ({
-    selectedElementId: window.__FPC_E2E_SELECTED_ELEMENT_ID__,
-    draftCamundaKeys: Object.keys(window.__FPC_E2E_DRAFT__?.bpmn_meta?.camunda_extensions_by_element_id || {}),
-    draftXmlLen: (window.__FPC_E2E_DRAFT__?.bpmn_xml || "").length,
-    draftXmlProp: (window.__FPC_E2E_DRAFT__?.bpmn_xml || "").includes("fromXmlProp"),
-    draftXmlSnippet: (window.__FPC_E2E_DRAFT__?.bpmn_xml || "").replace(/\n/g, "").slice(0, 700),
-  }));
-  console.log("[e2e] debug after save:", JSON.stringify(debugAfterSave));
-
-  const tokenAfterDelete = await page.evaluate(() => String(window.localStorage?.getItem("fpc_auth_access_token") || ""));
-  const sessionAfterDelete = await page.evaluate(
-    async ({ sid, token }) => {
-      const res = await fetch(`/api/sessions/${sid}`, { headers: { Authorization: `Bearer ${token}` } });
-      return res.json();
-    },
-    { sid: sessionId, token: tokenAfterDelete },
-  );
-  const xmlAfterDelete = sessionAfterDelete?.bpmn_xml || "";
-  console.log("[e2e] xml after delete contains fromXmlProp:", xmlAfterDelete.includes("fromXmlProp"));
-  console.log("[e2e] session camunda ext keys after delete:", Object.keys(sessionAfterDelete?.camunda_extensions_by_element_id || {}));
-  console.log("[e2e] session camunda ext after delete:", JSON.stringify(sessionAfterDelete?.camunda_extensions_by_element_id || {}));
-
-  const modelerXmlAfterDelete = await page.evaluate(async () => {
-    try {
-      // Use the same API the lifecycle flush uses.
-      const snapshot = await window.__FPC_E2E_BPMN_API__?.getRuntimeXmlSnapshot?.({ format: true });
-      if (snapshot?.xml) return String(snapshot.xml);
-      const m = window.__FPC_E2E_MODELER__;
-      if (!m || typeof m.saveXML !== "function") return "";
-      const out = await m.saveXML({ format: true });
-      return String(out?.xml || "");
-    } catch (e) {
-      return String(e?.message || e);
-    }
-  });
-  console.log("[e2e] modeler xml after delete len:", modelerXmlAfterDelete.length, "prop:", modelerXmlAfterDelete.includes("fromXmlProp"));
-  console.log("[e2e] modeler xml snippet:", modelerXmlAfterDelete.replace(/\n/g, "").slice(0, 700));
-
-  // 3. Reload and verify property is gone.
-  await page.reload();
-  await page.waitForSelector(".bpmnStageHost", { timeout: 20000 });
-  await page.waitForTimeout(1500);
-  const sessionAfterReload = await page.evaluate(
-    async ({ sid, token }) => {
-      const res = await fetch(`/api/sessions/${sid}`, { headers: { Authorization: `Bearer ${token}` } });
-      return res.json();
-    },
-    { sid: sessionId, token: tokenAfterDelete },
-  );
-  console.log("[e2e] after reload session bpmn_xml prop:", (sessionAfterReload?.bpmn_xml || "").includes("fromXmlProp"));
-  console.log("[e2e] after reload session camunda ext keys:", Object.keys(sessionAfterReload?.camunda_extensions_by_element_id || {}));
-  const modelerXmlAfterReload = await page.evaluate(async () => {
-    try {
-      const snapshot = await window.__FPC_E2E_BPMN_API__?.getRuntimeXmlSnapshot?.({ format: true });
-      if (snapshot?.xml) return String(snapshot.xml);
-      const m = window.__FPC_E2E_MODELER__;
-      if (!m || typeof m.saveXML !== "function") return "";
-      const out = await m.saveXML({ format: true });
-      return String(out?.xml || "");
-    } catch (e) {
-      return String(e?.message || e);
-    }
-  });
-  console.log("[e2e] modeler xml after reload prop:", modelerXmlAfterReload.includes("fromXmlProp"));
-  const debugAfterReload = await page.evaluate(() => ({
-    draftCamundaKeys: Object.keys(window.__FPC_E2E_DRAFT__?.bpmn_meta?.camunda_extensions_by_element_id || {}),
-    draftXmlProp: (window.__FPC_E2E_DRAFT__?.bpmn_xml || "").includes("fromXmlProp"),
-    storeXmlProp: (window.__FPC_E2E_BPMN_API__?.getState?.()?.xml || "").includes("fromXmlProp"),
-  }));
-  console.log("[e2e] debug after reload pre-select:", JSON.stringify(debugAfterReload));
-  await selectTask(page);
-  await ensureSidebarOpen(page);
-  await expandCamundaPropertiesGroup(page);
   await verifyPropertyAbsent(page, "fromXmlProp");
 
-  // 4. Add a new property and save.
-  await addProperty(page, "newProp", "new-value");
+  // Simulate another client bumping the server version while the UI still holds
+  // the stale base diagram-state version.
+  const accessToken = await page.evaluate(() => String(window.localStorage?.getItem("fpc_auth_access_token") || ""));
+  await bumpServerVersion(sessionId, accessToken);
+
+  // Now the UI save must be rejected with 409.
+  lastPutStatus = 0;
   await clickSaveProperties(page);
+  await page.waitForTimeout(2500);
+
+  if (lastPutStatus !== 409) {
+    throw new Error(`expected PUT status 409, got ${lastPutStatus}`);
+  }
+  console.log("[e2e] server returned 409 as expected");
+
+  // ProcessStage should show the conflict toast and modal.
+  const conflictToast = page.locator('[data-testid="process-save-ack-toast"]');
+  const toastVisible = await conflictToast.isVisible().catch(() => false);
+  const toastText = toastVisible ? await conflictToast.textContent() : "";
+  console.log("[e2e] toast visible:", toastVisible, "text:", toastText?.trim());
+
+  const modal = page.locator('[data-testid="diagram-save-conflict-modal"]');
+  await modal.waitFor({ state: "visible", timeout: 10000 });
+  console.log("[e2e] conflict modal visible");
+
+  // Click "Остаться" — the optimistic change should roll back locally.
+  await page.locator('[data-testid="diagram-save-conflict-modal-stay"]').click();
   await page.waitForTimeout(1000);
 
-  const tokenAfterAdd = await page.evaluate(() => String(window.localStorage?.getItem("fpc_auth_access_token") || ""));
-  const sessionAfterAdd = await page.evaluate(
-    async ({ sid, token }) => {
-      const res = await fetch(`/api/sessions/${sid}`, { headers: { Authorization: `Bearer ${token}` } });
-      return res.json();
-    },
-    { sid: sessionId, token: tokenAfterAdd },
-  );
-  console.log("[e2e] after add save server xml contains newProp:", (sessionAfterAdd?.bpmn_xml || "").includes("newProp"));
-  console.log("[e2e] after add save server camunda ext keys:", Object.keys(sessionAfterAdd?.camunda_extensions_by_element_id || {}));
+  await page.screenshot({ path: "/tmp/e2e_conflict_after_stay.png" });
+  console.log("[e2e] screenshot /tmp/e2e_conflict_after_stay.png");
+  const groupTextAfterStay = await page.locator('[data-testid="camunda-properties-group"]').innerText().catch(() => "");
+  console.log("[e2e] group text after stay:\n" + groupTextAfterStay);
 
-  // 5. Reload and verify new property is present.
-  await page.reload();
-  await page.waitForSelector(".bpmnStageHost", { timeout: 20000 });
-  await page.waitForTimeout(1500);
-  await selectTask(page);
-  await ensureSidebarOpen(page);
-  await expandCamundaPropertiesGroup(page);
-  await verifyPropertyVisible(page, "newProp", "new-value");
+  await verifyPropertyVisible(page, "fromXmlProp", "xml-value-42");
+  console.log("[e2e] optimistic delete rolled back after 409");
 
   await browser.close();
-  console.log("[e2e] SUCCESS: property delete/add roundtrip verified");
+  console.log("[e2e] SUCCESS: property delete conflict modal and rollback verified");
 }
 
 run().catch((err) => {

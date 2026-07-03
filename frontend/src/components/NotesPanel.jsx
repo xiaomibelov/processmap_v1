@@ -2574,12 +2574,14 @@ export default function NotesPanel({
       setCamundaPropertiesInfo("Без изменений.");
       return;
     }
+    const previousState = normalizeCamundaExtensionState(selectedCamundaExtensionEntry);
     setCamundaExtensionLastAction("save");
     setCamundaExtensionSavePhase("saving");
     setCamundaPropertiesBusy(true);
     setCamundaExtensionSaveFailed(false);
     setCamundaPropertiesErr("");
     setCamundaPropertiesInfo("");
+    setCamundaPropertiesDraft(normalized);
     try {
       const result = await Promise.resolve(onSetElementCamundaExtensions(selectedElementId, normalized, {
         backgroundSessionRefresh: true,
@@ -2601,6 +2603,13 @@ export default function NotesPanel({
         },
       }));
       if (result && result.ok === false) {
+        const isConflict = result?.status === 409 || result?.conflict === true;
+        if (isConflict) {
+          setCamundaPropertiesDraft(previousState);
+          if (camundaPropertiesDraftKey) {
+            camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, previousState);
+          }
+        }
         setCamundaExtensionSavePhase("idle");
         setCamundaExtensionSaveFailed(true);
         setCamundaPropertiesErr(str(result.error || "Не удалось сохранить Properties."));
@@ -2636,12 +2645,14 @@ export default function NotesPanel({
         ? selectedCamundaExtensionEntry.preservedExtensionElements.slice()
         : [],
     };
+    const previousState = normalizeCamundaExtensionState(selectedCamundaExtensionEntry);
     setCamundaExtensionLastAction("reset");
     setCamundaExtensionSavePhase("saving");
     setCamundaPropertiesBusy(true);
     setCamundaExtensionSaveFailed(false);
     setCamundaPropertiesErr("");
     setCamundaPropertiesInfo("");
+    setCamundaPropertiesDraft(nextState);
     try {
       const result = await Promise.resolve(onSetElementCamundaExtensions(selectedElementId, nextState, {
         backgroundSessionRefresh: true,
@@ -2663,6 +2674,13 @@ export default function NotesPanel({
         },
       }));
       if (result && result.ok === false) {
+        const isConflict = result?.status === 409 || result?.conflict === true;
+        if (isConflict) {
+          setCamundaPropertiesDraft(previousState);
+          if (camundaPropertiesDraftKey) {
+            camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, previousState);
+          }
+        }
         setCamundaExtensionSavePhase("idle");
         setCamundaExtensionSaveFailed(true);
         setCamundaPropertiesErr(str(result.error || "Не удалось очистить Properties."));
