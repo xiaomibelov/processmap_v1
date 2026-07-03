@@ -1,6 +1,10 @@
+import re
 import unittest
 
-from app.camunda_meta_utils import deduplicate_camunda_extension_properties
+from app.camunda_meta_utils import (
+    deduplicate_camunda_extension_properties,
+    extract_camunda_extensions_from_bpmn_xml,
+)
 
 
 class TestDeduplicateCamundaExtensionProperties(unittest.TestCase):
@@ -82,6 +86,91 @@ class TestDeduplicateCamundaExtensionProperties(unittest.TestCase):
     def test_no_camunda_extensions_unchanged(self):
         meta = {"version": 1}
         self.assertEqual(deduplicate_camunda_extension_properties(meta), meta)
+
+
+class TestExtractCamundaExtensionsFromBpmnXml(unittest.TestCase):
+    def test_empty_xml_returns_empty_map(self):
+        self.assertEqual(extract_camunda_extensions_from_bpmn_xml(""), {})
+        self.assertEqual(extract_camunda_extensions_from_bpmn_xml("   "), {})
+
+    def test_extracts_camunda_properties(self):
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_1">
+  <bpmn:process id="Process_1" isExecutable="false">
+    <bpmn:task id="Task_1">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="owner" value="ops" />
+          <camunda:property name="owner" value="dev" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+  </bpmn:process>
+</bpmn:definitions>"""
+        result = extract_camunda_extensions_from_bpmn_xml(xml)
+        task = result.get("Task_1") or {}
+        props = (task.get("properties") or {}).get("extensionProperties") or []
+        self.assertEqual(len(props), 2)
+        self.assertEqual(props[0].get("name"), "owner")
+        self.assertEqual(props[0].get("value"), "ops")
+        self.assertEqual(props[1].get("value"), "dev")
+
+    def test_extracts_execution_listener(self):
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_1">
+  <bpmn:process id="Process_1" isExecutable="false">
+    <bpmn:task id="Task_1">
+      <bpmn:extensionElements>
+        <camunda:executionListener event="start" class="com.example.StartListener" />
+      </bpmn:extensionElements>
+    </bpmn:task>
+  </bpmn:process>
+</bpmn:definitions>"""
+        result = extract_camunda_extensions_from_bpmn_xml(xml)
+        task = result.get("Task_1") or {}
+        listeners = (task.get("properties") or {}).get("extensionListeners") or []
+        self.assertEqual(len(listeners), 1)
+        self.assertEqual(listeners[0].get("event"), "start")
+        self.assertEqual(listeners[0].get("type"), "class")
+        self.assertEqual(listeners[0].get("value"), "com.example.StartListener")
+
+    def test_preserves_unmanaged_extension_elements(self):
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_1">
+  <bpmn:process id="Process_1" isExecutable="false">
+    <bpmn:task id="Task_1">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="owner" value="ops" />
+        </camunda:properties>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="in">1</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+    </bpmn:task>
+  </bpmn:process>
+</bpmn:definitions>"""
+        result = extract_camunda_extensions_from_bpmn_xml(xml)
+        task = result.get("Task_1") or {}
+        self.assertTrue(len(task.get("preservedExtensionElements") or []) > 0)
+        preserved = " ".join(task["preservedExtensionElements"])
+        self.assertIn("inputOutput", preserved)
+
+    def test_skips_pm_robot_meta(self):
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:pm="http://processmap.ai/schema/bpmn/1.0" id="Definitions_1">
+  <bpmn:process id="Process_1" isExecutable="false">
+    <bpmn:task id="Task_1">
+      <bpmn:extensionElements>
+        <pm:RobotMeta>
+          <pm:payload>{"x":1}</pm:payload>
+        </pm:RobotMeta>
+      </bpmn:extensionElements>
+    </bpmn:task>
+  </bpmn:process>
+</bpmn:definitions>"""
+        result = extract_camunda_extensions_from_bpmn_xml(xml)
+        self.assertEqual(result, {})
 
 
 if __name__ == "__main__":
