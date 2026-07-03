@@ -30,6 +30,9 @@ export default function ProcessPanels({ section = "top", view = {} }) {
     runToolbarReset,
     runToolbarClear,
     openTemplatesPicker,
+    openCreateTemplateModal,
+    canCreateTemplateFromSelection,
+    templateSelectionCount,
     isQualityMode,
     qualitySummary,
     qualityProfile,
@@ -200,6 +203,9 @@ export default function ProcessPanels({ section = "top", view = {} }) {
           runToolbarReset={runToolbarReset}
           runToolbarClear={runToolbarClear}
           openTemplatesPicker={openTemplatesPicker}
+          openCreateTemplateModal={openCreateTemplateModal}
+          canCreateTemplateFromSelection={canCreateTemplateFromSelection}
+          templateSelectionCount={templateSelectionCount}
           hasSession={hasSession}
           isBpmnTab={isBpmnTab}
           workbench={workbench}

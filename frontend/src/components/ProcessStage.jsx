@@ -6729,6 +6729,14 @@ function ProcessStage({
     showOverlaysDuringPan,
   });
 
+  const templateSelectionCount = Math.max(
+    Number(selectedBpmnElementIds?.length || 0),
+    Number(selectedHybridTemplateCount || 0),
+  );
+  const canCreateTemplateFromSelection = hasSession
+    && tab === "diagram"
+    && (selectedBpmnElementIds?.length > 0 || Number(selectedHybridTemplateCount || 0) > 0);
+
   const topPanelsView = buildTopPanelsView({
     toolbarMenuOpen,
     toolbarMenuRef,
@@ -6769,6 +6777,9 @@ function ProcessStage({
     runToolbarReset,
     runToolbarClear,
     openTemplatesPicker,
+    openCreateTemplateModal,
+    canCreateTemplateFromSelection,
+    templateSelectionCount,
     isQualityMode,
     qualitySummary,
     qualityProfile,
@@ -6940,8 +6951,6 @@ function ProcessStage({
   });
   const {
     canUseElementContextActions,
-    templateSelectionCount,
-    canCreateTemplateFromSelection,
     canOpenTemplatesList,
     hasPathHighlightData,
   } = shellVm.shellProps;
