@@ -110,6 +110,9 @@ import {
   buildSaveUploadStatusBadge,
   normalizeBpmnSaveLifecycleEvent,
 } from "../features/process/navigation/saveUploadStatus";
+import {
+  subscribePropertySaveEvents,
+} from "../features/process/save/propertySaveEvents";
 import { resolveManualSaveOutcomeUi } from "../features/process/navigation/manualSaveOutcomeUi";
 import { deriveLeaveNavigationRisk } from "../features/process/navigation/leaveNavigationGuardModel";
 import useProcessStageShellController from "../features/process/stage/controllers/useProcessStageShellController";
@@ -584,6 +587,8 @@ function ProcessStage({
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
   const [saveConflictNoticeDismissed, setSaveConflictNoticeDismissed] = useState(false);
   const [saveConflictActionBusy, setSaveConflictActionBusy] = useState(false);
+  const [propertySaveConflictOpen, setPropertySaveConflictOpen] = useState(false);
+  const [propertySaveConflictFallback, setPropertySaveConflictFallback] = useState("");
   const [mergePanelOpen, setMergePanelOpen] = useState(false);
   const [mergePanelBusy, setMergePanelBusy] = useState(false);
   const [mergePanelSource, setMergePanelSource] = useState("");
@@ -1302,6 +1307,29 @@ function ProcessStage({
     showSaveAckToast,
     toText,
   ]);
+  useEffect(() => {
+    return subscribePropertySaveEvents((event) => {
+      const type = toText(event?.type);
+      if (type === "start") {
+        showSaveAckToast("Сохранение…", "info", "save");
+        return;
+      }
+      if (type === "success") {
+        showSaveAckToast("Сохранено", "success", "save");
+        return;
+      }
+      if (type === "conflict") {
+        showSaveAckToast("Конфликт версий", "warning", "conflict");
+        setPropertySaveConflictOpen(true);
+        setPropertySaveConflictFallback(toText(event?.error) || "Конфликт версий");
+        return;
+      }
+      if (type === "error") {
+        const errorText = toText(event?.error);
+        showSaveAckToast(errorText ? `Ошибка сохранения: ${errorText}` : "Ошибка сохранения", "error", "save");
+      }
+    });
+  }, [sid, showSaveAckToast, toText]);
   const sessionPresenceView = useMemo(() => buildSessionPresenceView({
     actorsRaw: sessionPresence.activeUsers,
     currentUserIdRaw: currentUserId,
@@ -1323,6 +1351,12 @@ function ProcessStage({
     currentUserIdRaw: toText(user?.id || user?.user_id || user?.email),
     fallbackTextRaw: saveUploadStatus?.title || saveUploadStatus?.error,
   }), [saveUploadStatus?.conflict, saveUploadStatus?.error, saveUploadStatus?.title, toText, user]);
+  const propertySaveConflictView = useMemo(() => buildSaveConflictModalView({
+    conflictRaw: null,
+    currentUserRaw: user,
+    currentUserIdRaw: toText(user?.id || user?.user_id || user?.email),
+    fallbackTextRaw: propertySaveConflictFallback,
+  }), [propertySaveConflictFallback, toText, user]);
   const sessionVersionReadSnapshot = useMemo(
     () => asObject(sessionCompanionBridgeSnapshot.version),
     [sessionCompanionBridgeSnapshot.version],
@@ -7560,12 +7594,21 @@ function ProcessStage({
         view={shellVm.dialogsProps}
       />
       <ProcessStageSaveConflictModal
-        open={showSaveConflictModal}
+        open={showSaveConflictModal || propertySaveConflictOpen}
         busy={saveConflictActionBusy === true}
-        view={saveConflictModalView}
-        onRefreshSession={handleSaveConflictRefresh}
-        onStay={dismissSaveConflictNotice}
-        onDiscardLocalChanges={handleSaveConflictDiscardLocal}
+        view={showSaveConflictModal ? saveConflictModalView : propertySaveConflictView}
+        onRefreshSession={() => {
+          setPropertySaveConflictOpen(false);
+          handleSaveConflictRefresh();
+        }}
+        onStay={() => {
+          setPropertySaveConflictOpen(false);
+          dismissSaveConflictNotice();
+        }}
+        onDiscardLocalChanges={() => {
+          setPropertySaveConflictOpen(false);
+          handleSaveConflictDiscardLocal();
+        }}
         onCompare={() => void openMergePanel("save_conflict_modal")}
       />
       <BpmnMergePanel

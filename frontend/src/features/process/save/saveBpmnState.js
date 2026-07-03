@@ -258,32 +258,9 @@ export async function saveBpmnState(options = {}) {
     if (isDiagramStateConflict(saveRes)) {
       const serverVersion = extractServerVersionFromError(saveRes);
       updateLastServerVersion(options.lastServerDiagramStateVersionRef, serverVersion);
-      if (attempt >= maxAttempts) break;
-      // Try to rebase against the latest server XML if possible.
-      if (typeof options.apiGetSession === "function" && operation !== "session_save") {
-        try {
-          const latest = await options.apiGetSession(sid);
-          if (latest?.ok && latest.session && typeof latest.session === "object") {
-            const latestVersion = pickDiagramStateBaseVersion(latest.session);
-            updateLastServerVersion(options.lastServerDiagramStateVersionRef, latestVersion);
-            const rebasedXml = buildCanonicalXml({
-              currentXml: latest.session.bpmn_xml || currentXml,
-              nextCamundaExtensionsByElementId: nextMap,
-            });
-            if (rebasedXml && rebasedXml !== latest.session.bpmn_xml) {
-              persistedXml = rebasedXml;
-              persistedMeta = {
-                ...asObject(latest.session.bpmn_meta),
-                camunda_extensions_by_element_id: nextMap,
-              };
-              await sleep(100 * (2 ** (attempt - 1)));
-              continue;
-            }
-          }
-        } catch {
-          // fall through to break
-        }
-      }
+      // Surface conflicts to the caller immediately. The UI shows a conflict
+      // modal and lets the user choose reload/stay/discard instead of silently
+      // rebasing and overwriting concurrent changes.
       break;
     }
 

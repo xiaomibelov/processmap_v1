@@ -68,6 +68,9 @@ import {
 } from "./features/process/camunda/camundaExtensions";
 import { saveBpmnState } from "./features/process/save/saveBpmnState";
 import {
+  emitPropertySaveEvent,
+} from "./features/process/save/propertySaveEvents";
+import {
   normalizeCamundaPresentationMap,
   removeCamundaPresentationByElementId,
   shouldResetPropertiesOverlayPreviewForSelection,
@@ -2616,6 +2619,7 @@ export default function App() {
     const operation = shouldRemove
       ? "property_delete"
       : (currentCamundaExtensionsByElementId[elementId] ? "property_update" : "property_add");
+    emitPropertySaveEvent({ type: "start", operation, elementId, sid });
     const persistResult = await saveBpmnState({
       operation,
       sessionId: sid,
@@ -2641,8 +2645,23 @@ export default function App() {
       syncSource: "saveBpmnState:camunda_extensions",
     });
     if (!persistResult?.ok) {
-      return { ok: false, error: String(persistResult?.error || "Не удалось сохранить Properties.") };
+      const isConflict = persistResult?.status === 409 || persistResult?.conflict === true;
+      emitPropertySaveEvent({
+        type: isConflict ? "conflict" : "error",
+        operation,
+        elementId,
+        sid,
+        status: Number(persistResult?.status || 0),
+        error: String(persistResult?.error || "Не удалось сохранить Properties."),
+      });
+      return {
+        ok: false,
+        status: Number(persistResult?.status || 0),
+        conflict: isConflict,
+        error: String(persistResult?.error || "Не удалось сохранить Properties."),
+      };
     }
+    emitPropertySaveEvent({ type: "success", operation, elementId, sid });
     markOk(sid && !isLocalSessionId(sid)
       ? (shouldRemove ? "Properties удалены." : "Properties сохранены.")
       : (shouldRemove ? "Properties удалены локально." : "Properties сохранены локально."));
