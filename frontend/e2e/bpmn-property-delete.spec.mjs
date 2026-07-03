@@ -1,9 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { apiLogin, setUiToken } from "./helpers/e2eAuth.mjs";
-import {
-  API_BASE,
-  createFixture,
-} from "./helpers/processFixture.mjs";
+import { API_BASE, createFixture } from "./helpers/processFixture.mjs";
 import { waitForDiagramReady } from "./helpers/diagramReady.mjs";
 
 function seedXmlWithProperty() {
@@ -84,12 +81,11 @@ test("deleting an additional BPMN property removes it from the element", async (
   await page.waitForLoadState("domcontentloaded");
   await waitForDiagramReady(page);
 
-  // Click the task shape to select it (updates AppShell state).
+  // Select the task to open its sidebar.
   const taskShape = page.locator('g[data-element-id="Task_1"]').first();
   await expect(taskShape).toBeVisible();
   await taskShape.click();
 
-  // Open the right sidebar via the Discussions button, then switch to the selected-node section.
   const discussionsBtn = page.getByRole("button", { name: "Обсуждения" });
   await expect(discussionsBtn).toBeVisible();
   await discussionsBtn.click();
@@ -98,7 +94,6 @@ test("deleting an additional BPMN property removes it from the element", async (
   await expect(nodeSectionBtn).toBeVisible();
   await nodeSectionBtn.click();
 
-  // Open the left "Свойства" section, then the additional BPMN properties block.
   const propertiesAccordion = page.locator(".sidebarAccordionHead").filter({ hasText: /^Свойства$/ }).first();
   await expect(propertiesAccordion).toBeVisible();
   await propertiesAccordion.click();
@@ -111,17 +106,17 @@ test("deleting an additional BPMN property removes it from the element", async (
   const rows = page.locator(".sidebarBpmnPropertyItem");
   await expect(rows).toHaveCount(1);
 
-  // Delete the property using the X button.
+  // Delete the property.
   const deleteBtn = page.getByRole("button", { name: /Удалить BPMN-свойство/ });
   await expect(deleteBtn).toBeVisible();
   await deleteBtn.click();
 
-  // UI row should disappear and stay gone.
+  // Row should disappear immediately and stay gone.
   await expect(rows).toHaveCount(0);
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(500);
   await expect(rows).toHaveCount(0);
 
-  // Save and verify the UI still shows no rows.
+  // Save and verify the row does not reappear.
   const saveBtn = page.locator(".sidebarPropertiesBlock--secondary .primaryBtn", { hasText: "Сохранить" }).first();
   await saveBtn.click();
   await expect.poll(async () => rows.count()).toBe(0);
