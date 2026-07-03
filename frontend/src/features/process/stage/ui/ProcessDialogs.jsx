@@ -61,7 +61,6 @@ export default function ProcessDialogs({ view = {} }) {
     versionsIncludeTechnical,
     loadMoreSnapshotVersions,
     toggleVersionsIncludeTechnical,
-    isAdmin,
     setGenErr,
     setDiffTargetSnapshotId,
     setDiffBaseSnapshotId,
@@ -291,18 +290,16 @@ export default function ProcessDialogs({ view = {} }) {
                 <span data-testid="bpmn-versions-shown-count">
                   Показано {asArray(versionsList).length} из {Math.max(versionsTotalCount || 0, asArray(versionsList).length)} версий
                 </span>
-                {isAdmin ? (
-                  <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px]">
-                    <input
-                      type="checkbox"
-                      checked={!!versionsIncludeTechnical}
-                      onChange={() => void toggleVersionsIncludeTechnical?.()}
-                      disabled={versionsBusy || versionsLoadingMore}
-                      data-testid="bpmn-versions-show-technical"
-                    />
-                    Показать технические
-                  </label>
-                ) : null}
+                <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px]">
+                  <input
+                    type="checkbox"
+                    checked={!!versionsIncludeTechnical}
+                    onChange={() => void toggleVersionsIncludeTechnical?.()}
+                    disabled={versionsBusy || versionsLoadingMore}
+                    data-testid="bpmn-versions-show-technical"
+                  />
+                  Показать технические
+                </label>
               </div>
               <div className="mt-1 text-[11px] text-muted">
                 Текущий BPMN сохраняется отдельно от опубликованных версий. Пустая история не означает, что черновик не сохранён.
