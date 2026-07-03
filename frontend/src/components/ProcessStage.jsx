@@ -6864,7 +6864,6 @@ function ProcessStage({
     versionsList: versionsListWithDiffSummaries,
     versionsLoadState,
     versionsLoadError,
-    isAdmin: Boolean(user?.is_admin),
     showTechnicalVersions,
     setShowTechnicalVersions,
     saveSessionFromVersionsModal,
