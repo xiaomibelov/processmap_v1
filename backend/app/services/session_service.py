@@ -570,13 +570,14 @@ def bpmn_version_detail(
 def bpmn_restore(
     session_id: str,
     version_id: str,
+    inp: Any = None,
     request: Any = None,
 ) -> Dict[str, Any]:
     """Restore a BPMN version snapshot."""
     # CROSS-DOMAIN: depends on _latest_user_facing_bpmn_version,
     # _create_bpmn_revision_snapshot_if_needed, _mark_diagram_truth_write.
     import app._legacy_main as _lm
-    return _lm.session_bpmn_restore(session_id, version_id, request)
+    return _lm.session_bpmn_restore(session_id, version_id, inp=inp, request=request)
 
 
 def bpmn_clear(
