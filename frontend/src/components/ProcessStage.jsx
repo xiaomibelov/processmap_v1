@@ -1315,7 +1315,7 @@ function ProcessStage({
         return;
       }
       if (type === "success") {
-        showSaveAckToast("Сохранено", "success", "save");
+        showSaveAckToast(event?.local ? "Сохранено локально" : "Сохранено", "success", "save");
         return;
       }
       if (type === "conflict") {
