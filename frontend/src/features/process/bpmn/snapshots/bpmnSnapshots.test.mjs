@@ -5,6 +5,7 @@ import {
   clearBpmnSnapshots,
   getBpmnSnapshotById,
   listBpmnSnapshots,
+  overwriteBpmnSnapshot,
   saveBpmnSnapshot,
   shouldAutoRestoreFromSnapshot,
   updateBpmnSnapshotMeta,
@@ -170,7 +171,7 @@ test("shouldAutoRestoreFromSnapshot restores only when backend xml is empty", ()
     snapshot,
   });
   assert.equal(whenBackendPresent.restore, false);
-  assert.equal(whenBackendPresent.reason, "backend_present");
+  assert.equal(whenBackendPresent.reason, "server_xml_present");
 
   const whenBackendEmpty = shouldAutoRestoreFromSnapshot({
     backendXml: "",
@@ -178,4 +179,30 @@ test("shouldAutoRestoreFromSnapshot restores only when backend xml is empty", ()
   });
   assert.equal(whenBackendEmpty.restore, true);
   assert.equal(whenBackendEmpty.reason, "backend_empty");
+});
+
+test("overwriteBpmnSnapshot skips unless backend returned 200 OK", async () => {
+  const sid = `overwrite-non-200-${Date.now()}`;
+
+  const skipped = await overwriteBpmnSnapshot({
+    sessionId: sid,
+    xml: "<bpmn:definitions id='A'/>",
+    status: 409,
+    reason: "persist_ok",
+  });
+  assert.equal(skipped.skipped, true);
+  assert.equal(skipped.decisionReason, "non_200_status");
+
+  const ok = await overwriteBpmnSnapshot({
+    sessionId: sid,
+    xml: "<bpmn:definitions id='B'/>",
+    status: 200,
+    reason: "persist_ok",
+  });
+  assert.equal(ok.saved, true);
+  assert.equal(ok.decisionReason, "saved_new");
+
+  const list = await listBpmnSnapshots({ sessionId: sid });
+  assert.equal(list.length, 1);
+  assert.equal(list[0].xml, "<bpmn:definitions id='B'/>");
 });

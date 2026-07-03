@@ -564,9 +564,14 @@ export function createBpmnStageImperativeApi(ctxBase) {
       const modeler = refs.modelerRef?.current || refs.modelerRuntimeRef?.current?.getInstance?.();
       if (modeler && typeof modeler.saveXML === "function") {
         const out = await modeler.saveXML({ format: options?.format !== false });
+        const xml = String(out?.xml || "");
+        if (typeof window !== "undefined" && window.__FPC_DEBUG_BPMN__) {
+          // eslint-disable-next-line no-console
+          console.debug(`[GET_RUNTIME_XML] source=modeler_saveXML len=${xml.length} prop=${xml.includes("fromXmlProp")} modelerRefSame=${modeler === refs.modelerRef?.current}`);
+        }
         return {
           ok: true,
-          xml: String(out?.xml || ""),
+          xml,
           token: Number(refs.modelerRuntimeRef?.current?.getStatus?.()?.token || 0),
           source: "modeler_saveXML",
         };

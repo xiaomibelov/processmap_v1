@@ -54,6 +54,7 @@ export function buildSnapshotRestorePutOptions({
   if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
     options.baseDiagramStateVersion = Math.round(baseDiagramStateVersion);
   }
+  options.sourceAction = "snapshot_restore";
   return options;
 }
 
@@ -227,8 +228,19 @@ export default function useSessionActivationOrchestration({
     if (sidProject && sidProject !== String(projectId || "").trim()) {
       setProjectId(sidProject);
     }
-    const backendXml = String(nextRaw?.bpmn_xml || "");
+    let backendXml = String(nextRaw?.bpmn_xml || "");
     const backendHash = fnv1aHex(backendXml);
+    // If the session endpoint does not return the full BPMN XML but the session
+    // already has a version, the server copy is authoritative. Do not treat the
+    // backend as empty and do not overwrite it with a local snapshot.
+    const hasBackendVersion = (
+      Number(nextRaw?.bpmn_xml_version) > 0
+      || Number(nextRaw?.version) > 0
+      || Number(nextRaw?.diagram_state_version) > 0
+    );
+    if (!backendXml.trim() && hasBackendVersion) {
+      backendXml = "<server-xml-present/>";
+    }
     let restoredFromSnapshot = false;
     let restoredSnapshot = null;
     let next = nextRaw;

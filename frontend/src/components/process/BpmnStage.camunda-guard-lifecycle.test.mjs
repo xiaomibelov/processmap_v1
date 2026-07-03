@@ -90,7 +90,7 @@ test("template insert reconcile adopts guarded XML properties into local extensi
   assert.match(source, /syncDraftCamundaExtensionsMap\(nextMap, "camunda_extensions_template_insert_xml_reconcile"\)/);
   assert.match(
     source,
-    /const camundaExtensionsByElementId = reconcileTemplateInsertCamundaStateFromXml\(xmlText, templateInsertGuardIds\);[\s\S]*finalizeCamundaExtensionsXml\(\{[\s\S]*camundaExtensionsByElementId,[\s\S]*preserveManagedForElementIds: templateInsertGuardIds,/,
+    /const xmlCamundaExtensionsByElementId = reconcileTemplateInsertCamundaStateFromXml\(xmlText, templateInsertGuardIds\);[\s\S]*const camundaExtensionsByElementId = \{\s*\.\.\.xmlCamundaExtensionsByElementId,\s*\.\.\.metaCamundaExtensionsByElementId,\s*\};[\s\S]*finalizeCamundaExtensionsXml\(\{[\s\S]*camundaExtensionsByElementId,[\s\S]*preserveManagedForElementIds: templateInsertGuardIds,/,
   );
 });
 
