@@ -4773,11 +4773,12 @@ function ProcessStage({
         },
         totalCount: userFacingCount,
       });
-      const nonMeaningfulSorted = [...technicalList, ...unknownList].sort((a, b) => Number(b?.ts || 0) - Number(a?.ts || 0));
-      const allWithDisplayNumbers = [
-        ...asArray(listWithUserFacingNumbers),
-        ...nonMeaningfulSorted,
-      ];
+      const meaningfulById = new Map(
+        asArray(listWithUserFacingNumbers).map((item) => [String(item?.id || ""), item]),
+      );
+      const displayedList = includeTechnical
+        ? asArray(normalizedList).map((item) => meaningfulById.get(String(item?.id || "")) || item)
+        : asArray(listWithUserFacingNumbers);
       setLatestBpmnVersionHead(asArray(listWithUserFacingNumbers)[0] || null);
       if (trackHeadStatus) setLatestBpmnVersionHeadStatus("ready");
       if (!updateList) return;
@@ -4795,19 +4796,20 @@ function ProcessStage({
       if (loadMore) {
         setVersionsList((prev) => {
           const current = asArray(prev);
-          const newItems = asArray(listWithUserFacingNumbers).filter(
+          const newItems = asArray(displayedList).filter(
             (item) => !current.some((existing) => String(existing?.id || "") === String(item?.id || "")),
           );
           return [...current, ...newItems];
         });
-        setPreviewSnapshotId((prev) => (prev || asArray(listWithUserFacingNumbers)[0]?.id || ""));
+        setPreviewSnapshotId((prev) => (prev || asArray(displayedList)[0]?.id || ""));
       } else {
-        setVersionsList(asArray(listWithUserFacingNumbers));
-        setVersionsLoadState(asArray(listWithUserFacingNumbers).length > 0 ? "ready" : "empty");
+        setVersionsList(asArray(displayedList));
+        setVersionsListAll(asArray(displayedList));
+        setVersionsLoadState(asArray(displayedList).length > 0 ? "ready" : "empty");
         setPreviewSnapshotId((prev) => {
-          const exists = asArray(listWithUserFacingNumbers).some((item) => String(item?.id || "") === String(prev || ""));
+          const exists = asArray(displayedList).some((item) => String(item?.id || "") === String(prev || ""));
           if (exists) return prev;
-          return asArray(listWithUserFacingNumbers)[0]?.id || "";
+          return asArray(displayedList)[0]?.id || "";
         });
       }
       setVersionsLoadError("");
