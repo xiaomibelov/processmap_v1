@@ -263,8 +263,14 @@ export default function useBpmnSync({
         liveRuntimeXml,
         fallbackXml,
       });
+      // Do not use the raw live-runtime XML as an override for lifecycle flushes.
+      // The override bypasses the modeler-side Camunda extension sync and the
+      // canonical XML transform, so a property-only save that has already updated
+      // the server XML could be overwritten by stale modeler state on unload.
+      // Let saveLocalFromModeler read the current modeler XML and apply the
+      // canonical transform instead.
       if (!lifecycleGuardSignal?.skip && lifecycleGuardSignal?.hasFreshDirtyDelta) {
-        lifecycleXmlOverride = toText(lifecycleGuardSignal?.liveRuntimeXml || "");
+        lifecycleXmlOverride = "";
       }
     }
     const isSaveInProgress = () => {

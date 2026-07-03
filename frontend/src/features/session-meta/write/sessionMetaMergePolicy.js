@@ -69,15 +69,10 @@ export function mergeSessionMetaForRead({
       ...serverHybridLayerByElementId,
       ...localHybridLayerByElementId,
     };
-  const camundaExtensionsByElementId = preferServerOverlay
-    ? {
-      ...localCamundaExtensionsByElementId,
-      ...serverCamundaExtensionsByElementId,
-    }
-    : {
-      ...serverCamundaExtensionsByElementId,
-      ...localCamundaExtensionsByElementId,
-    };
+  // Camunda extensions are now derived from the BPMN XML on the server. The
+  // local-storage copy is only a stale fallback and must not override the
+  // authoritative (possibly empty) server state.
+  const camundaExtensionsByElementId = serverCamundaExtensionsByElementId;
   const nextRaw = {
     version: Number(sessionMeta.version) > 0 ? Number(sessionMeta.version) : 1,
     flow_meta: hasKeys(sessionMeta.flow_meta) ? sessionMeta.flow_meta : localMeta.flow_meta,

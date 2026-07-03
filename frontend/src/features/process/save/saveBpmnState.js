@@ -170,6 +170,24 @@ export async function saveBpmnState(options = {}) {
     nextXml = currentXml;
   } else {
     currentXml = toText(options.currentXml);
+    if (!currentXml && typeof options.getModelerXml === "function") {
+      try {
+        currentXml = toText(await options.getModelerXml());
+      } catch (error) {
+        return { ok: false, status: 0, error: `Не удалось получить XML: ${error?.message || error}` };
+      }
+    }
+    if (!currentXml && typeof options.apiGetSession === "function") {
+      try {
+        const latest = await options.apiGetSession(sid);
+        if (latest?.ok && latest.session && typeof latest.session === "object") {
+          currentXml = toText(latest.session.bpmn_xml);
+          updateLastServerVersion(options.lastServerDiagramStateVersionRef, pickDiagramStateBaseVersion(latest.session));
+        }
+      } catch {
+        // ignore
+      }
+    }
     if (!currentXml) {
       return { ok: false, status: 0, error: "Отсутствует BPMN XML для применения Properties." };
     }
@@ -319,6 +337,7 @@ export async function saveBpmnState(options = {}) {
         xml: persistedXml,
         rev: storedRev,
         reason: "persist_ok",
+        status: saveRes?.status,
       });
     } catch {
       // Snapshot overwrite is best-effort.
@@ -333,6 +352,7 @@ export async function saveBpmnState(options = {}) {
     diagramStateVersion,
     syncSource,
   });
+  fallbackPatch._apply_bpmn_xml = true;
 
   if (options.backgroundSessionRefresh) {
     options.onSessionSync?.(fallbackPatch);
@@ -369,7 +389,7 @@ export async function saveBpmnState(options = {}) {
       const fresh = await options.apiGetSession(sid);
       if (fresh?.ok && fresh.session && typeof fresh.session === "object") {
         updateLastServerVersion(options.lastServerDiagramStateVersionRef, pickDiagramStateBaseVersion(fresh.session));
-        options.onSessionSync?.({ ...fresh.session, _sync_source: syncSource });
+        options.onSessionSync?.({ ...fresh.session, _sync_source: syncSource, _apply_bpmn_xml: true });
         sessionSynced = true;
       }
     } catch {

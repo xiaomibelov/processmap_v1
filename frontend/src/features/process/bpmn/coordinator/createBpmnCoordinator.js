@@ -981,6 +981,14 @@ export default function createBpmnCoordinator(options = {}) {
 
   function syncExternalXml(xml, source = "external", options = {}) {
     if (!store) return null;
+    // Authoritative external XML (e.g. after a property-only save or server sync)
+    // must not be overwritten by a stale autosave that was queued against the
+    // previous modeler state. Cancel any pending autosave.
+    clearSaveTimer();
+    clearPendingSave();
+    clearDragTimers();
+    clearDragPending();
+    saveQueuedRev = 0;
     return store.setXml(xml, source, {
       bumpRev: options?.bumpRev === true,
       dirty: options?.dirty === true,
