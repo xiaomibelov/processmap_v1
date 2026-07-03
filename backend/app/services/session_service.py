@@ -486,12 +486,6 @@ def session_bpmn_save(session_id: str, inp: Any, request: Any = None) -> Dict[st
     return bpmn_save(session_id, inp, request)
 
 
-def meta_patch(session_id: str, inp: Any, request: Any = None) -> Dict[str, Any]:
-    """Router-facing alias for session_meta_patch that accepts request."""
-    import app._legacy_main as _lm
-    return _lm.session_meta_patch(session_id, inp, request)
-
-
 def bpmn_save(
     session_id: str,
     inp: Any,
@@ -990,12 +984,6 @@ def put_session(session_id: str, inp, request=None):
     """Replace session metadata."""
     import app._legacy_main as _lm
     return _lm.put_session(session_id, inp, request)
-
-
-def patch_session_meta(session_id: str, inp, request=None):
-    """Patch only session bpmn_meta_json without touching bpmn_xml."""
-    import app._legacy_main as _lm
-    return _lm.session_meta_patch(session_id, inp, request)
 
 
 def recompute_session(session_id: str, request: Optional[Request] = None):

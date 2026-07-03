@@ -62,6 +62,7 @@ test("snapshot restore PUT options propagate diagram CAS base from fetched sessi
   assert.deepEqual(options, {
     rev: 41,
     baseDiagramStateVersion: 133,
+    sourceAction: "snapshot_restore",
   });
 });
 
@@ -78,5 +79,6 @@ test("snapshot restore PUT options fall back to snapshot rev when session rev is
   assert.deepEqual(options, {
     rev: 5,
     baseDiagramStateVersion: 9,
+    sourceAction: "snapshot_restore",
   });
 });
