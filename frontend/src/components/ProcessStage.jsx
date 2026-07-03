@@ -4992,6 +4992,17 @@ function ProcessStage({
       const restoredDiagramStateVersion = Number(restored?.diagramStateVersion ?? restored?.result?.diagram_state_version);
       if (Number.isFinite(restoredDiagramStateVersion) && restoredDiagramStateVersion >= 0) {
         rememberDiagramStateVersion(restoredDiagramStateVersion, { sessionId: sid });
+        if (draftRef.current) {
+          draftRef.current.diagram_state_version = restoredDiagramStateVersion;
+          draftRef.current.diagramStateVersion = restoredDiagramStateVersion;
+        }
+        onSessionSyncWithVersion?.({
+          id: sid,
+          session_id: sid,
+          diagram_state_version: restoredDiagramStateVersion,
+          diagramStateVersion: restoredDiagramStateVersion,
+          _sync_source: "bpmn_restore",
+        });
       }
       const xml = String(restored?.bpmn_xml || item?.xml || "");
       if (!xml.trim()) {
