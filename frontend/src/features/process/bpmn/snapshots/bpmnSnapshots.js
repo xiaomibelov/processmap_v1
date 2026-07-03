@@ -413,37 +413,6 @@ export async function getLatestBpmnSnapshot({ projectId, sessionId }) {
   return list.length ? list[0] : null;
 }
 
-export async function overwriteBpmnSnapshot(payload = {}) {
-  /**
-   * Replace the snapshot record with a single latest snapshot.
-   *
-   * Used by the unified save pipeline: after a successful server PUT the local
-   * snapshot must match the server XML and version, not accumulate stale entries.
-   * Only overwrites when the backend has confirmed success with HTTP 200 OK.
-   */
-  const status = asNumber(payload?.status, 0);
-  if (status > 0 && status !== 200) {
-    logSnapshotTrace("overwrite_skip_non_200", {
-      sid: asText(payload?.sessionId),
-      status,
-      reason: payload?.reason || "persist_ok",
-    });
-    return {
-      ok: false,
-      saved: false,
-      skipped: true,
-      decisionReason: "non_200_status",
-      status,
-    };
-  }
-  return saveBpmnSnapshot({
-    ...payload,
-    force: true,
-    limit: 1,
-    reason: payload?.reason || "persist_ok",
-  });
-}
-
 export async function saveBpmnSnapshot(payload = {}) {
   const sid = asText(payload?.sessionId).trim();
   const xml = asText(payload?.xml);
@@ -849,13 +818,6 @@ export function shouldAutoRestoreFromSnapshot({
   backendXml = "",
   snapshot = null,
 } = {}) {
-  /**
-   * Server-priority / local-fallback decision.
-   *
-   * A local snapshot must only be restored when the server has no XML for the
-   * session. If the server returned any XML (even older), the server copy is the
-   * source of truth and the snapshot remains a fallback for future empty loads.
-   */
   const snapshotXml = asText(snapshot?.xml);
   if (!snapshotXml.trim()) {
     return { restore: false, reason: "snapshot_empty" };
@@ -864,7 +826,7 @@ export function shouldAutoRestoreFromSnapshot({
   if (!backend.trim()) {
     return { restore: true, reason: "backend_empty" };
   }
-  return { restore: false, reason: "server_xml_present" };
+  return { restore: false, reason: "backend_present" };
 }
 
 export function shortSnapshotHash(xmlOrHash) {

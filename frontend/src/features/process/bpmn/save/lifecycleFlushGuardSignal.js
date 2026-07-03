@@ -69,15 +69,9 @@ export function resolveLifecycleFlushGuardSignal({
   const baselineNormalized = normalizeXmlForLifecycleGuard(baselineXml);
   const liveNormalized = normalizeXmlForLifecycleGuard(liveRuntimeXml);
   const hasFreshDirtyDelta = !!liveNormalized && !!baselineNormalized && liveNormalized !== baselineNormalized;
-  // If the store is not dirty and we have already persisted up to the current
-  // revision, a lifecycle flush must not write the modeler's current XML. The
-  // modeler may still hold a stale snapshot (e.g. after a property-only save
-  // that updated the canonical server XML but has not yet been re-imported into
-  // the modeler), and writing it back would resurrect the deleted state.
-  const skip = !dirty && rev <= lastSavedRev;
   return {
-    skip,
-    reason: skip
+    skip: !dirty && !hasFreshDirtyDelta && rev <= lastSavedRev,
+    reason: !dirty && !hasFreshDirtyDelta && rev <= lastSavedRev
       ? "lifecycle_no_dirty_delta"
       : "lifecycle_dirty_delta_present",
     dirty,

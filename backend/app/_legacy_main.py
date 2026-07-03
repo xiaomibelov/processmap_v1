@@ -32,7 +32,7 @@ from .glossary import normalize_kind, slugify_canon, upsert_term
 from .models import Node, Edge, Question, ReportVersion, Session, Project, CreateProjectIn, UpdateProjectIn
 from .analytics import compute_analytics
 from .analytics_read_model import refresh_analytics_for_session
-from .camunda_meta_utils import extract_camunda_extensions_from_bpmn_xml
+from .camunda_meta_utils import deduplicate_camunda_extension_properties
 from .normalizer import load_seed_glossary, normalize_nodes
 from .resources import build_resources_report
 from .storage import (
@@ -4221,6 +4221,10 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
                     "robot_meta_by_element_id",
                     current_meta.get("robot_meta_by_element_id", {}),
                 ),
+                "camunda_extensions_by_element_id": incoming_meta.get(
+                    "camunda_extensions_by_element_id",
+                    current_meta.get("camunda_extensions_by_element_id", {}),
+                ),
                 "presentation_by_element_id": incoming_meta.get(
                     "presentation_by_element_id",
                     current_meta.get("presentation_by_element_id", {}),
@@ -4254,10 +4258,6 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
             outgoing_by_source=flow_ctx.get("outgoing_by_source"),
             gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
         )
-        # Properties are derived from the XML payload, not from sidecar bpmn_meta.
-        normalized_meta.pop("camunda_extensions_by_element_id", None)
-        if sess_xml.strip():
-            normalized_meta["camunda_extensions_by_element_id"] = extract_camunda_extensions_from_bpmn_xml(sess_xml)
         sess.bpmn_meta = normalized_meta
         handled = True
 
@@ -7374,9 +7374,6 @@ def _create_bpmn_revision_snapshot_if_needed(
     if not nxt.strip():
         return None
     action = str(source_action or "").strip().lower() or "manual_save"
-    # Property-only saves do not create user-facing BPMN revision snapshots.
-    if action.startswith("property_"):
-        return None
     session_id = str(getattr(session, "id", "") or "").strip()
     session_hash = session_version_payload_hash(session)
     should_snapshot = prev != nxt
@@ -7533,9 +7530,6 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
             outgoing_by_source=flow_ctx.get("outgoing_by_source"),
             gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
         )
-        # Properties are derived from the XML payload, not from sidecar bpmn_meta.
-        normalized_meta.pop("camunda_extensions_by_element_id", None)
-        normalized_meta["camunda_extensions_by_element_id"] = extract_camunda_extensions_from_bpmn_xml(xml)
         s.bpmn_meta = normalized_meta
         changed_keys = ["bpmn_meta"]
         if previous_xml != xml:
@@ -7638,6 +7632,79 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         return out
     finally:
         lock.release()
+
+
+def session_meta_patch(session_id: str, inp: Any, request: Request = None) -> Dict[str, Any]:
+    """Patch only bpmn_meta_json (and bump diagram_state_version) without touching bpmn_xml."""
+    sess, oid, _ = _legacy_load_session_scoped(session_id, request)
+    if not sess:
+        return {"error": "not found"}
+    role = _org_role_for_request(request, oid) if request is not None and oid else ""
+    user = _request_auth_user(request) if request is not None else {}
+    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
+    if not _can_edit_workspace(role, is_admin=is_admin):
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    meta = getattr(inp, "bpmn_meta_json", None)
+    if not isinstance(meta, dict):
+        meta = getattr(inp, "bpmn_meta", None)
+    if not isinstance(meta, dict):
+        raise HTTPException(status_code=400, detail="bpmn_meta_json must be an object")
+    meta = deduplicate_camunda_extension_properties(meta)
+    base_version_raw = getattr(inp, "base_diagram_state_version", None)
+    if base_version_raw is None:
+        raise HTTPException(
+            status_code=409,
+            detail=_diagram_state_conflict_payload(
+                code="DIAGRAM_STATE_BASE_VERSION_REQUIRED",
+                session_id=session_id,
+                client_base_version=None,
+                server_current_version=int(getattr(sess, "diagram_state_version", 0) or 0),
+                sess=sess,
+            ),
+        )
+    client_base_version = int(base_version_raw or 0)
+    st = get_storage()
+    # Edit permission already verified above; let storage apply org scoping without enforcing ownership.
+    storage_admin = True
+    try:
+        updated = st.patch_session_meta(
+            session_id,
+            meta,
+            client_base_version,
+            user_id=str(user.get("id") or "").strip() if isinstance(user, dict) else "",
+            org_id=oid,
+            is_admin=storage_admin,
+        )
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="forbidden")
+    if updated is None:
+        server_current_version = int(getattr(sess, "diagram_state_version", 0) or 0)
+        # Re-read in case version changed between load and update
+        try:
+            fresh = st.load(session_id, user_id=str(user.get("id") or "").strip() if isinstance(user, dict) else "", org_id=oid, is_admin=storage_admin)
+            if fresh:
+                server_current_version = int(getattr(fresh, "diagram_state_version", 0) or 0)
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=409,
+            detail=_diagram_state_conflict_payload(
+                code="DIAGRAM_STATE_CONFLICT",
+                session_id=session_id,
+                client_base_version=client_base_version,
+                server_current_version=server_current_version,
+                sess=sess,
+            ),
+        )
+    _invalidate_session_caches(updated, session_id=session_id, org_id=getattr(updated, "org_id", "") or get_default_org_id())
+    return {
+        "ok": True,
+        "id": updated.id,
+        "rev": int(getattr(updated, "bpmn_xml_version", 0) or 0),
+        "diagram_state_version": int(getattr(updated, "diagram_state_version", 0) or 0),
+        "bpmn_meta_json": getattr(updated, "bpmn_meta", {}) or {},
+    }
 
 
 # DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.

@@ -30,8 +30,9 @@ import {
   apiListSessions,
   apiCreateSession,
   apiGetSession,
-  apiGetBpmnXml,
   apiPatchSession,
+  apiPatchSessionMeta,
+  apiPatchSessionProperties,
   apiPostNote,
   apiPreviewNotesExtraction,
   apiApplyNotesExtraction,
@@ -49,7 +50,6 @@ import {
 import {
   getLatestBpmnSnapshot,
   shouldAutoRestoreFromSnapshot,
-  overwriteBpmnSnapshot,
 } from "./features/process/bpmn/snapshots/bpmnSnapshots";
 import {
   canonicalRobotMetaMapString,
@@ -66,10 +66,7 @@ import {
   removeCamundaExtensionStateByElementId,
   upsertCamundaExtensionStateByElementId,
 } from "./features/process/camunda/camundaExtensions";
-import { saveBpmnState } from "./features/process/save/saveBpmnState";
-import {
-  emitPropertySaveEvent,
-} from "./features/process/save/propertySaveEvents";
+import { persistCamundaExtensionsViaCanonicalXmlBoundary } from "./features/process/camunda/camundaExtensionsSaveBoundary";
 import {
   normalizeCamundaPresentationMap,
   removeCamundaPresentationByElementId,
@@ -332,11 +329,7 @@ function readLocalBpmnMeta(sessionId) {
     const raw = String(window.localStorage?.getItem(key) || "").trim();
     if (!raw) return emptyBpmnMeta();
     const parsed = JSON.parse(raw);
-    const normalized = normalizeBpmnMeta(parsed);
-    // Camunda extensions are authoritative from server BPMN XML; never hydrate
-    // stale local copies into the read model.
-    delete normalized.camunda_extensions_by_element_id;
-    return normalized;
+    return normalizeBpmnMeta(parsed);
   } catch {
     return emptyBpmnMeta();
   }
@@ -348,9 +341,6 @@ function writeLocalBpmnMeta(sessionId, meta) {
   if (!key) return;
   try {
     const payload = normalizeBpmnMeta(meta);
-    // Do not cache Camunda extensions locally; they are derived from server XML
-    // and a stale local copy could resurrect deleted properties after reload.
-    delete payload.camunda_extensions_by_element_id;
     window.localStorage?.setItem(key, JSON.stringify(payload));
   } catch {
   }
@@ -2611,57 +2601,37 @@ export default function App() {
       ?? draft?.version
       ?? 0,
     );
-    let currentXml = draft?.bpmn_xml;
-    if (!currentXml) {
-      const xmlRes = await apiGetBpmnXml(sid);
-      currentXml = xmlRes?.ok ? xmlRes.xml : "";
-    }
-    const operation = shouldRemove
-      ? "property_delete"
-      : (currentCamundaExtensionsByElementId[elementId] ? "property_update" : "property_add");
-    emitPropertySaveEvent({ type: "start", operation, elementId, sid });
-    const persistResult = await saveBpmnState({
-      operation,
-      sessionId: sid,
+    const persistResult = await persistCamundaExtensionsViaCanonicalXmlBoundary({
+      sessionIdRaw: sid,
       isLocal: isLocalSessionId(sid),
-      baseDiagramStateVersion,
+      currentXmlRaw: draft?.bpmn_xml,
+      currentMetaRaw: currentMeta,
+      nextMetaRaw: optimisticMeta,
+      nextCamundaExtensionsByElementIdRaw: nextCamundaExtensionsByElementId,
+      baseDiagramStateVersionRaw: baseDiagramStateVersion,
       lastServerDiagramStateVersionRef,
-      projectId: draft?.project_id,
-      elementId,
-      currentCamundaExtensionsByElementId,
-      nextCamundaExtensionsByElementId,
-      currentMeta,
-      nextMeta: optimisticMeta,
-      currentXml,
       apiPutBpmnXml,
+      apiPatchSessionMeta,
+      apiPatchSessionProperties,
       apiGetSession,
       onSessionSync,
-      overwriteBpmnSnapshot,
+      forceMetaPatch: false,
       backgroundSessionRefresh: options?.backgroundSessionRefresh === true,
       onDurableSaveAck: options?.onDurableSaveAck,
       onBackgroundSessionSyncStart: options?.onBackgroundSessionSyncStart,
       onBackgroundSessionSyncComplete: options?.onBackgroundSessionSyncComplete,
       onBackgroundSessionSyncError: options?.onBackgroundSessionSyncError,
-      syncSource: "saveBpmnState:camunda_extensions",
+      syncSource: "camunda_extensions_xml_boundary_save",
     });
-    if (!persistResult?.ok) {
-      const isConflict = persistResult?.status === 409 || persistResult?.conflict === true;
-      emitPropertySaveEvent({
-        type: isConflict ? "conflict" : "error",
-        operation,
-        elementId,
-        sid,
-        status: Number(persistResult?.status || 0),
-        error: String(persistResult?.error || "Не удалось сохранить Properties."),
-      });
-      return {
-        ok: false,
-        status: Number(persistResult?.status || 0),
-        conflict: isConflict,
-        error: String(persistResult?.error || "Не удалось сохранить Properties."),
-      };
+    if (persistResult?.ok && Number.isFinite(persistResult?.diagramStateVersion)) {
+      lastServerDiagramStateVersionRef.current = Math.max(
+        lastServerDiagramStateVersionRef.current ?? 0,
+        Number(persistResult.diagramStateVersion),
+      );
     }
-    emitPropertySaveEvent({ type: "success", operation, elementId, sid, local: persistResult?.local === true });
+    if (!persistResult?.ok) {
+      return { ok: false, error: String(persistResult?.error || "Не удалось сохранить Properties.") };
+    }
     markOk(sid && !isLocalSessionId(sid)
       ? (shouldRemove ? "Properties удалены." : "Properties сохранены.")
       : (shouldRemove ? "Properties удалены локально." : "Properties сохранены локально."));

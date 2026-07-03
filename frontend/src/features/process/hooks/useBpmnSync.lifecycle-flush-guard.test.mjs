@@ -47,8 +47,8 @@ test("new diagram dirty delta after accepted manual save still allows lifecycle 
     saveDebugState: {
       store: {
         xml: "<bpmn:task name='saved' />",
-        dirty: true,
-        rev: 1,
+        dirty: false,
+        rev: 0,
         lastSavedRev: 2,
       },
     },
@@ -66,7 +66,7 @@ test("useBpmnSync integrates fresh runtime lifecycle guard signal", () => {
   assert.equal(source.includes("bpmnRef.current?.getRuntimeXmlSnapshot?.({ format: true })"), true);
   assert.equal(source.includes("resolveLifecycleFlushGuardSignal({"), true);
   assert.equal(source.includes("if (!lifecycleGuardSignal?.skip && lifecycleGuardSignal?.hasFreshDirtyDelta) {"), true);
-  assert.equal(source.includes("lifecycleXmlOverride = \"\";"), true);
+  assert.equal(source.includes("lifecycleXmlOverride = toText(lifecycleGuardSignal?.liveRuntimeXml || \"\");"), true);
   assert.equal(source.includes("xmlOverride: lifecycleXmlOverride,"), true);
   assert.equal(source.includes("syncXmlToSession(fallbackXml, { source: `${source}:skip_no_dirty_delta` });"), true);
   assert.equal(source.includes("logBpmnTrace(\"FLUSH_SAVE_SKIPPED_NO_DIRTY_DELTA\""), true);

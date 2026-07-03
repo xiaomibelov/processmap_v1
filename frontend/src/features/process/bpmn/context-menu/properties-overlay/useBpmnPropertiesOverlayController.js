@@ -202,11 +202,6 @@ export default function useBpmnPropertiesOverlayController({
     setSavingRowId(rowId);
     setError("");
 
-    const previousSaved = String(asObject(savedByRowId)[rowId] ?? "");
-    const previousDraft = String(asObject(draftByRowId)[rowId] ?? "");
-    setSavedByRowId((prev) => ({ ...asObject(prev), [rowId]: nextValue }));
-    setDraftByRowId((prev) => ({ ...asObject(prev), [rowId]: nextValue }));
-
     let result = null;
     try {
       result = await Promise.resolve(bpmnRef?.current?.runDiagramContextAction?.(payload));
@@ -215,8 +210,6 @@ export default function useBpmnPropertiesOverlayController({
     }
 
     if (!result?.ok) {
-      setSavedByRowId((prev) => ({ ...asObject(prev), [rowId]: previousSaved }));
-      setDraftByRowId((prev) => ({ ...asObject(prev), [rowId]: previousDraft }));
       const err = toText(result?.error || "Не удалось сохранить свойство.");
       setError(err);
       setGenErr?.(err);

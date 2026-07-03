@@ -282,9 +282,7 @@ test("presentation overlay state survives server read merge after session patch 
   assert.deepEqual(merged.presentation_by_element_id, {
     Task_1: { showPropertiesOverlay: true },
   });
-  // Camunda extensions are authoritative from the server (derived from BPMN XML);
-  // local-only entries must not survive when the server patch omits them.
-  assert.deepEqual(merged.camunda_extensions_by_element_id, {});
+  assert.deepEqual(merged.camunda_extensions_by_element_id, currentMeta.camunda_extensions_by_element_id);
 });
 
 test("session-meta read merge keeps local copied camunda entries when server patch is missing newly pasted ids", () => {
@@ -322,11 +320,15 @@ test("session-meta read merge keeps local copied camunda entries when server pat
     preferServerOverlay: true,
   });
 
-  // Server camunda state is authoritative; local-only Activity_1 entry is ignored.
   assert.deepEqual(merged.camunda_extensions_by_element_id, {
     Task_1: {
       properties: {
         extensionProperties: [{ id: "p1", name: "priority", value: "high" }],
+      },
+    },
+    Activity_1: {
+      properties: {
+        extensionProperties: [{ id: "p2", name: "priority", value: "high" }],
       },
     },
   });

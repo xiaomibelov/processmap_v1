@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request, Query, Path, HTTPException
 from fastapi.responses import JSONResponse
 
 from ..services import session_service as _svc
+from ..save_services.property_save.property_save_service import patch_session_properties
 from ..schemas.legacy_api import (
     AiQuestionsIn,
     AnswerIn,
@@ -21,6 +22,7 @@ from ..schemas.legacy_api import (
     NotesExtractionPreviewIn,
     NotesIn,
     OrgReportBuildIn,
+    SessionMetaPatchIn,
     SessionPresenceTouchIn,
     SubprocessNavigateOut,
     SubprocessReturnOut,
@@ -186,6 +188,10 @@ def session_bpmn_meta_get(session_id: str):
 @router.patch('/api/sessions/{session_id}/bpmn_meta')
 def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn, request: Request = None):
     return _svc.bpmn_meta_patch(session_id, inp, request)
+
+@router.patch('/api/sessions/{session_id}/meta')
+def patch_session_meta(session_id: str, inp: SessionMetaPatchIn, request: Request = None):
+    return patch_session_properties(session_id, inp, request)
 
 @router.post('/api/sessions/{session_id}/bpmn_meta/infer_rtiers')
 def session_bpmn_meta_infer_rtiers(session_id: str, inp: InferRtiersIn, request: Request = None):
