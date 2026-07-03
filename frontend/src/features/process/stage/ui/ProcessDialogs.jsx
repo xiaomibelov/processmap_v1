@@ -299,10 +299,9 @@ export default function ProcessDialogs({ view = {} }) {
                   Показать технические
                 </label>
               </div>
-              <div className="mt-1 text-[11px] text-muted">
+              <div className="mt-1 text-[11px] leading-snug text-muted">
                 Текущий BPMN сохраняется отдельно от опубликованных версий. Пустая история не означает, что черновик не сохранён.
-                Новая версия BPMN создаётся, когда изменилось состояние сессии: схема, свойства, документы или связанные данные.
-                Чтобы понять, кто и что изменил, используйте compare-first: «Сравнить A/B» или «Сравнить» у нужной версии.
+                Новая версия BPMN создаётся, когда изменилось состояние сессии. Чтобы понять, кто и что изменил, используйте compare-first.
               </div>
             </div>
             <div className="min-h-0 flex-1 space-y-2 overflow-auto pr-1">
@@ -331,7 +330,7 @@ export default function ProcessDialogs({ view = {} }) {
                   return (
                     <div
                       key={id}
-                      className={"rounded-lg border px-2.5 py-2 " + (active ? "border-accent bg-accentSoft/35" : "border-border bg-panel")}
+                      className={"rounded-lg border px-3 py-2 transition-colors " + (active ? "border-accent bg-accentSoft/35" : "border-border bg-panel hover:border-accent hover:bg-accentSoft/15")}
                       data-testid="bpmn-version-item"
                       data-snapshot-id={id}
                     >
@@ -359,13 +358,13 @@ export default function ProcessDialogs({ view = {} }) {
                       <div className="mb-1 text-xs text-muted">
                         кто изменил: {String(item?.authorLabel || item?.authorName || item?.authorEmail || item?.authorId || "Автор не указан")}
                       </div>
-                      <div className="mb-2 text-xs text-muted">
+                      <div className="mb-1 text-xs text-muted">
                         комментарий: {String(item?.comment || "—")}
                       </div>
-                      <div className="mb-2 text-xs text-muted">
+                      <div className="mb-1 text-xs text-muted">
                         что изменилось: откройте «Сравнить» для diff с соседней версией.
                       </div>
-                      <div className="mb-2 text-xs text-muted">
+                      <div className="mb-1 text-xs text-muted">
                         хэш: <span className="font-mono text-fg">{shortSnapshotHash(item?.hash || item?.xml || "")}</span> · размер: {Number(item?.len || String(item?.xml || "").length)}
                       </div>
                       <div className="flex flex-wrap gap-1.5">
