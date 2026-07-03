@@ -1582,18 +1582,43 @@ export function syncCamundaExtensionsToBpmn({
       const nextManagedSig = signatureForManagedModelEntries(nextManagedEntries);
 
       if (!nextManagedEntries.length) {
-        if (!hasCurrentManagedEntries) return;
+        if (!hasCurrentManagedEntries) {
+          if (typeof window !== "undefined" && window.__FPC_DEBUG_BPMN__) {
+            // eslint-disable-next-line no-console
+            console.debug(`[SYNC_CAMUNDA] ${elementId} no_current_managed`);
+          }
+          return;
+        }
         if (!hasMapEntry && !hasExplicitMapEntry && preserveManagedIds.has(elementId)) {
           preservedManagedSkips += 1;
+          if (typeof window !== "undefined" && window.__FPC_DEBUG_BPMN__) {
+            // eslint-disable-next-line no-console
+            console.debug(`[SYNC_CAMUNDA] ${elementId} preserved_skip`);
+          }
           return;
         }
         if (nonManagedValues.length) {
           setBpmnProperty(currentExt, "values", nonManagedValues);
         } else {
-          setBpmnProperty(bo, "extensionElements", undefined);
+          // Direct assignment is required because moddle.set("extensionElements", undefined)
+          // may be ignored and leave the old extensionElements in the serialized output.
+          bo.extensionElements = undefined;
+          try {
+            delete bo.extensionElements;
+          } catch {
+            // no-op
+          }
         }
         changed += 1;
+        if (typeof window !== "undefined" && window.__FPC_DEBUG_BPMN__) {
+          // eslint-disable-next-line no-console
+          console.debug(`[SYNC_CAMUNDA] ${elementId} cleared extElements extElements=${typeof bo.extensionElements}`);
+        }
         return;
+      }
+      if (typeof window !== "undefined" && window.__FPC_DEBUG_BPMN__) {
+        // eslint-disable-next-line no-console
+        console.debug(`[SYNC_CAMUNDA] ${elementId} replace_entries nextCount=${nextManagedEntries.length} prevSig=${prevManagedSig} nextSig=${nextManagedSig}`);
       }
 
       if (prevManagedSig === nextManagedSig && currentExt) {

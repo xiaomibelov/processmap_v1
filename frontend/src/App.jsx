@@ -30,6 +30,7 @@ import {
   apiListSessions,
   apiCreateSession,
   apiGetSession,
+  apiGetBpmnXml,
   apiPatchSession,
   apiPostNote,
   apiPreviewNotesExtraction,
@@ -328,7 +329,11 @@ function readLocalBpmnMeta(sessionId) {
     const raw = String(window.localStorage?.getItem(key) || "").trim();
     if (!raw) return emptyBpmnMeta();
     const parsed = JSON.parse(raw);
-    return normalizeBpmnMeta(parsed);
+    const normalized = normalizeBpmnMeta(parsed);
+    // Camunda extensions are authoritative from server BPMN XML; never hydrate
+    // stale local copies into the read model.
+    delete normalized.camunda_extensions_by_element_id;
+    return normalized;
   } catch {
     return emptyBpmnMeta();
   }
@@ -340,6 +345,9 @@ function writeLocalBpmnMeta(sessionId, meta) {
   if (!key) return;
   try {
     const payload = normalizeBpmnMeta(meta);
+    // Do not cache Camunda extensions locally; they are derived from server XML
+    // and a stale local copy could resurrect deleted properties after reload.
+    delete payload.camunda_extensions_by_element_id;
     window.localStorage?.setItem(key, JSON.stringify(payload));
   } catch {
   }
@@ -2600,6 +2608,11 @@ export default function App() {
       ?? draft?.version
       ?? 0,
     );
+    let currentXml = draft?.bpmn_xml;
+    if (!currentXml) {
+      const xmlRes = await apiGetBpmnXml(sid);
+      currentXml = xmlRes?.ok ? xmlRes.xml : "";
+    }
     const operation = shouldRemove
       ? "property_delete"
       : (currentCamundaExtensionsByElementId[elementId] ? "property_update" : "property_add");
@@ -2615,7 +2628,7 @@ export default function App() {
       nextCamundaExtensionsByElementId,
       currentMeta,
       nextMeta: optimisticMeta,
-      currentXml: draft?.bpmn_xml,
+      currentXml,
       apiPutBpmnXml,
       apiGetSession,
       onSessionSync,

@@ -54,6 +54,7 @@ export function buildSnapshotRestorePutOptions({
   if (Number.isFinite(baseDiagramStateVersion) && baseDiagramStateVersion >= 0) {
     options.baseDiagramStateVersion = Math.round(baseDiagramStateVersion);
   }
+  options.sourceAction = "snapshot_restore";
   return options;
 }
 
