@@ -26,6 +26,7 @@ from .templates import router as templates_router
 from .feature_flags import router as feature_flags_router
 from .reference_resolver import router as reference_resolver_router
 from .deployment_notices import router as deployment_notices_router
+from .recipes import router as recipes_router
 
 # (router, openapi_tags).  Routers that already set their own tags keep them;
 # the tuple provides a fallback/default tag for Swagger UI grouping.
@@ -58,4 +59,5 @@ ROUTERS = (
     (feature_flags_router, ["feature-flags"]),
     (reference_resolver_router, ["reference-resolver"]),
     (deployment_notices_router, ["deployment-notices"]),
+    (recipes_router, ["recipes"]),
 )

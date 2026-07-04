@@ -2370,6 +2370,8 @@ def _ensure_schema() -> None:
             if not _column_exists(con, "projects", "executor_user_id"):
                 con.execute("ALTER TABLE projects ADD COLUMN executor_user_id TEXT")
             con.execute("CREATE INDEX IF NOT EXISTS idx_projects_org_workspace_folder ON projects(org_id, workspace_id, folder_id)")
+            from .recipe.storage import _ensure_recipe_tables
+            _ensure_recipe_tables(con)
             _maybe_migrate_legacy_files(con)
             _ensure_auth_users_backfill(con)
             _ensure_enterprise_bootstrap(con)
