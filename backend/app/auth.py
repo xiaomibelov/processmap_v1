@@ -12,6 +12,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
 try:
     import bcrypt  # type: ignore
 except Exception:
@@ -470,6 +473,31 @@ def decode_refresh_token(token: str) -> Dict[str, Any]:
     if not str(payload.get("jti") or ""):
         raise AuthError("invalid_jti")
     return payload
+
+
+# Swagger / OpenAPI JWT security scheme.  Auto-error is disabled so public
+# endpoints keep working while the "Authorize" button is still advertised.
+bearer_auth = HTTPBearer(
+    scheme_name="JWT access token",
+    description="Enter a valid JWT access token. Use the login endpoint to obtain one.",
+    auto_error=False,
+)
+
+
+def optional_access_token_payload(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_auth),
+) -> Dict[str, Any] | None:
+    """Decode the bearer token when present; return None otherwise.
+
+    Used as a global FastAPI dependency to advertise JWT auth in OpenAPI without
+    breaking endpoints that rely on the auth middleware for actual enforcement.
+    """
+    if not credentials:
+        return None
+    try:
+        return decode_access_token(credentials.credentials)
+    except AuthError:
+        return None
 
 
 def _find_refresh_index(rows: list[Dict[str, Any]], jti: str) -> int:
