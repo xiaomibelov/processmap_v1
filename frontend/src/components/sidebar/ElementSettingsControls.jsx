@@ -25,6 +25,8 @@ import { deriveNodePathCompareSummary } from "./nodePathCompare";
 import { resolveNodePathStatusState } from "./nodePathSyncState";
 import SidebarTrustStatus from "./SidebarTrustStatus";
 import useElementSettingsController, { SHOW_PROPERTIES_FLAG_KEY } from "./useElementSettingsController";
+import { RecipeQueryProvider } from "../../features/process/recipe/providers/RecipeQueryProvider.jsx";
+import RecipeSidebar from "../../features/process/recipe/components/RecipeSidebar.jsx";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -2244,6 +2246,10 @@ export function CamundaPropertiesSettings({
             </>
           ) : null}
         </section>
+
+        <RecipeQueryProvider>
+          <RecipeSidebar selectedElementType={selectedElementType} />
+        </RecipeQueryProvider>
 
         <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="camunda-listeners-group">
           <div className="sidebarPropertiesBlockHead">

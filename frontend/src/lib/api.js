@@ -1978,3 +1978,59 @@ export async function apiExportAnalyticsActionsXlsx(scope, scopeId) {
   const blob = r.data instanceof Blob ? r.data : new Blob([String(r.text || "")]);
   return { ok: true, status: r.status, blob, filename: `actions-${scope}-${scopeId}.xlsx` };
 }
+
+// ------- Recipes -------
+export async function apiListRecipes() {
+  const r = okOrError(await request(apiRoutes.recipes.list()));
+  const list = Array.isArray(r.data) ? r.data : [];
+  return r.ok ? { ok: true, status: r.status, recipes: list, items: list } : r;
+}
+
+export async function apiGetRecipe(recipeId) {
+  const id = String(recipeId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing recipe_id" };
+  const r = okOrError(await request(apiRoutes.recipes.item(id)));
+  return r.ok ? { ok: true, status: r.status, recipe: r.data } : r;
+}
+
+export async function apiCreateRecipe(payload) {
+  const r = okOrError(await request(apiRoutes.recipes.create(), { method: "POST", body: payload || {} }));
+  return r.ok ? { ok: true, status: r.status, recipe: r.data } : r;
+}
+
+export async function apiUpdateRecipe(recipeId, payload) {
+  const id = String(recipeId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing recipe_id" };
+  const r = okOrError(await request(apiRoutes.recipes.item(id), { method: "PATCH", body: payload || {} }));
+  return r.ok ? { ok: true, status: r.status, recipe: r.data } : r;
+}
+
+export async function apiDeleteRecipe(recipeId) {
+  const id = String(recipeId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing recipe_id" };
+  const r = okOrError(await request(apiRoutes.recipes.item(id), { method: "DELETE" }));
+  return r.ok ? { ok: true, status: r.status } : r;
+}
+
+export async function apiCalculateRecipe(recipeId, targetPortions) {
+  const id = String(recipeId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing recipe_id" };
+  const r = okOrError(
+    await request(apiRoutes.recipes.calculate(id), {
+      method: "POST",
+      body: { target_portions: Number(targetPortions) || 1 },
+    })
+  );
+  return r.ok ? { ok: true, status: r.status, calculation: r.data } : r;
+}
+
+export async function apiListIngredients() {
+  const r = okOrError(await request(apiRoutes.ingredients.list()));
+  const list = Array.isArray(r.data) ? r.data : [];
+  return r.ok ? { ok: true, status: r.status, ingredients: list, items: list } : r;
+}
+
+export async function apiCreateIngredient(payload) {
+  const r = okOrError(await request(apiRoutes.ingredients.create(), { method: "POST", body: payload || {} }));
+  return r.ok ? { ok: true, status: r.status, ingredient: r.data } : r;
+}
