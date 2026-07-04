@@ -6,23 +6,41 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class AuthLoginIn(BaseModel):
-    email: str
-    password: str
+    email: str = Field(examples=["admin@local"])
+    password: str = Field(examples=["admin"])
 
 
 class AuthTokenOut(BaseModel):
-    access_token: str
+    access_token: str = Field(examples=["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."])
     token_type: str = "bearer"
+
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", "token_type": "bearer"}}
+    )
 
 
 class AuthMeOut(BaseModel):
-    id: str
-    email: str
+    id: str = Field(examples=["user_123"])
+    email: str = Field(examples=["admin@local"])
     is_admin: bool = False
     active_org_id: str = ""
     default_org_id: str = ""
     orgs: List[Dict[str, Any]] = []
     groups: List[Dict[str, Any]] = []
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "id": "user_123",
+                "email": "admin@local",
+                "is_admin": True,
+                "active_org_id": "org_default",
+                "default_org_id": "org_default",
+                "orgs": [{"id": "org_default", "name": "Default"}],
+                "groups": [],
+            }
+        }
+    )
 
 
 class OrgCreateIn(BaseModel):
@@ -85,16 +103,26 @@ class InviteActivateIn(BaseModel):
 
 
 class CreateSessionIn(BaseModel):
-    title: str
+    title: str = Field(examples=["New process"])
     roles: Optional[Any] = None
     start_role: Optional[str] = None
     ai_prep_questions: Optional[List[Dict[str, Any]]] = None
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {
+                "title": "New process",
+                "roles": ["operator", "qa"],
+                "start_role": "operator",
+                "ai_prep_questions": [{"text": "What is the first step?"}],
+            }
+        },
+    )
 
 
 class UpdateSessionIn(BaseModel):
-    title: Optional[str] = None
-    status: Optional[str] = None
+    title: Optional[str] = Field(default=None, examples=["Updated title"])
+    status: Optional[str] = Field(default=None, examples=["draft"])
     roles: Optional[Any] = None
     start_role: Optional[str] = None
     notes: Optional[Any] = None
@@ -104,9 +132,19 @@ class UpdateSessionIn(BaseModel):
     edges: Optional[Any] = None
     questions: Optional[Any] = None
     bpmn_meta: Optional[Any] = None
-    base_diagram_state_version: Optional[int] = None
-    base_bpmn_xml_version: Optional[int] = None
-    model_config = ConfigDict(extra="allow")
+    base_diagram_state_version: Optional[int] = Field(default=None, examples=[2])
+    base_bpmn_xml_version: Optional[int] = Field(default=None, examples=[1])
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {
+                "title": "Updated process title",
+                "status": "draft",
+                "base_diagram_state_version": 2,
+                "base_bpmn_xml_version": 1,
+            }
+        },
+    )
 
 
 class SessionPresenceTouchIn(BaseModel):
@@ -139,10 +177,21 @@ def norm_project_session_mode(mode: str | None) -> str | None:
 
 
 class NotesIn(BaseModel):
-    notes: str
-    base_diagram_state_version: Optional[int] = None
-    base_bpmn_xml_version: Optional[int] = None
-    rev: Optional[int] = None
+    notes: str = Field(examples=["Initial process notes"])
+    base_diagram_state_version: Optional[int] = Field(default=None, examples=[2])
+    base_bpmn_xml_version: Optional[int] = Field(default=None, examples=[1])
+    rev: Optional[int] = Field(default=None, examples=[1])
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "notes": "Initial process notes",
+                "base_diagram_state_version": 2,
+                "base_bpmn_xml_version": 1,
+                "rev": 1,
+            }
+        }
+    )
 
 
 class NotesExtractionPreviewIn(BaseModel):
@@ -255,26 +304,36 @@ class SessionTitleQuestionsIn(BaseModel):
 
 
 class BpmnXmlIn(BaseModel):
-    xml: str = ""
+    xml: str = Field(default="", examples=["<?xml version=\"1.0\"?>..."])
     bpmn_meta: Optional[Dict[str, Any]] = None
-    source_action: Optional[str] = None
-    import_note: Optional[str] = None
-    base_diagram_state_version: Optional[int] = None
-    base_bpmn_xml_version: Optional[int] = None
-    rev: Optional[int] = None
+    source_action: Optional[str] = Field(default=None, examples=["manual_save"])
+    import_note: Optional[str] = Field(default=None, examples=["Imported from Camunda"])
+    base_diagram_state_version: Optional[int] = Field(default=None, examples=[2])
+    base_bpmn_xml_version: Optional[int] = Field(default=None, examples=[1])
+    rev: Optional[int] = Field(default=None, examples=[1])
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><bpmn:definitions>...</bpmn:definitions>",
+                "source_action": "manual_save",
+                "base_diagram_state_version": 2,
+            }
+        }
+    )
 
 
 class BpmnMetaPatchIn(BaseModel):
-    flowId: Optional[str] = None
+    flowId: Optional[str] = Field(default=None, examples=["Flow_1"])
     happy: Optional[bool] = None
-    tier: Optional[str] = None
+    tier: Optional[str] = Field(default=None, examples=["high"])
     rtier: Optional[str] = None
     updates: Optional[List[Dict[str, Any]]] = None
     flow_meta: Optional[Dict[str, Any]] = None
-    node_id: Optional[str] = None
+    node_id: Optional[str] = Field(default=None, examples=["Task_1"])
     paths: Optional[List[str]] = None
     sequence_key: Optional[str] = None
-    source: Optional[str] = None
+    source: Optional[str] = Field(default=None, examples=["ui"])
     node_updates: Optional[List[Dict[str, Any]]] = None
     node_path_meta: Optional[Dict[str, Any]] = None
     robot_element_id: Optional[str] = None
@@ -285,16 +344,37 @@ class BpmnMetaPatchIn(BaseModel):
     hybrid_layer_by_element_id: Optional[Dict[str, Any]] = None
     hybrid_v2: Optional[Dict[str, Any]] = None
     drawio: Optional[Dict[str, Any]] = None
-    base_diagram_state_version: Optional[int] = None
-    base_bpmn_xml_version: Optional[int] = None
-    model_config = ConfigDict(extra="allow")
+    base_diagram_state_version: Optional[int] = Field(default=None, examples=[2])
+    base_bpmn_xml_version: Optional[int] = Field(default=None, examples=[1])
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {
+                "flowId": "Flow_1",
+                "happy": True,
+                "tier": "high",
+                "node_id": "Task_1",
+                "source": "ui",
+                "base_diagram_state_version": 2,
+            }
+        },
+    )
 
 
 class StatusPatchIn(BaseModel):
-    status: str
-    base_diagram_state_version: Optional[int] = None
-    reason: Optional[str] = None
-    model_config = ConfigDict(extra="allow")
+    status: str = Field(examples=["published"])
+    base_diagram_state_version: Optional[int] = Field(default=None, examples=[2])
+    reason: Optional[str] = Field(default=None, examples=["Approved for publication"])
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {
+                "status": "published",
+                "base_diagram_state_version": 2,
+                "reason": "Approved for publication",
+            }
+        },
+    )
 
 
 class InferRtiersIn(BaseModel):
@@ -307,10 +387,19 @@ class InferRtiersIn(BaseModel):
 
 
 class BpmnRestoreIn(BaseModel):
-    base_diagram_state_version: Optional[int] = None
-    base_bpmn_xml_version: Optional[int] = None
-    rev: Optional[int] = None
-    model_config = ConfigDict(extra="allow")
+    base_diagram_state_version: Optional[int] = Field(default=None, examples=[1])
+    base_bpmn_xml_version: Optional[int] = Field(default=None, examples=[0])
+    rev: Optional[int] = Field(default=None, examples=[1])
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {
+                "base_diagram_state_version": 1,
+                "base_bpmn_xml_version": 0,
+                "rev": 1,
+            }
+        },
+    )
 
 
 class CreatePathReportVersionIn(BaseModel):

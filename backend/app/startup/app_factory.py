@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
 from .. import _legacy_main
-from ..auth import seed_admin_user_if_enabled
+from ..auth import bearer_auth, optional_access_token_payload, seed_admin_user_if_enabled
 from ..routers import ROUTERS
 from .boot_checks import register_boot_events
 from .middleware import (
@@ -17,15 +17,21 @@ from .static_mounts import mount_static_assets
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Food Process Copilot MVP")
+    app = FastAPI(
+        title="Food Process Copilot MVP",
+        description="ProcessMap API. Use the Authorize button to supply a JWT access token.",
+        dependencies=[Depends(optional_access_token_payload)],
+        security=[{bearer_auth.scheme_name: []}],
+    )
     register_cors(app, cors_origins=build_cors_origins())
     register_auth_guard(app, public_paths=set(_legacy_main.AUTH_PUBLIC_PATHS))
     register_deprecated_alias_middleware(app)
     register_backend_exception_capture(app)
     mount_static_assets(app)
 
-    for router in ROUTERS:
-        app.include_router(router)
+    for router, tags in ROUTERS:
+        effective_tags = list(router.tags) if router.tags else list(tags)
+        app.include_router(router, tags=effective_tags)
 
     register_boot_events(
         app,
