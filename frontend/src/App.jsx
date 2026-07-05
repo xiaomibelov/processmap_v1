@@ -3161,7 +3161,7 @@ export default function App() {
         if (!r.ok) throw new Error(String(r.error || "Не удалось переименовать проект."));
         await refreshProjects();
       } else if (scope === "session") {
-        const sid = String(draft?.session_id || "").trim();
+        const sid = String(draft?.session_id || shellSessionId || "").trim();
         if (!sid || isLocalSessionId(sid)) throw new Error("Сессия не выбрана.");
         const r = await apiPatchSession(sid, { title: nextTitle });
         if (!r.ok) throw new Error(String(r.error || "Не удалось переименовать сессию."));
