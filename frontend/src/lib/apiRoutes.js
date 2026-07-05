@@ -339,6 +339,16 @@ export const apiRoutes = {
       scope_id: String(scopeId || "").trim(),
     }),
   },
+  recipes: {
+    list: () => "/api/recipes",
+    create: () => "/api/recipes",
+    item: (id) => `/api/recipes/${encode(id)}`,
+    calculate: (id) => `/api/recipes/${encode(id)}/calculate`,
+  },
+  ingredients: {
+    list: () => "/api/ingredients",
+    create: () => "/api/ingredients",
+  },
 };
 
 export default apiRoutes;
