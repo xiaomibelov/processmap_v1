@@ -4891,6 +4891,9 @@ const BpmnStage = forwardRef(function BpmnStage({
         ? { viewport: { zoom: viewportSnapshot.zoom, viewbox: { ...viewportSnapshot.viewbox } } }
         : null;
       const saveBpmnMeta = viewportMeta ? { ...viewportMeta } : undefined;
+      if (saveBpmnMeta && bpmnStoreRef.current?.markDirty) {
+        bpmnStoreRef.current.markDirty("viewport_snapshot");
+      }
       let preFlushXml = "";
       const robotSync = syncRobotMetaToModeler(activeModeler);
       const templateInsertSeedInFlight = Number(templateInsertCamundaSeedInFlightRef.current || 0) > 0;
