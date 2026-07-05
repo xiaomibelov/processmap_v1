@@ -210,7 +210,7 @@ export function createBpmnWiring(ctxBase, deps = {}) {
       dragThrottleMs: 5000,
       dragFinalDebounceMs: 500,
       persistence: {
-        saveRaw: (sid, xmlText, rev, reason) => persistence.saveRaw(sid, xmlText, rev, reason),
+        saveRaw: (sid, xmlText, rev, reason, options) => persistence.saveRaw(sid, xmlText, rev, reason, options),
         loadRaw: (sid, optionsForLoad) => persistence.loadRaw(sid, optionsForLoad),
         cacheRaw: (sid, xmlText, rev, reason) => (
           typeof persistence.cacheRaw === "function"
