@@ -139,53 +139,11 @@ def get_project(project_id: str, request: Optional[Request] = None) -> dict:
 
 
 def patch_project(project_id: str, inp, request: Optional[Request] = None) -> dict:
-    user = _request_auth_user(request) if request is not None else {}
-    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
-    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
-    proj, oid, _scope = _legacy_load_project_scoped(project_id, request)
-    if not proj:
-        raise HTTPException(status_code=404, detail="not found")
-    role = _org_role_for_request(request, oid) if request is not None and oid else ""
-    if not can_edit_workspace(role, is_admin=is_admin):
-        raise HTTPException(status_code=403, detail="forbidden")
-
-    payload = inp.model_dump(exclude_unset=True)
-
-    if "title" in payload and payload["title"] is not None:
-        t = _clean_name(payload["title"])
-        if t:
-            sibling_titles = {
-                _clean_name(getattr(item, "title", ""))
-                for item in project_repo.list_projects(org_id=(oid or None), is_admin=True)
-                if str(getattr(item, "id", "") or project_id).strip() != str(getattr(proj, "id", "") or project_id).strip()
-            }
-            if t in sibling_titles:
-                raise HTTPException(status_code=409, detail="project title already exists")
-            proj.title = t
-
-    if "passport" in payload and payload["passport"] is not None:
-        if not isinstance(payload["passport"], dict):
-            raise HTTPException(status_code=400, detail="passport must be an object")
-        merged = dict(proj.passport or {})
-        merged.update(payload["passport"])
-        proj.passport = merged
-
-    if "executor_user_id" in payload:
-        proj.executor_user_id = validate_org_user_assignable(oid or get_default_org_id(), payload.get("executor_user_id")) or None
-
-    project_repo.save_project(proj, user_id=user_id, org_id=oid, is_admin=True)
-    _audit_log_safe(
-        request,
-        org_id=oid or str(getattr(proj, "org_id", "") or get_default_org_id()),
-        action="project.update",
-        entity_type="project",
-        entity_id=str(getattr(proj, "id", "") or project_id),
-        project_id=str(getattr(proj, "id", "") or project_id),
-        meta={"title": str(getattr(proj, "title", "") or "")},
-    )
-    _invalidate_workspace_cache_for_org(oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
-    _invalidate_explorer_children_for_project(str(getattr(proj, "id", "") or project_id), oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
-    return proj.model_dump()
+    # Delegate to the battle-tested legacy implementation while the service-layer
+    # copy is debugged. The legacy endpoint is exercised by the existing test
+    # suite and avoids the internal_server_error seen on project rename.
+    import app._legacy_main as _lm
+    return _lm.patch_project(project_id, inp, request)
 
 
 def put_project(project_id: str, inp, request: Optional[Request] = None) -> dict:
