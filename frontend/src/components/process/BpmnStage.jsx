@@ -5488,11 +5488,12 @@ const BpmnStage = forwardRef(function BpmnStage({
             return;
           }
           const preRenderSnapshot = modelerRef.current ? getCanvasSnapshot(modelerRef.current) : null;
+          const hadUserViewportTouch = userViewportTouchedRef.current === true;
           userViewportTouchedRef.current = false;
           if (isStale("modeler.render.before")) return;
           await renderModeler(resolvedXml);
           if (isStale("modeler.render.after")) return;
-          if (preRenderSnapshot && preRenderSnapshot.zoom > 0) {
+          if (preRenderSnapshot && preRenderSnapshot.zoom > 0 && hadUserViewportTouch) {
             const snapshotRunId = runId;
             const restore = () => {
               if (renderRunRef.current !== snapshotRunId) return;
