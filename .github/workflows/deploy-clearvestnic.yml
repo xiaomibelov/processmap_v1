@@ -1,0 +1,132 @@
+name: Deploy to clearvestnic.ru
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Deploy to clearvestnic.ru stand
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: clearvestnic.ru
+          username: deploy
+          key: ${{ secrets.CLEARVESTNIC_SSH_KEY || secrets.STAGE_SSH_KEY }}
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+            cd /opt/processmap/app
+
+            REQUESTED_REF="main"
+
+            echo "[deploy-clearvestnic] requested ref: ${REQUESTED_REF}"
+
+            git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
+            git fetch origin "${REQUESTED_REF}"
+            DEPLOY_SHA="$(git rev-parse --verify origin/${REQUESTED_REF})"
+            echo "[deploy-clearvestnic] resolved sha: ${DEPLOY_SHA}"
+
+            # Switch the checkout to the latest main while keeping server env files
+            git checkout -f "${DEPLOY_SHA}" -- .
+            git reset --hard "${DEPLOY_SHA}"
+
+            BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            BUILD_ENV="prod"
+
+            export BUILD_ID="${DEPLOY_SHA}"
+            export BUILD_BRANCH="${REQUESTED_REF}"
+            export BUILD_TIME="${BUILD_TIME}"
+            export BUILD_ENV="${BUILD_ENV}"
+
+            export VITE_BUILD_ID="${DEPLOY_SHA}"
+            export VITE_BUILD_BRANCH="${REQUESTED_REF}"
+            export VITE_BUILD_TIME="${BUILD_TIME}"
+            export VITE_BUILD_ENV="${BUILD_ENV}"
+
+            DEPLOY_FINGERPRINT="processmap-clearvestnic-deploy-sha:${DEPLOY_SHA}"
+            export VITE_DEPLOY_FINGERPRINT="${DEPLOY_FINGERPRINT}"
+            export VITE_DEPLOY_REQUESTED_REF="${REQUESTED_REF}"
+            export VITE_DEPLOY_RESOLVED_SHA="${DEPLOY_SHA}"
+
+            # Persist build metadata in the stand env file so /version tells the truth
+            ENV_FILE=".env"
+            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^VITE_BUILD_ID=/d; /^VITE_BUILD_TIME=/d; /^VITE_BUILD_BRANCH=/d; /^VITE_BUILD_ENV=/d; /^VITE_DEPLOY_FINGERPRINT=/d; /^VITE_DEPLOY_REQUESTED_REF=/d; /^VITE_DEPLOY_RESOLVED_SHA=/d' "${ENV_FILE}" 2>/dev/null || true
+            {
+              echo ""
+              echo "# Auto-injected by deploy-clearvestnic.yml at ${BUILD_TIME}"
+              echo "BUILD_ID=${DEPLOY_SHA}"
+              echo "BUILD_TIME=${BUILD_TIME}"
+              echo "BUILD_BRANCH=${REQUESTED_REF}"
+              echo "BUILD_ENV=${BUILD_ENV}"
+              echo "VITE_BUILD_ID=${DEPLOY_SHA}"
+              echo "VITE_BUILD_TIME=${BUILD_TIME}"
+              echo "VITE_BUILD_BRANCH=${REQUESTED_REF}"
+              echo "VITE_BUILD_ENV=${BUILD_ENV}"
+              echo "VITE_DEPLOY_FINGERPRINT=${DEPLOY_FINGERPRINT}"
+              echo "VITE_DEPLOY_REQUESTED_REF=${REQUESTED_REF}"
+              echo "VITE_DEPLOY_RESOLVED_SHA=${DEPLOY_SHA}"
+            } >> "${ENV_FILE}"
+
+            # Remove any legacy gateway container that may still hold port 5177
+            # from the pre-nginx-frontend compose layout.
+            for legacy in processmap_v1-gateway-1 app-gateway-1; do
+              if docker ps -a --format '{{.Names}}' | grep -qx "${legacy}"; then
+                echo "[deploy-clearvestnic] removing legacy gateway container ${legacy}"
+                docker rm -fsv "${legacy}" 2>/dev/null || true
+              fi
+            done
+
+            # Rebuild API and frontend images with fresh source and metadata
+            APP_ENV_FILE=.env docker compose \
+              --env-file .env \
+              -f docker-compose.yml \
+              -p processmap_v1 \
+              build --no-cache api frontend
+
+            # Drop the old frontend container so the new image is used and stale
+            # static files cannot survive.
+            docker compose -p processmap_v1 rm -fsv frontend 2>/dev/null || true
+            docker volume ls -q | grep '^processmap_v1_frontend' | xargs -r docker volume rm 2>/dev/null || true
+
+            # Start fresh containers; base compose publishes ports 8011 and 5177
+            APP_ENV_FILE=.env docker compose \
+              --env-file .env \
+              -f docker-compose.yml \
+              -p processmap_v1 \
+              up -d --no-deps --force-recreate -V api frontend
+
+            # Wait for the API /version endpoint to report the new SHA
+            echo "[deploy-clearvestnic] waiting for API /version ..."
+            for i in $(seq 1 30); do
+              VERSION=$(curl -fsS -H 'Cache-Control: no-cache' "http://localhost:8011/version" 2>/dev/null || true)
+              if echo "${VERSION}" | grep -q "\"commit\":\"${DEPLOY_SHA}\""; then
+                echo "[deploy-clearvestnic] API /version OK: ${VERSION}"
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "[deploy-clearvestnic] ERROR: API /version did not switch to ${DEPLOY_SHA}"
+                echo "${VERSION:-(no response)}"
+                exit 1
+              fi
+              sleep 2
+            done
+
+            # Wait for the frontend to serve the new hashed bundle
+            echo "[deploy-clearvestnic] waiting for frontend bundle ..."
+            for i in $(seq 1 30); do
+              HTML=$(curl -fsS -H 'Cache-Control: no-cache' "http://localhost:5177/" 2>/dev/null || true)
+              JS=$(echo "${HTML}" | grep -oE 'assets/index-[^"]+\.js' | head -1 || true)
+              if [ -n "${JS}" ] && curl -fsS "http://localhost:5177/${JS}" 2>/dev/null | grep -q "${DEPLOY_FINGERPRINT}"; then
+                echo "[deploy-clearvestnic] frontend bundle OK (${JS})"
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "[deploy-clearvestnic] ERROR: frontend bundle did not switch to ${DEPLOY_SHA}"
+                exit 1
+              fi
+              sleep 2
+            done
+
+            echo "[deploy-clearvestnic] done ref=${REQUESTED_REF} sha=${DEPLOY_SHA}"
