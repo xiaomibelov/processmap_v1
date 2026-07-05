@@ -5,7 +5,8 @@ import RecipeCalculator from "./RecipeCalculator.jsx";
 import RecipeSelector from "./RecipeSelector.jsx";
 
 export default function RecipeSidebar({ selectedElementType = "" }) {
-  const isTask = String(selectedElementType || "").toLowerCase() === "bpmn:task";
+  const normalizedType = String(selectedElementType || "").toLowerCase();
+  const isTask = normalizedType === "bpmn:task" || normalizedType === "bpmn:usertask";
   const { data: recipes = [], isLoading: recipesLoading } = useRecipes();
   const { data: ingredients = [], isLoading: ingredientsLoading } = useIngredients();
   const createRecipe = useCreateRecipe();
