@@ -2603,6 +2603,7 @@ export default function App() {
       hybrid_v2: currentMeta.hybrid_v2,
       drawio: currentMeta.drawio,
       execution_plans: currentExecutionPlans,
+      viewport: draft?.bpmn_meta?.viewport,
     };
     const baseDiagramStateVersion = Number(
       lastServerDiagramStateVersionRef.current

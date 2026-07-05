@@ -319,12 +319,12 @@ export default function createBpmnCoordinator(options = {}) {
     schedulePendingReplay();
   }
 
-  async function persistRaw(sid, xml, rev, reason) {
+  async function persistRaw(sid, xml, rev, reason, options = {}) {
     const saveRaw = persistence?.saveRaw;
     if (typeof saveRaw !== "function") {
       return { ok: false, error: "saveRaw unavailable", status: 0 };
     }
-    return await saveRaw(sid, xml, rev, reason);
+    return await saveRaw(sid, xml, rev, reason, options);
   }
 
   function preparePersistedXml(xmlText, meta = {}) {
@@ -432,7 +432,7 @@ export default function createBpmnCoordinator(options = {}) {
           xml_len: fallbackXml.length,
         });
         const startedAt = Date.now();
-        const persisted = await persistRaw(sid, fallbackXml, rev, `${reason}:fallback`);
+        const persisted = await persistRaw(sid, fallbackXml, rev, `${reason}:fallback`, persistOptions);
         if (persisted?.ok) {
           emit("SAVE_PERSIST_DONE", {
             sid,
@@ -560,9 +560,13 @@ export default function createBpmnCoordinator(options = {}) {
     const startedAt = Date.now();
     const staleConflictRetryEnabled = options?.staleConflictRetryEnabled !== false;
     const staleConflictRetryMaxAttempts = Math.max(0, asNumber(options?.staleConflictRetryMaxAttempts, 1));
+    const persistOptions = {};
+    if (options?.bpmnMeta && typeof options.bpmnMeta === "object") {
+      persistOptions.bpmnMeta = options.bpmnMeta;
+    }
     let staleRetryAttempts = 0;
     let staleRetryChangedKeys = [];
-    let persisted = await persistRaw(sid, xml, targetRev, reason);
+    let persisted = await persistRaw(sid, xml, targetRev, reason, persistOptions);
     while (
       !persisted?.ok
       && staleConflictRetryEnabled
@@ -583,7 +587,7 @@ export default function createBpmnCoordinator(options = {}) {
         error_details: normalizeErrorDetails(persisted?.errorDetails),
         changed_keys: staleRetryChangedKeys,
       });
-      persisted = await persistRaw(sid, xml, targetRev, reason);
+      persisted = await persistRaw(sid, xml, targetRev, reason, persistOptions);
     }
     if (!persisted?.ok) {
       const status = asNumber(persisted?.status, 0);
@@ -879,7 +883,11 @@ export default function createBpmnCoordinator(options = {}) {
           xml_len: xml.length,
         });
         const startedAt = Date.now();
-        const persisted = await persistRaw(sid, xml, rev, reason);
+        const explicitPersistOptions = {};
+        if (options?.bpmnMeta && typeof options.bpmnMeta === "object") {
+          explicitPersistOptions.bpmnMeta = options.bpmnMeta;
+        }
+        const persisted = await persistRaw(sid, xml, rev, reason, explicitPersistOptions);
         if (!persisted?.ok) {
           const status = asNumber(persisted?.status, 0);
           const errorCode = asText(
