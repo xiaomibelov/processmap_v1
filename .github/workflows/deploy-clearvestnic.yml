@@ -39,6 +39,14 @@ jobs:
             fi
             cd "${APP_DIR}"
 
+            echo "[deploy-clearvestnic] running as: $(whoami) / $(id)"
+            echo "[deploy-clearvestnic] app dir ownership:"
+            ls -la "${APP_DIR}" | head -20 || true
+            echo "[deploy-clearvestnic] git status:"
+            git status -sb || true
+            echo "[deploy-clearvestnic] sample nested dir:"
+            ls -la "${APP_DIR}/.planning/contours" 2>/dev/null | head -10 || true
+
             REQUESTED_REF="main"
 
             echo "[deploy-clearvestnic] requested ref: ${REQUESTED_REF}"
