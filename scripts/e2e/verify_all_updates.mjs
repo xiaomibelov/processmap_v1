@@ -121,14 +121,14 @@ async function selectShapeById(page, id) {
     }
   }, id);
   if (selectedViaApi) {
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(400);
     return;
   }
 
   const shape = page.locator(`g[data-element-id="${id}"]`).first();
   await shape.scrollIntoViewIfNeeded();
   await shape.click({ force: true });
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(400);
 }
 
 async function readModelerViewport(page) {
@@ -434,6 +434,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     expect(floatEq(afterChange.zoom, targetZoom, 0.1)).toBe(true);
 
     let saveStatus = null;
+    let saveResponseBody = null;
     const savePromise = new Promise((resolve) => {
       const handler = async (response) => {
         const req = response.request();
@@ -441,6 +442,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
         const method = req.method();
         if (url.includes(`/api/sessions/${SESSION_ID}/bpmn`) && method === "PUT") {
           saveStatus = response.status();
+          saveResponseBody = await response.json().catch(() => null);
           page.off("response", handler);
           resolve();
         }
@@ -454,8 +456,12 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     await page.waitForTimeout(1000);
 
     await page.reload({ waitUntil: "domcontentloaded" });
-    await authAndOpenFixedSession(page, request);
+    const authReload = await authAndOpenFixedSession(page, request);
 
+    const sessionAfterReload = await request.get(`${API_BASE_URL}/api/sessions/${SESSION_ID}`, {
+      headers: { Authorization: `Bearer ${authReload.accessToken}` },
+    });
+    const sessionBody = await sessionAfterReload.json().catch(() => null);
     const afterReload = await readModelerViewport(page);
     expect(afterReload).not.toBeNull();
     expect(floatEq(afterReload.zoom, targetZoom, 0.15)).toBe(true);
