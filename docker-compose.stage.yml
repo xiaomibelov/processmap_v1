@@ -15,10 +15,7 @@ services:
       - ./runtime/stage/postgres:/var/lib/postgresql/data
 
   frontend:
-    # Publish the stage frontend directly on the legacy stand port so that
-    # http://clearvestnic.ru:5177 serves the same build as https://stage.processmap.ru.
-    ports: !override
-      - "${FRONTEND_PORT:-5177}:5177"
+    ports: !override []
     networks:
       default:
       edge_shared:

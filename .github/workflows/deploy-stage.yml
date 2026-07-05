@@ -106,23 +106,6 @@ jobs:
             echo "[deploy-stage] current frontend assets:"
             docker exec processmap_stage-frontend-1 sh -c 'ls -la /usr/share/nginx/html/assets/index-*.js 2>/dev/null || true' 2>/dev/null || true
 
-            # The legacy stand at clearvestnic.ru:5177 is now served directly by the
-            # stage frontend container. Evict any stale container that still holds
-            # host port 5177 (e.g. an old processmap_v1-gateway-1 left over from the
-            # pre-nginx-frontend compose layout) so the fresh frontend can bind it.
-            echo "[deploy-stage] evicting stale port-5177 containers..."
-            for cid in $(docker ps -q --filter "publish=5177" 2>/dev/null || true); do
-              echo "[deploy-stage] stopping stale container ${cid}"
-              docker stop "${cid}" >/dev/null 2>&1 || true
-              docker rm -fv "${cid}" >/dev/null 2>&1 || true
-            done
-            for legacy in processmap_stage-gateway-1 processmap_v1-gateway-1; do
-              if docker ps -a --format '{{.Names}}' | grep -qx "${legacy}"; then
-                echo "[deploy-stage] removing legacy gateway container ${legacy}"
-                docker rm -fsv "${legacy}" 2>/dev/null || true
-              fi
-            done
-
             # Remove the old frontend container and any attached volumes so stale statics cannot survive
             docker compose -p processmap_stage rm -fsv frontend 2>/dev/null || true
             # Drop any project named volume that could be masking /usr/share/nginx/html
@@ -145,22 +128,6 @@ jobs:
             deploy/scripts/stage_freshness_proof.sh verify-chain \
               --requested-ref "${REQUESTED_REF}" \
               --resolved-sha "${DEPLOY_SHA}"
-
-            # Verify the legacy stand endpoint is also serving the new build
-            echo "[deploy-stage] verifying legacy stand http://clearvestnic.ru:5177/version ..."
-            for i in $(seq 1 30); do
-              STAND_VERSION=$(curl -fsS -H 'Cache-Control: no-cache' "http://clearvestnic.ru:5177/version" 2>/dev/null || true)
-              if echo "${STAND_VERSION}" | grep -q "\"commit\":\"${DEPLOY_SHA}\""; then
-                echo "[deploy-stage] legacy stand /version OK: ${STAND_VERSION}"
-                break
-              fi
-              if [ "$i" -eq 30 ]; then
-                echo "[deploy-stage] ERROR: legacy stand /version did not switch to ${DEPLOY_SHA}"
-                echo "${STAND_VERSION:-(no response)}"
-                exit 1
-              fi
-              sleep 2
-            done
 
             rm -f "${STAGE_FRESHNESS_SOURCE_FILE}"
 
