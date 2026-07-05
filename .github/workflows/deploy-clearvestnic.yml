@@ -29,36 +29,33 @@ jobs:
             done
             if [ -z "${APP_DIR}" ]; then
               echo "[deploy-clearvestnic] ERROR: could not locate app checkout directory"
-              echo "=== /opt ==="
               ls -la /opt 2>/dev/null || true
-              echo "=== docker ps ==="
               docker ps --format '{{.Names}}\t{{.Ports}}\t{{.Image}}' 2>/dev/null || true
-              echo "=== find docker-compose.yml ==="
-              find /opt /root /home /var/www /srv -maxdepth 4 -name docker-compose.yml 2>/dev/null || true
               exit 1
             fi
             cd "${APP_DIR}"
 
             echo "[deploy-clearvestnic] running as: $(whoami) / $(id)"
-            echo "[deploy-clearvestnic] app dir ownership:"
-            ls -la "${APP_DIR}" | head -20 || true
-            echo "[deploy-clearvestnic] git status:"
-            git status -sb || true
-            echo "[deploy-clearvestnic] sample nested dir:"
-            ls -la "${APP_DIR}/.planning/contours" 2>/dev/null | head -10 || true
+            if sudo -n true 2>/dev/null; then
+              echo "[deploy-clearvestnic] sudo available without password"
+              SUDO_CMD="sudo -E"
+            else
+              echo "[deploy-clearvestnic] sudo NOT available; continuing as $(whoami)"
+              SUDO_CMD=""
+            fi
 
             REQUESTED_REF="main"
 
             echo "[deploy-clearvestnic] requested ref: ${REQUESTED_REF}"
 
-            git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
-            git fetch origin "${REQUESTED_REF}"
-            DEPLOY_SHA="$(git rev-parse --verify origin/${REQUESTED_REF})"
+            ${SUDO_CMD} git remote set-url origin git@github.com:xiaomibelov/processmap_v1.git
+            ${SUDO_CMD} git fetch origin "${REQUESTED_REF}"
+            DEPLOY_SHA="$(${SUDO_CMD} git rev-parse --verify origin/${REQUESTED_REF})"
             echo "[deploy-clearvestnic] resolved sha: ${DEPLOY_SHA}"
 
             # Switch the checkout to the latest main while keeping server env files
-            git checkout -f "${DEPLOY_SHA}" -- .
-            git reset --hard "${DEPLOY_SHA}"
+            ${SUDO_CMD} git checkout -f "${DEPLOY_SHA}" -- .
+            ${SUDO_CMD} git reset --hard "${DEPLOY_SHA}"
 
             BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
             BUILD_ENV="prod"
@@ -80,7 +77,7 @@ jobs:
 
             # Persist build metadata in the stand env file so /version tells the truth
             ENV_FILE=".env"
-            sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^VITE_BUILD_ID=/d; /^VITE_BUILD_TIME=/d; /^VITE_BUILD_BRANCH=/d; /^VITE_BUILD_ENV=/d; /^VITE_DEPLOY_FINGERPRINT=/d; /^VITE_DEPLOY_REQUESTED_REF=/d; /^VITE_DEPLOY_RESOLVED_SHA=/d' "${ENV_FILE}" 2>/dev/null || true
+            ${SUDO_CMD} sed -i '/^BUILD_ID=/d; /^BUILD_TIME=/d; /^BUILD_BRANCH=/d; /^BUILD_ENV=/d; /^VITE_BUILD_ID=/d; /^VITE_BUILD_TIME=/d; /^VITE_BUILD_BRANCH=/d; /^VITE_BUILD_ENV=/d; /^VITE_DEPLOY_FINGERPRINT=/d; /^VITE_DEPLOY_REQUESTED_REF=/d; /^VITE_DEPLOY_RESOLVED_SHA=/d' "${ENV_FILE}" 2>/dev/null || true
             {
               echo ""
               echo "# Auto-injected by deploy-clearvestnic.yml at ${BUILD_TIME}"
@@ -95,11 +92,11 @@ jobs:
               echo "VITE_DEPLOY_FINGERPRINT=${DEPLOY_FINGERPRINT}"
               echo "VITE_DEPLOY_REQUESTED_REF=${REQUESTED_REF}"
               echo "VITE_DEPLOY_RESOLVED_SHA=${DEPLOY_SHA}"
-            } >> "${ENV_FILE}"
+            } | ${SUDO_CMD} tee -a "${ENV_FILE}" >/dev/null
 
             # Remove any legacy gateway container that may still hold port 5177
             # from the pre-nginx-frontend compose layout.
-            for legacy in processmap_v1-gateway-1 app-gateway-1; do
+            for legacy in processmap_v1-gateway-1 app-gateway-1 processmap-test-gateway-1; do
               if docker ps -a --format '{{.Names}}' | grep -qx "${legacy}"; then
                 echo "[deploy-clearvestnic] removing legacy gateway container ${legacy}"
                 docker rm -fsv "${legacy}" 2>/dev/null || true
@@ -107,7 +104,7 @@ jobs:
             done
 
             # Rebuild API and frontend images with fresh source and metadata
-            APP_ENV_FILE=.env docker compose \
+            ${SUDO_CMD} docker compose \
               --env-file .env \
               -f docker-compose.yml \
               -p processmap_v1 \
@@ -115,11 +112,11 @@ jobs:
 
             # Drop the old frontend container so the new image is used and stale
             # static files cannot survive.
-            docker compose -p processmap_v1 rm -fsv frontend 2>/dev/null || true
+            ${SUDO_CMD} docker compose -p processmap_v1 rm -fsv frontend 2>/dev/null || true
             docker volume ls -q | grep '^processmap_v1_frontend' | xargs -r docker volume rm 2>/dev/null || true
 
             # Start fresh containers; base compose publishes ports 8011 and 5177
-            APP_ENV_FILE=.env docker compose \
+            ${SUDO_CMD} docker compose \
               --env-file .env \
               -f docker-compose.yml \
               -p processmap_v1 \
