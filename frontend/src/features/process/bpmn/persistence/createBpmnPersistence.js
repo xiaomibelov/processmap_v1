@@ -592,11 +592,14 @@ export default function createBpmnPersistence(options = {}) {
     };
   }
 
-  async function saveRaw(sessionId, xmlText, rev, reason = "save") {
+  async function saveRaw(sessionId, xmlText, rev, reason = "save", options = {}) {
     const sid = asText(sessionId).trim();
     if (!sid) return { ok: false, status: 0, error: "missing session id" };
     const xml = asText(xmlText);
     const targetRev = asNumber(rev, 0);
+    const bpmnMeta = options?.bpmnMeta && typeof options.bpmnMeta === "object"
+      ? options.bpmnMeta
+      : null;
 
     if (isLocalSessionId(sid)) {
       window.localStorage?.setItem(getLocalStorageKey(sid), xml);
@@ -626,12 +629,17 @@ export default function createBpmnPersistence(options = {}) {
       known_diagram_state_version: asNumber(knownDiagramStateVersion, -1),
       base_diagram_state_version: asNumber(baseDiagramStateVersion, -1),
       local_session: isLocalSessionId(sid) ? 1 : 0,
+      has_bpmn_meta: bpmnMeta ? 1 : 0,
     });
-    const saved = await apiPutBpmnXml(sid, xml, {
+    const putOptions = {
       rev: targetRev,
       reason,
       baseDiagramStateVersion,
-    });
+    };
+    if (bpmnMeta) {
+      putOptions.bpmnMeta = bpmnMeta;
+    }
+    const saved = await apiPutBpmnXml(sid, xml, putOptions);
     emit("API_PUT_BPMN_XML_RESULT", {
       sid,
       reason: asText(reason || "save"),

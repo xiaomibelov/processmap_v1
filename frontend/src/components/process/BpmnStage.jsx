@@ -995,6 +995,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const pendingFocusElementIdRef = useRef("");
   const appliedFocusElementIdRef = useRef("");
   const pendingRestoreViewportRef = useRef(null);
+  const lastRestoredViewportSessionRef = useRef("");
   const draftRef = useRef(draft);
 
   const [xml, setXml] = useState("");
@@ -4874,6 +4875,22 @@ const BpmnStage = forwardRef(function BpmnStage({
       }
 
       const activeModeler = modelerRef.current || runtime.getInstance?.();
+      const viewportSnapshot = (activeModeler && modelerReadyRef.current)
+        ? getCanvasSnapshot(activeModeler)
+        : null;
+      const viewportMeta = (
+        viewportSnapshot
+        && Number.isFinite(viewportSnapshot.zoom)
+        && viewportSnapshot.zoom > 0
+        && viewportSnapshot.viewbox
+        && Number.isFinite(viewportSnapshot.viewbox.x)
+        && Number.isFinite(viewportSnapshot.viewbox.y)
+        && Number.isFinite(viewportSnapshot.viewbox.width)
+        && Number.isFinite(viewportSnapshot.viewbox.height)
+      )
+        ? { viewport: { zoom: viewportSnapshot.zoom, viewbox: { ...viewportSnapshot.viewbox } } }
+        : null;
+      const saveBpmnMeta = viewportMeta ? { ...viewportMeta } : undefined;
       let preFlushXml = "";
       const robotSync = syncRobotMetaToModeler(activeModeler);
       const templateInsertSeedInFlight = Number(templateInsertCamundaSeedInFlightRef.current || 0) > 0;
@@ -4967,6 +4984,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         trigger,
         saveOwner: resolvedSaveOwner,
         xmlOverride: primaryXmlOverride,
+        bpmnMeta: saveBpmnMeta,
       });
       const nextState = bpmnStoreRef.current?.getState?.() || {};
       const rawOut = String(flushed?.xml || nextState.xml || fallbackXml || "");
@@ -5018,8 +5036,9 @@ const BpmnStage = forwardRef(function BpmnStage({
           ? await coordinator.persistExplicitXml(out, transportPersistReason, {
             rev,
             saveOwner: resolvedSaveOwner,
+            bpmnMeta: saveBpmnMeta,
           })
-          : await ensureBpmnPersistence().saveRaw(sid, out, rev, transportPersistReason);
+          : await ensureBpmnPersistence().saveRaw(sid, out, rev, transportPersistReason, { bpmnMeta: saveBpmnMeta });
         if (!persistedFinalXml?.ok) {
           emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
             sid,
@@ -5091,8 +5110,9 @@ const BpmnStage = forwardRef(function BpmnStage({
           ? await coordinator.persistExplicitXml(canonicalOut, canonicalPersistReason, {
             rev: Number(finalStoredRev || 0),
             saveOwner: resolvedSaveOwner,
+            bpmnMeta: saveBpmnMeta,
           })
-          : await ensureBpmnPersistence().saveRaw(sid, canonicalOut, Number(finalStoredRev || 0), canonicalPersistReason);
+          : await ensureBpmnPersistence().saveRaw(sid, canonicalOut, Number(finalStoredRev || 0), canonicalPersistReason, { bpmnMeta: saveBpmnMeta });
         if (!canonicalPersisted?.ok) {
           emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
             sid,
@@ -5182,7 +5202,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       if (fallbackXml.trim()) {
         if (force && allowForceFallback) {
           const rev = Number(bpmnStoreRef.current?.getState?.()?.rev || 0);
-          const persisted = await ensureBpmnPersistence().saveRaw(sid, fallbackXml, rev, `${source}:catch_fallback`);
+          const persisted = await ensureBpmnPersistence().saveRaw(sid, fallbackXml, rev, `${source}:catch_fallback`, { bpmnMeta: saveBpmnMeta });
           if (!persisted.ok) {
             if (resolvedSaveOwner) {
               coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:save_local_fallback_fail`);
@@ -5260,6 +5280,9 @@ const BpmnStage = forwardRef(function BpmnStage({
     const sid = String(sessionId || "");
     const prevSid = String(activeSessionRef.current || "");
     prevSessionRef.current = prevSid;
+    if (sid !== prevSid) {
+      lastRestoredViewportSessionRef.current = "";
+    }
     if (shouldLogBpmnTrace()) {
       // eslint-disable-next-line no-console
       console.debug(`[SESSION] activate sid=${sid || "-"} prevSid=${prevSid || "-"} tab=${view === "xml" ? "xml" : "diagram"}`);
@@ -5484,6 +5507,37 @@ const BpmnStage = forwardRef(function BpmnStage({
             window.requestAnimationFrame(() => {
               window.setTimeout(restore, 120);
             });
+          } else if (
+            lastRestoredViewportSessionRef.current !== sid
+            && !restoreViewportSnapshot
+            && !pendingRestoreViewportRef.current
+          ) {
+            const persistedViewport = draftRef.current?.bpmn_meta?.viewport;
+            const pvb = persistedViewport?.viewbox;
+            if (
+              persistedViewport
+              && Number.isFinite(persistedViewport.zoom)
+              && persistedViewport.zoom > 0
+              && pvb
+              && Number.isFinite(pvb.x)
+              && Number.isFinite(pvb.y)
+              && Number.isFinite(pvb.width)
+              && Number.isFinite(pvb.height)
+            ) {
+              lastRestoredViewportSessionRef.current = sid;
+              const snapshotRunId = runId;
+              window.requestAnimationFrame(() => {
+                window.setTimeout(() => {
+                  if (renderRunRef.current !== snapshotRunId) return;
+                  try {
+                    imperativeApi.restoreViewport(persistedViewport);
+                    userViewportTouchedRef.current = true;
+                  } catch {
+                    // persisted viewport restore best-effort
+                  }
+                }, 120);
+              });
+            }
           }
         }
       } catch (e) {

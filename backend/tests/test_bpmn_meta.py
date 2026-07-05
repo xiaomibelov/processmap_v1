@@ -179,6 +179,28 @@ class BpmnMetaApiTests(unittest.TestCase):
         meta = self.session_bpmn_meta_get(self.sid)
         self.assertNotIn("Flow_yes", meta.get("flow_meta", {}))
 
+    def test_bpmn_save_preserves_viewport_in_bpmn_meta(self):
+        viewport = {
+            "zoom": 1.5,
+            "viewbox": {"x": 100, "y": 200, "width": 800, "height": 600},
+        }
+        payload = self.BpmnXmlIn(
+            xml=XOR_BPMN_XML,
+            bpmn_meta={"viewport": viewport, "custom_key": [1, 2, 3]},
+        )
+        self.assertEqual(self.session_bpmn_save(self.sid, payload).get("ok"), True)
+        meta = self.session_bpmn_meta_get(self.sid)
+        self.assertEqual(meta.get("viewport"), viewport)
+        self.assertEqual(meta.get("custom_key"), [1, 2, 3])
+
+        # A subsequent save without bpmn_meta must keep the stored viewport.
+        self.assertEqual(
+            self.session_bpmn_save(self.sid, self.BpmnXmlIn(xml=PRUNED_BPMN_XML)).get("ok"),
+            True,
+        )
+        meta = self.session_bpmn_meta_get(self.sid)
+        self.assertEqual(meta.get("viewport"), viewport)
+
     def test_node_path_meta_roundtrip_and_normalization(self):
         patched = self.session_bpmn_meta_patch(
             self.sid,
