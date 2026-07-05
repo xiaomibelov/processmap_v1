@@ -256,9 +256,30 @@ test.describe("clearvestnic.ru post-deploy checks", () => {
     await page.screenshot({ path: "/root/processmap_v1/scripts/e2e/property_panel_after_delete.png", fullPage: false });
   });
 
-  test.skip("recipe calculator is visible in property panel", () => {
-    // Recipe calculator lives on feat/recipe-calculator-mvp and is NOT merged to main.
-    // clearvestnic.ru deploys origin/main, so this feature is intentionally absent.
-    console.log("Recipe calculator skipped: feature branch not merged to main.");
+  test("recipe calculator is visible in property panel", async ({ page, request }) => {
+    const xml = xmlWithProperty("Recipe task", "dummy", "value").replace(/bpmn:userTask/g, "bpmn:task");
+    await authAndOpenSession(page, request, { xml });
+    const taskShape = page.locator('g[data-element-id="Task_1"]').first();
+    await expect(taskShape).toBeVisible();
+    await taskShape.click();
+
+    const nodeSectionBtn = page.locator("[data-testid='left-sidebar-handle'] button[aria-label='Выбранный узел']");
+    if (await nodeSectionBtn.isVisible().catch(() => false)) {
+      await nodeSectionBtn.click();
+    }
+
+    const propertiesAccordion = page.locator(".sidebarAccordionHead").filter({ hasText: /^Свойства$/ }).first();
+    await expect(propertiesAccordion).toBeVisible();
+    await propertiesAccordion.click();
+
+    const recipeSidebar = page.locator('[data-testid="recipe-sidebar"]').first();
+    await expect(recipeSidebar, "RecipeSidebar not found in property panel").toBeVisible();
+
+    const recipeSection = page.locator("text=Рецепт").first();
+    await expect(recipeSection).toBeVisible();
+
+    await recipeSidebar.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: "/root/processmap_v1/scripts/e2e/recipe_sidebar_visible.png", fullPage: false });
   });
 });
