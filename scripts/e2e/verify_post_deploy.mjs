@@ -256,6 +256,90 @@ test.describe("clearvestnic.ru post-deploy checks", () => {
     await page.screenshot({ path: "/root/processmap_v1/scripts/e2e/property_panel_after_delete.png", fullPage: false });
   });
 
+  test("viewport zoom and pan persist after save and reload", async ({ page, request }) => {
+    const { auth, fixture } = await authAndOpenSession(page, request);
+
+    await expect
+      .poll(async () => page.evaluate(() => Boolean(window.__FPC_E2E_MODELER__)), { timeout: 20000 })
+      .toBe(true);
+
+    function floatEq(a, b, eps = 0.05) {
+      return Math.abs(Number(a) - Number(b)) < eps;
+    }
+
+    async function readModelerViewport() {
+      return page.evaluate(() => {
+        const modeler = window.__FPC_E2E_MODELER__;
+        if (!modeler) return null;
+        const canvas = modeler.get("canvas");
+        const vb = canvas.viewbox();
+        return {
+          zoom: canvas.zoom(),
+          viewbox: {
+            x: vb.x,
+            y: vb.y,
+            width: vb.width,
+            height: vb.height,
+          },
+        };
+      });
+    }
+
+    const before = await readModelerViewport();
+    expect(before).not.toBeNull();
+
+    const targetZoom = Math.max((before.zoom || 1) * 1.5, 1.2);
+    const targetViewbox = {
+      x: (before.viewbox.x || 0) + 80,
+      y: (before.viewbox.y || 0) + 60,
+      width: (before.viewbox.width || 400) / 1.2,
+      height: (before.viewbox.height || 300) / 1.2,
+    };
+
+    await page.evaluate(({ zoom, viewbox }) => {
+      const modeler = window.__FPC_E2E_MODELER__;
+      if (!modeler) return;
+      const canvas = modeler.get("canvas");
+      canvas.viewbox(viewbox);
+      canvas.zoom(zoom);
+    }, { zoom: targetZoom, viewbox: targetViewbox });
+
+    const afterChange = await readModelerViewport();
+    expect(floatEq(afterChange.zoom, targetZoom, 0.1)).toBe(true);
+
+    let saveStatus = null;
+    const savePromise = new Promise((resolve) => {
+      const handler = async (response) => {
+        const req = response.request();
+        const url = req.url();
+        const method = req.method();
+        if (url.includes(`/api/sessions/${fixture.sessionId}/bpmn`) && method === "PUT") {
+          saveStatus = response.status();
+          page.off("response", handler);
+          resolve();
+        }
+      };
+      page.on("response", handler);
+    });
+
+    await page.locator('[data-testid="diagram-toolbar-save"]').click();
+    await savePromise;
+    expect(saveStatus).toBe(200);
+    await page.waitForTimeout(1000);
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await openFixture(page, fixture);
+    await waitForDiagramReady(page);
+
+    const afterReload = await readModelerViewport();
+    expect(afterReload).not.toBeNull();
+    expect(floatEq(afterReload.zoom, targetZoom, 0.15)).toBe(true);
+    expect(floatEq(afterReload.viewbox.x, targetViewbox.x, 5)).toBe(true);
+    expect(floatEq(afterReload.viewbox.y, targetViewbox.y, 5)).toBe(true);
+
+    await page.screenshot({ path: "/root/processmap_v1/scripts/e2e/viewport_persisted.png", fullPage: false });
+  });
+
   test.skip("recipe calculator is visible in property panel", () => {
     // Recipe calculator lives on feat/recipe-calculator-mvp and is NOT merged to main.
     // clearvestnic.ru deploys origin/main, so this feature is intentionally absent.

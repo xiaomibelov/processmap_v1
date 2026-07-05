@@ -74,7 +74,7 @@ test("template-apply save forwards saveOwner into coordinator flush lane", () =>
   );
   assert.match(
     source,
-    /coordinator\.flushSave\(persistReason, \{\s*force,\s*trigger,\s*saveOwner: resolvedSaveOwner,\s*xmlOverride: primaryXmlOverride,\s*\}\)/,
+    /coordinator\.flushSave\(persistReason, \{\s*force,\s*trigger,\s*saveOwner: resolvedSaveOwner,\s*xmlOverride: primaryXmlOverride,(\s*bpmnMeta: saveBpmnMeta,)?\s*\}\)/,
   );
 });
 
@@ -130,5 +130,5 @@ test("camunda finalize explicit persist keeps canonical transport reason while p
   assert.match(source, /const transportPersistReason = persistReason;/);
   assert.match(source, /const finalizeLifecycleReason = `\$\{persistReason\}:camunda_finalize`;/);
   assert.match(source, /coordinator\.persistExplicitXml\(out, transportPersistReason, \{/);
-  assert.match(source, /ensureBpmnPersistence\(\)\.saveRaw\(sid, out, rev, transportPersistReason\)/);
+  assert.match(source, /ensureBpmnPersistence\(\)\.saveRaw\(sid, out, rev, transportPersistReason(,\s*\{\s*bpmnMeta: saveBpmnMeta\s*\})?\)/);
 });
