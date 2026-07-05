@@ -125,7 +125,7 @@ jobs:
             # Wait for the API /version endpoint to report the new SHA
             echo "[deploy-clearvestnic] waiting for API /version ..."
             for i in $(seq 1 30); do
-              VERSION=$(curl -fsS -H 'Cache-Control: no-cache' "http://localhost:8011/version" 2>/dev/null || true)
+              VERSION=$(curl -fsS -H 'Cache-Control: no-cache' "http://127.0.0.1:8011/version" 2>/dev/null || true)
               if echo "${VERSION}" | grep -q "\"commit\":\"${DEPLOY_SHA}\""; then
                 echo "[deploy-clearvestnic] API /version OK: ${VERSION}"
                 break
@@ -141,9 +141,9 @@ jobs:
             # Wait for the frontend to serve the new hashed bundle
             echo "[deploy-clearvestnic] waiting for frontend bundle ..."
             for i in $(seq 1 30); do
-              HTML=$(curl -fsS -H 'Cache-Control: no-cache' "http://localhost:5177/" 2>/dev/null || true)
+              HTML=$(curl -fsS -H 'Cache-Control: no-cache' "http://127.0.0.1:5177/" 2>/dev/null || true)
               JS=$(echo "${HTML}" | grep -oE 'assets/index-[^"]+\.js' | head -1 || true)
-              if [ -n "${JS}" ] && curl -fsS "http://localhost:5177/${JS}" 2>/dev/null | grep -q "${DEPLOY_FINGERPRINT}"; then
+              if [ -n "${JS}" ] && curl -fsS "http://127.0.0.1:5177/${JS}" 2>/dev/null | grep -q "${DEPLOY_FINGERPRINT}"; then
                 echo "[deploy-clearvestnic] frontend bundle OK (${JS})"
                 break
               fi
