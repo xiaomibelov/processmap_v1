@@ -995,6 +995,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const pendingFocusElementIdRef = useRef("");
   const appliedFocusElementIdRef = useRef("");
   const pendingRestoreViewportRef = useRef(null);
+  const lastRestoredViewportSessionRef = useRef("");
   const draftRef = useRef(draft);
 
   const [xml, setXml] = useState("");
@@ -5279,6 +5280,9 @@ const BpmnStage = forwardRef(function BpmnStage({
     const sid = String(sessionId || "");
     const prevSid = String(activeSessionRef.current || "");
     prevSessionRef.current = prevSid;
+    if (sid !== prevSid) {
+      lastRestoredViewportSessionRef.current = "";
+    }
     if (shouldLogBpmnTrace()) {
       // eslint-disable-next-line no-console
       console.debug(`[SESSION] activate sid=${sid || "-"} prevSid=${prevSid || "-"} tab=${view === "xml" ? "xml" : "diagram"}`);
@@ -5503,6 +5507,37 @@ const BpmnStage = forwardRef(function BpmnStage({
             window.requestAnimationFrame(() => {
               window.setTimeout(restore, 120);
             });
+          } else if (
+            lastRestoredViewportSessionRef.current !== sid
+            && !restoreViewportSnapshot
+            && !pendingRestoreViewportRef.current
+          ) {
+            const persistedViewport = draftRef.current?.bpmn_meta?.viewport;
+            const pvb = persistedViewport?.viewbox;
+            if (
+              persistedViewport
+              && Number.isFinite(persistedViewport.zoom)
+              && persistedViewport.zoom > 0
+              && pvb
+              && Number.isFinite(pvb.x)
+              && Number.isFinite(pvb.y)
+              && Number.isFinite(pvb.width)
+              && Number.isFinite(pvb.height)
+            ) {
+              lastRestoredViewportSessionRef.current = sid;
+              const snapshotRunId = runId;
+              window.requestAnimationFrame(() => {
+                window.setTimeout(() => {
+                  if (renderRunRef.current !== snapshotRunId) return;
+                  try {
+                    imperativeApi.restoreViewport(persistedViewport);
+                    userViewportTouchedRef.current = true;
+                  } catch {
+                    // persisted viewport restore best-effort
+                  }
+                }, 120);
+              });
+            }
           }
         }
       } catch (e) {
