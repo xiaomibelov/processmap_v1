@@ -17,7 +17,27 @@ jobs:
           command_timeout: 20m
           script: |
             set -euo pipefail
-            cd /opt/processmap/app
+
+            # Discover the checkout directory on the clearvestnic.ru host
+            APP_DIR=""
+            for candidate in /opt/processmap/app /opt/processmap-test /root/processmap_v1 /home/deploy/processmap_v1 /var/www/processmap_v1 /srv/processmap_v1; do
+              if [ -f "${candidate}/docker-compose.yml" ]; then
+                APP_DIR="${candidate}"
+                echo "[deploy-clearvestnic] found app dir: ${APP_DIR}"
+                break
+              fi
+            done
+            if [ -z "${APP_DIR}" ]; then
+              echo "[deploy-clearvestnic] ERROR: could not locate app checkout directory"
+              echo "=== /opt ==="
+              ls -la /opt 2>/dev/null || true
+              echo "=== docker ps ==="
+              docker ps --format '{{.Names}}\t{{.Ports}}\t{{.Image}}' 2>/dev/null || true
+              echo "=== find docker-compose.yml ==="
+              find /opt /root /home /var/www /srv -maxdepth 4 -name docker-compose.yml 2>/dev/null || true
+              exit 1
+            fi
+            cd "${APP_DIR}"
 
             REQUESTED_REF="main"
 
