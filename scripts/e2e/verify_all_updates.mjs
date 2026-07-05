@@ -121,24 +121,13 @@ async function selectShapeById(page, id) {
     }
   }, id);
   if (selectedViaApi) {
-    const card = page.locator(".selectedElementCard").first();
-    try {
-      await card.waitFor({ state: "visible", timeout: 2000 });
-      return;
-    } catch {
-      // fall through to click-based selection
-    }
-  }
-
-  const paletteToggle = page.locator(".djs-palette-toggle").first();
-  if (await paletteToggle.isVisible().catch(() => false)) {
-    await paletteToggle.click();
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(300);
+    return;
   }
 
   const shape = page.locator(`g[data-element-id="${id}"]`).first();
   await shape.scrollIntoViewIfNeeded();
-  await shape.click();
+  await shape.click({ force: true });
   await page.waitForTimeout(300);
 }
 
@@ -379,8 +368,16 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     expect(propertyNames, "test property was not saved").toContain(testKey);
     console.log("✅ Test property added:", testKey);
 
+    // Save triggers a session refresh that can deselect the shape; reselect it.
+    await selectShapeById(page, taskInfo.id);
+    await ensureSelectedNodePanelOpen(page);
+    await openPropertiesAccordion(page);
+    await sectionToggle.locator("..").click();
+    await page.waitForTimeout(300);
+
     const rowWithKey = rows.filter({ hasText: testKey });
     const deleteBtn = rowWithKey.locator(`button[aria-label*="${testKey}"]`).first();
+    await expect(deleteBtn, "delete button for test property").toBeVisible();
     await deleteBtn.click();
 
     await page.waitForTimeout(500);
