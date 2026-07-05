@@ -148,6 +148,8 @@ jobs:
             # We probe the container directly because the host may still have a
             # stale local listener on 127.0.0.1:5177 that intercepts hairpin NAT.
             echo "[deploy-clearvestnic] waiting for frontend bundle ..."
+            echo "[deploy-clearvestnic] diagnostic from container:"
+            docker exec processmap_v1-frontend-1 sh -c 'curl -fsS http://localhost:5177/ 2>&1 || echo "container-curl-failed"' || echo "docker-exec-failed"
             for i in $(seq 1 30); do
               HTML=$(docker exec processmap_v1-frontend-1 sh -c 'curl -fsS http://localhost:5177/' 2>/dev/null || true)
               JS=$(echo "${HTML}" | grep -oE 'assets/index-[^"]+\.js' | head -1 || true)
@@ -157,6 +159,8 @@ jobs:
               fi
               if [ "$i" -eq 30 ]; then
                 echo "[deploy-clearvestnic] ERROR: frontend bundle did not switch to ${DEPLOY_SHA}"
+                echo "HTML=${HTML:-(empty)}"
+                echo "JS=${JS:-(empty)}"
                 exit 1
               fi
               sleep 2
