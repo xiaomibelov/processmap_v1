@@ -84,6 +84,13 @@ async function openPropertiesAccordion(page) {
   }
 }
 
+async function waitForModelerReady(page, timeout = 30000) {
+  await expect.poll(async () => await page.evaluate(() => Boolean(window.__FPC_E2E_MODELER__)), {
+    message: "modeler not exposed",
+    timeout,
+  }).toBeTruthy();
+}
+
 async function findShapeByBpmnType(page, bpmnType) {
   return page.evaluate((type) => {
     const modeler = window.__FPC_E2E_MODELER__;
@@ -327,6 +334,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
 
   test("Property delete persists after save and reload", async ({ page, request }) => {
     await authAndOpenFixedSession(page, request);
+    await waitForModelerReady(page);
 
     const taskInfo = (await findShapeByBpmnType(page, "bpmn:UserTask"))
       || (await findShapeByBpmnType(page, "bpmn:Task"));
@@ -392,6 +400,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
 
     await page.reload({ waitUntil: "domcontentloaded" });
     await authAndOpenFixedSession(page, request);
+    await waitForModelerReady(page);
     await page.waitForTimeout(1000);
 
     await selectShapeById(page, taskInfo.id);
@@ -409,6 +418,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
 
   test("Viewport persistence: zoom and pan survive save and reload", async ({ page, request }) => {
     await authAndOpenFixedSession(page, request);
+    await waitForModelerReady(page);
 
     const modelerReady = await page.evaluate(() => Boolean(window.__FPC_E2E_MODELER__));
     if (!modelerReady) {
@@ -461,6 +471,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
 
     await page.reload({ waitUntil: "domcontentloaded" });
     const authReload = await authAndOpenFixedSession(page, request);
+    await waitForModelerReady(page);
     await page.waitForTimeout(1500);
 
     const sessionAfterReload = await request.get(`${API_BASE_URL}/api/sessions/${SESSION_ID}`, {

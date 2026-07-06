@@ -5474,13 +5474,15 @@ const BpmnStage = forwardRef(function BpmnStage({
             ) {
               return;
             }
-            lastRestoredViewportSessionRef.current = sid;
             const snapshotRunId = runId;
             window.requestAnimationFrame(() => {
               window.setTimeout(() => {
                 if (renderRunRef.current !== snapshotRunId) return;
+                if (lastRestoredViewportSessionRef.current === sid) return;
+                if (userViewportTouchedRef.current) return;
                 try {
                   imperativeApi.restoreViewport(persistedViewport);
+                  lastRestoredViewportSessionRef.current = sid;
                   userViewportTouchedRef.current = true;
                   if (shouldLogBpmnTrace()) {
                     // eslint-disable-next-line no-console
