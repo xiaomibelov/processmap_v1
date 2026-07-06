@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response, Body
+from pydantic import BaseModel
 from fastapi.routing import APIRoute
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
@@ -7831,7 +7832,7 @@ def session_bpmn_restore(
     vid = str(version_id or "").strip()
     if not vid:
         return {"error": "missing_version_id"}
-    restore_payload = inp.model_dump(exclude_unset=True) if isinstance(inp, BpmnRestoreIn) else {}
+    restore_payload = inp.model_dump(exclude_unset=True) if isinstance(inp, BaseModel) else {}
     client_base_diagram_state_version = _resolve_base_diagram_state_version(request=request, payload=restore_payload)
 
     lock = acquire_session_lock(session_id, ttl_ms=15000)
