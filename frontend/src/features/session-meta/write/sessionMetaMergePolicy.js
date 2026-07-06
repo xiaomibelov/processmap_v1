@@ -73,8 +73,10 @@ export function mergeSessionMetaForRead({
   // local-storage copy is only a stale fallback and must not override the
   // authoritative (possibly empty) server state.
   const camundaExtensionsByElementId = serverCamundaExtensionsByElementId;
+  const sessionViewport = sessionMeta.viewport || localMeta.viewport;
   const nextRaw = {
     version: Number(sessionMeta.version) > 0 ? Number(sessionMeta.version) : 1,
+    viewport: sessionViewport,
     flow_meta: hasKeys(sessionMeta.flow_meta) ? sessionMeta.flow_meta : localMeta.flow_meta,
     node_path_meta: hasKeys(sessionMeta.node_path_meta) ? sessionMeta.node_path_meta : localMeta.node_path_meta,
     robot_meta_by_element_id: hasKeys(sessionMeta.robot_meta_by_element_id)
