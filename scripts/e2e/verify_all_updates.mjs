@@ -84,6 +84,14 @@ async function openPropertiesAccordion(page) {
   }
 }
 
+async function ensureSidebarOpen(page) {
+  const openBtn = page.locator("[data-testid='left-sidebar-handle'] button[aria-label='Открыть панель']").first();
+  if (await openBtn.isVisible().catch(() => false)) {
+    await openBtn.click();
+    await page.waitForTimeout(400);
+  }
+}
+
 async function waitForModelerReady(page, timeout = 30000) {
   await expect.poll(async () => await page.evaluate(() => {
     const modeler = window.__FPC_E2E_MODELER__;
@@ -348,6 +356,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
   test("Property delete persists after save and reload", async ({ page, request }) => {
     await authAndOpenFixedSession(page, request);
     await waitForModelerReady(page);
+    await ensureSidebarOpen(page);
 
     const taskInfo = (await findShapeByBpmnType(page, "bpmn:UserTask"))
       || (await findShapeByBpmnType(page, "bpmn:Task"));
@@ -365,7 +374,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
 
     const sectionToggle = page.locator(".sidebarPropertiesBlockTitle", { hasText: "Дополнительные BPMN-свойства" }).first();
     await expect(sectionToggle).toBeVisible();
-    await sectionToggle.locator("..").click();
+    await sectionToggle.locator("..").click({ force: true });
 
     const testKey = `e2e_delete_${Date.now()}`;
     const addBtn = page.getByRole("button", { name: "+ Добавить BPMN-свойство" }).first();
@@ -393,7 +402,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     await selectShapeById(page, taskInfo.id);
     await ensureSelectedNodePanelOpen(page);
     await openPropertiesAccordion(page);
-    await sectionToggle.locator("..").click();
+    await sectionToggle.locator("..").click({ force: true });
     await page.waitForTimeout(300);
 
     const propertyNames = await rows.evaluateAll((nodes) =>
@@ -417,6 +426,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     await page.reload({ waitUntil: "domcontentloaded" });
     await authAndOpenFixedSession(page, request);
     await waitForModelerReady(page);
+    await ensureSidebarOpen(page);
     await page.waitForTimeout(1000);
 
     await selectShapeById(page, taskInfo.id);
@@ -435,6 +445,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
   test("Viewport persistence: zoom and pan survive save and reload", async ({ page, request }) => {
     await authAndOpenFixedSession(page, request);
     await waitForModelerReady(page);
+    await ensureSidebarOpen(page);
 
     const modelerReady = await page.evaluate(() => Boolean(window.__FPC_E2E_MODELER__));
     if (!modelerReady) {
@@ -488,6 +499,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     await page.reload({ waitUntil: "domcontentloaded" });
     const authReload = await authAndOpenFixedSession(page, request);
     await waitForModelerReady(page);
+    await ensureSidebarOpen(page);
     await page.waitForTimeout(1500);
 
     const sessionAfterReload = await request.get(`${API_BASE_URL}/api/sessions/${SESSION_ID}`, {
