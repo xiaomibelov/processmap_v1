@@ -128,6 +128,10 @@ async function clickShapeById(page, id) {
   await shape.click({ force: true });
 }
 
+async function readSelectionContinuityLog(page) {
+  return page.evaluate(() => window.__FPC_SELECTION_CONTINUITY_LOG__ || []);
+}
+
 async function selectShapeById(page, id) {
   const selectedViaApi = await page.evaluate((shapeId) => {
     const modeler = window.__FPC_E2E_MODELER__;
@@ -353,6 +357,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     }
 
     await selectShapeById(page, taskInfo.id);
+    console.log("Selection continuity after select:", await readSelectionContinuityLog(page));
     await ensureSelectedNodePanelOpen(page);
     await openPropertiesAccordion(page);
 

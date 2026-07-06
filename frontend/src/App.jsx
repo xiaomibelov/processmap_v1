@@ -449,6 +449,7 @@ function sessionToDraft(sid, session) {
     notes_by_element: normalizeElementNotesMap(next.notes_by_element || next.notesByElementId),
     bpmn_meta: {
       version: Number(normalizedMeta.version) > 0 ? Number(normalizedMeta.version) : 1,
+      viewport: normalizedMeta.viewport,
       flow_meta: normalizedMeta.flow_meta,
       node_path_meta: normalizedMeta.node_path_meta,
       robot_meta_by_element_id: effectiveRobotMeta,

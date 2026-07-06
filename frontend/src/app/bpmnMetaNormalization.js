@@ -128,10 +128,36 @@ export function mergeHybridV2Doc(primaryRaw, fallbackRaw = {}) {
   return primary;
 }
 
+function normalizeViewportMeta(raw) {
+  const obj = ensureObject(raw);
+  const vb = ensureObject(obj.viewbox);
+  if (
+    !Number.isFinite(Number(obj.zoom))
+    || Number(obj.zoom) <= 0
+    || !Number.isFinite(Number(vb.x))
+    || !Number.isFinite(Number(vb.y))
+    || !Number.isFinite(Number(vb.width))
+    || !Number.isFinite(Number(vb.height))
+  ) {
+    return undefined;
+  }
+  return {
+    zoom: Number(obj.zoom),
+    viewbox: {
+      x: Number(vb.x),
+      y: Number(vb.y),
+      width: Number(vb.width),
+      height: Number(vb.height),
+    },
+  };
+}
+
 export function normalizeBpmnMeta(raw, options = {}) {
   const obj = ensureObject(raw);
+  const viewport = normalizeViewportMeta(obj.viewport);
   return {
     version: Number(obj.version) > 0 ? Number(obj.version) : 1,
+    viewport,
     flow_meta: normalizeFlowMetaMap(obj.flow_meta),
     node_path_meta: normalizeNodePathMetaMap(obj.node_path_meta),
     robot_meta_by_element_id: normalizeRobotMetaMap(obj.robot_meta_by_element_id),
