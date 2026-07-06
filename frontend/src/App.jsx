@@ -1469,6 +1469,17 @@ export default function App() {
   }, [selectedBpmnElement]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!window.__FPC_E2E__) return;
+    window.__FPC_E2E_SELECT_ELEMENT__ = (element) => {
+      focusElementNotes(element, "e2e_api", { openSidebar: false });
+    };
+    return () => {
+      window.__FPC_E2E_SELECT_ELEMENT__ = null;
+    };
+  }, []);
+
+  useEffect(() => {
     if (typeof window === "undefined") return undefined;
     if (!window.__FPC_E2E__) return undefined;
     const readSnapshot = () => buildSessionDebugProbeSnapshot({
