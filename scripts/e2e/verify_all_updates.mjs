@@ -85,10 +85,19 @@ async function openPropertiesAccordion(page) {
 }
 
 async function waitForModelerReady(page, timeout = 30000) {
-  await expect.poll(async () => await page.evaluate(() => Boolean(window.__FPC_E2E_MODELER__)), {
-    message: "modeler not exposed",
+  await expect.poll(async () => await page.evaluate(() => {
+    const modeler = window.__FPC_E2E_MODELER__;
+    if (!modeler) return false;
+    const registry = modeler.get("elementRegistry");
+    return Array.isArray(registry?.getAll?.()) && registry.getAll().length > 0;
+  }), {
+    message: "modeler not ready with elements",
     timeout,
   }).toBeTruthy();
+}
+
+async function readViewportRestoreAttempts(page) {
+  return page.evaluate(() => window.__FPC_E2E_VIEWPORT_RESTORE_ATTEMPTS__ || []);
 }
 
 async function findShapeByBpmnType(page, bpmnType) {
@@ -478,6 +487,15 @@ test.describe("ProcessMap: comprehensive update checks", () => {
       headers: { Authorization: `Bearer ${authReload.accessToken}` },
     });
     const sessionBody = await sessionAfterReload.json().catch(() => null);
+    console.log("Session bpmn_meta.viewport:", sessionBody?.bpmn_meta?.viewport);
+    console.log("Viewport restore attempts:", await readViewportRestoreAttempts(page));
+    const currentViewport = await page.evaluate(() => {
+      const modeler = window.__FPC_E2E_MODELER__;
+      if (!modeler) return null;
+      const canvas = modeler.get("canvas");
+      return { zoom: canvas.zoom(), viewbox: canvas.viewbox() };
+    });
+    console.log("Current viewport after reload:", currentViewport);
     const afterReload = await page.waitForFunction(({ tz, tx, ty }) => {
       const modeler = window.__FPC_E2E_MODELER__;
       if (!modeler) return null;
