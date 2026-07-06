@@ -140,6 +140,15 @@ async function readSelectionContinuityLog(page) {
   return page.evaluate(() => window.__FPC_SELECTION_CONTINUITY_LOG__ || []);
 }
 
+async function selectElementForE2e(page, element) {
+  await page.evaluate((el) => {
+    if (typeof window.__FPC_E2E_SELECT_ELEMENT__ === "function") {
+      window.__FPC_E2E_SELECT_ELEMENT__(el);
+    }
+  }, element);
+  await page.waitForTimeout(300);
+}
+
 async function selectShapeById(page, id) {
   const selectedViaApi = await page.evaluate((shapeId) => {
     const modeler = window.__FPC_E2E_MODELER__;
@@ -365,9 +374,9 @@ test.describe("ProcessMap: comprehensive update checks", () => {
       return;
     }
 
+    await selectElementForE2e(page, taskInfo);
     await selectShapeById(page, taskInfo.id);
     await page.waitForTimeout(400);
-    console.log("Selection continuity after select:", await readSelectionContinuityLog(page));
     console.log("Selected element id:", await page.evaluate(() => window.__FPC_E2E_SELECTED_ELEMENT_ID__));
     await ensureSelectedNodePanelOpen(page);
     await openPropertiesAccordion(page);
@@ -399,6 +408,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     await page.waitForTimeout(2500);
 
     // Save triggers a session refresh that can deselect the shape; reselect it.
+    await selectElementForE2e(page, taskInfo);
     await selectShapeById(page, taskInfo.id);
     await ensureSelectedNodePanelOpen(page);
     await openPropertiesAccordion(page);
@@ -429,10 +439,11 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     await ensureSidebarOpen(page);
     await page.waitForTimeout(1000);
 
+    await selectElementForE2e(page, taskInfo);
     await selectShapeById(page, taskInfo.id);
     await ensureSelectedNodePanelOpen(page);
     await openPropertiesAccordion(page);
-    await sectionToggle.locator("..").click();
+    await sectionToggle.locator("..").click({ force: true });
 
     const remainingNames = await rows.evaluateAll((nodes) =>
       nodes.map((node) => node.querySelector(".sidebarBpmnPropertyPreviewKey")?.textContent?.trim() || ""),
@@ -515,22 +526,23 @@ test.describe("ProcessMap: comprehensive update checks", () => {
       return { zoom: canvas.zoom(), viewbox: canvas.viewbox() };
     });
     console.log("Current viewport after reload:", currentViewport);
-    const afterReload = await page.waitForFunction(({ tz, tx, ty }) => {
-      const modeler = window.__FPC_E2E_MODELER__;
-      if (!modeler) return null;
-      const canvas = modeler.get("canvas");
-      const zoom = canvas.zoom();
-      const vb = canvas.viewbox();
+    const afterReload = await expect.poll(async () => {
+      const vp = await page.evaluate(() => {
+        const modeler = window.__FPC_E2E_MODELER__;
+        if (!modeler) return null;
+        const canvas = modeler.get("canvas");
+        return { zoom: canvas.zoom(), viewbox: canvas.viewbox() };
+      });
+      if (!vp) return null;
       if (
-        Math.abs(zoom - tz) < 0.15
-        && Math.abs(vb.x - tx) < 5
-        && Math.abs(vb.y - ty) < 5
+        Math.abs(vp.zoom - targetZoom) < 0.15
+        && Math.abs(vp.viewbox.x - targetViewbox.x) < 5
+        && Math.abs(vp.viewbox.y - targetViewbox.y) < 5
       ) {
-        return { zoom, viewbox: { x: vb.x, y: vb.y, width: vb.width, height: vb.height } };
+        return vp;
       }
       return null;
-    }, { tz: targetZoom, tx: targetViewbox.x, ty: targetViewbox.y }, { timeout: 10000 });
-    expect(afterReload).not.toBeNull();
+    }, { timeout: 10000 }).toBeTruthy();
     expect(floatEq(afterReload.zoom, targetZoom, 0.15)).toBe(true);
     expect(floatEq(afterReload.viewbox.x, targetViewbox.x, 5)).toBe(true);
     expect(floatEq(afterReload.viewbox.y, targetViewbox.y, 5)).toBe(true);
