@@ -375,7 +375,6 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     }
 
     await selectElementForE2e(page, taskInfo);
-    await selectShapeById(page, taskInfo.id);
     await page.waitForTimeout(400);
     console.log("Selected element id:", await page.evaluate(() => window.__FPC_E2E_SELECTED_ELEMENT_ID__));
     await ensureSelectedNodePanelOpen(page);
@@ -409,7 +408,6 @@ test.describe("ProcessMap: comprehensive update checks", () => {
 
     // Save triggers a session refresh that can deselect the shape; reselect it.
     await selectElementForE2e(page, taskInfo);
-    await selectShapeById(page, taskInfo.id);
     await ensureSelectedNodePanelOpen(page);
     await openPropertiesAccordion(page);
     await sectionToggle.locator("..").click({ force: true });
@@ -440,7 +438,6 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     await page.waitForTimeout(1000);
 
     await selectElementForE2e(page, taskInfo);
-    await selectShapeById(page, taskInfo.id);
     await ensureSelectedNodePanelOpen(page);
     await openPropertiesAccordion(page);
     await sectionToggle.locator("..").click({ force: true });
@@ -526,23 +523,14 @@ test.describe("ProcessMap: comprehensive update checks", () => {
       return { zoom: canvas.zoom(), viewbox: canvas.viewbox() };
     });
     console.log("Current viewport after reload:", currentViewport);
-    const afterReload = await expect.poll(async () => {
-      const vp = await page.evaluate(() => {
-        const modeler = window.__FPC_E2E_MODELER__;
-        if (!modeler) return null;
-        const canvas = modeler.get("canvas");
-        return { zoom: canvas.zoom(), viewbox: canvas.viewbox() };
-      });
-      if (!vp) return null;
-      if (
-        Math.abs(vp.zoom - targetZoom) < 0.15
-        && Math.abs(vp.viewbox.x - targetViewbox.x) < 5
-        && Math.abs(vp.viewbox.y - targetViewbox.y) < 5
-      ) {
-        return vp;
-      }
-      return null;
-    }, { timeout: 10000 }).toBeTruthy();
+    const afterReload = await page.evaluate(() => {
+      const modeler = window.__FPC_E2E_MODELER__;
+      if (!modeler) return null;
+      const canvas = modeler.get("canvas");
+      return { zoom: canvas.zoom(), viewbox: canvas.viewbox() };
+    });
+    console.log("Final viewport after reload:", afterReload);
+    expect(afterReload).not.toBeNull();
     expect(floatEq(afterReload.zoom, targetZoom, 0.15)).toBe(true);
     expect(floatEq(afterReload.viewbox.x, targetViewbox.x, 5)).toBe(true);
     expect(floatEq(afterReload.viewbox.y, targetViewbox.y, 5)).toBe(true);
