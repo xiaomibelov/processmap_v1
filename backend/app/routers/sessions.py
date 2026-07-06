@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Request, Query, Path, HTTPException
+from fastapi import APIRouter, Request, Query, Path, HTTPException, Body
 from fastapi.responses import JSONResponse
 
 from ..services import session_service as _svc
@@ -226,7 +226,7 @@ def session_bpmn_version_detail(session_id: str, version_id: str, request: Reque
     return _svc.bpmn_version_detail(session_id, version_id, request)
 
 @router.post('/api/sessions/{session_id}/bpmn/restore/{version_id}')
-def session_bpmn_restore(session_id: str, version_id: str, inp: BpmnRestoreIn | None = None, request: Request = None):
+def session_bpmn_restore(session_id: str, version_id: str, inp: BpmnRestoreIn | None = Body(default=None), request: Request = None):
     return _svc.bpmn_restore(session_id, version_id, inp=inp, request=request)
 
 @router.delete('/api/sessions/{session_id}/bpmn')
