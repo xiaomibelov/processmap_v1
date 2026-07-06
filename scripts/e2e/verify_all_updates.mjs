@@ -357,7 +357,9 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     }
 
     await selectShapeById(page, taskInfo.id);
+    await page.waitForTimeout(400);
     console.log("Selection continuity after select:", await readSelectionContinuityLog(page));
+    console.log("Selected element id:", await page.evaluate(() => window.__FPC_E2E_SELECTED_ELEMENT_ID__));
     await ensureSelectedNodePanelOpen(page);
     await openPropertiesAccordion(page);
 
