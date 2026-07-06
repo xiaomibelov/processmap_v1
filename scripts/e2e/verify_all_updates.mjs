@@ -55,6 +55,7 @@ async function authAndOpenFixedSession(page, request) {
   }
 
   await waitForDiagramReady(page, { timeout: 60000 });
+  await page.waitForFunction(() => Boolean(window.__FPC_E2E_MODELER__), { timeout: 30000 });
   return auth;
 }
 
@@ -88,8 +89,13 @@ async function findShapeByBpmnType(page, bpmnType) {
     const modeler = window.__FPC_E2E_MODELER__;
     if (!modeler) return null;
     const registry = modeler.get("elementRegistry");
+    const canvas = modeler.get("canvas");
     const el = registry.find(
-      (e) => e.businessObject && e.businessObject.$type === type && e.type !== "label" && !e.waypoints,
+      (e) => e.businessObject
+        && e.businessObject.$type === type
+        && e.type !== "label"
+        && !e.waypoints
+        && !!canvas.getGraphics(e.id),
     );
     if (!el) return null;
     return {
@@ -111,23 +117,20 @@ async function selectShapeById(page, id) {
     const modeler = window.__FPC_E2E_MODELER__;
     if (!modeler) return false;
     try {
-      const selection = modeler.get("selection");
-      const element = modeler.get("elementRegistry").get(shapeId);
-      if (!element || !selection) return false;
-      selection.select(element);
+      const canvas = modeler.get("canvas");
+      const gfx = canvas && typeof canvas.getGraphics === "function" ? canvas.getGraphics(shapeId) : null;
+      if (!gfx) return false;
+      gfx.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
       return true;
     } catch {
       return false;
     }
   }, id);
-  if (selectedViaApi) {
-    await page.waitForTimeout(400);
-    return;
+  if (!selectedViaApi) {
+    const shape = page.locator(`g[data-element-id="${id}"]`).first();
+    await shape.scrollIntoViewIfNeeded();
+    await shape.click({ force: true });
   }
-
-  const shape = page.locator(`g[data-element-id="${id}"]`).first();
-  await shape.scrollIntoViewIfNeeded();
-  await shape.click({ force: true });
   await page.waitForTimeout(400);
 }
 
@@ -362,18 +365,18 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     await saveBtn.click();
     await page.waitForTimeout(2500);
 
-    const propertyNames = await rows.evaluateAll((nodes) =>
-      nodes.map((node) => node.querySelector(".sidebarBpmnPropertyPreviewKey")?.textContent?.trim() || ""),
-    );
-    expect(propertyNames, "test property was not saved").toContain(testKey);
-    console.log("✅ Test property added:", testKey);
-
     // Save triggers a session refresh that can deselect the shape; reselect it.
     await selectShapeById(page, taskInfo.id);
     await ensureSelectedNodePanelOpen(page);
     await openPropertiesAccordion(page);
     await sectionToggle.locator("..").click();
     await page.waitForTimeout(300);
+
+    const propertyNames = await rows.evaluateAll((nodes) =>
+      nodes.map((node) => node.querySelector(".sidebarBpmnPropertyPreviewKey")?.textContent?.trim() || ""),
+    );
+    expect(propertyNames, "test property was not saved").toContain(testKey);
+    console.log("✅ Test property added:", testKey);
 
     const rowWithKey = rows.filter({ hasText: testKey });
     const deleteBtn = rowWithKey.locator(`button[aria-label*="${testKey}"]`).first();
@@ -389,6 +392,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
 
     await page.reload({ waitUntil: "domcontentloaded" });
     await authAndOpenFixedSession(page, request);
+    await page.waitForTimeout(1000);
 
     await selectShapeById(page, taskInfo.id);
     await ensureSelectedNodePanelOpen(page);
@@ -457,12 +461,27 @@ test.describe("ProcessMap: comprehensive update checks", () => {
 
     await page.reload({ waitUntil: "domcontentloaded" });
     const authReload = await authAndOpenFixedSession(page, request);
+    await page.waitForTimeout(1500);
 
     const sessionAfterReload = await request.get(`${API_BASE_URL}/api/sessions/${SESSION_ID}`, {
       headers: { Authorization: `Bearer ${authReload.accessToken}` },
     });
     const sessionBody = await sessionAfterReload.json().catch(() => null);
-    const afterReload = await readModelerViewport(page);
+    const afterReload = await page.waitForFunction(({ tz, tx, ty }) => {
+      const modeler = window.__FPC_E2E_MODELER__;
+      if (!modeler) return null;
+      const canvas = modeler.get("canvas");
+      const zoom = canvas.zoom();
+      const vb = canvas.viewbox();
+      if (
+        Math.abs(zoom - tz) < 0.15
+        && Math.abs(vb.x - tx) < 5
+        && Math.abs(vb.y - ty) < 5
+      ) {
+        return { zoom, viewbox: { x: vb.x, y: vb.y, width: vb.width, height: vb.height } };
+      }
+      return null;
+    }, { tz: targetZoom, tx: targetViewbox.x, ty: targetViewbox.y }, { timeout: 10000 });
     expect(afterReload).not.toBeNull();
     expect(floatEq(afterReload.zoom, targetZoom, 0.15)).toBe(true);
     expect(floatEq(afterReload.viewbox.x, targetViewbox.x, 5)).toBe(true);
