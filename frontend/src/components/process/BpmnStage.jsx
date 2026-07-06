@@ -5457,23 +5457,38 @@ const BpmnStage = forwardRef(function BpmnStage({
           const reason = String(storeEvent.reason || "");
 
           function tryRestorePersistedViewport(restoreReason) {
+            const persistedViewport = draftRef.current?.bpmn_meta?.viewport;
+            const pvb = persistedViewport?.viewbox;
+            const valid = !!persistedViewport
+              && Number.isFinite(persistedViewport.zoom)
+              && persistedViewport.zoom > 0
+              && !!pvb
+              && Number.isFinite(pvb.x)
+              && Number.isFinite(pvb.y)
+              && Number.isFinite(pvb.width)
+              && Number.isFinite(pvb.height);
+            try {
+              if (typeof window !== "undefined") {
+                window.__FPC_E2E_VIEWPORT_RESTORE_ATTEMPTS__ = window.__FPC_E2E_VIEWPORT_RESTORE_ATTEMPTS__ || [];
+                window.__FPC_E2E_VIEWPORT_RESTORE_ATTEMPTS__.push({
+                  reason: restoreReason,
+                  sid,
+                  runId,
+                  valid,
+                  hasUserTouch: userViewportTouchedRef.current,
+                  alreadyRestored: lastRestoredViewportSessionRef.current === sid,
+                  hasPending: !!pendingRestoreViewportRef.current,
+                  hasPropSnapshot: !!restoreViewportSnapshot,
+                  persistedViewport: valid ? JSON.parse(JSON.stringify(persistedViewport)) : null,
+                });
+              }
+            } catch {
+              // ignore
+            }
             if (lastRestoredViewportSessionRef.current === sid) return;
             if (userViewportTouchedRef.current) return;
             if (restoreViewportSnapshot || pendingRestoreViewportRef.current) return;
-            const persistedViewport = draftRef.current?.bpmn_meta?.viewport;
-            const pvb = persistedViewport?.viewbox;
-            if (
-              !persistedViewport
-              || !Number.isFinite(persistedViewport.zoom)
-              || persistedViewport.zoom <= 0
-              || !pvb
-              || !Number.isFinite(pvb.x)
-              || !Number.isFinite(pvb.y)
-              || !Number.isFinite(pvb.width)
-              || !Number.isFinite(pvb.height)
-            ) {
-              return;
-            }
+            if (!valid) return;
             const snapshotRunId = runId;
             window.requestAnimationFrame(() => {
               window.setTimeout(() => {
