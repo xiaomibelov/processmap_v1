@@ -108,6 +108,18 @@ async function readViewportRestoreAttempts(page) {
   return page.evaluate(() => window.__FPC_E2E_VIEWPORT_RESTORE_ATTEMPTS__ || []);
 }
 
+async function waitForViewportRestoreAttempt(page, { timeout = 10000 } = {}) {
+  await expect.poll(async () => {
+    const attempts = await readViewportRestoreAttempts(page);
+    return attempts.some((a) => a.reason === "render_modeler" || a.reason === "same_hash");
+  }, {
+    message: "viewport restore attempt recorded",
+    timeout,
+  }).toBe(true);
+  // Allow the rAF + setTimeout(120) scheduled restore to fire.
+  await page.waitForTimeout(300);
+}
+
 async function findShapeByBpmnType(page, bpmnType) {
   return page.evaluate((type) => {
     const modeler = window.__FPC_E2E_MODELER__;
@@ -141,12 +153,29 @@ async function readSelectionContinuityLog(page) {
 }
 
 async function selectElementForE2e(page, element) {
+  const expectedId = String(element?.id || "").trim();
   await page.evaluate((el) => {
     if (typeof window.__FPC_E2E_SELECT_ELEMENT__ === "function") {
       window.__FPC_E2E_SELECT_ELEMENT__(el);
     }
   }, element);
-  await page.waitForTimeout(300);
+  const selected = await expect.poll(async () => {
+    const id = await page.evaluate(() => window.__FPC_E2E_SELECTED_ELEMENT_ID__ || "");
+    return id.trim();
+  }, {
+    message: `element ${expectedId || "selected"} propagated to sidebar`,
+    timeout: 5000,
+  }).catch(() => "");
+  if (selected !== expectedId) {
+    await selectShapeById(page, expectedId);
+    await expect.poll(async () => {
+      const id = await page.evaluate(() => window.__FPC_E2E_SELECTED_ELEMENT_ID__ || "");
+      return id.trim();
+    }, {
+      message: `element ${expectedId} selected via DOM click`,
+      timeout: 5000,
+    }).toBe(expectedId);
+  }
 }
 
 async function selectShapeById(page, id) {
@@ -510,8 +539,9 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     await page.reload({ waitUntil: "domcontentloaded" });
     const authReload = await authAndOpenFixedSession(page, request);
     await waitForModelerReady(page);
+    await waitForViewportRestoreAttempt(page);
     await ensureSidebarOpen(page);
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(500);
 
     const sessionAfterReload = await request.get(`${API_BASE_URL}/api/sessions/${SESSION_ID}`, {
       headers: { Authorization: `Bearer ${authReload.accessToken}` },
