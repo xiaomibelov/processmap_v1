@@ -458,8 +458,14 @@ export function createBpmnStageImperativeApi(ctxBase) {
         if (!Number.isFinite(zoom) || !Number.isFinite(vb?.x) || !Number.isFinite(vb?.y) || !Number.isFinite(vb?.width) || !Number.isFinite(vb?.height)) return;
         callbacks.suppressViewboxEvents?.(1);
         try {
-          canvas.viewbox({ x: vb.x, y: vb.y, width: vb.width, height: vb.height });
           canvas.zoom(zoom);
+          const current = asObject(canvas.viewbox());
+          canvas.viewbox({
+            x: vb.x,
+            y: vb.y,
+            width: Number.isFinite(current.width) ? current.width : vb.width,
+            height: Number.isFinite(current.height) ? current.height : vb.height,
+          });
         } finally {
           callbacks.suppressViewboxEvents?.(-1);
         }
