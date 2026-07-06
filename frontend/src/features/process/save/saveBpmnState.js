@@ -145,8 +145,9 @@ export async function saveBpmnState(options = {}) {
   const currentMap = normalizeCamundaExtensionsMap(options.currentCamundaExtensionsByElementId);
   const nextMap = normalizeCamundaExtensionsMap(options.nextCamundaExtensionsByElementId);
 
+  const isPropertyOperation = operation.startsWith("property_");
   let sourceAction = operation;
-  if (operation.startsWith("property_")) {
+  if (isPropertyOperation) {
     sourceAction = operation;
   } else if (operation === "session_save") {
     sourceAction = "manual_save";
@@ -329,7 +330,20 @@ export async function saveBpmnState(options = {}) {
     diagramStateVersion,
     syncSource,
   });
-  fallbackPatch._apply_bpmn_xml = true;
+  // Property-only saves already mutated the XML in-place through the Camunda
+  // extension state map. Re-importing the server-normalized XML tears down and
+  // rebuilds the canvas (viewport reset + flicker), so we only mark the new
+  // XML as authoritative for non-property operations.
+  fallbackPatch._apply_bpmn_xml = !isPropertyOperation;
+  if (isPropertyOperation) {
+    // Property-only saves already mutated the XML in-place through the Camunda
+    // extension state map. Updating draft.bpmn_xml with the server-normalized XML
+    // tears down and rebuilds the canvas (viewport reset + flicker), so we keep
+    // the local XML untouched. The meta change is enough for the UI, and the next
+    // structural save re-syncs extensions from meta into the modeler.
+    delete fallbackPatch.bpmn_xml;
+    fallbackPatch._skip_bpmn_render = Date.now();
+  }
 
   if (options.backgroundSessionRefresh) {
     options.onSessionSync?.(fallbackPatch);
@@ -342,6 +356,10 @@ export async function saveBpmnState(options = {}) {
           if (fresh?.ok && fresh.session && typeof fresh.session === "object") {
             updateLastServerVersion(options.lastServerDiagramStateVersionRef, pickDiagramStateBaseVersion(fresh.session));
             const syncPayload = { ...fresh.session, _sync_source: syncSource };
+            if (isPropertyOperation) {
+              delete syncPayload.bpmn_xml;
+              syncPayload._skip_bpmn_render = Date.now();
+            }
             options.onSessionSync?.(syncPayload);
             options.onBackgroundSessionSyncComplete?.({ ok: true, session: syncPayload, durableAck });
             return { ok: true, session: syncPayload };
@@ -366,7 +384,12 @@ export async function saveBpmnState(options = {}) {
       const fresh = await options.apiGetSession(sid);
       if (fresh?.ok && fresh.session && typeof fresh.session === "object") {
         updateLastServerVersion(options.lastServerDiagramStateVersionRef, pickDiagramStateBaseVersion(fresh.session));
-        options.onSessionSync?.({ ...fresh.session, _sync_source: syncSource, _apply_bpmn_xml: true });
+        const syncPayload = { ...fresh.session, _sync_source: syncSource, _apply_bpmn_xml: !isPropertyOperation };
+        if (isPropertyOperation) {
+          delete syncPayload.bpmn_xml;
+          syncPayload._skip_bpmn_render = Date.now();
+        }
+        options.onSessionSync?.(syncPayload);
         sessionSynced = true;
       }
     } catch {
