@@ -152,6 +152,10 @@ async function readSelectionContinuityLog(page) {
   return page.evaluate(() => window.__FPC_SELECTION_CONTINUITY_LOG__ || []);
 }
 
+async function readSelectedElementId(page) {
+  return page.evaluate(() => String(window.__FPC_E2E_SELECTED_ELEMENT_ID__ || "").trim());
+}
+
 async function selectElementForE2e(page, element) {
   const expectedId = String(element?.id || "").trim();
   await page.evaluate((el) => {
@@ -159,19 +163,19 @@ async function selectElementForE2e(page, element) {
       window.__FPC_E2E_SELECT_ELEMENT__(el);
     }
   }, element);
-  const selected = await expect.poll(async () => {
-    const id = await page.evaluate(() => window.__FPC_E2E_SELECTED_ELEMENT_ID__ || "");
-    return id.trim();
-  }, {
-    message: `element ${expectedId || "selected"} propagated to sidebar`,
-    timeout: 5000,
-  }).catch(() => "");
+  let selected = "";
+  try {
+    await expect.poll(async () => readSelectedElementId(page), {
+      message: `element ${expectedId || "selected"} propagated to sidebar`,
+      timeout: 5000,
+    }).toBe(expectedId);
+    selected = expectedId;
+  } catch {
+    selected = await readSelectedElementId(page);
+  }
   if (selected !== expectedId) {
     await selectShapeById(page, expectedId);
-    await expect.poll(async () => {
-      const id = await page.evaluate(() => window.__FPC_E2E_SELECTED_ELEMENT_ID__ || "");
-      return id.trim();
-    }, {
+    await expect.poll(async () => readSelectedElementId(page), {
       message: `element ${expectedId} selected via DOM click`,
       timeout: 5000,
     }).toBe(expectedId);
