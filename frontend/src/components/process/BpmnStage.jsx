@@ -1560,6 +1560,8 @@ const BpmnStage = forwardRef(function BpmnStage({
 
   function applyXmlSnapshot(nextXml, nextSrcHint = "") {
     const raw = String(nextXml || "");
+    // eslint-disable-next-line no-console
+    console.debug("[BpmnStage] applyXmlSnapshot", { len: raw.length, source: nextSrcHint, xmlStateLen: String(xml || "").length });
     setXml(raw);
     setXmlDraft(raw);
     setXmlDirty(false);
@@ -2456,13 +2458,18 @@ const BpmnStage = forwardRef(function BpmnStage({
         .map((value) => toText(value))
         .filter(Boolean),
     ));
+    // Allow callers (e.g. property save) to push an explicit extension map
+    // without waiting for the next render cycle's draftRef update.
+    const camundaExtensionsByElementId = options?.camundaExtensionsByElementId
+      ? normalizeCamundaExtensionsMap(options.camundaExtensionsByElementId)
+      : getCamundaExtensionsMap();
     if (shouldLogBpmnTrace()) {
       // eslint-disable-next-line no-console
-      console.debug(`[CAMUNDA_EXT] sync_to_modeler mapKeys=${JSON.stringify(Object.keys(getCamundaExtensionsMap()))} preserve=${JSON.stringify(preserveManagedForElementIds)}`);
+      console.debug(`[CAMUNDA_EXT] sync_to_modeler mapKeys=${JSON.stringify(Object.keys(camundaExtensionsByElementId))} preserve=${JSON.stringify(preserveManagedForElementIds)}`);
     }
     const syncResult = syncCamundaExtensionsToBpmn({
       modeler: inst,
-      camundaExtensionsByElementId: getCamundaExtensionsMap(),
+      camundaExtensionsByElementId,
       preserveManagedForElementIds,
     });
     if (shouldLogBpmnTrace()) {
@@ -5429,6 +5436,23 @@ const BpmnStage = forwardRef(function BpmnStage({
       const resolvedXmlRaw = (xml && xml.trim()) ? xml : draftXml;
       const resolvedXml = normalizeTechnicalBpmnLabelsInXml(resolvedXmlRaw, draft?.nodes);
       const resolvedHash = fnv1aHex(resolvedXml);
+      // Property-only saves update bpmn_meta but do not change the diagram XML.
+      // The normal dependency array still fires because bpmn_meta/viewport object
+      // identity changes; skip the render when the XML is unchanged.
+      const skipRenderTs = Number(draft?._skip_bpmn_render || 0);
+      if (
+        skipRenderTs > 0
+        && Date.now() - skipRenderTs < 1000
+        && modelerRef.current
+        && modelerReadyRef.current
+        && hasDefinitionsLoaded(modelerRef.current)
+      ) {
+        if (shouldLogBpmnTrace()) {
+          // eslint-disable-next-line no-console
+          console.debug(`[BPMN] render.skip property-only sid=${sid} hash=${resolvedHash}`);
+        }
+        return;
+      }
       const storeEvent = lastStoreEventRef.current || {};
       try {
         if (view === "editor" || view === "diagram") {
