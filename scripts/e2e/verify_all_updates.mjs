@@ -84,6 +84,13 @@ async function openPropertiesAccordion(page) {
   }
 }
 
+async function openAdditionalBpmnProperties(page) {
+  const toggle = page.locator(".sidebarPropertiesBlockTitle", { hasText: "Дополнительные BPMN-свойства" }).first().locator("..");
+  await expect(toggle).toBeVisible();
+  const isOpen = await toggle.evaluate((el) => el.getAttribute("aria-expanded") === "true").catch(() => false);
+  if (!isOpen) await toggle.click({ force: true });
+}
+
 async function ensureSidebarOpen(page) {
   const openBtn = page.locator("[data-testid='left-sidebar-handle'] button[aria-label='Открыть панель']").first();
   if (await openBtn.isVisible().catch(() => false)) {
@@ -415,7 +422,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
 
     const sectionToggle = page.locator(".sidebarPropertiesBlockTitle", { hasText: "Дополнительные BPMN-свойства" }).first();
     await expect(sectionToggle).toBeVisible();
-    await sectionToggle.locator("..").click({ force: true });
+    await openAdditionalBpmnProperties(page);
 
     const testKey = `e2e_delete_${Date.now()}`;
     const addBtn = page.getByRole("button", { name: "+ Добавить BPMN-свойство" }).first();
@@ -446,7 +453,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     await selectElementForE2e(page, taskInfo);
     await ensureSelectedNodePanelOpen(page);
     await openPropertiesAccordion(page);
-    await sectionToggle.locator("..").click({ force: true });
+    await openAdditionalBpmnProperties(page);
     await page.waitForTimeout(300);
 
     const propertyNames = await rows.evaluateAll((nodes) =>
@@ -476,7 +483,7 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     await selectElementForE2e(page, taskInfo);
     await ensureSelectedNodePanelOpen(page);
     await openPropertiesAccordion(page);
-    await sectionToggle.locator("..").click({ force: true });
+    await openAdditionalBpmnProperties(page);
 
     const remainingNames = await rows.evaluateAll((nodes) =>
       nodes.map((node) => node.querySelector(".sidebarBpmnPropertyPreviewKey")?.textContent?.trim() || ""),
