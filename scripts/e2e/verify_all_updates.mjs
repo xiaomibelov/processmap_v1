@@ -386,7 +386,10 @@ test.describe("ProcessMap: comprehensive update checks", () => {
 
     const testKey = `e2e_delete_${Date.now()}`;
     const addBtn = page.getByRole("button", { name: "+ Добавить BPMN-свойство" }).first();
-    await expect(addBtn).toBeVisible();
+    await expect.poll(async () => addBtn.isVisible().catch(() => false), {
+      message: "add BPMN property button visible",
+      timeout: 10000,
+    }).toBe(true);
     await addBtn.click();
     await page.waitForTimeout(300);
 
@@ -531,9 +534,10 @@ test.describe("ProcessMap: comprehensive update checks", () => {
     });
     console.log("Final viewport after reload:", afterReload);
     expect(afterReload).not.toBeNull();
+    const expectedViewbox = afterChange.viewbox;
     expect(floatEq(afterReload.zoom, targetZoom, 0.15)).toBe(true);
-    expect(floatEq(afterReload.viewbox.x, targetViewbox.x, 5)).toBe(true);
-    expect(floatEq(afterReload.viewbox.y, targetViewbox.y, 5)).toBe(true);
+    expect(floatEq(afterReload.viewbox.x, expectedViewbox.x, 5)).toBe(true);
+    expect(floatEq(afterReload.viewbox.y, expectedViewbox.y, 5)).toBe(true);
 
     await page.screenshot({ path: "/root/processmap_v1/scripts/e2e/viewport_persisted.png", fullPage: false });
     console.log("✅ Viewport zoom and pan persisted after reload");

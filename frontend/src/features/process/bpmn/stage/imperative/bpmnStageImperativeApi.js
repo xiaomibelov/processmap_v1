@@ -455,16 +455,23 @@ export function createBpmnStageImperativeApi(ctxBase) {
         if (!canvas) return;
         const vb = asObject(snapshot?.viewbox);
         const zoom = Number(snapshot?.zoom);
-        if (!Number.isFinite(zoom) || !Number.isFinite(vb?.x) || !Number.isFinite(vb?.y) || !Number.isFinite(vb?.width) || !Number.isFinite(vb?.height)) return;
+        if (!Number.isFinite(zoom) || zoom <= 0 || !Number.isFinite(vb?.x) || !Number.isFinite(vb?.y)) return;
         callbacks.suppressViewboxEvents?.(1);
         try {
-          canvas.zoom(zoom);
           const current = asObject(canvas.viewbox());
+          const outer = asObject(current.outer);
+          const width = Number.isFinite(outer.width) && outer.width > 0
+            ? outer.width / zoom
+            : vb.width;
+          const height = Number.isFinite(outer.height) && outer.height > 0
+            ? outer.height / zoom
+            : vb.height;
+          if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
           canvas.viewbox({
             x: vb.x,
             y: vb.y,
-            width: Number.isFinite(current.width) ? current.width : vb.width,
-            height: Number.isFinite(current.height) ? current.height : vb.height,
+            width,
+            height,
           });
         } finally {
           callbacks.suppressViewboxEvents?.(-1);
