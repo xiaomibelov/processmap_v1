@@ -2013,38 +2013,37 @@ export function CamundaPropertiesSettings({
             />
           </div>
           {additionalBpmnOpen ? (
-            hasDictionarySchema || showFallbackBlock ? (
-              <>
-                <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
-                  <div className="sidebarPropertiesTableHead" role="presentation">
-                    <span>Свойство</span>
-                    <span>Значение</span>
-                    <span>Действие</span>
-                  </div>
-                  {additionalBpmnRows.map((row) => renderCustomPropertyRow(row))}
+            <>
+              {!hasDictionarySchema && !showFallbackBlock && dictionaryLoading ? (
+                <div className="sidebarFieldHint">Ожидаю загрузку схемы операции.</div>
+              ) : null}
+              <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
+                <div className="sidebarPropertiesTableHead" role="presentation">
+                  <span>Свойство</span>
+                  <span>Значение</span>
+                  <span>Действие</span>
                 </div>
-                <div className="sidebarButtonRow">
-                  <button
-                    type="button"
-                    className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
-                    onClick={addPropertyRow}
-                    disabled={!!disabled || !!extensionStateBusy}
-                  >
-                    + Добавить BPMN-свойство
-                  </button>
-                  <button
-                    type="button"
-                    className="primaryBtn sidebarPropertiesActionBtn px-2.5"
-                    onClick={() => void onSaveExtensionState?.()}
-                    disabled={!!disabled || !!extensionStateBusy}
-                  >
-                    {extensionStateBusy ? "Сохраняю..." : "Сохранить"}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="sidebarFieldHint">Ожидаю загрузку схемы операции.</div>
-            )
+                {additionalBpmnRows.map((row) => renderCustomPropertyRow(row))}
+              </div>
+              <div className="sidebarButtonRow">
+                <button
+                  type="button"
+                  className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+                  onClick={addPropertyRow}
+                  disabled={!!disabled || !!extensionStateBusy}
+                >
+                  + Добавить BPMN-свойство
+                </button>
+                <button
+                  type="button"
+                  className="primaryBtn sidebarPropertiesActionBtn px-2.5"
+                  onClick={() => void onSaveExtensionState?.()}
+                  disabled={!!disabled || !!extensionStateBusy}
+                >
+                  {extensionStateBusy ? "Сохраняю..." : "Сохранить"}
+                </button>
+              </div>
+            </>
           ) : null}
         </section>
 
