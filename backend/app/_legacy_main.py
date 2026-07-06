@@ -21,7 +21,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response, Body
 from fastapi.routing import APIRoute
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
@@ -7813,7 +7813,7 @@ def session_bpmn_version_detail(session_id: str, version_id: str, request: Reque
 def session_bpmn_restore(
     session_id: str,
     version_id: str,
-    inp: BpmnRestoreIn | None = None,
+    inp: BpmnRestoreIn | None = Body(default=None),
     request: Request = None,
 ) -> Dict[str, Any]:
     user = _request_auth_user(request) if request is not None else {}
