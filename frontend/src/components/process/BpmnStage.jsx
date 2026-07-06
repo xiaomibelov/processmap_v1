@@ -5455,6 +5455,44 @@ const BpmnStage = forwardRef(function BpmnStage({
           const modelerReady = !!modelerRef.current && !!modelerReadyRef.current && modelerHasDefinitions;
           const source = String(storeEvent.source || "");
           const reason = String(storeEvent.reason || "");
+
+          function tryRestorePersistedViewport(restoreReason) {
+            if (lastRestoredViewportSessionRef.current === sid) return;
+            if (userViewportTouchedRef.current) return;
+            if (restoreViewportSnapshot || pendingRestoreViewportRef.current) return;
+            const persistedViewport = draftRef.current?.bpmn_meta?.viewport;
+            const pvb = persistedViewport?.viewbox;
+            if (
+              !persistedViewport
+              || !Number.isFinite(persistedViewport.zoom)
+              || persistedViewport.zoom <= 0
+              || !pvb
+              || !Number.isFinite(pvb.x)
+              || !Number.isFinite(pvb.y)
+              || !Number.isFinite(pvb.width)
+              || !Number.isFinite(pvb.height)
+            ) {
+              return;
+            }
+            lastRestoredViewportSessionRef.current = sid;
+            const snapshotRunId = runId;
+            window.requestAnimationFrame(() => {
+              window.setTimeout(() => {
+                if (renderRunRef.current !== snapshotRunId) return;
+                try {
+                  imperativeApi.restoreViewport(persistedViewport);
+                  userViewportTouchedRef.current = true;
+                  if (shouldLogBpmnTrace()) {
+                    // eslint-disable-next-line no-console
+                    console.debug(`[BPMN] restored persisted viewport (${restoreReason})`, persistedViewport);
+                  }
+                } catch {
+                  // persisted viewport restore best-effort
+                }
+              }, 120);
+            });
+          }
+
           const isInternalModelerUpdate = reason === "setXml"
             && (
               source === "runtime_change"
@@ -5485,6 +5523,7 @@ const BpmnStage = forwardRef(function BpmnStage({
               suppressViewbox: suppressViewboxEvents,
             });
             if (isStale("modeler.same_hash.after")) return;
+            tryRestorePersistedViewport("same_hash");
             return;
           }
           const preRenderSnapshot = modelerRef.current ? getCanvasSnapshot(modelerRef.current) : null;
@@ -5511,37 +5550,8 @@ const BpmnStage = forwardRef(function BpmnStage({
             window.requestAnimationFrame(() => {
               window.setTimeout(restore, 120);
             });
-          } else if (
-            lastRestoredViewportSessionRef.current !== sid
-            && !restoreViewportSnapshot
-            && !pendingRestoreViewportRef.current
-          ) {
-            const persistedViewport = draftRef.current?.bpmn_meta?.viewport;
-            const pvb = persistedViewport?.viewbox;
-            if (
-              persistedViewport
-              && Number.isFinite(persistedViewport.zoom)
-              && persistedViewport.zoom > 0
-              && pvb
-              && Number.isFinite(pvb.x)
-              && Number.isFinite(pvb.y)
-              && Number.isFinite(pvb.width)
-              && Number.isFinite(pvb.height)
-            ) {
-              lastRestoredViewportSessionRef.current = sid;
-              const snapshotRunId = runId;
-              window.requestAnimationFrame(() => {
-                window.setTimeout(() => {
-                  if (renderRunRef.current !== snapshotRunId) return;
-                  try {
-                    imperativeApi.restoreViewport(persistedViewport);
-                    userViewportTouchedRef.current = true;
-                  } catch {
-                    // persisted viewport restore best-effort
-                  }
-                }, 120);
-              });
-            }
+          } else {
+            tryRestorePersistedViewport("render_modeler");
           }
         }
       } catch (e) {
@@ -5559,7 +5569,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, xml, sessionId, draft?.bpmn_xml, draft?.nodes, draft?.title, srcHint]);
+  }, [view, xml, sessionId, draft?.bpmn_xml, draft?.nodes, draft?.title, draft?.bpmn_meta?.viewport, srcHint]);
 
   useEffect(() => {
     const fromDraft = String(draft?.bpmn_xml || "");
