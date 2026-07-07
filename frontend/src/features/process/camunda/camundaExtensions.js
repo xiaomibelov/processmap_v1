@@ -1176,6 +1176,55 @@ export function extractManagedCamundaExtensionStateFromBusinessObject(boRaw) {
   });
 }
 
+/**
+ * Apply an extension state to a bpmn-js modeler instance without re-importing XML.
+ *
+ * Replaces the element's camunda:properties block while preserving other extension
+ * elements (listeners, connectors, robot meta, etc.). This keeps the canvas alive
+ * and the viewport stable after property-only saves.
+ */
+export function applyCamundaExtensionStateToModeler(elementId, extensionState, modeler) {
+  if (!elementId || !modeler) return { ok: false, error: "missing_args" };
+  try {
+    const registry = modeler.get("elementRegistry");
+    const el = registry?.get?.(elementId);
+    if (!el) return { ok: false, error: "element_not_found" };
+
+    const moddle = modeler.get("moddle");
+    const modeling = modeler.get("modeling");
+    const bo = el.businessObject;
+    const existingExt = asObject(bo.extensionElements);
+    const existingValues = asArray(existingExt.values);
+
+    // Preserve everything except the managed camunda:properties block.
+    const preserved = existingValues.filter((entry) => {
+      const type = String(entry?.$type || "").toLowerCase();
+      return type !== "camunda:properties";
+    });
+
+    const normalized = normalizeCamundaExtensionState(extensionState);
+    const propValues = asArray(normalized?.properties?.extensionProperties).map((item) => (
+      moddle.create("camunda:Property", {
+        name: String(item?.name ?? ""),
+        value: String(item?.value ?? ""),
+      })
+    ));
+    const camundaProperties = propValues.length
+      ? [moddle.create("camunda:Properties", { values: propValues })]
+      : [];
+
+    const nextValues = [...preserved, ...camundaProperties];
+    const nextExt = nextValues.length
+      ? moddle.create("bpmn:ExtensionElements", { values: nextValues })
+      : null;
+
+    modeling.updateProperties(el, { extensionElements: nextExt });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error || "apply_failed") };
+  }
+}
+
 function parseManagedExecutionListenerFromDom(node) {
   const event = normalizeListenerEvent(node?.getAttribute?.("event"));
   const classValue = node?.getAttribute?.("class");

@@ -1,5 +1,6 @@
 import { readableBpmnText } from "../../bpmnIdentity.js";
 import {
+  applyCamundaExtensionStateToModeler,
   extractManagedCamundaExtensionStateFromBusinessObject,
   normalizeCamundaExtensionState,
 } from "../../../camunda/camundaExtensions.js";
@@ -615,6 +616,14 @@ export function createBpmnStageImperativeApi(ctxBase) {
       } catch {
         return null;
       }
+    },
+    applyElementCamundaExtensionsToModeler: (elementIdRaw, extensionStateRaw, options = {}) => {
+      const elementId = toText(elementIdRaw);
+      if (!elementId) return { ok: false, error: "missing_element_id" };
+      const preferred = toText(options?.kind || options?.view || options?.mode || "editor").toLowerCase();
+      const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
+      if (!inst) return { ok: false, error: "modeler_not_ready" };
+      return applyCamundaExtensionStateToModeler(elementId, extensionStateRaw, inst);
     },
     isFlushing: () => !!refs.bpmnCoordinatorRef?.current?.isFlushing?.(),
     saveXmlDraft: () => callbacks.saveXmlDraftText?.(),

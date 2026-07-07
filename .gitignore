@@ -68,3 +68,6 @@ vault/.git
 # Git worktrees
 .worktrees/
 frontend/public/build-info.json
+
+# E2E diagnostic screenshots
+scripts/e2e/diagnose/
