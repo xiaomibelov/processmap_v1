@@ -4128,7 +4128,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
             }
             if title in sibling_titles:
                 raise HTTPException(status_code=409, detail="session title already exists")
-            sess2 = st.rename(session_id, title, user_id=user_id, is_admin=True)
+            sess2 = st.rename(session_id, title, user_id=user_id, is_admin=True, org_id=oid)
             if not sess2:
                 return {"error": "not found"}
             sess = sess2
@@ -4397,7 +4397,7 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
     if data.get("title") is not None:
         title = str(data["title"]).strip()
         if title:
-            sess2 = st.rename(session_id, title)
+            sess2 = st.rename(session_id, title, org_id=oid)
             if not sess2:
                 return {"error": "not found"}
             sess = sess2
