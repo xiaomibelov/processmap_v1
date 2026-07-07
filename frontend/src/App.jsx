@@ -2625,15 +2625,22 @@ export default function App() {
       ?? draft?.version
       ?? 0,
     );
-    let currentXml = draft?.bpmn_xml;
-    if (!currentXml) {
-      const xmlRes = await apiGetBpmnXml(sid);
-      currentXml = xmlRes?.ok ? xmlRes.xml : "";
-    }
     const operation = shouldRemove
       ? "property_delete"
       : (currentCamundaExtensionsByElementId[elementId] ? "property_update" : "property_add");
     emitPropertySaveEvent({ type: "start", operation, elementId, sid });
+
+    // Apply the optimistic extension state to the live modeler first so the
+    // serialized XML is always fresh and property duplication cannot happen.
+    try {
+      bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, extensionStateRaw);
+      // Force the sidebar to re-read extension state from the live modeler
+      // instead of the pre-mutation memoized snapshot.
+      setBpmnModelerSyncEpoch((e) => e + 1);
+    } catch {
+      // Best-effort; the XML merge path below will still apply the state.
+    }
+
     const persistResult = await saveBpmnState({
       operation,
       sessionId: sid,
@@ -2646,7 +2653,10 @@ export default function App() {
       nextCamundaExtensionsByElementId,
       currentMeta,
       nextMeta: optimisticMeta,
-      currentXml,
+      getModelerXml: async () => {
+        const snap = await bpmnStageRef.current?.getRuntimeXmlSnapshot?.();
+        return snap?.ok ? snap.xml : "";
+      },
       apiPutBpmnXml,
       apiGetSession,
       onSessionSync,
@@ -2676,17 +2686,6 @@ export default function App() {
       };
     }
     emitPropertySaveEvent({ type: "success", operation, elementId, sid, local: persistResult?.local === true });
-    // Keep the in-memory modeler in sync with the saved XML so the sidebar and
-    // canvas overlays do not show stale/duplicated property rows after the
-    // property-only save intentionally skips a full canvas re-import.
-    try {
-      const syncRes = bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, extensionStateRaw);
-      if (syncRes?.ok) {
-        setBpmnModelerSyncEpoch((n) => n + 1);
-      }
-    } catch {
-      // Best-effort sync; the next structural save will reconcile from meta.
-    }
     markOk(sid && !isLocalSessionId(sid)
       ? (shouldRemove ? "Properties удалены." : "Properties сохранены.")
       : (shouldRemove ? "Properties удалены локально." : "Properties сохранены локально."));

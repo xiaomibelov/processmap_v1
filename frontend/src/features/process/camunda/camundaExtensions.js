@@ -1213,7 +1213,17 @@ export function applyCamundaExtensionStateToModeler(elementId, extensionState, m
       ? [moddle.create("camunda:Properties", { values: propValues })]
       : [];
 
-    const nextValues = [...preserved, ...camundaProperties];
+    const listenerValues = asArray(normalized?.properties?.extensionListeners).map((item) => {
+      const attrs = { event: String(item?.event ?? "") };
+      const type = String(item?.type ?? "");
+      if (type === "class") attrs.class = String(item?.value ?? "");
+      else if (type === "expression") attrs.expression = String(item?.value ?? "");
+      else if (type === "delegateExpression") attrs.delegateExpression = String(item?.value ?? "");
+      return moddle.create("camunda:ExecutionListener", attrs);
+    });
+    const camundaListeners = listenerValues.length ? listenerValues : [];
+
+    const nextValues = [...preserved, ...camundaProperties, ...camundaListeners];
     const nextExt = nextValues.length
       ? moddle.create("bpmn:ExtensionElements", { values: nextValues })
       : null;
