@@ -394,7 +394,7 @@ export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExte
     return JSON.stringify({ ovl, geo });
   }
 
-  function createV2HostForElement(ovl, el) {
+  function createV2HostForElement(ovl, el, inst) {
     const isSequenceFlow = Array.isArray(el.waypoints) && String(el.type).toLowerCase() === "bpmn:sequenceflow";
     const elWidth = Number(el.width || 0);
     const elHeight = Number(el.height || 0);
@@ -552,7 +552,7 @@ export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExte
             map.delete(elementId);
             removedCount += 1;
             if (v2Enabled) {
-              const created = createV2HostForElement(ovl, el);
+              const created = createV2HostForElement(ovl, el, inst);
               if (created) {
                 const overlayId = overlays.add(el.id, { position: created.position, html: created.host });
                 map.set(elementId, { overlayId, contentSig, host: created.host, expanded: v2Expanded });
@@ -568,7 +568,7 @@ export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExte
             keptCount += 1;
           }
         } else if (v2Enabled) {
-          const created = createV2HostForElement(ovl, el);
+          const created = createV2HostForElement(ovl, el, inst);
           if (created) {
             const overlayId = overlays.add(el.id, { position: created.position, html: created.host });
             map.set(elementId, { overlayId, contentSig, host: created.host, expanded: v2Expanded });
