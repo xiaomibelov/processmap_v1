@@ -4505,16 +4505,16 @@ class Storage:
             con.commit()
             return int(cur.rowcount or 0) > 0
 
-    def rename(self, session_id: str, new_title: str, *, user_id: Optional[str] = None, is_admin: Optional[bool] = None) -> Optional[Session]:
-        sess = self.load(session_id, user_id=user_id, is_admin=is_admin)
+    def rename(self, session_id: str, new_title: str, *, user_id: Optional[str] = None, is_admin: Optional[bool] = None, org_id: Optional[str] = None) -> Optional[Session]:
+        sess = self.load(session_id, user_id=user_id, is_admin=is_admin, org_id=org_id)
         if not sess:
             return None
         t = (new_title or "").strip()
         if not t:
             return sess
         sess.title = t
-        self.save(sess, user_id=user_id, is_admin=is_admin)
-        return self.load(session_id, user_id=user_id, is_admin=is_admin)
+        self.save(sess, user_id=user_id, is_admin=is_admin, org_id=org_id)
+        return self.load(session_id, user_id=user_id, is_admin=is_admin, org_id=org_id)
 
     def list(
         self,
