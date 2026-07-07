@@ -999,6 +999,7 @@ export default function NotesPanel({
   onSetElementRobotMeta,
   onSetElementCamundaExtensions,
   getElementCamundaExtensionsFromModeler,
+  bpmnModelerSyncEpoch = 0,
   activeOrgId = "",
   reviewStatus = "draft",
   reviewComments = [],
@@ -1407,7 +1408,7 @@ export default function NotesPanel({
       return createEmptyCamundaExtensionState();
     }
     return normalizeCamundaExtensionState(getElementCamundaExtensionsFromModeler(selectedElementId));
-  }, [getElementCamundaExtensionsFromModeler, selectedElementId]);
+  }, [getElementCamundaExtensionsFromModeler, selectedElementId, bpmnModelerSyncEpoch]);
 
   const selectedCamundaExtensionEntry = useMemo(() => {
     const metaState = normalizeCamundaExtensionState(

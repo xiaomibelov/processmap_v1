@@ -896,6 +896,7 @@ export default function App() {
   const [showPropertiesOverlayAlways, setShowPropertiesOverlayAlways] = useState(false);
   const [v2OverlaysEnabled, setV2OverlaysEnabled] = useState(false);
   const [v2OverlaysExpanded, setV2OverlaysExpanded] = useState(false);
+  const [bpmnModelerSyncEpoch, setBpmnModelerSyncEpoch] = useState(0);
   const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
   const [notesPanelOpenRequest, setNotesPanelOpenRequest] = useState(null);
   const [notesDiscussionsOpen, setNotesDiscussionsOpen] = useState(false);
@@ -2675,6 +2676,17 @@ export default function App() {
       };
     }
     emitPropertySaveEvent({ type: "success", operation, elementId, sid, local: persistResult?.local === true });
+    // Keep the in-memory modeler in sync with the saved XML so the sidebar and
+    // canvas overlays do not show stale/duplicated property rows after the
+    // property-only save intentionally skips a full canvas re-import.
+    try {
+      const syncRes = bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, extensionStateRaw);
+      if (syncRes?.ok) {
+        setBpmnModelerSyncEpoch((n) => n + 1);
+      }
+    } catch {
+      // Best-effort sync; the next structural save will reconcile from meta.
+    }
     markOk(sid && !isLocalSessionId(sid)
       ? (shouldRemove ? "Properties удалены." : "Properties сохранены.")
       : (shouldRemove ? "Properties удалены локально." : "Properties сохранены локально."));
@@ -3312,6 +3324,7 @@ export default function App() {
         onShowV2OverlaysChange={setV2OverlaysEnabled}
         v2OverlaysExpanded={v2OverlaysExpanded}
         onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
+        bpmnModelerSyncEpoch={bpmnModelerSyncEpoch}
         getElementCamundaExtensionsFromModeler={getElementCamundaExtensionsFromModeler}
         onGoToDiagram={() => {
           const sid = String(draft?.session_id || "").trim();
