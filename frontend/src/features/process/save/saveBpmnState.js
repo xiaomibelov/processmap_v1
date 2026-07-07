@@ -330,18 +330,11 @@ export async function saveBpmnState(options = {}) {
     diagramStateVersion,
     syncSource,
   });
-  // Property-only saves already mutated the XML in-place through the Camunda
-  // extension state map. Re-importing the server-normalized XML tears down and
-  // rebuilds the canvas (viewport reset + flicker), so we only mark the new
-  // XML as authoritative for non-property operations.
+  // Property-only saves mutate the modeler in-place. We still update the
+  // authoritative draft XML so subsequent saves do not refetch a stale base,
+  // but we skip the canvas re-import to preserve viewport.
   fallbackPatch._apply_bpmn_xml = !isPropertyOperation;
   if (isPropertyOperation) {
-    // Property-only saves already mutated the XML in-place through the Camunda
-    // extension state map. Updating draft.bpmn_xml with the server-normalized XML
-    // tears down and rebuilds the canvas (viewport reset + flicker), so we keep
-    // the local XML untouched. The meta change is enough for the UI, and the next
-    // structural save re-syncs extensions from meta into the modeler.
-    delete fallbackPatch.bpmn_xml;
     fallbackPatch._skip_bpmn_render = Date.now();
   }
 
@@ -357,7 +350,6 @@ export async function saveBpmnState(options = {}) {
             updateLastServerVersion(options.lastServerDiagramStateVersionRef, pickDiagramStateBaseVersion(fresh.session));
             const syncPayload = { ...fresh.session, _sync_source: syncSource };
             if (isPropertyOperation) {
-              delete syncPayload.bpmn_xml;
               syncPayload._skip_bpmn_render = Date.now();
             }
             options.onSessionSync?.(syncPayload);
@@ -386,7 +378,6 @@ export async function saveBpmnState(options = {}) {
         updateLastServerVersion(options.lastServerDiagramStateVersionRef, pickDiagramStateBaseVersion(fresh.session));
         const syncPayload = { ...fresh.session, _sync_source: syncSource, _apply_bpmn_xml: !isPropertyOperation };
         if (isPropertyOperation) {
-          delete syncPayload.bpmn_xml;
           syncPayload._skip_bpmn_render = Date.now();
         }
         options.onSessionSync?.(syncPayload);
