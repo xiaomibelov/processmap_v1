@@ -372,6 +372,22 @@ export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExte
     return ex + ew >= vx && ex <= vx + vw && ey + eh >= vy && ey <= vy + vh;
   }
 
+  function hasLegacyPropertyOverlay(inst, elementId) {
+    if (!inst || !elementId) return false;
+    try {
+      const overlays = inst.get("overlays");
+      const all = overlays.get({ element: elementId });
+      for (const entry of all) {
+        const html = entry?.html;
+        const node = typeof html === "string" ? null : html;
+        if (node && node.classList && node.classList.contains("fpcPropertyOverlay")) {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  }
+
   function computeContentSig(ovl, el) {
     const isSequenceFlow = Array.isArray(el.waypoints) && String(el.type).toLowerCase() === "bpmn:sequenceflow";
     const geo = isSequenceFlow ? el.waypoints : { x: el.x, y: el.y, width: el.width, height: el.height };
@@ -396,6 +412,12 @@ export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExte
     const v2Enabled = enabledRef.current;
     if (!hasProps && (!v2Enabled || !titleText)) return null;
     if (!v2Enabled) return null;
+
+    // Avoid duplicating the legacy property overlay that is already rendered
+    // for this element by decorManager.
+    if (hasLegacyPropertyOverlay(inst, el.id)) {
+      return null;
+    }
 
     const colorKey = String(ovl.colorKey || ovl.meta?.type || ovl.type || "").trim();
     const colorModel = overlayPropertyColorByKey(colorKey || "property");
