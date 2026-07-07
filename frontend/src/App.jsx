@@ -2634,6 +2634,9 @@ export default function App() {
     // serialized XML is always fresh and property duplication cannot happen.
     try {
       bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, extensionStateRaw);
+      // Force the sidebar to re-read extension state from the live modeler
+      // instead of the pre-mutation memoized snapshot.
+      setBpmnModelerSyncEpoch((e) => e + 1);
     } catch {
       // Best-effort; the XML merge path below will still apply the state.
     }
