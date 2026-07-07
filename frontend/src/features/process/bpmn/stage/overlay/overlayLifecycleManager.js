@@ -341,6 +341,22 @@ function computeSequenceFlowMidpoint(waypoints) {
 export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExtensionOverlays }) {
   const lightweightOverlayStateRef = { current: { viewer: [], editor: [] } };
 
+  function hasLegacyPropertyOverlay(inst, elementId) {
+    if (!inst || !elementId) return false;
+    try {
+      const overlays = inst.get("overlays");
+      const all = overlays.get({ element: elementId });
+      for (const entry of all) {
+        const html = entry?.html;
+        const node = typeof html === "string" ? null : html;
+        if (node && node.classList && node.classList.contains("fpcPropertyOverlay")) {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  }
+
   function clear(inst, kind) {
     if (!inst) return;
     try {
@@ -403,6 +419,12 @@ export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExte
           const colorModel = overlayPropertyColorByKey(colorKey || "property");
 
           if (!v2Enabled) {
+            return;
+          }
+
+          // Avoid duplicating the legacy property overlay that is already
+          // rendered for this element by decorManager.
+          if (hasLegacyPropertyOverlay(inst, el.id)) {
             return;
           }
 
