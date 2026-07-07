@@ -4650,6 +4650,9 @@ const BpmnStage = forwardRef(function BpmnStage({
         const nextSig = JSON.stringify({
           enabled: v2OverlaysEnabled,
           overlays: extractOverlaysFromBpmn(inst, v2OverlaysEnabled),
+          legacyAlways: propertiesOverlayAlwaysEnabled,
+          legacyPreviewElementId: selectedPropertiesOverlayPreview?.elementId || null,
+          legacyAlwaysPreviewCount: Object.keys(propertiesOverlayAlwaysPreviewByElementId || {}).length,
         });
         if (prevOverlaySigRef.current[kind] === nextSig) return;
         prevOverlaySigRef.current[kind] = nextSig;
@@ -4661,7 +4664,15 @@ const BpmnStage = forwardRef(function BpmnStage({
       // Re-mount failures are non-critical.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [useExtensionOverlays, draft?.bpmn_meta, v2OverlaysEnabled]);
+  }, [
+    useExtensionOverlays,
+    draft?.bpmn_meta,
+    v2OverlaysEnabled,
+    propertiesOverlayAlwaysEnabled,
+    selectedPropertiesOverlayPreview?.elementId,
+    Object.keys(propertiesOverlayAlwaysPreviewByElementId || {}).length,
+    overlayLifecycle,
+  ]);
 
   function createViewportCtx() {
     return {
