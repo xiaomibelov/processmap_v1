@@ -2385,14 +2385,19 @@ const BpmnStage = forwardRef(function BpmnStage({
     };
   }
 
-  function transformPersistedXml(xmlText) {
+  function transformPersistedXml(xmlText, meta = {}) {
     const templateInsertGuardIds = readTemplateInsertCamundaClearGuardIds();
     const xmlCamundaExtensionsByElementId = reconcileTemplateInsertCamundaStateFromXml(xmlText, templateInsertGuardIds);
     // Merge authoritative meta camunda extensions so that property-only saves
     // (which update bpmn_meta but not the stored BPMN XML) are still reflected
-    // on the canvas after reload.
+    // on the canvas after reload. When the caller supplies an explicit meta
+    // payload (e.g. from saveBpmnState), use it instead of the possibly stale
+    // draftRef snapshot.
+    const explicitMeta = meta?.bpmnMeta && typeof meta.bpmnMeta === "object"
+      ? meta.bpmnMeta
+      : null;
     const metaCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(
-      asObject(draftRef.current?.bpmn_meta).camunda_extensions_by_element_id,
+      asObject(explicitMeta || draftRef.current?.bpmn_meta).camunda_extensions_by_element_id,
     );
     const camundaExtensionsByElementId = {
       ...xmlCamundaExtensionsByElementId,
@@ -5944,6 +5949,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         saveLocalFromModeler,
         saveXmlDraftText,
         seedNew,
+        flushSave: (reason, opts) => ensureBpmnCoordinator().flushSave(reason, opts),
       },
     };
   }
