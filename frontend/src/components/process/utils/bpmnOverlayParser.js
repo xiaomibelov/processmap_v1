@@ -36,6 +36,19 @@ function dedupePropertiesByName(props, { keep = "first" } = {}) {
   return Array.from(seen.values());
 }
 
+function dedupePropertiesByExactValue(props) {
+  if (!Array.isArray(props)) return [];
+  const seen = new Set();
+  return props.filter((prop) => {
+    const name = String(prop?.name ?? "").trim();
+    if (!name) return true;
+    const signature = `${name}\u0000${String(prop?.value ?? "").trim()}`;
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+}
+
 function isShapeElement(el) {
   return !!el && !Array.isArray(el?.waypoints) && el.type !== "label";
 }
@@ -336,8 +349,10 @@ export function extractOverlaysFromBpmn(inst, forceShow = false) {
         // Only business properties travel with the overlay; meta-descriptors
         // (fpc-overlay-v2, fpc-show-properties, fpc:overlay:*) are consumed by
         // the parser and must never leak into the rendered card.
-        const businessProperties = props.filter(
-          (p) => !isOverlayMetaProperty(p?.name)
+        // Collapse exact duplicate name/value rows so accidental duplicate
+        // <camunda:properties> blocks do not multiply the rendered rows.
+        const businessProperties = dedupePropertiesByExactValue(
+          props.filter((p) => !isOverlayMetaProperty(p?.name))
         );
         result.push({ ...overlay, properties: businessProperties });
       }

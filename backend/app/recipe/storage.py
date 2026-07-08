@@ -32,6 +32,7 @@ def _now() -> int:
 def _get_connection() -> sqlite3.Connection:
     con = sqlite3.connect(str(_db_path()))
     con.row_factory = sqlite3.Row
+    _ensure_recipe_tables(con)
     return con
 
 

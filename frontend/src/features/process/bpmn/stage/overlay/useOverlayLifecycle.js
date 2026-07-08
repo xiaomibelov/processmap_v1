@@ -15,13 +15,16 @@ export function useOverlayLifecycle({
   v2ExpandedRef,
   useExtensionOverlays,
 }) {
+  const useExtensionOverlaysRef = useRef(useExtensionOverlays);
+  useExtensionOverlaysRef.current = useExtensionOverlays;
+
   const managerRef = useRef(null);
 
   if (!managerRef.current) {
     managerRef.current = createOverlayLifecycleManager({
       enabledRef: v2EnabledRef,
       expandedRef: v2ExpandedRef,
-      useExtensionOverlays,
+      useExtensionOverlaysRef,
     });
   }
 
