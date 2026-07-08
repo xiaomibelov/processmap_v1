@@ -3379,6 +3379,46 @@ const BpmnStage = forwardRef(function BpmnStage({
           }
         }
       }
+      // Prime the local XML/hash state from the live modeler so any post-insert
+      // session sync or draft update is recognized as already loaded. Without
+      // this, a stale hash causes the render effect to call renderModeler()
+      // (full XML re-import) which appears as a page reload / white screen on
+      // large diagrams.
+      try {
+        const xmlModeler = modelerRef.current || await ensureModeler();
+        if (xmlModeler && typeof xmlModeler.saveXML === "function") {
+          const xmlOut = await xmlModeler.saveXML({ format: true });
+          const currentXml = String(xmlOut?.xml || "");
+          if (currentXml.trim()) {
+            lastModelerXmlHashRef.current = fnv1aHex(currentXml);
+            setXml(currentXml);
+            setXmlDraft(currentXml);
+            setXmlDirty(false);
+            if (
+              bpmnStoreRef.current
+              && typeof bpmnStoreRef.current.setXml === "function"
+            ) {
+              bpmnStoreRef.current.setXml(currentXml, "template_insert", {
+                bumpRev: false,
+                dirty: true,
+              });
+            }
+            if (shouldLogBpmnTrace()) {
+              // eslint-disable-next-line no-console
+              console.debug(
+                `[BPMN] template_insert primed xml hash=${lastModelerXmlHashRef.current} len=${currentXml.length}`,
+              );
+            }
+          }
+        }
+      } catch (xmlPrimeError) {
+        if (shouldLogBpmnTrace()) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[BPMN] template_insert xml prime failed: ${String(xmlPrimeError?.message || xmlPrimeError)}`,
+          );
+        }
+      }
       return inserted;
     } finally {
       templateInsertCamundaSeedInFlightRef.current = Math.max(

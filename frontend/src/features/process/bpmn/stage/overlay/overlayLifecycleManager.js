@@ -98,9 +98,11 @@ function installOverlayCardHoverListeners(inst, v2ExpandedRef) {
   const onHover = (event) => {
     setPropertyCardExpandedForElement(event?.element?.id, true);
     setV2OverlayExpandedForElement(event?.element?.id, true);
+    setLegacyPropertyOverlayExpandedForElement(event?.element?.id, true);
   };
   const onOut = (event) => {
     setPropertyCardExpandedForElement(event?.element?.id, false);
+    setLegacyPropertyOverlayExpandedForElement(event?.element?.id, false);
     if (!v2ExpandedRef?.current) {
       setV2OverlayExpandedForElement(event?.element?.id, false);
     }
@@ -301,6 +303,14 @@ function setV2OverlayExpandedForElement(elementId, expanded) {
   const selector = `.fpc-overlay-v2-host[data-fpc-element-id="${CSS.escape(elementId)}"]`;
   document.querySelectorAll(selector).forEach((host) => {
     host.classList.toggle("fpc-overlay-v2-host--expanded", expanded);
+  });
+}
+
+function setLegacyPropertyOverlayExpandedForElement(elementId, expanded) {
+  if (typeof document === "undefined" || !elementId) return;
+  const selector = `.fpcPropertyOverlay[data-node-id="${CSS.escape(elementId)}"]`;
+  document.querySelectorAll(selector).forEach((overlay) => {
+    overlay.classList.toggle("fpcPropertyOverlay--expanded", expanded);
   });
 }
 
