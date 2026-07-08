@@ -338,7 +338,7 @@ function computeSequenceFlowMidpoint(waypoints) {
   return { x: Number(last?.x || 0), y: Number(last?.y || 0) };
 }
 
-export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExtensionOverlays }) {
+export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExtensionOverlaysRef }) {
   const elementOverlayMapRef = { current: { viewer: new Map(), editor: new Map() } };
 
   function clear(inst, kind) {
@@ -388,18 +388,33 @@ export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExte
     return false;
   }
 
+  function removeExistingV2OverlaysForElement(inst, elementId) {
+    if (!inst || !elementId) return;
+    try {
+      const overlays = inst.get("overlays");
+      const all = overlays.get({ element: elementId });
+      for (const entry of all) {
+        const html = entry?.html;
+        const node = typeof html === "string" ? null : html;
+        if (node && node.classList && node.classList.contains("fpc-overlay-v2-host")) {
+          try { overlays.remove(entry.id || entry.overlayId || entry); } catch {}
+        }
+      }
+    } catch {}
+  }
+
   function computeContentSig(ovl, el) {
     const isSequenceFlow = Array.isArray(el.waypoints) && String(el.type).toLowerCase() === "bpmn:sequenceflow";
     const geo = isSequenceFlow ? el.waypoints : { x: el.x, y: el.y, width: el.width, height: el.height };
     return JSON.stringify({ ovl, geo });
   }
 
-  function createV2HostForElement(ovl, el, inst) {
+  function shouldRenderV2HostForElement(ovl, el, inst) {
     const isSequenceFlow = Array.isArray(el.waypoints) && String(el.type).toLowerCase() === "bpmn:sequenceflow";
     const elWidth = Number(el.width || 0);
     const elHeight = Number(el.height || 0);
     const MIN_ELEMENT_SIZE = 20;
-    if (!isSequenceFlow && (elWidth < MIN_ELEMENT_SIZE || elHeight < MIN_ELEMENT_SIZE)) return null;
+    if (!isSequenceFlow && (elWidth < MIN_ELEMENT_SIZE || elHeight < MIN_ELEMENT_SIZE)) return false;
 
     const properties = Array.isArray(ovl.properties) ? ovl.properties : [];
     const realProps = properties.filter((prop) => {
@@ -410,14 +425,29 @@ export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExte
     const titleText = String(ovl.text || ovl.meta?.title || el.businessObject?.name || el.name || "").trim();
     const hasProps = realProps.length > 0;
     const v2Enabled = enabledRef.current;
-    if (!hasProps && (!v2Enabled || !titleText)) return null;
-    if (!v2Enabled) return null;
+    if (!hasProps && (!v2Enabled || !titleText)) return false;
+    if (!v2Enabled) return false;
 
     // Avoid duplicating the legacy property overlay that is already rendered
     // for this element by decorManager.
     if (hasLegacyPropertyOverlay(inst, el.id)) {
-      return null;
+      return false;
     }
+
+    return true;
+  }
+
+  function createV2HostForElement(ovl, el, inst) {
+    if (!shouldRenderV2HostForElement(ovl, el, inst)) return null;
+
+    const isSequenceFlow = Array.isArray(el.waypoints) && String(el.type).toLowerCase() === "bpmn:sequenceflow";
+    const elWidth = Number(el.width || 0);
+    const properties = Array.isArray(ovl.properties) ? ovl.properties : [];
+    const realProps = properties.filter((prop) => {
+      const name = String(prop.name ?? "").trim();
+      return !!name && !isOverlayMetaProperty(name);
+    });
+    const titleText = String(ovl.text || ovl.meta?.title || el.businessObject?.name || el.name || "").trim();
 
     const colorKey = String(ovl.colorKey || ovl.meta?.type || ovl.type || "").trim();
     const colorModel = overlayPropertyColorByKey(colorKey || "property");
@@ -443,7 +473,7 @@ export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExte
 
   function mount(inst, kind, overlayList = []) {
     if (!inst || typeof window === "undefined") return;
-    if (!useExtensionOverlays) return;
+    if (!useExtensionOverlaysRef?.current) return;
     const overlaysToRender = Array.isArray(overlayList) ? overlayList : [];
     const map = elementOverlayMapRef.current[kind];
 
@@ -545,19 +575,30 @@ export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExte
       for (const [elementId, { ovl, el }] of desired.entries()) {
         const contentSig = computeContentSig(ovl, el);
         const existing = map.get(elementId);
-        if (existing) {
-          if (!v2Enabled || existing.contentSig !== contentSig) {
-            // V2 disabled or content changed: remove old host and (re)create if still enabled.
+        const canShow = v2Enabled && shouldRenderV2HostForElement(ovl, el, inst);
+
+        if (!canShow) {
+          // V2 disabled or a legacy property overlay now exists for this element.
+          // Remove any tracked or stray V2 host so we never stack redundant overlays.
+          if (existing) {
             try { overlays.remove(existing.overlayId); } catch {}
             map.delete(elementId);
             removedCount += 1;
-            if (v2Enabled) {
-              const created = createV2HostForElement(ovl, el, inst);
-              if (created) {
-                const overlayId = overlays.add(el.id, { position: created.position, html: created.host });
-                map.set(elementId, { overlayId, contentSig, host: created.host, expanded: v2Expanded });
-                updatedCount += 1;
-              }
+          }
+          removeExistingV2OverlaysForElement(inst, elementId);
+          continue;
+        }
+
+        if (existing) {
+          if (existing.contentSig !== contentSig) {
+            // Content changed: rebuild the host.
+            try { overlays.remove(existing.overlayId); } catch {}
+            removeExistingV2OverlaysForElement(inst, elementId);
+            const created = createV2HostForElement(ovl, el, inst);
+            if (created) {
+              const overlayId = overlays.add(el.id, { position: created.position, html: created.host });
+              map.set(elementId, { overlayId, contentSig, host: created.host, expanded: v2Expanded });
+              updatedCount += 1;
             }
           } else if (existing.expanded !== v2Expanded) {
             // Only expanded state changed: toggle CSS class.
@@ -567,7 +608,9 @@ export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExte
           } else {
             keptCount += 1;
           }
-        } else if (v2Enabled) {
+        } else {
+          // New overlay for this element.
+          removeExistingV2OverlaysForElement(inst, elementId);
           const created = createV2HostForElement(ovl, el, inst);
           if (created) {
             const overlayId = overlays.add(el.id, { position: created.position, html: created.host });
