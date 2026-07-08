@@ -612,7 +612,7 @@
 }
 
 .fpcPropertyOverlay {
-  pointer-events: auto;
+  pointer-events: none;
   display: block;
   max-width: 216px;
   transform: translate(-50%, calc(-100% - 12px));
@@ -621,7 +621,7 @@
 }
 
 .fpcPropertyOverlay--table {
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .fpcPropertyTable {
