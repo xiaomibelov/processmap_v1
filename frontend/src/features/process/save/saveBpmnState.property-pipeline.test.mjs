@@ -69,6 +69,38 @@ test("property save without XML source returns missing-XML error", async () => {
   assert.match(String(result?.error || ""), /Отсутствует BPMN XML/);
 });
 
+test("property save falls back to apiGetBpmnXml when modeler snapshot is empty", async () => {
+  const putCalls = [];
+  const result = await saveBpmnState({
+    operation: "property_update",
+    sessionId: "sid-123",
+    elementId: "Task_1",
+    baseDiagramStateVersion: 6,
+    currentCamundaExtensionsByElementId: {},
+    nextCamundaExtensionsByElementId: {
+      Task_1: {
+        properties: {
+          extensionProperties: [{ id: "p1", name: "key", value: "value" }],
+          extensionListeners: [],
+        },
+        preservedExtensionElements: [],
+      },
+    },
+    currentMeta: {},
+    nextMeta: { camunda_extensions_by_element_id: {} },
+    getModelerXml: async () => "",
+    apiGetBpmnXml: async () => ({ ok: true, xml: "<xml>from-server</xml>" }),
+    apiPutBpmnXml: async (sid, xml) => {
+      putCalls.push(xml);
+      return { ok: true, status: 200, diagramStateVersion: 7, storedRev: 5 };
+    },
+  });
+
+  assert.equal(result?.ok, true);
+  assert.equal(putCalls.length, 1, "PUT was called");
+  assert.equal(putCalls[0]?.includes("from-server"), true, "PUT uses server XML fallback");
+});
+
 test("session_save is unaffected by property-only skip-render flag", async () => {
   const calls = [];
   const result = await saveBpmnState({

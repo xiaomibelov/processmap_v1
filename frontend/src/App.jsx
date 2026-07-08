@@ -2630,6 +2630,15 @@ export default function App() {
       : (currentCamundaExtensionsByElementId[elementId] ? "property_update" : "property_add");
     emitPropertySaveEvent({ type: "start", operation, elementId, sid });
 
+    // Wait for the live modeler to be ready before we mutate or serialize it.
+    // This prevents the property-only save from reading an empty XML snapshot
+    // when the modeler runtime has not finished importing the diagram yet.
+    try {
+      await bpmnStageRef.current?.whenReady?.({ timeoutMs: 2000, expectedSid: sid });
+    } catch {
+      // Best-effort; proceed and let the XML fallback handle an unready modeler.
+    }
+
     // Apply the optimistic extension state to the live modeler first so the
     // serialized XML is always fresh and property duplication cannot happen.
     try {
@@ -2659,6 +2668,7 @@ export default function App() {
       },
       apiPutBpmnXml,
       apiGetSession,
+      apiGetBpmnXml,
       onSessionSync,
       overwriteBpmnSnapshot,
       backgroundSessionRefresh: options?.backgroundSessionRefresh === true,
