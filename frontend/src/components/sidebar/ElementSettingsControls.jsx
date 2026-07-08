@@ -220,6 +220,7 @@ export function NodePathSettings({
   flowHappyInfo = "",
   flowHappyEditable = false,
   nodePathSyncPreviewState = "",
+  hideActions = false,
   disabled = false,
 }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -449,28 +450,30 @@ export function NodePathSettings({
               </div>
             ) : null}
           </div>
-          <div className="sidebarButtonRow mt-1">
-            <button
-              type="button"
-              className="primaryBtn h-8 px-2.5 text-[11px]"
-              onClick={() => {
-                void onApplyNodePath?.();
-              }}
-              disabled={!!disabled || !!nodePathBusy}
-            >
-              Применить
-            </button>
-            <button
-              type="button"
-              className="secondaryBtn h-8 px-2.5 text-[11px]"
-              onClick={() => {
-                void onResetNodePath?.();
-              }}
-              disabled={!!disabled || !!nodePathBusy}
-            >
-              Сбросить
-            </button>
-          </div>
+          {!hideActions ? (
+            <div className="sidebarButtonRow mt-1">
+              <button
+                type="button"
+                className="primaryBtn h-8 px-2.5 text-[11px]"
+                onClick={() => {
+                  void onApplyNodePath?.();
+                }}
+                disabled={!!disabled || !!nodePathBusy}
+              >
+                Применить
+              </button>
+              <button
+                type="button"
+                className="secondaryBtn h-8 px-2.5 text-[11px]"
+                onClick={() => {
+                  void onResetNodePath?.();
+                }}
+                disabled={!!disabled || !!nodePathBusy}
+              >
+                Сбросить
+              </button>
+            </div>
+          ) : null}
 
           <details
             className="sidebarAdvanced mt-1"
@@ -600,6 +603,7 @@ export function StepTimeSettings({
   stepTimeEditable = false,
   stepTimeUnit = "min",
   onStepTimeUnitChange,
+  hideActions = false,
   disabled = false,
 }) {
   const [timePresetOpen, setTimePresetOpen] = useState(false);
@@ -722,16 +726,18 @@ export function StepTimeSettings({
             </div>
           ) : null}
         </div>
-        <button
-          type="button"
-          className="secondaryBtn h-8 px-2.5 text-[11px]"
-          onClick={() => {
-            void onSaveStepTime?.();
-          }}
-          disabled={timeInputDisabled}
-        >
-          {stepTimeBusy ? "Сохраняю..." : "Сохранить"}
-        </button>
+        {!hideActions ? (
+          <button
+            type="button"
+            className="secondaryBtn h-8 px-2.5 text-[11px]"
+            onClick={() => {
+              void onSaveStepTime?.();
+            }}
+            disabled={timeInputDisabled}
+          >
+            {stepTimeBusy ? "Сохраняю..." : "Сохранить"}
+          </button>
+        ) : null}
       </div>
       {!stepTimeEditable ? (
         <div className="text-[11px] text-muted">Время шага доступно для BPMN-узлов.</div>
@@ -752,6 +758,7 @@ export function RobotMetaSettings({
   onRobotMetaDraftChange,
   onSaveRobotMeta,
   onResetRobotMeta,
+  hideActions = false,
   disabled = false,
 }) {
   const [robotMetaAdvancedOpen, setRobotMetaAdvancedOpen] = useState(false);
@@ -995,30 +1002,32 @@ export function RobotMetaSettings({
         </div>
       ) : null}
 
-      <div className="sidebarButtonRow">
-        <button
-          type="button"
-          className="secondaryBtn h-7 px-2 text-[11px]"
-          onClick={() => {
-            void onSaveRobotMeta?.();
-          }}
-          disabled={!!disabled || !!robotMetaBusy}
-          data-testid="robotmeta-save"
-        >
-          {robotMetaBusy ? "Сохраняю..." : "Сохранить"}
-        </button>
-        <button
-          type="button"
-          className="secondaryBtn h-7 px-2 text-[11px]"
-          onClick={() => {
-            void onResetRobotMeta?.();
-          }}
-          disabled={!!disabled || !!robotMetaBusy}
-          data-testid="robotmeta-clear"
-        >
-          Clear Robot Meta
-        </button>
-      </div>
+      {!hideActions ? (
+        <div className="sidebarButtonRow">
+          <button
+            type="button"
+            className="secondaryBtn h-7 px-2 text-[11px]"
+            onClick={() => {
+              void onSaveRobotMeta?.();
+            }}
+            disabled={!!disabled || !!robotMetaBusy}
+            data-testid="robotmeta-save"
+          >
+            {robotMetaBusy ? "Сохраняю..." : "Сохранить"}
+          </button>
+          <button
+            type="button"
+            className="secondaryBtn h-7 px-2 text-[11px]"
+            onClick={() => {
+              void onResetRobotMeta?.();
+            }}
+            disabled={!!disabled || !!robotMetaBusy}
+            data-testid="robotmeta-clear"
+          >
+            Clear Robot Meta
+          </button>
+        </div>
+      ) : null}
 
       <details
         className="sidebarAdvanced"
@@ -1105,6 +1114,7 @@ export function CamundaPropertiesSettings({
   onSaveBpmnDocumentation,
   onResetBpmnDocumentation,
   onFocusDrawioCompanion,
+  hideActions = false,
   disabled = false,
 }) {
   const {
@@ -1696,7 +1706,25 @@ export function CamundaPropertiesSettings({
     { key: "vendor", title: "Vendor extensions", rows: asArray(propertyContext.vendor) },
   ].filter((section) => section.rows.length > 0);
   const generalPropertySection = propertySections.find((section) => section.key === "general") || null;
-  const otherPropertySections = propertySections.filter((section) => section.key !== "general");
+
+  // For task-like elements the "Execution and events" group shows listeners + documentation.
+  // For other element types the most relevant inspect-only context section is promoted to
+  // group 3 so the user sees the type-specific contract first.
+  const primaryContextKeyForType = (() => {
+    const t = String(selectedElementType || "").trim();
+    if (isTaskLikeBpmnType(t)) return null;
+    if (/sequenceflow/i.test(t)) return "routing";
+    if (/gateway/i.test(t)) return "vendor";
+    if (/participant/i.test(t) || /lane/i.test(t)) return "messaging";
+    if (/event/i.test(t)) return "execution";
+    return null;
+  })();
+  const group3PropertySections = primaryContextKeyForType
+    ? propertySections.filter((section) => section.key === primaryContextKeyForType)
+    : [];
+  const otherPropertySections = propertySections.filter(
+    (section) => section.key !== "general" && !group3PropertySections.includes(section),
+  );
   const propertyContextCount = propertySections.reduce(
     (sum, section) => sum + asArray(section?.rows).length,
     0,
@@ -2091,6 +2119,8 @@ async function handleSaveAll() {
         ) : null}
 
         <PropertyGroup title="Исполнение и события">
+          {group3PropertySections.map((section) => renderPropertyContextSection(section))}
+
           {isTaskLikeBpmnType(selectedElementType) ? (
             <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="camunda-listeners-group">
               <div className="sidebarPropertiesBlockHead">
@@ -2325,24 +2355,26 @@ async function handleSaveAll() {
 
           {renderOverlayCompanionsSection()}
 
-          <div className="sidebarPropertiesFooter sidebarPropertiesFooter--sticky sidebarButtonRow">
-            <button
-              type="button"
-              className="primaryBtn sidebarPropertiesActionBtn flex-1"
-              onClick={handleSaveAll}
-              disabled={!!disabled || !!extensionStateBusy || !!bpmnDocumentationBusy}
-            >
-              {extensionStateBusy || bpmnDocumentationBusy ? "Сохраняю..." : "Сохранить всё"}
-            </button>
-            <button
-              type="button"
-              className="secondaryBtn sidebarPropertiesActionBtn px-3"
-              onClick={handleResetAll}
-              disabled={!!disabled || !!extensionStateBusy || !!bpmnDocumentationBusy}
-            >
-              Сбросить
-            </button>
-          </div>
+          {!hideActions ? (
+            <div className="sidebarPropertiesFooter sidebarPropertiesFooter--sticky sidebarButtonRow">
+              <button
+                type="button"
+                className="primaryBtn sidebarPropertiesActionBtn flex-1"
+                onClick={handleSaveAll}
+                disabled={!!disabled || !!extensionStateBusy || !!bpmnDocumentationBusy}
+              >
+                {extensionStateBusy || bpmnDocumentationBusy ? "Сохраняю..." : "Сохранить всё"}
+              </button>
+              <button
+                type="button"
+                className="secondaryBtn sidebarPropertiesActionBtn px-3"
+                onClick={handleResetAll}
+                disabled={!!disabled || !!extensionStateBusy || !!bpmnDocumentationBusy}
+              >
+                Сбросить
+              </button>
+            </div>
+          ) : null}
         </PropertyGroup>
       </section>
 

@@ -2667,6 +2667,7 @@ export default function App() {
         return snap?.ok ? snap.xml : "";
       },
       apiPutBpmnXml,
+      flushSave: bpmnStageRef.current?.flushSave,
       apiGetSession,
       apiGetBpmnXml,
       onSessionSync,
