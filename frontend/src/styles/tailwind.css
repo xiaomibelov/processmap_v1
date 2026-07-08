@@ -4934,6 +4934,27 @@
     backdrop-filter: blur(2px);
   }
 
+  .sidebarGlobalFooter {
+    width: 100%;
+    max-width: 672px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .sidebarGlobalFooterInner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 4px 6px;
+    border-top: 1px solid #DDE6F3;
+  }
+
+  .sidebarGlobalFooterBtn {
+    min-height: 32px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
   .property-group {
     padding-top: 10px;
     margin-top: 8px;
