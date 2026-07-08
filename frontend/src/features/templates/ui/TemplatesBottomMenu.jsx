@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+import Modal from "../../../shared/ui/Modal";
 import { readTemplatePackFromTemplate } from "../services/applyBpmnFragmentTemplatePlacement.js";
 
 function toText(value) {
@@ -122,10 +122,10 @@ function FolderTree({
         const isActive = toText(activeFolderId) === id;
         return (
           <div key={id}>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-panel2/65 text-[10px] text-muted"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border/70 bg-panel2/65 text-[10px] text-muted"
                 onClick={() => onToggleExpand?.(id)}
                 aria-label={expanded ? "Свернуть папку" : "Развернуть папку"}
               >
@@ -133,12 +133,12 @@ function FolderTree({
               </button>
               <button
                 type="button"
-                className={`flex h-8 min-w-0 flex-1 items-center rounded-xl border px-3 text-left text-sm transition ${
+                className={`flex h-7 min-w-0 flex-1 items-center rounded-lg border px-2.5 text-left text-sm transition ${
                   isActive
                     ? "border-accent/60 bg-accentSoft/25 text-fg"
                     : "border-border/70 bg-panel2/40 text-fg hover:border-accent/35 hover:bg-panel2/70"
                 }`}
-                style={{ paddingLeft: `${12 + (level * 14)}px` }}
+                style={{ paddingLeft: `${10 + (level * 12)}px` }}
                 onClick={() => onSelectFolder?.(id)}
                 data-testid={`templates-folder-${id}`}
               >
@@ -169,7 +169,7 @@ function ScopeButton({ active = false, label = "", count = 0, onClick, testId = 
   return (
     <button
       type="button"
-      className={`flex min-h-[52px] w-full flex-col items-start rounded-2xl border px-3 py-2 text-left transition ${
+      className={`flex min-h-[48px] w-full flex-col items-start rounded-xl border px-3 py-2 text-left transition ${
         active
           ? "border-accent/60 bg-accentSoft/25 text-fg"
           : "border-border/70 bg-panel2/40 text-fg hover:border-accent/35 hover:bg-panel2/70"
@@ -189,37 +189,39 @@ function TemplateListRow({ template, selected = false, onSelect, onApply, busy =
   const preview = buildTemplatePreview(item);
   return (
     <div
-      className={`rounded-2xl border p-3 transition ${
+      className={`rounded-xl border p-3 transition ${
         selected
           ? "border-accent/60 bg-accentSoft/20"
           : "border-border/70 bg-panel2/35 hover:border-accent/35 hover:bg-panel2/60"
       }`}
       data-testid={`template-item-${id}`}
     >
-      <button
-        type="button"
-        className="block w-full text-left"
-        onClick={() => onSelect?.(item)}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-fg">{toText(item.title || item.name || "Шаблон")}</div>
-            <div className="mt-1 text-xs text-muted">
-              {preview.typeLabel} · {preview.nodeCount} узл. · {preview.edgeCount} flow
-            </div>
-            {preview.laneNames.length ? (
-              <div className="mt-1 truncate text-[11px] text-muted">
-                Lane: {preview.laneNames.join(", ")}
-              </div>
-            ) : null}
-          </div>
-          <div className="shrink-0 text-[11px] text-muted">{preview.updatedAtText}</div>
-        </div>
-      </button>
-      <div className="mt-3 flex items-center justify-end">
+      <div className="flex items-start gap-3">
         <button
           type="button"
-          className="secondaryBtn h-8 px-3 text-xs"
+          className="block min-w-0 flex-1 text-left"
+          onClick={() => onSelect?.(item)}
+          data-testid={`btn-select-template-${id}`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-fg">{toText(item.title || item.name || "Шаблон")}</div>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
+                <span className="rounded border border-border/70 bg-panel px-1.5 py-0.5">{preview.typeLabel}</span>
+                <span>{preview.nodeCount} узл.</span>
+                <span>{preview.edgeCount} flow</span>
+              </div>
+              {preview.laneNames.length ? (
+                <div className="mt-1 truncate text-[11px] text-muted">
+                  Lane: {preview.laneNames.join(", ")}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </button>
+        <button
+          type="button"
+          className="secondaryBtn h-8 shrink-0 px-2.5 text-[11px]"
           onClick={async () => {
             const result = await Promise.resolve(onApply?.(item));
             return result;
@@ -228,6 +230,69 @@ function TemplateListRow({ template, selected = false, onSelect, onApply, busy =
           disabled={busy}
         >
           Применить
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TemplatePickerFooter({
+  busy,
+  selectedTemplate,
+  onRefresh,
+  onClose,
+  onApply,
+  onDelete,
+}) {
+  const handleApply = useCallback(async () => {
+    if (!selectedTemplate) return;
+    const result = await Promise.resolve(onApply?.(selectedTemplate));
+    if (result?.ok) {
+      onClose?.();
+    }
+  }, [onApply, onClose, selectedTemplate]);
+
+  const handleDelete = useCallback(async () => {
+    if (!selectedTemplate) return;
+    await Promise.resolve(onDelete?.(selectedTemplate));
+  }, [onDelete, selectedTemplate]);
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className="secondaryBtn h-9 px-3 text-xs"
+          onClick={() => void onRefresh?.()}
+          disabled={busy}
+          data-testid="templates-footer-refresh"
+        >
+          Обновить
+        </button>
+        {selectedTemplate ? (
+          <button
+            type="button"
+            className="secondaryBtn h-9 px-3 text-xs text-danger"
+            onClick={() => void handleDelete()}
+            disabled={busy || selectedTemplate?.can_delete === false}
+            data-testid="templates-footer-delete"
+          >
+            Удалить
+          </button>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" className="secondaryBtn h-9 px-3 text-xs" onClick={onClose} disabled={busy}>
+          Закрыть
+        </button>
+        <button
+          type="button"
+          className="primaryBtn h-9 px-3 text-xs"
+          onClick={() => void handleApply()}
+          disabled={busy || !selectedTemplate}
+          data-testid="templates-footer-apply"
+        >
+          Применить в сессию
         </button>
       </div>
     </div>
@@ -251,7 +316,6 @@ export default function TemplatesBottomMenu({
   canCreateOrgFolder = false,
   showOrgScope = true,
 }) {
-  const panelRef = useRef(null);
   const [search, setSearch] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [expandedByScope, setExpandedByScope] = useState({ personal: new Set(), org: new Set() });
@@ -261,16 +325,39 @@ export default function TemplatesBottomMenu({
   const folders = Array.isArray(foldersByScope?.[scope]) ? foldersByScope[scope] : [];
   const childrenMap = useMemo(() => buildChildrenMap(folders), [folders]);
   const expandedIds = expandedByScope[scope] || new Set();
+
+  const byScope = useMemo(() => {
+    const personal = [];
+    const org = [];
+    allTemplates.forEach((item) => {
+      const scopeRaw = toText(item?.scope).toLowerCase();
+      if (scopeRaw === "org") org.push(item);
+      else personal.push(item);
+    });
+    return { personal, org };
+  }, [allTemplates]);
+
   const compatibleTemplates = useMemo(
     () => allTemplates.filter((template) => toText(template?.template_type || "bpmn_selection_v1") === "bpmn_fragment_v1"),
     [allTemplates],
   );
   const hiddenIncompatibleCount = Math.max(0, allTemplates.length - compatibleTemplates.length);
+
+  const folderFilteredTemplates = useMemo(() => {
+    const currentFolderId = toText(activeFolderId);
+    return compatibleTemplates.filter((template) => {
+      const templateFolderId = toText(template?.folder_id);
+      if (!currentFolderId) return !templateFolderId;
+      return templateFolderId === currentFolderId;
+    });
+  }, [compatibleTemplates, activeFolderId]);
+
   const searchNeedle = toText(search).toLowerCase();
   const visibleTemplates = useMemo(() => {
-    if (!searchNeedle) return compatibleTemplates;
-    return compatibleTemplates.filter((template) => collectSearchText(template).includes(searchNeedle));
-  }, [compatibleTemplates, searchNeedle]);
+    if (!searchNeedle) return folderFilteredTemplates;
+    return folderFilteredTemplates.filter((template) => collectSearchText(template).includes(searchNeedle));
+  }, [folderFilteredTemplates, searchNeedle]);
+
   const selectedTemplate = useMemo(() => {
     const current = visibleTemplates.find((template) => toText(template?.id) === toText(selectedTemplateId));
     return current || visibleTemplates[0] || null;
@@ -278,21 +365,11 @@ export default function TemplatesBottomMenu({
   const preview = useMemo(() => buildTemplatePreview(selectedTemplate), [selectedTemplate]);
 
   useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event) => {
-      const target = event?.target;
-      if (!(target instanceof Element)) return;
-      if (panelRef.current?.contains(target)) return;
-      onClose?.();
-    };
-    window.addEventListener("pointerdown", onPointerDown, true);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown, true);
-    };
-  }, [onClose, open]);
-
-  useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setSelectedTemplateId("");
+      setSearch("");
+      return;
+    }
     setExpandedByScope((prev) => {
       const current = prev && typeof prev === "object" ? prev : { personal: new Set(), org: new Set() };
       const existing = current[scope] instanceof Set ? current[scope] : new Set();
@@ -345,286 +422,204 @@ export default function TemplatesBottomMenu({
     }
   }, [activeFolderId, canCreateFolder, onCreateFolder, onSelectFolder, scope]);
 
-  const handleApply = useCallback(async (templateRaw) => {
+  const handleApplyRow = useCallback(async (templateRaw) => {
     const result = await Promise.resolve(onApply?.(templateRaw));
-    const placementStarted = result?.ok === true;
-    if (placementStarted) {
+    if (result?.ok) {
       onClose?.();
     }
     return result;
   }, [onApply, onClose]);
 
-  if (!open) return null;
+  const scopeCounts = useMemo(() => ({
+    personal: byScope.personal.filter((t) => toText(t?.template_type || "bpmn_selection_v1") === "bpmn_fragment_v1").length,
+    org: byScope.org.filter((t) => toText(t?.template_type || "bpmn_selection_v1") === "bpmn_fragment_v1").length,
+  }), [byScope]);
 
-  const overlay = (
-    <div className="fixed inset-0 z-[160] flex items-center justify-center bg-bg/70 px-4 py-5 backdrop-blur-sm">
+  return (
+    <Modal
+      open={open}
+      title="Шаблоны процесса"
+      onClose={onClose}
+      cardClassName="w-[calc(100vw-32px)] max-w-[1200px] min-w-[900px]"
+      footerClassName="!border-t-0 !p-0"
+      footer={(
+        <TemplatePickerFooter
+          busy={busy}
+          selectedTemplate={selectedTemplate}
+          onRefresh={onRefresh}
+          onClose={onClose}
+          onApply={onApply}
+          onDelete={onDelete}
+        />
+      )}
+    >
       <div
-        ref={panelRef}
-        className="flex h-[min(82vh,860px)] w-[min(1220px,calc(100vw-32px))] min-w-0 flex-col overflow-hidden rounded-[28px] border border-border bg-panel shadow-panel"
+        className="grid h-[65vh] min-h-[480px] gap-3 overflow-hidden md:grid-cols-[280px_1fr]"
         data-testid="templates-menu-panel"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
-          <div className="min-w-0">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Templates</div>
-            <div className="mt-1 text-xl font-semibold text-fg">BPMN templates for the current session</div>
-            <div className="mt-1 text-sm text-muted">
-              Выберите BPMN fragment и включите режим вставки.
-              После закрытия окна укажите точку на диаграмме и кликните ЛКМ, Esc отменяет placement.
-            </div>
+        {/* Left sidebar: scope + folders */}
+        <div className="flex min-h-0 flex-col border-r border-border bg-panel2/25 p-4">
+          <div className="mb-3 space-y-2">
+            <ScopeButton
+              active={scope === "personal"}
+              label="Личные"
+              count={scopeCounts.personal}
+              onClick={() => onScopeChange?.("personal")}
+              testId="templates-menu-scope-my"
+            />
+            {showOrgScope ? (
+              <ScopeButton
+                active={scope === "org"}
+                label="Организация"
+                count={scopeCounts.org}
+                onClick={() => onScopeChange?.("org")}
+                testId="templates-menu-scope-org"
+              />
+            ) : null}
           </div>
-          <div className="flex items-center gap-2">
-            <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={() => void onRefresh?.()} disabled={busy}>
-              Обновить
+
+          <label className="mb-3 block">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Поиск</div>
+            <input
+              type="search"
+              className="input h-9 w-full"
+              placeholder="Найти шаблон, lane, node"
+              value={search}
+              onChange={(event) => setSearch(String(event.target.value || ""))}
+            />
+          </label>
+
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Папки</div>
+              <div className="text-xs text-muted">Фильтр по папкам</div>
+            </div>
+            <button
+              type="button"
+              className="secondaryBtn h-8 px-2.5 text-[11px]"
+              onClick={() => void handleCreateFolder()}
+              disabled={!canCreateFolder}
+              title={canCreateFolder ? "Создать папку" : "Only org admins can create shared folders"}
+              data-testid="templates-folder-create"
+            >
+              + Папка
             </button>
-            <button type="button" className="secondaryBtn h-9 px-3 text-sm" onClick={onClose}>
-              Закрыть
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border/70 bg-panel/70 p-2">
+            <button
+              type="button"
+              className={`mb-2 flex h-8 w-full items-center rounded-lg border px-3 text-left text-sm transition ${
+                !toText(activeFolderId)
+                  ? "border-accent/60 bg-accentSoft/25 text-fg"
+                  : "border-border/70 bg-panel2/40 text-fg hover:border-accent/35 hover:bg-panel2/70"
+              }`}
+              onClick={() => onSelectFolder?.("")}
+              data-testid="templates-folder-unsorted"
+            >
+              Без папки
             </button>
+            <FolderTree
+              parentId=""
+              level={0}
+              childrenMap={childrenMap}
+              expandedIds={expandedIds}
+              onToggleExpand={handleToggleExpand}
+              activeFolderId={activeFolderId}
+              onSelectFolder={onSelectFolder}
+            />
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[260px_minmax(280px,360px)_minmax(0,1fr)] gap-0">
-          <aside className="flex min-h-0 flex-col border-r border-border bg-panel2/25 px-4 py-4">
-            <div className="mb-3 space-y-2">
-              <ScopeButton
-                active={scope === "personal"}
-                label="Личные"
-                count={scope === "personal" ? allTemplates.length : 0}
-                onClick={() => onScopeChange?.("personal")}
-                testId="templates-menu-scope-my"
-              />
-              {showOrgScope ? (
-                <ScopeButton
-                  active={scope === "org"}
-                  label="Организация"
-                  count={scope === "org" ? allTemplates.length : 0}
-                  onClick={() => onScopeChange?.("org")}
-                  testId="templates-menu-scope-org"
-                />
-              ) : null}
+        {/* Right area: list + preview */}
+        <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-panel2/35">
+          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Список шаблонов</div>
+              <div className="text-sm text-fg">{visibleTemplates.length} BPMN fragment шаблонов</div>
             </div>
-
-            <label className="mb-3 block">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Поиск</div>
-              <input
-                type="search"
-                className="input h-10 w-full"
-                placeholder="Найти шаблон, lane, node"
-                value={search}
-                onChange={(event) => setSearch(String(event.target.value || ""))}
-              />
-            </label>
-
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Folders</div>
-                <div className="text-xs text-muted">Explorer-style filter by folder</div>
-              </div>
-              <button
-                type="button"
-                className="secondaryBtn h-8 px-3 text-xs"
-                onClick={() => void handleCreateFolder()}
-                disabled={!canCreateFolder}
-                title={canCreateFolder ? "Создать папку" : "Only org admins can create shared folders"}
-                data-testid="templates-folder-create"
-              >
-                + Папка
-              </button>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-auto rounded-2xl border border-border/70 bg-panel/70 p-2">
-              <div className="mb-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  className={`flex h-8 min-w-0 flex-1 items-center rounded-xl border px-3 text-left text-sm transition ${
-                    !toText(activeFolderId)
-                      ? "border-accent/60 bg-accentSoft/25 text-fg"
-                      : "border-border/70 bg-panel2/40 text-fg hover:border-accent/35 hover:bg-panel2/70"
-                  }`}
-                  onClick={() => onSelectFolder?.("")}
-                  data-testid="templates-folder-unsorted"
-                >
-                  Без папки
-                </button>
-              </div>
-              <FolderTree
-                parentId=""
-                level={0}
-                childrenMap={childrenMap}
-                expandedIds={expandedIds}
-                onToggleExpand={handleToggleExpand}
-                activeFolderId={activeFolderId}
-                onSelectFolder={onSelectFolder}
-              />
-            </div>
-          </aside>
-
-          <section className="flex min-h-0 flex-col border-r border-border px-4 py-4">
-            <div className="mb-3 flex items-end justify-between gap-3">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Список</div>
-                <div className="text-sm text-fg">{visibleTemplates.length} BPMN templates in current view</div>
-              </div>
+            <div className="flex items-center gap-2">
               {hiddenIncompatibleCount > 0 ? (
                 <div className="rounded-full border border-border/70 bg-panel2/50 px-3 py-1 text-[11px] text-muted">
                   Скрыто legacy/hybrid: {hiddenIncompatibleCount}
                 </div>
               ) : null}
             </div>
+          </div>
 
-            <div className="min-h-0 flex-1 space-y-3 overflow-auto pr-1" data-testid="templates-picker">
-              {visibleTemplates.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-border px-4 py-5 text-sm text-muted">
-                  {compatibleTemplates.length === 0
-                    ? "В текущем scope пока нет BPMN fragment templates."
-                    : "По текущему поиску ничего не найдено."}
-                </div>
-              ) : (
-                visibleTemplates.map((template) => (
+          <div
+            className={`min-h-0 overflow-auto p-4 ${selectedTemplate ? "flex-1" : "flex-1"}`}
+            data-testid="templates-picker"
+          >
+            {visibleTemplates.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border px-4 py-5 text-sm text-muted">
+                {compatibleTemplates.length === 0
+                  ? "В текущем scope пока нет BPMN fragment templates."
+                  : "По текущему поиску или выбранной папке ничего не найдено."}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {visibleTemplates.map((template) => (
                   <TemplateListRow
                     key={toText(template?.id) || Math.random().toString(36)}
                     template={template}
                     selected={toText(template?.id) === toText(selectedTemplate?.id)}
                     onSelect={(item) => setSelectedTemplateId(toText(item?.id))}
-                    onApply={handleApply}
+                    onApply={handleApplyRow}
                     busy={busy}
                   />
-                ))
-              )}
-            </div>
-          </section>
-
-          <section className="flex min-h-0 flex-col px-5 py-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Preview</div>
-                <div className="text-sm text-muted">Что именно будет вставлено в текущую BPMN session</div>
+                ))}
               </div>
-              {selectedTemplate ? (
-                <button
-                  type="button"
-                  className="secondaryBtn h-8 px-3 text-xs text-danger"
-                  onClick={() => void onDelete?.(selectedTemplate)}
-                  disabled={busy || selectedTemplate?.can_delete === false}
-                >
-                  Удалить
-                </button>
-              ) : null}
-            </div>
-
-            {!selectedTemplate ? (
-              <div className="flex min-h-0 flex-1 items-center justify-center rounded-[24px] border border-dashed border-border bg-panel2/25 px-6 text-center text-sm text-muted">
-                Выберите BPMN template слева, чтобы посмотреть состав и применить его в текущую сессию.
-              </div>
-            ) : (
-              <>
-                <div className="min-h-0 flex-1 space-y-4 overflow-auto rounded-[24px] border border-border bg-panel2/25 p-5">
-                  <div>
-                    <div className="text-xl font-semibold text-fg">{toText(selectedTemplate.title || selectedTemplate.name || "Шаблон")}</div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <span className="rounded-full border border-border/70 bg-panel px-3 py-1 text-xs text-fg">{preview.typeLabel}</span>
-                      <span className="rounded-full border border-border/70 bg-panel px-3 py-1 text-xs text-fg">{preview.nodeCount} узл.</span>
-                      <span className="rounded-full border border-border/70 bg-panel px-3 py-1 text-xs text-fg">{preview.edgeCount} flow</span>
-                      <span className="rounded-full border border-border/70 bg-panel px-3 py-1 text-xs text-muted">Обновлён: {preview.updatedAtText}</span>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 lg:grid-cols-2">
-                    <div className="rounded-2xl border border-border/70 bg-panel px-4 py-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Insert behavior</div>
-                      <div className="mt-2 text-sm text-fg">
-                        После Apply окно закрывается и включается placement mode с ghost-предпросмотром под курсором.
-                      </div>
-                      <div className="mt-2 text-xs text-muted">
-                        Вставка выполняется только по ЛКМ в выбранной точке на диаграмме. Esc отменяет режим вставки.
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-border/70 bg-panel px-4 py-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Metadata</div>
-                      <div className="mt-2 space-y-2 text-sm">
-                        <div className="flex items-start justify-between gap-3">
-                          <span className="text-muted">Source session</span>
-                          <span className="text-right text-fg">{preview.sourceSessionId || "—"}</span>
-                        </div>
-                        <div className="flex items-start justify-between gap-3">
-                          <span className="text-muted">Selection size</span>
-                          <span className="text-right text-fg">{preview.selectionCount || preview.nodeCount || 0}</span>
-                        </div>
-                        <div className="flex items-start justify-between gap-3">
-                          <span className="text-muted">Folder</span>
-                          <span className="text-right text-fg">{toText(activeFolderId) || "Без папки"}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-border/70 bg-panel px-4 py-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Lane hints</div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {preview.laneNames.length ? preview.laneNames.map((lane) => (
-                        <span key={lane} className="rounded-full border border-border/70 bg-panel2/60 px-3 py-1 text-xs text-fg">
-                          {lane}
-                        </span>
-                      )) : <span className="text-sm text-muted">Lane hints не заданы.</span>}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-border/70 bg-panel px-4 py-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Nodes preview</div>
-                    {preview.nodeNames.length ? (
-                      <div className="mt-3 grid gap-2 md:grid-cols-2">
-                        {preview.nodeNames.slice(0, 12).map((name, index) => (
-                          <div key={`${name}_${index}`} className="rounded-xl border border-border/60 bg-panel2/40 px-3 py-2 text-sm text-fg">
-                            {name}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="mt-2 text-sm text-muted">Имена узлов недоступны, но pack валиден и будет вставлен как BPMN fragment.</div>
-                    )}
-                  </div>
-
-                  {preview.tags.length ? (
-                    <div className="rounded-2xl border border-border/70 bg-panel px-4 py-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Tags</div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {preview.tags.map((tag) => (
-                          <span key={tag} className="rounded-full border border-border/70 bg-panel2/60 px-3 py-1 text-xs text-fg">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
-                  <div className="text-xs text-muted">
-                    Apply переведёт диаграмму в режим выбора точки вставки (ЛКМ для вставки, Esc для отмены).
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button type="button" className="secondaryBtn h-10 px-4 text-sm" onClick={onClose} disabled={busy}>
-                      Отмена
-                    </button>
-                    <button
-                      type="button"
-                      className="primaryBtn h-10 px-4 text-sm"
-                      onClick={() => void handleApply(selectedTemplate)}
-                      disabled={busy || !selectedTemplate}
-                    >
-                      Применить в сессию
-                    </button>
-                  </div>
-                </div>
-              </>
             )}
-          </section>
+          </div>
+
+          {selectedTemplate ? (
+            <div className="border-t border-border bg-panel2/25 px-4 py-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="text-base font-semibold text-fg">
+                    {toText(selectedTemplate.title || selectedTemplate.name || "Шаблон")}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
+                    <span className="rounded border border-border/70 bg-panel px-2 py-0.5 text-fg">{preview.typeLabel}</span>
+                    <span>{preview.nodeCount} узл.</span>
+                    <span>{preview.edgeCount} flow</span>
+                    <span>Обновлён: {preview.updatedAtText}</span>
+                    {preview.sourceSessionId ? <span>Session: {preview.sourceSessionId}</span> : null}
+                  </div>
+                </div>
+              </div>
+              {preview.nodeNames.length > 0 ? (
+                <div className="mt-3">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Узлы</div>
+                  <div className="flex flex-wrap gap-2">
+                    {preview.nodeNames.slice(0, 12).map((name, index) => (
+                      <span key={`${name}_${index}`} className="rounded-lg border border-border/70 bg-panel px-2 py-1 text-xs text-fg">
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {preview.laneNames.length > 0 ? (
+                <div className="mt-3">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Lane hints</div>
+                  <div className="flex flex-wrap gap-2">
+                    {preview.laneNames.map((lane) => (
+                      <span key={lane} className="rounded-lg border border-border/70 bg-panel2/60 px-2 py-1 text-xs text-fg">
+                        {lane}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <div className="mt-3 text-xs text-muted">
+                После нажатия «Применить в сессию» окно закроется и включится режим размещения фрагмента: ghost под курсором, ЛКМ — вставить, Esc — отмена.
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
-    </div>
+    </Modal>
   );
-
-  if (typeof document === "undefined" || !document.body) {
-    return overlay;
-  }
-  return createPortal(overlay, document.body);
 }

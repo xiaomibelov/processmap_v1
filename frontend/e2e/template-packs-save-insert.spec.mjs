@@ -175,6 +175,36 @@ function byTestIds(page, ids) {
   return page.locator(selector).first();
 }
 
+async function placeFragmentIfNeeded(page) {
+  const ghost = page.getByTestId("bpmn-fragment-ghost");
+  const host = page.locator(".bpmnStageHost").first();
+  await expect(host).toBeVisible();
+  let visible = await ghost.isVisible().catch(() => false);
+  if (!visible) {
+    const probeBox = await host.boundingBox();
+    if (probeBox) {
+      const px = Number(probeBox.x || 0) + Math.round(Number(probeBox.width || 0) / 2);
+      const py = Number(probeBox.y || 0) + Math.round(Number(probeBox.height || 0) / 2);
+      await page.mouse.move(px, py);
+      visible = await ghost.isVisible().catch(() => false);
+    }
+  }
+  if (!visible) return false;
+  const box = await host.boundingBox();
+  expect(box).toBeTruthy();
+  const x = Number(box.x || 0) + Math.max(80, Math.round(Number(box.width || 0) * 0.55));
+  const y = Number(box.y || 0) + Math.max(60, Math.round(Number(box.height || 0) * 0.35));
+  await page.mouse.move(x, y);
+  await page.mouse.click(x, y);
+  await expect
+    .poll(async () => {
+      return await page.evaluate(() => Boolean(window.__FPC_E2E_TEMPLATE_FRAGMENT_INSERT__?.ok));
+    }, { timeout: 10000 })
+    .toBeTruthy();
+  await expect(ghost).toBeHidden({ timeout: 10000 });
+  return true;
+}
+
 test("template packs: save selected fragment and insert into another session", async ({ page, request }) => {
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const marker = `TPL_${runId.slice(-4)}`;
@@ -213,13 +243,14 @@ test("template packs: save selected fragment and insert into another session", a
   await byTestIds(page, ["btn-templates", "template-pack-insert-open"]).click();
   await expect(byTestIds(page, ["templates-picker", "template-pack-modal"])).toBeVisible();
 
+  await page.locator("[data-testid^='btn-apply-template-'], [data-testid='template-pack-insert-after']").first().click();
+  await placeFragmentIfNeeded(page);
+
   const putResponse = page.waitForResponse((resp) => {
     return resp.request().method() === "PUT"
       && /\/api\/sessions\/[^/]+\/bpmn(?:\?|$)/.test(resp.url())
       && resp.status() === 200;
   });
-
-  await page.locator("[data-testid^='btn-apply-template-'], [data-testid='template-pack-insert-after']").first().click();
   await putResponse;
 
   const afterCount = await readRegistryCount(page);
@@ -231,6 +262,4 @@ test("template packs: save selected fragment and insert into another session", a
   expect(xmlText).toContain(`${marker}_A`);
   expect(xmlText).toContain(`${marker}_B`);
 
-  // eslint-disable-next-line no-console
-  console.log(`[PACK_E2E] registryBefore=${beforeCount} registryAfter=${afterCount} put=200 marker=${marker}`);
 });
