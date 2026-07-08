@@ -570,6 +570,7 @@ export function createBpmnStageImperativeApi(ctxBase) {
     },
     seedFromActors: () => callbacks.seedNew?.(),
     saveLocal: (options) => callbacks.saveLocalFromModeler?.(options),
+    flushSave: (reason, options) => callbacks.flushSave?.(reason, options),
     setDiagramMutationSaveActive: (active) => {
       refs.bpmnCoordinatorRef?.current?.setDiagramMutationSaveActive?.(active === true);
     },
