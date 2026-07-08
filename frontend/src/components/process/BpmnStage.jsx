@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useFeatureFlag } from "../../features/config/featureFlagsContext";
 import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bpmnApi";
+import XmlEditor from "./XmlEditor";
 
 import { apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
@@ -374,7 +375,7 @@ ${laneShapesXml}
 </bpmn:definitions>`;
 }
 
-function XmlView({ xmlDraft, xmlDirty, saveBusy, onChange, onSave, onReset }) {
+function XmlView({ xmlDraft, xmlDirty, saveBusy, onChange, onSave, onReset, onApply }) {
   return (
     <div className="xmlWrap">
       <div className="xmlEditorToolbar">
@@ -389,12 +390,11 @@ function XmlView({ xmlDraft, xmlDirty, saveBusy, onChange, onSave, onReset }) {
         </button>
       </div>
       <div className="xmlScroller">
-        <textarea
-          className="xmlEditorTextarea"
+        <XmlEditor
           value={xmlDraft}
-          onChange={(e) => onChange?.(String(e.target.value || ""))}
-          spellCheck={false}
-          placeholder="Вставьте BPMN XML..."
+          onChange={onChange}
+          onApply={onApply}
+          height="100%"
         />
       </div>
     </div>
@@ -983,6 +983,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const viewerSubprocessUnbindRef = useRef(null);
   const modelerSubprocessUnbindRef = useRef(null);
   const bpmnStoreRef = useRef(null);
+  const applyingXmlToCanvasRef = useRef(false);
   const bpmnCoordinatorRef = useRef(null);
   const bpmnPersistenceRef = useRef(null);
   const bpmnStoreUnsubRef = useRef(null);
@@ -4763,6 +4764,47 @@ const BpmnStage = forwardRef(function BpmnStage({
     return viewportRecovery.ensureVisibleOnInstance(createViewportCtx(), inst, options);
   }
 
+  /**
+   * Apply the current XML editor draft to the canvas modeler without persisting
+   * to the backend. Used for two-way XML ↔ canvas synchronization.
+   */
+  async function applyXmlDraftToCanvas(rawXml) {
+    const nextXml = String(rawXml || "");
+    const vErr = validateBpmnXmlText(nextXml);
+    if (vErr) {
+      setErr(vErr);
+      logBpmnTrace("VALIDATION_FAIL", nextXml, {
+        sid: String(sessionId || ""),
+        source: "xml_apply_to_canvas",
+        error: vErr,
+      });
+      return { ok: false, error: vErr };
+    }
+    setErr("");
+    applyingXmlToCanvasRef.current = true;
+    try {
+      const result = await renderModeler(nextXml);
+      if (result?.error) {
+        setErr(String(result.error));
+        return { ok: false, error: result.error };
+      }
+      // Sync the accepted XML back to the store/coordinator so the rest of the
+      // app sees a consistent state, but keep the draft dirty flag intact.
+      ensureBpmnCoordinator().syncExternalXml(nextXml, "xml_editor_apply", {
+        bumpRev: false,
+        dirty: true,
+      });
+      emitDiagramMutation("xml.apply", { source: "xml_editor" });
+      return { ok: true, xml: nextXml };
+    } catch (e) {
+      const msg = String(e?.message || e);
+      setErr(msg);
+      return { ok: false, error: msg };
+    } finally {
+      applyingXmlToCanvasRef.current = false;
+    }
+  }
+
   async function persistXmlSnapshot(rawXml, hintBase = "backend") {
     const sid = String(sessionId || "");
     if (!sid) return { ok: false, error: "missing session id" };
@@ -5630,6 +5672,18 @@ const BpmnStage = forwardRef(function BpmnStage({
     applyXmlSnapshot(fromDraft, srcHint || "draft");
   }, [draft?.bpmn_xml, xml, srcHint, xmlDirty]);
 
+  // Canvas → XML editor sync: when the canonical XML changes while the XML tab
+  // is open and the user is not actively typing, update the editor draft.
+  useEffect(() => {
+    if (view !== "xml") return;
+    if (xmlDirty) return;
+    if (applyingXmlToCanvasRef.current) return;
+    const nextXml = String(xml || "");
+    if (!nextXml.trim()) return;
+    if (nextXml === String(xmlDraft || "")) return;
+    setXmlDraft(nextXml);
+  }, [view, xml, xmlDraft, xmlDirty]);
+
   useEffect(() => {
     const authoritativeXml = String(draft?._apply_bpmn_xml ? draft?.bpmn_xml || "" : "");
     if (!authoritativeXml.trim()) return;
@@ -5933,6 +5987,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           onChange={updateXmlDraft}
           onSave={saveXmlDraftText}
           onReset={() => applyXmlSnapshot(xml, srcHint || "backend")}
+          onApply={applyXmlDraftToCanvas}
         />
       </div>
 
