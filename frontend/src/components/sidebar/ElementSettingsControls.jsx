@@ -1170,9 +1170,10 @@ export function CamundaPropertiesSettings({
     ? (Array.isArray(dictionaryEditorModel?.customRows) ? dictionaryEditorModel.customRows : [])
     : visibleFallbackProperties)
     .filter((row) => !isShowPropertiesFlagRow(row));
-  const operationPropertiesCount = Array.isArray(dictionaryEditorModel?.schemaRows)
-    ? dictionaryEditorModel.schemaRows.length
-    : 0;
+  const visibleSchemaRows = Array.isArray(dictionaryEditorModel?.schemaRows)
+    ? dictionaryEditorModel.schemaRows.filter((row) => String(row?.value ?? "").trim() !== "")
+    : [];
+  const operationPropertiesCount = visibleSchemaRows.length;
   const overlayCompanionSummary = selectedBpmnOverlayCompanionSummary && typeof selectedBpmnOverlayCompanionSummary === "object"
     ? selectedBpmnOverlayCompanionSummary
     : {
@@ -1979,7 +1980,7 @@ async function handleSaveAll() {
                           <span>Значение</span>
                           <span>Действие</span>
                         </div>
-                        {dictionaryEditorModel.schemaRows.map((row) => renderSchemaPropertyRow(row))}
+                        {visibleSchemaRows.map((row) => renderSchemaPropertyRow(row))}
                       </div>
                     </>
                   ) : null}
@@ -2077,50 +2078,6 @@ async function handleSaveAll() {
                       disabled={!!disabled || !!extensionStateBusy}
                     >
                       + Добавить header
-                    </button>
-                  </div>
-                </>
-              ) : null}
-            </section>
-
-            <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary">
-              <div className="sidebarPropertiesBlockHead">
-                <button
-                  type="button"
-                  className="sidebarPropertiesBlockToggle"
-                  onClick={() => setAdditionalBpmnOpen((prev) => !prev)}
-                  aria-expanded={additionalBpmnOpen ? "true" : "false"}
-                >
-                  <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{additionalBpmnOpen ? "▾" : "▸"}</span>
-                  <span className="sidebarPropertiesBlockTitle">Дополнительные BPMN-свойства</span>
-                  <span className="sidebarPropertiesBlockMeta">{additionalBpmnCount}</span>
-                </button>
-                <SidebarInfoTip
-                  label="О дополнительных BPMN-свойствах"
-                  text="Extension properties текущего элемента в формате name/value."
-                />
-              </div>
-              {additionalBpmnOpen ? (
-                <>
-                  {!hasDictionarySchema && !showFallbackBlock && dictionaryLoading ? (
-                    <div className="sidebarFieldHint">Ожидаю загрузку схемы операции.</div>
-                  ) : null}
-                  <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
-                    <div className="sidebarPropertiesTableHead" role="presentation">
-                      <span>Свойство</span>
-                      <span>Значение</span>
-                      <span>Действие</span>
-                    </div>
-                    {additionalBpmnRows.map((row) => renderCustomPropertyRow(row))}
-                  </div>
-                  <div className="sidebarButtonRow">
-                    <button
-                      type="button"
-                      className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
-                      onClick={addPropertyRow}
-                      disabled={!!disabled || !!extensionStateBusy}
-                    >
-                      + Добавить BPMN-свойство
                     </button>
                   </div>
                 </>
@@ -2319,6 +2276,50 @@ async function handleSaveAll() {
             ctaVariant={String(extensionStateStatusMeta.tone || "").trim().toLowerCase() === "error" ? "primary" : "secondary"}
             testIdPrefix="camunda-extension-state-status"
           />
+
+          <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary">
+            <div className="sidebarPropertiesBlockHead">
+              <button
+                type="button"
+                className="sidebarPropertiesBlockToggle"
+                onClick={() => setAdditionalBpmnOpen((prev) => !prev)}
+                aria-expanded={additionalBpmnOpen ? "true" : "false"}
+              >
+                <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{additionalBpmnOpen ? "▾" : "▸"}</span>
+                <span className="sidebarPropertiesBlockTitle">Дополнительные BPMN-свойства</span>
+                <span className="sidebarPropertiesBlockMeta">{additionalBpmnCount}</span>
+              </button>
+              <SidebarInfoTip
+                label="О дополнительных BPMN-свойствах"
+                text="Extension properties текущего элемента в формате name/value."
+              />
+            </div>
+            {additionalBpmnOpen ? (
+              <>
+                {!hasDictionarySchema && !showFallbackBlock && dictionaryLoading ? (
+                  <div className="sidebarFieldHint">Ожидаю загрузку схемы операции.</div>
+                ) : null}
+                <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
+                  <div className="sidebarPropertiesTableHead" role="presentation">
+                    <span>Свойство</span>
+                    <span>Значение</span>
+                    <span>Действие</span>
+                  </div>
+                  {additionalBpmnRows.map((row) => renderCustomPropertyRow(row))}
+                </div>
+                <div className="sidebarButtonRow">
+                  <button
+                    type="button"
+                    className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+                    onClick={addPropertyRow}
+                    disabled={!!disabled || !!extensionStateBusy}
+                  >
+                    + Добавить BPMN-свойство
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </section>
 
           {otherPropertySections.map((section) => renderPropertyContextSection(section))}
 
