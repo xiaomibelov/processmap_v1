@@ -4934,6 +4934,51 @@
     backdrop-filter: blur(2px);
   }
 
+  .property-group {
+    padding-top: 10px;
+    margin-top: 8px;
+    border-top: 1px solid #E8EEF8;
+  }
+
+  .property-group:first-child {
+    padding-top: 0;
+    margin-top: 0;
+    border-top: 0;
+  }
+
+  .property-group-head {
+    margin-bottom: 6px;
+  }
+
+  .property-group-title {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: #6B7C9B;
+  }
+
+  .property-group-content {
+    display: grid;
+    gap: 6px;
+  }
+
+  .sidebarPropertiesLayout--centered {
+    width: 100%;
+    max-width: 672px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .sidebarSchemaPropertyRow {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr auto;
+    gap: 8px;
+    align-items: center;
+  }
+
   .sidebarPropertiesInlineStatusRow {
     @apply flex items-center justify-between gap-2;
     margin: -1px 0 0;
@@ -6144,6 +6189,14 @@
   .dark .sidebarPropertiesFooter--sticky {
     border-top-color: #334765;
     background: linear-gradient(180deg, rgba(18, 28, 44, 0.88) 0%, #121D2C 40%, #121D2C 100%);
+  }
+
+  .dark .property-group {
+    border-color: #2F3F5E;
+  }
+
+  .dark .property-group-title {
+    color: #8FA2C5;
   }
 
   .dark .sidebarSchemaPropertyMeta,
