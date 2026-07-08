@@ -199,6 +199,10 @@ export function parseOverlayFromProperties(
   const cleanProps = Array.isArray(props) ? props : [];
 
   const realProps = cleanProps.filter((p) => !isOverlayMetaProperty(p.name));
+  // The sidebar and the legacy overlay hide properties with empty values.
+  // Auto-generated V2 cards should follow the same rule so that clearing a
+  // property removes the overlay instead of leaving an empty row.
+  const visibleProps = realProps.filter((p) => String(p?.value ?? "").trim() !== "");
 
   if (!cleanProps.length) {
     // Even without properties, the global "show all V2 overlays" mode can
@@ -300,8 +304,8 @@ export function parseOverlayFromProperties(
   // properties. Create a compact auto-generated V2 card so the properties are
   // visible immediately without requiring users to add an fpc-overlay-v2
   // descriptor by hand.
-  if (realProps.length) {
-    const firstKey = String(realProps[0]?.name || "").trim();
+  if (visibleProps.length) {
+    const firstKey = String(visibleProps[0]?.name || "").trim();
     const titleText = String(elementName || firstKey || "Properties").trim();
     return {
       node_id: nodeId,
@@ -311,7 +315,7 @@ export function parseOverlayFromProperties(
       width: 180,
       height: 30,
       style: {},
-      meta: { title: `${realProps.length} element properties` },
+      meta: { title: `${visibleProps.length} element properties` },
       colorKey: deriveOverlayColorKey(props, ""),
       auto: true,
       showProperties: readShowPropertiesFlag(props),
@@ -352,7 +356,7 @@ export function extractOverlaysFromBpmn(inst, forceShow = false) {
         // Collapse exact duplicate name/value rows so accidental duplicate
         // <camunda:properties> blocks do not multiply the rendered rows.
         const businessProperties = dedupePropertiesByExactValue(
-          props.filter((p) => !isOverlayMetaProperty(p?.name))
+          props.filter((p) => !isOverlayMetaProperty(p?.name) && String(p?.value ?? "").trim() !== "")
         );
         result.push({ ...overlay, properties: businessProperties });
       }
