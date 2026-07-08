@@ -844,7 +844,7 @@ const NOTES_BATCH_RESULT_PREFIX = "fpc:batch_ops_result:";
 const NOTES_COVERAGE_OPEN_EVENT = "fpc:coverage_open";
 const SIDEBAR_SECTIONS_STATE_KEY = "fpc_left_sidebar_sections";
 const SIDEBAR_LAST_OPEN_KEY = "ui.sidebar.last_open.v2";
-const SIDEBAR_ACCORDION_KEYS = ["paths", "time", "robotmeta", "execution", "properties", "ai", "notes", "advanced"];
+const SIDEBAR_ACCORDION_KEYS = ["properties", "paths", "time", "robotmeta", "execution", "ai", "notes", "advanced"];
 
 const DEFAULT_SECTIONS_STATE = {
   paths: false,
@@ -2975,6 +2975,27 @@ export default function NotesPanel({
     }
   }
 
+  const sidebarSaveAllBusy = nodePathBusy || stepTimeBusy || robotMetaBusy || camundaPropertiesBusy || bpmnDocumentationBusy;
+
+  async function handleSidebarSaveAll() {
+    if (disabled || sidebarSaveAllBusy) return;
+    // Save order mirrors the new sidebar section order: properties first,
+    // then paths, time, robot meta. Each handler guards itself by element type.
+    await saveSelectedCamundaProperties?.();
+    await saveSelectedBpmnDocumentation?.();
+    await resolvedNodePathController.apply?.();
+    await saveSelectedElementStepTime?.();
+    await saveSelectedRobotMeta?.();
+  }
+
+  function handleSidebarResetAll() {
+    if (disabled || sidebarSaveAllBusy) return;
+    resetSelectedCamundaProperties?.();
+    resetSelectedBpmnDocumentation?.();
+    resolvedNodePathController.reset?.();
+    resetSelectedRobotMeta?.();
+  }
+
   const sectionShortcuts = [
     {
       id: "paths",
@@ -3033,7 +3054,28 @@ export default function NotesPanel({
         showQuickNav={false}
         onSectionShortcut={openSectionShortcut}
         stickyContent={null}
-        bottomBar={null}
+        bottomBar={(
+          <div className="sidebarGlobalFooter">
+            <div className="sidebarGlobalFooterInner">
+              <button
+                type="button"
+                className="primaryBtn sidebarGlobalFooterBtn flex-1"
+                onClick={() => void handleSidebarSaveAll()}
+                disabled={!!disabled || sidebarSaveAllBusy}
+              >
+                {sidebarSaveAllBusy ? "Сохраняю..." : "Сохранить всё"}
+              </button>
+              <button
+                type="button"
+                className="secondaryBtn sidebarGlobalFooterBtn px-3"
+                onClick={() => void handleSidebarResetAll()}
+                disabled={!!disabled || sidebarSaveAllBusy}
+              >
+                Сбросить
+              </button>
+            </div>
+          </div>
+        )}
       >
         <div id="element-notes-section" ref={elementNotesSectionRef} className="sidebarRedesignStack">
           <section className="sidebarSettingsSurface">
@@ -3041,118 +3083,6 @@ export default function NotesPanel({
               <div className="sidebarSectionCaption">Настройки элемента</div>
             </div>
             <div className="sidebarAccordionStack">
-              <div ref={pathsSectionRef}>
-                <SidebarAccordion
-                sectionKey="paths"
-                title="Пути и последовательность"
-                subtitle={isElementMode ? selectedElementId : "Выберите узел"}
-                open={!!sectionsOpen.paths}
-                onToggle={toggleSection}
-              >
-                <PathsSection
-                  selectedElementId={isElementMode ? selectedElementId : ""}
-                  nodePathEditable={isElementMode ? isSelectedPathNode : false}
-                  nodePathPaths={isElementMode ? resolvedNodePathController.paths : []}
-                  nodePathSharedSnapshot={isElementMode ? resolvedNodePathController.sharedSnapshot : null}
-                  nodePathSequenceKey={isElementMode ? resolvedNodePathController.sequenceKey : ""}
-                  nodePathSyncState={isElementMode && isSelectedPathNode
-                    ? resolvedNodePathController.syncState
-                    : "saved"}
-                  nodePathBusy={isElementMode ? resolvedNodePathController.busy : false}
-                  nodePathErr={isElementMode ? resolvedNodePathController.err : ""}
-                  nodePathInfo={isElementMode ? resolvedNodePathController.info : ""}
-                  selectedNodeCount={isElementMode ? selectedElementSelectionIds.length : 0}
-                  bulkSelectionCount={isElementMode ? bulkNodeIds.length : 0}
-                  onToggleNodePathTag={resolvedNodePathController.toggleTag}
-                  onNodePathSequenceChange={resolvedNodePathController.updateSequenceKey}
-                  onApplyNodePath={resolvedNodePathController.apply}
-                  onResetNodePath={resolvedNodePathController.reset}
-                  onAcceptSharedNodePath={resolvedNodePathController.acceptShared}
-                  onAutoNodePathFromColors={autoNodePathFromColors}
-                  onSelectBranchUntilBoundary={selectBranchUntilBoundary}
-                  onApplyP1ToSelected={applyP1ForSelectedNodes}
-                  showLegacyPathImportHint={isElementMode ? showLegacyPathImportHint : false}
-                  flowPathTier={isElementMode ? selectedFlowTier : ""}
-                  onSetFlowPathTier={setSelectedFlowTier}
-                  flowHappyBusy={isElementMode ? flowHappyBusy : false}
-                  flowHappyErr={isElementMode ? flowHappyErr : ""}
-                  flowHappyInfo={isElementMode ? flowHappyInfo : ""}
-                  flowHappyEditable={isElementMode ? isSelectedSequenceFlow : false}
-                  disabled={disabled}
-                />
-              </SidebarAccordion>
-              </div>
-
-              <div ref={timeSectionRef}>
-                <SidebarAccordion
-                sectionKey="time"
-                title="Время шага"
-                open={!!sectionsOpen.time}
-                onToggle={toggleSection}
-              >
-                <TimeSection
-                  selectedElementId={isElementMode ? selectedElementId : ""}
-                  stepTimeInput={isElementMode ? stepTimeInput : ""}
-                  stepTimeSyncState={isElementMode ? stepTimeSyncState : "saved"}
-                  onStepTimeInputChange={onStepTimeInputChangeCallback}
-                  onSaveStepTime={saveSelectedElementStepTime}
-                  stepTimeBusy={isElementMode ? stepTimeBusy : false}
-                  stepTimeErr={isElementMode ? stepTimeErr : ""}
-                  stepTimeEditable={isElementMode ? !!selectedElementNode : false}
-                  stepTimeUnit={normalizedStepTimeUnit}
-                  onStepTimeUnitChange={onStepTimeUnitChange}
-                  disabled={disabled}
-                />
-              </SidebarAccordion>
-              </div>
-
-              <div ref={robotMetaSectionRef}>
-                <SidebarAccordion
-                sectionKey="robotmeta"
-                title="Robot Meta"
-                badge={selectedRobotMetaEditable ? "v1" : ""}
-                open={!!sectionsOpen.robotmeta}
-                onToggle={toggleSection}
-              >
-                <RobotMetaSection
-                  selectedElementId={isElementMode ? selectedElementId : ""}
-                  robotMetaEditable={isElementMode ? selectedRobotMetaEditable : false}
-                  robotMetaDraft={isElementMode ? robotMetaDraft : createDefaultRobotMetaV1()}
-                  robotMetaSyncState={isElementMode ? robotMetaSyncState : "saved"}
-                  robotMetaBusy={isElementMode ? robotMetaBusy : false}
-                  robotMetaErr={isElementMode ? robotMetaErr : ""}
-                  robotMetaInfo={isElementMode ? robotMetaInfo : ""}
-                  onRobotMetaDraftChange={updateRobotMetaDraft}
-                  onSaveRobotMeta={saveSelectedRobotMeta}
-                  onResetRobotMeta={resetSelectedRobotMeta}
-                  disabled={disabled}
-                />
-              </SidebarAccordion>
-              </div>
-
-              <div ref={executionSectionRef}>
-                <SidebarAccordion
-                  sectionKey="execution"
-                  title="Execution Bridge"
-                  subtitle={isElementMode ? selectedElementId : "Выберите узел"}
-                  badge={`${Number(executionBridgeSummary.robot_ready || 0)}/${Number(executionBridgeSummary.total_nodes || 0)}`}
-                  open={!!sectionsOpen.execution}
-                  onToggle={toggleSection}
-                >
-                  <ExecutionBridgeSection
-                    sessionId={sid}
-                    projection={executionBridgeProjection}
-                    selectedElementId={isElementMode ? selectedElementId : ""}
-                    disabled={disabled}
-                  />
-                  {isElementMode && selectedExecutionBridgeNode ? (
-                    <div className="mt-2 text-[11px] text-muted">
-                      selected: {str(selectedExecutionBridgeNode.execution_classification || "unknown")}
-                    </div>
-                  ) : null}
-                </SidebarAccordion>
-              </div>
-
               <div ref={camundaPropertiesSectionRef}>
                 <SidebarAccordion
                 sectionKey="properties"
@@ -3248,9 +3178,125 @@ export default function NotesPanel({
                   onResetBpmnDocumentation={resetSelectedBpmnDocumentation}
                   onFocusDrawioCompanion={onFocusDrawioCompanion}
                   disabled={disabled}
+                  hideActions
                 />
               </SidebarAccordion>
               </div>
+              <div ref={pathsSectionRef}>
+                <SidebarAccordion
+                sectionKey="paths"
+                title="Пути и последовательность"
+                subtitle={isElementMode ? selectedElementId : "Выберите узел"}
+                open={!!sectionsOpen.paths}
+                onToggle={toggleSection}
+              >
+                <PathsSection
+                  selectedElementId={isElementMode ? selectedElementId : ""}
+                  nodePathEditable={isElementMode ? isSelectedPathNode : false}
+                  nodePathPaths={isElementMode ? resolvedNodePathController.paths : []}
+                  nodePathSharedSnapshot={isElementMode ? resolvedNodePathController.sharedSnapshot : null}
+                  nodePathSequenceKey={isElementMode ? resolvedNodePathController.sequenceKey : ""}
+                  nodePathSyncState={isElementMode && isSelectedPathNode
+                    ? resolvedNodePathController.syncState
+                    : "saved"}
+                  nodePathBusy={isElementMode ? resolvedNodePathController.busy : false}
+                  nodePathErr={isElementMode ? resolvedNodePathController.err : ""}
+                  nodePathInfo={isElementMode ? resolvedNodePathController.info : ""}
+                  selectedNodeCount={isElementMode ? selectedElementSelectionIds.length : 0}
+                  bulkSelectionCount={isElementMode ? bulkNodeIds.length : 0}
+                  onToggleNodePathTag={resolvedNodePathController.toggleTag}
+                  onNodePathSequenceChange={resolvedNodePathController.updateSequenceKey}
+                  onApplyNodePath={resolvedNodePathController.apply}
+                  onResetNodePath={resolvedNodePathController.reset}
+                  onAcceptSharedNodePath={resolvedNodePathController.acceptShared}
+                  onAutoNodePathFromColors={autoNodePathFromColors}
+                  onSelectBranchUntilBoundary={selectBranchUntilBoundary}
+                  onApplyP1ToSelected={applyP1ForSelectedNodes}
+                  showLegacyPathImportHint={isElementMode ? showLegacyPathImportHint : false}
+                  flowPathTier={isElementMode ? selectedFlowTier : ""}
+                  onSetFlowPathTier={setSelectedFlowTier}
+                  flowHappyBusy={isElementMode ? flowHappyBusy : false}
+                  flowHappyErr={isElementMode ? flowHappyErr : ""}
+                  flowHappyInfo={isElementMode ? flowHappyInfo : ""}
+                  flowHappyEditable={isElementMode ? isSelectedSequenceFlow : false}
+                  disabled={disabled}
+                  hideActions
+                />
+              </SidebarAccordion>
+              </div>
+
+              <div ref={timeSectionRef}>
+                <SidebarAccordion
+                sectionKey="time"
+                title="Время шага"
+                open={!!sectionsOpen.time}
+                onToggle={toggleSection}
+              >
+                <TimeSection
+                  selectedElementId={isElementMode ? selectedElementId : ""}
+                  stepTimeInput={isElementMode ? stepTimeInput : ""}
+                  stepTimeSyncState={isElementMode ? stepTimeSyncState : "saved"}
+                  onStepTimeInputChange={onStepTimeInputChangeCallback}
+                  onSaveStepTime={saveSelectedElementStepTime}
+                  stepTimeBusy={isElementMode ? stepTimeBusy : false}
+                  stepTimeErr={isElementMode ? stepTimeErr : ""}
+                  stepTimeEditable={isElementMode ? !!selectedElementNode : false}
+                  stepTimeUnit={normalizedStepTimeUnit}
+                  onStepTimeUnitChange={onStepTimeUnitChange}
+                  disabled={disabled}
+                  hideActions
+                />
+              </SidebarAccordion>
+              </div>
+
+              <div ref={robotMetaSectionRef}>
+                <SidebarAccordion
+                sectionKey="robotmeta"
+                title="Robot Meta"
+                badge={selectedRobotMetaEditable ? "v1" : ""}
+                open={!!sectionsOpen.robotmeta}
+                onToggle={toggleSection}
+              >
+                <RobotMetaSection
+                  selectedElementId={isElementMode ? selectedElementId : ""}
+                  robotMetaEditable={isElementMode ? selectedRobotMetaEditable : false}
+                  robotMetaDraft={isElementMode ? robotMetaDraft : createDefaultRobotMetaV1()}
+                  robotMetaSyncState={isElementMode ? robotMetaSyncState : "saved"}
+                  robotMetaBusy={isElementMode ? robotMetaBusy : false}
+                  robotMetaErr={isElementMode ? robotMetaErr : ""}
+                  robotMetaInfo={isElementMode ? robotMetaInfo : ""}
+                  onRobotMetaDraftChange={updateRobotMetaDraft}
+                  onSaveRobotMeta={saveSelectedRobotMeta}
+                  onResetRobotMeta={resetSelectedRobotMeta}
+                  disabled={disabled}
+                  hideActions
+                />
+              </SidebarAccordion>
+              </div>
+
+              <div ref={executionSectionRef}>
+                <SidebarAccordion
+                  sectionKey="execution"
+                  title="Execution Bridge"
+                  subtitle={isElementMode ? selectedElementId : "Выберите узел"}
+                  badge={`${Number(executionBridgeSummary.robot_ready || 0)}/${Number(executionBridgeSummary.total_nodes || 0)}`}
+                  open={!!sectionsOpen.execution}
+                  onToggle={toggleSection}
+                >
+                  <ExecutionBridgeSection
+                    sessionId={sid}
+                    projection={executionBridgeProjection}
+                    selectedElementId={isElementMode ? selectedElementId : ""}
+                    disabled={disabled}
+                  />
+                  {isElementMode && selectedExecutionBridgeNode ? (
+                    <div className="mt-2 text-[11px] text-muted">
+                      selected: {str(selectedExecutionBridgeNode.execution_classification || "unknown")}
+                    </div>
+                  ) : null}
+                </SidebarAccordion>
+              </div>
+
 
               <div ref={notesSectionRef}>
                 <SidebarAccordion
