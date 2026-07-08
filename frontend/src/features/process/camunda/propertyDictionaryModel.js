@@ -35,6 +35,18 @@ function normalizeInputMode(value) {
   return asText(value) === "free_text" ? "free_text" : "autocomplete";
 }
 
+function dedupeExactPropertyRows(rows) {
+  const seen = new Set();
+  return asArray(rows).filter((item) => {
+    const name = asText(item?.key ?? item?.name);
+    if (!name) return true;
+    const signature = `${name}\u0000${asText(item?.value)}`;
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+}
+
 function clampInlineText(value, limit = 96) {
   const text = String(value ?? "").replace(/\s+/g, " ").trim();
   if (!text) return "";
@@ -311,7 +323,7 @@ function derivePropertiesOverlayRows({ extensionStateRaw, dictionaryBundleRaw } 
       });
     });
   }
-  const result = rows;
+  const result = dedupeExactPropertyRows(rows);
   if (extensionStateCacheKey) {
     const cacheEntry = propertiesOverlayRowsCache.get(extensionStateCacheKey);
     if (dictionaryBundleCacheKey) cacheEntry?.withBundle?.set(dictionaryBundleCacheKey, result);
