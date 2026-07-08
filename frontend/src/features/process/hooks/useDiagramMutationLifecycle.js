@@ -259,6 +259,7 @@ export default function useDiagramMutationLifecycle({
   return {
     queueDiagramMutation,
     flushDiagramBeforeTabSwitch,
+    flushPendingDiagramAutosave: flushDiagramAutosave,
     cancelPendingDiagramAutosave: cancelDiagramAutosave,
   };
 }

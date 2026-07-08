@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 
 function cx(...items) {
   return items.filter(Boolean).join(" ");
@@ -34,9 +35,9 @@ export default function Modal({
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <div
       className={cx("modalOverlay", overlayClassName)}
       role="dialog"
@@ -57,6 +58,7 @@ export default function Modal({
 
         {footer ? <div className={cx("modalFooter", footerClassName)}>{footer}</div> : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

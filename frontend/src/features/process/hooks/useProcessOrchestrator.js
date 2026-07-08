@@ -76,6 +76,7 @@ export default function useProcessOrchestrator({
   const {
     queueDiagramMutation,
     flushDiagramBeforeTabSwitch,
+    flushPendingDiagramAutosave,
     cancelPendingDiagramAutosave,
   } = useDiagramMutationLifecycle({
     sid,
@@ -111,6 +112,7 @@ export default function useProcessOrchestrator({
     markInterviewAsSaved,
     handleInterviewChange,
     queueDiagramMutation,
+    flushPendingDiagramAutosave,
     cancelPendingDiagramAutosave,
   };
 }

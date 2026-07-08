@@ -39,3 +39,14 @@ test("non-interactive immediate insert keeps existing persistImmediately default
     /persistImmediately: options\?\.persistImmediately !== false,/,
   );
 });
+
+test("template apply bridge flushes pending diagram autosave before persisting", () => {
+  const autosaveFlushIndex = source.search(/await flushPendingDiagramAutosave\(\)/);
+  const saveLocalIndex = source.search(/api\.saveLocal\(/);
+  assert.ok(autosaveFlushIndex > 0, "expected await flushPendingDiagramAutosave()");
+  assert.ok(saveLocalIndex > 0, "expected api.saveLocal call");
+  assert.ok(
+    autosaveFlushIndex < saveLocalIndex,
+    "flushPendingDiagramAutosave must be awaited before api.saveLocal",
+  );
+});

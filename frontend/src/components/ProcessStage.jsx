@@ -545,6 +545,11 @@ function ProcessStage({
   const diagramQualityPopoverRef = useRef(null);
   const diagramOverflowPopoverRef = useRef(null);
   const bpmnStageHostRef = useRef(null);
+  const [bpmnStageHostElement, setBpmnStageHostElement] = useState(null);
+  const bpmnStageHostRefCallback = useCallback((node) => {
+    bpmnStageHostRef.current = node;
+    setBpmnStageHostElement((prev) => (prev === node ? prev : node));
+  }, []);
   const hybridLayerOverlayRef = useRef(null);
   const hybridV2FileInputRef = useRef(null);
   const drawioFileInputRef = useRef(null);
@@ -1945,6 +1950,7 @@ function ProcessStage({
     markInterviewAsSaved,
     handleInterviewChange,
     queueDiagramMutation: queueDiagramMutationRaw,
+    flushPendingDiagramAutosave,
     cancelPendingDiagramAutosave,
   } = useProcessOrchestrator({
     sid,
@@ -2045,7 +2051,9 @@ function ProcessStage({
         }
       }
     }
-    queueDiagramMutationRaw(mutation);
+    if (kind !== "diagram.template_insert") {
+      queueDiagramMutationRaw(mutation);
+    }
   }, [
     buildOwnerSnapshot,
     draft?.bpmn_graph_fingerprint,
@@ -3398,9 +3406,30 @@ function ProcessStage({
   // Cached host rect updated by ResizeObserver / resize listener.
   // NEVER read getBoundingClientRect during render — only in the observer callback.
   const [hostContainerRect, setHostContainerRect] = useState({ left: 0, top: 0, width: 0, height: 0 });
+  const hostRectRef = useRef(hostContainerRect);
+  const setHostContainerRectIfChanged = useCallback((next) => {
+    const current = hostRectRef.current;
+    if (
+      current
+      && Number(current.left || 0) === Number(next?.left || 0)
+      && Number(current.top || 0) === Number(next?.top || 0)
+      && Number(current.width || 0) === Number(next?.width || 0)
+      && Number(current.height || 0) === Number(next?.height || 0)
+    ) {
+      return;
+    }
+    hostRectRef.current = {
+      left: Number(next?.left || 0),
+      top: Number(next?.top || 0),
+      width: Number(next?.width || 0),
+      height: Number(next?.height || 0),
+    };
+    setHostContainerRect(hostRectRef.current);
+  }, []);
+  const hostRefForTemplates = useMemo(() => ({ current: bpmnStageHostElement }), [bpmnStageHostElement]);
   useViewportResizeController({
-    hostRef: bpmnStageHostRef,
-    onHostRect: setHostContainerRect,
+    hostRef: hostRefForTemplates,
+    onHostRect: setHostContainerRectIfChanged,
   });
 
   const templatesDiagramContainerRect = useMemo(() => {
@@ -3818,6 +3847,8 @@ function ProcessStage({
     bpmnApiRef: bpmnRef,
     bpmnStageHostRef,
     clientToDiagram,
+    flushPendingDiagramAutosave,
+    cancelPendingDiagramAutosave,
     onPersistedTemplateApply: async ({ template, saved }) => {
       const owner = ensureSessionWorkspaceTruthOwner();
       const snapshot = buildOwnerSnapshot({
@@ -7218,7 +7249,7 @@ function ProcessStage({
             <div className="absolute inset-0">
               <div
                 className={`bpmnStageHost h-full ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""}`}
-                ref={bpmnStageHostRef}
+                ref={bpmnStageHostRefCallback}
               >
                 {subprocessBreadcrumbs?.length > 1 ? (
                   <div className="subprocessBreadcrumbsBar">

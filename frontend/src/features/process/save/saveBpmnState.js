@@ -123,6 +123,7 @@ function updateLastServerVersion(ref, value) {
  * @param {() => Promise<string>} [options.getModelerXml]
  * @param {(sessionId, xml, opts) => Promise<Object>} options.apiPutBpmnXml
  * @param {(sessionId) => Promise<Object>} [options.apiGetSession]
+ * @param {(sessionId) => Promise<{ok:boolean, xml?:string}>} [options.apiGetBpmnXml]
  * @param {(patch) => void} [options.onSessionSync]
  * @param {(ack) => void} [options.onDurableSaveAck]
  * @param {(ctx) => void} [options.onConflict]
@@ -176,6 +177,16 @@ export async function saveBpmnState(options = {}) {
         currentXml = toText(await options.getModelerXml());
       } catch (error) {
         return { ok: false, status: 0, error: `Не удалось получить XML: ${error?.message || error}` };
+      }
+    }
+    if (!currentXml && typeof options.apiGetBpmnXml === "function") {
+      try {
+        const xmlRes = await options.apiGetBpmnXml(sid);
+        if (xmlRes?.ok) {
+          currentXml = toText(xmlRes.xml);
+        }
+      } catch {
+        // ignore
       }
     }
     if (!currentXml && typeof options.apiGetSession === "function") {
