@@ -639,6 +639,10 @@ export default function createBpmnPersistence(options = {}) {
     if (bpmnMeta) {
       putOptions.bpmnMeta = bpmnMeta;
     }
+    const sourceAction = asText(options?.sourceAction || options?.source_action).trim();
+    if (sourceAction) {
+      putOptions.sourceAction = sourceAction;
+    }
     const saved = await apiPutBpmnXml(sid, xml, putOptions);
     emit("API_PUT_BPMN_XML_RESULT", {
       sid,

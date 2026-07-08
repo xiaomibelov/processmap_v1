@@ -122,7 +122,9 @@ function updateLastServerVersion(ref, value) {
  * @param {Object} [options.nextMeta]
  * @param {() => Promise<string>} [options.getModelerXml]
  * @param {(sessionId, xml, opts) => Promise<Object>} options.apiPutBpmnXml
+ * @param {(reason, opts) => Promise<Object>} [options.flushSave] - coordinator flushSave for property operations
  * @param {(sessionId) => Promise<Object>} [options.apiGetSession]
+ * @param {(sessionId) => Promise<{ok:boolean, xml?:string}>} [options.apiGetBpmnXml]
  * @param {(patch) => void} [options.onSessionSync]
  * @param {(ack) => void} [options.onDurableSaveAck]
  * @param {(ctx) => void} [options.onConflict]
@@ -178,6 +180,16 @@ export async function saveBpmnState(options = {}) {
         return { ok: false, status: 0, error: `Не удалось получить XML: ${error?.message || error}` };
       }
     }
+    if (!currentXml && typeof options.apiGetBpmnXml === "function") {
+      try {
+        const xmlRes = await options.apiGetBpmnXml(sid);
+        if (xmlRes?.ok) {
+          currentXml = toText(xmlRes.xml);
+        }
+      } catch {
+        // ignore
+      }
+    }
     if (!currentXml && typeof options.apiGetSession === "function") {
       try {
         const latest = await options.apiGetSession(sid);
@@ -229,7 +241,7 @@ export async function saveBpmnState(options = {}) {
     };
   }
 
-  if (typeof options.apiPutBpmnXml !== "function") {
+  if (typeof options.flushSave !== "function" && typeof options.apiPutBpmnXml !== "function") {
     return { ok: false, status: 0, error: "apiPutBpmnXml unavailable" };
   }
 
@@ -245,11 +257,20 @@ export async function saveBpmnState(options = {}) {
       options.lastServerDiagramStateVersionRef?.current ?? baseDiagramStateVersion,
     ) ?? 0;
 
-    saveRes = await options.apiPutBpmnXml(sid, persistedXml, {
-      sourceAction,
-      baseDiagramStateVersion: attemptBaseVersion,
-      bpmnMeta: persistedMeta,
-    });
+    if (typeof options.flushSave === "function") {
+      saveRes = await options.flushSave(sourceAction, {
+        xmlOverride: persistedXml,
+        baseDiagramStateVersion: attemptBaseVersion,
+        sourceAction,
+        bpmnMeta: persistedMeta,
+      });
+    } else {
+      saveRes = await options.apiPutBpmnXml(sid, persistedXml, {
+        sourceAction,
+        baseDiagramStateVersion: attemptBaseVersion,
+        bpmnMeta: persistedMeta,
+      });
+    }
 
     if (saveRes?.ok) {
       updateLastServerVersion(options.lastServerDiagramStateVersionRef, saveRes.diagramStateVersion);

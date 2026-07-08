@@ -9,6 +9,8 @@ function toText(value) {
   return String(value || "").trim();
 }
 
+const BUNDLE_CLEAR_GRACE_MS = 500;
+
 export default function useNotesPanelController({
   activeOrgId = "",
   selectedCamundaPropertiesEditable = false,
@@ -54,25 +56,74 @@ export default function useNotesPanelController({
   }, [activeOrgId, selectedCamundaPropertiesEditable, orgPropertyDictionaryRevision]);
 
   const lastBundleKeyRef = useRef("");
+  const previousOperationKeyRef = useRef("");
+  const bundleClearTimeoutRef = useRef(null);
 
   useEffect(() => {
-    if (!selectedCamundaPropertiesEditable || !toText(activeOrgId) || !toText(selectedOperationKey)) {
+    if (bundleClearTimeoutRef.current) {
+      clearTimeout(bundleClearTimeoutRef.current);
+      bundleClearTimeoutRef.current = null;
+    }
+
+    if (!selectedCamundaPropertiesEditable || !toText(activeOrgId)) {
       setOrgPropertyDictionaryBundle(null);
       setOrgPropertyDictionaryLoading(false);
       setOrgPropertyDictionaryErr("");
       setOrgPropertyDictionaryAddBusyKey("");
+      lastBundleKeyRef.current = "";
+      previousOperationKeyRef.current = "";
       return () => {};
     }
-    const key = `${toText(activeOrgId)}:${selectedCamundaPropertiesEditable ? 1 : 0}:${toText(selectedOperationKey)}:${orgPropertyDictionaryRevision}`;
+
+    const opKey = toText(selectedOperationKey);
+
+    if (!opKey) {
+      // Keep the previous bundle for a short grace period so that transient
+      // operation-key resets (e.g. while Robot Meta is being saved/synced) do
+      // not immediately drop the schema and cause properties to be saved as
+      // custom rows.
+      if (previousOperationKeyRef.current) {
+        setOrgPropertyDictionaryLoading(false);
+        setOrgPropertyDictionaryErr("");
+        bundleClearTimeoutRef.current = setTimeout(() => {
+          setOrgPropertyDictionaryBundle(null);
+          lastBundleKeyRef.current = "";
+          previousOperationKeyRef.current = "";
+          bundleClearTimeoutRef.current = null;
+        }, BUNDLE_CLEAR_GRACE_MS);
+        return () => {
+          if (bundleClearTimeoutRef.current) {
+            clearTimeout(bundleClearTimeoutRef.current);
+            bundleClearTimeoutRef.current = null;
+          }
+        };
+      }
+      setOrgPropertyDictionaryBundle(null);
+      setOrgPropertyDictionaryLoading(false);
+      setOrgPropertyDictionaryErr("");
+      setOrgPropertyDictionaryAddBusyKey("");
+      lastBundleKeyRef.current = "";
+      previousOperationKeyRef.current = "";
+      return () => {};
+    }
+
+    const key = `${toText(activeOrgId)}:${selectedCamundaPropertiesEditable ? 1 : 0}:${opKey}:${orgPropertyDictionaryRevision}`;
     if (key === lastBundleKeyRef.current) {
+      // Same operation as before; if we were in the grace period the bundle is
+      // still valid, so just make sure loading is off.
+      previousOperationKeyRef.current = opKey;
+      setOrgPropertyDictionaryLoading(false);
       return () => {};
     }
+
     lastBundleKeyRef.current = key;
-    let cancelled = false;
+    previousOperationKeyRef.current = opKey;
+    setOrgPropertyDictionaryBundle(null);
     setOrgPropertyDictionaryLoading(true);
     setOrgPropertyDictionaryErr("");
+    let cancelled = false;
     void (async () => {
-      const result = await getOrgPropertyDictionaryBundle(activeOrgId, selectedOperationKey, { includeInactive: false });
+      const result = await getOrgPropertyDictionaryBundle(activeOrgId, opKey, { includeInactive: false });
       if (cancelled) return;
       if (!result.ok) {
         setOrgPropertyDictionaryBundle(null);

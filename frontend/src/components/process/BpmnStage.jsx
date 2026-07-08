@@ -2385,14 +2385,19 @@ const BpmnStage = forwardRef(function BpmnStage({
     };
   }
 
-  function transformPersistedXml(xmlText) {
+  function transformPersistedXml(xmlText, meta = {}) {
     const templateInsertGuardIds = readTemplateInsertCamundaClearGuardIds();
     const xmlCamundaExtensionsByElementId = reconcileTemplateInsertCamundaStateFromXml(xmlText, templateInsertGuardIds);
     // Merge authoritative meta camunda extensions so that property-only saves
     // (which update bpmn_meta but not the stored BPMN XML) are still reflected
-    // on the canvas after reload.
+    // on the canvas after reload. When the caller supplies an explicit meta
+    // payload (e.g. from saveBpmnState), use it instead of the possibly stale
+    // draftRef snapshot.
+    const explicitMeta = meta?.bpmnMeta && typeof meta.bpmnMeta === "object"
+      ? meta.bpmnMeta
+      : null;
     const metaCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(
-      asObject(draftRef.current?.bpmn_meta).camunda_extensions_by_element_id,
+      asObject(explicitMeta || draftRef.current?.bpmn_meta).camunda_extensions_by_element_id,
     );
     const camundaExtensionsByElementId = {
       ...xmlCamundaExtensionsByElementId,
@@ -3377,6 +3382,46 @@ const BpmnStage = forwardRef(function BpmnStage({
               error: String(error?.message || error || "session_meta_patch_failed"),
             });
           }
+        }
+      }
+      // Prime the local XML/hash state from the live modeler so any post-insert
+      // session sync or draft update is recognized as already loaded. Without
+      // this, a stale hash causes the render effect to call renderModeler()
+      // (full XML re-import) which appears as a page reload / white screen on
+      // large diagrams.
+      try {
+        const xmlModeler = modelerRef.current || await ensureModeler();
+        if (xmlModeler && typeof xmlModeler.saveXML === "function") {
+          const xmlOut = await xmlModeler.saveXML({ format: true });
+          const currentXml = String(xmlOut?.xml || "");
+          if (currentXml.trim()) {
+            lastModelerXmlHashRef.current = fnv1aHex(currentXml);
+            setXml(currentXml);
+            setXmlDraft(currentXml);
+            setXmlDirty(false);
+            if (
+              bpmnStoreRef.current
+              && typeof bpmnStoreRef.current.setXml === "function"
+            ) {
+              bpmnStoreRef.current.setXml(currentXml, "template_insert", {
+                bumpRev: false,
+                dirty: true,
+              });
+            }
+            if (shouldLogBpmnTrace()) {
+              // eslint-disable-next-line no-console
+              console.debug(
+                `[BPMN] template_insert primed xml hash=${lastModelerXmlHashRef.current} len=${currentXml.length}`,
+              );
+            }
+          }
+        }
+      } catch (xmlPrimeError) {
+        if (shouldLogBpmnTrace()) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[BPMN] template_insert xml prime failed: ${String(xmlPrimeError?.message || xmlPrimeError)}`,
+          );
         }
       }
       return inserted;
@@ -5904,6 +5949,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         saveLocalFromModeler,
         saveXmlDraftText,
         seedNew,
+        flushSave: (reason, opts) => ensureBpmnCoordinator().flushSave(reason, opts),
       },
     };
   }

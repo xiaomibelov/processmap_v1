@@ -503,6 +503,7 @@ export default function createBpmnCoordinator(options = {}) {
       rev,
       runtimeToken,
       source: xmlOverride.trim() ? "flush_save_override" : "flush_save",
+      bpmnMeta: options?.bpmnMeta,
     });
     const xml = prepared.xml;
     const currentXmlHash = fnv1aHex(xml);
@@ -563,6 +564,9 @@ export default function createBpmnCoordinator(options = {}) {
     const persistOptions = {};
     if (options?.bpmnMeta && typeof options.bpmnMeta === "object") {
       persistOptions.bpmnMeta = options.bpmnMeta;
+    }
+    if (options?.sourceAction && typeof options.sourceAction === "string") {
+      persistOptions.sourceAction = options.sourceAction;
     }
     let staleRetryAttempts = 0;
     let staleRetryChangedKeys = [];
