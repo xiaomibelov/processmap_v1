@@ -803,3 +803,58 @@ test("field classification contract is explicit for persistent/transient/exclude
   assert.equal(TEMPLATE_EXCLUDED_ROOT_KEYS.includes("outgoing"), true);
   assert.equal(TEMPLATE_EXCLUDED_DEEP_KEYS.includes("$parent"), true);
 });
+
+
+test("camunda properties on service task survive template semantic payload round-trip to XML", async (t) => {
+  const BpmnModdle = await importRealBpmnModdleOrSkip(t);
+  if (!BpmnModdle) return;
+  const moddle = new BpmnModdle({
+    camunda: camundaModdleDescriptor,
+    pm: pmModdleDescriptor,
+  });
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+  xmlns:pm="https://processmap.ru/schema/pm"
+  id="Definitions_1"
+  targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_1" isExecutable="false">
+    <bpmn:serviceTask id="Task_1" name="Source Service" camunda:delegateExpression="\${service}">
+      <bpmn:extensionElements>
+        <camunda:Properties>
+          <camunda:Property name="robot.code" value="R-42" />
+          <camunda:Property name="risk" value="high" />
+        </camunda:Properties>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+  </bpmn:process>
+</bpmn:definitions>`;
+  const { rootElement } = await moddle.fromXML(xml);
+  const task = rootElement.rootElements[0].flowElements[0];
+
+  const payload = serializeSupportedBusinessObjectPayload(task);
+  assert.equal(payload.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(payload.extensionElements?.values?.[0]?.values?.length, 2);
+  assert.equal(payload.extensionElements?.values?.[0]?.values?.[0]?.name, "robot.code");
+  assert.equal(payload.extensionElements?.values?.[0]?.values?.[0]?.value, "R-42");
+  assert.equal(payload.extensionElements?.values?.[0]?.values?.[1]?.name, "risk");
+  assert.equal(payload.extensionElements?.values?.[0]?.values?.[1]?.value, "high");
+
+  const target = moddle.create("bpmn:ServiceTask", { id: "Task_2", name: "Inserted Service" });
+  rehydrateSupportedBusinessObjectPayload(target, payload, { moddle });
+  assert.equal(target.extensionElements?.values?.[0]?.$type, "camunda:Properties");
+  assert.equal(target.extensionElements?.values?.[0]?.values?.length, 2);
+
+  const defs = moddle.create("bpmn:Definitions", {
+    id: "Definitions_2",
+    targetNamespace: "http://bpmn.io/schema/bpmn",
+    rootElements: [moddle.create("bpmn:Process", { id: "Process_2", isExecutable: false, flowElements: [target] })],
+  });
+  const out = await moddle.toXML(defs, { format: true });
+  assert.equal(typeof out?.xml, "string");
+  assert.equal(/camunda:properties/i.test(out.xml), true);
+  assert.equal(/name=["']robot\.code["'][^>]*value=["']R-42["']/i.test(out.xml), true);
+  assert.equal(/name=["']risk["'][^>]*value=["']high["']/i.test(out.xml), true);
+});
