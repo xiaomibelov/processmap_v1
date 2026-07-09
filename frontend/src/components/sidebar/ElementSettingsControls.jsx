@@ -29,6 +29,44 @@ import { RecipeQueryProvider } from "../../features/process/recipe/providers/Rec
 import RecipeSidebar from "../../features/process/recipe/components/RecipeSidebar.jsx";
 import PropertyGroup from "./PropertyGroup.jsx";
 
+function PencilIcon({ className = "h-4 w-4" }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+    </svg>
+  );
+}
+
+function TrashIcon({ className = "h-4 w-4" }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M3 6h18" />
+      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+    </svg>
+  );
+}
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -518,6 +556,7 @@ export function NodePathSettings({
                 <label className="inline-flex items-center gap-2 text-[11px] text-muted">
                   <input
                     type="checkbox"
+                    className="sidebarCheckbox"
                     checked={syncPreviewEnabled}
                     onChange={(event) => setSyncPreviewEnabled(!!event.target.checked)}
                   />
@@ -686,7 +725,7 @@ export function StepTimeSettings({
       <div className="sidebarControlRow">
         <input
           id="selected-node-step-time"
-          className="input h-8 min-h-0 min-w-0 flex-1"
+          className="input sidebarInput h-8 min-h-0 min-w-0 flex-1"
           type="number"
           min="0"
           step="1"
@@ -888,7 +927,7 @@ export function RobotMetaSettings({
 
       <div className="sidebarControlRow">
         <select
-          className="input h-8 min-h-0 w-full min-w-0"
+          className="input sidebarSelect h-8 min-h-0 w-full min-w-0"
           value={String(robotMeta.exec?.mode || "human")}
           onChange={(event) => updateRobotExecField("mode", event.target.value)}
           disabled={!!disabled || !!robotMetaBusy}
@@ -900,7 +939,7 @@ export function RobotMetaSettings({
           <option value="hybrid">hybrid</option>
         </select>
         <select
-          className="input h-8 min-h-0 w-full min-w-0"
+          className="input sidebarSelect h-8 min-h-0 w-full min-w-0"
           value={String(robotMeta.exec?.executor || "")}
           onChange={(event) => updateRobotExecField("executor", event.target.value)}
           disabled={!!disabled || !!robotMetaBusy}
@@ -916,7 +955,7 @@ export function RobotMetaSettings({
 
       <div className="sidebarControlRow sidebarControlRowWrap">
         <input
-          className="input h-8 min-h-0 min-w-0 flex-[2_1_200px]"
+          className="input sidebarInput h-8 min-h-0 min-w-0 flex-[2_1_200px]"
           placeholder="action_key"
           value={String(robotMeta.exec?.action_key || "")}
           onChange={(event) => updateRobotExecField("action_key", event.target.value)}
@@ -925,7 +964,7 @@ export function RobotMetaSettings({
           title={String(robotMeta.exec?.action_key || "")}
         />
         <input
-          className="input h-8 min-h-0 w-full min-w-0 flex-[1_1_100px]"
+          className="input sidebarInput h-8 min-h-0 w-full min-w-0 flex-[1_1_100px]"
           type="number"
           min="0"
           step="1"
@@ -939,7 +978,7 @@ export function RobotMetaSettings({
 
       <div className="sidebarControlRow sidebarControlRowWrap">
         <input
-          className="input h-8 min-h-0 w-full min-w-0 flex-[1_1_100px]"
+          className="input sidebarInput h-8 min-h-0 w-full min-w-0 flex-[1_1_100px]"
           type="number"
           min="0"
           step="1"
@@ -950,7 +989,7 @@ export function RobotMetaSettings({
           data-testid="robotmeta-retry-max"
         />
         <input
-          className="input h-8 min-h-0 w-full min-w-0 flex-[1_1_100px]"
+          className="input sidebarInput h-8 min-h-0 w-full min-w-0 flex-[1_1_100px]"
           type="number"
           min="0"
           step="1"
@@ -961,7 +1000,7 @@ export function RobotMetaSettings({
           data-testid="robotmeta-retry-backoff"
         />
         <input
-          className="input h-8 min-h-0 w-full min-w-0 flex-[1_1_140px]"
+          className="input sidebarInput h-8 min-h-0 w-full min-w-0 flex-[1_1_140px]"
           placeholder="from_zone"
           value={String(robotMeta.mat?.from_zone || "")}
           onChange={(event) => updateRobotMatField("from_zone", event.target.value)}
@@ -970,7 +1009,7 @@ export function RobotMetaSettings({
           title={String(robotMeta.mat?.from_zone || "")}
         />
         <input
-          className="input h-8 min-h-0 w-full min-w-0 flex-[1_1_140px]"
+          className="input sidebarInput h-8 min-h-0 w-full min-w-0 flex-[1_1_140px]"
           placeholder="to_zone"
           value={String(robotMeta.mat?.to_zone || "")}
           onChange={(event) => updateRobotMatField("to_zone", event.target.value)}
@@ -983,6 +1022,7 @@ export function RobotMetaSettings({
       <label className="inline-flex items-center gap-2 text-[11px] text-muted">
         <input
           type="checkbox"
+          className="sidebarCheckbox"
           checked={!!robotMeta.qc?.critical}
           onChange={(event) => updateRobotQcField("critical", !!event.target.checked)}
           disabled={!!disabled || !!robotMetaBusy}
@@ -1325,7 +1365,7 @@ export function CamundaPropertiesSettings({
     if (!isReadonlyValue) {
       return (
         <input
-          className="sidebarCamundaIoInput"
+          className="sidebarCamundaIoInput sidebarInput"
           placeholder={shape === "empty" ? "Empty" : "Value"}
           value={valueText}
           onChange={(event) => updateCamundaIoParameter(row, { value: event.target.value })}
@@ -1373,7 +1413,7 @@ export function CamundaPropertiesSettings({
     return (
       <details
         key={rowId || String(row?.id || "")}
-        className={`sidebarBpmnPropertyItem ${isExpanded ? "isOpen" : ""}`}
+        className={`sidebarBpmnPropertyItem sidebarPropertyRow ${isExpanded ? "isOpen" : ""}`}
         open={isExpanded}
       >
         <summary
@@ -1387,19 +1427,21 @@ export function CamundaPropertiesSettings({
           <span className="sidebarBpmnPropertyPreviewValue" title={previewValue}>{previewValue}</span>
           <button
             type="button"
-            className="secondaryBtn sidebarPropertiesActionBtn sidebarPropertiesActionBtn--tiny sidebarBpmnPropertyEditBtn"
+            className="sidebarPropertyActionBtn sidebarBpmnPropertyEditBtn"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
               setBpmnRowExpanded(rowId, !isExpanded);
             }}
             disabled={!!disabled || !!extensionStateBusy}
+            aria-label={isExpanded ? "Свернуть" : "Изменить BPMN-свойство"}
+            title={isExpanded ? "Свернуть" : "Изменить BPMN-свойство"}
           >
-            {isExpanded ? "Свернуть" : "Изменить"}
+            <PencilIcon />
           </button>
           <button
             type="button"
-            className="secondaryBtn sidebarPropertiesIconBtn sidebarPropertiesIconBtn--danger"
+            className="sidebarPropertyActionBtn sidebarPropertyActionBtn--danger"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -1409,7 +1451,7 @@ export function CamundaPropertiesSettings({
             aria-label={`Удалить BPMN-свойство ${previewName}`}
             title={`Удалить BPMN-свойство ${previewName}`}
           >
-            ×
+            <TrashIcon />
           </button>
         </summary>
         {isExpanded ? (
@@ -1417,7 +1459,7 @@ export function CamundaPropertiesSettings({
             <label className="sidebarBpmnEditorField">
               <span className="sidebarBpmnEditorLabel">Name</span>
               <input
-                className="input w-full min-w-0"
+                className="input sidebarInput w-full min-w-0"
                 placeholder="Название"
                 value={String(row?.name || "")}
                 onChange={(event) => updatePropertyRow(row?.id, { name: event.target.value })}
@@ -1427,7 +1469,7 @@ export function CamundaPropertiesSettings({
             <label className="sidebarBpmnEditorField">
               <span className="sidebarBpmnEditorLabel">Value</span>
               <input
-                className="input w-full min-w-0"
+                className="input sidebarInput w-full min-w-0"
                 placeholder="Значение"
                 value={String(row?.value || "")}
                 onChange={(event) => updatePropertyRow(row?.id, { value: event.target.value })}
@@ -1453,7 +1495,7 @@ export function CamundaPropertiesSettings({
         <div className="sidebarCamundaIoCell sidebarCamundaIoCell--name">
           <div className="sidebarCamundaIoNameWrap">
             <input
-              className="sidebarCamundaIoInput"
+              className="sidebarCamundaIoInput sidebarInput"
               placeholder="name"
               value={nameValue}
               onChange={(event) => updateCamundaIoParameter(row, { name: event.target.value })}
@@ -1476,13 +1518,13 @@ export function CamundaPropertiesSettings({
         <div className="sidebarCamundaIoCell sidebarCamundaIoCell--action">
           <button
             type="button"
-            className="secondaryBtn sidebarCamundaIoDeleteBtn"
+            className="sidebarPropertyActionBtn sidebarPropertyActionBtn--danger"
             onClick={() => deleteCamundaIoRow(row)}
             disabled={!!disabled || !!extensionStateBusy}
             aria-label={direction === "output" ? "Удалить output parameter" : "Удалить input parameter"}
             title="Удалить параметр"
           >
-            ×
+            <TrashIcon />
           </button>
         </div>
       </div>
@@ -1505,7 +1547,7 @@ export function CamundaPropertiesSettings({
           <div className="sidebarCamundaIoSectionTitle">{title} ({rows.length})</div>
           <button
             type="button"
-            className="secondaryBtn sidebarCamundaIoAddBtn"
+            className="sidebarAddBtn"
             onClick={() => addCamundaIoRow(normalizedDirection)}
             disabled={!!disabled || !!extensionStateBusy}
           >
@@ -1537,7 +1579,7 @@ export function CamundaPropertiesSettings({
       <div key={rowId} className="sidebarCamundaIoRow">
         <div className="sidebarCamundaIoCell sidebarCamundaIoCell--name">
           <input
-            className="sidebarCamundaIoInput"
+            className="sidebarCamundaIoInput sidebarInput"
             placeholder="key"
             value={keyValue}
             onChange={(event) => updateZeebeTaskHeaderRow(row, { key: event.target.value })}
@@ -1550,7 +1592,7 @@ export function CamundaPropertiesSettings({
         </div>
         <div className="sidebarCamundaIoCell sidebarCamundaIoCell--value">
           <input
-            className="sidebarCamundaIoInput"
+            className="sidebarCamundaIoInput sidebarInput"
             placeholder="value"
             value={valueText}
             onChange={(event) => updateZeebeTaskHeaderRow(row, { value: event.target.value })}
@@ -1561,13 +1603,13 @@ export function CamundaPropertiesSettings({
         <div className="sidebarCamundaIoCell sidebarCamundaIoCell--action">
           <button
             type="button"
-            className="secondaryBtn sidebarCamundaIoDeleteBtn"
+            className="sidebarPropertyActionBtn sidebarPropertyActionBtn--danger"
             onClick={() => deleteZeebeTaskHeaderRow(row)}
             disabled={!!disabled || !!extensionStateBusy}
             aria-label="Удалить Zeebe task header"
             title="Удалить header"
           >
-            ×
+            <TrashIcon />
           </button>
         </div>
       </div>
@@ -1593,7 +1635,7 @@ export function CamundaPropertiesSettings({
         </div>
         <div className="sidebarSchemaPropertyValueCell">
           <input
-            className="input w-full min-w-0 flex-[1_1_220px]"
+            className="input sidebarInput w-full min-w-0 flex-[1_1_220px]"
             placeholder={row?.inputMode === "free_text" ? "Введите значение" : "Выберите или введите значение"}
             value={String(row?.value || "")}
             list={row?.inputMode === "autocomplete" && options.length ? datalistId : undefined}
@@ -1605,7 +1647,7 @@ export function CamundaPropertiesSettings({
         <div className="sidebarSchemaPropertyActionCell">
           <button
             type="button"
-            className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+            className="sidebarPropertyActionBtn sidebarPropertyActionBtn--text"
             onClick={() => updateSchemaPropertyValue(logicalKey, "")}
             disabled={!!disabled || !!extensionStateBusy || !String(row?.value || "").trim()}
           >
@@ -1631,7 +1673,7 @@ export function CamundaPropertiesSettings({
           <div className="sidebarSchemaPropertyHint">
             <button
               type="button"
-              className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+              className="sidebarPropertyActionBtn sidebarPropertyActionBtn--text"
               onClick={() => {
                 void onAddDictionaryValue?.(logicalKey, row?.value);
               }}
@@ -1748,7 +1790,7 @@ export function CamundaPropertiesSettings({
             text="Truthful BPMN contract, вычитанный из XML. Поля в этой секции пока inspect-only, если не вынесены в отдельный редактируемый блок ниже."
           />
         </div>
-        <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarContextRows">
+        <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarPropertiesRows--zebra sidebarContextRows">
           <div className="sidebarPropertiesTableHead" role="presentation">
             <span>Свойство</span>
             <span>Значение</span>
@@ -1929,7 +1971,7 @@ async function handleSaveAll() {
                 <>
                   <div className="sidebarControlRow sidebarOperationRow">
                     <select
-                      className="select w-full min-w-0 flex-[1_1_220px]"
+                      className="select sidebarSelect w-full min-w-0 flex-[1_1_220px]"
                       value={normalizedOperationKey}
                       onChange={(event) => {
                         void onOperationKeyChange?.(event.target.value);
@@ -1952,7 +1994,7 @@ async function handleSaveAll() {
                     </select>
                     <button
                       type="button"
-                      className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+                      className="sidebarPropertyActionBtn sidebarPropertyActionBtn--text"
                       onClick={() => onOpenDictionaryManager?.()}
                       disabled={!!disabled}
                     >
@@ -2002,7 +2044,7 @@ async function handleSaveAll() {
                   ) : null}
                   {hasDictionarySchema ? (
                     <>
-                      <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
+                      <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarPropertiesRows--zebra">
                         <div className="sidebarPropertiesTableHead" role="presentation">
                           <span>Поле</span>
                           <span>Значение</span>
@@ -2101,7 +2143,7 @@ async function handleSaveAll() {
                   <div className="sidebarButtonRow">
                     <button
                       type="button"
-                      className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+                      className="sidebarAddBtn"
                       onClick={addZeebeTaskHeaderRow}
                       disabled={!!disabled || !!extensionStateBusy}
                     >
@@ -2144,7 +2186,7 @@ async function handleSaveAll() {
                   {listeners.map((row) => (
                     <div key={String(row?.id || "")} className="sidebarControlRow sidebarListenerRow sidebarPropertiesInputRow">
                       <select
-                        className="input w-full min-w-0 flex-[0_1_90px]"
+                        className="input sidebarSelect w-full min-w-0 flex-[0_1_90px]"
                         value={String(row?.event || "start")}
                         onChange={(event) => updateListenerRow(row?.id, { event: event.target.value })}
                         disabled={!!disabled || !!extensionStateBusy}
@@ -2154,7 +2196,7 @@ async function handleSaveAll() {
                         ))}
                       </select>
                       <select
-                        className="input w-full min-w-0 flex-[0_1_150px]"
+                        className="input sidebarSelect w-full min-w-0 flex-[0_1_150px]"
                         value={String(row?.type || "expression")}
                         onChange={(event) => updateListenerRow(row?.id, { type: event.target.value })}
                         disabled={!!disabled || !!extensionStateBusy}
@@ -2164,7 +2206,7 @@ async function handleSaveAll() {
                         ))}
                       </select>
                       <input
-                        className="input w-full min-w-0 flex-[1_1_180px]"
+                        className="input sidebarInput w-full min-w-0 flex-[1_1_180px]"
                         placeholder="Значение"
                         value={String(row?.value || "")}
                         onChange={(event) => updateListenerRow(row?.id, { value: event.target.value })}
@@ -2172,20 +2214,20 @@ async function handleSaveAll() {
                       />
                       <button
                         type="button"
-                        className="secondaryBtn sidebarPropertiesIconBtn sidebarPropertiesIconBtn--danger"
+                        className="sidebarPropertyActionBtn sidebarPropertyActionBtn--danger"
                         onClick={() => deleteListenerRow(row?.id)}
                         disabled={!!disabled || !!extensionStateBusy}
                         aria-label="Удалить слушатель"
                         title="Удалить слушатель"
                       >
-                        ×
+                        <TrashIcon />
                       </button>
                     </div>
                   ))}
                   <div className="sidebarButtonRow">
                     <button
                       type="button"
-                      className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+                      className="sidebarAddBtn"
                       onClick={addListenerRow}
                       disabled={!!disabled || !!extensionStateBusy}
                     >
@@ -2239,7 +2281,7 @@ async function handleSaveAll() {
                       <label className="sidebarBpmnEditorField">
                         <span className="sidebarBpmnEditorLabel">Text</span>
                         <textarea
-                          className="input w-full min-w-0 text-xs"
+                          className="input sidebarInput sidebarTextarea w-full min-w-0"
                           value={String(row?.text ?? "")}
                           rows={3}
                           style={{ resize: "vertical" }}
@@ -2251,7 +2293,7 @@ async function handleSaveAll() {
                         <label className="sidebarBpmnEditorField flex-[1_1_220px]">
                           <span className="sidebarBpmnEditorLabel">textFormat</span>
                           <input
-                            className="input w-full min-w-0"
+                            className="input sidebarInput w-full min-w-0"
                             placeholder="например, text/plain"
                             value={String(row?.textFormat || "")}
                             onChange={(event) => patchDocumentationRow(row.id, { textFormat: event.target.value })}
@@ -2260,13 +2302,13 @@ async function handleSaveAll() {
                         </label>
                         <button
                           type="button"
-                          className="secondaryBtn sidebarPropertiesIconBtn sidebarPropertiesIconBtn--danger"
+                          className="sidebarPropertyActionBtn sidebarPropertyActionBtn--danger"
                           onClick={() => removeDocumentationRow(row.id)}
                           disabled={!documentationEditable || !!disabled || !!bpmnDocumentationBusy}
                           aria-label={`Удалить Documentation ${index + 1}`}
                           title={`Удалить Documentation ${index + 1}`}
                         >
-                          ×
+                          <TrashIcon />
                         </button>
                       </div>
                     </div>
@@ -2280,7 +2322,7 @@ async function handleSaveAll() {
                 <div className="sidebarButtonRow">
                   <button
                     type="button"
-                    className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+                    className="sidebarAddBtn"
                     onClick={addDocumentationRow}
                     disabled={!documentationEditable || !!disabled || !!bpmnDocumentationBusy}
                   >
@@ -2329,7 +2371,7 @@ async function handleSaveAll() {
                 {!hasDictionarySchema && !showFallbackBlock && dictionaryLoading ? (
                   <div className="sidebarFieldHint">Ожидаю загрузку схемы операции.</div>
                 ) : null}
-                <div className="sidebarPropertiesRows sidebarPropertiesRows--table">
+                <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarPropertiesRows--zebra">
                   <div className="sidebarPropertiesTableHead" role="presentation">
                     <span>Свойство</span>
                     <span>Значение</span>
@@ -2340,7 +2382,7 @@ async function handleSaveAll() {
                 <div className="sidebarButtonRow">
                   <button
                     type="button"
-                    className="secondaryBtn sidebarPropertiesActionBtn px-2.5"
+                    className="sidebarAddBtn"
                     onClick={addPropertyRow}
                     disabled={!!disabled || !!extensionStateBusy}
                   >
