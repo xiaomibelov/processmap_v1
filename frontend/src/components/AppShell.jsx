@@ -11,6 +11,7 @@ import { appVersionInfo } from "../config/appVersion.js";
 import AppUpdateBanner from "../features/appUpdate/AppUpdateBanner.jsx";
 import BuildBadge from "./BuildBadge.jsx";
 import useAppUpdateAvailable from "../features/appUpdate/useAppUpdateAvailable.js";
+import useSidebarWidth from "./sidebar/useSidebarWidth.js";
 
 function isUpdatesHash() {
   if (typeof window === "undefined") return false;
@@ -177,6 +178,8 @@ export default function AppShell({
     return String(window.location.pathname || "").startsWith("/analytics");
   });
   const appUpdate = useAppUpdateAvailable();
+  const { width: sidebarWidth, startDragging } = useSidebarWidth();
+  const showResizeHandle = !effectiveLeftHidden && !leftCompact;
 
   useEffect(() => {
     function handle() {
@@ -303,10 +306,24 @@ export default function AppShell({
         ) : null}
       </div>
 
-      <div className={workspaceClass}>
+      <div
+        className={workspaceClass}
+        style={{ "--left-panel-width": `${sidebarWidth}px` }}
+      >
         <div className={effectiveLeftHidden ? "workspaceLeft workspaceLeft--rail" : `workspaceLeft ${leftCompact ? "workspaceLeft--compact" : "flex min-w-0 flex-col"}`.trim()}>
-          <div className={effectiveLeftHidden ? "workspaceLeftContent workspaceLeftContent--hidden" : "workspaceLeftContent"}>
+          <div className={effectiveLeftHidden ? "workspaceLeftContent workspaceLeftContent--hidden" : "workspaceLeftContent relative"}>
             {left}
+            {showResizeHandle ? (
+              <div
+                className="sidebarResizeHandle"
+                data-testid="sidebar-resize-handle"
+                onMouseDown={startDragging}
+                onTouchStart={startDragging}
+                title="Изменить ширину панели"
+                aria-label="Изменить ширину панели"
+                role="separator"
+              />
+            ) : null}
           </div>
           {effectiveLeftHidden ? (
             <SidebarHandle
