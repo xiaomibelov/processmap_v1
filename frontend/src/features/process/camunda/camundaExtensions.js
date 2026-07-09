@@ -165,6 +165,124 @@ function parseXmlDocument(xmlText) {
   }
 }
 
+function hasDuplicateCamundaPropertiesWithRegex(xmlText) {
+  const text = String(xmlText || "");
+  if (!text || !text.includes("property")) return false;
+  const blockRegex = /<camunda:properties\b[^>]*>[\s\S]*?<\/camunda:properties>/gi;
+  const propertyRegex = /<camunda:property\b[^>]*>/gi;
+  const nameRegex = /\bname\s*=\s*(["'])(.*?)\1/;
+  for (const blockMatch of text.matchAll(blockRegex)) {
+    const block = blockMatch[0];
+    const seen = new Set();
+    for (const propMatch of block.matchAll(propertyRegex)) {
+      const propTag = propMatch[0];
+      const nameMatch = propTag.match(nameRegex);
+      const name = String(nameMatch?.[2] || "").trim();
+      if (!name) continue;
+      if (seen.has(name)) return true;
+      seen.add(name);
+    }
+  }
+  return false;
+}
+
+export function hasDuplicateCamundaProperties(xmlText) {
+  const doc = parseXmlDocument(xmlText);
+  if (!doc) {
+    // DOMParser is unavailable in some test/runtime environments; fall back to
+    // a regex scan so the guard still works.
+    return hasDuplicateCamundaPropertiesWithRegex(xmlText);
+  }
+  const propertyNodes = doc.getElementsByTagNameNS?.(CAMUNDA_NAMESPACE_URI, "property")
+    || doc.getElementsByTagName?.("camunda:property")
+    || [];
+  const seenByParent = new Map();
+  for (let i = 0; i < propertyNodes.length; i += 1) {
+    const node = propertyNodes[i];
+    const parent = node.parentNode;
+    if (!parent) continue;
+    const name = String(node.getAttribute?.("name") || "").trim();
+    if (!name) continue;
+    let set = seenByParent.get(parent);
+    if (!set) {
+      set = new Set();
+      seenByParent.set(parent, set);
+    }
+    if (set.has(name)) return true;
+    set.add(name);
+  }
+  return false;
+}
+
+function dedupCamundaPropertiesWithRegex(xmlText) {
+  const text = String(xmlText || "");
+  if (!text || !text.includes("property")) return text;
+  const blockRegex = /<camunda:properties\b[^>]*>[\s\S]*?<\/camunda:properties>/gi;
+  const propertyRegex = /<camunda:property\b[^>]*>/gi;
+  const nameRegex = /\bname\s*=\s*(["'])(.*?)\1/;
+  return text.replace(blockRegex, (block) => {
+    const matches = Array.from(block.matchAll(propertyRegex));
+    const keptTagByName = new Map();
+    matches.forEach((match) => {
+      const tag = match[0];
+      const nameMatch = tag.match(nameRegex);
+      const name = String(nameMatch?.[2] || "").trim();
+      if (name) keptTagByName.set(name, tag);
+    });
+    const seen = new Set();
+    return block.replace(propertyRegex, (tag) => {
+      const nameMatch = tag.match(nameRegex);
+      const name = String(nameMatch?.[2] || "").trim();
+      if (!name) return tag;
+      if (tag === keptTagByName.get(name) && !seen.has(name)) {
+        seen.add(name);
+        return tag;
+      }
+      return "";
+    });
+  });
+}
+
+export function dedupCamundaProperties(xmlText) {
+  const doc = parseXmlDocument(xmlText);
+  if (!doc) {
+    // DOMParser is unavailable in some test/runtime environments; fall back to
+    // a regex-based deduplication.
+    return dedupCamundaPropertiesWithRegex(xmlText);
+  }
+  const propertiesLists = doc.getElementsByTagNameNS?.(CAMUNDA_NAMESPACE_URI, "properties")
+    || doc.getElementsByTagName?.("camunda:properties")
+    || [];
+  for (let i = 0; i < propertiesLists.length; i += 1) {
+    const list = propertiesLists[i];
+    const children = asArray(list.childNodes);
+    const byName = new Map();
+    children.forEach((child) => {
+      if (child?.nodeType !== 1) return;
+      const localName = String(child.localName || "").toLowerCase();
+      const ns = String(child.namespaceURI || "").trim();
+      if (localName !== "property" || ns !== CAMUNDA_NAMESPACE_URI) return;
+      const name = String(child.getAttribute?.("name") || "").trim();
+      if (!name) return;
+      if (!byName.has(name)) {
+        byName.set(name, []);
+      }
+      byName.get(name).push(child);
+    });
+    byName.forEach((nodes) => {
+      // Keep the last occurrence; remove all earlier duplicates.
+      for (let j = 0; j < nodes.length - 1; j += 1) {
+        try {
+          list.removeChild(nodes[j]);
+        } catch {
+          // no-op
+        }
+      }
+    });
+  }
+  return serializeXmlNode(doc);
+}
+
 function parseExtensionFragmentNode(rawXml) {
   const text = String(rawXml || "").trim();
   if (!text) return null;
@@ -1338,7 +1456,12 @@ export function extractCamundaExtensionsMapFromBpmnXml(xmlText) {
 export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap, allowSeedFromBpmn = true } = {}) {
   const extracted = normalizeCamundaExtensionsMap(extractedMap);
   const session = normalizeCamundaExtensionsMap(sessionMetaMap);
-  const shouldMergeManagedFromBpmn = allowSeedFromBpmn === true;
+  // When session already has data for an element, session meta is authoritative
+  // for user-managed extensionProperties and extensionListeners. Managed data is
+  // never merged back from BPMN XML here, because doing so would resurrect
+  // properties/listeners that the user intentionally deleted. Only
+  // preservedExtensionElements (unmanaged XML fragments not exposed in the UI)
+  // continue to be merged.
   const extractedKeys = Object.keys(extracted);
   const sessionKeys = Object.keys(session);
   if (!extractedKeys.length) {
@@ -1446,39 +1569,6 @@ export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap,
     const nextPreserved = Array.isArray(sessionEntry.preservedExtensionElements)
       ? sessionEntry.preservedExtensionElements.slice()
       : [];
-
-    if (shouldMergeManagedFromBpmn) {
-      // Preserve duplicate property names as long as their values differ.
-      // Only skip exact name+value duplicates so re-importing the same BPMN
-      // does not create noise.
-      const propertySignatures = new Set(
-        nextProperties
-          .map((item) => `${String(item?.name || "").trim()}\u0000${String(item?.value || "").trim()}`)
-          .filter((sig) => sig.split("\u0000")[0]),
-      );
-      extractedEntry.properties.extensionProperties.forEach((item) => {
-        const name = String(item?.name || "").trim();
-        if (!name) return;
-        const signature = `${name}\u0000${String(item?.value || "").trim()}`;
-        if (propertySignatures.has(signature)) return;
-        propertySignatures.add(signature);
-        nextProperties.push(item);
-        addedProperties += 1;
-      });
-
-      const listenerSignatures = new Set(
-        nextListeners
-          .map((item) => `${String(item?.event || "")}|${String(item?.type || "")}|${String(item?.value || "")}`)
-          .filter(Boolean),
-      );
-      extractedEntry.properties.extensionListeners.forEach((item) => {
-        const signature = `${String(item?.event || "")}|${String(item?.type || "")}|${String(item?.value || "")}`;
-        if (!signature || listenerSignatures.has(signature)) return;
-        listenerSignatures.add(signature);
-        nextListeners.push(item);
-        addedListeners += 1;
-      });
-    }
 
     // preservedExtensionElements are unmanaged XML fragments (connectors, etc.)
     // that are not exposed in the sidebar delete UI — safe to keep merging from XML.
@@ -1793,15 +1883,12 @@ function hasAnyManagedListenersInMap(mapRaw) {
 export function finalizeCamundaExtensionsXml({
   xmlText,
   camundaExtensionsByElementId,
-  preserveManagedForElementIds,
 } = {}) {
   const rawXml = String(xmlText || "").trim();
   if (!rawXml) return rawXml;
   const doc = parseXmlDocument(rawXml);
   if (!doc) return rawXml;
-  const explicitMapEntryIds = normalizeElementIdSet(Object.keys(asObject(camundaExtensionsByElementId)));
   const normalizedMap = normalizeCamundaExtensionsMap(camundaExtensionsByElementId);
-  const preserveManagedIds = normalizeElementIdSet(preserveManagedForElementIds);
   const useZeebeProperties = shouldUseZeebePropertiesProfile(doc);
   const candidateIds = collectCurrentManagedCandidateIds(doc);
   Object.keys(normalizedMap).forEach((elementId) => candidateIds.add(elementId));
@@ -1815,17 +1902,6 @@ export function finalizeCamundaExtensionsXml({
       || findDirectChild(owner, "extensionElements");
     const state = normalizeCamundaExtensionState(normalizedMap[elementId]);
     const currentChildren = directChildElements(currentExt);
-    const hasCurrentManagedEntries = currentChildren.some((child) => (
-      isManagedPropertiesNode(child)
-      || (namespaceOf(child) === CAMUNDA_NAMESPACE_URI && localNameOf(child) === "executionListener")
-    ));
-    if (
-      hasCurrentManagedEntries
-      && !explicitMapEntryIds.has(elementId)
-      && preserveManagedIds.has(elementId)
-    ) {
-      return;
-    }
     const preservedRaw = state.preservedExtensionElements.slice();
     const currentExtraRaw = currentChildren
       .filter((child) => {

@@ -1,6 +1,5 @@
 import { isLocalSessionId } from "../../../components/process/interview/utils.js";
 import {
-  finalizeCamundaExtensionsXml,
   normalizeCamundaExtensionsMap,
   removeCamundaExtensionStateByElementId,
   upsertCamundaExtensionStateByElementId,
@@ -82,23 +81,6 @@ function derivePropertySourceAction(currentMap, nextMap, elementId) {
   return "property_update";
 }
 
-function buildCanonicalXml({ currentXml, nextCamundaExtensionsByElementId }) {
-  const normalizedMap = normalizeCamundaExtensionsMap(nextCamundaExtensionsByElementId);
-  const nextXml = finalizeCamundaExtensionsXml({
-    xmlText: currentXml,
-    camundaExtensionsByElementId: normalizedMap,
-  });
-  return String(nextXml || "");
-}
-
-function updateLastServerVersion(ref, value) {
-  const v = toNonNegativeIntOrNull(value);
-  if (v === null) return;
-  if (ref && ref.current !== undefined) {
-    ref.current = Math.max(ref.current ?? 0, v);
-  }
-}
-
 /**
  * Unified BPMN save entry point.
  *
@@ -111,7 +93,6 @@ function updateLastServerVersion(ref, value) {
  * @param {string} options.sessionId
  * @param {boolean} [options.isLocal]
  * @param {number} options.baseDiagramStateVersion
- * @param {React.MutableRefObject<number>} [options.lastServerDiagramStateVersionRef]
  * @param {string} [options.projectId]
  * @param {string} [options.elementId] - element id for property operations
  * @param {Object} [options.currentCamundaExtensionsByElementId]
@@ -148,6 +129,10 @@ export async function saveBpmnState(options = {}) {
   const nextMap = normalizeCamundaExtensionsMap(options.nextCamundaExtensionsByElementId);
 
   const isPropertyOperation = operation.startsWith("property_");
+  if (isPropertyOperation && typeof options.flushSave !== "function") {
+    return { ok: false, status: 0, error: "flushSave unavailable for property operation" };
+  }
+
   let sourceAction = operation;
   if (isPropertyOperation) {
     sourceAction = operation;
@@ -157,65 +142,33 @@ export async function saveBpmnState(options = {}) {
     sourceAction = derivePropertySourceAction(currentMap, nextMap, elementId);
   }
 
-  let currentXml = "";
   let nextXml = "";
   let nextMeta = asObject(options.nextMeta ?? options.currentMeta);
 
-  if (operation === "session_save") {
-    currentXml = toText(options.xml);
-    if (!currentXml && typeof options.getModelerXml === "function") {
-      try {
-        currentXml = toText(await options.getModelerXml());
-      } catch (error) {
-        return { ok: false, status: 0, error: `Не удалось получить XML: ${error?.message || error}` };
-      }
-    }
-    nextXml = currentXml;
-  } else {
-    currentXml = toText(options.currentXml);
-    if (!currentXml && typeof options.getModelerXml === "function") {
-      try {
-        currentXml = toText(await options.getModelerXml());
-      } catch (error) {
-        return { ok: false, status: 0, error: `Не удалось получить XML: ${error?.message || error}` };
-      }
-    }
-    if (!currentXml && typeof options.apiGetBpmnXml === "function") {
-      try {
-        const xmlRes = await options.apiGetBpmnXml(sid);
-        if (xmlRes?.ok) {
-          currentXml = toText(xmlRes.xml);
-        }
-      } catch {
-        // ignore
-      }
-    }
-    if (!currentXml && typeof options.apiGetSession === "function") {
-      try {
-        const latest = await options.apiGetSession(sid);
-        if (latest?.ok && latest.session && typeof latest.session === "object") {
-          currentXml = toText(latest.session.bpmn_xml);
-          updateLastServerVersion(options.lastServerDiagramStateVersionRef, pickDiagramStateBaseVersion(latest.session));
-        }
-      } catch {
-        // ignore
-      }
-    }
-    if (!currentXml) {
-      return { ok: false, status: 0, error: "Отсутствует BPMN XML для применения Properties." };
-    }
-    nextXml = buildCanonicalXml({ currentXml, nextCamundaExtensionsByElementId: nextMap });
-    if (!nextXml) {
-      return { ok: false, status: 0, error: "Не удалось применить Properties к BPMN XML." };
-    }
-  }
+  // The coordinator is the single writer. Property operations always read the
+  // live modeler XML (App.jsx applies the extension state to the modeler first).
+  // Session saves may supply an explicit XML or fetch it from the modeler.
+  const useCoordinatorFlush = typeof options.flushSave === "function";
 
-  if (!nextXml) {
-    return { ok: false, status: 0, error: "Пустая BPMN XML." };
+  if (operation === "session_save") {
+    nextXml = toText(options.xml);
+    if (!nextXml && typeof options.getModelerXml === "function") {
+      try {
+        nextXml = toText(await options.getModelerXml());
+      } catch (error) {
+        return { ok: false, status: 0, error: `Не удалось получить XML: ${error?.message || error}` };
+      }
+    }
+    if (!nextXml && !useCoordinatorFlush) {
+      return { ok: false, status: 0, error: "Пустая BPMN XML." };
+    }
+  } else if (!useCoordinatorFlush) {
+    return { ok: false, status: 0, error: "flushSave unavailable for property operation" };
   }
 
   const baseDiagramStateVersion = toNonNegativeIntOrNull(
-    options.lastServerDiagramStateVersionRef?.current ?? options.baseDiagramStateVersion,
+    options.getBaseDiagramStateVersion?.()
+    ?? options.baseDiagramStateVersion,
   ) ?? 0;
 
   const syncSource = toText(options.syncSource) || `saveBpmnState:${sourceAction}`;
@@ -254,7 +207,8 @@ export async function saveBpmnState(options = {}) {
   while (attempt < maxAttempts) {
     attempt += 1;
     const attemptBaseVersion = toNonNegativeIntOrNull(
-      options.lastServerDiagramStateVersionRef?.current ?? baseDiagramStateVersion,
+      options.getBaseDiagramStateVersion?.()
+      ?? baseDiagramStateVersion,
     ) ?? 0;
 
     if (typeof options.flushSave === "function") {
@@ -273,13 +227,17 @@ export async function saveBpmnState(options = {}) {
     }
 
     if (saveRes?.ok) {
-      updateLastServerVersion(options.lastServerDiagramStateVersionRef, saveRes.diagramStateVersion);
+      options.rememberDiagramStateVersion?.(saveRes.diagramStateVersion);
+      // When the coordinator does the actual PUT it returns the serialized XML.
+      // Use that real XML for downstream snapshots and session patches instead
+      // of an empty placeholder.
+      persistedXml = saveRes.xml || persistedXml;
       break;
     }
 
     if (isDiagramStateConflict(saveRes)) {
       const serverVersion = extractServerVersionFromError(saveRes);
-      updateLastServerVersion(options.lastServerDiagramStateVersionRef, serverVersion);
+      if (serverVersion !== null) options.rememberDiagramStateVersion?.(serverVersion);
       // Surface conflicts to the caller immediately. The UI shows a conflict
       // modal and lets the user choose reload/stay/discard instead of silently
       // rebasing and overwriting concurrent changes.
@@ -368,7 +326,8 @@ export async function saveBpmnState(options = {}) {
         try {
           const fresh = await options.apiGetSession(sid);
           if (fresh?.ok && fresh.session && typeof fresh.session === "object") {
-            updateLastServerVersion(options.lastServerDiagramStateVersionRef, pickDiagramStateBaseVersion(fresh.session));
+            const freshVersion = pickDiagramStateBaseVersion(fresh.session);
+            options.rememberDiagramStateVersion?.(freshVersion);
             const syncPayload = { ...fresh.session, _sync_source: syncSource };
             if (isPropertyOperation) {
               syncPayload._skip_bpmn_render = Date.now();
@@ -396,7 +355,8 @@ export async function saveBpmnState(options = {}) {
     try {
       const fresh = await options.apiGetSession(sid);
       if (fresh?.ok && fresh.session && typeof fresh.session === "object") {
-        updateLastServerVersion(options.lastServerDiagramStateVersionRef, pickDiagramStateBaseVersion(fresh.session));
+        const freshVersion = pickDiagramStateBaseVersion(fresh.session);
+        options.rememberDiagramStateVersion?.(freshVersion);
         const syncPayload = { ...fresh.session, _sync_source: syncSource, _apply_bpmn_xml: !isPropertyOperation };
         if (isPropertyOperation) {
           syncPayload._skip_bpmn_render = Date.now();

@@ -40,6 +40,7 @@ export function useViewportResizeController({
   const timerRef = useRef(null);
   const getActiveInstanceRef = useRef(getActiveInstance);
   const onHostRectRef = useRef(onHostRect);
+  const lastHostRectRef = useRef(null);
 
   useEffect(() => {
     getActiveInstanceRef.current = getActiveInstance;
@@ -78,7 +79,18 @@ export function useViewportResizeController({
           rectsRef.current.editor = readContentRect(entry);
           canvasChanged = true;
         } else if (typeof onHostRectRef.current === "function" && hostRef?.current && target === hostRef.current) {
-          onHostRectRef.current(readBoundingRect(hostRef.current));
+          const rect = readBoundingRect(hostRef.current);
+          const last = lastHostRectRef.current;
+          if (
+            !last
+            || last.left !== rect.left
+            || last.top !== rect.top
+            || last.width !== rect.width
+            || last.height !== rect.height
+          ) {
+            lastHostRectRef.current = rect;
+            onHostRectRef.current(rect);
+          }
         }
       }
       if (canvasChanged && typeof getActiveInstanceRef.current === "function") {
@@ -89,7 +101,18 @@ export function useViewportResizeController({
     if (viewerContainerRef?.current) observer.observe(viewerContainerRef.current);
     if (editorContainerRef?.current) observer.observe(editorContainerRef.current);
     if (typeof onHostRectRef.current === "function" && hostRef?.current) {
-      onHostRectRef.current(readBoundingRect(hostRef.current));
+      const rect = readBoundingRect(hostRef.current);
+      const last = lastHostRectRef.current;
+      if (
+        !last
+        || last.left !== rect.left
+        || last.top !== rect.top
+        || last.width !== rect.width
+        || last.height !== rect.height
+      ) {
+        lastHostRectRef.current = rect;
+        onHostRectRef.current(rect);
+      }
       observer.observe(hostRef.current);
     }
 

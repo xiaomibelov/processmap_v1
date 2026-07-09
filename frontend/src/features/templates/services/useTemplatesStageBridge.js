@@ -96,6 +96,8 @@ export default function useTemplatesStageBridge({
   bpmnApiRef,
   bpmnStageHostRef,
   clientToDiagram,
+  flushPendingDiagramAutosave,
+  cancelPendingDiagramAutosave,
   onPersistedTemplateApply = null,
 }) {
   const selectedElementId = toText(selectedBpmnElement?.id);
@@ -288,6 +290,21 @@ export default function useTemplatesStageBridge({
       if (!inserted?.ok || options?.persistImmediately !== true) {
         return inserted;
       }
+      // Flush any in-flight diagram autosave (including its secondary session patch)
+      // so the diagram-state version is current before we persist the template.
+      if (typeof flushPendingDiagramAutosave === "function") {
+        try {
+          await flushPendingDiagramAutosave();
+        } catch {
+          // no-op
+        }
+      } else if (typeof cancelPendingDiagramAutosave === "function") {
+        try {
+          cancelPendingDiagramAutosave();
+        } catch {
+          // no-op
+        }
+      }
       if (typeof api.saveLocal !== "function") {
         return { ok: false, error: "save_api_unavailable" };
       }
@@ -332,7 +349,7 @@ export default function useTemplatesStageBridge({
     } catch (error) {
       return { ok: false, error: toText(error?.message || error || "insert_failed") };
     }
-  }, [bpmnApiRef, bpmnStageHostRef, clientToDiagram, onPersistedTemplateApply]);
+  }, [bpmnApiRef, bpmnStageHostRef, clientToDiagram, flushPendingDiagramAutosave, cancelPendingDiagramAutosave, onPersistedTemplateApply]);
 
   const insertBpmnFragmentTemplateImmediately = useCallback(async (templateRaw, options = {}) => {
     const rect = options?.diagramContainerRect && typeof options.diagramContainerRect === "object"

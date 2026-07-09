@@ -626,6 +626,16 @@ export function createBpmnStageImperativeApi(ctxBase) {
       if (!inst) return { ok: false, error: "modeler_not_ready" };
       return applyCamundaExtensionStateToModeler(elementId, extensionStateRaw, inst);
     },
+    getBaseDiagramStateVersion: () => {
+      const fn = callbacks.getBaseDiagramStateVersion;
+      if (typeof fn === "function") return fn();
+      return undefined;
+    },
+    rememberDiagramStateVersion: (version, options = {}) => {
+      const fn = callbacks.rememberDiagramStateVersion;
+      if (typeof fn === "function") return fn(version, options);
+      return null;
+    },
     isFlushing: () => !!refs.bpmnCoordinatorRef?.current?.isFlushing?.(),
     saveXmlDraft: () => callbacks.saveXmlDraftText?.(),
     hasXmlDraftChanges: () => !!values.xmlDirty,
