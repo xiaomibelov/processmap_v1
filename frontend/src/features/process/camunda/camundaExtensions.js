@@ -214,6 +214,75 @@ export function hasDuplicateCamundaProperties(xmlText) {
   return false;
 }
 
+function dedupCamundaPropertiesWithRegex(xmlText) {
+  const text = String(xmlText || "");
+  if (!text || !text.includes("property")) return text;
+  const blockRegex = /<camunda:properties\b[^>]*>[\s\S]*?<\/camunda:properties>/gi;
+  const propertyRegex = /<camunda:property\b[^>]*>/gi;
+  const nameRegex = /\bname\s*=\s*(["'])(.*?)\1/;
+  return text.replace(blockRegex, (block) => {
+    const matches = Array.from(block.matchAll(propertyRegex));
+    const keptTagByName = new Map();
+    matches.forEach((match) => {
+      const tag = match[0];
+      const nameMatch = tag.match(nameRegex);
+      const name = String(nameMatch?.[2] || "").trim();
+      if (name) keptTagByName.set(name, tag);
+    });
+    const seen = new Set();
+    return block.replace(propertyRegex, (tag) => {
+      const nameMatch = tag.match(nameRegex);
+      const name = String(nameMatch?.[2] || "").trim();
+      if (!name) return tag;
+      if (tag === keptTagByName.get(name) && !seen.has(name)) {
+        seen.add(name);
+        return tag;
+      }
+      return "";
+    });
+  });
+}
+
+export function dedupCamundaProperties(xmlText) {
+  const doc = parseXmlDocument(xmlText);
+  if (!doc) {
+    // DOMParser is unavailable in some test/runtime environments; fall back to
+    // a regex-based deduplication.
+    return dedupCamundaPropertiesWithRegex(xmlText);
+  }
+  const propertiesLists = doc.getElementsByTagNameNS?.(CAMUNDA_NAMESPACE_URI, "properties")
+    || doc.getElementsByTagName?.("camunda:properties")
+    || [];
+  for (let i = 0; i < propertiesLists.length; i += 1) {
+    const list = propertiesLists[i];
+    const children = asArray(list.childNodes);
+    const byName = new Map();
+    children.forEach((child) => {
+      if (child?.nodeType !== 1) return;
+      const localName = String(child.localName || "").toLowerCase();
+      const ns = String(child.namespaceURI || "").trim();
+      if (localName !== "property" || ns !== CAMUNDA_NAMESPACE_URI) return;
+      const name = String(child.getAttribute?.("name") || "").trim();
+      if (!name) return;
+      if (!byName.has(name)) {
+        byName.set(name, []);
+      }
+      byName.get(name).push(child);
+    });
+    byName.forEach((nodes) => {
+      // Keep the last occurrence; remove all earlier duplicates.
+      for (let j = 0; j < nodes.length - 1; j += 1) {
+        try {
+          list.removeChild(nodes[j]);
+        } catch {
+          // no-op
+        }
+      }
+    });
+  }
+  return serializeXmlNode(doc);
+}
+
 function parseExtensionFragmentNode(rawXml) {
   const text = String(rawXml || "").trim();
   if (!text) return null;
