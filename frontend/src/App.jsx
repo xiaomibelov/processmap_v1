@@ -867,7 +867,6 @@ export default function App() {
   const [reloadKey, setReloadKey] = useState(0);
   const openSessionReqSeqRef = useRef(0);
   const sessionMetaConflictGuardRef = useRef(createSessionMetaConflictGuard());
-  const lastServerDiagramStateVersionRef = useRef(null);
   const suppressProjectAutoselectRef = useRef(false);
   const initialProjectSelectionConsumedRef = useRef(false);
   const {
@@ -947,19 +946,6 @@ export default function App() {
     draft?.diagram_state_version ?? draft?.diagramStateVersion,
   ), [draft?.diagram_state_version, draft?.diagramStateVersion]);
 
-  // Seed the App-level monotonic version ref from the freshly loaded session.
-  // Without this, the first Camunda property save after opening a session falls
-  // back to draft.diagram_state_version, which can be stale and triggers a 409.
-  useEffect(() => {
-    const sid = draftSessionId;
-    const version = Number(draft?.diagram_state_version ?? draft?.diagramStateVersion ?? -1);
-    if (sid && Number.isFinite(version) && version >= 0) {
-      const current = lastServerDiagramStateVersionRef.current;
-      if (current === null || current < version) {
-        lastServerDiagramStateVersionRef.current = version;
-      }
-    }
-  }, [draftSessionId, draft?.diagram_state_version, draft?.diagramStateVersion]);
   const shortSessionMetaErr = useCallback((value) => (
     shortUserFacingError(value, 160, "Не удалось сохранить session meta.")
       || "Не удалось сохранить session meta."
@@ -1671,15 +1657,7 @@ export default function App() {
     if (activeSid && sid !== activeSid) return;
     const serverDiagramStateVersion = Number(session?.diagram_state_version ?? session?.diagramStateVersion ?? -1);
     if (Number.isFinite(serverDiagramStateVersion) && serverDiagramStateVersion >= 0) {
-      lastServerDiagramStateVersionRef.current = Math.max(
-        lastServerDiagramStateVersionRef.current ?? 0,
-        serverDiagramStateVersion,
-      );
-      try {
-        bpmnStageRef.current?.rememberDiagramStateVersion?.(serverDiagramStateVersion, { sessionId: sid });
-      } catch {
-        // best-effort: keep App ref as fallback if the modeler seam is not ready
-      }
+      bpmnStageRef.current?.rememberDiagramStateVersion?.(serverDiagramStateVersion, { sessionId: sid });
     }
     // Keep caches fresh instead of invalidating; status changes and saves both
     // include the latest diagram, so subprocess return can stay zero-fetch.
@@ -2625,7 +2603,6 @@ export default function App() {
     };
     const baseDiagramStateVersion = Number(
       bpmnStageRef.current?.getBaseDiagramStateVersion?.()
-      ?? lastServerDiagramStateVersionRef.current
       ?? draft?.diagram_state_version
       ?? draft?.bpmn_xml_version
       ?? draft?.version
@@ -2687,7 +2664,6 @@ export default function App() {
       sessionId: sid,
       isLocal: isLocalSessionId(sid),
       baseDiagramStateVersion,
-      lastServerDiagramStateVersionRef,
       getBaseDiagramStateVersion: () => bpmnStageRef.current?.getBaseDiagramStateVersion?.(),
       rememberDiagramStateVersion: (version) => bpmnStageRef.current?.rememberDiagramStateVersion?.(version, { sessionId: sid }),
       projectId: draft?.project_id,

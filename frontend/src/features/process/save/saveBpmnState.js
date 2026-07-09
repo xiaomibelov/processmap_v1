@@ -81,14 +81,6 @@ function derivePropertySourceAction(currentMap, nextMap, elementId) {
   return "property_update";
 }
 
-function updateLastServerVersion(ref, value) {
-  const v = toNonNegativeIntOrNull(value);
-  if (v === null) return;
-  if (ref && ref.current !== undefined) {
-    ref.current = Math.max(ref.current ?? 0, v);
-  }
-}
-
 /**
  * Unified BPMN save entry point.
  *
@@ -101,7 +93,6 @@ function updateLastServerVersion(ref, value) {
  * @param {string} options.sessionId
  * @param {boolean} [options.isLocal]
  * @param {number} options.baseDiagramStateVersion
- * @param {React.MutableRefObject<number>} [options.lastServerDiagramStateVersionRef]
  * @param {string} [options.projectId]
  * @param {string} [options.elementId] - element id for property operations
  * @param {Object} [options.currentCamundaExtensionsByElementId]
@@ -177,7 +168,6 @@ export async function saveBpmnState(options = {}) {
 
   const baseDiagramStateVersion = toNonNegativeIntOrNull(
     options.getBaseDiagramStateVersion?.()
-    ?? options.lastServerDiagramStateVersionRef?.current
     ?? options.baseDiagramStateVersion,
   ) ?? 0;
 
@@ -218,7 +208,6 @@ export async function saveBpmnState(options = {}) {
     attempt += 1;
     const attemptBaseVersion = toNonNegativeIntOrNull(
       options.getBaseDiagramStateVersion?.()
-      ?? options.lastServerDiagramStateVersionRef?.current
       ?? baseDiagramStateVersion,
     ) ?? 0;
 
@@ -238,7 +227,6 @@ export async function saveBpmnState(options = {}) {
     }
 
     if (saveRes?.ok) {
-      updateLastServerVersion(options.lastServerDiagramStateVersionRef, saveRes.diagramStateVersion);
       options.rememberDiagramStateVersion?.(saveRes.diagramStateVersion);
       // When the coordinator does the actual PUT it returns the serialized XML.
       // Use that real XML for downstream snapshots and session patches instead
@@ -249,7 +237,6 @@ export async function saveBpmnState(options = {}) {
 
     if (isDiagramStateConflict(saveRes)) {
       const serverVersion = extractServerVersionFromError(saveRes);
-      updateLastServerVersion(options.lastServerDiagramStateVersionRef, serverVersion);
       if (serverVersion !== null) options.rememberDiagramStateVersion?.(serverVersion);
       // Surface conflicts to the caller immediately. The UI shows a conflict
       // modal and lets the user choose reload/stay/discard instead of silently
@@ -340,7 +327,6 @@ export async function saveBpmnState(options = {}) {
           const fresh = await options.apiGetSession(sid);
           if (fresh?.ok && fresh.session && typeof fresh.session === "object") {
             const freshVersion = pickDiagramStateBaseVersion(fresh.session);
-            updateLastServerVersion(options.lastServerDiagramStateVersionRef, freshVersion);
             options.rememberDiagramStateVersion?.(freshVersion);
             const syncPayload = { ...fresh.session, _sync_source: syncSource };
             if (isPropertyOperation) {
@@ -370,7 +356,6 @@ export async function saveBpmnState(options = {}) {
       const fresh = await options.apiGetSession(sid);
       if (fresh?.ok && fresh.session && typeof fresh.session === "object") {
         const freshVersion = pickDiagramStateBaseVersion(fresh.session);
-        updateLastServerVersion(options.lastServerDiagramStateVersionRef, freshVersion);
         options.rememberDiagramStateVersion?.(freshVersion);
         const syncPayload = { ...fresh.session, _sync_source: syncSource, _apply_bpmn_xml: !isPropertyOperation };
         if (isPropertyOperation) {
