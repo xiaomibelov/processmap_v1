@@ -2392,7 +2392,7 @@
   }
 
   .workspace {
-    @apply grid h-full min-h-0 min-w-0 grid-cols-1 gap-3 overflow-hidden p-3 lg:grid-cols-[minmax(336px,432px)_minmax(0,1fr)];
+    @apply grid h-full min-h-0 min-w-0 grid-cols-1 gap-3 overflow-hidden p-3 lg:grid-cols-[var(--left-panel-width,336px)_minmax(0,1fr)];
   }
 
   .workspace--leftHidden {
@@ -4376,6 +4376,27 @@
     border-radius: 18px;
     background: #FFFFFF;
     box-shadow: 0 8px 24px rgba(31, 42, 68, 0.08);
+  }
+
+  .sidebarResizeHandle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    cursor: ew-resize;
+    background: transparent;
+    transition: background 0.2s, width 0.2s;
+    z-index: 50;
+  }
+
+  .sidebarResizeHandle:hover {
+    background: hsl(var(--accent));
+  }
+
+  .sidebarResizeHandle:active {
+    background: hsl(var(--accent));
+    width: 6px;
   }
 
   .leftSidebarSticky {
