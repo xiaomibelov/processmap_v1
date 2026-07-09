@@ -345,16 +345,15 @@ test("hydrateCamundaExtensionsFromBpmn merges missing element entries from BPMN 
     nextMap.Task_2.properties.extensionProperties.map((item) => ({ name: item.name, value: item.value })),
     [{ name: "equipment", value: "Весы высокоточные" }],
   );
+  // Session meta is authoritative for managed properties; missing keys from
+  // BPMN are NOT appended back to an element that already has session data.
   assert.deepEqual(
     nextMap.Task_1.properties.extensionProperties.map((item) => ({ name: item.name, value: item.value })),
-    [
-      { name: "value", value: "1" },
-      { name: "container", value: "Лоток 150x55" },
-    ],
+    [{ name: "value", value: "1" }],
   );
 }));
 
-test("hydrateCamundaExtensionsFromBpmn keeps session values and appends missing property keys from BPMN for same element", () => withDom(() => {
+test("hydrateCamundaExtensionsFromBpmn keeps session values and does not append missing property keys from BPMN for same element", () => withDom(() => {
   const extracted = {
     Task_1: {
       properties: {
@@ -385,15 +384,10 @@ test("hydrateCamundaExtensionsFromBpmn keeps session values and appends missing 
     sessionMetaMap: session,
   });
   const next = normalizeCamundaExtensionState(hydrated.nextSessionMetaMap.Task_1);
-  assert.equal(hydrated.adoptedFromBpmn, true);
+  assert.equal(hydrated.adoptedFromBpmn, false);
   assert.deepEqual(
     next.properties.extensionProperties.map((item) => ({ name: item.name, value: item.value })),
-    [
-      { name: "ingredient", value: "Креветки" },
-      { name: "ingredient", value: "Шампиньон" },
-      { name: "equipment", value: "Весы" },
-      { name: "value", value: "1" },
-    ],
+    [{ name: "ingredient", value: "Креветки" }],
   );
 }));
 
