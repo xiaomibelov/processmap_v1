@@ -68,7 +68,8 @@ test("flushSave persists clean XML without duplicate properties", async () => {
   assert.equal(saveCalls, 1);
 });
 
-test("flushSave aborts before persist when duplicate managed properties are detected", async () => {
+test("flushSave deduplicates managed properties before persist", async () => {
+  let savedXml = "";
   let saveCalls = 0;
   const events = [];
   const store = createBpmnStore({
@@ -83,8 +84,9 @@ test("flushSave aborts before persist when duplicate managed properties are dete
     getRuntime: () => makeRuntime(duplicateXml),
     onTrace: (event, payload) => events.push({ event, payload }),
     persistence: {
-      saveRaw: async () => {
+      saveRaw: async (_sid, xml) => {
         saveCalls += 1;
+        savedXml = String(xml || "");
         return { ok: true, status: 200, storedRev: 2 };
       },
     },
@@ -92,15 +94,17 @@ test("flushSave aborts before persist when duplicate managed properties are dete
 
   const result = await coordinator.flushSave("manual_save");
 
-  assert.equal(result.ok, false);
-  assert.equal(result.errorCode, "duplicate_camunda_properties");
-  assert.equal(saveCalls, 0, "backend persist must not be called");
-  const event = events.find((e) => e?.event === "SAVE_ABORTED_DUPLICATE_CAMUNDA_PROPERTIES");
-  assert.ok(event, "emits duplicate abort event");
+  assert.equal(result.ok, true, "save succeeds after dedup");
+  assert.equal(saveCalls, 1, "backend persist is called once");
+  const matches = savedXml.match(/<camunda:property\b[^>]*name="key1"[^>]*>/g) || [];
+  assert.equal(matches.length, 1, "only one key1 property remains");
+  const event = events.find((e) => e?.event === "SAVE_DEDUPLICATED_CAMUNDA_PROPERTIES");
+  assert.ok(event, "emits deduplication event");
   assert.equal(event?.payload?.sid, "sid_dup");
 });
 
-test("persistExplicitXml aborts before persist when duplicate managed properties are detected", async () => {
+test("persistExplicitXml deduplicates managed properties before persist", async () => {
+  let savedXml = "";
   let saveCalls = 0;
   const store = createBpmnStore({
     xml: "<bpmn:definitions id='initial'/>",
@@ -113,8 +117,9 @@ test("persistExplicitXml aborts before persist when duplicate managed properties
     getSessionId: () => "sid_explicit_dup",
     getRuntime: () => makeRuntime(cleanXml),
     persistence: {
-      saveRaw: async () => {
+      saveRaw: async (_sid, xml) => {
         saveCalls += 1;
+        savedXml = String(xml || "");
         return { ok: true, status: 200, storedRev: 2 };
       },
     },
@@ -122,9 +127,10 @@ test("persistExplicitXml aborts before persist when duplicate managed properties
 
   const result = await coordinator.persistExplicitXml(duplicateXml, "explicit_test");
 
-  assert.equal(result.ok, false);
-  assert.equal(result.errorCode, "duplicate_camunda_properties");
-  assert.equal(saveCalls, 0, "backend persist must not be called");
+  assert.equal(result.ok, true, "explicit persist succeeds after dedup");
+  assert.equal(saveCalls, 1, "backend persist is called once");
+  const matches = savedXml.match(/<camunda:property\b[^>]*name="key1"[^>]*>/g) || [];
+  assert.equal(matches.length, 1, "only one key1 property remains");
 });
 
 test("flushSave skip-unchanged path does not persist duplicate XML already stored", async () => {
