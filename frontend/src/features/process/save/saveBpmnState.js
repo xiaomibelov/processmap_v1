@@ -148,6 +148,10 @@ export async function saveBpmnState(options = {}) {
   const nextMap = normalizeCamundaExtensionsMap(options.nextCamundaExtensionsByElementId);
 
   const isPropertyOperation = operation.startsWith("property_");
+  if (isPropertyOperation && typeof options.flushSave !== "function") {
+    return { ok: false, status: 0, error: "flushSave unavailable for property operation" };
+  }
+
   let sourceAction = operation;
   if (isPropertyOperation) {
     sourceAction = operation;
@@ -286,6 +290,10 @@ export async function saveBpmnState(options = {}) {
 
     if (saveRes?.ok) {
       updateLastServerVersion(options.lastServerDiagramStateVersionRef, saveRes.diagramStateVersion);
+      // When the coordinator does the actual PUT it returns the serialized XML.
+      // Use that real XML for downstream snapshots and session patches instead
+      // of an empty placeholder.
+      persistedXml = saveRes.xml || persistedXml;
       break;
     }
 
