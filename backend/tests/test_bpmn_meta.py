@@ -1066,3 +1066,167 @@ class BpmnMetaApiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+CAMUNDA_BPMN_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_1" isExecutable="false">
+    <bpmn:startEvent id="StartEvent_1">
+      <bpmn:outgoing>Flow_start_gateway</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:exclusiveGateway id="Gateway_1" default="Flow_no">
+      <bpmn:incoming>Flow_start_gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_yes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_no</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_yes">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="key1" value="value1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_yes</bpmn:incoming>
+      <bpmn:outgoing>Flow_yes_end</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_no">
+      <bpmn:incoming>Flow_no</bpmn:incoming>
+      <bpmn:outgoing>Flow_no_end</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="End_1">
+      <bpmn:incoming>Flow_yes_end</bpmn:incoming>
+      <bpmn:incoming>Flow_no_end</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_start_gateway" sourceRef="StartEvent_1" targetRef="Gateway_1" />
+    <bpmn:sequenceFlow id="Flow_yes" sourceRef="Gateway_1" targetRef="Task_yes" />
+    <bpmn:sequenceFlow id="Flow_no" sourceRef="Gateway_1" targetRef="Task_no" />
+    <bpmn:sequenceFlow id="Flow_yes_end" sourceRef="Task_yes" targetRef="End_1" />
+    <bpmn:sequenceFlow id="Flow_no_end" sourceRef="Task_no" targetRef="End_1" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
+
+
+class BpmnMetaMergeHelperTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        os.environ["PROCESS_STORAGE_DIR"] = self.tmp.name
+        os.environ.setdefault("JWT_SECRET", "test-secret")
+        os.environ.setdefault("JWT_ISSUER", "test-issuer")
+        os.environ.setdefault("JWT_AUDIENCE", "test-audience")
+
+        from app._legacy_main import (
+            _collect_sequence_flow_meta,
+            _merge_and_normalize_bpmn_meta,
+            BpmnXmlIn,
+            CreateSessionIn,
+            UpdateSessionIn,
+            create_session,
+            get_storage,
+            patch_session,
+            session_bpmn_meta_get,
+            session_bpmn_save,
+        )
+
+        self._merge_and_normalize_bpmn_meta = _merge_and_normalize_bpmn_meta
+        self._collect_sequence_flow_meta = _collect_sequence_flow_meta
+        self.BpmnXmlIn = BpmnXmlIn
+        self.CreateSessionIn = CreateSessionIn
+        self.UpdateSessionIn = UpdateSessionIn
+        self.create_session = create_session
+        self.get_storage = get_storage
+        self.patch_session = patch_session
+        self.session_bpmn_meta_get = session_bpmn_meta_get
+        self.session_bpmn_save = session_bpmn_save
+
+        created = self.create_session(self.CreateSessionIn(title="merge test"))
+        self.sid = str(created.get("id") or "")
+        self.assertTrue(self.sid)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _call_merge(self, current_meta, incoming_meta, xml):
+        flow_ctx = self._collect_sequence_flow_meta(xml)
+        return self._merge_and_normalize_bpmn_meta(current_meta, incoming_meta, xml, flow_ctx)[0]
+
+    def test_merge_helper_preserves_hybrid_v2_when_incoming_empty(self):
+        current = {"hybrid_v2": {"schema_version": 2, "elements": [{"id": "E1"}]}}
+        incoming = {"hybrid_v2": {}, "drawio": {}, "hybrid_layer_by_element_id": {}}
+        result = self._call_merge(current, incoming, XOR_BPMN_XML)
+        self.assertEqual(result["hybrid_v2"].get("schema_version"), 2)
+        self.assertEqual(len(result["hybrid_v2"].get("elements", [])), 1)
+
+    def test_merge_helper_prefers_incoming_hybrid_v2_when_non_empty(self):
+        current = {"hybrid_v2": {"schema_version": 2, "elements": [{"id": "E1"}]}}
+        incoming = {"hybrid_v2": {"schema_version": 3, "elements": [{"id": "E2"}]}}
+        result = self._call_merge(current, incoming, XOR_BPMN_XML)
+        # _normalize_hybrid_v2 canonicalizes schema_version to 2, but the incoming
+        # element set must win over the current one.
+        self.assertEqual(result["hybrid_v2"].get("schema_version"), 2)
+        self.assertEqual(result["hybrid_v2"]["elements"][0].get("id"), "E2")
+
+    def test_merge_helper_derives_camunda_extensions_from_xml(self):
+        stale_ext = {
+            "Task_yes": {
+                "properties": {
+                    "extensionProperties": [{"id": "stale", "name": "stale", "value": "stale"}]
+                }
+            }
+        }
+        result = self._call_merge(
+            {"camunda_extensions_by_element_id": stale_ext},
+            {"camunda_extensions_by_element_id": stale_ext},
+            CAMUNDA_BPMN_XML,
+        )
+        ext = result.get("camunda_extensions_by_element_id", {}).get("Task_yes", {})
+        props = ext.get("properties", {}).get("extensionProperties", [])
+        self.assertTrue(
+            any(p.get("name") == "key1" and p.get("value") == "value1" for p in props),
+            f"expected XML-derived property, got {props}",
+        )
+
+    def test_merge_helper_preserves_custom_keys(self):
+        current = {"viewport": {"zoom": 1}, "custom_key": [1, 2]}
+        incoming = {"custom_key": [3, 4], "another": "x"}
+        result = self._call_merge(current, incoming, XOR_BPMN_XML)
+        self.assertEqual(result.get("viewport"), {"zoom": 1})
+        self.assertEqual(result.get("custom_key"), [3, 4])
+        self.assertEqual(result.get("another"), "x")
+
+    def test_patch_session_preserves_hybrid_v2_on_empty_incoming(self):
+        self.patch_session(
+            self.sid,
+            self.UpdateSessionIn(
+                bpmn_meta={
+                    "hybrid_v2": {
+                        "schema_version": 2,
+                        "elements": [{"id": "E1"}],
+                        "layers": [],
+                        "edges": [],
+                        "bindings": [],
+                    }
+                }
+            ),
+        )
+        after = self.patch_session(
+            self.sid,
+            self.UpdateSessionIn(bpmn_meta={"hybrid_v2": {}}),
+        )
+        hybrid = after.get("bpmn_meta", {}).get("hybrid_v2", {})
+        self.assertEqual(hybrid.get("schema_version"), 2)
+        self.assertEqual(len(hybrid.get("elements", [])), 1)
+
+    def test_patch_and_save_produce_equivalent_meta(self):
+        self.patch_session(
+            self.sid,
+            self.UpdateSessionIn(bpmn_meta={"viewport": {"zoom": 2}, "custom_key": "a"}),
+        )
+        patched = self.session_bpmn_meta_get(self.sid)
+        save_res = self.session_bpmn_save(
+            self.sid,
+            self.BpmnXmlIn(xml=XOR_BPMN_XML, bpmn_meta={}),
+        )
+        self.assertEqual(save_res.get("ok"), True)
+        saved = self.session_bpmn_meta_get(self.sid)
+        self.assertEqual(saved.get("viewport"), patched.get("viewport"))
+        self.assertEqual(saved.get("custom_key"), patched.get("custom_key"))
