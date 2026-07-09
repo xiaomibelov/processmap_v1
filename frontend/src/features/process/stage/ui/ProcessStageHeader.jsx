@@ -132,7 +132,7 @@ export default function ProcessStageHeader({ view = {} }) {
               </button>
               {showCreateRevisionNoDiffHint ? (
                 <span
-                  className="badge text-[11px] text-muted"
+                  className="badge text-[11px] text-muted truncate max-w-[220px]"
                   title={revisionActionTitle}
                   data-testid="diagram-toolbar-create-revision-no-diff-hint"
                 >
