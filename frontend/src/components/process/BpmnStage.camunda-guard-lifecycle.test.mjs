@@ -78,20 +78,9 @@ test("template-apply save forwards saveOwner into coordinator flush lane", () =>
   );
 });
 
-test("save path exposes camunda finalize transform to coordinator before first persist", () => {
-  assert.match(source, /function transformPersistedXml\(xmlText/);
-  assert.match(source, /transformPersistedXml,/);
-});
-
-test("template insert reconcile adopts guarded XML properties into local extension-state before finalize", () => {
-  assert.match(source, /function reconcileTemplateInsertCamundaStateFromXml\(xmlText, preserveIdsRaw = \[\]\) \{/);
-  assert.match(source, /extractCamundaExtensionsMapFromBpmnXml\(xmlText\)/);
-  assert.match(source, /upsertCamundaExtensionStateByElementId\(nextMap, elementId, state\)/);
-  assert.match(source, /syncDraftCamundaExtensionsMap\(nextMap, "camunda_extensions_template_insert_xml_reconcile"\)/);
-  assert.match(
-    source,
-    /const xmlCamundaExtensionsByElementId = reconcileTemplateInsertCamundaStateFromXml\(xmlText, templateInsertGuardIds\);[\s\S]*const camundaExtensionsByElementId = \{\s*\.\.\.xmlCamundaExtensionsByElementId,\s*\.\.\.metaCamundaExtensionsByElementId,\s*\};[\s\S]*finalizeCamundaExtensionsXml\(\{[\s\S]*camundaExtensionsByElementId,[\s\S]*preserveManagedForElementIds: templateInsertGuardIds,/,
-  );
+test("save path does not define camunda finalize transform in BpmnStage", () => {
+  assert.doesNotMatch(source, /function transformPersistedXml\(xmlText/);
+  assert.doesNotMatch(source, /finalizeCamundaExtensionsXml/);
 });
 
 test("template insert seed falls back to template semantic payload under generated element id", () => {
@@ -125,10 +114,8 @@ test("template/session meta patch uses monotonic diagram version context and rem
   assert.match(source, /rememberDiagramStateVersion\?\.\(Math\.round\(serverCurrentVersion\), \{ sessionId: sid \}\);/);
 });
 
-test("camunda finalize explicit persist keeps canonical transport reason while preserving debug suffix in lifecycle logs", () => {
-  assert.match(source, /if \(out !== rawOut && flushed\?\.xmlAlreadyTransformed !== true\) \{/);
-  assert.match(source, /const transportPersistReason = persistReason;/);
-  assert.match(source, /const finalizeLifecycleReason = `\$\{persistReason\}:camunda_finalize`;/);
-  assert.match(source, /coordinator\.persistExplicitXml\(out, transportPersistReason, \{/);
-  assert.doesNotMatch(source, /ensureBpmnPersistence\(\)\.saveRaw\(sid, out, rev, transportPersistReason/);
+test("no separate camunda finalize explicit persist path remains", () => {
+  assert.doesNotMatch(source, /if \(out !== rawOut && flushed\?\.xmlAlreadyTransformed !== true\) \{/);
+  assert.doesNotMatch(source, /:camunda_finalize/);
+  assert.doesNotMatch(source, /coordinator\.persistExplicitXml/);
 });
