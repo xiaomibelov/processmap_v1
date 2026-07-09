@@ -176,7 +176,9 @@ export async function saveBpmnState(options = {}) {
   }
 
   const baseDiagramStateVersion = toNonNegativeIntOrNull(
-    options.lastServerDiagramStateVersionRef?.current ?? options.baseDiagramStateVersion,
+    options.getBaseDiagramStateVersion?.()
+    ?? options.lastServerDiagramStateVersionRef?.current
+    ?? options.baseDiagramStateVersion,
   ) ?? 0;
 
   const syncSource = toText(options.syncSource) || `saveBpmnState:${sourceAction}`;
@@ -215,7 +217,9 @@ export async function saveBpmnState(options = {}) {
   while (attempt < maxAttempts) {
     attempt += 1;
     const attemptBaseVersion = toNonNegativeIntOrNull(
-      options.lastServerDiagramStateVersionRef?.current ?? baseDiagramStateVersion,
+      options.getBaseDiagramStateVersion?.()
+      ?? options.lastServerDiagramStateVersionRef?.current
+      ?? baseDiagramStateVersion,
     ) ?? 0;
 
     if (typeof options.flushSave === "function") {
@@ -235,6 +239,7 @@ export async function saveBpmnState(options = {}) {
 
     if (saveRes?.ok) {
       updateLastServerVersion(options.lastServerDiagramStateVersionRef, saveRes.diagramStateVersion);
+      options.rememberDiagramStateVersion?.(saveRes.diagramStateVersion);
       // When the coordinator does the actual PUT it returns the serialized XML.
       // Use that real XML for downstream snapshots and session patches instead
       // of an empty placeholder.
@@ -245,6 +250,7 @@ export async function saveBpmnState(options = {}) {
     if (isDiagramStateConflict(saveRes)) {
       const serverVersion = extractServerVersionFromError(saveRes);
       updateLastServerVersion(options.lastServerDiagramStateVersionRef, serverVersion);
+      if (serverVersion !== null) options.rememberDiagramStateVersion?.(serverVersion);
       // Surface conflicts to the caller immediately. The UI shows a conflict
       // modal and lets the user choose reload/stay/discard instead of silently
       // rebasing and overwriting concurrent changes.
@@ -333,7 +339,9 @@ export async function saveBpmnState(options = {}) {
         try {
           const fresh = await options.apiGetSession(sid);
           if (fresh?.ok && fresh.session && typeof fresh.session === "object") {
-            updateLastServerVersion(options.lastServerDiagramStateVersionRef, pickDiagramStateBaseVersion(fresh.session));
+            const freshVersion = pickDiagramStateBaseVersion(fresh.session);
+            updateLastServerVersion(options.lastServerDiagramStateVersionRef, freshVersion);
+            options.rememberDiagramStateVersion?.(freshVersion);
             const syncPayload = { ...fresh.session, _sync_source: syncSource };
             if (isPropertyOperation) {
               syncPayload._skip_bpmn_render = Date.now();
@@ -361,7 +369,9 @@ export async function saveBpmnState(options = {}) {
     try {
       const fresh = await options.apiGetSession(sid);
       if (fresh?.ok && fresh.session && typeof fresh.session === "object") {
-        updateLastServerVersion(options.lastServerDiagramStateVersionRef, pickDiagramStateBaseVersion(fresh.session));
+        const freshVersion = pickDiagramStateBaseVersion(fresh.session);
+        updateLastServerVersion(options.lastServerDiagramStateVersionRef, freshVersion);
+        options.rememberDiagramStateVersion?.(freshVersion);
         const syncPayload = { ...fresh.session, _sync_source: syncSource, _apply_bpmn_xml: !isPropertyOperation };
         if (isPropertyOperation) {
           syncPayload._skip_bpmn_render = Date.now();

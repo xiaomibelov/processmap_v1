@@ -5779,6 +5779,8 @@ const BpmnStage = forwardRef(function BpmnStage({
         saveLocalFromModeler,
         saveXmlDraftText,
         seedNew,
+        getBaseDiagramStateVersion: () => getBaseDiagramStateVersion?.(),
+        rememberDiagramStateVersion: (version, opts) => rememberDiagramStateVersion?.(version, opts),
         flushSave: (reason, opts) => ensureBpmnCoordinator().flushSave(reason, opts),
       },
     };

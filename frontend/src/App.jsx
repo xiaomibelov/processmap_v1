@@ -1675,6 +1675,11 @@ export default function App() {
         lastServerDiagramStateVersionRef.current ?? 0,
         serverDiagramStateVersion,
       );
+      try {
+        bpmnStageRef.current?.rememberDiagramStateVersion?.(serverDiagramStateVersion, { sessionId: sid });
+      } catch {
+        // best-effort: keep App ref as fallback if the modeler seam is not ready
+      }
     }
     // Keep caches fresh instead of invalidating; status changes and saves both
     // include the latest diagram, so subprocess return can stay zero-fetch.
@@ -2619,7 +2624,8 @@ export default function App() {
       viewport: draft?.bpmn_meta?.viewport,
     };
     const baseDiagramStateVersion = Number(
-      lastServerDiagramStateVersionRef.current
+      bpmnStageRef.current?.getBaseDiagramStateVersion?.()
+      ?? lastServerDiagramStateVersionRef.current
       ?? draft?.diagram_state_version
       ?? draft?.bpmn_xml_version
       ?? draft?.version
@@ -2656,6 +2662,8 @@ export default function App() {
       isLocal: isLocalSessionId(sid),
       baseDiagramStateVersion,
       lastServerDiagramStateVersionRef,
+      getBaseDiagramStateVersion: () => bpmnStageRef.current?.getBaseDiagramStateVersion?.(),
+      rememberDiagramStateVersion: (version) => bpmnStageRef.current?.rememberDiagramStateVersion?.(version, { sessionId: sid }),
       projectId: draft?.project_id,
       elementId,
       currentCamundaExtensionsByElementId,
