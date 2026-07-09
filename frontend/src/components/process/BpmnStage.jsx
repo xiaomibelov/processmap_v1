@@ -2349,9 +2349,10 @@ const BpmnStage = forwardRef(function BpmnStage({
     const elementType = toText(element?.businessObject?.$type || element?.type).toLowerCase();
     if (activeInst) {
       syncRobotMetaToModeler(activeInst);
-      syncCamundaExtensionsToModeler(activeInst, {
-        preserveManagedForElementIds: elementId ? [elementId] : [],
-      });
+      // Sync from the authoritative meta map. Do not preserve the selected
+      // element's current managed block: if a property was just deleted it must
+      // be removed from the modeler, not kept alive by a stale preserve guard.
+      syncCamundaExtensionsToModeler(activeInst);
     }
     let nativeTree = null;
     if (activeInst && elementId && elementType.includes("subprocess")) {
