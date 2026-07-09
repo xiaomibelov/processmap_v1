@@ -2645,6 +2645,15 @@ export default function App() {
       // Best-effort; proceed and let the XML fallback handle an unready modeler.
     }
 
+    // Capture the current modeler extension state so we can roll it back if the
+    // save fails or conflicts with a concurrent edit.
+    let modelerExtensionBackup = null;
+    try {
+      modelerExtensionBackup = bpmnStageRef.current?.getElementCamundaExtensionState?.(elementId);
+    } catch {
+      // Best-effort backup; rollback will be skipped if unavailable.
+    }
+
     // Apply the optimistic extension state to the live modeler first so the
     // serialized XML is always fresh and property duplication cannot happen.
     try {
@@ -2689,6 +2698,16 @@ export default function App() {
     });
     if (!persistResult?.ok) {
       const isConflict = persistResult?.status === 409 || persistResult?.conflict === true;
+      // Rollback the live modeler to the pre-save extension state so the next
+      // serialize/save does not resurrect the failed change.
+      if (modelerExtensionBackup) {
+        try {
+          bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, modelerExtensionBackup);
+          setBpmnModelerSyncEpoch((e) => e + 1);
+        } catch {
+          // Best-effort rollback.
+        }
+      }
       emitPropertySaveEvent({
         type: isConflict ? "conflict" : "error",
         operation,
