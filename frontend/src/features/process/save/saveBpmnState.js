@@ -161,6 +161,14 @@ export async function saveBpmnState(options = {}) {
   let nextXml = "";
   let nextMeta = asObject(options.nextMeta ?? options.currentMeta);
 
+  // Unified XML source: when a coordinator flush path is available, property
+  // saves let the coordinator read the live modeler XML. App.jsx already
+  // applies the new Camunda extension state to the modeler, so the serialized
+  // XML is authoritative. This prevents two independent XML funnels
+  // (saveBpmnState canonical build vs. BpmnStage.saveLocalFromModeler) from
+  // diverging. Direct PUT fallbacks still build the canonical XML here.
+  const useCoordinatorFlush = typeof options.flushSave === "function";
+
   if (operation === "session_save") {
     currentXml = toText(options.xml);
     if (!currentXml && typeof options.getModelerXml === "function") {
@@ -171,6 +179,10 @@ export async function saveBpmnState(options = {}) {
       }
     }
     nextXml = currentXml;
+  } else if (useCoordinatorFlush) {
+    // Property operations delegate XML serialization to the coordinator so the
+    // live modeler is the single source of truth.
+    nextXml = "";
   } else {
     currentXml = toText(options.currentXml);
     if (!currentXml && typeof options.getModelerXml === "function") {
@@ -210,7 +222,7 @@ export async function saveBpmnState(options = {}) {
     }
   }
 
-  if (!nextXml) {
+  if (!nextXml && !useCoordinatorFlush) {
     return { ok: false, status: 0, error: "Пустая BPMN XML." };
   }
 
