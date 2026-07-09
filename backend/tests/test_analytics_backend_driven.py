@@ -359,3 +359,98 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         self.assertIn("kpi", data)
         self.assertIn("session_trend", data)
         self.assertEqual(data["kpi"]["unique_processes"], data["projects_count"])
+
+    def test_recalculate_helper_happy_path(self):
+        from app.routers.analytics import _build_recalculated_rows
+
+        rows = [
+            {"bpmn_id": "op1", "bpmn_name": "Operation 1", "name": "ee_time", "value": "3,61"},
+            {"bpmn_id": "op1", "bpmn_name": "Operation 1", "name": "ingredient_value", "value": "1"},
+        ]
+        out, errors = _build_recalculated_rows(rows)
+        self.assertEqual(errors, [])
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["bpmn_id"], "op1")
+        self.assertEqual(out[0]["ee_time"], 3.61)
+        self.assertEqual(out[0]["ingredient_value"], 1.0)
+        self.assertEqual(out[0]["result"], 3.61)
+
+    def test_recalculate_helper_invalid_ingredient_value_returns_error(self):
+        from app.routers.analytics import _build_recalculated_rows
+
+        rows = [
+            {"bpmn_id": "op1", "bpmn_name": "Operation 1", "name": "ee_time", "value": "3.61"},
+            {"bpmn_id": "op1", "bpmn_name": "Operation 1", "name": "ingredient_value", "value": "abc"},
+        ]
+        out, errors = _build_recalculated_rows(rows)
+        self.assertEqual(out, [])
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0]["bpmn_id"], "op1")
+        self.assertIn("ingredient_value", errors[0]["reason"])
+
+    def _set_session_bpmn_meta(self, meta: dict):
+        storage = self.get_storage()
+        storage.patch_session_meta(
+            self.session_id,
+            bpmn_meta=meta,
+            base_diagram_state_version=0,
+            user_id=self.admin_id,
+            org_id=self.org_id,
+            is_admin=True,
+        )
+
+    def test_export_properties_recalculated_xlsx_happy_path(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "3.61"},
+                            {"name": "ingredient_value", "value": "1"},
+                        ]
+                    }
+                }
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.headers["content-type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn("properties-recalculated-session-", r.headers.get("content-disposition", ""))
+        self.assertTrue(r.content.startswith(b"PK"))
+
+    def test_export_properties_recalculated_xlsx_returns_json_errors(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "3.61"},
+                            {"name": "ingredient_value", "value": ""},
+                        ]
+                    }
+                }
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.headers["content-type"], "application/json")
+        body = r.json()
+        self.assertIn("errors", body)
+        self.assertEqual(len(body["errors"]), 1)
+        self.assertEqual(body["errors"][0]["bpmn_id"], "op1")
+        self.assertIn("ingredient_value", body["errors"][0]["reason"])
+
+    def test_export_properties_recalculated_xlsx_requires_auth(self):
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}",
+        )
+        self.assertEqual(r.status_code, 401)
