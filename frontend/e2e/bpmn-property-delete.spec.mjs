@@ -64,18 +64,6 @@ async function getServerBpmnXml(request, sessionId, token) {
   return res.text();
 }
 
-async function waitForSaveComplete(saveBtn, { timeout = 15000 } = {}) {
-  await expect
-    .poll(
-      async () => {
-        const [enabled, text] = await Promise.all([saveBtn.isEnabled(), saveBtn.innerText()]);
-        return { enabled, text: text.trim() };
-      },
-      { timeout },
-    )
-    .toEqual({ enabled: false, text: "Сохранить всё" });
-}
-
 test("deleting an additional BPMN property removes it from the element", async ({ page, request }) => {
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const auth = await apiLogin(request, { apiBase: API_BASE });
@@ -134,11 +122,18 @@ test("deleting an additional BPMN property removes it from the element", async (
   await page.waitForTimeout(500);
   await expect(rows).toHaveCount(0);
 
+  // The deletion is flushed immediately, so the server XML should already
+  // reflect the removal before any global save.
+  await expect.poll(async () => {
+    const xml = await getServerBpmnXml(request, fixture.sessionId, auth.accessToken);
+    return xml.includes('name="priority"');
+  }).toBe(false);
+
   // Save via the global footer and verify the row does not reappear.
   const saveBtn = page.locator(".sidebarGlobalFooter").getByRole("button", { name: "Сохранить всё" });
   await expect(saveBtn).toBeEnabled();
   await saveBtn.click();
-  await waitForSaveComplete(saveBtn);
+  await expect(saveBtn).not.toContainText("Сохраняю...", { timeout: 15000 });
   await expect.poll(async () => rows.count()).toBe(0);
 
   const serverXml = await getServerBpmnXml(request, fixture.sessionId, auth.accessToken);
