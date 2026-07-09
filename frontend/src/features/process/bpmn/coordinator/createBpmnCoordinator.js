@@ -1,3 +1,4 @@
+import { hasDuplicateCamundaProperties } from "../../camunda/camundaExtensions.js";
 import createLocalMutationStaging from "./createLocalMutationStaging.js";
 
 function asText(value) {
@@ -537,6 +538,22 @@ export default function createBpmnCoordinator(options = {}) {
         xmlAlreadyTransformed: prepared.transformed,
       };
     }
+    if (hasDuplicateCamundaProperties(xml)) {
+      emit("SAVE_ABORTED_DUPLICATE_CAMUNDA_PROPERTIES", {
+        sid,
+        reason,
+        rev,
+        xml_len: xml.length,
+      });
+      return {
+        ok: false,
+        rev,
+        status: 0,
+        errorCode: "duplicate_camunda_properties",
+        error: "Duplicate managed Camunda properties detected; aborting save to prevent data corruption.",
+      };
+    }
+
     const refreshed = store.setXml(xml, "flush_save", { bumpRev: false, dirty: true });
     const targetRev = asNumber(refreshed?.rev, rev);
     emit("SAVE_EXECUTED", {
@@ -887,6 +904,21 @@ export default function createBpmnCoordinator(options = {}) {
           xml_len: xml.length,
         });
         const startedAt = Date.now();
+        if (hasDuplicateCamundaProperties(xml)) {
+          emit("SAVE_ABORTED_DUPLICATE_CAMUNDA_PROPERTIES", {
+            sid,
+            reason,
+            rev,
+            xml_len: xml.length,
+          });
+          return {
+            ok: false,
+            rev,
+            status: 0,
+            errorCode: "duplicate_camunda_properties",
+            error: "Duplicate managed Camunda properties detected; aborting save to prevent data corruption.",
+          };
+        }
         const explicitPersistOptions = {};
         if (options?.bpmnMeta && typeof options.bpmnMeta === "object") {
           explicitPersistOptions.bpmnMeta = options.bpmnMeta;
