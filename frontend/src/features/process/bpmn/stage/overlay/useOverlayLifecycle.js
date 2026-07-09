@@ -14,6 +14,7 @@ export function useOverlayLifecycle({
   v2EnabledRef,
   v2ExpandedRef,
   useExtensionOverlays,
+  propertyPreviewMapRef,
 }) {
   const useExtensionOverlaysRef = useRef(useExtensionOverlays);
   useExtensionOverlaysRef.current = useExtensionOverlays;
@@ -25,6 +26,7 @@ export function useOverlayLifecycle({
       enabledRef: v2EnabledRef,
       expandedRef: v2ExpandedRef,
       useExtensionOverlaysRef,
+      propertyPreviewMapRef,
     });
   }
 
