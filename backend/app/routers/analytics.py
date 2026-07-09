@@ -6,6 +6,7 @@ import time
 from typing import Any, Dict, List, Set
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 
 from ..legacy.request_context import request_active_org_id
 from ..schemas.analytics import AnalyticsActionsQuery, AnalyticsDashboardOut, AnalyticsPropertiesQuery
@@ -16,7 +17,7 @@ from ..analytics_read_model import (
     refresh_project_analytics_snapshot,
     refresh_workspace_analytics_snapshot,
 )
-from ..routers.process_properties_registry import _extract_camunda_rows
+from ..routers.process_properties_registry import _extract_camunda_rows, _text
 from ..routers.product_actions_registry import _registry_row
 from ..analytics_cache import (
     ANALYTICS_CACHE_TTL_SEC,
@@ -814,6 +815,108 @@ def _xlsx_response(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+
+_EE_TIME_KEY = "ee_time"
+_INGREDIENT_VALUE_KEY = "ingredient_value"
+_RECALC_REQUIRED_KEYS = {_EE_TIME_KEY, _INGREDIENT_VALUE_KEY}
+
+
+def _parse_recalc_number(value: Any) -> float | None:
+    """Parse a numeric string, allowing commas as decimal separators."""
+    raw = _text(value).replace(",", ".")
+    if raw in ("", "—"):
+        return None
+    try:
+        return float(raw)
+    except Exception:
+        return None
+
+
+def _build_recalculated_rows(rows: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
+    """Group Camunda properties by BPMN element and compute ee_time * ingredient_value."""
+    by_element: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        name = _text(row.get("name"))
+        if name not in _RECALC_REQUIRED_KEYS:
+            continue
+        bpmn_id = _text(row.get("bpmn_id"))
+        if not bpmn_id:
+            continue
+        element = by_element.setdefault(bpmn_id, {
+            "bpmn_id": bpmn_id,
+            "bpmn_name": _text(row.get("bpmn_name")),
+            _EE_TIME_KEY: None,
+            _INGREDIENT_VALUE_KEY: None,
+        })
+        element[name] = _text(row.get("value"))
+
+    out_rows: List[Dict[str, Any]] = []
+    errors: List[Dict[str, str]] = []
+    for element in by_element.values():
+        ee_raw = element.get(_EE_TIME_KEY)
+        ing_raw = element.get(_INGREDIENT_VALUE_KEY)
+        ee_val = _parse_recalc_number(ee_raw)
+        ing_val = _parse_recalc_number(ing_raw)
+
+        reasons: List[str] = []
+        if ee_raw is None:
+            reasons.append("отсутствует ee_time")
+        elif ee_val is None:
+            reasons.append(f"некорректное значение ee_time: {ee_raw}")
+        if ing_raw is None:
+            reasons.append("отсутствует ingredient_value")
+        elif ing_val is None:
+            reasons.append(f"некорректное значение ingredient_value: {ing_raw}")
+
+        if reasons:
+            errors.append({
+                "bpmn_id": element["bpmn_id"],
+                "bpmn_name": element["bpmn_name"],
+                "ingredient_value": ing_raw if ing_raw is not None else "",
+                "reason": "; ".join(reasons),
+            })
+            continue
+
+        result = round(ee_val * ing_val, 2)  # type: ignore[arg-type]
+        out_rows.append({
+            "bpmn_id": element["bpmn_id"],
+            "bpmn_name": element["bpmn_name"],
+            _EE_TIME_KEY: ee_val,
+            _INGREDIENT_VALUE_KEY: ing_val,
+            "result": result,
+        })
+
+    return out_rows, errors
+
+
+@router.get("/properties/export-recalculated.xlsx")
+def export_properties_recalculated_xlsx(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+    rows = _properties_rows(scope, scope_id, oid)
+    recalc_rows, errors = _build_recalculated_rows(rows)
+    if errors:
+        return JSONResponse(status_code=400, content={"errors": errors})
+    columns = [
+        ("bpmn_id", "BPMN ID"),
+        ("bpmn_name", "BPMN Name"),
+        (_EE_TIME_KEY, "ee_time"),
+        (_INGREDIENT_VALUE_KEY, "ingredient_value"),
+        ("result", "Результат"),
+    ]
+    formats = {
+        _EE_TIME_KEY: {"num_format": "0.00"},
+        _INGREDIENT_VALUE_KEY: {"num_format": "0.00"},
+        "result": {"num_format": "0.00"},
+    }
+    return _xlsx_response(recalc_rows, f"properties-recalculated-{scope}-{scope_id}.xlsx", columns, formats)
 
 
 @router.get("/properties/export.xlsx")
