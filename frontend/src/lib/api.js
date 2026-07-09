@@ -1974,10 +1974,7 @@ export async function apiExportAnalyticsPropertiesXlsx(scope, scopeId) {
 
 export async function apiExportAnalyticsPropertiesRecalculatedXlsx(scope, scopeId) {
   const r = await request(apiRoutes.analytics.exportPropertiesRecalculatedXlsx(scope, scopeId), { method: "GET", responseType: "blob" });
-  if (!r.ok) {
-    const errors = Array.isArray(r.data?.errors) ? r.data.errors : [];
-    return { ok: false, status: r.status, errors, error: r.error };
-  }
+  if (!r.ok) return r;
   const blob = r.data instanceof Blob ? r.data : new Blob([String(r.text || "")]);
   return { ok: true, status: r.status, blob, filename: `properties-recalculated-${scope}-${scopeId}.xlsx` };
 }
