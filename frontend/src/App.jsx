@@ -1675,6 +1675,11 @@ export default function App() {
         lastServerDiagramStateVersionRef.current ?? 0,
         serverDiagramStateVersion,
       );
+      try {
+        bpmnStageRef.current?.rememberDiagramStateVersion?.(serverDiagramStateVersion, { sessionId: sid });
+      } catch {
+        // best-effort: keep App ref as fallback if the modeler seam is not ready
+      }
     }
     // Keep caches fresh instead of invalidating; status changes and saves both
     // include the latest diagram, so subprocess return can stay zero-fetch.
@@ -2619,7 +2624,8 @@ export default function App() {
       viewport: draft?.bpmn_meta?.viewport,
     };
     const baseDiagramStateVersion = Number(
-      lastServerDiagramStateVersionRef.current
+      bpmnStageRef.current?.getBaseDiagramStateVersion?.()
+      ?? lastServerDiagramStateVersionRef.current
       ?? draft?.diagram_state_version
       ?? draft?.bpmn_xml_version
       ?? draft?.version
@@ -2636,18 +2642,44 @@ export default function App() {
     try {
       await bpmnStageRef.current?.whenReady?.({ timeoutMs: 2000, expectedSid: sid });
     } catch {
-      // Best-effort; proceed and let the XML fallback handle an unready modeler.
+      // Best-effort; proceed. If the modeler is not ready the apply step below
+      // will fail and the save will abort without falling back to an XML merge.
+    }
+
+    // Capture the current modeler extension state so we can roll it back if the
+    // save fails or conflicts with a concurrent edit.
+    let modelerExtensionBackup = null;
+    try {
+      modelerExtensionBackup = bpmnStageRef.current?.getElementCamundaExtensionState?.(elementId);
+    } catch {
+      // Best-effort backup; rollback will be skipped if unavailable.
     }
 
     // Apply the optimistic extension state to the live modeler first so the
     // serialized XML is always fresh and property duplication cannot happen.
+    let applyResult;
     try {
-      bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, extensionStateRaw);
+      applyResult = bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, extensionStateRaw);
       // Force the sidebar to re-read extension state from the live modeler
       // instead of the pre-mutation memoized snapshot.
       setBpmnModelerSyncEpoch((e) => e + 1);
-    } catch {
-      // Best-effort; the XML merge path below will still apply the state.
+    } catch (error) {
+      applyResult = { ok: false, error: String(error?.message || error || "apply_failed") };
+    }
+    if (!applyResult?.ok) {
+      emitPropertySaveEvent({
+        type: "error",
+        operation,
+        elementId,
+        sid,
+        status: 0,
+        error: String(applyResult?.error || "Не удалось применить Properties к модели."),
+      });
+      return {
+        ok: false,
+        status: 0,
+        error: String(applyResult?.error || "Не удалось применить Properties к модели."),
+      };
     }
 
     const persistResult = await saveBpmnState({
@@ -2656,6 +2688,8 @@ export default function App() {
       isLocal: isLocalSessionId(sid),
       baseDiagramStateVersion,
       lastServerDiagramStateVersionRef,
+      getBaseDiagramStateVersion: () => bpmnStageRef.current?.getBaseDiagramStateVersion?.(),
+      rememberDiagramStateVersion: (version) => bpmnStageRef.current?.rememberDiagramStateVersion?.(version, { sessionId: sid }),
       projectId: draft?.project_id,
       elementId,
       currentCamundaExtensionsByElementId,
@@ -2681,6 +2715,16 @@ export default function App() {
     });
     if (!persistResult?.ok) {
       const isConflict = persistResult?.status === 409 || persistResult?.conflict === true;
+      // Rollback the live modeler to the pre-save extension state so the next
+      // serialize/save does not resurrect the failed change.
+      if (modelerExtensionBackup) {
+        try {
+          bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, modelerExtensionBackup);
+          setBpmnModelerSyncEpoch((e) => e + 1);
+        } catch {
+          // Best-effort rollback.
+        }
+      }
       emitPropertySaveEvent({
         type: isConflict ? "conflict" : "error",
         operation,

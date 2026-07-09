@@ -165,6 +165,55 @@ function parseXmlDocument(xmlText) {
   }
 }
 
+function hasDuplicateCamundaPropertiesWithRegex(xmlText) {
+  const text = String(xmlText || "");
+  if (!text || !text.includes("property")) return false;
+  const blockRegex = /<camunda:properties\b[^>]*>[\s\S]*?<\/camunda:properties>/gi;
+  const propertyRegex = /<camunda:property\b[^>]*>/gi;
+  const nameRegex = /\bname\s*=\s*(["'])(.*?)\1/;
+  for (const blockMatch of text.matchAll(blockRegex)) {
+    const block = blockMatch[0];
+    const seen = new Set();
+    for (const propMatch of block.matchAll(propertyRegex)) {
+      const propTag = propMatch[0];
+      const nameMatch = propTag.match(nameRegex);
+      const name = String(nameMatch?.[2] || "").trim();
+      if (!name) continue;
+      if (seen.has(name)) return true;
+      seen.add(name);
+    }
+  }
+  return false;
+}
+
+export function hasDuplicateCamundaProperties(xmlText) {
+  const doc = parseXmlDocument(xmlText);
+  if (!doc) {
+    // DOMParser is unavailable in some test/runtime environments; fall back to
+    // a regex scan so the guard still works.
+    return hasDuplicateCamundaPropertiesWithRegex(xmlText);
+  }
+  const propertyNodes = doc.getElementsByTagNameNS?.(CAMUNDA_NAMESPACE_URI, "property")
+    || doc.getElementsByTagName?.("camunda:property")
+    || [];
+  const seenByParent = new Map();
+  for (let i = 0; i < propertyNodes.length; i += 1) {
+    const node = propertyNodes[i];
+    const parent = node.parentNode;
+    if (!parent) continue;
+    const name = String(node.getAttribute?.("name") || "").trim();
+    if (!name) continue;
+    let set = seenByParent.get(parent);
+    if (!set) {
+      set = new Set();
+      seenByParent.set(parent, set);
+    }
+    if (set.has(name)) return true;
+    set.add(name);
+  }
+  return false;
+}
+
 function parseExtensionFragmentNode(rawXml) {
   const text = String(rawXml || "").trim();
   if (!text) return null;
