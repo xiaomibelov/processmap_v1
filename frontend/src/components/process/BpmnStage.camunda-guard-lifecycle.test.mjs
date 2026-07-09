@@ -79,7 +79,7 @@ test("template-apply save forwards saveOwner into coordinator flush lane", () =>
 });
 
 test("save path exposes camunda finalize transform to coordinator before first persist", () => {
-  assert.match(source, /function transformPersistedXml\(xmlText\) \{/);
+  assert.match(source, /function transformPersistedXml\(xmlText/);
   assert.match(source, /transformPersistedXml,/);
 });
 
@@ -130,5 +130,5 @@ test("camunda finalize explicit persist keeps canonical transport reason while p
   assert.match(source, /const transportPersistReason = persistReason;/);
   assert.match(source, /const finalizeLifecycleReason = `\$\{persistReason\}:camunda_finalize`;/);
   assert.match(source, /coordinator\.persistExplicitXml\(out, transportPersistReason, \{/);
-  assert.match(source, /ensureBpmnPersistence\(\)\.saveRaw\(sid, out, rev, transportPersistReason(,\s*\{\s*bpmnMeta: saveBpmnMeta\s*\})?\)/);
+  assert.doesNotMatch(source, /ensureBpmnPersistence\(\)\.saveRaw\(sid, out, rev, transportPersistReason/);
 });
