@@ -43,8 +43,8 @@ test("NotesPanel reuses existing camunda extension-state save and reset lifecycl
   assert.match(notesPanelSource, /onDurableSaveAck: \(\) => \{/);
   assert.match(notesPanelSource, /setCamundaPropertiesInfo\("Сохранено на сервере\."\);/);
   assert.match(notesPanelSource, /setCamundaPropertiesInfo\("Сохранено на сервере\. Обновляем состояние…"\);/);
-  assert.match(notesPanelSource, /if \(result && result\.ok === false\) \{\s*setCamundaExtensionSavePhase\("idle"\);\s*setCamundaExtensionSaveFailed\(true\);/);
-  assert.match(notesPanelSource, /catch \(error\) \{\s*setCamundaExtensionSavePhase\("idle"\);\s*setCamundaExtensionSaveFailed\(true\);/);
+  assert.match(notesPanelSource, /if \(result && result\.ok === false\) \{[\s\S]*?setCamundaExtensionSavePhase\("idle"\);[\s\S]*?setCamundaExtensionSaveFailed\(true\);/);
+  assert.match(notesPanelSource, /catch \(error\) \{[\s\S]*?setCamundaExtensionSavePhase\("idle"\);[\s\S]*?setCamundaExtensionSaveFailed\(true\);/);
   assert.match(notesPanelSource, /async function resetSelectedCamundaProperties\(\)/);
   assert.match(notesPanelSource, /setCamundaExtensionLastAction\("reset"\);/);
 });

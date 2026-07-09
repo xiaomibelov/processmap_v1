@@ -11,13 +11,9 @@ import {
   removeZeebeTaskHeaderFromExtensionState,
 } from "../../features/process/camunda/camundaExtensions";
 import { setSchemaPropertyValueInExtensionState } from "../../features/process/camunda/propertyDictionaryModel";
-import { deleteExtensionPropertyRowsByDeleteAction } from "./propertyDeleteSemantics";
+import useBpmnPropertiesController from "./controllers/useBpmnPropertiesController";
 
 export const SHOW_PROPERTIES_FLAG_KEY = "fpc-show-properties";
-
-function isShowPropertiesFlagRow(row) {
-  return String(row?.name || "").trim().toLowerCase() === SHOW_PROPERTIES_FLAG_KEY;
-}
 
 export default function useElementSettingsController({
   selectedElementId,
@@ -28,20 +24,22 @@ export default function useElementSettingsController({
   const [listenersOpen, setListenersOpen] = useState(false);
   const [operationOpen, setOperationOpen] = useState(false);
   const [operationPropertiesOpen, setOperationPropertiesOpen] = useState(false);
-  const [additionalBpmnOpen, setAdditionalBpmnOpen] = useState(true);
   const [documentationOpen, setDocumentationOpen] = useState(false);
   const [camundaIoOpen, setCamundaIoOpen] = useState(false);
   const [zeebeTaskHeadersOpen, setZeebeTaskHeadersOpen] = useState(false);
   const [overlayCompanionsExpanded, setOverlayCompanionsExpanded] = useState(false);
   const [expandedCamundaScripts, setExpandedCamundaScripts] = useState({});
-  const [expandedBpmnRows, setExpandedBpmnRows] = useState({});
+
+  const bpmnProperties = useBpmnPropertiesController({
+    selectedElementId,
+    extensionStateDraft,
+    dictionaryBundle,
+    onExtensionStateDraftChange,
+  });
 
   const state = extensionStateDraft && typeof extensionStateDraft === "object"
     ? extensionStateDraft
     : createEmptyCamundaExtensionState();
-  const properties = Array.isArray(state?.properties?.extensionProperties)
-    ? state.properties.extensionProperties
-    : [];
   const listeners = Array.isArray(state?.properties?.extensionListeners)
     ? state.properties.extensionListeners
     : [];
@@ -59,55 +57,12 @@ export default function useElementSettingsController({
   const zeebeTaskHeaderRows = Array.isArray(zeebeTaskHeadersModel?.rows) ? zeebeTaskHeadersModel.rows : [];
 
   useEffect(() => {
-    // Keep secondary groups collapsed by default when entering a node;
-    // surface Additional BPMN properties immediately.
+    // Keep secondary groups collapsed by default when entering a node.
     setDocumentationOpen(false);
     setCamundaIoOpen(false);
     setZeebeTaskHeadersOpen(false);
     setListenersOpen(false);
-    setAdditionalBpmnOpen(true);
   }, [selectedElementId]);
-
-  function isBpmnRowExpanded(rowIdRaw) {
-    const rowId = String(rowIdRaw || "").trim();
-    if (!rowId) return false;
-    return !!expandedBpmnRows[rowId];
-  }
-
-  function setBpmnRowExpanded(rowIdRaw, nextOpen) {
-    const rowId = String(rowIdRaw || "").trim();
-    if (!rowId) return;
-    setExpandedBpmnRows((prev) => {
-      const next = { ...(prev || {}) };
-      if (nextOpen) {
-        next[rowId] = true;
-      } else {
-        delete next[rowId];
-      }
-      return next;
-    });
-  }
-
-  useEffect(() => {
-    const knownIds = new Set(
-      properties
-        .map((row) => String(row?.id || "").trim())
-        .filter(Boolean),
-    );
-    setExpandedBpmnRows((prev) => {
-      const current = prev && typeof prev === "object" ? prev : {};
-      let changed = false;
-      const next = {};
-      Object.keys(current).forEach((rowId) => {
-        if (knownIds.has(rowId) && !!current[rowId]) {
-          next[rowId] = true;
-        } else {
-          changed = true;
-        }
-      });
-      return changed ? next : current;
-    });
-  }, [properties]);
 
   useEffect(() => {
     const knownIoIds = new Set(
@@ -132,33 +87,6 @@ export default function useElementSettingsController({
 
   function updateDraft(nextState) {
     onExtensionStateDraftChange?.(nextState);
-  }
-
-  function replaceExtensionProperties(nextExtensionProperties) {
-    updateDraft({
-      ...state,
-      properties: {
-        ...(state.properties || {}),
-        extensionProperties: nextExtensionProperties,
-        extensionListeners: listeners,
-      },
-    });
-  }
-
-  function updatePropertyRow(rowId, patch = {}) {
-    replaceExtensionProperties(properties.map((row) => (
-      String(row?.id || "") === String(rowId || "")
-        ? { ...row, ...patch }
-        : row
-    )));
-  }
-
-  function addPropertyRow() {
-    replaceExtensionProperties([...properties, { id: `prop_draft_${Date.now()}`, name: "", value: "" }]);
-  }
-
-  function deletePropertyRow(rowId) {
-    replaceExtensionProperties(deleteExtensionPropertyRowsByDeleteAction(properties, rowId));
   }
 
   function updateCamundaIoParameter(rowRef, patch = {}) {
@@ -305,8 +233,6 @@ export default function useElementSettingsController({
     setOperationOpen,
     operationPropertiesOpen,
     setOperationPropertiesOpen,
-    additionalBpmnOpen,
-    setAdditionalBpmnOpen,
     documentationOpen,
     setDocumentationOpen,
     camundaIoOpen,
@@ -316,27 +242,23 @@ export default function useElementSettingsController({
     overlayCompanionsExpanded,
     setOverlayCompanionsExpanded,
     state,
-    properties,
     listeners,
     camundaInputRows,
     camundaOutputRows,
     zeebeTaskHeaderRows,
-    isBpmnRowExpanded,
-    setBpmnRowExpanded,
-    updatePropertyRow,
-    addPropertyRow,
-    deletePropertyRow,
+    isCamundaScriptExpanded,
+    setCamundaScriptExpanded,
     updateCamundaIoParameter,
     addCamundaIoRow,
     deleteCamundaIoRow,
     updateZeebeTaskHeaderRow,
     addZeebeTaskHeaderRow,
     deleteZeebeTaskHeaderRow,
-    isCamundaScriptExpanded,
-    setCamundaScriptExpanded,
     updateSchemaPropertyValue,
     updateListenerRow,
     addListenerRow,
     deleteListenerRow,
+    // BPMN properties subsection (isolated controller)
+    ...bpmnProperties,
   };
 }

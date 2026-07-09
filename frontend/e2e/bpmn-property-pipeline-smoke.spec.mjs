@@ -205,17 +205,14 @@ test("add/edit/delete additional BPMN property persists without duplicates or mi
   expect(serverXml).toContain('value="urgent"');
   expect(serverXml).not.toContain('value="high"');
 
-  // Delete the property.
+  // Delete the property. The deletion is flushed immediately, so the global
+  // save button has no further changes to persist.
   const deleteBtn = reloadedRow.locator(".sidebarPropertyActionBtn--danger").first();
   await expect(deleteBtn).toBeVisible();
   await deleteBtn.click();
   await expect(rows).toHaveCount(0);
-  await expect(saveBtn).toBeEnabled();
-
-  await saveBtn.click();
-  await waitForSaveComplete(saveBtn);
+  await expect(saveBtn).toBeDisabled();
   await expect(page.getByText("Отсутствует BPMN XML")).toHaveCount(0);
-  await expect.poll(async () => rows.count()).toBe(0);
 
   serverXml = await getServerBpmnXml(request, fixture.sessionId, auth.accessToken);
   expect(serverXml).not.toContain('name="priority"');
