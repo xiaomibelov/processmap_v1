@@ -2642,7 +2642,8 @@ export default function App() {
     try {
       await bpmnStageRef.current?.whenReady?.({ timeoutMs: 2000, expectedSid: sid });
     } catch {
-      // Best-effort; proceed and let the XML fallback handle an unready modeler.
+      // Best-effort; proceed. If the modeler is not ready the apply step below
+      // will fail and the save will abort without falling back to an XML merge.
     }
 
     // Capture the current modeler extension state so we can roll it back if the
@@ -2656,13 +2657,29 @@ export default function App() {
 
     // Apply the optimistic extension state to the live modeler first so the
     // serialized XML is always fresh and property duplication cannot happen.
+    let applyResult;
     try {
-      bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, extensionStateRaw);
+      applyResult = bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, extensionStateRaw);
       // Force the sidebar to re-read extension state from the live modeler
       // instead of the pre-mutation memoized snapshot.
       setBpmnModelerSyncEpoch((e) => e + 1);
-    } catch {
-      // Best-effort; the XML merge path below will still apply the state.
+    } catch (error) {
+      applyResult = { ok: false, error: String(error?.message || error || "apply_failed") };
+    }
+    if (!applyResult?.ok) {
+      emitPropertySaveEvent({
+        type: "error",
+        operation,
+        elementId,
+        sid,
+        status: 0,
+        error: String(applyResult?.error || "Не удалось применить Properties к модели."),
+      });
+      return {
+        ok: false,
+        status: 0,
+        error: String(applyResult?.error || "Не удалось применить Properties к модели."),
+      };
     }
 
     const persistResult = await saveBpmnState({
