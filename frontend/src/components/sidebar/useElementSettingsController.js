@@ -25,10 +25,10 @@ export default function useElementSettingsController({
   dictionaryBundle,
   onExtensionStateDraftChange,
 }) {
-  const [listenersOpen, setListenersOpen] = useState(true);
+  const [listenersOpen, setListenersOpen] = useState(false);
   const [operationOpen, setOperationOpen] = useState(false);
   const [operationPropertiesOpen, setOperationPropertiesOpen] = useState(false);
-  const [additionalBpmnOpen, setAdditionalBpmnOpen] = useState(false);
+  const [additionalBpmnOpen, setAdditionalBpmnOpen] = useState(true);
   const [documentationOpen, setDocumentationOpen] = useState(false);
   const [camundaIoOpen, setCamundaIoOpen] = useState(false);
   const [zeebeTaskHeadersOpen, setZeebeTaskHeadersOpen] = useState(false);
@@ -59,10 +59,13 @@ export default function useElementSettingsController({
   const zeebeTaskHeaderRows = Array.isArray(zeebeTaskHeadersModel?.rows) ? zeebeTaskHeadersModel.rows : [];
 
   useEffect(() => {
-    // Keep Camunda I/O collapsed by default when entering a node.
+    // Keep secondary groups collapsed by default when entering a node;
+    // surface Additional BPMN properties immediately.
     setDocumentationOpen(false);
     setCamundaIoOpen(false);
     setZeebeTaskHeadersOpen(false);
+    setListenersOpen(false);
+    setAdditionalBpmnOpen(true);
   }, [selectedElementId]);
 
   function isBpmnRowExpanded(rowIdRaw) {

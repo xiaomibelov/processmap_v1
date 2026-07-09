@@ -64,9 +64,12 @@ async function openNodeProperties(page) {
   await expect(propertiesAccordion).toBeVisible();
   await propertiesAccordion.click();
 
-  const sectionToggle = page.locator(".sidebarPropertiesBlockTitle", { hasText: "Дополнительные BPMN-свойства" });
+  const sectionToggle = page.locator("button.sidebarPropertiesBlockToggle", { hasText: "Дополнительные BPMN-свойства" });
   await expect(sectionToggle).toBeVisible();
-  await sectionToggle.locator("..").click();
+  const isExpanded = await sectionToggle.getAttribute("aria-expanded");
+  if (isExpanded !== "true") {
+    await sectionToggle.click();
+  }
 }
 
 async function getServerBpmnXml(request, sessionId, token) {
@@ -75,6 +78,18 @@ async function getServerBpmnXml(request, sessionId, token) {
   });
   if (!res.ok()) return "";
   return res.text();
+}
+
+async function waitForSaveComplete(saveBtn, { timeout = 15000 } = {}) {
+  await expect
+    .poll(
+      async () => {
+        const [enabled, text] = await Promise.all([saveBtn.isEnabled(), saveBtn.innerText()]);
+        return { enabled, text: text.trim() };
+      },
+      { timeout },
+    )
+    .toEqual({ enabled: false, text: "Сохранить всё" });
 }
 
 test("add/edit/delete additional BPMN property persists without duplicates or missing-XML error", async ({ page, request }) => {
@@ -112,6 +127,10 @@ test("add/edit/delete additional BPMN property persists without duplicates or mi
   const rows = page.locator(".sidebarBpmnPropertyItem");
   await expect(rows).toHaveCount(0);
 
+  const saveBtn = page.locator(".sidebarGlobalFooter").getByRole("button", { name: "Сохранить всё" });
+  await expect(saveBtn).toBeVisible();
+  await expect(saveBtn).toBeDisabled();
+
   // Add a property row.
   const addBtn = page.getByRole("button", { name: /Добавить BPMN-свойство/ });
   await expect(addBtn).toBeVisible();
@@ -120,33 +139,33 @@ test("add/edit/delete additional BPMN property persists without duplicates or mi
   // The new row should be the only one.
   await expect(rows).toHaveCount(1);
 
-  // Expand the row to reveal inputs.
+  // Edit the new row inline.
   const row = rows.first();
-  await row.locator(".sidebarBpmnPropertySummary").click();
-
-  const nameInput = row.locator(".sidebarBpmnPropertyEditor input").nth(0);
-  const valueInput = row.locator(".sidebarBpmnPropertyEditor input").nth(1);
-  await expect(nameInput).toBeVisible();
-  await expect(valueInput).toBeVisible();
-
+  await row.click();
+  const inputs = row.locator("input.sidebarInput");
+  await expect(inputs).toHaveCount(2);
+  const nameInput = inputs.nth(0);
+  const valueInput = inputs.nth(1);
   await nameInput.fill("priority");
   await valueInput.fill("high");
+  await valueInput.press("Enter");
 
-  // Save and wait for the operation to finish.
-  const saveBtn = page.locator(".sidebarPropertiesBlock--secondary .primaryBtn", { hasText: "Сохранить" }).first();
+  // The row preview should reflect the entered values.
+  await expect(row.locator(".sidebarSchemaPropertyHuman")).toHaveText("priority");
+  await expect(row.locator(".sidebarSchemaPropertyValueText")).toHaveText("high");
+  await expect(saveBtn).toBeEnabled();
+
+  // Save via the global footer.
   await saveBtn.click();
-
-  await expect
-    .poll(async () => saveBtn.isEnabled(), { timeout: 15000 })
-    .toBe(true);
+  await waitForSaveComplete(saveBtn);
 
   // No missing-XML error should appear.
   await expect(page.getByText("Отсутствует BPMN XML")).toHaveCount(0);
 
   // Row count should remain exactly one (no duplication).
   await expect.poll(async () => rows.count()).toBe(1);
-  await expect(row.locator(".sidebarBpmnPropertyPreviewKey")).toHaveText("priority");
-  await expect(row.locator(".sidebarBpmnPropertyPreviewValue")).toHaveText("high");
+  await expect(row.locator(".sidebarSchemaPropertyHuman")).toHaveText("priority");
+  await expect(row.locator(".sidebarSchemaPropertyValueText")).toHaveText("high");
 
   // Server XML should contain the saved property.
   let serverXml = await getServerBpmnXml(request, fixture.sessionId, auth.accessToken);
@@ -162,23 +181,24 @@ test("add/edit/delete additional BPMN property persists without duplicates or mi
   await openNodeProperties(page);
 
   await expect.poll(async () => rows.count()).toBe(1);
-  await expect(rows.first().locator(".sidebarBpmnPropertyPreviewKey")).toHaveText("priority");
-  await expect(rows.first().locator(".sidebarBpmnPropertyPreviewValue")).toHaveText("high");
+  const reloadedRow = rows.first();
+  await expect(reloadedRow.locator(".sidebarSchemaPropertyHuman")).toHaveText("priority");
+  await expect(reloadedRow.locator(".sidebarSchemaPropertyValueText")).toHaveText("high");
 
   // Edit the value.
-  const reloadedRow = rows.first();
-  await reloadedRow.locator(".sidebarBpmnPropertySummary").click();
-  const editValue = reloadedRow.locator(".sidebarBpmnPropertyEditor input").nth(1);
+  await reloadedRow.click();
+  const editInputs = reloadedRow.locator("input.sidebarInput");
+  await expect(editInputs).toHaveCount(2);
+  const editValue = editInputs.nth(1);
   await editValue.fill("urgent");
-  await saveBtn.click();
+  await editValue.press("Enter");
+  await expect(reloadedRow.locator(".sidebarSchemaPropertyValueText")).toHaveText("urgent");
+  await expect(saveBtn).toBeEnabled();
 
-  await expect
-    .poll(async () => saveBtn.isEnabled(), { timeout: 15000 })
-    .toBe(true);
+  await saveBtn.click();
+  await waitForSaveComplete(saveBtn);
 
   await expect(page.getByText("Отсутствует BPMN XML")).toHaveCount(0);
-  await expect.poll(async () => rows.count()).toBe(1);
-  await expect(reloadedRow.locator(".sidebarBpmnPropertyPreviewValue")).toHaveText("urgent");
 
   serverXml = await getServerBpmnXml(request, fixture.sessionId, auth.accessToken);
   expect(serverXml).toContain('name="priority"');
@@ -186,15 +206,14 @@ test("add/edit/delete additional BPMN property persists without duplicates or mi
   expect(serverXml).not.toContain('value="high"');
 
   // Delete the property.
-  const deleteBtn = page.getByRole("button", { name: /Удалить BPMN-свойство/ });
+  const deleteBtn = reloadedRow.locator(".sidebarPropertyActionBtn--danger").first();
   await expect(deleteBtn).toBeVisible();
   await deleteBtn.click();
   await expect(rows).toHaveCount(0);
+  await expect(saveBtn).toBeEnabled();
 
   await saveBtn.click();
-  await expect
-    .poll(async () => saveBtn.isEnabled(), { timeout: 15000 })
-    .toBe(true);
+  await waitForSaveComplete(saveBtn);
   await expect(page.getByText("Отсутствует BPMN XML")).toHaveCount(0);
   await expect.poll(async () => rows.count()).toBe(0);
 

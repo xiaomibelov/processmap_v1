@@ -11523,6 +11523,23 @@
     background: #F7FAFF;
   }
 
+  .sidebarSchemaPropertyRow.sidebarBpmnPropertyItem {
+    cursor: pointer;
+  }
+
+  .sidebarSchemaPropertyRow.sidebarBpmnPropertyItem.isEditing {
+    cursor: default;
+    background: #FFFFFF;
+  }
+
+  .sidebarSchemaPropertyRow.sidebarBpmnPropertyItem:hover:not(.isEditing) {
+    background: #F3F8FF;
+  }
+
+  .sidebarSchemaPropertyRow.sidebarBpmnPropertyItem .sidebarSchemaPropertyActionCell {
+    gap: 4px;
+  }
+
   .sidebarLocalBadge {
     border-color: #F5D78E;
     background: #FFF8E6;
@@ -14596,6 +14613,14 @@
   }
 
   .dark .sidebarBpmnPropertySummary:hover {
+    background: #1A2840;
+  }
+
+  .dark .sidebarSchemaPropertyRow.sidebarBpmnPropertyItem.isEditing {
+    background: #131C2E;
+  }
+
+  .dark .sidebarSchemaPropertyRow.sidebarBpmnPropertyItem:hover:not(.isEditing) {
     background: #1A2840;
   }
 
