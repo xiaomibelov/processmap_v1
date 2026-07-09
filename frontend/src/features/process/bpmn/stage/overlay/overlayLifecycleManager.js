@@ -1,8 +1,17 @@
 import {
   extractOverlaysFromBpmn,
   isOverlayMetaProperty,
-} from "../../../../../components/process/utils/bpmnOverlayParser";
+  parseOverlayFromProperties,
+} from "../../../../../components/process/utils/bpmnOverlayParser.js";
 import { overlayPropertyColorByKey } from "../decor/overlayColorModel.js";
+
+function asObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function asText(value) {
+  return String(value ?? "").trim();
+}
 
 function asArray(x) {
   if (Array.isArray(x)) return x;
@@ -348,7 +357,58 @@ function computeSequenceFlowMidpoint(waypoints) {
   return { x: Number(last?.x || 0), y: Number(last?.y || 0) };
 }
 
-export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExtensionOverlaysRef }) {
+export function mergeV2OverlaysWithPropertyPreview(inst, overlayList, previewMap, { forceShow = false } = {}) {
+  const normalizedPreviewMap = asObject(previewMap);
+  const previewKeys = Object.keys(normalizedPreviewMap);
+  if (!previewKeys.length) return overlayList;
+
+  const registry = inst?.get?.("elementRegistry");
+  const extractedByNodeId = new Map(
+    overlayList.map((ovl) => [String(ovl.node_id || ovl.nodeId || "").trim(), ovl])
+  );
+  const merged = [];
+
+  previewKeys.forEach((elementId) => {
+    const preview = normalizedPreviewMap[elementId];
+    if (!preview?.enabled) return;
+    const props = asArray(preview?.items)
+      .filter((item) => asText(item?.key) && asText(item?.value))
+      .map((item) => ({ name: asText(item.key), value: asText(item.value) }));
+    if (!props.length) return;
+
+    let ovl = extractedByNodeId.get(elementId);
+    if (ovl) {
+      ovl = { ...ovl, properties: props };
+    } else {
+      const el = typeof registry?.get === "function" ? registry.get(elementId) : null;
+      if (el) {
+        const bo = asObject(el.businessObject);
+        ovl = parseOverlayFromProperties(
+          props,
+          elementId,
+          String(bo.name || ""),
+          String(bo.$type || el.type || ""),
+          forceShow
+        );
+        if (ovl) {
+          ovl.properties = props;
+        }
+      }
+    }
+    if (ovl) merged.push(ovl);
+  });
+
+  overlayList.forEach((ovl) => {
+    const nodeId = String(ovl.node_id || ovl.nodeId || "").trim();
+    if (!normalizedPreviewMap[nodeId]) {
+      merged.push(ovl);
+    }
+  });
+
+  return merged;
+}
+
+export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExtensionOverlaysRef, propertyPreviewMapRef }) {
   const elementOverlayMapRef = { current: { viewer: new Map(), editor: new Map() } };
 
   function clear(inst, kind) {
@@ -652,7 +712,7 @@ export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExte
   function mountFromBpmn(inst, kind) {
     if (!inst) return;
     const overlayList = extractOverlaysFromBpmn(inst, enabledRef.current) || [];
-    mount(inst, kind, overlayList);
+    mount(inst, kind, mergeV2OverlaysWithPropertyPreview(inst, overlayList, asObject(propertyPreviewMapRef?.current), { forceShow: enabledRef.current }));
   }
 
   return {

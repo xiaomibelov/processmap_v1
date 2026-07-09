@@ -1247,10 +1247,22 @@ const BpmnStage = forwardRef(function BpmnStage({
   });
 
   const useExtensionOverlays = useFeatureFlag("useBpmnExtensionOverlays");
+  const v2PropertyPreviewMapRef = useRef({});
+  useEffect(() => {
+    const combined = { ...asObject(propertiesOverlayAlwaysPreviewByElementId) };
+    const selected = asObject(selectedPropertiesOverlayPreview);
+    const selectedElementId = toText(selected?.elementId);
+    if (selectedElementId && selected?.enabled === true && asArray(selected?.items).length) {
+      combined[selectedElementId] = selected;
+    }
+    v2PropertyPreviewMapRef.current = combined;
+  }, [propertiesOverlayAlwaysPreviewByElementId, selectedPropertiesOverlayPreview]);
+
   const overlayLifecycle = useOverlayLifecycle({
     v2EnabledRef: v2OverlayState.enabledRef,
     v2ExpandedRef: v2OverlayState.expandedRef,
     useExtensionOverlays,
+    propertyPreviewMapRef: v2PropertyPreviewMapRef,
   });
 
   const handleViewboxChangedForOverlays = useCallback((inst, mode) => {
@@ -4690,6 +4702,13 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     if (!useExtensionOverlays) return;
     try {
+      const previewMap = { ...asObject(propertiesOverlayAlwaysPreviewByElementId) };
+      const selected = asObject(selectedPropertiesOverlayPreview);
+      const selectedElementId = toText(selected?.elementId);
+      if (selectedElementId && selected?.enabled === true && asArray(selected?.items).length) {
+        previewMap[selectedElementId] = selected;
+      }
+      const previewMapSig = JSON.stringify(previewMap);
       const maybeRemount = (inst, kind) => {
         if (!inst || !hasDefinitionsLoaded(inst)) return;
         const nextSig = JSON.stringify({
@@ -4697,7 +4716,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           overlays: extractOverlaysFromBpmn(inst, v2OverlaysEnabled),
           legacyAlways: propertiesOverlayAlwaysEnabled,
           legacyPreviewElementId: selectedPropertiesOverlayPreview?.elementId || null,
-          legacyAlwaysPreviewCount: Object.keys(propertiesOverlayAlwaysPreviewByElementId || {}).length,
+          previewMap: previewMapSig,
         });
         if (prevOverlaySigRef.current[kind] === nextSig) return;
         prevOverlaySigRef.current[kind] = nextSig;
@@ -4714,8 +4733,8 @@ const BpmnStage = forwardRef(function BpmnStage({
     draft?.bpmn_meta,
     v2OverlaysEnabled,
     propertiesOverlayAlwaysEnabled,
-    selectedPropertiesOverlayPreview?.elementId,
-    Object.keys(propertiesOverlayAlwaysPreviewByElementId || {}).length,
+    selectedPropertiesOverlayPreview,
+    propertiesOverlayAlwaysPreviewByElementId,
     overlayLifecycle,
   ]);
 
