@@ -283,6 +283,11 @@ def _compute_dashboard_extras(scope_type: str, scope_id: str, org_id: str, base:
 
     project_titles = _project_titles_for_scope(scope_type, scope_id, org_id)
     session_project_map = {s["id"]: s.get("project_id") or "" for s in session_rows}
+
+    prop_rows = _properties_rows(scope_type, scope_id, org_id)
+    properties_summary = _properties_summary(prop_rows)
+    properties_summary["recalculated_count"] = len(_build_recalculated_rows(prop_rows))
+
     process_durations: Dict[str, Dict[str, Any]] = {}
     for snap in snapshots:
         sid = snap.get("session_id")
@@ -311,6 +316,7 @@ def _compute_dashboard_extras(scope_type: str, scope_id: str, org_id: str, base:
         "bpmn_element_types": element_types,
         "process_duration": process_duration_list,
         "activity_heatmap": {"by_hour": heatmap_hour, "by_weekday": heatmap_weekday},
+        "properties_summary": properties_summary,
     }
 
 
