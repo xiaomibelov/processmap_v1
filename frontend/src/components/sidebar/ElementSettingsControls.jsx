@@ -31,6 +31,10 @@ import PropertyGroup from "./PropertyGroup.jsx";
 import AdditionalBpmnPropertiesSection from "./sections/AdditionalBpmnPropertiesSection.jsx";
 import InlineBpmnPropertyRow from "./rows/InlineBpmnPropertyRow.jsx";
 
+function toText(value) {
+  return String(value || "").trim();
+}
+
 function TrashIcon({ className = "h-4 w-4" }) {
   return (
     <svg
