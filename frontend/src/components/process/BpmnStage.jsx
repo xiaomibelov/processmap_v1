@@ -5120,13 +5120,11 @@ const BpmnStage = forwardRef(function BpmnStage({
           rev,
           xml_len: out.length,
         });
-        const persistedFinalXml = typeof coordinator.persistExplicitXml === "function"
-          ? await coordinator.persistExplicitXml(out, transportPersistReason, {
-            rev,
-            saveOwner: resolvedSaveOwner,
-            bpmnMeta: saveBpmnMeta,
-          })
-          : await ensureBpmnPersistence().saveRaw(sid, out, rev, transportPersistReason, { bpmnMeta: saveBpmnMeta });
+        const persistedFinalXml = await coordinator.persistExplicitXml(out, transportPersistReason, {
+          rev,
+          saveOwner: resolvedSaveOwner,
+          bpmnMeta: saveBpmnMeta,
+        });
         if (!persistedFinalXml?.ok) {
           emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
             sid,
@@ -5194,13 +5192,11 @@ const BpmnStage = forwardRef(function BpmnStage({
           rev: Number(finalStoredRev || 0),
           xml_len: canonicalOut.length,
         });
-        const canonicalPersisted = typeof coordinator.persistExplicitXml === "function"
-          ? await coordinator.persistExplicitXml(canonicalOut, canonicalPersistReason, {
-            rev: Number(finalStoredRev || 0),
-            saveOwner: resolvedSaveOwner,
-            bpmnMeta: saveBpmnMeta,
-          })
-          : await ensureBpmnPersistence().saveRaw(sid, canonicalOut, Number(finalStoredRev || 0), canonicalPersistReason, { bpmnMeta: saveBpmnMeta });
+        const canonicalPersisted = await coordinator.persistExplicitXml(canonicalOut, canonicalPersistReason, {
+          rev: Number(finalStoredRev || 0),
+          saveOwner: resolvedSaveOwner,
+          bpmnMeta: saveBpmnMeta,
+        });
         if (!canonicalPersisted?.ok) {
           emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
             sid,
