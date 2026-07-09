@@ -118,3 +118,44 @@ test("session_save is unaffected by property-only skip-render flag", async () =>
   assert.equal(patch?._apply_bpmn_xml, true, "session save still applies XML");
   assert.equal(patch?._skip_bpmn_render, undefined, "no skip token for session save");
 });
+
+
+test("property save delegates XML serialization to coordinator when flushSave is available", async () => {
+  const flushCalls = [];
+
+  const result = await saveBpmnState({
+    operation: "property_update",
+    sessionId: "sid-123",
+    elementId: "Task_1",
+    baseDiagramStateVersion: 6,
+    currentCamundaExtensionsByElementId: {},
+    nextCamundaExtensionsByElementId: {
+      Task_1: {
+        properties: {
+          extensionProperties: [{ id: "p1", name: "key", value: "value" }],
+          extensionListeners: [],
+        },
+        preservedExtensionElements: [],
+      },
+    },
+    currentMeta: {},
+    nextMeta: { camunda_extensions_by_element_id: { Task_1: {} } },
+    // Direct XML builders should not be invoked because flushSave is present.
+    getModelerXml: async () => { throw new Error("getModelerXml should not be called"); },
+    apiGetBpmnXml: async () => { throw new Error("apiGetBpmnXml should not be called"); },
+    apiPutBpmnXml: async () => { throw new Error("apiPutBpmnXml should not be called"); },
+    flushSave: async (reason, opts) => {
+      flushCalls.push({ reason, opts });
+      return { ok: true, diagramStateVersion: 7, storedRev: 5 };
+    },
+    onSessionSync: () => {},
+  });
+
+  assert.equal(result?.ok, true);
+  assert.equal(flushCalls.length, 1, "flushSave was called once");
+  const call = flushCalls[0];
+  assert.equal(call.reason, "property_update", "reason is property_update");
+  assert.ok(!call.opts?.xmlOverride, "no xmlOverride so coordinator uses runtime XML");
+  assert.equal(typeof call.opts?.bpmnMeta, "object", "bpmnMeta passed to coordinator");
+  assert.equal(call.opts?.sourceAction, "property_update", "sourceAction passed");
+});
