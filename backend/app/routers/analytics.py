@@ -6,7 +6,6 @@ import time
 from typing import Any, Dict, List, Set
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from fastapi.responses import JSONResponse
 
 from ..legacy.request_context import request_active_org_id
 from ..schemas.analytics import AnalyticsActionsQuery, AnalyticsDashboardOut, AnalyticsPropertiesQuery
@@ -834,8 +833,11 @@ def _parse_recalc_number(value: Any) -> float | None:
         return None
 
 
-def _build_recalculated_rows(rows: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
-    """Group Camunda properties by BPMN element and compute ee_time * ingredient_value."""
+def _build_recalculated_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Group Camunda properties by BPMN element and compute ee_time * ingredient_value.
+
+    Rows with missing or non-numeric ee_time / ingredient_value are skipped.
+    """
     by_element: Dict[str, Dict[str, Any]] = {}
     for row in rows:
         name = _text(row.get("name"))
@@ -853,33 +855,12 @@ def _build_recalculated_rows(rows: List[Dict[str, Any]]) -> tuple[List[Dict[str,
         element[name] = _text(row.get("value"))
 
     out_rows: List[Dict[str, Any]] = []
-    errors: List[Dict[str, str]] = []
     for element in by_element.values():
-        ee_raw = element.get(_EE_TIME_KEY)
-        ing_raw = element.get(_INGREDIENT_VALUE_KEY)
-        ee_val = _parse_recalc_number(ee_raw)
-        ing_val = _parse_recalc_number(ing_raw)
-
-        reasons: List[str] = []
-        if ee_raw is None:
-            reasons.append("отсутствует ee_time")
-        elif ee_val is None:
-            reasons.append(f"некорректное значение ee_time: {ee_raw}")
-        if ing_raw is None:
-            reasons.append("отсутствует ingredient_value")
-        elif ing_val is None:
-            reasons.append(f"некорректное значение ingredient_value: {ing_raw}")
-
-        if reasons:
-            errors.append({
-                "bpmn_id": element["bpmn_id"],
-                "bpmn_name": element["bpmn_name"],
-                "ingredient_value": ing_raw if ing_raw is not None else "",
-                "reason": "; ".join(reasons),
-            })
+        ee_val = _parse_recalc_number(element.get(_EE_TIME_KEY))
+        ing_val = _parse_recalc_number(element.get(_INGREDIENT_VALUE_KEY))
+        if ee_val is None or ing_val is None:
             continue
-
-        result = round(ee_val * ing_val, 2)  # type: ignore[arg-type]
+        result = round(ee_val * ing_val, 2)
         out_rows.append({
             "bpmn_id": element["bpmn_id"],
             "bpmn_name": element["bpmn_name"],
@@ -888,7 +869,7 @@ def _build_recalculated_rows(rows: List[Dict[str, Any]]) -> tuple[List[Dict[str,
             "result": result,
         })
 
-    return out_rows, errors
+    return out_rows
 
 
 @router.get("/properties/export-recalculated.xlsx")
@@ -901,9 +882,7 @@ def export_properties_recalculated_xlsx(
     oid = org_id or _org_id_from_request(request)
     require_analytics_scope(request, scope, scope_id, oid)
     rows = _properties_rows(scope, scope_id, oid)
-    recalc_rows, errors = _build_recalculated_rows(rows)
-    if errors:
-        return JSONResponse(status_code=400, content={"errors": errors})
+    recalc_rows = _build_recalculated_rows(rows)
     columns = [
         ("bpmn_id", "BPMN ID"),
         ("bpmn_name", "BPMN Name"),

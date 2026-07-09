@@ -5,7 +5,6 @@ import {
   apiExportAnalyticsPropertiesXlsx,
   apiGetAnalyticsProperties,
 } from "../../lib/api.js";
-import Modal from "../../shared/ui/Modal.jsx";
 import { DownloadIcon, FilterIcon, SearchIcon } from "./AnalyticsIcons.jsx";
 import AnalyticsPropertiesTable, {
   getRowKey,
@@ -195,8 +194,6 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
 
   const [selectedRows, setSelectedRows] = useState(new Set());
   const [compareRows, setCompareRows] = useState([]);
-  const [recalcErrors, setRecalcErrors] = useState([]);
-  const [recalcErrorOpen, setRecalcErrorOpen] = useState(false);
 
   useEffect(() => {
     setSelectedRows(new Set());
@@ -321,21 +318,11 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
   async function handleServerExportRecalculatedXlsx() {
     if (exporting) return;
     setExporting(true);
-    setRecalcErrorOpen(false);
-    setRecalcErrors([]);
     const result = await apiExportAnalyticsPropertiesRecalculatedXlsx(scope, scopeId);
-    setExporting(false);
     if (result?.ok && result.blob) {
       downloadBlob(result.blob, result.filename || `properties-recalculated-${scope}-${scopeId}.xlsx`);
-      return;
     }
-    const errors = Array.isArray(result?.errors) ? result.errors : [];
-    if (errors.length) {
-      setRecalcErrors(errors);
-      setRecalcErrorOpen(true);
-    } else {
-      setError(text(result?.error) || "Ошибка экспорта пересчитанных свойств.");
-    }
+    setExporting(false);
   }
 
   function handleSelectedExport() {
@@ -506,39 +493,6 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
         </>
       ) : null}
       {compareRows.length ? <CompareDrawer rows={compareRows} onClose={() => setCompareRows([])} /> : null}
-      <Modal
-        open={recalcErrorOpen}
-        title="Ошибки пересчета"
-        onClose={() => setRecalcErrorOpen(false)}
-        cardClassName="max-w-3xl"
-      >
-        {recalcErrors.length === 0 ? (
-          <p>Нет данных об ошибках.</p>
-        ) : (
-          <div className="overflow-auto max-h-[60vh]">
-            <table className="analyticsTable">
-              <thead>
-                <tr>
-                  <th>BPMN ID</th>
-                  <th>BPMN Name</th>
-                  <th>ingredient_value</th>
-                  <th>Причина</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recalcErrors.map((err, idx) => (
-                  <tr key={idx}>
-                    <td>{text(err.bpmn_id)}</td>
-                    <td>{text(err.bpmn_name)}</td>
-                    <td>{text(err.ingredient_value)}</td>
-                    <td>{text(err.reason)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Modal>
     </div>
   );
 }
