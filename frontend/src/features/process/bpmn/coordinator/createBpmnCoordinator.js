@@ -1,4 +1,7 @@
-import { hasDuplicateCamundaProperties } from "../../camunda/camundaExtensions.js";
+import {
+  dedupCamundaProperties,
+  hasDuplicateCamundaProperties,
+} from "../../camunda/camundaExtensions.js";
 import createLocalMutationStaging from "./createLocalMutationStaging.js";
 
 function asText(value) {
@@ -506,7 +509,7 @@ export default function createBpmnCoordinator(options = {}) {
       source: xmlOverride.trim() ? "flush_save_override" : "flush_save",
       bpmnMeta: options?.bpmnMeta,
     });
-    const xml = prepared.xml;
+    let xml = prepared.xml;
     const currentXmlHash = fnv1aHex(xml);
     const localHash = asText(state?.lastHash || state?.hash || "");
     const localDirty = state?.dirty === true;
@@ -539,19 +542,15 @@ export default function createBpmnCoordinator(options = {}) {
       };
     }
     if (hasDuplicateCamundaProperties(xml)) {
-      emit("SAVE_ABORTED_DUPLICATE_CAMUNDA_PROPERTIES", {
+      const dedupedXml = dedupCamundaProperties(xml);
+      emit("SAVE_DEDUPLICATED_CAMUNDA_PROPERTIES", {
         sid,
         reason,
         rev,
         xml_len: xml.length,
+        deduped_xml_len: dedupedXml.length,
       });
-      return {
-        ok: false,
-        rev,
-        status: 0,
-        errorCode: "duplicate_camunda_properties",
-        error: "Duplicate managed Camunda properties detected; aborting save to prevent data corruption.",
-      };
+      xml = dedupedXml;
     }
 
     const refreshed = store.setXml(xml, "flush_save", { bumpRev: false, dirty: true });
@@ -885,7 +884,7 @@ export default function createBpmnCoordinator(options = {}) {
         }
         const state = store.getState();
         const rev = asNumber(options?.rev, asNumber(state?.rev, 0));
-        const xml = asText(xmlText);
+        let xml = asText(xmlText);
         emit("SAVE_EXECUTED", {
           sid,
           reason,
@@ -905,19 +904,15 @@ export default function createBpmnCoordinator(options = {}) {
         });
         const startedAt = Date.now();
         if (hasDuplicateCamundaProperties(xml)) {
-          emit("SAVE_ABORTED_DUPLICATE_CAMUNDA_PROPERTIES", {
+          const dedupedXml = dedupCamundaProperties(xml);
+          emit("SAVE_DEDUPLICATED_CAMUNDA_PROPERTIES", {
             sid,
             reason,
             rev,
             xml_len: xml.length,
+            deduped_xml_len: dedupedXml.length,
           });
-          return {
-            ok: false,
-            rev,
-            status: 0,
-            errorCode: "duplicate_camunda_properties",
-            error: "Duplicate managed Camunda properties detected; aborting save to prevent data corruption.",
-          };
+          xml = dedupedXml;
         }
         const explicitPersistOptions = {};
         if (options?.bpmnMeta && typeof options.bpmnMeta === "object") {
