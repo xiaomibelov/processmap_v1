@@ -28,24 +28,7 @@ import useElementSettingsController, { SHOW_PROPERTIES_FLAG_KEY } from "./useEle
 import { RecipeQueryProvider } from "../../features/process/recipe/providers/RecipeQueryProvider.jsx";
 import RecipeSidebar from "../../features/process/recipe/components/RecipeSidebar.jsx";
 import PropertyGroup from "./PropertyGroup.jsx";
-
-function PencilIcon({ className = "h-4 w-4" }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-    </svg>
-  );
-}
+import AdditionalBpmnPropertiesSection from "./sections/AdditionalBpmnPropertiesSection.jsx";
 
 function TrashIcon({ className = "h-4 w-4" }) {
   return (
@@ -64,172 +47,6 @@ function TrashIcon({ className = "h-4 w-4" }) {
       <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
       <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
     </svg>
-  );
-}
-
-function InlineBpmnPropertyRow({
-  row,
-  disabled = false,
-  extensionStateBusy = false,
-  updatePropertyRow,
-  deletePropertyRow,
-}) {
-  const rowId = String(row?.id || "").trim();
-  const savedName = String(row?.name || "");
-  const savedValue = String(row?.value || "");
-  const [isEditing, setIsEditing] = useState(false);
-  const [draftName, setDraftName] = useState(savedName);
-  const [draftValue, setDraftValue] = useState(savedValue);
-  const rowRef = useRef(null);
-  const nameInputRef = useRef(null);
-
-  useEffect(() => {
-    setDraftName(savedName);
-    setDraftValue(savedValue);
-  }, [savedName, savedValue]);
-
-  useEffect(() => {
-    if (isEditing && nameInputRef.current) {
-      nameInputRef.current.focus();
-      nameInputRef.current.select();
-    }
-  }, [isEditing]);
-
-  function commit() {
-    const nextName = draftName.trim();
-    const nextValue = draftValue.trim();
-    if (nextName !== savedName || nextValue !== savedValue) {
-      updatePropertyRow(rowId, { name: nextName, value: nextValue });
-    }
-    setIsEditing(false);
-  }
-
-  function cancel() {
-    setDraftName(savedName);
-    setDraftValue(savedValue);
-    setIsEditing(false);
-  }
-
-  function handleKeyDown(event) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      event.stopPropagation();
-      commit();
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      cancel();
-    }
-  }
-
-  function handleBlur(event) {
-    // Stay in edit mode when focus moves between the two inputs inside this row.
-    if (rowRef.current && rowRef.current.contains(event.relatedTarget)) {
-      return;
-    }
-    commit();
-  }
-
-  const isBusy = !!disabled || !!extensionStateBusy;
-
-  if (!isEditing) {
-    return (
-      <div
-        className="sidebarSchemaPropertyRow sidebarBpmnPropertyItem"
-        onClick={() => setIsEditing(true)}
-        role="button"
-        tabIndex={isBusy ? -1 : 0}
-        aria-label={`Редактировать свойство ${savedName || "новое"}`}
-        onKeyDown={(event) => {
-          if (!isBusy && (event.key === "Enter" || event.key === " ")) {
-            event.preventDefault();
-            setIsEditing(true);
-          }
-        }}
-      >
-        <div className="sidebarSchemaPropertyLabel">
-          <div className="sidebarSchemaPropertyHuman">{savedName.trim() || <span className="text-muted">—</span>}</div>
-        </div>
-        <div className="sidebarSchemaPropertyValueCell">
-          <div className="sidebarSchemaPropertyValueText">{savedValue.trim() || <span className="text-muted">—</span>}</div>
-        </div>
-        <div className="sidebarSchemaPropertyActionCell">
-          <button
-            type="button"
-            className="sidebarPropertyActionBtn"
-            onClick={(event) => {
-              event.stopPropagation();
-              setIsEditing(true);
-            }}
-            disabled={isBusy}
-            aria-label="Редактировать свойство"
-            title="Редактировать свойство"
-          >
-            <PencilIcon />
-          </button>
-          <button
-            type="button"
-            className="sidebarPropertyActionBtn sidebarPropertyActionBtn--danger"
-            onClick={(event) => {
-              event.stopPropagation();
-              deletePropertyRow(rowId);
-            }}
-            disabled={isBusy}
-            aria-label={`Удалить свойство ${savedName || rowId}`}
-            title={`Удалить свойство ${savedName || rowId}`}
-          >
-            <TrashIcon />
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div ref={rowRef} className="sidebarSchemaPropertyRow sidebarBpmnPropertyItem isEditing">
-      <div className="sidebarSchemaPropertyValueCell">
-        <input
-          ref={nameInputRef}
-          className="input sidebarInput w-full min-w-0"
-          placeholder="Название"
-          value={draftName}
-          onChange={(event) => setDraftName(event.target.value)}
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-          disabled={isBusy}
-        />
-      </div>
-      <div className="sidebarSchemaPropertyValueCell">
-        <input
-          className="input sidebarInput w-full min-w-0"
-          placeholder="Значение"
-          value={draftValue}
-          onChange={(event) => setDraftValue(event.target.value)}
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-          disabled={isBusy}
-        />
-      </div>
-      <div className="sidebarSchemaPropertyActionCell">
-        <button
-          type="button"
-          className="sidebarPropertyActionBtn sidebarPropertyActionBtn--danger"
-          onMouseDown={(event) => {
-            // Prevent blur on the input from committing before the click handler runs.
-            event.preventDefault();
-          }}
-          onClick={(event) => {
-            event.stopPropagation();
-            deletePropertyRow(rowId);
-          }}
-          disabled={isBusy}
-          aria-label={`Удалить свойство ${savedName || rowId}`}
-          title={`Удалить свойство ${savedName || rowId}`}
-        >
-          <TrashIcon />
-        </button>
-      </div>
-    </div>
   );
 }
 
@@ -1341,7 +1158,6 @@ export function CamundaPropertiesSettings({
     overlayCompanionsExpanded,
     setOverlayCompanionsExpanded,
     state,
-    properties,
     listeners,
     camundaInputRows,
     camundaOutputRows,
@@ -2036,58 +1852,20 @@ async function handleSaveAll() {
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div className="sidebarControlStack sidebarPropertiesLayout sidebarPropertiesLayout--centered" onKeyDown={handlePropertiesKeyDown}>
       <section className="sidebarPropertiesForm" data-testid="camunda-properties-group">
-        <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary">
-          <div className="sidebarPropertiesBlockHead">
-            <button
-              type="button"
-              className="sidebarPropertiesBlockToggle"
-              onClick={() => setAdditionalBpmnOpen((prev) => !prev)}
-              aria-expanded={additionalBpmnOpen ? "true" : "false"}
-            >
-              <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{additionalBpmnOpen ? "▾" : "▸"}</span>
-              <span className="sidebarPropertiesBlockTitle">Дополнительные BPMN-свойства</span>
-              <span className="sidebarPropertiesBlockMeta">{additionalBpmnCount}</span>
-            </button>
-            <SidebarInfoTip
-              label="О дополнительных BPMN-свойствах"
-              text="Extension properties текущего элемента в формате name/value."
-            />
-          </div>
-          {additionalBpmnOpen ? (
-            <>
-              {!hasDictionarySchema && !showFallbackBlock && dictionaryLoading ? (
-                <div className="sidebarFieldHint">Ожидаю загрузку схемы операции.</div>
-              ) : null}
-              <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarPropertiesRows--zebra">
-                <div className="sidebarPropertiesTableHead" role="presentation">
-                  <span>Свойство</span>
-                  <span>Значение</span>
-                  <span>Действие</span>
-                </div>
-                {additionalBpmnRows.map((row) => (
-                  <InlineBpmnPropertyRow
-                    key={String(row?.id || "")}
-                    row={row}
-                    disabled={disabled}
-                    extensionStateBusy={extensionStateBusy}
-                    updatePropertyRow={updatePropertyRow}
-                    deletePropertyRow={deletePropertyRow}
-                  />
-                ))}
-              </div>
-              <div className="sidebarButtonRow">
-                <button
-                  type="button"
-                  className="sidebarAddBtn"
-                  onClick={addPropertyRow}
-                  disabled={!!disabled || !!extensionStateBusy}
-                >
-                  + Добавить BPMN-свойство
-                </button>
-              </div>
-            </>
-          ) : null}
-        </section>
+        <AdditionalBpmnPropertiesSection
+          open={additionalBpmnOpen}
+          onToggleOpen={setAdditionalBpmnOpen}
+          count={additionalBpmnCount}
+          rows={additionalBpmnRows}
+          hasDictionarySchema={hasDictionarySchema}
+          dictionaryLoading={dictionaryLoading}
+          disabled={disabled}
+          extensionStateBusy={extensionStateBusy}
+          updatePropertyRow={updatePropertyRow}
+          deletePropertyRow={deletePropertyRow}
+          addPropertyRow={addPropertyRow}
+          onSaveExtensionState={onSaveExtensionState}
+        />
 
         {isTaskLikeBpmnType(selectedElementType) ? (
           <PropertyGroup title="Идентификация и операция">

@@ -3,6 +3,8 @@ import fs from "node:fs";
 import test from "node:test";
 
 const source = fs.readFileSync(new URL("./ElementSettingsControls.jsx", import.meta.url), "utf8");
+const additionalSectionSource = fs.readFileSync(new URL("./sections/AdditionalBpmnPropertiesSection.jsx", import.meta.url), "utf8");
+const combinedSource = `${source}\n${additionalSectionSource}`;
 
 test("Properties inspector uses Russian-first copy for dictionary workflow", () => {
   assert.match(source, /Операция/);
@@ -14,17 +16,17 @@ test("Properties inspector uses Russian-first copy for dictionary workflow", () 
   assert.match(source, /Свернуть related overlays/);
   assert.match(source, /Дополнительные BPMN-свойства/);
   assert.match(source, /BPMN Documentation/);
-  assert.match(source, /Extension properties текущего элемента/);
+  assert.match(combinedSource, /Extension properties текущего элемента/);
   assert.match(source, /Справочник/);
 });
 
-test("BPMN Documentation section is ordered between Additional BPMN Properties and Camunda I/O", () => {
-  const additionalIndex = source.indexOf("Дополнительные BPMN-свойства");
+test("Additional BPMN Properties section is rendered before Camunda I/O and BPMN Documentation", () => {
+  const additionalComponentIndex = source.indexOf("<AdditionalBpmnPropertiesSection");
   const documentationIndex = source.indexOf("BPMN Documentation");
   const ioIndex = source.indexOf("Camunda Input/Output");
-  assert.ok(additionalIndex >= 0, "additional BPMN section label must exist");
-  assert.ok(documentationIndex > additionalIndex, "documentation section must be after additional BPMN");
-  assert.ok(ioIndex > documentationIndex, "Camunda I/O must stay after documentation section");
+  assert.ok(additionalComponentIndex >= 0, "additional BPMN section component must be used");
+  assert.ok(documentationIndex > additionalComponentIndex, "documentation section must be after additional BPMN");
+  assert.ok(ioIndex > additionalComponentIndex, "Camunda I/O must stay after additional BPMN section");
 });
 
 test("Camunda IO grid keeps global overlay toggles and no row-level Show on task column", () => {
