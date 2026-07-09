@@ -2976,6 +2976,11 @@ export default function NotesPanel({
   }
 
   const sidebarSaveAllBusy = nodePathBusy || stepTimeBusy || robotMetaBusy || camundaPropertiesBusy || bpmnDocumentationBusy;
+  const sidebarGlobalHasChanges = camundaExtensionHasLocalChanges
+    || bpmnDocumentationHasLocalChanges
+    || nodePathHasLocalChanges
+    || stepTimeHasLocalChanges
+    || robotMetaHasLocalChanges;
 
   async function handleSidebarSaveAll() {
     if (disabled || sidebarSaveAllBusy) return;
@@ -3061,7 +3066,7 @@ export default function NotesPanel({
                 type="button"
                 className="primaryBtn sidebarGlobalFooterBtn flex-1"
                 onClick={() => void handleSidebarSaveAll()}
-                disabled={!!disabled || sidebarSaveAllBusy}
+                disabled={!!disabled || sidebarSaveAllBusy || !sidebarGlobalHasChanges}
               >
                 {sidebarSaveAllBusy ? "Сохраняю..." : "Сохранить всё"}
               </button>
@@ -3069,7 +3074,7 @@ export default function NotesPanel({
                 type="button"
                 className="secondaryBtn sidebarGlobalFooterBtn px-3"
                 onClick={() => void handleSidebarResetAll()}
-                disabled={!!disabled || sidebarSaveAllBusy}
+                disabled={!!disabled || sidebarSaveAllBusy || !sidebarGlobalHasChanges}
               >
                 Сбросить
               </button>
@@ -3094,6 +3099,7 @@ export default function NotesPanel({
                   <label className="sidebarPropertiesInlineToggle">
                     <input
                       type="checkbox"
+                      className="sidebarCheckbox"
                       checked={!!resolvedShowPropertiesOverlayOnSelect}
                       onChange={(event) => void resolvedOnShowPropertiesOverlayOnSelectChange(!!event.target.checked)}
                       disabled={!!disabled}
@@ -3103,6 +3109,7 @@ export default function NotesPanel({
                   <label className="sidebarPropertiesInlineToggle">
                     <input
                       type="checkbox"
+                      className="sidebarCheckbox"
                       checked={!!showPropertiesOverlayAlways}
                       onChange={(event) => void onShowPropertiesOverlayAlwaysChange?.(!!event.target.checked)}
                       disabled={!!disabled}
@@ -3113,6 +3120,7 @@ export default function NotesPanel({
                   <label className="sidebarPropertiesInlineToggle">
                     <input
                       type="checkbox"
+                      className="sidebarCheckbox"
                       checked={!!showPropertiesFlag}
                       onChange={(event) => void setShowPropertiesFlag(!!event.target.checked)}
                       disabled={!!disabled || !!camundaPropertiesBusy || !selectedCamundaPropertiesEditable}
@@ -3124,6 +3132,7 @@ export default function NotesPanel({
                   <label className="sidebarPropertiesInlineToggle">
                     <input
                       type="checkbox"
+                      className="sidebarCheckbox"
                       checked={!!v2OverlaysEnabled}
                       onChange={(event) => void onShowV2OverlaysChange?.(!!event.target.checked)}
                       disabled={!!disabled}
@@ -3134,6 +3143,7 @@ export default function NotesPanel({
                   <label className="sidebarPropertiesInlineToggle">
                     <input
                       type="checkbox"
+                      className="sidebarCheckbox"
                       checked={!!v2OverlaysExpanded}
                       onChange={(event) => void onShowV2OverlaysExpandedChange?.(!!event.target.checked)}
                       disabled={!!disabled || !v2OverlaysEnabled}
