@@ -1384,6 +1384,14 @@ export function CamundaPropertiesSettings({
     ? (Array.isArray(dictionaryEditorModel?.customRows) ? dictionaryEditorModel.customRows : [])
     : visibleFallbackProperties)
     .filter((row) => !isShowPropertiesFlagRow(row));
+  const QUICK_PROPERTY_NAMES = ["ee_time", "ingredient_value"];
+  const quickPropertyNamesSet = new Set(QUICK_PROPERTY_NAMES);
+  const quickRows = QUICK_PROPERTY_NAMES
+    .map((name) => additionalBpmnRows.find((row) => toText(row?.name).toLowerCase() === name))
+    .filter(Boolean);
+  const otherAdditionalBpmnRows = additionalBpmnRows.filter(
+    (row) => !quickPropertyNamesSet.has(toText(row?.name).toLowerCase()),
+  );
   const visibleSchemaRows = Array.isArray(dictionaryEditorModel?.schemaRows)
     ? dictionaryEditorModel.schemaRows.filter((row) => String(row?.value ?? "").trim() !== "")
     : [];
@@ -1822,9 +1830,7 @@ export function CamundaPropertiesSettings({
 
   const showSchemaHint = !hasDictionarySchema && !!normalizedOperationKey && !!dictionaryLoading && !dictionaryError;
   const showFallbackBlock = !hasDictionarySchema && (!normalizedOperationKey || !dictionaryLoading || !!dictionaryError);
-  const additionalBpmnCount = hasDictionarySchema
-    ? (Array.isArray(dictionaryEditorModel?.customRows) ? dictionaryEditorModel.customRows.length : 0)
-    : visibleFallbackProperties.length;
+  const additionalBpmnCount = otherAdditionalBpmnRows.length;
   const camundaIoCount = camundaInputRows.length + camundaOutputRows.length;
   const zeebeTaskHeadersCount = zeebeTaskHeaderRows.length;
   const propertySections = [
@@ -2036,6 +2042,45 @@ async function handleSaveAll() {
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div className="sidebarControlStack sidebarPropertiesLayout sidebarPropertiesLayout--centered" onKeyDown={handlePropertiesKeyDown}>
       <section className="sidebarPropertiesForm" data-testid="camunda-properties-group">
+        <section className="sidebarPropertiesBlock sidebarPropertiesBlock--primary">
+          <div className="sidebarPropertiesBlockHead">
+            <span className="sidebarPropertiesBlockTitle">Быстрые свойства</span>
+            <SidebarInfoTip
+              label="О быстрых свойствах"
+              text="Приоритетные свойства элемента: ee_time и ingredient_value."
+            />
+          </div>
+          <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarPropertiesRows--zebra">
+            <div className="sidebarPropertiesTableHead" role="presentation">
+              <span>Свойство</span>
+              <span>Значение</span>
+              <span>Действие</span>
+            </div>
+            {QUICK_PROPERTY_NAMES.map((name) => {
+              const row = quickRows.find((r) => toText(r?.name).toLowerCase() === name);
+              if (!row) {
+                return (
+                  <div key={name} className="sidebarPropertiesRow sidebarPropertiesRow--quick sidebarPropertiesRow--empty">
+                    <span className="sidebarPropertiesRowName sidebarPropertiesRowName--quick">{name}</span>
+                    <span className="sidebarPropertiesRowValue sidebarPropertiesRowValue--empty">—</span>
+                    <span className="sidebarPropertiesRowAction" />
+                  </div>
+                );
+              }
+              return (
+                <InlineBpmnPropertyRow
+                  key={String(row?.id || name)}
+                  row={row}
+                  disabled={disabled}
+                  extensionStateBusy={extensionStateBusy}
+                  updatePropertyRow={updatePropertyRow}
+                  deletePropertyRow={deletePropertyRow}
+                />
+              );
+            })}
+          </div>
+        </section>
+
         <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary">
           <div className="sidebarPropertiesBlockHead">
             <button
@@ -2064,7 +2109,7 @@ async function handleSaveAll() {
                   <span>Значение</span>
                   <span>Действие</span>
                 </div>
-                {additionalBpmnRows.map((row) => (
+                {otherAdditionalBpmnRows.map((row) => (
                   <InlineBpmnPropertyRow
                     key={String(row?.id || "")}
                     row={row}

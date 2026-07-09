@@ -15,6 +15,16 @@ function getRowKey(row) {
   return `${row.bpmn_id || ""}::${row.name || ""}::${row.value || ""}`;
 }
 
+const PINNED_PROPERTY_NAMES = new Set(["ee_time", "ingredient_value"]);
+
+function isPinnedPropertyName(name) {
+  return PINNED_PROPERTY_NAMES.has(toText(name).toLowerCase());
+}
+
+function pinnedPriority(name) {
+  return isPinnedPropertyName(name) ? 0 : 1;
+}
+
 function propertyTypeTone(type, valueType) {
   const t = toText(type).toLowerCase();
   const vt = toText(valueType).toLowerCase();
@@ -173,10 +183,11 @@ function Row({ row, index, selectedRows, onToggleRow, maxUsage }) {
   const key = getRowKey(row);
   const valueType = inferPropertyValueType(row.name, row.value);
   const family = inferPropertyFamily(row.name, valueType);
+  const pinned = isPinnedPropertyName(row.name);
 
   return (
     <div
-      className={`analyticsPropTableRow ${selectedRows.has(key) ? "analyticsPropTableRow--selected" : ""}`}
+      className={`analyticsPropTableRow ${selectedRows.has(key) ? "analyticsPropTableRow--selected" : ""} ${pinned ? "analyticsPropTableRow--pinned" : ""}`}
       style={{ display: "grid", gridTemplateColumns: GRID_TEMPLATE }}
       data-testid={`property-row-${index}`}
     >
@@ -192,7 +203,12 @@ function Row({ row, index, selectedRows, onToggleRow, maxUsage }) {
         <span className="analyticsPropBpmnName">{toText(row.bpmn_name) || "—"}</span>
       </div>
       <div className="analyticsPropTableCell analyticsPropTableCell--name" title={toText(row.name)}>
-        <span className="analyticsPropName">{toText(row.name) || "—"}</span>
+        <span className={`analyticsPropName ${isPinnedPropertyName(row.name) ? "analyticsPropName--pinned" : ""}`}>
+          {toText(row.name) || "—"}
+          {isPinnedPropertyName(row.name) ? (
+            <span className="analyticsPinnedIndicator" title="Приоритетное свойство"> ★</span>
+          ) : null}
+        </span>
       </div>
       <div className="analyticsPropTableCell analyticsPropTableCell--type">
         <Badge tone={propertyTypeTone(row.type, valueType)}>{toText(row.type) || valueType}</Badge>

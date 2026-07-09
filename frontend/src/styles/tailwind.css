@@ -4737,6 +4737,12 @@
     border-color: #EDF1F9;
   }
 
+  .sidebarPropertiesBlock--primary {
+    background: hsl(var(--accent) / 0.04);
+    border-color: hsl(var(--accent) / 0.15);
+    margin-bottom: 10px;
+  }
+
   .sidebarPropertiesBlockHead {
     @apply flex items-center justify-between gap-2 min-w-0;
     padding: 1px 0 2px;
@@ -4864,6 +4870,28 @@
   .sidebarPropertiesRows--table {
     gap: 0;
     border-top: 1px solid #EEF3F9;
+  }
+
+  .sidebarPropertiesRow--quick {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.75fr) 84px;
+    gap: 6px;
+    align-items: center;
+    min-height: 34px;
+    padding: 4px 0;
+    border-bottom: 1px solid #EEF3F9;
+  }
+
+  .sidebarPropertiesRowName--quick {
+    font-weight: 600;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    color: hsl(var(--accent));
+  }
+
+  .sidebarPropertiesRowValue--empty {
+    color: #9AA4B8;
+    font-style: italic;
   }
 
   .sidebarPropertiesTableHead {
@@ -13873,6 +13901,24 @@
   font-weight: 500;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
+}
+
+.analyticsPropName--pinned {
+  font-weight: 700;
+  color: hsl(var(--accent));
+}
+
+.analyticsPinnedIndicator {
+  margin-left: 4px;
+  font-size: 11px;
+}
+
+.analyticsPropTableRow--pinned {
+  background: hsl(var(--accent) / 0.04);
+}
+
+.analyticsPropTableRow--pinned:hover {
+  background: hsl(var(--accent) / 0.08);
 }
 
 .analyticsPropBpmnName {
