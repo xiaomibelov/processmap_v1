@@ -1,6 +1,5 @@
 import { isLocalSessionId } from "../../../components/process/interview/utils.js";
 import {
-  finalizeCamundaExtensionsXml,
   normalizeCamundaExtensionsMap,
   removeCamundaExtensionStateByElementId,
   upsertCamundaExtensionStateByElementId,
@@ -82,15 +81,6 @@ function derivePropertySourceAction(currentMap, nextMap, elementId) {
   return "property_update";
 }
 
-function buildCanonicalXml({ currentXml, nextCamundaExtensionsByElementId }) {
-  const normalizedMap = normalizeCamundaExtensionsMap(nextCamundaExtensionsByElementId);
-  const nextXml = finalizeCamundaExtensionsXml({
-    xmlText: currentXml,
-    camundaExtensionsByElementId: normalizedMap,
-  });
-  return String(nextXml || "");
-}
-
 function updateLastServerVersion(ref, value) {
   const v = toNonNegativeIntOrNull(value);
   if (v === null) return;
@@ -161,73 +151,28 @@ export async function saveBpmnState(options = {}) {
     sourceAction = derivePropertySourceAction(currentMap, nextMap, elementId);
   }
 
-  let currentXml = "";
   let nextXml = "";
   let nextMeta = asObject(options.nextMeta ?? options.currentMeta);
 
-  // Unified XML source: when a coordinator flush path is available, property
-  // saves let the coordinator read the live modeler XML. App.jsx already
-  // applies the new Camunda extension state to the modeler, so the serialized
-  // XML is authoritative. This prevents two independent XML funnels
-  // (saveBpmnState canonical build vs. BpmnStage.saveLocalFromModeler) from
-  // diverging. Direct PUT fallbacks still build the canonical XML here.
+  // The coordinator is the single writer. Property operations always read the
+  // live modeler XML (App.jsx applies the extension state to the modeler first).
+  // Session saves may supply an explicit XML or fetch it from the modeler.
   const useCoordinatorFlush = typeof options.flushSave === "function";
 
   if (operation === "session_save") {
-    currentXml = toText(options.xml);
-    if (!currentXml && typeof options.getModelerXml === "function") {
+    nextXml = toText(options.xml);
+    if (!nextXml && typeof options.getModelerXml === "function") {
       try {
-        currentXml = toText(await options.getModelerXml());
+        nextXml = toText(await options.getModelerXml());
       } catch (error) {
         return { ok: false, status: 0, error: `Не удалось получить XML: ${error?.message || error}` };
       }
     }
-    nextXml = currentXml;
-  } else if (useCoordinatorFlush) {
-    // Property operations delegate XML serialization to the coordinator so the
-    // live modeler is the single source of truth.
-    nextXml = "";
-  } else {
-    currentXml = toText(options.currentXml);
-    if (!currentXml && typeof options.getModelerXml === "function") {
-      try {
-        currentXml = toText(await options.getModelerXml());
-      } catch (error) {
-        return { ok: false, status: 0, error: `Не удалось получить XML: ${error?.message || error}` };
-      }
+    if (!nextXml && !useCoordinatorFlush) {
+      return { ok: false, status: 0, error: "Пустая BPMN XML." };
     }
-    if (!currentXml && typeof options.apiGetBpmnXml === "function") {
-      try {
-        const xmlRes = await options.apiGetBpmnXml(sid);
-        if (xmlRes?.ok) {
-          currentXml = toText(xmlRes.xml);
-        }
-      } catch {
-        // ignore
-      }
-    }
-    if (!currentXml && typeof options.apiGetSession === "function") {
-      try {
-        const latest = await options.apiGetSession(sid);
-        if (latest?.ok && latest.session && typeof latest.session === "object") {
-          currentXml = toText(latest.session.bpmn_xml);
-          updateLastServerVersion(options.lastServerDiagramStateVersionRef, pickDiagramStateBaseVersion(latest.session));
-        }
-      } catch {
-        // ignore
-      }
-    }
-    if (!currentXml) {
-      return { ok: false, status: 0, error: "Отсутствует BPMN XML для применения Properties." };
-    }
-    nextXml = buildCanonicalXml({ currentXml, nextCamundaExtensionsByElementId: nextMap });
-    if (!nextXml) {
-      return { ok: false, status: 0, error: "Не удалось применить Properties к BPMN XML." };
-    }
-  }
-
-  if (!nextXml && !useCoordinatorFlush) {
-    return { ok: false, status: 0, error: "Пустая BPMN XML." };
+  } else if (!useCoordinatorFlush) {
+    return { ok: false, status: 0, error: "flushSave unavailable for property operation" };
   }
 
   const baseDiagramStateVersion = toNonNegativeIntOrNull(

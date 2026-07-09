@@ -4,10 +4,7 @@ import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bp
 
 import { apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
-import {
-  shouldCanonicalRePersistManualSave,
-  shouldUseCanonicalPrimaryManualSave,
-} from "../../features/process/bpmn/save/manualSaveCanonicalXml";
+import { shouldUseCanonicalPrimaryManualSave } from "../../features/process/bpmn/save/manualSaveCanonicalXml";
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
 import * as viewportRecovery from "../../features/process/bpmn/stage/viewport/viewportRecovery";
@@ -65,7 +62,6 @@ import {
   normalizeCamundaExtensionState,
   extractManagedCamundaExtensionStateFromBusinessObject,
   extractCamundaExtensionsMapFromBpmnXml,
-  finalizeCamundaExtensionsXml,
   hydrateCamundaExtensionsFromBpmn,
   normalizeCamundaExtensionsMap,
   syncCamundaExtensionsToBpmn,
@@ -1372,7 +1368,6 @@ const BpmnStage = forwardRef(function BpmnStage({
         probeCanvas,
         emitDiagramMutation,
         trackRuntimeStatus,
-        transformPersistedXml,
         fnv1aHex,
       },
     }),
@@ -2339,31 +2334,6 @@ const BpmnStage = forwardRef(function BpmnStage({
     return { ok: true, refreshed };
   }
 
-  function reconcileTemplateInsertCamundaStateFromXml(xmlText, preserveIdsRaw = []) {
-    const preserveIds = asArray(preserveIdsRaw)
-      .map((value) => toText(value))
-      .filter(Boolean);
-    if (!preserveIds.length) return getCamundaExtensionsMap();
-    const extractedMap = normalizeCamundaExtensionsMap(extractCamundaExtensionsMapFromBpmnXml(xmlText));
-    if (!Object.keys(extractedMap).length) return getCamundaExtensionsMap();
-
-    let nextMap = getCamundaExtensionsMap();
-    let adopted = 0;
-    preserveIds.forEach((elementId) => {
-      if (nextMap[elementId]) return;
-      const state = extractedMap[elementId];
-      if (!state) return;
-      const candidateMap = upsertCamundaExtensionStateByElementId(nextMap, elementId, state);
-      if (JSON.stringify(asObject(candidateMap[elementId])) === JSON.stringify(asObject(nextMap[elementId]))) return;
-      nextMap = candidateMap;
-      adopted += 1;
-    });
-    if (adopted > 0) {
-      syncDraftCamundaExtensionsMap(nextMap, "camunda_extensions_template_insert_xml_reconcile");
-    }
-    return nextMap;
-  }
-
   function resolveRobotMetaStateFromSemanticPayload(payloadRaw) {
     const payload = asObject(payloadRaw);
     const extensionElements = asObject(payload.extensionElements);
@@ -2398,31 +2368,6 @@ const BpmnStage = forwardRef(function BpmnStage({
       camundaExtensionState: elementId ? resolveSourceCamundaExtensionState(elementId) : null,
       nativeTree,
     };
-  }
-
-  function transformPersistedXml(xmlText, meta = {}) {
-    const templateInsertGuardIds = readTemplateInsertCamundaClearGuardIds();
-    const xmlCamundaExtensionsByElementId = reconcileTemplateInsertCamundaStateFromXml(xmlText, templateInsertGuardIds);
-    // Merge authoritative meta camunda extensions so that property-only saves
-    // (which update bpmn_meta but not the stored BPMN XML) are still reflected
-    // on the canvas after reload. When the caller supplies an explicit meta
-    // payload (e.g. from saveBpmnState), use it instead of the possibly stale
-    // draftRef snapshot.
-    const explicitMeta = meta?.bpmnMeta && typeof meta.bpmnMeta === "object"
-      ? meta.bpmnMeta
-      : null;
-    const metaCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(
-      asObject(explicitMeta || draftRef.current?.bpmn_meta).camunda_extensions_by_element_id,
-    );
-    const camundaExtensionsByElementId = {
-      ...xmlCamundaExtensionsByElementId,
-      ...metaCamundaExtensionsByElementId,
-    };
-    return finalizeCamundaExtensionsXml({
-      xmlText,
-      camundaExtensionsByElementId,
-      preserveManagedForElementIds: templateInsertGuardIds,
-    });
   }
 
   function primeCopyPasteRobotMetaPreserveGuard(idsRaw = []) {
@@ -5076,7 +5021,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       });
       const nextState = bpmnStoreRef.current?.getState?.() || {};
       const rawOut = String(flushed?.xml || nextState.xml || fallbackXml || "");
-      const out = transformPersistedXml(rawOut);
+      const out = rawOut;
       publishE2ESaveProbe({
         sid,
         source,
@@ -5110,62 +5055,6 @@ const BpmnStage = forwardRef(function BpmnStage({
         return { ok: true, pending: true, xml: out, source: "pending" };
       }
 
-      if (out !== rawOut && flushed?.xmlAlreadyTransformed !== true) {
-        const rev = Number(nextState.rev || 0);
-        const transportPersistReason = persistReason;
-        const finalizeLifecycleReason = `${persistReason}:camunda_finalize`;
-        emitSaveLifecycleEvent("SAVE_PERSIST_STARTED", {
-          sid,
-          reason: finalizeLifecycleReason,
-          rev,
-          xml_len: out.length,
-        });
-        const persistedFinalXml = await coordinator.persistExplicitXml(out, transportPersistReason, {
-          rev,
-          saveOwner: resolvedSaveOwner,
-          bpmnMeta: saveBpmnMeta,
-        });
-        if (!persistedFinalXml?.ok) {
-          emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
-            sid,
-            reason: finalizeLifecycleReason,
-            rev,
-            status: Number(persistedFinalXml?.status || 0),
-            error_code: String(persistedFinalXml?.errorCode || ""),
-            error_details: (
-              persistedFinalXml?.errorDetails && typeof persistedFinalXml.errorDetails === "object"
-                ? persistedFinalXml.errorDetails
-                : null
-            ),
-            xml_len: out.length,
-            error: String(persistedFinalXml?.error || "camunda finalize persist failed"),
-          });
-          if (resolvedSaveOwner) {
-            coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:camunda_finalize_fail`);
-          }
-          return {
-            ok: false,
-            error: String(persistedFinalXml?.error || "camunda finalize persist failed"),
-            status: Number(persistedFinalXml?.status || 0),
-            errorCode: String(persistedFinalXml?.errorCode || ""),
-            errorDetails: (
-              persistedFinalXml?.errorDetails && typeof persistedFinalXml.errorDetails === "object"
-                ? persistedFinalXml.errorDetails
-                : null
-            ),
-            xml: out,
-          };
-        }
-        emitSaveLifecycleEvent("SAVE_PERSIST_DONE", {
-          sid,
-          reason: finalizeLifecycleReason,
-          rev: Number(persistedFinalXml?.storedRev || rev),
-          status: Number(persistedFinalXml?.status || 200),
-          diagram_state_version: Number(persistedFinalXml?.diagramStateVersion || 0),
-          xml_len: out.length,
-        });
-      }
-
       let finalOut = out;
       let finalStoredRev = Number(flushed?.storedRev || flushed?.rev || nextState.rev || 0);
       let finalDiagramStateVersion = Number(flushed?.diagramStateVersion || 0);
@@ -5174,83 +5063,6 @@ const BpmnStage = forwardRef(function BpmnStage({
           ? flushed.bpmnVersionSnapshot
           : null
       );
-
-      const canonicalComparisonXml = shouldUseCanonicalPrimaryPersist
-        ? transformPersistedXml(preFlushXml)
-        : preFlushXml;
-      if (shouldCanonicalRePersistManualSave({
-        source,
-        persistReason,
-        canonicalXml: canonicalComparisonXml,
-        persistedXml: finalOut,
-      })) {
-        const canonicalOut = transformPersistedXml(preFlushXml);
-        const canonicalPersistReason = `${persistReason}:manual_canonical_repersist`;
-        emitSaveLifecycleEvent("SAVE_PERSIST_STARTED", {
-          sid,
-          reason: canonicalPersistReason,
-          rev: Number(finalStoredRev || 0),
-          xml_len: canonicalOut.length,
-        });
-        const canonicalPersisted = await coordinator.persistExplicitXml(canonicalOut, canonicalPersistReason, {
-          rev: Number(finalStoredRev || 0),
-          saveOwner: resolvedSaveOwner,
-          bpmnMeta: saveBpmnMeta,
-        });
-        if (!canonicalPersisted?.ok) {
-          emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
-            sid,
-            reason: canonicalPersistReason,
-            rev: Number(finalStoredRev || 0),
-            status: Number(canonicalPersisted?.status || 0),
-            error_code: String(canonicalPersisted?.errorCode || ""),
-            error_details: (
-              canonicalPersisted?.errorDetails && typeof canonicalPersisted.errorDetails === "object"
-                ? canonicalPersisted.errorDetails
-                : null
-            ),
-            xml_len: canonicalOut.length,
-            error: String(canonicalPersisted?.error || "manual canonical persist failed"),
-          });
-          if (resolvedSaveOwner) {
-            coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:manual_canonical_repersist_fail`);
-          }
-          return {
-            ok: false,
-            error: String(canonicalPersisted?.error || "manual canonical persist failed"),
-            status: Number(canonicalPersisted?.status || 0),
-            errorCode: String(canonicalPersisted?.errorCode || ""),
-            errorDetails: (
-              canonicalPersisted?.errorDetails && typeof canonicalPersisted.errorDetails === "object"
-                ? canonicalPersisted.errorDetails
-                : null
-            ),
-            xml: finalOut,
-          };
-        }
-        emitSaveLifecycleEvent("SAVE_PERSIST_DONE", {
-          sid,
-          reason: canonicalPersistReason,
-          rev: Number(canonicalPersisted?.storedRev || finalStoredRev || 0),
-          status: Number(canonicalPersisted?.status || 200),
-          diagram_state_version: Number(canonicalPersisted?.diagramStateVersion || finalDiagramStateVersion || 0),
-          xml_len: canonicalOut.length,
-        });
-        publishE2ESaveProbe({
-          sid,
-          source,
-          persistReason,
-          manualCanonicalRePersist: true,
-          manualCanonicalRePersistReason: canonicalPersistReason,
-          manualCanonicalXml: canonicalOut,
-        });
-        finalOut = canonicalOut;
-        finalStoredRev = Number(canonicalPersisted?.storedRev || finalStoredRev || 0);
-        finalDiagramStateVersion = Number(canonicalPersisted?.diagramStateVersion || finalDiagramStateVersion || 0);
-        if (canonicalPersisted?.bpmnVersionSnapshot && typeof canonicalPersisted.bpmnVersionSnapshot === "object") {
-          finalVersionSnapshot = canonicalPersisted.bpmnVersionSnapshot;
-        }
-      }
 
       if (force) {
         coordinator.clearPendingWork?.(`${source}:after_force_flush`);
