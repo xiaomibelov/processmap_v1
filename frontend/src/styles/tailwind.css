@@ -10043,6 +10043,167 @@
     @apply appearance-none;
   }
 
+  /* ---------- Sidebar redesign (variant A) ---------- */
+
+  .sidebarInput,
+  .sidebarSelect,
+  .sidebarTextarea {
+    @apply w-full rounded-xl border border-border bg-white/90 px-3 py-2.5 text-sm text-fg placeholder:text-muted transition-colors;
+  }
+
+  .dark .sidebarInput,
+  .dark .sidebarSelect,
+  .dark .sidebarTextarea {
+    @apply bg-panel/60;
+  }
+
+  .sidebarInput:hover,
+  .sidebarSelect:hover,
+  .sidebarTextarea:hover {
+    @apply border-borderStrong;
+  }
+
+  .sidebarInput:focus,
+  .sidebarSelect:focus,
+  .sidebarTextarea:focus {
+    @apply border-accent ring-2 ring-accent/25 outline-none;
+  }
+
+  .sidebarCheckboxLabel {
+    @apply inline-flex cursor-pointer items-center gap-2.5 text-sm text-fg select-none;
+  }
+
+  .sidebarCheckbox {
+    @apply h-5 w-5 cursor-pointer accent-accent rounded border-border;
+  }
+
+  .sidebarAddBtn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl border border-accent bg-white px-3 py-2 text-sm font-medium text-accent transition-colors duration-150;
+  }
+
+  .sidebarAddBtn:hover {
+    @apply bg-accent text-white;
+  }
+
+  .dark .sidebarAddBtn {
+    @apply bg-panel text-accent;
+  }
+
+  .dark .sidebarAddBtn:hover {
+    @apply bg-accent text-white;
+  }
+
+  .sidebarAddBtn:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
+  .sidebarPropertyRow {
+    @apply border-b border-border transition-colors;
+  }
+
+  .sidebarPropertyRow:nth-child(even) {
+    @apply bg-panel/30;
+  }
+
+  .dark .sidebarPropertyRow:nth-child(even) {
+    @apply bg-panel2/20;
+  }
+
+  .sidebarPropertyRow:hover {
+    @apply bg-accentSoft/40;
+  }
+
+  .sidebarPropertyRow:last-child {
+    @apply border-b-0;
+  }
+
+  .sidebarPropertyActionBtn {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-white text-muted transition-colors;
+  }
+
+  .sidebarPropertyActionBtn:hover {
+    @apply border-accentSoft bg-accentSoft text-accent;
+  }
+
+  .sidebarPropertyActionBtn--danger:hover {
+    @apply border-danger/30 bg-danger/10 text-danger;
+  }
+
+  .dark .sidebarPropertyActionBtn {
+    @apply bg-panel2;
+  }
+
+  .sidebarPropertyActionBtn:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
+  .sidebarAccordion {
+    @apply border-b border-border bg-transparent;
+  }
+
+  .sidebarAccordion:last-child {
+    @apply border-b-0;
+  }
+
+  .sidebarAccordion.isOpen {
+    @apply bg-accentSoft/20;
+  }
+
+  .dark .sidebarAccordion.isOpen {
+    @apply bg-panel2/30;
+  }
+
+  .sidebarAccordionTitle {
+    @apply text-[15px] font-semibold text-fg;
+  }
+
+  .sidebarAccordionSubtitle {
+    @apply text-xs text-muted;
+  }
+
+  .sidebarAccordionBadge {
+    @apply inline-flex h-5 items-center rounded-lg border border-border bg-panel2 px-2 text-xs font-semibold text-muted;
+  }
+
+  .sidebarAccordionChevron {
+    @apply h-4 w-4 text-muted transition-transform duration-200;
+  }
+
+  .sidebarInfoTip {
+    @apply inline-flex h-4 w-4 items-center justify-center rounded-full border border-accent/40 bg-accentSoft text-[10px] font-bold text-accent transition-colors;
+  }
+
+  .sidebarInfoTip:hover,
+  .sidebarInfoTip:focus-visible {
+    @apply bg-accent/15;
+  }
+
+  .sidebarInfoTipBubble {
+    @apply rounded-lg border border-border bg-panel2 p-2 text-xs text-fg shadow-lg;
+    width: min(260px, 70vw);
+  }
+
+  .dark .sidebarInfoTipBubble {
+    @apply bg-panel;
+  }
+
+  .sidebarLocalBadge {
+    @apply inline-flex items-center gap-1 rounded-full border border-warning bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning;
+  }
+
+  .sidebarLocalBadge::before {
+    content: "";
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: currentColor;
+  }
+
+  .sidebarGlobalFooter button:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
   .badge {
     @apply inline-flex items-center rounded-full border border-border bg-panel2 px-2.5 py-1 text-xs font-medium text-fg;
   }
@@ -11194,6 +11355,215 @@
 
   .interviewPathsNestedBranchLabel {
     @apply mb-0.5 text-xs text-muted;
+  }
+
+  /* Sidebar redesign variant A enhancements */
+  .sidebarInput,
+  .sidebarSelect,
+  .sidebarTextarea {
+    border: 1px solid #D5DFF0;
+    border-radius: 8px;
+    background: #FFFFFF;
+    color: #1F2A44;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+  }
+
+  .sidebarInput:hover:not(:disabled),
+  .sidebarSelect:hover:not(:disabled),
+  .sidebarTextarea:hover:not(:disabled) {
+    border-color: #B0C0E8;
+  }
+
+  .sidebarInput:focus,
+  .sidebarInput:focus-visible,
+  .sidebarSelect:focus,
+  .sidebarSelect:focus-visible,
+  .sidebarTextarea:focus,
+  .sidebarTextarea:focus-visible {
+    outline: none;
+    border-color: #4F6BFF;
+    box-shadow: 0 0 0 3px rgba(79, 107, 255, 0.18);
+  }
+
+  .sidebarInput:disabled,
+  .sidebarSelect:disabled,
+  .sidebarTextarea:disabled {
+    background: #F3F6FB;
+    color: #8A96AE;
+    cursor: not-allowed;
+  }
+
+  .sidebarSelect {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%235B667A' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 14px 14px;
+    padding-right: 26px;
+  }
+
+  .sidebarCheckbox {
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    border: 1px solid #BFC7D9;
+    border-radius: 5px;
+    accent-color: #3E59D9;
+    cursor: pointer;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  }
+
+  .sidebarCheckbox:hover:not(:disabled) {
+    border-color: #3E59D9;
+  }
+
+  .sidebarCheckbox:focus-visible {
+    outline: none;
+    border-color: #3E59D9;
+    box-shadow: 0 0 0 3px rgba(62, 89, 217, 0.18);
+  }
+
+  .sidebarCheckbox:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .sidebarAddBtn {
+    @apply inline-flex items-center justify-center rounded-lg transition-colors;
+    min-height: 28px;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid #C8D2FF;
+    background: #FFFFFF;
+    color: #3E59D9;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .sidebarAddBtn:hover:not(:disabled) {
+    background: #F2F5FF;
+    border-color: #A8B8FF;
+    color: #2A3FBA;
+  }
+
+  .sidebarAddBtn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(79, 107, 255, 0.18);
+  }
+
+  .sidebarAddBtn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .sidebarPropertyActionBtn {
+    @apply inline-flex items-center justify-center rounded-lg transition-colors;
+    min-width: 26px;
+    min-height: 26px;
+    padding: 0 6px;
+    border: 1px solid #D9E1EE;
+    background: #FFFFFF;
+    color: #5B667A;
+  }
+
+  .sidebarPropertyActionBtn:hover:not(:disabled) {
+    border-color: #C8D2FF;
+    background: #F7F9FC;
+    color: #4F5D75;
+  }
+
+  .sidebarPropertyActionBtn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(79, 107, 255, 0.18);
+  }
+
+  .sidebarPropertyActionBtn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .sidebarPropertyActionBtn--danger {
+    border-color: #E9CDD3;
+    color: #9D4157;
+    background: #FDF5F7;
+  }
+
+  .sidebarPropertyActionBtn--danger:hover:not(:disabled) {
+    border-color: #E2B8C2;
+    background: #FAECEF;
+    color: #853246;
+  }
+
+  .sidebarPropertyActionBtn--text {
+    border-color: transparent;
+    background: transparent;
+    color: #3E59D9;
+    text-decoration: underline;
+    text-decoration-color: rgba(62, 89, 217, 0.35);
+    padding: 0;
+    min-width: auto;
+  }
+
+  .sidebarPropertyActionBtn--text:hover:not(:disabled) {
+    color: #2A3FBA;
+    background: rgba(62, 89, 217, 0.06);
+  }
+
+  .sidebarPropertiesRows--zebra .sidebarSchemaPropertyRow:nth-child(odd),
+  .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:nth-child(odd) {
+    background: #FAFCFF;
+  }
+
+  .sidebarPropertiesRows--zebra .sidebarSchemaPropertyRow:hover,
+  .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:hover {
+    background: #F3F8FF;
+  }
+
+  .sidebarBpmnPropertySummary:hover {
+    background: #F7FAFF;
+  }
+
+  .sidebarLocalBadge {
+    border-color: #F5D78E;
+    background: #FFF8E6;
+    color: #956A00;
+  }
+
+  .sidebarInfoTip {
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+  }
+
+  .sidebarInfoTipBubble {
+    width: min(280px, 62vw);
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.4;
+    border-radius: 12px;
+  }
+
+  .sidebarAccordionHead {
+    min-height: 46px;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .sidebarAccordionTitle {
+    font-size: 14px;
+    letter-spacing: -0.01em;
+  }
+
+  .sidebarAccordionChevron {
+    width: 16px;
+    height: 16px;
+  }
+
+  .sidebarGlobalFooterBtn:disabled,
+  .sidebarGlobalFooterBtn:disabled:hover {
+    opacity: 0.45;
+    cursor: not-allowed;
+    filter: grayscale(0.35);
   }
 }
 
@@ -14120,4 +14490,118 @@
   gap: 12px;
   padding: 12px 18px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@layer components {
+  /* Sidebar redesign variant A dark overrides */
+  .dark .sidebarInput,
+  .dark .sidebarSelect,
+  .dark .sidebarTextarea {
+    background: #131C2E;
+    border-color: #314463;
+    color: #E8ECF5;
+  }
+
+  .dark .sidebarInput:hover:not(:disabled),
+  .dark .sidebarSelect:hover:not(:disabled),
+  .dark .sidebarTextarea:hover:not(:disabled) {
+    border-color: #4A5F85;
+  }
+
+  .dark .sidebarInput:focus,
+  .dark .sidebarInput:focus-visible,
+  .dark .sidebarSelect:focus,
+  .dark .sidebarSelect:focus-visible,
+  .dark .sidebarTextarea:focus,
+  .dark .sidebarTextarea:focus-visible {
+    border-color: #5B7CFF;
+    box-shadow: 0 0 0 3px rgba(91, 124, 255, 0.22);
+  }
+
+  .dark .sidebarInput:disabled,
+  .dark .sidebarSelect:disabled,
+  .dark .sidebarTextarea:disabled {
+    background: #1A2539;
+    color: #5F739A;
+  }
+
+  .dark .sidebarSelect {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239AA9C6' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+  }
+
+  .dark .sidebarCheckbox {
+    border-color: #4A5F85;
+    accent-color: #5B7CFF;
+  }
+
+  .dark .sidebarCheckbox:hover:not(:disabled) {
+    border-color: #5B7CFF;
+  }
+
+  .dark .sidebarAddBtn {
+    background: transparent;
+    border-color: #4A5F85;
+    color: #8FB3FF;
+  }
+
+  .dark .sidebarAddBtn:hover:not(:disabled) {
+    background: rgba(91, 124, 255, 0.12);
+    border-color: #5B7CFF;
+    color: #B6D0FF;
+  }
+
+  .dark .sidebarPropertyActionBtn {
+    background: #172235;
+    border-color: #314463;
+    color: #9AA9C6;
+  }
+
+  .dark .sidebarPropertyActionBtn:hover:not(:disabled) {
+    background: #1E2E47;
+    border-color: #3E5891;
+    color: #C8D5F2;
+  }
+
+  .dark .sidebarPropertyActionBtn--danger {
+    background: #2A1B22;
+    border-color: #5A3341;
+    color: #D77A8F;
+  }
+
+  .dark .sidebarPropertyActionBtn--danger:hover:not(:disabled) {
+    background: #361F29;
+    border-color: #6D3E4F;
+    color: #E89AAF;
+  }
+
+  .dark .sidebarPropertyActionBtn--text {
+    background: transparent;
+    border-color: transparent;
+    color: #8FB3FF;
+  }
+
+  .dark .sidebarPropertyActionBtn--text:hover:not(:disabled) {
+    background: rgba(91, 124, 255, 0.12);
+    color: #B6D0FF;
+  }
+
+  .dark .sidebarPropertiesRows--zebra .sidebarSchemaPropertyRow:nth-child(odd),
+  .dark .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:nth-child(odd) {
+    background: #131C2E;
+  }
+
+  .dark .sidebarPropertiesRows--zebra .sidebarSchemaPropertyRow:hover,
+  .dark .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:hover {
+    background: #1A2840;
+  }
+
+  .dark .sidebarBpmnPropertySummary:hover {
+    background: #1A2840;
+  }
+
+  .dark .sidebarLocalBadge {
+    border-color: #7A5C1E;
+    background: #2E240C;
+    color: #F5D78E;
+  }
 }
