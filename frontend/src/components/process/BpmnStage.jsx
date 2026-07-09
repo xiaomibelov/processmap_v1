@@ -1252,7 +1252,10 @@ const BpmnStage = forwardRef(function BpmnStage({
     const combined = { ...asObject(propertiesOverlayAlwaysPreviewByElementId) };
     const selected = asObject(selectedPropertiesOverlayPreview);
     const selectedElementId = toText(selected?.elementId);
-    if (selectedElementId && selected?.enabled === true && asArray(selected?.items).length) {
+    // Include the selected preview even when it is empty/disabled so the V2
+    // overlay resolver knows the element is intentionally property-less and
+    // does not fall back to stale modeler/XML overlays.
+    if (selectedElementId && selected) {
       combined[selectedElementId] = selected;
     }
     v2PropertyPreviewMapRef.current = combined;
