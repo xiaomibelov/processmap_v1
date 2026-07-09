@@ -2739,6 +2739,118 @@ def _drawio_payload_size(value: Any) -> int:
     )
 
 
+def _merge_hybrid_layer(current: Any, incoming: Any) -> Any:
+    if isinstance(incoming, dict):
+        if not incoming and isinstance(current, dict) and current:
+            return current
+        return incoming
+    return current
+
+
+def _merge_hybrid_v2(current: Any, incoming: Any) -> Any:
+    if isinstance(incoming, dict):
+        incoming_size = _hybrid_v2_payload_size(incoming)
+        current_size = _hybrid_v2_payload_size(current)
+        if incoming_size <= 0 < current_size:
+            return current
+        return incoming
+    return current
+
+
+def _merge_drawio(current: Any, incoming: Any) -> Any:
+    if isinstance(incoming, dict):
+        incoming_size = _drawio_payload_size(incoming)
+        current_size = _drawio_payload_size(current)
+        if incoming_size <= 0 < current_size:
+            return current
+        return incoming
+    return current
+
+
+def _merge_and_normalize_bpmn_meta(
+    current_meta: Any,
+    incoming_meta: Any,
+    xml_text: str,
+    flow_ctx: Dict[str, Any],
+) -> Tuple[Dict[str, Any], bool]:
+    """Merge incoming bpmn_meta on top of current meta and normalize.
+
+    Uses the XML payload as the authoritative source for Camunda extension
+    properties. Returns the normalized meta dict and a flag indicating whether
+    the caller requested an auto-pass state write.
+    """
+    xml_str = str(xml_text or "").strip()
+    flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
+    node_ids = flow_ctx.get("node_ids") if isinstance(flow_ctx, dict) else set()
+    allowed_flow_ids = flow_ids if xml_str else None
+    allowed_node_ids = node_ids if xml_str else None
+
+    current_meta = _normalize_bpmn_meta(
+        current_meta,
+        allowed_flow_ids=allowed_flow_ids,
+        allowed_node_ids=allowed_node_ids,
+    )
+
+    auto_pass_state_write_requested = False
+    if isinstance(incoming_meta, dict):
+        auto_pass_state_write_requested = "auto_pass_v1" in incoming_meta
+        raw_bpmn_meta = {
+            **current_meta,
+            **incoming_meta,
+            "version": incoming_meta.get("version", current_meta.get("version", 1)),
+            "flow_meta": incoming_meta.get("flow_meta", current_meta.get("flow_meta", {})),
+            "node_path_meta": incoming_meta.get(
+                "node_path_meta", current_meta.get("node_path_meta", {})
+            ),
+            "robot_meta_by_element_id": incoming_meta.get(
+                "robot_meta_by_element_id",
+                current_meta.get("robot_meta_by_element_id", {}),
+            ),
+            "camunda_extensions_by_element_id": incoming_meta.get(
+                "camunda_extensions_by_element_id",
+                current_meta.get("camunda_extensions_by_element_id", {}),
+            ),
+            "presentation_by_element_id": incoming_meta.get(
+                "presentation_by_element_id",
+                current_meta.get("presentation_by_element_id", {}),
+            ),
+            "execution_plans": incoming_meta.get(
+                "execution_plans",
+                current_meta.get("execution_plans", []),
+            ),
+            "hybrid_layer_by_element_id": _merge_hybrid_layer(
+                current_meta.get("hybrid_layer_by_element_id", {}),
+                incoming_meta.get("hybrid_layer_by_element_id"),
+            ),
+            "hybrid_v2": _merge_hybrid_v2(
+                current_meta.get("hybrid_v2", {}),
+                incoming_meta.get("hybrid_v2"),
+            ),
+            "drawio": _merge_drawio(
+                current_meta.get("drawio", {}),
+                incoming_meta.get("drawio"),
+            ),
+        }
+    else:
+        raw_bpmn_meta = current_meta
+
+    normalized_meta = _normalize_bpmn_meta(
+        raw_bpmn_meta,
+        allowed_flow_ids=allowed_flow_ids,
+        allowed_node_ids=allowed_node_ids,
+    )
+    normalized_meta["flow_meta"] = _enforce_gateway_tier_constraints(
+        dict(normalized_meta.get("flow_meta") or {}),
+        outgoing_by_source=flow_ctx.get("outgoing_by_source") if isinstance(flow_ctx, dict) else {},
+        gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node") if isinstance(flow_ctx, dict) else {},
+    )
+    # Properties are derived from the XML payload, not from sidecar bpmn_meta.
+    normalized_meta.pop("camunda_extensions_by_element_id", None)
+    if xml_str:
+        normalized_meta["camunda_extensions_by_element_id"] = extract_camunda_extensions_from_bpmn_xml(xml_str)
+    return normalized_meta, auto_pass_state_write_requested
+
+
 def _normalize_auto_pass_v1(value: Any) -> Dict[str, Any]:
     raw = value if isinstance(value, dict) else {}
     schema_version = str(raw.get("schema_version") or "").strip() or "auto_pass_v1.1"
@@ -4202,63 +4314,12 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
             raise HTTPException(status_code=403, detail="forbidden")
         sess_xml = str(getattr(sess, "bpmn_xml", "") or "")
         flow_ctx = _collect_sequence_flow_meta(sess_xml)
-        flow_ids = flow_ctx.get("flow_ids")
-        node_ids = flow_ctx.get("node_ids")
-        current_meta = _normalize_bpmn_meta(
+        normalized_meta, auto_pass_state_write_requested = _merge_and_normalize_bpmn_meta(
             getattr(sess, "bpmn_meta", {}),
-            allowed_flow_ids=flow_ids if sess_xml.strip() else None,
-            allowed_node_ids=node_ids if sess_xml.strip() else None,
+            data.get("bpmn_meta"),
+            sess_xml,
+            flow_ctx,
         )
-        incoming_meta = data.get("bpmn_meta")
-        if isinstance(incoming_meta, dict):
-            auto_pass_state_write_requested = "auto_pass_v1" in incoming_meta
-            raw_bpmn_meta = {
-                **current_meta,
-                **incoming_meta,
-                "version": incoming_meta.get("version", current_meta.get("version", 1)),
-                "flow_meta": incoming_meta.get("flow_meta", current_meta.get("flow_meta", {})),
-                "node_path_meta": incoming_meta.get("node_path_meta", current_meta.get("node_path_meta", {})),
-                "robot_meta_by_element_id": incoming_meta.get(
-                    "robot_meta_by_element_id",
-                    current_meta.get("robot_meta_by_element_id", {}),
-                ),
-                "presentation_by_element_id": incoming_meta.get(
-                    "presentation_by_element_id",
-                    current_meta.get("presentation_by_element_id", {}),
-                ),
-                "execution_plans": incoming_meta.get(
-                    "execution_plans",
-                    current_meta.get("execution_plans", []),
-                ),
-                "hybrid_layer_by_element_id": incoming_meta.get(
-                    "hybrid_layer_by_element_id",
-                    current_meta.get("hybrid_layer_by_element_id", {}),
-                ),
-                "hybrid_v2": incoming_meta.get(
-                    "hybrid_v2",
-                    current_meta.get("hybrid_v2", {}),
-                ),
-                "drawio": incoming_meta.get(
-                    "drawio",
-                    current_meta.get("drawio", {}),
-                ),
-            }
-        else:
-            raw_bpmn_meta = current_meta
-        normalized_meta = _normalize_bpmn_meta(
-            raw_bpmn_meta,
-            allowed_flow_ids=flow_ids if sess_xml.strip() else None,
-            allowed_node_ids=node_ids if sess_xml.strip() else None,
-        )
-        normalized_meta["flow_meta"] = _enforce_gateway_tier_constraints(
-            dict(normalized_meta.get("flow_meta") or {}),
-            outgoing_by_source=flow_ctx.get("outgoing_by_source"),
-            gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
-        )
-        # Properties are derived from the XML payload, not from sidecar bpmn_meta.
-        normalized_meta.pop("camunda_extensions_by_element_id", None)
-        if sess_xml.strip():
-            normalized_meta["camunda_extensions_by_element_id"] = extract_camunda_extensions_from_bpmn_xml(sess_xml)
         sess.bpmn_meta = normalized_meta
         handled = True
 
@@ -7453,90 +7514,16 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         bpmn_version_snapshot = None
 
         flow_ctx = _collect_sequence_flow_meta(xml)
-        flow_ids = flow_ctx.get("flow_ids") if isinstance(flow_ctx, dict) else set()
-        node_ids = flow_ctx.get("node_ids") if isinstance(flow_ctx, dict) else set()
-        current_meta = _normalize_bpmn_meta(
+        normalized_meta, auto_pass_state_write_requested = _merge_and_normalize_bpmn_meta(
             getattr(s, "bpmn_meta", {}),
-            allowed_flow_ids=flow_ids,
-            allowed_node_ids=node_ids,
+            inp.bpmn_meta,
+            xml,
+            flow_ctx,
         )
-        auto_pass_state_write_requested = False
-        if isinstance(inp.bpmn_meta, dict):
-            incoming_meta = inp.bpmn_meta
-            auto_pass_state_write_requested = "auto_pass_v1" in incoming_meta
-            incoming_hybrid_layer = incoming_meta.get("hybrid_layer_by_element_id")
-            current_hybrid_layer = current_meta.get("hybrid_layer_by_element_id", {})
-            if isinstance(incoming_hybrid_layer, dict):
-                if not incoming_hybrid_layer and isinstance(current_hybrid_layer, dict) and current_hybrid_layer:
-                    merged_hybrid_layer = current_hybrid_layer
-                else:
-                    merged_hybrid_layer = incoming_hybrid_layer
-            else:
-                merged_hybrid_layer = current_hybrid_layer
-
-            incoming_hybrid_v2 = incoming_meta.get("hybrid_v2")
-            current_hybrid_v2 = current_meta.get("hybrid_v2", {})
-            if isinstance(incoming_hybrid_v2, dict):
-                incoming_v2_size = _hybrid_v2_payload_size(incoming_hybrid_v2)
-                current_v2_size = _hybrid_v2_payload_size(current_hybrid_v2)
-                merged_hybrid_v2 = current_hybrid_v2 if incoming_v2_size <= 0 < current_v2_size else incoming_hybrid_v2
-            else:
-                merged_hybrid_v2 = current_hybrid_v2
-
-            incoming_drawio = incoming_meta.get("drawio")
-            current_drawio = current_meta.get("drawio", {})
-            if isinstance(incoming_drawio, dict):
-                incoming_drawio_size = _drawio_payload_size(incoming_drawio)
-                current_drawio_size = _drawio_payload_size(current_drawio)
-                merged_drawio = current_drawio if incoming_drawio_size <= 0 < current_drawio_size else incoming_drawio
-            else:
-                merged_drawio = current_drawio
-
-            raw_bpmn_meta = {
-                **current_meta,
-                **incoming_meta,
-                "version": incoming_meta.get("version", current_meta.get("version", 1)),
-                "flow_meta": incoming_meta.get("flow_meta", current_meta.get("flow_meta", {})),
-                "node_path_meta": incoming_meta.get("node_path_meta", current_meta.get("node_path_meta", {})),
-                "robot_meta_by_element_id": incoming_meta.get(
-                    "robot_meta_by_element_id",
-                    current_meta.get("robot_meta_by_element_id", {}),
-                ),
-                "camunda_extensions_by_element_id": incoming_meta.get(
-                    "camunda_extensions_by_element_id",
-                    current_meta.get("camunda_extensions_by_element_id", {}),
-                ),
-                "presentation_by_element_id": incoming_meta.get(
-                    "presentation_by_element_id",
-                    current_meta.get("presentation_by_element_id", {}),
-                ),
-                "execution_plans": incoming_meta.get(
-                    "execution_plans",
-                    current_meta.get("execution_plans", []),
-                ),
-                "hybrid_layer_by_element_id": merged_hybrid_layer,
-                "hybrid_v2": merged_hybrid_v2,
-                "drawio": merged_drawio,
-            }
-        else:
-            raw_bpmn_meta = current_meta
         s.bpmn_xml = xml
         s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
         s.activity_count = _count_bpmn_activities(xml)
         s.bpmn_graph_fingerprint = _session_graph_fingerprint(s)
-        normalized_meta = _normalize_bpmn_meta(
-            raw_bpmn_meta,
-            allowed_flow_ids=flow_ids,
-            allowed_node_ids=node_ids,
-        )
-        normalized_meta["flow_meta"] = _enforce_gateway_tier_constraints(
-            dict(normalized_meta.get("flow_meta") or {}),
-            outgoing_by_source=flow_ctx.get("outgoing_by_source"),
-            gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
-        )
-        # Properties are derived from the XML payload, not from sidecar bpmn_meta.
-        normalized_meta.pop("camunda_extensions_by_element_id", None)
-        normalized_meta["camunda_extensions_by_element_id"] = extract_camunda_extensions_from_bpmn_xml(xml)
         s.bpmn_meta = normalized_meta
         changed_keys = ["bpmn_meta"]
         if previous_xml != xml:
