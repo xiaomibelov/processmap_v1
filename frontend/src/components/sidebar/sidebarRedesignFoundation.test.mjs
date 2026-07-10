@@ -106,3 +106,15 @@ test("C7: sticky glassy footer + disabled opacity 0.5", () => {
   const disabled = css.match(/\.sidebarGlobalFooterBtn:disabled[^{]*\{[^}]*\}/)?.[0] || "";
   assert.match(disabled, /opacity:\s*0\.5/, "disabled opacity 0.5");
 });
+
+// C8 — sidebar scrolls (overflow-y:auto inline) with a thin 4px accent
+// scrollbar; min width is 300 (C1). Firefox uses scrollbar-width/color,
+// webkit uses the ::-webkit-scrollbar rules for an exact 4px track.
+test("C8: thin 4px accent sidebar scrollbar", () => {
+  const css = readSrc("styles/tailwind.css");
+  const body = css.match(/\.leftSidebarBody\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(body, /scrollbar-color:\s*hsl\(var\(--accent\)\)\s*transparent/, "accent scrollbar-color");
+  const webkit = css.match(/\.leftSidebarBody::-webkit-scrollbar\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(webkit, /width:\s*4px/, "webkit scrollbar 4px");
+  assert.ok(css.includes(".leftSidebarBody::-webkit-scrollbar-thumb"), "webkit thumb styled");
+});

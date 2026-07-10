@@ -4409,7 +4409,25 @@
 
   .leftSidebarBody {
     scrollbar-width: thin;
+    scrollbar-color: hsl(var(--accent)) transparent;
     background: linear-gradient(180deg, #F7F9FC 0%, #F5F7FB 34%, #F5F7FB 100%);
+  }
+
+  .leftSidebarBody::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .leftSidebarBody::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .leftSidebarBody::-webkit-scrollbar-thumb {
+    background: hsl(var(--accent));
+    border-radius: 4px;
+  }
+
+  .leftSidebarBody::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--accent) / 0.8);
   }
 
   .leftSidebarBottom {
