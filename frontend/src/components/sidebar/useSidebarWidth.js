@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const STORAGE_KEY = "processmap_sidebar_width";
-const MIN_WIDTH = 240;
-const MAX_WIDTH = 480;
-const DEFAULT_WIDTH = 336;
+const MIN_WIDTH = 300;
+const MAX_WIDTH = 520;
+const DEFAULT_WIDTH = 380;
 
 function clampWidth(value) {
   return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, value));
