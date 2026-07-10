@@ -4600,7 +4600,7 @@
     background: transparent;
     border-radius: 0;
     border: none;
-    border-bottom: 1px solid #EEF2F9;
+    border-bottom: 1px solid hsl(var(--border));
     box-shadow: none;
     transition: background 0.15s ease;
   }
@@ -4629,7 +4629,7 @@
   }
 
   .sidebarAccordionTitle {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     color: #1E2C45;
   }
@@ -4641,15 +4641,15 @@
   }
 
   .sidebarAccordionBadge {
-    @apply inline-flex h-[18px] shrink-0 items-center rounded-[8px] px-1.5 text-[10px] font-semibold;
+    @apply inline-flex shrink-0 items-center rounded-[8px] px-2 py-0.5 text-xs font-semibold;
     border: 1px solid #E2E9F4;
     background: #F3F6FB;
     color: #7080A0;
   }
 
   .sidebarAccordionChevron {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     flex-shrink: 0;
     color: #9AA4BE;
     transition: transform 0.2s ease, color 0.12s ease;
@@ -6016,7 +6016,7 @@
   }
 
   .dark .sidebarAccordion {
-    border-color: #243450;
+    border-color: hsl(var(--border));
   }
 
   .dark .sidebarAccordion.isOpen {
