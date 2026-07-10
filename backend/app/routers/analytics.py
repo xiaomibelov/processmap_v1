@@ -17,6 +17,7 @@ from ..analytics_read_model import (
     refresh_workspace_analytics_snapshot,
 )
 from ..routers.process_properties_registry import _extract_camunda_rows, _text
+from ..recipe.storage import get_ingredient_values_by_name
 from ..routers.product_actions_registry import _registry_row
 from ..analytics_cache import (
     ANALYTICS_CACHE_TTL_SEC,
@@ -286,7 +287,9 @@ def _compute_dashboard_extras(scope_type: str, scope_id: str, org_id: str, base:
 
     prop_rows = _properties_rows(scope_type, scope_id, org_id)
     properties_summary = _properties_summary(prop_rows)
-    properties_summary["recalculated_count"] = len(_build_recalculated_rows(prop_rows))
+    properties_summary["recalculated_count"] = sum(
+        1 for r in _build_recalculated_rows(prop_rows) if r.get("result") is not None
+    )
 
     process_durations: Dict[str, Dict[str, Any]] = {}
     for snap in snapshots:
@@ -413,6 +416,12 @@ def _properties_rows(scope_type: str, scope_id: str, org_id: str) -> List[Dict[s
                 "category": r.get("property_group") or "",
                 "source": r.get("source") or "",
                 "element_type": r.get("element_type") or "",
+                "session_id": r.get("session_id") or "",
+                "session_title": r.get("session_title") or "",
+                "project_id": r.get("project_id") or "",
+                "project_title": r.get("project_title") or "",
+                "workspace_id": r.get("workspace_id") or "",
+                "org_id": r.get("org_id") or "",
                 "section": "",
                 "role": "",
                 "usage_count": 1,
@@ -825,7 +834,9 @@ def _xlsx_response(
 
 _EE_TIME_KEY = "ee_time"
 _INGREDIENT_VALUE_KEY = "ingredient_value"
+_INGREDIENT_KEY = "ingredient"
 _RECALC_REQUIRED_KEYS = {_EE_TIME_KEY, _INGREDIENT_VALUE_KEY}
+_RECALC_CAPTURE_KEYS = {_EE_TIME_KEY, _INGREDIENT_VALUE_KEY, _INGREDIENT_KEY}
 
 
 def _parse_recalc_number(value: Any) -> float | None:
@@ -855,40 +866,82 @@ def _parse_recalc_number(value: Any) -> float | None:
         return None
 
 
-def _build_recalculated_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _build_recalculated_rows(
+    rows: List[Dict[str, Any]],
+    catalog_values: Dict[str, float] | None = None,
+) -> List[Dict[str, Any]]:
     """Group Camunda properties by BPMN element and compute ee_time * ingredient_value.
 
-    Rows with missing or non-numeric ee_time / ingredient_value are skipped.
+    Emits one row per element that has a numeric ``ee_time``. ``ingredient_value``
+    is resolved from the element property first (``source="property"``); when
+    missing, falls back to the recipe-ingredient catalog by ``ingredient`` name
+    (``source="catalog"``); otherwise ``source=None`` and ``result=None``
+    ("нет данных"). Session/project/workspace/org context is carried from the
+    first-seen row. Grouping stays by ``bpmn_id`` (cross-session collapse is a
+    known limitation).
     """
+    catalog_values = catalog_values or {}
     by_element: Dict[str, Dict[str, Any]] = {}
     for row in rows:
         name = _text(row.get("name"))
-        if name not in _RECALC_REQUIRED_KEYS:
+        if name not in _RECALC_CAPTURE_KEYS:
             continue
         bpmn_id = _text(row.get("bpmn_id"))
         if not bpmn_id:
             continue
-        element = by_element.setdefault(bpmn_id, {
-            "bpmn_id": bpmn_id,
-            "bpmn_name": _text(row.get("bpmn_name")),
-            _EE_TIME_KEY: None,
-            _INGREDIENT_VALUE_KEY: None,
-        })
+        element = by_element.get(bpmn_id)
+        if element is None:
+            element = {
+                "bpmn_id": bpmn_id,
+                "bpmn_name": _text(row.get("bpmn_name")),
+                _EE_TIME_KEY: None,
+                _INGREDIENT_VALUE_KEY: None,
+                _INGREDIENT_KEY: None,
+                "session_id": _text(row.get("session_id")),
+                "session_title": _text(row.get("session_title")),
+                "project_id": _text(row.get("project_id")),
+                "project_title": _text(row.get("project_title")),
+                "workspace_id": _text(row.get("workspace_id")),
+                "org_id": _text(row.get("org_id")),
+            }
+            by_element[bpmn_id] = element
+        # First-seen context is kept; the captured property value is last-write-wins
+        # (matches the previous behavior for ee_time / ingredient_value).
         element[name] = _text(row.get("value"))
+        if not element["bpmn_name"]:
+            element["bpmn_name"] = _text(row.get("bpmn_name"))
 
     out_rows: List[Dict[str, Any]] = []
     for element in by_element.values():
         ee_val = _parse_recalc_number(element.get(_EE_TIME_KEY))
+        if ee_val is None:
+            continue  # ee_time is required to emit a row
         ing_val = _parse_recalc_number(element.get(_INGREDIENT_VALUE_KEY))
-        if ee_val is None or ing_val is None:
-            continue
-        result = round(ee_val * ing_val, 2)
+        source: str | None = None
+        if ing_val is not None:
+            source = "property"
+        else:
+            ing_name = _text(element.get(_INGREDIENT_KEY)).strip().lower()
+            if ing_name and ing_name in catalog_values:
+                ing_val = float(catalog_values[ing_name])
+                source = "catalog"
+        result = round(ee_val * ing_val, 2) if ing_val is not None else None
+        sid = element["session_id"]
         out_rows.append({
             "bpmn_id": element["bpmn_id"],
             "bpmn_name": element["bpmn_name"],
             _EE_TIME_KEY: ee_val,
             _INGREDIENT_VALUE_KEY: ing_val,
+            _INGREDIENT_KEY: element.get(_INGREDIENT_KEY) or None,
             "result": result,
+            "source": source,
+            "session_id": sid,
+            "session_title": element["session_title"],
+            "project_id": element["project_id"],
+            "project_title": element["project_title"],
+            "workspace_id": element["workspace_id"],
+            "org_id": element["org_id"],
+            "source_url": f"/app?session={sid}" if sid else "",
         })
 
     return out_rows
@@ -904,13 +957,20 @@ def export_properties_recalculated_xlsx(
     oid = org_id or _org_id_from_request(request)
     require_analytics_scope(request, scope, scope_id, oid)
     rows = _properties_rows(scope, scope_id, oid)
-    recalc_rows = _build_recalculated_rows(rows)
+    recalc_rows = _build_recalculated_rows(rows, catalog_values=get_ingredient_values_by_name(oid))
     columns = [
         ("bpmn_id", "BPMN ID"),
         ("bpmn_name", "BPMN Name"),
         (_EE_TIME_KEY, "ee_time"),
         (_INGREDIENT_VALUE_KEY, "ingredient_value"),
+        (_INGREDIENT_KEY, "ingredient"),
         ("result", "Результат"),
+        ("source", "Source"),
+        ("session_id", "Session ID"),
+        ("session_title", "Session Name"),
+        ("workspace_id", "Workspace"),
+        ("org_id", "Organization"),
+        ("source_url", "Source URL"),
     ]
     formats = {
         _EE_TIME_KEY: {"num_format": "0.00"},
@@ -918,6 +978,29 @@ def export_properties_recalculated_xlsx(
         "result": {"num_format": "0.00"},
     }
     return _xlsx_response(recalc_rows, f"properties-recalculated-{scope}-{scope_id}.xlsx", columns, formats)
+
+
+@router.get("/properties/recalculation")
+def get_properties_recalculation(
+    request: Request,
+    scope: str = Query(..., pattern="^(workspace|project|session)$"),
+    scope_id: str = Query(..., min_length=1),
+    org_id: str | None = Query(None),
+):
+    """JSON recalculation rows for the Analytics "Расчёт" UI section.
+
+    Same grouping/resolution as the recalculated xlsx export, including the
+    ingredient-catalog backfill (property -> catalog -> none).
+    """
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+    rows = _properties_rows(scope, scope_id, oid)
+    recalc_rows = _build_recalculated_rows(rows, catalog_values=get_ingredient_values_by_name(oid))
+    resolved = sum(1 for r in recalc_rows if r.get("result") is not None)
+    return _ok(
+        {"rows": recalc_rows, "count": len(recalc_rows), "resolved": resolved},
+        {"scope": scope, "scope_id": scope_id},
+    )
 
 
 @router.get("/properties/export.xlsx")
