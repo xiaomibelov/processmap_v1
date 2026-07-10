@@ -398,6 +398,20 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         self.assertIsNone(_parse_recalc_number("abc"))
         self.assertIsNone(_parse_recalc_number("0,33*n+1"))
 
+    def test_parse_recalc_number_accepts_comparison_prefix(self):
+        from app.routers.analytics import _parse_recalc_number
+
+        # Leading threshold/comparison prefix is stripped.
+        self.assertAlmostEqual(_parse_recalc_number(">10"), 10)
+        self.assertAlmostEqual(_parse_recalc_number("<5"), 5)
+        self.assertAlmostEqual(_parse_recalc_number("> 10"), 10)
+        self.assertAlmostEqual(_parse_recalc_number("<0,5"), 0.5)
+        # Non-numeric after the prefix still falls through to None.
+        self.assertIsNone(_parse_recalc_number(">abc"))
+        self.assertIsNone(_parse_recalc_number("<"))
+        # No over-parse: trailing operators after *n are NOT dropped.
+        self.assertIsNone(_parse_recalc_number("0,33*n+1"))
+
     def test_recalculate_helper_exports_coefficient_times_n_rows(self):
         from app.routers.analytics import _build_recalculated_rows
 
