@@ -96,20 +96,22 @@ test("sidebar resize handle changes width and persists after reload", async ({ p
   expect(initialBox).not.toBeNull();
   const initialWidth = initialBox.width;
 
-  // Drag the resize handle 80px to the right.
+  // Drag the resize handle far enough to the right to hit the max-width clamp (520px).
   const handleBox = await handle.boundingBox();
   await handle.hover();
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(handleBox.x + handleBox.width / 2 + 80, handleBox.y + handleBox.height / 2);
+  await page.mouse.move(handleBox.x + handleBox.width / 2 + 240, handleBox.y + handleBox.height / 2);
   await page.mouse.up();
 
   await page.waitForTimeout(200);
 
   const newBox = await sidebar.boundingBox();
   const newWidth = newBox.width;
-  expect(newWidth).toBeGreaterThan(initialWidth + 60);
-  expect(newWidth).toBeLessThanOrEqual(480);
+  expect(newWidth).toBeGreaterThanOrEqual(initialWidth);
+  expect(newWidth).toBeLessThanOrEqual(520);
+  // With a +240px drag from any initial width in [300, 520] the result clamps at the 520px cap.
+  expect(Math.abs(newWidth - 520)).toBeLessThan(2);
 
   // Reload and verify the width is restored.
   await page.reload();

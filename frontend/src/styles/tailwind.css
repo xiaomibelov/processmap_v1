@@ -4383,20 +4383,23 @@
     right: 0;
     top: 0;
     bottom: 0;
-    width: 4px;
+    width: 6px;
     cursor: ew-resize;
-    background: transparent;
-    transition: background 0.2s, width 0.2s;
+    background: hsl(var(--accent));
+    opacity: 0.3;
+    box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
+    transition: opacity 0.2s, width 0.2s;
     z-index: 50;
   }
 
   .sidebarResizeHandle:hover {
-    background: hsl(var(--accent));
+    opacity: 1;
+    width: 8px;
   }
 
   .sidebarResizeHandle:active {
-    background: hsl(var(--accent));
-    width: 6px;
+    opacity: 1;
+    width: 8px;
   }
 
   .leftSidebarSticky {
