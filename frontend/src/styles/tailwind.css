@@ -4379,15 +4379,12 @@
     box-shadow: 0 8px 24px rgba(31, 42, 68, 0.08);
   }
 
-  /* ~10% visual shrink of the EXPANDED left sidebar content only.
-     Modifier keeps the collapsed rail (56/72px grid track) untouched.
-     Layout box (column width = --left-panel-width, user-resizable) and the
-     resize handle (sibling of the aside) are NOT affected; only the painted
-     content scales. Residual: ~10% inner gutter at the panel's right/bottom. */
-  .leftSidebarShell--expanded {
-    transform: scale(0.9);
-    transform-origin: top left;
-  }
+  /* Expanded shell fills the left column edge-to-edge and top-to-bottom so the
+     resize handle (absolute right:0 of the column) sits flush against the
+     sidebar and the body scroll area reaches the bottom bar. A previous
+     `transform: scale(0.9)` here painted the shell at 90% and left a ~10%
+     gutter on the right (handle looked detached) and the bottom (content
+     looked cut off) — removed. */
 
   .sidebarResizeHandle {
     position: absolute;
