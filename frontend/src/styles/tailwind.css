@@ -4903,12 +4903,17 @@
 
   .sidebarPropertiesRow--quick {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.75fr) 84px;
+    grid-template-columns: minmax(96px, 1fr) minmax(72px, 1.75fr) 84px;
     gap: 6px;
     align-items: center;
     min-height: 40px;
     padding: 8px 0;
     border-bottom: 1px solid #E7ECF4;
+  }
+
+  .sidebarPropertiesRow--quick > * {
+    min-width: 0;
+    overflow: hidden;
   }
 
   .sidebarPropertiesRowName--quick {
@@ -4925,7 +4930,7 @@
 
   .sidebarPropertiesTableHead {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.75fr) 84px;
+    grid-template-columns: minmax(96px, 1fr) minmax(72px, 1.75fr) 84px;
     gap: 6px;
     align-items: center;
     min-height: 22px;
@@ -5102,7 +5107,7 @@
 
   .sidebarSchemaPropertyRow {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.75fr) 84px;
+    grid-template-columns: minmax(96px, 1fr) minmax(72px, 1.75fr) 84px;
     gap: 6px;
     align-items: center;
     min-height: 40px;
@@ -5118,6 +5123,7 @@
 
   .sidebarSchemaPropertyLabel {
     @apply min-w-0;
+    overflow: hidden;
   }
 
   .sidebarSchemaPropertyPrimaryLine {
@@ -5129,6 +5135,9 @@
     font-weight: 600;
     color: #1F2A44;
     line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .sidebarSchemaPropertyMeta {
@@ -5147,6 +5156,7 @@
 
   .sidebarSchemaPropertyValueCell {
     @apply min-w-0;
+    overflow: hidden;
   }
 
   .sidebarSchemaPropertyValueText {

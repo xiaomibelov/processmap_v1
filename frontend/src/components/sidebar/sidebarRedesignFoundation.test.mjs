@@ -132,3 +132,34 @@ test("C9: dark parity for new rules", () => {
   const inner = css.match(/\.sidebarGlobalFooterInner\s*\{[^}]*\}/)?.[0] || "";
   assert.match(inner, /border-top:\s*1px solid hsl\(var\(--border\)\)/, "footer inner border token");
 });
+
+// Resize guard — properties table (BPMN дополнительные + quick) must not overlap
+// when the sidebar is dragged between 300..520. Columns use floored grid
+// tracks (no collapse to 0), a fixed 84px action column, and cells clip with
+// ellipsis instead of spilling into neighbours.
+test("properties table keeps fixed/ellipsized columns on sidebar resize", () => {
+  const css = readSrc("styles/tailwind.css");
+  const schemaBlocks = css.match(/\.sidebarSchemaPropertyRow\s*\{[^}]*\}/g) || [];
+  const schema = schemaBlocks.find((b) => /min-height/.test(b)) || "";
+  assert.match(schema, /minmax\(96px,\s*1fr\)/, "name column floored (no collapse to 0)");
+  assert.match(schema, /minmax\(72px,\s*1\.75fr\)/, "value column floored");
+  assert.match(schema, /84px/, "action column fixed 84px");
+
+  const head = css.match(/\.sidebarPropertiesTableHead\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(head, /minmax\(96px,\s*1fr\)/, "header aligned to name floor");
+  assert.match(head, /minmax\(72px,\s*1\.75fr\)/, "header aligned to value floor");
+
+  const name = css.match(/\.sidebarSchemaPropertyHuman\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(name, /text-overflow:\s*ellipsis/, "name ellipsizes");
+  assert.match(name, /white-space:\s*nowrap/, "name single-line");
+
+  const label = css.match(/\.sidebarSchemaPropertyLabel\s*\{[^}]*\}/)?.[0] || "";
+  const value = css.match(/\.sidebarSchemaPropertyValueCell\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(label, /overflow:\s*hidden/, "label cell clips overflow");
+  assert.match(value, /overflow:\s*hidden/, "value cell clips overflow");
+
+  assert.ok(
+    /\.sidebarPropertiesRow--quick\s*>\s*\*\s*\{[^}]*overflow:\s*hidden/.test(css),
+    "quick row children clip overflow",
+  );
+});
