@@ -1314,21 +1314,30 @@ export function applyCamundaExtensionStateToModeler(elementId, extensionState, m
     const existingExt = asObject(bo.extensionElements);
     const existingValues = asArray(existingExt.values);
 
-    // Preserve everything except the managed camunda:properties block.
-    const preserved = existingValues.filter((entry) => {
-      const type = String(entry?.$type || "").toLowerCase();
-      return type !== "camunda:properties";
-    });
+    // Determine the element's property namespace. A zeebe element carries a
+    // zeebe:Properties container (materialized by the zeebe moddle descriptor);
+    // otherwise we fall back to camunda to preserve legacy behavior.
+    const managedPropertiesTypes = new Set(["camunda:properties", "zeebe:properties"]);
+    const hasZeebeProperties = existingValues.some((entry) => (
+      String(entry?.$type || "").toLowerCase() === "zeebe:properties"
+    ));
+    const propertiesPrefix = hasZeebeProperties ? "zeebe" : "camunda";
+
+    // Drop ALL managed properties containers (both namespaces) for this element
+    // so repeated applies never accumulate zeebe + camunda duplicates.
+    const preserved = existingValues.filter((entry) => (
+      !managedPropertiesTypes.has(String(entry?.$type || "").toLowerCase())
+    ));
 
     const normalized = normalizeCamundaExtensionState(extensionState);
     const propValues = asArray(normalized?.properties?.extensionProperties).map((item) => (
-      moddle.create("camunda:Property", {
+      moddle.create(`${propertiesPrefix}:Property`, {
         name: String(item?.name ?? ""),
         value: String(item?.value ?? ""),
       })
     ));
-    const camundaProperties = propValues.length
-      ? [moddle.create("camunda:Properties", { values: propValues })]
+    const managedProperties = propValues.length
+      ? [moddle.create(`${propertiesPrefix}:Properties`, { values: propValues })]
       : [];
 
     const listenerValues = asArray(normalized?.properties?.extensionListeners).map((item) => {
@@ -1341,7 +1350,7 @@ export function applyCamundaExtensionStateToModeler(elementId, extensionState, m
     });
     const camundaListeners = listenerValues.length ? listenerValues : [];
 
-    const nextValues = [...preserved, ...camundaProperties, ...camundaListeners];
+    const nextValues = [...preserved, ...managedProperties, ...camundaListeners];
     const nextExt = nextValues.length
       ? moddle.create("bpmn:ExtensionElements", { values: nextValues })
       : null;

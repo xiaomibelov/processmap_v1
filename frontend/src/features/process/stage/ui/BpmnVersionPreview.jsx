@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import pmModdleDescriptor from "../../robotmeta/pmModdleDescriptor";
 import camundaModdleDescriptor from "../../camunda/camundaModdleDescriptor";
+import zeebeModdleDescriptor from "../../camunda/zeebeModdleDescriptor";
 
 function formatBytes(bytes) {
   const n = Number(bytes || 0);
@@ -70,7 +71,7 @@ export default function BpmnVersionPreview({
           const Viewer = mod.default || mod.NavigatedViewer || mod;
           viewer = new Viewer({
             container: containerRef.current,
-            moddleExtensions: { pm: pmModdleDescriptor, camunda: camundaModdleDescriptor },
+            moddleExtensions: { pm: pmModdleDescriptor, camunda: camundaModdleDescriptor, zeebe: zeebeModdleDescriptor },
           });
           if (cancelled) {
             try { viewer.destroy(); } catch {}
