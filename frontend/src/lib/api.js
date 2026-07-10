@@ -1979,6 +1979,20 @@ export async function apiExportAnalyticsPropertiesRecalculatedXlsx(scope, scopeI
   return { ok: true, status: r.status, blob, filename: `properties-recalculated-${scope}-${scopeId}.xlsx` };
 }
 
+export async function apiGetAnalyticsPropertiesRecalculation(scope, scopeId, opts = {}) {
+  const r = okOrError(await request(apiRoutes.analytics.propertiesRecalculation(scope, scopeId), { signal: opts.signal }));
+  const data = unwrapAnalyticsData(r);
+  if (!data) return r;
+  return {
+    ok: true,
+    status: r.status,
+    rows: Array.isArray(data.rows) ? data.rows : [],
+    count: Number(data.count || 0),
+    resolved: Number(data.resolved || 0),
+    meta: r.meta,
+  };
+}
+
 export async function apiExportAnalyticsActionsXlsx(scope, scopeId) {
   const r = await request(apiRoutes.analytics.exportActionsXlsx(scope, scopeId), { method: "GET", responseType: "blob" });
   if (!r.ok) return r;
