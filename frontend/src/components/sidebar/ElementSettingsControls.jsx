@@ -16,7 +16,6 @@ import {
   normalizePathTier,
 } from "../../features/process/pathClassification.js";
 import {
-  buildVisibleExtensionPropertyRows,
   buildPropertyDictionaryEditorModel,
   countVisibleExtensionPropertyRows,
   shouldOfferAddDictionaryValueAction,
@@ -24,7 +23,7 @@ import {
 import { deriveNodePathCompareSummary } from "./nodePathCompare";
 import { resolveNodePathStatusState } from "./nodePathSyncState";
 import SidebarTrustStatus from "./SidebarTrustStatus";
-import useElementSettingsController, { SHOW_PROPERTIES_FLAG_KEY } from "./useElementSettingsController";
+import useElementSettingsController from "./useElementSettingsController";
 import { RecipeQueryProvider } from "../../features/process/recipe/providers/RecipeQueryProvider.jsx";
 import RecipeSidebar from "../../features/process/recipe/components/RecipeSidebar.jsx";
 import PropertyGroup from "./PropertyGroup.jsx";
@@ -64,10 +63,6 @@ function clampInlineValue(value, limit = 120) {
   if (!text) return "";
   if (text.length <= limit) return text;
   return `${text.slice(0, Math.max(18, limit - 1)).trimEnd()}…`;
-}
-
-function isShowPropertiesFlagRow(row) {
-  return String(row?.name || "").trim().toLowerCase() === SHOW_PROPERTIES_FLAG_KEY;
 }
 
 const TASK_LIKE_BPMN_TYPES = new Set([
@@ -1207,6 +1202,13 @@ export function CamundaPropertiesSettings({
     addPropertyRow,
     addQuickPropertyRow,
     deletePropertyRow,
+    quickPropertyNames,
+    quickRows,
+    otherAdditionalBpmnRows,
+    userPins,
+    isUserPinnedName,
+    pinName,
+    unpinName,
     updateCamundaIoParameter,
     addCamundaIoRow,
     deleteCamundaIoRow,
@@ -1233,23 +1235,9 @@ export function CamundaPropertiesSettings({
     () => buildPropertyDictionaryEditorModel({ extensionStateRaw: state, dictionaryBundleRaw: dictionaryBundle }),
     [state, dictionaryBundle],
   );
-  const visibleFallbackProperties = useMemo(
-    () => buildVisibleExtensionPropertyRows(state).rows,
-    [state],
-  );
   const hasDictionarySchema = dictionaryEditorModel.hasSchema;
-  const additionalBpmnRows = (hasDictionarySchema
-    ? (Array.isArray(dictionaryEditorModel?.customRows) ? dictionaryEditorModel.customRows : [])
-    : visibleFallbackProperties)
-    .filter((row) => !isShowPropertiesFlagRow(row));
-  const QUICK_PROPERTY_NAMES = ["ee_time", "ingredient_value"];
-  const quickPropertyNamesSet = new Set(QUICK_PROPERTY_NAMES);
-  const quickRows = QUICK_PROPERTY_NAMES
-    .map((name) => additionalBpmnRows.find((row) => toText(row?.name).toLowerCase() === name))
-    .filter(Boolean);
-  const otherAdditionalBpmnRows = additionalBpmnRows.filter(
-    (row) => !quickPropertyNamesSet.has(toText(row?.name).toLowerCase()),
-  );
+  // quickPropertyNames / quickRows / otherAdditionalBpmnRows / userPins are
+  // sourced from useBpmnPropertiesController (single source of truth).
 
   // Quick pinned-slot inline create: fill an empty pinned slot (ee_time /
   // ingredient_value) by creating the row with the canonical name (draft-only;
@@ -1258,11 +1246,19 @@ export function CamundaPropertiesSettings({
     const nextValue = String(value || "").trim();
     if (!nextValue) return;
     addQuickPropertyRow(name, nextValue);
+    pinName(name);
   }
 
-  // Unify the delete policy with Additional: flush the next state immediately
-  // so a quick-row delete is persisted just like an Additional-row delete.
+  // Delete-from-Quick semantics: a user-pinned row is only unpinned (the row
+  // stays and surfaces in Additional); a default-name or unpinned row is
+  // hard-deleted and flushed (unified with Additional's auto-save).
   function handleQuickDelete(rowId) {
+    const row = quickRows.find((r) => String(r?.id || "") === String(rowId || ""));
+    const rowName = String(row?.name || "");
+    if (row && isUserPinnedName(rowName)) {
+      unpinName(rowName);
+      return;
+    }
     const nextState = deletePropertyRow(rowId);
     if (nextState && typeof onSaveExtensionState === "function") {
       void onSaveExtensionState(nextState);
@@ -1932,7 +1928,7 @@ async function handleSaveAll() {
               <span>Значение</span>
               <span>Действие</span>
             </div>
-            {QUICK_PROPERTY_NAMES.map((name) => {
+            {quickPropertyNames.map((name) => {
               const row = quickRows.find((r) => toText(r?.name).toLowerCase() === name);
               if (!row) {
                 return (

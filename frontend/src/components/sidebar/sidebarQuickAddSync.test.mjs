@@ -38,3 +38,37 @@ test("C4: quick delete is unified with Additional (auto-save via onSaveExtension
   assert.match(esc, /deletePropertyRow=\{handleQuickDelete\}/,
     "quick InlineBpmnPropertyRow uses handleQuickDelete");
 });
+
+// C5a — Option C pin model (pin-by-name, persisted per-user) + single source
+// of truth for the quick/additional split (controller-owned).
+test("C5a: controller owns pin model (defaults + persisted userPins, by name)", () => {
+  const ctrl = readSrc(CTRL);
+  assert.match(ctrl, /DEFAULT_QUICK_PROPERTY_NAMES\s*=\s*\[\s*"ee_time"\s*,\s*"ingredient_value"\s*\]/,
+    "defaults ee_time + ingredient_value");
+  assert.match(ctrl, /QUICK_PINS_STORAGE_KEY\s*=\s*"processmap_quick_pins"/,
+    "userPins storage key");
+  assert.match(ctrl, /localStorage\.setItem\(\s*QUICK_PINS_STORAGE_KEY/, "userPins persisted");
+  assert.match(ctrl, /function\s+pinName\s*\(/, "pinName defined");
+  assert.match(ctrl, /function\s+unpinName\s*\(/, "unpinName defined");
+  assert.match(ctrl, /function\s+isUserPinnedName\s*\(/, "isUserPinnedName defined");
+  assert.match(ctrl, /normalizePinName[\s\S]*?toLowerCase\(\)/, "pins normalized (lowercased)");
+  for (const sym of ["quickPropertyNames", "quickRows", "otherAdditionalBpmnRows", "userPins", "pinName", "unpinName"]) {
+    assert.ok(new RegExp(`return\\s*\\{[\\s\\S]*${sym},`).test(ctrl), `controller returns ${sym}`);
+  }
+});
+
+test("C5a: ElementSettingsControls consumes the split (no local re-derivation)", () => {
+  const esc = readSrc(ESC);
+  assert.ok(!/const\s+QUICK_PROPERTY_NAMES\s*=/.test(esc), "no local QUICK_PROPERTY_NAMES");
+  assert.ok(!/quickPropertyNamesSet\s*=\s*new\s+Set/.test(esc), "no local quickPropertyNamesSet");
+  assert.match(esc, /quickPropertyNames\.map\(\s*\(name\)\s*=>/, "quick table iterates controller quickPropertyNames");
+});
+
+test("C5a: delete-from-Quick unpins user pins but hard-deletes defaults", () => {
+  const esc = readSrc(ESC);
+  const fn = esc.match(/function\s+handleQuickDelete[\s\S]*?\n  \}/)?.[0] || "";
+  assert.match(fn, /isUserPinnedName\(\s*rowName\s*\)/, "checks user-pinned");
+  assert.match(fn, /unpinName\(\s*rowName\s*\)/, "unpins user-pinned (keep row)");
+  assert.match(fn, /deletePropertyRow\(\s*rowId\s*\)[\s\S]*?onSaveExtensionState\(\s*nextState\s*\)/,
+    "otherwise hard-delete + auto-save");
+});
