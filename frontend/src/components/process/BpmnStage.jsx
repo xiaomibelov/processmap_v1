@@ -46,6 +46,7 @@ import { elementNotesCount, normalizeElementNotesMap } from "../../features/note
 import { measureInterviewPerf } from "./interview/perf";
 import pmModdleDescriptor from "../../features/process/robotmeta/pmModdleDescriptor";
 import camundaModdleDescriptor from "../../features/process/camunda/camundaModdleDescriptor";
+import zeebeModdleDescriptor from "../../features/process/camunda/zeebeModdleDescriptor";
 import { enqueueSessionPatchCasWrite } from "../../features/process/stage/utils/sessionPatchCasCoordinator";
 import {
   canonicalRobotMetaMapString,
@@ -1375,6 +1376,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       forceTaskResizeRulesModule,
       pmModdleDescriptor,
       camundaModdleDescriptor,
+      zeebeModdleDescriptor,
     },
   );
 
@@ -4366,7 +4368,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       const Viewer = mod.default || mod;
       const v = new Viewer({
         container: viewerEl.current,
-        moddleExtensions: { pm: pmModdleDescriptor, camunda: camundaModdleDescriptor },
+        moddleExtensions: { pm: pmModdleDescriptor, camunda: camundaModdleDescriptor, zeebe: zeebeModdleDescriptor },
         deferUpdate: true,
       });
       instrumentBpmnInst(v, "viewer");
