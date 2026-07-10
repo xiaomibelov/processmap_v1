@@ -163,3 +163,13 @@ test("properties table keeps fixed/ellipsized columns on sidebar resize", () => 
     "quick row children clip overflow",
   );
 });
+
+// Resize handle sits flush against the sidebar and the expanded shell fills
+// the column (no 90% visual-shrink gutter on the right / bottom).
+test("resize handle flush to sidebar + expanded shell not visually shrunk", () => {
+  const css = readSrc("styles/tailwind.css");
+  const handle = css.match(/\.sidebarResizeHandle\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(handle, /right:\s*0\b/, "handle anchored flush to column right edge");
+  const expanded = css.match(/\.leftSidebarShell--expanded\s*\{[^}]*\}/)?.[0] || "";
+  assert.doesNotMatch(expanded, /scale\(0\.9\)/, "no 90% shrink (right/bottom gutter removed)");
+});
