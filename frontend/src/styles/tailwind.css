@@ -4705,10 +4705,16 @@
   }
 
   .sidebarPropertiesInlineToggle {
-    @apply flex items-center gap-2 text-[12px];
-    padding: 3px 0 5px;
+    @apply flex items-start gap-2 text-sm font-medium;
+    line-height: 1.4;
+    padding: 8px 12px;
     border-bottom: 1px solid #E7ECF4;
     color: #1F2A44;
+  }
+
+  .sidebarPropertiesInlineToggle > span {
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .sidebarPropertiesDivider {
@@ -6104,7 +6110,7 @@
   }
 
   .dark .sidebarPropertiesInlineToggle input[type="checkbox"] {
-    accent-color: #7EB0FF;
+    accent-color: hsl(var(--accent));
   }
 
   .dark .sidebarPropertiesBlockMeta,
@@ -11455,23 +11461,23 @@
   }
 
   .sidebarCheckbox {
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
     border: 1px solid #BFC7D9;
     border-radius: 5px;
-    accent-color: #3E59D9;
+    accent-color: hsl(var(--accent));
     cursor: pointer;
     transition: border-color 0.12s ease, box-shadow 0.12s ease;
   }
 
   .sidebarCheckbox:hover:not(:disabled) {
-    border-color: #3E59D9;
+    border-color: hsl(var(--accent));
   }
 
   .sidebarCheckbox:focus-visible {
     outline: none;
-    border-color: #3E59D9;
+    border-color: hsl(var(--accent));
     box-shadow: 0 0 0 3px rgba(62, 89, 217, 0.18);
   }
 
@@ -14618,7 +14624,7 @@
 
   .dark .sidebarCheckbox {
     border-color: #4A5F85;
-    accent-color: #5B7CFF;
+    accent-color: hsl(var(--accent));
   }
 
   .dark .sidebarCheckbox:hover:not(:disabled) {

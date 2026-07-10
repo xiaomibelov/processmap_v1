@@ -1,0 +1,17 @@
+[
+  {
+    "time": 1782746939969,
+    "type": "log",
+    "text": "[FPC-OVERLAY-V2] extension overlays found {count: 17}"
+  },
+  {
+    "time": 1782746939970,
+    "type": "log",
+    "text": "[FPC-OVERLAY-V2] overlays mounted {elements: 0, overlayNodes: 0}"
+  },
+  {
+    "time": 1782746946608,
+    "type": "debug",
+    "text": "[OverlayPanPatch] skipped 1/3 _updateOverlaysVisibilty calls in last 5s"
+  }
+]
