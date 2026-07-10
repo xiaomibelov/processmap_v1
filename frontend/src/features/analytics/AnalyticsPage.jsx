@@ -445,6 +445,12 @@ export default function AnalyticsPage({ scope: initialScope, scopeId: initialSco
                   <MetricCard label="Критично" value={formatNumber(data.critical_questions)} tone="danger" icon={CriticalIcon} sparklineItems={sparklineItems} />
                   <MetricCard label="Сессий" value={formatNumber(data.sessions_count)} tone="slate" icon={SessionIcon} sparklineItems={sparklineItems} />
                   <MetricCard label="Проектов" value={formatNumber(data.projects_count)} tone="slate" icon={ProjectIcon} sparklineItems={sparklineItems} />
+                  {data.properties_summary ? (
+                    <>
+                      <MetricCard label="Свойств" value={formatNumber(data.properties_summary.total)} tone="accent" icon={TableIcon} sparklineItems={sparklineItems} />
+                      <MetricCard label="Пересчитано" value={formatNumber(data.properties_summary.recalculated_count)} tone="success" icon={ChartBarIcon} sparklineItems={sparklineItems} />
+                    </>
+                  ) : null}
                 </div>
               ) : null}
             </div>

@@ -20,13 +20,15 @@ test("Properties inspector uses Russian-first copy for dictionary workflow", () 
   assert.match(source, /Справочник/);
 });
 
-test("Additional BPMN Properties section is rendered before Camunda I/O and BPMN Documentation", () => {
+test("Sidebar properties sections are ordered: Quick, Additional, Camunda I/O, BPMN Documentation", () => {
+  const quickIndex = source.indexOf("Быстрые свойства");
   const additionalComponentIndex = source.indexOf("<AdditionalBpmnPropertiesSection");
-  const documentationIndex = source.indexOf("BPMN Documentation");
   const ioIndex = source.indexOf("Camunda Input/Output");
-  assert.ok(additionalComponentIndex >= 0, "additional BPMN section component must be used");
-  assert.ok(documentationIndex > additionalComponentIndex, "documentation section must be after additional BPMN");
-  assert.ok(ioIndex > additionalComponentIndex, "Camunda I/O must stay after additional BPMN section");
+  const documentationIndex = source.indexOf("BPMN Documentation");
+  assert.ok(quickIndex >= 0, "quick properties section label must exist");
+  assert.ok(additionalComponentIndex > quickIndex, "additional BPMN section component must be after quick properties");
+  assert.ok(ioIndex > additionalComponentIndex, "Camunda I/O section must be after additional BPMN");
+  assert.ok(documentationIndex > ioIndex, "BPMN Documentation section must be after Camunda I/O");
 });
 
 test("Camunda IO grid keeps global overlay toggles and no row-level Show on task column", () => {
