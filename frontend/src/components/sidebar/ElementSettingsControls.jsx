@@ -1107,6 +1107,42 @@ function SidebarInfoTip({ text = "", label = "Пояснение" }) {
   );
 }
 
+function QuickEmptyPropertyRow({ name, disabled = false, extensionStateBusy = false, onCreate }) {
+  const [draft, setDraft] = useState("");
+  const isBusy = !!disabled || !!extensionStateBusy;
+  function commit() {
+    const next = draft.trim();
+    if (!next) return;
+    onCreate?.(name, next);
+    setDraft("");
+  }
+  function handleKeyDown(event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commit();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      setDraft("");
+    }
+  }
+  return (
+    <div className="sidebarPropertiesRow sidebarPropertiesRow--quick">
+      <span className="sidebarPropertiesRowName sidebarPropertiesRowName--quick">{name}</span>
+      <input
+        className="input sidebarInput w-full min-w-0"
+        placeholder="—"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={handleKeyDown}
+        disabled={isBusy}
+        aria-label={`Добавить значение для ${name}`}
+      />
+      <span className="sidebarPropertiesRowAction" />
+    </div>
+  );
+}
+
 export function CamundaPropertiesSettings({
   selectedElementId,
   selectedElementType = "",
@@ -1169,6 +1205,7 @@ export function CamundaPropertiesSettings({
     zeebeTaskHeaderRows,
     updatePropertyRow,
     addPropertyRow,
+    addQuickPropertyRow,
     deletePropertyRow,
     updateCamundaIoParameter,
     addCamundaIoRow,
@@ -1213,6 +1250,24 @@ export function CamundaPropertiesSettings({
   const otherAdditionalBpmnRows = additionalBpmnRows.filter(
     (row) => !quickPropertyNamesSet.has(toText(row?.name).toLowerCase()),
   );
+
+  // Quick pinned-slot inline create: fill an empty pinned slot (ee_time /
+  // ingredient_value) by creating the row with the canonical name (draft-only;
+  // persists on the global Save, identical to Additional's addPropertyRow).
+  function handleQuickCreate(name, value) {
+    const nextValue = String(value || "").trim();
+    if (!nextValue) return;
+    addQuickPropertyRow(name, nextValue);
+  }
+
+  // Unify the delete policy with Additional: flush the next state immediately
+  // so a quick-row delete is persisted just like an Additional-row delete.
+  function handleQuickDelete(rowId) {
+    const nextState = deletePropertyRow(rowId);
+    if (nextState && typeof onSaveExtensionState === "function") {
+      void onSaveExtensionState(nextState);
+    }
+  }
   const visibleSchemaRows = Array.isArray(dictionaryEditorModel?.schemaRows)
     ? dictionaryEditorModel.schemaRows.filter((row) => String(row?.value ?? "").trim() !== "")
     : [];
@@ -1881,11 +1936,13 @@ async function handleSaveAll() {
               const row = quickRows.find((r) => toText(r?.name).toLowerCase() === name);
               if (!row) {
                 return (
-                  <div key={name} className="sidebarPropertiesRow sidebarPropertiesRow--quick sidebarPropertiesRow--empty">
-                    <span className="sidebarPropertiesRowName sidebarPropertiesRowName--quick">{name}</span>
-                    <span className="sidebarPropertiesRowValue sidebarPropertiesRowValue--empty">—</span>
-                    <span className="sidebarPropertiesRowAction" />
-                  </div>
+                  <QuickEmptyPropertyRow
+                    key={name}
+                    name={name}
+                    disabled={disabled}
+                    extensionStateBusy={extensionStateBusy}
+                    onCreate={handleQuickCreate}
+                  />
                 );
               }
               return (
@@ -1895,7 +1952,7 @@ async function handleSaveAll() {
                   disabled={disabled}
                   extensionStateBusy={extensionStateBusy}
                   updatePropertyRow={updatePropertyRow}
-                  deletePropertyRow={deletePropertyRow}
+                  deletePropertyRow={handleQuickDelete}
                 />
               );
             })}
