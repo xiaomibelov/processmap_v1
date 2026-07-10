@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 
 import {
   applyPropertiesOverlayDecor,
@@ -446,16 +447,121 @@ test("properties overlay decor builds sequence preview from zeebe properties in 
     assert.equal(call.elementId, "Flow_1");
     assert.equal(call.overlayType, "fpc-properties");
     const rows = call.payload.html.childNodes[0].childNodes;
-    assert.equal(rows.length, 2);
-    const nameRow = rows[0];
-    assert.equal(nameRow?.title, "Name: Да");
-    assert.equal(nameRow.childNodes[0]?.childNodes[0]?.textContent, "Name");
-    assert.equal(nameRow.childNodes[1]?.textContent, "Да");
-    const propRow = rows[1];
+    // Unified read-model: legacy shows the same rows as V2 — real properties
+    // only, no synthetic element-"Name" row.
+    assert.equal(rows.length, 1);
+    const propRow = rows[0];
     assert.equal(propRow?.title, "container_condition: Закрыта");
     assert.equal(propRow.childNodes[0]?.childNodes[0]?.textContent, "container_condition");
     assert.equal(propRow.childNodes[1]?.textContent, "Закрыта");
   });
+});
+
+test("properties overlay decor preserves multi-value same-name properties (matches V2)", () => {
+  const fixture = createPropertyOverlayCtx({
+    preview: null,
+    alwaysEnabled: true,
+    alwaysPreviewByElementId: {},
+    elements: [
+      {
+        id: "Flow_2",
+        type: "bpmn:SequenceFlow",
+        x: 0, y: 0, width: 200, height: 24,
+        waypoints: [{ x: 0, y: 10 }, { x: 200, y: 10 }],
+        businessObject: {
+          id: "Flow_2",
+          $type: "bpmn:SequenceFlow",
+          extensionElements: {
+            values: [
+              {
+                $type: "camunda:Properties",
+                values: [
+                  { $type: "camunda:Property", name: "container_tara", value: "1/1" },
+                  { $type: "camunda:Property", name: "container_tara", value: "2/1" },
+                  { $type: "camunda:Property", name: "ee_time", value: "0.33" },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    ],
+  });
+  withDocumentStub(() => {
+    applyPropertiesOverlayDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 1);
+    const rows = fixture.overlays.addCalls[0].payload.html.childNodes[0].childNodes;
+    const titles = Array.from(rows).map((row) => row.title);
+    const taraTitles = titles.filter((t) => String(t).startsWith("container_tara:"));
+    assert.deepEqual(taraTitles, ["container_tara: 1/1", "container_tara: 2/1"]);
+    assert.ok(!titles.some((t) => String(t).startsWith("Name:")), "no synthetic Name row");
+  });
+});
+
+test("properties overlay decor drops element without properties (no synthetic Name row)", () => {
+  const fixture = createPropertyOverlayCtx({
+    preview: null,
+    alwaysEnabled: true,
+    alwaysPreviewByElementId: {},
+    elements: [
+      {
+        id: "Flow_3",
+        type: "bpmn:SequenceFlow",
+        x: 0, y: 0, width: 200, height: 24,
+        waypoints: [{ x: 0, y: 10 }, { x: 200, y: 10 }],
+        businessObject: { id: "Flow_3", $type: "bpmn:SequenceFlow", name: "Да" },
+      },
+    ],
+  });
+  withDocumentStub(() => {
+    applyPropertiesOverlayDecor(fixture.ctx);
+    // No real properties and no synthetic Name row -> no overlay at all (matches V2).
+    assert.equal(fixture.overlays.addCalls.length, 0);
+  });
+});
+
+test("properties overlay decor shows real properties on task-like elements (legacy=V2)", () => {
+  const fixture = createPropertyOverlayCtx({
+    preview: null,
+    alwaysEnabled: true,
+    alwaysPreviewByElementId: {},
+    elements: [
+      {
+        id: "Task_1",
+        type: "bpmn:Task",
+        x: 0, y: 0, width: 120, height: 80,
+        businessObject: {
+          id: "Task_1",
+          $type: "bpmn:Task",
+          extensionElements: {
+            values: [
+              {
+                $type: "camunda:Properties",
+                values: [
+                  { $type: "camunda:Property", name: "ee_time", value: "0.33" },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    ],
+  });
+  withDocumentStub(() => {
+    applyPropertiesOverlayDecor(fixture.ctx);
+    assert.equal(fixture.overlays.addCalls.length, 1);
+    const rows = fixture.overlays.addCalls[0].payload.html.childNodes[0].childNodes;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].title, "ee_time: 0.33");
+  });
+});
+
+test("legacy overlay read-model matches V2 (source guard)", () => {
+  const src = readFileSync(new URL("./decorManager.js", import.meta.url), "utf8");
+  assert.ok(src.includes("isOverlayMetaProperty"), "legacy hides the same meta properties as V2");
+  assert.ok(src.includes("\\u0000"), "legacy dedups by name+value (\\u0000) like V2");
+  assert.ok(!src.includes("\u241f"), "legacy no longer uses the old \\u241f dedup separator");
+  assert.ok(!src.includes('label: "Name"'), "legacy no longer injects a synthetic Name row");
 });
 
 test("sequence fallback overlay remains available after clear/reapply cycle", () => {
