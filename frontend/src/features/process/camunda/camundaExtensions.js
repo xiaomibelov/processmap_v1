@@ -165,22 +165,39 @@ function parseXmlDocument(xmlText) {
   }
 }
 
+function readPropertyAttributeFromTag(tag, attribute) {
+  const source = String(tag || "");
+  if (!source) return "";
+  const attr = String(attribute || "").trim();
+  if (!attr) return "";
+  const attrRegex = new RegExp(`\\b${attr}\\s*=\\s*(["'])([\\s\\S]*?)\\1`);
+  const match = source.match(attrRegex);
+  return String(match?.[2] || "").trim();
+}
+
+function propertySignatureFromTag(tag) {
+  const name = readPropertyAttributeFromTag(tag, "name");
+  if (!name) return "";
+  const value = readPropertyAttributeFromTag(tag, "value");
+  // Key on (name, value): only exact name+value pairs are considered
+  // duplicates. Multi-value rows (same name, different value) get distinct
+  // signatures and are preserved, matching backend semantics.
+  return `${name}\u0000${value}`;
+}
+
 function hasDuplicateCamundaPropertiesWithRegex(xmlText) {
   const text = String(xmlText || "");
   if (!text || !text.includes("property")) return false;
   const blockRegex = /<camunda:properties\b[^>]*>[\s\S]*?<\/camunda:properties>/gi;
   const propertyRegex = /<camunda:property\b[^>]*>/gi;
-  const nameRegex = /\bname\s*=\s*(["'])(.*?)\1/;
   for (const blockMatch of text.matchAll(blockRegex)) {
     const block = blockMatch[0];
     const seen = new Set();
     for (const propMatch of block.matchAll(propertyRegex)) {
-      const propTag = propMatch[0];
-      const nameMatch = propTag.match(nameRegex);
-      const name = String(nameMatch?.[2] || "").trim();
-      if (!name) continue;
-      if (seen.has(name)) return true;
-      seen.add(name);
+      const signature = propertySignatureFromTag(propMatch[0]);
+      if (!signature) continue;
+      if (seen.has(signature)) return true;
+      seen.add(signature);
     }
   }
   return false;
@@ -203,13 +220,15 @@ export function hasDuplicateCamundaProperties(xmlText) {
     if (!parent) continue;
     const name = String(node.getAttribute?.("name") || "").trim();
     if (!name) continue;
+    const value = String(node.getAttribute?.("value") || "").trim();
+    const signature = `${name}\u0000${value}`;
     let set = seenByParent.get(parent);
     if (!set) {
       set = new Set();
       seenByParent.set(parent, set);
     }
-    if (set.has(name)) return true;
-    set.add(name);
+    if (set.has(signature)) return true;
+    set.add(signature);
   }
   return false;
 }
@@ -219,26 +238,17 @@ function dedupCamundaPropertiesWithRegex(xmlText) {
   if (!text || !text.includes("property")) return text;
   const blockRegex = /<camunda:properties\b[^>]*>[\s\S]*?<\/camunda:properties>/gi;
   const propertyRegex = /<camunda:property\b[^>]*>/gi;
-  const nameRegex = /\bname\s*=\s*(["'])(.*?)\1/;
   return text.replace(blockRegex, (block) => {
-    const matches = Array.from(block.matchAll(propertyRegex));
-    const keptTagByName = new Map();
-    matches.forEach((match) => {
-      const tag = match[0];
-      const nameMatch = tag.match(nameRegex);
-      const name = String(nameMatch?.[2] || "").trim();
-      if (name) keptTagByName.set(name, tag);
-    });
     const seen = new Set();
     return block.replace(propertyRegex, (tag) => {
-      const nameMatch = tag.match(nameRegex);
-      const name = String(nameMatch?.[2] || "").trim();
-      if (!name) return tag;
-      if (tag === keptTagByName.get(name) && !seen.has(name)) {
-        seen.add(name);
-        return tag;
-      }
-      return "";
+      const signature = propertySignatureFromTag(tag);
+      if (!signature) return tag;
+      // Keep the first occurrence of each (name, value) pair; drop only
+      // exact duplicates. Multi-value rows with the same name but different
+      // values have distinct signatures and are preserved.
+      if (seen.has(signature)) return "";
+      seen.add(signature);
+      return tag;
     });
   });
 }
@@ -256,7 +266,7 @@ export function dedupCamundaProperties(xmlText) {
   for (let i = 0; i < propertiesLists.length; i += 1) {
     const list = propertiesLists[i];
     const children = asArray(list.childNodes);
-    const byName = new Map();
+    const seen = new Set();
     children.forEach((child) => {
       if (child?.nodeType !== 1) return;
       const localName = String(child.localName || "").toLowerCase();
@@ -264,20 +274,19 @@ export function dedupCamundaProperties(xmlText) {
       if (localName !== "property" || ns !== CAMUNDA_NAMESPACE_URI) return;
       const name = String(child.getAttribute?.("name") || "").trim();
       if (!name) return;
-      if (!byName.has(name)) {
-        byName.set(name, []);
-      }
-      byName.get(name).push(child);
-    });
-    byName.forEach((nodes) => {
-      // Keep the last occurrence; remove all earlier duplicates.
-      for (let j = 0; j < nodes.length - 1; j += 1) {
+      const value = String(child.getAttribute?.("value") || "").trim();
+      const signature = `${name}\u0000${value}`;
+      if (seen.has(signature)) {
+        // Exact (name, value) duplicate: drop it. Multi-value rows sharing
+        // the same name but carrying different values are preserved.
         try {
-          list.removeChild(nodes[j]);
+          list.removeChild(child);
         } catch {
           // no-op
         }
+        return;
       }
+      seen.add(signature);
     });
   }
   return serializeXmlNode(doc);
