@@ -2243,7 +2243,8 @@
      Keep this as a bounded dark-theme override for proven sidebar/topbar readability defects. */
   .dark .leftSidebarBottom {
     border-top-color: hsl(var(--border-strong) / 0.72);
-    background: hsl(var(--panel) / 0.96);
+    background: hsl(var(--panel) / 0.9);
+    backdrop-filter: blur(4px);
   }
 
   .dark .sidebarContextChip {
@@ -4383,20 +4384,23 @@
     right: 0;
     top: 0;
     bottom: 0;
-    width: 4px;
+    width: 6px;
     cursor: ew-resize;
-    background: transparent;
-    transition: background 0.2s, width 0.2s;
+    background: hsl(var(--accent));
+    opacity: 0.3;
+    box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
+    transition: opacity 0.2s, width 0.2s;
     z-index: 50;
   }
 
   .sidebarResizeHandle:hover {
-    background: hsl(var(--accent));
+    opacity: 1;
+    width: 8px;
   }
 
   .sidebarResizeHandle:active {
-    background: hsl(var(--accent));
-    width: 6px;
+    opacity: 1;
+    width: 8px;
   }
 
   .leftSidebarSticky {
@@ -4405,13 +4409,32 @@
 
   .leftSidebarBody {
     scrollbar-width: thin;
+    scrollbar-color: hsl(var(--accent)) transparent;
     background: linear-gradient(180deg, #F7F9FC 0%, #F5F7FB 34%, #F5F7FB 100%);
   }
 
+  .leftSidebarBody::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .leftSidebarBody::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .leftSidebarBody::-webkit-scrollbar-thumb {
+    background: hsl(var(--accent));
+    border-radius: 4px;
+  }
+
+  .leftSidebarBody::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--accent) / 0.8);
+  }
+
   .leftSidebarBottom {
-    @apply relative z-10;
-    border-top: 1px solid #E7ECF4;
-    background: #FFFFFF;
+    @apply sticky bottom-0 z-10;
+    border-top: 1px solid hsl(var(--border));
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(4px);
   }
 
   .leftSidebarHeader {
@@ -4597,7 +4620,7 @@
     background: transparent;
     border-radius: 0;
     border: none;
-    border-bottom: 1px solid #EEF2F9;
+    border-bottom: 1px solid hsl(var(--border));
     box-shadow: none;
     transition: background 0.15s ease;
   }
@@ -4626,7 +4649,7 @@
   }
 
   .sidebarAccordionTitle {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     color: #1E2C45;
   }
@@ -4638,15 +4661,15 @@
   }
 
   .sidebarAccordionBadge {
-    @apply inline-flex h-[18px] shrink-0 items-center rounded-[8px] px-1.5 text-[10px] font-semibold;
+    @apply inline-flex shrink-0 items-center rounded-[8px] px-2 py-0.5 text-xs font-semibold;
     border: 1px solid #E2E9F4;
     background: #F3F6FB;
     color: #7080A0;
   }
 
   .sidebarAccordionChevron {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     flex-shrink: 0;
     color: #9AA4BE;
     transition: transform 0.2s ease, color 0.12s ease;
@@ -4702,10 +4725,16 @@
   }
 
   .sidebarPropertiesInlineToggle {
-    @apply flex items-center gap-2 text-[12px];
-    padding: 3px 0 5px;
+    @apply flex items-start gap-2 text-sm font-medium;
+    line-height: 1.4;
+    padding: 8px 12px;
     border-bottom: 1px solid #E7ECF4;
     color: #1F2A44;
+  }
+
+  .sidebarPropertiesInlineToggle > span {
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .sidebarPropertiesDivider {
@@ -4877,9 +4906,9 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.75fr) 84px;
     gap: 6px;
     align-items: center;
-    min-height: 34px;
-    padding: 4px 0;
-    border-bottom: 1px solid #EEF3F9;
+    min-height: 40px;
+    padding: 8px 0;
+    border-bottom: 1px solid #E7ECF4;
   }
 
   .sidebarPropertiesRowName--quick {
@@ -4995,7 +5024,7 @@
     align-items: center;
     gap: 8px;
     padding: 8px 4px 6px;
-    border-top: 1px solid #DDE6F3;
+    border-top: 1px solid hsl(var(--border));
   }
 
   .sidebarGlobalFooterBtn {
@@ -5076,8 +5105,9 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.75fr) 84px;
     gap: 6px;
     align-items: center;
+    min-height: 40px;
     border-bottom: 1px solid #E7ECF4;
-    padding: 5px 0;
+    padding: 8px 0;
     border-color: #E7ECF4;
   }
 
@@ -5154,8 +5184,8 @@
   }
 
   .sidebarBpmnPropertyItem {
-    border-bottom: 1px solid #E7ECF4;
-    padding: 2px 0;
+    border-bottom: 0;
+    padding: 0;
   }
 
   .sidebarBpmnPropertyItem:last-child {
@@ -6006,7 +6036,7 @@
   }
 
   .dark .sidebarAccordion {
-    border-color: #243450;
+    border-color: hsl(var(--border));
   }
 
   .dark .sidebarAccordion.isOpen {
@@ -6026,6 +6056,7 @@
   .dark .sidebarPropertiesDivider,
   .dark .sidebarPropertiesBlockHead,
   .dark .sidebarPropertiesRows--table,
+  .dark .sidebarPropertiesRow--quick,
   .dark .sidebarPropertiesInlineStatusRow,
   .dark .sidebarPropertiesGroupHead,
   .dark .sidebarPropertiesBlock,
@@ -6101,7 +6132,7 @@
   }
 
   .dark .sidebarPropertiesInlineToggle input[type="checkbox"] {
-    accent-color: #7EB0FF;
+    accent-color: hsl(var(--accent));
   }
 
   .dark .sidebarPropertiesBlockMeta,
@@ -11452,23 +11483,23 @@
   }
 
   .sidebarCheckbox {
-    width: 18px;
-    height: 18px;
-    min-width: 18px;
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
     border: 1px solid #BFC7D9;
     border-radius: 5px;
-    accent-color: #3E59D9;
+    accent-color: hsl(var(--accent));
     cursor: pointer;
     transition: border-color 0.12s ease, box-shadow 0.12s ease;
   }
 
   .sidebarCheckbox:hover:not(:disabled) {
-    border-color: #3E59D9;
+    border-color: hsl(var(--accent));
   }
 
   .sidebarCheckbox:focus-visible {
     outline: none;
-    border-color: #3E59D9;
+    border-color: hsl(var(--accent));
     box-shadow: 0 0 0 3px rgba(62, 89, 217, 0.18);
   }
 
@@ -11558,14 +11589,16 @@
     background: rgba(62, 89, 217, 0.06);
   }
 
-  .sidebarPropertiesRows--zebra .sidebarSchemaPropertyRow:nth-child(odd),
-  .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:nth-child(odd) {
+  .sidebarPropertiesRows--zebra .sidebarSchemaPropertyRow:nth-child(even),
+  .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:nth-child(even),
+  .sidebarPropertiesRows--zebra .sidebarPropertiesRow--quick:nth-child(even) {
     background: #FAFCFF;
   }
 
   .sidebarPropertiesRows--zebra .sidebarSchemaPropertyRow:hover,
-  .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:hover {
-    background: #F3F8FF;
+  .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:hover,
+  .sidebarPropertiesRows--zebra .sidebarPropertiesRow--quick:hover {
+    background: hsl(var(--accent-soft) / 0.2);
   }
 
   .sidebarBpmnPropertySummary:hover {
@@ -11627,7 +11660,7 @@
 
   .sidebarGlobalFooterBtn:disabled,
   .sidebarGlobalFooterBtn:disabled:hover {
-    opacity: 0.45;
+    opacity: 0.5;
     cursor: not-allowed;
     filter: grayscale(0.35);
   }
@@ -14615,7 +14648,7 @@
 
   .dark .sidebarCheckbox {
     border-color: #4A5F85;
-    accent-color: #5B7CFF;
+    accent-color: hsl(var(--accent));
   }
 
   .dark .sidebarCheckbox:hover:not(:disabled) {
@@ -14669,14 +14702,16 @@
     color: #B6D0FF;
   }
 
-  .dark .sidebarPropertiesRows--zebra .sidebarSchemaPropertyRow:nth-child(odd),
-  .dark .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:nth-child(odd) {
+  .dark .sidebarPropertiesRows--zebra .sidebarSchemaPropertyRow:nth-child(even),
+  .dark .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:nth-child(even),
+  .dark .sidebarPropertiesRows--zebra .sidebarPropertiesRow--quick:nth-child(even) {
     background: #131C2E;
   }
 
   .dark .sidebarPropertiesRows--zebra .sidebarSchemaPropertyRow:hover,
-  .dark .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:hover {
-    background: #1A2840;
+  .dark .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:hover,
+  .dark .sidebarPropertiesRows--zebra .sidebarPropertiesRow--quick:hover {
+    background: hsl(var(--accent-soft) / 0.35);
   }
 
   .dark .sidebarBpmnPropertySummary:hover {
