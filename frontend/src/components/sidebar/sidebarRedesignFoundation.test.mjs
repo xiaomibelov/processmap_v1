@@ -72,3 +72,21 @@ test("C3: shared row rhythm, no double border, fixed zebra + accent hover", () =
   assert.match(css, /\.sidebarPropertiesRows--zebra[\s\S]*?hsl\(var\(--accent-soft\)\s*\/\s*0\.2\)/,
     "row hover uses accent-soft/20");
 });
+
+// C6 — accordion primitive polish: title text-sm/semibold, chevron w-4 h-4,
+// count badge px-2 py-0.5 text-xs, group dividers use the border token.
+test("C6: accordion title/chevron/badge/divider tokens", () => {
+  const css = readSrc("styles/tailwind.css");
+  const title = css.match(/\.sidebarAccordionTitle\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(title, /font-size:\s*14px/, "title text-sm (14px)");
+  assert.match(title, /font-weight:\s*600/, "title semibold");
+  const chev = css.match(/\.sidebarAccordionChevron\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(chev, /width:\s*16px/, "chevron w-4");
+  assert.match(chev, /height:\s*16px/, "chevron h-4");
+  const badge = css.match(/\.sidebarAccordionBadge\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(badge, /px-2/, "badge px-2");
+  assert.match(badge, /py-0\.5/, "badge py-0.5");
+  assert.match(badge, /text-xs/, "badge text-xs");
+  const acc = css.match(/\.sidebarAccordion\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(acc, /hsl\(var\(--border\)\)/, "divider uses border token");
+});
