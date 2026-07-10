@@ -118,3 +118,17 @@ test("C8: thin 4px accent sidebar scrollbar", () => {
   assert.match(webkit, /width:\s*4px/, "webkit scrollbar 4px");
   assert.ok(css.includes(".leftSidebarBody::-webkit-scrollbar-thumb"), "webkit thumb styled");
 });
+
+// C9 — dark parity: empty quick rows join the dark border group (their light
+// border was missed when C3 unified empty/filled rows); footer inner border
+// uses the border token so it adapts in dark. Token-based rules (handle,
+// checkbox accent, accordion divider, scrollbar) adapt automatically.
+test("C9: dark parity for new rules", () => {
+  const css = readSrc("styles/tailwind.css");
+  assert.ok(
+    /\.dark\s+\.sidebarPropertiesRow--quick\s*,/.test(css),
+    "empty quick row border covered in dark",
+  );
+  const inner = css.match(/\.sidebarGlobalFooterInner\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(inner, /border-top:\s*1px solid hsl\(var\(--border\)\)/, "footer inner border token");
+});

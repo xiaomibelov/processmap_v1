@@ -5024,7 +5024,7 @@
     align-items: center;
     gap: 8px;
     padding: 8px 4px 6px;
-    border-top: 1px solid #DDE6F3;
+    border-top: 1px solid hsl(var(--border));
   }
 
   .sidebarGlobalFooterBtn {
@@ -6056,6 +6056,7 @@
   .dark .sidebarPropertiesDivider,
   .dark .sidebarPropertiesBlockHead,
   .dark .sidebarPropertiesRows--table,
+  .dark .sidebarPropertiesRow--quick,
   .dark .sidebarPropertiesInlineStatusRow,
   .dark .sidebarPropertiesGroupHead,
   .dark .sidebarPropertiesBlock,
