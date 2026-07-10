@@ -53,3 +53,22 @@ test("C2: checkbox 20px + accent token; inline-toggle readable + wraps", () => {
   const span = css.match(/\.sidebarPropertiesInlineToggle\s*>\s*span\s*\{[^}]*\}/)?.[0] || "";
   assert.match(span, /overflow-wrap:\s*anywhere|word-break:\s*break-word/, "long label wraps");
 });
+
+// C3 — quick/additional rows share one rhythm (no double border/padding),
+// min-height 40px, py-2, zebra fixed (header excluded) + accent-soft hover.
+test("C3: shared row rhythm, no double border, fixed zebra + accent hover", () => {
+  const css = readSrc("styles/tailwind.css");
+  const item = css.match(/\.sidebarBpmnPropertyItem\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(item, /border-bottom:\s*0/, "item no own border (no double)");
+  assert.match(item, /padding:\s*0/, "item no own padding");
+  const schemaBlocks = css.match(/\.sidebarSchemaPropertyRow\s*\{[^}]*\}/g) || [];
+  const schema = schemaBlocks.find((b) => /min-height/.test(b)) || "";
+  assert.match(schema, /min-height:\s*40px/, "row min-height 40px");
+  assert.match(schema, /padding:\s*8px 0/, "row padding py-2");
+  assert.ok(
+    css.includes(".sidebarPropertiesRow--quick:nth-child(even)"),
+    "zebra includes quick rows (header excluded via :nth-child(even))",
+  );
+  assert.match(css, /\.sidebarPropertiesRows--zebra[\s\S]*?hsl\(var\(--accent-soft\)\s*\/\s*0\.2\)/,
+    "row hover uses accent-soft/20");
+});

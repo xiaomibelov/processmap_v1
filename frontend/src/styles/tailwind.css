@@ -4886,9 +4886,9 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.75fr) 84px;
     gap: 6px;
     align-items: center;
-    min-height: 34px;
-    padding: 4px 0;
-    border-bottom: 1px solid #EEF3F9;
+    min-height: 40px;
+    padding: 8px 0;
+    border-bottom: 1px solid #E7ECF4;
   }
 
   .sidebarPropertiesRowName--quick {
@@ -5085,8 +5085,9 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.75fr) 84px;
     gap: 6px;
     align-items: center;
+    min-height: 40px;
     border-bottom: 1px solid #E7ECF4;
-    padding: 5px 0;
+    padding: 8px 0;
     border-color: #E7ECF4;
   }
 
@@ -5163,8 +5164,8 @@
   }
 
   .sidebarBpmnPropertyItem {
-    border-bottom: 1px solid #E7ECF4;
-    padding: 2px 0;
+    border-bottom: 0;
+    padding: 0;
   }
 
   .sidebarBpmnPropertyItem:last-child {
@@ -11567,14 +11568,16 @@
     background: rgba(62, 89, 217, 0.06);
   }
 
-  .sidebarPropertiesRows--zebra .sidebarSchemaPropertyRow:nth-child(odd),
-  .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:nth-child(odd) {
+  .sidebarPropertiesRows--zebra .sidebarSchemaPropertyRow:nth-child(even),
+  .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:nth-child(even),
+  .sidebarPropertiesRows--zebra .sidebarPropertiesRow--quick:nth-child(even) {
     background: #FAFCFF;
   }
 
   .sidebarPropertiesRows--zebra .sidebarSchemaPropertyRow:hover,
-  .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:hover {
-    background: #F3F8FF;
+  .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:hover,
+  .sidebarPropertiesRows--zebra .sidebarPropertiesRow--quick:hover {
+    background: hsl(var(--accent-soft) / 0.2);
   }
 
   .sidebarBpmnPropertySummary:hover {
@@ -14678,14 +14681,16 @@
     color: #B6D0FF;
   }
 
-  .dark .sidebarPropertiesRows--zebra .sidebarSchemaPropertyRow:nth-child(odd),
-  .dark .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:nth-child(odd) {
+  .dark .sidebarPropertiesRows--zebra .sidebarSchemaPropertyRow:nth-child(even),
+  .dark .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:nth-child(even),
+  .dark .sidebarPropertiesRows--zebra .sidebarPropertiesRow--quick:nth-child(even) {
     background: #131C2E;
   }
 
   .dark .sidebarPropertiesRows--zebra .sidebarSchemaPropertyRow:hover,
-  .dark .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:hover {
-    background: #1A2840;
+  .dark .sidebarPropertiesRows--zebra .sidebarBpmnPropertyItem:hover,
+  .dark .sidebarPropertiesRows--zebra .sidebarPropertiesRow--quick:hover {
+    background: hsl(var(--accent-soft) / 0.35);
   }
 
   .dark .sidebarBpmnPropertySummary:hover {
