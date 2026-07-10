@@ -1138,6 +1138,46 @@ function QuickEmptyPropertyRow({ name, disabled = false, extensionStateBusy = fa
   );
 }
 
+function QuickNewPropertyRow({ disabled = false, extensionStateBusy = false, onCommit, onCancel }) {
+  const [draft, setDraft] = useState("");
+  const isBusy = !!disabled || !!extensionStateBusy;
+  function commit() {
+    const name = draft.trim().toLowerCase();
+    if (!name) {
+      onCancel?.();
+      return;
+    }
+    onCommit?.(name);
+    setDraft("");
+  }
+  function handleKeyDown(event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commit();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel?.();
+    }
+  }
+  return (
+    <div className="sidebarPropertiesRow sidebarPropertiesRow--quick">
+      <input
+        autoFocus
+        className="input sidebarInput w-full min-w-0"
+        placeholder="Название свойства"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={handleKeyDown}
+        disabled={isBusy}
+        aria-label="Название нового быстрого свойства"
+      />
+      <span className="sidebarPropertiesRowValue sidebarPropertiesRowValue--empty">—</span>
+      <span className="sidebarPropertiesRowAction" />
+    </div>
+  );
+}
+
 export function CamundaPropertiesSettings({
   selectedElementId,
   selectedElementType = "",
@@ -1227,6 +1267,7 @@ export function CamundaPropertiesSettings({
     dictionaryBundle,
     onExtensionStateDraftChange,
   });
+  const [addingQuick, setAddingQuick] = useState(false);
   const normalizedState = useMemo(() => normalizeCamundaExtensionState(state), [state]);
   const propertyContext = selectedBpmnPropertyContext && typeof selectedBpmnPropertyContext === "object"
     ? selectedBpmnPropertyContext
@@ -1263,6 +1304,14 @@ export function CamundaPropertiesSettings({
     if (nextState && typeof onSaveExtensionState === "function") {
       void onSaveExtensionState(nextState);
     }
+  }
+
+  // Generic quick add: create an empty row with the chosen name and pin it so
+  // it surfaces in the Quick table (the value is then filled in place).
+  function handleQuickAddNamed(name) {
+    addQuickPropertyRow(name, "");
+    pinName(name);
+    setAddingQuick(false);
   }
   const visibleSchemaRows = Array.isArray(dictionaryEditorModel?.schemaRows)
     ? dictionaryEditorModel.schemaRows.filter((row) => String(row?.value ?? "").trim() !== "")
@@ -1952,6 +2001,24 @@ async function handleSaveAll() {
                 />
               );
             })}
+            {addingQuick ? (
+              <QuickNewPropertyRow
+                disabled={disabled}
+                extensionStateBusy={extensionStateBusy}
+                onCommit={handleQuickAddNamed}
+                onCancel={() => setAddingQuick(false)}
+              />
+            ) : null}
+          </div>
+          <div className="sidebarButtonRow">
+            <button
+              type="button"
+              className="sidebarAddBtn"
+              onClick={() => setAddingQuick(true)}
+              disabled={!!disabled || !!extensionStateBusy || addingQuick}
+            >
+              + Добавить быстрое свойство
+            </button>
           </div>
         </section>
 

@@ -72,3 +72,16 @@ test("C5a: delete-from-Quick unpins user pins but hard-deletes defaults", () => 
   assert.match(fn, /deletePropertyRow\(\s*rowId\s*\)[\s\S]*?onSaveExtensionState\(\s*nextState\s*\)/,
     "otherwise hard-delete + auto-save");
 });
+
+// C5b — generic "+ Добавить быстрое свойство" entry (inline name -> create+pin).
+test("C5b: generic quick-add button + inline name entry wired to create+pin", () => {
+  const esc = readSrc(ESC);
+  assert.match(esc, /function\s+QuickNewPropertyRow\s*\(/, "QuickNewPropertyRow component");
+  assert.match(esc, /<QuickNewPropertyRow/, "entry row rendered");
+  assert.match(esc, /\+\s*Добавить быстрое свойство/, "add button label");
+  assert.match(esc, /const\s*\[\s*addingQuick\s*,\s*setAddingQuick\s*\]\s*=\s*useState/, "addingQuick state");
+  const fn = esc.match(/function\s+handleQuickAddNamed[\s\S]*?\n  \}/)?.[0] || "";
+  assert.match(fn, /addQuickPropertyRow\(\s*name\s*,/, "creates the row");
+  assert.match(fn, /pinName\(\s*name\s*\)/, "pins the name");
+  assert.match(fn, /setAddingQuick\(\s*false\s*\)/, "closes entry on commit");
+});
