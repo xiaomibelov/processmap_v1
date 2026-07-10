@@ -384,6 +384,39 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         out = _build_recalculated_rows(rows)
         self.assertEqual(out, [])
 
+    def test_parse_recalc_number_accepts_coefficient_times_n(self):
+        from app.routers.analytics import _parse_recalc_number
+
+        # Per-unit coefficient form "<number>*n" -> leading coefficient.
+        self.assertAlmostEqual(_parse_recalc_number("0,33*n"), 0.33)
+        self.assertAlmostEqual(_parse_recalc_number("0,08*n"), 0.08)
+        self.assertAlmostEqual(_parse_recalc_number("1,5 * n"), 1.5)
+        self.assertAlmostEqual(_parse_recalc_number("0,33*N"), 0.33)
+        # Plain numerics and invalids are unaffected.
+        self.assertAlmostEqual(_parse_recalc_number("3,61"), 3.61)
+        self.assertIsNone(_parse_recalc_number(""))
+        self.assertIsNone(_parse_recalc_number("abc"))
+        self.assertIsNone(_parse_recalc_number("0,33*n+1"))
+
+    def test_recalculate_helper_exports_coefficient_times_n_rows(self):
+        from app.routers.analytics import _build_recalculated_rows
+
+        rows = [
+            {"bpmn_id": "op1", "bpmn_name": "Op 1", "name": "ee_time", "value": "0,33*n"},
+            {"bpmn_id": "op1", "bpmn_name": "Op 1", "name": "ingredient_value", "value": "10"},
+            {"bpmn_id": "op2", "bpmn_name": "Op 2", "name": "ee_time", "value": "0,08*n"},
+            {"bpmn_id": "op2", "bpmn_name": "Op 2", "name": "ingredient_value", "value": "5"},
+            # Both-required still holds: ee_time without ingredient_value is skipped.
+            {"bpmn_id": "op3", "bpmn_name": "Op 3", "name": "ee_time", "value": "0,33*n"},
+        ]
+        out = _build_recalculated_rows(rows)
+        self.assertEqual(len(out), 2)
+        by_id = {r["bpmn_id"]: r for r in out}
+        self.assertAlmostEqual(by_id["op1"]["ee_time"], 0.33)
+        self.assertAlmostEqual(by_id["op1"]["result"], round(0.33 * 10, 2))
+        self.assertAlmostEqual(by_id["op2"]["ee_time"], 0.08)
+        self.assertAlmostEqual(by_id["op2"]["result"], round(0.08 * 5, 2))
+
     def _set_session_bpmn_meta(self, meta: dict):
         storage = self.get_storage()
         storage.patch_session_meta(
