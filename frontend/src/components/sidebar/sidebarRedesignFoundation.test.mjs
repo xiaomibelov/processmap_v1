@@ -33,3 +33,23 @@ test("C1: resize handle is always-visible accent with boundary shadow", () => {
   assert.match(hover, /width:\s*8px/, "handle hover width 8px");
   assert.match(hover, /opacity:\s*1\b/, "handle hover opacity 1");
 });
+
+// C2 — checkboxes are 20px with accent-color from the token; inline-toggle label
+// uses text-sm/font-medium/1.4 with py-2 px-3 spacing and wraps long text.
+test("C2: checkbox 20px + accent token; inline-toggle readable + wraps", () => {
+  const css = readSrc("styles/tailwind.css");
+  // Pick the base .sidebarCheckbox block (the one declaring width/height),
+  // not the dark-theme override which only restates border/accent.
+  const blocks = css.match(/\.sidebarCheckbox\s*\{[^}]*\}/g) || [];
+  const cb = blocks.find((b) => /width:/.test(b)) || "";
+  assert.match(cb, /width:\s*20px/, "checkbox width 20px");
+  assert.match(cb, /height:\s*20px/, "checkbox height 20px");
+  assert.match(cb, /accent-color:\s*hsl\(var\(--accent\)\)/, "checkbox accent token");
+  const toggle = css.match(/\.sidebarPropertiesInlineToggle\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(toggle, /text-sm/, "toggle text-sm");
+  assert.match(toggle, /font-medium/, "toggle font-medium");
+  assert.match(toggle, /line-height:\s*1\.4/, "toggle line-height 1.4");
+  assert.match(toggle, /padding:\s*8px 12px/, "toggle padding py-2 px-3");
+  const span = css.match(/\.sidebarPropertiesInlineToggle\s*>\s*span\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(span, /overflow-wrap:\s*anywhere|word-break:\s*break-word/, "long label wraps");
+});

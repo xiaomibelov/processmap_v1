@@ -1,0 +1,15 @@
+{
+  "contour": "bpmn-editor-improvements",
+  "phase": "audit",
+  "status": "pending_approval",
+  "tasks": [
+    { "id": 1, "name": "version-conflict-detection", "status": "audited" },
+    { "id": 2, "name": "version-merge", "status": "audited" },
+    { "id": 3, "name": "ellipsis-menu-redesign", "status": "audited" },
+    { "id": 4, "name": "v2-overlays-checkbox-bug", "status": "audited" }
+  ],
+  "constraints": {
+    "test_only_on": "clearvestnic.ru:5177",
+    "deploy_to_prod": false
+  }
+}
