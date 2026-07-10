@@ -56,10 +56,17 @@ def _ensure_recipe_tables(con: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_recipe_ingredient_catalog_org ON recipe_ingredient_catalog(org_id, name)"
     )
     # Idempotent migration for existing DBs that predate the `value` column.
+    # Tolerate the "column already present" error from both SQLite
+    # (sqlite3.OperationalError: "duplicate column name: ...") and Postgres
+    # (psycopg.errors.DuplicateColumn: 'column ... already exists').
+    # psycopg is not imported here (sqlite-only deployments may not have it),
+    # so we match on the error message instead of the exception type.
+    # Anything that is not a duplicate-column error is re-raised.
     try:
         con.execute("ALTER TABLE recipe_ingredient_catalog ADD COLUMN value REAL")
-    except sqlite3.OperationalError as exc:
-        if "duplicate column name" not in str(exc).lower():
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "duplicate column" not in msg and "already exists" not in msg:
             raise
     con.execute(
         """
