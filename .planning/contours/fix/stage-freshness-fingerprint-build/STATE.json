@@ -1,0 +1,12 @@
+{
+  "contour": "fix/stage-freshness-fingerprint-build",
+  "type": "fix",
+  "branch": "fix/stage-freshness-fingerprint-build",
+  "head": "ccb487e1d13ea272875701b533b8fe4decd19a84",
+  "pr": 397,
+  "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/397",
+  "status": "awaiting_review",
+  "mirrored": true,
+  "mirror_dest": "/srv/obsidian/project-atlas/ProcessMap/AgentReports/fix/stage-freshness-fingerprint-build",
+  "updated_at": "2026-06-22T10:50:00Z"
+}
