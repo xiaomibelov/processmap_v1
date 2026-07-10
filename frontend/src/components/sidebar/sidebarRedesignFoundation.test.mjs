@@ -90,3 +90,19 @@ test("C6: accordion title/chevron/badge/divider tokens", () => {
   const acc = css.match(/\.sidebarAccordion\s*\{[^}]*\}/)?.[0] || "";
   assert.match(acc, /hsl\(var\(--border\)\)/, "divider uses border token");
 });
+
+// C7 — footer sticks to bottom with a glassy bg + blur; Save is primary blue
+// (primaryBtn = bg-accent) and disabled state is opacity 0.5 when clean.
+test("C7: sticky glassy footer + disabled opacity 0.5", () => {
+  const css = readSrc("styles/tailwind.css");
+  // .dark .leftSidebarBottom also contains ".leftSidebarBottom"; pick the block
+  // that declares the sticky behavior (the base rule).
+  const slots = css.match(/\.leftSidebarBottom\s*\{[^}]*\}/g) || [];
+  const slot = slots.find((b) => /sticky/.test(b)) || "";
+  assert.match(slot, /sticky/, "footer position sticky");
+  assert.match(slot, /bottom-0/, "footer bottom-0");
+  assert.match(slot, /backdrop-filter:\s*blur/, "footer backdrop blur");
+  assert.match(slot, /rgba\(255,\s*255,\s*255,\s*0\.9\)/, "footer bg white/90");
+  const disabled = css.match(/\.sidebarGlobalFooterBtn:disabled[^{]*\{[^}]*\}/)?.[0] || "";
+  assert.match(disabled, /opacity:\s*0\.5/, "disabled opacity 0.5");
+});

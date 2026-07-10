@@ -2243,7 +2243,8 @@
      Keep this as a bounded dark-theme override for proven sidebar/topbar readability defects. */
   .dark .leftSidebarBottom {
     border-top-color: hsl(var(--border-strong) / 0.72);
-    background: hsl(var(--panel) / 0.96);
+    background: hsl(var(--panel) / 0.9);
+    backdrop-filter: blur(4px);
   }
 
   .dark .sidebarContextChip {
@@ -4412,9 +4413,10 @@
   }
 
   .leftSidebarBottom {
-    @apply relative z-10;
-    border-top: 1px solid #E7ECF4;
-    background: #FFFFFF;
+    @apply sticky bottom-0 z-10;
+    border-top: 1px solid hsl(var(--border));
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(4px);
   }
 
   .leftSidebarHeader {
@@ -11639,7 +11641,7 @@
 
   .sidebarGlobalFooterBtn:disabled,
   .sidebarGlobalFooterBtn:disabled:hover {
-    opacity: 0.45;
+    opacity: 0.5;
     cursor: not-allowed;
     filter: grayscale(0.35);
   }
