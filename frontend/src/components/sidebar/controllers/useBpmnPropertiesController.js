@@ -125,6 +125,18 @@ export default function useBpmnPropertiesController({
     updateDraft([...properties, { id: `prop_draft_${Date.now()}`, name: "", value: "" }]);
   }
 
+  // Create a pinned (quick) property with a known name in one step so the
+  // quick table can fill an empty pinned slot inline (draft-only, consistent
+  // with addPropertyRow; persists on the global Save).
+  function addQuickPropertyRow(name, value = "") {
+    const nextName = String(name || "").trim();
+    if (!nextName) return null;
+    return updateDraft([
+      ...properties,
+      { id: `prop_draft_${Date.now()}`, name: nextName, value: String(value || "") },
+    ]);
+  }
+
   function deletePropertyRow(rowId) {
     return updateDraft(deleteExtensionPropertyRowsByDeleteAction(properties, rowId));
   }
@@ -142,6 +154,7 @@ export default function useBpmnPropertiesController({
     setBpmnRowExpanded,
     updatePropertyRow,
     addPropertyRow,
+    addQuickPropertyRow,
     deletePropertyRow,
   };
 }
