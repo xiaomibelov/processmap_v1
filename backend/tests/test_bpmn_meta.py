@@ -1064,6 +1064,118 @@ class BpmnMetaApiTests(unittest.TestCase):
         self.assertEqual(len(all_technical.get("versions") or []), 21)
 
 
+    def _make_camunda_xml(self, props, defs_id="Defs_x"):
+        rows = "".join(
+            f'<camunda:property name="{name}" value="{value}" />' for name, value in props
+        )
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" '
+            'xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="%s" targetNamespace="http://bpmn.io/schema/bpmn">'
+            '<bpmn:process id="Process_1" isExecutable="false">'
+            '<bpmn:startEvent id="StartEvent_1"><bpmn:outgoing>Flow_1</bpmn:outgoing></bpmn:startEvent>'
+            '<bpmn:task id="Task_1"><bpmn:incoming>Flow_1</bpmn:incoming><bpmn:outgoing>Flow_2</bpmn:outgoing>'
+            '<bpmn:extensionElements><camunda:properties>%s</camunda:properties></bpmn:extensionElements></bpmn:task>'
+            '<bpmn:endEvent id="End_1"><bpmn:incoming>Flow_2</bpmn:incoming></bpmn:endEvent>'
+            '<bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Task_1" />'
+            '<bpmn:sequenceFlow id="Flow_2" sourceRef="Task_1" targetRef="End_1" />'
+            '</bpmn:process></bpmn:definitions>'
+        ) % (defs_id, rows)
+
+    def _camunda_prop_values(self, meta, element_id, name):
+        ext = (dict(meta or {}).get("camunda_extensions_by_element_id", {}) or {}).get(element_id, {}) or {}
+        props = ext.get("properties", {}).get("extensionProperties", []) or []
+        return [p.get("value") for p in props if p.get("name") == name]
+
+    def test_bpmn_restore_re_derives_camunda_extensions_from_restored_xml(self):
+        # v1 holds ee_time=0.33 on Task_1 (the version we will restore to).
+        xml_v1 = self._make_camunda_xml([("ee_time", "0.33")], defs_id="Defs_v1")
+        # v2 is the current/pre-restore diagram with ee_time=0.66 on the same element.
+        xml_v2 = self._make_camunda_xml([("ee_time", "0.66")], defs_id="Defs_v2")
+
+        v1_res = self.session_bpmn_save(
+            self.sid, self.BpmnXmlIn(xml=xml_v1, source_action="import_bpmn", import_note="v1")
+        )
+        self.assertEqual(v1_res.get("ok"), True)
+        v1_id = str((v1_res.get("bpmn_version_snapshot") or {}).get("id") or "")
+        self.assertTrue(v1_id)
+
+        v2_res = self.session_bpmn_save(
+            self.sid, self.BpmnXmlIn(xml=xml_v2, source_action="import_bpmn", import_note="v2")
+        )
+        self.assertEqual(v2_res.get("ok"), True)
+
+        # Sanity: the current (pre-restore) meta reflects v2.
+        current = self.get_storage().load(self.sid, is_admin=True)
+        self.assertEqual(self._camunda_prop_values(current.bpmn_meta, "Task_1", "ee_time"), ["0.66"])
+
+        restored = self.session_bpmn_restore(self.sid, v1_id)
+        self.assertEqual(restored.get("ok"), True)
+
+        reloaded = self.get_storage().load(self.sid, is_admin=True)
+        self.assertEqual(str(getattr(reloaded, "bpmn_xml", "") or ""), xml_v1)
+        # Pre-fix this stayed ["0.66"] (carried verbatim from current_meta).
+        self.assertEqual(
+            self._camunda_prop_values(reloaded.bpmn_meta, "Task_1", "ee_time"),
+            ["0.33"],
+            f"restore must re-derive extensions from the restored XML, got {reloaded.bpmn_meta}",
+        )
+
+    def test_bpmn_restore_to_clean_xml_drops_orphan_camunda_extensions(self):
+        # Clean v1 (no properties), then a property-bearing current. Restoring to clean
+        # must not leave orphan extensions carried over from the current diagram.
+        v_clean = self.session_bpmn_save(
+            self.sid, self.BpmnXmlIn(xml=PRUNED_BPMN_XML, source_action="import_bpmn", import_note="clean")
+        )
+        clean_id = str((v_clean.get("bpmn_version_snapshot") or {}).get("id") or "")
+        self.assertTrue(clean_id)
+
+        xml_with_prop = self._make_camunda_xml([("ee_time", "0.66")], defs_id="Defs_props")
+        self.assertEqual(
+            self.session_bpmn_save(
+                self.sid, self.BpmnXmlIn(xml=xml_with_prop, source_action="import_bpmn", import_note="props")
+            ).get("ok"),
+            True,
+        )
+
+        restored = self.session_bpmn_restore(self.sid, clean_id)
+        self.assertEqual(restored.get("ok"), True)
+
+        reloaded = self.get_storage().load(self.sid, is_admin=True)
+        self.assertEqual(
+            dict(reloaded.bpmn_meta or {}).get("camunda_extensions_by_element_id", {}),
+            {},
+            "restoring to a property-less XML must not leave orphan camunda extensions",
+        )
+
+    def test_bpmn_restore_preserves_multi_value_camunda_properties(self):
+        # v1: two container_tara rows (multi-value). v2: a single container_tara.
+        # Restore v1 -> both multi-value rows must come back (Critical #1 + #2 together).
+        xml_mv = self._make_camunda_xml([("container_tara", "1/1"), ("container_tara", "2/1")], defs_id="Defs_mv")
+        xml_single = self._make_camunda_xml([("container_tara", "3/1")], defs_id="Defs_single")
+
+        v1 = self.session_bpmn_save(
+            self.sid, self.BpmnXmlIn(xml=xml_mv, source_action="import_bpmn", import_note="multi")
+        )
+        v1_id = str((v1.get("bpmn_version_snapshot") or {}).get("id") or "")
+        self.assertTrue(v1_id)
+        self.assertEqual(
+            self.session_bpmn_save(
+                self.sid, self.BpmnXmlIn(xml=xml_single, source_action="import_bpmn", import_note="single")
+            ).get("ok"),
+            True,
+        )
+
+        restored = self.session_bpmn_restore(self.sid, v1_id)
+        self.assertEqual(restored.get("ok"), True)
+
+        reloaded = self.get_storage().load(self.sid, is_admin=True)
+        self.assertEqual(
+            sorted(self._camunda_prop_values(reloaded.bpmn_meta, "Task_1", "container_tara")),
+            ["1/1", "2/1"],
+            f"multi-value properties must survive restore, got {reloaded.bpmn_meta}",
+        )
+
 if __name__ == "__main__":
     unittest.main()
 

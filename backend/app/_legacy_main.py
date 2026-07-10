@@ -7988,6 +7988,13 @@ def session_bpmn_restore(
             outgoing_by_source=flow_ctx.get("outgoing_by_source"),
             gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
         )
+        # Properties are derived from the XML payload, not from sidecar bpmn_meta.
+        # After restore, re-derive camunda extensions from the RESTORED xml so the
+        # registry and analytics reflect the restored version, not the pre-restore
+        # (current) diagram whose bpmn_meta was carried in via current_meta above.
+        normalized_meta.pop("camunda_extensions_by_element_id", None)
+        if xml.strip():
+            normalized_meta["camunda_extensions_by_element_id"] = extract_camunda_extensions_from_bpmn_xml(xml)
         s.bpmn_meta = normalized_meta
         changed_keys = ["bpmn_meta"]
         if previous_xml != xml:
