@@ -16,7 +16,6 @@ import {
   normalizePathTier,
 } from "../../features/process/pathClassification.js";
 import {
-  buildVisibleExtensionPropertyRows,
   buildPropertyDictionaryEditorModel,
   countVisibleExtensionPropertyRows,
   shouldOfferAddDictionaryValueAction,
@@ -24,7 +23,7 @@ import {
 import { deriveNodePathCompareSummary } from "./nodePathCompare";
 import { resolveNodePathStatusState } from "./nodePathSyncState";
 import SidebarTrustStatus from "./SidebarTrustStatus";
-import useElementSettingsController, { SHOW_PROPERTIES_FLAG_KEY } from "./useElementSettingsController";
+import useElementSettingsController from "./useElementSettingsController";
 import { RecipeQueryProvider } from "../../features/process/recipe/providers/RecipeQueryProvider.jsx";
 import RecipeSidebar from "../../features/process/recipe/components/RecipeSidebar.jsx";
 import PropertyGroup from "./PropertyGroup.jsx";
@@ -64,10 +63,6 @@ function clampInlineValue(value, limit = 120) {
   if (!text) return "";
   if (text.length <= limit) return text;
   return `${text.slice(0, Math.max(18, limit - 1)).trimEnd()}…`;
-}
-
-function isShowPropertiesFlagRow(row) {
-  return String(row?.name || "").trim().toLowerCase() === SHOW_PROPERTIES_FLAG_KEY;
 }
 
 const TASK_LIKE_BPMN_TYPES = new Set([
@@ -1107,6 +1102,82 @@ function SidebarInfoTip({ text = "", label = "Пояснение" }) {
   );
 }
 
+function QuickEmptyPropertyRow({ name, disabled = false, extensionStateBusy = false, onCreate }) {
+  const [draft, setDraft] = useState("");
+  const isBusy = !!disabled || !!extensionStateBusy;
+  function commit() {
+    const next = draft.trim();
+    if (!next) return;
+    onCreate?.(name, next);
+    setDraft("");
+  }
+  function handleKeyDown(event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commit();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      setDraft("");
+    }
+  }
+  return (
+    <div className="sidebarPropertiesRow sidebarPropertiesRow--quick">
+      <span className="sidebarPropertiesRowName sidebarPropertiesRowName--quick">{name}</span>
+      <input
+        className="input sidebarInput w-full min-w-0"
+        placeholder="—"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={handleKeyDown}
+        disabled={isBusy}
+        aria-label={`Добавить значение для ${name}`}
+      />
+      <span className="sidebarPropertiesRowAction" />
+    </div>
+  );
+}
+
+function QuickNewPropertyRow({ disabled = false, extensionStateBusy = false, onCommit, onCancel }) {
+  const [draft, setDraft] = useState("");
+  const isBusy = !!disabled || !!extensionStateBusy;
+  function commit() {
+    const name = draft.trim().toLowerCase();
+    if (!name) {
+      onCancel?.();
+      return;
+    }
+    onCommit?.(name);
+    setDraft("");
+  }
+  function handleKeyDown(event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commit();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel?.();
+    }
+  }
+  return (
+    <div className="sidebarPropertiesRow sidebarPropertiesRow--quick">
+      <input
+        autoFocus
+        className="input sidebarInput w-full min-w-0"
+        placeholder="Название свойства"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={handleKeyDown}
+        disabled={isBusy}
+        aria-label="Название нового быстрого свойства"
+      />
+      <span className="sidebarPropertiesRowValue sidebarPropertiesRowValue--empty">—</span>
+      <span className="sidebarPropertiesRowAction" />
+    </div>
+  );
+}
+
 export function CamundaPropertiesSettings({
   selectedElementId,
   selectedElementType = "",
@@ -1169,7 +1240,15 @@ export function CamundaPropertiesSettings({
     zeebeTaskHeaderRows,
     updatePropertyRow,
     addPropertyRow,
+    addQuickPropertyRow,
     deletePropertyRow,
+    quickPropertyNames,
+    quickRows,
+    otherAdditionalBpmnRows,
+    userPins,
+    isUserPinnedName,
+    pinName,
+    unpinName,
     updateCamundaIoParameter,
     addCamundaIoRow,
     deleteCamundaIoRow,
@@ -1188,6 +1267,7 @@ export function CamundaPropertiesSettings({
     dictionaryBundle,
     onExtensionStateDraftChange,
   });
+  const [addingQuick, setAddingQuick] = useState(false);
   const normalizedState = useMemo(() => normalizeCamundaExtensionState(state), [state]);
   const propertyContext = selectedBpmnPropertyContext && typeof selectedBpmnPropertyContext === "object"
     ? selectedBpmnPropertyContext
@@ -1196,23 +1276,43 @@ export function CamundaPropertiesSettings({
     () => buildPropertyDictionaryEditorModel({ extensionStateRaw: state, dictionaryBundleRaw: dictionaryBundle }),
     [state, dictionaryBundle],
   );
-  const visibleFallbackProperties = useMemo(
-    () => buildVisibleExtensionPropertyRows(state).rows,
-    [state],
-  );
   const hasDictionarySchema = dictionaryEditorModel.hasSchema;
-  const additionalBpmnRows = (hasDictionarySchema
-    ? (Array.isArray(dictionaryEditorModel?.customRows) ? dictionaryEditorModel.customRows : [])
-    : visibleFallbackProperties)
-    .filter((row) => !isShowPropertiesFlagRow(row));
-  const QUICK_PROPERTY_NAMES = ["ee_time", "ingredient_value"];
-  const quickPropertyNamesSet = new Set(QUICK_PROPERTY_NAMES);
-  const quickRows = QUICK_PROPERTY_NAMES
-    .map((name) => additionalBpmnRows.find((row) => toText(row?.name).toLowerCase() === name))
-    .filter(Boolean);
-  const otherAdditionalBpmnRows = additionalBpmnRows.filter(
-    (row) => !quickPropertyNamesSet.has(toText(row?.name).toLowerCase()),
-  );
+  // quickPropertyNames / quickRows / otherAdditionalBpmnRows / userPins are
+  // sourced from useBpmnPropertiesController (single source of truth).
+
+  // Quick pinned-slot inline create: fill an empty pinned slot (ee_time /
+  // ingredient_value) by creating the row with the canonical name (draft-only;
+  // persists on the global Save, identical to Additional's addPropertyRow).
+  function handleQuickCreate(name, value) {
+    const nextValue = String(value || "").trim();
+    if (!nextValue) return;
+    addQuickPropertyRow(name, nextValue);
+    pinName(name);
+  }
+
+  // Delete-from-Quick semantics: a user-pinned row is only unpinned (the row
+  // stays and surfaces in Additional); a default-name or unpinned row is
+  // hard-deleted and flushed (unified with Additional's auto-save).
+  function handleQuickDelete(rowId) {
+    const row = quickRows.find((r) => String(r?.id || "") === String(rowId || ""));
+    const rowName = String(row?.name || "");
+    if (row && isUserPinnedName(rowName)) {
+      unpinName(rowName);
+      return;
+    }
+    const nextState = deletePropertyRow(rowId);
+    if (nextState && typeof onSaveExtensionState === "function") {
+      void onSaveExtensionState(nextState);
+    }
+  }
+
+  // Generic quick add: create an empty row with the chosen name and pin it so
+  // it surfaces in the Quick table (the value is then filled in place).
+  function handleQuickAddNamed(name) {
+    addQuickPropertyRow(name, "");
+    pinName(name);
+    setAddingQuick(false);
+  }
   const visibleSchemaRows = Array.isArray(dictionaryEditorModel?.schemaRows)
     ? dictionaryEditorModel.schemaRows.filter((row) => String(row?.value ?? "").trim() !== "")
     : [];
@@ -1877,15 +1977,17 @@ async function handleSaveAll() {
               <span>Значение</span>
               <span>Действие</span>
             </div>
-            {QUICK_PROPERTY_NAMES.map((name) => {
+            {quickPropertyNames.map((name) => {
               const row = quickRows.find((r) => toText(r?.name).toLowerCase() === name);
               if (!row) {
                 return (
-                  <div key={name} className="sidebarPropertiesRow sidebarPropertiesRow--quick sidebarPropertiesRow--empty">
-                    <span className="sidebarPropertiesRowName sidebarPropertiesRowName--quick">{name}</span>
-                    <span className="sidebarPropertiesRowValue sidebarPropertiesRowValue--empty">—</span>
-                    <span className="sidebarPropertiesRowAction" />
-                  </div>
+                  <QuickEmptyPropertyRow
+                    key={name}
+                    name={name}
+                    disabled={disabled}
+                    extensionStateBusy={extensionStateBusy}
+                    onCreate={handleQuickCreate}
+                  />
                 );
               }
               return (
@@ -1895,10 +1997,28 @@ async function handleSaveAll() {
                   disabled={disabled}
                   extensionStateBusy={extensionStateBusy}
                   updatePropertyRow={updatePropertyRow}
-                  deletePropertyRow={deletePropertyRow}
+                  deletePropertyRow={handleQuickDelete}
                 />
               );
             })}
+            {addingQuick ? (
+              <QuickNewPropertyRow
+                disabled={disabled}
+                extensionStateBusy={extensionStateBusy}
+                onCommit={handleQuickAddNamed}
+                onCancel={() => setAddingQuick(false)}
+              />
+            ) : null}
+          </div>
+          <div className="sidebarButtonRow">
+            <button
+              type="button"
+              className="sidebarAddBtn"
+              onClick={() => setAddingQuick(true)}
+              disabled={!!disabled || !!extensionStateBusy || addingQuick}
+            >
+              + Добавить быстрое свойство
+            </button>
           </div>
         </section>
 
