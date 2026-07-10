@@ -44,6 +44,7 @@ def _ensure_recipe_tables(con: sqlite3.Connection) -> None:
           org_id TEXT NOT NULL DEFAULT 'org_default',
           name TEXT NOT NULL,
           unit TEXT NOT NULL DEFAULT '',
+          value REAL,
           created_by TEXT NOT NULL DEFAULT '',
           created_at INTEGER NOT NULL DEFAULT 0,
           updated_at INTEGER NOT NULL DEFAULT 0,
@@ -54,6 +55,12 @@ def _ensure_recipe_tables(con: sqlite3.Connection) -> None:
     con.execute(
         "CREATE INDEX IF NOT EXISTS idx_recipe_ingredient_catalog_org ON recipe_ingredient_catalog(org_id, name)"
     )
+    # Idempotent migration for existing DBs that predate the `value` column.
+    try:
+        con.execute("ALTER TABLE recipe_ingredient_catalog ADD COLUMN value REAL")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column name" not in str(exc).lower():
+            raise
     con.execute(
         """
         CREATE TABLE IF NOT EXISTS recipes (
@@ -110,11 +117,13 @@ def _ensure_recipe_tables(con: sqlite3.Connection) -> None:
 
 
 def _row_to_ingredient(row: sqlite3.Row) -> Dict[str, Any]:
+    raw_value = row["value"] if "value" in row.keys() else None
     return {
         "id": str(row["id"]),
         "org_id": str(row["org_id"]),
         "name": str(row["name"]),
         "unit": str(row["unit"]),
+        "value": float(raw_value) if raw_value is not None else None,
         "created_by": str(row["created_by"]),
         "created_at": int(row["created_at"]),
         "updated_at": int(row["updated_at"]),
@@ -181,6 +190,28 @@ def list_ingredients(org_id: str) -> List[Dict[str, Any]]:
         return [_row_to_ingredient(row) for row in rows]
 
 
+def get_ingredient_values_by_name(org_id: str) -> Dict[str, float]:
+    """Bulk {lowercased name: numeric value} map for analytics backfill.
+
+    Single query, single connection. Ingredients without a numeric value are
+    omitted so callers can distinguish "catalog has it" from "no data".
+    """
+    with _get_connection() as con:
+        rows = con.execute(
+            """
+            SELECT name, value FROM recipe_ingredient_catalog
+            WHERE org_id = ? AND deleted_at = 0 AND value IS NOT NULL
+            """,
+            [org_id],
+        ).fetchall()
+    out: Dict[str, float] = {}
+    for row in rows:
+        key = str(row["name"] or "").strip().lower()
+        if key:
+            out[key] = float(row["value"])
+    return out
+
+
 def get_ingredient(ingredient_id: str, org_id: str) -> Optional[Dict[str, Any]]:
     with _get_connection() as con:
         row = con.execute(
@@ -193,17 +224,20 @@ def get_ingredient(ingredient_id: str, org_id: str) -> Optional[Dict[str, Any]]:
 def create_ingredient(data: Dict[str, Any], org_id: str, user_id: str) -> Dict[str, Any]:
     ingredient_id = _ingredient_id()
     now = _now()
+    raw_value = data.get("value")
+    value = float(raw_value) if raw_value not in (None, "") else None
     with _get_connection() as con:
         con.execute(
             """
-            INSERT INTO recipe_ingredient_catalog (id, org_id, name, unit, created_by, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO recipe_ingredient_catalog (id, org_id, name, unit, value, created_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 ingredient_id,
                 org_id,
                 str(data.get("name") or "").strip(),
                 str(data.get("unit") or "").strip(),
+                value,
                 user_id,
                 now,
                 now,
