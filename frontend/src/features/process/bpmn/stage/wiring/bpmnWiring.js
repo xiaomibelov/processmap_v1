@@ -87,6 +87,7 @@ export function createBpmnWiring(ctxBase, deps = {}) {
   const forceTaskResizeRulesModule = deps.forceTaskResizeRulesModule || null;
   const pmModdleDescriptor = deps.pmModdleDescriptor || null;
   const camundaModdleDescriptor = deps.camundaModdleDescriptor || null;
+  const zeebeModdleDescriptor = deps.zeebeModdleDescriptor || null;
 
   function ensureBpmnStore() {
     const ctx = resolveCtx(ctxBase);
@@ -286,6 +287,7 @@ export function createBpmnWiring(ctxBase, deps = {}) {
         const moddleExtensions = {
           ...(pmModdleDescriptor ? { pm: pmModdleDescriptor } : {}),
           ...(camundaModdleDescriptor ? { camunda: camundaModdleDescriptor } : {}),
+          ...(zeebeModdleDescriptor ? { zeebe: zeebeModdleDescriptor } : {}),
         };
         return {
           additionalModules,
