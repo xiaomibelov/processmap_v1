@@ -192,7 +192,15 @@ test("property round-trip: add 4 / reload / edit A=10 / delete A (now+5s+reload)
   }
 
   // 2) Edit A → value 10, global Save, reload → A=10, others unchanged.
-  const aRow = rowByName(page, rows, "A");
+  // NOTE: rowByName() filters by .sidebarSchemaPropertyHuman, which is NOT rendered
+  // while a row is in edit mode, so a name-based locator self-invalidates the moment
+  // the row opens for editing (Received: 0 inputs). Resolve A's index in read mode
+  // first, then pin the row by position so the locator survives entering edit mode.
+  const aIndex = await rows.evaluateAll((els) =>
+    els.findIndex((el) => el.querySelector(".sidebarSchemaPropertyHuman")?.textContent?.trim() === "A"),
+  );
+  expect(aIndex).toBeGreaterThanOrEqual(0);
+  const aRow = rows.nth(aIndex);
   await aRow.click();
   const aInputs = aRow.locator("input.sidebarInput");
   await expect(aInputs).toHaveCount(2);
