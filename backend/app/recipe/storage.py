@@ -29,6 +29,31 @@ def _now() -> int:
     return int(time.time())
 
 
+def _recipe_column_exists(con: Any, table: str, column: str) -> bool:
+    """Dialect-safe column check for recipe tables.
+
+    Uses ``PRAGMA table_info`` which works on SQLite natively and is translated
+    to ``information_schema.columns`` by the Postgres compat layer
+    (``backend/app/storage.py:_translate_sql_for_postgres``). Both backends return
+    rows exposing a ``name`` field, so this never raises on a healthy connection
+    and -- crucially -- never aborts a Postgres transaction the way a failing
+    ``ALTER TABLE ... ADD COLUMN`` does.
+    """
+    try:
+        rows = con.execute(f"PRAGMA table_info({table})").fetchall()
+    except Exception:
+        return False
+    target = str(column or "").strip().lower()
+    for row in rows:
+        try:
+            name = row["name"]
+        except Exception:
+            name = row[1]
+        if str(name or "").strip().lower() == target:
+            return True
+    return False
+
+
 def _get_connection() -> sqlite3.Connection:
     con = sqlite3.connect(str(_db_path()))
     con.row_factory = sqlite3.Row
@@ -56,18 +81,16 @@ def _ensure_recipe_tables(con: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_recipe_ingredient_catalog_org ON recipe_ingredient_catalog(org_id, name)"
     )
     # Idempotent migration for existing DBs that predate the `value` column.
-    # Tolerate the "column already present" error from both SQLite
-    # (sqlite3.OperationalError: "duplicate column name: ...") and Postgres
-    # (psycopg.errors.DuplicateColumn: 'column ... already exists').
-    # psycopg is not imported here (sqlite-only deployments may not have it),
-    # so we match on the error message instead of the exception type.
-    # Anything that is not a duplicate-column error is re-raised.
-    try:
+    # Check for the column first and only ALTER when it is actually missing.
+    # The previous approach ran ALTER unconditionally and caught the
+    # "duplicate column" error, but on PostgreSQL a failed ALTER aborts the
+    # whole transaction, so catching DuplicateColumn still left every following
+    # statement failing with InFailedSqlTransaction (stage 502 / restart loop).
+    # PRAGMA table_info is safe on both SQLite (native) and PostgreSQL
+    # (translated to information_schema by the compat layer), so the existence
+    # check itself never poisons the transaction.
+    if not _recipe_column_exists(con, "recipe_ingredient_catalog", "value"):
         con.execute("ALTER TABLE recipe_ingredient_catalog ADD COLUMN value REAL")
-    except Exception as exc:
-        msg = str(exc).lower()
-        if "duplicate column" not in msg and "already exists" not in msg:
-            raise
     con.execute(
         """
         CREATE TABLE IF NOT EXISTS recipes (
