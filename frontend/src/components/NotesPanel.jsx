@@ -50,6 +50,10 @@ import { DEFAULT_QUICK_PROPERTY_NAMES } from "./sidebar/controllers/useBpmnPrope
 import PropertyDisplaySettings from "./sidebar/displaySettings/PropertyDisplaySettings";
 import { buildFieldChips } from "./sidebar/displaySettings/fieldChipsModel";
 import { createDefaultDisplaySettings } from "./sidebar/displaySettings/overlayDisplaySettings";
+import LiveCardPreview from "./sidebar/displaySettings/LiveCardPreview";
+import ToBeBuilder from "./sidebar/displaySettings/ToBeBuilder";
+import { deriveToBeModel } from "./sidebar/displaySettings/toBeBuilderModel";
+import { useToBeState } from "./sidebar/displaySettings/useToBeState";
 import SidebarShell from "./sidebar/SidebarShell";
 import ActorsSection from "./sidebar/ActorsSection";
 import TemplatesAndTldrSection from "./sidebar/TemplatesAndTldrSection";
@@ -1175,6 +1179,7 @@ export default function NotesPanel({
   );
   const selectedElementId = str(selectedElement?.id);
   const sid = str(draft?.session_id || draft?.id);
+  const { toBeState, toggleToBe, markRemoved } = useToBeState(sid);
   const camundaPropertiesDraftKey = useMemo(
     () => buildCamundaPropertiesDraftKey(sid, selectedElementId),
     [sid, selectedElementId],
@@ -1478,23 +1483,46 @@ export default function NotesPanel({
   const robotMetaSyncState = robotMetaBusy
     ? "syncing"
     : (robotMetaSaveFailed ? "error" : (robotMetaHasLocalChanges ? "local" : "saved"));
-  const fieldChips = useMemo(() => {
-    const elementPropertyNames = asArray(camundaPropertiesDraft?.properties?.extensionProperties)
-      .map((row) => row?.name);
-    const dictionaryNames = normalizeOrgPropertyDictionaryBundle(orgPropertyDictionaryBundle)
+  const selectedElementPropertyNames = useMemo(() => (
+    asArray(camundaPropertiesDraft?.properties?.extensionProperties)
+      .map((row) => str(row?.name))
+      .filter(Boolean)
+  ), [camundaPropertiesDraft]);
+  const dictionaryPropertyNames = useMemo(() => (
+    normalizeOrgPropertyDictionaryBundle(orgPropertyDictionaryBundle)
       .properties
-      .map((property) => property.propertyKey);
-    return buildFieldChips({
-      elementPropertyNames,
-      dictionaryNames,
-      quickNames: DEFAULT_QUICK_PROPERTY_NAMES,
-      hiddenFields: overlayDisplaySettings?.hiddenFields ?? null,
-    });
-  }, [camundaPropertiesDraft, orgPropertyDictionaryBundle, overlayDisplaySettings?.hiddenFields]);
+      .map((property) => property.propertyKey)
+  ), [orgPropertyDictionaryBundle]);
+  const fieldChips = useMemo(() => buildFieldChips({
+    elementPropertyNames: selectedElementPropertyNames,
+    dictionaryNames: dictionaryPropertyNames,
+    quickNames: DEFAULT_QUICK_PROPERTY_NAMES,
+    hiddenFields: overlayDisplaySettings?.hiddenFields ?? null,
+  }), [selectedElementPropertyNames, dictionaryPropertyNames, overlayDisplaySettings?.hiddenFields]);
+  const toBeModel = useMemo(() => deriveToBeModel({
+    toBeState,
+    asIsNames: selectedElementPropertyNames,
+    dictionaryNames: dictionaryPropertyNames,
+  }), [toBeState, selectedElementPropertyNames, dictionaryPropertyNames]);
+  // Removed-tracking: a To-Be name that disappears from the configured rows
+  // while the SAME element stays selected was deleted (or renamed away) —
+  // mark it so the Pool shows the "Removed" badge. Element switches only
+  // re-baseline; they never mark.
+  const toBePrevAsIsRef = useRef({ elementId: "", names: [] });
+  useEffect(() => {
+    const prev = toBePrevAsIsRef.current;
+    if (prev.elementId && prev.elementId === selectedElementId) {
+      prev.names.forEach((name) => {
+        if (!selectedElementPropertyNames.includes(name)) markRemoved(name);
+      });
+    }
+    toBePrevAsIsRef.current = { elementId: selectedElementId, names: selectedElementPropertyNames };
+  }, [selectedElementId, selectedElementPropertyNames, markRemoved]);
   const {
     finalizedCamundaPropertiesDraft,
     selectedCamundaExtensionCanonical,
     finalizedCamundaPropertiesDraftCanonical,
+    overlayPreview,
   } = useCamundaPropertiesOverlayPreview({
     selectedElementId,
     selectedCamundaPropertiesEditable,
@@ -2531,6 +2559,24 @@ export default function NotesPanel({
     setCamundaPropertiesErr("");
   }, [camundaPropertiesDraft, camundaPropertiesDraftKey]);
 
+  // To-Be builder Pool "+": append the field to the element draft (draft-only,
+  // same semantics as addPropertyRow; persists on the global Save).
+  const addPropertyFromPool = useCallback((nameRaw) => {
+    const name = str(nameRaw);
+    if (!name || !selectedCamundaPropertiesEditable) return;
+    const prevRows = asArray(camundaPropertiesDraft?.properties?.extensionProperties);
+    updateCamundaPropertiesDraft({
+      ...camundaPropertiesDraft,
+      properties: {
+        ...camundaPropertiesDraft.properties,
+        extensionProperties: [
+          ...prevRows,
+          { id: `prop_draft_${Date.now()}`, name, value: "" },
+        ],
+      },
+    });
+  }, [camundaPropertiesDraft, selectedCamundaPropertiesEditable, updateCamundaPropertiesDraft]);
+
   const updateBpmnDocumentationDraft = useCallback((nextRowsRaw) => {
     setBpmnDocumentationDraftRows(normalizeDocumentationRows(nextRowsRaw, { keepEmpty: true }));
     setBpmnDocumentationSaveFailed(false);
@@ -3155,6 +3201,12 @@ export default function NotesPanel({
                 open={!!sectionsOpen.properties}
                 onToggle={toggleSection}
               >
+                {isElementMode && selectedCamundaPropertiesEditable && !isProcessLikeSelection && (
+                  <LiveCardPreview
+                    preview={overlayPreview}
+                    elementName={selectedElementName}
+                  />
+                )}
                 <PropertyDisplaySettings
                   displayMode={overlayDisplaySettings.displayMode}
                   v2Mode={overlayDisplaySettings.v2Mode}
@@ -3164,6 +3216,17 @@ export default function NotesPanel({
                   onV2ModeChange={onOverlayV2ModeChange}
                   onToggleField={onOverlayFieldToggle}
                 />
+                {isElementMode && selectedCamundaPropertiesEditable && (
+                  <ToBeBuilder
+                    asIs={toBeModel.asIs}
+                    pool={toBeModel.pool}
+                    inToBeCount={toBeModel.inToBeCount}
+                    skippedCount={toBeModel.skippedCount}
+                    disabled={disabled}
+                    onAddFromPool={addPropertyFromPool}
+                    onToggleToBe={toggleToBe}
+                  />
+                )}
                 <CamundaPropertiesSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   selectedElementType={isElementMode ? selectedElementType : ""}
