@@ -115,20 +115,20 @@ test.describe("sidebar redesign variant A", () => {
     await expect(resetBtn).toBeDisabled();
   });
 
-  test("checkbox toggles and does not spuriously enable the global footer", async ({ page }) => {
-    const checkbox = page.getByTestId("bpmn-show-v2-overlays-checkbox");
-    await expect(checkbox).not.toBeChecked();
+  test("display settings select toggles and does not spuriously enable the global footer", async ({ page }) => {
+    const select = page.getByTestId("overlay-v2-mode-select");
+    await expect(select).toHaveValue("none");
 
-    await checkbox.click();
-    await expect(checkbox).toBeChecked();
+    await select.selectOption("all");
+    await expect(select).toHaveValue("all");
 
     const saveBtn = await saveAllButton(page);
     const resetBtn = await resetAllButton(page);
     await expect(saveBtn).toBeDisabled();
     await expect(resetBtn).toBeDisabled();
 
-    await checkbox.click();
-    await expect(checkbox).not.toBeChecked();
+    await select.selectOption("none");
+    await expect(select).toHaveValue("none");
   });
 
   test("input change enables footer and save all persists the change", async ({ page }) => {
