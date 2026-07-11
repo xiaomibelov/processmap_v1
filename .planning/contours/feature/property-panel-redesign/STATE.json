@@ -1,21 +1,39 @@
 {
   "contour": "feature/property-panel-redesign",
   "branch": "feature/property-panel-redesign",
-  "base": "origin/main@03090852",
+  "base": "origin/main@5aabba98",
   "state": "in-progress",
   "states": ["planned", "approved", "in-progress", "stage-verified", "pr-open", "merged"],
   "pr": null,
   "created": "2026-07-11T14:05:00Z",
   "approved": "2026-07-11T14:20:00Z",
+  "implementationComplete": "2026-07-11",
   "decisions": {
     "D1": "RESOLVED UPSTREAM: PR #523 (feat/process-properties) merged to main 2026-07-11; branch rebased onto 5aabba98. Phase 3 = integration verification only (no re-implementation).",
     "D2": "use existing styles/tokens.css + color-mix (no --kimi-* in product)",
     "D3": "chips per-field visibility = per-session (localStorage)",
     "D4": "To-Be storage = derived + localStorage (no bpmn_meta in MVP)",
-    "D5": "deferred to review phase (raise :5180 or use stage.processmap.ru)"
+    "D5": "OPEN: runtime for Agent-3 review — local vite :5180 (verified working) or stage.processmap.ru; awaiting user decision"
   },
-  "artifacts": ["PLAN.md", "UI.md", "API.md", "TESTS.md", "STATE.json"],
-  "commits": ["0ac9b133 docs(planning)", "e15d04e1 feat(sidebar) phase 0"],
-  "baseline": { "tree": "main@5aabba98 + phase0", "tests": 2303, "preExistingFails": 35, "list": "/tmp/fails_rebased.txt" },
-  "notes": "PLAN approved. Phase 0 done via TDD (48 new tests + 2 integration, all green; 2 atomic commits). Pre-existing failure in propertyDictionaryModel fallback-mode test confirmed on clean main (dedup PR #516 aftermath), unrelated to this contour. Next: Phase 1 (hook + App.jsx wiring + compact UI)."
+  "artifacts": ["PLAN.md", "UI.md", "API.md", "TESTS.md", "WORKER_REPORT.md", "REVIEW_REPORT.md", "PR.md", "STATE.json"],
+  "commits": [
+    "0ac9b133 docs(planning)",
+    "e15d04e1 feat(sidebar) phase 0",
+    "44842695 refactor(sidebar) hiddenFields opt-out",
+    "47773335 feat(sidebar) phase 1 compact settings",
+    "c5c844b2 feat(sidebar) phase 2 To-Be builder + live preview",
+    "bcb5cadd feat(overlays) phase 4 V2 chip filter + clear-before-mount fix",
+    "1f7b9410 test(e2e) property-panel-redesign spec"
+  ],
+  "verification": {
+    "unitSweep": "2305 pass / 35 fail — fail-set byte-identical to baseline (/tmp/fails_base_names.txt)",
+    "overlaySuites": "38/38",
+    "build": "exit 0",
+    "e2e": "property-panel-redesign.spec.mjs 8/8 green (chromium, workers=1, 3.0m)",
+    "e2eEnv": "vite dev :5180 + SSH tunnel 127.0.0.1:8011 -> root@91.184.252.237 (processmap_v1 api, admin@local/admin)"
+  },
+  "findings": {
+    "preExistingRenderLoop": "useBpmnSync returns fresh object per render -> registerAppSafeRefreshHandler effect re-runs per render -> AppShell setRefreshRisk ping-pong. Reproduced on clean main@5aabba98. NOT fixed in this contour; separate PR recommended."
+  },
+  "next": "Review gate: user approves WORKER_REPORT/REVIEW_REPORT -> decision on D5 -> push + PR only on explicit command -> stage verification checklist."
 }
