@@ -3,6 +3,7 @@ import {
   isOverlayMetaProperty,
   parseOverlayFromProperties,
 } from "../../../../../components/process/utils/bpmnOverlayParser.js";
+import { filterRowsByHiddenFields } from "../../../../../components/sidebar/displaySettings/filterRowsByHiddenFields.js";
 import { asArray, asObject, asText } from "./overlayUtils.js";
 
 function dedupePropertiesByExactValue(props) {
@@ -35,7 +36,7 @@ function buildAutoOverlayDescriptor(elementId, title, colorKey, geometry, proper
   };
 }
 
-export function resolveV2OverlayContent({ elementId, inst, previewMap, forceShow = false }) {
+export function resolveV2OverlayContent({ elementId, inst, previewMap, forceShow = false, hiddenFields = null }) {
   const id = asText(elementId);
   if (!id) return null;
 
@@ -54,10 +55,13 @@ export function resolveV2OverlayContent({ elementId, inst, previewMap, forceShow
     const items = enabled
       ? asArray(preview?.items).filter((item) => asText(item?.key ?? item?.label) && asText(item?.value) !== "")
       : [];
-    const properties = items.map((item) => ({
+    // Per-field chip filter (property-panel-redesign): preview-level only,
+    // opt-out semantics. Applied here too (not just upstream) so direct
+    // callers get consistent filtering.
+    const properties = filterRowsByHiddenFields(items.map((item) => ({
       name: asText(item?.key ?? item?.label),
       value: asText(item?.value),
-    }));
+    })), hiddenFields);
 
     if (properties.length) {
       const title = `${properties.length} element properties`;
@@ -81,15 +85,23 @@ export function resolveV2OverlayContent({ elementId, inst, previewMap, forceShow
   const businessProperties = dedupePropertiesByExactValue(
     props.filter((p) => !isOverlayMetaProperty(p?.name) && asText(p?.value) !== "")
   );
+  const properties = filterRowsByHiddenFields(businessProperties, hiddenFields);
+
+  // Auto property cards exist only to show fields: when the field filter
+  // hides every one of them, the card must not render (API.md §5). Name-only
+  // cards (no properties to begin with) and authored overlays stay.
+  if (overlay.auto === true && businessProperties.length > 0 && properties.length === 0) {
+    return null;
+  }
 
   return {
     ...overlay,
     source: "bpmn",
-    properties: businessProperties,
+    properties,
   };
 }
 
-export function mergeV2OverlaysWithPropertyPreview(inst, overlayList, previewMap, { forceShow = false } = {}) {
+export function mergeV2OverlaysWithPropertyPreview(inst, overlayList, previewMap, { forceShow = false, hiddenFields = null } = {}) {
   const normalizedPreviewMap = asObject(previewMap);
   const previewKeys = Object.keys(normalizedPreviewMap);
   if (!previewKeys.length) return overlayList;
@@ -100,7 +112,7 @@ export function mergeV2OverlaysWithPropertyPreview(inst, overlayList, previewMap
   const merged = [];
 
   previewKeys.forEach((elementId) => {
-    const content = resolveV2OverlayContent({ elementId, inst, previewMap: normalizedPreviewMap, forceShow });
+    const content = resolveV2OverlayContent({ elementId, inst, previewMap: normalizedPreviewMap, forceShow, hiddenFields });
     if (!content) return;
 
     const existing = extractedByNodeId.get(elementId);
