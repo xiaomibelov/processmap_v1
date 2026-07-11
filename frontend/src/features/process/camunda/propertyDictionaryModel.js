@@ -2,7 +2,7 @@ import {
   createEmptyCamundaExtensionState,
   extractCamundaInputOutputParametersFromExtensionState,
 } from "./camundaExtensions.js";
-import { filterRowsByVisibleFields } from "../../../components/sidebar/displaySettings/filterRowsByVisibleFields.js";
+import { filterRowsByHiddenFields } from "../../../components/sidebar/displaySettings/filterRowsByHiddenFields.js";
 
 const propertyDictionaryEditorModelCache = new WeakMap();
 const propertiesOverlayRowsCache = new WeakMap();
@@ -404,7 +404,7 @@ export function buildPropertiesOverlayPreview({
   dictionaryBundleRaw,
   showPropertiesOverlay = false,
   visibleLimit = 4,
-  visibleFields = null,
+  hiddenFields = null,
 } = {}) {
   if (!showPropertiesOverlay) {
     return {
@@ -419,8 +419,8 @@ export function buildPropertiesOverlayPreview({
   const allRows = derivePropertiesOverlayRows({ extensionStateRaw, dictionaryBundleRaw });
   // Per-field chip filter (property-panel-redesign): applied pre-slice so the
   // visible window and hiddenCount reflect only the active fields. A non-array
-  // visibleFields means "no filter configured".
-  const rows = Array.isArray(visibleFields) ? filterRowsByVisibleFields(allRows, visibleFields) : allRows;
+  // hiddenFields means "no filter configured"; rows are active by default.
+  const rows = Array.isArray(hiddenFields) ? filterRowsByHiddenFields(allRows, hiddenFields) : allRows;
 
   const normalizedLimit = Math.max(1, Math.min(5, Number(visibleLimit || 4) || 4));
   const visibleItems = rows.slice(0, normalizedLimit);
