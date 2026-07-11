@@ -41,11 +41,22 @@ import {
   finalizeExtensionStateWithDictionary,
   buildPropertiesOverlayPreview,
   getOperationKeyFromRobotMeta,
+  normalizeOrgPropertyDictionaryBundle,
 } from "../features/process/camunda/propertyDictionaryModel";
 import useCamundaPropertiesOverlayPreview from "../features/process/camunda/useCamundaPropertiesOverlayPreview";
 import { isProcessLikeType } from "../features/process/bpmn/stage/interaction/processRootSelection.js";
 import useNotesPanelController from "./notesPanel/useNotesPanelController.js";
-import { SHOW_PROPERTIES_FLAG_KEY } from "./sidebar/useElementSettingsController.js";
+import { DEFAULT_QUICK_PROPERTY_NAMES } from "./sidebar/controllers/useBpmnPropertiesController.js";
+import PropertyDisplaySettings from "./sidebar/displaySettings/PropertyDisplaySettings";
+import { buildFieldChips } from "./sidebar/displaySettings/fieldChipsModel";
+import { createDefaultDisplaySettings } from "./sidebar/displaySettings/overlayDisplaySettings";
+import LiveCardPreview from "./sidebar/displaySettings/LiveCardPreview";
+import ToBeBuilder from "./sidebar/displaySettings/ToBeBuilder";
+import { deriveToBeModel } from "./sidebar/displaySettings/toBeBuilderModel";
+import { useToBeState } from "./sidebar/displaySettings/useToBeState";
+import { usePanelGroupsState } from "./sidebar/displaySettings/usePanelGroupsState";
+import PanelGroup from "./sidebar/displaySettings/PanelGroup";
+import ExtensionStateMiniIndicator from "./sidebar/displaySettings/ExtensionStateMiniIndicator";
 import SidebarShell from "./sidebar/SidebarShell";
 import ActorsSection from "./sidebar/ActorsSection";
 import TemplatesAndTldrSection from "./sidebar/TemplatesAndTldrSection";
@@ -89,9 +100,7 @@ function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
 
-function isShowPropertiesFlagRow(row) {
-  return String(row?.name || "").trim().toLowerCase() === SHOW_PROPERTIES_FLAG_KEY;
-}
+const FALLBACK_OVERLAY_DISPLAY_SETTINGS = Object.freeze(createDefaultDisplaySettings());
 
 function str(v) {
   return String(v || "").trim();
@@ -1025,14 +1034,10 @@ export default function NotesPanel({
   onOrgPropertyDictionaryChanged,
   onPropertiesOverlayPreviewChange,
   onPropertiesOverlayAlwaysPreviewChange,
-  showPropertiesOverlayAlways = false,
-  onShowPropertiesOverlayAlwaysChange,
-  showPropertiesOverlayOnSelect = false,
-  onShowPropertiesOverlayOnSelectChange,
-  v2OverlaysEnabled = false,
-  onShowV2OverlaysChange,
-  v2OverlaysExpanded = false,
-  onShowV2OverlaysExpandedChange,
+  overlayDisplaySettings = FALLBACK_OVERLAY_DISPLAY_SETTINGS,
+  onOverlayDisplayModeChange,
+  onOverlayV2ModeChange,
+  onOverlayFieldToggle,
   onGoToDiagram,
   onProjectBreadcrumbClick,
   onSessionBreadcrumbClick,
@@ -1053,12 +1058,9 @@ export default function NotesPanel({
   onFocusDrawioCompanion,
   disabled,
 }) {
-  const [localShowPropertiesOverlayOnSelect, setLocalShowPropertiesOverlayOnSelect] = useState(showPropertiesOverlayOnSelect);
-  const resolvedShowPropertiesOverlayOnSelect = onShowPropertiesOverlayOnSelectChange
-    ? showPropertiesOverlayOnSelect
-    : localShowPropertiesOverlayOnSelect;
-  const resolvedOnShowPropertiesOverlayOnSelectChange = onShowPropertiesOverlayOnSelectChange
-    ?? setLocalShowPropertiesOverlayOnSelect;
+  // "hidden" turns every property card off; "hover"/"always" both show the
+  // selected element card ("always" additionally renders cards for all elements).
+  const overlayCardOnSelectEnabled = overlayDisplaySettings.displayMode !== "hidden";
 
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1180,6 +1182,8 @@ export default function NotesPanel({
   );
   const selectedElementId = str(selectedElement?.id);
   const sid = str(draft?.session_id || draft?.id);
+  const { toBeState, toggleToBe, markRemoved } = useToBeState(sid);
+  const { groups: panelGroups, toggleGroup: togglePanelGroup } = usePanelGroupsState();
   const camundaPropertiesDraftKey = useMemo(
     () => buildCamundaPropertiesDraftKey(sid, selectedElementId),
     [sid, selectedElementId],
@@ -1483,25 +1487,57 @@ export default function NotesPanel({
   const robotMetaSyncState = robotMetaBusy
     ? "syncing"
     : (robotMetaSaveFailed ? "error" : (robotMetaHasLocalChanges ? "local" : "saved"));
-  const showPropertiesFlag = useMemo(() => {
-    const rows = camundaPropertiesDraft?.properties?.extensionProperties;
-    if (!Array.isArray(rows)) return false;
-    return rows.some(isShowPropertiesFlagRow);
-  }, [camundaPropertiesDraft]);
+  const selectedElementPropertyNames = useMemo(() => (
+    asArray(camundaPropertiesDraft?.properties?.extensionProperties)
+      .map((row) => str(row?.name))
+      .filter(Boolean)
+  ), [camundaPropertiesDraft]);
+  const dictionaryPropertyNames = useMemo(() => (
+    normalizeOrgPropertyDictionaryBundle(orgPropertyDictionaryBundle)
+      .properties
+      .map((property) => property.propertyKey)
+  ), [orgPropertyDictionaryBundle]);
+  const fieldChips = useMemo(() => buildFieldChips({
+    elementPropertyNames: selectedElementPropertyNames,
+    dictionaryNames: dictionaryPropertyNames,
+    quickNames: DEFAULT_QUICK_PROPERTY_NAMES,
+    hiddenFields: overlayDisplaySettings?.hiddenFields ?? null,
+  }), [selectedElementPropertyNames, dictionaryPropertyNames, overlayDisplaySettings?.hiddenFields]);
+  const toBeModel = useMemo(() => deriveToBeModel({
+    toBeState,
+    asIsNames: selectedElementPropertyNames,
+    dictionaryNames: dictionaryPropertyNames,
+  }), [toBeState, selectedElementPropertyNames, dictionaryPropertyNames]);
+  // Removed-tracking: a To-Be name that disappears from the configured rows
+  // while the SAME element stays selected was deleted (or renamed away) —
+  // mark it so the Pool shows the "Removed" badge. Element switches only
+  // re-baseline; they never mark.
+  const toBePrevAsIsRef = useRef({ elementId: "", names: [] });
+  useEffect(() => {
+    const prev = toBePrevAsIsRef.current;
+    if (prev.elementId && prev.elementId === selectedElementId) {
+      prev.names.forEach((name) => {
+        if (!selectedElementPropertyNames.includes(name)) markRemoved(name);
+      });
+    }
+    toBePrevAsIsRef.current = { elementId: selectedElementId, names: selectedElementPropertyNames };
+  }, [selectedElementId, selectedElementPropertyNames, markRemoved]);
   const {
     finalizedCamundaPropertiesDraft,
     selectedCamundaExtensionCanonical,
     finalizedCamundaPropertiesDraftCanonical,
+    overlayPreview,
   } = useCamundaPropertiesOverlayPreview({
     selectedElementId,
     selectedCamundaPropertiesEditable,
     camundaPropertiesDraft,
     selectedCamundaExtensionEntry,
     orgPropertyDictionaryBundle,
-    resolvedShowPropertiesOverlayOnSelect,
+    resolvedShowPropertiesOverlayOnSelect: overlayCardOnSelectEnabled,
     propertiesOverlayPreviewDispatchRef,
     onPropertiesOverlayPreviewChange,
     onPropertiesOverlayAlwaysPreviewChange,
+    hiddenFields: overlayDisplaySettings?.hiddenFields ?? null,
     // The root process has no canvas geometry: never render a property
     // overlay card for it (properties are edited in the sidebar only).
     suppressOverlayPreview: isProcessLikeSelection,
@@ -2527,26 +2563,23 @@ export default function NotesPanel({
     setCamundaPropertiesErr("");
   }, [camundaPropertiesDraft, camundaPropertiesDraftKey]);
 
-  const setShowPropertiesFlag = useCallback((enabled) => {
-    if (!selectedCamundaPropertiesEditable || !selectedElementId) return;
-    const nextEnabled = !!enabled;
-    const prevRows = Array.isArray(camundaPropertiesDraft?.properties?.extensionProperties)
-      ? camundaPropertiesDraft.properties.extensionProperties
-      : [];
-    if (nextEnabled === showPropertiesFlag) return;
-    const nextRows = nextEnabled
-      ? [...prevRows, { id: `prop_draft_${Date.now()}`, name: SHOW_PROPERTIES_FLAG_KEY, value: "true" }]
-      : prevRows.filter((row) => !isShowPropertiesFlagRow(row));
-    const nextDraft = {
+  // To-Be builder Pool "+": append the field to the element draft (draft-only,
+  // same semantics as addPropertyRow; persists on the global Save).
+  const addPropertyFromPool = useCallback((nameRaw) => {
+    const name = str(nameRaw);
+    if (!name || !selectedCamundaPropertiesEditable) return;
+    const prevRows = asArray(camundaPropertiesDraft?.properties?.extensionProperties);
+    updateCamundaPropertiesDraft({
       ...camundaPropertiesDraft,
       properties: {
         ...camundaPropertiesDraft.properties,
-        extensionProperties: nextRows,
+        extensionProperties: [
+          ...prevRows,
+          { id: `prop_draft_${Date.now()}`, name, value: "" },
+        ],
       },
-    };
-    updateCamundaPropertiesDraft(nextDraft);
-    void saveSelectedCamundaProperties(nextDraft);
-  }, [selectedCamundaPropertiesEditable, selectedElementId, showPropertiesFlag, camundaPropertiesDraft, updateCamundaPropertiesDraft, saveSelectedCamundaProperties]);
+    });
+  }, [camundaPropertiesDraft, selectedCamundaPropertiesEditable, updateCamundaPropertiesDraft]);
 
   const updateBpmnDocumentationDraft = useCallback((nextRowsRaw) => {
     setBpmnDocumentationDraftRows(normalizeDocumentationRows(nextRowsRaw, { keepEmpty: true }));
@@ -3172,63 +3205,55 @@ export default function NotesPanel({
                 open={!!sectionsOpen.properties}
                 onToggle={toggleSection}
               >
-                <div className="sidebarPropertiesDisplaySettings">
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      className="sidebarCheckbox"
-                      checked={!!resolvedShowPropertiesOverlayOnSelect}
-                      onChange={(event) => void resolvedOnShowPropertiesOverlayOnSelectChange(!!event.target.checked)}
-                      disabled={!!disabled}
+                {isElementMode && selectedCamundaPropertiesEditable && (
+                  <div className="propertiesTabTopRow">
+                    <ExtensionStateMiniIndicator
+                      syncState={camundaExtensionSyncState}
+                      busy={camundaPropertiesBusy}
                     />
-                    <span>Показывать свойства над задачей при выделении</span>
-                  </label>
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      className="sidebarCheckbox"
-                      checked={!!showPropertiesOverlayAlways}
-                      onChange={(event) => void onShowPropertiesOverlayAlwaysChange?.(!!event.target.checked)}
-                      disabled={!!disabled}
-                      data-testid="bpmn-show-properties-checkbox"
+                  </div>
+                )}
+                {isElementMode && selectedCamundaPropertiesEditable && !isProcessLikeSelection && (
+                  <LiveCardPreview
+                    preview={overlayPreview}
+                    elementName={selectedElementName}
+                  />
+                )}
+                <PropertyDisplaySettings
+                  displayMode={overlayDisplaySettings.displayMode}
+                  v2Mode={overlayDisplaySettings.v2Mode}
+                  chips={fieldChips}
+                  disabled={disabled}
+                  onDisplayModeChange={onOverlayDisplayModeChange}
+                  onV2ModeChange={onOverlayV2ModeChange}
+                  onToggleField={onOverlayFieldToggle}
+                  groups={panelGroups}
+                  onToggleGroup={togglePanelGroup}
+                />
+                {isElementMode && selectedCamundaPropertiesEditable && (
+                  <PanelGroup
+                    groupId="toBe"
+                    label="To-Be"
+                    open={panelGroups.toBe}
+                    onToggle={togglePanelGroup}
+                    right={(
+                      <span className="toBePills">
+                        {toBeModel.inToBeCount} in To-Be / {toBeModel.skippedCount} skipped
+                      </span>
+                    )}
+                  >
+                    <ToBeBuilder
+                      asIs={toBeModel.asIs}
+                      pool={toBeModel.pool}
+                      inToBeCount={toBeModel.inToBeCount}
+                      skippedCount={toBeModel.skippedCount}
+                      disabled={disabled}
+                      onAddFromPool={addPropertyFromPool}
+                      onToggleToBe={toggleToBe}
+                      hideHeader
                     />
-                    <span>Всегда показывать свойства над задачей</span>
-                  </label>
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      className="sidebarCheckbox"
-                      checked={!!showPropertiesFlag}
-                      onChange={(event) => void setShowPropertiesFlag(!!event.target.checked)}
-                      disabled={!!disabled || !!camundaPropertiesBusy || !selectedCamundaPropertiesEditable}
-                      data-testid="bpmn-show-properties-per-element-checkbox"
-                    />
-                    <span>Показывать свойства над задачей</span>
-                  </label>
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted py-1">V2-оверлеи</div>
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      className="sidebarCheckbox"
-                      checked={!!v2OverlaysEnabled}
-                      onChange={(event) => void onShowV2OverlaysChange?.(!!event.target.checked)}
-                      disabled={!!disabled}
-                      data-testid="bpmn-show-v2-overlays-checkbox"
-                    />
-                    <span>Показывать все V2-оверлеи свойств</span>
-                  </label>
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      className="sidebarCheckbox"
-                      checked={!!v2OverlaysExpanded}
-                      onChange={(event) => void onShowV2OverlaysExpandedChange?.(!!event.target.checked)}
-                      disabled={!!disabled || !v2OverlaysEnabled}
-                      data-testid="bpmn-show-v2-overlays-expanded-checkbox"
-                    />
-                    <span>Показывать все V2-оверлеи свойств раскрытыми</span>
-                  </label>
-                </div>
+                  </PanelGroup>
+                )}
                 <CamundaPropertiesSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   selectedElementType={isElementMode ? selectedElementType : ""}

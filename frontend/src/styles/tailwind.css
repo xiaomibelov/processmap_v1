@@ -4756,6 +4756,433 @@
     margin-bottom: 4px;
   }
 
+  /* Compact overlay display settings (property-panel-redesign). Token-only:
+     all colors derive from design tokens so dark/graphite themes flip free. */
+  .overlayDisplaySettings {
+    @apply grid;
+    gap: 8px;
+    padding: 6px 2px 10px;
+    border-bottom: 1px solid hsl(var(--border) / 0.55);
+    margin-bottom: 6px;
+  }
+
+  .overlayDisplayField {
+    @apply grid;
+    gap: 3px;
+  }
+
+  .overlayDisplayLabel {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: hsl(var(--muted));
+  }
+
+  .overlayDisplaySelect {
+    width: 100%;
+    padding: 5px 8px;
+    font-size: 13px;
+    line-height: 1.35;
+    color: hsl(var(--text));
+    background: hsl(var(--panel));
+    border: 1px solid hsl(var(--border));
+    border-radius: 6px;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 140ms ease, box-shadow 140ms ease;
+  }
+
+  .overlayDisplaySelect:hover:not(:disabled) {
+    border-color: hsl(var(--border-strong));
+  }
+
+  .overlayDisplaySelect:focus-visible {
+    border-color: hsl(var(--ring));
+    box-shadow: 0 0 0 2px hsl(var(--ring) / 0.35);
+  }
+
+  .overlayDisplaySelect:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .overlayDisplayHint {
+    font-size: 11px;
+    line-height: 1.4;
+    color: hsl(var(--hint));
+  }
+
+  /* Collapsible panel groups + side-by-side selects (UI refresh). */
+  .overlayDisplaySelectsRow {
+    @apply grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    align-items: start;
+  }
+
+  .panelGroup {
+    @apply grid;
+    gap: 4px;
+  }
+
+  .panelGroupHead {
+    @apply flex items-center justify-between;
+    gap: 6px;
+  }
+
+  .panelGroupToggle {
+    @apply inline-flex items-center;
+    gap: 4px;
+    padding: 2px 0;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .panelGroupToggle:hover .overlayDisplayLabel {
+    color: hsl(var(--text));
+  }
+
+  .panelGroupToggle:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 1px;
+    border-radius: 3px;
+  }
+
+  .panelGroupChevron {
+    font-size: 9px;
+    line-height: 1;
+    color: hsl(var(--muted));
+    transform: rotate(-90deg);
+    transition: transform 140ms ease;
+  }
+
+  .panelGroupChevron--open {
+    transform: rotate(0deg);
+  }
+
+  .panelGroupRight {
+    @apply inline-flex items-center;
+    flex-shrink: 0;
+  }
+
+  .panelGroupBody {
+    @apply grid;
+    gap: 4px;
+  }
+
+  /* Extension-state mini indicator (top of the Properties tab). */
+  .propertiesTabTopRow {
+    @apply flex items-center justify-end;
+    padding: 0 2px 4px;
+  }
+
+  .extensionStateMini {
+    @apply inline-flex items-center justify-center;
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    color: hsl(var(--muted));
+  }
+
+  .extensionStateMini--saved {
+    color: hsl(var(--success) / 0.9);
+  }
+
+  .extensionStateMini--dirty {
+    color: hsl(var(--warning) / 0.95);
+  }
+
+  .extensionStateMini--syncing {
+    color: hsl(var(--muted));
+    animation: extensionStateMiniSpin 1s linear infinite;
+  }
+
+  .extensionStateMini--error {
+    color: hsl(var(--danger) / 0.95);
+  }
+
+  @keyframes extensionStateMiniSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .overlayFieldChipsBlock {
+    @apply grid;
+    gap: 4px;
+    padding-top: 2px;
+  }
+
+  .overlayFieldChips {
+    @apply flex flex-wrap;
+    gap: 5px;
+  }
+
+  .overlayFieldChip {
+    @apply inline-flex items-center;
+    gap: 4px;
+    padding: 3px 9px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: hsl(var(--muted));
+    background: transparent;
+    border: 1px solid hsl(var(--border));
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 100ms ease;
+  }
+
+  .overlayFieldChip:hover:not(:disabled) {
+    background: color-mix(in srgb, hsl(var(--text)) 6%, transparent);
+    border-color: hsl(var(--border-strong));
+    color: hsl(var(--text));
+  }
+
+  .overlayFieldChip:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 1px;
+  }
+
+  .overlayFieldChip:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .overlayFieldChip--active {
+    background: hsl(var(--text));
+    border-color: hsl(var(--text));
+    color: hsl(var(--bg));
+  }
+
+  .overlayFieldChip--active:hover:not(:disabled) {
+    background: color-mix(in srgb, hsl(var(--text)) 85%, hsl(var(--bg)));
+    border-color: transparent;
+    color: hsl(var(--bg));
+  }
+
+  .overlayFieldChipCheck {
+    flex: none;
+    color: currentColor;
+  }
+
+  /* LiveCardPreview + ToBeBuilder (property-panel-redesign, phase 2).
+     Token-only; dark/graphite themes flip free. */
+  .liveCardPreview {
+    @apply grid;
+    gap: 5px;
+    padding: 6px 2px 8px;
+    border-bottom: 1px solid hsl(var(--border) / 0.55);
+    margin-bottom: 6px;
+  }
+
+  .liveCardPreviewHeader {
+    @apply flex items-baseline justify-between;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .liveCardPreviewElement {
+    font-size: 11px;
+    color: hsl(var(--hint));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .liveCardPreviewEmpty {
+    font-size: 12px;
+    color: hsl(var(--hint));
+    padding: 8px 10px;
+    border: 1px dashed hsl(var(--border));
+    border-radius: 6px;
+    text-align: center;
+  }
+
+  .liveCardPreviewCard {
+    @apply grid;
+    gap: 2px;
+    max-height: 180px;
+    overflow: auto;
+    padding: 8px 10px;
+    background: hsl(var(--panel));
+    border: 1px solid hsl(var(--border));
+    border-radius: 8px;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .liveCardPreviewRow {
+    @apply flex items-baseline justify-between;
+    gap: 10px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .liveCardPreviewLabel {
+    color: hsl(var(--muted));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .liveCardPreviewValue {
+    color: hsl(var(--text));
+    font-weight: 500;
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+
+  .liveCardPreviewMore {
+    font-size: 11px;
+    color: hsl(var(--hint));
+    text-align: right;
+  }
+
+  .toBeBuilder {
+    @apply grid;
+    gap: 8px;
+    padding: 6px 2px 10px;
+    border-bottom: 1px solid hsl(var(--border) / 0.55);
+    margin-bottom: 6px;
+  }
+
+  .toBeSummary {
+    @apply flex items-center justify-between;
+    gap: 8px;
+  }
+
+  .toBePills {
+    font-size: 11px;
+    color: hsl(var(--muted));
+    padding: 2px 8px;
+    background: hsl(var(--panel2));
+    border: 1px solid hsl(var(--border) / 0.7);
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  .toBeSection {
+    @apply grid;
+    gap: 4px;
+  }
+
+  .toBeSectionTitle {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: hsl(var(--muted));
+  }
+
+  .toBeEmpty {
+    font-size: 11px;
+    color: hsl(var(--hint));
+    padding: 4px 2px;
+  }
+
+  .toBeList {
+    @apply grid;
+    gap: 4px;
+    max-height: 220px;
+    overflow: auto;
+  }
+
+  .toBeRow {
+    @apply flex items-center;
+    gap: 5px;
+  }
+
+  .toBeRowToggle {
+    @apply flex items-center justify-between;
+    flex: 1;
+    gap: 8px;
+    min-width: 0;
+    padding: 4px 8px;
+    background: hsl(var(--panel));
+    border: 1px solid hsl(var(--border) / 0.8);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border-color 140ms ease, background 140ms ease;
+  }
+
+  .toBeRowToggle:hover:not(:disabled) {
+    border-color: hsl(var(--border-strong));
+    background: color-mix(in srgb, hsl(var(--text)) 4%, hsl(var(--panel)));
+  }
+
+  .toBeRowToggle:focus-visible,
+  .toBeAddBtn:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 1px;
+  }
+
+  .toBeRowToggle:disabled,
+  .toBeAddBtn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .toBeRowName {
+    font-size: 12px;
+    color: hsl(var(--text));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .toBeBadge {
+    flex: none;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 1px 7px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  .toBeBadge--inToBe {
+    color: hsl(var(--accent));
+    background: color-mix(in srgb, hsl(var(--accent)) 14%, transparent);
+    border: 1px solid color-mix(in srgb, hsl(var(--accent)) 30%, transparent);
+  }
+
+  .toBeBadge--added {
+    color: hsl(var(--success));
+    background: color-mix(in srgb, hsl(var(--success)) 14%, transparent);
+    border: 1px solid color-mix(in srgb, hsl(var(--success)) 30%, transparent);
+  }
+
+  .toBeBadge--removed {
+    color: hsl(var(--danger));
+    background: color-mix(in srgb, hsl(var(--danger)) 12%, transparent);
+    border: 1px solid color-mix(in srgb, hsl(var(--danger)) 28%, transparent);
+  }
+
+  .toBeBadge--notFilled {
+    color: hsl(var(--muted));
+    background: color-mix(in srgb, hsl(var(--muted)) 10%, transparent);
+    border: 1px solid color-mix(in srgb, hsl(var(--muted)) 22%, transparent);
+  }
+
+  .toBeAddBtn {
+    flex: none;
+    width: 24px;
+    height: 24px;
+    font-size: 15px;
+    line-height: 1;
+    color: hsl(var(--accent));
+    background: color-mix(in srgb, hsl(var(--accent)) 10%, transparent);
+    border: 1px solid color-mix(in srgb, hsl(var(--accent)) 28%, transparent);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease;
+  }
+
+  .toBeAddBtn:hover:not(:disabled) {
+    background: color-mix(in srgb, hsl(var(--accent)) 18%, transparent);
+    border-color: hsl(var(--accent));
+  }
+
   .sidebarPropertiesBlock {
     @apply grid;
     gap: 5px;
@@ -5079,8 +5506,10 @@
     max-width: 672px;
     margin-left: auto;
     margin-right: auto;
-    padding-left: 12px;
-    padding-right: 12px;
+    /* UI refresh: no side padding — quick/additional property blocks must
+       align edge-to-edge with the other sidebar sections. */
+    padding-left: 0;
+    padding-right: 0;
   }
 
   .sidebarSchemaPropertyRow {

@@ -622,3 +622,48 @@ test("editor model without schema exposes all rows as customRows", () => {
     ],
   );
 });
+
+test("properties overlay preview applies the per-field chip filter pre-slice", () => {
+  // visibleLimit=2 would slice [container, equipment] and hide "value" post-slice;
+  // the chip filter must run BEFORE the slice so "value" still fills the window.
+  const preview = buildPropertiesOverlayPreview({
+    elementId: "Task_1",
+    showPropertiesOverlay: true,
+    visibleLimit: 2,
+    hiddenFields: ["container"],
+    extensionStateRaw: {
+      properties: {
+        extensionProperties: [
+          { id: "p1", name: "container", value: "Лоток 150x55" },
+          { id: "p2", name: "equipment", value: "Весы" },
+          { id: "p3", name: "value", value: "1" },
+        ],
+      },
+    },
+  });
+  assert.deepEqual(
+    preview.items.map((item) => item.label),
+    ["equipment", "value"],
+  );
+  assert.equal(preview.totalCount, 2);
+  assert.equal(preview.hiddenCount, 0);
+});
+
+test("properties overlay preview without hiddenFields keeps all rows (backward compatible)", () => {
+  const preview = buildPropertiesOverlayPreview({
+    elementId: "Task_1",
+    showPropertiesOverlay: true,
+    extensionStateRaw: {
+      properties: {
+        extensionProperties: [
+          { id: "p1", name: "container", value: "Лоток 150x55" },
+          { id: "p2", name: "equipment", value: "Весы" },
+        ],
+      },
+    },
+  });
+  assert.deepEqual(
+    preview.items.map((item) => item.label),
+    ["container", "equipment"],
+  );
+});
