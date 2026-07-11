@@ -11,7 +11,19 @@ import {
   deriveToBeModel,
   toggleToBeName,
   markPropertyRemoved,
+  TO_BE_STORAGE_PREFIX,
+  loadToBeState,
+  saveToBeState,
 } from './toBeBuilderModel.js';
+
+function createMemoryStorage() {
+  const map = new Map();
+  return {
+    getItem: (k) => (map.has(k) ? map.get(k) : null),
+    setItem: (k, v) => { map.set(k, String(v)); },
+    removeItem: (k) => { map.delete(k); },
+  };
+}
 
 test('createEmptyToBeState', () => {
   assert.deepEqual(createEmptyToBeState(), { toBe: [], removed: [] });
@@ -108,4 +120,36 @@ test('markPropertyRemoved: immutable and deduped', () => {
   const out = markPropertyRemoved(state, 'document');
   assert.deepEqual(out, state);
   assert.notEqual(out, state, 'returns a copy');
+});
+
+test('loadToBeState: missing key / no storage / no session -> empty state', () => {
+  const storage = createMemoryStorage();
+  assert.deepEqual(loadToBeState(storage, 's1'), createEmptyToBeState());
+  assert.deepEqual(loadToBeState(null, 's1'), createEmptyToBeState());
+  assert.deepEqual(loadToBeState(storage, ''), createEmptyToBeState());
+});
+
+test('saveToBeState + loadToBeState: round-trip under the per-session key', () => {
+  const storage = createMemoryStorage();
+  saveToBeState(storage, 's1', { toBe: ['ee_time'], removed: ['document'] });
+  assert.equal(storage.getItem(`${TO_BE_STORAGE_PREFIX}s1`) !== null, true);
+  assert.deepEqual(loadToBeState(storage, 's1'), { toBe: ['ee_time'], removed: ['document'] });
+  assert.deepEqual(loadToBeState(storage, 's2'), createEmptyToBeState(), 'other session unaffected');
+});
+
+test('loadToBeState: garbage or invalid JSON -> validated empty state', () => {
+  const storage = createMemoryStorage();
+  storage.setItem(`${TO_BE_STORAGE_PREFIX}s1`, '{not json');
+  assert.deepEqual(loadToBeState(storage, 's1'), createEmptyToBeState());
+  storage.setItem(`${TO_BE_STORAGE_PREFIX}s1`, JSON.stringify({ toBe: ['ee_time', 7], removed: 'x' }));
+  assert.deepEqual(loadToBeState(storage, 's1'), { toBe: ['ee_time'], removed: [] });
+});
+
+test('saveToBeState: validates before write and tolerates no storage / no session', () => {
+  const storage = createMemoryStorage();
+  saveToBeState(storage, 's1', { toBe: ['ee_time', 'ee_time', 3], removed: null });
+  assert.deepEqual(loadToBeState(storage, 's1'), { toBe: ['ee_time'], removed: [] });
+  saveToBeState(storage, '', { toBe: ['ee_time'], removed: [] });
+  assert.equal(storage.getItem(TO_BE_STORAGE_PREFIX), null);
+  saveToBeState(null, 's1', { toBe: ['ee_time'], removed: [] });
 });

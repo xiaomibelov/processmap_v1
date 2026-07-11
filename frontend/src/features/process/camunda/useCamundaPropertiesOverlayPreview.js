@@ -119,5 +119,8 @@ export default function useCamundaPropertiesOverlayPreview({
     finalizedCamundaPropertiesDraft,
     selectedCamundaExtensionCanonical,
     finalizedCamundaPropertiesDraftCanonical,
+    // The always-mode preview (already filtered by hiddenFields) drives the
+    // LiveCardPreview in the sidebar; null when suppressed or not editable.
+    overlayPreview: memoizedPropertiesOverlayAlwaysPreview,
   };
 }
