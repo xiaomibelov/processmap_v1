@@ -630,7 +630,7 @@ test("properties overlay preview applies the per-field chip filter pre-slice", (
     elementId: "Task_1",
     showPropertiesOverlay: true,
     visibleLimit: 2,
-    visibleFields: ["value", "equipment"],
+    hiddenFields: ["container"],
     extensionStateRaw: {
       properties: {
         extensionProperties: [
@@ -649,7 +649,7 @@ test("properties overlay preview applies the per-field chip filter pre-slice", (
   assert.equal(preview.hiddenCount, 0);
 });
 
-test("properties overlay preview without visibleFields keeps all rows (backward compatible)", () => {
+test("properties overlay preview without hiddenFields keeps all rows (backward compatible)", () => {
   const preview = buildPropertiesOverlayPreview({
     elementId: "Task_1",
     showPropertiesOverlay: true,
