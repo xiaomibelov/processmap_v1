@@ -51,7 +51,7 @@ Post-deploy запуск на stage — как `playwright.post-deploy.config.mj
 - Foundation guard (из adopted-дизайна §10) — 10/10.
 - `git diff --stat` по окончании каждой фазы — только файлы контура (§4 scope).
 
-## 5. Visual regression checklist (ручной, скриншоты в EXEC_REPORT)
+## 5. Visual regression checklist (ручной, скриншоты в WORKER_REPORT)
 
 1. Аккордеон «Свойства» до/после (5 чекбоксов → compact).
 2. Chips: active/inactive/hover/focus-visible — light + dark.
