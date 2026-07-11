@@ -10,6 +10,7 @@ import {
   normalizeAiQuestionsByElementMap,
 } from "../features/notes/knowledgeTools";
 import { parseBatchOpsFromNotes } from "../features/process/bpmn/ops/parseBatchOpsFromNotes";
+import { useElementThreads } from "../features/notes/useElementThreads";
 import {
   collectBpmnTraversalOrderMeta,
   parseLaneMetaByNodeFromBpmnXml,
@@ -1222,6 +1223,10 @@ export default function NotesPanel({
     [aiQuestionsByElement, selectedElementId],
   );
   const isElementMode = !!selectedElementId;
+  const { threads: elementNoteThreads } = useElementThreads(
+    isElementMode ? sid : "",
+    isElementMode ? selectedElementId : "",
+  );
   const isSelectedSequenceFlow = /(^|:)sequenceflow$/i.test(selectedElementType);
   const bpmnFlowMetaById = useMemo(() => {
     const rawMeta = draft?.bpmn_meta && typeof draft.bpmn_meta === "object" ? draft.bpmn_meta : {};
@@ -3312,11 +3317,12 @@ export default function NotesPanel({
                 <SidebarAccordion
                 sectionKey="notes"
                 title="Заметки"
-                badge={isElementMode ? String(selectedElementNotes.length) : ""}
+                badge={isElementMode ? String(selectedElementNotes.length + elementNoteThreads.length) : ""}
                 open={!!sectionsOpen.notes}
                 onToggle={toggleSection}
               >
                 <NotesSection
+                  sessionId={sid}
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   globalText={!isElementMode ? text : ""}
                   onGlobalTextChange={(value) => {
