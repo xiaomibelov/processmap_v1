@@ -3817,6 +3817,7 @@ export default function App() {
         selectedPropertiesOverlayPreview={selectedPropertiesOverlayPreview}
         propertiesOverlayAlwaysEnabled={showPropertiesOverlayAlways}
         propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
+        overlayHiddenFields={overlayHiddenFields}
         v2OverlaysEnabled={v2OverlaysEnabled}
         v2OverlaysExpanded={v2OverlaysExpanded}
         onShowV2OverlaysExpandedChange={(expanded) => setOverlayV2Mode(expanded ? "expanded" : "all")}

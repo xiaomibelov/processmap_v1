@@ -99,6 +99,28 @@ function fakeElement(id, name = "", type = "bpmn:Task") {
   return { id, type, x: 0, y: 0, width: 100, height: 80, businessObject: { id, name, $type: type } };
 }
 
+function fakeElementWithProperties(id, props) {
+  return {
+    id,
+    type: "bpmn:Task",
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 80,
+    businessObject: {
+      id,
+      name: "Task",
+      $type: "bpmn:Task",
+      extensionElements: {
+        values: [{
+          $type: "camunda:Properties",
+          values: props.map(([name, value]) => ({ name, value })),
+        }],
+      },
+    },
+  };
+}
+
 test("coordinator mount renders overlay for preview-only element", () => {
   setupMockDom();
   const inst = fakeInst({ elements: [fakeElement("T1", "Task")] });
@@ -177,4 +199,43 @@ test("coordinator mount keeps overlay when preview becomes empty in global mode"
   // Selecting an element (which empties/disables its preview entry) must not
   // remove the V2 overlay while global V2 rendering is enabled.
   assert.equal(inst._overlays.store.length, 1);
+});
+
+test("coordinator mountFromBpmn applies hiddenFields to BPMN-derived auto cards", () => {
+  setupMockDom();
+  const inst = fakeInst({
+    elements: [fakeElementWithProperties("T1", [["ee_time", "0.33"], ["ingredient_value", "5"]])],
+  });
+  const coordinator = createV2OverlayCoordinator({
+    enabledRef: { current: true },
+    expandedRef: { current: false },
+    useExtensionOverlaysRef: { current: true },
+    previewMapRef: { current: {} },
+    hiddenFieldsRef: { current: ["ee_time"] },
+  });
+  coordinator.mountFromBpmn(inst, "editor");
+  assert.equal(inst._overlays.store.length, 1);
+  const hostDump = JSON.stringify(inst._overlays.store[0].html);
+  assert.ok(!hostDump.includes("0.33"), "hidden field value must not render");
+  assert.ok(hostDump.includes("5"), "visible field must stay");
+});
+
+test("coordinator mountFromBpmn drops auto card when every field is hidden, keeps name-only card", () => {
+  setupMockDom();
+  const inst = fakeInst({
+    elements: [
+      fakeElementWithProperties("T1", [["ee_time", "0.33"]]),
+      fakeElement("T2", "Named task"),
+    ],
+  });
+  const coordinator = createV2OverlayCoordinator({
+    enabledRef: { current: true },
+    expandedRef: { current: false },
+    useExtensionOverlaysRef: { current: true },
+    previewMapRef: { current: {} },
+    hiddenFieldsRef: { current: ["ee_time"] },
+  });
+  coordinator.mountFromBpmn(inst, "editor");
+  const elementIds = inst._overlays.store.map((entry) => entry.elementId).sort();
+  assert.deepEqual(elementIds, ["T2"], "fully-hidden auto card dropped; name-only card kept");
 });
