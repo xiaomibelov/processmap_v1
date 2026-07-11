@@ -30,6 +30,13 @@ import {
   normalizeCamundaExtensionState,
 } from "../features/process/camunda/camundaExtensions";
 import {
+  accumulateCamundaDraftOps,
+  createCamundaDraftOps,
+  mergeCamundaDraftWithFresh,
+  readCamundaDraftCacheEntry,
+  shouldApplyExternalEditToken,
+} from "../features/process/camunda/camundaExtensionDraftMerge";
+import {
   finalizeExtensionStateWithDictionary,
   buildPropertiesOverlayPreview,
   getOperationKeyFromRobotMeta,
@@ -1000,6 +1007,7 @@ export default function NotesPanel({
   onSetElementCamundaExtensions,
   getElementCamundaExtensionsFromModeler,
   bpmnModelerSyncEpoch = 0,
+  bpmnExternalEditToken = null,
   activeOrgId = "",
   reviewStatus = "draft",
   reviewComments = [],
@@ -1131,6 +1139,9 @@ export default function NotesPanel({
   const nodeEditorRef = useRef(null);
   const nodePathDirtyBaselineRef = useRef({ nodeId: "", snapshot: null });
   const camundaPropertiesDraftCacheRef = useRef(new Map());
+  // Last applied bpmnExternalEditToken.seq — each external (canvas popover)
+  // edit token is consumed at most once per sidebar mount.
+  const lastAppliedExternalTokenSeqRef = useRef(0);
   const propertiesOverlayPreviewDispatchRef = useRef({
     draftSignature: "__init__",
     alwaysSignature: "__init__",
@@ -1783,22 +1794,55 @@ export default function NotesPanel({
       setCamundaPropertiesInfo("");
       return;
     }
-    const cachedDraftRaw = camundaPropertiesDraftKey
-      ? camundaPropertiesDraftCacheRef.current.get(camundaPropertiesDraftKey)
-      : null;
-    const cachedDraft = cachedDraftRaw && typeof cachedDraftRaw === "object" ? cachedDraftRaw : null;
-    setCamundaPropertiesDraft(
-      cachedDraft && typeof cachedDraft === "object" ? cachedDraft : selectedCamundaExtensionEntry,
+    const cachedEntry = readCamundaDraftCacheEntry(
+      camundaPropertiesDraftKey
+        ? camundaPropertiesDraftCacheRef.current.get(camundaPropertiesDraftKey)
+        : null,
     );
+    // An external writer (canvas properties popover) mutated the modeler.
+    // The fresh modeler read is authoritative for rows the user did not
+    // touch; pending sidebar edits (tracked as signature ops) are replayed
+    // on top so unsaved typing is never lost. Each token applies once.
+    // Note: on a token the base is the raw modeler read, not the hydrated
+    // entry — session meta still holds the pre-write values for one autosave
+    // round-trip, and the hydrate step prefers meta over the modeler.
+    const externalTokenApplies = shouldApplyExternalEditToken(
+      bpmnExternalEditToken,
+      lastAppliedExternalTokenSeqRef.current,
+      selectedElementId,
+    );
+    if (externalTokenApplies) {
+      lastAppliedExternalTokenSeqRef.current = Number(bpmnExternalEditToken?.seq || 0);
+    }
+    if (externalTokenApplies && cachedEntry) {
+      const mergedDraft = mergeCamundaDraftWithFresh(
+        modelerExtensionState,
+        cachedEntry.draft,
+        cachedEntry.ops,
+      );
+      if (camundaPropertiesDraftKey) {
+        camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, {
+          draft: mergedDraft,
+          ops: cachedEntry.ops,
+        });
+      }
+      setCamundaPropertiesDraft(mergedDraft);
+    } else if (externalTokenApplies) {
+      setCamundaPropertiesDraft(modelerExtensionState);
+    } else {
+      setCamundaPropertiesDraft(cachedEntry ? cachedEntry.draft : selectedCamundaExtensionEntry);
+    }
     setCamundaExtensionSaveFailed(false);
     setCamundaExtensionLastAction("save");
     setCamundaExtensionSavePhase("idle");
     setCamundaPropertiesErr("");
     setCamundaPropertiesInfo("");
   }, [
+    bpmnExternalEditToken,
     camundaPropertiesDraftKey,
     selectedCamundaPropertiesEditable,
     selectedCamundaExtensionEntry,
+    selectedElementId,
     modelerExtensionState,
   ]);
 
@@ -2453,12 +2497,23 @@ export default function NotesPanel({
     const nextDraft = nextRaw && typeof nextRaw === "object" ? nextRaw : createEmptyCamundaExtensionState();
     setCamundaPropertiesDraft(nextDraft);
     if (camundaPropertiesDraftKey) {
-      camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, nextDraft);
+      // Track the user's pending edits as signature ops so a later external
+      // (canvas popover) write can merge the fresh model read underneath
+      // without discarding unsaved typing.
+      const prevEntry = readCamundaDraftCacheEntry(
+        camundaPropertiesDraftCacheRef.current.get(camundaPropertiesDraftKey),
+      );
+      const prevDraft = prevEntry ? prevEntry.draft : camundaPropertiesDraft;
+      const nextOps = accumulateCamundaDraftOps(prevEntry?.ops, prevDraft, nextDraft);
+      camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, {
+        draft: nextDraft,
+        ops: nextOps,
+      });
     }
     setCamundaExtensionSaveFailed(false);
     setCamundaExtensionSavePhase("idle");
     setCamundaPropertiesErr("");
-  }, [camundaPropertiesDraftKey]);
+  }, [camundaPropertiesDraft, camundaPropertiesDraftKey]);
 
   const setShowPropertiesFlag = useCallback((enabled) => {
     if (!selectedCamundaPropertiesEditable || !selectedElementId) return;
@@ -2608,7 +2663,12 @@ export default function NotesPanel({
         if (isConflict) {
           setCamundaPropertiesDraft(previousState);
           if (camundaPropertiesDraftKey) {
-            camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, previousState);
+            camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, {
+              draft: previousState,
+              // Conflict restore discards the rejected edits: the draft
+              // is back to the model-derived state, so no pending ops.
+              ops: createCamundaDraftOps(),
+            });
           }
         }
         setCamundaExtensionSavePhase("idle");
@@ -2679,7 +2739,12 @@ export default function NotesPanel({
         if (isConflict) {
           setCamundaPropertiesDraft(previousState);
           if (camundaPropertiesDraftKey) {
-            camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, previousState);
+            camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, {
+              draft: previousState,
+              // Conflict restore discards the rejected edits: the draft
+              // is back to the model-derived state, so no pending ops.
+              ops: createCamundaDraftOps(),
+            });
           }
         }
         setCamundaExtensionSavePhase("idle");

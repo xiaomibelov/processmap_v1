@@ -70,6 +70,32 @@ function fnv1aHex(input) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
+// Content-derived row id: stable across re-derivations of the same
+// (name, value) pair, so sidebar rows keyed by id keep their identity when
+// the modeler is re-read after an external (canvas popover) write.
+// Mirrors the backend convention `prop_<hash8(name\x00value)>`
+// (camunda_meta_utils.py); ids are UI-only and never serialized to XML.
+function hashExtensionPropertyRowId(name, value) {
+  return `prop_${fnv1aHex(`${String(name || "")}\u0000${String(value ?? "")}`)}`;
+}
+
+// Guarantee unique ids within a row array: exact (name, value) duplicates
+// hash to the same id, so the k-th occurrence (document order is stable)
+// gets a deterministic `_<k>` suffix. Exact duplicates are pre-save only —
+// save-time dedup collapses them — so suffixed ids never reach the backend.
+function uniquifyExtensionPropertyIds(rowsRaw) {
+  const rows = asArray(rowsRaw);
+  const seen = new Map();
+  rows.forEach((row) => {
+    if (!row || typeof row !== "object") return;
+    const base = asText(row.id) || hashExtensionPropertyRowId(row.name, row.value);
+    const count = (seen.get(base) || 0) + 1;
+    seen.set(base, count);
+    row.id = count > 1 ? `${base}_${count}` : base;
+  });
+  return rows;
+}
+
 function readBoundedDerivationCache(cache, key) {
   if (!cache.has(key)) return null;
   const cached = cache.get(key);
@@ -416,7 +442,7 @@ function normalizeExtensionProperty(rawValue) {
   const value = normalizePropertyValue(raw.value);
   if (!asText(name)) return null;
   return {
-    id: asText(raw.id) || nextEditorLocalId("prop"),
+    id: asText(raw.id) || hashExtensionPropertyRowId(name, value),
     name,
     value,
   };
@@ -459,9 +485,11 @@ export function createEmptyCamundaExtensionState() {
 export function normalizeCamundaExtensionState(rawValue) {
   const raw = asObject(rawValue);
   const rawProperties = asObject(raw.properties);
-  const extensionProperties = asArray(rawProperties.extensionProperties)
-    .map((item) => normalizeExtensionProperty(item))
-    .filter(Boolean);
+  const extensionProperties = uniquifyExtensionPropertyIds(
+    asArray(rawProperties.extensionProperties)
+      .map((item) => normalizeExtensionProperty(item))
+      .filter(Boolean),
+  );
   const extensionListeners = asArray(rawProperties.extensionListeners)
     .map((item) => normalizeExtensionListener(item))
     .filter(Boolean);
@@ -1253,13 +1281,15 @@ function isPmRobotMetaModelEntry(entry) {
 function parseManagedPropertiesFromModelEntry(entryRaw) {
   const type = String(entryRaw?.$type || "").trim();
   if (type !== "camunda:Properties" && type !== "zeebe:Properties") return [];
-  return asArray(entryRaw?.values)
-    .map((item) => normalizeExtensionProperty({
-      id: asText(item?.id) || nextEditorLocalId("prop"),
-      name: item?.name,
-      value: item?.value,
-    }))
-    .filter(Boolean);
+  return uniquifyExtensionPropertyIds(
+    asArray(entryRaw?.values)
+      .map((item) => normalizeExtensionProperty({
+        id: asText(item?.id),
+        name: item?.name,
+        value: item?.value,
+      }))
+      .filter(Boolean),
+  );
 }
 
 function parseManagedExecutionListenerFromModelEntry(entryRaw) {
@@ -1396,13 +1426,15 @@ function parseManagedPropertiesBlockFromDom(node, expectedNamespaceUri = CAMUNDA
     namespaceOf(child) === expectedNamespaceUri && localNameOf(child).toLowerCase() === "property"
   ));
   if (!onlyPropertyChildren) return null;
-  const items = children
-    .map((child) => normalizeExtensionProperty({
-      id: nextEditorLocalId("prop"),
-      name: child?.getAttribute?.("name"),
-      value: child?.getAttribute?.("value"),
-    }))
-    .filter(Boolean);
+  const items = uniquifyExtensionPropertyIds(
+    children
+      .map((child) => normalizeExtensionProperty({
+        id: asText(child?.getAttribute?.("id") || ""),
+        name: child?.getAttribute?.("name"),
+        value: child?.getAttribute?.("value"),
+      }))
+      .filter(Boolean),
+  );
   return items;
 }
 

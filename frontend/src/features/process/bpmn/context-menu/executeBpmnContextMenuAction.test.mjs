@@ -1318,3 +1318,94 @@ test("semantic paste falls back to clicked canvas point when no target shape is 
   assert.equal(pasteResult.ok, true);
   assert.deepEqual(calls[calls.length - 1]?.pos, { x: 200, y: 150 });
 });
+
+function createExtensionPropertyTask() {
+  return {
+    id: "Task_ext_1",
+    type: "bpmn:Task",
+    businessObject: {
+      $type: "bpmn:Task",
+      name: "Шаг",
+      extensionElements: {
+        $type: "bpmn:ExtensionElements",
+        values: [
+          {
+            $type: "camunda:Properties",
+            values: [
+              { $type: "camunda:Property", name: "priority", value: "high" },
+              { $type: "camunda:Property", name: "owner", value: "ops" },
+            ],
+          },
+        ],
+      },
+    },
+  };
+}
+
+test("properties overlay edit emits diagram.context_menu_action so the sidebar re-hydrates", async () => {
+  const task = createExtensionPropertyTask();
+  const { inst } = createStubModeler({ root: task, registryItems: [task] });
+  const emitted = [];
+
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "properties_overlay_update_extension_property",
+      target: { id: "Task_ext_1" },
+      propertyName: "priority",
+      propertyKey: "0:0:priority",
+      value: "low",
+    },
+    modelerRef: { current: inst },
+    emitDiagramMutation: (kind, payload) => emitted.push({ kind, payload }),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].kind, "diagram.context_menu_action");
+  assert.equal(emitted[0].payload.actionId, "properties_overlay_update_extension_property");
+  assert.equal(emitted[0].payload.elementId, "Task_ext_1");
+  assert.equal(emitted[0].payload.propertyName, "priority");
+  assert.equal(emitted[0].payload.source, "properties_overlay");
+});
+
+test("properties overlay no-op write does not emit (keeps in-flight sidebar draft)", async () => {
+  const task = createExtensionPropertyTask();
+  const { inst } = createStubModeler({ root: task, registryItems: [task] });
+  const emitted = [];
+
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "properties_overlay_update_extension_property",
+      target: { id: "Task_ext_1" },
+      propertyName: "priority",
+      propertyKey: "0:0:priority",
+      value: "high",
+    },
+    modelerRef: { current: inst },
+    emitDiagramMutation: (kind, payload) => emitted.push({ kind, payload }),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(emitted.length, 0);
+});
+
+test("properties overlay unknown property fails without emitting", async () => {
+  const task = createExtensionPropertyTask();
+  const { inst } = createStubModeler({ root: task, registryItems: [task] });
+  const emitted = [];
+
+  const result = await executeBpmnContextMenuAction({
+    payloadRaw: {
+      actionId: "properties_overlay_update_extension_property",
+      target: { id: "Task_ext_1" },
+      propertyName: "missing",
+      value: "x",
+    },
+    modelerRef: { current: inst },
+    emitDiagramMutation: (kind, payload) => emitted.push({ kind, payload }),
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "extension_property_not_found");
+  assert.equal(emitted.length, 0);
+});
