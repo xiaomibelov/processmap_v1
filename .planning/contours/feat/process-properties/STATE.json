@@ -1,0 +1,10 @@
+{
+  "contour": "feat/process-properties",
+  "branch": "feat/process-properties",
+  "base": "origin/main@03090852",
+  "state": "in-progress",
+  "states": ["planned", "in-progress", "stage-verified", "pr-open", "approved", "merged"],
+  "pr": null,
+  "created": "2026-07-11T12:30:00Z",
+  "notes": "Process-level camunda properties (Camunda Modeler parity): canvas click selects root process; sidebar edits process properties via existing id-generic pipeline."
+}

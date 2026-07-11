@@ -2,6 +2,7 @@ import { overlayPropertyColorByKey, normalizeOverlayPropertyKey } from "./overla
 import { buildOverlayGeometry, readOverlayCanvasZoom } from "./overlayLayoutModel.js";
 import { isGfxInDom } from "../viewport/cullBpmnViewport.js";
 import { isOverlayMetaProperty } from "../../../../../components/process/utils/bpmnOverlayParser.js";
+import { isProcessLikeType } from "../interaction/processRootSelection.js";
 
 function runMeasure(ctx, name, run, payload) {
   const measureInterviewPerf = ctx?.callbacks?.measureInterviewPerf;
@@ -1794,6 +1795,18 @@ export function applyPropertiesOverlayDecor(ctx) {
       });
     } catch {
     }
+  }
+  // Process-like roots (bpmn:Process / bpmn:Collaboration) have no own canvas geometry;
+  // never render legacy overlay cards for them (e.g. pinned via the always-map).
+  try {
+    const registry = inst.get("elementRegistry");
+    Object.keys(previewByElementId).forEach((elementId) => {
+      const el = typeof registry?.get === "function" ? registry.get(elementId) : null;
+      if (el && isProcessLikeType(el?.businessObject?.$type || el?.type)) {
+        delete previewByElementId[elementId];
+      }
+    });
+  } catch {
   }
   const previewEntries = Object.values(previewByElementId);
   if (!previewEntries.length) {

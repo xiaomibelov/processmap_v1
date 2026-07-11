@@ -7,6 +7,8 @@
  *   2. Prefixed: `fpc:overlay:text`, `fpc:overlay:x`, `fpc:overlay:y`, etc.
  */
 
+import { isProcessLikeType } from "../../../features/process/bpmn/stage/interaction/processRootSelection.js";
+
 function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
 }
@@ -50,7 +52,12 @@ function dedupePropertiesByExactValue(props) {
 }
 
 function isShapeElement(el) {
-  return !!el && !Array.isArray(el?.waypoints) && el.type !== "label";
+  if (!el || Array.isArray(el?.waypoints) || el.type === "label") return false;
+  // Process-like roots (bpmn:Process / bpmn:Collaboration) are diagram
+  // containers without own canvas geometry: they must never produce overlay
+  // cards, even when they carry camunda:properties (process-level properties).
+  if (isProcessLikeType(el?.businessObject?.$type || el?.type)) return false;
+  return true;
 }
 
 function isSequenceFlowElement(el) {
