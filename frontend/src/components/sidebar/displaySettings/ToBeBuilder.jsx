@@ -54,13 +54,16 @@ export default function ToBeBuilder({
   disabled = false,
   onAddFromPool,
   onToggleToBe,
+  hideHeader = false,
 }) {
   return (
     <div className="toBeBuilder" data-testid="to-be-builder">
-      <div className="toBeSummary">
-        <span className="overlayDisplayLabel">To-Be</span>
-        <span className="toBePills">{inToBeCount} in To-Be / {skippedCount} skipped</span>
-      </div>
+      {!hideHeader && (
+        <div className="toBeSummary">
+          <span className="overlayDisplayLabel">To-Be</span>
+          <span className="toBePills">{inToBeCount} in To-Be / {skippedCount} skipped</span>
+        </div>
+      )}
 
       <div className="toBeSection">
         <span className="toBeSectionTitle">Настроено</span>

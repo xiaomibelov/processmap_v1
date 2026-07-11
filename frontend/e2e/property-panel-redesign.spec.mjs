@@ -348,21 +348,24 @@ test("To-Be: toggle -> Pool on another task -> '+' -> draft row -> save -> XML",
   await selectTask(page, TASK_A);
   await openPropertiesSection(page);
   const builder = page.locator('[data-testid="to-be-builder"]');
+  // UI refresh: summary pills live in the collapsible To-Be group header
+  // (outside the builder body) — assert against the whole group.
+  const toBeGroup = page.locator('.panelGroup[data-group="toBe"]');
   await expect(builder).toBeVisible({ timeout: 15_000 });
-  await expect(builder).toContainText("0 in To-Be / 0 skipped");
+  await expect(toBeGroup).toContainText("0 in To-Be / 0 skipped");
   await page.locator('[data-testid="to-be-toggle-ee_time"]').click();
-  await expect(builder).toContainText("1 in To-Be / 0 skipped");
+  await expect(toBeGroup).toContainText("1 in To-Be / 0 skipped");
 
   // Task B has no properties: ee_time surfaces in the Pool as «Not filled».
   await selectTask(page, TASK_B);
   await openPropertiesSection(page);
-  await expect(builder).toContainText("0 in To-Be / 1 skipped", { timeout: 15_000 });
+  await expect(toBeGroup).toContainText("0 in To-Be / 1 skipped", { timeout: 15_000 });
   await expect(builder.locator('[data-testid="to-be-add-ee_time"]')).toBeVisible();
 
   // «+» adds the field to the draft (CRUD section), pills recount.
   await builder.locator('[data-testid="to-be-add-ee_time"]').click();
   await expect(page.getByLabel("Редактировать свойство ee_time")).toBeVisible({ timeout: 10_000 });
-  await expect(builder).toContainText("1 in To-Be / 0 skipped");
+  await expect(toBeGroup).toContainText("1 in To-Be / 0 skipped");
 
   // Global save persists the property into the task's extensionElements.
   await saveAll(page);
@@ -397,6 +400,71 @@ test("keyboard: chip toggles via Space/Enter with aria-pressed mirroring state",
   const displaySelect = page.locator('[data-testid="overlay-display-mode-select"]');
   await displaySelect.focus();
   await expect(displaySelect).toBeFocused();
+
+  expect(problems, problems.join("\n")).toEqual([]);
+});
+
+// --- UI refresh: collapsible panel groups with persistence ------------------
+
+test("panel groups collapse and stay collapsed across a reload", async ({ page, request }) => {
+  const problems = collectConsoleProblems(page);
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await bootDiagram(page, request, `ppr_groups_${runId}`);
+
+  await selectTask(page, TASK_A);
+  await openPropertiesSection(page);
+
+  const fieldsToggle = page.locator('[data-testid="panel-group-toggle-fields"]');
+  await expect(fieldsToggle).toBeVisible({ timeout: 15_000 });
+  await expect(fieldsToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator('[data-testid="overlay-field-chip-ee_time"]')).toBeVisible();
+
+  // Collapse «Поля в оверлее»: chips leave the DOM (body is not rendered).
+  await fieldsToggle.click();
+  await expect(fieldsToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator('[data-testid="overlay-field-chip-ee_time"]')).toHaveCount(0);
+
+  // The collapse survives a reload (global UI preference in localStorage).
+  await page.reload();
+  await settleOrgChooser(page);
+  await waitForDiagramReady(page);
+  await ensureSidebarOpen(page);
+  await selectTask(page, TASK_A);
+  await openPropertiesSection(page);
+  await expect(page.locator('[data-testid="panel-group-toggle-fields"]')).toHaveAttribute("aria-expanded", "false", { timeout: 15_000 });
+  await expect(page.locator('[data-testid="overlay-field-chip-ee_time"]')).toHaveCount(0);
+
+  // Expand back: chips return.
+  await page.locator('[data-testid="panel-group-toggle-fields"]').click();
+  await expect(page.locator('[data-testid="overlay-field-chip-ee_time"]')).toBeVisible({ timeout: 10_000 });
+
+  expect(problems, problems.join("\n")).toEqual([]);
+});
+
+// --- UI refresh: extension-state mini indicator -----------------------------
+
+test("extension-state mini indicator: saved -> dirty on inline edit", async ({ page, request }) => {
+  const problems = collectConsoleProblems(page);
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await bootDiagram(page, request, `ppr_mini_${runId}`);
+
+  await selectTask(page, TASK_A);
+  await openPropertiesSection(page);
+
+  const mini = page.locator('[data-testid="extension-state-mini"]');
+  await expect(mini).toBeVisible({ timeout: 15_000 });
+  await expect(mini).toHaveAttribute("data-tone", "saved");
+  await expect(mini).toHaveAttribute("title", "Сохранено");
+
+  // Inline-edit a value and commit with Enter: the draft diverges from the
+  // saved state, so the indicator flips to «dirty» without a save.
+  await page.getByLabel("Редактировать свойство ee_time").click();
+  const valueInput = page.locator('.sidebarSchemaPropertyRow.isEditing input[placeholder="Значение"]');
+  await expect(valueInput).toBeVisible({ timeout: 10_000 });
+  await valueInput.fill("0.77");
+  await valueInput.press("Enter");
+  await expect(mini).toHaveAttribute("data-tone", "dirty", { timeout: 15_000 });
+  await expect(mini).toHaveAttribute("title", "Есть несохранённые изменения");
 
   expect(problems, problems.join("\n")).toEqual([]);
 });
