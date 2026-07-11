@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { apiLogin, setUiToken } from "./helpers/e2eAuth.mjs";
-import { API_BASE, createFixture, openFixture } from "./helpers/processFixture.mjs";
+import { API_BASE, createFixture } from "./helpers/processFixture.mjs";
 import { waitForDiagramReady } from "./helpers/diagramReady.mjs";
 
 // V2 property overlays must survive element selection.
@@ -120,7 +120,23 @@ async function bootDiagramWithV2(page, request, runId) {
   const auth = await apiLogin(request, { apiBase: API_BASE });
   const fixture = await createFixture(request, runId, auth.headers, seedXmlTwoTasks());
   await setUiToken(page, auth.accessToken);
-  await openFixture(page, fixture);
+  // The stage user belongs to many orgs: pin the fixture org so the app does
+  // not stop at the org chooser, and open the session directly from the URL.
+  const orgId = String(fixture.orgId || auth.activeOrgId || "").trim();
+  await page.addInitScript((value) => {
+    if (value) window.localStorage.setItem("fpc_active_org_id", value);
+  }, orgId);
+  await page.goto(`/app?project=${encodeURIComponent(fixture.projectId)}&session=${encodeURIComponent(fixture.sessionId)}`);
+  // The org chooser may appear after a delay; race it against the diagram.
+  const chooser = page.getByText("Выберите организацию").first();
+  for (let i = 0; i < 40; i += 1) {
+    if (await chooser.isVisible().catch(() => false)) {
+      await page.getByRole("button", { name: /Default/i }).first().click();
+      break;
+    }
+    if (await page.locator(".bpmnStageHost").isVisible().catch(() => false)) break;
+    await page.waitForTimeout(500);
+  }
   await waitForDiagramReady(page);
 
   await ensureSidebarOpen(page);
