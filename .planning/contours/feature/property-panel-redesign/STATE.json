@@ -1,0 +1,19 @@
+{
+  "contour": "feature/property-panel-redesign",
+  "branch": "feature/property-panel-redesign",
+  "base": "origin/main@03090852",
+  "state": "in-progress",
+  "states": ["planned", "approved", "in-progress", "stage-verified", "pr-open", "merged"],
+  "pr": null,
+  "created": "2026-07-11T14:05:00Z",
+  "approved": "2026-07-11T14:20:00Z",
+  "decisions": {
+    "D1": "absorb feat/process-properties as Phase 3",
+    "D2": "use existing styles/tokens.css + color-mix (no --kimi-* in product)",
+    "D3": "chips per-field visibility = per-session (localStorage)",
+    "D4": "To-Be storage = derived + localStorage (no bpmn_meta in MVP)",
+    "D5": "deferred to review phase (raise :5180 or use stage.processmap.ru)"
+  },
+  "artifacts": ["PLAN.md", "UI.md", "API.md", "TESTS.md", "STATE.json"],
+  "notes": "PLAN approved by user. UI/API/TESTS written. Phase 0 (overlay display state model) started via TDD. feat/process-properties design adopted for Phase 3."
+}
