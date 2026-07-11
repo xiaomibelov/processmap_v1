@@ -108,3 +108,80 @@ test("mergeV2OverlaysWithPropertyPreview: does not fall back when preview map ha
   const merged = mergeV2OverlaysWithPropertyPreview(fakeInst([fakeElement("T1")]), list, previewMap);
   assert.deepEqual(merged, []);
 });
+
+// --- hiddenFields per-field filter (property-panel-redesign, phase 4) -------
+
+test("resolveV2OverlayContent: hiddenFields filters BPMN-derived properties", () => {
+  const inst = fakeInst([fakeElementWithProps("T1", [["ee_time", "0.33"], ["ingredient_value", "5"]])]);
+  const content = resolveV2OverlayContent({
+    elementId: "T1", inst, previewMap: {}, forceShow: true, hiddenFields: ["ee_time"],
+  });
+  assert.deepEqual(content.properties, [{ name: "ingredient_value", value: "5" }]);
+});
+
+test("resolveV2OverlayContent: auto property card is suppressed when every field is hidden", () => {
+  const inst = fakeInst([fakeElementWithProps("T1", [["ee_time", "0.33"]])]);
+  const content = resolveV2OverlayContent({
+    elementId: "T1", inst, previewMap: {}, forceShow: true, hiddenFields: ["ee_time"],
+  });
+  assert.equal(content, null, "card must not render when all its fields are hidden");
+});
+
+test("resolveV2OverlayContent: name-only card (no properties) survives hiddenFields", () => {
+  const inst = fakeInst([fakeElement("T1", "Named Task")]);
+  const content = resolveV2OverlayContent({
+    elementId: "T1", inst, previewMap: {}, forceShow: true, hiddenFields: ["ee_time"],
+  });
+  assert.ok(content, "name-only card must survive field filtering");
+  assert.deepEqual(content.properties, []);
+});
+
+test("resolveV2OverlayContent: hiddenFields filters preview-branch items", () => {
+  const inst = fakeInst([fakeElement("T1", "Task")]);
+  const previewMap = {
+    T1: {
+      enabled: true,
+      elementId: "T1",
+      items: [
+        { key: "ee_time", label: "ee_time", value: "0.33" },
+        { key: "ingredient_value", label: "ingredient_value", value: "5" },
+      ],
+    },
+  };
+  const content = resolveV2OverlayContent({ elementId: "T1", inst, previewMap, hiddenFields: ["ee_time"] });
+  assert.equal(content.source, "preview");
+  assert.deepEqual(content.properties, [{ name: "ingredient_value", value: "5" }]);
+});
+
+test("resolveV2OverlayContent: authored fpc-overlay-v2 card keeps its text with filtered rows", () => {
+  const inst = fakeInst([fakeElementWithProps("T1", [
+    ["fpc-overlay-v2", JSON.stringify({ text: "Authored" })],
+    ["ee_time", "0.33"],
+  ])]);
+  const content = resolveV2OverlayContent({
+    elementId: "T1", inst, previewMap: {}, forceShow: true, hiddenFields: ["ee_time"],
+  });
+  assert.ok(content, "authored overlay must survive field filtering");
+  assert.equal(content.text, "Authored");
+  assert.deepEqual(content.properties, []);
+});
+
+test("mergeV2OverlaysWithPropertyPreview: threads hiddenFields into content resolution", () => {
+  const inst = fakeInst([fakeElementWithProps("T1", [["ee_time", "0.33"], ["ingredient_value", "5"]])]);
+  const previewMap = {
+    T1: {
+      enabled: true,
+      elementId: "T1",
+      items: [
+        { key: "ee_time", label: "ee_time", value: "0.33" },
+        { key: "ingredient_value", label: "ingredient_value", value: "5" },
+      ],
+    },
+  };
+  const merged = mergeV2OverlaysWithPropertyPreview(inst, [], previewMap, {
+    forceShow: true,
+    hiddenFields: ["ee_time"],
+  });
+  assert.equal(merged.length, 1);
+  assert.deepEqual(merged[0].properties, [{ name: "ingredient_value", value: "5" }]);
+});
