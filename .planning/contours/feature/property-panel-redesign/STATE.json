@@ -2,9 +2,16 @@
   "contour": "feature/property-panel-redesign",
   "branch": "feature/property-panel-redesign",
   "base": "origin/main@5aabba98",
-  "state": "in-progress",
-  "states": ["planned", "approved", "in-progress", "stage-verified", "pr-open", "merged"],
-  "pr": null,
+  "state": "pr-open",
+  "states": [
+    "planned",
+    "approved",
+    "in-progress",
+    "stage-verified",
+    "pr-open",
+    "merged"
+  ],
+  "pr": "https://github.com/xiaomibelov/processmap_v1/pull/524",
   "created": "2026-07-11T14:05:00Z",
   "approved": "2026-07-11T14:20:00Z",
   "implementationComplete": "2026-07-11",
@@ -15,7 +22,16 @@
     "D4": "To-Be storage = derived + localStorage (no bpmn_meta in MVP)",
     "D5": "OPEN: runtime for Agent-3 review — local vite :5180 (verified working) or stage.processmap.ru; awaiting user decision"
   },
-  "artifacts": ["PLAN.md", "UI.md", "API.md", "TESTS.md", "WORKER_REPORT.md", "REVIEW_REPORT.md", "PR.md", "STATE.json"],
+  "artifacts": [
+    "PLAN.md",
+    "UI.md",
+    "API.md",
+    "TESTS.md",
+    "WORKER_REPORT.md",
+    "REVIEW_REPORT.md",
+    "PR.md",
+    "STATE.json"
+  ],
   "commits": [
     "0ac9b133 docs(planning)",
     "e15d04e1 feat(sidebar) phase 0",
@@ -35,5 +51,6 @@
   "findings": {
     "preExistingRenderLoop": "useBpmnSync returns fresh object per render -> registerAppSafeRefreshHandler effect re-runs per render -> AppShell setRefreshRisk ping-pong. Reproduced on clean main@5aabba98. NOT fixed in this contour; separate PR recommended."
   },
-  "next": "Review gate: user approves WORKER_REPORT/REVIEW_REPORT -> decision on D5 -> push + PR only on explicit command -> stage verification checklist."
+  "next": "PR #524 open. Awaiting review/CI. Stage verification checklist after merge approval. D5 (review runtime) and render-loop separate PR still open questions.",
+  "prOpened": "2026-07-11"
 }
