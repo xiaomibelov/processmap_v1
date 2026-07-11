@@ -17,6 +17,7 @@ export default function useCamundaPropertiesOverlayPreview({
   propertiesOverlayPreviewDispatchRef,
   onPropertiesOverlayPreviewChange,
   onPropertiesOverlayAlwaysPreviewChange,
+  suppressOverlayPreview = false,
 }) {
   const finalizedCamundaPropertiesDraft = useMemo(
     () => normalizeCamundaExtensionState(finalizeExtensionStateWithDictionary({
@@ -37,6 +38,7 @@ export default function useCamundaPropertiesOverlayPreview({
   );
 
   const memoizedPropertiesOverlayAlwaysPreview = useMemo(() => {
+    if (suppressOverlayPreview) return null;
     if (!selectedElementId || !selectedCamundaPropertiesEditable) return null;
     return buildPropertiesOverlayPreview({
       elementId: selectedElementId,
@@ -49,9 +51,11 @@ export default function useCamundaPropertiesOverlayPreview({
     orgPropertyDictionaryBundle,
     selectedCamundaPropertiesEditable,
     selectedElementId,
+    suppressOverlayPreview,
   ]);
 
   const memoizedPropertiesOverlayPreview = useMemo(() => {
+    if (suppressOverlayPreview) return null;
     if (!selectedElementId || !selectedCamundaPropertiesEditable) return null;
     if (resolvedShowPropertiesOverlayOnSelect) return memoizedPropertiesOverlayAlwaysPreview;
     return buildPropertiesOverlayPreview({
@@ -67,6 +71,7 @@ export default function useCamundaPropertiesOverlayPreview({
     resolvedShowPropertiesOverlayOnSelect,
     selectedCamundaPropertiesEditable,
     selectedElementId,
+    suppressOverlayPreview,
   ]);
 
   useEffect(() => {

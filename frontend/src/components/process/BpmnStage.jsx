@@ -7,6 +7,7 @@ import { traceProcess } from "../../features/process/lib/processDebugTrace";
 import { shouldUseCanonicalPrimaryManualSave } from "../../features/process/bpmn/save/manualSaveCanonicalXml";
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
+import { isProcessLikeElement } from "../../features/process/bpmn/stage/interaction/processRootSelection.js";
 import * as viewportRecovery from "../../features/process/bpmn/stage/viewport/viewportRecovery";
 import { isGfxInDom } from "../../features/process/bpmn/stage/viewport/cullBpmnViewport";
 import { createPlaybackOverlayAdapter } from "../../features/process/bpmn/stage/playbackAdapter";
@@ -1679,11 +1680,10 @@ const BpmnStage = forwardRef(function BpmnStage({
     const rawType = String(el?.businessObject?.$type || el?.type || "").trim().toLowerCase();
     if (!rawType) return false;
     const simpleType = String(rawType.split(":").pop() || rawType).trim();
-    return simpleType === "lane"
-      || simpleType === "participant"
-      || simpleType === "process"
-      || simpleType === "collaboration"
-      || simpleType === "laneset";
+    // Lane, participant, process and collaboration ARE selectable (Camunda
+    // Modeler parity: clicking a pool/lane selects it; clicking empty canvas
+    // selects the root process). Only laneSet stays a non-selectable container.
+    return simpleType === "laneset";
   }
 
   function isSelectableElement(el) {
@@ -1858,10 +1858,22 @@ const BpmnStage = forwardRef(function BpmnStage({
     };
   }
 
+  // A process-like root (bpmn:Process / bpmn:Collaboration) wraps every shape
+  // on the canvas, so the usual fpcElementSelected marker would light up the
+  // whole diagram. Signal its selection with a container-level class instead.
+  function toggleProcessSelectedDecor(inst, on) {
+    try {
+      const container = inst?.get?.("canvas")?.getContainer?.();
+      container?.classList?.toggle("fpcProcessSelected", !!on);
+    } catch {
+    }
+  }
+
   function clearSelectedDecor(inst, kind) {
     if (!inst) return;
     const id = String(selectedMarkerStateRef.current[kind] || "");
     clearSelectionFocusDecor(inst, kind);
+    toggleProcessSelectedDecor(inst, false);
     if (!id) return;
     try {
       const canvas = inst.get("canvas");
@@ -1900,6 +1912,9 @@ const BpmnStage = forwardRef(function BpmnStage({
   function applySelectionFocusDecor(inst, kind, selectedEl) {
     if (!inst || !selectedEl) return;
     clearSelectionFocusDecor(inst, kind);
+    // A process-like root has no neighbors; dimming every other element on a
+    // plain canvas click would be hostile. Previous dim was cleared above.
+    if (isProcessLikeElement(selectedEl)) return;
     try {
       const canvas = inst.get("canvas");
       const registry = inst.get("elementRegistry");
@@ -1966,6 +1981,13 @@ const BpmnStage = forwardRef(function BpmnStage({
       const registry = inst.get("elementRegistry");
       const el = registry.get(eid);
       if (!isSelectableElement(el)) return;
+      if (isProcessLikeElement(el)) {
+        // No addMarker here: the root gfx contains every shape, and the
+        // fpcElementSelected CSS uses descendant selectors.
+        toggleProcessSelectedDecor(inst, true);
+        selectedMarkerStateRef.current[kind] = eid;
+        return;
+      }
       // Skip selection decor for off-screen elements (gfx detached by viewport culling)
       if (!isGfxInDom(inst, el)) {
         selectedMarkerStateRef.current[kind] = eid;

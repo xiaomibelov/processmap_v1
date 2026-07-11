@@ -260,4 +260,69 @@ describe("bpmnOverlayParser", () => {
     const overlays = extractOverlaysFromBpmn(inst, false);
     assert.strictEqual(overlays.length, 0);
   });
+
+  it("never creates overlays for process-like roots even when they carry properties", () => {
+    // Process-level camunda:properties are shown in the sidebar, never as a
+    // canvas overlay card: the root has no own geometry (it wraps everything).
+    const registry = {
+      getAll: () => [
+        {
+          id: "Process_1",
+          type: "bpmn:Process",
+          businessObject: {
+            id: "Process_1",
+            $type: "bpmn:Process",
+            name: "Main process",
+            extensionElements: {
+              values: [
+                {
+                  $type: "camunda:properties",
+                  values: [{ name: "owner", value: "finance" }],
+                },
+              ],
+            },
+          },
+        },
+        {
+          id: "Collaboration_1",
+          type: "bpmn:Collaboration",
+          businessObject: {
+            id: "Collaboration_1",
+            $type: "bpmn:Collaboration",
+            name: "Pool",
+            extensionElements: {
+              values: [
+                {
+                  $type: "camunda:properties",
+                  values: [{ name: "owner", value: "ops" }],
+                },
+              ],
+            },
+          },
+        },
+        {
+          id: "Task_1",
+          type: "bpmn:Task",
+          businessObject: {
+            id: "Task_1",
+            $type: "bpmn:Task",
+            name: "Task",
+            extensionElements: {
+              values: [
+                {
+                  $type: "camunda:properties",
+                  values: [{ name: "owner", value: "a" }],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+    const inst = { get: (name) => (name === "elementRegistry" ? registry : undefined) };
+    for (const forceShow of [false, true]) {
+      const overlays = extractOverlaysFromBpmn(inst, forceShow);
+      assert.deepStrictEqual(overlays.map((o) => o.node_id), ["Task_1"]);
+    }
+  });
 });
