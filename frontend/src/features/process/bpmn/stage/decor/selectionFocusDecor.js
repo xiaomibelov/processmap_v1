@@ -1,3 +1,5 @@
+import { isProcessLikeElement } from "../interaction/processRootSelection.js";
+
 function asArray(x) {
   return Array.isArray(x) ? x : [];
 }
@@ -11,13 +13,9 @@ function isContainerElement(el) {
   const rawType = String(el?.businessObject?.$type || el?.type || "").trim().toLowerCase();
   if (!rawType) return false;
   const simpleType = String(rawType.split(":").pop() || rawType).trim();
-  return (
-    simpleType === "lane"
-    || simpleType === "participant"
-    || simpleType === "process"
-    || simpleType === "collaboration"
-    || simpleType === "laneset"
-  );
+  // Lane, participant, process and collaboration ARE selectable (Camunda
+  // Modeler parity). Only laneSet stays a non-selectable container.
+  return simpleType === "laneset";
 }
 
 function isSelectableElement(el) {
@@ -57,6 +55,9 @@ export function markFocusDecor(canvas, kind, elementId, className) {
 export function applySelectionFocusDecor(inst, kind, selectedEl, focusMarkerStateRef) {
   if (!inst || !selectedEl) return;
   clearSelectionFocusDecor(inst, kind, focusMarkerStateRef);
+  // A process-like root has no neighbors; do not dim the whole diagram when
+  // it gets selected by an empty-canvas click.
+  if (isProcessLikeElement(selectedEl)) return;
   try {
     const canvas = inst.get("canvas");
     const registry = inst.get("elementRegistry");
@@ -118,12 +119,25 @@ export function applySelectionFocusDecor(inst, kind, selectedEl, focusMarkerStat
   }
 }
 
+// A process-like root (bpmn:Process / bpmn:Collaboration) wraps every shape
+// on the canvas, so the usual fpcElementSelected marker would light up the
+// whole diagram. Signal its selection with a container-level class instead.
+export function toggleProcessSelectedDecor(inst, on) {
+  try {
+    const container = inst?.get?.("canvas")?.getContainer?.();
+    container?.classList?.toggle("fpcProcessSelected", !!on);
+  } catch {
+    // intentionally ignore
+  }
+}
+
 export function setSelectedDecor(inst, kind, elementId, { selectedMarkerStateRef, focusMarkerStateRef }) {
   if (!inst) return;
 
   // Clear previous selection focus and marker (behavior from original clearSelectedDecor)
   const prevId = String(selectedMarkerStateRef.current[kind] || "");
   clearSelectionFocusDecor(inst, kind, focusMarkerStateRef);
+  toggleProcessSelectedDecor(inst, false);
   if (prevId) {
     try {
       const canvas = inst.get("canvas");
@@ -144,6 +158,13 @@ export function setSelectedDecor(inst, kind, elementId, { selectedMarkerStateRef
     const el = registry.get(eid);
     if (!isSelectableElement(el)) {
       selectedMarkerStateRef.current[kind] = "";
+      return;
+    }
+    if (isProcessLikeElement(el)) {
+      // No addMarker here: the root gfx contains every shape, and the
+      // fpcElementSelected CSS uses descendant selectors.
+      toggleProcessSelectedDecor(inst, true);
+      selectedMarkerStateRef.current[kind] = eid;
       return;
     }
     const canvas = inst.get("canvas");
