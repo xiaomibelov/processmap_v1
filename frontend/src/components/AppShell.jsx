@@ -126,6 +126,7 @@ export default function AppShell({
   onNewBackendSession,
   selectedBpmnElement,
   onBpmnElementSelect,
+  onBpmnModelerExtensionChange = null,
   onOpenElementNotes,
   onElementNotesRemap,
   onSessionSync,
@@ -361,6 +362,7 @@ export default function AppShell({
               reloadKey={reloadKey}
               selectedBpmnElement={selectedBpmnElement}
               onBpmnElementSelect={onBpmnElementSelect}
+              onBpmnModelerExtensionChange={onBpmnModelerExtensionChange}
               onOpenElementNotes={onOpenElementNotes}
               onElementNotesRemap={onElementNotesRemap}
               snapshotRestoreNotice={snapshotRestoreNotice}

@@ -896,6 +896,17 @@ export default function App() {
   const [v2OverlaysEnabled, setV2OverlaysEnabled] = useState(false);
   const [v2OverlaysExpanded, setV2OverlaysExpanded] = useState(false);
   const [bpmnModelerSyncEpoch, setBpmnModelerSyncEpoch] = useState(0);
+  // Set when an external writer (canvas properties popover) mutates camunda
+  // extension properties in the live modeler. NotesPanel uses it to merge
+  // the fresh model read into any unsaved sidebar draft.
+  const [bpmnExternalEditToken, setBpmnExternalEditToken] = useState(null);
+  const handleBpmnModelerExtensionChange = useCallback(({ elementId } = {}) => {
+    setBpmnModelerSyncEpoch((epoch) => epoch + 1);
+    setBpmnExternalEditToken((prev) => ({
+      seq: Number(prev?.seq || 0) + 1,
+      elementId: String(elementId || "").trim(),
+    }));
+  }, []);
   const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
   const [notesPanelOpenRequest, setNotesPanelOpenRequest] = useState(null);
   const [notesDiscussionsOpen, setNotesDiscussionsOpen] = useState(false);
@@ -3355,6 +3366,7 @@ export default function App() {
         v2OverlaysExpanded={v2OverlaysExpanded}
         onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
         bpmnModelerSyncEpoch={bpmnModelerSyncEpoch}
+        bpmnExternalEditToken={bpmnExternalEditToken}
         getElementCamundaExtensionsFromModeler={getElementCamundaExtensionsFromModeler}
         onGoToDiagram={() => {
           const sid = String(draft?.session_id || "").trim();
@@ -3818,6 +3830,7 @@ export default function App() {
         onNewBackendSession={() => setSessionFlowOpen(true)}
         selectedBpmnElement={selectedBpmnElement}
         onBpmnElementSelect={handleBpmnElementSelect}
+        onBpmnModelerExtensionChange={handleBpmnModelerExtensionChange}
         onOpenElementNotes={focusElementNotes}
         onOpenNotesDiscussions={openNotesDiscussions}
         onElementNotesRemap={remapElementNotes}
