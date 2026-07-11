@@ -9,7 +9,7 @@
 |---|---|---|
 | `src/components/sidebar/displaySettings/overlayDisplaySettings.test.mjs` | AC2, AC3, AC12-инварианты модели | defaults; миграция `fpc_properties_overlay_always_v1` (true→always / absent→hover); validation untrusted JSON (мусор → defaults); round-trip write/read; expanded⊂enabled инвариант |
 | `src/components/sidebar/displaySettings/fieldChipsModel.test.mjs` | AC4 | union источников имён (элемент ∪ словарь ∪ quick pins); dedup; toggle on/off; «все скрыты» → preview пуст |
-| `src/components/sidebar/displaySettings/filterPreviewByVisibleFields.test.mjs` | AC4, AC5 | preview rows фильтруются по имени; порядок сохраняется; пустой visibleFields = без фильтра; не меняет исходные данные (immutable) |
+| `src/components/sidebar/displaySettings/filterRowsByHiddenFields.test.mjs` | AC4, AC5 | preview rows фильтруются по имени (opt-out); порядок сохраняется; поля активны по умолчанию; не меняет исходные данные (immutable) |
 | `src/components/sidebar/toBe/toBeBuilderModel.test.mjs` | AC6–AC8 | derived: inToBe/added/skipped/pills; badge «Removed» vs «Not filled» (removed-tracked); add из Pool → asIs; дубли x3 во входных строках → dedup |
 | `src/features/process/bpmn/stage/interaction/processRootSelection.test.mjs` | AC9 | (adopted) process root → element; collaboration root → element; subprocess drill-down root → null; нет definitions → null; fallback definitions.rootElements[0] |
 | расширение `src/components/process/utils/bpmnOverlayParser.test.mjs` | AC10 | process-like root с properties исключён из `extractOverlaysFromBpmn` (adopted-дизайн §7) |

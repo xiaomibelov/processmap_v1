@@ -30,7 +30,7 @@
 ```
 displayMode : "hover" | "always" | "hidden"      // legacy overlay pipeline
 v2Mode      : "none" | "all" | "expanded"        // V2 overlay pipeline
-visibleFields : Set<propertyName>                // per-field (chips), per-session (D3)
+hiddenFields : propertyName[]                    // per-field (chips), per-session (D3); поля активны по умолчанию
 ```
 
 **Независимые оси** (dropdown гарантирует radio-семантику, недопустимые комбо невозможны):
@@ -49,7 +49,7 @@ visibleFields : Set<propertyName>                // per-field (chips), per-sessi
 | #4 «Все V2…» | `v2OverlaysEnabled` (не персистился) | default `none` |
 | #5 «…раскрытыми» | `v2OverlaysExpanded` (не персистился) | `all` / `expanded` |
 
-Новый persisted-ключ (per-session): `fpc_overlay_display_v1:{sid}` = `{ displayMode, v2Mode, visibleFields }`. Старые ключи не удаляются (read-only миграция, rollback-safe).
+Новый persisted-ключ (per-session): `fpc_overlay_display_v1:{sid}` = `{ displayMode, v2Mode, hiddenFields }`. Старые ключи не удаляются (read-only миграция, rollback-safe).
 
 ### 2.3 Владение стейтом
 
@@ -65,7 +65,7 @@ visibleFields : Set<propertyName>                // per-field (chips), per-sessi
 | Редактирование свойства (draft) | LiveCardPreview + AsIsList обновляются live; pills пересчитываются |
 | Смена `displayMode` | refs → re-apply decor (существующий эффект `BpmnStage.jsx:1235-1250`); localStorage write |
 | Смена `v2Mode` | V2 mount-эффект (`BpmnStage.jsx:4676-4722`) пересобирает V2; при v2≠none legacy decor очищается |
-| Клик/Space/Enter по chip | поле toggled в `visibleFields` → overlay preview фильтруется по имени (preview-level, данные не трогаются) |
+| Клик/Space/Enter по chip | поле toggled в `hiddenFields` → overlay preview фильтруется по имени (preview-level, данные не трогаются) |
 | «+» на Pool-строке | `addPropertyRow(name)` (существующий `useBpmnPropertiesController.js:212-214`) → draft → AsIsList с badge «Added»/«In To-Be» |
 | Удаление свойства ∈ To-Be | переходит в Pool с badge «Removed» (tracked, API.md §4); delete-семантика (автосейв) не меняется |
 | Hover по canvas (root) | (Фаза 3) `fpcCanvasProcessHoverHint` — tint фона canvas |
