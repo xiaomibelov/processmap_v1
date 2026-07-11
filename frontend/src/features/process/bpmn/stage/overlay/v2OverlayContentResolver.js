@@ -59,12 +59,19 @@ export function resolveV2OverlayContent({ elementId, inst, previewMap, forceShow
       value: asText(item?.value),
     }));
 
-    // An empty or disabled preview entry means "this element has no properties
-    // to show" and must suppress any BPMN-extracted fallback overlay.
-    if (!properties.length) return null;
+    if (properties.length) {
+      const title = `${properties.length} element properties`;
+      return { ...buildAutoOverlayDescriptor(id, title, properties[0]?.name || "property", undefined, properties), source: "preview" };
+    }
 
-    const title = `${properties.length} element properties`;
-    return { ...buildAutoOverlayDescriptor(id, title, properties[0]?.name || "property", undefined, properties), source: "preview" };
+    // An empty or disabled preview entry means "this element has no properties
+    // to show via the selection preview". When V2 global rendering is active
+    // (forceShow) the selection-driven preview must NOT suppress the element's
+    // own BPMN-derived card — otherwise selecting an element would remove its
+    // V2 overlay. Fall through to BPMN extraction.
+    // When forceShow is off (per-element mode), keep the "intentionally
+    // property-less" suppression so stale BPMN cards are not shown.
+    if (!forceShow) return null;
   }
 
   const props = extractOverlayProperties(bo);

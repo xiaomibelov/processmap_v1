@@ -3956,6 +3956,12 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   function applyPropertiesOverlayDecor(inst, kind) {
+    if (v2OverlayState.enabledRef.current) {
+      // While V2 overlays are enabled, the V2 layer owns property rendering.
+      // Keep the legacy property overlay layer empty so V2 cards are never
+      // suppressed (legacy/V2 mutual exclusion) or duplicated by legacy decor.
+      return decorManager.clearPropertiesOverlayDecor(createDecorCtx(inst, kind));
+    }
     return decorManager.applyPropertiesOverlayDecor(createDecorCtx(inst, kind));
   }
 
@@ -4692,6 +4698,15 @@ const BpmnStage = forwardRef(function BpmnStage({
       };
       maybeRemount(viewerRef.current, "viewer");
       maybeRemount(modelerRef.current, "editor");
+      if (v2OverlaysEnabled) {
+        // Entering (or staying in) V2 mode: remove any legacy property
+        // overlays so they cannot suppress or duplicate V2 cards. The legacy
+        // decor is gated through applyPropertiesOverlayDecor while V2 is on,
+        // but pre-existing cards (e.g. present when V2 gets toggled on) must
+        // be cleared explicitly.
+        if (viewerRef.current) clearPropertiesOverlayDecor(viewerRef.current, "viewer");
+        if (modelerRef.current) clearPropertiesOverlayDecor(modelerRef.current, "editor");
+      }
     } catch {
       // Re-mount failures are non-critical.
     }

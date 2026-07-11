@@ -117,7 +117,25 @@ test("coordinator mount renders overlay for preview-only element", () => {
   assert.equal(inst._overlays.store.length, 1);
 });
 
-test("coordinator mount suppresses overlay when preview entry is empty", () => {
+test("coordinator mount suppresses overlay when preview entry is empty in per-element mode", () => {
+  setupMockDom();
+  const inst = fakeInst({ elements: [fakeElement("T1", "Task")] });
+  const previewMapRef = {
+    current: {
+      T1: { enabled: false, elementId: "T1", items: [] },
+    },
+  };
+  const coordinator = createV2OverlayCoordinator({
+    enabledRef: { current: false },
+    expandedRef: { current: false },
+    useExtensionOverlaysRef: { current: true },
+    previewMapRef,
+  });
+  coordinator.mount(inst, "editor");
+  assert.equal(inst._overlays.store.length, 0);
+});
+
+test("coordinator mount keeps BPMN fallback when preview entry is empty in global mode", () => {
   setupMockDom();
   const inst = fakeInst({ elements: [fakeElement("T1", "Task")] });
   const previewMapRef = {
@@ -132,10 +150,12 @@ test("coordinator mount suppresses overlay when preview entry is empty", () => {
     previewMapRef,
   });
   coordinator.mount(inst, "editor");
-  assert.equal(inst._overlays.store.length, 0);
+  // Global V2 mode: an empty/disabled selection preview must not suppress the
+  // element's own BPMN-derived card (name-only fallback for a named task).
+  assert.equal(inst._overlays.store.length, 1);
 });
 
-test("coordinator mount removes overlay when preview becomes empty", () => {
+test("coordinator mount keeps overlay when preview becomes empty in global mode", () => {
   setupMockDom();
   const inst = fakeInst({ elements: [fakeElement("T1", "Task")] });
   const previewMapRef = {
@@ -154,5 +174,7 @@ test("coordinator mount removes overlay when preview becomes empty", () => {
 
   previewMapRef.current = { T1: { enabled: false, elementId: "T1", items: [] } };
   coordinator.mount(inst, "editor");
-  assert.equal(inst._overlays.store.length, 0);
+  // Selecting an element (which empties/disables its preview entry) must not
+  // remove the V2 overlay while global V2 rendering is enabled.
+  assert.equal(inst._overlays.store.length, 1);
 });
