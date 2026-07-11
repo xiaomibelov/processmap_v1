@@ -289,7 +289,10 @@ function updateExtensionPropertyValue({
   const moddle = inst?.get?.("moddle");
   const nextExt = cloneBpmnModdleValue(ext, moddle);
   const values = asArray(nextExt?.values);
+  const nextValue = String(nextValueRaw ?? "");
   let found = false;
+  let changed = false;
+  let matchedName = "";
   values.forEach((containerRaw, containerIndex) => {
     const container = asObject(containerRaw);
     const type = toText(container?.$type || container?.type || "").toLowerCase();
@@ -303,14 +306,16 @@ function updateExtensionPropertyValue({
       } else if (name !== propertyName) {
         return;
       }
-      setBpmnProperty(prop, "value", String(nextValueRaw ?? ""));
+      if (String(prop?.value ?? "") !== nextValue) changed = true;
+      setBpmnProperty(prop, "value", nextValue);
+      matchedName = name;
       found = true;
     });
   });
   if (!found) return { ok: false, error: "extension_property_not_found" };
   try {
     modeling.updateProperties(element, { extensionElements: nextExt });
-    return { ok: true };
+    return { ok: true, changed, propertyName: matchedName };
   } catch (error) {
     return {
       ok: false,
@@ -960,6 +965,16 @@ export async function executeBpmnContextMenuAction({
         nextValueRaw: payload.value,
       });
       if (!result.ok) return { ok: false, error: result.error || "extension_property_update_failed" };
+      // Signal the sidebar to re-hydrate its editable draft from the live
+      // modeler (epoch bump + external-edit token). Only real value changes
+      // emit, so no-op writes never invalidate an in-flight sidebar draft.
+      if (result.changed) {
+        emitMutation({
+          elementId: toText(target.id),
+          propertyName: toText(result.propertyName || payload.propertyName),
+          source: "properties_overlay",
+        });
+      }
       selectAndEmitElement({
         inst,
         element: target,
