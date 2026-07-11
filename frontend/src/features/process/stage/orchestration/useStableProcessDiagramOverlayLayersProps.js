@@ -94,6 +94,7 @@ const BPMN_INPUT_KEYS = [
   "queueDiagramMutation",
   "v2OverlaysEnabled",
   "v2OverlaysExpanded",
+  "onV2OverlayPropertiesRequest",
   "reloadKey",
   "bpmnXmlCacheRef",
   "robotMetaOverlayEnabled",

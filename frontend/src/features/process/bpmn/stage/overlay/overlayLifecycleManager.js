@@ -4,6 +4,60 @@ import { mergeV2OverlaysWithPropertyPreview } from "./v2OverlayContentResolver.j
 let overlayBadgeTooltipListenerInstalled = false;
 let overlayBadgeTooltipHandler = null;
 
+let v2OverlayClickListenerInstalled = false;
+let v2OverlayClickHandler = null;
+
+const V2_OVERLAY_HOST_SELECTOR = ".fpc-overlay-v2-host[data-fpc-element-id]";
+
+function findV2OverlayHostFromEvent(event) {
+  const host = event?.target?.closest?.(V2_OVERLAY_HOST_SELECTOR) || null;
+  const elementId = String(host?.dataset?.fpcElementId || "").trim();
+  return elementId ? { host, elementId } : null;
+}
+
+// Pressing on a V2 card must not start a canvas pan / rubber-band selection.
+// Capture phase: the canvas container listens in bubble phase, so stopping
+// here keeps the gesture owned by the overlay.
+function handleV2OverlayMouseDownCapture(event) {
+  if (findV2OverlayHostFromEvent(event)) event.stopPropagation();
+}
+
+function handleV2OverlayClick(event) {
+  const hit = findV2OverlayHostFromEvent(event);
+  if (!hit) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (typeof v2OverlayClickHandler !== "function") return;
+  try {
+    v2OverlayClickHandler({ elementId: hit.elementId, event });
+  } catch {
+    // Overlay click handler failures are non-critical.
+  }
+}
+
+function installV2OverlayClickListener() {
+  if (v2OverlayClickListenerInstalled || typeof document === "undefined") return;
+  document.addEventListener("mousedown", handleV2OverlayMouseDownCapture, true);
+  document.addEventListener("click", handleV2OverlayClick);
+  v2OverlayClickListenerInstalled = true;
+}
+
+function uninstallV2OverlayClickListener() {
+  if (!v2OverlayClickListenerInstalled || typeof document === "undefined") return;
+  document.removeEventListener("mousedown", handleV2OverlayMouseDownCapture, true);
+  document.removeEventListener("click", handleV2OverlayClick);
+  v2OverlayClickListenerInstalled = false;
+}
+
+// Registers the handler invoked with { elementId } when a V2 overlay card is
+// clicked. Installs the delegated document listeners on first registration.
+export function setV2OverlayClickHandler(handler) {
+  v2OverlayClickHandler = typeof handler === "function" ? handler : null;
+  if (v2OverlayClickHandler) {
+    installV2OverlayClickListener();
+  }
+}
+
 function fillOverlayTooltip(tooltip, payload) {
   if (!tooltip) return;
   tooltip.innerHTML = "";
@@ -79,4 +133,9 @@ export function createOverlayLifecycleManager({ enabledRef, expandedRef, useExte
   });
 }
 
-export { mergeV2OverlaysWithPropertyPreview, installOverlayBadgeTooltipListener, uninstallOverlayBadgeTooltipListener };
+export {
+  mergeV2OverlaysWithPropertyPreview,
+  installOverlayBadgeTooltipListener,
+  uninstallOverlayBadgeTooltipListener,
+  uninstallV2OverlayClickListener,
+};

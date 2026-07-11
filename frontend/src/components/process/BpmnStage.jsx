@@ -23,6 +23,7 @@ import useDiagramLoadStateMachine from "../../features/process/bpmn/stage/stateM
 import DiagramLoadBoundary from "../../features/process/bpmn/stage/load/DiagramLoadBoundary";
 import { useV2OverlayState } from "../../features/process/bpmn/stage/state/useV2OverlayState";
 import { useOverlayLifecycle } from "../../features/process/bpmn/stage/overlay/useOverlayLifecycle";
+import { setV2OverlayClickHandler } from "../../features/process/bpmn/stage/overlay/overlayLifecycleManager";
 import { useViewportResizeController } from "../../features/process/bpmn/stage/viewport/useViewportResizeController";
 import {
   bindModelerStageEvents,
@@ -955,6 +956,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   propertiesOverlayAlwaysPreviewByElementId = null,
   v2OverlaysEnabled = false,
   v2OverlaysExpanded = false,
+  onV2OverlayPropertiesRequest = null,
   onDiagramContextMenuRequest = null,
   onDiagramContextMenuDismiss = null,
   onNavigateToSubprocess = null,
@@ -1045,6 +1047,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const selectedMarkerStateRef = useRef({ viewer: "", editor: "" });
   const onDiagramMutationRef = useRef(onDiagramMutation);
   const onElementSelectionChangeRef = useRef(onElementSelectionChange);
+  const onV2OverlayPropertiesRequestRef = useRef(onV2OverlayPropertiesRequest);
   const selectionImportGuardRef = useRef({ viewer: "", editor: "" });
   const contextMenuInteractionRef = useRef({ contextMenuOpenedAtMs: 0 });
   const onElementNotesRemapRef = useRef(onElementNotesRemap);
@@ -1144,6 +1147,20 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     onDiagramMutationRef.current = onDiagramMutation;
   }, [onDiagramMutation]);
+
+  useEffect(() => {
+    onV2OverlayPropertiesRequestRef.current = onV2OverlayPropertiesRequest;
+  }, [onV2OverlayPropertiesRequest]);
+
+  // V2 overlay cards are display-only DOM; a click on a card opens the
+  // properties popover for its element through the same pipeline the
+  // context-menu "open_properties" action uses.
+  useEffect(() => {
+    setV2OverlayClickHandler(({ elementId }) => {
+      onV2OverlayPropertiesRequestRef.current?.(elementId);
+    });
+    return () => setV2OverlayClickHandler(null);
+  }, []);
 
   useEffect(() => {
     onElementSelectionChangeRef.current = onElementSelectionChange;

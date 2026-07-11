@@ -262,6 +262,7 @@
   position: absolute;
   left: 50%;
   bottom: 0;
+  cursor: pointer;
   transform: translateX(-50%);
   transform-origin: bottom center;
   box-sizing: border-box;

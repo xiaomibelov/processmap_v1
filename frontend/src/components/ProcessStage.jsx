@@ -4101,6 +4101,33 @@ function ProcessStage({
     openBpmnSubprocessPreviewProperties,
   ]);
 
+  // Click on a V2 properties overlay card: open the properties popover for
+  // that element through the same pipeline the context-menu action uses.
+  const handleV2OverlayPropertiesRequest = useCallback(async (elementIdRaw) => {
+    const elementId = toText(elementIdRaw);
+    if (!elementId) return null;
+    const result = await Promise.resolve(
+      bpmnRef?.current?.runDiagramContextAction?.({
+        actionId: "open_properties",
+        target: { id: elementId, kind: "element" },
+      }),
+    );
+    bpmnPropertiesOverlayController.handleContextMenuActionResult({
+      actionId: "open_properties",
+      menu: {
+        target: {
+          id: elementId,
+          kind: "element",
+        },
+      },
+      result: asObject(result),
+    });
+    return result;
+  }, [
+    bpmnPropertiesOverlayController,
+    bpmnRef,
+  ]);
+
   const handleDiagramSearchResultNavigation = useCallback((result, { source = "diagram_search" } = {}) => {
     const requestId = diagramSearchNavigationRequestRef.current + 1;
     diagramSearchNavigationRequestRef.current = requestId;
@@ -6811,6 +6838,7 @@ function ProcessStage({
     tab,
     toText,
     runBpmnContextMenuAction: handleBpmnContextMenuAction,
+    onV2OverlayPropertiesRequest: handleV2OverlayPropertiesRequest,
     openBpmnSubprocessPreviewProperties: handleBpmnSubprocessPreviewOpenProperties,
     onNavigateToSubprocess: (elementId) => {
       if (sid && typeof onNavigateToSubprocess === "function") {
