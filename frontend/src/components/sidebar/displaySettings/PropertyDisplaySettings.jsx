@@ -3,6 +3,12 @@
 // Replaces the five As-Is checkboxes with two mutually exclusive dropdowns
 // (display mode + V2 mode) and a per-field chip row. Every option carries an
 // inline hint; chips toggle per-field visibility in overlays (preview-level).
+//
+// UI refresh: the two selects sit side-by-side and each block (display mode,
+// V2 mode, fields) is a collapsible PanelGroup with persisted state.
+
+import PanelGroup from "./PanelGroup.jsx";
+import { createDefaultPanelGroupsState } from "./panelGroupsModel.js";
 
 const DISPLAY_MODE_OPTIONS = [
   { value: "hover", label: "При выделении", hint: "Карточка появляется при выделении элемента" },
@@ -37,48 +43,65 @@ export default function PropertyDisplaySettings({
   onDisplayModeChange,
   onV2ModeChange,
   onToggleField,
+  groups,
+  onToggleGroup,
 }) {
+  const groupState = { ...createDefaultPanelGroupsState(), ...(groups || {}) };
   return (
     <div className="overlayDisplaySettings" role="group" aria-label="Настройки отображения свойств">
-      <label className="overlayDisplayField">
-        <span className="overlayDisplayLabel">Свойства над задачей</span>
-        <select
-          className="overlayDisplaySelect"
-          value={displayMode}
-          onChange={(event) => onDisplayModeChange?.(event.target.value)}
-          disabled={disabled}
-          aria-label="Свойства над задачей"
-          aria-describedby="overlay-display-mode-hint"
-          data-testid="overlay-display-mode-select"
+      <div className="overlayDisplaySelectsRow">
+        <PanelGroup
+          groupId="displayMode"
+          label="Свойства над задачей"
+          open={groupState.displayMode}
+          onToggle={onToggleGroup}
         >
-          {DISPLAY_MODE_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
-        <span className="overlayDisplayHint" id="overlay-display-mode-hint">{hintFor(DISPLAY_MODE_OPTIONS, displayMode)}</span>
-      </label>
+          <select
+            className="overlayDisplaySelect"
+            value={displayMode}
+            onChange={(event) => onDisplayModeChange?.(event.target.value)}
+            disabled={disabled}
+            aria-label="Свойства над задачей"
+            aria-describedby="overlay-display-mode-hint"
+            data-testid="overlay-display-mode-select"
+          >
+            {DISPLAY_MODE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <span className="overlayDisplayHint" id="overlay-display-mode-hint">{hintFor(DISPLAY_MODE_OPTIONS, displayMode)}</span>
+        </PanelGroup>
 
-      <label className="overlayDisplayField">
-        <span className="overlayDisplayLabel">V2-оверлеи</span>
-        <select
-          className="overlayDisplaySelect"
-          value={v2Mode}
-          onChange={(event) => onV2ModeChange?.(event.target.value)}
-          disabled={disabled}
-          aria-label="V2-оверлеи"
-          aria-describedby="overlay-v2-mode-hint"
-          data-testid="overlay-v2-mode-select"
+        <PanelGroup
+          groupId="v2Mode"
+          label="V2-оверлеи"
+          open={groupState.v2Mode}
+          onToggle={onToggleGroup}
         >
-          {V2_MODE_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
-        <span className="overlayDisplayHint" id="overlay-v2-mode-hint">{hintFor(V2_MODE_OPTIONS, v2Mode)}</span>
-      </label>
+          <select
+            className="overlayDisplaySelect"
+            value={v2Mode}
+            onChange={(event) => onV2ModeChange?.(event.target.value)}
+            disabled={disabled}
+            aria-label="V2-оверлеи"
+            aria-describedby="overlay-v2-mode-hint"
+            data-testid="overlay-v2-mode-select"
+          >
+            {V2_MODE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <span className="overlayDisplayHint" id="overlay-v2-mode-hint">{hintFor(V2_MODE_OPTIONS, v2Mode)}</span>
+        </PanelGroup>
+      </div>
 
       {chips.length > 0 && (
-        <div className="overlayFieldChipsBlock">
-          <span className="overlayDisplayLabel">Поля в оверлее</span>
+        <PanelGroup
+          groupId="fields"
+          label="Поля в оверлее"
+          open={groupState.fields}
+          onToggle={onToggleGroup}
+        >
           <div className="overlayFieldChips" role="group" aria-label="Поля в оверлее">
             {chips.map((chip) => (
               <button
@@ -95,7 +118,7 @@ export default function PropertyDisplaySettings({
               </button>
             ))}
           </div>
-        </div>
+        </PanelGroup>
       )}
     </div>
   );
