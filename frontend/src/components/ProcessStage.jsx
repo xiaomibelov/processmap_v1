@@ -477,6 +477,7 @@ function ProcessStage({
   reloadKey,
   selectedBpmnElement,
   onBpmnElementSelect,
+  onBpmnModelerExtensionChange = null,
   onOpenElementNotes,
   onOpenNotesDiscussions,
   onElementNotesRemap,
@@ -2013,6 +2014,21 @@ function ProcessStage({
 
   const queueDiagramMutation = useCallback((mutation) => {
     const kind = String(mutation?.kind || mutation || "").trim().toLowerCase();
+    if (
+      kind === "diagram.context_menu_action"
+      && String(mutation?.actionId || "").trim() === "properties_overlay_update_extension_property"
+    ) {
+      // Canvas properties popover wrote a camunda property value into the
+      // live modeler: ask the sidebar owner to re-hydrate its editable
+      // draft (epoch bump + external-edit token).
+      const changedElementId = String(mutation?.elementId || "").trim();
+      if (changedElementId && typeof onBpmnModelerExtensionChange === "function") {
+        onBpmnModelerExtensionChange({
+          elementId: changedElementId,
+          propertyName: String(mutation?.propertyName || "").trim(),
+        });
+      }
+    }
     if (kind.startsWith("diagram.") || kind.startsWith("xml.")) {
       setSaveDirtyHint(true);
       setDiagramSearchMutationVersion((prev) => prev + 1);
@@ -2064,6 +2080,7 @@ function ProcessStage({
     draft?.version,
     ensureSessionWorkspaceTruthOwner,
     getBaseDiagramStateVersion,
+    onBpmnModelerExtensionChange,
     queueDiagramMutationRaw,
     refreshDiagramUndoRedoState,
     sid,
