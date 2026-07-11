@@ -54,6 +54,9 @@ import LiveCardPreview from "./sidebar/displaySettings/LiveCardPreview";
 import ToBeBuilder from "./sidebar/displaySettings/ToBeBuilder";
 import { deriveToBeModel } from "./sidebar/displaySettings/toBeBuilderModel";
 import { useToBeState } from "./sidebar/displaySettings/useToBeState";
+import { usePanelGroupsState } from "./sidebar/displaySettings/usePanelGroupsState";
+import PanelGroup from "./sidebar/displaySettings/PanelGroup";
+import ExtensionStateMiniIndicator from "./sidebar/displaySettings/ExtensionStateMiniIndicator";
 import SidebarShell from "./sidebar/SidebarShell";
 import ActorsSection from "./sidebar/ActorsSection";
 import TemplatesAndTldrSection from "./sidebar/TemplatesAndTldrSection";
@@ -1180,6 +1183,7 @@ export default function NotesPanel({
   const selectedElementId = str(selectedElement?.id);
   const sid = str(draft?.session_id || draft?.id);
   const { toBeState, toggleToBe, markRemoved } = useToBeState(sid);
+  const { groups: panelGroups, toggleGroup: togglePanelGroup } = usePanelGroupsState();
   const camundaPropertiesDraftKey = useMemo(
     () => buildCamundaPropertiesDraftKey(sid, selectedElementId),
     [sid, selectedElementId],
@@ -3201,6 +3205,14 @@ export default function NotesPanel({
                 open={!!sectionsOpen.properties}
                 onToggle={toggleSection}
               >
+                {isElementMode && selectedCamundaPropertiesEditable && (
+                  <div className="propertiesTabTopRow">
+                    <ExtensionStateMiniIndicator
+                      syncState={camundaExtensionSyncState}
+                      busy={camundaPropertiesBusy}
+                    />
+                  </div>
+                )}
                 {isElementMode && selectedCamundaPropertiesEditable && !isProcessLikeSelection && (
                   <LiveCardPreview
                     preview={overlayPreview}
@@ -3215,17 +3227,32 @@ export default function NotesPanel({
                   onDisplayModeChange={onOverlayDisplayModeChange}
                   onV2ModeChange={onOverlayV2ModeChange}
                   onToggleField={onOverlayFieldToggle}
+                  groups={panelGroups}
+                  onToggleGroup={togglePanelGroup}
                 />
                 {isElementMode && selectedCamundaPropertiesEditable && (
-                  <ToBeBuilder
-                    asIs={toBeModel.asIs}
-                    pool={toBeModel.pool}
-                    inToBeCount={toBeModel.inToBeCount}
-                    skippedCount={toBeModel.skippedCount}
-                    disabled={disabled}
-                    onAddFromPool={addPropertyFromPool}
-                    onToggleToBe={toggleToBe}
-                  />
+                  <PanelGroup
+                    groupId="toBe"
+                    label="To-Be"
+                    open={panelGroups.toBe}
+                    onToggle={togglePanelGroup}
+                    right={(
+                      <span className="toBePills">
+                        {toBeModel.inToBeCount} in To-Be / {toBeModel.skippedCount} skipped
+                      </span>
+                    )}
+                  >
+                    <ToBeBuilder
+                      asIs={toBeModel.asIs}
+                      pool={toBeModel.pool}
+                      inToBeCount={toBeModel.inToBeCount}
+                      skippedCount={toBeModel.skippedCount}
+                      disabled={disabled}
+                      onAddFromPool={addPropertyFromPool}
+                      onToggleToBe={toggleToBe}
+                      hideHeader
+                    />
+                  </PanelGroup>
                 )}
                 <CamundaPropertiesSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
