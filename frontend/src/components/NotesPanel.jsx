@@ -43,6 +43,7 @@ import {
   getOperationKeyFromRobotMeta,
 } from "../features/process/camunda/propertyDictionaryModel";
 import useCamundaPropertiesOverlayPreview from "../features/process/camunda/useCamundaPropertiesOverlayPreview";
+import { isProcessLikeType } from "../features/process/bpmn/stage/interaction/processRootSelection.js";
 import useNotesPanelController from "./notesPanel/useNotesPanelController.js";
 import { SHOW_PROPERTIES_FLAG_KEY } from "./sidebar/useElementSettingsController.js";
 import SidebarShell from "./sidebar/SidebarShell";
@@ -1234,6 +1235,9 @@ export default function NotesPanel({
     [aiQuestionsByElement, selectedElementId],
   );
   const isElementMode = !!selectedElementId;
+  // Selecting the root process/collaboration (empty-canvas click) opens a
+  // process-scoped sidebar: only the camunda properties group applies.
+  const isProcessLikeSelection = isElementMode && isProcessLikeType(selectedElementType);
   const { threads: elementNoteThreads } = useElementThreads(
     isElementMode ? sid : "",
     isElementMode ? selectedElementId : "",
@@ -1498,6 +1502,9 @@ export default function NotesPanel({
     propertiesOverlayPreviewDispatchRef,
     onPropertiesOverlayPreviewChange,
     onPropertiesOverlayAlwaysPreviewChange,
+    // The root process has no canvas geometry: never render a property
+    // overlay card for it (properties are edited in the sidebar only).
+    suppressOverlayPreview: isProcessLikeSelection,
   });
   const camundaExtensionHasLocalChanges = selectedCamundaPropertiesEditable
     && finalizedCamundaPropertiesDraftCanonical !== selectedCamundaExtensionCanonical;
@@ -3262,6 +3269,8 @@ export default function NotesPanel({
                 />
               </SidebarAccordion>
               </div>
+              {!isProcessLikeSelection && (
+              <>
               <div ref={pathsSectionRef}>
                 <SidebarAccordion
                 sectionKey="paths"
@@ -3328,7 +3337,10 @@ export default function NotesPanel({
                 />
               </SidebarAccordion>
               </div>
+              </>
+              )}
 
+              {!isProcessLikeSelection && (
               <div ref={robotMetaSectionRef}>
                 <SidebarAccordion
                 sectionKey="robotmeta"
@@ -3353,7 +3365,9 @@ export default function NotesPanel({
                 />
               </SidebarAccordion>
               </div>
+              )}
 
+              {!isProcessLikeSelection && (
               <div ref={executionSectionRef}>
                 <SidebarAccordion
                   sectionKey="execution"
@@ -3376,8 +3390,10 @@ export default function NotesPanel({
                   ) : null}
                 </SidebarAccordion>
               </div>
+              )}
 
 
+              {!isProcessLikeSelection && (
               <div ref={notesSectionRef}>
                 <SidebarAccordion
                 sectionKey="notes"
@@ -3417,7 +3433,9 @@ export default function NotesPanel({
                 />
               </SidebarAccordion>
               </div>
+              )}
 
+              {!isProcessLikeSelection && (
               <div ref={aiSectionRef}>
                 <SidebarAccordion
                 sectionKey="ai"
@@ -3453,7 +3471,9 @@ export default function NotesPanel({
                 />
               </SidebarAccordion>
               </div>
+              )}
 
+              {!isProcessLikeSelection && (
               <div ref={advancedSectionRef}>
                 <SidebarAccordion
                   sectionKey="advanced"
@@ -3498,10 +3518,12 @@ export default function NotesPanel({
                   </details>
                 </SidebarAccordion>
               </div>
+              )}
             </div>
           </section>
 
           <SelectedElementCard
+            isProcessLike={isProcessLikeSelection}
             selectedElementId={isElementMode ? selectedElementId : ""}
             selectedElementName={isElementMode ? selectedElementName : ""}
             selectedElementType={isElementMode ? selectedElementType : ""}
