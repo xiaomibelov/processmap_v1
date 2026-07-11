@@ -80,3 +80,34 @@ console.error/pageerror по-прежнему роняет тест.
 - push / PR / merge / deploy — ожидают явной команды.
 - D5 (runtime для Agent-3 review): открыт — :5180 локально или stage.
 - AI-слой FB-помощника, real-time sync, cross-session notes — out of scope (PLAN.md).
+
+## UI refresh (2026-07-11, по запросу пользователя со скриншотами)
+
+4 правки во вкладке «Свойства» (та же ветка, PR #524):
+
+1. **Сворачиваемые группы** — «Свойства над задачей», «V2-оверлеи», «Поля в оверлее»,
+   «To-Be» теперь collapsible (PanelGroup: header = кнопка с chevron + label,
+   body не рендерится когда свернуто). Состояние persists в localStorage
+   (`fpc_prop_panel_groups_v1`, глобально — UI-предпочтение, не per-session).
+   Default = всё раскрыто (e2e-селекторы и существующие флоу не требуют
+   лишних кликов).
+2. **Select'ы в один ряд** — «Свойства над задачей» и «V2-оверлеи» в 2-колоночном
+   grid (`.overlayDisplaySelectsRow`), больше не друг над другом.
+3. **Полная ширина блоков** — у `.sidebarPropertiesLayout--centered` убраны
+   `padding-left/right: 12px`: «Быстрые свойства» и «Дополнительные
+   BPMN-свойства» теперь edge-to-edge с остальными секциями (max-width: 672px
+   сохранён — в узком сайдбаре не играет).
+4. **Мини-индикатор extension-state** — glanceable twin детального
+   SidebarTrustStatus: иконка ~16px (✓ saved / ✎ dirty / ⟳ syncing / ⚠ error)
+   в самом верху контента вкладки «Свойства», tooltip на русском, без текста.
+   Детальный индикатор с CTA «Повторить» в группе «Вспомогательное» НЕ тронут.
+
+To-Be builder: summary pills переехали в header collapsible-группы (проп
+`hideHeader` на ToBeBuilder), дубля заголовка «To-Be» нет.
+
+Новые файлы:
+- `displaySettings/PanelGroup.jsx`, `usePanelGroupsState.js`,
+  `panelGroupsModel.js` (+6 unit), `extensionStateMiniView.js` (+5 unit),
+  `ExtensionStateMiniIndicator.jsx` (+3 ui-copy).
+- e2e: +2 теста (collapse persistence across reload; mini indicator
+  saved→dirty on inline edit). Spec: 10/10 green.
