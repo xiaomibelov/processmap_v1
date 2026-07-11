@@ -8,12 +8,14 @@
   "created": "2026-07-11T14:05:00Z",
   "approved": "2026-07-11T14:20:00Z",
   "decisions": {
-    "D1": "absorb feat/process-properties as Phase 3",
+    "D1": "RESOLVED UPSTREAM: PR #523 (feat/process-properties) merged to main 2026-07-11; branch rebased onto 5aabba98. Phase 3 = integration verification only (no re-implementation).",
     "D2": "use existing styles/tokens.css + color-mix (no --kimi-* in product)",
     "D3": "chips per-field visibility = per-session (localStorage)",
     "D4": "To-Be storage = derived + localStorage (no bpmn_meta in MVP)",
     "D5": "deferred to review phase (raise :5180 or use stage.processmap.ru)"
   },
   "artifacts": ["PLAN.md", "UI.md", "API.md", "TESTS.md", "STATE.json"],
-  "notes": "PLAN approved by user. UI/API/TESTS written. Phase 0 (overlay display state model) started via TDD. feat/process-properties design adopted for Phase 3."
+  "commits": ["0ac9b133 docs(planning)", "e15d04e1 feat(sidebar) phase 0"],
+  "baseline": { "tree": "main@5aabba98 + phase0", "tests": 2303, "preExistingFails": 35, "list": "/tmp/fails_rebased.txt" },
+  "notes": "PLAN approved. Phase 0 done via TDD (48 new tests + 2 integration, all green; 2 atomic commits). Pre-existing failure in propertyDictionaryModel fallback-mode test confirmed on clean main (dedup PR #516 aftermath), unrelated to this contour. Next: Phase 1 (hook + App.jsx wiring + compact UI)."
 }

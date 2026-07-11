@@ -14,12 +14,13 @@
  * @typedef {Object} OverlayDisplaySettings
  * @property {DisplayMode} displayMode      // legacy overlay pipeline
  * @property {V2Mode} v2Mode                // V2 overlay pipeline
- * @property {string[]} visibleFields       // активные поля chips (имена свойств)
+ * @property {string[]} hiddenFields        // скрытые поля chips (имена свойств); поля активны по умолчанию
  */
 ```
 
 - Персистентность (per-session, D3): localStorage `fpc_overlay_display_v1:{sid}` — JSON целиком.
-- Defaults: `{ displayMode: "hover", v2Mode: "none", visibleFields: <все известные поля> }`.
+- Defaults: `{ displayMode: "hover", v2Mode: "none", hiddenFields: [] }`.
+- Семантика opt-out: поле скрыто из оверлея только если явно в `hiddenFields`; новые поля (кастомное свойство элемента, обновление словаря) видны по умолчанию.
 - Миграция: при отсутствии нового ключа читать `fpc_properties_overlay_always_v1:{sid}` (builder ключа `App.jsx:300-303`): `true → displayMode="always"`, иначе `"hover"`. Старый ключ не удалять.
 
 ### 1.2 `ToBeState` (D4: derived + localStorage, per-session)
@@ -54,8 +55,8 @@ pills       = "|inToBe| in To-Be / |skipped| skipped"
 ```
 
 - Источник имён: union(имена свойств выбранного элемента, имена из словаря организации, `DEFAULT_QUICK_PROPERTY_NAMES` = `["ee_time","ingredient_value"]` — `useBpmnPropertiesController.js:13`).
-- `visibleFields` — глобальный per-session фильтр (не per-element, D3).
-- Фильтрация — **preview-level**: `filterPreviewByVisibleFields(preview, visibleFields)` применяется к rows preview, НЕ к draft/XML. Поле скрыто из оверлея ≠ свойство удалено.
+- `hiddenFields` — глобальный per-session фильтр (не per-element, D3).
+- Фильтрация — **preview-level**: `filterRowsByHiddenFields(rows, hiddenFields)` применяется к rows preview (pre-slice в `buildPropertiesOverlayPreview`), НЕ к draft/XML. Поле скрыто из оверлея ≠ свойство удалено.
 
 ### 1.4 Process selection (Фаза 3, adoption `feat/process-properties`)
 
@@ -67,7 +68,7 @@ pills       = "|inToBe| in To-Be / |skipped| skipped"
 | Событие | Payload | Потребители |
 |---|---|---|
 | `onDisplaySettingsChange(settings)` | `OverlayDisplaySettings` | App → refs (`BpmnStage.jsx:1070-1072`) → legacy decor; V2 mount-эффект (`:4676-4722`) |
-| `onVisibleFieldsChange(names)` | `string[]` | preview memos `App.jsx:1377-1409` + V2 `previewMap` (`:4679-4685`) — через общий `filterPreviewByVisibleFields` |
+| `onHiddenFieldsChange(names)` | `string[]` | preview memos `App.jsx:1377-1409` + V2 `previewMap` (`:4679-4685`) — через общий `filterRowsByHiddenFields` (pre-slice) |
 | `onToBeChange(state)` | `ToBeState` | ToBeBuilder derived model (local) |
 | overlay preview (существующий) | `onPropertiesOverlayPreviewChange` / `onPropertiesOverlayAlwaysPreviewChange` (`App.jsx:3360-3361`) | без изменений; на вход preview добавляется field-фильтр |
 | selection (существующий) | `emitElementSelection(element, source)` — `elementSelectionEmitter.js` | Фаза 3: источник `"<kind>.canvas_process_select"` |
@@ -111,7 +112,7 @@ pills       = "|inToBe| in To-Be / |skipped| skipped"
 - `readOverlayDisplaySettings(raw)`:
   - `displayMode ∉ {hover,always,hidden}` → `"hover"`;
   - `v2Mode ∉ {none,all,expanded}` → `"none"`;
-  - `visibleFields`: не массив → `[]` = «все активны» (пустой = не фильтровать); элементы не-string → отбросить; дедуп.
+  - `hiddenFields`: не массив → `[]` = «ничего не скрыто»; элементы не-string → отбросить; дедуп.
 - `readToBeState(raw)`: `toBe`/`removed` — массивы string, дедуп, пересечение `toBe∩removed` разрешено (removed ⊂ skipped вычисляется).
 - Запись всегда после валидации (round-trip safe).
 - Имена свойств санитизируются через существующий `asText`/`toText` хелпер (используется в sidebar-контроллерах).
