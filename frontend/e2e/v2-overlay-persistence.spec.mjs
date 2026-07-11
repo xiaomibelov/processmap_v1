@@ -78,21 +78,15 @@ async function openPropertiesSection(page) {
 }
 
 async function enableV2Overlays(page) {
-  const checkbox = page.locator('[data-testid="bpmn-show-v2-overlays-checkbox"]');
-  await expect(checkbox).toBeVisible({ timeout: 15_000 });
-  if (!(await checkbox.isChecked())) {
-    await checkbox.click();
-  }
+  const select = page.locator('[data-testid="overlay-v2-mode-select"]');
+  await expect(select).toBeVisible({ timeout: 15_000 });
+  await select.selectOption("all");
 }
 
 async function setSelectPreview(page, on) {
-  const checkbox = page
-    .locator('label:has-text("Показывать свойства над задачей при выделении") input[type="checkbox"]')
-    .first();
-  await expect(checkbox).toBeVisible({ timeout: 15_000 });
-  if ((await checkbox.isChecked()) !== on) {
-    await checkbox.click();
-  }
+  const select = page.locator('[data-testid="overlay-display-mode-select"]');
+  await expect(select).toBeVisible({ timeout: 15_000 });
+  await select.selectOption(on ? "hover" : "hidden");
 }
 
 function v2Host(page, elementId) {

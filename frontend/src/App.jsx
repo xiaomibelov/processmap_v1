@@ -77,6 +77,7 @@ import {
   upsertCamundaPresentationByElementId,
 } from "./features/process/camunda/camundaPresentation";
 import { buildPropertiesOverlayPreview } from "./features/process/camunda/propertyDictionaryModel";
+import { useOverlayDisplaySettings } from "./components/sidebar/displaySettings/useOverlayDisplaySettings";
 import { normalizeHybridLayerMap } from "./features/process/hybrid/hybridLayerUi";
 import { mergeDrawioMeta, normalizeDrawioMeta } from "./features/process/drawio/drawioMeta";
 import buildSessionMetaReadModel from "./features/session-meta/read/buildSessionMetaReadModel";
@@ -270,7 +271,6 @@ const LEFT_PANEL_OPEN_KEY = "ui.sidebar.left.open";
 const LEFT_PANEL_COMPACT_KEY = "fpc_leftpanel_compact";
 const STEP_TIME_UNIT_KEY = "fpc_step_time_unit_v1";
 const BPMN_META_LOCAL_KEY_PREFIX = "fpc_bpmn_meta_v1:";
-const PROPERTIES_OVERLAY_ALWAYS_KEY_PREFIX = "fpc_properties_overlay_always_v1:";
 function normalizeStepTimeUnit(raw) {
   return String(raw || "").trim().toLowerCase() === "sec" ? "sec" : "min";
 }
@@ -295,33 +295,6 @@ function writeStepTimeUnit(unit) {
 function bpmnMetaLocalStorageKey(sessionId) {
   const sid = String(sessionId || "").trim();
   return sid ? `${BPMN_META_LOCAL_KEY_PREFIX}${sid}` : "";
-}
-
-function propertiesOverlayAlwaysLocalStorageKey(sessionId) {
-  const sid = String(sessionId || "").trim();
-  return sid ? `${PROPERTIES_OVERLAY_ALWAYS_KEY_PREFIX}${sid}` : "";
-}
-
-function readPropertiesOverlayAlwaysEnabled(sessionId) {
-  if (typeof window === "undefined") return false;
-  const key = propertiesOverlayAlwaysLocalStorageKey(sessionId);
-  if (!key) return false;
-  try {
-    const raw = String(window.localStorage?.getItem(key) || "").trim().toLowerCase();
-    return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
-  } catch {
-    return false;
-  }
-}
-
-function writePropertiesOverlayAlwaysEnabled(sessionId, value) {
-  if (typeof window === "undefined") return;
-  const key = propertiesOverlayAlwaysLocalStorageKey(sessionId);
-  if (!key) return;
-  try {
-    window.localStorage?.setItem(key, value ? "1" : "0");
-  } catch {
-  }
 }
 
 function readLocalBpmnMeta(sessionId) {
@@ -892,9 +865,6 @@ export default function App() {
   const [sessionNavNotice, setSessionNavNotice] = useState(null);
   const [renameDialog, setRenameDialog] = useState({ open: false, scope: "", value: "", error: "", busy: false });
   const [deleteDialog, setDeleteDialog] = useState({ open: false, scope: "", error: "", busy: false });
-  const [showPropertiesOverlayAlways, setShowPropertiesOverlayAlways] = useState(false);
-  const [v2OverlaysEnabled, setV2OverlaysEnabled] = useState(false);
-  const [v2OverlaysExpanded, setV2OverlaysExpanded] = useState(false);
   const [bpmnModelerSyncEpoch, setBpmnModelerSyncEpoch] = useState(0);
   // Set when an external writer (canvas properties popover) mutates camunda
   // extension properties in the live modeler. NotesPanel uses it to merge
@@ -952,6 +922,18 @@ export default function App() {
   }, [activeOrgRole, user?.is_admin]);
   const draftSessionId = String(draft?.session_id || "").trim();
   const isSessionLocalMode = !draftSessionId || isLocalSessionId(draftSessionId);
+  // Overlay display settings (property-panel-redesign): one per-session model
+  // (displayMode × v2Mode × hiddenFields) replaces the five As-Is checkboxes.
+  const {
+    settings: overlayDisplaySettings,
+    setDisplayMode: setOverlayDisplayMode,
+    setV2Mode: setOverlayV2Mode,
+    toggleField: toggleOverlayField,
+  } = useOverlayDisplaySettings(draftSessionId);
+  const showPropertiesOverlayAlways = overlayDisplaySettings.displayMode === "always";
+  const v2OverlaysEnabled = overlayDisplaySettings.v2Mode !== "none";
+  const v2OverlaysExpanded = overlayDisplaySettings.v2Mode === "expanded";
+  const overlayHiddenFields = overlayDisplaySettings.hiddenFields;
   const serializeSessionMetaForBoundary = useCallback((valueRaw) => JSON.stringify(normalizeBpmnMeta(valueRaw)), []);
   const getSessionMetaBaseDiagramStateVersion = useCallback(() => Number(
     draft?.diagram_state_version ?? draft?.diagramStateVersion,
@@ -1366,13 +1348,8 @@ export default function App() {
   }, [openSession]);
 
   useEffect(() => {
-    setShowPropertiesOverlayAlways(readPropertiesOverlayAlwaysEnabled(draftSessionId));
     setSelectedPropertiesOverlayAlwaysPreview(null);
   }, [draftSessionId, setSelectedPropertiesOverlayAlwaysPreview]);
-
-  useEffect(() => {
-    writePropertiesOverlayAlwaysEnabled(draftSessionId, !!showPropertiesOverlayAlways);
-  }, [draftSessionId, showPropertiesOverlayAlways]);
 
   const propertiesOverlayAlwaysPreviewByElementId = useMemo(() => {
     if (!showPropertiesOverlayAlways) return {};
@@ -1386,6 +1363,7 @@ export default function App() {
         elementId,
         extensionStateRaw: extensionMap[rawElementId],
         showPropertiesOverlay: true,
+        hiddenFields: overlayHiddenFields,
       });
       if (preview?.enabled && ensureArray(preview.items).length) {
         out[elementId] = preview;
@@ -1406,7 +1384,7 @@ export default function App() {
       }
     }
     return out;
-  }, [showPropertiesOverlayAlways, draft?.bpmn_meta, selectedPropertiesOverlayAlwaysPreview]);
+  }, [showPropertiesOverlayAlways, draft?.bpmn_meta, selectedPropertiesOverlayAlwaysPreview, overlayHiddenFields]);
 
   const sidebarHandleSections = useMemo(() => {
     const hasActiveSession = !!String(shellSessionId || "").trim();
@@ -3359,12 +3337,10 @@ export default function App() {
         onOrgPropertyDictionaryChanged={notifyOrgPropertyDictionaryChanged}
         onPropertiesOverlayPreviewChange={setSelectedPropertiesOverlayPreview}
         onPropertiesOverlayAlwaysPreviewChange={setSelectedPropertiesOverlayAlwaysPreview}
-        showPropertiesOverlayAlways={showPropertiesOverlayAlways}
-        onShowPropertiesOverlayAlwaysChange={setShowPropertiesOverlayAlways}
-        v2OverlaysEnabled={v2OverlaysEnabled}
-        onShowV2OverlaysChange={setV2OverlaysEnabled}
-        v2OverlaysExpanded={v2OverlaysExpanded}
-        onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
+        overlayDisplaySettings={overlayDisplaySettings}
+        onOverlayDisplayModeChange={setOverlayDisplayMode}
+        onOverlayV2ModeChange={setOverlayV2Mode}
+        onOverlayFieldToggle={toggleOverlayField}
         bpmnModelerSyncEpoch={bpmnModelerSyncEpoch}
         bpmnExternalEditToken={bpmnExternalEditToken}
         getElementCamundaExtensionsFromModeler={getElementCamundaExtensionsFromModeler}
@@ -3843,7 +3819,7 @@ export default function App() {
         propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
         v2OverlaysEnabled={v2OverlaysEnabled}
         v2OverlaysExpanded={v2OverlaysExpanded}
-        onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
+        onShowV2OverlaysExpandedChange={(expanded) => setOverlayV2Mode(expanded ? "expanded" : "all")}
         drawioCompanionFocusIntent={drawioCompanionFocusIntent}
         discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
         onDiscussionLinkedElementFocusResult={completeDiscussionLinkedElementFocus}
