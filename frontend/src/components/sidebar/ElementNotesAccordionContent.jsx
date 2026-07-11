@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ElementThreadNotes from "./ElementThreadNotes";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -403,6 +404,7 @@ function NotesExtractionPreviewPanel({
 
 export default function ElementNotesAccordionContent({
   selectedElementId,
+  sessionId = "",
   globalText = "",
   onGlobalTextChange,
   onSendGlobalNote,
@@ -496,6 +498,8 @@ export default function ElementNotesAccordionContent({
 
   return (
     <div className="sidebarControlStack gap-3">
+      <ElementThreadNotes sessionId={sessionId} elementId={selectedElementId} />
+
       {list.length ? (
         <div className="rounded-xl border border-border bg-panel/70 p-2">
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Последние заметки</div>
