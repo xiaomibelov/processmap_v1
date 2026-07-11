@@ -97,3 +97,48 @@ export function markPropertyRemoved(stateRaw, nameRaw) {
   }
   return { toBe: [...state.toBe], removed: [...state.removed, name] };
 }
+
+// --- Persistence (per session, localStorage `fpc_tobe_v1:{sid}`) -------------
+
+export const TO_BE_STORAGE_PREFIX = "fpc_tobe_v1:";
+
+export function toBeStorageKey(sessionId) {
+  const sid = String(sessionId || "").trim();
+  return sid ? `${TO_BE_STORAGE_PREFIX}${sid}` : "";
+}
+
+function safeGetItem(storage, key) {
+  try {
+    return storage?.getItem?.(key) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Loads the To-Be state for the session, validating untrusted input.
+export function loadToBeState(storage, sessionId) {
+  const key = toBeStorageKey(sessionId);
+  const raw = key ? safeGetItem(storage, key) : null;
+  if (raw !== null && raw !== undefined && raw !== "") {
+    try {
+      return readToBeState(JSON.parse(String(raw)));
+    } catch {
+      // Corrupt value — fall through to the empty state.
+    }
+  }
+  return createEmptyToBeState();
+}
+
+// Persists after validation. Returns false (without throwing) when the session
+// id is empty or the storage rejects the write (quota, privacy mode).
+export function saveToBeState(storage, sessionId, stateRaw) {
+  const key = toBeStorageKey(sessionId);
+  if (!key) return false;
+  const safe = readToBeState(stateRaw);
+  try {
+    storage?.setItem?.(key, JSON.stringify(safe));
+    return true;
+  } catch {
+    return false;
+  }
+}
