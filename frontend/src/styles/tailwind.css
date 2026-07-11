@@ -4756,6 +4756,121 @@
     margin-bottom: 4px;
   }
 
+  /* Compact overlay display settings (property-panel-redesign). Token-only:
+     all colors derive from design tokens so dark/graphite themes flip free. */
+  .overlayDisplaySettings {
+    @apply grid;
+    gap: 8px;
+    padding: 6px 2px 10px;
+    border-bottom: 1px solid hsl(var(--border) / 0.55);
+    margin-bottom: 6px;
+  }
+
+  .overlayDisplayField {
+    @apply grid;
+    gap: 3px;
+  }
+
+  .overlayDisplayLabel {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: hsl(var(--muted));
+  }
+
+  .overlayDisplaySelect {
+    width: 100%;
+    padding: 5px 8px;
+    font-size: 13px;
+    line-height: 1.35;
+    color: hsl(var(--text));
+    background: hsl(var(--panel));
+    border: 1px solid hsl(var(--border));
+    border-radius: 6px;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 140ms ease, box-shadow 140ms ease;
+  }
+
+  .overlayDisplaySelect:hover:not(:disabled) {
+    border-color: hsl(var(--border-strong));
+  }
+
+  .overlayDisplaySelect:focus-visible {
+    border-color: hsl(var(--ring));
+    box-shadow: 0 0 0 2px hsl(var(--ring) / 0.35);
+  }
+
+  .overlayDisplaySelect:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .overlayDisplayHint {
+    font-size: 11px;
+    line-height: 1.4;
+    color: hsl(var(--hint));
+  }
+
+  .overlayFieldChipsBlock {
+    @apply grid;
+    gap: 4px;
+    padding-top: 2px;
+  }
+
+  .overlayFieldChips {
+    @apply flex flex-wrap;
+    gap: 5px;
+  }
+
+  .overlayFieldChip {
+    @apply inline-flex items-center;
+    gap: 4px;
+    padding: 3px 9px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: hsl(var(--muted));
+    background: transparent;
+    border: 1px solid hsl(var(--border));
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 100ms ease;
+  }
+
+  .overlayFieldChip:hover:not(:disabled) {
+    background: color-mix(in srgb, hsl(var(--text)) 6%, transparent);
+    border-color: hsl(var(--border-strong));
+    color: hsl(var(--text));
+  }
+
+  .overlayFieldChip:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 1px;
+  }
+
+  .overlayFieldChip:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .overlayFieldChip--active {
+    background: hsl(var(--text));
+    border-color: hsl(var(--text));
+    color: hsl(var(--bg));
+  }
+
+  .overlayFieldChip--active:hover:not(:disabled) {
+    background: color-mix(in srgb, hsl(var(--text)) 85%, hsl(var(--bg)));
+    border-color: transparent;
+    color: hsl(var(--bg));
+  }
+
+  .overlayFieldChipCheck {
+    flex: none;
+    color: currentColor;
+  }
+
   .sidebarPropertiesBlock {
     @apply grid;
     gap: 5px;

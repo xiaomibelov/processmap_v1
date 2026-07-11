@@ -18,6 +18,7 @@ export default function useCamundaPropertiesOverlayPreview({
   onPropertiesOverlayPreviewChange,
   onPropertiesOverlayAlwaysPreviewChange,
   suppressOverlayPreview = false,
+  hiddenFields = null,
 }) {
   const finalizedCamundaPropertiesDraft = useMemo(
     () => normalizeCamundaExtensionState(finalizeExtensionStateWithDictionary({
@@ -45,9 +46,11 @@ export default function useCamundaPropertiesOverlayPreview({
       extensionStateRaw: camundaPropertiesDraft,
       dictionaryBundleRaw: orgPropertyDictionaryBundle,
       showPropertiesOverlay: true,
+      hiddenFields,
     });
   }, [
     camundaPropertiesDraft,
+    hiddenFields,
     orgPropertyDictionaryBundle,
     selectedCamundaPropertiesEditable,
     selectedElementId,
