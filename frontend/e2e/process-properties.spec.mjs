@@ -65,7 +65,9 @@ async function clickEmptyCanvas(page) {
     try {
       const eventBus = modeler.get("eventBus");
       const root = modeler.get("canvas").getRootElement();
-      eventBus.fire("element.click", { element: root });
+      // originalEvent.button===0 is required: bpmn-js SelectionBehavior
+      // ignores element.click events that are not primary-button clicks.
+      eventBus.fire("element.click", { element: root, originalEvent: { button: 0 } });
       return { ok: true, rootId: String(root?.id || "") };
     } catch (error) {
       return { ok: false, error: String(error?.message || error) };
@@ -83,7 +85,7 @@ async function selectTask(page, taskId = TASK_ID) {
       const eventBus = modeler.get("eventBus");
       const element = modeler.get("elementRegistry").get(String(id));
       if (!element) return { ok: false, error: "element_missing" };
-      eventBus.fire("element.click", { element });
+      eventBus.fire("element.click", { element, originalEvent: { button: 0 } });
       return { ok: true };
     } catch (error) {
       return { ok: false, error: String(error?.message || error) };
@@ -120,13 +122,13 @@ async function bootDiagram(page, request, runId, xml) {
 }
 
 async function fetchBpmnXml(request, fixture) {
+  // GET /api/sessions/{id}/bpmn returns the raw BPMN document (application/xml).
   const res = await request.get(`${API_BASE}/api/sessions/${encodeURIComponent(fixture.sessionId)}/bpmn`, {
     headers: fixture.auth.headers,
   });
-  const body = await res.json().catch(() => ({}));
-  expect(res.ok(), `GET bpmn: ${JSON.stringify(body).slice(0, 300)}`).toBeTruthy();
-  const xml = String(body.xml || body.bpmn_xml || body?.diagram?.xml || "");
-  expect(xml).not.toBe("");
+  const xml = await res.text();
+  expect(res.ok(), `GET bpmn: ${xml.slice(0, 300)}`).toBeTruthy();
+  expect(xml).toContain("bpmn:definitions");
   return xml;
 }
 
@@ -243,10 +245,24 @@ test("process property edit and delete are persisted", async ({ page, request })
     .poll(async () => processBlock(await fetchBpmnXml(request, fixture)), { timeout: 20_000 })
     .toContain('name="proc_seeded" value="seeded-2"');
 
-  // Delete the property.
+  // Reload so the delete step starts from a settled server state (the
+  // post-save background session refresh is eventually consistent).
+  await page.reload();
+  await settleOrgChooser(page);
+  await waitForDiagramReady(page);
+  await ensureSidebarOpen(page);
+  await selectProcessAndOpenProperties(page);
+  await expect(page.getByLabel("Редактировать свойство proc_seeded")).toContainText("seeded-2", { timeout: 15_000 });
+
+  // Delete the property. Deleting a row in the additional-properties section
+  // auto-saves the extension state, so await the PUT it triggers itself.
+  const deletePutWait = page.waitForResponse(
+    (res) => res.url().includes("/bpmn") && res.request().method() === "PUT",
+    { timeout: 30_000 },
+  );
   await page.getByLabel("Удалить свойство proc_seeded").click();
-  await page.waitForTimeout(200);
-  await saveAll(page);
+  const deletePut = await deletePutWait;
+  expect(deletePut.ok(), `PUT bpmn status ${deletePut.status()}`).toBeTruthy();
   await expect
     .poll(async () => processBlock(await fetchBpmnXml(request, fixture)), { timeout: 20_000 })
     .not.toContain("proc_seeded");
