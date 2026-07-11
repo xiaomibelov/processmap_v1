@@ -39,18 +39,28 @@
     "47773335 feat(sidebar) phase 1 compact settings",
     "c5c844b2 feat(sidebar) phase 2 To-Be builder + live preview",
     "bcb5cadd feat(overlays) phase 4 V2 chip filter + clear-before-mount fix",
-    "1f7b9410 test(e2e) property-panel-redesign spec"
+    "1f7b9410 test(e2e) property-panel-redesign spec",
+    "31ff4ee7 feat(sidebar) UI refresh: collapsible groups + side-by-side selects + mini indicator"
   ],
   "verification": {
-    "unitSweep": "2305 pass / 35 fail — fail-set byte-identical to baseline (/tmp/fails_base_names.txt)",
+    "unitSweep": "2305 pass / 35 fail — fail-set byte-identical to baseline (/tmp/fails_base_names.txt); UI-refresh suites 19/19 green",
     "overlaySuites": "38/38",
     "build": "exit 0",
-    "e2e": "property-panel-redesign.spec.mjs 8/8 green (chromium, workers=1, 3.0m)",
+    "e2e": "property-panel-redesign.spec.mjs 10/10 green (chromium, workers=1, 3.7m) — +2 UI-refresh tests (group collapse persistence, mini indicator saved->dirty)",
     "e2eEnv": "vite dev :5180 + SSH tunnel 127.0.0.1:8011 -> root@91.184.252.237 (processmap_v1 api, admin@local/admin)"
   },
   "findings": {
     "preExistingRenderLoop": "useBpmnSync returns fresh object per render -> registerAppSafeRefreshHandler effect re-runs per render -> AppShell setRefreshRisk ping-pong. Reproduced on clean main@5aabba98. NOT fixed in this contour; separate PR recommended."
   },
   "next": "PR #524 open. Awaiting review/CI. Stage verification checklist after merge approval. D5 (review runtime) and render-loop separate PR still open questions.",
-  "prOpened": "2026-07-11"
+  "prOpened": "2026-07-11",
+  "uiRefresh": {
+    "date": "2026-07-11",
+    "items": [
+      "collapsible PanelGroup for displayMode/v2Mode/fields/toBe (localStorage fpc_prop_panel_groups_v1, default expanded)",
+      "two selects side-by-side (.overlayDisplaySelectsRow 2-col grid)",
+      "quick/additional BPMN properties full width (removed .sidebarPropertiesLayout--centered side padding)",
+      "extension-state mini indicator (16px icon + tooltip) at top of Properties tab; detailed SidebarTrustStatus untouched"
+    ]
+  }
 }
