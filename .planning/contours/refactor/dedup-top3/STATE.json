@@ -2,9 +2,26 @@
   "contour": "refactor/dedup-top3",
   "branch": "refactor/dedup-top3",
   "base": "origin/main@5aabba98",
-  "state": "in-progress",
+  "state": "pr-open",
   "states": ["planned", "in-progress", "stage-verified", "pr-open", "approved", "merged"],
-  "pr": null,
+  "pr": 525,
+  "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/525",
   "created": "2026-07-11T15:10:00Z",
-  "notes": "Approved scope: P1-2 normalizeGlobalNotes (live order bug) → P1-1 normalizeDocumentationRows ×5 → P1-3 dead ProductActionsRegistry copy + N1 dead selectionFocusDecor.js; optional P2-2 dedupe ×4. Source audit: Duplication-ReReview-2026-07-11."
+  "updated": "2026-07-12T08:45:00Z",
+  "commits": {
+    "P1-2": "5ec4a77f — normalizeGlobalNotes shared module + {order} option",
+    "P1-1": "5aaf4489 — normalizeDocumentationRows shared module (5 consumers, {keepEmpty,withId})",
+    "P1-3+N1": "55b60992 — dead ProductActionsRegistry copy + dead selectionFocusDecor.js deleted",
+    "N4": "e42e780a — dedupe-by-exact-signature x4 -> features/process/camunda/dedupeExactPropertyRows.js"
+  },
+  "verification": {
+    "unit_sweep": "51/51 vs main baseline (53 - 2 deleted dead-code guard tests), zero new failures",
+    "foundation_guard": "10/10",
+    "new_tests": ["sessionGlobalNotes.test.mjs 7/7", "normalizeDocumentationRows.test.mjs 11/11", "dedupeExactPropertyRows.test.mjs 6/6"],
+    "build": "npm run build OK (x3)",
+    "stage": "deployed e42e780a; E2E process-properties 5/5 + v2-overlay-persistence 3/3 = 8/8 PASS (40.2s)"
+  },
+  "rollback": "rebuild from origin/main (stage container rotation; previous image tag overwritten)",
+  "pending": "AWAITING explicit user approval to merge PR #525. Parallel contour feature/property-panel-redesign touches same files (NotesPanel.jsx, ElementSettingsControls.jsx) — merge coordination needed.",
+  "notes": "Approved scope fully implemented incl. optional N4. Source audit: Duplication-ReReview-2026-07-11. Deploy lesson: .env VITE_BUILD_* must be refreshed before docker compose build (stale June-29 values overrode build-info)."
 }
