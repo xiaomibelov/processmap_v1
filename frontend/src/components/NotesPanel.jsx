@@ -11,6 +11,10 @@ import {
 } from "../features/notes/knowledgeTools";
 import { parseBatchOpsFromNotes } from "../features/process/bpmn/ops/parseBatchOpsFromNotes";
 import { normalizeGlobalNotes as sharedNormalizeGlobalNotes } from "../app/sessionGlobalNotes.js";
+import {
+  normalizeDocumentationRows as sharedNormalizeDocumentationRows,
+  normalizeDocumentationText,
+} from "../features/process/bpmn/documentation/normalizeDocumentationRows.js";
 import { useElementThreads } from "../features/notes/useElementThreads";
 import {
   collectBpmnTraversalOrderMeta,
@@ -615,31 +619,10 @@ function parseSelectedBpmnDocumentation(xmlText, elementIdRaw) {
   }
 }
 
-function normalizeDocumentationText(value) {
-  return String(value ?? "").replace(/\r\n/g, "\n");
-}
-
 function normalizeDocumentationRows(rowsRaw, options = {}) {
-  const keepEmpty = options && typeof options === "object" && options.keepEmpty === true;
-  return asArray(rowsRaw)
-    .map((entryRaw, index) => {
-      const entry = entryRaw && typeof entryRaw === "object"
-        ? entryRaw
-        : { text: entryRaw };
-      const text = normalizeDocumentationText(
-        Object.prototype.hasOwnProperty.call(entry, "text")
-          ? entry.text
-          : (Object.prototype.hasOwnProperty.call(entry, "value") ? entry.value : entryRaw),
-      );
-      const textFormat = str(entry?.textFormat || entry?.textformat);
-      if (!keepEmpty && !text.length && !textFormat) return null;
-      return {
-        id: str(entry?.id || `documentation_${index + 1}`) || `documentation_${index + 1}`,
-        text,
-        textFormat,
-      };
-    })
-    .filter(Boolean);
+  // Shared implementation; sidebar documentation draft rows always carry a
+  // stable id (fallback documentation_<index+1>).
+  return sharedNormalizeDocumentationRows(rowsRaw, { ...(options || {}), withId: true });
 }
 
 function buildDocumentationSignature(rowsRaw) {

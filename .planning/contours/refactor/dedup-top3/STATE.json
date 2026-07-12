@@ -1,0 +1,10 @@
+{
+  "contour": "refactor/dedup-top3",
+  "branch": "refactor/dedup-top3",
+  "base": "origin/main@5aabba98",
+  "state": "in-progress",
+  "states": ["planned", "in-progress", "stage-verified", "pr-open", "approved", "merged"],
+  "pr": null,
+  "created": "2026-07-11T15:10:00Z",
+  "notes": "Approved scope: P1-2 normalizeGlobalNotes (live order bug) → P1-1 normalizeDocumentationRows ×5 → P1-3 dead ProductActionsRegistry copy + N1 dead selectionFocusDecor.js; optional P2-2 dedupe ×4. Source audit: Duplication-ReReview-2026-07-11."
+}
