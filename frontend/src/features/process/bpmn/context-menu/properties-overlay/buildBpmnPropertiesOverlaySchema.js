@@ -1,3 +1,5 @@
+import { normalizeDocumentationRows } from "../../documentation/normalizeDocumentationRows.js";
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -13,22 +15,6 @@ function toText(value) {
 function toRowId(prefix, raw) {
   const key = toText(raw).replace(/[^a-zA-Z0-9_:-]+/g, "_");
   return `${prefix}_${key || "row"}`;
-}
-
-function normalizeDocumentationRows(rawRows) {
-  return asArray(rawRows)
-    .map((rowRaw) => {
-      const row = asObject(rowRaw);
-      const text = String(
-        Object.prototype.hasOwnProperty.call(row, "text")
-          ? row.text
-          : (Object.prototype.hasOwnProperty.call(row, "value") ? row.value : rowRaw),
-      );
-      const textFormat = toText(row?.textFormat || row?.textformat);
-      if (!text.trim() && !textFormat) return null;
-      return { text, textFormat };
-    })
-    .filter(Boolean);
 }
 
 function normalizeExtensionRows(rawRows) {
