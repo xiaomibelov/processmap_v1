@@ -54,12 +54,12 @@ Typography 14/12/13px, radii 8/10/6px, spacing 16/8/6px — как в промп
 | P3 | D: BPMN KV-list (refactor `InlineBpmnPropertyRow` → hover-actions; `AdditionalBpmnPropertiesSection` empty-state + add-form) | `rows/`, `sections/` |
 | P4 | E: floating save bar (unify два футера) | `ElementSettingsControls.jsx`, `NotesPanel.jsx` |
 
-## 6. Открытые решения (нужен approve)
+## 6. Решения (APPROVED 2026-07-12)
 
-- **Q1 (E-вариант):** E1 floating bar внизу (recommended — меньше риска, Save/Reset виден в контексте списка) vs E2 кнопки в header аккордеона (нужен headAccessory в SidebarAccordionSection). Auto-save + undo toast **отклонён**: конфликт с explicit-save моделью, 409-rollback и background refresh.
-- **Q2 (G4):** delete в Additional BPMN сейчас auto-save — унифицировать в draft-only (поведение изменится: delete потребует «Сохранить») или оставить auto-save (inconsistent, но zero-regression)? Recommended: draft-only + E2E на новый флоу.
-- **Q3 (G6):** per-element flag — компактный toggle «Показывать над этой задачей» в строке подзаголовка quick-секции. OK?
-- **Q4:** «Скрыто»-семантика: prompt говорит «visible only inside the card» — трактуем как «оверлеи над задачами скрыты, свойства только в панели» (= оба overlay-режима OFF). Подтвердить.
+- **Q1 (E-вариант):** ✅ **E1 floating bar внизу** — ≤48px, 1px top border, виден только при изменениях. Header-вариант и auto-save отклонены.
+- **Q2 (G4):** ✅ **draft-only унификация** — delete в Additional BPMN больше не делает мгновенный PUT; сохранение через SaveBar (консистентно с edit). E2E T8 пишется под новый флоу.
+- **Q3 (G6):** ✅ **toggle «Показывать над этой задачей»** в строке подзаголовка блока «Быстрые свойства» (отдельная per-element ось, не часть segmented control).
+- **Q4 («Скрыто»):** ✅ подтверждено — оба overlay-режима OFF, свойства только в панели (= derive `{showOnSelect:false, showAlways:false}`).
 
 ## 7. Acceptance Criteria
 
