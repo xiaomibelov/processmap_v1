@@ -7,9 +7,10 @@ import { waitForDiagramReady } from "./helpers/diagramReady.mjs";
 // Extension-state mini indicator (feature/mini-indicator-from-524).
 //
 // Covers the Tier-1a cherry-pick from PR #524: the compact ✓/✎ indicator at
-// the top of the «Свойства» accordion. Verifies reactivity (saved -> dirty on
-// inline edit WITHOUT save) and the save round-trip (dirty -> saved after
-// «Сохранить всё», value persisted into the BPMN XML).
+// the «Свойства» accordion head (visible even while collapsed). Verifies
+// reactivity (saved -> dirty on inline edit WITHOUT save) and the save
+// round-trip (dirty -> saved after «Сохранить», value persisted into the
+// BPMN XML).
 
 const PROCESS_ID = "Process_miniind";
 const TASK_A = "Task_miniA";
@@ -163,7 +164,7 @@ test("mini indicator: saved -> dirty on inline edit (no save)", async ({ page, r
   expect(problems, problems.join("\n")).toEqual([]);
 });
 
-test("mini indicator: dirty -> saved after «Сохранить всё» (XML persisted)", async ({ page, request }) => {
+test("mini indicator: dirty -> saved after «Сохранить» (XML persisted)", async ({ page, request }) => {
   const problems = collectConsoleProblems(page);
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const fixture = await bootDiagram(page, request, `mini_${runId}`);
@@ -180,7 +181,7 @@ test("mini indicator: dirty -> saved after «Сохранить всё» (XML pe
   await valueInput.press("Enter");
   await expect(mini).toHaveAttribute("data-tone", "dirty", { timeout: 15_000 });
 
-  const saveAll = page.getByRole("button", { name: "Сохранить всё" });
+  const saveAll = page.locator(".sidebarGlobalFooter").getByRole("button", { name: "Сохранить", exact: true });
   await expect(saveAll).toBeEnabled({ timeout: 10_000 });
   await saveAll.click();
   await expect(mini).toHaveAttribute("data-tone", "saved", { timeout: 20_000 });

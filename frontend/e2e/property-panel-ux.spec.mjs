@@ -9,6 +9,13 @@ import { waitForDiagramReady } from "./helpers/diagramReady.mjs";
 // T1: segmented display-mode keyboard navigation (radiogroup contract).
 // T2: display mode instant preview (always/hidden/hover) — no save needed.
 // T3: V2 toggle dependency — sub-control hidden when OFF, value persisted.
+// T4: V2→display-mode coupling (B3): ON forces «Скрыто» + locks; OFF restores.
+// T5: extension-state mini indicator lives in the accordion head (B1).
+// T6: quick properties collapsible + default pin removable (B4).
+// T7: floating save bar gated on unsaved changes (B6).
+// T8: To-Be toggle → pool → '+' → draft → save → XML.
+// T9: chip toggle hides the field from legacy + V2 cards (data untouched).
+// T10: live preview mirrors the draft (no save).
 
 const PROCESS_ID = "Process_pux";
 const TASK_A = "Task_puxA";
@@ -29,6 +36,7 @@ function seedXml() {
       <bpmn:extensionElements>
         <camunda:properties>
           <camunda:property name="ee_time" value="0.33" />
+          <camunda:property name="ingredient_value" value="5" />
         </camunda:properties>
       </bpmn:extensionElements>
     </bpmn:task>
@@ -135,6 +143,32 @@ function legacyCards(page) {
   return page.locator(".fpcPropertyOverlay");
 }
 
+async function fetchBpmnXml(request, fixture) {
+  const res = await request.get(`${API_BASE}/api/sessions/${encodeURIComponent(fixture.sessionId)}/bpmn`, {
+    headers: fixture.auth.headers,
+  });
+  const xml = await res.text();
+  expect(res.ok(), `GET bpmn: ${xml.slice(0, 300)}`).toBeTruthy();
+  expect(xml).toContain("bpmn:definitions");
+  return xml;
+}
+
+async function saveAll(page) {
+  const putWait = page.waitForResponse(
+    (res) => res.url().includes("/bpmn") && res.request().method() === "PUT",
+    { timeout: 30_000 },
+  );
+  await page.locator(".sidebarGlobalFooter").getByRole("button", { name: "Сохранить", exact: true }).click();
+  const putRes = await putWait;
+  expect(putRes.ok(), `PUT bpmn status ${putRes.status()}`).toBeTruthy();
+}
+
+function taskBlock(xml, taskId) {
+  const match = String(xml).match(new RegExp(`<bpmn:task id="${taskId}"[\\s\\S]*?</bpmn:task>`));
+  expect(match, `task ${taskId} block must exist in saved XML`).toBeTruthy();
+  return match[0];
+}
+
 test("T1: segmented display mode — keyboard navigation (radiogroup)", async ({ page, request }) => {
   const problems = collectConsoleProblems(page);
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -231,6 +265,225 @@ test("T3: V2 toggle dependency — sub-control hidden when OFF, value persisted"
   await expect(sub).toHaveAttribute("aria-hidden", "true", { timeout: 5_000 });
   await toggle.click();
   await expect(expanded).toHaveAttribute("aria-checked", "true", { timeout: 5_000 });
+
+  expect(problems, problems.join("\n")).toEqual([]);
+});
+
+test("T4: V2→display-mode coupling — ON forces «Скрыто» + locks; OFF restores", async ({ page, request }) => {
+  const problems = collectConsoleProblems(page);
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await bootDiagram(page, request, `pux_${runId}`);
+  await openPropertiesSection(page);
+
+  const toggle = page.locator('[data-testid="v2-toggle"]');
+  const hover = page.locator('[data-testid="display-mode-segment-hover"]');
+  const always = page.locator('[data-testid="display-mode-segment-always"]');
+  const hidden = page.locator('[data-testid="display-mode-segment-hidden"]');
+  const hint = page.locator('[data-testid="display-mode-hint"]');
+  await expect(toggle).toBeVisible({ timeout: 15_000 });
+
+  // Start from a deterministic non-hidden mode.
+  await always.click();
+  await expect(always).toHaveAttribute("aria-checked", "true");
+
+  // V2 ON: display mode forced to «Скрыто», segments locked, hint explains why.
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect(hidden).toHaveAttribute("aria-checked", "true", { timeout: 5_000 });
+  await expect(always).toHaveAttribute("aria-checked", "false");
+  await expect(hover).toBeDisabled();
+  await expect(always).toBeDisabled();
+  await expect(hidden).toBeDisabled();
+  await expect(hint).toContainText("Скрыто автоматически: включены V2-оверлеи");
+
+  // V2 OFF: the previous mode («Всегда») is restored and segments unlock.
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect(always).toHaveAttribute("aria-checked", "true", { timeout: 5_000 });
+  await expect(always).toBeEnabled();
+
+  expect(problems, problems.join("\n")).toEqual([]);
+});
+
+test("T5: extension-state mini indicator lives in the accordion head (visible while collapsed)", async ({ page, request }) => {
+  const problems = collectConsoleProblems(page);
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await bootDiagram(page, request, `pux_${runId}`);
+
+  await selectTask(page, TASK_A);
+  await openPropertiesSection(page);
+
+  const mini = page.locator('[data-testid="extension-state-mini"]');
+  await expect(mini).toBeVisible({ timeout: 15_000 });
+  await expect(mini).toHaveAttribute("data-tone", "saved");
+
+  // The indicator lives in the accordion HEAD (headAccessory): it must stay
+  // visible when the «Свойства» accordion is collapsed.
+  const head = page.locator('.sidebarAccordion[data-section-id="properties"] > .sidebarAccordionHead');
+  await head.click();
+  await expect(head).toHaveAttribute("aria-expanded", "false");
+  await expect(mini).toBeVisible();
+  await head.click();
+  await expect(head).toHaveAttribute("aria-expanded", "true");
+
+  expect(problems, problems.join("\n")).toEqual([]);
+});
+
+test("T6: quick properties collapsible; a default pin (ee_time) can be removed", async ({ page, request }) => {
+  const problems = collectConsoleProblems(page);
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await bootDiagram(page, request, `pux_${runId}`);
+
+  await selectTask(page, TASK_A);
+  await openPropertiesSection(page);
+
+  const quickBlock = page.locator(".sidebarPropertiesBlock--primary").first();
+  const quickToggle = quickBlock.locator(".sidebarPropertiesBlockToggle").first();
+  await expect(quickToggle).toBeVisible({ timeout: 15_000 });
+  await expect(quickToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(quickBlock.getByLabel("Редактировать свойство ee_time")).toBeVisible();
+
+  // Collapse: rows leave the DOM; expand: they return.
+  await quickToggle.click();
+  await expect(quickToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(quickBlock.getByLabel("Редактировать свойство ee_time")).toHaveCount(0);
+  await quickToggle.click();
+  await expect(quickToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(quickBlock.getByLabel("Редактировать свойство ee_time")).toBeVisible();
+
+  // Defaults are initial pins only: trash on ee_time unpins it — the row
+  // leaves Quick but stays in the draft (surfaces in «Дополнительные BPMN»).
+  await quickBlock.getByLabel("Удалить свойство ee_time").click();
+  await expect(quickBlock.getByLabel("Редактировать свойство ee_time")).toHaveCount(0, { timeout: 10_000 });
+  const additionalBlock = page.locator(".sidebarPropertiesBlock--wide").first();
+  await expect(additionalBlock.getByLabel("Редактировать свойство ee_time")).toBeVisible({ timeout: 10_000 });
+
+  expect(problems, problems.join("\n")).toEqual([]);
+});
+
+test("T7: floating save bar — hidden when clean, appears on edit, «Отмена» reverts", async ({ page, request }) => {
+  const problems = collectConsoleProblems(page);
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await bootDiagram(page, request, `pux_${runId}`);
+
+  await selectTask(page, TASK_A);
+  await openPropertiesSection(page);
+
+  const footer = page.locator(".sidebarGlobalFooter");
+  await expect(footer).toHaveCount(0);
+
+  // Inline draft edit (no save): the bar appears with «Сохранить»/«Отмена».
+  await page.getByLabel("Редактировать свойство ee_time").click();
+  const valueInput = page.locator('.sidebarSchemaPropertyRow.isEditing input[placeholder="Значение"]');
+  await expect(valueInput).toBeVisible({ timeout: 10_000 });
+  await valueInput.fill("0.66");
+  await valueInput.press("Enter");
+  await expect(footer).toBeVisible({ timeout: 15_000 });
+  await expect(footer.getByRole("button", { name: "Сохранить", exact: true })).toBeEnabled();
+  await expect(footer.getByRole("button", { name: "Отмена", exact: true })).toBeEnabled();
+
+  // «Отмена» reverts the draft and hides the bar again.
+  await footer.getByRole("button", { name: "Отмена", exact: true }).click();
+  await expect(footer).toHaveCount(0, { timeout: 15_000 });
+  const preview = page.locator('[data-testid="live-card-preview"]');
+  await expect(preview).toContainText("0.33", { timeout: 10_000 });
+  await expect(preview).not.toContainText("0.66");
+
+  expect(problems, problems.join("\n")).toEqual([]);
+});
+
+test("T8: To-Be — toggle → Pool on another task → '+' → draft row → save → XML", async ({ page, request }) => {
+  const problems = collectConsoleProblems(page);
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const fixture = await bootDiagram(page, request, `pux_${runId}`);
+
+  // Task A: ee_time starts as «Added» (ad-hoc); toggle it into the To-Be set.
+  await selectTask(page, TASK_A);
+  await openPropertiesSection(page);
+  const builder = page.locator('[data-testid="to-be-builder"]');
+  const pills = page.locator(".toBePills").first();
+  await expect(builder).toBeVisible({ timeout: 15_000 });
+  await expect(pills).toContainText("0 in To-Be / 0 skipped");
+  await page.locator('[data-testid="to-be-toggle-ee_time"]').click();
+  await expect(pills).toContainText("1 in To-Be / 0 skipped");
+
+  // Task B has no properties: ee_time surfaces in the Pool as «Not filled».
+  await selectTask(page, TASK_B);
+  await expect(pills).toContainText("0 in To-Be / 1 skipped", { timeout: 15_000 });
+  await expect(builder.locator('[data-testid="to-be-add-ee_time"]')).toBeVisible();
+
+  // «+» adds the field to the draft, pills recount.
+  await builder.locator('[data-testid="to-be-add-ee_time"]').click();
+  await expect(page.getByLabel("Редактировать свойство ee_time")).toBeVisible({ timeout: 10_000 });
+  await expect(pills).toContainText("1 in To-Be / 0 skipped");
+
+  // Global save persists the property into the task's extensionElements.
+  await saveAll(page);
+  await expect
+    .poll(async () => taskBlock(await fetchBpmnXml(request, fixture), TASK_B), { timeout: 20_000 })
+    .toContain('name="ee_time"');
+
+  expect(problems, problems.join("\n")).toEqual([]);
+});
+
+test("T9: chip toggle hides the field from legacy and V2 cards (data untouched)", async ({ page, request }) => {
+  const problems = collectConsoleProblems(page);
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await bootDiagram(page, request, `pux_${runId}`);
+
+  await selectTask(page, TASK_A);
+  await openPropertiesSection(page);
+
+  // «Всегда» — legacy cards over all tasks.
+  await page.locator('[data-testid="display-mode-segment-always"]').click();
+  const card = legacyCards(page).first();
+  await expect(card).toContainText("ee_time", { timeout: 15_000 });
+  await expect(card).toContainText("ingredient_value");
+
+  const chip = page.locator('[data-testid="overlay-field-chip-ee_time"]');
+  await expect(chip).toHaveAttribute("aria-pressed", "true");
+  await chip.click();
+  await expect(chip).toHaveAttribute("aria-pressed", "false");
+  await expect(card).not.toContainText("ee_time", { timeout: 15_000 });
+  await expect(card).toContainText("ingredient_value");
+
+  // Same filter applies to V2 cards (V2 ON forces legacy «Скрыто» — B3).
+  await page.locator('[data-testid="v2-toggle"]').click();
+  const v2HostA = page.locator(`.fpc-overlay-v2-host[data-fpc-element-id="${TASK_A}"]`);
+  await expect(v2HostA).toBeVisible({ timeout: 15_000 });
+  await expect(v2HostA).not.toContainText("ee_time");
+  await expect(v2HostA).toContainText("ingredient_value");
+
+  // Toggle back: the field returns (nothing was deleted).
+  await chip.click();
+  await expect(v2HostA).toContainText("ee_time", { timeout: 15_000 });
+
+  expect(problems, problems.join("\n")).toEqual([]);
+});
+
+test("T10: live preview mirrors the draft — seeded values and inline edits (no save)", async ({ page, request }) => {
+  const problems = collectConsoleProblems(page);
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await bootDiagram(page, request, `pux_${runId}`);
+
+  await selectTask(page, TASK_A);
+  await openPropertiesSection(page);
+
+  const preview = page.locator('[data-testid="live-card-preview"]');
+  await expect(preview).toBeVisible({ timeout: 15_000 });
+  await expect(preview).toContainText("ee_time");
+  await expect(preview).toContainText("0.33");
+
+  // Inline-edit the value: commit on Enter (Tab stays inside the row's
+  // two-input edit mode by design and does not commit), preview must follow
+  // without a save.
+  await page.getByLabel("Редактировать свойство ee_time").click();
+  const valueInput = page.locator('.sidebarSchemaPropertyRow.isEditing input[placeholder="Значение"]');
+  await expect(valueInput).toBeVisible({ timeout: 10_000 });
+  await valueInput.fill("0.66");
+  await valueInput.press("Enter");
+  await expect(preview).toContainText("0.66", { timeout: 15_000 });
+  await expect(preview).not.toContainText("0.33");
 
   expect(problems, problems.join("\n")).toEqual([]);
 });

@@ -2,7 +2,7 @@
   "contour": "feature/mini-indicator-from-524",
   "branch": "feature/mini-indicator-from-524",
   "base": "origin/main@47a0c12f (post-merge #525)",
-  "state": "pr-open",
+  "state": "in-progress",
   "states": [
     "planned",
     "in-progress",
@@ -55,5 +55,25 @@
         "scope": "Quick chips (QuickPropertyChip + add mini-form), replace quick table in ElementSettingsControls"
       }
     }
-  }
+  },
+  "uxAdaptationPort": {
+    "date": "2026-07-12",
+    "source": "ported from feature/property-panel-redesign@5e39dcb0 (PR #524) per user decision — this branch is the one deployed on stage (GH Actions run #71)",
+    "items": [
+      "B1: headAccessory slot; ExtensionStateMiniIndicator in «Свойства» accordion head (visible when collapsed)",
+      "B2: per-element «Показывать над этой задачей» toggle hidden from quick props UI; fpc-show-properties write-path preserved + round-trip guard test",
+      "B3: V2 toggle ON -> display mode forced «Скрыто» (segments disabled + hint); OFF -> restore captured mode (fpc_display_mode_before_v2_v1:{sid}); pure helpers captureModeBeforeV2/restoreModeAfterV2 + tests",
+      "B4: quick props collapsible; ee_time/ingredient_value initial pins only (removable, unpin -> Additional BPMN)",
+      "B5: order LiveCardPreview -> DisplaySettings -> Quick -> To-Be -> Additional BPMN; Additional full-bleed negative inset (+~10%); dense spacing",
+      "B6: save bar only when sidebarGlobalHasChanges; «Сохранить»/«Отмена»; <=48px",
+      "Modules ported from #524: ToBeBuilder (+model/hook/tests), LiveCardPreview, fieldChipsModel + filterRowsByHiddenFields + useHiddenFields (fpc_overlay_hidden_fields_v1:{sid}) wired into legacy preview memo + V2 overlay chain"
+    ],
+    "verification": {
+      "build": "exit 0",
+      "unit": "fail-set identical to baseline (51 pre-existing)",
+      "foundation": "10/10",
+      "e2e": "PENDING stage approval"
+    }
+  },
+  "next": "UX adaptation port complete; awaiting approve for stage deploy (GH Actions workflow_dispatch deploy_ref=feature/mini-indicator-from-524) + E2E."
 }

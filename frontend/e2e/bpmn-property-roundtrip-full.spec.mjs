@@ -88,16 +88,10 @@ async function getServerBpmnXml(request, sessionId, token) {
   return res.text();
 }
 
-async function waitForSaveComplete(saveBtn, { timeout = 15000 } = {}) {
-  await expect
-    .poll(
-      async () => {
-        const [enabled, text] = await Promise.all([saveBtn.isEnabled(), saveBtn.innerText()]);
-        return { enabled, text: text.trim() };
-      },
-      { timeout },
-    )
-    .toEqual({ enabled: false, text: "Сохранить всё" });
+// The floating save bar renders only while there are unsaved changes:
+// after a successful save it disappears from the DOM.
+async function waitForSaveComplete(page, { timeout = 20000 } = {}) {
+  await expect(page.locator(".sidebarGlobalFooter")).toHaveCount(0, { timeout });
 }
 
 // Row whose read-mode name (.sidebarSchemaPropertyHuman) equals `name` exactly.
@@ -156,9 +150,9 @@ test("property round-trip: add 4 / reload / edit A=10 / delete A (now+5s+reload)
   const rows = page.locator(".sidebarBpmnPropertyItem");
   await expect(rows).toHaveCount(0);
 
-  const saveBtn = page.locator(".sidebarGlobalFooter").getByRole("button", { name: "Сохранить всё" });
-  await expect(saveBtn).toBeVisible();
-  await expect(saveBtn).toBeDisabled();
+  // Clean state: the floating save bar is not rendered at all.
+  await expect(page.locator(".sidebarGlobalFooter")).toHaveCount(0);
+  const saveBtn = page.locator(".sidebarGlobalFooter").getByRole("button", { name: "Сохранить", exact: true });
 
   const addBtn = page.getByRole("button", { name: /Добавить BPMN-свойство/ });
   await expect(addBtn).toBeVisible();
@@ -171,7 +165,7 @@ test("property round-trip: add 4 / reload / edit A=10 / delete A (now+5s+reload)
   await expect(saveBtn).toBeEnabled();
 
   await saveBtn.click();
-  await waitForSaveComplete(saveBtn);
+  await waitForSaveComplete(page);
   await expect(page.getByText("Отсутствует BPMN XML")).toHaveCount(0);
 
   let xml = await readXml();
@@ -210,7 +204,7 @@ test("property round-trip: add 4 / reload / edit A=10 / delete A (now+5s+reload)
   await expect(saveBtn).toBeEnabled();
 
   await saveBtn.click();
-  await waitForSaveComplete(saveBtn);
+  await waitForSaveComplete(page);
   await expect(page.getByText("Отсутствует BPMN XML")).toHaveCount(0);
 
   xml = await readXml();
@@ -259,7 +253,7 @@ test("property round-trip: add 4 / reload / edit A=10 / delete A (now+5s+reload)
   }
   await expect(saveBtn).toBeEnabled();
   await saveBtn.click();
-  await waitForSaveComplete(saveBtn);
+  await waitForSaveComplete(page);
   await expect(page.getByText("Отсутствует BPMN XML")).toHaveCount(0);
 
   xml = await readXml();

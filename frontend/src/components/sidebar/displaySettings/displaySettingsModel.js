@@ -26,3 +26,19 @@ export function applyDisplayMode(modeRaw, { showOnSelect = false } = {}) {
   if (mode === "hidden") return { showOnSelect: false, showAlways: false };
   return { showOnSelect: true, showAlways: false };
 }
+
+// V2 → display mode coupling (B3): while V2 overlays are enabled, the legacy
+// display mode is forced to "hidden" (legacy cards would duplicate the V2
+// cards). The caller captures the current mode BEFORE enabling V2 and
+// restores it when V2 is turned off. Pure: no persistence, no side effects.
+
+// Captures the mode to restore after V2 is turned off.
+export function captureModeBeforeV2(prev = {}) {
+  return deriveDisplayMode(prev);
+}
+
+// Restores the captured mode (default "hover") onto the current flags.
+export function restoreModeAfterV2(beforeV2, prev = {}) {
+  const mode = DISPLAY_MODES.includes(beforeV2) ? beforeV2 : "hover";
+  return applyDisplayMode(mode, prev);
+}

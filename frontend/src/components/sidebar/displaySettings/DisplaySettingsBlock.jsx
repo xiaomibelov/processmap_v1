@@ -1,8 +1,8 @@
 // DisplaySettingsBlock — display-mode segmented control + V2 overlay toggle
-// with a dependent sub-control (property panel UX redesign, P1).
+// with a dependent sub-control (property panel UX redesign, P1) and a
+// per-field chip row (property-panel-redesign port).
 // Replaces the four conflicting checkboxes (on-select / always / V2 on /
-// V2 expanded). The per-element flag lives in the quick-properties subhead
-// (Q3), not here — different axis.
+// V2 expanded). Chips toggle per-field visibility in overlays (preview-level).
 //
 // UI: UI.md §1/§2.1/§2.2; API: API.md §2.
 
@@ -26,6 +26,14 @@ function hintFor(options, value) {
   return found?.hint || "";
 }
 
+function CheckIcon() {
+  return (
+    <svg className="overlayFieldChipCheck" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" focusable="false">
+      <path d="M1.5 5.5 L4 8 L8.5 2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export default function DisplaySettingsBlock({
   displayMode = "hover",
   onDisplayModeChange,
@@ -33,10 +41,19 @@ export default function DisplaySettingsBlock({
   onV2EnabledChange,
   v2Mode = "compact",
   onV2ModeChange,
+  chips = [],
+  onToggleField,
   disabled = false,
 }) {
   const mode = sanitizeDisplayMode(displayMode);
   const subMode = v2Mode === "expanded" ? "expanded" : "compact";
+  // V2 → display mode coupling (B3): while V2 overlays are on, the legacy
+  // display mode is forced to "hidden" in the model; the segmented control
+  // is locked and the hint explains why.
+  const displayModeLocked = !!v2Enabled;
+  const displayModeHint = displayModeLocked
+    ? "Скрыто автоматически: включены V2-оверлеи"
+    : hintFor(DISPLAY_MODE_OPTIONS, mode);
   return (
     <div className="displaySettingsBlock" role="group" aria-label="Настройки отображения свойств">
       <div className="displaySettingsRow">
@@ -46,10 +63,10 @@ export default function DisplaySettingsBlock({
           value={mode}
           onChange={onDisplayModeChange}
           ariaLabel="Свойства над задачей"
-          disabled={disabled}
+          disabled={disabled || displayModeLocked}
           testIdPrefix="display-mode"
         />
-        <span className="displaySettingsHint" data-testid="display-mode-hint">{hintFor(DISPLAY_MODE_OPTIONS, mode)}</span>
+        <span className="displaySettingsHint" data-testid="display-mode-hint">{displayModeHint}</span>
       </div>
 
       <div className="displaySettingsRow">
@@ -78,6 +95,28 @@ export default function DisplaySettingsBlock({
           </div>
         </div>
       </div>
+
+      {chips.length > 0 && (
+        <div className="displaySettingsRow">
+          <span className="displaySettingsLabel">Поля в оверлее</span>
+          <div className="overlayFieldChips" role="group" aria-label="Поля в оверлее">
+            {chips.map((chip) => (
+              <button
+                key={chip.name}
+                type="button"
+                className={chip.active ? "overlayFieldChip overlayFieldChip--active" : "overlayFieldChip"}
+                aria-pressed={chip.active}
+                disabled={disabled}
+                onClick={() => onToggleField?.(chip.name)}
+                data-testid={`overlay-field-chip-${chip.name}`}
+              >
+                {chip.active && <CheckIcon />}
+                <span>{chip.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
