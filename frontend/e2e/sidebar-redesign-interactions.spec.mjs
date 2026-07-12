@@ -34,18 +34,12 @@ async function selectTaskOnCanvas(page, elementId = "Task_1") {
   await page.waitForTimeout(500);
 }
 
-async function waitForGlobalFooter(page) {
-  const footer = page.locator(".sidebarGlobalFooter");
-  await expect(footer).toBeVisible();
-  return footer;
-}
-
 async function saveAllButton(page) {
-  return page.locator(".sidebarGlobalFooter .primaryBtn").filter({ hasText: "Сохранить всё" });
+  return page.locator(".sidebarGlobalFooter .primaryBtn").filter({ hasText: "Сохранить" });
 }
 
 async function resetAllButton(page) {
-  return page.locator(".sidebarGlobalFooter .secondaryBtn").filter({ hasText: "Сбросить" });
+  return page.locator(".sidebarGlobalFooter .sidebarTextBtn").filter({ hasText: "Отмена" });
 }
 
 async function openAccordionSection(page, sectionId) {
@@ -97,7 +91,6 @@ test.describe("sidebar redesign variant A", () => {
     await selectTaskOnCanvas(page, "Task_1");
     await openAccordionSection(page, "properties");
     await expandPropertiesBlockByTitle(page, "Операция");
-    await page.locator(".sidebarGlobalFooter").waitFor({ state: "visible", timeout: 10000 });
   });
 
   test("applies redesign classes to sidebar controls", async ({ page }) => {
@@ -108,30 +101,26 @@ test.describe("sidebar redesign variant A", () => {
     await expect(page.locator("button.sidebarPropertyActionBtn")).not.toHaveCount(0);
   });
 
-  test("global footer is disabled when nothing is dirty", async ({ page }) => {
-    const saveBtn = await saveAllButton(page);
-    const resetBtn = await resetAllButton(page);
-    await expect(saveBtn).toBeDisabled();
-    await expect(resetBtn).toBeDisabled();
+  test("global footer is not rendered when nothing is dirty", async ({ page }) => {
+    await expect(page.locator(".sidebarGlobalFooter")).toHaveCount(0);
   });
 
-  test("display settings select toggles and does not spuriously enable the global footer", async ({ page }) => {
+  test("display settings select toggles and does not spuriously show the global footer", async ({ page }) => {
     const select = page.getByTestId("overlay-v2-mode-select");
     await expect(select).toHaveValue("none");
 
     await select.selectOption("all");
     await expect(select).toHaveValue("all");
 
-    const saveBtn = await saveAllButton(page);
-    const resetBtn = await resetAllButton(page);
-    await expect(saveBtn).toBeDisabled();
-    await expect(resetBtn).toBeDisabled();
+    // V2/display-mode changes persist locally — they are NOT unsaved element
+    // changes, so the floating save bar must stay hidden.
+    await expect(page.locator(".sidebarGlobalFooter")).toHaveCount(0);
 
     await select.selectOption("none");
     await expect(select).toHaveValue("none");
   });
 
-  test("input change enables footer and save all persists the change", async ({ page }) => {
+  test("input change shows the footer and save all persists the change", async ({ page }) => {
     const docBlock = await expandPropertiesBlockByTitle(page, "BPMN Documentation");
     const addBtn = docBlock.locator("button.sidebarAddBtn").filter({ hasText: "Добавить Documentation" });
     await expect(addBtn).toBeVisible();
@@ -147,7 +136,7 @@ test.describe("sidebar redesign variant A", () => {
     await expect(resetBtn).toBeEnabled();
 
     await saveBtn.click();
-    await expect(saveBtn).toBeDisabled();
-    await expect(resetBtn).toBeDisabled();
+    // Saved: no pending changes — the floating bar hides again.
+    await expect(page.locator(".sidebarGlobalFooter")).toHaveCount(0, { timeout: 20000 });
   });
 });

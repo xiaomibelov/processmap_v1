@@ -7,10 +7,10 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  applyV2ModeChange,
   loadOverlayDisplaySettings,
   saveOverlayDisplaySettings,
   sanitizeDisplayMode,
-  sanitizeV2Mode,
 } from "./overlayDisplaySettings.js";
 import { toggleFieldHidden } from "./fieldChipsModel.js";
 
@@ -44,8 +44,12 @@ export function useOverlayDisplaySettings(sessionId) {
   }, [update]);
 
   const setV2Mode = useCallback((mode) => {
-    update({ v2Mode: sanitizeV2Mode(mode) });
-  }, [update]);
+    setSettings((prev) => {
+      const next = applyV2ModeChange(prev, mode);
+      saveOverlayDisplaySettings(getLocalStorage(), sessionId, next);
+      return next;
+    });
+  }, [sessionId]);
 
   const toggleField = useCallback((name) => {
     setSettings((prev) => {

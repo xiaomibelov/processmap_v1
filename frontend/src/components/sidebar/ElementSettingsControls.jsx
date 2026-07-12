@@ -1213,6 +1213,7 @@ export function CamundaPropertiesSettings({
   onSaveBpmnDocumentation,
   onResetBpmnDocumentation,
   onFocusDrawioCompanion,
+  afterQuickProperties = null,
   hideActions = false,
   disabled = false,
 }) {
@@ -1225,6 +1226,8 @@ export function CamundaPropertiesSettings({
     setOperationPropertiesOpen,
     additionalBpmnOpen,
     setAdditionalBpmnOpen,
+    quickPropsOpen,
+    setQuickPropsOpen,
     documentationOpen,
     setDocumentationOpen,
     camundaIoOpen,
@@ -1290,9 +1293,11 @@ export function CamundaPropertiesSettings({
     pinName(name);
   }
 
-  // Delete-from-Quick semantics: a user-pinned row is only unpinned (the row
-  // stays and surfaces in Additional); a default-name or unpinned row is
-  // hard-deleted and flushed (unified with Additional's auto-save).
+  // Delete-from-Quick semantics: a pinned row (user pin OR default —
+  // defaults are initial pins only) is only unpinned: the row stays in the
+  // draft and surfaces in Additional (no data loss). A non-pinned row
+  // (cannot normally appear in Quick) is hard-deleted and flushed (unified
+  // with Additional's auto-save).
   function handleQuickDelete(rowId) {
     const row = quickRows.find((r) => String(r?.id || "") === String(rowId || ""));
     const rowName = String(row?.name || "");
@@ -1965,62 +1970,77 @@ async function handleSaveAll() {
       <section className="sidebarPropertiesForm" data-testid="camunda-properties-group">
         <section className="sidebarPropertiesBlock sidebarPropertiesBlock--primary">
           <div className="sidebarPropertiesBlockHead">
-            <span className="sidebarPropertiesBlockTitle">Быстрые свойства</span>
+            <button
+              type="button"
+              className="sidebarPropertiesBlockToggle"
+              onClick={() => setQuickPropsOpen((prev) => !prev)}
+              aria-expanded={quickPropsOpen ? "true" : "false"}
+            >
+              <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{quickPropsOpen ? "▾" : "▸"}</span>
+              <span className="sidebarPropertiesBlockTitle">Быстрые свойства</span>
+              <span className="sidebarPropertiesBlockMeta">{quickRows.length}</span>
+            </button>
             <SidebarInfoTip
               label="О быстрых свойствах"
               text="Приоритетные свойства элемента: ee_time и ingredient_value."
             />
           </div>
-          <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarPropertiesRows--zebra">
-            <div className="sidebarPropertiesTableHead" role="presentation">
-              <span>Свойство</span>
-              <span>Значение</span>
-              <span>Действие</span>
-            </div>
-            {quickPropertyNames.map((name) => {
-              const row = quickRows.find((r) => toText(r?.name).toLowerCase() === name);
-              if (!row) {
-                return (
-                  <QuickEmptyPropertyRow
-                    key={name}
-                    name={name}
+          {quickPropsOpen ? (
+            <>
+              <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarPropertiesRows--zebra">
+                <div className="sidebarPropertiesTableHead" role="presentation">
+                  <span>Свойство</span>
+                  <span>Значение</span>
+                  <span>Действие</span>
+                </div>
+                {quickPropertyNames.map((name) => {
+                  const row = quickRows.find((r) => toText(r?.name).toLowerCase() === name);
+                  if (!row) {
+                    return (
+                      <QuickEmptyPropertyRow
+                        key={name}
+                        name={name}
+                        disabled={disabled}
+                        extensionStateBusy={extensionStateBusy}
+                        onCreate={handleQuickCreate}
+                      />
+                    );
+                  }
+                  return (
+                    <InlineBpmnPropertyRow
+                      key={String(row?.id || name)}
+                      row={row}
+                      disabled={disabled}
+                      extensionStateBusy={extensionStateBusy}
+                      updatePropertyRow={updatePropertyRow}
+                      deletePropertyRow={handleQuickDelete}
+                    />
+                  );
+                })}
+                {addingQuick ? (
+                  <QuickNewPropertyRow
                     disabled={disabled}
                     extensionStateBusy={extensionStateBusy}
-                    onCreate={handleQuickCreate}
+                    onCommit={handleQuickAddNamed}
+                    onCancel={() => setAddingQuick(false)}
                   />
-                );
-              }
-              return (
-                <InlineBpmnPropertyRow
-                  key={String(row?.id || name)}
-                  row={row}
-                  disabled={disabled}
-                  extensionStateBusy={extensionStateBusy}
-                  updatePropertyRow={updatePropertyRow}
-                  deletePropertyRow={handleQuickDelete}
-                />
-              );
-            })}
-            {addingQuick ? (
-              <QuickNewPropertyRow
-                disabled={disabled}
-                extensionStateBusy={extensionStateBusy}
-                onCommit={handleQuickAddNamed}
-                onCancel={() => setAddingQuick(false)}
-              />
-            ) : null}
-          </div>
-          <div className="sidebarButtonRow">
-            <button
-              type="button"
-              className="sidebarAddBtn"
-              onClick={() => setAddingQuick(true)}
-              disabled={!!disabled || !!extensionStateBusy || addingQuick}
-            >
-              + Добавить быстрое свойство
-            </button>
-          </div>
+                ) : null}
+              </div>
+              <div className="sidebarButtonRow">
+                <button
+                  type="button"
+                  className="sidebarAddBtn"
+                  onClick={() => setAddingQuick(true)}
+                  disabled={!!disabled || !!extensionStateBusy || addingQuick}
+                >
+                  + Добавить быстрое свойство
+                </button>
+              </div>
+            </>
+          ) : null}
         </section>
+
+        {afterQuickProperties}
 
         <AdditionalBpmnPropertiesSection
           open={additionalBpmnOpen}

@@ -143,7 +143,7 @@ async function saveAll(page) {
     (res) => res.url().includes("/bpmn") && res.request().method() === "PUT",
     { timeout: 30_000 },
   );
-  await page.getByRole("button", { name: "Сохранить всё" }).click();
+  await page.locator(".sidebarGlobalFooter").getByRole("button", { name: "Сохранить", exact: true }).click();
   const putRes = await putWait;
   expect(putRes.ok(), `PUT bpmn status ${putRes.status()}`).toBeTruthy();
 }

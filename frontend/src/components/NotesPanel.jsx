@@ -3169,28 +3169,28 @@ export default function NotesPanel({
         showQuickNav={false}
         onSectionShortcut={openSectionShortcut}
         stickyContent={null}
-        bottomBar={(
+        bottomBar={sidebarGlobalHasChanges ? (
           <div className="sidebarGlobalFooter">
             <div className="sidebarGlobalFooterInner">
               <button
                 type="button"
                 className="primaryBtn sidebarGlobalFooterBtn flex-1"
                 onClick={() => void handleSidebarSaveAll()}
-                disabled={!!disabled || sidebarSaveAllBusy || !sidebarGlobalHasChanges}
+                disabled={!!disabled || sidebarSaveAllBusy}
               >
-                {sidebarSaveAllBusy ? "Сохраняю..." : "Сохранить всё"}
+                {sidebarSaveAllBusy ? "Сохраняю..." : "Сохранить"}
               </button>
               <button
                 type="button"
-                className="secondaryBtn sidebarGlobalFooterBtn px-3"
+                className="sidebarTextBtn sidebarGlobalFooterBtn px-3"
                 onClick={() => void handleSidebarResetAll()}
-                disabled={!!disabled || sidebarSaveAllBusy || !sidebarGlobalHasChanges}
+                disabled={!!disabled || sidebarSaveAllBusy}
               >
-                Сбросить
+                Отмена
               </button>
             </div>
           </div>
-        )}
+        ) : null}
       >
         <div id="element-notes-section" ref={elementNotesSectionRef} className="sidebarRedesignStack">
           <section className="sidebarSettingsSurface">
@@ -3204,15 +3204,13 @@ export default function NotesPanel({
                 title="Свойства"
                 open={!!sectionsOpen.properties}
                 onToggle={toggleSection}
+                headAccessory={isElementMode && selectedCamundaPropertiesEditable ? (
+                  <ExtensionStateMiniIndicator
+                    syncState={camundaExtensionSyncState}
+                    busy={camundaPropertiesBusy}
+                  />
+                ) : null}
               >
-                {isElementMode && selectedCamundaPropertiesEditable && (
-                  <div className="propertiesTabTopRow">
-                    <ExtensionStateMiniIndicator
-                      syncState={camundaExtensionSyncState}
-                      busy={camundaPropertiesBusy}
-                    />
-                  </div>
-                )}
                 {isElementMode && selectedCamundaPropertiesEditable && !isProcessLikeSelection && (
                   <LiveCardPreview
                     preview={overlayPreview}
@@ -3230,30 +3228,6 @@ export default function NotesPanel({
                   groups={panelGroups}
                   onToggleGroup={togglePanelGroup}
                 />
-                {isElementMode && selectedCamundaPropertiesEditable && (
-                  <PanelGroup
-                    groupId="toBe"
-                    label="To-Be"
-                    open={panelGroups.toBe}
-                    onToggle={togglePanelGroup}
-                    right={(
-                      <span className="toBePills">
-                        {toBeModel.inToBeCount} in To-Be / {toBeModel.skippedCount} skipped
-                      </span>
-                    )}
-                  >
-                    <ToBeBuilder
-                      asIs={toBeModel.asIs}
-                      pool={toBeModel.pool}
-                      inToBeCount={toBeModel.inToBeCount}
-                      skippedCount={toBeModel.skippedCount}
-                      disabled={disabled}
-                      onAddFromPool={addPropertyFromPool}
-                      onToggleToBe={toggleToBe}
-                      hideHeader
-                    />
-                  </PanelGroup>
-                )}
                 <CamundaPropertiesSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   selectedElementType={isElementMode ? selectedElementType : ""}
@@ -3289,6 +3263,30 @@ export default function NotesPanel({
                   onSaveBpmnDocumentation={saveSelectedBpmnDocumentation}
                   onResetBpmnDocumentation={resetSelectedBpmnDocumentation}
                   onFocusDrawioCompanion={onFocusDrawioCompanion}
+                  afterQuickProperties={isElementMode && selectedCamundaPropertiesEditable ? (
+                    <PanelGroup
+                      groupId="toBe"
+                      label="To-Be"
+                      open={panelGroups.toBe}
+                      onToggle={togglePanelGroup}
+                      right={(
+                        <span className="toBePills">
+                          {toBeModel.inToBeCount} in To-Be / {toBeModel.skippedCount} skipped
+                        </span>
+                      )}
+                    >
+                      <ToBeBuilder
+                        asIs={toBeModel.asIs}
+                        pool={toBeModel.pool}
+                        inToBeCount={toBeModel.inToBeCount}
+                        skippedCount={toBeModel.skippedCount}
+                        disabled={disabled}
+                        onAddFromPool={addPropertyFromPool}
+                        onToggleToBe={toggleToBe}
+                        hideHeader
+                      />
+                    </PanelGroup>
+                  ) : null}
                   disabled={disabled}
                   hideActions
                 />
