@@ -955,6 +955,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   selectedPropertiesOverlayPreview = null,
   propertiesOverlayAlwaysEnabled = false,
   propertiesOverlayAlwaysPreviewByElementId = null,
+  overlayHiddenFields = null,
   v2OverlaysEnabled = false,
   v2OverlaysExpanded = false,
   onV2OverlayPropertiesRequest = null,
@@ -1276,11 +1277,17 @@ const BpmnStage = forwardRef(function BpmnStage({
     v2PropertyPreviewMapRef.current = combined;
   }, [propertiesOverlayAlwaysPreviewByElementId, selectedPropertiesOverlayPreview]);
 
+  // Per-field chip filter (property-panel-redesign): null = no filter
+  // configured; the V2 resolver treats both null and [] as "nothing hidden".
+  const v2HiddenFieldsRef = useRef(null);
+  v2HiddenFieldsRef.current = Array.isArray(overlayHiddenFields) ? overlayHiddenFields : null;
+
   const overlayLifecycle = useOverlayLifecycle({
     v2EnabledRef: v2OverlayState.enabledRef,
     v2ExpandedRef: v2OverlayState.expandedRef,
     useExtensionOverlays,
     propertyPreviewMapRef: v2PropertyPreviewMapRef,
+    hiddenFieldsRef: v2HiddenFieldsRef,
   });
 
   const handleViewboxChangedForOverlays = useCallback((inst, mode) => {
@@ -4713,22 +4720,26 @@ const BpmnStage = forwardRef(function BpmnStage({
           legacyAlways: propertiesOverlayAlwaysEnabled,
           legacyPreviewElementId: selectedPropertiesOverlayPreview?.elementId || null,
           previewMap: previewMapSig,
+          hiddenFields: Array.isArray(overlayHiddenFields) ? overlayHiddenFields : null,
         });
         if (prevOverlaySigRef.current[kind] === nextSig) return;
         prevOverlaySigRef.current[kind] = nextSig;
         overlayLifecycle.mountFromBpmn(inst, kind);
       };
-      maybeRemount(viewerRef.current, "viewer");
-      maybeRemount(modelerRef.current, "editor");
       if (v2OverlaysEnabled) {
         // Entering (or staying in) V2 mode: remove any legacy property
         // overlays so they cannot suppress or duplicate V2 cards. The legacy
         // decor is gated through applyPropertiesOverlayDecor while V2 is on,
         // but pre-existing cards (e.g. present when V2 gets toggled on) must
-        // be cleared explicitly.
+        // be cleared explicitly — BEFORE the V2 mount below, otherwise
+        // hasLegacyPropertyOverlay suppresses the fresh V2 hosts and the
+        // element ends up with no card at all.
+        // (Fix cherry-picked from PR #524, Tier 1b.)
         if (viewerRef.current) clearPropertiesOverlayDecor(viewerRef.current, "viewer");
         if (modelerRef.current) clearPropertiesOverlayDecor(modelerRef.current, "editor");
       }
+      maybeRemount(viewerRef.current, "viewer");
+      maybeRemount(modelerRef.current, "editor");
     } catch {
       // Re-mount failures are non-critical.
     }
@@ -4740,6 +4751,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     propertiesOverlayAlwaysEnabled,
     selectedPropertiesOverlayPreview,
     propertiesOverlayAlwaysPreviewByElementId,
+    overlayHiddenFields,
     overlayLifecycle,
   ]);
 

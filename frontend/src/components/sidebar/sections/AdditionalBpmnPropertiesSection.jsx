@@ -29,7 +29,7 @@ export default function AdditionalBpmnPropertiesSection({
   }
 
   return (
-    <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary">
+    <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary sidebarPropertiesBlock--wide">
       <div className="sidebarPropertiesBlockHead">
         <button
           type="button"

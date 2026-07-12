@@ -143,7 +143,7 @@ async function saveAll(page) {
     (res) => res.url().includes("/bpmn") && res.request().method() === "PUT",
     { timeout: 30_000 },
   );
-  await page.getByRole("button", { name: "Сохранить всё" }).click();
+  await page.locator(".sidebarGlobalFooter").getByRole("button", { name: "Сохранить", exact: true }).click();
   const putRes = await putWait;
   expect(putRes.ok(), `PUT bpmn status ${putRes.status()}`).toBeTruthy();
 }
@@ -157,9 +157,22 @@ async function selectProcessAndOpenProperties(page) {
   await expect(page.locator('[data-testid="camunda-properties-group"]')).toBeVisible({ timeout: 15_000 });
 }
 
+// «Быстрые свойства» is collapsed by default on entry (layout directive):
+// expand it before interacting with quick rows.
+async function expandQuickProperties(page) {
+  const quickBlock = page.locator(".sidebarPropertiesBlock--primary").first();
+  const quickToggle = quickBlock.locator(".sidebarPropertiesBlockToggle").first();
+  await expect(quickToggle).toBeVisible({ timeout: 15_000 });
+  if ((await quickToggle.getAttribute("aria-expanded")) !== "true") {
+    await quickToggle.click();
+  }
+  await expect(quickToggle).toHaveAttribute("aria-expanded", "true");
+}
+
 // Quick pinned slot (ee_time / ingredient_value): fill the empty slot value
 // and commit — creates a draft row that persists on the global save.
 async function fillQuickProperty(page, name, value) {
+  await expandQuickProperties(page);
   const input = page.getByLabel(`Добавить значение для ${name}`);
   await expect(input).toBeVisible({ timeout: 15_000 });
   await input.fill(value);

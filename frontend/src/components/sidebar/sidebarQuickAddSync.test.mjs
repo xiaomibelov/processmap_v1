@@ -64,13 +64,24 @@ test("C5a: ElementSettingsControls consumes the split (no local re-derivation)",
   assert.match(esc, /quickPropertyNames\.map\(\s*\(name\)\s*=>/, "quick table iterates controller quickPropertyNames");
 });
 
-test("C5a: delete-from-Quick unpins user pins but hard-deletes defaults", () => {
+test("C5a: delete-from-Quick unpins any pinned row (defaults are initial pins only)", () => {
   const esc = readSrc(ESC);
   const fn = esc.match(/function\s+handleQuickDelete[\s\S]*?\n  \}/)?.[0] || "";
-  assert.match(fn, /isUserPinnedName\(\s*rowName\s*\)/, "checks user-pinned");
-  assert.match(fn, /unpinName\(\s*rowName\s*\)/, "unpins user-pinned (keep row)");
+  assert.match(fn, /isUserPinnedName\(\s*rowName\s*\)/, "checks pinned");
+  assert.match(fn, /unpinName\(\s*rowName\s*\)/, "unpins pinned rows (defaults included; row kept)");
   assert.match(fn, /deletePropertyRow\(\s*rowId\s*\)[\s\S]*?onSaveExtensionState\(\s*nextState\s*\)/,
-    "otherwise hard-delete + auto-save");
+    "non-pinned fallback hard-deletes + auto-saves");
+});
+
+test("C5a: defaults are initial pins only (seeded, not locked)", () => {
+  const ctrl = readSrc(CTRL);
+  const pin = ctrl.match(/function\s+pinName[\s\S]*?\n  \}/)?.[0] || "";
+  const unpin = ctrl.match(/function\s+unpinName[\s\S]*?\n  \}/)?.[0] || "";
+  assert.doesNotMatch(pin, /DEFAULT_QUICK_PROPERTY_NAMES/, "pinName has no default lock");
+  assert.doesNotMatch(unpin, /DEFAULT_QUICK_PROPERTY_NAMES/, "unpinName has no default lock (defaults removable)");
+  const load = ctrl.match(/function\s+loadQuickPins[\s\S]*?\n\}/)?.[0] || "";
+  assert.match(load, /DEFAULT_QUICK_PROPERTY_NAMES/, "fresh users still seeded with defaults");
+  assert.match(load, /raw\s*===\s*null/, "stored list (even empty) wins over defaults");
 });
 
 // C5b — generic "+ Добавить быстрое свойство" entry (inline name -> create+pin).

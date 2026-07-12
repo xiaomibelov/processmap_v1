@@ -11,6 +11,10 @@ import { waitForDiagramReady } from "./helpers/diagramReady.mjs";
 // exclusion suppressed the V2 layer). Selecting an element must not remove or
 // duplicate V2 cards, other elements must stay unaffected, and clicking a V2
 // card must still open the properties popover (#521).
+//
+// Adaptation (property-panel-redesign port, B3): while V2 is on, the legacy
+// display mode is forced to «Скрыто» and its segmented control is locked —
+// the legacy select-preview cannot be toggled independently anymore.
 
 const TASK_A = "Task_persistA";
 const TASK_B = "Task_persistB";
@@ -77,22 +81,22 @@ async function openPropertiesSection(page) {
   }
 }
 
-async function enableV2Overlays(page) {
-  const checkbox = page.locator('[data-testid="bpmn-show-v2-overlays-checkbox"]');
-  await expect(checkbox).toBeVisible({ timeout: 15_000 });
-  if (!(await checkbox.isChecked())) {
-    await checkbox.click();
+async function setV2Overlays(page, on) {
+  const toggle = page.locator('[data-testid="v2-toggle"]');
+  await expect(toggle).toBeVisible({ timeout: 15_000 });
+  if ((await toggle.getAttribute("aria-checked")) !== (on ? "true" : "false")) {
+    await toggle.click();
   }
+  await expect(toggle).toHaveAttribute("aria-checked", on ? "true" : "false");
 }
 
 async function setSelectPreview(page, on) {
-  const checkbox = page
-    .locator('label:has-text("Показывать свойства над задачей при выделении") input[type="checkbox"]')
-    .first();
-  await expect(checkbox).toBeVisible({ timeout: 15_000 });
-  if ((await checkbox.isChecked()) !== on) {
-    await checkbox.click();
-  }
+  // P1 UX redesign: the on-select checkbox became the display-mode
+  // segmented control — hover = on, hidden = off.
+  const segment = page.locator(`[data-testid="display-mode-segment-${on ? "hover" : "hidden"}"]`);
+  await expect(segment).toBeVisible({ timeout: 15_000 });
+  await segment.click();
+  await expect(segment).toHaveAttribute("aria-checked", "true");
 }
 
 function v2Host(page, elementId) {
@@ -141,20 +145,27 @@ async function bootDiagramWithV2(page, request, runId) {
 
   await ensureSidebarOpen(page);
   await openPropertiesSection(page);
-  await enableV2Overlays(page);
+  await setV2Overlays(page, true);
   await expectV2Hosts(page, [TASK_A, TASK_B]);
   return fixture;
 }
 
-test("V2 overlay persists when element is selected (select-preview on)", async ({ page, request }) => {
+test("V2 overlay persists when element is selected (legacy select-preview toggled while V2 off)", async ({ page, request }) => {
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   await bootDiagramWithV2(page, request, `v2persist_${runId}`);
 
-  // Select Task A, then enable "show properties on select" (it renders only
-  // when an element is selected). The V2 card of the selected element must
-  // survive, and no legacy overlay may duplicate it.
+  // While V2 is on the legacy display mode is forced to «Скрыто» and locked.
+  const hidden = page.locator('[data-testid="display-mode-segment-hidden"]');
+  await expect(hidden).toHaveAttribute("aria-checked", "true");
+  await expect(hidden).toBeDisabled();
+
+  // Turn V2 off and enable the select-preview (it renders only when an
+  // element is selected), then re-enable V2: the V2 cards of selected and
+  // deselected elements must survive and no legacy overlay may duplicate them.
+  await setV2Overlays(page, false);
   await clickTaskOnCanvas(page, TASK_A);
   await setSelectPreview(page, true);
+  await setV2Overlays(page, true);
   await expectV2Hosts(page, [TASK_A, TASK_B]);
   await expectLegacyOverlaysGone(page);
 
