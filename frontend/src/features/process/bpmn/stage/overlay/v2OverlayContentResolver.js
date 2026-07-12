@@ -4,19 +4,7 @@ import {
   parseOverlayFromProperties,
 } from "../../../../../components/process/utils/bpmnOverlayParser.js";
 import { asArray, asObject, asText } from "./overlayUtils.js";
-
-function dedupePropertiesByExactValue(props) {
-  if (!Array.isArray(props)) return [];
-  const seen = new Set();
-  return props.filter((prop) => {
-    const name = asText(prop?.name);
-    if (!name) return true;
-    const signature = `${name}\u0000${asText(prop?.value)}`;
-    if (seen.has(signature)) return false;
-    seen.add(signature);
-    return true;
-  });
-}
+import { dedupeExactPropertyRows as dedupePropertiesByExactValue } from "../../../camunda/dedupeExactPropertyRows.js";
 
 function buildAutoOverlayDescriptor(elementId, title, colorKey, geometry, properties) {
   return {

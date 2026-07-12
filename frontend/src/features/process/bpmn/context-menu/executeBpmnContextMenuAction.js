@@ -7,6 +7,7 @@ import {
   readCopiedBpmnElementSnapshot,
   resolveBpmnPastePoint,
 } from "../copy-paste/bpmnElementClipboard.js";
+import { normalizeDocumentationRows } from "../documentation/normalizeDocumentationRows.js";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -120,22 +121,6 @@ function hasSemanticFlowElements(el) {
   if (Array.isArray(bo.flowElements)) return true;
   if (bo.processRef && Array.isArray(bo.processRef.flowElements)) return true;
   return false;
-}
-
-function normalizeDocumentationRows(rawRows) {
-  return asArray(rawRows)
-    .map((rowRaw) => {
-      const row = asObject(rowRaw);
-      const text = String(
-        Object.prototype.hasOwnProperty.call(row, "text")
-          ? row.text
-          : (Object.prototype.hasOwnProperty.call(row, "value") ? row.value : rowRaw),
-      );
-      const textFormat = toText(row?.textFormat || row?.textformat);
-      if (!text.trim() && !textFormat) return null;
-      return { text, textFormat };
-    })
-    .filter(Boolean);
 }
 
 function readDocumentationRowsFromElement(element) {
