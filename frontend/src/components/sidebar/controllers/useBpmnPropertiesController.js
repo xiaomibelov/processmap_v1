@@ -61,7 +61,7 @@ export default function useBpmnPropertiesController({
   onExtensionStateDraftChange,
 }) {
   const [additionalBpmnOpen, setAdditionalBpmnOpen] = useState(true);
-  const [quickPropsOpen, setQuickPropsOpen] = useState(true);
+  const [quickPropsOpen, setQuickPropsOpen] = useState(false);
   const [expandedBpmnRows, setExpandedBpmnRows] = useState({});
   const [userPins, setUserPins] = useState(loadQuickPins);
 
@@ -84,9 +84,10 @@ export default function useBpmnPropertiesController({
     : [];
 
   useEffect(() => {
-    // Surface Quick + Additional BPMN properties immediately when entering a node.
+    // Surface Additional BPMN properties immediately when entering a node;
+    // «Быстрые свойства» stays collapsed by default (manual toggle only).
     setAdditionalBpmnOpen(true);
-    setQuickPropsOpen(true);
+    setQuickPropsOpen(false);
   }, [selectedElementId]);
 
   useEffect(() => {

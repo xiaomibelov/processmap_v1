@@ -1251,6 +1251,9 @@ export function CamundaPropertiesSettings({
     onExtensionStateDraftChange,
   });
   const [addingQuick, setAddingQuick] = useState(false);
+  // «Вспомогательное» block: collapsible, collapsed by default on entry
+  // (local-only state, never persisted).
+  const [auxiliaryOpen, setAuxiliaryOpen] = useState(false);
   const normalizedState = useMemo(() => normalizeCamundaExtensionState(state), [state]);
   const propertyContext = selectedBpmnPropertyContext && typeof selectedBpmnPropertyContext === "object"
     ? selectedBpmnPropertyContext
@@ -1948,7 +1951,22 @@ async function handleSaveAll() {
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div className="sidebarControlStack sidebarPropertiesLayout sidebarPropertiesLayout--centered" onKeyDown={handlePropertiesKeyDown}>
       <section className="sidebarPropertiesForm" data-testid="camunda-properties-group">
-        <section className="sidebarPropertiesBlock sidebarPropertiesBlock--primary">
+        <AdditionalBpmnPropertiesSection
+          open={additionalBpmnOpen}
+          onToggleOpen={setAdditionalBpmnOpen}
+          count={additionalBpmnCount}
+          rows={otherAdditionalBpmnRows}
+          hasDictionarySchema={hasDictionarySchema}
+          dictionaryLoading={dictionaryLoading}
+          disabled={disabled}
+          extensionStateBusy={extensionStateBusy}
+          updatePropertyRow={updatePropertyRow}
+          deletePropertyRow={deletePropertyRow}
+          addPropertyRow={addPropertyRow}
+          onSaveExtensionState={onSaveExtensionState}
+        />
+
+        <section className="sidebarPropertiesBlock sidebarPropertiesBlock--primary sidebarPropertiesBlock--wide">
           <div className="sidebarPropertiesBlockHead">
             <button
               type="button"
@@ -2021,21 +2039,6 @@ async function handleSaveAll() {
         </section>
 
         {afterQuickProperties}
-
-        <AdditionalBpmnPropertiesSection
-          open={additionalBpmnOpen}
-          onToggleOpen={setAdditionalBpmnOpen}
-          count={additionalBpmnCount}
-          rows={otherAdditionalBpmnRows}
-          hasDictionarySchema={hasDictionarySchema}
-          dictionaryLoading={dictionaryLoading}
-          disabled={disabled}
-          extensionStateBusy={extensionStateBusy}
-          updatePropertyRow={updatePropertyRow}
-          deletePropertyRow={deletePropertyRow}
-          addPropertyRow={addPropertyRow}
-          onSaveExtensionState={onSaveExtensionState}
-        />
 
         {isTaskLikeBpmnType(selectedElementType) ? (
           <PropertyGroup title="Идентификация и операция">
@@ -2424,44 +2427,59 @@ async function handleSaveAll() {
           </section>
         </PropertyGroup>
 
-        <PropertyGroup title="Вспомогательное">
-          <SidebarTrustStatus
-            title={<span>BPMN extension-state</span>}
-            label={extensionStateStatusMeta.label}
-            helper={extensionStateStatusMeta.helper}
-            tone={extensionStateStatusMeta.tone}
-            ctaLabel={extensionStateStatusMeta.cta}
-            onCta={onRetryExtensionState}
-            ctaDisabled={!!disabled || !!extensionStateBusy}
-            ctaVariant={String(extensionStateStatusMeta.tone || "").trim().toLowerCase() === "error" ? "primary" : "secondary"}
-            testIdPrefix="camunda-extension-state-status"
-          />
+        <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="auxiliary-properties-block">
+          <div className="sidebarPropertiesBlockHead">
+            <button
+              type="button"
+              className="sidebarPropertiesBlockToggle"
+              onClick={() => setAuxiliaryOpen((prev) => !prev)}
+              aria-expanded={auxiliaryOpen ? "true" : "false"}
+            >
+              <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{auxiliaryOpen ? "▾" : "▸"}</span>
+              <span className="sidebarPropertiesBlockTitle">Вспомогательное</span>
+            </button>
+          </div>
+          {auxiliaryOpen ? (
+            <>
+              <SidebarTrustStatus
+                title={<span>BPMN extension-state</span>}
+                label={extensionStateStatusMeta.label}
+                helper={extensionStateStatusMeta.helper}
+                tone={extensionStateStatusMeta.tone}
+                ctaLabel={extensionStateStatusMeta.cta}
+                onCta={onRetryExtensionState}
+                ctaDisabled={!!disabled || !!extensionStateBusy}
+                ctaVariant={String(extensionStateStatusMeta.tone || "").trim().toLowerCase() === "error" ? "primary" : "secondary"}
+                testIdPrefix="camunda-extension-state-status"
+              />
 
-          {otherPropertySections.map((section) => renderPropertyContextSection(section))}
+              {otherPropertySections.map((section) => renderPropertyContextSection(section))}
 
-          {renderOverlayCompanionsSection()}
+              {renderOverlayCompanionsSection()}
 
-          {!hideActions ? (
-            <div className="sidebarPropertiesFooter sidebarPropertiesFooter--sticky sidebarButtonRow">
-              <button
-                type="button"
-                className="primaryBtn sidebarPropertiesActionBtn flex-1"
-                onClick={handleSaveAll}
-                disabled={!!disabled || !!extensionStateBusy || !!bpmnDocumentationBusy}
-              >
-                {extensionStateBusy || bpmnDocumentationBusy ? "Сохраняю..." : "Сохранить всё"}
-              </button>
-              <button
-                type="button"
-                className="secondaryBtn sidebarPropertiesActionBtn px-3"
-                onClick={handleResetAll}
-                disabled={!!disabled || !!extensionStateBusy || !!bpmnDocumentationBusy}
-              >
-                Сбросить
-              </button>
-            </div>
+              {!hideActions ? (
+                <div className="sidebarPropertiesFooter sidebarPropertiesFooter--sticky sidebarButtonRow">
+                  <button
+                    type="button"
+                    className="primaryBtn sidebarPropertiesActionBtn flex-1"
+                    onClick={handleSaveAll}
+                    disabled={!!disabled || !!extensionStateBusy || !!bpmnDocumentationBusy}
+                  >
+                    {extensionStateBusy || bpmnDocumentationBusy ? "Сохраняю..." : "Сохранить всё"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondaryBtn sidebarPropertiesActionBtn px-3"
+                    onClick={handleResetAll}
+                    disabled={!!disabled || !!extensionStateBusy || !!bpmnDocumentationBusy}
+                  >
+                    Сбросить
+                  </button>
+                </div>
+              ) : null}
+            </>
           ) : null}
-        </PropertyGroup>
+        </section>
       </section>
 
       {(() => {
