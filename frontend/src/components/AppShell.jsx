@@ -136,6 +136,7 @@ export default function AppShell({
   selectedPropertiesOverlayPreview,
   propertiesOverlayAlwaysEnabled = false,
   propertiesOverlayAlwaysPreviewByElementId = null,
+  overlayHiddenFields = null,
   v2OverlaysEnabled = false,
   v2OverlaysExpanded = false,
   onShowV2OverlaysExpandedChange,
@@ -371,6 +372,7 @@ export default function AppShell({
               selectedPropertiesOverlayPreview={selectedPropertiesOverlayPreview}
               propertiesOverlayAlwaysEnabled={propertiesOverlayAlwaysEnabled}
               propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
+              overlayHiddenFields={overlayHiddenFields}
               v2OverlaysEnabled={v2OverlaysEnabled}
               v2OverlaysExpanded={v2OverlaysExpanded}
               drawioCompanionFocusIntent={drawioCompanionFocusIntent}

@@ -955,6 +955,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   selectedPropertiesOverlayPreview = null,
   propertiesOverlayAlwaysEnabled = false,
   propertiesOverlayAlwaysPreviewByElementId = null,
+  overlayHiddenFields = null,
   v2OverlaysEnabled = false,
   v2OverlaysExpanded = false,
   onV2OverlayPropertiesRequest = null,
@@ -1276,11 +1277,17 @@ const BpmnStage = forwardRef(function BpmnStage({
     v2PropertyPreviewMapRef.current = combined;
   }, [propertiesOverlayAlwaysPreviewByElementId, selectedPropertiesOverlayPreview]);
 
+  // Per-field chip filter (property-panel-redesign): null = no filter
+  // configured; the V2 resolver treats both null and [] as "nothing hidden".
+  const v2HiddenFieldsRef = useRef(null);
+  v2HiddenFieldsRef.current = Array.isArray(overlayHiddenFields) ? overlayHiddenFields : null;
+
   const overlayLifecycle = useOverlayLifecycle({
     v2EnabledRef: v2OverlayState.enabledRef,
     v2ExpandedRef: v2OverlayState.expandedRef,
     useExtensionOverlays,
     propertyPreviewMapRef: v2PropertyPreviewMapRef,
+    hiddenFieldsRef: v2HiddenFieldsRef,
   });
 
   const handleViewboxChangedForOverlays = useCallback((inst, mode) => {
@@ -4713,6 +4720,7 @@ const BpmnStage = forwardRef(function BpmnStage({
           legacyAlways: propertiesOverlayAlwaysEnabled,
           legacyPreviewElementId: selectedPropertiesOverlayPreview?.elementId || null,
           previewMap: previewMapSig,
+          hiddenFields: Array.isArray(overlayHiddenFields) ? overlayHiddenFields : null,
         });
         if (prevOverlaySigRef.current[kind] === nextSig) return;
         prevOverlaySigRef.current[kind] = nextSig;
@@ -4743,6 +4751,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     propertiesOverlayAlwaysEnabled,
     selectedPropertiesOverlayPreview,
     propertiesOverlayAlwaysPreviewByElementId,
+    overlayHiddenFields,
     overlayLifecycle,
   ]);
 
