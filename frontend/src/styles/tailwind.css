@@ -4651,6 +4651,113 @@
     to { transform: rotate(360deg); }
   }
 
+  /* P0 primitives — segmented control + toggle switch
+     (property panel UX redesign; token-only, UI.md §3). */
+  .segmentedControl {
+    @apply flex items-center;
+    gap: 2px;
+    padding: 2px;
+    height: 32px;
+    border-radius: 10px;
+    background: hsl(var(--panel2));
+    border: 1px solid hsl(var(--border));
+  }
+
+  .segmentedControl--sm {
+    height: 28px;
+  }
+
+  .segmentedControlSegment {
+    @apply flex-1 min-w-0 inline-flex items-center justify-center;
+    height: 100%;
+    padding: 0 8px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: hsl(var(--muted));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: background-color 150ms ease-out, color 150ms ease-out;
+  }
+
+  .segmentedControlSegment--active {
+    background: hsl(var(--bg-elevated));
+    color: hsl(var(--text));
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  }
+
+  .segmentedControlSegment:not(.segmentedControlSegment--active):not(:disabled):hover {
+    background: color-mix(in srgb, hsl(var(--accent)) 8%, transparent);
+  }
+
+  .segmentedControlSegment:focus-visible {
+    outline: 2px solid hsl(var(--focus-ring));
+    outline-offset: 1px;
+  }
+
+  .segmentedControlSegment:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .toggleSwitch {
+    @apply inline-flex items-center;
+    gap: 8px;
+    background: transparent;
+  }
+
+  .toggleSwitchTrack {
+    @apply inline-flex items-center;
+    width: 32px;
+    height: 18px;
+    border-radius: 9999px;
+    background: hsl(var(--border-strong));
+    transition: background-color 150ms ease-in-out;
+    flex: none;
+  }
+
+  .toggleSwitch--on .toggleSwitchTrack {
+    background: hsl(var(--accent));
+  }
+
+  .toggleSwitchKnob {
+    width: 14px;
+    height: 14px;
+    border-radius: 9999px;
+    background: hsl(var(--bg-elevated));
+    transform: translateX(2px);
+    transition: transform 150ms ease-in-out;
+  }
+
+  .toggleSwitch--on .toggleSwitchKnob {
+    transform: translateX(16px);
+  }
+
+  .toggleSwitchLabel {
+    font-size: 13px;
+    color: hsl(var(--text));
+  }
+
+  .toggleSwitch:focus-visible {
+    outline: 2px solid hsl(var(--focus-ring));
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  .toggleSwitch:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .segmentedControlSegment,
+    .toggleSwitchTrack,
+    .toggleSwitchKnob {
+      transition: none;
+    }
+  }
+
   .sidebarAccordionStack {
     @apply grid overflow-visible;
     margin-top: 0;
