@@ -78,21 +78,21 @@ async function openPropertiesSection(page) {
 }
 
 async function enableV2Overlays(page) {
-  const checkbox = page.locator('[data-testid="bpmn-show-v2-overlays-checkbox"]');
-  await expect(checkbox).toBeVisible({ timeout: 15_000 });
-  if (!(await checkbox.isChecked())) {
-    await checkbox.click();
+  const toggle = page.locator('[data-testid="v2-toggle"]');
+  await expect(toggle).toBeVisible({ timeout: 15_000 });
+  if ((await toggle.getAttribute("aria-checked")) !== "true") {
+    await toggle.click();
   }
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
 }
 
 async function setSelectPreview(page, on) {
-  const checkbox = page
-    .locator('label:has-text("Показывать свойства над задачей при выделении") input[type="checkbox"]')
-    .first();
-  await expect(checkbox).toBeVisible({ timeout: 15_000 });
-  if ((await checkbox.isChecked()) !== on) {
-    await checkbox.click();
-  }
+  // P1 UX redesign: the on-select checkbox became the display-mode
+  // segmented control — hover = on, hidden = off.
+  const segment = page.locator(`[data-testid="display-mode-segment-${on ? "hover" : "hidden"}"]`);
+  await expect(segment).toBeVisible({ timeout: 15_000 });
+  await segment.click();
+  await expect(segment).toHaveAttribute("aria-checked", "true");
 }
 
 function v2Host(page, elementId) {

@@ -52,6 +52,8 @@ import { isProcessLikeType } from "../features/process/bpmn/stage/interaction/pr
 import useNotesPanelController from "./notesPanel/useNotesPanelController.js";
 import { SHOW_PROPERTIES_FLAG_KEY } from "./sidebar/useElementSettingsController.js";
 import ExtensionStateMiniIndicator from "./sidebar/displaySettings/ExtensionStateMiniIndicator";
+import DisplaySettingsBlock from "./sidebar/displaySettings/DisplaySettingsBlock";
+import { applyDisplayMode, deriveDisplayMode } from "./sidebar/displaySettings/displaySettingsModel";
 import SidebarShell from "./sidebar/SidebarShell";
 import ActorsSection from "./sidebar/ActorsSection";
 import TemplatesAndTldrSection from "./sidebar/TemplatesAndTldrSection";
@@ -3126,63 +3128,24 @@ export default function NotesPanel({
                     />
                   </div>
                 )}
-                <div className="sidebarPropertiesDisplaySettings">
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      className="sidebarCheckbox"
-                      checked={!!resolvedShowPropertiesOverlayOnSelect}
-                      onChange={(event) => void resolvedOnShowPropertiesOverlayOnSelectChange(!!event.target.checked)}
-                      disabled={!!disabled}
-                    />
-                    <span>Показывать свойства над задачей при выделении</span>
-                  </label>
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      className="sidebarCheckbox"
-                      checked={!!showPropertiesOverlayAlways}
-                      onChange={(event) => void onShowPropertiesOverlayAlwaysChange?.(!!event.target.checked)}
-                      disabled={!!disabled}
-                      data-testid="bpmn-show-properties-checkbox"
-                    />
-                    <span>Всегда показывать свойства над задачей</span>
-                  </label>
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      className="sidebarCheckbox"
-                      checked={!!showPropertiesFlag}
-                      onChange={(event) => void setShowPropertiesFlag(!!event.target.checked)}
-                      disabled={!!disabled || !!camundaPropertiesBusy || !selectedCamundaPropertiesEditable}
-                      data-testid="bpmn-show-properties-per-element-checkbox"
-                    />
-                    <span>Показывать свойства над задачей</span>
-                  </label>
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted py-1">V2-оверлеи</div>
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      className="sidebarCheckbox"
-                      checked={!!v2OverlaysEnabled}
-                      onChange={(event) => void onShowV2OverlaysChange?.(!!event.target.checked)}
-                      disabled={!!disabled}
-                      data-testid="bpmn-show-v2-overlays-checkbox"
-                    />
-                    <span>Показывать все V2-оверлеи свойств</span>
-                  </label>
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      className="sidebarCheckbox"
-                      checked={!!v2OverlaysExpanded}
-                      onChange={(event) => void onShowV2OverlaysExpandedChange?.(!!event.target.checked)}
-                      disabled={!!disabled || !v2OverlaysEnabled}
-                      data-testid="bpmn-show-v2-overlays-expanded-checkbox"
-                    />
-                    <span>Показывать все V2-оверлеи свойств раскрытыми</span>
-                  </label>
-                </div>
+                <DisplaySettingsBlock
+                  displayMode={deriveDisplayMode({
+                    showOnSelect: !!resolvedShowPropertiesOverlayOnSelect,
+                    showAlways: !!showPropertiesOverlayAlways,
+                  })}
+                  onDisplayModeChange={(mode) => {
+                    const next = applyDisplayMode(mode, {
+                      showOnSelect: !!resolvedShowPropertiesOverlayOnSelect,
+                    });
+                    void resolvedOnShowPropertiesOverlayOnSelectChange(next.showOnSelect);
+                    void onShowPropertiesOverlayAlwaysChange?.(next.showAlways);
+                  }}
+                  v2Enabled={!!v2OverlaysEnabled}
+                  onV2EnabledChange={(enabled) => void onShowV2OverlaysChange?.(enabled)}
+                  v2Mode={v2OverlaysExpanded ? "expanded" : "compact"}
+                  onV2ModeChange={(mode) => void onShowV2OverlaysExpandedChange?.(mode === "expanded")}
+                  disabled={!!disabled}
+                />
                 <CamundaPropertiesSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   selectedElementType={isElementMode ? selectedElementType : ""}
@@ -3195,6 +3158,8 @@ export default function NotesPanel({
                   bpmnDocumentationInfo={isElementMode ? bpmnDocumentationInfo : ""}
                   selectedBpmnOverlayCompanionSummary={isElementMode ? selectedBpmnOverlayCompanionSummary : null}
                   camundaPropertiesEditable={isElementMode ? selectedCamundaPropertiesEditable : false}
+                  showPropertiesFlag={isElementMode ? showPropertiesFlag : false}
+                  onShowPropertiesFlagChange={setShowPropertiesFlag}
                   extensionStateDraft={isElementMode ? camundaPropertiesDraft : createEmptyCamundaExtensionState()}
                   extensionStateSyncState={isElementMode ? camundaExtensionSyncState : "saved"}
                   extensionStateBusy={isElementMode ? camundaPropertiesBusy : false}
