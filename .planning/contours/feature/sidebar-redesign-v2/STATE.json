@@ -2,7 +2,7 @@
   "contour": "feature/sidebar-redesign-v2",
   "branch": "feature/sidebar-redesign-v2",
   "base": "origin/main@5aabba98",
-  "state": "planned",
+  "state": "in-progress",
   "states": [
     "planned",
     "approved",
@@ -24,16 +24,22 @@
   ],
   "verification": {
     "cherryPickUnit": "displaySettings suites 86/86 green",
-    "build": "exit 0"
+    "build": "exit 0 (20.45s)",
+    "unitSweep": "fail-set byte-identical to baseline (35 pre-existing); sidebar suites 95/95 green",
+    "e2e": "sidebar-redesign-v2.spec.mjs 3/3 green; property-panel-redesign.spec.mjs 10/10 green (chromium, workers=1)",
+    "e2eEnv": "vite dev :5180 + SSH tunnel 127.0.0.1:8011 -> root@91.184.252.237"
   },
   "gaps": {
-    "G1": "save indicator into accordion header (SidebarAccordion headerRight slot)",
-    "G2": "quick props / chips / preview composition per reference (needs screenshot)",
-    "G3": "dense CSS polish per reference (needs screenshot)",
-    "G4": "focused e2e spec: add/edit/save/reload/delete + header indicator"
+    "G1": "DONE: headerRight slot in SidebarAccordionSection; indicator moved to header; ui-copy test added",
+    "G2": "DONE: DEFAULT_QUICK_PROPERTY_NAMES = ee_time/ingredient/ingredient_um/ingredient_value/equipment",
+    "G3": "DONE (no-op): layout already dense post-UI-refresh; pixel-polish deferred until screenshot",
+    "G4": "DONE: sidebar-redesign-v2.spec.mjs (3 scenarios) + shared helpers module"
   },
-  "blockers": [
-    "reference screenshot missing — requested from user"
-  ],
-  "next": "AWAITING APPROVE: REVIEW_REPORT.md → user approve → G1..G4 implementation. No push/PR/deploy without explicit command."
+  "blockers": [],
+  "next": "Awaiting user command for push/PR. PR #524 stays open; user decides 524 vs v2.",
+  "implementationComplete": "2026-07-12",
+  "notes": [
+    "quick-delete auto-saves (handleQuickDelete flushes onSaveExtensionState) — e2e asserts the auto-save PUT",
+    "reference screenshot still not provided; G2/G3 done by text description"
+  ]
 }

@@ -22,6 +22,7 @@ function SidebarAccordionSection({
   title,
   subtitle = "",
   badge = "",
+  headerRight = null,
   open,
   onToggle,
   children,
@@ -41,6 +42,14 @@ function SidebarAccordionSection({
           </div>
           {subtitle ? <div className="sidebarAccordionSubtitle">{subtitle}</div> : null}
         </div>
+        {headerRight ? (
+          // Non-interactive status slot (e.g. the extension-state mini
+          // indicator). Clicks must not toggle the accordion.
+          // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
+          <span className="sidebarAccordionHeaderRight" onClick={(event) => event.stopPropagation()}>
+            {headerRight}
+          </span>
+        ) : null}
         <ChevronIcon className={`sidebarAccordionChevron ${open ? "isOpen" : ""}`} />
       </button>
       <div className="sidebarAccordionBodyWrap">

@@ -43,8 +43,8 @@ test("C4: quick delete is unified with Additional (auto-save via onSaveExtension
 // of truth for the quick/additional split (controller-owned).
 test("C5a: controller owns pin model (defaults + persisted userPins, by name)", () => {
   const ctrl = readSrc(CTRL);
-  assert.match(ctrl, /DEFAULT_QUICK_PROPERTY_NAMES\s*=\s*\[\s*"ee_time"\s*,\s*"ingredient_value"\s*\]/,
-    "defaults ee_time + ingredient_value");
+  assert.match(ctrl, /DEFAULT_QUICK_PROPERTY_NAMES\s*=\s*\[\s*"ee_time"\s*,\s*"ingredient"\s*,\s*"ingredient_um"\s*,\s*"ingredient_value"\s*,\s*"equipment"\s*\]/,
+    "defaults ee_time + ingredient group + equipment (sidebar-redesign-v2)");
   assert.match(ctrl, /QUICK_PINS_STORAGE_KEY\s*=\s*"processmap_quick_pins"/,
     "userPins storage key");
   assert.match(ctrl, /localStorage\.setItem\(\s*QUICK_PINS_STORAGE_KEY/, "userPins persisted");

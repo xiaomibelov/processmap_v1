@@ -10,7 +10,11 @@ import { SHOW_PROPERTIES_FLAG_KEY } from "../useElementSettingsController";
 // (by name, persisted in localStorage). Pin-by-name means "add a property with
 // a pinned name anywhere -> it surfaces in Quick"; renaming a user-pinned row
 // unpins it (documented behavior).
-export const DEFAULT_QUICK_PROPERTY_NAMES = ["ee_time", "ingredient_value"];
+// sidebar-redesign-v2 (G2): quick set extended to the reference composition —
+// timing first (ee_time), then the ingredient group + equipment. These names
+// surface in the Quick block, the overlay chips, and the To-Be pool even when
+// the element/dictionary does not define them yet.
+export const DEFAULT_QUICK_PROPERTY_NAMES = ["ee_time", "ingredient", "ingredient_um", "ingredient_value", "equipment"];
 const QUICK_PINS_STORAGE_KEY = "processmap_quick_pins";
 
 function normalizePinName(name) {

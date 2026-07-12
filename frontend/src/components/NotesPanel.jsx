@@ -3204,15 +3204,13 @@ export default function NotesPanel({
                 title="Свойства"
                 open={!!sectionsOpen.properties}
                 onToggle={toggleSection}
+                headerRight={isElementMode && selectedCamundaPropertiesEditable ? (
+                  <ExtensionStateMiniIndicator
+                    syncState={camundaExtensionSyncState}
+                    busy={camundaPropertiesBusy}
+                  />
+                ) : null}
               >
-                {isElementMode && selectedCamundaPropertiesEditable && (
-                  <div className="propertiesTabTopRow">
-                    <ExtensionStateMiniIndicator
-                      syncState={camundaExtensionSyncState}
-                      busy={camundaPropertiesBusy}
-                    />
-                  </div>
-                )}
                 {isElementMode && selectedCamundaPropertiesEditable && !isProcessLikeSelection && (
                   <LiveCardPreview
                     preview={overlayPreview}
