@@ -29,6 +29,7 @@ import RecipeSidebar from "../../features/process/recipe/components/RecipeSideba
 import PropertyGroup from "./PropertyGroup.jsx";
 import AdditionalBpmnPropertiesSection from "./sections/AdditionalBpmnPropertiesSection.jsx";
 import InlineBpmnPropertyRow from "./rows/InlineBpmnPropertyRow.jsx";
+import ToggleSwitch from "./controls/ToggleSwitch.jsx";
 import { normalizeDocumentationRows as sharedNormalizeDocumentationRows } from "../../features/process/bpmn/documentation/normalizeDocumentationRows.js";
 
 function toText(value) {
@@ -1170,6 +1171,8 @@ export function CamundaPropertiesSettings({
   bpmnDocumentationInfo = "",
   selectedBpmnOverlayCompanionSummary = null,
   camundaPropertiesEditable = false,
+  showPropertiesFlag = false,
+  onShowPropertiesFlagChange,
   extensionStateDraft = null,
   extensionStateSyncState = "saved",
   extensionStateBusy = false,
@@ -1951,6 +1954,18 @@ async function handleSaveAll() {
               text="Приоритетные свойства элемента: ee_time и ingredient_value."
             />
           </div>
+          {camundaPropertiesEditable ? (
+            <div className="perElementFlagRow">
+              <ToggleSwitch
+                checked={!!showPropertiesFlag}
+                onChange={(enabled) => void onShowPropertiesFlagChange?.(enabled)}
+                label="Показывать над этой задачей"
+                disabled={!!disabled || !!extensionStateBusy}
+                testId="per-element-properties-toggle"
+              />
+              <span className="perElementFlagHint">per-element, сохраняется в XML</span>
+            </div>
+          ) : null}
           <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarPropertiesRows--zebra">
             <div className="sidebarPropertiesTableHead" role="presentation">
               <span>Свойство</span>

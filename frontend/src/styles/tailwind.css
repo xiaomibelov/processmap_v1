@@ -4758,6 +4758,70 @@
     }
   }
 
+  /* P1 — display settings block + dependent V2 sub-control (UI.md §2.2/§3). */
+  .displaySettingsBlock {
+    @apply grid;
+    gap: 8px;
+    padding: 4px 2px 8px;
+  }
+
+  .displaySettingsRow {
+    @apply grid;
+    gap: 6px;
+  }
+
+  .displaySettingsLabel {
+    font-size: 12px;
+    font-weight: 600;
+    color: hsl(var(--muted));
+  }
+
+  .displaySettingsHint {
+    font-size: 12px;
+    color: hsl(var(--hint));
+  }
+
+  .v2SubControl {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    margin-left: 8px;
+    padding-left: 10px;
+    border-left: 2px solid hsl(var(--border));
+    transition: grid-template-rows 200ms ease-out, opacity 150ms ease-out;
+  }
+
+  .v2SubControl--open {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+
+  .v2SubControlInner {
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .v2SubControl--open .v2SubControlInner {
+    padding-top: 6px;
+  }
+
+  .perElementFlagRow {
+    @apply flex items-center justify-between;
+    gap: 8px;
+    padding: 2px 0 6px;
+  }
+
+  .perElementFlagHint {
+    font-size: 12px;
+    color: hsl(var(--hint));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .v2SubControl {
+      transition: none;
+    }
+  }
+
   .sidebarAccordionStack {
     @apply grid overflow-visible;
     margin-top: 0;
