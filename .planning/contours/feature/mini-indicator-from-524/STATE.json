@@ -14,7 +14,7 @@
   "pr": 526,
   "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/526",
   "created": "2026-07-12T09:10:00Z",
-  "updated": "2026-07-12T11:15:00Z",
+  "updated": "2026-07-12T18:25:00Z",
   "commits": {
     "1a": "8e772c0d — ExtensionStateMiniIndicator + CSS + NotesPanel topRow + unit 8/8 + e2e spec",
     "1b": "08f42c5c — BpmnStage clear-before-remount reorder"
@@ -28,7 +28,7 @@
   "source": "Tier 1 cherry-pick из PR #524; анализ: Audits/PR524-Inventory-Borrowability-2026-07-12.md",
   "pending": "AWAITING explicit user approval to merge PR #526",
   "ux_redesign_phase": {
-    "status": "P0-done",
+    "status": "P1-done",
     "artifacts": [
       "PLAN.md",
       "UI.md",
@@ -46,8 +46,13 @@
         "gate": "G-P0 PASS: unit 14/14, sweep 51=51, foundation 10/10, build OK"
       },
       "P1": {
+        "status": "done",
+        "commit": "6a65d133",
+        "gate": "G-P1 PASS: sweep 51=51, foundation 10/10, build OK, stage E2E 17/17 (T1-T3 + 4 regression specs)"
+      },
+      "P2": {
         "status": "next",
-        "scope": "DisplaySettingsBlock: segmented display mode + V2 toggle/sub-control + per-element toggle (NotesPanel.jsx)"
+        "scope": "Quick chips (QuickPropertyChip + add mini-form), replace quick table in ElementSettingsControls"
       }
     }
   }
