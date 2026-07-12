@@ -2,9 +2,22 @@
   "contour": "feature/mini-indicator-from-524",
   "branch": "feature/mini-indicator-from-524",
   "base": "origin/main@47a0c12f (post-merge #525)",
-  "state": "in-progress",
+  "state": "pr-open",
   "states": ["planned", "in-progress", "stage-verified", "pr-open", "approved", "merged"],
-  "pr": null,
+  "pr": 526,
+  "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/526",
   "created": "2026-07-12T09:10:00Z",
-  "source": "Tier 1 cherry-pick из PR #524; анализ: Audits/PR524-Inventory-Borrowability-2026-07-12.md"
+  "updated": "2026-07-12T10:40:00Z",
+  "commits": {
+    "1a": "8e772c0d — ExtensionStateMiniIndicator + CSS + NotesPanel topRow + unit 8/8 + e2e spec",
+    "1b": "08f42c5c — BpmnStage clear-before-remount reorder"
+  },
+  "verification": {
+    "unit_sweep": "51/51 = new main baseline (post-#525), zero new failures",
+    "foundation_guard": "10/10",
+    "build": "npm run build OK",
+    "stage_e2e": "7/7 PASS (34.5s): extension-state-mini 2/2 + process-properties 5/5"
+  },
+  "source": "Tier 1 cherry-pick из PR #524; анализ: Audits/PR524-Inventory-Borrowability-2026-07-12.md",
+  "pending": "AWAITING explicit user approval to merge PR #526"
 }
