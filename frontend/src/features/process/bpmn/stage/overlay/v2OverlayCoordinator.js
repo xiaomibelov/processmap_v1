@@ -1,4 +1,5 @@
 import { extractOverlaysFromBpmn } from "../../../../../components/process/utils/bpmnOverlayParser.js";
+import { filterRowsByHiddenFields } from "../../../../../components/sidebar/displaySettings/filterRowsByHiddenFields.js";
 import { asArray, asObject, asText } from "./overlayUtils.js";
 import { resolveV2OverlayContent, mergeV2OverlaysWithPropertyPreview } from "./v2OverlayContentResolver.js";
 import { hasLegacyPropertyOverlay, shouldRenderV2Overlay } from "./v2OverlayVisibilityController.js";
@@ -61,6 +62,7 @@ export function createV2OverlayCoordinator({
   useExtensionOverlaysRef,
   previewMapRef,
   selectedElementRef,
+  hiddenFieldsRef,
 }) {
   const elementOverlayMapRef = { current: { viewer: new Map(), editor: new Map() } };
 
@@ -106,7 +108,13 @@ export function createV2OverlayCoordinator({
 
     elements.forEach((el) => {
       const elementId = el.id;
-      const content = resolveV2OverlayContent({ elementId, inst, previewMap, forceShow: globalEnabled });
+      const content = resolveV2OverlayContent({
+        elementId,
+        inst,
+        previewMap,
+        forceShow: globalEnabled,
+        hiddenFields: asArray(hiddenFieldsRef?.current),
+      });
       if (!content) return;
 
       const elementState = {
@@ -284,9 +292,25 @@ export function createV2OverlayCoordinator({
 
   function mountFromBpmn(inst, kind) {
     if (!inst) return;
-    const overlayList = extractOverlaysFromBpmn(inst, enabledRef?.current) || [];
+    const hiddenFields = asArray(hiddenFieldsRef?.current);
+    // Per-field chip filter (property-panel-redesign): the BPMN extraction
+    // path builds card rows directly, so the filter is applied to the
+    // extracted list itself. An auto property card whose every field was
+    // hidden must not render; name-only cards (no properties to begin with)
+    // and authored overlays survive.
+    const overlayList = (extractOverlaysFromBpmn(inst, enabledRef?.current) || [])
+      .map((ovl) => {
+        const original = asArray(ovl?.properties);
+        const properties = filterRowsByHiddenFields(original, hiddenFields);
+        if (ovl?.auto === true && original.length > 0 && properties.length === 0) return null;
+        return { ...ovl, properties };
+      })
+      .filter(Boolean);
     const previewMap = asObject(previewMapRef?.current);
-    const merged = mergeV2OverlaysWithPropertyPreview(inst, overlayList, previewMap, { forceShow: enabledRef?.current });
+    const merged = mergeV2OverlaysWithPropertyPreview(inst, overlayList, previewMap, {
+      forceShow: enabledRef?.current,
+      hiddenFields,
+    });
     mount(inst, kind, merged);
   }
 

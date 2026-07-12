@@ -4439,9 +4439,11 @@
 
   .leftSidebarBottom {
     @apply sticky bottom-0 z-10;
+    max-height: 48px;
     border-top: 1px solid hsl(var(--border));
     background: rgba(255, 255, 255, 0.9);
     backdrop-filter: blur(4px);
+    box-shadow: 0 -2px 8px color-mix(in srgb, hsl(var(--text)) 6%, transparent);
   }
 
   .leftSidebarHeader {
@@ -4614,6 +4616,492 @@
     border-bottom: 1px solid #EEF2F9;
   }
 
+  /* Extension-state mini indicator («Свойства» accordion head accessory). */
+  .extensionStateMini {
+    @apply inline-flex items-center justify-center;
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    color: hsl(var(--muted));
+  }
+
+  .extensionStateMini--saved {
+    color: hsl(var(--success) / 0.9);
+  }
+
+  .extensionStateMini--dirty {
+    color: hsl(var(--warning) / 0.95);
+  }
+
+  .extensionStateMini--syncing {
+    color: hsl(var(--muted));
+    animation: extensionStateMiniSpin 1s linear infinite;
+  }
+
+  .extensionStateMini--error {
+    color: hsl(var(--danger) / 0.95);
+  }
+
+  @keyframes extensionStateMiniSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  /* Shared uppercase label (LiveCardPreview / To-Be headers). */
+  .overlayDisplayLabel {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: hsl(var(--muted));
+  }
+
+  /* Per-field chips (property-panel-redesign port). */
+  .overlayFieldChipsBlock {
+    @apply grid;
+    gap: 4px;
+    padding-top: 2px;
+  }
+
+  .overlayFieldChips {
+    @apply flex flex-wrap;
+    gap: 5px;
+  }
+
+  .overlayFieldChip {
+    @apply inline-flex items-center;
+    gap: 4px;
+    padding: 3px 9px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: hsl(var(--muted));
+    background: transparent;
+    border: 1px solid hsl(var(--border));
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 100ms ease;
+  }
+
+  .overlayFieldChip:hover:not(:disabled) {
+    background: color-mix(in srgb, hsl(var(--text)) 6%, transparent);
+    border-color: hsl(var(--border-strong));
+    color: hsl(var(--text));
+  }
+
+  .overlayFieldChip:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 1px;
+  }
+
+  .overlayFieldChip:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .overlayFieldChip--active {
+    background: hsl(var(--text));
+    border-color: hsl(var(--text));
+    color: hsl(var(--bg));
+  }
+
+  .overlayFieldChip--active:hover:not(:disabled) {
+    background: color-mix(in srgb, hsl(var(--text)) 85%, hsl(var(--bg)));
+    border-color: transparent;
+    color: hsl(var(--bg));
+  }
+
+  .overlayFieldChipCheck {
+    flex: none;
+    color: currentColor;
+  }
+
+  /* LiveCardPreview + ToBeBuilder (property-panel-redesign port).
+     Token-only; dark/graphite themes flip free. */
+  .liveCardPreview {
+    @apply grid;
+    gap: 5px;
+    padding: 4px 2px 6px;
+    border-bottom: 1px solid hsl(var(--border) / 0.55);
+    margin-bottom: 2px;
+  }
+
+  .liveCardPreviewHeader {
+    @apply flex items-baseline justify-between;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .liveCardPreviewElement {
+    font-size: 11px;
+    color: hsl(var(--hint));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .liveCardPreviewEmpty {
+    font-size: 12px;
+    color: hsl(var(--hint));
+    padding: 8px 10px;
+    border: 1px dashed hsl(var(--border));
+    border-radius: 6px;
+    text-align: center;
+  }
+
+  .liveCardPreviewCard {
+    @apply grid;
+    gap: 2px;
+    max-height: 180px;
+    overflow: auto;
+    padding: 8px 10px;
+    background: hsl(var(--panel));
+    border: 1px solid hsl(var(--border));
+    border-radius: 8px;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .liveCardPreviewRow {
+    @apply flex items-baseline justify-between;
+    gap: 10px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .liveCardPreviewLabel {
+    color: hsl(var(--muted));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .liveCardPreviewValue {
+    color: hsl(var(--text));
+    font-weight: 500;
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+
+  .liveCardPreviewMore {
+    font-size: 11px;
+    color: hsl(var(--hint));
+    text-align: right;
+  }
+
+  .toBeBuilder {
+    @apply grid;
+    gap: 8px;
+    padding: 6px 2px 10px;
+    border-bottom: 1px solid hsl(var(--border) / 0.55);
+    margin-bottom: 6px;
+  }
+
+  .toBeSummary {
+    @apply flex items-center justify-between;
+    gap: 8px;
+  }
+
+  .toBePills {
+    font-size: 11px;
+    color: hsl(var(--muted));
+    padding: 2px 8px;
+    background: hsl(var(--panel2));
+    border: 1px solid hsl(var(--border) / 0.7);
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  .toBeSection {
+    @apply grid;
+    gap: 4px;
+  }
+
+  .toBeSectionTitle {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: hsl(var(--muted));
+  }
+
+  .toBeEmpty {
+    font-size: 11px;
+    color: hsl(var(--hint));
+    padding: 4px 2px;
+  }
+
+  .toBeList {
+    @apply grid;
+    gap: 4px;
+    max-height: 220px;
+    overflow: auto;
+  }
+
+  .toBeRow {
+    @apply flex items-center;
+    gap: 5px;
+  }
+
+  .toBeRowToggle {
+    @apply flex items-center justify-between;
+    flex: 1;
+    gap: 8px;
+    min-width: 0;
+    padding: 4px 8px;
+    background: hsl(var(--panel));
+    border: 1px solid hsl(var(--border) / 0.8);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border-color 140ms ease, background 140ms ease;
+  }
+
+  .toBeRowToggle:hover:not(:disabled) {
+    border-color: hsl(var(--border-strong));
+    background: color-mix(in srgb, hsl(var(--text)) 4%, hsl(var(--panel)));
+  }
+
+  .toBeRowToggle:focus-visible,
+  .toBeAddBtn:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 1px;
+  }
+
+  .toBeRowToggle:disabled,
+  .toBeAddBtn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .toBeRowName {
+    font-size: 12px;
+    color: hsl(var(--text));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .toBeBadge {
+    flex: none;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 1px 7px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  .toBeBadge--inToBe {
+    color: hsl(var(--accent));
+    background: color-mix(in srgb, hsl(var(--accent)) 14%, transparent);
+    border: 1px solid color-mix(in srgb, hsl(var(--accent)) 30%, transparent);
+  }
+
+  .toBeBadge--added {
+    color: hsl(var(--success));
+    background: color-mix(in srgb, hsl(var(--success)) 14%, transparent);
+    border: 1px solid color-mix(in srgb, hsl(var(--success)) 30%, transparent);
+  }
+
+  .toBeBadge--removed {
+    color: hsl(var(--danger));
+    background: color-mix(in srgb, hsl(var(--danger)) 12%, transparent);
+    border: 1px solid color-mix(in srgb, hsl(var(--danger)) 28%, transparent);
+  }
+
+  .toBeBadge--notFilled {
+    color: hsl(var(--muted));
+    background: color-mix(in srgb, hsl(var(--muted)) 10%, transparent);
+    border: 1px solid color-mix(in srgb, hsl(var(--muted)) 22%, transparent);
+  }
+
+  .toBeAddBtn {
+    flex: none;
+    width: 24px;
+    height: 24px;
+    font-size: 15px;
+    line-height: 1;
+    color: hsl(var(--accent));
+    background: color-mix(in srgb, hsl(var(--accent)) 10%, transparent);
+    border: 1px solid color-mix(in srgb, hsl(var(--accent)) 28%, transparent);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease;
+  }
+
+  .toBeAddBtn:hover:not(:disabled) {
+    background: color-mix(in srgb, hsl(var(--accent)) 18%, transparent);
+    border-color: hsl(var(--accent));
+  }
+
+  /* P0 primitives — segmented control + toggle switch
+     (property panel UX redesign; token-only, UI.md §3). */
+  .segmentedControl {
+    @apply flex items-center;
+    gap: 2px;
+    padding: 2px;
+    height: 32px;
+    border-radius: 10px;
+    background: hsl(var(--panel2));
+    border: 1px solid hsl(var(--border));
+  }
+
+  .segmentedControl--sm {
+    height: 28px;
+  }
+
+  .segmentedControlSegment {
+    @apply flex-1 min-w-0 inline-flex items-center justify-center;
+    height: 100%;
+    padding: 0 8px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: hsl(var(--muted));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: background-color 150ms ease-out, color 150ms ease-out;
+  }
+
+  .segmentedControlSegment--active {
+    background: hsl(var(--bg-elevated));
+    color: hsl(var(--text));
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  }
+
+  .segmentedControlSegment:not(.segmentedControlSegment--active):not(:disabled):hover {
+    background: color-mix(in srgb, hsl(var(--accent)) 8%, transparent);
+  }
+
+  .segmentedControlSegment:focus-visible {
+    outline: 2px solid hsl(var(--focus-ring));
+    outline-offset: 1px;
+  }
+
+  .segmentedControlSegment:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .toggleSwitch {
+    @apply inline-flex items-center;
+    gap: 8px;
+    background: transparent;
+  }
+
+  .toggleSwitchTrack {
+    @apply inline-flex items-center;
+    width: 32px;
+    height: 18px;
+    border-radius: 9999px;
+    background: hsl(var(--border-strong));
+    transition: background-color 150ms ease-in-out;
+    flex: none;
+  }
+
+  .toggleSwitch--on .toggleSwitchTrack {
+    background: hsl(var(--accent));
+  }
+
+  .toggleSwitchKnob {
+    width: 14px;
+    height: 14px;
+    border-radius: 9999px;
+    background: hsl(var(--bg-elevated));
+    transform: translateX(2px);
+    transition: transform 150ms ease-in-out;
+  }
+
+  .toggleSwitch--on .toggleSwitchKnob {
+    transform: translateX(16px);
+  }
+
+  .toggleSwitchLabel {
+    font-size: 13px;
+    color: hsl(var(--text));
+  }
+
+  .toggleSwitch:focus-visible {
+    outline: 2px solid hsl(var(--focus-ring));
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  .toggleSwitch:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .segmentedControlSegment,
+    .toggleSwitchTrack,
+    .toggleSwitchKnob {
+      transition: none;
+    }
+  }
+
+  /* P1 — display settings block + dependent V2 sub-control (UI.md §2.2/§3). */
+  .displaySettingsBlock {
+    @apply grid;
+    gap: 8px;
+    padding: 4px 2px 8px;
+  }
+
+  .displaySettingsRow {
+    @apply grid;
+    gap: 6px;
+  }
+
+  .displaySettingsLabel {
+    font-size: 12px;
+    font-weight: 600;
+    color: hsl(var(--muted));
+  }
+
+  .displaySettingsHint {
+    font-size: 12px;
+    color: hsl(var(--hint));
+  }
+
+  .v2SubControl {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    margin-left: 8px;
+    padding-left: 10px;
+    border-left: 2px solid hsl(var(--border));
+    transition: grid-template-rows 200ms ease-out, opacity 150ms ease-out;
+  }
+
+  .v2SubControl--open {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+
+  .v2SubControlInner {
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .v2SubControl--open .v2SubControlInner {
+    padding-top: 6px;
+  }
+
+  .perElementFlagRow {
+    @apply flex items-center justify-between;
+    gap: 8px;
+    padding: 2px 0 6px;
+  }
+
+  .perElementFlagHint {
+    font-size: 12px;
+    color: hsl(var(--hint));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .v2SubControl {
+      transition: none;
+    }
+  }
+
   .sidebarAccordionStack {
     @apply grid overflow-visible;
     margin-top: 0;
@@ -4672,6 +5160,14 @@
     border: 1px solid #E2E9F4;
     background: #F3F6FB;
     color: #7080A0;
+  }
+
+  .sidebarAccordionHeadAccessory {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    margin-left: 4px;
+    color: hsl(var(--muted));
   }
 
   .sidebarAccordionChevron {
@@ -4760,7 +5256,7 @@
     @apply grid;
     gap: 5px;
     padding: 5px 7px 6px;
-    margin-top: 3px;
+    margin-top: 2px;
     border: 1px solid #E8EEF8;
     border-radius: 7px;
     background: transparent;
@@ -4773,10 +5269,21 @@
     border-color: #EDF1F9;
   }
 
+  /* «+10%» requirement (D4, negative inset): the Additional BPMN block
+     bleeds into the accordion body horizontal padding (px-3 = 12px), so its
+     frame spans edge-to-edge and the content reclaims ~24px (~7-10% of the
+     ~300px body) versus sibling blocks. The compensating padding-inline
+     keeps the inner content aligned with the accordion's own inset.
+     Token-only: colors stay on the shared --border token. */
+  .sidebarPropertiesBlock--wide {
+    margin-inline: -12px;
+    padding-inline: 12px;
+  }
+
   .sidebarPropertiesBlock--primary {
     background: hsl(var(--accent) / 0.04);
     border-color: hsl(var(--accent) / 0.15);
-    margin-bottom: 10px;
+    margin-bottom: 6px;
   }
 
   .sidebarPropertiesBlockHead {
@@ -5024,6 +5531,24 @@
     backdrop-filter: blur(2px);
   }
 
+  /* Text-only cancel button (floating save bar): no fill/border, token ink. */
+  .sidebarTextBtn {
+    background: transparent;
+    border: none;
+    color: hsl(var(--muted));
+    cursor: pointer;
+    transition: color 140ms ease;
+  }
+
+  .sidebarTextBtn:hover:not(:disabled) {
+    color: hsl(var(--text));
+  }
+
+  .sidebarTextBtn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .sidebarGlobalFooter {
     width: 100%;
     max-width: 672px;
@@ -5035,7 +5560,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 4px 6px;
+    padding: 6px 4px;
     border-top: 1px solid hsl(var(--border));
   }
 

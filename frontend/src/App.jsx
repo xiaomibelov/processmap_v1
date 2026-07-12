@@ -77,6 +77,7 @@ import {
   upsertCamundaPresentationByElementId,
 } from "./features/process/camunda/camundaPresentation";
 import { buildPropertiesOverlayPreview } from "./features/process/camunda/propertyDictionaryModel";
+import { useHiddenFields } from "./components/sidebar/displaySettings/useHiddenFields";
 import { normalizeHybridLayerMap } from "./features/process/hybrid/hybridLayerUi";
 import { mergeDrawioMeta, normalizeDrawioMeta } from "./features/process/drawio/drawioMeta";
 import buildSessionMetaReadModel from "./features/session-meta/read/buildSessionMetaReadModel";
@@ -952,6 +953,9 @@ export default function App() {
   }, [activeOrgRole, user?.is_admin]);
   const draftSessionId = String(draft?.session_id || "").trim();
   const isSessionLocalMode = !draftSessionId || isLocalSessionId(draftSessionId);
+  // Per-field chip filter (property-panel-redesign port): per-session
+  // localStorage `fpc_overlay_hidden_fields_v1:{sid}`, preview-level only.
+  const { hiddenFields: overlayHiddenFields, toggleField: toggleOverlayField } = useHiddenFields(draftSessionId);
   const serializeSessionMetaForBoundary = useCallback((valueRaw) => JSON.stringify(normalizeBpmnMeta(valueRaw)), []);
   const getSessionMetaBaseDiagramStateVersion = useCallback(() => Number(
     draft?.diagram_state_version ?? draft?.diagramStateVersion,
@@ -1386,6 +1390,7 @@ export default function App() {
         elementId,
         extensionStateRaw: extensionMap[rawElementId],
         showPropertiesOverlay: true,
+        hiddenFields: overlayHiddenFields,
       });
       if (preview?.enabled && ensureArray(preview.items).length) {
         out[elementId] = preview;
@@ -1406,7 +1411,7 @@ export default function App() {
       }
     }
     return out;
-  }, [showPropertiesOverlayAlways, draft?.bpmn_meta, selectedPropertiesOverlayAlwaysPreview]);
+  }, [showPropertiesOverlayAlways, draft?.bpmn_meta, selectedPropertiesOverlayAlwaysPreview, overlayHiddenFields]);
 
   const sidebarHandleSections = useMemo(() => {
     const hasActiveSession = !!String(shellSessionId || "").trim();
@@ -3361,6 +3366,8 @@ export default function App() {
         onPropertiesOverlayAlwaysPreviewChange={setSelectedPropertiesOverlayAlwaysPreview}
         showPropertiesOverlayAlways={showPropertiesOverlayAlways}
         onShowPropertiesOverlayAlwaysChange={setShowPropertiesOverlayAlways}
+        overlayHiddenFields={overlayHiddenFields}
+        onOverlayFieldToggle={toggleOverlayField}
         v2OverlaysEnabled={v2OverlaysEnabled}
         onShowV2OverlaysChange={setV2OverlaysEnabled}
         v2OverlaysExpanded={v2OverlaysExpanded}
@@ -3841,6 +3848,7 @@ export default function App() {
         selectedPropertiesOverlayPreview={selectedPropertiesOverlayPreview}
         propertiesOverlayAlwaysEnabled={showPropertiesOverlayAlways}
         propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
+        overlayHiddenFields={overlayHiddenFields}
         v2OverlaysEnabled={v2OverlaysEnabled}
         v2OverlaysExpanded={v2OverlaysExpanded}
         onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}

@@ -6,10 +6,12 @@ import {
 import { deleteExtensionPropertyRowsByDeleteAction } from "../propertyDeleteSemantics";
 import { SHOW_PROPERTIES_FLAG_KEY } from "../useElementSettingsController";
 
-// Pinned (quick) properties = hardcoded defaults (by name) + per-user pins
-// (by name, persisted in localStorage). Pin-by-name means "add a property with
-// a pinned name anywhere -> it surfaces in Quick"; renaming a user-pinned row
-// unpins it (documented behavior).
+// Pinned (quick) properties = per-user pins (by name, persisted in
+// localStorage). DEFAULT_QUICK_PROPERTY_NAMES are INITIAL pins only: fresh
+// users (no stored list) start with them, but they are fully removable —
+// unpinning a default drops it from the quick list like any other pin.
+// Pin-by-name means "add a property with a pinned name anywhere -> it
+// surfaces in Quick"; renaming a pinned row unpins it (documented behavior).
 export const DEFAULT_QUICK_PROPERTY_NAMES = ["ee_time", "ingredient_value"];
 const QUICK_PINS_STORAGE_KEY = "processmap_quick_pins";
 
@@ -19,8 +21,11 @@ function normalizePinName(name) {
 
 function loadQuickPins() {
   try {
-    if (typeof localStorage === "undefined") return [];
+    if (typeof localStorage === "undefined") return [...DEFAULT_QUICK_PROPERTY_NAMES];
     const raw = localStorage.getItem(QUICK_PINS_STORAGE_KEY);
+    // Fresh users (no stored list) get the default pins; an explicitly stored
+    // list — even an empty one — is respected (defaults are removable).
+    if (raw === null || raw === undefined) return [...DEFAULT_QUICK_PROPERTY_NAMES];
     const parsed = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(parsed)) return [];
     const seen = new Set();
@@ -56,6 +61,7 @@ export default function useBpmnPropertiesController({
   onExtensionStateDraftChange,
 }) {
   const [additionalBpmnOpen, setAdditionalBpmnOpen] = useState(true);
+  const [quickPropsOpen, setQuickPropsOpen] = useState(false);
   const [expandedBpmnRows, setExpandedBpmnRows] = useState({});
   const [userPins, setUserPins] = useState(loadQuickPins);
 
@@ -78,8 +84,10 @@ export default function useBpmnPropertiesController({
     : [];
 
   useEffect(() => {
-    // Surface Additional BPMN properties immediately when entering a node.
+    // Surface Additional BPMN properties immediately when entering a node;
+    // «Быстрые свойства» stays collapsed by default (manual toggle only).
     setAdditionalBpmnOpen(true);
+    setQuickPropsOpen(false);
   }, [selectedElementId]);
 
   useEffect(() => {
@@ -121,22 +129,8 @@ export default function useBpmnPropertiesController({
 
   // Single source of truth for the quick/additional split (consumed by
   // ElementSettingsControls via useElementSettingsController).
-  const pinnedNameSet = useMemo(() => {
-    const set = new Set(DEFAULT_QUICK_PROPERTY_NAMES);
-    userPins.forEach((n) => set.add(n));
-    return set;
-  }, [userPins]);
-  const quickPropertyNames = useMemo(() => {
-    const out = [...DEFAULT_QUICK_PROPERTY_NAMES];
-    const seen = new Set(out);
-    userPins.forEach((n) => {
-      if (!seen.has(n)) {
-        seen.add(n);
-        out.push(n);
-      }
-    });
-    return out;
-  }, [userPins]);
+  const pinnedNameSet = useMemo(() => new Set(userPins), [userPins]);
+  const quickPropertyNames = userPins;
   const quickRows = useMemo(
     () => additionalBpmnRows.filter((row) => pinnedNameSet.has(normalizePinName(row?.name))),
     [additionalBpmnRows, pinnedNameSet],
@@ -148,19 +142,19 @@ export default function useBpmnPropertiesController({
 
   function isUserPinnedName(name) {
     const n = normalizePinName(name);
-    if (!n || DEFAULT_QUICK_PROPERTY_NAMES.includes(n)) return false;
+    if (!n) return false;
     return userPins.includes(n);
   }
 
   function pinName(name) {
     const n = normalizePinName(name);
-    if (!n || DEFAULT_QUICK_PROPERTY_NAMES.includes(n)) return;
+    if (!n) return;
     setUserPins((prev) => (prev.includes(n) ? prev : [...prev, n]));
   }
 
   function unpinName(name) {
     const n = normalizePinName(name);
-    if (!n || DEFAULT_QUICK_PROPERTY_NAMES.includes(n)) return;
+    if (!n) return;
     setUserPins((prev) => prev.filter((x) => x !== n));
   }
 
@@ -232,6 +226,8 @@ export default function useBpmnPropertiesController({
   return {
     additionalBpmnOpen,
     setAdditionalBpmnOpen,
+    quickPropsOpen,
+    setQuickPropsOpen,
     properties,
     additionalBpmnRows,
     quickPropertyNames,

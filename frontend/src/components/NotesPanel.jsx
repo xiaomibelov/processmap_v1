@@ -46,11 +46,26 @@ import {
   finalizeExtensionStateWithDictionary,
   buildPropertiesOverlayPreview,
   getOperationKeyFromRobotMeta,
+  normalizeOrgPropertyDictionaryBundle,
 } from "../features/process/camunda/propertyDictionaryModel";
 import useCamundaPropertiesOverlayPreview from "../features/process/camunda/useCamundaPropertiesOverlayPreview";
 import { isProcessLikeType } from "../features/process/bpmn/stage/interaction/processRootSelection.js";
 import useNotesPanelController from "./notesPanel/useNotesPanelController.js";
 import { SHOW_PROPERTIES_FLAG_KEY } from "./sidebar/useElementSettingsController.js";
+import ExtensionStateMiniIndicator from "./sidebar/displaySettings/ExtensionStateMiniIndicator";
+import DisplaySettingsBlock from "./sidebar/displaySettings/DisplaySettingsBlock";
+import LiveCardPreview from "./sidebar/displaySettings/LiveCardPreview";
+import ToBeBuilder from "./sidebar/displaySettings/ToBeBuilder";
+import { deriveToBeModel } from "./sidebar/displaySettings/toBeBuilderModel";
+import { useToBeState } from "./sidebar/displaySettings/useToBeState";
+import { buildFieldChips } from "./sidebar/displaySettings/fieldChipsModel";
+import { DEFAULT_QUICK_PROPERTY_NAMES } from "./sidebar/controllers/useBpmnPropertiesController";
+import {
+  applyDisplayMode,
+  captureModeBeforeV2,
+  deriveDisplayMode,
+  restoreModeAfterV2,
+} from "./sidebar/displaySettings/displaySettingsModel";
 import SidebarShell from "./sidebar/SidebarShell";
 import ActorsSection from "./sidebar/ActorsSection";
 import TemplatesAndTldrSection from "./sidebar/TemplatesAndTldrSection";
@@ -107,6 +122,38 @@ function buildCamundaPropertiesDraftKey(sessionIdRaw, elementIdRaw) {
   const elementId = str(elementIdRaw);
   if (!sessionId || !elementId) return "";
   return `${sessionId}:${elementId}:camunda-properties`;
+}
+
+// V2 → display mode coupling (B3): the mode captured before V2 was enabled
+// is persisted per session (same namespacing style as the showAlways flag in
+// App.jsx: `fpc_*_v1:{sid}`) so turning V2 off restores the user's choice.
+const DISPLAY_MODE_BEFORE_V2_KEY_PREFIX = "fpc_display_mode_before_v2_v1:";
+
+function displayModeBeforeV2StorageKey(sessionId) {
+  const sid = str(sessionId);
+  return sid ? `${DISPLAY_MODE_BEFORE_V2_KEY_PREFIX}${sid}` : "";
+}
+
+function readDisplayModeBeforeV2(sessionId) {
+  if (typeof window === "undefined") return null;
+  const key = displayModeBeforeV2StorageKey(sessionId);
+  if (!key) return null;
+  try {
+    const raw = str(window.localStorage?.getItem(key));
+    return raw || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDisplayModeBeforeV2(sessionId, mode) {
+  if (typeof window === "undefined") return;
+  const key = displayModeBeforeV2StorageKey(sessionId);
+  if (!key) return;
+  try {
+    window.localStorage?.setItem(key, str(mode));
+  } catch {
+  }
 }
 
 function mergeModelerOnlyPropertiesIntoDraft(draftRaw, baselineRaw) {
@@ -978,6 +1025,8 @@ export default function NotesPanel({
   onShowV2OverlaysChange,
   v2OverlaysExpanded = false,
   onShowV2OverlaysExpandedChange,
+  overlayHiddenFields = null,
+  onOverlayFieldToggle,
   onGoToDiagram,
   onProjectBreadcrumbClick,
   onSessionBreadcrumbClick,
@@ -1073,6 +1122,9 @@ export default function NotesPanel({
   const [startRoleErr, setStartRoleErr] = useState("");
   const [laneElementCounts, setLaneElementCounts] = useState(() => ({ byKey: {}, byLaneId: {}, byName: {} }));
   const [sectionsOpen, setSectionsOpen] = useState(() => readSectionsState());
+  // To-Be block collapse state (local-only, mirrors quick/additional blocks).
+  // Collapsed by default on entry (layout directive 2026-07).
+  const [toBeOpen, setToBeOpen] = useState(false);
   const elementNotesSectionRef = useRef(null);
   const pathsSectionRef = useRef(null);
   const timeSectionRef = useRef(null);
@@ -1433,10 +1485,49 @@ export default function NotesPanel({
     if (!Array.isArray(rows)) return false;
     return rows.some(isShowPropertiesFlagRow);
   }, [camundaPropertiesDraft]);
+  // To-Be builder (property-panel-redesign port): per-session target set of
+  // property names; the model below derives As-Is/Pool lists + badges.
+  const { toBeState, toggleToBe, markRemoved } = useToBeState(sid);
+  const selectedElementPropertyNames = useMemo(() => (
+    asArray(camundaPropertiesDraft?.properties?.extensionProperties)
+      .map((row) => str(row?.name))
+      .filter(Boolean)
+  ), [camundaPropertiesDraft]);
+  const dictionaryPropertyNames = useMemo(() => (
+    normalizeOrgPropertyDictionaryBundle(orgPropertyDictionaryBundle)
+      .properties
+      .map((property) => property.propertyKey)
+  ), [orgPropertyDictionaryBundle]);
+  const fieldChips = useMemo(() => buildFieldChips({
+    elementPropertyNames: selectedElementPropertyNames,
+    dictionaryNames: dictionaryPropertyNames,
+    quickNames: DEFAULT_QUICK_PROPERTY_NAMES,
+    hiddenFields: Array.isArray(overlayHiddenFields) ? overlayHiddenFields : null,
+  }), [selectedElementPropertyNames, dictionaryPropertyNames, overlayHiddenFields]);
+  const toBeModel = useMemo(() => deriveToBeModel({
+    toBeState,
+    asIsNames: selectedElementPropertyNames,
+    dictionaryNames: dictionaryPropertyNames,
+  }), [toBeState, selectedElementPropertyNames, dictionaryPropertyNames]);
+  // Removed-tracking: a To-Be name that disappears from the configured rows
+  // while the SAME element stays selected was deleted (or renamed away) —
+  // mark it so the Pool shows the "Removed" badge. Element switches only
+  // re-baseline; they never mark.
+  const toBePrevAsIsRef = useRef({ elementId: "", names: [] });
+  useEffect(() => {
+    const prev = toBePrevAsIsRef.current;
+    if (prev.elementId && prev.elementId === selectedElementId) {
+      prev.names.forEach((name) => {
+        if (!selectedElementPropertyNames.includes(name)) markRemoved(name);
+      });
+    }
+    toBePrevAsIsRef.current = { elementId: selectedElementId, names: selectedElementPropertyNames };
+  }, [selectedElementId, selectedElementPropertyNames, markRemoved]);
   const {
     finalizedCamundaPropertiesDraft,
     selectedCamundaExtensionCanonical,
     finalizedCamundaPropertiesDraftCanonical,
+    overlayPreview,
   } = useCamundaPropertiesOverlayPreview({
     selectedElementId,
     selectedCamundaPropertiesEditable,
@@ -1447,6 +1538,7 @@ export default function NotesPanel({
     propertiesOverlayPreviewDispatchRef,
     onPropertiesOverlayPreviewChange,
     onPropertiesOverlayAlwaysPreviewChange,
+    hiddenFields: Array.isArray(overlayHiddenFields) ? overlayHiddenFields : null,
     // The root process has no canvas geometry: never render a property
     // overlay card for it (properties are edited in the sidebar only).
     suppressOverlayPreview: isProcessLikeSelection,
@@ -2493,6 +2585,24 @@ export default function NotesPanel({
     void saveSelectedCamundaProperties(nextDraft);
   }, [selectedCamundaPropertiesEditable, selectedElementId, showPropertiesFlag, camundaPropertiesDraft, updateCamundaPropertiesDraft, saveSelectedCamundaProperties]);
 
+  // To-Be builder Pool "+": append the field to the element draft (draft-only,
+  // same semantics as addPropertyRow; persists on the global Save).
+  const addPropertyFromPool = useCallback((nameRaw) => {
+    const name = str(nameRaw);
+    if (!name || !selectedCamundaPropertiesEditable) return;
+    const prevRows = asArray(camundaPropertiesDraft?.properties?.extensionProperties);
+    updateCamundaPropertiesDraft({
+      ...camundaPropertiesDraft,
+      properties: {
+        ...camundaPropertiesDraft.properties,
+        extensionProperties: [
+          ...prevRows,
+          { id: `prop_draft_${Date.now()}`, name, value: "" },
+        ],
+      },
+    });
+  }, [camundaPropertiesDraft, selectedCamundaPropertiesEditable, updateCamundaPropertiesDraft]);
+
   const updateBpmnDocumentationDraft = useCallback((nextRowsRaw) => {
     setBpmnDocumentationDraftRows(normalizeDocumentationRows(nextRowsRaw, { keepEmpty: true }));
     setBpmnDocumentationSaveFailed(false);
@@ -3023,6 +3133,28 @@ export default function NotesPanel({
     resetSelectedRobotMeta?.();
   }
 
+  // V2 → display mode coupling (B3): enabling V2 forces the legacy display
+  // mode to «Скрыто» (legacy cards would duplicate the V2 cards) after
+  // capturing the current mode per session; disabling V2 restores it.
+  function handleV2EnabledChange(enabledRaw) {
+    const next = !!enabledRaw;
+    const prev = {
+      showOnSelect: !!resolvedShowPropertiesOverlayOnSelect,
+      showAlways: !!showPropertiesOverlayAlways,
+    };
+    if (next) {
+      writeDisplayModeBeforeV2(sid, captureModeBeforeV2(prev));
+      const forced = applyDisplayMode("hidden", prev);
+      void resolvedOnShowPropertiesOverlayOnSelectChange(forced.showOnSelect);
+      void onShowPropertiesOverlayAlwaysChange?.(forced.showAlways);
+    } else {
+      const restored = restoreModeAfterV2(readDisplayModeBeforeV2(sid), prev);
+      void resolvedOnShowPropertiesOverlayOnSelectChange(restored.showOnSelect);
+      void onShowPropertiesOverlayAlwaysChange?.(restored.showAlways);
+    }
+    void onShowV2OverlaysChange?.(next);
+  }
+
   const sectionShortcuts = [
     {
       id: "paths",
@@ -3081,28 +3213,28 @@ export default function NotesPanel({
         showQuickNav={false}
         onSectionShortcut={openSectionShortcut}
         stickyContent={null}
-        bottomBar={(
+        bottomBar={sidebarGlobalHasChanges ? (
           <div className="sidebarGlobalFooter">
             <div className="sidebarGlobalFooterInner">
               <button
                 type="button"
                 className="primaryBtn sidebarGlobalFooterBtn flex-1"
                 onClick={() => void handleSidebarSaveAll()}
-                disabled={!!disabled || sidebarSaveAllBusy || !sidebarGlobalHasChanges}
+                disabled={!!disabled || sidebarSaveAllBusy}
               >
-                {sidebarSaveAllBusy ? "Сохраняю..." : "Сохранить всё"}
+                {sidebarSaveAllBusy ? "Сохраняю..." : "Сохранить"}
               </button>
               <button
                 type="button"
-                className="secondaryBtn sidebarGlobalFooterBtn px-3"
+                className="sidebarTextBtn sidebarGlobalFooterBtn px-3"
                 onClick={() => void handleSidebarResetAll()}
-                disabled={!!disabled || sidebarSaveAllBusy || !sidebarGlobalHasChanges}
+                disabled={!!disabled || sidebarSaveAllBusy}
               >
-                Сбросить
+                Отмена
               </button>
             </div>
           </div>
-        )}
+        ) : null}
       >
         <div id="element-notes-section" ref={elementNotesSectionRef} className="sidebarRedesignStack">
           <section className="sidebarSettingsSurface">
@@ -3116,64 +3248,39 @@ export default function NotesPanel({
                 title="Свойства"
                 open={!!sectionsOpen.properties}
                 onToggle={toggleSection}
+                headAccessory={isElementMode && selectedCamundaPropertiesEditable ? (
+                  <ExtensionStateMiniIndicator
+                    syncState={camundaExtensionSyncState}
+                    busy={camundaPropertiesBusy}
+                  />
+                ) : null}
               >
-                <div className="sidebarPropertiesDisplaySettings">
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      className="sidebarCheckbox"
-                      checked={!!resolvedShowPropertiesOverlayOnSelect}
-                      onChange={(event) => void resolvedOnShowPropertiesOverlayOnSelectChange(!!event.target.checked)}
-                      disabled={!!disabled}
-                    />
-                    <span>Показывать свойства над задачей при выделении</span>
-                  </label>
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      className="sidebarCheckbox"
-                      checked={!!showPropertiesOverlayAlways}
-                      onChange={(event) => void onShowPropertiesOverlayAlwaysChange?.(!!event.target.checked)}
-                      disabled={!!disabled}
-                      data-testid="bpmn-show-properties-checkbox"
-                    />
-                    <span>Всегда показывать свойства над задачей</span>
-                  </label>
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      className="sidebarCheckbox"
-                      checked={!!showPropertiesFlag}
-                      onChange={(event) => void setShowPropertiesFlag(!!event.target.checked)}
-                      disabled={!!disabled || !!camundaPropertiesBusy || !selectedCamundaPropertiesEditable}
-                      data-testid="bpmn-show-properties-per-element-checkbox"
-                    />
-                    <span>Показывать свойства над задачей</span>
-                  </label>
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted py-1">V2-оверлеи</div>
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      className="sidebarCheckbox"
-                      checked={!!v2OverlaysEnabled}
-                      onChange={(event) => void onShowV2OverlaysChange?.(!!event.target.checked)}
-                      disabled={!!disabled}
-                      data-testid="bpmn-show-v2-overlays-checkbox"
-                    />
-                    <span>Показывать все V2-оверлеи свойств</span>
-                  </label>
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      className="sidebarCheckbox"
-                      checked={!!v2OverlaysExpanded}
-                      onChange={(event) => void onShowV2OverlaysExpandedChange?.(!!event.target.checked)}
-                      disabled={!!disabled || !v2OverlaysEnabled}
-                      data-testid="bpmn-show-v2-overlays-expanded-checkbox"
-                    />
-                    <span>Показывать все V2-оверлеи свойств раскрытыми</span>
-                  </label>
-                </div>
+                <DisplaySettingsBlock
+                  displayMode={deriveDisplayMode({
+                    showOnSelect: !!resolvedShowPropertiesOverlayOnSelect,
+                    showAlways: !!showPropertiesOverlayAlways,
+                  })}
+                  onDisplayModeChange={(mode) => {
+                    const next = applyDisplayMode(mode, {
+                      showOnSelect: !!resolvedShowPropertiesOverlayOnSelect,
+                    });
+                    void resolvedOnShowPropertiesOverlayOnSelectChange(next.showOnSelect);
+                    void onShowPropertiesOverlayAlwaysChange?.(next.showAlways);
+                  }}
+                  v2Enabled={!!v2OverlaysEnabled}
+                  onV2EnabledChange={handleV2EnabledChange}
+                  v2Mode={v2OverlaysExpanded ? "expanded" : "compact"}
+                  onV2ModeChange={(mode) => void onShowV2OverlaysExpandedChange?.(mode === "expanded")}
+                  chips={fieldChips}
+                  onToggleField={onOverlayFieldToggle}
+                  disabled={!!disabled}
+                />
+                {isElementMode && selectedCamundaPropertiesEditable && !isProcessLikeSelection && (
+                  <LiveCardPreview
+                    preview={overlayPreview}
+                    elementName={selectedElementId}
+                  />
+                )}
                 <CamundaPropertiesSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   selectedElementType={isElementMode ? selectedElementType : ""}
@@ -3209,6 +3316,36 @@ export default function NotesPanel({
                   onSaveBpmnDocumentation={saveSelectedBpmnDocumentation}
                   onResetBpmnDocumentation={resetSelectedBpmnDocumentation}
                   onFocusDrawioCompanion={onFocusDrawioCompanion}
+                  afterQuickProperties={isElementMode && selectedCamundaPropertiesEditable ? (
+                    <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary sidebarPropertiesBlock--wide">
+                      <div className="sidebarPropertiesBlockHead">
+                        <button
+                          type="button"
+                          className="sidebarPropertiesBlockToggle"
+                          onClick={() => setToBeOpen((prev) => !prev)}
+                          aria-expanded={toBeOpen ? "true" : "false"}
+                        >
+                          <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{toBeOpen ? "▾" : "▸"}</span>
+                          <span className="sidebarPropertiesBlockTitle">To-Be</span>
+                          <span className="toBePills">
+                            {toBeModel.inToBeCount} in To-Be / {toBeModel.skippedCount} skipped
+                          </span>
+                        </button>
+                      </div>
+                      {toBeOpen ? (
+                        <ToBeBuilder
+                          asIs={toBeModel.asIs}
+                          pool={toBeModel.pool}
+                          inToBeCount={toBeModel.inToBeCount}
+                          skippedCount={toBeModel.skippedCount}
+                          disabled={disabled}
+                          onAddFromPool={addPropertyFromPool}
+                          onToggleToBe={toggleToBe}
+                          hideHeader
+                        />
+                      ) : null}
+                    </section>
+                  ) : null}
                   disabled={disabled}
                   hideActions
                 />

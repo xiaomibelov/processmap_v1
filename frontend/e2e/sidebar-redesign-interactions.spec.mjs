@@ -34,18 +34,12 @@ async function selectTaskOnCanvas(page, elementId = "Task_1") {
   await page.waitForTimeout(500);
 }
 
-async function waitForGlobalFooter(page) {
-  const footer = page.locator(".sidebarGlobalFooter");
-  await expect(footer).toBeVisible();
-  return footer;
-}
-
 async function saveAllButton(page) {
-  return page.locator(".sidebarGlobalFooter .primaryBtn").filter({ hasText: "Сохранить всё" });
+  return page.locator(".sidebarGlobalFooter .primaryBtn").filter({ hasText: "Сохранить" });
 }
 
 async function resetAllButton(page) {
-  return page.locator(".sidebarGlobalFooter .secondaryBtn").filter({ hasText: "Сбросить" });
+  return page.locator(".sidebarGlobalFooter .sidebarTextBtn").filter({ hasText: "Отмена" });
 }
 
 async function openAccordionSection(page, sectionId) {
@@ -97,41 +91,39 @@ test.describe("sidebar redesign variant A", () => {
     await selectTaskOnCanvas(page, "Task_1");
     await openAccordionSection(page, "properties");
     await expandPropertiesBlockByTitle(page, "Операция");
-    await page.locator(".sidebarGlobalFooter").waitFor({ state: "visible", timeout: 10000 });
   });
 
   test("applies redesign classes to sidebar controls", async ({ page }) => {
-    await expect(page.locator("input.sidebarCheckbox")).not.toHaveCount(0);
+    // P1 UX redesign: display-settings checkboxes were replaced by the
+    // segmented control + toggle switch primitives.
+    await expect(page.locator('[data-testid="display-mode"] .segmentedControlSegment')).not.toHaveCount(0);
+    await expect(page.locator('.toggleSwitch').first()).toBeVisible();
     await expect(page.locator("input.sidebarInput")).not.toHaveCount(0);
     await expect(page.locator("select.sidebarSelect")).not.toHaveCount(0);
     await expect(page.locator("button.sidebarAddBtn")).not.toHaveCount(0);
     await expect(page.locator("button.sidebarPropertyActionBtn")).not.toHaveCount(0);
   });
 
-  test("global footer is disabled when nothing is dirty", async ({ page }) => {
-    const saveBtn = await saveAllButton(page);
-    const resetBtn = await resetAllButton(page);
-    await expect(saveBtn).toBeDisabled();
-    await expect(resetBtn).toBeDisabled();
+  test("global footer is not rendered when nothing is dirty", async ({ page }) => {
+    await expect(page.locator(".sidebarGlobalFooter")).toHaveCount(0);
   });
 
-  test("checkbox toggles and does not spuriously enable the global footer", async ({ page }) => {
-    const checkbox = page.getByTestId("bpmn-show-v2-overlays-checkbox");
-    await expect(checkbox).not.toBeChecked();
+  test("V2 toggle switches and does not spuriously show the global footer", async ({ page }) => {
+    const toggle = page.getByTestId("v2-toggle");
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
 
-    await checkbox.click();
-    await expect(checkbox).toBeChecked();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
 
-    const saveBtn = await saveAllButton(page);
-    const resetBtn = await resetAllButton(page);
-    await expect(saveBtn).toBeDisabled();
-    await expect(resetBtn).toBeDisabled();
+    // V2/display-mode changes persist locally — they are NOT unsaved element
+    // changes, so the floating save bar must stay hidden.
+    await expect(page.locator(".sidebarGlobalFooter")).toHaveCount(0);
 
-    await checkbox.click();
-    await expect(checkbox).not.toBeChecked();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
   });
 
-  test("input change enables footer and save all persists the change", async ({ page }) => {
+  test("input change shows the footer and save all persists the change", async ({ page }) => {
     const docBlock = await expandPropertiesBlockByTitle(page, "BPMN Documentation");
     const addBtn = docBlock.locator("button.sidebarAddBtn").filter({ hasText: "Добавить Documentation" });
     await expect(addBtn).toBeVisible();
@@ -147,7 +139,7 @@ test.describe("sidebar redesign variant A", () => {
     await expect(resetBtn).toBeEnabled();
 
     await saveBtn.click();
-    await expect(saveBtn).toBeDisabled();
-    await expect(resetBtn).toBeDisabled();
+    // Saved: no pending changes — the floating bar hides again.
+    await expect(page.locator(".sidebarGlobalFooter")).toHaveCount(0, { timeout: 20000 });
   });
 });

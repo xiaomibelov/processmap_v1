@@ -154,12 +154,12 @@ async function deleteProperty(page, name) {
 }
 
 async function clickSaveAll(page) {
-  const btn = page.locator(".sidebarGlobalFooter .sidebarGlobalFooterBtn").filter({ hasText: "Сохранить всё" }).first();
+  const btn = page.locator(".sidebarGlobalFooter").getByRole("button", { name: "Сохранить", exact: true });
   await expect(btn).toBeVisible({ timeout: 15000 });
   await expect(btn).toBeEnabled({ timeout: 15000 });
   await btn.click();
-  // wait until the footer reports no pending changes (button disabled) again
-  await expect(btn).toBeDisabled({ timeout: 20000 });
+  // Saved: no pending changes — the floating save bar hides again.
+  await expect(page.locator(".sidebarGlobalFooter")).toHaveCount(0, { timeout: 20000 });
 }
 
 async function setupSession(page, request) {

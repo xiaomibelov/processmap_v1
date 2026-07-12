@@ -1193,6 +1193,7 @@ export function CamundaPropertiesSettings({
   onSaveBpmnDocumentation,
   onResetBpmnDocumentation,
   onFocusDrawioCompanion,
+  afterQuickProperties = null,
   hideActions = false,
   disabled = false,
 }) {
@@ -1205,6 +1206,8 @@ export function CamundaPropertiesSettings({
     setOperationPropertiesOpen,
     additionalBpmnOpen,
     setAdditionalBpmnOpen,
+    quickPropsOpen,
+    setQuickPropsOpen,
     documentationOpen,
     setDocumentationOpen,
     camundaIoOpen,
@@ -1248,6 +1251,9 @@ export function CamundaPropertiesSettings({
     onExtensionStateDraftChange,
   });
   const [addingQuick, setAddingQuick] = useState(false);
+  // «Вспомогательное» block: collapsible, collapsed by default on entry
+  // (local-only state, never persisted).
+  const [auxiliaryOpen, setAuxiliaryOpen] = useState(false);
   const normalizedState = useMemo(() => normalizeCamundaExtensionState(state), [state]);
   const propertyContext = selectedBpmnPropertyContext && typeof selectedBpmnPropertyContext === "object"
     ? selectedBpmnPropertyContext
@@ -1270,9 +1276,11 @@ export function CamundaPropertiesSettings({
     pinName(name);
   }
 
-  // Delete-from-Quick semantics: a user-pinned row is only unpinned (the row
-  // stays and surfaces in Additional); a default-name or unpinned row is
-  // hard-deleted and flushed (unified with Additional's auto-save).
+  // Delete-from-Quick semantics: a pinned row (user pin OR default —
+  // defaults are initial pins only) is only unpinned: the row stays in the
+  // draft and surfaces in Additional (no data loss). A non-pinned row
+  // (cannot normally appear in Quick) is hard-deleted and flushed (unified
+  // with Additional's auto-save).
   function handleQuickDelete(rowId) {
     const row = quickRows.find((r) => String(r?.id || "") === String(rowId || ""));
     const rowName = String(row?.name || "");
@@ -1943,65 +1951,6 @@ async function handleSaveAll() {
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div className="sidebarControlStack sidebarPropertiesLayout sidebarPropertiesLayout--centered" onKeyDown={handlePropertiesKeyDown}>
       <section className="sidebarPropertiesForm" data-testid="camunda-properties-group">
-        <section className="sidebarPropertiesBlock sidebarPropertiesBlock--primary">
-          <div className="sidebarPropertiesBlockHead">
-            <span className="sidebarPropertiesBlockTitle">Быстрые свойства</span>
-            <SidebarInfoTip
-              label="О быстрых свойствах"
-              text="Приоритетные свойства элемента: ee_time и ingredient_value."
-            />
-          </div>
-          <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarPropertiesRows--zebra">
-            <div className="sidebarPropertiesTableHead" role="presentation">
-              <span>Свойство</span>
-              <span>Значение</span>
-              <span>Действие</span>
-            </div>
-            {quickPropertyNames.map((name) => {
-              const row = quickRows.find((r) => toText(r?.name).toLowerCase() === name);
-              if (!row) {
-                return (
-                  <QuickEmptyPropertyRow
-                    key={name}
-                    name={name}
-                    disabled={disabled}
-                    extensionStateBusy={extensionStateBusy}
-                    onCreate={handleQuickCreate}
-                  />
-                );
-              }
-              return (
-                <InlineBpmnPropertyRow
-                  key={String(row?.id || name)}
-                  row={row}
-                  disabled={disabled}
-                  extensionStateBusy={extensionStateBusy}
-                  updatePropertyRow={updatePropertyRow}
-                  deletePropertyRow={handleQuickDelete}
-                />
-              );
-            })}
-            {addingQuick ? (
-              <QuickNewPropertyRow
-                disabled={disabled}
-                extensionStateBusy={extensionStateBusy}
-                onCommit={handleQuickAddNamed}
-                onCancel={() => setAddingQuick(false)}
-              />
-            ) : null}
-          </div>
-          <div className="sidebarButtonRow">
-            <button
-              type="button"
-              className="sidebarAddBtn"
-              onClick={() => setAddingQuick(true)}
-              disabled={!!disabled || !!extensionStateBusy || addingQuick}
-            >
-              + Добавить быстрое свойство
-            </button>
-          </div>
-        </section>
-
         <AdditionalBpmnPropertiesSection
           open={additionalBpmnOpen}
           onToggleOpen={setAdditionalBpmnOpen}
@@ -2016,6 +1965,80 @@ async function handleSaveAll() {
           addPropertyRow={addPropertyRow}
           onSaveExtensionState={onSaveExtensionState}
         />
+
+        <section className="sidebarPropertiesBlock sidebarPropertiesBlock--primary sidebarPropertiesBlock--wide">
+          <div className="sidebarPropertiesBlockHead">
+            <button
+              type="button"
+              className="sidebarPropertiesBlockToggle"
+              onClick={() => setQuickPropsOpen((prev) => !prev)}
+              aria-expanded={quickPropsOpen ? "true" : "false"}
+            >
+              <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{quickPropsOpen ? "▾" : "▸"}</span>
+              <span className="sidebarPropertiesBlockTitle">Быстрые свойства</span>
+              <span className="sidebarPropertiesBlockMeta">{quickRows.length}</span>
+            </button>
+            <SidebarInfoTip
+              label="О быстрых свойствах"
+              text="Приоритетные свойства элемента: ee_time и ingredient_value."
+            />
+          </div>
+          {quickPropsOpen ? (
+            <>
+              <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarPropertiesRows--zebra">
+                <div className="sidebarPropertiesTableHead" role="presentation">
+                  <span>Свойство</span>
+                  <span>Значение</span>
+                  <span>Действие</span>
+                </div>
+                {quickPropertyNames.map((name) => {
+                  const row = quickRows.find((r) => toText(r?.name).toLowerCase() === name);
+                  if (!row) {
+                    return (
+                      <QuickEmptyPropertyRow
+                        key={name}
+                        name={name}
+                        disabled={disabled}
+                        extensionStateBusy={extensionStateBusy}
+                        onCreate={handleQuickCreate}
+                      />
+                    );
+                  }
+                  return (
+                    <InlineBpmnPropertyRow
+                      key={String(row?.id || name)}
+                      row={row}
+                      disabled={disabled}
+                      extensionStateBusy={extensionStateBusy}
+                      updatePropertyRow={updatePropertyRow}
+                      deletePropertyRow={handleQuickDelete}
+                    />
+                  );
+                })}
+                {addingQuick ? (
+                  <QuickNewPropertyRow
+                    disabled={disabled}
+                    extensionStateBusy={extensionStateBusy}
+                    onCommit={handleQuickAddNamed}
+                    onCancel={() => setAddingQuick(false)}
+                  />
+                ) : null}
+              </div>
+              <div className="sidebarButtonRow">
+                <button
+                  type="button"
+                  className="sidebarAddBtn"
+                  onClick={() => setAddingQuick(true)}
+                  disabled={!!disabled || !!extensionStateBusy || addingQuick}
+                >
+                  + Добавить быстрое свойство
+                </button>
+              </div>
+            </>
+          ) : null}
+        </section>
+
+        {afterQuickProperties}
 
         {isTaskLikeBpmnType(selectedElementType) ? (
           <PropertyGroup title="Идентификация и операция">
@@ -2404,44 +2427,59 @@ async function handleSaveAll() {
           </section>
         </PropertyGroup>
 
-        <PropertyGroup title="Вспомогательное">
-          <SidebarTrustStatus
-            title={<span>BPMN extension-state</span>}
-            label={extensionStateStatusMeta.label}
-            helper={extensionStateStatusMeta.helper}
-            tone={extensionStateStatusMeta.tone}
-            ctaLabel={extensionStateStatusMeta.cta}
-            onCta={onRetryExtensionState}
-            ctaDisabled={!!disabled || !!extensionStateBusy}
-            ctaVariant={String(extensionStateStatusMeta.tone || "").trim().toLowerCase() === "error" ? "primary" : "secondary"}
-            testIdPrefix="camunda-extension-state-status"
-          />
+        <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="auxiliary-properties-block">
+          <div className="sidebarPropertiesBlockHead">
+            <button
+              type="button"
+              className="sidebarPropertiesBlockToggle"
+              onClick={() => setAuxiliaryOpen((prev) => !prev)}
+              aria-expanded={auxiliaryOpen ? "true" : "false"}
+            >
+              <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{auxiliaryOpen ? "▾" : "▸"}</span>
+              <span className="sidebarPropertiesBlockTitle">Вспомогательное</span>
+            </button>
+          </div>
+          {auxiliaryOpen ? (
+            <>
+              <SidebarTrustStatus
+                title={<span>BPMN extension-state</span>}
+                label={extensionStateStatusMeta.label}
+                helper={extensionStateStatusMeta.helper}
+                tone={extensionStateStatusMeta.tone}
+                ctaLabel={extensionStateStatusMeta.cta}
+                onCta={onRetryExtensionState}
+                ctaDisabled={!!disabled || !!extensionStateBusy}
+                ctaVariant={String(extensionStateStatusMeta.tone || "").trim().toLowerCase() === "error" ? "primary" : "secondary"}
+                testIdPrefix="camunda-extension-state-status"
+              />
 
-          {otherPropertySections.map((section) => renderPropertyContextSection(section))}
+              {otherPropertySections.map((section) => renderPropertyContextSection(section))}
 
-          {renderOverlayCompanionsSection()}
+              {renderOverlayCompanionsSection()}
 
-          {!hideActions ? (
-            <div className="sidebarPropertiesFooter sidebarPropertiesFooter--sticky sidebarButtonRow">
-              <button
-                type="button"
-                className="primaryBtn sidebarPropertiesActionBtn flex-1"
-                onClick={handleSaveAll}
-                disabled={!!disabled || !!extensionStateBusy || !!bpmnDocumentationBusy}
-              >
-                {extensionStateBusy || bpmnDocumentationBusy ? "Сохраняю..." : "Сохранить всё"}
-              </button>
-              <button
-                type="button"
-                className="secondaryBtn sidebarPropertiesActionBtn px-3"
-                onClick={handleResetAll}
-                disabled={!!disabled || !!extensionStateBusy || !!bpmnDocumentationBusy}
-              >
-                Сбросить
-              </button>
-            </div>
+              {!hideActions ? (
+                <div className="sidebarPropertiesFooter sidebarPropertiesFooter--sticky sidebarButtonRow">
+                  <button
+                    type="button"
+                    className="primaryBtn sidebarPropertiesActionBtn flex-1"
+                    onClick={handleSaveAll}
+                    disabled={!!disabled || !!extensionStateBusy || !!bpmnDocumentationBusy}
+                  >
+                    {extensionStateBusy || bpmnDocumentationBusy ? "Сохраняю..." : "Сохранить всё"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondaryBtn sidebarPropertiesActionBtn px-3"
+                    onClick={handleResetAll}
+                    disabled={!!disabled || !!extensionStateBusy || !!bpmnDocumentationBusy}
+                  >
+                    Сбросить
+                  </button>
+                </div>
+              ) : null}
+            </>
           ) : null}
-        </PropertyGroup>
+        </section>
       </section>
 
       {(() => {
