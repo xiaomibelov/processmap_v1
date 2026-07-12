@@ -4873,10 +4873,12 @@
     gap: 4px;
   }
 
-  /* Extension-state mini indicator (top of the Properties tab). */
-  .propertiesTabTopRow {
-    @apply flex items-center justify-end;
-    padding: 0 2px 4px;
+  /* Extension-state mini indicator — lives in the accordion header
+     (sidebar-redesign-v2, G1). */
+  .sidebarAccordionHeaderRight {
+    @apply inline-flex items-center;
+    flex-shrink: 0;
+    margin-right: 4px;
   }
 
   .extensionStateMini {
