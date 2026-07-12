@@ -2,7 +2,7 @@
   "contour": "feature/sidebar-redesign-v2",
   "branch": "feature/sidebar-redesign-v2",
   "base": "origin/main@5aabba98",
-  "state": "in-progress",
+  "state": "pr-open",
   "states": [
     "planned",
     "approved",
@@ -36,10 +36,18 @@
     "G4": "DONE: sidebar-redesign-v2.spec.mjs (3 scenarios) + shared helpers module"
   },
   "blockers": [],
-  "next": "Awaiting user command for push/PR. PR #524 stays open; user decides 524 vs v2.",
+  "next": "PR #527 open. Awaiting review/CI. Stage verification after merge approval. PR #524 = subset of this branch.",
   "implementationComplete": "2026-07-12",
   "notes": [
     "quick-delete auto-saves (handleQuickDelete flushes onSaveExtensionState) — e2e asserts the auto-save PUT",
     "reference screenshot still not provided; G2/G3 done by text description"
+  ],
+  "pr": "https://github.com/xiaomibelov/processmap_v1/pull/527",
+  "prOpened": "2026-07-12",
+  "commits": [
+    "cherry-picks da54aaf3..979d1b0e",
+    "3cbdb2cb docs REVIEW_REPORT",
+    "c787c296 feat G1/G2/G4",
+    "docs PR.md"
   ]
 }
