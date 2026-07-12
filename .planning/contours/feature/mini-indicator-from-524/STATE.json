@@ -3,11 +3,18 @@
   "branch": "feature/mini-indicator-from-524",
   "base": "origin/main@47a0c12f (post-merge #525)",
   "state": "pr-open",
-  "states": ["planned", "in-progress", "stage-verified", "pr-open", "approved", "merged"],
+  "states": [
+    "planned",
+    "in-progress",
+    "stage-verified",
+    "pr-open",
+    "approved",
+    "merged"
+  ],
   "pr": 526,
   "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/526",
   "created": "2026-07-12T09:10:00Z",
-  "updated": "2026-07-12T10:40:00Z",
+  "updated": "2026-07-12T10:55:00Z",
   "commits": {
     "1a": "8e772c0d — ExtensionStateMiniIndicator + CSS + NotesPanel topRow + unit 8/8 + e2e spec",
     "1b": "08f42c5c — BpmnStage clear-before-remount reorder"
@@ -19,5 +26,23 @@
     "stage_e2e": "7/7 PASS (34.5s): extension-state-mini 2/2 + process-properties 5/5"
   },
   "source": "Tier 1 cherry-pick из PR #524; анализ: Audits/PR524-Inventory-Borrowability-2026-07-12.md",
-  "pending": "AWAITING explicit user approval to merge PR #526"
+  "pending": "AWAITING explicit user approval to merge PR #526",
+  "ux_redesign_phase": {
+    "status": "design-awaiting-approval",
+    "artifacts": [
+      "PLAN.md",
+      "UI.md",
+      "API.md",
+      "TESTS.md",
+      "PR.md"
+    ],
+    "scope": "Segmented display mode; V2 toggle+sub-control; quick chips; BPMN KV-list; floating SaveBar",
+    "open_questions": [
+      "Q1: SaveBar floating vs header",
+      "Q2: additional-BPMN delete auto-save -> draft-only",
+      "Q3: per-element flag toggle placement",
+      "Q4: 'Скрыто' semantics confirm"
+    ],
+    "constraints": "no code/deploy/PR until approve; save pipeline untouched; fpc-show-properties preserved; --kimi-* tokens mapped to tokens.css (D2)"
+  }
 }
