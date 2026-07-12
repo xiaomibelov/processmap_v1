@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {
   DISPLAY_MODES,
   V2_MODES,
+  applyV2ModeChange,
   createDefaultDisplaySettings,
   sanitizeDisplayMode,
   sanitizeV2Mode,
@@ -28,6 +29,7 @@ test('createDefaultDisplaySettings: hover + none + nothing hidden', () => {
   assert.deepEqual(createDefaultDisplaySettings(), {
     displayMode: 'hover',
     v2Mode: 'none',
+    displayModeBeforeV2: null,
     hiddenFields: [],
   });
 });
@@ -69,10 +71,11 @@ test('sanitizeHiddenFields: empty array stays empty (nothing hidden)', () => {
 });
 
 test('readOverlayDisplaySettings: valid raw passes through', () => {
-  const raw = { displayMode: 'always', v2Mode: 'expanded', hiddenFields: ['ee_time'] };
+  const raw = { displayMode: 'always', v2Mode: 'expanded', displayModeBeforeV2: 'hover', hiddenFields: ['ee_time'] };
   assert.deepEqual(readOverlayDisplaySettings(raw), {
     displayMode: 'always',
     v2Mode: 'expanded',
+    displayModeBeforeV2: 'hover',
     hiddenFields: ['ee_time'],
   });
 });
@@ -105,7 +108,7 @@ test('migrateLegacyAlwaysFlag: true-ish -> always, everything else -> hover', ()
 
 test('expanded mode needs no separate enabled flag (structural invariant)', () => {
   const settings = createDefaultDisplaySettings();
-  assert.deepEqual(Object.keys(settings).sort(), ['displayMode', 'hiddenFields', 'v2Mode']);
+  assert.deepEqual(Object.keys(settings).sort(), ['displayMode', 'displayModeBeforeV2', 'hiddenFields', 'v2Mode']);
   settings.v2Mode = 'expanded';
   assert.equal('v2Enabled' in settings, false);
   assert.equal('v2Expanded' in settings, false);
@@ -142,6 +145,7 @@ test('loadOverlayDisplaySettings: reads and validates stored value', () => {
   assert.deepEqual(loadOverlayDisplaySettings(storage, 's1'), {
     displayMode: 'always',
     v2Mode: 'expanded',
+    displayModeBeforeV2: null,
     hiddenFields: ['ee_time'],
   });
 });
@@ -176,15 +180,15 @@ test('saveOverlayDisplaySettings: writes validated JSON, round-trip stable', () 
   const ok = saveOverlayDisplaySettings(storage, 's1', { displayMode: 'always', v2Mode: 'all', hiddenFields: ['ee_time'] });
   assert.equal(ok, true);
   const stored = JSON.parse(storage.getItem('fpc_overlay_display_v1:s1'));
-  assert.deepEqual(stored, { displayMode: 'always', v2Mode: 'all', hiddenFields: ['ee_time'] });
+  assert.deepEqual(stored, { displayMode: 'always', v2Mode: 'all', displayModeBeforeV2: null, hiddenFields: ['ee_time'] });
   assert.deepEqual(loadOverlayDisplaySettings(storage, 's1'), stored);
 });
 
 test('saveOverlayDisplaySettings: sanitizes before writing', () => {
   const storage = makeStorage();
-  saveOverlayDisplaySettings(storage, 's1', { displayMode: 'WRONG', v2Mode: null, hiddenFields: 'oops' });
+  saveOverlayDisplaySettings(storage, 's1', { displayMode: 'WRONG', v2Mode: null, displayModeBeforeV2: 'WRONG', hiddenFields: 'oops' });
   const stored = JSON.parse(storage.getItem('fpc_overlay_display_v1:s1'));
-  assert.deepEqual(stored, { displayMode: 'hover', v2Mode: 'none', hiddenFields: [] });
+  assert.deepEqual(stored, { displayMode: 'hover', v2Mode: 'none', displayModeBeforeV2: null, hiddenFields: [] });
 });
 
 test('saveOverlayDisplaySettings: throwing storage -> false, no crash', () => {
@@ -196,4 +200,74 @@ test('saveOverlayDisplaySettings: empty session id -> false, nothing written', (
   const storage = makeStorage();
   assert.equal(saveOverlayDisplaySettings(storage, '', createDefaultDisplaySettings()), false);
   assert.equal(storage._map.size, 0);
+});
+
+// --- V2 → displayMode coupling (applyV2ModeChange) ---
+
+test('applyV2ModeChange: turning V2 on forces displayMode=hidden and remembers the previous mode', () => {
+  const prev = { displayMode: 'always', v2Mode: 'none', displayModeBeforeV2: null, hiddenFields: [] };
+  const next = applyV2ModeChange(prev, 'all');
+  assert.equal(next.v2Mode, 'all');
+  assert.equal(next.displayMode, 'hidden');
+  assert.equal(next.displayModeBeforeV2, 'always');
+  assert.deepEqual(next.hiddenFields, []);
+});
+
+test('applyV2ModeChange: turning V2 off restores the remembered display mode', () => {
+  const prev = { displayMode: 'hidden', v2Mode: 'all', displayModeBeforeV2: 'always', hiddenFields: [] };
+  const next = applyV2ModeChange(prev, 'none');
+  assert.equal(next.v2Mode, 'none');
+  assert.equal(next.displayMode, 'always');
+  assert.equal(next.displayModeBeforeV2, null);
+});
+
+test('applyV2ModeChange: turning V2 off without a stored previous falls back sanely', () => {
+  const prev = { displayMode: 'hidden', v2Mode: 'expanded', displayModeBeforeV2: null, hiddenFields: [] };
+  const next = applyV2ModeChange(prev, 'none');
+  assert.equal(next.v2Mode, 'none');
+  // beforeV2 is null -> falls back to the current mode ("hidden" by then);
+  // acceptable, the user can re-pick explicitly. Never an invalid value.
+  assert.ok(DISPLAY_MODES.includes(next.displayMode));
+  assert.equal(next.displayMode, 'hidden');
+  assert.equal(next.displayModeBeforeV2, null);
+});
+
+test('applyV2ModeChange: switching between V2 modes keeps a single beforeV2', () => {
+  const prev = { displayMode: 'hidden', v2Mode: 'all', displayModeBeforeV2: 'always', hiddenFields: [] };
+  const next = applyV2ModeChange(prev, 'expanded');
+  assert.equal(next.v2Mode, 'expanded');
+  assert.equal(next.displayMode, 'hidden');
+  assert.equal(next.displayModeBeforeV2, 'always', 'beforeV2 must not be overwritten by the forced hidden mode');
+});
+
+test('applyV2ModeChange: none -> none only sanitizes v2Mode', () => {
+  const prev = { displayMode: 'hover', v2Mode: 'none', displayModeBeforeV2: null, hiddenFields: ['x'] };
+  const next = applyV2ModeChange(prev, 'none');
+  assert.deepEqual(next, prev);
+});
+
+test('applyV2ModeChange: invalid nextV2Mode is sanitized (treated as off)', () => {
+  const prev = { displayMode: 'hidden', v2Mode: 'all', displayModeBeforeV2: 'hover', hiddenFields: [] };
+  const next = applyV2ModeChange(prev, 'garbage');
+  assert.equal(next.v2Mode, 'none');
+  assert.equal(next.displayMode, 'hover');
+});
+
+test('persistence round-trips displayModeBeforeV2', () => {
+  const storage = makeStorage();
+  const ok = saveOverlayDisplaySettings(storage, 's1', {
+    displayMode: 'hidden', v2Mode: 'all', displayModeBeforeV2: 'always', hiddenFields: [],
+  });
+  assert.equal(ok, true);
+  const loaded = loadOverlayDisplaySettings(storage, 's1');
+  assert.equal(loaded.displayModeBeforeV2, 'always');
+});
+
+test('direct displayMode change leaves v2Mode and beforeV2 untouched', () => {
+  // Same merge semantics as useOverlayDisplaySettings.setDisplayMode.
+  const prev = { displayMode: 'hidden', v2Mode: 'all', displayModeBeforeV2: 'always', hiddenFields: [] };
+  const next = { ...prev, displayMode: sanitizeDisplayMode('hover') };
+  assert.equal(next.displayMode, 'hover');
+  assert.equal(next.v2Mode, 'all');
+  assert.equal(next.displayModeBeforeV2, 'always');
 });

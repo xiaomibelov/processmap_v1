@@ -129,10 +129,9 @@ test("deleting an additional BPMN property removes it from the element", async (
     return xml.includes('name="priority"');
   }).toBe(false);
 
-  // Deletion is flushed immediately, so there are no remaining unsaved changes
-  // and the global save button stays disabled.
-  const saveBtn = page.locator(".sidebarGlobalFooter").getByRole("button", { name: "Сохранить всё" });
-  await expect(saveBtn).toBeDisabled();
+  // Deletion is flushed immediately, so there are no remaining unsaved
+  // changes and the floating save bar is not rendered at all.
+  await expect(page.locator(".sidebarGlobalFooter")).toHaveCount(0);
 
   const serverXml = await getServerBpmnXml(request, fixture.sessionId, auth.accessToken);
   expect(serverXml).not.toContain('name="priority"');

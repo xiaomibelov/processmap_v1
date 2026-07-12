@@ -156,7 +156,7 @@ async function saveAll(page) {
     (res) => res.url().includes("/bpmn") && res.request().method() === "PUT",
     { timeout: 30_000 },
   );
-  await page.getByRole("button", { name: "Сохранить всё" }).click();
+  await page.locator(".sidebarGlobalFooter").getByRole("button", { name: "Сохранить", exact: true }).click();
   const putRes = await putWait;
   expect(putRes.ok(), `PUT bpmn status ${putRes.status()}`).toBeTruthy();
 }
@@ -289,7 +289,7 @@ test("chip toggle hides the field from legacy and V2 cards (data untouched)", as
 
 // --- Scenario 5 (AC4, AC5): V2 expanded + legacy decor cleared --------------
 
-test("v2Mode «Раскрытые» expands V2 hosts and clears legacy decor", async ({ page, request }) => {
+test("v2Mode «Раскрытые» expands V2 hosts, hides legacy display mode and restores it on off", async ({ page, request }) => {
   const problems = collectConsoleProblems(page);
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   await bootDiagram(page, request, `ppr_v2exp_${runId}`);
@@ -298,12 +298,27 @@ test("v2Mode «Раскрытые» expands V2 hosts and clears legacy decor", a
   await expect(page.locator(".fpcPropertyOverlay")).toHaveCount(1, { timeout: 15_000 });
 
   await openPropertiesSection(page);
+  const displaySelect = page.locator('[data-testid="overlay-display-mode-select"]');
+  await expect(displaySelect).toHaveValue("hover");
+  await expect(displaySelect).toBeEnabled();
+
   await page.locator('[data-testid="overlay-v2-mode-select"]').selectOption("expanded");
 
   await expect(page.locator(".fpc-overlay-v2-host--expanded").first()).toBeVisible({ timeout: 15_000 });
   await expect
     .poll(async () => page.locator(".fpcPropertyOverlay").count(), { timeout: 15_000 })
     .toBe(0);
+
+  // V2→displayMode coupling: legacy mode is forced to «hidden» and the
+  // select is locked with an explanatory hint while V2 is on.
+  await expect(displaySelect).toHaveValue("hidden");
+  await expect(displaySelect).toBeDisabled();
+  await expect(page.locator("#overlay-display-mode-hint")).toHaveText("Скрыто автоматически: включены V2-оверлеи");
+
+  // Turning V2 back off restores the previous display mode.
+  await page.locator('[data-testid="overlay-v2-mode-select"]').selectOption("none");
+  await expect(displaySelect).toHaveValue("hover", { timeout: 10_000 });
+  await expect(displaySelect).toBeEnabled();
 
   expect(problems, problems.join("\n")).toEqual([]);
 });
@@ -443,7 +458,7 @@ test("panel groups collapse and stay collapsed across a reload", async ({ page, 
 
 // --- UI refresh: extension-state mini indicator -----------------------------
 
-test("extension-state mini indicator: saved -> dirty on inline edit", async ({ page, request }) => {
+test("extension-state mini indicator: saved -> dirty on inline edit, visible while collapsed", async ({ page, request }) => {
   const problems = collectConsoleProblems(page);
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   await bootDiagram(page, request, `ppr_mini_${runId}`);
@@ -456,6 +471,15 @@ test("extension-state mini indicator: saved -> dirty on inline edit", async ({ p
   await expect(mini).toHaveAttribute("data-tone", "saved");
   await expect(mini).toHaveAttribute("title", "Сохранено");
 
+  // The indicator lives in the accordion HEAD (headAccessory): it must stay
+  // visible when the «Свойства» accordion is collapsed.
+  const head = page.locator('.sidebarAccordion[data-section-id="properties"] > .sidebarAccordionHead');
+  await head.click();
+  await expect(head).toHaveAttribute("aria-expanded", "false");
+  await expect(mini).toBeVisible();
+  await head.click();
+  await expect(head).toHaveAttribute("aria-expanded", "true");
+
   // Inline-edit a value and commit with Enter: the draft diverges from the
   // saved state, so the indicator flips to «dirty» without a save.
   await page.getByLabel("Редактировать свойство ee_time").click();
@@ -465,6 +489,73 @@ test("extension-state mini indicator: saved -> dirty on inline edit", async ({ p
   await valueInput.press("Enter");
   await expect(mini).toHaveAttribute("data-tone", "dirty", { timeout: 15_000 });
   await expect(mini).toHaveAttribute("title", "Есть несохранённые изменения");
+
+  expect(problems, problems.join("\n")).toEqual([]);
+});
+
+// --- Adaptation: collapsible quick properties + removable default pins ----
+
+test("quick properties: collapsible block; a default pin (ee_time) can be removed", async ({ page, request }) => {
+  const problems = collectConsoleProblems(page);
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await bootDiagram(page, request, `ppr_quick_${runId}`);
+
+  await selectTask(page, TASK_A);
+  await openPropertiesSection(page);
+
+  const quickBlock = page.locator(".sidebarPropertiesBlock--primary").first();
+  const quickToggle = quickBlock.locator(".sidebarPropertiesBlockToggle").first();
+  await expect(quickToggle).toBeVisible({ timeout: 15_000 });
+  await expect(quickToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(quickBlock.getByLabel("Редактировать свойство ee_time")).toBeVisible();
+
+  // Collapse: rows leave the DOM; expand: they return.
+  await quickToggle.click();
+  await expect(quickToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(quickBlock.getByLabel("Редактировать свойство ee_time")).toHaveCount(0);
+  await quickToggle.click();
+  await expect(quickToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(quickBlock.getByLabel("Редактировать свойство ee_time")).toBeVisible();
+
+  // Defaults are initial pins only: trash on ee_time unpins it — the row
+  // leaves Quick but stays in the draft (surfaces in «Дополнительные BPMN»).
+  await quickBlock.getByLabel("Удалить свойство ee_time").click();
+  await expect(quickBlock.getByLabel("Редактировать свойство ee_time")).toHaveCount(0, { timeout: 10_000 });
+  const additionalBlock = page.locator(".sidebarPropertiesBlock--wide").first();
+  await expect(additionalBlock.getByLabel("Редактировать свойство ee_time")).toBeVisible({ timeout: 10_000 });
+
+  expect(problems, problems.join("\n")).toEqual([]);
+});
+
+// --- Adaptation: floating save bar gated on unsaved changes ----------------
+
+test("floating save bar: hidden when clean, appears on draft edit, «Отмена» reverts", async ({ page, request }) => {
+  const problems = collectConsoleProblems(page);
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await bootDiagram(page, request, `ppr_savebar_${runId}`);
+
+  await selectTask(page, TASK_A);
+  await openPropertiesSection(page);
+
+  const footer = page.locator(".sidebarGlobalFooter");
+  await expect(footer).toHaveCount(0);
+
+  // Inline draft edit (no save): the bar appears with «Сохранить»/«Отмена».
+  await page.getByLabel("Редактировать свойство ee_time").click();
+  const valueInput = page.locator('.sidebarSchemaPropertyRow.isEditing input[placeholder="Значение"]');
+  await expect(valueInput).toBeVisible({ timeout: 10_000 });
+  await valueInput.fill("0.66");
+  await valueInput.press("Enter");
+  await expect(footer).toBeVisible({ timeout: 15_000 });
+  await expect(footer.getByRole("button", { name: "Сохранить", exact: true })).toBeEnabled();
+  await expect(footer.getByRole("button", { name: "Отмена", exact: true })).toBeEnabled();
+
+  // «Отмена» reverts the draft and hides the bar again.
+  await footer.getByRole("button", { name: "Отмена", exact: true }).click();
+  await expect(footer).toHaveCount(0, { timeout: 15_000 });
+  const preview = page.locator('[data-testid="live-card-preview"]');
+  await expect(preview).toContainText("0.33", { timeout: 10_000 });
+  await expect(preview).not.toContainText("0.66");
 
   expect(problems, problems.join("\n")).toEqual([]);
 });

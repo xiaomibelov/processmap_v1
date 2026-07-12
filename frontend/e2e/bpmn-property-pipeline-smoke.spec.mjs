@@ -80,16 +80,10 @@ async function getServerBpmnXml(request, sessionId, token) {
   return res.text();
 }
 
-async function waitForSaveComplete(saveBtn, { timeout = 15000 } = {}) {
-  await expect
-    .poll(
-      async () => {
-        const [enabled, text] = await Promise.all([saveBtn.isEnabled(), saveBtn.innerText()]);
-        return { enabled, text: text.trim() };
-      },
-      { timeout },
-    )
-    .toEqual({ enabled: false, text: "Сохранить всё" });
+// The floating save bar renders only while there are unsaved changes:
+// after a successful save it disappears from the DOM.
+async function waitForSaveComplete(page, { timeout = 20000 } = {}) {
+  await expect(page.locator(".sidebarGlobalFooter")).toHaveCount(0, { timeout });
 }
 
 test("add/edit/delete additional BPMN property persists without duplicates or missing-XML error", async ({ page, request }) => {
@@ -127,9 +121,9 @@ test("add/edit/delete additional BPMN property persists without duplicates or mi
   const rows = page.locator(".sidebarBpmnPropertyItem");
   await expect(rows).toHaveCount(0);
 
-  const saveBtn = page.locator(".sidebarGlobalFooter").getByRole("button", { name: "Сохранить всё" });
-  await expect(saveBtn).toBeVisible();
-  await expect(saveBtn).toBeDisabled();
+  // Clean state: the floating save bar is not rendered at all.
+  await expect(page.locator(".sidebarGlobalFooter")).toHaveCount(0);
+  const saveBtn = page.locator(".sidebarGlobalFooter").getByRole("button", { name: "Сохранить", exact: true });
 
   // Add a property row.
   const addBtn = page.getByRole("button", { name: /Добавить BPMN-свойство/ });
@@ -157,7 +151,7 @@ test("add/edit/delete additional BPMN property persists without duplicates or mi
 
   // Save via the global footer.
   await saveBtn.click();
-  await waitForSaveComplete(saveBtn);
+  await waitForSaveComplete(page);
 
   // No missing-XML error should appear.
   await expect(page.getByText("Отсутствует BPMN XML")).toHaveCount(0);
@@ -196,7 +190,7 @@ test("add/edit/delete additional BPMN property persists without duplicates or mi
   await expect(saveBtn).toBeEnabled();
 
   await saveBtn.click();
-  await waitForSaveComplete(saveBtn);
+  await waitForSaveComplete(page);
 
   await expect(page.getByText("Отсутствует BPMN XML")).toHaveCount(0);
 

@@ -11,6 +11,10 @@ import { waitForDiagramReady } from "./helpers/diagramReady.mjs";
 // exclusion suppressed the V2 layer). Selecting an element must not remove or
 // duplicate V2 cards, other elements must stay unaffected, and clicking a V2
 // card must still open the properties popover (#521).
+//
+// Adaptation (property-panel-redesign, B3): while V2 is on, the legacy
+// display mode is forced to «hidden» and its select is locked — the legacy
+// select-preview cannot be toggled independently anymore.
 
 const TASK_A = "Task_persistA";
 const TASK_B = "Task_persistB";
@@ -86,6 +90,7 @@ async function enableV2Overlays(page) {
 async function setSelectPreview(page, on) {
   const select = page.locator('[data-testid="overlay-display-mode-select"]');
   await expect(select).toBeVisible({ timeout: 15_000 });
+  await expect(select).toBeEnabled();
   await select.selectOption(on ? "hover" : "hidden");
 }
 
@@ -140,15 +145,23 @@ async function bootDiagramWithV2(page, request, runId) {
   return fixture;
 }
 
-test("V2 overlay persists when element is selected (select-preview on)", async ({ page, request }) => {
+test("V2 overlay persists when element is selected (legacy select-preview toggled while V2 off)", async ({ page, request }) => {
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   await bootDiagramWithV2(page, request, `v2persist_${runId}`);
 
-  // Select Task A, then enable "show properties on select" (it renders only
-  // when an element is selected). The V2 card of the selected element must
-  // survive, and no legacy overlay may duplicate it.
+  // While V2 is on the legacy display mode is forced to «hidden» and locked.
+  const displaySelect = page.locator('[data-testid="overlay-display-mode-select"]');
+  await expect(displaySelect).toHaveValue("hidden");
+  await expect(displaySelect).toBeDisabled();
+
+  // Turn V2 off and enable the select-preview (it renders only when an
+  // element is selected), then re-enable V2: the V2 cards of selected and
+  // deselected elements must survive and no legacy overlay may duplicate them.
+  const v2Select = page.locator('[data-testid="overlay-v2-mode-select"]');
+  await v2Select.selectOption("none");
   await clickTaskOnCanvas(page, TASK_A);
   await setSelectPreview(page, true);
+  await v2Select.selectOption("all");
   await expectV2Hosts(page, [TASK_A, TASK_B]);
   await expectLegacyOverlaysGone(page);
 

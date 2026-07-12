@@ -2,7 +2,7 @@
   "contour": "feature/property-panel-redesign",
   "branch": "feature/property-panel-redesign",
   "base": "origin/main@5aabba98",
-  "state": "pr-open",
+  "state": "in-progress",
   "states": [
     "planned",
     "approved",
@@ -52,7 +52,7 @@
   "findings": {
     "preExistingRenderLoop": "useBpmnSync returns fresh object per render -> registerAppSafeRefreshHandler effect re-runs per render -> AppShell setRefreshRisk ping-pong. Reproduced on clean main@5aabba98. NOT fixed in this contour; separate PR recommended."
   },
-  "next": "PR #524 open. Awaiting review/CI. Stage verification checklist after merge approval. D5 (review runtime) and render-loop separate PR still open questions.",
+  "next": "Adaptation B1-B6 implemented, awaiting user approve for stage deploy + e2e run.",
   "prOpened": "2026-07-11",
   "uiRefresh": {
     "date": "2026-07-11",
@@ -62,5 +62,22 @@
       "quick/additional BPMN properties full width (removed .sidebarPropertiesLayout--centered side padding)",
       "extension-state mini indicator (16px icon + tooltip) at top of Properties tab; detailed SidebarTrustStatus untouched"
     ]
+  },
+  "adaptation": {
+    "date": "2026-07-12",
+    "spec": "REVIEW_REPORT_ADAPT.md (approved: text-only layout, v2Mode!=none = V2 ON, flag round-trip preserved, +10% via negative inset)",
+    "items": [
+      "B1: headAccessory slot in SidebarAccordionSection; ExtensionStateMiniIndicator moved to accordion head (visible when collapsed)",
+      "B2: verified fpc-show-properties round-trips through both save paths (no data loss); round-trip locked by new unit test; toggle UI stays hidden",
+      "B3: applyV2ModeChange coupling — V2 on -> displayMode forced hidden + select disabled, V2 off -> restore displayModeBeforeV2 (persisted)",
+      "B4: quick props collapsible (quickPropsOpen, mirrors AdditionalBpmn); defaults ee_time/ingredient_value are initial pins only, removable",
+      "B5: To-Be moved into afterQuickProperties slot (Preview -> Display -> Quick -> To-Be -> Additional BPMN); Additional BPMN full-bleed negative inset (~+10%); dense spacing",
+      "B6: bottomBar rendered only when sidebarGlobalHasChanges; buttons 'Сохранить'/'Отмена'; .leftSidebarBottom max-height 48px"
+    ],
+    "verification": {
+      "build": "exit 0",
+      "unit": "fail-set identical to baseline (53 pre-existing), foundation 10/10",
+      "e2e": "PENDING stage deploy approval"
+    }
   }
 }

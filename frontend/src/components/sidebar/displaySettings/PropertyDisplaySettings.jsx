@@ -47,6 +47,13 @@ export default function PropertyDisplaySettings({
   onToggleGroup,
 }) {
   const groupState = { ...createDefaultPanelGroupsState(), ...(groups || {}) };
+  // V2 → displayMode coupling (B3): while V2 overlays are on, the legacy
+  // display mode is forced to "hidden" in the model; the select is locked
+  // and the hint explains why.
+  const displayModeLocked = v2Mode !== "none";
+  const displayModeHint = displayModeLocked
+    ? "Скрыто автоматически: включены V2-оверлеи"
+    : hintFor(DISPLAY_MODE_OPTIONS, displayMode);
   return (
     <div className="overlayDisplaySettings" role="group" aria-label="Настройки отображения свойств">
       <div className="overlayDisplaySelectsRow">
@@ -60,7 +67,7 @@ export default function PropertyDisplaySettings({
             className="overlayDisplaySelect"
             value={displayMode}
             onChange={(event) => onDisplayModeChange?.(event.target.value)}
-            disabled={disabled}
+            disabled={disabled || displayModeLocked}
             aria-label="Свойства над задачей"
             aria-describedby="overlay-display-mode-hint"
             data-testid="overlay-display-mode-select"
@@ -69,7 +76,7 @@ export default function PropertyDisplaySettings({
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
-          <span className="overlayDisplayHint" id="overlay-display-mode-hint">{hintFor(DISPLAY_MODE_OPTIONS, displayMode)}</span>
+          <span className="overlayDisplayHint" id="overlay-display-mode-hint">{displayModeHint}</span>
         </PanelGroup>
 
         <PanelGroup

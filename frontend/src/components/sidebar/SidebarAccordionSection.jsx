@@ -24,6 +24,7 @@ function SidebarAccordionSection({
   badge = "",
   open,
   onToggle,
+  headAccessory = null,
   children,
 }) {
   return (
@@ -41,6 +42,14 @@ function SidebarAccordionSection({
           </div>
           {subtitle ? <div className="sidebarAccordionSubtitle">{subtitle}</div> : null}
         </div>
+        {headAccessory ? (
+          // Non-interactive status slot (e.g. sync indicator) that stays
+          // visible while the accordion is collapsed. stopPropagation is
+          // belt-and-braces: the slot itself never handles clicks.
+          <span className="sidebarAccordionHeadAccessory" onClick={(e) => e.stopPropagation()}>
+            {headAccessory}
+          </span>
+        ) : null}
         <ChevronIcon className={`sidebarAccordionChevron ${open ? "isOpen" : ""}`} />
       </button>
       <div className="sidebarAccordionBodyWrap">

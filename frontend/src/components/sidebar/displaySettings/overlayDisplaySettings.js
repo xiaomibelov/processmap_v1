@@ -3,6 +3,8 @@
 // Single source of truth for how property overlays are shown on the canvas:
 //   displayMode  — legacy overlay pipeline ("hover" | "always" | "hidden")
 //   v2Mode       — V2 overlay pipeline ("none" | "all" | "expanded")
+//   displayModeBeforeV2 — displayMode captured when V2 was turned on, so
+//                  turning V2 off restores the user's previous choice.
 //   hiddenFields — per-field chip filter: property names hidden from overlays.
 //                  Fields are ACTIVE BY DEFAULT — a field disappears from
 //                  overlays only when explicitly listed here, so newly
@@ -45,10 +47,15 @@ export function sanitizeHiddenFields(value) {
   return out;
 }
 
+function sanitizeDisplayModeBeforeV2(value) {
+  return DISPLAY_MODES.includes(value) ? value : null;
+}
+
 export function createDefaultDisplaySettings() {
   return {
     displayMode: DEFAULT_DISPLAY_MODE,
     v2Mode: DEFAULT_V2_MODE,
+    displayModeBeforeV2: null,
     hiddenFields: [],
   };
 }
@@ -61,6 +68,7 @@ export function readOverlayDisplaySettings(rawValue) {
   return {
     displayMode: sanitizeDisplayMode(raw.displayMode),
     v2Mode: sanitizeV2Mode(raw.v2Mode),
+    displayModeBeforeV2: sanitizeDisplayModeBeforeV2(raw.displayModeBeforeV2),
     hiddenFields: sanitizeHiddenFields(raw.hiddenFields) ?? [],
   };
 }
@@ -71,6 +79,37 @@ export function migrateLegacyAlwaysFlag(value) {
   if (value === true || value === 1) return "always";
   const text = String(value ?? "").trim().toLowerCase();
   return text === "true" || text === "1" || text === "yes" || text === "on" ? "always" : DEFAULT_DISPLAY_MODE;
+}
+
+// V2 → displayMode coupling (approved interpretation: "V2 ON" =
+// v2Mode !== "none"). Turning V2 on forces displayMode="hidden" (legacy
+// overlays would duplicate the V2 cards) and remembers the previous mode;
+// turning V2 off restores it. Pure: no persistence, no side effects.
+export function applyV2ModeChange(prevRaw, nextV2ModeRaw) {
+  const prev = prevRaw && typeof prevRaw === "object" ? prevRaw : createDefaultDisplaySettings();
+  const nextV2Mode = sanitizeV2Mode(nextV2ModeRaw);
+  const prevV2Mode = sanitizeV2Mode(prev.v2Mode);
+  if (nextV2Mode !== "none") {
+    return {
+      ...prev,
+      v2Mode: nextV2Mode,
+      displayMode: "hidden",
+      displayModeBeforeV2: prevV2Mode === "none"
+        ? sanitizeDisplayMode(prev.displayMode)
+        : (sanitizeDisplayModeBeforeV2(prev.displayModeBeforeV2) ?? sanitizeDisplayMode(prev.displayMode)),
+    };
+  }
+  if (prevV2Mode !== "none") {
+    return {
+      ...prev,
+      v2Mode: "none",
+      // beforeV2 null falls back to the current mode ("hidden" by then) —
+      // acceptable; the user can re-pick explicitly.
+      displayMode: sanitizeDisplayModeBeforeV2(prev.displayModeBeforeV2) ?? sanitizeDisplayMode(prev.displayMode),
+      displayModeBeforeV2: null,
+    };
+  }
+  return { ...prev, v2Mode: "none" };
 }
 
 // --- Persistence (per session, localStorage) ---
@@ -127,6 +166,7 @@ export function saveOverlayDisplaySettings(storage, sessionId, settings) {
   const safe = {
     displayMode: sanitizeDisplayMode(settings?.displayMode),
     v2Mode: sanitizeV2Mode(settings?.v2Mode),
+    displayModeBeforeV2: sanitizeDisplayModeBeforeV2(settings?.displayModeBeforeV2),
     hiddenFields: sanitizeHiddenFields(settings?.hiddenFields) ?? [],
   };
   try {
