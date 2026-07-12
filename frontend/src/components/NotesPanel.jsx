@@ -10,6 +10,11 @@ import {
   normalizeAiQuestionsByElementMap,
 } from "../features/notes/knowledgeTools";
 import { parseBatchOpsFromNotes } from "../features/process/bpmn/ops/parseBatchOpsFromNotes";
+import { normalizeGlobalNotes as sharedNormalizeGlobalNotes } from "../app/sessionGlobalNotes.js";
+import {
+  normalizeDocumentationRows as sharedNormalizeDocumentationRows,
+  normalizeDocumentationText,
+} from "../features/process/bpmn/documentation/normalizeDocumentationRows.js";
 import { useElementThreads } from "../features/notes/useElementThreads";
 import {
   collectBpmnTraversalOrderMeta,
@@ -614,31 +619,10 @@ function parseSelectedBpmnDocumentation(xmlText, elementIdRaw) {
   }
 }
 
-function normalizeDocumentationText(value) {
-  return String(value ?? "").replace(/\r\n/g, "\n");
-}
-
 function normalizeDocumentationRows(rowsRaw, options = {}) {
-  const keepEmpty = options && typeof options === "object" && options.keepEmpty === true;
-  return asArray(rowsRaw)
-    .map((entryRaw, index) => {
-      const entry = entryRaw && typeof entryRaw === "object"
-        ? entryRaw
-        : { text: entryRaw };
-      const text = normalizeDocumentationText(
-        Object.prototype.hasOwnProperty.call(entry, "text")
-          ? entry.text
-          : (Object.prototype.hasOwnProperty.call(entry, "value") ? entry.value : entryRaw),
-      );
-      const textFormat = str(entry?.textFormat || entry?.textformat);
-      if (!keepEmpty && !text.length && !textFormat) return null;
-      return {
-        id: str(entry?.id || `documentation_${index + 1}`) || `documentation_${index + 1}`,
-        text,
-        textFormat,
-      };
-    })
-    .filter(Boolean);
+  // Shared implementation; sidebar documentation draft rows always carry a
+  // stable id (fallback documentation_<index+1>).
+  return sharedNormalizeDocumentationRows(rowsRaw, { ...(options || {}), withId: true });
 }
 
 function buildDocumentationSignature(rowsRaw) {
@@ -647,49 +631,10 @@ function buildDocumentationSignature(rowsRaw) {
     .join("\u241e");
 }
 
-function normalizeGlobalNoteItem(raw, fallbackIndex = 0) {
-  const obj = raw && typeof raw === "object" ? raw : {};
-  const text = str(obj.text || obj.note || obj.notes || obj.message || raw);
-  if (!text) return null;
-  const rawTs = obj.ts ?? obj.createdAt ?? obj.created_at ?? obj.updatedAt ?? obj.updated_at;
-  let ts = Number(rawTs);
-  if (!Number.isFinite(ts) || ts <= 0) {
-    const parsed = Date.parse(str(rawTs));
-    ts = Number.isFinite(parsed) && parsed > 0 ? parsed : Date.now();
-  }
-  const author = str(obj.author || obj.user || obj.created_by || "you") || "you";
-  const id = str(obj.id || obj.note_id || obj.noteId) || `note_${ts}_${fallbackIndex + 1}`;
-  return { id, text, ts, author };
-}
-
 function normalizeGlobalNotes(value) {
-  let source = [];
-  if (Array.isArray(value)) {
-    source = value;
-  } else if (value && typeof value === "object") {
-    source = [value];
-  } else {
-    const raw = str(value);
-    if (!raw) source = [];
-    else {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) source = parsed;
-        else if (parsed && typeof parsed === "object") source = [parsed];
-        else source = [{ text: raw }];
-      } catch {
-        source = [{ text: raw }];
-      }
-    }
-  }
-  return source
-    .map((item, idx) => normalizeGlobalNoteItem(item, idx))
-    .filter(Boolean)
-    .sort((a, b) => {
-      const dt = Number(b?.ts || 0) - Number(a?.ts || 0);
-      if (dt !== 0) return dt;
-      return String(a?.id || "").localeCompare(String(b?.id || ""), "ru");
-    });
+  // Shared implementation (App-level surfaces use the same module with the
+  // default ascending order); the sidebar feed renders newest first.
+  return sharedNormalizeGlobalNotes(value, { order: "desc" });
 }
 
 function roleObj(r, idx) {

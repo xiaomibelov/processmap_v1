@@ -8,6 +8,7 @@
  */
 
 import { isProcessLikeType } from "../../../features/process/bpmn/stage/interaction/processRootSelection.js";
+import { dedupeExactPropertyRows as dedupePropertiesByExactValue } from "../../../features/process/camunda/dedupeExactPropertyRows.js";
 
 function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
@@ -36,19 +37,6 @@ function dedupePropertiesByName(props, { keep = "first" } = {}) {
     }
   });
   return Array.from(seen.values());
-}
-
-function dedupePropertiesByExactValue(props) {
-  if (!Array.isArray(props)) return [];
-  const seen = new Set();
-  return props.filter((prop) => {
-    const name = String(prop?.name ?? "").trim();
-    if (!name) return true;
-    const signature = `${name}\u0000${String(prop?.value ?? "").trim()}`;
-    if (seen.has(signature)) return false;
-    seen.add(signature);
-    return true;
-  });
 }
 
 function isShapeElement(el) {

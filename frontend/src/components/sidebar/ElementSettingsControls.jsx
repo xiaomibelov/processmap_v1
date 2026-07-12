@@ -29,6 +29,7 @@ import RecipeSidebar from "../../features/process/recipe/components/RecipeSideba
 import PropertyGroup from "./PropertyGroup.jsx";
 import AdditionalBpmnPropertiesSection from "./sections/AdditionalBpmnPropertiesSection.jsx";
 import InlineBpmnPropertyRow from "./rows/InlineBpmnPropertyRow.jsx";
+import { normalizeDocumentationRows as sharedNormalizeDocumentationRows } from "../../features/process/bpmn/documentation/normalizeDocumentationRows.js";
 
 function toText(value) {
   return String(value || "").trim();
@@ -91,31 +92,10 @@ function camundaIoTypeLabel(shapeRaw) {
   return "text";
 }
 
-function normalizeDocumentationText(value) {
-  return String(value ?? "").replace(/\r\n/g, "\n");
-}
-
 function normalizeDocumentationRows(rowsRaw, options = {}) {
-  const keepEmpty = options && typeof options === "object" && options.keepEmpty === true;
-  return asArray(rowsRaw)
-    .map((entryRaw, index) => {
-      const entry = entryRaw && typeof entryRaw === "object"
-        ? entryRaw
-        : { text: entryRaw };
-      const text = normalizeDocumentationText(
-        Object.prototype.hasOwnProperty.call(entry, "text")
-          ? entry.text
-          : (Object.prototype.hasOwnProperty.call(entry, "value") ? entry.value : entryRaw),
-      );
-      const textFormat = String(entry?.textFormat || entry?.textformat || "").trim();
-      if (!keepEmpty && !text.length && !textFormat) return null;
-      return {
-        id: String(entry?.id || `documentation_${index + 1}`),
-        text,
-        textFormat,
-      };
-    })
-    .filter(Boolean);
+  // Shared implementation; draft rows always carry a stable id
+  // (fallback documentation_<index+1>).
+  return sharedNormalizeDocumentationRows(rowsRaw, { ...(options || {}), withId: true });
 }
 
 function normalizeNodePathTag(value) {
