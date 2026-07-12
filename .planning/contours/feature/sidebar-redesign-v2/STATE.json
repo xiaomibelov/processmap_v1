@@ -1,0 +1,39 @@
+{
+  "contour": "feature/sidebar-redesign-v2",
+  "branch": "feature/sidebar-redesign-v2",
+  "base": "origin/main@5aabba98",
+  "state": "planned",
+  "states": [
+    "planned",
+    "approved",
+    "in-progress",
+    "stage-verified",
+    "pr-open",
+    "merged"
+  ],
+  "created": "2026-07-12",
+  "reuseFrom": "PR #524 (feature/property-panel-redesign) — 7 code commits cherry-picked (docs commits excluded)",
+  "cherryPick": [
+    "da54aaf3 phase 0 display settings model",
+    "27df6a3a hiddenFields opt-out",
+    "87bf76ce phase 1 compact settings",
+    "7dfb950d phase 2 To-Be + live preview",
+    "d0c6a968 phase 4 V2 chip filter",
+    "4f67f0ac e2e spec",
+    "979d1b0e UI refresh (collapsible groups + mini indicator)"
+  ],
+  "verification": {
+    "cherryPickUnit": "displaySettings suites 86/86 green",
+    "build": "exit 0"
+  },
+  "gaps": {
+    "G1": "save indicator into accordion header (SidebarAccordion headerRight slot)",
+    "G2": "quick props / chips / preview composition per reference (needs screenshot)",
+    "G3": "dense CSS polish per reference (needs screenshot)",
+    "G4": "focused e2e spec: add/edit/save/reload/delete + header indicator"
+  },
+  "blockers": [
+    "reference screenshot missing — requested from user"
+  ],
+  "next": "AWAITING APPROVE: REVIEW_REPORT.md → user approve → G1..G4 implementation. No push/PR/deploy without explicit command."
+}
