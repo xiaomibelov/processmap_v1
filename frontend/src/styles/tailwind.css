@@ -4614,6 +4614,43 @@
     border-bottom: 1px solid #EEF2F9;
   }
 
+  /* Extension-state mini indicator (top of the Properties tab).
+     Cherry-picked from PR #524 (property-panel-redesign), Tier 1a. */
+  .propertiesTabTopRow {
+    @apply flex items-center justify-end;
+    padding: 0 2px 4px;
+  }
+
+  .extensionStateMini {
+    @apply inline-flex items-center justify-center;
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    color: hsl(var(--muted));
+  }
+
+  .extensionStateMini--saved {
+    color: hsl(var(--success) / 0.9);
+  }
+
+  .extensionStateMini--dirty {
+    color: hsl(var(--warning) / 0.95);
+  }
+
+  .extensionStateMini--syncing {
+    color: hsl(var(--muted));
+    animation: extensionStateMiniSpin 1s linear infinite;
+  }
+
+  .extensionStateMini--error {
+    color: hsl(var(--danger) / 0.95);
+  }
+
+  @keyframes extensionStateMiniSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
   .sidebarAccordionStack {
     @apply grid overflow-visible;
     margin-top: 0;

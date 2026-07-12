@@ -51,6 +51,7 @@ import useCamundaPropertiesOverlayPreview from "../features/process/camunda/useC
 import { isProcessLikeType } from "../features/process/bpmn/stage/interaction/processRootSelection.js";
 import useNotesPanelController from "./notesPanel/useNotesPanelController.js";
 import { SHOW_PROPERTIES_FLAG_KEY } from "./sidebar/useElementSettingsController.js";
+import ExtensionStateMiniIndicator from "./sidebar/displaySettings/ExtensionStateMiniIndicator";
 import SidebarShell from "./sidebar/SidebarShell";
 import ActorsSection from "./sidebar/ActorsSection";
 import TemplatesAndTldrSection from "./sidebar/TemplatesAndTldrSection";
@@ -3117,6 +3118,14 @@ export default function NotesPanel({
                 open={!!sectionsOpen.properties}
                 onToggle={toggleSection}
               >
+                {isElementMode && selectedCamundaPropertiesEditable && (
+                  <div className="propertiesTabTopRow">
+                    <ExtensionStateMiniIndicator
+                      syncState={camundaExtensionSyncState}
+                      busy={camundaPropertiesBusy}
+                    />
+                  </div>
+                )}
                 <div className="sidebarPropertiesDisplaySettings">
                   <label className="sidebarPropertiesInlineToggle">
                     <input
