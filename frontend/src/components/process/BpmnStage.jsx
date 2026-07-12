@@ -4718,17 +4718,20 @@ const BpmnStage = forwardRef(function BpmnStage({
         prevOverlaySigRef.current[kind] = nextSig;
         overlayLifecycle.mountFromBpmn(inst, kind);
       };
-      maybeRemount(viewerRef.current, "viewer");
-      maybeRemount(modelerRef.current, "editor");
       if (v2OverlaysEnabled) {
         // Entering (or staying in) V2 mode: remove any legacy property
         // overlays so they cannot suppress or duplicate V2 cards. The legacy
         // decor is gated through applyPropertiesOverlayDecor while V2 is on,
         // but pre-existing cards (e.g. present when V2 gets toggled on) must
-        // be cleared explicitly.
+        // be cleared explicitly — BEFORE the V2 mount below, otherwise
+        // hasLegacyPropertyOverlay suppresses the fresh V2 hosts and the
+        // element ends up with no card at all.
+        // (Fix cherry-picked from PR #524, Tier 1b.)
         if (viewerRef.current) clearPropertiesOverlayDecor(viewerRef.current, "viewer");
         if (modelerRef.current) clearPropertiesOverlayDecor(modelerRef.current, "editor");
       }
+      maybeRemount(viewerRef.current, "viewer");
+      maybeRemount(modelerRef.current, "editor");
     } catch {
       // Re-mount failures are non-critical.
     }
