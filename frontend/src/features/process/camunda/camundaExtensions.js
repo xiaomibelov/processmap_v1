@@ -1,4 +1,5 @@
 import { PM_ROBOT_META_NAMESPACE } from "../robotmeta/pmModdleDescriptor.js";
+import { dedupeExactPropertyRows } from "./dedupeExactPropertyRows.js";
 
 export const CAMUNDA_NAMESPACE_URI = "http://camunda.org/schema/1.0/bpmn";
 export const ZEEBE_NAMESPACE_URI = "http://camunda.org/schema/zeebe/1.0";
@@ -46,18 +47,6 @@ function asArray(value) {
 
 function asText(value) {
   return String(value ?? "").trim();
-}
-
-function dedupeExactPropertyRows(rows) {
-  const seen = new Set();
-  return asArray(rows).filter((item) => {
-    const name = asText(item?.name);
-    if (!name) return true;
-    const signature = `${name}\u0000${asText(item?.value)}`;
-    if (seen.has(signature)) return false;
-    seen.add(signature);
-    return true;
-  });
 }
 
 function fnv1aHex(input) {
