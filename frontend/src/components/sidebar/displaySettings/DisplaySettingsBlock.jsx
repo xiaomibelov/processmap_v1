@@ -6,6 +6,8 @@
 //
 // UI: UI.md §1/§2.1/§2.2; API: API.md §2.
 
+import { useState } from "react";
+
 import SegmentedControl from "../controls/SegmentedControl.jsx";
 import ToggleSwitch from "../controls/ToggleSwitch.jsx";
 import { sanitizeDisplayMode } from "./displaySettingsModel.js";
@@ -46,6 +48,9 @@ export default function DisplaySettingsBlock({
   disabled = false,
 }) {
   const mode = sanitizeDisplayMode(displayMode);
+  // Chips («Поля в оверлее») are a collapsible sub-block, collapsed by
+  // default on entry (local-only state, never persisted).
+  const [chipsOpen, setChipsOpen] = useState(false);
   const subMode = v2Mode === "expanded" ? "expanded" : "compact";
   // V2 → display mode coupling (B3): while V2 overlays are on, the legacy
   // display mode is forced to "hidden" in the model; the segmented control
@@ -98,23 +103,37 @@ export default function DisplaySettingsBlock({
 
       {chips.length > 0 && (
         <div className="displaySettingsRow">
-          <span className="displaySettingsLabel">Поля в оверлее</span>
-          <div className="overlayFieldChips" role="group" aria-label="Поля в оверлее">
-            {chips.map((chip) => (
-              <button
-                key={chip.name}
-                type="button"
-                className={chip.active ? "overlayFieldChip overlayFieldChip--active" : "overlayFieldChip"}
-                aria-pressed={chip.active}
-                disabled={disabled}
-                onClick={() => onToggleField?.(chip.name)}
-                data-testid={`overlay-field-chip-${chip.name}`}
-              >
-                {chip.active && <CheckIcon />}
-                <span>{chip.label}</span>
-              </button>
-            ))}
+          <div className="sidebarPropertiesBlockHead">
+            <button
+              type="button"
+              className="sidebarPropertiesBlockToggle"
+              onClick={() => setChipsOpen((prev) => !prev)}
+              aria-expanded={chipsOpen ? "true" : "false"}
+              data-testid="overlay-fields-toggle"
+            >
+              <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{chipsOpen ? "▾" : "▸"}</span>
+              <span className="sidebarPropertiesBlockTitle">Поля в оверлее</span>
+              <span className="sidebarPropertiesBlockMeta">{chips.length}</span>
+            </button>
           </div>
+          {chipsOpen ? (
+            <div className="overlayFieldChips" role="group" aria-label="Поля в оверлее">
+              {chips.map((chip) => (
+                <button
+                  key={chip.name}
+                  type="button"
+                  className={chip.active ? "overlayFieldChip overlayFieldChip--active" : "overlayFieldChip"}
+                  aria-pressed={chip.active}
+                  disabled={disabled}
+                  onClick={() => onToggleField?.(chip.name)}
+                  data-testid={`overlay-field-chip-${chip.name}`}
+                >
+                  {chip.active && <CheckIcon />}
+                  <span>{chip.label}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       )}
     </div>

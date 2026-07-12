@@ -138,6 +138,18 @@ async function fetchBpmnXml(request, fixture) {
   return xml;
 }
 
+// «Быстрые свойства» is collapsed by default on entry (layout directive):
+// expand it before interacting with quick rows.
+async function expandQuickProperties(page) {
+  const quickBlock = page.locator(".sidebarPropertiesBlock--primary").first();
+  const quickToggle = quickBlock.locator(".sidebarPropertiesBlockToggle").first();
+  await expect(quickToggle).toBeVisible({ timeout: 15_000 });
+  if ((await quickToggle.getAttribute("aria-expanded")) !== "true") {
+    await quickToggle.click();
+  }
+  await expect(quickToggle).toHaveAttribute("aria-expanded", "true");
+}
+
 test("mini indicator: saved -> dirty on inline edit (no save)", async ({ page, request }) => {
   const problems = collectConsoleProblems(page);
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -150,6 +162,8 @@ test("mini indicator: saved -> dirty on inline edit (no save)", async ({ page, r
   await expect(mini).toBeVisible({ timeout: 15_000 });
   await expect(mini).toHaveAttribute("data-tone", "saved");
   await expect(mini).toHaveAttribute("title", "Сохранено");
+
+  await expandQuickProperties(page);
 
   // Inline-edit a value and commit with Enter: the draft diverges from the
   // saved state, so the indicator flips to «dirty» WITHOUT a save.
@@ -174,6 +188,8 @@ test("mini indicator: dirty -> saved after «Сохранить» (XML persisted
 
   const mini = page.locator('[data-testid="extension-state-mini"]');
   await expect(mini).toHaveAttribute("data-tone", "saved", { timeout: 15_000 });
+
+  await expandQuickProperties(page);
 
   await page.getByLabel("Редактировать свойство ee_time").click();
   const valueInput = page.locator('.sidebarSchemaPropertyRow.isEditing input[placeholder="Значение"]');

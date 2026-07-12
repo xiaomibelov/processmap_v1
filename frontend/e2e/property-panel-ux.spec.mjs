@@ -143,6 +143,42 @@ function legacyCards(page) {
   return page.locator(".fpcPropertyOverlay");
 }
 
+// «Быстрые свойства» is collapsed by default on entry (layout directive):
+// any interaction with quick rows must expand the block first.
+async function expandQuickProperties(page) {
+  const quickBlock = page.locator(".sidebarPropertiesBlock--primary").first();
+  const quickToggle = quickBlock.locator(".sidebarPropertiesBlockToggle").first();
+  await expect(quickToggle).toBeVisible({ timeout: 15_000 });
+  if ((await quickToggle.getAttribute("aria-expanded")) !== "true") {
+    await quickToggle.click();
+  }
+  await expect(quickToggle).toHaveAttribute("aria-expanded", "true");
+  return quickBlock;
+}
+
+// To-Be block is collapsed by default on entry; expand before interacting
+// with the builder.
+async function expandToBeBlock(page) {
+  const toBeToggle = page.locator("button.sidebarPropertiesBlockToggle", { hasText: "To-Be" }).first();
+  await expect(toBeToggle).toBeVisible({ timeout: 15_000 });
+  if ((await toBeToggle.getAttribute("aria-expanded")) !== "true") {
+    await toBeToggle.click();
+  }
+  await expect(toBeToggle).toHaveAttribute("aria-expanded", "true");
+  return toBeToggle;
+}
+
+// «Поля в оверлее» chips sub-block is collapsed by default on entry.
+async function expandOverlayFields(page) {
+  const toggle = page.locator('[data-testid="overlay-fields-toggle"]');
+  await expect(toggle).toBeVisible({ timeout: 15_000 });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  return toggle;
+}
+
 async function fetchBpmnXml(request, fixture) {
   const res = await request.get(`${API_BASE}/api/sessions/${encodeURIComponent(fixture.sessionId)}/bpmn`, {
     headers: fixture.auth.headers,
@@ -340,6 +376,10 @@ test("T6: quick properties collapsible; a default pin (ee_time) can be removed",
   const quickBlock = page.locator(".sidebarPropertiesBlock--primary").first();
   const quickToggle = quickBlock.locator(".sidebarPropertiesBlockToggle").first();
   await expect(quickToggle).toBeVisible({ timeout: 15_000 });
+  // Collapsed by default on entry; expands on click.
+  await expect(quickToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(quickBlock.getByLabel("Редактировать свойство ee_time")).toHaveCount(0);
+  await quickToggle.click();
   await expect(quickToggle).toHaveAttribute("aria-expanded", "true");
   await expect(quickBlock.getByLabel("Редактировать свойство ee_time")).toBeVisible();
 
@@ -372,6 +412,8 @@ test("T7: floating save bar — hidden when clean, appears on edit, «Отмен
   const footer = page.locator(".sidebarGlobalFooter");
   await expect(footer).toHaveCount(0);
 
+  await expandQuickProperties(page);
+
   // Inline draft edit (no save): the bar appears with «Сохранить»/«Отмена».
   await page.getByLabel("Редактировать свойство ee_time").click();
   const valueInput = page.locator('.sidebarSchemaPropertyRow.isEditing input[placeholder="Значение"]');
@@ -402,6 +444,10 @@ test("T8: To-Be — toggle → Pool on another task → '+' → draft row → sa
   await openPropertiesSection(page);
   const builder = page.locator('[data-testid="to-be-builder"]');
   const pills = page.locator(".toBePills").first();
+  // To-Be is collapsed by default on entry; expands on click.
+  await expect(pills).toBeVisible({ timeout: 15_000 });
+  await expect(builder).toHaveCount(0);
+  await expandToBeBlock(page);
   await expect(builder).toBeVisible({ timeout: 15_000 });
   await expect(pills).toContainText("0 in To-Be / 0 skipped");
   await page.locator('[data-testid="to-be-toggle-ee_time"]').click();
@@ -441,6 +487,9 @@ test("T9: chip toggle hides the field from legacy and V2 cards (data untouched)"
   await expect(card).toContainText("ingredient_value");
 
   const chip = page.locator('[data-testid="overlay-field-chip-ee_time"]');
+  // Chips («Поля в оверлее») are collapsed by default on entry; expand first.
+  await expect(chip).toHaveCount(0);
+  await expandOverlayFields(page);
   await expect(chip).toHaveAttribute("aria-pressed", "true");
   await chip.click();
   await expect(chip).toHaveAttribute("aria-pressed", "false");
@@ -473,6 +522,8 @@ test("T10: live preview mirrors the draft — seeded values and inline edits (no
   await expect(preview).toBeVisible({ timeout: 15_000 });
   await expect(preview).toContainText("ee_time");
   await expect(preview).toContainText("0.33");
+
+  await expandQuickProperties(page);
 
   // Inline-edit the value: commit on Enter (Tab stays inside the row's
   // two-input edit mode by design and does not commit), preview must follow

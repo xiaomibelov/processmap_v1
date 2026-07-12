@@ -1123,7 +1123,8 @@ export default function NotesPanel({
   const [laneElementCounts, setLaneElementCounts] = useState(() => ({ byKey: {}, byLaneId: {}, byName: {} }));
   const [sectionsOpen, setSectionsOpen] = useState(() => readSectionsState());
   // To-Be block collapse state (local-only, mirrors quick/additional blocks).
-  const [toBeOpen, setToBeOpen] = useState(true);
+  // Collapsed by default on entry (layout directive 2026-07).
+  const [toBeOpen, setToBeOpen] = useState(false);
   const elementNotesSectionRef = useRef(null);
   const pathsSectionRef = useRef(null);
   const timeSectionRef = useRef(null);
@@ -3254,12 +3255,6 @@ export default function NotesPanel({
                   />
                 ) : null}
               >
-                {isElementMode && selectedCamundaPropertiesEditable && !isProcessLikeSelection && (
-                  <LiveCardPreview
-                    preview={overlayPreview}
-                    elementName={selectedElementId}
-                  />
-                )}
                 <DisplaySettingsBlock
                   displayMode={deriveDisplayMode({
                     showOnSelect: !!resolvedShowPropertiesOverlayOnSelect,
@@ -3280,6 +3275,12 @@ export default function NotesPanel({
                   onToggleField={onOverlayFieldToggle}
                   disabled={!!disabled}
                 />
+                {isElementMode && selectedCamundaPropertiesEditable && !isProcessLikeSelection && (
+                  <LiveCardPreview
+                    preview={overlayPreview}
+                    elementName={selectedElementId}
+                  />
+                )}
                 <CamundaPropertiesSection
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   selectedElementType={isElementMode ? selectedElementType : ""}
@@ -3316,7 +3317,7 @@ export default function NotesPanel({
                   onResetBpmnDocumentation={resetSelectedBpmnDocumentation}
                   onFocusDrawioCompanion={onFocusDrawioCompanion}
                   afterQuickProperties={isElementMode && selectedCamundaPropertiesEditable ? (
-                    <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary">
+                    <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary sidebarPropertiesBlock--wide">
                       <div className="sidebarPropertiesBlockHead">
                         <button
                           type="button"
