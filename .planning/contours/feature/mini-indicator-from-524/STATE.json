@@ -14,7 +14,7 @@
   "pr": 526,
   "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/526",
   "created": "2026-07-12T09:10:00Z",
-  "updated": "2026-07-12T11:00:00Z",
+  "updated": "2026-07-12T11:15:00Z",
   "commits": {
     "1a": "8e772c0d — ExtensionStateMiniIndicator + CSS + NotesPanel topRow + unit 8/8 + e2e spec",
     "1b": "08f42c5c — BpmnStage clear-before-remount reorder"
@@ -28,7 +28,7 @@
   "source": "Tier 1 cherry-pick из PR #524; анализ: Audits/PR524-Inventory-Borrowability-2026-07-12.md",
   "pending": "AWAITING explicit user approval to merge PR #526",
   "ux_redesign_phase": {
-    "status": "design-approved-awaiting-implementation-go",
+    "status": "P0-done",
     "artifacts": [
       "PLAN.md",
       "UI.md",
@@ -38,6 +38,17 @@
     ],
     "scope": "Segmented display mode; V2 toggle+sub-control; quick chips; BPMN KV-list; floating SaveBar",
     "open_questions": "RESOLVED 2026-07-12: Q1=floating bar; Q2=draft-only delete; Q3=toggle in quick-section subhead; Q4=hidden=overlays off",
-    "constraints": "no code/deploy/PR until approve; save pipeline untouched; fpc-show-properties preserved; --kimi-* tokens mapped to tokens.css (D2)"
+    "constraints": "no code/deploy/PR until approve; save pipeline untouched; fpc-show-properties preserved; --kimi-* tokens mapped to tokens.css (D2)",
+    "phases": {
+      "P0": {
+        "status": "done",
+        "commit": "62300f08",
+        "gate": "G-P0 PASS: unit 14/14, sweep 51=51, foundation 10/10, build OK"
+      },
+      "P1": {
+        "status": "next",
+        "scope": "DisplaySettingsBlock: segmented display mode + V2 toggle/sub-control + per-element toggle (NotesPanel.jsx)"
+      }
+    }
   }
 }
