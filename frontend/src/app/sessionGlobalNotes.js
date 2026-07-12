@@ -13,7 +13,12 @@ export function normalizeGlobalNoteItem(raw, fallbackIndex = 0) {
   return { id, text, ts, author };
 }
 
-export function normalizeGlobalNotes(value) {
+export function normalizeGlobalNotes(value, options = {}) {
+  // order: "asc" (oldest first — default, used by App-level surfaces) or
+  // "desc" (newest first — sidebar notes feed). Previously the sidebar kept
+  // its own copy of this function with a reversed sort, so the same notes
+  // list rendered in different orders depending on the surface.
+  const order = options?.order === "desc" ? "desc" : "asc";
   let source = [];
   if (Array.isArray(value)) {
     source = value;
@@ -38,7 +43,7 @@ export function normalizeGlobalNotes(value) {
     .filter(Boolean);
   normalized.sort((a, b) => {
     const dt = Number(a?.ts || 0) - Number(b?.ts || 0);
-    if (dt !== 0) return dt;
+    if (dt !== 0) return order === "desc" ? -dt : dt;
     return String(a?.id || "").localeCompare(String(b?.id || ""), "ru");
   });
   return normalized;
