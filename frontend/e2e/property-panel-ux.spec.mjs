@@ -778,3 +778,34 @@ test("T13: *_ref properties autocomplete from the process-derived ref pool", asy
 
   expect(problems, problems.join("\n")).toEqual([]);
 });
+
+test("T14: «Экспорт ZIP (YAML + BPMN)» downloads the session export zip", async ({ page, request }) => {
+  const problems = collectConsoleProblems(page);
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await bootDiagram(page, request, `pux_${runId}`);
+
+  const exportBtn = page.getByTestId("bpmn-export-zip-button");
+  await expect(exportBtn).toBeVisible({ timeout: 15_000 });
+  const [download] = await Promise.all([
+    page.waitForEvent("download", { timeout: 30_000 }),
+    exportBtn.click(),
+  ]);
+  const filename = download.suggestedFilename();
+  expect(filename).toMatch(/\.zip$/);
+
+  // Zip content sanity: process.yml + a .bpmn file must be inside.
+  const { execFileSync } = await import("node:child_process");
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const tmpFile = path.join(os.tmpdir(), `pux_export_${runId}.zip`);
+  await download.saveAs(tmpFile);
+  const listing = execFileSync("python3", ["-c",
+    `import zipfile,sys; print("\\n".join(zipfile.ZipFile(sys.argv[1]).namelist()))`, tmpFile],
+  ).toString();
+  expect(listing).toContain("process.yml");
+  expect(listing).toMatch(/\.bpmn/);
+  fs.unlinkSync(tmpFile);
+
+  expect(problems, problems.join("\n")).toEqual([]);
+});

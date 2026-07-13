@@ -71,6 +71,7 @@ export default function DiagramToolbarOverflowMenu({
   setCommandModeEnabled,
   openImportDialog,
   exportBpmn,
+  exportSessionZip,
   openVersionsModal,
   selectedElementId,
   openInsertBetweenModal,
@@ -174,6 +175,20 @@ export default function DiagramToolbarOverflowMenu({
               title={workbench.labels.exportBpmn}
               onClick={closeAfter(() => void exportBpmn())}
               data-testid="bpmn-export-button"
+              icon={
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M8 9V1" />
+                  <path d="M5 5l3-3 3 3" />
+                  <path d="M2 13h12" />
+                </svg>
+              }
+            />
+            <MenuItem
+              label="Экспорт ZIP (YAML + BPMN)"
+              disabled={!hasSession || typeof exportSessionZip !== "function"}
+              title="Скачать ZIP: process.yml + BPMN XML + sidecar"
+              onClick={closeAfter(() => void exportSessionZip?.())}
+              data-testid="bpmn-export-zip-button"
               icon={
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M8 9V1" />
