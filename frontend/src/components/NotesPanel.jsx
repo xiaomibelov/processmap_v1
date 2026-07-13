@@ -1534,6 +1534,10 @@ export default function NotesPanel({
     camundaPropertiesDraft,
     selectedCamundaExtensionEntry,
     orgPropertyDictionaryBundle,
+    // Display name (v0.3 P1B): the operation code drives the RU template even
+    // when the org dictionary has no entry for it; the label still comes from
+    // the normalized bundle inside the model.
+    operationKey: selectedOperationKey,
     resolvedShowPropertiesOverlayOnSelect,
     propertiesOverlayPreviewDispatchRef,
     onPropertiesOverlayPreviewChange,

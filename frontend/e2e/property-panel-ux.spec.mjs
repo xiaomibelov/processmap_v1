@@ -18,10 +18,31 @@ import { waitForDiagramReady } from "./helpers/diagramReady.mjs";
 // T10: live preview mirrors the draft (no save).
 // T11: quick ↔ additional two-way sync — one draft, two views (add/edit/
 //      delete semantics + save/reload persistence).
+// T12: V2 cards show the derived one-line display name (RU template from
+//      exec.action_key + params); a manual display_name property wins.
 
 const PROCESS_ID = "Process_pux";
 const TASK_A = "Task_puxA";
 const TASK_B = "Task_puxB";
+const TASK_C = "Task_puxC";
+const TASK_D = "Task_puxD";
+
+// Canonical RobotMetaV1 body (see robotmeta/robotMeta.js) carrying an
+// exec.action_key; seeded as the pm:RobotMeta text body.
+function robotMetaBodyJson(actionKey) {
+  return JSON.stringify({
+    robot_meta_version: "v1",
+    exec: {
+      mode: "machine",
+      executor: "manual_ui",
+      action_key: actionKey,
+      timeout_sec: null,
+      retry: { max_attempts: 1, backoff_sec: 0 },
+    },
+    mat: { from_zone: null, to_zone: null, inputs: [], outputs: [] },
+    qc: { critical: false, checks: [] },
+  });
+}
 
 function seedXml() {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -30,6 +51,7 @@ function seedXml() {
                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
                   xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
                   xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  xmlns:pm="http://processmap.ai/schema/bpmn/1.0"
                   id="Definitions_1"
                   targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="${PROCESS_ID}" isExecutable="false">
@@ -43,20 +65,45 @@ function seedXml() {
       </bpmn:extensionElements>
     </bpmn:task>
     <bpmn:task id="${TASK_B}" name="Task B" />
+    <bpmn:task id="${TASK_C}" name="Task C">
+      <bpmn:extensionElements>
+        <pm:RobotMeta version="v1">${robotMetaBodyJson("move")}</pm:RobotMeta>
+        <camunda:properties>
+          <camunda:property name="object_ref" value="container_1" />
+          <camunda:property name="target_ref" value="microwave_1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:task id="${TASK_D}" name="Task D">
+      <bpmn:extensionElements>
+        <pm:RobotMeta version="v1">${robotMetaBodyJson("move")}</pm:RobotMeta>
+        <camunda:properties>
+          <camunda:property name="object_ref" value="container_1" />
+          <camunda:property name="target_ref" value="microwave_1" />
+          <camunda:property name="display_name" value="Ручное имя" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
     <bpmn:endEvent id="EndEvent_1" />
     <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="${TASK_A}" />
     <bpmn:sequenceFlow id="Flow_2" sourceRef="${TASK_A}" targetRef="${TASK_B}" />
-    <bpmn:sequenceFlow id="Flow_3" sourceRef="${TASK_B}" targetRef="EndEvent_1" />
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="${TASK_B}" targetRef="${TASK_C}" />
+    <bpmn:sequenceFlow id="Flow_4" sourceRef="${TASK_C}" targetRef="${TASK_D}" />
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="${TASK_D}" targetRef="EndEvent_1" />
   </bpmn:process>
   <bpmndi:BPMNDiagram id="BPMNDiagram_1" name="Diagram">
     <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="${PROCESS_ID}">
       <bpmndi:BPMNShape id="_BPMNShape_StartEvent_1" bpmnElement="StartEvent_1"><dc:Bounds x="120" y="152" width="36" height="36" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="_BPMNShape_${TASK_A}" bpmnElement="${TASK_A}"><dc:Bounds x="220" y="130" width="120" height="80" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="_BPMNShape_${TASK_B}" bpmnElement="${TASK_B}"><dc:Bounds x="430" y="130" width="120" height="80" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="_BPMNShape_EndEvent_1" bpmnElement="EndEvent_1"><dc:Bounds x="640" y="152" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="_BPMNShape_${TASK_C}" bpmnElement="${TASK_C}"><dc:Bounds x="640" y="130" width="120" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="_BPMNShape_${TASK_D}" bpmnElement="${TASK_D}"><dc:Bounds x="850" y="130" width="120" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="_BPMNShape_EndEvent_1" bpmnElement="EndEvent_1"><dc:Bounds x="1060" y="152" width="36" height="36" /></bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1"><di:waypoint x="156" y="170" /><di:waypoint x="220" y="170" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2"><di:waypoint x="340" y="170" /><di:waypoint x="430" y="170" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3"><di:waypoint x="550" y="170" /><di:waypoint x="640" y="170" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_4_di" bpmnElement="Flow_4"><di:waypoint x="760" y="170" /><di:waypoint x="850" y="170" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_5_di" bpmnElement="Flow_5"><di:waypoint x="970" y="170" /><di:waypoint x="1060" y="170" /></bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>`;
@@ -648,6 +695,36 @@ test("T11: quick ↔ additional two-way sync — one draft, two views", async ({
   await expect
     .poll(async () => fetchBpmnXml(request, fixture), { timeout: 20_000 })
     .not.toContain("persist_key");
+
+  expect(problems, problems.join("\n")).toEqual([]);
+});
+
+test("T12: V2 card shows derived display name; manual display_name wins", async ({ page, request }) => {
+  const problems = collectConsoleProblems(page);
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await bootDiagram(page, request, `pux_${runId}`);
+
+  // V2 overlays ON (seeded fixture already carries pm:RobotMeta +
+  // camunda:properties for Tasks C/D — no UI editing needed).
+  await page.locator('[data-testid="v2-toggle"]').click();
+
+  // Task C: exec.action_key="move" + object_ref/target_ref → RU template.
+  await selectTask(page, TASK_C);
+  const v2HostC = page.locator(`.fpc-overlay-v2-host[data-fpc-element-id="${TASK_C}"]`);
+  await expect(v2HostC).toBeVisible({ timeout: 15_000 });
+  await expect(v2HostC.locator(".fpc-overlay-v2-title"))
+    .toHaveText("Перенести container_1 в microwave_1", { timeout: 15_000 });
+  // Idle/compact mode: the raw rows list is replaced by the one-line name.
+  await expect(v2HostC.locator(".fpc-overlay-v2-list")).toBeHidden();
+
+  // Task D: same operation + params, but a manual display_name property
+  // always wins and is shown as-is.
+  await selectTask(page, TASK_D);
+  const v2HostD = page.locator(`.fpc-overlay-v2-host[data-fpc-element-id="${TASK_D}"]`);
+  await expect(v2HostD).toBeVisible({ timeout: 15_000 });
+  await expect(v2HostD.locator(".fpc-overlay-v2-title"))
+    .toHaveText("Ручное имя", { timeout: 15_000 });
+  await expect(v2HostD.locator(".fpc-overlay-v2-list")).toBeHidden();
 
   expect(problems, problems.join("\n")).toEqual([]);
 });

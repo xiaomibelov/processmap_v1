@@ -84,3 +84,34 @@ test("computeSequenceFlowMidpoint: returns midpoint of waypoints", () => {
   assert.equal(mid.x, 50);
   assert.equal(mid.y, 0);
 });
+
+test("createV2OverlayHost: displayName adds the title line and host marker class", () => {
+  setupMockDom();
+  const result = createV2OverlayHost(
+    { id: "T1", type: "bpmn:Task", x: 0, y: 0, width: 100, height: 80 },
+    {
+      title: "Props",
+      displayName: "Перенести container_1 в microwave_1",
+      properties: [{ name: "object_ref", value: "container_1" }],
+    },
+    false
+  );
+  assert.ok(result.host.classList.contains("fpc-overlay-v2-host--has-display-name"));
+  const titleEl = findByClass(result.host, "fpc-overlay-v2-title");
+  assert.ok(titleEl);
+  assert.equal(titleEl.textContent, "Перенести container_1 в microwave_1");
+  // Rows are still rendered (CSS hides them in idle; expanded keeps them).
+  const list = findByClass(result.host, "fpc-overlay-v2-list");
+  assert.equal(list.children.length, 1);
+});
+
+test("createV2OverlayHost: no displayName → no title, no marker class", () => {
+  setupMockDom();
+  const result = createV2OverlayHost(
+    { id: "T1", type: "bpmn:Task", x: 0, y: 0, width: 100, height: 80 },
+    { title: "Props", properties: [{ name: "priority", value: "high" }] },
+    false
+  );
+  assert.equal(result.host.classList.contains("fpc-overlay-v2-host--has-display-name"), false);
+  assert.equal(findByClass(result.host, "fpc-overlay-v2-title"), null);
+});

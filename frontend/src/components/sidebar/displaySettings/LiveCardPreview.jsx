@@ -12,6 +12,7 @@ function ensureArray(value) {
 export default function LiveCardPreview({ preview = null, elementName = "" }) {
   const items = ensureArray(preview?.items);
   const hiddenCount = Math.max(0, Number(preview?.hiddenCount || 0));
+  const displayName = String(preview?.displayName || "").trim();
 
   return (
     <div className="liveCardPreview" data-testid="live-card-preview">
@@ -19,10 +20,13 @@ export default function LiveCardPreview({ preview = null, elementName = "" }) {
         <span className="overlayDisplayLabel">Превью оверлея</span>
         {elementName && <span className="liveCardPreviewElement" title={elementName}>{elementName}</span>}
       </div>
-      {items.length === 0 ? (
+      {items.length === 0 && !displayName ? (
         <div className="liveCardPreviewEmpty">У элемента нет свойств</div>
       ) : (
         <div className="liveCardPreviewCard" role="list" aria-label="Превью оверлея">
+          {displayName && (
+            <div className="liveCardPreviewTitle" title={displayName}>{displayName}</div>
+          )}
           {items.map((item, index) => (
             <div className="liveCardPreviewRow" role="listitem" key={item.key || `${item.label}:${index}`}>
               <span className="liveCardPreviewLabel">{item.label}</span>
