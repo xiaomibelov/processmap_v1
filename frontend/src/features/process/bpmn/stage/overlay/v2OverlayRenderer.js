@@ -68,6 +68,7 @@ export function createV2OverlayHost(element, content, expanded = false) {
   const elWidth = Number(element?.width || 0);
   const properties = asArray(content?.properties).filter((prop) => asText(prop?.name));
   const titleText = asText(content?.title ?? content?.text);
+  const displayName = asText(content?.displayName);
   const colorKey = asText(content?.colorKey || content?.meta?.type || "property");
   const colorModel = overlayPropertyColorByKey(colorKey || "property");
 
@@ -80,6 +81,11 @@ export function createV2OverlayHost(element, content, expanded = false) {
     host.classList.add("fpc-overlay-v2-host--expanded");
   }
   host.dataset.fpcElementId = element.id;
+  if (displayName) {
+    // One-line derived name replaces the raw rows list in idle/compact mode;
+    // expanded mode keeps the full rows with this as the title line (CSS).
+    host.classList.add("fpc-overlay-v2-host--has-display-name");
+  }
   host.style.setProperty("--fpc-overlay-accent", colorModel.accent);
 
   const v2HostWidth = isSequenceFlow
@@ -113,6 +119,15 @@ export function createV2OverlayHost(element, content, expanded = false) {
     badge.appendChild(footer);
   }
   badge.appendChild(list);
+  if (displayName) {
+    // flex column-reverse on the badge → appended last renders as the FIRST
+    // (top) line of the expanded card.
+    const titleEl = document.createElement("div");
+    titleEl.classList.add("fpc-overlay-v2-title");
+    titleEl.textContent = displayName;
+    titleEl.title = displayName;
+    badge.appendChild(titleEl);
+  }
   host.appendChild(badge);
 
   let position = { top: -20, left: 0 };

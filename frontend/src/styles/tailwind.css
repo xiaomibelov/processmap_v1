@@ -4760,6 +4760,19 @@
     box-shadow: var(--shadow-soft);
   }
 
+  .liveCardPreviewTitle {
+    font-size: 12px;
+    font-weight: 600;
+    color: hsl(var(--text));
+    line-height: 1.5;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding-bottom: 4px;
+    margin-bottom: 2px;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+
   .liveCardPreviewRow {
     @apply flex items-baseline justify-between;
     gap: 10px;
