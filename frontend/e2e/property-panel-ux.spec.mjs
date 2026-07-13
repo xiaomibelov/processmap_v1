@@ -20,6 +20,8 @@ import { waitForDiagramReady } from "./helpers/diagramReady.mjs";
 //      delete semantics + save/reload persistence).
 // T12: V2 cards show the derived one-line display name (RU template from
 //      exec.action_key + params); a manual display_name property wins.
+// T13: *_ref properties autocomplete (native datalist) from the
+//      process-derived ref pool; non-ref properties stay plain inputs.
 
 const PROCESS_ID = "Process_pux";
 const TASK_A = "Task_puxA";
@@ -725,6 +727,54 @@ test("T12: V2 card shows derived display name; manual display_name wins", async 
   await expect(v2HostD.locator(".fpc-overlay-v2-title"))
     .toHaveText("Ручное имя", { timeout: 15_000 });
   await expect(v2HostD.locator(".fpc-overlay-v2-list")).toBeHidden();
+
+  expect(problems, problems.join("\n")).toEqual([]);
+});
+
+test("T13: *_ref properties autocomplete from the process-derived ref pool", async ({ page, request }) => {
+  const problems = collectConsoleProblems(page);
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await bootDiagram(page, request, `pux_${runId}`);
+
+  // Task B has NO seeded extension properties; the ref pool comes from
+  // Task C/D (object_ref=container_1, target_ref=microwave_1), derived
+  // server-side into camunda_extensions_by_element_id. Backend reference
+  // options are intentionally NOT asserted (stage may return anything).
+  await selectTask(page, TASK_B);
+  await openPropertiesSection(page);
+  const additionalBlock = page.locator(".sidebarPropertiesBlock--secondary").first();
+  await expect(additionalBlock.locator(".sidebarPropertiesBlockToggle").first())
+    .toHaveAttribute("aria-expanded", "true");
+
+  // 1. Add a ref-named property → its value input gains a datalist with
+  //    the process-derived refs.
+  await additionalBlock.getByRole("button", { name: "+ Добавить BPMN-свойство" }).click();
+  await additionalBlock.getByLabel("Редактировать свойство новое").click();
+  const refNameInput = additionalBlock.locator('.sidebarSchemaPropertyRow.isEditing input[placeholder="Название"]');
+  await expect(refNameInput).toBeVisible({ timeout: 10_000 });
+  await refNameInput.fill("object_ref");
+  const refValueInput = additionalBlock.locator('.sidebarSchemaPropertyRow.isEditing input[placeholder="Значение"]');
+  await expect(refValueInput).toHaveAttribute("list", /^prop_ref_/, { timeout: 10_000 });
+  const refListId = await refValueInput.getAttribute("list");
+  const refDatalist = page.locator(`datalist[id="${refListId}"]`);
+  await expect(refDatalist.locator('option[value="container_1"]')).toHaveCount(1);
+  await expect(refDatalist.locator('option[value="microwave_1"]')).toHaveCount(1);
+
+  // Commit the ref row (Enter) so the next added row is a fresh empty one.
+  await refValueInput.press("Enter");
+  await expect(additionalBlock.getByLabel("Редактировать свойство object_ref"))
+    .toBeVisible({ timeout: 10_000 });
+
+  // 2. A non-ref property gets NO datalist — stays a plain text input.
+  await additionalBlock.getByRole("button", { name: "+ Добавить BPMN-свойство" }).click();
+  await additionalBlock.getByLabel("Редактировать свойство новое").click();
+  const plainNameInput = additionalBlock.locator('.sidebarSchemaPropertyRow.isEditing input[placeholder="Название"]');
+  await expect(plainNameInput).toBeVisible({ timeout: 10_000 });
+  await plainNameInput.fill("plain_key");
+  const plainValueInput = additionalBlock.locator('.sidebarSchemaPropertyRow.isEditing input[placeholder="Значение"]');
+  await expect(plainValueInput).toBeVisible({ timeout: 10_000 });
+  expect(await plainValueInput.getAttribute("list")).toBeNull();
+  await plainValueInput.press("Enter");
 
   expect(problems, problems.join("\n")).toEqual([]);
 });

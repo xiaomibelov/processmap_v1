@@ -43,6 +43,11 @@ import {
   shouldApplyExternalEditToken,
 } from "../features/process/camunda/camundaExtensionDraftMerge";
 import {
+  collectProcessRefs,
+  mergeRefOptions,
+} from "../features/process/camunda/refsModel";
+import { apiGetReferenceOptions } from "../lib/api.js";
+import {
   finalizeExtensionStateWithDictionary,
   buildPropertiesOverlayPreview,
   getOperationKeyFromRobotMeta,
@@ -1256,6 +1261,47 @@ export default function NotesPanel({
     const rawMeta = draft?.bpmn_meta && typeof draft.bpmn_meta === "object" ? draft.bpmn_meta : {};
     return normalizeCamundaExtensionsMap(rawMeta.camunda_extensions_by_element_id);
   }, [draft?.bpmn_meta]);
+  // Ref-property autocomplete (v0.3 Phase 1C): process-derived refs merged
+  // with backend reference dictionaries. Backend options are fetched lazily
+  // ONCE per org; any failure degrades to an empty list (inputs stay plain
+  // text inputs — zero UI breakage).
+  const referenceOptionsCacheRef = useRef(new Map());
+  const [backendRefOptions, setBackendRefOptions] = useState([]);
+  useEffect(() => {
+    const orgKey = str(activeOrgId);
+    const cache = referenceOptionsCacheRef.current;
+    if (cache.has(orgKey)) {
+      setBackendRefOptions(cache.get(orgKey));
+      return () => {};
+    }
+    let cancelled = false;
+    void (async () => {
+      const collected = [];
+      for (const source of ["ingredients", "equipment", "containers"]) {
+        try {
+          const result = await apiGetReferenceOptions(source, "", 100);
+          if (result?.ok && Array.isArray(result.items)) {
+            collected.push(...result.items);
+          } else if (!result?.ok) {
+            console.warn("[refs] reference options unavailable for", source, result?.error || result?.status || "");
+          }
+        } catch (err) {
+          console.warn("[refs] reference options fetch failed for", source, err);
+        }
+      }
+      if (cancelled) return;
+      const options = mergeRefOptions(collected);
+      cache.set(orgKey, options);
+      setBackendRefOptions(options);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOrgId]);
+  const refOptions = useMemo(
+    () => mergeRefOptions(collectProcessRefs(bpmnCamundaExtensionsByElementId), backendRefOptions),
+    [bpmnCamundaExtensionsByElementId, backendRefOptions],
+  );
   // Stabilise bpmn_meta reference: only recompute execution bridge when the
   // meta content actually changes (shallow-new objects produced by parent
   // renders should not trigger a full BPMN graph traversal).
@@ -3306,6 +3352,7 @@ export default function NotesPanel({
                   dictionaryLoading={isElementMode ? orgPropertyDictionaryLoading : false}
                   dictionaryError={isElementMode ? orgPropertyDictionaryErr : ""}
                   dictionaryAddBusyKey={isElementMode ? orgPropertyDictionaryAddBusyKey : ""}
+                  refOptions={isElementMode ? refOptions : []}
                   operationKey={isElementMode ? selectedOperationKey : ""}
                   operationOptions={isElementMode ? orgPropertyDictionaryOperations : []}
                   operationSelectionBusy={isElementMode ? (orgPropertyDictionaryOperationsLoading || robotMetaBusy) : false}

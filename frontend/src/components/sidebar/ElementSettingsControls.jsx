@@ -29,6 +29,10 @@ import RecipeSidebar from "../../features/process/recipe/components/RecipeSideba
 import PropertyGroup from "./PropertyGroup.jsx";
 import AdditionalBpmnPropertiesSection from "./sections/AdditionalBpmnPropertiesSection.jsx";
 import InlineBpmnPropertyRow from "./rows/InlineBpmnPropertyRow.jsx";
+import {
+  isRefPropertyName,
+  mergeRefOptions,
+} from "../../features/process/camunda/refsModel";
 import { normalizeDocumentationRows as sharedNormalizeDocumentationRows } from "../../features/process/bpmn/documentation/normalizeDocumentationRows.js";
 
 function toText(value) {
@@ -1179,6 +1183,7 @@ export function CamundaPropertiesSettings({
   dictionaryLoading = false,
   dictionaryError = "",
   dictionaryAddBusyKey = "",
+  refOptions = [],
   operationKey = "",
   operationOptions = [],
   operationSelectionBusy = false,
@@ -1639,6 +1644,15 @@ export function CamundaPropertiesSettings({
     const logicalKey = String(row?.propertyKey || row?.name || "");
     const label = String(row?.propertyLabel || logicalKey || "");
     const options = Array.isArray(row?.options) ? row.options : [];
+    // Ref-named properties (*_ref) get autocomplete from the process-wide
+    // ref pool + backend reference options, merged with dictionary options.
+    const isRefRow = isRefPropertyName(logicalKey);
+    const refDatalistValues = isRefRow
+      ? mergeRefOptions(options.map((option) => String(option?.optionValue || "")), refOptions)
+      : [];
+    const hasDatalist = isRefRow
+      ? refDatalistValues.length > 0
+      : (row?.inputMode === "autocomplete" && options.length);
     const datalistId = selectedElementId ? `property_dict_${selectedElementId}_${logicalKey}` : "";
     const canAddTypedValue = shouldOfferAddDictionaryValueAction({
       inputValue: row?.value,
@@ -1664,7 +1678,7 @@ export function CamundaPropertiesSettings({
             className="input sidebarInput w-full min-w-0 flex-[1_1_220px]"
             placeholder={row?.inputMode === "free_text" ? "Введите значение" : "Выберите или введите значение"}
             value={String(row?.value || "")}
-            list={row?.inputMode === "autocomplete" && options.length ? datalistId : undefined}
+            list={hasDatalist ? datalistId : undefined}
             onChange={(event) => updateSchemaPropertyValue(logicalKey, event.target.value)}
             disabled={!!disabled || !!extensionStateBusy}
             title={String(row?.value || "")}
@@ -1680,17 +1694,24 @@ export function CamundaPropertiesSettings({
             Очистить
           </button>
         </div>
-        {row?.inputMode === "autocomplete" && options.length ? (
+        {hasDatalist ? (
           <datalist id={datalistId}>
-            {options.map((option) => (
-              <option
-                key={`schema_property_option_${logicalKey}_${String(option?.id || option?.optionValue || "")}`}
-                value={String(option?.optionValue || "")}
-              />
-            ))}
+            {isRefRow
+              ? refDatalistValues.map((value) => (
+                <option
+                  key={`schema_property_ref_${logicalKey}_${value}`}
+                  value={value}
+                />
+              ))
+              : options.map((option) => (
+                <option
+                  key={`schema_property_option_${logicalKey}_${String(option?.id || option?.optionValue || "")}`}
+                  value={String(option?.optionValue || "")}
+                />
+              ))}
           </datalist>
         ) : null}
-        {row?.inputMode === "autocomplete" && !options.length ? (
+        {row?.inputMode === "autocomplete" && !options.length && !hasDatalist ? (
           <div className="sidebarFieldHint sidebarSchemaPropertyHint">
             {row?.allowCustomValue ? "Пока нет значений. Можно ввести своё." : "Для этого свойства пока нет значений."}
           </div>
@@ -1985,6 +2006,7 @@ async function handleSaveAll() {
           updatePropertyRow={updatePropertyRow}
           deletePropertyRow={handleAdditionalDelete}
           addPropertyRow={addPropertyRow}
+          refOptions={refOptions}
           onSaveExtensionState={onSaveExtensionState}
         />
 
@@ -2034,6 +2056,7 @@ async function handleSaveAll() {
                       extensionStateBusy={extensionStateBusy}
                       updatePropertyRow={updatePropertyRow}
                       deletePropertyRow={handleQuickDelete}
+                      refOptions={refOptions}
                     />
                   );
                 })}
