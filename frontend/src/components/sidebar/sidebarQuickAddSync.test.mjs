@@ -52,9 +52,35 @@ test("C5a: controller owns pin model (defaults + persisted userPins, by name)", 
   assert.match(ctrl, /function\s+unpinName\s*\(/, "unpinName defined");
   assert.match(ctrl, /function\s+isUserPinnedName\s*\(/, "isUserPinnedName defined");
   assert.match(ctrl, /normalizePinName[\s\S]*?toLowerCase\(\)/, "pins normalized (lowercased)");
-  for (const sym of ["quickPropertyNames", "quickRows", "otherAdditionalBpmnRows", "userPins", "pinName", "unpinName"]) {
+  for (const sym of ["quickPropertyNames", "quickRows", "additionalBpmnRows", "userPins", "pinName", "unpinName"]) {
     assert.ok(new RegExp(`return\\s*\\{[\\s\\S]*${sym},`).test(ctrl), `controller returns ${sym}`);
   }
+  assert.ok(!/otherAdditionalBpmnRows/.test(ctrl),
+    "partition list removed: Additional shows the full draft (two views of ONE draft)");
+  // quickRows ⊆ additionalBpmnRows by construction (filter of the same list).
+  assert.match(ctrl, /quickRows[\s\S]*?additionalBpmnRows\.filter\(/,
+    "quickRows derived as a filter of additionalBpmnRows (subset of one draft)");
+});
+
+test("C5a: Additional receives the FULL draft (pinned rows included), not a partition", () => {
+  const esc = readSrc(ESC);
+  const section = esc.match(/<AdditionalBpmnPropertiesSection[\s\S]*?\/>/)?.[0] || "";
+  assert.match(section, /rows=\{additionalBpmnRows\}/,
+    "AdditionalBpmnPropertiesSection gets the full additionalBpmnRows list");
+  assert.doesNotMatch(section, /otherAdditionalBpmnRows/, "no draft-minus-pinned partition list");
+  assert.match(esc, /const\s+additionalBpmnCount\s*=\s*additionalBpmnRows\.length/,
+    "Additional count reflects the full list");
+});
+
+test("C5a: delete-from-Additional hard-deletes AND unpins (no dangling Quick slot)", () => {
+  const esc = readSrc(ESC);
+  const fn = esc.match(/function\s+handleAdditionalDelete[\s\S]*?\n  \}/)?.[0] || "";
+  assert.match(fn, /isUserPinnedName\(\s*rowName\s*\)/, "checks pinned");
+  assert.match(fn, /unpinName\(\s*rowName\s*\)/, "unpins pinned rows (slot leaves Quick too)");
+  assert.match(fn, /deletePropertyRow\(\s*rowId\s*\)/, "hard-deletes from the draft");
+  const section = esc.match(/<AdditionalBpmnPropertiesSection[\s\S]*?\/>/)?.[0] || "";
+  assert.match(section, /deletePropertyRow=\{handleAdditionalDelete\}/,
+    "Additional rows use the unpin-aware delete");
 });
 
 test("C5a: ElementSettingsControls consumes the split (no local re-derivation)", () => {

@@ -1227,7 +1227,7 @@ export function CamundaPropertiesSettings({
     deletePropertyRow,
     quickPropertyNames,
     quickRows,
-    otherAdditionalBpmnRows,
+    additionalBpmnRows,
     userPins,
     isUserPinnedName,
     pinName,
@@ -1263,8 +1263,10 @@ export function CamundaPropertiesSettings({
     [state, dictionaryBundle],
   );
   const hasDictionarySchema = dictionaryEditorModel.hasSchema;
-  // quickPropertyNames / quickRows / otherAdditionalBpmnRows / userPins are
-  // sourced from useBpmnPropertiesController (single source of truth).
+  // quickPropertyNames / quickRows / additionalBpmnRows / userPins are
+  // sourced from useBpmnPropertiesController (single source of truth):
+  // Quick and Additional are two views of ONE draft — Quick shows the pinned
+  // rows, Additional shows the full list (pinned rows included).
 
   // Quick pinned-slot inline create: fill an empty pinned slot (ee_time /
   // ingredient_value) by creating the row with the canonical name (draft-only;
@@ -1278,9 +1280,9 @@ export function CamundaPropertiesSettings({
 
   // Delete-from-Quick semantics: a pinned row (user pin OR default —
   // defaults are initial pins only) is only unpinned: the row stays in the
-  // draft and surfaces in Additional (no data loss). A non-pinned row
-  // (cannot normally appear in Quick) is hard-deleted and flushed (unified
-  // with Additional's auto-save).
+  // draft and remains visible in Additional, which shows the full list (no
+  // data loss). A non-pinned row (cannot normally appear in Quick) is
+  // hard-deleted and flushed (unified with Additional's auto-save).
   function handleQuickDelete(rowId) {
     const row = quickRows.find((r) => String(r?.id || "") === String(rowId || ""));
     const rowName = String(row?.name || "");
@@ -1292,6 +1294,16 @@ export function CamundaPropertiesSettings({
     if (nextState && typeof onSaveExtensionState === "function") {
       void onSaveExtensionState(nextState);
     }
+  }
+
+  // Hard delete from Additional: remove from draft AND unpin (so it also
+  // disappears from Quick — no dangling empty pinned slot). The section's own
+  // delete wrapper flushes the auto-save with the returned next state.
+  function handleAdditionalDelete(rowId) {
+    const row = additionalBpmnRows.find((r) => String(r?.id || "") === String(rowId || ""));
+    const rowName = String(row?.name || "");
+    if (rowName && isUserPinnedName(rowName)) unpinName(rowName);
+    return deletePropertyRow(rowId);
   }
 
   // Generic quick add: create an empty row with the chosen name and pin it so
@@ -1739,7 +1751,7 @@ export function CamundaPropertiesSettings({
 
   const showSchemaHint = !hasDictionarySchema && !!normalizedOperationKey && !!dictionaryLoading && !dictionaryError;
   const showFallbackBlock = !hasDictionarySchema && (!normalizedOperationKey || !dictionaryLoading || !!dictionaryError);
-  const additionalBpmnCount = otherAdditionalBpmnRows.length;
+  const additionalBpmnCount = additionalBpmnRows.length;
   const camundaIoCount = camundaInputRows.length + camundaOutputRows.length;
   const zeebeTaskHeadersCount = zeebeTaskHeaderRows.length;
   const propertySections = [
@@ -1955,13 +1967,13 @@ async function handleSaveAll() {
           open={additionalBpmnOpen}
           onToggleOpen={setAdditionalBpmnOpen}
           count={additionalBpmnCount}
-          rows={otherAdditionalBpmnRows}
+          rows={additionalBpmnRows}
           hasDictionarySchema={hasDictionarySchema}
           dictionaryLoading={dictionaryLoading}
           disabled={disabled}
           extensionStateBusy={extensionStateBusy}
           updatePropertyRow={updatePropertyRow}
-          deletePropertyRow={deletePropertyRow}
+          deletePropertyRow={handleAdditionalDelete}
           addPropertyRow={addPropertyRow}
           onSaveExtensionState={onSaveExtensionState}
         />
