@@ -5849,12 +5849,13 @@ def create_org_record(name: str, *, created_by: str, org_id: Optional[str] = Non
             "is_active": True,
             **_org_git_mirror_payload({}),
         }
+    is_active_raw = _row_value(row, "is_active")
     out = {
         "id": str(row["id"] or ""),
         "name": str(row["name"] or ""),
         "created_at": int(row["created_at"] or 0),
         "created_by": str(row["created_by"] or ""),
-        "is_active": bool(row.get("is_active", 1)),
+        "is_active": bool(1 if is_active_raw is None else is_active_raw),
     }
     out.update(_org_git_mirror_payload(row))
     return out
@@ -5897,12 +5898,13 @@ def set_org_active(org_id: str, is_active: bool) -> Dict[str, Any]:
         ).fetchone()
     if not row:
         raise ValueError("org not found")
+    is_active_raw = _row_value(row, "is_active")
     out = {
         "id": str(row["id"] or ""),
         "name": str(row["name"] or ""),
         "created_at": int(row["created_at"] or 0),
         "created_by": str(row["created_by"] or ""),
-        "is_active": bool(row.get("is_active", 1)),
+        "is_active": bool(1 if is_active_raw is None else is_active_raw),
     }
     out.update(_org_git_mirror_payload(row))
     return out
@@ -5968,12 +5970,13 @@ def rename_org_record(org_id: str, name: str) -> Dict[str, Any]:
         ).fetchone()
     if not row:
         raise ValueError("org not found")
+    is_active_raw = _row_value(row, "is_active")
     out = {
         "id": str(row["id"] or ""),
         "name": str(row["name"] or ""),
         "created_at": int(row["created_at"] or 0),
         "created_by": str(row["created_by"] or ""),
-        "is_active": bool(row.get("is_active", 1)),
+        "is_active": bool(1 if is_active_raw is None else is_active_raw),
     }
     out.update(_org_git_mirror_payload(row))
     return out
