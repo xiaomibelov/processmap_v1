@@ -16,6 +16,8 @@ import { waitForDiagramReady } from "./helpers/diagramReady.mjs";
 // T8: To-Be toggle → pool → '+' → draft → save → XML.
 // T9: chip toggle hides the field from legacy + V2 cards (data untouched).
 // T10: live preview mirrors the draft (no save).
+// T11: quick ↔ additional two-way sync — one draft, two views (add/edit/
+//      delete semantics + save/reload persistence).
 
 const PROCESS_ID = "Process_pux";
 const TASK_A = "Task_puxA";
@@ -535,6 +537,117 @@ test("T10: live preview mirrors the draft — seeded values and inline edits (no
   await valueInput.press("Enter");
   await expect(preview).toContainText("0.66", { timeout: 15_000 });
   await expect(preview).not.toContainText("0.33");
+
+  expect(problems, problems.join("\n")).toEqual([]);
+});
+
+test("T11: quick ↔ additional two-way sync — one draft, two views", async ({ page, request }) => {
+  const problems = collectConsoleProblems(page);
+  const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const fixture = await bootDiagram(page, request, `pux_${runId}`);
+
+  // Task B has NO seeded extension properties — the test is fixture-agnostic.
+  await selectTask(page, TASK_B);
+  await openPropertiesSection(page);
+
+  const quickBlock = await expandQuickProperties(page);
+  const additionalBlock = page.locator(".sidebarPropertiesBlock--secondary").first();
+  // «Дополнительные BPMN-свойства» is open by default on element entry.
+  await expect(additionalBlock.locator(".sidebarPropertiesBlockToggle").first())
+    .toHaveAttribute("aria-expanded", "true");
+
+  // 1. Add «test_key» via «+ Добавить быстрое свойство» and fill the value.
+  await quickBlock.getByRole("button", { name: "+ Добавить быстрое свойство" }).click();
+  const nameInput = quickBlock.getByLabel("Название нового быстрого свойства");
+  await expect(nameInput).toBeVisible({ timeout: 10_000 });
+  await nameInput.fill("test_key");
+  await nameInput.press("Enter");
+  const quickRow = quickBlock.getByLabel("Редактировать свойство test_key");
+  await expect(quickRow).toBeVisible({ timeout: 10_000 });
+  await quickRow.click();
+  const quickValueInput = quickBlock.locator('.sidebarSchemaPropertyRow.isEditing input[placeholder="Значение"]');
+  await expect(quickValueInput).toBeVisible({ timeout: 10_000 });
+  await quickValueInput.fill("test_value");
+  await quickValueInput.press("Enter");
+
+  // 2. The row is visible in BOTH Quick and Additional (same draft).
+  await expect(quickBlock.getByLabel("Редактировать свойство test_key"))
+    .toContainText("test_value", { timeout: 10_000 });
+  await expect(additionalBlock.getByLabel("Редактировать свойство test_key"))
+    .toContainText("test_value", { timeout: 10_000 });
+
+  // 3. Edit the value in Quick → Additional follows (one draft, two views).
+  await quickBlock.getByLabel("Редактировать свойство test_key").click();
+  const quickValueEdit = quickBlock.locator('.sidebarSchemaPropertyRow.isEditing input[placeholder="Значение"]');
+  await expect(quickValueEdit).toBeVisible({ timeout: 10_000 });
+  await quickValueEdit.fill("new_value");
+  await quickValueEdit.press("Enter");
+  await expect(additionalBlock.getByLabel("Редактировать свойство test_key"))
+    .toContainText("new_value", { timeout: 10_000 });
+
+  // 4. Delete in Quick → pinned row is only unpinned: gone from Quick,
+  //    still present in Additional.
+  await quickBlock.getByLabel("Удалить свойство test_key").click();
+  await expect(quickBlock.getByLabel("Редактировать свойство test_key")).toHaveCount(0, { timeout: 10_000 });
+  await expect(quickBlock.getByLabel("Добавить значение для test_key")).toHaveCount(0);
+  await expect(additionalBlock.getByLabel("Редактировать свойство test_key")).toBeVisible({ timeout: 10_000 });
+
+  // 5. Delete in Additional → hard delete: gone from Additional AND no
+  //    dangling empty pinned slot in Quick.
+  await additionalBlock.getByLabel("Удалить свойство test_key").click();
+  await expect(additionalBlock.getByLabel("Редактировать свойство test_key")).toHaveCount(0, { timeout: 10_000 });
+  await expect(quickBlock.getByLabel("Редактировать свойство test_key")).toHaveCount(0);
+  await expect(quickBlock.getByLabel("Добавить значение для test_key")).toHaveCount(0);
+  await expect(quickBlock.getByText("test_key", { exact: true })).toHaveCount(0);
+
+  // 6. Persistence: add «persist_key=persist_val» in Quick, save, reload —
+  //    it must reappear in BOTH lists.
+  await quickBlock.getByRole("button", { name: "+ Добавить быстрое свойство" }).click();
+  const persistNameInput = quickBlock.getByLabel("Название нового быстрого свойства");
+  await expect(persistNameInput).toBeVisible({ timeout: 10_000 });
+  await persistNameInput.fill("persist_key");
+  await persistNameInput.press("Enter");
+  const persistQuickRow = quickBlock.getByLabel("Редактировать свойство persist_key");
+  await expect(persistQuickRow).toBeVisible({ timeout: 10_000 });
+  await persistQuickRow.click();
+  const persistValueInput = quickBlock.locator('.sidebarSchemaPropertyRow.isEditing input[placeholder="Значение"]');
+  await expect(persistValueInput).toBeVisible({ timeout: 10_000 });
+  await persistValueInput.fill("persist_val");
+  await persistValueInput.press("Enter");
+  await expect(quickBlock.getByLabel("Редактировать свойство persist_key"))
+    .toContainText("persist_val", { timeout: 10_000 });
+
+  await saveAll(page);
+  await expect
+    .poll(async () => taskBlock(await fetchBpmnXml(request, fixture), TASK_B), { timeout: 20_000 })
+    .toContain('name="persist_key"');
+
+  await page.reload();
+  await waitForDiagramReady(page);
+  await ensureSidebarOpen(page);
+  await selectTask(page, TASK_B);
+  await openPropertiesSection(page);
+  const quickBlock2 = await expandQuickProperties(page);
+  const additionalBlock2 = page.locator(".sidebarPropertiesBlock--secondary").first();
+  await expect(quickBlock2.getByLabel("Редактировать свойство persist_key"))
+    .toContainText("persist_val", { timeout: 15_000 });
+  await expect(additionalBlock2.getByLabel("Редактировать свойство persist_key"))
+    .toContainText("persist_val", { timeout: 15_000 });
+
+  // 7. Cleanup-agnostic: delete «persist_key» in Additional (still pinned
+  //    after reload) → unpin + hard delete; auto-save flushes; the property
+  //    disappears from both views and from the saved XML.
+  await additionalBlock2.getByLabel("Удалить свойство persist_key").click();
+  await expect(additionalBlock2.getByLabel("Редактировать свойство persist_key"))
+    .toHaveCount(0, { timeout: 10_000 });
+  await expect(quickBlock2.getByLabel("Редактировать свойство persist_key")).toHaveCount(0);
+  await expect(quickBlock2.getByLabel("Добавить значение для persist_key")).toHaveCount(0);
+  await expect(quickBlock2.getByText("persist_key", { exact: true })).toHaveCount(0);
+  // Full XML check: with its only property gone, Task B may serialize back
+  // to a self-closing tag (no </bpmn:task> block to match).
+  await expect
+    .poll(async () => fetchBpmnXml(request, fixture), { timeout: 20_000 })
+    .not.toContain("persist_key");
 
   expect(problems, problems.join("\n")).toEqual([]);
 });
