@@ -1313,8 +1313,11 @@ export function CamundaPropertiesSettings({
     pinName(name);
     setAddingQuick(false);
   }
+  // Show ALL active schema rows — including empty ones — so the operation's
+  // parameters can be filled in place (v0.3 Phase 1A). Only rows deactivated
+  // in the dictionary are hidden.
   const visibleSchemaRows = Array.isArray(dictionaryEditorModel?.schemaRows)
-    ? dictionaryEditorModel.schemaRows.filter((row) => String(row?.value ?? "").trim() !== "")
+    ? dictionaryEditorModel.schemaRows.filter((row) => row?.isActive !== false)
     : [];
   const operationPropertiesCount = visibleSchemaRows.length;
   const overlayCompanionSummary = selectedBpmnOverlayCompanionSummary && typeof selectedBpmnOverlayCompanionSummary === "object"
@@ -1643,10 +1646,17 @@ export function CamundaPropertiesSettings({
       allowCustomValue: row?.allowCustomValue,
       busy: dictionaryAddBusyKey === logicalKey,
     });
+    const isRequiredEmpty = !!row?.required && !String(row?.value || "").trim();
     return (
-      <div key={`schema_property_${logicalKey}`} className="sidebarSchemaPropertyRow">
+      <div
+        key={`schema_property_${logicalKey}`}
+        className={isRequiredEmpty ? "sidebarSchemaPropertyRow sidebarSchemaPropertyRow--requiredEmpty" : "sidebarSchemaPropertyRow"}
+      >
         <div className="sidebarSchemaPropertyLabel">
-          <div className="sidebarSchemaPropertyHuman">{label}</div>
+          <div className="sidebarSchemaPropertyHuman">
+            {label}
+            {row?.required ? <span className="sidebarSchemaPropertyRequired" title="Обязательное поле">*</span> : null}
+          </div>
           {logicalKey ? <div className="sidebarSchemaPropertyKey">{logicalKey}</div> : null}
         </div>
         <div className="sidebarSchemaPropertyValueCell">

@@ -5653,6 +5653,17 @@
     padding-bottom: 4px;
   }
 
+  .sidebarSchemaPropertyRow--requiredEmpty .sidebarInput {
+    border-color: color-mix(in srgb, var(--c-danger) 45%, var(--border));
+    background: color-mix(in srgb, var(--c-danger) 6%, var(--panel));
+  }
+
+  .sidebarSchemaPropertyRequired {
+    color: var(--c-danger);
+    font-weight: 700;
+    margin-left: 2px;
+  }
+
   .sidebarSchemaPropertyLabel {
     @apply min-w-0;
     overflow: hidden;
