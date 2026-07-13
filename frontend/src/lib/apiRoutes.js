@@ -148,6 +148,7 @@ export const apiRoutes = {
     recompute: (sessionId) => `/api/sessions/${encode(sessionId)}/recompute`,
     analytics: (sessionId) => `/api/sessions/${encode(sessionId)}/analytics`,
     export: (sessionId) => `/api/sessions/${encode(sessionId)}/export`,
+    exportZip: (sessionId) => `/api/sessions/${encode(sessionId)}/export.zip`,
     bpmn: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/bpmn`, {
       raw: options?.raw === true ? "1" : "",
       include_overlay: options?.includeOverlay === false ? "0" : "",
