@@ -29,6 +29,19 @@ describe("BpmnXmlCodeEditor source contract", () => {
     assert.match(source, /lintGutter\s*\(\s*\)/);
   });
 
+  it("enables closeBrackets, scrollPastEnd and placeholder", () => {
+    assert.match(source, /closeBrackets\s*\(\s*\)/);
+    assert.match(source, /scrollPastEnd\s*\(\s*\)/);
+    assert.match(source, /placeholder\s*\(/);
+  });
+
+  it("binds navigation and selection keymaps", () => {
+    assert.match(source, /gotoLine/);
+    assert.match(source, /selectNextOccurrence/);
+    assert.match(source, /selectMatchingBracket/);
+    assert.match(source, /closeBracketsKeymap/);
+  });
+
   it("binds Mod-s to onSave", () => {
     assert.match(source, /Mod-s/);
     assert.match(source, /onSaveRef\.current/);
