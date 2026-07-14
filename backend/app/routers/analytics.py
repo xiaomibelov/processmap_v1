@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import math
 import time
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Literal, Set
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 
 from ..legacy.request_context import request_active_org_id
 from ..schemas.analytics import AnalyticsActionsQuery, AnalyticsDashboardOut, AnalyticsPropertiesQuery
@@ -821,6 +822,7 @@ def _xlsx_response(
         worksheet.set_column(col_idx, col_idx, min(max_len + 3, 60))
 
     worksheet.autofilter(0, 0, len(rows), len(columns) - 1)
+    worksheet.freeze_panes(1, 0)
     workbook.close()
     out.seek(0)
 
@@ -835,8 +837,41 @@ def _xlsx_response(
 _EE_TIME_KEY = "ee_time"
 _INGREDIENT_VALUE_KEY = "ingredient_value"
 _INGREDIENT_KEY = "ingredient"
+_EE_OPERATION_KEY = "ee_operation"
+_INGREDIENT_UM_KEY = "ingredient_um"
 _RECALC_REQUIRED_KEYS = {_EE_TIME_KEY, _INGREDIENT_VALUE_KEY}
 _RECALC_CAPTURE_KEYS = {_EE_TIME_KEY, _INGREDIENT_VALUE_KEY, _INGREDIENT_KEY}
+
+
+# Sentinel used to distinguish an absent ingredient_value property from an empty one.
+_MISSING = object()
+
+
+def compute_source(ee_time: float, ingredient_value: Any) -> float | str:
+    """Compute the Source value for the ?mode=source export.
+
+    - ``ingredient_value`` is missing (the property key is absent) -> ``ee_time * 1.0``.
+    - ``ingredient_value`` is an empty string -> ``"нет данных"``.
+    - Otherwise the value is normalized (trim, strip trailing commas, ``"," -> "."``),
+      parsed as float, and if ``> 0`` it is multiplied by ``ee_time``.
+    - Any parse error or non-positive value -> ``"нет данных"``.
+    """
+    if ingredient_value is _MISSING:
+        return round(ee_time * 1.0, 2)
+
+    raw = _text(ingredient_value)
+    if raw == "" or raw == "—":
+        return "нет данных"
+
+    normalized = raw.strip().rstrip(",").replace(",", ".")
+    try:
+        parsed = float(normalized)
+    except ValueError:
+        return "нет данных"
+
+    if parsed > 0:
+        return round(ee_time * parsed, 2)
+    return "нет данных"
 
 
 def _parse_recalc_number(value: Any) -> float | None:
@@ -947,16 +982,134 @@ def _build_recalculated_rows(
     return out_rows
 
 
+def _build_source_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Group Camunda properties by BPMN element and compute Source for the source export.
+
+    Emits one row per element that has a numeric ``ee_time``. Missing
+    ``ingredient_value`` (the property key is absent) is treated as a multiplier of
+    ``1.0``. Empty or unparseable ``ingredient_value`` yields ``Source = "нет данных"``.
+    ``ee_operation`` and ``ingredient_um`` are carried through when present.
+    """
+    by_element: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        name = _text(row.get("name"))
+        if name not in (
+            _EE_TIME_KEY,
+            _INGREDIENT_VALUE_KEY,
+            _INGREDIENT_KEY,
+            _EE_OPERATION_KEY,
+            _INGREDIENT_UM_KEY,
+        ):
+            continue
+        bpmn_id = _text(row.get("bpmn_id"))
+        if not bpmn_id:
+            continue
+        element = by_element.get(bpmn_id)
+        if element is None:
+            element = {
+                "bpmn_id": bpmn_id,
+                "bpmn_name": _text(row.get("bpmn_name")),
+                _EE_TIME_KEY: None,
+                _INGREDIENT_VALUE_KEY: _MISSING,
+                _INGREDIENT_KEY: None,
+                _EE_OPERATION_KEY: "",
+                _INGREDIENT_UM_KEY: "",
+                "session_id": _text(row.get("session_id")),
+                "session_title": _text(row.get("session_title")),
+                "workspace_id": _text(row.get("workspace_id")),
+                "org_id": _text(row.get("org_id")),
+            }
+            by_element[bpmn_id] = element
+        if name == _EE_TIME_KEY:
+            element[_EE_TIME_KEY] = _text(row.get("value"))
+        elif name == _INGREDIENT_VALUE_KEY:
+            # The registry normalises an empty Camunda value to "—"; treat it as empty.
+            raw = _text(row.get("value"))
+            element[_INGREDIENT_VALUE_KEY] = "" if raw == "—" else raw
+        elif name == _INGREDIENT_KEY:
+            element[_INGREDIENT_KEY] = _text(row.get("value"))
+        elif name == _EE_OPERATION_KEY:
+            element[_EE_OPERATION_KEY] = _text(row.get("value"))
+        elif name == _INGREDIENT_UM_KEY:
+            element[_INGREDIENT_UM_KEY] = _text(row.get("value"))
+        if not element["bpmn_name"]:
+            element["bpmn_name"] = _text(row.get("bpmn_name"))
+
+    out_rows: List[Dict[str, Any]] = []
+    for element in by_element.values():
+        ee_val = _parse_recalc_number(element.get(_EE_TIME_KEY))
+        if ee_val is None:
+            continue  # ee_time is required to emit a source row
+        source = compute_source(ee_val, element.get(_INGREDIENT_VALUE_KEY))
+        ing_display = "" if element.get(_INGREDIENT_VALUE_KEY) is _MISSING else element[_INGREDIENT_VALUE_KEY]
+        sid = element["session_id"]
+        out_rows.append({
+            "bpmn_id": element["bpmn_id"],
+            "bpmn_name": element["bpmn_name"],
+            _EE_OPERATION_KEY: element.get(_EE_OPERATION_KEY) or "",
+            _INGREDIENT_VALUE_KEY: ing_display,
+            _INGREDIENT_UM_KEY: element.get(_INGREDIENT_UM_KEY) or "",
+            "source": source,
+            "session_id": sid,
+            "session_title": element["session_title"],
+            "workspace_id": element["workspace_id"],
+            "org_id": element["org_id"],
+            "source_url": f"/app?session={sid}" if sid else "",
+        })
+
+    return out_rows
+
+
 @router.get("/properties/export-recalculated.xlsx")
 def export_properties_recalculated_xlsx(
     request: Request,
     scope: str = Query(..., pattern="^(workspace|project|session)$"),
     scope_id: str = Query(..., min_length=1),
+    mode: Literal["source"] | None = Query(None),
     org_id: str | None = Query(None),
 ):
     oid = org_id or _org_id_from_request(request)
     require_analytics_scope(request, scope, scope_id, oid)
     rows = _properties_rows(scope, scope_id, oid)
+
+    if mode == "source":
+        source_rows = _build_source_rows(rows)
+        invalid_tasks = [
+            {
+                "bpmn_id": r["bpmn_id"],
+                "bpmn_name": r["bpmn_name"],
+                "ingredient_value": r[_INGREDIENT_VALUE_KEY],
+            }
+            for r in source_rows
+            if r["source"] == "нет данных"
+        ]
+        if invalid_tasks:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "error": "В схеме найдены не заполненные значения свойства ingredient_value, заполните значения и повторите операцию",
+                    "invalid_tasks": invalid_tasks,
+                },
+            )
+        columns = [
+            ("bpmn_id", "BPMN ID"),
+            ("bpmn_name", "BPMN Name"),
+            (_EE_OPERATION_KEY, "ee_operation"),
+            (_INGREDIENT_VALUE_KEY, "ingredient_value"),
+            (_INGREDIENT_UM_KEY, "ingredient_um"),
+            ("source", "Source"),
+            ("session_id", "Session ID"),
+            ("session_title", "Session Name"),
+            ("workspace_id", "Workspace"),
+            ("org_id", "Organization"),
+            ("source_url", "Source URL"),
+        ]
+        formats = {
+            _INGREDIENT_VALUE_KEY: {"num_format": "0.00"},
+            "source": {"num_format": "0.00"},
+        }
+        return _xlsx_response(source_rows, f"properties-source-{scope}-{scope_id}.xlsx", columns, formats)
+
     recalc_rows = _build_recalculated_rows(rows, catalog_values=get_ingredient_values_by_name(oid))
     columns = [
         ("bpmn_id", "BPMN ID"),
