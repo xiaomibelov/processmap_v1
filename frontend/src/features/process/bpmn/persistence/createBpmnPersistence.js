@@ -4,6 +4,86 @@ import {
   bumpVersion as bumpTrackedDiagramStateVersion,
   rollbackVersion as rollbackTrackedDiagramStateVersion,
 } from "../../../../lib/casVersionTracker.js";
+import { saveCoordinator } from "../../../../features/session/saveCoordinator.js";
+
+const RAW_XML_PIPELINE_NAME = "rawXml";
+
+function pickDiagramStateVersion(response) {
+  if (!response || typeof response !== "object") return null;
+  const raw = response.diagram_state_version ?? response.diagramStateVersion;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+}
+
+saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, {
+  transport: async (sessionId, payload) => {
+    const apiPutBpmnXml = payload?.apiPutBpmnXml;
+    if (typeof apiPutBpmnXml !== "function") {
+      return { ok: false, status: 0, error: "apiPutBpmnXml unavailable" };
+    }
+    return apiPutBpmnXml(sessionId, payload.xml, payload.options);
+  },
+  buildPayload: (payload) => {
+    const options = {
+      rev: payload.rev,
+      reason: payload.reason,
+      baseDiagramStateVersion: payload.baseDiagramStateVersion,
+    };
+    if (payload.sourceAction) {
+      options.sourceAction = payload.sourceAction;
+    }
+    if (payload.bpmnMeta) {
+      options.bpmnMeta = payload.bpmnMeta;
+    }
+    return {
+      apiPutBpmnXml: payload.apiPutBpmnXml,
+      xml: payload.xml,
+      options,
+    };
+  },
+  getBaseVersion: (_sessionId, payload) => {
+    const base = Number(payload?.baseDiagramStateVersion);
+    return Number.isFinite(base) && base >= 0 ? Math.round(base) : null;
+  },
+  onSuccess: (response, sessionId, payload) => {
+    const version = pickDiagramStateVersion(response);
+    if (version !== null) {
+      bumpTrackedDiagramStateVersion(sessionId, version);
+      if (typeof payload?.rememberDiagramStateVersion === "function") {
+        try {
+          payload.rememberDiagramStateVersion(version, { sessionId });
+        } catch {
+          // no-op
+        }
+      }
+    }
+  },
+  on409: (response, sessionId, payload) => {
+    rollbackTrackedDiagramStateVersion(sessionId);
+    const data = response?.data ?? {};
+    const detail = data?.detail ?? data ?? {};
+    const serverVersion = Number(
+      detail.server_current_version ?? detail.serverCurrentVersion ?? response?.server_current_version ?? response?.serverCurrentVersion ?? -1,
+    );
+    if (Number.isFinite(serverVersion) && serverVersion >= 0) {
+      const normalized = Math.round(serverVersion);
+      setTrackedDiagramStateVersion(sessionId, normalized);
+      if (typeof payload?.rememberDiagramStateVersion === "function") {
+        try {
+          payload.rememberDiagramStateVersion(normalized, { sessionId });
+        } catch {
+          // no-op
+        }
+      }
+    }
+  },
+  onError: (_response, sessionId) => {
+    rollbackTrackedDiagramStateVersion(sessionId);
+  },
+  debounceMs: 0,
+  retryCount: 3,
+  retryDelayMs: 1000,
+});
 
 function asText(value) {
   return String(value || "");
@@ -644,7 +724,17 @@ export default function createBpmnPersistence(options = {}) {
     if (sourceAction) {
       putOptions.sourceAction = sourceAction;
     }
-    const saved = await apiPutBpmnXml(sid, xml, putOptions);
+    const saved = await saveCoordinator.execute(RAW_XML_PIPELINE_NAME, {
+      sessionId: sid,
+      xml,
+      rev: targetRev,
+      reason,
+      baseDiagramStateVersion,
+      sourceAction,
+      bpmnMeta,
+      apiPutBpmnXml,
+      rememberDiagramStateVersion: rememberExternalDiagramStateVersion,
+    });
     emit("API_PUT_BPMN_XML_RESULT", {
       sid,
       reason: asText(reason || "save"),
@@ -660,11 +750,6 @@ export default function createBpmnPersistence(options = {}) {
     if (!saved?.ok) {
       const status = asNumber(saved?.status, 0);
       const errorDetails = resolvePersistErrorDetails(saved);
-      rollbackTrackedDiagramStateVersion(sid);
-      rememberDiagramStateVersion(
-        errorDetails?.server_current_version ?? errorDetails?.serverCurrentVersion,
-        sid,
-      );
       const errorCode = asText(
         saved?.errorCode
         || errorDetails.code
@@ -680,7 +765,7 @@ export default function createBpmnPersistence(options = {}) {
       };
     }
     const storedRev = asNumber(saved?.storedRev, targetRev);
-    const storedDiagramStateVersion = bumpDiagramStateVersion(saved?.diagramStateVersion, sid);
+    const storedDiagramStateVersion = asNumber(saved?.diagramStateVersion, 0);
     // eslint-disable-next-line no-console
     console.debug(
       `PERSIST_OK sid=${sid} rev=${storedRev} hash=${fnv1aHex(xml)} len=${xml.length} `
