@@ -1,3 +1,10 @@
+import {
+  getVersion as getTrackedDiagramStateVersion,
+  setVersion as setTrackedDiagramStateVersion,
+  bumpVersion as bumpTrackedDiagramStateVersion,
+  rollbackVersion as rollbackTrackedDiagramStateVersion,
+} from "../../../../lib/casVersionTracker.js";
+
 function asText(value) {
   return String(value || "");
 }
@@ -241,9 +248,6 @@ export default function createBpmnPersistence(options = {}) {
     return Math.round(value);
   }
 
-  let knownDiagramStateVersion = readDraftDiagramStateVersion();
-  let knownDiagramStateVersionSid = "";
-
   function readExternalBaseDiagramStateVersion() {
     if (typeof getExternalBaseDiagramStateVersion !== "function") return null;
     const raw = Number(getExternalBaseDiagramStateVersion());
@@ -253,54 +257,51 @@ export default function createBpmnPersistence(options = {}) {
 
   function resolveBaseDiagramStateVersion(sessionId = "") {
     const sid = asText(sessionId).trim();
-    if (sid && sid !== knownDiagramStateVersionSid) {
-      knownDiagramStateVersionSid = sid;
-      knownDiagramStateVersion = readDraftDiagramStateVersion();
-    }
+    if (!sid) return 0;
+
+    const trackedVersion = getTrackedDiagramStateVersion(sid);
     const externalVersion = readExternalBaseDiagramStateVersion();
-    if (
-      externalVersion !== null
-      && (
-        knownDiagramStateVersion === null
-        || !Number.isFinite(knownDiagramStateVersion)
-        || externalVersion > knownDiagramStateVersion
-      )
-    ) {
-      knownDiagramStateVersion = externalVersion;
-    }
     const draftVersion = readDraftDiagramStateVersion();
-    if (draftVersion !== null) {
-      if (
-        knownDiagramStateVersion === null
-        || !Number.isFinite(knownDiagramStateVersion)
-        || draftVersion > knownDiagramStateVersion
-      ) {
-        knownDiagramStateVersion = draftVersion;
-      }
-      return Math.max(0, Math.round(knownDiagramStateVersion));
-    }
-    if (knownDiagramStateVersion !== null && Number.isFinite(knownDiagramStateVersion)) {
-      return Math.max(0, Math.round(knownDiagramStateVersion));
-    }
-    return 0;
+
+    // Prefer the most up-to-date source across tracker, external context and
+    // the session draft. The tracker is the unified store, but the external
+    // getter/draft may have received a newer value from another write path.
+    const resolved = Math.max(
+      trackedVersion ?? -1,
+      externalVersion ?? -1,
+      draftVersion ?? -1,
+    );
+    return resolved >= 0 ? Math.max(0, Math.round(resolved)) : 0;
   }
 
   function rememberDiagramStateVersion(raw, sessionId = "") {
     const next = asNumber(raw, -1);
     if (!Number.isFinite(next) || next < 0) return null;
     const sid = asText(sessionId).trim();
-    if (sid) {
-      knownDiagramStateVersionSid = sid;
-    }
-    knownDiagramStateVersion = Math.round(next);
+    setTrackedDiagramStateVersion(sid, next);
     if (typeof rememberExternalDiagramStateVersion === "function") {
       try {
-        rememberExternalDiagramStateVersion(knownDiagramStateVersion, { sessionId: sid });
+        rememberExternalDiagramStateVersion(next, { sessionId: sid });
       } catch {
         // no-op
       }
     }
-    return knownDiagramStateVersion;
+    return next;
+  }
+
+  function bumpDiagramStateVersion(raw, sessionId = "") {
+    const next = asNumber(raw, -1);
+    if (!Number.isFinite(next) || next < 0) return null;
+    const sid = asText(sessionId).trim();
+    bumpTrackedDiagramStateVersion(sid, next);
+    if (typeof rememberExternalDiagramStateVersion === "function") {
+      try {
+        rememberExternalDiagramStateVersion(next, { sessionId: sid });
+      } catch {
+        // no-op
+      }
+    }
+    return next;
   }
 
   function snapshotProjectId() {
@@ -626,7 +627,7 @@ export default function createBpmnPersistence(options = {}) {
       rev: targetRev,
       xml_len: xml.length,
       draft_rev: draftRevision(),
-      known_diagram_state_version: asNumber(knownDiagramStateVersion, -1),
+      known_diagram_state_version: asNumber(getTrackedDiagramStateVersion(sid), -1),
       base_diagram_state_version: asNumber(baseDiagramStateVersion, -1),
       local_session: isLocalSessionId(sid) ? 1 : 0,
       has_bpmn_meta: bpmnMeta ? 1 : 0,
@@ -659,6 +660,7 @@ export default function createBpmnPersistence(options = {}) {
     if (!saved?.ok) {
       const status = asNumber(saved?.status, 0);
       const errorDetails = resolvePersistErrorDetails(saved);
+      rollbackTrackedDiagramStateVersion(sid);
       rememberDiagramStateVersion(
         errorDetails?.server_current_version ?? errorDetails?.serverCurrentVersion,
         sid,
@@ -678,7 +680,7 @@ export default function createBpmnPersistence(options = {}) {
       };
     }
     const storedRev = asNumber(saved?.storedRev, targetRev);
-    const storedDiagramStateVersion = rememberDiagramStateVersion(saved?.diagramStateVersion, sid);
+    const storedDiagramStateVersion = bumpDiagramStateVersion(saved?.diagramStateVersion, sid);
     // eslint-disable-next-line no-console
     console.debug(
       `PERSIST_OK sid=${sid} rev=${storedRev} hash=${fnv1aHex(xml)} len=${xml.length} `
