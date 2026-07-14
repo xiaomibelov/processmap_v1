@@ -26,8 +26,10 @@ import SidebarTrustStatus from "./SidebarTrustStatus";
 import useElementSettingsController from "./useElementSettingsController";
 import { RecipeQueryProvider } from "../../features/process/recipe/providers/RecipeQueryProvider.jsx";
 import RecipeSidebar from "../../features/process/recipe/components/RecipeSidebar.jsx";
-import PropertyGroup from "./PropertyGroup.jsx";
 import AdditionalBpmnPropertiesSection from "./sections/AdditionalBpmnPropertiesSection.jsx";
+import PropertySection from "./PropertySection.jsx";
+import OperationSection from "./OperationSection.jsx";
+import AdvancedSettingsSection from "./AdvancedSettingsSection.jsx";
 import InlineBpmnPropertyRow from "./rows/InlineBpmnPropertyRow.jsx";
 import {
   isRefPropertyName,
@@ -1199,7 +1201,8 @@ export function CamundaPropertiesSettings({
   onResetBpmnDocumentation,
   onSaveAllBatch,
   onFocusDrawioCompanion,
-  afterQuickProperties = null,
+  operationToBeSlot = null,
+  operationToBeCount = 0,
   hideActions = false,
   disabled = false,
 }) {
@@ -1208,12 +1211,8 @@ export function CamundaPropertiesSettings({
     setListenersOpen,
     operationOpen,
     setOperationOpen,
-    operationPropertiesOpen,
-    setOperationPropertiesOpen,
     additionalBpmnOpen,
     setAdditionalBpmnOpen,
-    quickPropsOpen,
-    setQuickPropsOpen,
     documentationOpen,
     setDocumentationOpen,
     camundaIoOpen,
@@ -1260,6 +1259,7 @@ export function CamundaPropertiesSettings({
   // «Вспомогательное» block: collapsible, collapsed by default on entry
   // (local-only state, never persisted).
   const [auxiliaryOpen, setAuxiliaryOpen] = useState(false);
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [saveAllBusy, setSaveAllBusy] = useState(false);
   const normalizedState = useMemo(() => normalizeCamundaExtensionState(state), [state]);
   const propertyContext = selectedBpmnPropertyContext && typeof selectedBpmnPropertyContext === "object"
@@ -1788,6 +1788,10 @@ export function CamundaPropertiesSettings({
   const additionalBpmnCount = additionalBpmnRows.length;
   const camundaIoCount = camundaInputRows.length + camundaOutputRows.length;
   const zeebeTaskHeadersCount = zeebeTaskHeaderRows.length;
+  const propertySectionCount = additionalBpmnRows.length;
+  const operationSectionCount =
+    (normalizedOperationKey ? 1 : 0) + operationPropertiesCount + (operationToBeCount || 0);
+  const advancedSettingsCount = camundaIoCount + zeebeTaskHeadersCount + listenerCount + documentationCount;
   const propertySections = [
     { key: "general", title: "General", rows: asArray(propertyContext.general) },
     { key: "routing", title: "Routing / Conditions", rows: asArray(propertyContext.routing) },
@@ -2006,302 +2010,302 @@ async function handleSaveAll() {
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div className="sidebarControlStack sidebarPropertiesLayout sidebarPropertiesLayout--centered" onKeyDown={handlePropertiesKeyDown}>
       <section className="sidebarPropertiesForm" data-testid="camunda-properties-group">
-        <AdditionalBpmnPropertiesSection
+        <PropertySection
+          count={propertySectionCount}
           open={additionalBpmnOpen}
-          onToggleOpen={setAdditionalBpmnOpen}
-          count={additionalBpmnCount}
-          rows={additionalBpmnRows}
-          hasDictionarySchema={hasDictionarySchema}
-          dictionaryLoading={dictionaryLoading}
-          disabled={disabled}
-          extensionStateBusy={extensionStateBusy}
-          updatePropertyRow={updatePropertyRow}
-          deletePropertyRow={handleAdditionalDelete}
-          addPropertyRow={addPropertyRow}
-          refOptions={refOptions}
-          onSaveExtensionState={onSaveExtensionState}
-        />
-
-        <section className="sidebarPropertiesBlock sidebarPropertiesBlock--primary sidebarPropertiesBlock--wide">
-          <div className="sidebarPropertiesBlockHead">
-            <button
-              type="button"
-              className="sidebarPropertiesBlockToggle"
-              onClick={() => setQuickPropsOpen((prev) => !prev)}
-              aria-expanded={quickPropsOpen ? "true" : "false"}
-            >
-              <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{quickPropsOpen ? "▾" : "▸"}</span>
-              <span className="sidebarPropertiesBlockTitle">Быстрые свойства</span>
-              <span className="sidebarPropertiesBlockMeta">{quickRows.length}</span>
-            </button>
-            <SidebarInfoTip
-              label="О быстрых свойствах"
-              text="Приоритетные свойства элемента: ee_time и ingredient_value."
-            />
-          </div>
-          {quickPropsOpen ? (
+          onToggle={setAdditionalBpmnOpen}
+        >
+          {additionalBpmnRows.length === 0 ? (
             <>
-              <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarPropertiesRows--zebra">
-                <div className="sidebarPropertiesTableHead" role="presentation">
-                  <span>Свойство</span>
-                  <span>Значение</span>
-                  <span>Действие</span>
-                </div>
-                {quickPropertyNames.map((name) => {
-                  const row = quickRows.find((r) => toText(r?.name).toLowerCase() === name);
-                  if (!row) {
-                    return (
-                      <QuickEmptyPropertyRow
-                        key={name}
-                        name={name}
-                        disabled={disabled}
-                        extensionStateBusy={extensionStateBusy}
-                        onCreate={handleQuickCreate}
-                      />
-                    );
-                  }
-                  return (
-                    <InlineBpmnPropertyRow
-                      key={String(row?.id || name)}
-                      row={row}
-                      disabled={disabled}
-                      extensionStateBusy={extensionStateBusy}
-                      updatePropertyRow={updatePropertyRow}
-                      deletePropertyRow={handleQuickDelete}
-                      refOptions={refOptions}
-                    />
-                  );
-                })}
-                {addingQuick ? (
-                  <QuickNewPropertyRow
-                    disabled={disabled}
-                    extensionStateBusy={extensionStateBusy}
-                    onCommit={handleQuickAddNamed}
-                    onCancel={() => setAddingQuick(false)}
-                  />
-                ) : null}
-              </div>
+              <div className="sidebarPropertiesEmptyState">Нет свойств</div>
               <div className="sidebarButtonRow">
                 <button
                   type="button"
                   className="sidebarAddBtn"
-                  onClick={() => setAddingQuick(true)}
-                  disabled={!!disabled || !!extensionStateBusy || addingQuick}
+                  onClick={addPropertyRow}
+                  disabled={!!disabled || !!extensionStateBusy}
                 >
-                  + Добавить быстрое свойство
+                  + Добавить BPMN-свойство
                 </button>
               </div>
             </>
-          ) : null}
-        </section>
+          ) : (
+            <>
+              <section className="sidebarPropertiesBlock sidebarPropertiesBlock--primary sidebarPropertiesBlock--wide">
+                <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarPropertiesRows--zebra">
+                  <div className="sidebarPropertiesTableHead" role="presentation">
+                    <span>Свойство</span>
+                    <span>Значение</span>
+                    <span>Действие</span>
+                  </div>
+                  {quickPropertyNames.map((name) => {
+                    const row = quickRows.find((r) => toText(r?.name).toLowerCase() === name);
+                    if (!row) {
+                      return (
+                        <QuickEmptyPropertyRow
+                          key={name}
+                          name={name}
+                          disabled={disabled}
+                          extensionStateBusy={extensionStateBusy}
+                          onCreate={handleQuickCreate}
+                        />
+                      );
+                    }
+                    return (
+                      <InlineBpmnPropertyRow
+                        key={String(row?.id || name)}
+                        row={row}
+                        disabled={disabled}
+                        extensionStateBusy={extensionStateBusy}
+                        updatePropertyRow={updatePropertyRow}
+                        deletePropertyRow={handleQuickDelete}
+                        refOptions={refOptions}
+                      />
+                    );
+                  })}
+                  {addingQuick ? (
+                    <QuickNewPropertyRow
+                      disabled={disabled}
+                      extensionStateBusy={extensionStateBusy}
+                      onCommit={handleQuickAddNamed}
+                      onCancel={() => setAddingQuick(false)}
+                    />
+                  ) : null}
+                </div>
+                <div className="sidebarButtonRow">
+                  <button
+                    type="button"
+                    className="sidebarAddBtn"
+                    onClick={() => setAddingQuick(true)}
+                    disabled={!!disabled || !!extensionStateBusy || addingQuick}
+                  >
+                    + Добавить быстрое свойство
+                  </button>
+                </div>
+              </section>
 
-        {afterQuickProperties}
+              {quickPropertyNames.length > 0 && additionalBpmnRows.length > 0 ? (
+                <div className="sidebarPropertiesSectionDivider" />
+              ) : null}
+
+              <AdditionalBpmnPropertiesSection
+                hideHeader
+                open
+                onToggleOpen={() => {}}
+                count={additionalBpmnCount}
+                rows={additionalBpmnRows}
+                hasDictionarySchema={hasDictionarySchema}
+                dictionaryLoading={dictionaryLoading}
+                disabled={disabled}
+                extensionStateBusy={extensionStateBusy}
+                updatePropertyRow={updatePropertyRow}
+                deletePropertyRow={handleAdditionalDelete}
+                addPropertyRow={addPropertyRow}
+                refOptions={refOptions}
+                onSaveExtensionState={onSaveExtensionState}
+              />
+            </>
+          )}
+        </PropertySection>
 
         {isTaskLikeBpmnType(selectedElementType) ? (
-          <PropertyGroup title="Идентификация и операция">
+          <OperationSection
+            count={operationSectionCount}
+            open={operationOpen}
+            onToggle={setOperationOpen}
+          >
             <section className="sidebarPropertiesBlock">
               <div className="sidebarPropertiesBlockHead">
-                <button
-                  type="button"
-                  className="sidebarPropertiesBlockToggle"
-                  onClick={() => setOperationOpen((prev) => !prev)}
-                  aria-expanded={operationOpen ? "true" : "false"}
-                >
-                  <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{operationOpen ? "▾" : "▸"}</span>
-                  <span className="sidebarPropertiesBlockTitle">Операция</span>
-                </button>
+                <span className="sidebarPropertiesBlockTitle">Операция</span>
                 <SidebarInfoTip
                   label="Что такое операция"
                   text="Операция определяет схему полей, доступных для этого узла."
                 />
               </div>
-              {operationOpen ? (
-                <>
-                  <div className="sidebarControlRow sidebarOperationRow">
-                    <select
-                      className="select sidebarSelect w-full min-w-0 flex-[1_1_220px]"
-                      value={normalizedOperationKey}
-                      onChange={(event) => {
-                        void onOperationKeyChange?.(event.target.value);
-                      }}
-                      disabled={!!disabled || !!extensionStateBusy || !!operationSelectionBusy || typeof onOperationKeyChange !== "function"}
-                    >
-                      <option value="">Не выбрано</option>
-                      {normalizedOperationOptions.map((item) => (
-                        <option key={`operation_option_${item.key}`} value={item.key}>
-                          {item.label && item.label !== item.key ? `${item.label} (${item.key})` : item.key}
-                        </option>
-                      ))}
-                      {normalizedOperationKey && !selectedOperationOption ? (
-                        <option value={normalizedOperationKey}>
-                          {operationDisplayLabel && operationDisplayLabel !== normalizedOperationKey
-                            ? `${operationDisplayLabel} (${normalizedOperationKey})`
-                            : normalizedOperationKey}
-                        </option>
-                      ) : null}
-                    </select>
-                    <button
-                      type="button"
-                      className="sidebarPropertyActionBtn sidebarPropertyActionBtn--text"
-                      onClick={() => onOpenDictionaryManager?.()}
-                      disabled={!!disabled}
-                    >
-                      Справочник
-                    </button>
-                  </div>
-                  {!normalizedOperationKey && !hasOperationChoices ? (
-                    <div className="sidebarFieldHint mt-1">
-                      Для организации пока нет операций в справочнике.
-                    </div>
+              <div className="sidebarControlRow sidebarOperationRow">
+                <select
+                  className="select sidebarSelect w-full min-w-0 flex-[1_1_220px]"
+                  value={normalizedOperationKey}
+                  onChange={(event) => {
+                    void onOperationKeyChange?.(event.target.value);
+                  }}
+                  disabled={!!disabled || !!extensionStateBusy || !!operationSelectionBusy || typeof onOperationKeyChange !== "function"}
+                >
+                  <option value="">Не выбрано</option>
+                  {normalizedOperationOptions.map((item) => (
+                    <option key={`operation_option_${item.key}`} value={item.key}>
+                      {item.label && item.label !== item.key ? `${item.label} (${item.key})` : item.key}
+                    </option>
+                  ))}
+                  {normalizedOperationKey && !selectedOperationOption ? (
+                    <option value={normalizedOperationKey}>
+                      {operationDisplayLabel && operationDisplayLabel !== normalizedOperationKey
+                        ? `${operationDisplayLabel} (${normalizedOperationKey})`
+                        : normalizedOperationKey}
+                    </option>
                   ) : null}
-                  {normalizedOperationKey ? (
-                    <div className="sidebarOperationSummary">
-                      Операция: <span className="font-medium text-fg">{operationDisplayLabel || normalizedOperationKey}</span>
-                      <span className="text-muted"> ({normalizedOperationKey})</span>
-                    </div>
-                  ) : null}
-                </>
+                </select>
+                <button
+                  type="button"
+                  className="sidebarPropertyActionBtn sidebarPropertyActionBtn--text"
+                  onClick={() => onOpenDictionaryManager?.()}
+                  disabled={!!disabled}
+                >
+                  Справочник
+                </button>
+              </div>
+              {!normalizedOperationKey && !hasOperationChoices ? (
+                <div className="sidebarFieldHint mt-1">
+                  Для организации пока нет операций в справочнике.
+                </div>
+              ) : null}
+              {normalizedOperationKey ? (
+                <div className="sidebarOperationSummary">
+                  Операция: <span className="font-medium text-fg">{operationDisplayLabel || normalizedOperationKey}</span>
+                  <span className="text-muted"> ({normalizedOperationKey})</span>
+                </div>
               ) : null}
             </section>
 
             <section className="sidebarPropertiesBlock">
               <div className="sidebarPropertiesBlockHead">
-                <button
-                  type="button"
-                  className="sidebarPropertiesBlockToggle"
-                  onClick={() => setOperationPropertiesOpen((prev) => !prev)}
-                  aria-expanded={operationPropertiesOpen ? "true" : "false"}
-                >
-                  <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{operationPropertiesOpen ? "▾" : "▸"}</span>
-                  <span className="sidebarPropertiesBlockTitle">Свойства операции</span>
-                  <span className="sidebarPropertiesBlockMeta">{operationPropertiesCount}</span>
-                </button>
+                <span className="sidebarPropertiesBlockTitle">Свойства операции</span>
+                <span className="sidebarPropertiesBlockMeta">{operationPropertiesCount}</span>
                 <SidebarInfoTip
                   label="О свойствах операции"
                   text="Поля, которые управляются выбранной операцией и её схемой."
                 />
               </div>
-              {operationPropertiesOpen ? (
-                <>
-                  {dictionaryLoading ? <div className="sidebarFieldHint">Загружаю справочник организации...</div> : null}
-                  {dictionaryError ? <div className="selectedNodeFieldError">{dictionaryError}</div> : null}
-                  {showSchemaHint ? (
-                    <div className="sidebarFieldHint">
-                      Подгружаю свойства операции <span className="font-medium text-fg">{operationDisplayLabel || normalizedOperationKey}</span>.
-                    </div>
-                  ) : null}
-                  {hasDictionarySchema ? (
-                    <div className="sidebarOperationParams">
-                      {visibleSchemaRows.map((row) => renderSchemaPropertyRow(row))}
-                    </div>
-                  ) : null}
-                  {showFallbackBlock ? (
-                    <div className="sidebarFieldHint">
-                      {normalizedOperationKey
-                        ? (
-                          <>
-                            Для операции <span className="font-medium text-fg">{operationDisplayLabel || normalizedOperationKey}</span> схема не найдена. Используйте блок «Дополнительные BPMN-свойства».
-                          </>
-                        )
-                        : "Выберите операцию, чтобы увидеть схему свойств. Пока доступен ручной режим."}
-                    </div>
-                  ) : null}
-                </>
+              {dictionaryLoading ? <div className="sidebarFieldHint">Загружаю справочник организации...</div> : null}
+              {dictionaryError ? <div className="selectedNodeFieldError">{dictionaryError}</div> : null}
+              {showSchemaHint ? (
+                <div className="sidebarFieldHint">
+                  Подгружаю свойства операции <span className="font-medium text-fg">{operationDisplayLabel || normalizedOperationKey}</span>.
+                </div>
               ) : null}
-            </section>
-
-            {generalPropertySection ? renderPropertyContextSection(generalPropertySection) : null}
-          </PropertyGroup>
-        ) : null}
-
-        {isTaskLikeBpmnType(selectedElementType) ? (
-          <PropertyGroup title="Данные и маппинг">
-            <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="camunda-io-group">
-              <div className="sidebarPropertiesBlockHead">
-                <button
-                  type="button"
-                  className="sidebarPropertiesBlockToggle"
-                  onClick={() => setCamundaIoOpen((prev) => !prev)}
-                  aria-expanded={camundaIoOpen ? "true" : "false"}
-                >
-                  <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{camundaIoOpen ? "▾" : "▸"}</span>
-                  <span className="sidebarPropertiesBlockTitle">Camunda Input/Output</span>
-                  <span className="sidebarPropertiesBlockMeta">{camundaIoCount}</span>
-                </button>
-                <SidebarInfoTip
-                  label="О Camunda/Zeebe Input/Output"
-                  text="Параметры camunda:inputOutput и zeebe:ioMapping из extensionElements. Поддержаны Add input/output, удаление и compact preview для script."
-                />
-              </div>
-              {camundaIoOpen ? (
-                <div className="sidebarCamundaIoLayout">
-                  {renderCamundaIoSection({
-                    title: "Input Parameters",
-                    direction: "input",
-                    rows: camundaInputRows,
-                  })}
-                  {renderCamundaIoSection({
-                    title: "Output Parameters",
-                    direction: "output",
-                    rows: camundaOutputRows,
-                  })}
+              {hasDictionarySchema ? (
+                <div className="sidebarOperationParams">
+                  {visibleSchemaRows.map((row) => renderSchemaPropertyRow(row))}
+                </div>
+              ) : null}
+              {showFallbackBlock ? (
+                <div className="sidebarFieldHint">
+                  {normalizedOperationKey
+                    ? (
+                      <>
+                        Для операции <span className="font-medium text-fg">{operationDisplayLabel || normalizedOperationKey}</span> схема не найдена. Используйте блок «Дополнительные BPMN-свойства».
+                      </>
+                    )
+                    : "Выберите операцию, чтобы увидеть схему свойств. Пока доступен ручной режим."}
                 </div>
               ) : null}
             </section>
 
-            <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="zeebe-task-headers-group">
-              <div className="sidebarPropertiesBlockHead">
-                <button
-                  type="button"
-                  className="sidebarPropertiesBlockToggle"
-                  onClick={() => setZeebeTaskHeadersOpen((prev) => !prev)}
-                  aria-expanded={zeebeTaskHeadersOpen ? "true" : "false"}
-                >
-                  <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{zeebeTaskHeadersOpen ? "▾" : "▸"}</span>
-                  <span className="sidebarPropertiesBlockTitle">Zeebe Task Headers</span>
-                  <span className="sidebarPropertiesBlockMeta">{zeebeTaskHeadersCount}</span>
-                </button>
-                <SidebarInfoTip
-                  label="О Zeebe Task Headers"
-                  text="Параметры zeebe:taskHeaders/zeebe:header текущего элемента."
-                />
-              </div>
-              {zeebeTaskHeadersOpen ? (
-                <>
-                  <div className="sidebarCamundaIoTableWrap">
-                    <div className="sidebarCamundaIoTableHead" role="presentation">
-                      <span>Key</span>
-                      <span>Type</span>
-                      <span>Value</span>
-                      <span className="isCenter">Action</span>
-                    </div>
-                    <div className="sidebarCamundaIoTableBody">
-                      {zeebeTaskHeaderRows.length ? zeebeTaskHeaderRows.map((row) => renderZeebeTaskHeaderRow(row)) : (
-                        <div className="sidebarCamundaIoEmptyRow">Нет task headers. Добавьте первую строку.</div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="sidebarButtonRow">
-                    <button
-                      type="button"
-                      className="sidebarAddBtn"
-                      onClick={addZeebeTaskHeaderRow}
-                      disabled={!!disabled || !!extensionStateBusy}
-                    >
-                      + Добавить header
-                    </button>
-                  </div>
-                </>
-              ) : null}
-            </section>
+            {generalPropertySection ? renderPropertyContextSection(generalPropertySection) : null}
 
-            <RecipeQueryProvider>
-              <RecipeSidebar selectedElementType={selectedElementType} />
-            </RecipeQueryProvider>
-          </PropertyGroup>
+            {operationToBeSlot}
+          </OperationSection>
         ) : null}
 
-        <PropertyGroup title="Исполнение и события">
+        <AdvancedSettingsSection
+          count={advancedSettingsCount}
+          open={advancedSettingsOpen}
+          onToggle={setAdvancedSettingsOpen}
+          onSaveAll={handleSaveAll}
+          onResetAll={handleResetAll}
+          disabled={disabled}
+          busy={saveAllBusy}
+          extensionStateBusy={extensionStateBusy}
+          bpmnDocumentationBusy={bpmnDocumentationBusy}
+          hideActions={hideActions}
+        >
+          {isTaskLikeBpmnType(selectedElementType) ? (
+            <>
+              <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="camunda-io-group">
+                <div className="sidebarPropertiesBlockHead">
+                  <button
+                    type="button"
+                    className="sidebarPropertiesBlockToggle"
+                    onClick={() => setCamundaIoOpen((prev) => !prev)}
+                    aria-expanded={camundaIoOpen ? "true" : "false"}
+                  >
+                    <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{camundaIoOpen ? "▾" : "▸"}</span>
+                    <span className="sidebarPropertiesBlockTitle">Camunda Input/Output</span>
+                    <span className="sidebarPropertiesBlockMeta">{camundaIoCount}</span>
+                  </button>
+                  <SidebarInfoTip
+                    label="О Camunda/Zeebe Input/Output"
+                    text="Параметры camunda:inputOutput и zeebe:ioMapping из extensionElements. Поддержаны Add input/output, удаление и compact preview для script."
+                  />
+                </div>
+                {camundaIoOpen ? (
+                  <div className="sidebarCamundaIoLayout">
+                    {renderCamundaIoSection({
+                      title: "Input Parameters",
+                      direction: "input",
+                      rows: camundaInputRows,
+                    })}
+                    {renderCamundaIoSection({
+                      title: "Output Parameters",
+                      direction: "output",
+                      rows: camundaOutputRows,
+                    })}
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="zeebe-task-headers-group">
+                <div className="sidebarPropertiesBlockHead">
+                  <button
+                    type="button"
+                    className="sidebarPropertiesBlockToggle"
+                    onClick={() => setZeebeTaskHeadersOpen((prev) => !prev)}
+                    aria-expanded={zeebeTaskHeadersOpen ? "true" : "false"}
+                  >
+                    <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{zeebeTaskHeadersOpen ? "▾" : "▸"}</span>
+                    <span className="sidebarPropertiesBlockTitle">Zeebe Task Headers</span>
+                    <span className="sidebarPropertiesBlockMeta">{zeebeTaskHeadersCount}</span>
+                  </button>
+                  <SidebarInfoTip
+                    label="О Zeebe Task Headers"
+                    text="Параметры zeebe:taskHeaders/zeebe:header текущего элемента."
+                  />
+                </div>
+                {zeebeTaskHeadersOpen ? (
+                  <>
+                    <div className="sidebarCamundaIoTableWrap">
+                      <div className="sidebarCamundaIoTableHead" role="presentation">
+                        <span>Key</span>
+                        <span>Type</span>
+                        <span>Value</span>
+                        <span className="isCenter">Action</span>
+                      </div>
+                      <div className="sidebarCamundaIoTableBody">
+                        {zeebeTaskHeaderRows.length ? zeebeTaskHeaderRows.map((row) => renderZeebeTaskHeaderRow(row)) : (
+                          <div className="sidebarCamundaIoEmptyRow">Нет task headers. Добавьте первую строку.</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="sidebarButtonRow">
+                      <button
+                        type="button"
+                        className="sidebarAddBtn"
+                        onClick={addZeebeTaskHeaderRow}
+                        disabled={!!disabled || !!extensionStateBusy}
+                      >
+                        + Добавить header
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+              </section>
+
+              <RecipeQueryProvider>
+                <RecipeSidebar selectedElementType={selectedElementType} />
+              </RecipeQueryProvider>
+            </>
+          ) : null}
+
           {group3PropertySections.map((section) => renderPropertyContextSection(section))}
 
           {isTaskLikeBpmnType(selectedElementType) ? (
@@ -2475,61 +2479,40 @@ async function handleSaveAll() {
               </div>
             ) : null}
           </section>
-        </PropertyGroup>
 
-        <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="auxiliary-properties-block">
-          <div className="sidebarPropertiesBlockHead">
-            <button
-              type="button"
-              className="sidebarPropertiesBlockToggle"
-              onClick={() => setAuxiliaryOpen((prev) => !prev)}
-              aria-expanded={auxiliaryOpen ? "true" : "false"}
-            >
-              <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{auxiliaryOpen ? "▾" : "▸"}</span>
-              <span className="sidebarPropertiesBlockTitle">Вспомогательное</span>
-            </button>
-          </div>
-          {auxiliaryOpen ? (
-            <>
-              <SidebarTrustStatus
-                title={<span>BPMN extension-state</span>}
-                label={extensionStateStatusMeta.label}
-                helper={extensionStateStatusMeta.helper}
-                tone={extensionStateStatusMeta.tone}
-                ctaLabel={extensionStateStatusMeta.cta}
-                onCta={onRetryExtensionState}
-                ctaDisabled={!!disabled || !!extensionStateBusy}
-                ctaVariant={String(extensionStateStatusMeta.tone || "").trim().toLowerCase() === "error" ? "primary" : "secondary"}
-                testIdPrefix="camunda-extension-state-status"
-              />
+          <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary" data-testid="auxiliary-properties-block">
+            <div className="sidebarPropertiesBlockHead">
+              <button
+                type="button"
+                className="sidebarPropertiesBlockToggle"
+                onClick={() => setAuxiliaryOpen((prev) => !prev)}
+                aria-expanded={auxiliaryOpen ? "true" : "false"}
+              >
+                <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{auxiliaryOpen ? "▾" : "▸"}</span>
+                <span className="sidebarPropertiesBlockTitle">Вспомогательное</span>
+              </button>
+            </div>
+            {auxiliaryOpen ? (
+              <>
+                <SidebarTrustStatus
+                  title={<span>BPMN extension-state</span>}
+                  label={extensionStateStatusMeta.label}
+                  helper={extensionStateStatusMeta.helper}
+                  tone={extensionStateStatusMeta.tone}
+                  ctaLabel={extensionStateStatusMeta.cta}
+                  onCta={onRetryExtensionState}
+                  ctaDisabled={!!disabled || !!extensionStateBusy}
+                  ctaVariant={String(extensionStateStatusMeta.tone || "").trim().toLowerCase() === "error" ? "primary" : "secondary"}
+                  testIdPrefix="camunda-extension-state-status"
+                />
 
-              {otherPropertySections.map((section) => renderPropertyContextSection(section))}
+                {otherPropertySections.map((section) => renderPropertyContextSection(section))}
 
-              {renderOverlayCompanionsSection()}
-
-              {!hideActions ? (
-                <div className="sidebarPropertiesFooter sidebarPropertiesFooter--sticky sidebarButtonRow">
-                  <button
-                    type="button"
-                    className="primaryBtn sidebarPropertiesActionBtn flex-1"
-                    onClick={handleSaveAll}
-                    disabled={!!disabled || !!saveAllBusy || !!extensionStateBusy || !!bpmnDocumentationBusy}
-                  >
-                    {saveAllBusy || extensionStateBusy || bpmnDocumentationBusy ? "Сохраняю..." : "Сохранить всё"}
-                  </button>
-                  <button
-                    type="button"
-                    className="secondaryBtn sidebarPropertiesActionBtn px-3"
-                    onClick={handleResetAll}
-                    disabled={!!disabled || !!extensionStateBusy || !!bpmnDocumentationBusy}
-                  >
-                    Сбросить
-                  </button>
-                </div>
-              ) : null}
-            </>
-          ) : null}
-        </section>
+                {renderOverlayCompanionsSection()}
+              </>
+            ) : null}
+          </section>
+        </AdvancedSettingsSection>
       </section>
 
       {(() => {
