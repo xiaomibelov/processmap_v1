@@ -38,10 +38,11 @@ test("buildInterviewAnalysisPatchPayload sends only interview.analysis and optio
   assert.equal(payload.interview.analysis.custom_marker, "preserve-me");
 });
 
-test("helper bypasses generic Interview autosave guard and uses CAS coordinator", () => {
+test("helper bypasses generic Interview autosave guard and uses saveCoordinator", () => {
   const source = fs.readFileSync(path.join(__dirname, "interviewAnalysisPatchHelper.js"), "utf8");
 
-  assert.equal(source.includes("enqueueSessionPatchCasWrite"), true);
+  assert.equal(source.includes("saveCoordinator.execute"), true);
+  assert.equal(source.includes("enqueueSessionPatchCasWrite"), false);
   assert.equal(source.includes("useInterviewSyncLifecycle"), false);
   assert.equal(source.includes("shouldBlockInterviewSemanticPrimaryWrite"), false);
 });

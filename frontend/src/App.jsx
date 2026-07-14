@@ -67,6 +67,7 @@ import {
   upsertCamundaExtensionStateByElementId,
 } from "./features/process/camunda/camundaExtensions";
 import { saveBpmnState } from "./features/process/save/saveBpmnState";
+import { patchInterviewAnalysis } from "./features/process/analysis/interviewAnalysisPatchHelper";
 import {
   emitPropertySaveEvent,
 } from "./features/process/save/propertySaveEvents";
@@ -1015,6 +1016,102 @@ export default function App() {
       stale: result?.stale === true,
     };
   }, [draftSessionId, markFail, markOk, onSessionSync, sessionMetaWriteGateway]);
+
+  const handleSaveAllBatch = useCallback(async () => {
+    const sid = String(draftSessionId || "").trim();
+    if (!sid || isLocalSessionId(sid)) {
+      return { ok: false, error: "Сессия не выбрана." };
+    }
+
+    const xmlSnap = await bpmnStageRef.current?.getRuntimeXmlSnapshot?.();
+    const xml = xmlSnap?.ok ? xmlSnap.xml : "";
+    if (!xml) {
+      return { ok: false, error: "Не удалось получить BPMN XML." };
+    }
+
+    const xmlResult = await saveBpmnState({
+      operation: "session_save",
+      sessionId: sid,
+      isLocal: false,
+      baseDiagramStateVersion: bpmnStageRef.current?.getBaseDiagramStateVersion?.() ?? 0,
+      getBaseDiagramStateVersion: () => bpmnStageRef.current?.getBaseDiagramStateVersion?.(),
+      rememberDiagramStateVersion: (version) => bpmnStageRef.current?.rememberDiagramStateVersion?.(version, { sessionId: sid }),
+      projectId: draft?.project_id,
+      xml,
+      nextMeta: draft?.bpmn_meta,
+      apiPutBpmnXml,
+      flushSave: bpmnStageRef.current?.flushSave,
+      apiGetSession,
+      apiGetBpmnXml,
+      onSessionSync,
+      overwriteBpmnSnapshot,
+      backgroundSessionRefresh: true,
+      syncSource: "saveBpmnState:save_all",
+    });
+    if (!xmlResult?.ok) {
+      markFail(String(xmlResult?.error || "Не удалось сохранить BPMN."));
+      return {
+        ok: false,
+        error: xmlResult?.error,
+        status: xmlResult?.status,
+        phase: "xml",
+      };
+    }
+
+    const metaResult = await persistSessionMetaBoundary(draft?.bpmn_meta, {
+      source: "save_all",
+      successHint: "",
+    });
+    if (!metaResult?.ok) {
+      return {
+        ok: false,
+        error: metaResult?.error,
+        status: metaResult?.status,
+        phase: "meta",
+      };
+    }
+
+    const analysisPatch = draft?.interview?.analysis;
+    let analysisResult = { ok: true, skipped: true };
+    if (analysisPatch && typeof analysisPatch === "object" && Object.keys(analysisPatch).length > 0) {
+      analysisResult = await patchInterviewAnalysis(sid, analysisPatch, {
+        apiPatchSession,
+        getBaseDiagramStateVersion: () => bpmnStageRef.current?.getBaseDiagramStateVersion?.(),
+        rememberDiagramStateVersion: (version) => bpmnStageRef.current?.rememberDiagramStateVersion?.(version, { sessionId: sid }),
+        onSessionSync,
+      });
+      if (!analysisResult?.ok) {
+        markFail(String(analysisResult?.error || "Не удалось сохранить analysis."));
+        return {
+          ok: false,
+          error: analysisResult?.error,
+          status: analysisResult?.status,
+          phase: "analysis",
+        };
+      }
+    }
+
+    markOk("Сохранено.");
+    return {
+      ok: true,
+      xml: xmlResult,
+      meta: metaResult,
+      analysis: analysisResult,
+    };
+  }, [
+    draftSessionId,
+    draft?.bpmn_meta,
+    draft?.interview?.analysis,
+    draft?.project_id,
+    apiPutBpmnXml,
+    apiGetSession,
+    apiGetBpmnXml,
+    onSessionSync,
+    overwriteBpmnSnapshot,
+    persistSessionMetaBoundary,
+    markFail,
+    markOk,
+  ]);
 
   function markOk(hint) {
     setBackendHint(String(hint || ""));
@@ -3412,6 +3509,7 @@ export default function App() {
         onDeleteProject={workspacePermissions.canDeleteProject ? (() => openDeleteDialog("project")) : undefined}
         onRenameSession={canManageProjectEntities ? (() => openRenameDialog("session")) : undefined}
         onDeleteSession={workspacePermissions.canDeleteSession ? (() => openDeleteDialog("session")) : undefined}
+        onSaveAllBatch={handleSaveAllBatch}
         disabled={locked}
       />
     );
@@ -3442,6 +3540,7 @@ export default function App() {
     openDeleteDialog,
     canManageProjectEntities,
     workspacePermissions,
+    handleSaveAllBatch,
   ]);
 
   useEffect(() => {

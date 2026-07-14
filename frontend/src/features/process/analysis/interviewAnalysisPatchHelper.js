@@ -1,7 +1,70 @@
 import { apiPatchSession as defaultApiPatchSession } from "../../../lib/api.js";
-import { enqueueSessionPatchCasWrite } from "../stage/utils/sessionPatchCasCoordinator.js";
+import { saveCoordinator } from "../../../features/session/saveCoordinator.js";
 
+const PIPELINE_NAME = "analysis";
 const UNSAFE_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+
+saveCoordinator.registerPipeline(PIPELINE_NAME, {
+  transport: async (sessionId, payload) => {
+    const apiPatchSession = payload?.apiPatchSession;
+    if (typeof apiPatchSession !== "function") {
+      return { ok: false, status: 0, error: "missing_api_patch_session" };
+    }
+    const patchBody = payload?.patchBody && typeof payload.patchBody === "object"
+      ? { ...payload.patchBody }
+      : {};
+    if (payload?.base_diagram_state_version !== undefined) {
+      patchBody.base_diagram_state_version = payload.base_diagram_state_version;
+    }
+    return apiPatchSession(sessionId, patchBody);
+  },
+  buildPayload: (payload) => {
+    const patch = buildInterviewAnalysisPatchPayload(payload?.analysisPatch, {
+      baseDiagramStateVersion: payload?.baseDiagramStateVersion,
+    });
+    return {
+      patchBody: patch,
+      apiPatchSession: payload?.apiPatchSession,
+      baseDiagramStateVersion: payload?.baseDiagramStateVersion,
+      onSessionSync: payload?.onSessionSync,
+    };
+  },
+  getBaseVersion: (_sessionId, payload) => {
+    const fromGetter = typeof payload?.getBaseDiagramStateVersion === "function"
+      ? Number(payload.getBaseDiagramStateVersion())
+      : NaN;
+    if (Number.isFinite(fromGetter) && fromGetter >= 0) return Math.round(fromGetter);
+    const fromOption = Number(payload?.baseDiagramStateVersion);
+    if (Number.isFinite(fromOption) && fromOption >= 0) return Math.round(fromOption);
+    return null;
+  },
+  onSuccess: (response, sessionId, payload) => {
+    const version = response?.session?.diagram_state_version ?? response?.session?.diagramStateVersion ?? null;
+    if (version !== null) {
+      try {
+        payload?.rememberDiagramStateVersion?.(Number(version), { sessionId });
+      } catch {
+        // no-op
+      }
+    }
+  },
+  on409: (response, sessionId, payload) => {
+    const details = response?.data?.detail ?? response?.data ?? {};
+    const serverVersion = Number(
+      details.server_current_version ?? details.serverCurrentVersion ?? response?.server_current_version ?? response?.serverCurrentVersion,
+    );
+    if (Number.isFinite(serverVersion) && serverVersion >= 0) {
+      try {
+        payload?.rememberDiagramStateVersion?.(Math.round(serverVersion), { sessionId });
+      } catch {
+        // no-op
+      }
+    }
+  },
+  debounceMs: 0,
+  retryCount: 3,
+  retryDelayMs: 1000,
+});
 
 function toText(value) {
   return String(value || "").trim();
@@ -77,14 +140,16 @@ export async function patchInterviewAnalysis(sessionId, analysisPatchRaw, option
     return { ok: false, status: 0, error: "empty_analysis_patch" };
   }
 
-  const response = await enqueueSessionPatchCasWrite({
+  const response = await saveCoordinator.execute(PIPELINE_NAME, {
     sessionId: sid,
-    patch,
+    analysisPatch: analysisPatchRaw,
     apiPatchSession: typeof options?.apiPatchSession === "function"
       ? options.apiPatchSession
       : defaultApiPatchSession,
     getBaseDiagramStateVersion: options?.getBaseDiagramStateVersion,
     rememberDiagramStateVersion: options?.rememberDiagramStateVersion,
+    baseDiagramStateVersion: options?.baseDiagramStateVersion ?? options?.base_diagram_state_version,
+    onSessionSync: options?.onSessionSync,
   });
 
   if (!response?.ok) {
