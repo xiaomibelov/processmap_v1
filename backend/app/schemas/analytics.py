@@ -61,6 +61,7 @@ class AnalyticsDashboardOut(BaseModel):
     bpmn_element_types: Dict[str, int] = Field(default_factory=dict)
     process_duration: List[AnalyticsDashboardProcessDurationOut] = Field(default_factory=list)
     activity_heatmap: AnalyticsDashboardActivityHeatmapOut = Field(default_factory=AnalyticsDashboardActivityHeatmapOut)
+    properties_summary: Dict[str, Any] = Field(default_factory=dict)
 
 
 class AnalyticsPropertiesQuery(BaseModel):

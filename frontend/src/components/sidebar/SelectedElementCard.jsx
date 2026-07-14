@@ -22,6 +22,7 @@ function SelectedElementCard({
   selectedElementName,
   selectedElementType,
   selectedElementLaneName,
+  isProcessLike = false,
   incomingCount = 0,
   outgoingCount = 0,
   robotMetaStatus = "none",
@@ -61,7 +62,7 @@ function SelectedElementCard({
         <>
           <div className="selectedElementTitleWrap">
             <div className="selectedElementTitle" title={selectedElementName || selectedElementId}>
-              {selectedElementName || selectedElementId}
+              {isProcessLike ? `Процесс: ${selectedElementName || selectedElementId}` : (selectedElementName || selectedElementId)}
             </div>
             <button
               type="button"

@@ -570,6 +570,7 @@ export function createBpmnStageImperativeApi(ctxBase) {
     },
     seedFromActors: () => callbacks.seedNew?.(),
     saveLocal: (options) => callbacks.saveLocalFromModeler?.(options),
+    flushSave: (reason, options) => callbacks.flushSave?.(reason, options),
     setDiagramMutationSaveActive: (active) => {
       refs.bpmnCoordinatorRef?.current?.setDiagramMutationSaveActive?.(active === true);
     },
@@ -624,6 +625,16 @@ export function createBpmnStageImperativeApi(ctxBase) {
       const inst = getPreferredInstance(preferred) || getReadyInstance(preferred);
       if (!inst) return { ok: false, error: "modeler_not_ready" };
       return applyCamundaExtensionStateToModeler(elementId, extensionStateRaw, inst);
+    },
+    getBaseDiagramStateVersion: () => {
+      const fn = callbacks.getBaseDiagramStateVersion;
+      if (typeof fn === "function") return fn();
+      return undefined;
+    },
+    rememberDiagramStateVersion: (version, options = {}) => {
+      const fn = callbacks.rememberDiagramStateVersion;
+      if (typeof fn === "function") return fn(version, options);
+      return null;
     },
     isFlushing: () => !!refs.bpmnCoordinatorRef?.current?.isFlushing?.(),
     saveXmlDraft: () => callbacks.saveXmlDraftText?.(),

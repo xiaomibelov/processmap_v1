@@ -2,6 +2,9 @@ import {
   createEmptyCamundaExtensionState,
   extractCamundaInputOutputParametersFromExtensionState,
 } from "./camundaExtensions.js";
+import { dedupeExactPropertyRows } from "./dedupeExactPropertyRows.js";
+import { resolveDisplayName } from "./displayNameModel.js";
+import { filterRowsByHiddenFields } from "../../../components/sidebar/displaySettings/filterRowsByHiddenFields.js";
 
 const propertyDictionaryEditorModelCache = new WeakMap();
 const propertiesOverlayRowsCache = new WeakMap();
@@ -311,7 +314,7 @@ function derivePropertiesOverlayRows({ extensionStateRaw, dictionaryBundleRaw } 
       });
     });
   }
-  const result = rows;
+  const result = dedupeExactPropertyRows(rows, { keyFields: ["key", "name"] });
   if (extensionStateCacheKey) {
     const cacheEntry = propertiesOverlayRowsCache.get(extensionStateCacheKey);
     if (dictionaryBundleCacheKey) cacheEntry?.withBundle?.set(dictionaryBundleCacheKey, result);
@@ -389,9 +392,27 @@ export function buildPropertiesOverlayPreview({
   elementId = "",
   extensionStateRaw,
   dictionaryBundleRaw,
+  operationKey = "",
+  operationLabel = "",
   showPropertiesOverlay = false,
   visibleLimit = 4,
+  hiddenFields = null,
 } = {}) {
+  // Display name is DERIVED (never written to the draft): operation code +
+  // params → one-line RU label; a manual `display_name` property wins.
+  // Operation key/label default to the normalized dictionary bundle when
+  // the caller does not pass them explicitly.
+  const bundle = (!asText(operationKey) || !asText(operationLabel))
+    ? normalizeOrgPropertyDictionaryBundle(dictionaryBundleRaw)
+    : null;
+  const resolvedOperationKey = asText(operationKey) || asText(bundle?.operationKey);
+  const resolvedOperationLabel = asText(operationLabel) || asText(bundle?.operationLabel);
+  const displayName = resolveDisplayName({
+    operationKey: resolvedOperationKey,
+    operationLabel: resolvedOperationLabel,
+    rows: rawExtensionPropertyRows(extensionStateRaw),
+  });
+
   if (!showPropertiesOverlay) {
     return {
       enabled: false,
@@ -399,10 +420,15 @@ export function buildPropertiesOverlayPreview({
       items: [],
       hiddenCount: 0,
       totalCount: 0,
+      displayName,
     };
   }
 
-  const rows = derivePropertiesOverlayRows({ extensionStateRaw, dictionaryBundleRaw });
+  const allRows = derivePropertiesOverlayRows({ extensionStateRaw, dictionaryBundleRaw });
+  // Per-field chip filter (property-panel-redesign): applied pre-slice so the
+  // visible window and hiddenCount reflect only the active fields. A non-array
+  // hiddenFields means "no filter configured"; rows are active by default.
+  const rows = Array.isArray(hiddenFields) ? filterRowsByHiddenFields(allRows, hiddenFields) : allRows;
 
   const normalizedLimit = Math.max(1, Math.min(5, Number(visibleLimit || 4) || 4));
   const visibleItems = rows.slice(0, normalizedLimit);
@@ -414,5 +440,6 @@ export function buildPropertiesOverlayPreview({
     visibleCount: normalizedLimit,
     hiddenCount,
     totalCount: rows.length,
+    displayName,
   };
 }

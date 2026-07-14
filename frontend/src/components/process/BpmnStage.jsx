@@ -4,12 +4,10 @@ import { apiDeleteBpmnXml, apiGetBpmnXml, apiPutBpmnXml } from "../../lib/api/bp
 
 import { apiPatchSession } from "../../lib/api/sessionApi";
 import { traceProcess } from "../../features/process/lib/processDebugTrace";
-import {
-  shouldCanonicalRePersistManualSave,
-  shouldUseCanonicalPrimaryManualSave,
-} from "../../features/process/bpmn/save/manualSaveCanonicalXml";
+import { shouldUseCanonicalPrimaryManualSave } from "../../features/process/bpmn/save/manualSaveCanonicalXml";
 import { createBpmnWiring } from "../../features/process/bpmn/stage/wiring/bpmnWiring";
 import * as decorManager from "../../features/process/bpmn/stage/decor/decorManager";
+import { isProcessLikeElement } from "../../features/process/bpmn/stage/interaction/processRootSelection.js";
 import * as viewportRecovery from "../../features/process/bpmn/stage/viewport/viewportRecovery";
 import { isGfxInDom } from "../../features/process/bpmn/stage/viewport/cullBpmnViewport";
 import { createPlaybackOverlayAdapter } from "../../features/process/bpmn/stage/playbackAdapter";
@@ -27,6 +25,7 @@ import DiagramLoadBoundary from "../../features/process/bpmn/stage/load/DiagramL
 import BpmnXmlEditor from "./bpmnXmlEditor/BpmnXmlEditor";
 import { useV2OverlayState } from "../../features/process/bpmn/stage/state/useV2OverlayState";
 import { useOverlayLifecycle } from "../../features/process/bpmn/stage/overlay/useOverlayLifecycle";
+import { setV2OverlayClickHandler } from "../../features/process/bpmn/stage/overlay/overlayLifecycleManager";
 import { useViewportResizeController } from "../../features/process/bpmn/stage/viewport/useViewportResizeController";
 import {
   bindModelerStageEvents,
@@ -50,6 +49,7 @@ import { elementNotesCount, normalizeElementNotesMap } from "../../features/note
 import { measureInterviewPerf } from "./interview/perf";
 import pmModdleDescriptor from "../../features/process/robotmeta/pmModdleDescriptor";
 import camundaModdleDescriptor from "../../features/process/camunda/camundaModdleDescriptor";
+import zeebeModdleDescriptor from "../../features/process/camunda/zeebeModdleDescriptor";
 import { enqueueSessionPatchCasWrite } from "../../features/process/stage/utils/sessionPatchCasCoordinator";
 import {
   canonicalRobotMetaMapString,
@@ -66,7 +66,6 @@ import {
   normalizeCamundaExtensionState,
   extractManagedCamundaExtensionStateFromBusinessObject,
   extractCamundaExtensionsMapFromBpmnXml,
-  finalizeCamundaExtensionsXml,
   hydrateCamundaExtensionsFromBpmn,
   normalizeCamundaExtensionsMap,
   syncCamundaExtensionsToBpmn,
@@ -930,8 +929,10 @@ const BpmnStage = forwardRef(function BpmnStage({
   selectedPropertiesOverlayPreview = null,
   propertiesOverlayAlwaysEnabled = false,
   propertiesOverlayAlwaysPreviewByElementId = null,
+  overlayHiddenFields = null,
   v2OverlaysEnabled = false,
   v2OverlaysExpanded = false,
+  onV2OverlayPropertiesRequest = null,
   onDiagramContextMenuRequest = null,
   onDiagramContextMenuDismiss = null,
   onNavigateToSubprocess = null,
@@ -1022,6 +1023,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   const selectedMarkerStateRef = useRef({ viewer: "", editor: "" });
   const onDiagramMutationRef = useRef(onDiagramMutation);
   const onElementSelectionChangeRef = useRef(onElementSelectionChange);
+  const onV2OverlayPropertiesRequestRef = useRef(onV2OverlayPropertiesRequest);
   const selectionImportGuardRef = useRef({ viewer: "", editor: "" });
   const contextMenuInteractionRef = useRef({ contextMenuOpenedAtMs: 0 });
   const onElementNotesRemapRef = useRef(onElementNotesRemap);
@@ -1123,6 +1125,20 @@ const BpmnStage = forwardRef(function BpmnStage({
   }, [onDiagramMutation]);
 
   useEffect(() => {
+    onV2OverlayPropertiesRequestRef.current = onV2OverlayPropertiesRequest;
+  }, [onV2OverlayPropertiesRequest]);
+
+  // V2 overlay cards are display-only DOM; a click on a card opens the
+  // properties popover for its element through the same pipeline the
+  // context-menu "open_properties" action uses.
+  useEffect(() => {
+    setV2OverlayClickHandler(({ elementId }) => {
+      onV2OverlayPropertiesRequestRef.current?.(elementId);
+    });
+    return () => setV2OverlayClickHandler(null);
+  }, []);
+
+  useEffect(() => {
     onElementSelectionChangeRef.current = onElementSelectionChange;
   }, [onElementSelectionChange]);
 
@@ -1221,10 +1237,31 @@ const BpmnStage = forwardRef(function BpmnStage({
   });
 
   const useExtensionOverlays = useFeatureFlag("useBpmnExtensionOverlays");
+  const v2PropertyPreviewMapRef = useRef({});
+  useEffect(() => {
+    const combined = { ...asObject(propertiesOverlayAlwaysPreviewByElementId) };
+    const selected = asObject(selectedPropertiesOverlayPreview);
+    const selectedElementId = toText(selected?.elementId);
+    // Include the selected preview even when it is empty/disabled so the V2
+    // overlay resolver knows the element is intentionally property-less and
+    // does not fall back to stale modeler/XML overlays.
+    if (selectedElementId && selected) {
+      combined[selectedElementId] = selected;
+    }
+    v2PropertyPreviewMapRef.current = combined;
+  }, [propertiesOverlayAlwaysPreviewByElementId, selectedPropertiesOverlayPreview]);
+
+  // Per-field chip filter (property-panel-redesign): null = no filter
+  // configured; the V2 resolver treats both null and [] as "nothing hidden".
+  const v2HiddenFieldsRef = useRef(null);
+  v2HiddenFieldsRef.current = Array.isArray(overlayHiddenFields) ? overlayHiddenFields : null;
+
   const overlayLifecycle = useOverlayLifecycle({
     v2EnabledRef: v2OverlayState.enabledRef,
     v2ExpandedRef: v2OverlayState.expandedRef,
     useExtensionOverlays,
+    propertyPreviewMapRef: v2PropertyPreviewMapRef,
+    hiddenFieldsRef: v2HiddenFieldsRef,
   });
 
   const handleViewboxChangedForOverlays = useCallback((inst, mode) => {
@@ -1331,7 +1368,6 @@ const BpmnStage = forwardRef(function BpmnStage({
         probeCanvas,
         emitDiagramMutation,
         trackRuntimeStatus,
-        transformPersistedXml,
         fnv1aHex,
       },
     }),
@@ -1339,6 +1375,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       forceTaskResizeRulesModule,
       pmModdleDescriptor,
       camundaModdleDescriptor,
+      zeebeModdleDescriptor,
     },
   );
 
@@ -1624,11 +1661,10 @@ const BpmnStage = forwardRef(function BpmnStage({
     const rawType = String(el?.businessObject?.$type || el?.type || "").trim().toLowerCase();
     if (!rawType) return false;
     const simpleType = String(rawType.split(":").pop() || rawType).trim();
-    return simpleType === "lane"
-      || simpleType === "participant"
-      || simpleType === "process"
-      || simpleType === "collaboration"
-      || simpleType === "laneset";
+    // Lane, participant, process and collaboration ARE selectable (Camunda
+    // Modeler parity: clicking a pool/lane selects it; clicking empty canvas
+    // selects the root process). Only laneSet stays a non-selectable container.
+    return simpleType === "laneset";
   }
 
   function isSelectableElement(el) {
@@ -1803,10 +1839,22 @@ const BpmnStage = forwardRef(function BpmnStage({
     };
   }
 
+  // A process-like root (bpmn:Process / bpmn:Collaboration) wraps every shape
+  // on the canvas, so the usual fpcElementSelected marker would light up the
+  // whole diagram. Signal its selection with a container-level class instead.
+  function toggleProcessSelectedDecor(inst, on) {
+    try {
+      const container = inst?.get?.("canvas")?.getContainer?.();
+      container?.classList?.toggle("fpcProcessSelected", !!on);
+    } catch {
+    }
+  }
+
   function clearSelectedDecor(inst, kind) {
     if (!inst) return;
     const id = String(selectedMarkerStateRef.current[kind] || "");
     clearSelectionFocusDecor(inst, kind);
+    toggleProcessSelectedDecor(inst, false);
     if (!id) return;
     try {
       const canvas = inst.get("canvas");
@@ -1845,6 +1893,9 @@ const BpmnStage = forwardRef(function BpmnStage({
   function applySelectionFocusDecor(inst, kind, selectedEl) {
     if (!inst || !selectedEl) return;
     clearSelectionFocusDecor(inst, kind);
+    // A process-like root has no neighbors; dimming every other element on a
+    // plain canvas click would be hostile. Previous dim was cleared above.
+    if (isProcessLikeElement(selectedEl)) return;
     try {
       const canvas = inst.get("canvas");
       const registry = inst.get("elementRegistry");
@@ -1911,6 +1962,13 @@ const BpmnStage = forwardRef(function BpmnStage({
       const registry = inst.get("elementRegistry");
       const el = registry.get(eid);
       if (!isSelectableElement(el)) return;
+      if (isProcessLikeElement(el)) {
+        // No addMarker here: the root gfx contains every shape, and the
+        // fpcElementSelected CSS uses descendant selectors.
+        toggleProcessSelectedDecor(inst, true);
+        selectedMarkerStateRef.current[kind] = eid;
+        return;
+      }
       // Skip selection decor for off-screen elements (gfx detached by viewport culling)
       if (!isGfxInDom(inst, el)) {
         selectedMarkerStateRef.current[kind] = eid;
@@ -2298,31 +2356,6 @@ const BpmnStage = forwardRef(function BpmnStage({
     return { ok: true, refreshed };
   }
 
-  function reconcileTemplateInsertCamundaStateFromXml(xmlText, preserveIdsRaw = []) {
-    const preserveIds = asArray(preserveIdsRaw)
-      .map((value) => toText(value))
-      .filter(Boolean);
-    if (!preserveIds.length) return getCamundaExtensionsMap();
-    const extractedMap = normalizeCamundaExtensionsMap(extractCamundaExtensionsMapFromBpmnXml(xmlText));
-    if (!Object.keys(extractedMap).length) return getCamundaExtensionsMap();
-
-    let nextMap = getCamundaExtensionsMap();
-    let adopted = 0;
-    preserveIds.forEach((elementId) => {
-      if (nextMap[elementId]) return;
-      const state = extractedMap[elementId];
-      if (!state) return;
-      const candidateMap = upsertCamundaExtensionStateByElementId(nextMap, elementId, state);
-      if (JSON.stringify(asObject(candidateMap[elementId])) === JSON.stringify(asObject(nextMap[elementId]))) return;
-      nextMap = candidateMap;
-      adopted += 1;
-    });
-    if (adopted > 0) {
-      syncDraftCamundaExtensionsMap(nextMap, "camunda_extensions_template_insert_xml_reconcile");
-    }
-    return nextMap;
-  }
-
   function resolveRobotMetaStateFromSemanticPayload(payloadRaw) {
     const payload = asObject(payloadRaw);
     const extensionElements = asObject(payload.extensionElements);
@@ -2338,9 +2371,10 @@ const BpmnStage = forwardRef(function BpmnStage({
     const elementType = toText(element?.businessObject?.$type || element?.type).toLowerCase();
     if (activeInst) {
       syncRobotMetaToModeler(activeInst);
-      syncCamundaExtensionsToModeler(activeInst, {
-        preserveManagedForElementIds: elementId ? [elementId] : [],
-      });
+      // Sync from the authoritative meta map. Do not preserve the selected
+      // element's current managed block: if a property was just deleted it must
+      // be removed from the modeler, not kept alive by a stale preserve guard.
+      syncCamundaExtensionsToModeler(activeInst);
     }
     let nativeTree = null;
     if (activeInst && elementId && elementType.includes("subprocess")) {
@@ -2357,26 +2391,6 @@ const BpmnStage = forwardRef(function BpmnStage({
       camundaExtensionState: elementId ? resolveSourceCamundaExtensionState(elementId) : null,
       nativeTree,
     };
-  }
-
-  function transformPersistedXml(xmlText) {
-    const templateInsertGuardIds = readTemplateInsertCamundaClearGuardIds();
-    const xmlCamundaExtensionsByElementId = reconcileTemplateInsertCamundaStateFromXml(xmlText, templateInsertGuardIds);
-    // Merge authoritative meta camunda extensions so that property-only saves
-    // (which update bpmn_meta but not the stored BPMN XML) are still reflected
-    // on the canvas after reload.
-    const metaCamundaExtensionsByElementId = normalizeCamundaExtensionsMap(
-      asObject(draftRef.current?.bpmn_meta).camunda_extensions_by_element_id,
-    );
-    const camundaExtensionsByElementId = {
-      ...xmlCamundaExtensionsByElementId,
-      ...metaCamundaExtensionsByElementId,
-    };
-    return finalizeCamundaExtensionsXml({
-      xmlText,
-      camundaExtensionsByElementId,
-      preserveManagedForElementIds: templateInsertGuardIds,
-    });
   }
 
   function primeCopyPasteRobotMetaPreserveGuard(idsRaw = []) {
@@ -3353,6 +3367,46 @@ const BpmnStage = forwardRef(function BpmnStage({
           }
         }
       }
+      // Prime the local XML/hash state from the live modeler so any post-insert
+      // session sync or draft update is recognized as already loaded. Without
+      // this, a stale hash causes the render effect to call renderModeler()
+      // (full XML re-import) which appears as a page reload / white screen on
+      // large diagrams.
+      try {
+        const xmlModeler = modelerRef.current || await ensureModeler();
+        if (xmlModeler && typeof xmlModeler.saveXML === "function") {
+          const xmlOut = await xmlModeler.saveXML({ format: true });
+          const currentXml = String(xmlOut?.xml || "");
+          if (currentXml.trim()) {
+            lastModelerXmlHashRef.current = fnv1aHex(currentXml);
+            setXml(currentXml);
+            setXmlDraft(currentXml);
+            setXmlDirty(false);
+            if (
+              bpmnStoreRef.current
+              && typeof bpmnStoreRef.current.setXml === "function"
+            ) {
+              bpmnStoreRef.current.setXml(currentXml, "template_insert", {
+                bumpRev: false,
+                dirty: true,
+              });
+            }
+            if (shouldLogBpmnTrace()) {
+              // eslint-disable-next-line no-console
+              console.debug(
+                `[BPMN] template_insert primed xml hash=${lastModelerXmlHashRef.current} len=${currentXml.length}`,
+              );
+            }
+          }
+        }
+      } catch (xmlPrimeError) {
+        if (shouldLogBpmnTrace()) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[BPMN] template_insert xml prime failed: ${String(xmlPrimeError?.message || xmlPrimeError)}`,
+          );
+        }
+      }
       return inserted;
     } finally {
       templateInsertCamundaSeedInFlightRef.current = Math.max(
@@ -3905,6 +3959,12 @@ const BpmnStage = forwardRef(function BpmnStage({
   }
 
   function applyPropertiesOverlayDecor(inst, kind) {
+    if (v2OverlayState.enabledRef.current) {
+      // While V2 overlays are enabled, the V2 layer owns property rendering.
+      // Keep the legacy property overlay layer empty so V2 cards are never
+      // suppressed (legacy/V2 mutual exclusion) or duplicated by legacy decor.
+      return decorManager.clearPropertiesOverlayDecor(createDecorCtx(inst, kind));
+    }
     return decorManager.applyPropertiesOverlayDecor(createDecorCtx(inst, kind));
   }
 
@@ -4334,7 +4394,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       const Viewer = mod.default || mod;
       const v = new Viewer({
         container: viewerEl.current,
-        moddleExtensions: { pm: pmModdleDescriptor, camunda: camundaModdleDescriptor },
+        moddleExtensions: { pm: pmModdleDescriptor, camunda: camundaModdleDescriptor, zeebe: zeebeModdleDescriptor },
         deferUpdate: true,
       });
       instrumentBpmnInst(v, "viewer");
@@ -4619,6 +4679,13 @@ const BpmnStage = forwardRef(function BpmnStage({
   useEffect(() => {
     if (!useExtensionOverlays) return;
     try {
+      const previewMap = { ...asObject(propertiesOverlayAlwaysPreviewByElementId) };
+      const selected = asObject(selectedPropertiesOverlayPreview);
+      const selectedElementId = toText(selected?.elementId);
+      if (selectedElementId && selected?.enabled === true && asArray(selected?.items).length) {
+        previewMap[selectedElementId] = selected;
+      }
+      const previewMapSig = JSON.stringify(previewMap);
       const maybeRemount = (inst, kind) => {
         if (!inst || !hasDefinitionsLoaded(inst)) return;
         const nextSig = JSON.stringify({
@@ -4626,12 +4693,25 @@ const BpmnStage = forwardRef(function BpmnStage({
           overlays: extractOverlaysFromBpmn(inst, v2OverlaysEnabled),
           legacyAlways: propertiesOverlayAlwaysEnabled,
           legacyPreviewElementId: selectedPropertiesOverlayPreview?.elementId || null,
-          legacyAlwaysPreviewCount: Object.keys(propertiesOverlayAlwaysPreviewByElementId || {}).length,
+          previewMap: previewMapSig,
+          hiddenFields: Array.isArray(overlayHiddenFields) ? overlayHiddenFields : null,
         });
         if (prevOverlaySigRef.current[kind] === nextSig) return;
         prevOverlaySigRef.current[kind] = nextSig;
         overlayLifecycle.mountFromBpmn(inst, kind);
       };
+      if (v2OverlaysEnabled) {
+        // Entering (or staying in) V2 mode: remove any legacy property
+        // overlays so they cannot suppress or duplicate V2 cards. The legacy
+        // decor is gated through applyPropertiesOverlayDecor while V2 is on,
+        // but pre-existing cards (e.g. present when V2 gets toggled on) must
+        // be cleared explicitly — BEFORE the V2 mount below, otherwise
+        // hasLegacyPropertyOverlay suppresses the fresh V2 hosts and the
+        // element ends up with no card at all.
+        // (Fix cherry-picked from PR #524, Tier 1b.)
+        if (viewerRef.current) clearPropertiesOverlayDecor(viewerRef.current, "viewer");
+        if (modelerRef.current) clearPropertiesOverlayDecor(modelerRef.current, "editor");
+      }
       maybeRemount(viewerRef.current, "viewer");
       maybeRemount(modelerRef.current, "editor");
     } catch {
@@ -4643,8 +4723,9 @@ const BpmnStage = forwardRef(function BpmnStage({
     draft?.bpmn_meta,
     v2OverlaysEnabled,
     propertiesOverlayAlwaysEnabled,
-    selectedPropertiesOverlayPreview?.elementId,
-    Object.keys(propertiesOverlayAlwaysPreviewByElementId || {}).length,
+    selectedPropertiesOverlayPreview,
+    propertiesOverlayAlwaysPreviewByElementId,
+    overlayHiddenFields,
     overlayLifecycle,
   ]);
 
@@ -4983,7 +5064,7 @@ const BpmnStage = forwardRef(function BpmnStage({
       });
       const nextState = bpmnStoreRef.current?.getState?.() || {};
       const rawOut = String(flushed?.xml || nextState.xml || fallbackXml || "");
-      const out = transformPersistedXml(rawOut);
+      const out = rawOut;
       publishE2ESaveProbe({
         sid,
         source,
@@ -5017,64 +5098,6 @@ const BpmnStage = forwardRef(function BpmnStage({
         return { ok: true, pending: true, xml: out, source: "pending" };
       }
 
-      if (out !== rawOut && flushed?.xmlAlreadyTransformed !== true) {
-        const rev = Number(nextState.rev || 0);
-        const transportPersistReason = persistReason;
-        const finalizeLifecycleReason = `${persistReason}:camunda_finalize`;
-        emitSaveLifecycleEvent("SAVE_PERSIST_STARTED", {
-          sid,
-          reason: finalizeLifecycleReason,
-          rev,
-          xml_len: out.length,
-        });
-        const persistedFinalXml = typeof coordinator.persistExplicitXml === "function"
-          ? await coordinator.persistExplicitXml(out, transportPersistReason, {
-            rev,
-            saveOwner: resolvedSaveOwner,
-            bpmnMeta: saveBpmnMeta,
-          })
-          : await ensureBpmnPersistence().saveRaw(sid, out, rev, transportPersistReason, { bpmnMeta: saveBpmnMeta });
-        if (!persistedFinalXml?.ok) {
-          emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
-            sid,
-            reason: finalizeLifecycleReason,
-            rev,
-            status: Number(persistedFinalXml?.status || 0),
-            error_code: String(persistedFinalXml?.errorCode || ""),
-            error_details: (
-              persistedFinalXml?.errorDetails && typeof persistedFinalXml.errorDetails === "object"
-                ? persistedFinalXml.errorDetails
-                : null
-            ),
-            xml_len: out.length,
-            error: String(persistedFinalXml?.error || "camunda finalize persist failed"),
-          });
-          if (resolvedSaveOwner) {
-            coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:camunda_finalize_fail`);
-          }
-          return {
-            ok: false,
-            error: String(persistedFinalXml?.error || "camunda finalize persist failed"),
-            status: Number(persistedFinalXml?.status || 0),
-            errorCode: String(persistedFinalXml?.errorCode || ""),
-            errorDetails: (
-              persistedFinalXml?.errorDetails && typeof persistedFinalXml.errorDetails === "object"
-                ? persistedFinalXml.errorDetails
-                : null
-            ),
-            xml: out,
-          };
-        }
-        emitSaveLifecycleEvent("SAVE_PERSIST_DONE", {
-          sid,
-          reason: finalizeLifecycleReason,
-          rev: Number(persistedFinalXml?.storedRev || rev),
-          status: Number(persistedFinalXml?.status || 200),
-          diagram_state_version: Number(persistedFinalXml?.diagramStateVersion || 0),
-          xml_len: out.length,
-        });
-      }
-
       let finalOut = out;
       let finalStoredRev = Number(flushed?.storedRev || flushed?.rev || nextState.rev || 0);
       let finalDiagramStateVersion = Number(flushed?.diagramStateVersion || 0);
@@ -5083,85 +5106,6 @@ const BpmnStage = forwardRef(function BpmnStage({
           ? flushed.bpmnVersionSnapshot
           : null
       );
-
-      const canonicalComparisonXml = shouldUseCanonicalPrimaryPersist
-        ? transformPersistedXml(preFlushXml)
-        : preFlushXml;
-      if (shouldCanonicalRePersistManualSave({
-        source,
-        persistReason,
-        canonicalXml: canonicalComparisonXml,
-        persistedXml: finalOut,
-      })) {
-        const canonicalOut = transformPersistedXml(preFlushXml);
-        const canonicalPersistReason = `${persistReason}:manual_canonical_repersist`;
-        emitSaveLifecycleEvent("SAVE_PERSIST_STARTED", {
-          sid,
-          reason: canonicalPersistReason,
-          rev: Number(finalStoredRev || 0),
-          xml_len: canonicalOut.length,
-        });
-        const canonicalPersisted = typeof coordinator.persistExplicitXml === "function"
-          ? await coordinator.persistExplicitXml(canonicalOut, canonicalPersistReason, {
-            rev: Number(finalStoredRev || 0),
-            saveOwner: resolvedSaveOwner,
-            bpmnMeta: saveBpmnMeta,
-          })
-          : await ensureBpmnPersistence().saveRaw(sid, canonicalOut, Number(finalStoredRev || 0), canonicalPersistReason, { bpmnMeta: saveBpmnMeta });
-        if (!canonicalPersisted?.ok) {
-          emitSaveLifecycleEvent("SAVE_PERSIST_FAIL", {
-            sid,
-            reason: canonicalPersistReason,
-            rev: Number(finalStoredRev || 0),
-            status: Number(canonicalPersisted?.status || 0),
-            error_code: String(canonicalPersisted?.errorCode || ""),
-            error_details: (
-              canonicalPersisted?.errorDetails && typeof canonicalPersisted.errorDetails === "object"
-                ? canonicalPersisted.errorDetails
-                : null
-            ),
-            xml_len: canonicalOut.length,
-            error: String(canonicalPersisted?.error || "manual canonical persist failed"),
-          });
-          if (resolvedSaveOwner) {
-            coordinator.endSingleWriter?.(resolvedSaveOwner, `${source}:manual_canonical_repersist_fail`);
-          }
-          return {
-            ok: false,
-            error: String(canonicalPersisted?.error || "manual canonical persist failed"),
-            status: Number(canonicalPersisted?.status || 0),
-            errorCode: String(canonicalPersisted?.errorCode || ""),
-            errorDetails: (
-              canonicalPersisted?.errorDetails && typeof canonicalPersisted.errorDetails === "object"
-                ? canonicalPersisted.errorDetails
-                : null
-            ),
-            xml: finalOut,
-          };
-        }
-        emitSaveLifecycleEvent("SAVE_PERSIST_DONE", {
-          sid,
-          reason: canonicalPersistReason,
-          rev: Number(canonicalPersisted?.storedRev || finalStoredRev || 0),
-          status: Number(canonicalPersisted?.status || 200),
-          diagram_state_version: Number(canonicalPersisted?.diagramStateVersion || finalDiagramStateVersion || 0),
-          xml_len: canonicalOut.length,
-        });
-        publishE2ESaveProbe({
-          sid,
-          source,
-          persistReason,
-          manualCanonicalRePersist: true,
-          manualCanonicalRePersistReason: canonicalPersistReason,
-          manualCanonicalXml: canonicalOut,
-        });
-        finalOut = canonicalOut;
-        finalStoredRev = Number(canonicalPersisted?.storedRev || finalStoredRev || 0);
-        finalDiagramStateVersion = Number(canonicalPersisted?.diagramStateVersion || finalDiagramStateVersion || 0);
-        if (canonicalPersisted?.bpmnVersionSnapshot && typeof canonicalPersisted.bpmnVersionSnapshot === "object") {
-          finalVersionSnapshot = canonicalPersisted.bpmnVersionSnapshot;
-        }
-      }
 
       if (force) {
         coordinator.clearPendingWork?.(`${source}:after_force_flush`);
@@ -5878,6 +5822,9 @@ const BpmnStage = forwardRef(function BpmnStage({
         saveLocalFromModeler,
         saveXmlDraftText,
         seedNew,
+        getBaseDiagramStateVersion: () => getBaseDiagramStateVersion?.(),
+        rememberDiagramStateVersion: (version, opts) => rememberDiagramStateVersion?.(version, opts),
+        flushSave: (reason, opts) => ensureBpmnCoordinator().flushSave(reason, opts),
       },
     };
   }

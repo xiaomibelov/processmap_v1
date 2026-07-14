@@ -13,6 +13,7 @@ export default function ProcessPanels({ section = "top", view = {} }) {
     isBpmnTab,
     workbench,
     exportBpmn,
+    exportSessionZip,
     openVersionsModal,
     selectedElementId,
     openInsertBetweenModal,
@@ -186,6 +187,7 @@ export default function ProcessPanels({ section = "top", view = {} }) {
           setCommandModeEnabled={setCommandModeEnabled}
           openImportDialog={openImportDialog}
           exportBpmn={exportBpmn}
+          exportSessionZip={exportSessionZip}
           openVersionsModal={openVersionsModal}
           selectedElementId={selectedElementId}
           openInsertBetweenModal={openInsertBetweenModal}

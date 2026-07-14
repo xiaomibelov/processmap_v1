@@ -1777,6 +1777,26 @@ export async function apiGetExport(sessionId) {
   return r.ok ? { ok: true, status: r.status, export: r.data } : r;
 }
 
+// Session export ZIP (process.yml + BPMN XML + sidecars) as a Blob download.
+// Uses raw fetch because the response is binary; auth mirrors apiRequest.
+export async function apiGetExportZip(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  try {
+    const token = String(getAccessToken() || "").trim();
+    const resp = await fetch(apiRoutes.sessions.exportZip(sid), {
+      method: "GET",
+      credentials: "include",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!resp.ok) return { ok: false, status: resp.status, error: `http ${resp.status}` };
+    const blob = await resp.blob();
+    return { ok: true, status: resp.status, blob };
+  } catch (e) {
+    return { ok: false, status: 0, error: String(e?.message || e) };
+  }
+}
+
 // ------- LLM Settings -------
 export async function apiGetLlmSettings() {
   const r = okOrError(await request(apiRoutes.llm.settings()));
@@ -1970,6 +1990,27 @@ export async function apiExportAnalyticsPropertiesXlsx(scope, scopeId) {
   if (!r.ok) return r;
   const blob = r.data instanceof Blob ? r.data : new Blob([String(r.text || "")]);
   return { ok: true, status: r.status, blob, filename: `properties-${scope}-${scopeId}.xlsx` };
+}
+
+export async function apiExportAnalyticsPropertiesRecalculatedXlsx(scope, scopeId, params = {}) {
+  const r = await request(apiRoutes.analytics.exportPropertiesRecalculatedXlsx(scope, scopeId, params), { method: "GET", responseType: "blob" });
+  if (!r.ok) return r;
+  const blob = r.data instanceof Blob ? r.data : new Blob([String(r.text || "")]);
+  return { ok: true, status: r.status, blob, filename: `properties-recalculated-${scope}-${scopeId}.xlsx` };
+}
+
+export async function apiGetAnalyticsPropertiesRecalculation(scope, scopeId, opts = {}) {
+  const r = okOrError(await request(apiRoutes.analytics.propertiesRecalculation(scope, scopeId), { signal: opts.signal }));
+  const data = unwrapAnalyticsData(r);
+  if (!data) return r;
+  return {
+    ok: true,
+    status: r.status,
+    rows: Array.isArray(data.rows) ? data.rows : [],
+    count: Number(data.count || 0),
+    resolved: Number(data.resolved || 0),
+    meta: r.meta,
+  };
 }
 
 export async function apiExportAnalyticsActionsXlsx(scope, scopeId) {

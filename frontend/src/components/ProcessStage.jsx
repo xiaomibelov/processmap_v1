@@ -22,6 +22,7 @@ import {
   apiGetAutoPassPrecheck,
   apiGetAutoPassStatus,
 } from "../lib/api/sessionApi";
+import { apiGetExportZip } from "../lib/api.js";
 import { seedSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
 import {
   apiGetBpmnMeta,
@@ -131,6 +132,7 @@ import useProcessStageDrawio from "../features/process/stage/orchestration/usePr
 import useProcessStageHybrid from "../features/process/stage/orchestration/useProcessStageHybrid";
 import useProcessStageLocalState from "../features/process/stage/orchestration/state/useProcessStageLocalState";
 import useDiagramSearchController from "../features/process/stage/search/useDiagramSearchController";
+import useDiagramSearchHotkey from "../features/process/stage/search/diagramSearchHotkey";
 import { navigateDiagramSearchResult } from "../features/process/stage/search/diagramSearchNavigation";
 import {
   buildTopPanelsView,
@@ -477,6 +479,7 @@ function ProcessStage({
   reloadKey,
   selectedBpmnElement,
   onBpmnElementSelect,
+  onBpmnModelerExtensionChange = null,
   onOpenElementNotes,
   onOpenNotesDiscussions,
   onElementNotesRemap,
@@ -486,6 +489,7 @@ function ProcessStage({
   selectedPropertiesOverlayPreview = null,
   propertiesOverlayAlwaysEnabled = false,
   propertiesOverlayAlwaysPreviewByElementId = null,
+  overlayHiddenFields = null,
   v2OverlaysEnabled = false,
   v2OverlaysExpanded = false,
   drawioCompanionFocusIntent = null,
@@ -545,6 +549,11 @@ function ProcessStage({
   const diagramQualityPopoverRef = useRef(null);
   const diagramOverflowPopoverRef = useRef(null);
   const bpmnStageHostRef = useRef(null);
+  const [bpmnStageHostElement, setBpmnStageHostElement] = useState(null);
+  const bpmnStageHostRefCallback = useCallback((node) => {
+    bpmnStageHostRef.current = node;
+    setBpmnStageHostElement((prev) => (prev === node ? prev : node));
+  }, []);
   const hybridLayerOverlayRef = useRef(null);
   const hybridV2FileInputRef = useRef(null);
   const drawioFileInputRef = useRef(null);
@@ -1945,6 +1954,7 @@ function ProcessStage({
     markInterviewAsSaved,
     handleInterviewChange,
     queueDiagramMutation: queueDiagramMutationRaw,
+    flushPendingDiagramAutosave,
     cancelPendingDiagramAutosave,
   } = useProcessOrchestrator({
     sid,
@@ -2007,6 +2017,21 @@ function ProcessStage({
 
   const queueDiagramMutation = useCallback((mutation) => {
     const kind = String(mutation?.kind || mutation || "").trim().toLowerCase();
+    if (
+      kind === "diagram.context_menu_action"
+      && String(mutation?.actionId || "").trim() === "properties_overlay_update_extension_property"
+    ) {
+      // Canvas properties popover wrote a camunda property value into the
+      // live modeler: ask the sidebar owner to re-hydrate its editable
+      // draft (epoch bump + external-edit token).
+      const changedElementId = String(mutation?.elementId || "").trim();
+      if (changedElementId && typeof onBpmnModelerExtensionChange === "function") {
+        onBpmnModelerExtensionChange({
+          elementId: changedElementId,
+          propertyName: String(mutation?.propertyName || "").trim(),
+        });
+      }
+    }
     if (kind.startsWith("diagram.") || kind.startsWith("xml.")) {
       setSaveDirtyHint(true);
       setDiagramSearchMutationVersion((prev) => prev + 1);
@@ -2045,7 +2070,9 @@ function ProcessStage({
         }
       }
     }
-    queueDiagramMutationRaw(mutation);
+    if (kind !== "diagram.template_insert") {
+      queueDiagramMutationRaw(mutation);
+    }
   }, [
     buildOwnerSnapshot,
     draft?.bpmn_graph_fingerprint,
@@ -2056,6 +2083,7 @@ function ProcessStage({
     draft?.version,
     ensureSessionWorkspaceTruthOwner,
     getBaseDiagramStateVersion,
+    onBpmnModelerExtensionChange,
     queueDiagramMutationRaw,
     refreshDiagramUndoRedoState,
     sid,
@@ -3398,9 +3426,30 @@ function ProcessStage({
   // Cached host rect updated by ResizeObserver / resize listener.
   // NEVER read getBoundingClientRect during render — only in the observer callback.
   const [hostContainerRect, setHostContainerRect] = useState({ left: 0, top: 0, width: 0, height: 0 });
+  const hostRectRef = useRef(hostContainerRect);
+  const setHostContainerRectIfChanged = useCallback((next) => {
+    const current = hostRectRef.current;
+    if (
+      current
+      && Number(current.left || 0) === Number(next?.left || 0)
+      && Number(current.top || 0) === Number(next?.top || 0)
+      && Number(current.width || 0) === Number(next?.width || 0)
+      && Number(current.height || 0) === Number(next?.height || 0)
+    ) {
+      return;
+    }
+    hostRectRef.current = {
+      left: Number(next?.left || 0),
+      top: Number(next?.top || 0),
+      width: Number(next?.width || 0),
+      height: Number(next?.height || 0),
+    };
+    setHostContainerRect(hostRectRef.current);
+  }, []);
+  const hostRefForTemplates = useMemo(() => ({ current: bpmnStageHostElement }), [bpmnStageHostElement]);
   useViewportResizeController({
-    hostRef: bpmnStageHostRef,
-    onHostRect: setHostContainerRect,
+    hostRef: hostRefForTemplates,
+    onHostRect: setHostContainerRectIfChanged,
   });
 
   const templatesDiagramContainerRect = useMemo(() => {
@@ -3818,6 +3867,8 @@ function ProcessStage({
     bpmnApiRef: bpmnRef,
     bpmnStageHostRef,
     clientToDiagram,
+    flushPendingDiagramAutosave,
+    cancelPendingDiagramAutosave,
     onPersistedTemplateApply: async ({ template, saved }) => {
       const owner = ensureSessionWorkspaceTruthOwner();
       const snapshot = buildOwnerSnapshot({
@@ -4053,6 +4104,33 @@ function ProcessStage({
     openBpmnSubprocessPreviewProperties,
   ]);
 
+  // Click on a V2 properties overlay card: open the properties popover for
+  // that element through the same pipeline the context-menu action uses.
+  const handleV2OverlayPropertiesRequest = useCallback(async (elementIdRaw) => {
+    const elementId = toText(elementIdRaw);
+    if (!elementId) return null;
+    const result = await Promise.resolve(
+      bpmnRef?.current?.runDiagramContextAction?.({
+        actionId: "open_properties",
+        target: { id: elementId, kind: "element" },
+      }),
+    );
+    bpmnPropertiesOverlayController.handleContextMenuActionResult({
+      actionId: "open_properties",
+      menu: {
+        target: {
+          id: elementId,
+          kind: "element",
+        },
+      },
+      result: asObject(result),
+    });
+    return result;
+  }, [
+    bpmnPropertiesOverlayController,
+    bpmnRef,
+  ]);
+
   const handleDiagramSearchResultNavigation = useCallback((result, { source = "diagram_search" } = {}) => {
     const requestId = diagramSearchNavigationRequestRef.current + 1;
     diagramSearchNavigationRequestRef.current = requestId;
@@ -4093,6 +4171,21 @@ function ProcessStage({
     isOpen: diagramActionSearchOpen,
     setOpen: setDiagramActionSearchOpen,
     isEnabled: hasSession && tab === "diagram" && !isInterview,
+  });
+
+  // Superpower Search (S2): Ctrl+K / Cmd+K opens the diagram search popover
+  // from anywhere on the diagram tab (ignored while typing in form fields).
+  useDiagramSearchHotkey({
+    enabled: hasSession && tab === "diagram" && !isInterview,
+    isOpen: diagramActionSearchOpen,
+    onOpen: () => {
+      closeAllDiagramActions();
+      setDiagramActionSearchOpen(true);
+    },
+    onFocus: () => {
+      const input = diagramSearchPopoverRef.current?.querySelector?.("#diagram-search-query");
+      input?.focus?.();
+    },
   });
 
   const handleUndoAction = useCallback(async () => {
@@ -6620,6 +6713,7 @@ function ProcessStage({
       executeAi,
       apiAiQuestions,
       apiGetBpmnXml,
+      apiGetExportZip,
       apiPatchSession,
       getBaseDiagramStateVersion,
       rememberDiagramStateVersion,
@@ -6639,6 +6733,7 @@ function ProcessStage({
     runToolbarClear,
     toggleAiBottlenecks,
     exportBpmn,
+    exportSessionZip,
     openClarifyNode,
     toggleAttentionFilter,
     focusAttentionItem,
@@ -6743,6 +6838,7 @@ function ProcessStage({
     rememberDiagramStateVersion,
     propertiesOverlayAlwaysEnabled,
     propertiesOverlayAlwaysPreviewByElementId,
+    overlayHiddenFields,
     queueDiagramMutation,
     v2OverlaysEnabled,
     v2OverlaysExpanded,
@@ -6763,6 +6859,7 @@ function ProcessStage({
     tab,
     toText,
     runBpmnContextMenuAction: handleBpmnContextMenuAction,
+    onV2OverlayPropertiesRequest: handleV2OverlayPropertiesRequest,
     openBpmnSubprocessPreviewProperties: handleBpmnSubprocessPreviewOpenProperties,
     onNavigateToSubprocess: (elementId) => {
       if (sid && typeof onNavigateToSubprocess === "function") {
@@ -6794,6 +6891,7 @@ function ProcessStage({
     isBpmnTab,
     workbench,
     exportBpmn,
+    exportSessionZip,
     openVersionsModal,
     selectedElementId,
     openInsertBetweenModal,
@@ -7223,7 +7321,7 @@ function ProcessStage({
             <div className="absolute inset-0">
               <div
                 className={`bpmnStageHost h-full ${tab === "xml" ? "bpmnStageHost--xml" : ""} ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""}`}
-                ref={bpmnStageHostRef}
+                ref={bpmnStageHostRefCallback}
               >
                 {subprocessBreadcrumbs?.length > 1 && tab !== "xml" ? (
                   <div className="subprocessBreadcrumbsBar">
@@ -7330,9 +7428,10 @@ function ProcessStage({
                     setDiagramSearchQuery: diagramSearch.setQuery,
                     diagramSearchResults: diagramSearch.results,
                     diagramSearchActiveIndex: diagramSearch.activeIndex,
-                    handleDiagramSearchPrev: diagramSearch.prev,
-                    handleDiagramSearchNext: diagramSearch.next,
                     selectDiagramSearchResult: diagramSearch.selectIndex,
+                    moveDiagramSearchActive: diagramSearch.moveActive,
+                    moveDiagramSearchActiveBoundary: diagramSearch.moveActiveBoundary,
+                    activateDiagramSearchResult: diagramSearch.activateActive,
                     hasPathHighlightData,
                     setPathHighlightEnabled,
                     availablePathTiers,

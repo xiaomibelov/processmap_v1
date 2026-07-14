@@ -359,3 +359,381 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         self.assertIn("kpi", data)
         self.assertIn("session_trend", data)
         self.assertEqual(data["kpi"]["unique_processes"], data["projects_count"])
+
+    def test_recalculate_helper_happy_path(self):
+        from app.routers.analytics import _build_recalculated_rows
+
+        rows = [
+            {"bpmn_id": "op1", "bpmn_name": "Operation 1", "name": "ee_time", "value": "3,61"},
+            {"bpmn_id": "op1", "bpmn_name": "Operation 1", "name": "ingredient_value", "value": "1"},
+        ]
+        out = _build_recalculated_rows(rows)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["bpmn_id"], "op1")
+        self.assertEqual(out[0]["ee_time"], 3.61)
+        self.assertEqual(out[0]["ingredient_value"], 1.0)
+        self.assertEqual(out[0]["result"], 3.61)
+
+    def test_recalculate_helper_invalid_ingredient_value_emits_null_result(self):
+        from app.routers.analytics import _build_recalculated_rows
+
+        rows = [
+            {"bpmn_id": "op1", "bpmn_name": "Operation 1", "name": "ee_time", "value": "3.61"},
+            {"bpmn_id": "op1", "bpmn_name": "Operation 1", "name": "ingredient_value", "value": "abc"},
+        ]
+        out = _build_recalculated_rows(rows)
+        # ee_time is enough to emit a row; unresolvable ingredient_value -> null result.
+        self.assertEqual(len(out), 1)
+        self.assertAlmostEqual(out[0]["ee_time"], 3.61)
+        self.assertIsNone(out[0]["ingredient_value"])
+        self.assertIsNone(out[0]["result"])
+        self.assertIsNone(out[0]["source"])
+
+    def test_parse_recalc_number_accepts_coefficient_times_n(self):
+        from app.routers.analytics import _parse_recalc_number
+
+        # Per-unit coefficient form "<number>*n" -> leading coefficient.
+        self.assertAlmostEqual(_parse_recalc_number("0,33*n"), 0.33)
+        self.assertAlmostEqual(_parse_recalc_number("0,08*n"), 0.08)
+        self.assertAlmostEqual(_parse_recalc_number("1,5 * n"), 1.5)
+        self.assertAlmostEqual(_parse_recalc_number("0,33*N"), 0.33)
+        # Plain numerics and invalids are unaffected.
+        self.assertAlmostEqual(_parse_recalc_number("3,61"), 3.61)
+        self.assertIsNone(_parse_recalc_number(""))
+        self.assertIsNone(_parse_recalc_number("abc"))
+        self.assertIsNone(_parse_recalc_number("0,33*n+1"))
+
+    def test_parse_recalc_number_accepts_comparison_prefix(self):
+        from app.routers.analytics import _parse_recalc_number
+
+        # Leading threshold/comparison prefix is stripped.
+        self.assertAlmostEqual(_parse_recalc_number(">10"), 10)
+        self.assertAlmostEqual(_parse_recalc_number("<5"), 5)
+        self.assertAlmostEqual(_parse_recalc_number("> 10"), 10)
+        self.assertAlmostEqual(_parse_recalc_number("<0,5"), 0.5)
+        # Non-numeric after the prefix still falls through to None.
+        self.assertIsNone(_parse_recalc_number(">abc"))
+        self.assertIsNone(_parse_recalc_number("<"))
+        # No over-parse: trailing operators after *n are NOT dropped.
+        self.assertIsNone(_parse_recalc_number("0,33*n+1"))
+
+    def test_recalculate_helper_exports_coefficient_times_n_rows(self):
+        from app.routers.analytics import _build_recalculated_rows
+
+        rows = [
+            {"bpmn_id": "op1", "bpmn_name": "Op 1", "name": "ee_time", "value": "0,33*n"},
+            {"bpmn_id": "op1", "bpmn_name": "Op 1", "name": "ingredient_value", "value": "10"},
+            {"bpmn_id": "op2", "bpmn_name": "Op 2", "name": "ee_time", "value": "0,08*n"},
+            {"bpmn_id": "op2", "bpmn_name": "Op 2", "name": "ingredient_value", "value": "5"},
+            # ee_time without ingredient_value is still emitted (result=None, source=None).
+            {"bpmn_id": "op3", "bpmn_name": "Op 3", "name": "ee_time", "value": "0,33*n"},
+        ]
+        out = _build_recalculated_rows(rows)
+        self.assertEqual(len(out), 3)
+        by_id = {r["bpmn_id"]: r for r in out}
+        self.assertAlmostEqual(by_id["op1"]["ee_time"], 0.33)
+        self.assertAlmostEqual(by_id["op1"]["result"], round(0.33 * 10, 2))
+        self.assertAlmostEqual(by_id["op2"]["ee_time"], 0.08)
+        self.assertAlmostEqual(by_id["op2"]["result"], round(0.08 * 5, 2))
+        self.assertIn("op3", by_id)
+        self.assertAlmostEqual(by_id["op3"]["ee_time"], 0.33)
+        self.assertIsNone(by_id["op3"]["result"])
+        self.assertIsNone(by_id["op3"]["source"])
+
+    def _set_session_bpmn_meta(self, meta: dict):
+        storage = self.get_storage()
+        storage.patch_session_meta(
+            self.session_id,
+            bpmn_meta=meta,
+            base_diagram_state_version=0,
+            user_id=self.admin_id,
+            org_id=self.org_id,
+            is_admin=True,
+        )
+
+    def test_export_properties_recalculated_xlsx_happy_path(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "3.61"},
+                            {"name": "ingredient_value", "value": "1"},
+                        ]
+                    }
+                }
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.headers["content-type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn("properties-recalculated-session-", r.headers.get("content-disposition", ""))
+        self.assertTrue(r.content.startswith(b"PK"))
+
+    def test_export_properties_recalculated_xlsx_skips_invalid_rows(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "3.61"},
+                            {"name": "ingredient_value", "value": ""},
+                        ]
+                    }
+                }
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.headers["content-type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertTrue(r.content.startswith(b"PK"))
+
+    def test_export_properties_recalculated_xlsx_requires_auth(self):
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}",
+        )
+        self.assertEqual(r.status_code, 401)
+
+    def test_recalculate_helper_uses_catalog_when_property_missing(self):
+        from app.routers.analytics import _build_recalculated_rows
+
+        rows = [
+            {"bpmn_id": "op1", "bpmn_name": "Op 1", "name": "ee_time", "value": "0,33*n"},
+            {"bpmn_id": "op1", "bpmn_name": "Op 1", "name": "ingredient", "value": "Рис"},
+        ]
+        out = _build_recalculated_rows(rows, catalog_values={"рис": 1.2})
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["source"], "catalog")
+        self.assertAlmostEqual(out[0]["ingredient_value"], 1.2)
+        self.assertAlmostEqual(out[0]["result"], round(0.33 * 1.2, 2))
+
+    def test_recalculate_helper_property_wins_over_catalog(self):
+        from app.routers.analytics import _build_recalculated_rows
+
+        rows = [
+            {"bpmn_id": "op1", "name": "ee_time", "value": "2"},
+            {"bpmn_id": "op1", "name": "ingredient_value", "value": "5"},
+            {"bpmn_id": "op1", "name": "ingredient", "value": "Рис"},
+        ]
+        out = _build_recalculated_rows(rows, catalog_values={"рис": 99})
+        self.assertEqual(out[0]["source"], "property")
+        self.assertAlmostEqual(out[0]["ingredient_value"], 5.0)
+
+    def test_recalculate_helper_carries_context_fields(self):
+        from app.routers.analytics import _build_recalculated_rows
+
+        rows = [
+            {"bpmn_id": "op1", "bpmn_name": "Op 1", "name": "ee_time", "value": "2",
+             "session_id": "s1", "session_title": "Sess", "project_id": "p1",
+             "project_title": "Proj", "workspace_id": "w1", "org_id": "o1"},
+            {"bpmn_id": "op1", "name": "ingredient_value", "value": "3"},
+        ]
+        out = _build_recalculated_rows(rows)
+        self.assertEqual(out[0]["session_id"], "s1")
+        self.assertEqual(out[0]["session_title"], "Sess")
+        self.assertEqual(out[0]["workspace_id"], "w1")
+        self.assertEqual(out[0]["org_id"], "o1")
+        self.assertEqual(out[0]["source_url"], "/app?session=s1")
+
+    def test_get_properties_recalculation_requires_auth(self):
+        r = self.client.get(
+            f"/api/analytics/properties/recalculation?scope=session&scope_id={self.session_id}",
+        )
+        self.assertEqual(r.status_code, 401)
+
+    def test_get_properties_recalculation_shape_with_catalog_backfill(self):
+        from app.recipe.storage import create_ingredient
+
+        create_ingredient(
+            {"name": "Рис", "unit": "кг", "value": 1.2}, self.org_id, self.admin_id
+        )
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {"properties": {"extensionProperties": [
+                    {"name": "ee_time", "value": "0,33*n"},
+                    {"name": "ingredient", "value": "Рис"},
+                ]}}
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/recalculation?scope=session&scope_id={self.session_id}",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        payload = r.json()
+        self.assertTrue(payload["success"])
+        data = payload["data"]
+        self.assertEqual(data["count"], 1)
+        self.assertEqual(data["resolved"], 1)
+        row = data["rows"][0]
+        self.assertEqual(row["source"], "catalog")
+        self.assertEqual(row["ingredient"], "Рис")
+        self.assertAlmostEqual(row["ingredient_value"], 1.2)
+        self.assertAlmostEqual(row["result"], round(0.33 * 1.2, 2))
+
+    def test_compute_source_missing_ingredient_uses_ee_time(self):
+        from app.routers.analytics import _MISSING, compute_source
+
+        self.assertEqual(compute_source(2.5, _MISSING), 2.5)
+        self.assertEqual(compute_source(0.0, _MISSING), 0.0)
+
+    def test_compute_source_empty_ingredient_is_no_data(self):
+        from app.routers.analytics import compute_source
+
+        self.assertEqual(compute_source(2.5, ""), "нет данных")
+
+    def test_compute_source_valid_positive_ingredient(self):
+        from app.routers.analytics import compute_source
+
+        self.assertEqual(compute_source(2.0, "3"), 3.0)
+        self.assertEqual(compute_source(1.5, "10,0"), 10.0)
+
+    def test_compute_source_comma_decimal_and_trailing_comma(self):
+        from app.routers.analytics import compute_source
+
+        self.assertEqual(compute_source(2.0, "1,5"), 1.5)
+        self.assertEqual(compute_source(2.0, " 1,5, "), 1.5)
+
+    def test_compute_source_invalid_or_non_positive_is_no_data(self):
+        from app.routers.analytics import compute_source
+
+        self.assertEqual(compute_source(2.0, "abc"), "нет данных")
+        self.assertEqual(compute_source(2.0, "0"), "нет данных")
+        self.assertEqual(compute_source(2.0, "-1"), "нет данных")
+
+    def test_export_properties_recalculated_xlsx_source_mode_200(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "2.5"},
+                            {"name": "ingredient_value", "value": "2"},
+                            {"name": "ingredient", "value": "Котлеты ПФ"},
+                            {"name": "ee_operation", "value": "Смешивание"},
+                            {"name": "ingredient_um", "value": "кг"},
+                        ]
+                    }
+                }
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.headers["content-type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn("properties-source-session-", r.headers.get("content-disposition", ""))
+        self.assertTrue(r.content.startswith(b"PK"))
+
+    def test_export_properties_recalculated_xlsx_source_mode_missing_ingredient(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "3.0"},
+                        ]
+                    }
+                }
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.headers["content-type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertTrue(r.content.startswith(b"PK"))
+
+    def test_export_properties_recalculated_xlsx_source_mode_422_empty_ingredient(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "3.0"},
+                            {"name": "ingredient_value", "value": ""},
+                        ]
+                    }
+                }
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 422)
+        body = r.json()
+        self.assertIn("invalid_tasks", body)
+        self.assertEqual(len(body["invalid_tasks"]), 1)
+        self.assertEqual(body["invalid_tasks"][0]["bpmn_id"], "op1")
+        self.assertEqual(body["invalid_tasks"][0]["ingredient_value"], "")
+
+    def test_export_properties_recalculated_xlsx_source_mode_422_invalid_ingredient(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "3.0"},
+                            {"name": "ingredient_value", "value": "abc"},
+                        ]
+                    }
+                }
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 422)
+        body = r.json()
+        self.assertIn("invalid_tasks", body)
+        self.assertEqual(len(body["invalid_tasks"]), 1)
+        self.assertEqual(body["invalid_tasks"][0]["ingredient_value"], "abc")
+
+    def test_build_source_rows_includes_ee_time_and_ingredient(self):
+        from app.routers.analytics import _build_source_rows
+
+        rows = [
+            {"bpmn_id": "op1", "bpmn_name": "Mix A", "name": "ee_time", "value": "2,5"},
+            {"bpmn_id": "op1", "name": "ingredient_value", "value": "2"},
+            {"bpmn_id": "op1", "name": "ingredient", "value": "Котлеты ПФ"},
+            {"bpmn_id": "op1", "name": "ee_operation", "value": "Смешивание"},
+            {"bpmn_id": "op1", "name": "ingredient_um", "value": "кг"},
+        ]
+        out = _build_source_rows(rows)
+        self.assertEqual(len(out), 1)
+        row = out[0]
+        self.assertEqual(row["bpmn_id"], "op1")
+        self.assertAlmostEqual(row["ee_time"], 2.5)
+        self.assertEqual(row["ingredient"], "Котлеты ПФ")
+        self.assertEqual(row["ee_operation"], "Смешивание")
+        self.assertEqual(row["ingredient_value"], "2")
+        self.assertEqual(row["ingredient_um"], "кг")
+        self.assertEqual(row["source"], 2.0)
+
+    def test_export_properties_recalculated_xlsx_source_mode_requires_auth(self):
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
+        )
+        self.assertEqual(r.status_code, 401)

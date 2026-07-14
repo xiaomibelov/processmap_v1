@@ -1,4 +1,10 @@
 import { normalizeDiagramSessionId, normalizeDiagramStateVersion } from "./diagramVersionContext.js";
+import {
+  getVersion as getTrackedDiagramStateVersion,
+  setVersion as setTrackedDiagramStateVersion,
+  bumpVersion as bumpTrackedDiagramStateVersion,
+  rollbackVersion as rollbackTrackedDiagramStateVersion,
+} from "../../../../lib/casVersionTracker.js";
 
 const sessionPatchQueues = new Map();
 
@@ -26,9 +32,12 @@ export function readSessionPatchConflictServerCurrentVersion(responseRaw = null)
 }
 
 export function resolveSessionPatchBaseAtSendTime({
+  sessionId,
   getBaseDiagramStateVersion,
   fallbackBaseDiagramStateVersion,
 } = {}) {
+  const trackedBase = normalizeDiagramStateVersion(getTrackedDiagramStateVersion(sessionId));
+  if (trackedBase !== null) return trackedBase;
   const currentBase = normalizeDiagramStateVersion(
     typeof getBaseDiagramStateVersion === "function"
       ? getBaseDiagramStateVersion()
@@ -41,11 +50,26 @@ export function resolveSessionPatchBaseAtSendTime({
 function rememberVersion(rememberDiagramStateVersion, version, sessionId) {
   const normalizedVersion = normalizeDiagramStateVersion(version);
   const sid = normalizeDiagramSessionId(sessionId);
-  if (normalizedVersion === null || !sid || typeof rememberDiagramStateVersion !== "function") return;
+  if (normalizedVersion === null || !sid) return;
+  setTrackedDiagramStateVersion(sid, normalizedVersion);
+  if (typeof rememberDiagramStateVersion !== "function") return;
   try {
     rememberDiagramStateVersion(normalizedVersion, { sessionId: sid });
   } catch {
     // Best-effort monotonic context update; callers still receive the original response.
+  }
+}
+
+function bumpVersion(rememberDiagramStateVersion, version, sessionId) {
+  const normalizedVersion = normalizeDiagramStateVersion(version);
+  const sid = normalizeDiagramSessionId(sessionId);
+  if (normalizedVersion === null || !sid) return;
+  bumpTrackedDiagramStateVersion(sid, normalizedVersion);
+  if (typeof rememberDiagramStateVersion !== "function") return;
+  try {
+    rememberDiagramStateVersion(normalizedVersion, { sessionId: sid });
+  } catch {
+    // no-op
   }
 }
 
@@ -74,6 +98,7 @@ export function enqueueSessionPatchCasWrite({
 
   const run = previous.catch(() => null).then(async () => {
     const baseDiagramStateVersion = resolveSessionPatchBaseAtSendTime({
+      sessionId: sid,
       getBaseDiagramStateVersion,
       fallbackBaseDiagramStateVersion: patchBody.base_diagram_state_version ?? patchBody.baseDiagramStateVersion,
     });
@@ -84,9 +109,10 @@ export function enqueueSessionPatchCasWrite({
 
     const response = await apiPatchSession(sid, payload);
     if (response?.ok) {
-      rememberVersion(rememberDiagramStateVersion, readSessionPatchAckDiagramStateVersion(response), sid);
+      bumpVersion(rememberDiagramStateVersion, readSessionPatchAckDiagramStateVersion(response), sid);
       return response;
     }
+    rollbackTrackedDiagramStateVersion(sid);
     rememberVersion(rememberDiagramStateVersion, readSessionPatchConflictServerCurrentVersion(response), sid);
     return response;
   });
