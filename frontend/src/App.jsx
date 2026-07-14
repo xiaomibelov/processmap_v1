@@ -77,6 +77,7 @@ import {
   upsertCamundaPresentationByElementId,
 } from "./features/process/camunda/camundaPresentation";
 import { buildPropertiesOverlayPreview } from "./features/process/camunda/propertyDictionaryModel";
+import { useHiddenFields } from "./components/sidebar/displaySettings/useHiddenFields";
 import { normalizeHybridLayerMap } from "./features/process/hybrid/hybridLayerUi";
 import { mergeDrawioMeta, normalizeDrawioMeta } from "./features/process/drawio/drawioMeta";
 import buildSessionMetaReadModel from "./features/session-meta/read/buildSessionMetaReadModel";
@@ -867,7 +868,6 @@ export default function App() {
   const [reloadKey, setReloadKey] = useState(0);
   const openSessionReqSeqRef = useRef(0);
   const sessionMetaConflictGuardRef = useRef(createSessionMetaConflictGuard());
-  const lastServerDiagramStateVersionRef = useRef(null);
   const suppressProjectAutoselectRef = useRef(false);
   const initialProjectSelectionConsumedRef = useRef(false);
   const {
@@ -897,6 +897,17 @@ export default function App() {
   const [v2OverlaysEnabled, setV2OverlaysEnabled] = useState(false);
   const [v2OverlaysExpanded, setV2OverlaysExpanded] = useState(false);
   const [bpmnModelerSyncEpoch, setBpmnModelerSyncEpoch] = useState(0);
+  // Set when an external writer (canvas properties popover) mutates camunda
+  // extension properties in the live modeler. NotesPanel uses it to merge
+  // the fresh model read into any unsaved sidebar draft.
+  const [bpmnExternalEditToken, setBpmnExternalEditToken] = useState(null);
+  const handleBpmnModelerExtensionChange = useCallback(({ elementId } = {}) => {
+    setBpmnModelerSyncEpoch((epoch) => epoch + 1);
+    setBpmnExternalEditToken((prev) => ({
+      seq: Number(prev?.seq || 0) + 1,
+      elementId: String(elementId || "").trim(),
+    }));
+  }, []);
   const [elementNotesFocusKey, setElementNotesFocusKey] = useState(0);
   const [notesPanelOpenRequest, setNotesPanelOpenRequest] = useState(null);
   const [notesDiscussionsOpen, setNotesDiscussionsOpen] = useState(false);
@@ -942,24 +953,14 @@ export default function App() {
   }, [activeOrgRole, user?.is_admin]);
   const draftSessionId = String(draft?.session_id || "").trim();
   const isSessionLocalMode = !draftSessionId || isLocalSessionId(draftSessionId);
+  // Per-field chip filter (property-panel-redesign port): per-session
+  // localStorage `fpc_overlay_hidden_fields_v1:{sid}`, preview-level only.
+  const { hiddenFields: overlayHiddenFields, toggleField: toggleOverlayField } = useHiddenFields(draftSessionId);
   const serializeSessionMetaForBoundary = useCallback((valueRaw) => JSON.stringify(normalizeBpmnMeta(valueRaw)), []);
   const getSessionMetaBaseDiagramStateVersion = useCallback(() => Number(
     draft?.diagram_state_version ?? draft?.diagramStateVersion,
   ), [draft?.diagram_state_version, draft?.diagramStateVersion]);
 
-  // Seed the App-level monotonic version ref from the freshly loaded session.
-  // Without this, the first Camunda property save after opening a session falls
-  // back to draft.diagram_state_version, which can be stale and triggers a 409.
-  useEffect(() => {
-    const sid = draftSessionId;
-    const version = Number(draft?.diagram_state_version ?? draft?.diagramStateVersion ?? -1);
-    if (sid && Number.isFinite(version) && version >= 0) {
-      const current = lastServerDiagramStateVersionRef.current;
-      if (current === null || current < version) {
-        lastServerDiagramStateVersionRef.current = version;
-      }
-    }
-  }, [draftSessionId, draft?.diagram_state_version, draft?.diagramStateVersion]);
   const shortSessionMetaErr = useCallback((value) => (
     shortUserFacingError(value, 160, "Не удалось сохранить session meta.")
       || "Не удалось сохранить session meta."
@@ -1389,6 +1390,7 @@ export default function App() {
         elementId,
         extensionStateRaw: extensionMap[rawElementId],
         showPropertiesOverlay: true,
+        hiddenFields: overlayHiddenFields,
       });
       if (preview?.enabled && ensureArray(preview.items).length) {
         out[elementId] = preview;
@@ -1409,7 +1411,7 @@ export default function App() {
       }
     }
     return out;
-  }, [showPropertiesOverlayAlways, draft?.bpmn_meta, selectedPropertiesOverlayAlwaysPreview]);
+  }, [showPropertiesOverlayAlways, draft?.bpmn_meta, selectedPropertiesOverlayAlwaysPreview, overlayHiddenFields]);
 
   const sidebarHandleSections = useMemo(() => {
     const hasActiveSession = !!String(shellSessionId || "").trim();
@@ -1671,10 +1673,7 @@ export default function App() {
     if (activeSid && sid !== activeSid) return;
     const serverDiagramStateVersion = Number(session?.diagram_state_version ?? session?.diagramStateVersion ?? -1);
     if (Number.isFinite(serverDiagramStateVersion) && serverDiagramStateVersion >= 0) {
-      lastServerDiagramStateVersionRef.current = Math.max(
-        lastServerDiagramStateVersionRef.current ?? 0,
-        serverDiagramStateVersion,
-      );
+      bpmnStageRef.current?.rememberDiagramStateVersion?.(serverDiagramStateVersion, { sessionId: sid });
     }
     // Keep caches fresh instead of invalidating; status changes and saves both
     // include the latest diagram, so subprocess return can stay zero-fetch.
@@ -2619,36 +2618,84 @@ export default function App() {
       viewport: draft?.bpmn_meta?.viewport,
     };
     const baseDiagramStateVersion = Number(
-      lastServerDiagramStateVersionRef.current
+      bpmnStageRef.current?.getBaseDiagramStateVersion?.()
       ?? draft?.diagram_state_version
       ?? draft?.bpmn_xml_version
       ?? draft?.version
       ?? 0,
     );
-    let currentXml = draft?.bpmn_xml;
-    if (!currentXml) {
-      const xmlRes = await apiGetBpmnXml(sid);
-      currentXml = xmlRes?.ok ? xmlRes.xml : "";
-    }
     const operation = shouldRemove
       ? "property_delete"
       : (currentCamundaExtensionsByElementId[elementId] ? "property_update" : "property_add");
     emitPropertySaveEvent({ type: "start", operation, elementId, sid });
+
+    // Wait for the live modeler to be ready before we mutate or serialize it.
+    // This prevents the property-only save from reading an empty XML snapshot
+    // when the modeler runtime has not finished importing the diagram yet.
+    try {
+      await bpmnStageRef.current?.whenReady?.({ timeoutMs: 2000, expectedSid: sid });
+    } catch {
+      // Best-effort; proceed. If the modeler is not ready the apply step below
+      // will fail and the save will abort without falling back to an XML merge.
+    }
+
+    // Capture the current modeler extension state so we can roll it back if the
+    // save fails or conflicts with a concurrent edit.
+    let modelerExtensionBackup = null;
+    try {
+      modelerExtensionBackup = bpmnStageRef.current?.getElementCamundaExtensionState?.(elementId);
+    } catch {
+      // Best-effort backup; rollback will be skipped if unavailable.
+    }
+
+    // Apply the optimistic extension state to the live modeler first so the
+    // serialized XML is always fresh and property duplication cannot happen.
+    let applyResult;
+    try {
+      applyResult = bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, extensionStateRaw);
+      // Force the sidebar to re-read extension state from the live modeler
+      // instead of the pre-mutation memoized snapshot.
+      setBpmnModelerSyncEpoch((e) => e + 1);
+    } catch (error) {
+      applyResult = { ok: false, error: String(error?.message || error || "apply_failed") };
+    }
+    if (!applyResult?.ok) {
+      emitPropertySaveEvent({
+        type: "error",
+        operation,
+        elementId,
+        sid,
+        status: 0,
+        error: String(applyResult?.error || "Не удалось применить Properties к модели."),
+      });
+      return {
+        ok: false,
+        status: 0,
+        error: String(applyResult?.error || "Не удалось применить Properties к модели."),
+      };
+    }
+
     const persistResult = await saveBpmnState({
       operation,
       sessionId: sid,
       isLocal: isLocalSessionId(sid),
       baseDiagramStateVersion,
-      lastServerDiagramStateVersionRef,
+      getBaseDiagramStateVersion: () => bpmnStageRef.current?.getBaseDiagramStateVersion?.(),
+      rememberDiagramStateVersion: (version) => bpmnStageRef.current?.rememberDiagramStateVersion?.(version, { sessionId: sid }),
       projectId: draft?.project_id,
       elementId,
       currentCamundaExtensionsByElementId,
       nextCamundaExtensionsByElementId,
       currentMeta,
       nextMeta: optimisticMeta,
-      currentXml,
+      getModelerXml: async () => {
+        const snap = await bpmnStageRef.current?.getRuntimeXmlSnapshot?.();
+        return snap?.ok ? snap.xml : "";
+      },
       apiPutBpmnXml,
+      flushSave: bpmnStageRef.current?.flushSave,
       apiGetSession,
+      apiGetBpmnXml,
       onSessionSync,
       overwriteBpmnSnapshot,
       backgroundSessionRefresh: options?.backgroundSessionRefresh === true,
@@ -2660,6 +2707,16 @@ export default function App() {
     });
     if (!persistResult?.ok) {
       const isConflict = persistResult?.status === 409 || persistResult?.conflict === true;
+      // Rollback the live modeler to the pre-save extension state so the next
+      // serialize/save does not resurrect the failed change.
+      if (modelerExtensionBackup) {
+        try {
+          bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, modelerExtensionBackup);
+          setBpmnModelerSyncEpoch((e) => e + 1);
+        } catch {
+          // Best-effort rollback.
+        }
+      }
       emitPropertySaveEvent({
         type: isConflict ? "conflict" : "error",
         operation,
@@ -2676,17 +2733,6 @@ export default function App() {
       };
     }
     emitPropertySaveEvent({ type: "success", operation, elementId, sid, local: persistResult?.local === true });
-    // Keep the in-memory modeler in sync with the saved XML so the sidebar and
-    // canvas overlays do not show stale/duplicated property rows after the
-    // property-only save intentionally skips a full canvas re-import.
-    try {
-      const syncRes = bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, extensionStateRaw);
-      if (syncRes?.ok) {
-        setBpmnModelerSyncEpoch((n) => n + 1);
-      }
-    } catch {
-      // Best-effort sync; the next structural save will reconcile from meta.
-    }
     markOk(sid && !isLocalSessionId(sid)
       ? (shouldRemove ? "Properties удалены." : "Properties сохранены.")
       : (shouldRemove ? "Properties удалены локально." : "Properties сохранены локально."));
@@ -3320,11 +3366,14 @@ export default function App() {
         onPropertiesOverlayAlwaysPreviewChange={setSelectedPropertiesOverlayAlwaysPreview}
         showPropertiesOverlayAlways={showPropertiesOverlayAlways}
         onShowPropertiesOverlayAlwaysChange={setShowPropertiesOverlayAlways}
+        overlayHiddenFields={overlayHiddenFields}
+        onOverlayFieldToggle={toggleOverlayField}
         v2OverlaysEnabled={v2OverlaysEnabled}
         onShowV2OverlaysChange={setV2OverlaysEnabled}
         v2OverlaysExpanded={v2OverlaysExpanded}
         onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
         bpmnModelerSyncEpoch={bpmnModelerSyncEpoch}
+        bpmnExternalEditToken={bpmnExternalEditToken}
         getElementCamundaExtensionsFromModeler={getElementCamundaExtensionsFromModeler}
         onGoToDiagram={() => {
           const sid = String(draft?.session_id || "").trim();
@@ -3788,6 +3837,7 @@ export default function App() {
         onNewBackendSession={() => setSessionFlowOpen(true)}
         selectedBpmnElement={selectedBpmnElement}
         onBpmnElementSelect={handleBpmnElementSelect}
+        onBpmnModelerExtensionChange={handleBpmnModelerExtensionChange}
         onOpenElementNotes={focusElementNotes}
         onOpenNotesDiscussions={openNotesDiscussions}
         onElementNotesRemap={remapElementNotes}
@@ -3798,6 +3848,7 @@ export default function App() {
         selectedPropertiesOverlayPreview={selectedPropertiesOverlayPreview}
         propertiesOverlayAlwaysEnabled={showPropertiesOverlayAlways}
         propertiesOverlayAlwaysPreviewByElementId={propertiesOverlayAlwaysPreviewByElementId}
+        overlayHiddenFields={overlayHiddenFields}
         v2OverlaysEnabled={v2OverlaysEnabled}
         v2OverlaysExpanded={v2OverlaysExpanded}
         onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}

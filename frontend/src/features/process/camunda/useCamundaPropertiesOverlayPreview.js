@@ -13,10 +13,14 @@ export default function useCamundaPropertiesOverlayPreview({
   camundaPropertiesDraft,
   selectedCamundaExtensionEntry,
   orgPropertyDictionaryBundle,
+  operationKey = "",
+  operationLabel = "",
   resolvedShowPropertiesOverlayOnSelect,
   propertiesOverlayPreviewDispatchRef,
   onPropertiesOverlayPreviewChange,
   onPropertiesOverlayAlwaysPreviewChange,
+  suppressOverlayPreview = false,
+  hiddenFields = null,
 }) {
   const finalizedCamundaPropertiesDraft = useMemo(
     () => normalizeCamundaExtensionState(finalizeExtensionStateWithDictionary({
@@ -37,36 +41,50 @@ export default function useCamundaPropertiesOverlayPreview({
   );
 
   const memoizedPropertiesOverlayAlwaysPreview = useMemo(() => {
+    if (suppressOverlayPreview) return null;
     if (!selectedElementId || !selectedCamundaPropertiesEditable) return null;
     return buildPropertiesOverlayPreview({
       elementId: selectedElementId,
       extensionStateRaw: camundaPropertiesDraft,
       dictionaryBundleRaw: orgPropertyDictionaryBundle,
+      operationKey,
+      operationLabel,
       showPropertiesOverlay: true,
+      hiddenFields,
     });
   }, [
     camundaPropertiesDraft,
+    hiddenFields,
+    operationKey,
+    operationLabel,
     orgPropertyDictionaryBundle,
     selectedCamundaPropertiesEditable,
     selectedElementId,
+    suppressOverlayPreview,
   ]);
 
   const memoizedPropertiesOverlayPreview = useMemo(() => {
+    if (suppressOverlayPreview) return null;
     if (!selectedElementId || !selectedCamundaPropertiesEditable) return null;
     if (resolvedShowPropertiesOverlayOnSelect) return memoizedPropertiesOverlayAlwaysPreview;
     return buildPropertiesOverlayPreview({
       elementId: selectedElementId,
       extensionStateRaw: camundaPropertiesDraft,
       dictionaryBundleRaw: orgPropertyDictionaryBundle,
+      operationKey,
+      operationLabel,
       showPropertiesOverlay: false,
     });
   }, [
     camundaPropertiesDraft,
     memoizedPropertiesOverlayAlwaysPreview,
+    operationKey,
+    operationLabel,
     orgPropertyDictionaryBundle,
     resolvedShowPropertiesOverlayOnSelect,
     selectedCamundaPropertiesEditable,
     selectedElementId,
+    suppressOverlayPreview,
   ]);
 
   useEffect(() => {
@@ -111,5 +129,8 @@ export default function useCamundaPropertiesOverlayPreview({
     finalizedCamundaPropertiesDraft,
     selectedCamundaExtensionCanonical,
     finalizedCamundaPropertiesDraftCanonical,
+    // The always-mode preview (already filtered by hiddenFields) drives the
+    // LiveCardPreview in the sidebar; null when suppressed or not editable.
+    overlayPreview: memoizedPropertiesOverlayAlwaysPreview,
   };
 }

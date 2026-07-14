@@ -10,6 +10,12 @@ import {
   normalizeAiQuestionsByElementMap,
 } from "../features/notes/knowledgeTools";
 import { parseBatchOpsFromNotes } from "../features/process/bpmn/ops/parseBatchOpsFromNotes";
+import { normalizeGlobalNotes as sharedNormalizeGlobalNotes } from "../app/sessionGlobalNotes.js";
+import {
+  normalizeDocumentationRows as sharedNormalizeDocumentationRows,
+  normalizeDocumentationText,
+} from "../features/process/bpmn/documentation/normalizeDocumentationRows.js";
+import { useElementThreads } from "../features/notes/useElementThreads";
 import {
   collectBpmnTraversalOrderMeta,
   parseLaneMetaByNodeFromBpmnXml,
@@ -30,13 +36,41 @@ import {
   normalizeCamundaExtensionState,
 } from "../features/process/camunda/camundaExtensions";
 import {
+  accumulateCamundaDraftOps,
+  createCamundaDraftOps,
+  mergeCamundaDraftWithFresh,
+  readCamundaDraftCacheEntry,
+  shouldApplyExternalEditToken,
+} from "../features/process/camunda/camundaExtensionDraftMerge";
+import {
+  collectProcessRefs,
+  mergeRefOptions,
+} from "../features/process/camunda/refsModel";
+import { apiGetReferenceOptions } from "../lib/api.js";
+import {
   finalizeExtensionStateWithDictionary,
   buildPropertiesOverlayPreview,
   getOperationKeyFromRobotMeta,
+  normalizeOrgPropertyDictionaryBundle,
 } from "../features/process/camunda/propertyDictionaryModel";
 import useCamundaPropertiesOverlayPreview from "../features/process/camunda/useCamundaPropertiesOverlayPreview";
+import { isProcessLikeType } from "../features/process/bpmn/stage/interaction/processRootSelection.js";
 import useNotesPanelController from "./notesPanel/useNotesPanelController.js";
 import { SHOW_PROPERTIES_FLAG_KEY } from "./sidebar/useElementSettingsController.js";
+import ExtensionStateMiniIndicator from "./sidebar/displaySettings/ExtensionStateMiniIndicator";
+import DisplaySettingsBlock from "./sidebar/displaySettings/DisplaySettingsBlock";
+import LiveCardPreview from "./sidebar/displaySettings/LiveCardPreview";
+import ToBeBuilder from "./sidebar/displaySettings/ToBeBuilder";
+import { deriveToBeModel } from "./sidebar/displaySettings/toBeBuilderModel";
+import { useToBeState } from "./sidebar/displaySettings/useToBeState";
+import { buildFieldChips } from "./sidebar/displaySettings/fieldChipsModel";
+import { DEFAULT_QUICK_PROPERTY_NAMES } from "./sidebar/controllers/useBpmnPropertiesController";
+import {
+  applyDisplayMode,
+  captureModeBeforeV2,
+  deriveDisplayMode,
+  restoreModeAfterV2,
+} from "./sidebar/displaySettings/displaySettingsModel";
 import SidebarShell from "./sidebar/SidebarShell";
 import ActorsSection from "./sidebar/ActorsSection";
 import TemplatesAndTldrSection from "./sidebar/TemplatesAndTldrSection";
@@ -93,6 +127,38 @@ function buildCamundaPropertiesDraftKey(sessionIdRaw, elementIdRaw) {
   const elementId = str(elementIdRaw);
   if (!sessionId || !elementId) return "";
   return `${sessionId}:${elementId}:camunda-properties`;
+}
+
+// V2 → display mode coupling (B3): the mode captured before V2 was enabled
+// is persisted per session (same namespacing style as the showAlways flag in
+// App.jsx: `fpc_*_v1:{sid}`) so turning V2 off restores the user's choice.
+const DISPLAY_MODE_BEFORE_V2_KEY_PREFIX = "fpc_display_mode_before_v2_v1:";
+
+function displayModeBeforeV2StorageKey(sessionId) {
+  const sid = str(sessionId);
+  return sid ? `${DISPLAY_MODE_BEFORE_V2_KEY_PREFIX}${sid}` : "";
+}
+
+function readDisplayModeBeforeV2(sessionId) {
+  if (typeof window === "undefined") return null;
+  const key = displayModeBeforeV2StorageKey(sessionId);
+  if (!key) return null;
+  try {
+    const raw = str(window.localStorage?.getItem(key));
+    return raw || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDisplayModeBeforeV2(sessionId, mode) {
+  if (typeof window === "undefined") return;
+  const key = displayModeBeforeV2StorageKey(sessionId);
+  if (!key) return;
+  try {
+    window.localStorage?.setItem(key, str(mode));
+  } catch {
+  }
 }
 
 function mergeModelerOnlyPropertiesIntoDraft(draftRaw, baselineRaw) {
@@ -605,31 +671,10 @@ function parseSelectedBpmnDocumentation(xmlText, elementIdRaw) {
   }
 }
 
-function normalizeDocumentationText(value) {
-  return String(value ?? "").replace(/\r\n/g, "\n");
-}
-
 function normalizeDocumentationRows(rowsRaw, options = {}) {
-  const keepEmpty = options && typeof options === "object" && options.keepEmpty === true;
-  return asArray(rowsRaw)
-    .map((entryRaw, index) => {
-      const entry = entryRaw && typeof entryRaw === "object"
-        ? entryRaw
-        : { text: entryRaw };
-      const text = normalizeDocumentationText(
-        Object.prototype.hasOwnProperty.call(entry, "text")
-          ? entry.text
-          : (Object.prototype.hasOwnProperty.call(entry, "value") ? entry.value : entryRaw),
-      );
-      const textFormat = str(entry?.textFormat || entry?.textformat);
-      if (!keepEmpty && !text.length && !textFormat) return null;
-      return {
-        id: str(entry?.id || `documentation_${index + 1}`) || `documentation_${index + 1}`,
-        text,
-        textFormat,
-      };
-    })
-    .filter(Boolean);
+  // Shared implementation; sidebar documentation draft rows always carry a
+  // stable id (fallback documentation_<index+1>).
+  return sharedNormalizeDocumentationRows(rowsRaw, { ...(options || {}), withId: true });
 }
 
 function buildDocumentationSignature(rowsRaw) {
@@ -638,49 +683,10 @@ function buildDocumentationSignature(rowsRaw) {
     .join("\u241e");
 }
 
-function normalizeGlobalNoteItem(raw, fallbackIndex = 0) {
-  const obj = raw && typeof raw === "object" ? raw : {};
-  const text = str(obj.text || obj.note || obj.notes || obj.message || raw);
-  if (!text) return null;
-  const rawTs = obj.ts ?? obj.createdAt ?? obj.created_at ?? obj.updatedAt ?? obj.updated_at;
-  let ts = Number(rawTs);
-  if (!Number.isFinite(ts) || ts <= 0) {
-    const parsed = Date.parse(str(rawTs));
-    ts = Number.isFinite(parsed) && parsed > 0 ? parsed : Date.now();
-  }
-  const author = str(obj.author || obj.user || obj.created_by || "you") || "you";
-  const id = str(obj.id || obj.note_id || obj.noteId) || `note_${ts}_${fallbackIndex + 1}`;
-  return { id, text, ts, author };
-}
-
 function normalizeGlobalNotes(value) {
-  let source = [];
-  if (Array.isArray(value)) {
-    source = value;
-  } else if (value && typeof value === "object") {
-    source = [value];
-  } else {
-    const raw = str(value);
-    if (!raw) source = [];
-    else {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) source = parsed;
-        else if (parsed && typeof parsed === "object") source = [parsed];
-        else source = [{ text: raw }];
-      } catch {
-        source = [{ text: raw }];
-      }
-    }
-  }
-  return source
-    .map((item, idx) => normalizeGlobalNoteItem(item, idx))
-    .filter(Boolean)
-    .sort((a, b) => {
-      const dt = Number(b?.ts || 0) - Number(a?.ts || 0);
-      if (dt !== 0) return dt;
-      return String(a?.id || "").localeCompare(String(b?.id || ""), "ru");
-    });
+  // Shared implementation (App-level surfaces use the same module with the
+  // default ascending order); the sidebar feed renders newest first.
+  return sharedNormalizeGlobalNotes(value, { order: "desc" });
 }
 
 function roleObj(r, idx) {
@@ -844,7 +850,7 @@ const NOTES_BATCH_RESULT_PREFIX = "fpc:batch_ops_result:";
 const NOTES_COVERAGE_OPEN_EVENT = "fpc:coverage_open";
 const SIDEBAR_SECTIONS_STATE_KEY = "fpc_left_sidebar_sections";
 const SIDEBAR_LAST_OPEN_KEY = "ui.sidebar.last_open.v2";
-const SIDEBAR_ACCORDION_KEYS = ["paths", "time", "robotmeta", "execution", "properties", "ai", "notes", "advanced"];
+const SIDEBAR_ACCORDION_KEYS = ["properties", "paths", "time", "robotmeta", "execution", "ai", "notes", "advanced"];
 
 const DEFAULT_SECTIONS_STATE = {
   paths: false,
@@ -1000,6 +1006,7 @@ export default function NotesPanel({
   onSetElementCamundaExtensions,
   getElementCamundaExtensionsFromModeler,
   bpmnModelerSyncEpoch = 0,
+  bpmnExternalEditToken = null,
   activeOrgId = "",
   reviewStatus = "draft",
   reviewComments = [],
@@ -1023,6 +1030,8 @@ export default function NotesPanel({
   onShowV2OverlaysChange,
   v2OverlaysExpanded = false,
   onShowV2OverlaysExpandedChange,
+  overlayHiddenFields = null,
+  onOverlayFieldToggle,
   onGoToDiagram,
   onProjectBreadcrumbClick,
   onSessionBreadcrumbClick,
@@ -1118,6 +1127,9 @@ export default function NotesPanel({
   const [startRoleErr, setStartRoleErr] = useState("");
   const [laneElementCounts, setLaneElementCounts] = useState(() => ({ byKey: {}, byLaneId: {}, byName: {} }));
   const [sectionsOpen, setSectionsOpen] = useState(() => readSectionsState());
+  // To-Be block collapse state (local-only, mirrors quick/additional blocks).
+  // Collapsed by default on entry (layout directive 2026-07).
+  const [toBeOpen, setToBeOpen] = useState(false);
   const elementNotesSectionRef = useRef(null);
   const pathsSectionRef = useRef(null);
   const timeSectionRef = useRef(null);
@@ -1131,6 +1143,9 @@ export default function NotesPanel({
   const nodeEditorRef = useRef(null);
   const nodePathDirtyBaselineRef = useRef({ nodeId: "", snapshot: null });
   const camundaPropertiesDraftCacheRef = useRef(new Map());
+  // Last applied bpmnExternalEditToken.seq — each external (canvas popover)
+  // edit token is consumed at most once per sidebar mount.
+  const lastAppliedExternalTokenSeqRef = useRef(0);
   const propertiesOverlayPreviewDispatchRef = useRef({
     draftSignature: "__init__",
     alwaysSignature: "__init__",
@@ -1222,6 +1237,13 @@ export default function NotesPanel({
     [aiQuestionsByElement, selectedElementId],
   );
   const isElementMode = !!selectedElementId;
+  // Selecting the root process/collaboration (empty-canvas click) opens a
+  // process-scoped sidebar: only the camunda properties group applies.
+  const isProcessLikeSelection = isElementMode && isProcessLikeType(selectedElementType);
+  const { threads: elementNoteThreads } = useElementThreads(
+    isElementMode ? sid : "",
+    isElementMode ? selectedElementId : "",
+  );
   const isSelectedSequenceFlow = /(^|:)sequenceflow$/i.test(selectedElementType);
   const bpmnFlowMetaById = useMemo(() => {
     const rawMeta = draft?.bpmn_meta && typeof draft.bpmn_meta === "object" ? draft.bpmn_meta : {};
@@ -1239,6 +1261,47 @@ export default function NotesPanel({
     const rawMeta = draft?.bpmn_meta && typeof draft.bpmn_meta === "object" ? draft.bpmn_meta : {};
     return normalizeCamundaExtensionsMap(rawMeta.camunda_extensions_by_element_id);
   }, [draft?.bpmn_meta]);
+  // Ref-property autocomplete (v0.3 Phase 1C): process-derived refs merged
+  // with backend reference dictionaries. Backend options are fetched lazily
+  // ONCE per org; any failure degrades to an empty list (inputs stay plain
+  // text inputs — zero UI breakage).
+  const referenceOptionsCacheRef = useRef(new Map());
+  const [backendRefOptions, setBackendRefOptions] = useState([]);
+  useEffect(() => {
+    const orgKey = str(activeOrgId);
+    const cache = referenceOptionsCacheRef.current;
+    if (cache.has(orgKey)) {
+      setBackendRefOptions(cache.get(orgKey));
+      return () => {};
+    }
+    let cancelled = false;
+    void (async () => {
+      const collected = [];
+      for (const source of ["ingredients", "equipment", "containers"]) {
+        try {
+          const result = await apiGetReferenceOptions(source, "", 100);
+          if (result?.ok && Array.isArray(result.items)) {
+            collected.push(...result.items);
+          } else if (!result?.ok) {
+            console.warn("[refs] reference options unavailable for", source, result?.error || result?.status || "");
+          }
+        } catch (err) {
+          console.warn("[refs] reference options fetch failed for", source, err);
+        }
+      }
+      if (cancelled) return;
+      const options = mergeRefOptions(collected);
+      cache.set(orgKey, options);
+      setBackendRefOptions(options);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOrgId]);
+  const refOptions = useMemo(
+    () => mergeRefOptions(collectProcessRefs(bpmnCamundaExtensionsByElementId), backendRefOptions),
+    [bpmnCamundaExtensionsByElementId, backendRefOptions],
+  );
   // Stabilise bpmn_meta reference: only recompute execution bridge when the
   // meta content actually changes (shallow-new objects produced by parent
   // renders should not trigger a full BPMN graph traversal).
@@ -1468,20 +1531,67 @@ export default function NotesPanel({
     if (!Array.isArray(rows)) return false;
     return rows.some(isShowPropertiesFlagRow);
   }, [camundaPropertiesDraft]);
+  // To-Be builder (property-panel-redesign port): per-session target set of
+  // property names; the model below derives As-Is/Pool lists + badges.
+  const { toBeState, toggleToBe, markRemoved } = useToBeState(sid);
+  const selectedElementPropertyNames = useMemo(() => (
+    asArray(camundaPropertiesDraft?.properties?.extensionProperties)
+      .map((row) => str(row?.name))
+      .filter(Boolean)
+  ), [camundaPropertiesDraft]);
+  const dictionaryPropertyNames = useMemo(() => (
+    normalizeOrgPropertyDictionaryBundle(orgPropertyDictionaryBundle)
+      .properties
+      .map((property) => property.propertyKey)
+  ), [orgPropertyDictionaryBundle]);
+  const fieldChips = useMemo(() => buildFieldChips({
+    elementPropertyNames: selectedElementPropertyNames,
+    dictionaryNames: dictionaryPropertyNames,
+    quickNames: DEFAULT_QUICK_PROPERTY_NAMES,
+    hiddenFields: Array.isArray(overlayHiddenFields) ? overlayHiddenFields : null,
+  }), [selectedElementPropertyNames, dictionaryPropertyNames, overlayHiddenFields]);
+  const toBeModel = useMemo(() => deriveToBeModel({
+    toBeState,
+    asIsNames: selectedElementPropertyNames,
+    dictionaryNames: dictionaryPropertyNames,
+  }), [toBeState, selectedElementPropertyNames, dictionaryPropertyNames]);
+  // Removed-tracking: a To-Be name that disappears from the configured rows
+  // while the SAME element stays selected was deleted (or renamed away) —
+  // mark it so the Pool shows the "Removed" badge. Element switches only
+  // re-baseline; they never mark.
+  const toBePrevAsIsRef = useRef({ elementId: "", names: [] });
+  useEffect(() => {
+    const prev = toBePrevAsIsRef.current;
+    if (prev.elementId && prev.elementId === selectedElementId) {
+      prev.names.forEach((name) => {
+        if (!selectedElementPropertyNames.includes(name)) markRemoved(name);
+      });
+    }
+    toBePrevAsIsRef.current = { elementId: selectedElementId, names: selectedElementPropertyNames };
+  }, [selectedElementId, selectedElementPropertyNames, markRemoved]);
   const {
     finalizedCamundaPropertiesDraft,
     selectedCamundaExtensionCanonical,
     finalizedCamundaPropertiesDraftCanonical,
+    overlayPreview,
   } = useCamundaPropertiesOverlayPreview({
     selectedElementId,
     selectedCamundaPropertiesEditable,
     camundaPropertiesDraft,
     selectedCamundaExtensionEntry,
     orgPropertyDictionaryBundle,
+    // Display name (v0.3 P1B): the operation code drives the RU template even
+    // when the org dictionary has no entry for it; the label still comes from
+    // the normalized bundle inside the model.
+    operationKey: selectedOperationKey,
     resolvedShowPropertiesOverlayOnSelect,
     propertiesOverlayPreviewDispatchRef,
     onPropertiesOverlayPreviewChange,
     onPropertiesOverlayAlwaysPreviewChange,
+    hiddenFields: Array.isArray(overlayHiddenFields) ? overlayHiddenFields : null,
+    // The root process has no canvas geometry: never render a property
+    // overlay card for it (properties are edited in the sidebar only).
+    suppressOverlayPreview: isProcessLikeSelection,
   });
   const camundaExtensionHasLocalChanges = selectedCamundaPropertiesEditable
     && finalizedCamundaPropertiesDraftCanonical !== selectedCamundaExtensionCanonical;
@@ -1783,22 +1893,55 @@ export default function NotesPanel({
       setCamundaPropertiesInfo("");
       return;
     }
-    const cachedDraftRaw = camundaPropertiesDraftKey
-      ? camundaPropertiesDraftCacheRef.current.get(camundaPropertiesDraftKey)
-      : null;
-    const cachedDraft = cachedDraftRaw && typeof cachedDraftRaw === "object" ? cachedDraftRaw : null;
-    setCamundaPropertiesDraft(
-      cachedDraft && typeof cachedDraft === "object" ? cachedDraft : selectedCamundaExtensionEntry,
+    const cachedEntry = readCamundaDraftCacheEntry(
+      camundaPropertiesDraftKey
+        ? camundaPropertiesDraftCacheRef.current.get(camundaPropertiesDraftKey)
+        : null,
     );
+    // An external writer (canvas properties popover) mutated the modeler.
+    // The fresh modeler read is authoritative for rows the user did not
+    // touch; pending sidebar edits (tracked as signature ops) are replayed
+    // on top so unsaved typing is never lost. Each token applies once.
+    // Note: on a token the base is the raw modeler read, not the hydrated
+    // entry — session meta still holds the pre-write values for one autosave
+    // round-trip, and the hydrate step prefers meta over the modeler.
+    const externalTokenApplies = shouldApplyExternalEditToken(
+      bpmnExternalEditToken,
+      lastAppliedExternalTokenSeqRef.current,
+      selectedElementId,
+    );
+    if (externalTokenApplies) {
+      lastAppliedExternalTokenSeqRef.current = Number(bpmnExternalEditToken?.seq || 0);
+    }
+    if (externalTokenApplies && cachedEntry) {
+      const mergedDraft = mergeCamundaDraftWithFresh(
+        modelerExtensionState,
+        cachedEntry.draft,
+        cachedEntry.ops,
+      );
+      if (camundaPropertiesDraftKey) {
+        camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, {
+          draft: mergedDraft,
+          ops: cachedEntry.ops,
+        });
+      }
+      setCamundaPropertiesDraft(mergedDraft);
+    } else if (externalTokenApplies) {
+      setCamundaPropertiesDraft(modelerExtensionState);
+    } else {
+      setCamundaPropertiesDraft(cachedEntry ? cachedEntry.draft : selectedCamundaExtensionEntry);
+    }
     setCamundaExtensionSaveFailed(false);
     setCamundaExtensionLastAction("save");
     setCamundaExtensionSavePhase("idle");
     setCamundaPropertiesErr("");
     setCamundaPropertiesInfo("");
   }, [
+    bpmnExternalEditToken,
     camundaPropertiesDraftKey,
     selectedCamundaPropertiesEditable,
     selectedCamundaExtensionEntry,
+    selectedElementId,
     modelerExtensionState,
   ]);
 
@@ -2453,12 +2596,23 @@ export default function NotesPanel({
     const nextDraft = nextRaw && typeof nextRaw === "object" ? nextRaw : createEmptyCamundaExtensionState();
     setCamundaPropertiesDraft(nextDraft);
     if (camundaPropertiesDraftKey) {
-      camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, nextDraft);
+      // Track the user's pending edits as signature ops so a later external
+      // (canvas popover) write can merge the fresh model read underneath
+      // without discarding unsaved typing.
+      const prevEntry = readCamundaDraftCacheEntry(
+        camundaPropertiesDraftCacheRef.current.get(camundaPropertiesDraftKey),
+      );
+      const prevDraft = prevEntry ? prevEntry.draft : camundaPropertiesDraft;
+      const nextOps = accumulateCamundaDraftOps(prevEntry?.ops, prevDraft, nextDraft);
+      camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, {
+        draft: nextDraft,
+        ops: nextOps,
+      });
     }
     setCamundaExtensionSaveFailed(false);
     setCamundaExtensionSavePhase("idle");
     setCamundaPropertiesErr("");
-  }, [camundaPropertiesDraftKey]);
+  }, [camundaPropertiesDraft, camundaPropertiesDraftKey]);
 
   const setShowPropertiesFlag = useCallback((enabled) => {
     if (!selectedCamundaPropertiesEditable || !selectedElementId) return;
@@ -2480,6 +2634,24 @@ export default function NotesPanel({
     updateCamundaPropertiesDraft(nextDraft);
     void saveSelectedCamundaProperties(nextDraft);
   }, [selectedCamundaPropertiesEditable, selectedElementId, showPropertiesFlag, camundaPropertiesDraft, updateCamundaPropertiesDraft, saveSelectedCamundaProperties]);
+
+  // To-Be builder Pool "+": append the field to the element draft (draft-only,
+  // same semantics as addPropertyRow; persists on the global Save).
+  const addPropertyFromPool = useCallback((nameRaw) => {
+    const name = str(nameRaw);
+    if (!name || !selectedCamundaPropertiesEditable) return;
+    const prevRows = asArray(camundaPropertiesDraft?.properties?.extensionProperties);
+    updateCamundaPropertiesDraft({
+      ...camundaPropertiesDraft,
+      properties: {
+        ...camundaPropertiesDraft.properties,
+        extensionProperties: [
+          ...prevRows,
+          { id: `prop_draft_${Date.now()}`, name, value: "" },
+        ],
+      },
+    });
+  }, [camundaPropertiesDraft, selectedCamundaPropertiesEditable, updateCamundaPropertiesDraft]);
 
   const updateBpmnDocumentationDraft = useCallback((nextRowsRaw) => {
     setBpmnDocumentationDraftRows(normalizeDocumentationRows(nextRowsRaw, { keepEmpty: true }));
@@ -2608,7 +2780,12 @@ export default function NotesPanel({
         if (isConflict) {
           setCamundaPropertiesDraft(previousState);
           if (camundaPropertiesDraftKey) {
-            camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, previousState);
+            camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, {
+              draft: previousState,
+              // Conflict restore discards the rejected edits: the draft
+              // is back to the model-derived state, so no pending ops.
+              ops: createCamundaDraftOps(),
+            });
           }
         }
         setCamundaExtensionSavePhase("idle");
@@ -2679,7 +2856,12 @@ export default function NotesPanel({
         if (isConflict) {
           setCamundaPropertiesDraft(previousState);
           if (camundaPropertiesDraftKey) {
-            camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, previousState);
+            camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, {
+              draft: previousState,
+              // Conflict restore discards the rejected edits: the draft
+              // is back to the model-derived state, so no pending ops.
+              ops: createCamundaDraftOps(),
+            });
           }
         }
         setCamundaExtensionSavePhase("idle");
@@ -2975,6 +3157,54 @@ export default function NotesPanel({
     }
   }
 
+  const sidebarSaveAllBusy = nodePathBusy || stepTimeBusy || robotMetaBusy || camundaPropertiesBusy || bpmnDocumentationBusy;
+  const sidebarGlobalHasChanges = camundaExtensionHasLocalChanges
+    || bpmnDocumentationHasLocalChanges
+    || nodePathHasLocalChanges
+    || stepTimeHasLocalChanges
+    || robotMetaHasLocalChanges;
+
+  async function handleSidebarSaveAll() {
+    if (disabled || sidebarSaveAllBusy) return;
+    // Save order mirrors the new sidebar section order: properties first,
+    // then paths, time, robot meta. Each handler guards itself by element type.
+    await saveSelectedCamundaProperties?.();
+    await saveSelectedBpmnDocumentation?.();
+    await resolvedNodePathController.apply?.();
+    await saveSelectedElementStepTime?.();
+    await saveSelectedRobotMeta?.();
+  }
+
+  function handleSidebarResetAll() {
+    if (disabled || sidebarSaveAllBusy) return;
+    resetSelectedCamundaProperties?.();
+    resetSelectedBpmnDocumentation?.();
+    resolvedNodePathController.reset?.();
+    resetSelectedRobotMeta?.();
+  }
+
+  // V2 → display mode coupling (B3): enabling V2 forces the legacy display
+  // mode to «Скрыто» (legacy cards would duplicate the V2 cards) after
+  // capturing the current mode per session; disabling V2 restores it.
+  function handleV2EnabledChange(enabledRaw) {
+    const next = !!enabledRaw;
+    const prev = {
+      showOnSelect: !!resolvedShowPropertiesOverlayOnSelect,
+      showAlways: !!showPropertiesOverlayAlways,
+    };
+    if (next) {
+      writeDisplayModeBeforeV2(sid, captureModeBeforeV2(prev));
+      const forced = applyDisplayMode("hidden", prev);
+      void resolvedOnShowPropertiesOverlayOnSelectChange(forced.showOnSelect);
+      void onShowPropertiesOverlayAlwaysChange?.(forced.showAlways);
+    } else {
+      const restored = restoreModeAfterV2(readDisplayModeBeforeV2(sid), prev);
+      void resolvedOnShowPropertiesOverlayOnSelectChange(restored.showOnSelect);
+      void onShowPropertiesOverlayAlwaysChange?.(restored.showAlways);
+    }
+    void onShowV2OverlaysChange?.(next);
+  }
+
   const sectionShortcuts = [
     {
       id: "paths",
@@ -3033,7 +3263,28 @@ export default function NotesPanel({
         showQuickNav={false}
         onSectionShortcut={openSectionShortcut}
         stickyContent={null}
-        bottomBar={null}
+        bottomBar={sidebarGlobalHasChanges ? (
+          <div className="sidebarGlobalFooter">
+            <div className="sidebarGlobalFooterInner">
+              <button
+                type="button"
+                className="primaryBtn sidebarGlobalFooterBtn flex-1"
+                onClick={() => void handleSidebarSaveAll()}
+                disabled={!!disabled || sidebarSaveAllBusy}
+              >
+                {sidebarSaveAllBusy ? "Сохраняю..." : "Сохранить"}
+              </button>
+              <button
+                type="button"
+                className="sidebarTextBtn sidebarGlobalFooterBtn px-3"
+                onClick={() => void handleSidebarResetAll()}
+                disabled={!!disabled || sidebarSaveAllBusy}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        ) : null}
       >
         <div id="element-notes-section" ref={elementNotesSectionRef} className="sidebarRedesignStack">
           <section className="sidebarSettingsSurface">
@@ -3041,6 +3292,118 @@ export default function NotesPanel({
               <div className="sidebarSectionCaption">Настройки элемента</div>
             </div>
             <div className="sidebarAccordionStack">
+              <div ref={camundaPropertiesSectionRef}>
+                <SidebarAccordion
+                sectionKey="properties"
+                title="Свойства"
+                open={!!sectionsOpen.properties}
+                onToggle={toggleSection}
+                headAccessory={isElementMode && selectedCamundaPropertiesEditable ? (
+                  <ExtensionStateMiniIndicator
+                    syncState={camundaExtensionSyncState}
+                    busy={camundaPropertiesBusy}
+                  />
+                ) : null}
+              >
+                <DisplaySettingsBlock
+                  displayMode={deriveDisplayMode({
+                    showOnSelect: !!resolvedShowPropertiesOverlayOnSelect,
+                    showAlways: !!showPropertiesOverlayAlways,
+                  })}
+                  onDisplayModeChange={(mode) => {
+                    const next = applyDisplayMode(mode, {
+                      showOnSelect: !!resolvedShowPropertiesOverlayOnSelect,
+                    });
+                    void resolvedOnShowPropertiesOverlayOnSelectChange(next.showOnSelect);
+                    void onShowPropertiesOverlayAlwaysChange?.(next.showAlways);
+                  }}
+                  v2Enabled={!!v2OverlaysEnabled}
+                  onV2EnabledChange={handleV2EnabledChange}
+                  v2Mode={v2OverlaysExpanded ? "expanded" : "compact"}
+                  onV2ModeChange={(mode) => void onShowV2OverlaysExpandedChange?.(mode === "expanded")}
+                  chips={fieldChips}
+                  onToggleField={onOverlayFieldToggle}
+                  disabled={!!disabled}
+                />
+                {isElementMode && selectedCamundaPropertiesEditable && !isProcessLikeSelection && (
+                  <LiveCardPreview
+                    preview={overlayPreview}
+                    elementName={selectedElementId}
+                  />
+                )}
+                <CamundaPropertiesSection
+                  selectedElementId={isElementMode ? selectedElementId : ""}
+                  selectedElementType={isElementMode ? selectedElementType : ""}
+                  selectedBpmnPropertyContext={isElementMode ? selectedBpmnPropertyContext : null}
+                  selectedBpmnDocumentation={isElementMode ? selectedBpmnDocumentation : []}
+                  bpmnDocumentationDraftRows={isElementMode ? bpmnDocumentationDraftRows : []}
+                  bpmnDocumentationSyncState={isElementMode ? bpmnDocumentationSyncState : "saved"}
+                  bpmnDocumentationBusy={isElementMode ? bpmnDocumentationBusy : false}
+                  bpmnDocumentationErr={isElementMode ? bpmnDocumentationErr : ""}
+                  bpmnDocumentationInfo={isElementMode ? bpmnDocumentationInfo : ""}
+                  selectedBpmnOverlayCompanionSummary={isElementMode ? selectedBpmnOverlayCompanionSummary : null}
+                  camundaPropertiesEditable={isElementMode ? selectedCamundaPropertiesEditable : false}
+                  extensionStateDraft={isElementMode ? camundaPropertiesDraft : createEmptyCamundaExtensionState()}
+                  extensionStateSyncState={isElementMode ? camundaExtensionSyncState : "saved"}
+                  extensionStateBusy={isElementMode ? camundaPropertiesBusy : false}
+                  extensionStateErr={isElementMode ? camundaPropertiesErr : ""}
+                  extensionStateInfo={isElementMode ? camundaPropertiesInfo : ""}
+                  dictionaryBundle={isElementMode ? orgPropertyDictionaryBundle : null}
+                  dictionaryLoading={isElementMode ? orgPropertyDictionaryLoading : false}
+                  dictionaryError={isElementMode ? orgPropertyDictionaryErr : ""}
+                  dictionaryAddBusyKey={isElementMode ? orgPropertyDictionaryAddBusyKey : ""}
+                  refOptions={isElementMode ? refOptions : []}
+                  operationKey={isElementMode ? selectedOperationKey : ""}
+                  operationOptions={isElementMode ? orgPropertyDictionaryOperations : []}
+                  operationSelectionBusy={isElementMode ? (orgPropertyDictionaryOperationsLoading || robotMetaBusy) : false}
+                  onExtensionStateDraftChange={updateCamundaPropertiesDraft}
+                  onOperationKeyChange={updateSelectedOperationKey}
+                  onAddDictionaryValue={addDictionaryValueForSelectedElement}
+                  onOpenDictionaryManager={onOpenDictionaryManagerCallback}
+                  onSaveExtensionState={saveSelectedCamundaProperties}
+                  onResetExtensionState={resetSelectedCamundaProperties}
+                  onRetryExtensionState={camundaExtensionLastAction === "reset" ? resetSelectedCamundaProperties : saveSelectedCamundaProperties}
+                  onBpmnDocumentationDraftChange={updateBpmnDocumentationDraft}
+                  onSaveBpmnDocumentation={saveSelectedBpmnDocumentation}
+                  onResetBpmnDocumentation={resetSelectedBpmnDocumentation}
+                  onFocusDrawioCompanion={onFocusDrawioCompanion}
+                  afterQuickProperties={isElementMode && selectedCamundaPropertiesEditable ? (
+                    <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary sidebarPropertiesBlock--wide">
+                      <div className="sidebarPropertiesBlockHead">
+                        <button
+                          type="button"
+                          className="sidebarPropertiesBlockToggle"
+                          onClick={() => setToBeOpen((prev) => !prev)}
+                          aria-expanded={toBeOpen ? "true" : "false"}
+                        >
+                          <span className="sidebarPropertiesBlockToggleChevron" aria-hidden="true">{toBeOpen ? "▾" : "▸"}</span>
+                          <span className="sidebarPropertiesBlockTitle">To-Be</span>
+                          <span className="toBePills">
+                            {toBeModel.inToBeCount} in To-Be / {toBeModel.skippedCount} skipped
+                          </span>
+                        </button>
+                      </div>
+                      {toBeOpen ? (
+                        <ToBeBuilder
+                          asIs={toBeModel.asIs}
+                          pool={toBeModel.pool}
+                          inToBeCount={toBeModel.inToBeCount}
+                          skippedCount={toBeModel.skippedCount}
+                          disabled={disabled}
+                          onAddFromPool={addPropertyFromPool}
+                          onToggleToBe={toggleToBe}
+                          hideHeader
+                        />
+                      ) : null}
+                    </section>
+                  ) : null}
+                  disabled={disabled}
+                  hideActions
+                />
+              </SidebarAccordion>
+              </div>
+              {!isProcessLikeSelection && (
+              <>
               <div ref={pathsSectionRef}>
                 <SidebarAccordion
                 sectionKey="paths"
@@ -3079,6 +3442,7 @@ export default function NotesPanel({
                   flowHappyInfo={isElementMode ? flowHappyInfo : ""}
                   flowHappyEditable={isElementMode ? isSelectedSequenceFlow : false}
                   disabled={disabled}
+                  hideActions
                 />
               </SidebarAccordion>
               </div>
@@ -3102,10 +3466,14 @@ export default function NotesPanel({
                   stepTimeUnit={normalizedStepTimeUnit}
                   onStepTimeUnitChange={onStepTimeUnitChange}
                   disabled={disabled}
+                  hideActions
                 />
               </SidebarAccordion>
               </div>
+              </>
+              )}
 
+              {!isProcessLikeSelection && (
               <div ref={robotMetaSectionRef}>
                 <SidebarAccordion
                 sectionKey="robotmeta"
@@ -3126,10 +3494,13 @@ export default function NotesPanel({
                   onSaveRobotMeta={saveSelectedRobotMeta}
                   onResetRobotMeta={resetSelectedRobotMeta}
                   disabled={disabled}
+                  hideActions
                 />
               </SidebarAccordion>
               </div>
+              )}
 
+              {!isProcessLikeSelection && (
               <div ref={executionSectionRef}>
                 <SidebarAccordion
                   sectionKey="execution"
@@ -3152,115 +3523,20 @@ export default function NotesPanel({
                   ) : null}
                 </SidebarAccordion>
               </div>
+              )}
 
-              <div ref={camundaPropertiesSectionRef}>
-                <SidebarAccordion
-                sectionKey="properties"
-                title="Свойства"
-                open={!!sectionsOpen.properties}
-                onToggle={toggleSection}
-              >
-                <div className="sidebarPropertiesDisplaySettings">
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      checked={!!resolvedShowPropertiesOverlayOnSelect}
-                      onChange={(event) => void resolvedOnShowPropertiesOverlayOnSelectChange(!!event.target.checked)}
-                      disabled={!!disabled}
-                    />
-                    <span>Показывать свойства над задачей при выделении</span>
-                  </label>
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      checked={!!showPropertiesOverlayAlways}
-                      onChange={(event) => void onShowPropertiesOverlayAlwaysChange?.(!!event.target.checked)}
-                      disabled={!!disabled}
-                      data-testid="bpmn-show-properties-checkbox"
-                    />
-                    <span>Всегда показывать свойства над задачей</span>
-                  </label>
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      checked={!!showPropertiesFlag}
-                      onChange={(event) => void setShowPropertiesFlag(!!event.target.checked)}
-                      disabled={!!disabled || !!camundaPropertiesBusy || !selectedCamundaPropertiesEditable}
-                      data-testid="bpmn-show-properties-per-element-checkbox"
-                    />
-                    <span>Показывать свойства над задачей</span>
-                  </label>
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted py-1">V2-оверлеи</div>
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      checked={!!v2OverlaysEnabled}
-                      onChange={(event) => void onShowV2OverlaysChange?.(!!event.target.checked)}
-                      disabled={!!disabled}
-                      data-testid="bpmn-show-v2-overlays-checkbox"
-                    />
-                    <span>Показывать все V2-оверлеи свойств</span>
-                  </label>
-                  <label className="sidebarPropertiesInlineToggle">
-                    <input
-                      type="checkbox"
-                      checked={!!v2OverlaysExpanded}
-                      onChange={(event) => void onShowV2OverlaysExpandedChange?.(!!event.target.checked)}
-                      disabled={!!disabled || !v2OverlaysEnabled}
-                      data-testid="bpmn-show-v2-overlays-expanded-checkbox"
-                    />
-                    <span>Показывать все V2-оверлеи свойств раскрытыми</span>
-                  </label>
-                </div>
-                <CamundaPropertiesSection
-                  selectedElementId={isElementMode ? selectedElementId : ""}
-                  selectedElementType={isElementMode ? selectedElementType : ""}
-                  selectedBpmnPropertyContext={isElementMode ? selectedBpmnPropertyContext : null}
-                  selectedBpmnDocumentation={isElementMode ? selectedBpmnDocumentation : []}
-                  bpmnDocumentationDraftRows={isElementMode ? bpmnDocumentationDraftRows : []}
-                  bpmnDocumentationSyncState={isElementMode ? bpmnDocumentationSyncState : "saved"}
-                  bpmnDocumentationBusy={isElementMode ? bpmnDocumentationBusy : false}
-                  bpmnDocumentationErr={isElementMode ? bpmnDocumentationErr : ""}
-                  bpmnDocumentationInfo={isElementMode ? bpmnDocumentationInfo : ""}
-                  selectedBpmnOverlayCompanionSummary={isElementMode ? selectedBpmnOverlayCompanionSummary : null}
-                  camundaPropertiesEditable={isElementMode ? selectedCamundaPropertiesEditable : false}
-                  extensionStateDraft={isElementMode ? camundaPropertiesDraft : createEmptyCamundaExtensionState()}
-                  extensionStateSyncState={isElementMode ? camundaExtensionSyncState : "saved"}
-                  extensionStateBusy={isElementMode ? camundaPropertiesBusy : false}
-                  extensionStateErr={isElementMode ? camundaPropertiesErr : ""}
-                  extensionStateInfo={isElementMode ? camundaPropertiesInfo : ""}
-                  dictionaryBundle={isElementMode ? orgPropertyDictionaryBundle : null}
-                  dictionaryLoading={isElementMode ? orgPropertyDictionaryLoading : false}
-                  dictionaryError={isElementMode ? orgPropertyDictionaryErr : ""}
-                  dictionaryAddBusyKey={isElementMode ? orgPropertyDictionaryAddBusyKey : ""}
-                  operationKey={isElementMode ? selectedOperationKey : ""}
-                  operationOptions={isElementMode ? orgPropertyDictionaryOperations : []}
-                  operationSelectionBusy={isElementMode ? (orgPropertyDictionaryOperationsLoading || robotMetaBusy) : false}
-                  onExtensionStateDraftChange={updateCamundaPropertiesDraft}
-                  onOperationKeyChange={updateSelectedOperationKey}
-                  onAddDictionaryValue={addDictionaryValueForSelectedElement}
-                  onOpenDictionaryManager={onOpenDictionaryManagerCallback}
-                  onSaveExtensionState={saveSelectedCamundaProperties}
-                  onResetExtensionState={resetSelectedCamundaProperties}
-                  onRetryExtensionState={camundaExtensionLastAction === "reset" ? resetSelectedCamundaProperties : saveSelectedCamundaProperties}
-                  onBpmnDocumentationDraftChange={updateBpmnDocumentationDraft}
-                  onSaveBpmnDocumentation={saveSelectedBpmnDocumentation}
-                  onResetBpmnDocumentation={resetSelectedBpmnDocumentation}
-                  onFocusDrawioCompanion={onFocusDrawioCompanion}
-                  disabled={disabled}
-                />
-              </SidebarAccordion>
-              </div>
 
+              {!isProcessLikeSelection && (
               <div ref={notesSectionRef}>
                 <SidebarAccordion
                 sectionKey="notes"
                 title="Заметки"
-                badge={isElementMode ? String(selectedElementNotes.length) : ""}
+                badge={isElementMode ? String(selectedElementNotes.length + elementNoteThreads.length) : ""}
                 open={!!sectionsOpen.notes}
                 onToggle={toggleSection}
               >
                 <NotesSection
+                  sessionId={sid}
                   selectedElementId={isElementMode ? selectedElementId : ""}
                   globalText={!isElementMode ? text : ""}
                   onGlobalTextChange={(value) => {
@@ -3290,7 +3566,9 @@ export default function NotesPanel({
                 />
               </SidebarAccordion>
               </div>
+              )}
 
+              {!isProcessLikeSelection && (
               <div ref={aiSectionRef}>
                 <SidebarAccordion
                 sectionKey="ai"
@@ -3326,7 +3604,9 @@ export default function NotesPanel({
                 />
               </SidebarAccordion>
               </div>
+              )}
 
+              {!isProcessLikeSelection && (
               <div ref={advancedSectionRef}>
                 <SidebarAccordion
                   sectionKey="advanced"
@@ -3371,10 +3651,12 @@ export default function NotesPanel({
                   </details>
                 </SidebarAccordion>
               </div>
+              )}
             </div>
           </section>
 
           <SelectedElementCard
+            isProcessLike={isProcessLikeSelection}
             selectedElementId={isElementMode ? selectedElementId : ""}
             selectedElementName={isElementMode ? selectedElementName : ""}
             selectedElementType={isElementMode ? selectedElementType : ""}

@@ -159,7 +159,7 @@ jobs:
             echo
 
             echo "=== Prod frontend fingerprint ==="
-            MAIN_JS=$(curl -fsS https://processmap.ru/ | grep -oE 'assets/index-[A-Za-z0-9]*\.js' | head -1)
+            MAIN_JS=$(curl -fsS https://processmap.ru/ | grep -oE 'assets/index-[A-Za-z0-9_-]*\.js' | head -1)
             if [ -n "${MAIN_JS}" ]; then
               FINGERPRINT=$(curl -fsS "https://processmap.ru/${MAIN_JS}" \
                 | grep -oE "processmap-prod-deploy-sha:[a-f0-9]+" \

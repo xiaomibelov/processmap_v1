@@ -8,6 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field
 class IngredientBase(BaseModel):
     name: str = Field(examples=["Мука пшеничная"])
     unit: str = Field(examples=["кг"])
+    value: Optional[float] = Field(
+        default=None,
+        examples=[1.2],
+        description="Optional numeric coefficient used by analytics recalculation (per-unit time/qty).",
+    )
 
 
 class IngredientCreate(IngredientBase):
@@ -17,6 +22,7 @@ class IngredientCreate(IngredientBase):
 class IngredientUpdate(BaseModel):
     name: Optional[str] = Field(default=None, examples=["Мука пшеничная"])
     unit: Optional[str] = Field(default=None, examples=["кг"])
+    value: Optional[float] = Field(default=None, examples=[1.2])
 
 
 class IngredientOut(IngredientBase):

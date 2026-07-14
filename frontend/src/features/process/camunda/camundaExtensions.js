@@ -1,4 +1,5 @@
 import { PM_ROBOT_META_NAMESPACE } from "../robotmeta/pmModdleDescriptor.js";
+import { dedupeExactPropertyRows } from "./dedupeExactPropertyRows.js";
 
 export const CAMUNDA_NAMESPACE_URI = "http://camunda.org/schema/1.0/bpmn";
 export const ZEEBE_NAMESPACE_URI = "http://camunda.org/schema/zeebe/1.0";
@@ -48,18 +49,6 @@ function asText(value) {
   return String(value ?? "").trim();
 }
 
-function dedupeExactPropertyRows(rows) {
-  const seen = new Set();
-  return asArray(rows).filter((item) => {
-    const name = asText(item?.name);
-    if (!name) return true;
-    const signature = `${name}\u0000${asText(item?.value)}`;
-    if (seen.has(signature)) return false;
-    seen.add(signature);
-    return true;
-  });
-}
-
 function fnv1aHex(input) {
   const src = String(input || "");
   let hash = 0x811c9dc5;
@@ -68,6 +57,32 @@ function fnv1aHex(input) {
     hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+// Content-derived row id: stable across re-derivations of the same
+// (name, value) pair, so sidebar rows keyed by id keep their identity when
+// the modeler is re-read after an external (canvas popover) write.
+// Mirrors the backend convention `prop_<hash8(name\x00value)>`
+// (camunda_meta_utils.py); ids are UI-only and never serialized to XML.
+function hashExtensionPropertyRowId(name, value) {
+  return `prop_${fnv1aHex(`${String(name || "")}\u0000${String(value ?? "")}`)}`;
+}
+
+// Guarantee unique ids within a row array: exact (name, value) duplicates
+// hash to the same id, so the k-th occurrence (document order is stable)
+// gets a deterministic `_<k>` suffix. Exact duplicates are pre-save only —
+// save-time dedup collapses them — so suffixed ids never reach the backend.
+function uniquifyExtensionPropertyIds(rowsRaw) {
+  const rows = asArray(rowsRaw);
+  const seen = new Map();
+  rows.forEach((row) => {
+    if (!row || typeof row !== "object") return;
+    const base = asText(row.id) || hashExtensionPropertyRowId(row.name, row.value);
+    const count = (seen.get(base) || 0) + 1;
+    seen.set(base, count);
+    row.id = count > 1 ? `${base}_${count}` : base;
+  });
+  return rows;
 }
 
 function readBoundedDerivationCache(cache, key) {
@@ -163,6 +178,133 @@ function parseXmlDocument(xmlText) {
   } catch {
     return null;
   }
+}
+
+function readPropertyAttributeFromTag(tag, attribute) {
+  const source = String(tag || "");
+  if (!source) return "";
+  const attr = String(attribute || "").trim();
+  if (!attr) return "";
+  const attrRegex = new RegExp(`\\b${attr}\\s*=\\s*(["'])([\\s\\S]*?)\\1`);
+  const match = source.match(attrRegex);
+  return String(match?.[2] || "").trim();
+}
+
+function propertySignatureFromTag(tag) {
+  const name = readPropertyAttributeFromTag(tag, "name");
+  if (!name) return "";
+  const value = readPropertyAttributeFromTag(tag, "value");
+  // Key on (name, value): only exact name+value pairs are considered
+  // duplicates. Multi-value rows (same name, different value) get distinct
+  // signatures and are preserved, matching backend semantics.
+  return `${name}\u0000${value}`;
+}
+
+function hasDuplicateCamundaPropertiesWithRegex(xmlText) {
+  const text = String(xmlText || "");
+  if (!text || !text.includes("property")) return false;
+  const blockRegex = /<camunda:properties\b[^>]*>[\s\S]*?<\/camunda:properties>/gi;
+  const propertyRegex = /<camunda:property\b[^>]*>/gi;
+  for (const blockMatch of text.matchAll(blockRegex)) {
+    const block = blockMatch[0];
+    const seen = new Set();
+    for (const propMatch of block.matchAll(propertyRegex)) {
+      const signature = propertySignatureFromTag(propMatch[0]);
+      if (!signature) continue;
+      if (seen.has(signature)) return true;
+      seen.add(signature);
+    }
+  }
+  return false;
+}
+
+export function hasDuplicateCamundaProperties(xmlText) {
+  const doc = parseXmlDocument(xmlText);
+  if (!doc) {
+    // DOMParser is unavailable in some test/runtime environments; fall back to
+    // a regex scan so the guard still works.
+    return hasDuplicateCamundaPropertiesWithRegex(xmlText);
+  }
+  const propertyNodes = doc.getElementsByTagNameNS?.(CAMUNDA_NAMESPACE_URI, "property")
+    || doc.getElementsByTagName?.("camunda:property")
+    || [];
+  const seenByParent = new Map();
+  for (let i = 0; i < propertyNodes.length; i += 1) {
+    const node = propertyNodes[i];
+    const parent = node.parentNode;
+    if (!parent) continue;
+    const name = String(node.getAttribute?.("name") || "").trim();
+    if (!name) continue;
+    const value = String(node.getAttribute?.("value") || "").trim();
+    const signature = `${name}\u0000${value}`;
+    let set = seenByParent.get(parent);
+    if (!set) {
+      set = new Set();
+      seenByParent.set(parent, set);
+    }
+    if (set.has(signature)) return true;
+    set.add(signature);
+  }
+  return false;
+}
+
+function dedupCamundaPropertiesWithRegex(xmlText) {
+  const text = String(xmlText || "");
+  if (!text || !text.includes("property")) return text;
+  const blockRegex = /<camunda:properties\b[^>]*>[\s\S]*?<\/camunda:properties>/gi;
+  const propertyRegex = /<camunda:property\b[^>]*>/gi;
+  return text.replace(blockRegex, (block) => {
+    const seen = new Set();
+    return block.replace(propertyRegex, (tag) => {
+      const signature = propertySignatureFromTag(tag);
+      if (!signature) return tag;
+      // Keep the first occurrence of each (name, value) pair; drop only
+      // exact duplicates. Multi-value rows with the same name but different
+      // values have distinct signatures and are preserved.
+      if (seen.has(signature)) return "";
+      seen.add(signature);
+      return tag;
+    });
+  });
+}
+
+export function dedupCamundaProperties(xmlText) {
+  const doc = parseXmlDocument(xmlText);
+  if (!doc) {
+    // DOMParser is unavailable in some test/runtime environments; fall back to
+    // a regex-based deduplication.
+    return dedupCamundaPropertiesWithRegex(xmlText);
+  }
+  const propertiesLists = doc.getElementsByTagNameNS?.(CAMUNDA_NAMESPACE_URI, "properties")
+    || doc.getElementsByTagName?.("camunda:properties")
+    || [];
+  for (let i = 0; i < propertiesLists.length; i += 1) {
+    const list = propertiesLists[i];
+    const children = asArray(list.childNodes);
+    const seen = new Set();
+    children.forEach((child) => {
+      if (child?.nodeType !== 1) return;
+      const localName = String(child.localName || "").toLowerCase();
+      const ns = String(child.namespaceURI || "").trim();
+      if (localName !== "property" || ns !== CAMUNDA_NAMESPACE_URI) return;
+      const name = String(child.getAttribute?.("name") || "").trim();
+      if (!name) return;
+      const value = String(child.getAttribute?.("value") || "").trim();
+      const signature = `${name}\u0000${value}`;
+      if (seen.has(signature)) {
+        // Exact (name, value) duplicate: drop it. Multi-value rows sharing
+        // the same name but carrying different values are preserved.
+        try {
+          list.removeChild(child);
+        } catch {
+          // no-op
+        }
+        return;
+      }
+      seen.add(signature);
+    });
+  }
+  return serializeXmlNode(doc);
 }
 
 function parseExtensionFragmentNode(rawXml) {
@@ -289,7 +431,7 @@ function normalizeExtensionProperty(rawValue) {
   const value = normalizePropertyValue(raw.value);
   if (!asText(name)) return null;
   return {
-    id: asText(raw.id) || nextEditorLocalId("prop"),
+    id: asText(raw.id) || hashExtensionPropertyRowId(name, value),
     name,
     value,
   };
@@ -332,9 +474,11 @@ export function createEmptyCamundaExtensionState() {
 export function normalizeCamundaExtensionState(rawValue) {
   const raw = asObject(rawValue);
   const rawProperties = asObject(raw.properties);
-  const extensionProperties = asArray(rawProperties.extensionProperties)
-    .map((item) => normalizeExtensionProperty(item))
-    .filter(Boolean);
+  const extensionProperties = uniquifyExtensionPropertyIds(
+    asArray(rawProperties.extensionProperties)
+      .map((item) => normalizeExtensionProperty(item))
+      .filter(Boolean),
+  );
   const extensionListeners = asArray(rawProperties.extensionListeners)
     .map((item) => normalizeExtensionListener(item))
     .filter(Boolean);
@@ -1126,13 +1270,15 @@ function isPmRobotMetaModelEntry(entry) {
 function parseManagedPropertiesFromModelEntry(entryRaw) {
   const type = String(entryRaw?.$type || "").trim();
   if (type !== "camunda:Properties" && type !== "zeebe:Properties") return [];
-  return asArray(entryRaw?.values)
-    .map((item) => normalizeExtensionProperty({
-      id: asText(item?.id) || nextEditorLocalId("prop"),
-      name: item?.name,
-      value: item?.value,
-    }))
-    .filter(Boolean);
+  return uniquifyExtensionPropertyIds(
+    asArray(entryRaw?.values)
+      .map((item) => normalizeExtensionProperty({
+        id: asText(item?.id),
+        name: item?.name,
+        value: item?.value,
+      }))
+      .filter(Boolean),
+  );
 }
 
 function parseManagedExecutionListenerFromModelEntry(entryRaw) {
@@ -1196,24 +1342,43 @@ export function applyCamundaExtensionStateToModeler(elementId, extensionState, m
     const existingExt = asObject(bo.extensionElements);
     const existingValues = asArray(existingExt.values);
 
-    // Preserve everything except the managed camunda:properties block.
-    const preserved = existingValues.filter((entry) => {
-      const type = String(entry?.$type || "").toLowerCase();
-      return type !== "camunda:properties";
-    });
+    // Determine the element's property namespace. A zeebe element carries a
+    // zeebe:Properties container (materialized by the zeebe moddle descriptor);
+    // otherwise we fall back to camunda to preserve legacy behavior.
+    const managedPropertiesTypes = new Set(["camunda:properties", "zeebe:properties"]);
+    const hasZeebeProperties = existingValues.some((entry) => (
+      String(entry?.$type || "").toLowerCase() === "zeebe:properties"
+    ));
+    const propertiesPrefix = hasZeebeProperties ? "zeebe" : "camunda";
+
+    // Drop ALL managed properties containers (both namespaces) for this element
+    // so repeated applies never accumulate zeebe + camunda duplicates.
+    const preserved = existingValues.filter((entry) => (
+      !managedPropertiesTypes.has(String(entry?.$type || "").toLowerCase())
+    ));
 
     const normalized = normalizeCamundaExtensionState(extensionState);
     const propValues = asArray(normalized?.properties?.extensionProperties).map((item) => (
-      moddle.create("camunda:Property", {
+      moddle.create(`${propertiesPrefix}:Property`, {
         name: String(item?.name ?? ""),
         value: String(item?.value ?? ""),
       })
     ));
-    const camundaProperties = propValues.length
-      ? [moddle.create("camunda:Properties", { values: propValues })]
+    const managedProperties = propValues.length
+      ? [moddle.create(`${propertiesPrefix}:Properties`, { values: propValues })]
       : [];
 
-    const nextValues = [...preserved, ...camundaProperties];
+    const listenerValues = asArray(normalized?.properties?.extensionListeners).map((item) => {
+      const attrs = { event: String(item?.event ?? "") };
+      const type = String(item?.type ?? "");
+      if (type === "class") attrs.class = String(item?.value ?? "");
+      else if (type === "expression") attrs.expression = String(item?.value ?? "");
+      else if (type === "delegateExpression") attrs.delegateExpression = String(item?.value ?? "");
+      return moddle.create("camunda:ExecutionListener", attrs);
+    });
+    const camundaListeners = listenerValues.length ? listenerValues : [];
+
+    const nextValues = [...preserved, ...managedProperties, ...camundaListeners];
     const nextExt = nextValues.length
       ? moddle.create("bpmn:ExtensionElements", { values: nextValues })
       : null;
@@ -1250,13 +1415,15 @@ function parseManagedPropertiesBlockFromDom(node, expectedNamespaceUri = CAMUNDA
     namespaceOf(child) === expectedNamespaceUri && localNameOf(child).toLowerCase() === "property"
   ));
   if (!onlyPropertyChildren) return null;
-  const items = children
-    .map((child) => normalizeExtensionProperty({
-      id: nextEditorLocalId("prop"),
-      name: child?.getAttribute?.("name"),
-      value: child?.getAttribute?.("value"),
-    }))
-    .filter(Boolean);
+  const items = uniquifyExtensionPropertyIds(
+    children
+      .map((child) => normalizeExtensionProperty({
+        id: asText(child?.getAttribute?.("id") || ""),
+        name: child?.getAttribute?.("name"),
+        value: child?.getAttribute?.("value"),
+      }))
+      .filter(Boolean),
+  );
   return items;
 }
 
@@ -1328,7 +1495,12 @@ export function extractCamundaExtensionsMapFromBpmnXml(xmlText) {
 export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap, allowSeedFromBpmn = true } = {}) {
   const extracted = normalizeCamundaExtensionsMap(extractedMap);
   const session = normalizeCamundaExtensionsMap(sessionMetaMap);
-  const shouldMergeManagedFromBpmn = allowSeedFromBpmn === true;
+  // When session already has data for an element, session meta is authoritative
+  // for user-managed extensionProperties and extensionListeners. Managed data is
+  // never merged back from BPMN XML here, because doing so would resurrect
+  // properties/listeners that the user intentionally deleted. Only
+  // preservedExtensionElements (unmanaged XML fragments not exposed in the UI)
+  // continue to be merged.
   const extractedKeys = Object.keys(extracted);
   const sessionKeys = Object.keys(session);
   if (!extractedKeys.length) {
@@ -1436,39 +1608,6 @@ export function hydrateCamundaExtensionsFromBpmn({ extractedMap, sessionMetaMap,
     const nextPreserved = Array.isArray(sessionEntry.preservedExtensionElements)
       ? sessionEntry.preservedExtensionElements.slice()
       : [];
-
-    if (shouldMergeManagedFromBpmn) {
-      // Preserve duplicate property names as long as their values differ.
-      // Only skip exact name+value duplicates so re-importing the same BPMN
-      // does not create noise.
-      const propertySignatures = new Set(
-        nextProperties
-          .map((item) => `${String(item?.name || "").trim()}\u0000${String(item?.value || "").trim()}`)
-          .filter((sig) => sig.split("\u0000")[0]),
-      );
-      extractedEntry.properties.extensionProperties.forEach((item) => {
-        const name = String(item?.name || "").trim();
-        if (!name) return;
-        const signature = `${name}\u0000${String(item?.value || "").trim()}`;
-        if (propertySignatures.has(signature)) return;
-        propertySignatures.add(signature);
-        nextProperties.push(item);
-        addedProperties += 1;
-      });
-
-      const listenerSignatures = new Set(
-        nextListeners
-          .map((item) => `${String(item?.event || "")}|${String(item?.type || "")}|${String(item?.value || "")}`)
-          .filter(Boolean),
-      );
-      extractedEntry.properties.extensionListeners.forEach((item) => {
-        const signature = `${String(item?.event || "")}|${String(item?.type || "")}|${String(item?.value || "")}`;
-        if (!signature || listenerSignatures.has(signature)) return;
-        listenerSignatures.add(signature);
-        nextListeners.push(item);
-        addedListeners += 1;
-      });
-    }
 
     // preservedExtensionElements are unmanaged XML fragments (connectors, etc.)
     // that are not exposed in the sidebar delete UI — safe to keep merging from XML.
@@ -1783,15 +1922,12 @@ function hasAnyManagedListenersInMap(mapRaw) {
 export function finalizeCamundaExtensionsXml({
   xmlText,
   camundaExtensionsByElementId,
-  preserveManagedForElementIds,
 } = {}) {
   const rawXml = String(xmlText || "").trim();
   if (!rawXml) return rawXml;
   const doc = parseXmlDocument(rawXml);
   if (!doc) return rawXml;
-  const explicitMapEntryIds = normalizeElementIdSet(Object.keys(asObject(camundaExtensionsByElementId)));
   const normalizedMap = normalizeCamundaExtensionsMap(camundaExtensionsByElementId);
-  const preserveManagedIds = normalizeElementIdSet(preserveManagedForElementIds);
   const useZeebeProperties = shouldUseZeebePropertiesProfile(doc);
   const candidateIds = collectCurrentManagedCandidateIds(doc);
   Object.keys(normalizedMap).forEach((elementId) => candidateIds.add(elementId));
@@ -1805,17 +1941,6 @@ export function finalizeCamundaExtensionsXml({
       || findDirectChild(owner, "extensionElements");
     const state = normalizeCamundaExtensionState(normalizedMap[elementId]);
     const currentChildren = directChildElements(currentExt);
-    const hasCurrentManagedEntries = currentChildren.some((child) => (
-      isManagedPropertiesNode(child)
-      || (namespaceOf(child) === CAMUNDA_NAMESPACE_URI && localNameOf(child) === "executionListener")
-    ));
-    if (
-      hasCurrentManagedEntries
-      && !explicitMapEntryIds.has(elementId)
-      && preserveManagedIds.has(elementId)
-    ) {
-      return;
-    }
     const preservedRaw = state.preservedExtensionElements.slice();
     const currentExtraRaw = currentChildren
       .filter((child) => {

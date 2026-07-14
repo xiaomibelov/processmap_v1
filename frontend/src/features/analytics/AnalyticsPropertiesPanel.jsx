@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   apiExportAnalyticsPropertiesCsv,
+  apiExportAnalyticsPropertiesRecalculatedXlsx,
   apiExportAnalyticsPropertiesXlsx,
   apiGetAnalyticsProperties,
+  apiGetAnalyticsPropertiesRecalculation,
 } from "../../lib/api.js";
-import { DownloadIcon, FilterIcon, SearchIcon } from "./AnalyticsIcons.jsx";
+import { CalculatorIcon, DownloadIcon, FilterIcon, SearchIcon } from "./AnalyticsIcons.jsx";
 import AnalyticsPropertiesTable, {
   getRowKey,
   usePropertyRowsProcessor,
@@ -12,6 +14,7 @@ import AnalyticsPropertiesTable, {
 import { AnalyticsError, AnalyticsLoading } from "./AnalyticsStatus.jsx";
 import EmptyState from "./registry/EmptyState.jsx";
 import { inferPropertyValueType, inferPropertyFamily } from "./propertyValueUtils.js";
+import Modal from "../../shared/ui/Modal.jsx";
 
 function text(value) {
   return String(value || "").trim();
@@ -179,6 +182,18 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
   const [options, setOptions] = useState({});
   const abortRef = useRef(null);
 
+  const [recalcOpen, setRecalcOpen] = useState(false);
+  const [recalcRows, setRecalcRows] = useState([]);
+  const [recalcLoading, setRecalcLoading] = useState(false);
+  const [recalcError, setRecalcError] = useState("");
+  const recalcAbortRef = useRef(null);
+
+  const [sourceValidationModal, setSourceValidationModal] = useState({
+    open: false,
+    message: "",
+    tasks: [],
+  });
+
   const [backendFilters, setBackendFilters] = useState({});
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
@@ -235,6 +250,18 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
       controller.abort();
     };
   }, [loadData]);
+
+  // Reset the "Расчёт" section when the scope changes and abort any in-flight fetch.
+  useEffect(() => {
+    setRecalcOpen(false);
+    setRecalcRows([]);
+    setRecalcError("");
+    setRecalcLoading(false);
+    if (recalcAbortRef.current) {
+      try { recalcAbortRef.current.abort(); } catch {}
+      recalcAbortRef.current = null;
+    }
+  }, [scope, scopeId]);
 
   const filteredRows = usePropertyRowsProcessor(rawRows, {
     search: debouncedSearch,
@@ -314,8 +341,62 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
     setExporting(false);
   }
 
+  async function handleServerExportRecalculatedXlsx() {
+    if (exporting) return;
+    setExporting(true);
+    const result = await apiExportAnalyticsPropertiesRecalculatedXlsx(scope, scopeId, { mode: "source" });
+    if (!result?.ok) {
+      setExporting(false);
+      if (result?.status === 422 && Array.isArray(result?.data?.invalid_tasks)) {
+        setSourceValidationModal({
+          open: true,
+          message: result.data.error || "В схеме найдены не заполненные значения свойства ingredient_value.",
+          tasks: result.data.invalid_tasks,
+        });
+      }
+      return;
+    }
+    if (result.blob) {
+      downloadBlob(result.blob, result.filename || `properties-recalculated-${scope}-${scopeId}.xlsx`);
+    }
+    setExporting(false);
+  }
+
   function handleSelectedExport() {
     exportRowsToCsv(selectedRowObjects, `properties-selected-${scope}-${scopeId}.csv`);
+  }
+
+  const loadRecalculation = useCallback(async ({ signal } = {}) => {
+    setRecalcLoading(true);
+    setRecalcError("");
+    try {
+      const result = await apiGetAnalyticsPropertiesRecalculation(scope, scopeId, { signal });
+      if (signal?.aborted) return;
+      setRecalcLoading(false);
+      if (!result?.ok) {
+        setRecalcError(text(result?.error) || "Не удалось загрузить расчёт.");
+        return;
+      }
+      setRecalcRows(result.rows || []);
+    } catch (e) {
+      if (signal?.aborted || e?.name === "AbortError") return;
+      setRecalcLoading(false);
+      setRecalcError(String(e?.message || e || "Ошибка загрузки расчёта"));
+    }
+  }, [scope, scopeId]);
+
+  function handleToggleRecalc() {
+    const next = !recalcOpen;
+    setRecalcOpen(next);
+    // Lazy-load on first open (and retry on reopen after an error / empty).
+    if (next && recalcRows.length === 0 && !recalcLoading) {
+      const controller = new AbortController();
+      if (recalcAbortRef.current) {
+        try { recalcAbortRef.current.abort(); } catch {}
+      }
+      recalcAbortRef.current = controller;
+      loadRecalculation({ signal: controller.signal });
+    }
   }
 
   function handleCompare() {
@@ -438,6 +519,15 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
             {selectedRows.size} выбрано · {filteredRows.length} из {total}
           </span>
           <div className="analyticsBulkButtons">
+            <button
+              type="button"
+              className={`analyticsRecalcToggle ${recalcOpen ? "analyticsRecalcToggle--active" : ""}`}
+              onClick={handleToggleRecalc}
+              title="Расчёт производительности"
+            >
+              <CalculatorIcon className="w-4 h-4" />
+              Расчёт{recalcRows.length ? ` (${recalcRows.length})` : ""}
+            </button>
             <button type="button" className="analyticsExportBtn" disabled={selectedRows.size === 0} onClick={handleSelectedExport}>
               <DownloadIcon className="w-4 h-4" />
               CSV выбранных
@@ -460,6 +550,61 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
         </div>
       </div>
 
+      {recalcOpen ? (
+        <section className="analyticsRecalculationSection">
+          <div className="analyticsRecalculationHeader">
+            <h3 className="analyticsRecalculationTitle">Расчёт производительности</h3>
+            <button
+              type="button"
+              className="analyticsExportBtn"
+              onClick={handleServerExportRecalculatedXlsx}
+              disabled={exporting}
+            >
+              <DownloadIcon className="w-4 h-4" />
+              {exporting ? "Экспорт…" : "Excel с пересчётом"}
+            </button>
+          </div>
+          {recalcLoading ? <AnalyticsLoading text="Загрузка расчёта…" /> : null}
+          {recalcError ? <AnalyticsError message={recalcError} onRetry={() => loadRecalculation()} /> : null}
+          {!recalcLoading && !recalcError && !recalcRows.length ? (
+            <EmptyState title="Нет данных для расчёта" description="Нет элементов с ee_time в выбранном scope." />
+          ) : null}
+          {!recalcLoading && !recalcError && recalcRows.length ? (
+            <div className="analyticsRecalcTableWrap">
+              <table className="analyticsRecalcTable">
+                <thead>
+                  <tr>
+                    <th>BPMN Name</th>
+                    <th>ee_time</th>
+                    <th>ingredient_value</th>
+                    <th>result</th>
+                    <th>Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recalcRows.map((row, idx) => (
+                    <tr key={row.bpmn_id || idx}>
+                      <td>{text(row.bpmn_name) || text(row.bpmn_id) || "—"}</td>
+                      <td>{row.ee_time != null ? Number(row.ee_time).toFixed(2) : "—"}</td>
+                      <td>
+                        {row.ingredient_value != null ? Number(row.ingredient_value).toFixed(2) : "—"}
+                        {row.source === "catalog" ? <span className="analyticsRecalcSourceHint"> (справочник)</span> : null}
+                      </td>
+                      <td>{row.result != null ? Number(row.result).toFixed(2) : "—"}</td>
+                      <td>
+                        <span className={`analyticsRecalcSource analyticsRecalcSource--${row.source || "none"}`}>
+                          {row.source === "property" ? "property" : row.source === "catalog" ? "catalog" : "нет данных"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
       {loading && !rawRows.length ? <AnalyticsLoading text="Загрузка реестра свойств…" /> : null}
       {error ? <AnalyticsError message={error} onRetry={() => loadData()} /> : null}
       {!loading && !error && !rawRows.length ? (
@@ -479,6 +624,31 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
         </>
       ) : null}
       {compareRows.length ? <CompareDrawer rows={compareRows} onClose={() => setCompareRows([])} /> : null}
+      {sourceValidationModal.open ? (
+        <Modal
+          open
+          title="Ошибка заполнения"
+          onClose={() => setSourceValidationModal((m) => ({ ...m, open: false }))}
+          footer={
+            <button
+              type="button"
+              className="analyticsExportBtn"
+              onClick={() => setSourceValidationModal((m) => ({ ...m, open: false }))}
+            >
+              OK
+            </button>
+          }
+        >
+          <p>{sourceValidationModal.message}</p>
+          {sourceValidationModal.tasks.length ? (
+            <ul className="analyticsRecalcValidationList">
+              {sourceValidationModal.tasks.map((t, idx) => (
+                <li key={idx}>{text(t.bpmn_name) || text(t.bpmn_id) || "—"}</li>
+              ))}
+            </ul>
+          ) : null}
+        </Modal>
+      ) : null}
     </div>
   );
 }

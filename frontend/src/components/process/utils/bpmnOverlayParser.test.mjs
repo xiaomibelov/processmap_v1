@@ -181,4 +181,148 @@ describe("bpmnOverlayParser", () => {
       { name: "equipment_mode", value: "150 об мин" },
     ]);
   });
+
+  it("does not create an auto overlay for a property with an empty value", () => {
+    const props = [{ name: "prop_audit", value: "" }];
+    const overlay = parseOverlayFromProperties(props, "Task_1", "Approve invoice");
+    assert.strictEqual(overlay, null);
+  });
+
+  it("skips empty-value properties when building an auto overlay", () => {
+    const props = [
+      { name: "prop_audit", value: "" },
+      { name: "owner", value: "finance" },
+    ];
+    const overlay = parseOverlayFromProperties(props, "Task_1", "Approve invoice");
+    assert.ok(overlay);
+    assert.strictEqual(overlay.auto, true);
+    // Title should come from the element name, not from the empty property key.
+    assert.strictEqual(overlay.text, "Approve invoice");
+  });
+
+  it("excludes empty-value properties from V2 overlay business properties", () => {
+    const registry = {
+      getAll: () => [
+        {
+          id: "Task_1",
+          type: "bpmn:Task",
+          businessObject: {
+            id: "Task_1",
+            $type: "bpmn:Task",
+            name: "Task",
+            extensionElements: {
+              values: [
+                {
+                  $type: "camunda:properties",
+                  values: [
+                    { name: "prop_audit", value: "" },
+                    { name: "owner", value: "finance" },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+    const inst = { get: (name) => (name === "elementRegistry" ? registry : undefined) };
+    const overlays = extractOverlaysFromBpmn(inst, false);
+    assert.strictEqual(overlays.length, 1);
+    const businessProps = overlays[0].properties;
+    assert.strictEqual(businessProps.length, 1);
+    assert.strictEqual(businessProps[0].name, "owner");
+    assert.strictEqual(businessProps[0].value, "finance");
+  });
+
+  it("does not return an auto overlay when every property value is empty", () => {
+    const registry = {
+      getAll: () => [
+        {
+          id: "Task_1",
+          type: "bpmn:Task",
+          businessObject: {
+            id: "Task_1",
+            $type: "bpmn:Task",
+            name: "Task",
+            extensionElements: {
+              values: [
+                {
+                  $type: "camunda:properties",
+                  values: [{ name: "prop_audit", value: "" }],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+    const inst = { get: (name) => (name === "elementRegistry" ? registry : undefined) };
+    const overlays = extractOverlaysFromBpmn(inst, false);
+    assert.strictEqual(overlays.length, 0);
+  });
+
+  it("never creates overlays for process-like roots even when they carry properties", () => {
+    // Process-level camunda:properties are shown in the sidebar, never as a
+    // canvas overlay card: the root has no own geometry (it wraps everything).
+    const registry = {
+      getAll: () => [
+        {
+          id: "Process_1",
+          type: "bpmn:Process",
+          businessObject: {
+            id: "Process_1",
+            $type: "bpmn:Process",
+            name: "Main process",
+            extensionElements: {
+              values: [
+                {
+                  $type: "camunda:properties",
+                  values: [{ name: "owner", value: "finance" }],
+                },
+              ],
+            },
+          },
+        },
+        {
+          id: "Collaboration_1",
+          type: "bpmn:Collaboration",
+          businessObject: {
+            id: "Collaboration_1",
+            $type: "bpmn:Collaboration",
+            name: "Pool",
+            extensionElements: {
+              values: [
+                {
+                  $type: "camunda:properties",
+                  values: [{ name: "owner", value: "ops" }],
+                },
+              ],
+            },
+          },
+        },
+        {
+          id: "Task_1",
+          type: "bpmn:Task",
+          businessObject: {
+            id: "Task_1",
+            $type: "bpmn:Task",
+            name: "Task",
+            extensionElements: {
+              values: [
+                {
+                  $type: "camunda:properties",
+                  values: [{ name: "owner", value: "a" }],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+    const inst = { get: (name) => (name === "elementRegistry" ? registry : undefined) };
+    for (const forceShow of [false, true]) {
+      const overlays = extractOverlaysFromBpmn(inst, forceShow);
+      assert.deepStrictEqual(overlays.map((o) => o.node_id), ["Task_1"]);
+    }
+  });
 });

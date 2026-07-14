@@ -1,6 +1,8 @@
 import { overlayPropertyColorByKey, normalizeOverlayPropertyKey } from "./overlayColorModel.js";
 import { buildOverlayGeometry, readOverlayCanvasZoom } from "./overlayLayoutModel.js";
 import { isGfxInDom } from "../viewport/cullBpmnViewport.js";
+import { isOverlayMetaProperty } from "../../../../../components/process/utils/bpmnOverlayParser.js";
+import { isProcessLikeType } from "../interaction/processRootSelection.js";
 
 function runMeasure(ctx, name, run, payload) {
   const measureInterviewPerf = ctx?.callbacks?.measureInterviewPerf;
@@ -1703,7 +1705,13 @@ function buildSequenceOverlayItemsFromBusinessObject(boRaw, { asArray, asObject,
       const name = readSequenceOverlayField(propertyRaw, "name", asObject, toText);
       const value = readSequenceOverlayField(propertyRaw, "value", asObject, toText);
       if (!name || !value) return;
-      const sig = `${name}\u241f${value}`;
+      // Unified with the V2 overlay read-model: hide meta properties
+      // (fpc-overlay-v2 / fpc:overlay:* / fpc-show-properties) and dedup by
+      // name+value (\u0000). Container enumeration stays the legacy permissive
+      // reader (values + $children + children) so existing diagrams do not
+      // regress; V2 reads the same .values containers for the common case.
+      if (isOverlayMetaProperty(name)) return;
+      const sig = `${name}\u0000${value}`;
       if (dedupe.has(sig)) return;
       dedupe.add(sig);
       out.push({
@@ -1776,15 +1784,7 @@ export function applyPropertiesOverlayDecor(ctx) {
         const isSequenceFlow = isConnection && (elementType === "bpmn:sequenceflow" || elementType === "sequenceflow");
         const isTaskLike = !isConnection && /task$/i.test(elementType);
         if (!isSequenceFlow && !isTaskLike) return;
-        const items = [];
-        if (isSequenceFlow) {
-          const sequenceItems = buildSequenceOverlayItemsFromBusinessObject(el?.businessObject, { asArray, asObject, toText });
-          items.push(...sequenceItems);
-        }
-        const elementName = toText(el?.businessObject?.name || el?.name);
-        if (elementName) {
-          items.unshift({ key: "name", label: "Name", value: elementName });
-        }
+        const items = buildSequenceOverlayItemsFromBusinessObject(el?.businessObject, { asArray, asObject, toText });
         if (!items.length) return;
         previewByElementId[elementId] = {
           elementId,
@@ -1795,6 +1795,18 @@ export function applyPropertiesOverlayDecor(ctx) {
       });
     } catch {
     }
+  }
+  // Process-like roots (bpmn:Process / bpmn:Collaboration) have no own canvas geometry;
+  // never render legacy overlay cards for them (e.g. pinned via the always-map).
+  try {
+    const registry = inst.get("elementRegistry");
+    Object.keys(previewByElementId).forEach((elementId) => {
+      const el = typeof registry?.get === "function" ? registry.get(elementId) : null;
+      if (el && isProcessLikeType(el?.businessObject?.$type || el?.type)) {
+        delete previewByElementId[elementId];
+      }
+    });
+  } catch {
   }
   const previewEntries = Object.values(previewByElementId);
   if (!previewEntries.length) {

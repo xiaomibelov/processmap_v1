@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { apiLogin, setUiToken } from "./helpers/e2eAuth.mjs";
+import { apiLogin, setUiToken, withAuthHeaders } from "./helpers/e2eAuth.mjs";
 import { API_BASE, createFixture } from "./helpers/processFixture.mjs";
 import { waitForDiagramReady } from "./helpers/diagramReady.mjs";
 
@@ -56,6 +56,14 @@ function seedXmlWithProperty() {
 </bpmn:definitions>`;
 }
 
+async function getServerBpmnXml(request, sessionId, token) {
+  const res = await request.get(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/bpmn?include_overlay=0`, {
+    headers: withAuthHeaders(token),
+  });
+  if (!res.ok()) return "";
+  return res.text();
+}
+
 test("deleting an additional BPMN property removes it from the element", async ({ page, request }) => {
   const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const auth = await apiLogin(request, { apiBase: API_BASE });
@@ -98,16 +106,14 @@ test("deleting an additional BPMN property removes it from the element", async (
   await expect(propertiesAccordion).toBeVisible();
   await propertiesAccordion.click();
 
-  const sectionToggle = page.locator(".sidebarPropertiesBlockTitle", { hasText: "Дополнительные BPMN-свойства" });
-  await expect(sectionToggle).toBeVisible();
-  await sectionToggle.locator("..").click();
+  // Additional BPMN properties is the primary editable block and stays expanded by default.
 
   // The seeded property should be visible.
   const rows = page.locator(".sidebarBpmnPropertyItem");
   await expect(rows).toHaveCount(1);
 
   // Delete the property.
-  const deleteBtn = page.getByRole("button", { name: /Удалить BPMN-свойство/ });
+  const deleteBtn = rows.first().locator(".sidebarPropertyActionBtn--danger").first();
   await expect(deleteBtn).toBeVisible();
   await deleteBtn.click();
 
@@ -116,8 +122,17 @@ test("deleting an additional BPMN property removes it from the element", async (
   await page.waitForTimeout(500);
   await expect(rows).toHaveCount(0);
 
-  // Save and verify the row does not reappear.
-  const saveBtn = page.locator(".sidebarPropertiesBlock--secondary .primaryBtn", { hasText: "Сохранить" }).first();
-  await saveBtn.click();
-  await expect.poll(async () => rows.count()).toBe(0);
+  // The deletion is flushed immediately, so the server XML should already
+  // reflect the removal before any global save.
+  await expect.poll(async () => {
+    const xml = await getServerBpmnXml(request, fixture.sessionId, auth.accessToken);
+    return xml.includes('name="priority"');
+  }).toBe(false);
+
+  // Deletion is flushed immediately, so there are no remaining unsaved
+  // changes and the floating save bar is not rendered at all.
+  await expect(page.locator(".sidebarGlobalFooter")).toHaveCount(0);
+
+  const serverXml = await getServerBpmnXml(request, fixture.sessionId, auth.accessToken);
+  expect(serverXml).not.toContain('name="priority"');
 });

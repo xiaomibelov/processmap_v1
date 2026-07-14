@@ -1,0 +1,21 @@
+{
+  "contour": "feat/process-properties",
+  "branch": "feat/process-properties",
+  "base": "origin/main@03090852",
+  "state": "pr-open",
+  "states": ["planned", "in-progress", "stage-verified", "pr-open", "approved", "merged"],
+  "pr": 523,
+  "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/523",
+  "commits": ["d68b9ccf", "59a7dd5a"],
+  "created": "2026-07-11T12:30:00Z",
+  "updated": "2026-07-11T14:55:00Z",
+  "verification": {
+    "unit_sweep": "53=53 vs /tmp/fails_main.txt, REGRESSION-CLEAN",
+    "foundation_guard": "sidebarRedesignFoundation 10/10",
+    "build": "npm run build OK 19.5s",
+    "stage_e2e_process_properties": "5/5 PASS (25.2s) on http://127.0.0.1:5177",
+    "stage_e2e_v2_overlay_persistence_regression": "3/3 PASS (15.4s)",
+    "stage_deploy": "frontend-only; processmap_v1-frontend-1 serves d68b9ccf; deprecated container processmap_v1-frontend-1-deprecated-20260711_143426 kept for rollback"
+  },
+  "notes": "Process-level camunda properties (Camunda Modeler parity): empty-canvas click selects root process; sidebar edits process properties via existing id-generic pipeline. E2E lessons: synthetic element.click needs originalEvent.button===0; GET /api/sessions/{id}/bpmn is raw application/xml; additional-properties row delete auto-saves. Awaiting explicit user approval to merge."
+}

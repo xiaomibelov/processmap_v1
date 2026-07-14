@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import buildBpmnPropertiesOverlaySchema from "./buildBpmnPropertiesOverlaySchema.js";
+import { normalizeDocumentationRows } from "../../documentation/normalizeDocumentationRows.js";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -11,22 +12,6 @@ function asObject(value) {
 
 function toText(value) {
   return String(value || "").trim();
-}
-
-function normalizeDocumentationRows(rawRows) {
-  return asArray(rawRows)
-    .map((rowRaw) => {
-      const row = asObject(rowRaw);
-      const text = String(
-        Object.prototype.hasOwnProperty.call(row, "text")
-          ? row.text
-          : (Object.prototype.hasOwnProperty.call(row, "value") ? row.value : rowRaw),
-      );
-      const textFormat = toText(row?.textFormat || row?.textformat);
-      if (!text.trim() && !textFormat) return null;
-      return { text, textFormat };
-    })
-    .filter(Boolean);
 }
 
 function buildDocumentationSaveRows(rowRaw, value) {

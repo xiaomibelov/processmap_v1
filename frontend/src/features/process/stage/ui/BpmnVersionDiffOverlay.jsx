@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import pmModdleDescriptor from "../../robotmeta/pmModdleDescriptor";
 import camundaModdleDescriptor from "../../camunda/camundaModdleDescriptor";
+import zeebeModdleDescriptor from "../../camunda/zeebeModdleDescriptor";
 import { buildSemanticBpmnDiff, buildBpmnPositionDiff } from "../../bpmn/diff/semanticDiff.js";
 import BpmnVersionPreview from "./BpmnVersionPreview";
 
@@ -98,7 +99,7 @@ export default function BpmnVersionDiffOverlay({
           const Viewer = mod.default || mod.NavigatedViewer || mod;
           viewer = new Viewer({
             container: mainRef.current,
-            moddleExtensions: { pm: pmModdleDescriptor, camunda: camundaModdleDescriptor },
+            moddleExtensions: { pm: pmModdleDescriptor, camunda: camundaModdleDescriptor, zeebe: zeebeModdleDescriptor },
           });
           if (cancelled) {
             try { viewer.destroy(); } catch {}

@@ -1,4 +1,41 @@
 import { resolveBpmnContextMenuRuntimeResolution } from "../../context-menu/resolveBpmnContextMenuTarget.js";
+import { resolveProcessLikeRootElement } from "../interaction/processRootSelection.js";
+
+const CANVAS_PROCESS_HOVER_CLASS = "fpcCanvasProcessHoverHint";
+
+function toggleCanvasProcessHoverHint(inst, on) {
+  try {
+    const container = inst?.get?.("canvas")?.getContainer?.();
+    container?.classList?.toggle(CANVAS_PROCESS_HOVER_CLASS, !!on);
+  } catch {
+    // ignore DOM failures
+  }
+}
+
+// bpmn-js fires element.hover/element.out with the ROOT element when the
+// pointer moves over empty canvas. Toggle a subtle hint that clicking there
+// selects the root process (Camunda Modeler parity).
+function bindCanvasProcessHoverHint(eventBus, inst) {
+  eventBus.on("element.hover", 1500, (ev) => {
+    const root = resolveProcessLikeRootElement(inst);
+    if (root && ev?.element === root) toggleCanvasProcessHoverHint(inst, true);
+  });
+  eventBus.on("element.out", 1500, (ev) => {
+    const root = resolveProcessLikeRootElement(inst);
+    if (root && ev?.element === root) toggleCanvasProcessHoverHint(inst, false);
+  });
+}
+
+// Empty-canvas click = select the root process-like element instead of
+// leaving the sidebar empty. Returns true when a process root was selected.
+function trySelectProcessRoot({ inst, kind, setSelectedDecor, emitElementSelection, clearAiQuestionPanel }) {
+  const root = resolveProcessLikeRootElement(inst);
+  if (!root?.id) return false;
+  setSelectedDecor(inst, kind, root.id);
+  emitElementSelection(root, `${kind}.canvas_process_select`);
+  clearAiQuestionPanel(inst, kind);
+  return true;
+}
 import {
   patchOverlaysInstance,
   setOverlaysUpdatePaused,
@@ -436,6 +473,8 @@ export function bindViewerStageEvents({
 
   cleanupFns.push(bindOverlayPanDebouncer({ eventBus, inst }));
 
+  bindCanvasProcessHoverHint(eventBus, inst);
+
   const applyPropertiesOverlayDecorForZoomChangeDebounced = debounce(
     applyPropertiesOverlayDecorForZoomChange,
     OVERLAY_PAN_DEBOUNCE_MS,
@@ -455,6 +494,9 @@ export function bindViewerStageEvents({
           source: "viewer.selection_changed",
           guardedSelectedId: String(selectionImportGuardRef.current.viewer || "").trim(),
         });
+        return;
+      }
+      if (trySelectProcessRoot({ inst, kind: "viewer", setSelectedDecor, emitElementSelection, clearAiQuestionPanel })) {
         return;
       }
       clearSelectedDecor(inst, "viewer");
@@ -578,6 +620,8 @@ export function bindModelerStageEvents({
 
   cleanupFns.push(bindOverlayPanDebouncer({ eventBus, inst }));
 
+  bindCanvasProcessHoverHint(eventBus, inst);
+
   const applyPropertiesOverlayDecorForZoomChangeDebounced = debounce(
     applyPropertiesOverlayDecorForZoomChange,
     OVERLAY_PAN_DEBOUNCE_MS,
@@ -660,6 +704,9 @@ export function bindModelerStageEvents({
           source: "editor.selection_changed",
           guardedSelectedId: String(selectionImportGuardRef.current.editor || "").trim(),
         });
+        return;
+      }
+      if (trySelectProcessRoot({ inst, kind: "editor", setSelectedDecor, emitElementSelection, clearAiQuestionPanel })) {
         return;
       }
       clearSelectedDecor(inst, "editor");

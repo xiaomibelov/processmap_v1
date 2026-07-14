@@ -119,7 +119,7 @@ test("Top toolbar keeps discussions as the primary entry and removes conflicting
   assert.match(diagramControlsSource, /className=\"primaryBtn diagramActionBtn relative z-\[1\]\"/);
   assert.match(diagramControlsSource, /data-notes-panel-trigger=\"true\"/);
   assert.doesNotMatch(diagramControlsSource, /data-testid="diagram-action-quality"/);
-  assert.match(diagramControlsSource, /data-testid="diagram-action-search"[\s\S]*<svg/);
+  assert.match(diagramControlsSource, /<DiagramSearchInlineInput/);
 });
 
 test("Discussions toolbar uses an explicit App to NotesMvpPanel open bridge", () => {

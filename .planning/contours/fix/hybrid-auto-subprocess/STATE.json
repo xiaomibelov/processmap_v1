@@ -1,0 +1,12 @@
+{
+  "contour": "fix/hybrid-auto-subprocess",
+  "role": "executor",
+  "status": "READY_FOR_REVIEW",
+  "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/420",
+  "branch": "fix/hybrid-auto-subprocess",
+  "base": "main",
+  "merged": false,
+  "deployed": true,
+  "stage_url": "https://stage.processmap.ru",
+  "updated_at": "2026-06-26T18:08:00Z"
+}

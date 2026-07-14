@@ -1,3 +1,7 @@
+import {
+  dedupCamundaProperties,
+  hasDuplicateCamundaProperties,
+} from "../../camunda/camundaExtensions.js";
 import createLocalMutationStaging from "./createLocalMutationStaging.js";
 
 function asText(value) {
@@ -503,8 +507,9 @@ export default function createBpmnCoordinator(options = {}) {
       rev,
       runtimeToken,
       source: xmlOverride.trim() ? "flush_save_override" : "flush_save",
+      bpmnMeta: options?.bpmnMeta,
     });
-    const xml = prepared.xml;
+    let xml = prepared.xml;
     const currentXmlHash = fnv1aHex(xml);
     const localHash = asText(state?.lastHash || state?.hash || "");
     const localDirty = state?.dirty === true;
@@ -536,6 +541,18 @@ export default function createBpmnCoordinator(options = {}) {
         xmlAlreadyTransformed: prepared.transformed,
       };
     }
+    if (hasDuplicateCamundaProperties(xml)) {
+      const dedupedXml = dedupCamundaProperties(xml);
+      emit("SAVE_DEDUPLICATED_CAMUNDA_PROPERTIES", {
+        sid,
+        reason,
+        rev,
+        xml_len: xml.length,
+        deduped_xml_len: dedupedXml.length,
+      });
+      xml = dedupedXml;
+    }
+
     const refreshed = store.setXml(xml, "flush_save", { bumpRev: false, dirty: true });
     const targetRev = asNumber(refreshed?.rev, rev);
     emit("SAVE_EXECUTED", {
@@ -563,6 +580,9 @@ export default function createBpmnCoordinator(options = {}) {
     const persistOptions = {};
     if (options?.bpmnMeta && typeof options.bpmnMeta === "object") {
       persistOptions.bpmnMeta = options.bpmnMeta;
+    }
+    if (options?.sourceAction && typeof options.sourceAction === "string") {
+      persistOptions.sourceAction = options.sourceAction;
     }
     let staleRetryAttempts = 0;
     let staleRetryChangedKeys = [];
@@ -864,7 +884,7 @@ export default function createBpmnCoordinator(options = {}) {
         }
         const state = store.getState();
         const rev = asNumber(options?.rev, asNumber(state?.rev, 0));
-        const xml = asText(xmlText);
+        let xml = asText(xmlText);
         emit("SAVE_EXECUTED", {
           sid,
           reason,
@@ -883,6 +903,17 @@ export default function createBpmnCoordinator(options = {}) {
           xml_len: xml.length,
         });
         const startedAt = Date.now();
+        if (hasDuplicateCamundaProperties(xml)) {
+          const dedupedXml = dedupCamundaProperties(xml);
+          emit("SAVE_DEDUPLICATED_CAMUNDA_PROPERTIES", {
+            sid,
+            reason,
+            rev,
+            xml_len: xml.length,
+            deduped_xml_len: dedupedXml.length,
+          });
+          xml = dedupedXml;
+        }
         const explicitPersistOptions = {};
         if (options?.bpmnMeta && typeof options.bpmnMeta === "object") {
           explicitPersistOptions.bpmnMeta = options.bpmnMeta;

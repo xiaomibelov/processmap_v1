@@ -1,0 +1,79 @@
+{
+  "contour": "feature/mini-indicator-from-524",
+  "branch": "feature/mini-indicator-from-524",
+  "base": "origin/main@47a0c12f (post-merge #525)",
+  "state": "in-progress",
+  "states": [
+    "planned",
+    "in-progress",
+    "stage-verified",
+    "pr-open",
+    "approved",
+    "merged"
+  ],
+  "pr": 526,
+  "pr_url": "https://github.com/xiaomibelov/processmap_v1/pull/526",
+  "created": "2026-07-12T09:10:00Z",
+  "updated": "2026-07-12T18:25:00Z",
+  "commits": {
+    "1a": "8e772c0d — ExtensionStateMiniIndicator + CSS + NotesPanel topRow + unit 8/8 + e2e spec",
+    "1b": "08f42c5c — BpmnStage clear-before-remount reorder"
+  },
+  "verification": {
+    "unit_sweep": "51/51 = new main baseline (post-#525), zero new failures",
+    "foundation_guard": "10/10",
+    "build": "npm run build OK",
+    "stage_e2e": "7/7 PASS (34.5s): extension-state-mini 2/2 + process-properties 5/5"
+  },
+  "source": "Tier 1 cherry-pick из PR #524; анализ: Audits/PR524-Inventory-Borrowability-2026-07-12.md",
+  "pending": "AWAITING explicit user approval to merge PR #526",
+  "ux_redesign_phase": {
+    "status": "P1-done",
+    "artifacts": [
+      "PLAN.md",
+      "UI.md",
+      "API.md",
+      "TESTS.md",
+      "PR.md"
+    ],
+    "scope": "Segmented display mode; V2 toggle+sub-control; quick chips; BPMN KV-list; floating SaveBar",
+    "open_questions": "RESOLVED 2026-07-12: Q1=floating bar; Q2=draft-only delete; Q3=toggle in quick-section subhead; Q4=hidden=overlays off",
+    "constraints": "no code/deploy/PR until approve; save pipeline untouched; fpc-show-properties preserved; --kimi-* tokens mapped to tokens.css (D2)",
+    "phases": {
+      "P0": {
+        "status": "done",
+        "commit": "62300f08",
+        "gate": "G-P0 PASS: unit 14/14, sweep 51=51, foundation 10/10, build OK"
+      },
+      "P1": {
+        "status": "done",
+        "commit": "6a65d133",
+        "gate": "G-P1 PASS: sweep 51=51, foundation 10/10, build OK, stage E2E 17/17 (T1-T3 + 4 regression specs)"
+      },
+      "P2": {
+        "status": "next",
+        "scope": "Quick chips (QuickPropertyChip + add mini-form), replace quick table in ElementSettingsControls"
+      }
+    }
+  },
+  "uxAdaptationPort": {
+    "date": "2026-07-12",
+    "source": "ported from feature/property-panel-redesign@5e39dcb0 (PR #524) per user decision — this branch is the one deployed on stage (GH Actions run #71)",
+    "items": [
+      "B1: headAccessory slot; ExtensionStateMiniIndicator in «Свойства» accordion head (visible when collapsed)",
+      "B2: per-element «Показывать над этой задачей» toggle hidden from quick props UI; fpc-show-properties write-path preserved + round-trip guard test",
+      "B3: V2 toggle ON -> display mode forced «Скрыто» (segments disabled + hint); OFF -> restore captured mode (fpc_display_mode_before_v2_v1:{sid}); pure helpers captureModeBeforeV2/restoreModeAfterV2 + tests",
+      "B4: quick props collapsible; ee_time/ingredient_value initial pins only (removable, unpin -> Additional BPMN)",
+      "B5: order LiveCardPreview -> DisplaySettings -> Quick -> To-Be -> Additional BPMN; Additional full-bleed negative inset (+~10%); dense spacing",
+      "B6: save bar only when sidebarGlobalHasChanges; «Сохранить»/«Отмена»; <=48px",
+      "Modules ported from #524: ToBeBuilder (+model/hook/tests), LiveCardPreview, fieldChipsModel + filterRowsByHiddenFields + useHiddenFields (fpc_overlay_hidden_fields_v1:{sid}) wired into legacy preview memo + V2 overlay chain"
+    ],
+    "verification": {
+      "build": "exit 0",
+      "unit": "fail-set identical to baseline (51 pre-existing)",
+      "foundation": "10/10",
+      "e2e": "PENDING stage approval"
+    }
+  },
+  "next": "UX adaptation port complete; awaiting approve for stage deploy (GH Actions workflow_dispatch deploy_ref=feature/mini-indicator-from-524) + E2E."
+}

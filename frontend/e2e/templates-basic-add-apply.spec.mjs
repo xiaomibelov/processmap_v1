@@ -249,6 +249,7 @@ test("templates smoke: add from selection and apply restores selection", async (
   });
   await applyFooter.click();
   await putResponse;
+  await placeFragmentIfNeeded(page);
   await expect
     .poll(async () => {
       return await page.evaluate(() => Boolean(window.__FPC_E2E_TEMPLATE_FRAGMENT_INSERT__?.ok));

@@ -1196,12 +1196,22 @@ def auto_create_subprocess_sessions(
             org_id=oid,
         )
         if existing:
+            # Refresh the child XML from the freshly extracted parent fragment
+            # so parent re-saves (e.g. BPMN import into an existing session)
+            # propagate into existing child sessions instead of leaving stale
+            # content behind.
+            refreshed = bool(child_xml) and child_xml != str(getattr(existing, "bpmn_xml", "") or "")
+            if refreshed:
+                existing.bpmn_xml = child_xml
             if getattr(existing, "deleted_at", 0):
                 existing.deleted_at = 0
                 existing.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
                 session_repo.save(existing, user_id=uid, org_id=oid, is_admin=admin)
                 restored.append(str(existing.id))
             else:
+                if refreshed:
+                    existing.updated_at = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+                    session_repo.save(existing, user_id=uid, org_id=oid, is_admin=admin)
                 skipped.append(str(existing.id))
             continue
 

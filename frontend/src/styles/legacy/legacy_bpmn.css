@@ -262,6 +262,7 @@
   position: absolute;
   left: 50%;
   bottom: 0;
+  cursor: pointer;
   transform: translateX(-50%);
   transform-origin: bottom center;
   box-sizing: border-box;
@@ -353,6 +354,38 @@
 .fpc-overlay-v2-value {
   flex: 1 1 auto;
   color: #ffffff;
+}
+
+/* Derived display name (v0.3 P1B): in idle/compact mode the one-line name
+   replaces the raw rows list; on hover/expand the full rows return with the
+   name as the card's first (title) line. */
+.fpc-overlay-v2-title {
+  display: none;
+  padding: 1px 0 1px 4px;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+  margin-bottom: 2px;
+}
+
+.fpc-overlay-v2-host--has-display-name .fpc-overlay-v2-title {
+  display: block;
+}
+
+.fpc-overlay-v2-host--has-display-name:not(:hover):not(.fpc-overlay-v2-host--expanded) .fpc-overlay-v2-list {
+  display: none;
+}
+
+.fpc-overlay-v2-host--has-display-name:not(:hover):not(.fpc-overlay-v2-host--expanded) .fpc-overlay-v2-footer[data-hidden-count] {
+  display: none;
+}
+
+.fpc-overlay-v2-host--has-display-name:not(:hover):not(.fpc-overlay-v2-host--expanded) .fpc-overlay-v2-title {
+  border-bottom: none;
+  margin-bottom: 0;
 }
 
 /* V2 sequence-flow overlay host: positioned above the polyline midpoint,

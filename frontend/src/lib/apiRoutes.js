@@ -148,6 +148,7 @@ export const apiRoutes = {
     recompute: (sessionId) => `/api/sessions/${encode(sessionId)}/recompute`,
     analytics: (sessionId) => `/api/sessions/${encode(sessionId)}/analytics`,
     export: (sessionId) => `/api/sessions/${encode(sessionId)}/export`,
+    exportZip: (sessionId) => `/api/sessions/${encode(sessionId)}/export.zip`,
     bpmn: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/bpmn`, {
       raw: options?.raw === true ? "1" : "",
       include_overlay: options?.includeOverlay === false ? "0" : "",
@@ -331,6 +332,15 @@ export const apiRoutes = {
       scope_id: String(scopeId || "").trim(),
     }),
     exportPropertiesXlsx: (scope, scopeId) => withQuery("/api/analytics/properties/export.xlsx", {
+      scope: String(scope || "").trim(),
+      scope_id: String(scopeId || "").trim(),
+    }),
+    exportPropertiesRecalculatedXlsx: (scope, scopeId, params = {}) => withQuery("/api/analytics/properties/export-recalculated.xlsx", {
+      scope: String(scope || "").trim(),
+      scope_id: String(scopeId || "").trim(),
+      ...(params.mode ? { mode: params.mode } : {}),
+    }),
+    propertiesRecalculation: (scope, scopeId) => withQuery("/api/analytics/properties/recalculation", {
       scope: String(scope || "").trim(),
       scope_id: String(scopeId || "").trim(),
     }),

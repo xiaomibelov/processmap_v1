@@ -274,6 +274,19 @@
   stroke-width: 2.3px !important;
 }
 
+/* Process root selection (empty-canvas click). The root element wraps every
+   shape on the diagram, so per-shape markers are impossible; hover/selection
+   is signaled on the canvas container itself (Camunda Modeler parity). */
+.bpmnCanvas .djs-container.fpcCanvasProcessHoverHint {
+  background-color: color-mix(in srgb, var(--bpmn-hover-stroke) 5%, transparent);
+}
+
+.bpmnCanvas .djs-container.fpcProcessSelected {
+  background-color: color-mix(in srgb, var(--bpmn-selected-stroke) 4%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--bpmn-selected-stroke) 55%, transparent);
+  border-radius: 8px;
+}
+
 .bpmnCanvas .djs-element.fpcSearchMatch:not(.fpcSearchActive):not(.fpcElementSelected):not(.fpcQualityProblem):not(.fpcQualityIssueFocus):not(.fpcNodeFlashAccent):not(.fpcNodeFlashAi):not(.fpcNodeFlashNotes):not(.fpcNodeFlashSync):not(.fpcNodeFlashFlow) .djs-visual > :is(rect, circle, ellipse, polygon, path) {
   stroke: color-mix(in srgb, hsl(var(--diagram-select)) 68%, #fef08a) !important;
   stroke-width: 2px !important;
@@ -612,7 +625,7 @@
 }
 
 .fpcPropertyOverlay {
-  pointer-events: auto;
+  pointer-events: none;
   display: block;
   max-width: 216px;
   transform: translate(-50%, calc(-100% - 12px));
@@ -621,7 +634,7 @@
 }
 
 .fpcPropertyOverlay--table {
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .fpcPropertyTable {
@@ -632,37 +645,46 @@
   min-width: var(--fpc-property-table-min-width, 120px);
 }
 
-/* Overflow rows: hidden by default, shown on hover */
+/* Overflow rows: hidden by default, shown on hover or JS-driven expansion.
+   The container keeps pointer-events: none to avoid the hover feedback loop,
+   so expansion is driven by the element.hover event bus via the
+   .fpcPropertyOverlay--expanded class. */
 .fpcPropertyRow--overflow {
   display: none;
 }
-.fpcPropertyOverlay:hover .fpcPropertyRow--overflow {
+.fpcPropertyOverlay:hover .fpcPropertyRow--overflow,
+.fpcPropertyOverlay--expanded .fpcPropertyRow--overflow {
   display: grid;
 }
-/* On hover: hide the "+N ещё" summary since all rows are visible */
-.fpcPropertyOverlay:hover .fpcPropertyRow--summary {
+/* On hover/expand: hide the "+N ещё" summary since all rows are visible */
+.fpcPropertyOverlay:hover .fpcPropertyRow--summary,
+.fpcPropertyOverlay--expanded .fpcPropertyRow--summary {
   display: none;
 }
-/* Hover: elevate overlay and show full untruncated text */
-.fpcPropertyOverlay:hover {
+/* Expand: elevate overlay and show full untruncated text */
+.fpcPropertyOverlay:hover,
+.fpcPropertyOverlay--expanded {
   z-index: 30;
 }
 
-.fpcPropertyOverlay:hover .fpcPropertyCell {
+.fpcPropertyOverlay:hover .fpcPropertyCell,
+.fpcPropertyOverlay--expanded .fpcPropertyCell {
   overflow: visible;
   text-overflow: unset;
   white-space: normal;
   word-break: break-word;
 }
 
-.fpcPropertyOverlay:hover .fpcPropertyKeyText {
+.fpcPropertyOverlay:hover .fpcPropertyKeyText,
+.fpcPropertyOverlay--expanded .fpcPropertyKeyText {
   overflow: visible;
   text-overflow: unset;
   white-space: normal;
   word-break: break-word;
 }
 
-.fpcPropertyOverlay:hover .fpcPropertyRow {
+.fpcPropertyOverlay:hover .fpcPropertyRow,
+.fpcPropertyOverlay--expanded .fpcPropertyRow {
   align-items: flex-start;
   padding-top: 3px;
   padding-bottom: 3px;

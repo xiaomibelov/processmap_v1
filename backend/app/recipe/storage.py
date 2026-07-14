@@ -29,9 +29,35 @@ def _now() -> int:
     return int(time.time())
 
 
+def _recipe_column_exists(con: Any, table: str, column: str) -> bool:
+    """Dialect-safe column check for recipe tables.
+
+    Uses ``PRAGMA table_info`` which works on SQLite natively and is translated
+    to ``information_schema.columns`` by the Postgres compat layer
+    (``backend/app/storage.py:_translate_sql_for_postgres``). Both backends return
+    rows exposing a ``name`` field, so this never raises on a healthy connection
+    and -- crucially -- never aborts a Postgres transaction the way a failing
+    ``ALTER TABLE ... ADD COLUMN`` does.
+    """
+    try:
+        rows = con.execute(f"PRAGMA table_info({table})").fetchall()
+    except Exception:
+        return False
+    target = str(column or "").strip().lower()
+    for row in rows:
+        try:
+            name = row["name"]
+        except Exception:
+            name = row[1]
+        if str(name or "").strip().lower() == target:
+            return True
+    return False
+
+
 def _get_connection() -> sqlite3.Connection:
     con = sqlite3.connect(str(_db_path()))
     con.row_factory = sqlite3.Row
+    _ensure_recipe_tables(con)
     return con
 
 
@@ -43,6 +69,7 @@ def _ensure_recipe_tables(con: sqlite3.Connection) -> None:
           org_id TEXT NOT NULL DEFAULT 'org_default',
           name TEXT NOT NULL,
           unit TEXT NOT NULL DEFAULT '',
+          value REAL,
           created_by TEXT NOT NULL DEFAULT '',
           created_at INTEGER NOT NULL DEFAULT 0,
           updated_at INTEGER NOT NULL DEFAULT 0,
@@ -53,6 +80,17 @@ def _ensure_recipe_tables(con: sqlite3.Connection) -> None:
     con.execute(
         "CREATE INDEX IF NOT EXISTS idx_recipe_ingredient_catalog_org ON recipe_ingredient_catalog(org_id, name)"
     )
+    # Idempotent migration for existing DBs that predate the `value` column.
+    # Check for the column first and only ALTER when it is actually missing.
+    # The previous approach ran ALTER unconditionally and caught the
+    # "duplicate column" error, but on PostgreSQL a failed ALTER aborts the
+    # whole transaction, so catching DuplicateColumn still left every following
+    # statement failing with InFailedSqlTransaction (stage 502 / restart loop).
+    # PRAGMA table_info is safe on both SQLite (native) and PostgreSQL
+    # (translated to information_schema by the compat layer), so the existence
+    # check itself never poisons the transaction.
+    if not _recipe_column_exists(con, "recipe_ingredient_catalog", "value"):
+        con.execute("ALTER TABLE recipe_ingredient_catalog ADD COLUMN value REAL")
     con.execute(
         """
         CREATE TABLE IF NOT EXISTS recipes (
@@ -109,11 +147,13 @@ def _ensure_recipe_tables(con: sqlite3.Connection) -> None:
 
 
 def _row_to_ingredient(row: sqlite3.Row) -> Dict[str, Any]:
+    raw_value = row["value"] if "value" in row.keys() else None
     return {
         "id": str(row["id"]),
         "org_id": str(row["org_id"]),
         "name": str(row["name"]),
         "unit": str(row["unit"]),
+        "value": float(raw_value) if raw_value is not None else None,
         "created_by": str(row["created_by"]),
         "created_at": int(row["created_at"]),
         "updated_at": int(row["updated_at"]),
@@ -180,6 +220,28 @@ def list_ingredients(org_id: str) -> List[Dict[str, Any]]:
         return [_row_to_ingredient(row) for row in rows]
 
 
+def get_ingredient_values_by_name(org_id: str) -> Dict[str, float]:
+    """Bulk {lowercased name: numeric value} map for analytics backfill.
+
+    Single query, single connection. Ingredients without a numeric value are
+    omitted so callers can distinguish "catalog has it" from "no data".
+    """
+    with _get_connection() as con:
+        rows = con.execute(
+            """
+            SELECT name, value FROM recipe_ingredient_catalog
+            WHERE org_id = ? AND deleted_at = 0 AND value IS NOT NULL
+            """,
+            [org_id],
+        ).fetchall()
+    out: Dict[str, float] = {}
+    for row in rows:
+        key = str(row["name"] or "").strip().lower()
+        if key:
+            out[key] = float(row["value"])
+    return out
+
+
 def get_ingredient(ingredient_id: str, org_id: str) -> Optional[Dict[str, Any]]:
     with _get_connection() as con:
         row = con.execute(
@@ -192,17 +254,20 @@ def get_ingredient(ingredient_id: str, org_id: str) -> Optional[Dict[str, Any]]:
 def create_ingredient(data: Dict[str, Any], org_id: str, user_id: str) -> Dict[str, Any]:
     ingredient_id = _ingredient_id()
     now = _now()
+    raw_value = data.get("value")
+    value = float(raw_value) if raw_value not in (None, "") else None
     with _get_connection() as con:
         con.execute(
             """
-            INSERT INTO recipe_ingredient_catalog (id, org_id, name, unit, created_by, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO recipe_ingredient_catalog (id, org_id, name, unit, value, created_by, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 ingredient_id,
                 org_id,
                 str(data.get("name") or "").strip(),
                 str(data.get("unit") or "").strip(),
+                value,
                 user_id,
                 now,
                 now,

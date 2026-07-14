@@ -89,7 +89,7 @@ export default function SidebarShell({
   }
 
   return (
-    <aside className="leftSidebarShell flex h-full min-h-0 flex-col overflow-hidden">
+    <aside className="leftSidebarShell leftSidebarShell--expanded flex h-full min-h-0 flex-col overflow-hidden">
       <SidebarHeader
         processTitle={processTitle}
         projectTitle={projectTitle}

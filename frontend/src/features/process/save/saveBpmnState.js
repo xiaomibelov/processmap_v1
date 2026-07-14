@@ -1,16 +1,22 @@
 import { isLocalSessionId } from "../../../components/process/interview/utils.js";
 import {
-  finalizeCamundaExtensionsXml,
   normalizeCamundaExtensionsMap,
   removeCamundaExtensionStateByElementId,
   upsertCamundaExtensionStateByElementId,
 } from "../camunda/camundaExtensions.js";
+import {
+  getVersion as getTrackedDiagramStateVersion,
+  setVersion as setTrackedDiagramStateVersion,
+  bumpVersion as bumpTrackedDiagramStateVersion,
+  rollbackVersion as rollbackTrackedDiagramStateVersion,
+} from "../../../lib/casVersionTracker.js";
 
 function toText(value) {
   return String(value || "").trim();
 }
 
 function toNonNegativeIntOrNull(value) {
+  if (value === null || value === undefined) return null;
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) return null;
   return Math.round(n);
@@ -22,6 +28,43 @@ function asObject(value) {
 
 function sleep(ms) {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
+function resolveBaseDiagramStateVersion(sessionId, options = {}) {
+  const tracked = getTrackedDiagramStateVersion(sessionId);
+  const fromGetter = toNonNegativeIntOrNull(
+    typeof options.getBaseDiagramStateVersion === "function"
+      ? options.getBaseDiagramStateVersion()
+      : null,
+  );
+  const fromOption = toNonNegativeIntOrNull(options.baseDiagramStateVersion);
+  return tracked ?? fromGetter ?? fromOption ?? 0;
+}
+
+function rememberDiagramStateVersion(sessionId, version, options = {}) {
+  const normalized = toNonNegativeIntOrNull(version);
+  if (normalized === null) return;
+  setTrackedDiagramStateVersion(sessionId, normalized);
+  if (typeof options.rememberDiagramStateVersion === "function") {
+    try {
+      options.rememberDiagramStateVersion(normalized, { sessionId });
+    } catch {
+      // no-op
+    }
+  }
+}
+
+function bumpDiagramStateVersion(sessionId, version, options = {}) {
+  const normalized = toNonNegativeIntOrNull(version);
+  if (normalized === null) return;
+  bumpTrackedDiagramStateVersion(sessionId, normalized);
+  if (typeof options.rememberDiagramStateVersion === "function") {
+    try {
+      options.rememberDiagramStateVersion(normalized, { sessionId });
+    } catch {
+      // no-op
+    }
+  }
 }
 
 function isDiagramStateConflict(saveResult) {
@@ -82,23 +125,6 @@ function derivePropertySourceAction(currentMap, nextMap, elementId) {
   return "property_update";
 }
 
-function buildCanonicalXml({ currentXml, nextCamundaExtensionsByElementId }) {
-  const normalizedMap = normalizeCamundaExtensionsMap(nextCamundaExtensionsByElementId);
-  const nextXml = finalizeCamundaExtensionsXml({
-    xmlText: currentXml,
-    camundaExtensionsByElementId: normalizedMap,
-  });
-  return String(nextXml || "");
-}
-
-function updateLastServerVersion(ref, value) {
-  const v = toNonNegativeIntOrNull(value);
-  if (v === null) return;
-  if (ref && ref.current !== undefined) {
-    ref.current = Math.max(ref.current ?? 0, v);
-  }
-}
-
 /**
  * Unified BPMN save entry point.
  *
@@ -111,7 +137,6 @@ function updateLastServerVersion(ref, value) {
  * @param {string} options.sessionId
  * @param {boolean} [options.isLocal]
  * @param {number} options.baseDiagramStateVersion
- * @param {React.MutableRefObject<number>} [options.lastServerDiagramStateVersionRef]
  * @param {string} [options.projectId]
  * @param {string} [options.elementId] - element id for property operations
  * @param {Object} [options.currentCamundaExtensionsByElementId]
@@ -122,7 +147,9 @@ function updateLastServerVersion(ref, value) {
  * @param {Object} [options.nextMeta]
  * @param {() => Promise<string>} [options.getModelerXml]
  * @param {(sessionId, xml, opts) => Promise<Object>} options.apiPutBpmnXml
+ * @param {(reason, opts) => Promise<Object>} [options.flushSave] - coordinator flushSave for property operations
  * @param {(sessionId) => Promise<Object>} [options.apiGetSession]
+ * @param {(sessionId) => Promise<{ok:boolean, xml?:string}>} [options.apiGetBpmnXml]
  * @param {(patch) => void} [options.onSessionSync]
  * @param {(ack) => void} [options.onDurableSaveAck]
  * @param {(ctx) => void} [options.onConflict]
@@ -146,6 +173,10 @@ export async function saveBpmnState(options = {}) {
   const nextMap = normalizeCamundaExtensionsMap(options.nextCamundaExtensionsByElementId);
 
   const isPropertyOperation = operation.startsWith("property_");
+  if (isPropertyOperation && typeof options.flushSave !== "function") {
+    return { ok: false, status: 0, error: "flushSave unavailable for property operation" };
+  }
+
   let sourceAction = operation;
   if (isPropertyOperation) {
     sourceAction = operation;
@@ -155,56 +186,31 @@ export async function saveBpmnState(options = {}) {
     sourceAction = derivePropertySourceAction(currentMap, nextMap, elementId);
   }
 
-  let currentXml = "";
   let nextXml = "";
   let nextMeta = asObject(options.nextMeta ?? options.currentMeta);
 
+  // The coordinator is the single writer. Property operations always read the
+  // live modeler XML (App.jsx applies the extension state to the modeler first).
+  // Session saves may supply an explicit XML or fetch it from the modeler.
+  const useCoordinatorFlush = typeof options.flushSave === "function";
+
   if (operation === "session_save") {
-    currentXml = toText(options.xml);
-    if (!currentXml && typeof options.getModelerXml === "function") {
+    nextXml = toText(options.xml);
+    if (!nextXml && typeof options.getModelerXml === "function") {
       try {
-        currentXml = toText(await options.getModelerXml());
+        nextXml = toText(await options.getModelerXml());
       } catch (error) {
         return { ok: false, status: 0, error: `Не удалось получить XML: ${error?.message || error}` };
       }
     }
-    nextXml = currentXml;
-  } else {
-    currentXml = toText(options.currentXml);
-    if (!currentXml && typeof options.getModelerXml === "function") {
-      try {
-        currentXml = toText(await options.getModelerXml());
-      } catch (error) {
-        return { ok: false, status: 0, error: `Не удалось получить XML: ${error?.message || error}` };
-      }
+    if (!nextXml && !useCoordinatorFlush) {
+      return { ok: false, status: 0, error: "Пустая BPMN XML." };
     }
-    if (!currentXml && typeof options.apiGetSession === "function") {
-      try {
-        const latest = await options.apiGetSession(sid);
-        if (latest?.ok && latest.session && typeof latest.session === "object") {
-          currentXml = toText(latest.session.bpmn_xml);
-          updateLastServerVersion(options.lastServerDiagramStateVersionRef, pickDiagramStateBaseVersion(latest.session));
-        }
-      } catch {
-        // ignore
-      }
-    }
-    if (!currentXml) {
-      return { ok: false, status: 0, error: "Отсутствует BPMN XML для применения Properties." };
-    }
-    nextXml = buildCanonicalXml({ currentXml, nextCamundaExtensionsByElementId: nextMap });
-    if (!nextXml) {
-      return { ok: false, status: 0, error: "Не удалось применить Properties к BPMN XML." };
-    }
+  } else if (!useCoordinatorFlush) {
+    return { ok: false, status: 0, error: "flushSave unavailable for property operation" };
   }
 
-  if (!nextXml) {
-    return { ok: false, status: 0, error: "Пустая BPMN XML." };
-  }
-
-  const baseDiagramStateVersion = toNonNegativeIntOrNull(
-    options.lastServerDiagramStateVersionRef?.current ?? options.baseDiagramStateVersion,
-  ) ?? 0;
+  const baseDiagramStateVersion = resolveBaseDiagramStateVersion(sid, options);
 
   const syncSource = toText(options.syncSource) || `saveBpmnState:${sourceAction}`;
 
@@ -229,7 +235,7 @@ export async function saveBpmnState(options = {}) {
     };
   }
 
-  if (typeof options.apiPutBpmnXml !== "function") {
+  if (typeof options.flushSave !== "function" && typeof options.apiPutBpmnXml !== "function") {
     return { ok: false, status: 0, error: "apiPutBpmnXml unavailable" };
   }
 
@@ -241,24 +247,38 @@ export async function saveBpmnState(options = {}) {
 
   while (attempt < maxAttempts) {
     attempt += 1;
-    const attemptBaseVersion = toNonNegativeIntOrNull(
-      options.lastServerDiagramStateVersionRef?.current ?? baseDiagramStateVersion,
-    ) ?? 0;
+    const attemptBaseVersion = resolveBaseDiagramStateVersion(sid, options);
 
-    saveRes = await options.apiPutBpmnXml(sid, persistedXml, {
-      sourceAction,
-      baseDiagramStateVersion: attemptBaseVersion,
-      bpmnMeta: persistedMeta,
-    });
+    if (typeof options.flushSave === "function") {
+      saveRes = await options.flushSave(sourceAction, {
+        xmlOverride: persistedXml,
+        baseDiagramStateVersion: attemptBaseVersion,
+        sourceAction,
+        bpmnMeta: persistedMeta,
+      });
+    } else {
+      saveRes = await options.apiPutBpmnXml(sid, persistedXml, {
+        sourceAction,
+        baseDiagramStateVersion: attemptBaseVersion,
+        bpmnMeta: persistedMeta,
+      });
+    }
 
     if (saveRes?.ok) {
-      updateLastServerVersion(options.lastServerDiagramStateVersionRef, saveRes.diagramStateVersion);
+      bumpDiagramStateVersion(sid, saveRes.diagramStateVersion, options);
+      // When the coordinator does the actual PUT it returns the serialized XML.
+      // Use that real XML for downstream snapshots and session patches instead
+      // of an empty placeholder.
+      persistedXml = saveRes.xml || persistedXml;
       break;
     }
 
     if (isDiagramStateConflict(saveRes)) {
       const serverVersion = extractServerVersionFromError(saveRes);
-      updateLastServerVersion(options.lastServerDiagramStateVersionRef, serverVersion);
+      rollbackTrackedDiagramStateVersion(sid);
+      if (serverVersion !== null) {
+        rememberDiagramStateVersion(sid, serverVersion, options);
+      }
       // Surface conflicts to the caller immediately. The UI shows a conflict
       // modal and lets the user choose reload/stay/discard instead of silently
       // rebasing and overwriting concurrent changes.
@@ -282,6 +302,8 @@ export async function saveBpmnState(options = {}) {
         serverLastWrite: saveRes?.data?.detail?.server_last_write,
         clientBaseVersion: baseDiagramStateVersion,
       });
+    } else {
+      rollbackTrackedDiagramStateVersion(sid);
     }
     return {
       ok: false,
@@ -330,18 +352,11 @@ export async function saveBpmnState(options = {}) {
     diagramStateVersion,
     syncSource,
   });
-  // Property-only saves already mutated the XML in-place through the Camunda
-  // extension state map. Re-importing the server-normalized XML tears down and
-  // rebuilds the canvas (viewport reset + flicker), so we only mark the new
-  // XML as authoritative for non-property operations.
+  // Property-only saves mutate the modeler in-place. We still update the
+  // authoritative draft XML so subsequent saves do not refetch a stale base,
+  // but we skip the canvas re-import to preserve viewport.
   fallbackPatch._apply_bpmn_xml = !isPropertyOperation;
   if (isPropertyOperation) {
-    // Property-only saves already mutated the XML in-place through the Camunda
-    // extension state map. Updating draft.bpmn_xml with the server-normalized XML
-    // tears down and rebuilds the canvas (viewport reset + flicker), so we keep
-    // the local XML untouched. The meta change is enough for the UI, and the next
-    // structural save re-syncs extensions from meta into the modeler.
-    delete fallbackPatch.bpmn_xml;
     fallbackPatch._skip_bpmn_render = Date.now();
   }
 
@@ -354,10 +369,10 @@ export async function saveBpmnState(options = {}) {
         try {
           const fresh = await options.apiGetSession(sid);
           if (fresh?.ok && fresh.session && typeof fresh.session === "object") {
-            updateLastServerVersion(options.lastServerDiagramStateVersionRef, pickDiagramStateBaseVersion(fresh.session));
+            const freshVersion = pickDiagramStateBaseVersion(fresh.session);
+            rememberDiagramStateVersion(sid, freshVersion, options);
             const syncPayload = { ...fresh.session, _sync_source: syncSource };
             if (isPropertyOperation) {
-              delete syncPayload.bpmn_xml;
               syncPayload._skip_bpmn_render = Date.now();
             }
             options.onSessionSync?.(syncPayload);
@@ -383,10 +398,10 @@ export async function saveBpmnState(options = {}) {
     try {
       const fresh = await options.apiGetSession(sid);
       if (fresh?.ok && fresh.session && typeof fresh.session === "object") {
-        updateLastServerVersion(options.lastServerDiagramStateVersionRef, pickDiagramStateBaseVersion(fresh.session));
+        const freshVersion = pickDiagramStateBaseVersion(fresh.session);
+        rememberDiagramStateVersion(sid, freshVersion, options);
         const syncPayload = { ...fresh.session, _sync_source: syncSource, _apply_bpmn_xml: !isPropertyOperation };
         if (isPropertyOperation) {
-          delete syncPayload.bpmn_xml;
           syncPayload._skip_bpmn_render = Date.now();
         }
         options.onSessionSync?.(syncPayload);

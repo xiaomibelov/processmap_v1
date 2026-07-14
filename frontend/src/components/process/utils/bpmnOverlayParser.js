@@ -7,6 +7,9 @@
  *   2. Prefixed: `fpc:overlay:text`, `fpc:overlay:x`, `fpc:overlay:y`, etc.
  */
 
+import { isProcessLikeType } from "../../../features/process/bpmn/stage/interaction/processRootSelection.js";
+import { dedupeExactPropertyRows as dedupePropertiesByExactValue } from "../../../features/process/camunda/dedupeExactPropertyRows.js";
+
 function asObject(x) {
   return x && typeof x === "object" && !Array.isArray(x) ? x : {};
 }
@@ -37,7 +40,12 @@ function dedupePropertiesByName(props, { keep = "first" } = {}) {
 }
 
 function isShapeElement(el) {
-  return !!el && !Array.isArray(el?.waypoints) && el.type !== "label";
+  if (!el || Array.isArray(el?.waypoints) || el.type === "label") return false;
+  // Process-like roots (bpmn:Process / bpmn:Collaboration) are diagram
+  // containers without own canvas geometry: they must never produce overlay
+  // cards, even when they carry camunda:properties (process-level properties).
+  if (isProcessLikeType(el?.businessObject?.$type || el?.type)) return false;
+  return true;
 }
 
 function isSequenceFlowElement(el) {
@@ -186,6 +194,10 @@ export function parseOverlayFromProperties(
   const cleanProps = Array.isArray(props) ? props : [];
 
   const realProps = cleanProps.filter((p) => !isOverlayMetaProperty(p.name));
+  // The sidebar and the legacy overlay hide properties with empty values.
+  // Auto-generated V2 cards should follow the same rule so that clearing a
+  // property removes the overlay instead of leaving an empty row.
+  const visibleProps = realProps.filter((p) => String(p?.value ?? "").trim() !== "");
 
   if (!cleanProps.length) {
     // Even without properties, the global "show all V2 overlays" mode can
@@ -287,8 +299,8 @@ export function parseOverlayFromProperties(
   // properties. Create a compact auto-generated V2 card so the properties are
   // visible immediately without requiring users to add an fpc-overlay-v2
   // descriptor by hand.
-  if (realProps.length) {
-    const firstKey = String(realProps[0]?.name || "").trim();
+  if (visibleProps.length) {
+    const firstKey = String(visibleProps[0]?.name || "").trim();
     const titleText = String(elementName || firstKey || "Properties").trim();
     return {
       node_id: nodeId,
@@ -298,7 +310,7 @@ export function parseOverlayFromProperties(
       width: 180,
       height: 30,
       style: {},
-      meta: { title: `${realProps.length} element properties` },
+      meta: { title: `${visibleProps.length} element properties` },
       colorKey: deriveOverlayColorKey(props, ""),
       auto: true,
       showProperties: readShowPropertiesFlag(props),
@@ -336,8 +348,10 @@ export function extractOverlaysFromBpmn(inst, forceShow = false) {
         // Only business properties travel with the overlay; meta-descriptors
         // (fpc-overlay-v2, fpc-show-properties, fpc:overlay:*) are consumed by
         // the parser and must never leak into the rendered card.
-        const businessProperties = props.filter(
-          (p) => !isOverlayMetaProperty(p?.name)
+        // Collapse exact duplicate name/value rows so accidental duplicate
+        // <camunda:properties> blocks do not multiply the rendered rows.
+        const businessProperties = dedupePropertiesByExactValue(
+          props.filter((p) => !isOverlayMetaProperty(p?.name) && String(p?.value ?? "").trim() !== "")
         );
         result.push({ ...overlay, properties: businessProperties });
       }

@@ -39,7 +39,14 @@ export default function SidebarTrustStatus({
         <div className={titleClassName} data-testid={titleTestId || undefined}>
           {title}
           {normalizedLabel ? (
-            <span className={joinClassNames(`sidebarStatusPill is-${normalizedTone}`, pillClassName)} data-testid={pillTestId}>
+            <span
+              className={joinClassNames(
+                `sidebarStatusPill is-${normalizedTone}`,
+                normalizedTone === "local" ? "sidebarLocalBadge" : "",
+                pillClassName,
+              )}
+              data-testid={pillTestId}
+            >
               {normalizedLabel}
             </span>
           ) : null}
