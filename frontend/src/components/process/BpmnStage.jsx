@@ -5899,8 +5899,9 @@ const BpmnStage = forwardRef(function BpmnStage({
         </div>
       ) : null}
 
-      <div className={view === "xml" ? "h-full min-h-0 w-full" : "hidden"}>
+      <div className={view === "xml" ? "bpmnXmlEditorPage" : "hidden"}>
         <BpmnXmlEditor
+          fullPage
           xmlDraft={xmlDraft}
           xml={xml}
           xmlDirty={xmlDirty}
