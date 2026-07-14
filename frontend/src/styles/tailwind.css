@@ -5725,6 +5725,145 @@
     margin-top: 1px;
   }
 
+  /* Operation params card layout — replaces the 3-column table only for the
+     «Свойства операции» block; other sidebarSchemaPropertyRow consumers
+     (context rows, quick/additional BPMN tables) keep the grid styles above. */
+  .sidebarOperationParams {
+    display: grid;
+    gap: 8px;
+    padding-top: 4px;
+  }
+
+  .sidebarOperationParamCard {
+    display: grid;
+    gap: 6px;
+    padding: 8px 10px 10px;
+    border: 1px solid color-mix(in srgb, var(--c-border) 70%, transparent);
+    border-radius: 10px;
+    background: var(--c-panel);
+  }
+
+  .sidebarOperationParamLabel {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .sidebarOperationParamLabelText {
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--c-text);
+    overflow-wrap: anywhere;
+  }
+
+  .sidebarOperationParamRequired {
+    margin-left: 3px;
+    font-weight: 700;
+    color: var(--c-danger);
+  }
+
+  .sidebarOperationParamKey {
+    flex: none;
+    max-width: 46%;
+    font-size: 11px;
+    line-height: 1.2;
+    color: var(--c-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sidebarOperationParamInputWrap {
+    position: relative;
+  }
+
+  .sidebarOperationParamInputWrap .sidebarInput {
+    padding-right: 30px;
+  }
+
+  /* Scoped with .sidebarOperationParams to win over the later
+     .sidebarRedesignStack .input border rules (same base specificity). */
+  .sidebarOperationParams .sidebarOperationParamInputWrap--required-empty .sidebarInput {
+    border-color: color-mix(in srgb, var(--c-warning) 55%, var(--c-border));
+  }
+
+  .sidebarOperationParams .sidebarOperationParamInputWrap--required-empty .sidebarInput:focus,
+  .sidebarOperationParams .sidebarOperationParamInputWrap--required-empty .sidebarInput:focus-visible {
+    border-color: var(--c-focus);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-focus) 18%, transparent);
+  }
+
+  .sidebarOperationParamClear {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--c-text-muted);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .sidebarOperationParamClear:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--c-text) 8%, transparent);
+    color: var(--c-text);
+  }
+
+  .sidebarOperationParamClear:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-focus) 18%, transparent);
+  }
+
+  .sidebarOperationParamClear:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .sidebarOperationParamHint {
+    margin-top: -2px;
+  }
+
+  .sidebarOperationParamChip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 0 8px;
+    border: 1px solid color-mix(in srgb, var(--c-accent) 30%, var(--c-border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--c-accent-soft) 45%, transparent);
+    color: color-mix(in srgb, var(--c-accent) 78%, var(--c-text));
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .sidebarOperationParamChip:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--c-accent) 52%, var(--c-border-strong));
+    background: color-mix(in srgb, var(--c-accent-soft) 70%, transparent);
+  }
+
+  .sidebarOperationParamChip:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-focus) 18%, transparent);
+  }
+
+  .sidebarOperationParamChip:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .sidebarBpmnPropertyItem {
     border-bottom: 0;
     padding: 0;
@@ -6715,6 +6854,27 @@
     background: #172235;
   }
 
+  /* Operation params card dark tuning — token mixes need a touch more presence
+     on dark surfaces than in light (see light rules near .sidebarOperationParams). */
+  .dark .sidebarOperationParamCard {
+    border-color: color-mix(in srgb, var(--c-border) 82%, transparent);
+    background: color-mix(in srgb, var(--c-panel) 88%, var(--c-bg));
+  }
+
+  .dark .sidebarOperationParams .sidebarOperationParamInputWrap--required-empty .sidebarInput {
+    border-color: color-mix(in srgb, var(--c-warning) 64%, var(--c-border));
+  }
+
+  .dark .sidebarOperationParams .sidebarOperationParamInputWrap--required-empty .sidebarInput:focus,
+  .dark .sidebarOperationParams .sidebarOperationParamInputWrap--required-empty .sidebarInput:focus-visible {
+    border-color: var(--c-focus);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-focus) 22%, transparent);
+  }
+
+  .dark .sidebarOperationParamClear:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--c-text) 12%, transparent);
+  }
+
   .dark .sidebarInfoTip {
     border-color: #4B63A0;
     background: #25365A;
@@ -6821,6 +6981,12 @@
 
   .dark .sidebarPropertiesBlock:has(.sidebarPropertiesBlockToggle[aria-expanded="true"]) .sidebarPropertiesBlockHead {
     border-bottom-color: #3C527A;
+  }
+
+  /* Dark counterpart for the expanded-block title rule at ~5370: without it the
+     light #223657 wins on specificity and the title is invisible on dark. */
+  .dark .sidebarPropertiesBlock:has(.sidebarPropertiesBlockToggle[aria-expanded="true"]) .sidebarPropertiesBlockTitle {
+    color: #E7EEFC;
   }
 
   .dark .sidebarPropertiesBlock:has(.sidebarPropertiesBlockToggle[aria-expanded="true"]) .sidebarPropertiesBlockMeta {
