@@ -2,7 +2,9 @@ import { useCallback, useRef } from "react";
 
 import { apiPatchSession } from "../../../lib/api/sessionApi";
 import { buildSessionMetaWriteEnvelope } from "./sessionMetaMergePolicy";
-import { enqueueSessionPatchCasWrite } from "../../process/stage/utils/sessionPatchCasCoordinator";
+import { saveCoordinator } from "../../session/saveCoordinator";
+
+const PIPELINE_NAME = "meta";
 
 function toText(value) {
   return String(value || "").trim();
@@ -77,11 +79,11 @@ export default function useSessionMetaWriteGateway({
         if (Number.isFinite(baseVersion) && baseVersion >= 0) {
           payload.base_diagram_state_version = Math.round(baseVersion);
         }
-        return enqueueSessionPatchCasWrite({
+        return saveCoordinator.execute(PIPELINE_NAME, {
           sessionId: writeSid,
           patch: payload,
           apiPatchSession,
-          getBaseDiagramStateVersion,
+          getBaseDiagramStateVersion: () => baseVersion,
           rememberDiagramStateVersion,
         });
       };
