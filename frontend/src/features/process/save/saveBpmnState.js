@@ -4,12 +4,19 @@ import {
   removeCamundaExtensionStateByElementId,
   upsertCamundaExtensionStateByElementId,
 } from "../camunda/camundaExtensions.js";
+import {
+  getVersion as getTrackedDiagramStateVersion,
+  setVersion as setTrackedDiagramStateVersion,
+  bumpVersion as bumpTrackedDiagramStateVersion,
+  rollbackVersion as rollbackTrackedDiagramStateVersion,
+} from "../../../lib/casVersionTracker.js";
 
 function toText(value) {
   return String(value || "").trim();
 }
 
 function toNonNegativeIntOrNull(value) {
+  if (value === null || value === undefined) return null;
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) return null;
   return Math.round(n);
@@ -21,6 +28,43 @@ function asObject(value) {
 
 function sleep(ms) {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
+function resolveBaseDiagramStateVersion(sessionId, options = {}) {
+  const tracked = getTrackedDiagramStateVersion(sessionId);
+  const fromGetter = toNonNegativeIntOrNull(
+    typeof options.getBaseDiagramStateVersion === "function"
+      ? options.getBaseDiagramStateVersion()
+      : null,
+  );
+  const fromOption = toNonNegativeIntOrNull(options.baseDiagramStateVersion);
+  return tracked ?? fromGetter ?? fromOption ?? 0;
+}
+
+function rememberDiagramStateVersion(sessionId, version, options = {}) {
+  const normalized = toNonNegativeIntOrNull(version);
+  if (normalized === null) return;
+  setTrackedDiagramStateVersion(sessionId, normalized);
+  if (typeof options.rememberDiagramStateVersion === "function") {
+    try {
+      options.rememberDiagramStateVersion(normalized, { sessionId });
+    } catch {
+      // no-op
+    }
+  }
+}
+
+function bumpDiagramStateVersion(sessionId, version, options = {}) {
+  const normalized = toNonNegativeIntOrNull(version);
+  if (normalized === null) return;
+  bumpTrackedDiagramStateVersion(sessionId, normalized);
+  if (typeof options.rememberDiagramStateVersion === "function") {
+    try {
+      options.rememberDiagramStateVersion(normalized, { sessionId });
+    } catch {
+      // no-op
+    }
+  }
 }
 
 function isDiagramStateConflict(saveResult) {
@@ -166,10 +210,7 @@ export async function saveBpmnState(options = {}) {
     return { ok: false, status: 0, error: "flushSave unavailable for property operation" };
   }
 
-  const baseDiagramStateVersion = toNonNegativeIntOrNull(
-    options.getBaseDiagramStateVersion?.()
-    ?? options.baseDiagramStateVersion,
-  ) ?? 0;
+  const baseDiagramStateVersion = resolveBaseDiagramStateVersion(sid, options);
 
   const syncSource = toText(options.syncSource) || `saveBpmnState:${sourceAction}`;
 
@@ -206,10 +247,7 @@ export async function saveBpmnState(options = {}) {
 
   while (attempt < maxAttempts) {
     attempt += 1;
-    const attemptBaseVersion = toNonNegativeIntOrNull(
-      options.getBaseDiagramStateVersion?.()
-      ?? baseDiagramStateVersion,
-    ) ?? 0;
+    const attemptBaseVersion = resolveBaseDiagramStateVersion(sid, options);
 
     if (typeof options.flushSave === "function") {
       saveRes = await options.flushSave(sourceAction, {
@@ -227,7 +265,7 @@ export async function saveBpmnState(options = {}) {
     }
 
     if (saveRes?.ok) {
-      options.rememberDiagramStateVersion?.(saveRes.diagramStateVersion);
+      bumpDiagramStateVersion(sid, saveRes.diagramStateVersion, options);
       // When the coordinator does the actual PUT it returns the serialized XML.
       // Use that real XML for downstream snapshots and session patches instead
       // of an empty placeholder.
@@ -237,7 +275,10 @@ export async function saveBpmnState(options = {}) {
 
     if (isDiagramStateConflict(saveRes)) {
       const serverVersion = extractServerVersionFromError(saveRes);
-      if (serverVersion !== null) options.rememberDiagramStateVersion?.(serverVersion);
+      rollbackTrackedDiagramStateVersion(sid);
+      if (serverVersion !== null) {
+        rememberDiagramStateVersion(sid, serverVersion, options);
+      }
       // Surface conflicts to the caller immediately. The UI shows a conflict
       // modal and lets the user choose reload/stay/discard instead of silently
       // rebasing and overwriting concurrent changes.
@@ -261,6 +302,8 @@ export async function saveBpmnState(options = {}) {
         serverLastWrite: saveRes?.data?.detail?.server_last_write,
         clientBaseVersion: baseDiagramStateVersion,
       });
+    } else {
+      rollbackTrackedDiagramStateVersion(sid);
     }
     return {
       ok: false,
@@ -327,7 +370,7 @@ export async function saveBpmnState(options = {}) {
           const fresh = await options.apiGetSession(sid);
           if (fresh?.ok && fresh.session && typeof fresh.session === "object") {
             const freshVersion = pickDiagramStateBaseVersion(fresh.session);
-            options.rememberDiagramStateVersion?.(freshVersion);
+            rememberDiagramStateVersion(sid, freshVersion, options);
             const syncPayload = { ...fresh.session, _sync_source: syncSource };
             if (isPropertyOperation) {
               syncPayload._skip_bpmn_render = Date.now();
@@ -356,7 +399,7 @@ export async function saveBpmnState(options = {}) {
       const fresh = await options.apiGetSession(sid);
       if (fresh?.ok && fresh.session && typeof fresh.session === "object") {
         const freshVersion = pickDiagramStateBaseVersion(fresh.session);
-        options.rememberDiagramStateVersion?.(freshVersion);
+        rememberDiagramStateVersion(sid, freshVersion, options);
         const syncPayload = { ...fresh.session, _sync_source: syncSource, _apply_bpmn_xml: !isPropertyOperation };
         if (isPropertyOperation) {
           syncPayload._skip_bpmn_render = Date.now();
