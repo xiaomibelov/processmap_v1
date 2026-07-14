@@ -47,8 +47,8 @@ test("Empty schema rows stay visible with required markers (v0.3 Phase 1A)", () 
   // visibleSchemaRows must NOT filter by empty value — only by isActive.
   assert.match(source, /visibleSchemaRows[\s\S]{0,200}isActive !== false/);
   assert.doesNotMatch(source, /visibleSchemaRows[\s\S]{0,200}trim\(\)\s*!==\s*""/);
-  // Required fields get a marker and an empty-state highlight.
-  assert.match(source, /sidebarSchemaPropertyRequired/);
-  assert.match(source, /sidebarSchemaPropertyRow--requiredEmpty/);
+  // Required fields get a marker and an empty-state highlight (card layout).
+  assert.match(source, /sidebarOperationParamRequired/);
+  assert.match(source, /sidebarOperationParamInputWrap--required-empty/);
   assert.match(source, /Обязательное поле/);
 });
