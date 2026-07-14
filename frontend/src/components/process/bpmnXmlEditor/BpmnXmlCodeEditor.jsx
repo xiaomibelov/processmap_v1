@@ -1,13 +1,14 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars,
   drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine,
-  ViewPlugin } from "@codemirror/view";
+  scrollPastEnd, placeholder, ViewPlugin } from "@codemirror/view";
 import { EditorState, Compartment } from "@codemirror/state";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentWithTab, selectMatchingBracket } from "@codemirror/commands";
 import { xml } from "@codemirror/lang-xml";
 import { foldGutter, indentOnInput, syntaxHighlighting, defaultHighlightStyle,
   bracketMatching } from "@codemirror/language";
-import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+import { search, searchKeymap, highlightSelectionMatches, gotoLine, selectNextOccurrence } from "@codemirror/search";
+import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { lintGutter } from "@codemirror/lint";
 import { bpmnXmlLinter } from "./xmlLinter";
 import { bpmnXmlHighlightPlugin } from "./bpmnXmlHighlighting";
@@ -130,7 +131,14 @@ const BpmnXmlCodeEditor = forwardRef(function BpmnXmlCodeEditor({
         crosshairCursor(),
         highlightActiveLine(),
         highlightSelectionMatches(),
+        closeBrackets(),
+        scrollPastEnd(),
+        placeholder("Вставьте BPMN XML..."),
         keymap.of([
+          ...closeBracketsKeymap,
+          { key: "Ctrl-g", run: gotoLine },
+          { key: "Ctrl-d", run: selectNextOccurrence },
+          { key: "Ctrl-Shift-m", run: selectMatchingBracket },
           ...defaultKeymap,
           ...historyKeymap,
           ...searchKeymap,
