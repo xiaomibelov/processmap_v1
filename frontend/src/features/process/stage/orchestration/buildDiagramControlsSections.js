@@ -234,8 +234,6 @@ const SEARCH_KEYS = [
   "setDiagramSearchQuery",
   "diagramSearchResults",
   "diagramSearchActiveIndex",
-  "handleDiagramSearchPrev",
-  "handleDiagramSearchNext",
   "selectDiagramSearchResult",
   "moveDiagramSearchActive",
   "moveDiagramSearchActiveBoundary",

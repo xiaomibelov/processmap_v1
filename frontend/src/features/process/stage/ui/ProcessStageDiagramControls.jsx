@@ -307,8 +307,6 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     setDiagramSearchQuery,
     diagramSearchResults,
     diagramSearchActiveIndex,
-    handleDiagramSearchPrev,
-    handleDiagramSearchNext,
     selectDiagramSearchResult,
     moveDiagramSearchActive,
     moveDiagramSearchActiveBoundary,

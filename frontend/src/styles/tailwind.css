@@ -2946,14 +2946,24 @@
   }
 
   .diagramSearchInlineBox {
-    @apply relative flex h-8 shrink-0 items-center justify-center rounded-full border border-transparent text-fg;
+    @apply relative flex h-8 shrink-0 items-center justify-center rounded-full border border-border/50 bg-panel2/40 text-fg;
     width: 104px;
     transition: width 200ms ease-out, box-shadow 150ms ease, border-color 150ms ease, background-color 150ms ease;
   }
 
+  .diagramSearchInlineBox:hover:not(.isExpanded) {
+    @apply border-border bg-accent/10;
+  }
+
   .diagramSearchInlineBox.isExpanded {
     @apply justify-start gap-1.5 border-border bg-panel px-2.5;
-    width: min(320px, 42vw);
+    width: min(300px, 42vw);
+  }
+
+  @media (max-width: 768px) {
+    .diagramSearchInlineBox.isExpanded {
+      width: min(240px, 68vw);
+    }
   }
 
   .diagramSearchInlineBox.isExpanded:focus-within {

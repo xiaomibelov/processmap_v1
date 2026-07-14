@@ -7422,8 +7422,6 @@ function ProcessStage({
                     setDiagramSearchQuery: diagramSearch.setQuery,
                     diagramSearchResults: diagramSearch.results,
                     diagramSearchActiveIndex: diagramSearch.activeIndex,
-                    handleDiagramSearchPrev: diagramSearch.prev,
-                    handleDiagramSearchNext: diagramSearch.next,
                     selectDiagramSearchResult: diagramSearch.selectIndex,
                     moveDiagramSearchActive: diagramSearch.moveActive,
                     moveDiagramSearchActiveBoundary: diagramSearch.moveActiveBoundary,
