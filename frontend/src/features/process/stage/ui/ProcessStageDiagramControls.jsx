@@ -1886,6 +1886,20 @@ export default function ProcessStageDiagramControls({ view = {} }) {
               <OverflowMenuItem
                 icon={
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="7" cy="7" r="4.5" />
+                    <path d="M10.5 10.5L14 14" />
+                  </svg>
+                }
+                label="Поиск (Ctrl+K)"
+                active={diagramActionSearchOpen}
+                onClick={() => {
+                  closeDiagramPopovers();
+                  setSearchOpenSafe(true);
+                }}
+              />
+              <OverflowMenuItem
+                icon={
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="4" cy="4" r="2" />
                     <circle cx="12" cy="12" r="2" />
                     <path d="M6 4h3c1.5 0 2.5 1 2.5 2.5V10" />

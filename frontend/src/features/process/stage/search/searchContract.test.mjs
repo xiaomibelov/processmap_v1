@@ -231,3 +231,36 @@ test("contract: toolbar exposes the search trigger button with stable test id", 
   assert.equal(popoverSource.includes('data-testid="diagram-action-search-popover"'), true);
   assert.equal(popoverSource.includes('data-testid="diagram-action-search-input"'), true);
 });
+
+// ---------------------------------------------------------------------------
+// E. Wave 1 S2 contract: hotkey, overflow entry, focus management
+// ---------------------------------------------------------------------------
+
+const processStageSource = readSource("../../../../components/ProcessStage.jsx");
+
+test("contract S2: ProcessStage wires Ctrl+K hotkey to open the search popover", () => {
+  assert.equal(processStageSource.includes("useDiagramSearchHotkey"), true);
+  assert.equal(processStageSource.includes("closeAllDiagramActions();"), true);
+  assert.equal(processStageSource.includes("setDiagramActionSearchOpen(true);"), true);
+});
+
+test("contract S2: hotkey model ignores editable targets and requires Ctrl/Cmd+K", () => {
+  const hotkeySource = readSource("./diagramSearchHotkey.js");
+  assert.equal(hotkeySource.includes("isEditableEventTarget"), true);
+  assert.equal(hotkeySource.includes("event.preventDefault()"), true);
+  assert.equal(hotkeySource.includes('key !== "k"'), true);
+  assert.equal(hotkeySource.includes("event.ctrlKey") && hotkeySource.includes("event.metaKey"), true);
+});
+
+test("contract S2: overflow menu contains a search entry with the Ctrl+K hint", () => {
+  assert.equal(controlsSource.includes('label="Поиск (Ctrl+K)"'), true);
+  assert.equal(controlsSource.includes("setSearchOpenSafe(true);"), true);
+});
+
+test("contract S2: popover autofocuses the query input and traps Tab inside", () => {
+  assert.equal(popoverSource.includes("inputRef"), true);
+  assert.equal(popoverSource.includes("node.focus()"), true);
+  assert.equal(popoverSource.includes("trapTabKeyEvent(event, event.currentTarget)"), true);
+  assert.equal(popoverSource.includes('event.key === "Escape"'), true);
+  assert.equal(popoverSource.includes("event.stopPropagation()"), true);
+});

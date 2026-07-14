@@ -132,6 +132,7 @@ import useProcessStageDrawio from "../features/process/stage/orchestration/usePr
 import useProcessStageHybrid from "../features/process/stage/orchestration/useProcessStageHybrid";
 import useProcessStageLocalState from "../features/process/stage/orchestration/state/useProcessStageLocalState";
 import useDiagramSearchController from "../features/process/stage/search/useDiagramSearchController";
+import useDiagramSearchHotkey from "../features/process/stage/search/diagramSearchHotkey";
 import { navigateDiagramSearchResult } from "../features/process/stage/search/diagramSearchNavigation";
 import {
   buildTopPanelsView,
@@ -4170,6 +4171,21 @@ function ProcessStage({
     isOpen: diagramActionSearchOpen,
     setOpen: setDiagramActionSearchOpen,
     isEnabled: hasSession && tab === "diagram" && !isInterview,
+  });
+
+  // Superpower Search (S2): Ctrl+K / Cmd+K opens the diagram search popover
+  // from anywhere on the diagram tab (ignored while typing in form fields).
+  useDiagramSearchHotkey({
+    enabled: hasSession && tab === "diagram" && !isInterview,
+    isOpen: diagramActionSearchOpen,
+    onOpen: () => {
+      closeAllDiagramActions();
+      setDiagramActionSearchOpen(true);
+    },
+    onFocus: () => {
+      const input = diagramSearchPopoverRef.current?.querySelector?.("#diagram-search-query");
+      input?.focus?.();
+    },
   });
 
   const handleUndoAction = useCallback(async () => {
