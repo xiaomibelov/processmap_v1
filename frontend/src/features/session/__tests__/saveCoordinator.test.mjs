@@ -274,3 +274,99 @@ test("unsubscribe removes listener", async () => {
   await c.execute("x", { sessionId: "s1" });
   assert.equal(events.length, 0);
 });
+
+test("transport timeout rejects hanging pipeline and unblocks queue", async () => {
+  const c = createSaveCoordinator();
+  const order = [];
+  c.registerPipeline("hang", {
+    debounceMs: 0,
+    retryCount: 0,
+    transportTimeoutMs: 50,
+    transport: async () => {
+      order.push("start");
+      await sleep(10000);
+      order.push("end");
+      return { ok: true };
+    },
+    onError: () => {},
+  });
+
+  const r1 = await c.execute("hang", { sessionId: "s1" });
+  assert.equal(r1.ok, false);
+  assert.ok(String(r1.error).includes("timeout"));
+  assert.deepEqual(order, ["start"]);
+
+  // A second save after the timeout must be processed (queue unblocked).
+  c.registerPipeline("fast", {
+    debounceMs: 0,
+    transport: async () => {
+      order.push("fast");
+      return { ok: true };
+    },
+    onSuccess: () => {},
+  });
+  const r2 = await c.execute("fast", { sessionId: "s1" });
+  assert.equal(r2.ok, true);
+  assert.deepEqual(order, ["start", "fast"]);
+});
+
+test("retry exponential backoff is capped", async () => {
+  const c = createSaveCoordinator();
+  const starts = [];
+  let attempts = 0;
+  c.registerPipeline("flaky", {
+    retryCount: 4,
+    retryDelayMs: 100,
+    maxRetryDelayMs: 150,
+    transport: async () => {
+      starts.push(Date.now());
+      attempts += 1;
+      return { ok: false, status: 500, error: "boom" };
+    },
+    onError: () => {},
+  });
+
+  const result = await c.execute("flaky", { sessionId: "s1" });
+  assert.equal(result.ok, false);
+  assert.equal(attempts, 5);
+  assert.equal(starts.length, 5);
+  const gaps = [];
+  for (let i = 1; i < starts.length; i += 1) {
+    gaps.push(starts[i] - starts[i - 1]);
+  }
+  // With cap 150ms gaps should be ~100, ~150, ~150, ~150 instead of 100/200/400/800.
+  for (const gap of gaps) {
+    assert.ok(gap >= 80 && gap <= 300, `gap=${gap}`);
+  }
+});
+
+test("queue processes next item after transport error", async () => {
+  const c = createSaveCoordinator();
+  const order = [];
+  c.registerPipeline("err", {
+    debounceMs: 0,
+    retryCount: 0,
+    transport: async () => {
+      order.push("err");
+      return { ok: false, status: 500, error: "boom" };
+    },
+    onError: () => {},
+  });
+  c.registerPipeline("ok", {
+    debounceMs: 0,
+    transport: async () => {
+      order.push("ok");
+      return { ok: true };
+    },
+    onSuccess: () => {},
+  });
+
+  const [r1, r2] = await Promise.all([
+    c.execute("err", { sessionId: "s1" }),
+    c.execute("ok", { sessionId: "s1" }),
+  ]);
+
+  assert.equal(r1.ok, false);
+  assert.equal(r2.ok, true);
+  assert.deepEqual(order, ["err", "ok"]);
+});
