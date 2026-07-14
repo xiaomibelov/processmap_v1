@@ -256,3 +256,39 @@ test("non-conflict error rolls back tracked version", async () => {
   assert.equal(failed?.ok, false);
   assert.equal(getTrackedVersion("sid-rollback"), 7);
 });
+
+test("property save returns error when coordinator transport hangs", async () => {
+  resetCasVersionTracker();
+  const startedAt = Date.now();
+  const result = await saveBpmnState({
+    operation: "property_update",
+    sessionId: "sid-hang",
+    elementId: "Task_1",
+    baseDiagramStateVersion: 1,
+    currentCamundaExtensionsByElementId: {},
+    nextCamundaExtensionsByElementId: {
+      Task_1: {
+        properties: {
+          extensionProperties: [{ id: "p1", name: "key", value: "value" }],
+          extensionListeners: [],
+        },
+        preservedExtensionElements: [],
+      },
+    },
+    currentMeta: {},
+    nextMeta: { camunda_extensions_by_element_id: {} },
+    getModelerXml: async () => { throw new Error("getModelerXml should not be called"); },
+    apiGetBpmnXml: async () => { throw new Error("apiGetBpmnXml should not be called"); },
+    apiPutBpmnXml: async () => { throw new Error("apiPutBpmnXml should not be called"); },
+    flushSave: async () => {
+      await new Promise((resolve) => { setTimeout(resolve, 12000); }); // hang longer than timeout
+      return { ok: true };
+    },
+    onSessionSync: () => {},
+  });
+  const elapsed = Date.now() - startedAt;
+
+  assert.equal(result?.ok, false);
+  assert.ok(String(result?.error).toLowerCase().includes("timeout"), `error=${result?.error}`);
+  assert.ok(elapsed < 15000, `elapsed=${elapsed}ms`);
+});
