@@ -621,6 +621,7 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
                         "extensionProperties": [
                             {"name": "ee_time", "value": "2.5"},
                             {"name": "ingredient_value", "value": "2"},
+                            {"name": "ingredient", "value": "Котлеты ПФ"},
                             {"name": "ee_operation", "value": "Смешивание"},
                             {"name": "ingredient_um", "value": "кг"},
                         ]
@@ -709,6 +710,27 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         self.assertIn("invalid_tasks", body)
         self.assertEqual(len(body["invalid_tasks"]), 1)
         self.assertEqual(body["invalid_tasks"][0]["ingredient_value"], "abc")
+
+    def test_build_source_rows_includes_ee_time_and_ingredient(self):
+        from app.routers.analytics import _build_source_rows
+
+        rows = [
+            {"bpmn_id": "op1", "bpmn_name": "Mix A", "name": "ee_time", "value": "2,5"},
+            {"bpmn_id": "op1", "name": "ingredient_value", "value": "2"},
+            {"bpmn_id": "op1", "name": "ingredient", "value": "Котлеты ПФ"},
+            {"bpmn_id": "op1", "name": "ee_operation", "value": "Смешивание"},
+            {"bpmn_id": "op1", "name": "ingredient_um", "value": "кг"},
+        ]
+        out = _build_source_rows(rows)
+        self.assertEqual(len(out), 1)
+        row = out[0]
+        self.assertEqual(row["bpmn_id"], "op1")
+        self.assertAlmostEqual(row["ee_time"], 2.5)
+        self.assertEqual(row["ingredient"], "Котлеты ПФ")
+        self.assertEqual(row["ee_operation"], "Смешивание")
+        self.assertEqual(row["ingredient_value"], "2")
+        self.assertEqual(row["ingredient_um"], "кг")
+        self.assertEqual(row["source"], 2.0)
 
     def test_export_properties_recalculated_xlsx_source_mode_requires_auth(self):
         r = self.client.get(
