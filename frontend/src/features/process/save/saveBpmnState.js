@@ -10,6 +10,88 @@ import {
   bumpVersion as bumpTrackedDiagramStateVersion,
   rollbackVersion as rollbackTrackedDiagramStateVersion,
 } from "../../../lib/casVersionTracker.js";
+import { saveCoordinator } from "../../session/saveCoordinator.js";
+
+const XML_PIPELINE_NAME = "xml";
+
+function pickDiagramStateVersion(response) {
+  if (!response || typeof response !== "object") return null;
+  const raw = response.diagram_state_version ?? response.diagramStateVersion;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+}
+
+function pickServerCurrentVersionFromError(saveResult) {
+  const detail = saveResult?.data?.detail;
+  if (detail && typeof detail === "object") {
+    const v = Number(detail.server_current_version ?? detail.serverCurrentVersion ?? -1);
+    if (Number.isFinite(v) && v >= 0) return Math.round(v);
+  }
+  return null;
+}
+
+saveCoordinator.registerPipeline(XML_PIPELINE_NAME, {
+  transport: async (sessionId, payload) => {
+    const useFlushSave = payload?.useFlushSave === true && typeof payload.flushSave === "function";
+    if (useFlushSave) {
+      return payload.flushSave(payload.sourceAction, {
+        xmlOverride: payload.xml,
+        baseDiagramStateVersion: payload.baseDiagramStateVersion,
+        sourceAction: payload.sourceAction,
+        bpmnMeta: payload.bpmnMeta,
+      });
+    }
+    if (typeof payload.apiPutBpmnXml === "function") {
+      return payload.apiPutBpmnXml(sessionId, payload.xml, {
+        sourceAction: payload.sourceAction,
+        baseDiagramStateVersion: payload.baseDiagramStateVersion,
+        bpmnMeta: payload.bpmnMeta,
+      });
+    }
+    return { ok: false, status: 0, error: "xml transport unavailable" };
+  },
+  buildPayload: (payload) => payload,
+  getBaseVersion: (sessionId, payload) => {
+    const tracked = getTrackedDiagramStateVersion(sessionId);
+    if (tracked !== null) return tracked;
+    const fromGetter = typeof payload?.getBaseDiagramStateVersion === "function"
+      ? Number(payload.getBaseDiagramStateVersion())
+      : NaN;
+    if (Number.isFinite(fromGetter) && fromGetter >= 0) return Math.round(fromGetter);
+    const fromOption = Number(payload?.baseDiagramStateVersion);
+    if (Number.isFinite(fromOption) && fromOption >= 0) return Math.round(fromOption);
+    return null;
+  },
+  onSuccess: (response, sessionId, payload) => {
+    const version = pickDiagramStateVersion(response);
+    if (version !== null) {
+      bumpTrackedDiagramStateVersion(sessionId, version);
+      try {
+        payload?.rememberDiagramStateVersion?.(version, { sessionId });
+      } catch {
+        // no-op
+      }
+    }
+  },
+  on409: (response, sessionId, payload) => {
+    rollbackTrackedDiagramStateVersion(sessionId);
+    const serverVersion = pickServerCurrentVersionFromError(response);
+    if (serverVersion !== null) {
+      setTrackedDiagramStateVersion(sessionId, serverVersion);
+      try {
+        payload?.rememberDiagramStateVersion?.(serverVersion, { sessionId });
+      } catch {
+        // no-op
+      }
+    }
+  },
+  onError: (_response, sessionId) => {
+    rollbackTrackedDiagramStateVersion(sessionId);
+  },
+  debounceMs: 0,
+  retryCount: 3,
+  retryDelayMs: 1000,
+});
 
 function toText(value) {
   return String(value || "").trim();
@@ -239,62 +321,31 @@ export async function saveBpmnState(options = {}) {
     return { ok: false, status: 0, error: "apiPutBpmnXml unavailable" };
   }
 
-  let attempt = 0;
-  const maxAttempts = 3;
   let saveRes = null;
   let persistedXml = nextXml;
-  let persistedMeta = nextMeta;
+  const persistedMeta = nextMeta;
 
-  while (attempt < maxAttempts) {
-    attempt += 1;
-    const attemptBaseVersion = resolveBaseDiagramStateVersion(sid, options);
+  const coordinatorPayload = {
+    sessionId: sid,
+    xml: persistedXml,
+    bpmnMeta: persistedMeta,
+    sourceAction,
+    useFlushSave: useCoordinatorFlush,
+    flushSave: options.flushSave,
+    apiPutBpmnXml: options.apiPutBpmnXml,
+    getBaseDiagramStateVersion: options.getBaseDiagramStateVersion,
+    rememberDiagramStateVersion: options.rememberDiagramStateVersion,
+    baseDiagramStateVersion,
+  };
 
-    if (typeof options.flushSave === "function") {
-      saveRes = await options.flushSave(sourceAction, {
-        xmlOverride: persistedXml,
-        baseDiagramStateVersion: attemptBaseVersion,
-        sourceAction,
-        bpmnMeta: persistedMeta,
-      });
-    } else {
-      saveRes = await options.apiPutBpmnXml(sid, persistedXml, {
-        sourceAction,
-        baseDiagramStateVersion: attemptBaseVersion,
-        bpmnMeta: persistedMeta,
-      });
-    }
+  saveRes = await saveCoordinator.execute(XML_PIPELINE_NAME, coordinatorPayload);
 
-    if (saveRes?.ok) {
-      bumpDiagramStateVersion(sid, saveRes.diagramStateVersion, options);
-      // When the coordinator does the actual PUT it returns the serialized XML.
-      // Use that real XML for downstream snapshots and session patches instead
-      // of an empty placeholder.
-      persistedXml = saveRes.xml || persistedXml;
-      break;
-    }
-
-    if (isDiagramStateConflict(saveRes)) {
-      const serverVersion = extractServerVersionFromError(saveRes);
-      rollbackTrackedDiagramStateVersion(sid);
-      if (serverVersion !== null) {
-        rememberDiagramStateVersion(sid, serverVersion, options);
-      }
-      // Surface conflicts to the caller immediately. The UI shows a conflict
-      // modal and lets the user choose reload/stay/discard instead of silently
-      // rebasing and overwriting concurrent changes.
-      break;
-    }
-
-    if (isLockFailure(saveRes)) {
-      if (attempt >= maxAttempts) break;
-      await sleep(500);
-      continue;
-    }
-
-    break;
-  }
-
-  if (!saveRes?.ok) {
+  if (saveRes?.ok) {
+    // When the coordinator does the actual PUT it returns the serialized XML.
+    // Use that real XML for downstream snapshots and session patches instead
+    // of an empty placeholder.
+    persistedXml = saveRes.xml || persistedXml;
+  } else {
     if (isDiagramStateConflict(saveRes)) {
       options.onConflict?.({
         sessionId: sid,
@@ -302,8 +353,6 @@ export async function saveBpmnState(options = {}) {
         serverLastWrite: saveRes?.data?.detail?.server_last_write,
         clientBaseVersion: baseDiagramStateVersion,
       });
-    } else {
-      rollbackTrackedDiagramStateVersion(sid);
     }
     return {
       ok: false,
