@@ -582,3 +582,158 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
         self.assertEqual(row["ingredient"], "Рис")
         self.assertAlmostEqual(row["ingredient_value"], 1.2)
         self.assertAlmostEqual(row["result"], round(0.33 * 1.2, 2))
+
+    def test_compute_source_missing_ingredient_uses_ee_time(self):
+        from app.routers.analytics import _MISSING, compute_source
+
+        self.assertEqual(compute_source(2.5, _MISSING), 2.5)
+        self.assertEqual(compute_source(0.0, _MISSING), 0.0)
+
+    def test_compute_source_empty_ingredient_is_no_data(self):
+        from app.routers.analytics import compute_source
+
+        self.assertEqual(compute_source(2.5, ""), "нет данных")
+
+    def test_compute_source_valid_positive_ingredient(self):
+        from app.routers.analytics import compute_source
+
+        self.assertEqual(compute_source(2.0, "3"), 3.0)
+        self.assertEqual(compute_source(1.5, "10,0"), 10.0)
+
+    def test_compute_source_comma_decimal_and_trailing_comma(self):
+        from app.routers.analytics import compute_source
+
+        self.assertEqual(compute_source(2.0, "1,5"), 1.5)
+        self.assertEqual(compute_source(2.0, " 1,5, "), 1.5)
+
+    def test_compute_source_invalid_or_non_positive_is_no_data(self):
+        from app.routers.analytics import compute_source
+
+        self.assertEqual(compute_source(2.0, "abc"), "нет данных")
+        self.assertEqual(compute_source(2.0, "0"), "нет данных")
+        self.assertEqual(compute_source(2.0, "-1"), "нет данных")
+
+    def test_export_properties_recalculated_xlsx_source_mode_200(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "2.5"},
+                            {"name": "ingredient_value", "value": "2"},
+                            {"name": "ingredient", "value": "Котлеты ПФ"},
+                            {"name": "ee_operation", "value": "Смешивание"},
+                            {"name": "ingredient_um", "value": "кг"},
+                        ]
+                    }
+                }
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.headers["content-type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn("properties-source-session-", r.headers.get("content-disposition", ""))
+        self.assertTrue(r.content.startswith(b"PK"))
+
+    def test_export_properties_recalculated_xlsx_source_mode_missing_ingredient(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "3.0"},
+                        ]
+                    }
+                }
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.headers["content-type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertTrue(r.content.startswith(b"PK"))
+
+    def test_export_properties_recalculated_xlsx_source_mode_422_empty_ingredient(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "3.0"},
+                            {"name": "ingredient_value", "value": ""},
+                        ]
+                    }
+                }
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 422)
+        body = r.json()
+        self.assertIn("invalid_tasks", body)
+        self.assertEqual(len(body["invalid_tasks"]), 1)
+        self.assertEqual(body["invalid_tasks"][0]["bpmn_id"], "op1")
+        self.assertEqual(body["invalid_tasks"][0]["ingredient_value"], "")
+
+    def test_export_properties_recalculated_xlsx_source_mode_422_invalid_ingredient(self):
+        self._set_session_bpmn_meta({
+            "camunda_extensions_by_element_id": {
+                "op1": {
+                    "properties": {
+                        "extensionProperties": [
+                            {"name": "ee_time", "value": "3.0"},
+                            {"name": "ingredient_value", "value": "abc"},
+                        ]
+                    }
+                }
+            }
+        })
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
+            headers=self._headers(self.admin_token),
+        )
+        self.assertEqual(r.status_code, 422)
+        body = r.json()
+        self.assertIn("invalid_tasks", body)
+        self.assertEqual(len(body["invalid_tasks"]), 1)
+        self.assertEqual(body["invalid_tasks"][0]["ingredient_value"], "abc")
+
+    def test_build_source_rows_includes_ee_time_and_ingredient(self):
+        from app.routers.analytics import _build_source_rows
+
+        rows = [
+            {"bpmn_id": "op1", "bpmn_name": "Mix A", "name": "ee_time", "value": "2,5"},
+            {"bpmn_id": "op1", "name": "ingredient_value", "value": "2"},
+            {"bpmn_id": "op1", "name": "ingredient", "value": "Котлеты ПФ"},
+            {"bpmn_id": "op1", "name": "ee_operation", "value": "Смешивание"},
+            {"bpmn_id": "op1", "name": "ingredient_um", "value": "кг"},
+        ]
+        out = _build_source_rows(rows)
+        self.assertEqual(len(out), 1)
+        row = out[0]
+        self.assertEqual(row["bpmn_id"], "op1")
+        self.assertAlmostEqual(row["ee_time"], 2.5)
+        self.assertEqual(row["ingredient"], "Котлеты ПФ")
+        self.assertEqual(row["ee_operation"], "Смешивание")
+        self.assertEqual(row["ingredient_value"], "2")
+        self.assertEqual(row["ingredient_um"], "кг")
+        self.assertEqual(row["source"], 2.0)
+
+    def test_export_properties_recalculated_xlsx_source_mode_requires_auth(self):
+        r = self.client.get(
+            f"/api/analytics/properties/export-recalculated.xlsx?scope=session&scope_id={self.session_id}&mode=source",
+        )
+        self.assertEqual(r.status_code, 401)
