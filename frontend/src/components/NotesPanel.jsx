@@ -1050,6 +1050,7 @@ export default function NotesPanel({
   onRenameSession,
   onDeleteSession,
   onFocusDrawioCompanion,
+  onSaveAllBatch,
   disabled,
 }) {
   const [localShowPropertiesOverlayOnSelect, setLocalShowPropertiesOverlayOnSelect] = useState(showPropertiesOverlayOnSelect);
@@ -3366,6 +3367,7 @@ export default function NotesPanel({
                   onBpmnDocumentationDraftChange={updateBpmnDocumentationDraft}
                   onSaveBpmnDocumentation={saveSelectedBpmnDocumentation}
                   onResetBpmnDocumentation={resetSelectedBpmnDocumentation}
+                  onSaveAllBatch={onSaveAllBatch}
                   onFocusDrawioCompanion={onFocusDrawioCompanion}
                   afterQuickProperties={isElementMode && selectedCamundaPropertiesEditable ? (
                     <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary sidebarPropertiesBlock--wide">

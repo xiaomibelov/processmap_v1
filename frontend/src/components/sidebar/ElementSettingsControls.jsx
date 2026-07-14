@@ -1197,6 +1197,7 @@ export function CamundaPropertiesSettings({
   onBpmnDocumentationDraftChange,
   onSaveBpmnDocumentation,
   onResetBpmnDocumentation,
+  onSaveAllBatch,
   onFocusDrawioCompanion,
   afterQuickProperties = null,
   hideActions = false,
@@ -1259,6 +1260,7 @@ export function CamundaPropertiesSettings({
   // «Вспомогательное» block: collapsible, collapsed by default on entry
   // (local-only state, never persisted).
   const [auxiliaryOpen, setAuxiliaryOpen] = useState(false);
+  const [saveAllBusy, setSaveAllBusy] = useState(false);
   const normalizedState = useMemo(() => normalizeCamundaExtensionState(state), [state]);
   const propertyContext = selectedBpmnPropertyContext && typeof selectedBpmnPropertyContext === "object"
     ? selectedBpmnPropertyContext
@@ -1979,7 +1981,16 @@ export function CamundaPropertiesSettings({
   }
 
 async function handleSaveAll() {
-    if (disabled) return;
+    if (disabled || saveAllBusy) return;
+    if (typeof onSaveAllBatch === "function") {
+      setSaveAllBusy(true);
+      try {
+        await onSaveAllBatch();
+      } finally {
+        setSaveAllBusy(false);
+      }
+      return;
+    }
     await onSaveExtensionState?.();
     await onSaveBpmnDocumentation?.();
   }
@@ -2508,9 +2519,9 @@ async function handleSaveAll() {
                     type="button"
                     className="primaryBtn sidebarPropertiesActionBtn flex-1"
                     onClick={handleSaveAll}
-                    disabled={!!disabled || !!extensionStateBusy || !!bpmnDocumentationBusy}
+                    disabled={!!disabled || !!saveAllBusy || !!extensionStateBusy || !!bpmnDocumentationBusy}
                   >
-                    {extensionStateBusy || bpmnDocumentationBusy ? "Сохраняю..." : "Сохранить всё"}
+                    {saveAllBusy || extensionStateBusy || bpmnDocumentationBusy ? "Сохраняю..." : "Сохранить всё"}
                   </button>
                   <button
                     type="button"
