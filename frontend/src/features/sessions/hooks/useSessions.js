@@ -2,10 +2,10 @@ import { useCallback, useState } from "react";
 import {
   apiCreateProjectSession,
   apiCreateSession,
-  apiGetSession,
   apiListProjectSessions,
   apiListSessions,
 } from "../../../lib/api";
+import { loadSessionWithXml } from "../../session/sessionLoaderFacades.js";
 
 function shouldTraceSessionsFallback() {
   if (typeof window === "undefined") return false;
@@ -59,7 +59,7 @@ export default function useSessions({ projectId = "", onOk, onFail } = {}) {
       const sessionId = String(sid || "").trim();
       if (!sessionId) return { ok: false, session: null };
 
-      const r = await apiGetSession(sessionId);
+      const r = await loadSessionWithXml(sessionId);
       if (!r.ok || !r.session) {
         onFail?.(String(r.error || "Не удалось открыть сессию."));
         return { ok: false, session: null };
