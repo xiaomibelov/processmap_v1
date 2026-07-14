@@ -5,8 +5,48 @@ import {
   bumpVersion as bumpTrackedDiagramStateVersion,
   rollbackVersion as rollbackTrackedDiagramStateVersion,
 } from "../../../../lib/casVersionTracker.js";
+import { saveCoordinator } from "../../../../features/session/saveCoordinator.js";
 
-const sessionPatchQueues = new Map();
+const PIPELINE_NAME = "meta";
+
+saveCoordinator.registerPipeline(PIPELINE_NAME, {
+  transport: async (sessionId, payload) => {
+    const apiPatchSession = payload?.apiPatchSession;
+    if (typeof apiPatchSession !== "function") {
+      return { ok: false, status: 0, error: "missing_session_patch_context" };
+    }
+    const patchBody = payload?.patchBody && typeof payload.patchBody === "object"
+      ? { ...payload.patchBody }
+      : {};
+    if (payload?.base_diagram_state_version !== undefined) {
+      patchBody.base_diagram_state_version = payload.base_diagram_state_version;
+    }
+    return apiPatchSession(sessionId, patchBody);
+  },
+  buildPayload: (payload) => {
+    const patch = payload?.patch && typeof payload.patch === "object" ? { ...payload.patch } : {};
+    delete patch.base_diagram_state_version;
+    delete patch.baseDiagramStateVersion;
+    return { patchBody: patch, apiPatchSession: payload?.apiPatchSession };
+  },
+  getBaseVersion: (sessionId, payload) => resolveSessionPatchBaseAtSendTime({
+    sessionId,
+    getBaseDiagramStateVersion: payload?.getBaseDiagramStateVersion,
+    fallbackBaseDiagramStateVersion: payload?.patch?.base_diagram_state_version ?? payload?.patch?.baseDiagramStateVersion,
+  }),
+  onSuccess: (response, sessionId, payload) => {
+    bumpVersion(payload?.rememberDiagramStateVersion, readSessionPatchAckDiagramStateVersion(response), sessionId);
+  },
+  on409: (response, sessionId, payload) => {
+    rememberVersion(payload?.rememberDiagramStateVersion, readSessionPatchConflictServerCurrentVersion(response), sessionId);
+  },
+  onError: (_response, sessionId) => {
+    rollbackTrackedDiagramStateVersion(sessionId);
+  },
+  debounceMs: 0,
+  retryCount: 3,
+  retryDelayMs: 1000,
+});
 
 export function readSessionPatchAckDiagramStateVersion(responseRaw = null) {
   const response = responseRaw && typeof responseRaw === "object" ? responseRaw : {};
@@ -74,12 +114,7 @@ function bumpVersion(rememberDiagramStateVersion, version, sessionId) {
 }
 
 export function resetSessionPatchCasCoordinator(sessionId = "") {
-  const sid = normalizeDiagramSessionId(sessionId);
-  if (sid) {
-    sessionPatchQueues.delete(sid);
-    return;
-  }
-  sessionPatchQueues.clear();
+  saveCoordinator.clearSession(normalizeDiagramSessionId(sessionId));
 }
 
 export function enqueueSessionPatchCasWrite({
@@ -93,35 +128,11 @@ export function enqueueSessionPatchCasWrite({
   if (!sid || typeof apiPatchSession !== "function") {
     return Promise.resolve({ ok: false, status: 0, error: "missing_session_patch_context" });
   }
-  const patchBody = patch && typeof patch === "object" ? { ...patch } : {};
-  const previous = sessionPatchQueues.get(sid) || Promise.resolve();
-
-  const run = previous.catch(() => null).then(async () => {
-    const baseDiagramStateVersion = resolveSessionPatchBaseAtSendTime({
-      sessionId: sid,
-      getBaseDiagramStateVersion,
-      fallbackBaseDiagramStateVersion: patchBody.base_diagram_state_version ?? patchBody.baseDiagramStateVersion,
-    });
-    const payload = { ...patchBody };
-    if (baseDiagramStateVersion !== null) {
-      payload.base_diagram_state_version = baseDiagramStateVersion;
-    }
-
-    const response = await apiPatchSession(sid, payload);
-    if (response?.ok) {
-      bumpVersion(rememberDiagramStateVersion, readSessionPatchAckDiagramStateVersion(response), sid);
-      return response;
-    }
-    rollbackTrackedDiagramStateVersion(sid);
-    rememberVersion(rememberDiagramStateVersion, readSessionPatchConflictServerCurrentVersion(response), sid);
-    return response;
+  return saveCoordinator.execute(PIPELINE_NAME, {
+    sessionId: sid,
+    patch,
+    apiPatchSession,
+    getBaseDiagramStateVersion,
+    rememberDiagramStateVersion,
   });
-
-  const queuePromise = run.finally(() => {
-    if (sessionPatchQueues.get(sid) === queuePromise) {
-      sessionPatchQueues.delete(sid);
-    }
-  });
-  sessionPatchQueues.set(sid, queuePromise);
-  return run;
 }
