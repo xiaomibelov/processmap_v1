@@ -1,0 +1,107 @@
+.bpmnXmlCodeEditor {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.bpmnXmlCodeEditor .cm-editor {
+  width: 100%;
+  height: 100%;
+}
+
+.bpmnXmlCodeEditor .cm-content {
+  white-space: pre;
+}
+
+.bpmnXmlCodeEditor .cm-scroller {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.bpmnXmlCodeEditor .cm-content {
+  color: #1f2937;
+}
+
+.bpmnXmlCodeEditor .cm-tooltip {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  color: #1f2937;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.bpmnXmlCodeEditor .cm-diagnostic {
+  border-left: 3px solid #ef4444;
+}
+
+.bpmnXmlCodeEditor .cm-diagnostic-error {
+  color: #b91c1c;
+}
+
+.bpmnXmlCodeEditor .cm-lintMarker-error {
+  color: #ef4444;
+}
+
+/* BPMN element categories */
+.cm-bpmn-process { color: #1d4ed8; font-weight: 600; }
+.cm-bpmn-task { color: #059669; font-weight: 600; }
+.cm-bpmn-gateway { color: #d97706; font-weight: 600; }
+.cm-bpmn-event { color: #7c3aed; font-weight: 600; }
+.cm-bpmn-flow { color: #4b5563; font-weight: 600; }
+.cm-bpmn-data { color: #0ea5e9; font-weight: 600; }
+.cm-bpmn-di { color: #9ca3af; font-weight: 500; }
+
+/* Extension namespaces */
+.cm-extension-camunda { color: #db2777; font-weight: 600; }
+.cm-extension-pm { color: #dc2626; font-weight: 600; }
+.cm-extension-zeebe { color: #4f46e5; font-weight: 600; }
+
+/* Attribute names */
+.cm-attr-id { color: #111827; font-weight: 700; }
+.cm-attr-name { color: #2563eb; font-weight: 700; }
+.cm-attr-value { color: #059669; font-weight: 700; }
+.cm-attr-ref { color: #d97706; font-weight: 700; }
+
+/* Attribute values */
+.cm-value-id {
+  color: #6b7280;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.cm-value-number {
+  color: #059669;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.cm-value-key {
+  color: #db2777;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.cm-value-operation {
+  color: #d97706;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.cm-value-unit {
+  color: #0ea5e9;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* Text content */
+.cm-content-annotation {
+  color: #059669;
+  font-style: italic;
+}
+
+.cm-content-doc {
+  color: #6b7280;
+  font-style: italic;
+}
