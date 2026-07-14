@@ -5,15 +5,16 @@ import test from "node:test";
 const source = fs.readFileSync(new URL("./DiagramSearchPopover.jsx", import.meta.url), "utf8");
 const trimmedChangeHandler = "onQueryChange?.(toText" + "(event.target.value))";
 
-test("DiagramSearchPopover passes raw input value to query state", () => {
+test("DiagramSearchPopover passes raw input value to query state (debounced, untrimmed)", () => {
   assert.equal(
     source.includes(trimmedChangeHandler),
     false,
   );
-  assert.equal(
-    source.includes("onQueryChange?.(event.target.value)"),
-    true,
-  );
+  // S3: input edits a local draft; the debouncer forwards the RAW value.
+  assert.equal(source.includes("setDraft(event.target.value)"), true);
+  assert.equal(source.includes("createDebouncer((value) =>"), true);
+  assert.equal(source.includes("onQueryChangeRef.current?.(value)"), true);
+  assert.equal(source.includes("toText(event.target.value)"), false);
 });
 
 test("DiagramSearchPopover renders grouped result sections without changing row selection contract", () => {
