@@ -1301,8 +1301,11 @@ export function CamundaPropertiesSettings({
     pinName(name);
     setAddingQuick(false);
   }
+  // Required schema rows stay visible even while empty so the required-empty
+  // state (asterisk + warning-tint border) is reachable; optional empty rows
+  // stay hidden (overlay/sidebar "one truth", see bb2f4219).
   const visibleSchemaRows = Array.isArray(dictionaryEditorModel?.schemaRows)
-    ? dictionaryEditorModel.schemaRows.filter((row) => String(row?.value ?? "").trim() !== "")
+    ? dictionaryEditorModel.schemaRows.filter((row) => !!row?.required || String(row?.value ?? "").trim() !== "")
     : [];
   const operationPropertiesCount = visibleSchemaRows.length;
   const overlayCompanionSummary = selectedBpmnOverlayCompanionSummary && typeof selectedBpmnOverlayCompanionSummary === "object"
@@ -1631,32 +1634,42 @@ export function CamundaPropertiesSettings({
       allowCustomValue: row?.allowCustomValue,
       busy: dictionaryAddBusyKey === logicalKey,
     });
+    const valueText = String(row?.value || "");
+    const isRequired = !!row?.required;
+    const isRequiredEmpty = isRequired && !valueText.trim();
     return (
-      <div key={`schema_property_${logicalKey}`} className="sidebarSchemaPropertyRow">
-        <div className="sidebarSchemaPropertyLabel">
-          <div className="sidebarSchemaPropertyHuman">{label}</div>
-          {logicalKey ? <div className="sidebarSchemaPropertyKey">{logicalKey}</div> : null}
+      <div key={`schema_property_${logicalKey}`} className="sidebarOperationParamCard">
+        <div className="sidebarOperationParamLabel">
+          <span className="sidebarOperationParamLabelText">
+            {label}
+            {isRequired ? <span className="sidebarOperationParamRequired" aria-hidden="true">*</span> : null}
+          </span>
+          {logicalKey ? (
+            <span className="sidebarOperationParamKey" title={logicalKey}>{logicalKey}</span>
+          ) : null}
         </div>
-        <div className="sidebarSchemaPropertyValueCell">
+        <div className={`sidebarOperationParamInputWrap${isRequiredEmpty ? " sidebarOperationParamInputWrap--required-empty" : ""}`}>
           <input
-            className="input sidebarInput w-full min-w-0 flex-[1_1_220px]"
+            className="input sidebarInput w-full min-w-0"
             placeholder={row?.inputMode === "free_text" ? "Введите значение" : "Выберите или введите значение"}
-            value={String(row?.value || "")}
+            value={valueText}
             list={row?.inputMode === "autocomplete" && options.length ? datalistId : undefined}
             onChange={(event) => updateSchemaPropertyValue(logicalKey, event.target.value)}
             disabled={!!disabled || !!extensionStateBusy}
-            title={String(row?.value || "")}
+            title={valueText}
           />
-        </div>
-        <div className="sidebarSchemaPropertyActionCell">
-          <button
-            type="button"
-            className="sidebarPropertyActionBtn sidebarPropertyActionBtn--text"
-            onClick={() => updateSchemaPropertyValue(logicalKey, "")}
-            disabled={!!disabled || !!extensionStateBusy || !String(row?.value || "").trim()}
-          >
-            Очистить
-          </button>
+          {valueText.trim() ? (
+            <button
+              type="button"
+              className="sidebarOperationParamClear"
+              onClick={() => updateSchemaPropertyValue(logicalKey, "")}
+              disabled={!!disabled || !!extensionStateBusy}
+              aria-label={`Очистить ${label || logicalKey}`}
+              title="Очистить"
+            >
+              ✕
+            </button>
+          ) : null}
         </div>
         {row?.inputMode === "autocomplete" && options.length ? (
           <datalist id={datalistId}>
@@ -1669,23 +1682,21 @@ export function CamundaPropertiesSettings({
           </datalist>
         ) : null}
         {row?.inputMode === "autocomplete" && !options.length ? (
-          <div className="sidebarFieldHint sidebarSchemaPropertyHint">
+          <div className="sidebarFieldHint sidebarOperationParamHint">
             {row?.allowCustomValue ? "Пока нет значений. Можно ввести своё." : "Для этого свойства пока нет значений."}
           </div>
         ) : null}
         {canAddTypedValue ? (
-          <div className="sidebarSchemaPropertyHint">
+          <div className="sidebarOperationParamHint">
             <button
               type="button"
-              className="sidebarPropertyActionBtn sidebarPropertyActionBtn--text"
+              className="sidebarOperationParamChip"
               onClick={() => {
                 void onAddDictionaryValue?.(logicalKey, row?.value);
               }}
               disabled={!!disabled || !!extensionStateBusy || dictionaryAddBusyKey === logicalKey}
             >
-              {dictionaryAddBusyKey === logicalKey
-                ? "Добавляю..."
-                : `Добавить «${String(row?.value || "").trim()}» в справочник`}
+              {dictionaryAddBusyKey === logicalKey ? "Добавляю..." : "＋ в справочник"}
             </button>
           </div>
         ) : null}
@@ -2134,16 +2145,9 @@ async function handleSaveAll() {
                     </div>
                   ) : null}
                   {hasDictionarySchema ? (
-                    <>
-                      <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarPropertiesRows--zebra">
-                        <div className="sidebarPropertiesTableHead" role="presentation">
-                          <span>Поле</span>
-                          <span>Значение</span>
-                          <span>Действие</span>
-                        </div>
-                        {visibleSchemaRows.map((row) => renderSchemaPropertyRow(row))}
-                      </div>
-                    </>
+                    <div className="sidebarOperationParams">
+                      {visibleSchemaRows.map((row) => renderSchemaPropertyRow(row))}
+                    </div>
                   ) : null}
                   {showFallbackBlock ? (
                     <div className="sidebarFieldHint">
