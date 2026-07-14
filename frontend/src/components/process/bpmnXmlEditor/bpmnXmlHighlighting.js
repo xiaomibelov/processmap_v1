@@ -76,11 +76,12 @@ const DI_PREFIXES = new Set(["bpmndi", "di", "dc"]);
 const EXTENSION_PREFIXES = new Set(["camunda", "pm", "zeebe"]);
 
 function parseTagName(tagName) {
-  const parts = String(tagName || "").split(":");
+  const raw = String(tagName || "");
+  const parts = raw.split(":");
   if (parts.length >= 2) {
     return { prefix: parts[0].toLowerCase(), local: parts.slice(1).join(":").toLowerCase() };
   }
-  return { prefix: null, local: tagName.toLowerCase() };
+  return { prefix: null, local: raw.toLowerCase() };
 }
 
 /**
@@ -119,7 +120,7 @@ export function getAttributeNameClass(attrName, tagName) {
   if (prefix === "pm") return "cm-extension-pm";
   if (prefix === "zeebe") return "cm-extension-zeebe";
 
-  const lower = attrName.toLowerCase();
+  const lower = String(attrName || "").toLowerCase();
   if (lower === "id") return "cm-attr-id";
   if (lower === "name") return "cm-attr-name";
   if (lower === "value") return "cm-attr-value";
@@ -158,7 +159,7 @@ export function getAttributeValueClass(value, attrName, tagName) {
   if (prefix === "pm") return "cm-extension-pm";
   if (prefix === "zeebe") return "cm-extension-zeebe";
 
-  const lowerAttr = attrName.toLowerCase();
+  const lowerAttr = String(attrName || "").toLowerCase();
   const raw = stripQuotes(value);
 
   if (lowerAttr === "id") return "cm-value-id";
@@ -189,71 +190,79 @@ export function getTextContentClass(tagName) {
 
 function buildDecorations(view) {
   const builder = new RangeSetBuilder();
-  const tree = syntaxTree(view.state);
-  if (!tree) return builder.finish();
+  try {
+    const tree = syntaxTree(view.state);
+    if (!tree || tree.length === 0) return builder.finish();
 
-  const stack = [];
-  let currentTagName = null;
-  let currentAttrName = null;
+    const stack = [];
+    let currentTagName = null;
+    let currentAttrName = null;
 
-  tree.cursor().iterate(
-    (node) => {
-      const name = node.name;
-      if (name === "Element") {
-        stack.push(null);
-        return;
-      }
-      if (name === "Attribute") {
-        currentAttrName = null;
-        return;
-      }
-      if (name === "TagName") {
-        const tag = view.state.doc.sliceString(node.from, node.to);
-        currentTagName = tag;
-        if (stack.length > 0 && stack[stack.length - 1] === null) {
-          stack[stack.length - 1] = tag;
+    tree.cursor().iterate(
+      (node) => {
+        const name = node?.name;
+        if (!name) return;
+        if (name === "Element") {
+          stack.push(null);
+          return;
         }
-        const cls = getTagClass(tag);
-        if (cls) {
-          builder.add(node.from, node.to, Decoration.mark({ class: cls }));
+        if (name === "Attribute") {
+          currentAttrName = null;
+          return;
         }
-        return;
-      }
-      if (name === "AttributeName") {
-        const attr = view.state.doc.sliceString(node.from, node.to);
-        currentAttrName = attr;
-        const tag = stack.length > 0 ? stack[stack.length - 1] : currentTagName;
-        const cls = getAttributeNameClass(attr, tag);
-        if (cls) {
-          builder.add(node.from, node.to, Decoration.mark({ class: cls }));
+        if (name === "TagName") {
+          const tag = view.state.doc.sliceString(node.from, node.to);
+          currentTagName = tag;
+          if (stack.length > 0 && stack[stack.length - 1] === null) {
+            stack[stack.length - 1] = tag;
+          }
+          const cls = getTagClass(tag);
+          if (cls) {
+            builder.add(node.from, node.to, Decoration.mark({ class: cls }));
+          }
+          return;
         }
-        return;
-      }
-      if (name === "AttributeValue") {
-        const val = view.state.doc.sliceString(node.from, node.to);
-        const tag = stack.length > 0 ? stack[stack.length - 1] : currentTagName;
-        const cls = getAttributeValueClass(val, currentAttrName, tag);
-        if (cls) {
-          builder.add(node.from, node.to, Decoration.mark({ class: cls }));
+        if (name === "AttributeName") {
+          const attr = view.state.doc.sliceString(node.from, node.to);
+          currentAttrName = attr;
+          const tag = stack.length > 0 ? stack[stack.length - 1] : currentTagName;
+          const cls = getAttributeNameClass(attr, tag);
+          if (cls) {
+            builder.add(node.from, node.to, Decoration.mark({ class: cls }));
+          }
+          return;
         }
-        return;
-      }
-      if (name === "Text") {
-        const tag = stack.length > 0 ? stack[stack.length - 1] : currentTagName;
-        const cls = getTextContentClass(tag);
-        if (cls) {
-          builder.add(node.from, node.to, Decoration.mark({ class: cls }));
+        if (name === "AttributeValue") {
+          const val = view.state.doc.sliceString(node.from, node.to);
+          const tag = stack.length > 0 ? stack[stack.length - 1] : currentTagName;
+          const cls = getAttributeValueClass(val, currentAttrName, tag);
+          if (cls) {
+            builder.add(node.from, node.to, Decoration.mark({ class: cls }));
+          }
+          return;
         }
-      }
-    },
-    (node) => {
-      if (node.name === "Element") {
-        stack.pop();
-      } else if (node.name === "Attribute") {
-        currentAttrName = null;
-      }
-    },
-  );
+        if (name === "Text") {
+          const tag = stack.length > 0 ? stack[stack.length - 1] : currentTagName;
+          const cls = getTextContentClass(tag);
+          if (cls) {
+            builder.add(node.from, node.to, Decoration.mark({ class: cls }));
+          }
+        }
+      },
+      (node) => {
+        const name = node?.name;
+        if (name === "Element") {
+          stack.pop();
+        } else if (name === "Attribute") {
+          currentAttrName = null;
+        }
+      },
+    );
+  } catch (err) {
+    if (typeof console !== "undefined" && console.error) {
+      console.error("BpmnXmlHighlightPlugin error:", err);
+    }
+  }
 
   return builder.finish();
 }
