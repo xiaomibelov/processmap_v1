@@ -335,9 +335,10 @@ export const apiRoutes = {
       scope: String(scope || "").trim(),
       scope_id: String(scopeId || "").trim(),
     }),
-    exportPropertiesRecalculatedXlsx: (scope, scopeId) => withQuery("/api/analytics/properties/export-recalculated.xlsx", {
+    exportPropertiesRecalculatedXlsx: (scope, scopeId, params = {}) => withQuery("/api/analytics/properties/export-recalculated.xlsx", {
       scope: String(scope || "").trim(),
       scope_id: String(scopeId || "").trim(),
+      ...(params.mode ? { mode: params.mode } : {}),
     }),
     propertiesRecalculation: (scope, scopeId) => withQuery("/api/analytics/properties/recalculation", {
       scope: String(scope || "").trim(),
