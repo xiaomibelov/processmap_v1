@@ -18,6 +18,9 @@ import {
   createEmptyCamundaExtensionState,
   extractCamundaExtensionsMapFromBpmnXml,
   finalizeCamundaExtensionsXml,
+  normalizeCamundaExtensionState,
+  removeCamundaExtensionStateByElementId,
+  upsertCamundaExtensionStateByElementId,
 } from "./camunda/camundaExtensions.js";
 import { saveBpmnState } from "./save/saveBpmnState.js";
 import { apiPutBpmnXml } from "../../lib/api.js";
@@ -174,6 +177,54 @@ class PropertyCrudBoundary {
     this._scheduleSave(sid);
 
     return { ok: true, changedKeys };
+  }
+
+  /**
+   * Replace the entire extension state for an element (properties + listeners +
+   * preserved fragments). Used by legacy callers that work with full extension
+   * state objects (e.g., NotesPanel / App.jsx setElementCamundaExtensions).
+   */
+  async setExtensionState(elementIdRaw, extensionStateRaw, options = {}) {
+    const elementId = asText(elementIdRaw);
+    const sid = this._getSessionId();
+    if (!elementId) return { ok: false, error: "missing element id" };
+    if (!sid) return { ok: false, error: "session not ready" };
+
+    const shouldRemove = options?.remove === true || extensionStateRaw === null;
+    const map = this._extractMap();
+    const nextMap = shouldRemove
+      ? removeCamundaExtensionStateByElementId(map, elementId)
+      : upsertCamundaExtensionStateByElementId(map, elementId, extensionStateRaw);
+    const nextState = nextMap[elementId] || createEmptyCamundaExtensionState();
+
+    const backupState = this.runtime?.getElementCamundaExtensionState?.(elementId) || null;
+    const applyResult = this.runtime?.applyElementCamundaExtensionsToModeler
+      ? this.runtime.applyElementCamundaExtensionsToModeler(elementId, nextState)
+      : { ok: true };
+    if (applyResult && !applyResult.ok) {
+      return { ok: false, error: applyResult.error || "modeler apply failed" };
+    }
+
+    const nextXml = finalizeCamundaExtensionsXml({
+      xmlText: this.currentXml,
+      camundaExtensionsByElementId: nextMap,
+    });
+    if (!nextXml) {
+      this._rollbackModeler(elementId, backupState);
+      return { ok: false, error: "xml serialization failed" };
+    }
+
+    this.currentXml = nextXml;
+    this._notify(elementId, { type: "properties" });
+    this._scheduleSave(sid);
+    return { ok: true };
+  }
+
+  /**
+   * Delete the entire extension state for an element.
+   */
+  async deleteExtensionState(elementId) {
+    return this.setExtensionState(elementId, null, { remove: true });
   }
 
   _applyUpdates(map, elementId, updates) {
