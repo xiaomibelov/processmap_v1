@@ -1,4 +1,5 @@
 import { normalizeDocumentationRows } from "../../documentation/normalizeDocumentationRows.js";
+import { resolveDisplayName } from "../../../camunda/displayNameModel.js";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -55,6 +56,20 @@ function normalizeRobotRows(rawRows) {
     .filter(Boolean);
 }
 
+function extractOperationKeyFromPayload(payload) {
+  // The pm:RobotMeta payload rows carry the canonical meta JSON body
+  // (readRobotMetaFromElement flattens attributes + body into key/value rows).
+  const jsonRow = asArray(payload?.robotMeta).find((row) => toText(row?.key) === "json");
+  const jsonText = String(jsonRow?.value ?? "").trim();
+  if (!jsonText) return "";
+  try {
+    const parsed = JSON.parse(jsonText);
+    return toText(parsed?.exec?.action_key || parsed?.operationKey || parsed?.operation_key);
+  } catch {
+    return "";
+  }
+}
+
 export default function buildBpmnPropertiesOverlaySchema({
   payloadRaw = {},
   targetRaw = {},
@@ -74,7 +89,35 @@ export default function buildBpmnPropertiesOverlaySchema({
   const extensionRows = normalizeExtensionRows(payload?.extensionProperties);
   const robotRows = normalizeRobotRows(payload?.robotMeta);
 
+  // Derived operation identity (v0.3 P1B): read-only header rows at the top
+  // of the properties section — the operation code and its one-line display
+  // name (a manual `display_name` property always wins). Only shown when the
+  // element carries a RobotMeta operation key.
+  const operationKey = extractOperationKeyFromPayload(payload);
+  const displayName = operationKey
+    ? resolveDisplayName({ operationKey, rows: asArray(payload?.extensionProperties) })
+    : "";
+  const operationRows = operationKey
+    ? [
+      {
+        id: "operation_key",
+        kind: "operation_key",
+        label: "Операция",
+        value: operationKey,
+        editable: false,
+      },
+      {
+        id: "operation_display_name",
+        kind: "operation_display_name",
+        label: "Название",
+        value: displayName || "—",
+        editable: false,
+      },
+    ]
+    : [];
+
   const editableRows = [
+    ...operationRows,
     {
       id: "name",
       kind: "name",
