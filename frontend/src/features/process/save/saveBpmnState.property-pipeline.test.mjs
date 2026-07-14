@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { saveBpmnState } from "./saveBpmnState.js";
+import { __resetForTests as resetCasVersionTracker, getVersion as getTrackedVersion } from "../../../lib/casVersionTracker.js";
+
+test.beforeEach(() => {
+  resetCasVersionTracker();
+});
 
 function createFakeApiPut(ok = true, overrides = {}) {
   return async () => ({
@@ -164,4 +169,90 @@ test("session_save uses coordinator when flushSave is available", async () => {
   assert.equal(flushCalls.length, 1, "flushSave was called");
   assert.equal(flushCalls[0].reason, "manual_save", "session_save reason mapped to manual_save");
   assert.equal(flushCalls[0].opts?.xmlOverride, "<xml>session</xml>", "session XML passed as override");
+});
+
+test("successful save bumps tracked diagram state version", async () => {
+  const result = await saveBpmnState({
+    operation: "session_save",
+    sessionId: "sid-track",
+    baseDiagramStateVersion: 6,
+    xml: "<xml>track</xml>",
+    nextMeta: {},
+    apiPutBpmnXml: async (_sid, _xml, opts) => ({
+      ok: true,
+      status: 200,
+      diagramStateVersion: Number(opts.baseDiagramStateVersion) + 1,
+      storedRev: 5,
+    }),
+    onSessionSync: () => {},
+  });
+
+  assert.equal(result?.ok, true);
+  assert.equal(getTrackedVersion("sid-track"), 7);
+});
+
+test("409 conflict rolls back and stores server current version", async () => {
+  let remembered = null;
+  const result = await saveBpmnState({
+    operation: "session_save",
+    sessionId: "sid-conflict",
+    baseDiagramStateVersion: 6,
+    xml: "<xml>conflict</xml>",
+    nextMeta: {},
+    apiPutBpmnXml: async () => ({
+      ok: false,
+      status: 409,
+      error: "DIAGRAM_STATE_CONFLICT",
+      data: {
+        detail: {
+          code: "DIAGRAM_STATE_CONFLICT",
+          server_current_version: 9,
+        },
+      },
+    }),
+    rememberDiagramStateVersion: (version) => {
+      remembered = version;
+    },
+    onSessionSync: () => {},
+  });
+
+  assert.equal(result?.ok, false);
+  assert.equal(result?.conflict, true);
+  assert.equal(remembered, 9);
+  assert.equal(getTrackedVersion("sid-conflict"), 9);
+});
+
+test("non-conflict error rolls back tracked version", async () => {
+  await saveBpmnState({
+    operation: "session_save",
+    sessionId: "sid-rollback",
+    baseDiagramStateVersion: 6,
+    xml: "<xml>rollback</xml>",
+    nextMeta: {},
+    apiPutBpmnXml: async () => ({
+      ok: true,
+      status: 200,
+      diagramStateVersion: 7,
+      storedRev: 5,
+    }),
+    onSessionSync: () => {},
+  });
+  assert.equal(getTrackedVersion("sid-rollback"), 7);
+
+  const failed = await saveBpmnState({
+    operation: "session_save",
+    sessionId: "sid-rollback",
+    baseDiagramStateVersion: 7,
+    xml: "<xml>rollback2</xml>",
+    nextMeta: {},
+    apiPutBpmnXml: async () => ({
+      ok: false,
+      status: 500,
+      error: "server error",
+    }),
+    onSessionSync: () => {},
+  });
+
+  assert.equal(failed?.ok, false);
+  assert.equal(getTrackedVersion("sid-rollback"), 7);
 });

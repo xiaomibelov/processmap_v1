@@ -8,6 +8,12 @@ import {
   resetSessionPatchCasCoordinator,
   resolveSessionPatchBaseAtSendTime,
 } from "./sessionPatchCasCoordinator.js";
+import { __resetForTests as resetCasVersionTracker, getVersion as getTrackedVersion } from "../../../../lib/casVersionTracker.js";
+
+test.beforeEach(() => {
+  resetSessionPatchCasCoordinator();
+  resetCasVersionTracker();
+});
 
 test("session PATCH coordinator resolves latest base at send time for queued same-client writes", async () => {
   resetSessionPatchCasCoordinator();
@@ -86,4 +92,40 @@ test("session PATCH response readers normalize ack and conflict versions", () =>
     ok: false,
     errorDetails: { serverCurrentVersion: "82" },
   }), 82);
+});
+
+test("session PATCH coordinator bumps tracked version on successful ack", async () => {
+  const response = await enqueueSessionPatchCasWrite({
+    sessionId: "sid_ack",
+    patch: { bpmn_meta: { version: 1 }, base_diagram_state_version: 10 },
+    apiPatchSession: async () => ({
+      ok: true,
+      session: { diagram_state_version: 11 },
+    }),
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(getTrackedVersion("sid_ack"), 11);
+});
+
+test("session PATCH coordinator rolls back tracked version and stores server current version on 409", async () => {
+  let remembered = null;
+  const response = await enqueueSessionPatchCasWrite({
+    sessionId: "sid_conflict_track",
+    patch: { interview: {}, base_diagram_state_version: 10 },
+    apiPatchSession: async () => ({
+      ok: false,
+      status: 409,
+      error: "DIAGRAM_STATE_CONFLICT",
+      data: { server_current_version: 12 },
+    }),
+    rememberDiagramStateVersion: (version) => {
+      remembered = version;
+    },
+  });
+
+  assert.equal(response.ok, false);
+  assert.equal(response.status, 409);
+  assert.equal(remembered, 12);
+  assert.equal(getTrackedVersion("sid_conflict_track"), 12);
 });
