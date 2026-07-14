@@ -181,6 +181,49 @@ class SaveCoordinator {
     return this.sessionQueues.size > 0 || this.debounceTimers.size > 0;
   }
 
+  /**
+   * Cancel pending debounces and drop queued (but not yet running) saves for a
+   * session. Used when closing a session or resetting state in tests.
+   */
+  clearSession(sessionId) {
+    const sid = asText(sessionId);
+    if (!sid) {
+      for (const timer of this.debounceTimers.values()) {
+        clearTimeout(timer);
+      }
+      this.debounceTimers.clear();
+      this.debouncePayloads.clear();
+      for (const deferred of this.debouncePromises.values()) {
+        try {
+          deferred.reject(new Error("saveCoordinator cleared"));
+        } catch {
+          // no-op
+        }
+      }
+      this.debouncePromises.clear();
+      this.sessionQueues.clear();
+      return;
+    }
+
+    this.sessionQueues.delete(sid);
+    for (const [key, timer] of this.debounceTimers.entries()) {
+      if (key.endsWith(`::${sid}`)) {
+        clearTimeout(timer);
+        this.debounceTimers.delete(key);
+        this.debouncePayloads.delete(key);
+        const deferred = this.debouncePromises.get(key);
+        this.debouncePromises.delete(key);
+        if (deferred) {
+          try {
+            deferred.reject(new Error("saveCoordinator cleared"));
+          } catch {
+            // no-op
+          }
+        }
+      }
+    }
+  }
+
   _scheduleDebounced(pipelineName, pipeline, sessionId, payload) {
     const key = debounceKey(pipelineName, sessionId);
     this.debouncePayloads.set(key, { sessionId, payload });
@@ -240,7 +283,7 @@ class SaveCoordinator {
     }
 
     if (pipeline.getBaseVersion) {
-      const baseVersion = pipeline.getBaseVersion(sid);
+      const baseVersion = pipeline.getBaseVersion(sid, payload);
       if (baseVersion !== null && baseVersion !== undefined) {
         builtPayload.base_diagram_state_version = Math.round(asNumber(baseVersion, -1));
       }
@@ -272,7 +315,7 @@ class SaveCoordinator {
           }
           if (pipeline.on409) {
             try {
-              pipeline.on409(result, sid);
+              pipeline.on409(result, sid, payload);
             } catch {
               // no-op
             }
@@ -292,7 +335,7 @@ class SaveCoordinator {
         rollbackTrackedDiagramStateVersion(sid);
         if (pipeline.onError) {
           try {
-            pipeline.onError(result, sid);
+            pipeline.onError(result, sid, payload);
           } catch {
             // no-op
           }
@@ -309,7 +352,7 @@ class SaveCoordinator {
       }
       if (pipeline.onSuccess) {
         try {
-          pipeline.onSuccess(result, sid);
+          pipeline.onSuccess(result, sid, payload);
         } catch {
           // no-op
         }
