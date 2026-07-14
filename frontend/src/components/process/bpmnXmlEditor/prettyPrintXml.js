@@ -1,83 +1,10 @@
-function escapeXmlAttr(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function buildAttributes(element) {
-  if (!element.attributes || element.attributes.length === 0) return "";
-  const parts = [];
-  for (let i = 0; i < element.attributes.length; i += 1) {
-    const attr = element.attributes.item(i);
-    if (attr) parts.push(` ${attr.name}="${escapeXmlAttr(attr.value)}"`);
-  }
-  return parts.join("");
-}
-
-const TEXT_NODE = 3;
-const ELEMENT_NODE = 1;
-const COMMENT_NODE = 8;
-const CDATA_SECTION_NODE = 4;
-
-function serializeNode(node, depth) {
-  const indent = "  ".repeat(depth);
-
-  if (node.nodeType === TEXT_NODE) {
-    const text = String(node.nodeValue || "").trim();
-    return text ? `${indent}${text}\n` : "";
-  }
-
-  if (node.nodeType === COMMENT_NODE) {
-    const text = String(node.nodeValue || "").trim();
-    return text ? `${indent}<!-- ${text} -->\n` : `${indent}<!-- -->\n`;
-  }
-
-  if (node.nodeType === CDATA_SECTION_NODE) {
-    return `${indent}<![CDATA[${node.nodeValue}]]>\n`;
-  }
-
-  if (node.nodeType === ELEMENT_NODE) {
-    const tag = node.tagName;
-    const attrs = buildAttributes(node);
-    const children = Array.from(node.childNodes);
-    const nonTextChildren = children.filter((c) => c.nodeType !== TEXT_NODE);
-    const textOnlyChild = children.length === 1 && children[0].nodeType === TEXT_NODE;
-
-    if (children.length === 0) {
-      return `${indent}<${tag}${attrs}/>\n`;
-    }
-
-    if (textOnlyChild) {
-      const text = String(children[0].nodeValue || "").trim();
-      return text
-        ? `${indent}<${tag}${attrs}>${text}</${tag}>\n`
-        : `${indent}<${tag}${attrs}></${tag}>\n`;
-    }
-
-    let out = `${indent}<${tag}${attrs}>\n`;
-    children.forEach((child) => {
-      out += serializeNode(child, depth + 1);
-    });
-    out += `${indent}</${tag}>\n`;
-    return out;
-  }
-
-  return "";
-}
-
-function hasBpmnDefinitionsRoot(doc) {
-  const root = doc.documentElement;
-  if (!root) return false;
-  const localName = root.localName || root.tagName;
-  const ns = String(root.namespaceURI || "").toLowerCase();
-  return localName === "definitions" && ns.includes("bpmn");
-}
-
 /**
- * Pretty-print BPMN XML with 2-space indentation.
- * Throws if the input is not well-formed XML.
+ * Lightweight XML pretty-printer.
+ *
+ * Does NOT parse/re-serialize the document, so it never introduces entity,
+ * namespace, or attribute-order changes. It tokenizes the input into tags,
+ * text, CDATA, comments and processing instructions and re-indents them with
+ * 2-space indentation.
  *
  * @param {string} rawXml
  * @returns {string}
@@ -86,20 +13,131 @@ export function prettyPrintXml(rawXml) {
   const raw = String(rawXml || "").trim();
   if (!raw) return "";
 
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(raw, "application/xml");
-  const parserError = doc.getElementsByTagName("parsererror")[0];
-  if (parserError) {
-    const message = String(parserError.textContent || "").replace(/\s+/g, " ").trim() || "XML parsing error";
-    throw new Error(message);
+  const tokens = tokenizeXml(raw);
+  let formatted = "";
+  let indent = 0;
+  const pad = "  ";
+
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+
+    if (token.type === "text") {
+      const text = token.value.replace(/\s+/g, " ").trim();
+      if (text) {
+        formatted += pad.repeat(indent) + text + "\n";
+      }
+      continue;
+    }
+
+    if (token.type === "comment" || token.type === "cdata" || token.type === "doctype") {
+      formatted += pad.repeat(indent) + token.value + "\n";
+      continue;
+    }
+
+    if (token.type === "processing") {
+      // Keep the XML declaration flush at the top without indentation.
+      formatted += token.value + "\n";
+      continue;
+    }
+
+    if (token.type === "tag") {
+      const tag = token.value;
+      const isClose = tag.startsWith("</");
+      const isSelfClose = tag.endsWith("/>");
+
+      if (isClose) {
+        indent = Math.max(0, indent - 1);
+        formatted += pad.repeat(indent) + tag + "\n";
+      } else if (isSelfClose) {
+        formatted += pad.repeat(indent) + tag + "\n";
+      } else {
+        formatted += pad.repeat(indent) + tag + "\n";
+        indent += 1;
+      }
+    }
   }
 
-  if (!hasBpmnDefinitionsRoot(doc)) {
-    throw new Error("Missing BPMN definitions root element");
+  return formatted.trim();
+}
+
+function tokenizeXml(xml) {
+  const tokens = [];
+  let i = 0;
+
+  while (i < xml.length) {
+    const ch = xml[i];
+
+    if (ch === "<") {
+      if (xml.startsWith("<!--", i)) {
+        const end = xml.indexOf("-->", i);
+        if (end === -1) {
+          tokens.push({ type: "comment", value: xml.slice(i) });
+          break;
+        }
+        tokens.push({ type: "comment", value: xml.slice(i, end + 3) });
+        i = end + 3;
+        continue;
+      }
+
+      if (xml.startsWith("<![CDATA[", i)) {
+        const end = xml.indexOf("]]>", i);
+        if (end === -1) {
+          tokens.push({ type: "cdata", value: xml.slice(i) });
+          break;
+        }
+        tokens.push({ type: "cdata", value: xml.slice(i, end + 3) });
+        i = end + 3;
+        continue;
+      }
+
+      if (xml.startsWith("<?", i)) {
+        const end = xml.indexOf("?>", i);
+        if (end === -1) {
+          tokens.push({ type: "processing", value: xml.slice(i) });
+          break;
+        }
+        tokens.push({ type: "processing", value: xml.slice(i, end + 2) });
+        i = end + 2;
+        continue;
+      }
+
+      if (xml.startsWith("<!", i)) {
+        const end = xml.indexOf(">", i);
+        if (end === -1) {
+          tokens.push({ type: "doctype", value: xml.slice(i) });
+          break;
+        }
+        tokens.push({ type: "doctype", value: xml.slice(i, end + 1) });
+        i = end + 1;
+        continue;
+      }
+
+      // Standard tag: find matching '>' outside of quoted attribute values.
+      let j = i + 1;
+      let quote = null;
+      while (j < xml.length) {
+        const c = xml[j];
+        if (quote) {
+          if (c === quote) quote = null;
+        } else if (c === '"' || c === "'") {
+          quote = c;
+        } else if (c === ">") {
+          break;
+        }
+        j += 1;
+      }
+      tokens.push({ type: "tag", value: xml.slice(i, j + 1) });
+      i = j + 1;
+      continue;
+    }
+
+    // Text node: everything up to the next '<'.
+    const start = i;
+    while (i < xml.length && xml[i] !== "<") {
+      i += 1;
+    }
+    tokens.push({ type: "text", value: xml.slice(start, i) });
   }
 
-  const declaration = raw.startsWith("<?xml") ? raw.split("\n")[0].trim() + "\n" : "";
-  const root = doc.documentElement;
-  const formatted = declaration + serializeNode(root, 0).trim();
-  return formatted;
+  return tokens;
 }

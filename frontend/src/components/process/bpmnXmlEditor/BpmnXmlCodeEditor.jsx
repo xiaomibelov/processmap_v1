@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars,
   drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine,
   ViewPlugin } from "@codemirror/view";
@@ -46,17 +46,21 @@ function buildLightTheme() {
  * - value: string
  * - onChange: (value: string) => void
  * - onSave: () => void
+ * - onCursorActivity?: (line: number, col: number) => void
  * - readOnly?: boolean
  * - className?: string
+ *
+ * Ref API:
+ * - scrollToLine(line: number): void
  */
-export default function BpmnXmlCodeEditor({
+const BpmnXmlCodeEditor = forwardRef(function BpmnXmlCodeEditor({
   value = "",
   onChange,
   onSave,
   onCursorActivity,
   readOnly = false,
   className = "",
-}) {
+}, ref) {
   const hostRef = useRef(null);
   const viewRef = useRef(null);
   const valueRef = useRef(value);
@@ -70,6 +74,20 @@ export default function BpmnXmlCodeEditor({
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
   useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
   useEffect(() => { onCursorActivityRef.current = onCursorActivity; }, [onCursorActivity]);
+
+  useImperativeHandle(ref, () => ({
+    scrollToLine(line) {
+      const v = viewRef.current;
+      if (!v) return;
+      const doc = v.state.doc;
+      const targetLine = Math.max(1, Math.min(line, doc.lines));
+      const pos = doc.line(targetLine).from;
+      v.dispatch({
+        selection: { anchor: pos },
+        scrollIntoView: true,
+      });
+    },
+  }), []);
 
   useEffect(() => {
     const updateListener = ViewPlugin.fromClass(class {
@@ -160,4 +178,6 @@ export default function BpmnXmlCodeEditor({
   }, [readOnly]);
 
   return <div ref={hostRef} className={`bpmnXmlCodeEditor ${className}`} />;
-}
+});
+
+export default BpmnXmlCodeEditor;
