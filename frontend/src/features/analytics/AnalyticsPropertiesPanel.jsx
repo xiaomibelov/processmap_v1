@@ -14,6 +14,7 @@ import AnalyticsPropertiesTable, {
 import { AnalyticsError, AnalyticsLoading } from "./AnalyticsStatus.jsx";
 import EmptyState from "./registry/EmptyState.jsx";
 import { inferPropertyValueType, inferPropertyFamily } from "./propertyValueUtils.js";
+import Modal from "../../shared/ui/Modal.jsx";
 
 function text(value) {
   return String(value || "").trim();
@@ -187,6 +188,12 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
   const [recalcError, setRecalcError] = useState("");
   const recalcAbortRef = useRef(null);
 
+  const [sourceValidationModal, setSourceValidationModal] = useState({
+    open: false,
+    message: "",
+    tasks: [],
+  });
+
   const [backendFilters, setBackendFilters] = useState({});
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
@@ -337,8 +344,19 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
   async function handleServerExportRecalculatedXlsx() {
     if (exporting) return;
     setExporting(true);
-    const result = await apiExportAnalyticsPropertiesRecalculatedXlsx(scope, scopeId);
-    if (result?.ok && result.blob) {
+    const result = await apiExportAnalyticsPropertiesRecalculatedXlsx(scope, scopeId, { mode: "source" });
+    if (!result?.ok) {
+      setExporting(false);
+      if (result?.status === 422 && Array.isArray(result?.data?.invalid_tasks)) {
+        setSourceValidationModal({
+          open: true,
+          message: result.data.error || "В схеме найдены не заполненные значения свойства ingredient_value.",
+          tasks: result.data.invalid_tasks,
+        });
+      }
+      return;
+    }
+    if (result.blob) {
       downloadBlob(result.blob, result.filename || `properties-recalculated-${scope}-${scopeId}.xlsx`);
     }
     setExporting(false);
@@ -606,6 +624,31 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
         </>
       ) : null}
       {compareRows.length ? <CompareDrawer rows={compareRows} onClose={() => setCompareRows([])} /> : null}
+      {sourceValidationModal.open ? (
+        <Modal
+          open
+          title="Ошибка заполнения"
+          onClose={() => setSourceValidationModal((m) => ({ ...m, open: false }))}
+          footer={
+            <button
+              type="button"
+              className="analyticsExportBtn"
+              onClick={() => setSourceValidationModal((m) => ({ ...m, open: false }))}
+            >
+              OK
+            </button>
+          }
+        >
+          <p>{sourceValidationModal.message}</p>
+          {sourceValidationModal.tasks.length ? (
+            <ul className="analyticsRecalcValidationList">
+              {sourceValidationModal.tasks.map((t, idx) => (
+                <li key={idx}>{text(t.bpmn_name) || text(t.bpmn_id) || "—"}</li>
+              ))}
+            </ul>
+          ) : null}
+        </Modal>
+      ) : null}
     </div>
   );
 }
