@@ -597,14 +597,14 @@ class AnalyticsBackendDrivenTests(unittest.TestCase):
     def test_compute_source_valid_positive_ingredient(self):
         from app.routers.analytics import compute_source
 
-        self.assertEqual(compute_source(2.0, "3"), 6.0)
-        self.assertEqual(compute_source(1.5, "10,0"), 15.0)
+        self.assertEqual(compute_source(2.0, "3"), 3.0)
+        self.assertEqual(compute_source(1.5, "10,0"), 10.0)
 
     def test_compute_source_comma_decimal_and_trailing_comma(self):
         from app.routers.analytics import compute_source
 
-        self.assertEqual(compute_source(2.0, "1,5"), 3.0)
-        self.assertEqual(compute_source(2.0, " 1,5, "), 3.0)
+        self.assertEqual(compute_source(2.0, "1,5"), 1.5)
+        self.assertEqual(compute_source(2.0, " 1,5, "), 1.5)
 
     def test_compute_source_invalid_or_non_positive_is_no_data(self):
         from app.routers.analytics import compute_source

@@ -853,7 +853,7 @@ def compute_source(ee_time: float, ingredient_value: Any) -> float | str:
     - ``ingredient_value`` is missing (the property key is absent) -> ``ee_time * 1.0``.
     - ``ingredient_value`` is an empty string -> ``"нет данных"``.
     - Otherwise the value is normalized (trim, strip trailing commas, ``"," -> "."``),
-      parsed as float, and if ``> 0`` it is multiplied by ``ee_time``.
+      parsed as float, and if ``> 0`` the parsed value is returned as Source.
     - Any parse error or non-positive value -> ``"нет данных"``.
     """
     if ingredient_value is _MISSING:
@@ -870,7 +870,7 @@ def compute_source(ee_time: float, ingredient_value: Any) -> float | str:
         return "нет данных"
 
     if parsed > 0:
-        return round(ee_time * parsed, 2)
+        return round(parsed, 2)
     return "нет данных"
 
 
