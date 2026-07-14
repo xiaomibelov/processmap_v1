@@ -15,6 +15,7 @@ export default function AdditionalBpmnPropertiesSection({
   addPropertyRow,
   refOptions = [],
   onSaveExtensionState,
+  hideHeader = false,
 }) {
   const showFallbackBlock = !hasDictionarySchema;
 
@@ -27,6 +28,50 @@ export default function AdditionalBpmnPropertiesSection({
     if (nextState && typeof onSaveExtensionState === "function") {
       void onSaveExtensionState(nextState);
     }
+  }
+
+  const tableBody = (
+    <>
+      {!hasDictionarySchema && !showFallbackBlock && dictionaryLoading ? (
+        <div className="sidebarFieldHint">Ожидаю загрузку схемы операции.</div>
+      ) : null}
+      <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarPropertiesRows--zebra">
+        <div className="sidebarPropertiesTableHead" role="presentation">
+          <span>Свойство</span>
+          <span>Значение</span>
+          <span>Действие</span>
+        </div>
+        {rows.map((row) => (
+          <InlineBpmnPropertyRow
+            key={String(row?.id || "")}
+            row={row}
+            disabled={disabled}
+            extensionStateBusy={extensionStateBusy}
+            updatePropertyRow={updatePropertyRow}
+            deletePropertyRow={handleDelete}
+            refOptions={refOptions}
+          />
+        ))}
+      </div>
+      <div className="sidebarButtonRow">
+        <button
+          type="button"
+          className="sidebarAddBtn"
+          onClick={addPropertyRow}
+          disabled={!!disabled || !!extensionStateBusy}
+        >
+          + Добавить BPMN-свойство
+        </button>
+      </div>
+    </>
+  );
+
+  if (hideHeader) {
+    return (
+      <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary sidebarPropertiesBlock--wide">
+        {tableBody}
+      </section>
+    );
   }
 
   return (
@@ -47,41 +92,7 @@ export default function AdditionalBpmnPropertiesSection({
           text="Extension properties текущего элемента в формате name/value."
         />
       </div>
-      {open ? (
-        <>
-          {!hasDictionarySchema && !showFallbackBlock && dictionaryLoading ? (
-            <div className="sidebarFieldHint">Ожидаю загрузку схемы операции.</div>
-          ) : null}
-          <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarPropertiesRows--zebra">
-            <div className="sidebarPropertiesTableHead" role="presentation">
-              <span>Свойство</span>
-              <span>Значение</span>
-              <span>Действие</span>
-            </div>
-            {rows.map((row) => (
-              <InlineBpmnPropertyRow
-                key={String(row?.id || "")}
-                row={row}
-                disabled={disabled}
-                extensionStateBusy={extensionStateBusy}
-                updatePropertyRow={updatePropertyRow}
-                deletePropertyRow={handleDelete}
-                refOptions={refOptions}
-              />
-            ))}
-          </div>
-          <div className="sidebarButtonRow">
-            <button
-              type="button"
-              className="sidebarAddBtn"
-              onClick={addPropertyRow}
-              disabled={!!disabled || !!extensionStateBusy}
-            >
-              + Добавить BPMN-свойство
-            </button>
-          </div>
-        </>
-      ) : null}
+      {open ? tableBody : null}
     </section>
   );
 }
