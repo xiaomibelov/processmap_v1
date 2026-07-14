@@ -310,6 +310,9 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     handleDiagramSearchPrev,
     handleDiagramSearchNext,
     selectDiagramSearchResult,
+    moveDiagramSearchActive,
+    moveDiagramSearchActiveBoundary,
+    activateDiagramSearchResult,
   } = searchSection;
 
   const {
@@ -1064,6 +1067,9 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         onPrev={handleDiagramSearchPrev}
         onNext={handleDiagramSearchNext}
         onSelect={selectDiagramSearchResult}
+        onMoveActive={moveDiagramSearchActive}
+        onMoveActiveBoundary={moveDiagramSearchActiveBoundary}
+        onActivate={activateDiagramSearchResult}
         onClose={() => setSearchOpenSafe(false)}
       />
 
@@ -1883,6 +1889,20 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             </div>
             <div className="diagramActionOverflowSection">
               <div className="diagramActionOverflowSectionTitle">Навигация и диагностика</div>
+              <OverflowMenuItem
+                icon={
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="7" cy="7" r="4.5" />
+                    <path d="M10.5 10.5L14 14" />
+                  </svg>
+                }
+                label="Поиск (Ctrl+K)"
+                active={diagramActionSearchOpen}
+                onClick={() => {
+                  closeDiagramPopovers();
+                  setSearchOpenSafe(true);
+                }}
+              />
               <OverflowMenuItem
                 icon={
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

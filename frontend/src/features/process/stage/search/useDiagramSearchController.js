@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import useDiagramSearchModel from "./useDiagramSearchModel.js";
 import useDiagramPropertySearchModel from "./useDiagramPropertySearchModel.js";
+import { resolveBoundaryIndex, resolveMoveIndex } from "./diagramSearchActiveNav.js";
 
 const PROPERTY_REFRESH_RETRY_LIMIT = 5;
 const PROPERTY_REFRESH_RETRY_DELAY_MS = 80;
@@ -117,6 +118,38 @@ export default function useDiagramSearchController({
     if (result) focusResult(result, "row");
     return result;
   }, [activeModel, focusResult]);
+
+  // Keyboard navigation (S3): move the active result WITHOUT selecting or
+  // focusing the canvas — the highlight effect syncs fpcSearchActive only.
+  // selection.select + focusNode happen on explicit activation (Enter).
+  const moveActive = useCallback((stepRaw) => {
+    const results = activeModel.results;
+    const nextIndex = resolveMoveIndex({
+      length: results.length,
+      activeIndex: activeModel.activeIndex,
+      step: stepRaw,
+    });
+    if (nextIndex < 0) return null;
+    return activeModel.selectIndex(nextIndex);
+  }, [activeModel]);
+
+  const moveActiveBoundary = useCallback((edge) => {
+    const results = activeModel.results;
+    const nextIndex = resolveBoundaryIndex({ length: results.length, edge });
+    if (nextIndex < 0) return null;
+    return activeModel.selectIndex(nextIndex);
+  }, [activeModel]);
+
+  const activateActive = useCallback((source = "enter") => {
+    const result = activeModel.activeResult;
+    if (!result) return null;
+    focusResult(result, source);
+    return result;
+  }, [activeModel, focusResult]);
+
+  const clearQuery = useCallback(() => {
+    activeModel.setQuery("");
+  }, [activeModel]);
 
   useEffect(() => {
     if (!isEnabled || !isOpen) return;
@@ -238,6 +271,10 @@ export default function useDiagramSearchController({
     next,
     prev,
     selectIndex,
+    moveActive,
+    moveActiveBoundary,
+    activateActive,
+    clearQuery,
     refreshElements,
     refreshProperties,
   };
