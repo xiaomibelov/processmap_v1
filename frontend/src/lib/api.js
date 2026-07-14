@@ -304,8 +304,18 @@ export function apiExportPropertyRegistry(format, params = {}) {
   window.location.href = url.toString();
 }
 
-export async function apiGetReferenceOptions(source, q = "", limit = 20) {
+const REFERENCE_TABLE_SOURCES = new Set(["ingredients", "equipment", "containers"]);
+
+function normalizeReferenceSource(source) {
   const src = String(source || "").trim();
+  if (!src) return src;
+  if (src.includes(":") || src.includes("/")) return src;
+  if (REFERENCE_TABLE_SOURCES.has(src)) return `table:${src}`;
+  return src;
+}
+
+export async function apiGetReferenceOptions(source, q = "", limit = 20) {
+  const src = normalizeReferenceSource(source);
   if (!src) return { ok: false, status: 0, error: "missing source" };
   const url = new URL(apiRoutes.analysis.referenceOptions(src), window.location.origin);
   if (q) url.searchParams.set("q", q);
