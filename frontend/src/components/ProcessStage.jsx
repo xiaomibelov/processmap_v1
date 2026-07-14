@@ -6969,6 +6969,11 @@ function ProcessStage({
     historyDiffVersionLabel,
     closeHistoryDiff,
   });
+  const finalBodyClassName = useMemo(
+    () => `${bodyClassName}${tab === "xml" ? " processBody--xml" : ""}`,
+    [bodyClassName, tab],
+  );
+
   const shellVm = useProcessStageShellController({
     hasSession,
     isBpmnTab,
@@ -7072,7 +7077,7 @@ function ProcessStage({
       />
 
       <div
-        className={bodyClassName}
+        className={finalBodyClassName}
         ref={processBodyRef}
       >
         {!hasSession ? (
@@ -7217,10 +7222,10 @@ function ProcessStage({
             {!isInterview && (
             <div className="absolute inset-0">
               <div
-                className={`bpmnStageHost h-full ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""}`}
+                className={`bpmnStageHost h-full ${tab === "xml" ? "bpmnStageHost--xml" : ""} ${(hybridVisible && hybridUiPrefs.focus) ? "isHybridFocus" : ""}`}
                 ref={bpmnStageHostRef}
               >
-                {subprocessBreadcrumbs?.length > 1 ? (
+                {subprocessBreadcrumbs?.length > 1 && tab !== "xml" ? (
                   <div className="subprocessBreadcrumbsBar">
                     {subprocessBreadcrumbs.length > 1 ? (
                       <button
@@ -7239,8 +7244,9 @@ function ProcessStage({
                     />
                   </div>
                 ) : null}
-                <ProcessStageDiagramControls
-                  view={buildDiagramControlsView({
+                {tab !== "xml" ? (
+                  <ProcessStageDiagramControls
+                    view={buildDiagramControlsView({
                     tab,
                     diagramActionBarRef,
                     showOverlaysDuringPan,
@@ -7488,7 +7494,8 @@ function ProcessStage({
                     canInsertBetween,
                     insertBetweenErrorMessage,
                   })}
-                />
+                  />
+                ) : null}
                 <ProcessDiagramOverlayLayers {...diagramOverlayLayersProps} />
                 <BottomViewportScrubber
                   active={tab === "diagram" && !isInterview}

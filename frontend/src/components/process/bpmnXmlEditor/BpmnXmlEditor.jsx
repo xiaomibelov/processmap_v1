@@ -84,6 +84,7 @@ export default function BpmnXmlEditor({
   xml = "",
   xmlDirty: externalDirty,
   xmlSaveBusy = false,
+  fullPage = false,
   onChange,
   onSave,
   onReset,
@@ -163,8 +164,10 @@ export default function BpmnXmlEditor({
 
   const sizeBytes = useMemo(() => new Blob([editorValue]).size, [editorValue]);
 
+  const rootClass = ["bpmnXmlEditor", fullPage ? "bpmnXmlEditor--fullPage" : ""].filter(Boolean).join(" ");
+
   return (
-    <div className="bpmnXmlEditor">
+    <div className={rootClass}>
       <div className="bpmnXmlEditorToolbar">
         <span className={`bpmnXmlEditorStatus ${statusClass}`}>{statusText}</span>
         <div className="bpmnXmlEditorActions">
