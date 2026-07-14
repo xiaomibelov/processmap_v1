@@ -185,3 +185,74 @@ test("mergeV2OverlaysWithPropertyPreview: threads hiddenFields into content reso
   assert.equal(merged.length, 1);
   assert.deepEqual(merged[0].properties, [{ name: "ingredient_value", value: "5" }]);
 });
+
+// --- derived display name (v0.3 P1B) ----------------------------------------
+
+test("resolveV2OverlayContent: preview displayName is carried into the card content", () => {
+  const inst = fakeInst([fakeElement("T1", "Task")]);
+  const previewMap = {
+    T1: {
+      enabled: true,
+      elementId: "T1",
+      displayName: "Перенести container_1 в microwave_1",
+      items: [{ key: "object_ref", label: "object_ref", value: "container_1" }],
+    },
+  };
+  const content = resolveV2OverlayContent({ elementId: "T1", inst, previewMap });
+  assert.equal(content.source, "preview");
+  assert.equal(content.displayName, "Перенести container_1 в microwave_1");
+});
+
+test("resolveV2OverlayContent: empty preview displayName keeps current behavior", () => {
+  const inst = fakeInst([fakeElement("T1", "Task")]);
+  const previewMap = {
+    T1: {
+      enabled: true,
+      elementId: "T1",
+      displayName: "  ",
+      items: [{ key: "priority", label: "priority", value: "high" }],
+    },
+  };
+  const content = resolveV2OverlayContent({ elementId: "T1", inst, previewMap });
+  assert.equal(content.displayName, undefined);
+});
+
+test("resolveV2OverlayContent: BPMN branch derives displayName from pm:RobotMeta + properties", () => {
+  const element = fakeElementWithProps("T1", [
+    ["object_ref", "container_1"],
+    ["target_ref", "microwave_1"],
+  ]);
+  element.businessObject.extensionElements.values.push({
+    $type: "pm:RobotMeta",
+    version: "v1",
+    json: JSON.stringify({ exec: { action_key: "move" } }),
+  });
+  const inst = fakeInst([element]);
+  const content = resolveV2OverlayContent({ elementId: "T1", inst, previewMap: {}, forceShow: true });
+  assert.ok(content, "expected BPMN-derived content");
+  assert.equal(content.source, "bpmn");
+  assert.equal(content.displayName, "Перенести container_1 в microwave_1");
+});
+
+test("resolveV2OverlayContent: BPMN branch without RobotMeta has no displayName", () => {
+  const inst = fakeInst([fakeElementWithProps("T1", [["priority", "high"]])]);
+  const content = resolveV2OverlayContent({ elementId: "T1", inst, previewMap: {}, forceShow: true });
+  assert.ok(content);
+  assert.equal(content.displayName, undefined);
+});
+
+test("mergeV2OverlaysWithPropertyPreview: displayName threads onto an existing overlay", () => {
+  const list = [{ node_id: "T1", properties: [{ name: "old", value: "old" }] }];
+  const inst = fakeInst([fakeElement("T1", "Task")]);
+  const previewMap = {
+    T1: {
+      enabled: true,
+      elementId: "T1",
+      displayName: "Ручное имя",
+      items: [{ key: "display_name", label: "display_name", value: "Ручное имя" }],
+    },
+  };
+  const merged = mergeV2OverlaysWithPropertyPreview(inst, list, previewMap);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].displayName, "Ручное имя");
+});

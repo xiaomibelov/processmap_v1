@@ -22,6 +22,7 @@ import {
   apiGetAutoPassPrecheck,
   apiGetAutoPassStatus,
 } from "../lib/api/sessionApi";
+import { apiGetExportZip } from "../lib/api.js";
 import { seedSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
 import {
   apiGetBpmnMeta,
@@ -6696,6 +6697,7 @@ function ProcessStage({
       executeAi,
       apiAiQuestions,
       apiGetBpmnXml,
+      apiGetExportZip,
       apiPatchSession,
       getBaseDiagramStateVersion,
       rememberDiagramStateVersion,
@@ -6715,6 +6717,7 @@ function ProcessStage({
     runToolbarClear,
     toggleAiBottlenecks,
     exportBpmn,
+    exportSessionZip,
     openClarifyNode,
     toggleAttentionFilter,
     focusAttentionItem,
@@ -6872,6 +6875,7 @@ function ProcessStage({
     isBpmnTab,
     workbench,
     exportBpmn,
+    exportSessionZip,
     openVersionsModal,
     selectedElementId,
     openInsertBetweenModal,

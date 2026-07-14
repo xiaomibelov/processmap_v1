@@ -4760,6 +4760,19 @@
     box-shadow: var(--shadow-soft);
   }
 
+  .liveCardPreviewTitle {
+    font-size: 12px;
+    font-weight: 600;
+    color: hsl(var(--text));
+    line-height: 1.5;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding-bottom: 4px;
+    margin-bottom: 2px;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+
   .liveCardPreviewRow {
     @apply flex items-baseline justify-between;
     gap: 10px;
@@ -5651,6 +5664,17 @@
   .sidebarSchemaPropertyRow:last-child {
     border-bottom: none;
     padding-bottom: 4px;
+  }
+
+  .sidebarSchemaPropertyRow--requiredEmpty .sidebarInput {
+    border-color: color-mix(in srgb, var(--c-danger) 45%, var(--border));
+    background: color-mix(in srgb, var(--c-danger) 6%, var(--panel));
+  }
+
+  .sidebarSchemaPropertyRequired {
+    color: var(--c-danger);
+    font-weight: 700;
+    margin-left: 2px;
   }
 
   .sidebarSchemaPropertyLabel {

@@ -3,6 +3,7 @@ import {
   extractCamundaInputOutputParametersFromExtensionState,
 } from "./camundaExtensions.js";
 import { dedupeExactPropertyRows } from "./dedupeExactPropertyRows.js";
+import { resolveDisplayName } from "./displayNameModel.js";
 import { filterRowsByHiddenFields } from "../../../components/sidebar/displaySettings/filterRowsByHiddenFields.js";
 
 const propertyDictionaryEditorModelCache = new WeakMap();
@@ -391,10 +392,27 @@ export function buildPropertiesOverlayPreview({
   elementId = "",
   extensionStateRaw,
   dictionaryBundleRaw,
+  operationKey = "",
+  operationLabel = "",
   showPropertiesOverlay = false,
   visibleLimit = 4,
   hiddenFields = null,
 } = {}) {
+  // Display name is DERIVED (never written to the draft): operation code +
+  // params → one-line RU label; a manual `display_name` property wins.
+  // Operation key/label default to the normalized dictionary bundle when
+  // the caller does not pass them explicitly.
+  const bundle = (!asText(operationKey) || !asText(operationLabel))
+    ? normalizeOrgPropertyDictionaryBundle(dictionaryBundleRaw)
+    : null;
+  const resolvedOperationKey = asText(operationKey) || asText(bundle?.operationKey);
+  const resolvedOperationLabel = asText(operationLabel) || asText(bundle?.operationLabel);
+  const displayName = resolveDisplayName({
+    operationKey: resolvedOperationKey,
+    operationLabel: resolvedOperationLabel,
+    rows: rawExtensionPropertyRows(extensionStateRaw),
+  });
+
   if (!showPropertiesOverlay) {
     return {
       enabled: false,
@@ -402,6 +420,7 @@ export function buildPropertiesOverlayPreview({
       items: [],
       hiddenCount: 0,
       totalCount: 0,
+      displayName,
     };
   }
 
@@ -421,5 +440,6 @@ export function buildPropertiesOverlayPreview({
     visibleCount: normalizedLimit,
     hiddenCount,
     totalCount: rows.length,
+    displayName,
   };
 }

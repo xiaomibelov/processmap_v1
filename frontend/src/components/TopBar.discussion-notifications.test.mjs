@@ -108,6 +108,7 @@ test("App bridge opens NotesMvpPanel in notification mode without a new router",
   assert.match(appSource, /currentUserId=\{user\?\.id\}/);
 });
 
-test("frontend index links the source-backed backend favicon", () => {
-  assert.match(indexSource, /<link rel="icon" href="\/favicon\.ico" \/>/);
+test("frontend index links the favicon set (svg primary + ico fallback)", () => {
+  assert.match(indexSource, /<link rel="icon" type="image\/svg\+xml" href="\/favicon\.svg" \/>/);
+  assert.match(indexSource, /<link rel="alternate icon" href="\/favicon\.ico"/);
 });

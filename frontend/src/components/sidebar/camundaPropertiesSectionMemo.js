@@ -62,5 +62,6 @@ export function buildPropertiesOverlayPreviewSignature(previewRaw) {
       return `${key}\u241f${label}\u241f${value}`;
     })
     .join("\u241e");
-  return `${enabled}|${elementId}|${hiddenCount}|${visibleCount}|${totalCount}|${itemsSignature}`;
+  const displayName = asText(preview.displayName).replace(/\s+/g, " ").trim();
+  return `${enabled}|${elementId}|${hiddenCount}|${visibleCount}|${totalCount}|${itemsSignature}|${displayName}`;
 }

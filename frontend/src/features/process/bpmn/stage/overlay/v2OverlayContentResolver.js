@@ -4,7 +4,25 @@ import {
   parseOverlayFromProperties,
 } from "../../../../../components/process/utils/bpmnOverlayParser.js";
 import { filterRowsByHiddenFields } from "../../../../../components/sidebar/displaySettings/filterRowsByHiddenFields.js";
+import { resolveDisplayName } from "../../../camunda/displayNameModel.js";
 import { asArray, asObject, asText } from "./overlayUtils.js";
+
+// Derived display name (v0.3 P1B) for BPMN-sourced cards: the operation code
+// lives in the pm:RobotMeta JSON body; the params are the element's business
+// properties. A manual `display_name` property wins (handled by the model).
+function extractRobotMetaActionKey(boRaw) {
+  const bo = asObject(boRaw);
+  const values = asArray(bo?.extensionElements?.values);
+  const entry = values.find((value) => String(value?.$type || "") === "pm:RobotMeta");
+  const jsonText = asText(entry?.json);
+  if (!jsonText) return "";
+  try {
+    const parsed = JSON.parse(jsonText);
+    return asText(parsed?.exec?.action_key || parsed?.operationKey || parsed?.operation_key);
+  } catch {
+    return "";
+  }
+}
 
 function dedupePropertiesByExactValue(props) {
   if (!Array.isArray(props)) return [];
@@ -65,7 +83,12 @@ export function resolveV2OverlayContent({ elementId, inst, previewMap, forceShow
 
     if (properties.length) {
       const title = `${properties.length} element properties`;
-      return { ...buildAutoOverlayDescriptor(id, title, properties[0]?.name || "property", undefined, properties), source: "preview" };
+      const displayName = asText(preview?.displayName);
+      return {
+        ...buildAutoOverlayDescriptor(id, title, properties[0]?.name || "property", undefined, properties),
+        ...(displayName ? { displayName } : {}),
+        source: "preview",
+      };
     }
 
     // An empty or disabled preview entry means "this element has no properties
@@ -87,6 +110,13 @@ export function resolveV2OverlayContent({ elementId, inst, previewMap, forceShow
   );
   const properties = filterRowsByHiddenFields(businessProperties, hiddenFields);
 
+  // Display name is derived from the UNFILTERED business properties so the
+  // per-field chip filter never changes the card's title line.
+  const operationKey = extractRobotMetaActionKey(bo);
+  const displayName = operationKey
+    ? resolveDisplayName({ operationKey, rows: businessProperties })
+    : "";
+
   // Auto property cards exist only to show fields: when the field filter
   // hides every one of them, the card must not render (API.md §5). Name-only
   // cards (no properties to begin with) and authored overlays stay.
@@ -96,6 +126,7 @@ export function resolveV2OverlayContent({ elementId, inst, previewMap, forceShow
 
   return {
     ...overlay,
+    ...(displayName ? { displayName } : {}),
     source: "bpmn",
     properties,
   };
@@ -117,7 +148,11 @@ export function mergeV2OverlaysWithPropertyPreview(inst, overlayList, previewMap
 
     const existing = extractedByNodeId.get(elementId);
     if (existing) {
-      merged.push({ ...existing, properties: content.properties });
+      merged.push({
+        ...existing,
+        properties: content.properties,
+        ...(content.displayName ? { displayName: content.displayName } : {}),
+      });
     } else {
       merged.push(content);
     }
