@@ -2,6 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import createBpmnPersistence from "./createBpmnPersistence.js";
+import { __resetForTests as resetCasVersionTracker, getVersion as getTrackedVersion } from "../../../../lib/casVersionTracker.js";
+
+test.beforeEach(() => {
+  resetCasVersionTracker();
+});
 
 function createLocalStorageMock() {
   const store = new Map();
@@ -308,4 +313,59 @@ test("saveRaw publishes conflict server_current_version into external diagram st
   assert.equal(saved.errorCode, "DIAGRAM_STATE_CONFLICT");
   assert.equal(externalVersion, 9);
   assert.equal(remembered.some((entry) => entry.sessionId === "sid_conflict_ctx" && entry.version === 9), true);
+});
+
+test("saveRaw bumps tracked diagram state version on successful ack", async () => {
+  window.localStorage.clear();
+  const persistence = createBpmnPersistence({
+    getSessionDraft: () => ({
+      bpmn_xml: "<bpmn:baseline/>",
+      bpmn_xml_version: 1,
+      version: 1,
+      diagram_state_version: 5,
+    }),
+    apiPutBpmnXml: async (_sid, _xml, options) => ({
+      ok: true,
+      status: 200,
+      storedRev: Number(options?.rev || 0),
+      diagramStateVersion: Number(options?.baseDiagramStateVersion || 0) + 1,
+    }),
+  });
+
+  const saved = await persistence.saveRaw("sid_track_bump", "<bpmn:first/>", 1, "manual_save");
+  assert.equal(saved.ok, true);
+  assert.equal(saved.diagramStateVersion, 6);
+  assert.equal(getTrackedVersion("sid_track_bump"), 6);
+});
+
+test("saveRaw rolls back tracked version and stores server current version on 409", async () => {
+  window.localStorage.clear();
+  let remembered = null;
+  const persistence = createBpmnPersistence({
+    getSessionDraft: () => ({
+      bpmn_xml: "<bpmn:baseline/>",
+      bpmn_xml_version: 1,
+      version: 1,
+      diagram_state_version: 5,
+    }),
+    apiPutBpmnXml: async () => ({
+      ok: false,
+      status: 409,
+      data: {
+        detail: {
+          code: "DIAGRAM_STATE_CONFLICT",
+          server_current_version: 9,
+        },
+      },
+    }),
+    rememberDiagramStateVersion: (version) => {
+      remembered = version;
+    },
+  });
+
+  const saved = await persistence.saveRaw("sid_track_rollback", "<bpmn:new/>", 1, "manual_save");
+  assert.equal(saved.ok, false);
+  assert.equal(saved.status, 409);
+  assert.equal(remembered, 9);
+  assert.equal(getTrackedVersion("sid_track_rollback"), 9);
 });
