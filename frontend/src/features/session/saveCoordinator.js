@@ -102,6 +102,8 @@ class SaveCoordinator {
    * @param {number} [config.debounceMs]
    * @param {number} [config.retryCount]
    * @param {number} [config.retryDelayMs]
+   * @param {number} [config.transportTimeoutMs] - max time a single transport call may hang (default 10000)
+   * @param {number} [config.maxRetryDelayMs] - cap for exponential backoff (default 4000)
    */
   registerPipeline(name, config = {}) {
     const pipelineName = asText(name);
@@ -121,6 +123,8 @@ class SaveCoordinator {
       debounceMs: Math.max(0, asNumber(config.debounceMs, 300)),
       retryCount: Math.max(0, asNumber(config.retryCount, 3)),
       retryDelayMs: Math.max(0, asNumber(config.retryDelayMs, 1000)),
+      transportTimeoutMs: Math.max(50, asNumber(config.transportTimeoutMs, 10000)),
+      maxRetryDelayMs: Math.max(0, asNumber(config.maxRetryDelayMs, 4000)),
     });
   }
 
@@ -154,6 +158,19 @@ class SaveCoordinator {
     };
     this.pipelineStatus.set(pipelineName, status);
     this.emit("status", status);
+  }
+
+  _runTransportWithTimeout(pipelineName, pipeline, sessionId, payload) {
+    const timeoutMs = Math.max(1000, asNumber(pipeline.transportTimeoutMs, 10000));
+    const transportPromise = pipeline.transport(sessionId, payload);
+    const timeoutPromise = new Promise((_, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`saveCoordinator: pipeline "${pipelineName}" transport timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+      // Ensure timer doesn't keep Node process alive in tests.
+      if (timer && typeof timer.unref === "function") timer.unref();
+    });
+    return Promise.race([transportPromise, timeoutPromise]);
   }
 
   getStatus(name) {
@@ -296,7 +313,7 @@ class SaveCoordinator {
       this._setPipelineStatus(pipelineName, sid, "busy", { stage: "transport", attempt });
 
       try {
-        lastResult = await pipeline.transport(sid, builtPayload);
+        lastResult = await this._runTransportWithTimeout(pipelineName, pipeline, sid, builtPayload);
         lastError = null;
       } catch (error) {
         lastError = error;
@@ -325,8 +342,9 @@ class SaveCoordinator {
           return result;
         }
 
-        if (attempt < pipeline.retryCount) {
-          const delay = pipeline.retryDelayMs * 2 ** attempt;
+        const isTimeoutError = lastError && /timeout/i.test(String(lastError?.message || lastError));
+        if (attempt < pipeline.retryCount && !isTimeoutError) {
+          const delay = Math.min(pipeline.maxRetryDelayMs, pipeline.retryDelayMs * 2 ** attempt);
           this._setPipelineStatus(pipelineName, sid, "busy", { stage: "retry", attempt, delayMs: delay });
           await sleep(delay);
           continue;

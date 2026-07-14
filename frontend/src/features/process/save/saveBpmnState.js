@@ -91,6 +91,8 @@ saveCoordinator.registerPipeline(XML_PIPELINE_NAME, {
   debounceMs: 0,
   retryCount: 3,
   retryDelayMs: 1000,
+  transportTimeoutMs: 10000,
+  maxRetryDelayMs: 4000,
 });
 
 function toText(value) {
@@ -338,7 +340,16 @@ export async function saveBpmnState(options = {}) {
     baseDiagramStateVersion,
   };
 
-  saveRes = await saveCoordinator.execute(XML_PIPELINE_NAME, coordinatorPayload);
+  try {
+    saveRes = await saveCoordinator.execute(XML_PIPELINE_NAME, coordinatorPayload);
+  } catch (executeError) {
+    return {
+      ok: false,
+      status: 0,
+      error: String(executeError?.message || executeError || "saveCoordinator.execute failed"),
+      conflict: false,
+    };
+  }
 
   if (saveRes?.ok) {
     // When the coordinator does the actual PUT it returns the serialized XML.
