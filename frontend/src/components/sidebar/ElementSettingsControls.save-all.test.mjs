@@ -3,6 +3,8 @@ import fs from "node:fs";
 import test from "node:test";
 
 const source = fs.readFileSync(new URL("./ElementSettingsControls.jsx", import.meta.url), "utf8");
+const advancedSource = fs.readFileSync(new URL("./AdvancedSettingsSection.jsx", import.meta.url), "utf8");
+const combinedSource = `${source}\n${advancedSource}`;
 
 test("CamundaPropertiesSettings accepts onSaveAllBatch prop", () => {
   assert.match(source, /onSaveAllBatch,/);
@@ -15,6 +17,7 @@ test("Save All handler prefers onSaveAllBatch and toggles local busy state", () 
 });
 
 test("Save All button disables while saveAllBusy and shows progress copy", () => {
-  assert.match(source, /disabled=\{!!disabled \|\| !!saveAllBusy \|\| !!extensionStateBusy \|\| !!bpmnDocumentationBusy\}/);
-  assert.match(source, /\{saveAllBusy \|\| extensionStateBusy \|\| bpmnDocumentationBusy \? "Сохраняю\.\.\." : "Сохранить всё"\}/);
+  assert.match(source, /busy=\{saveAllBusy\}/, "ElementSettingsControls passes saveAllBusy to AdvancedSettingsSection");
+  assert.match(combinedSource, /disabled=\{!!disabled \|\| !!busy \|\| !!extensionStateBusy \|\| !!bpmnDocumentationBusy\}/);
+  assert.match(combinedSource, /\{busy \|\| extensionStateBusy \|\| bpmnDocumentationBusy \? "Сохраняю\.\.\." : "Сохранить всё"\}/);
 });

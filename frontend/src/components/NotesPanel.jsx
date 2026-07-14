@@ -3369,7 +3369,8 @@ export default function NotesPanel({
                   onResetBpmnDocumentation={resetSelectedBpmnDocumentation}
                   onSaveAllBatch={onSaveAllBatch}
                   onFocusDrawioCompanion={onFocusDrawioCompanion}
-                  afterQuickProperties={isElementMode && selectedCamundaPropertiesEditable ? (
+                  operationToBeCount={isElementMode ? toBeModel.inToBeCount : 0}
+                  operationToBeSlot={isElementMode && selectedCamundaPropertiesEditable ? (
                     <section className="sidebarPropertiesBlock sidebarPropertiesBlock--secondary sidebarPropertiesBlock--wide">
                       <div className="sidebarPropertiesBlockHead">
                         <button
