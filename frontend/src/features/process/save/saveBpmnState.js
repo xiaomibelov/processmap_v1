@@ -13,6 +13,35 @@ import {
 import { saveCoordinator } from "../../session/saveCoordinator.js";
 
 const XML_PIPELINE_NAME = "xml";
+const MODELER_XML_CAPTURE_TIMEOUT_MS = 8000;
+
+function withTimeout(promiseFactory, ms, context) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`${context || "operation"} timeout after ${ms}ms`));
+    }, Math.max(100, Number(ms) || 8000));
+    if (timer && typeof timer.unref === "function") timer.unref();
+    Promise.resolve()
+      .then(() => promiseFactory())
+      .then(
+        (value) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+  });
+}
 
 function pickDiagramStateVersion(response) {
   if (!response || typeof response !== "object") return null;
@@ -282,7 +311,11 @@ export async function saveBpmnState(options = {}) {
     nextXml = toText(options.xml);
     if (!nextXml && typeof options.getModelerXml === "function") {
       try {
-        nextXml = toText(await options.getModelerXml());
+        nextXml = toText(await withTimeout(
+          () => options.getModelerXml(),
+          MODELER_XML_CAPTURE_TIMEOUT_MS,
+          "getModelerXml",
+        ));
       } catch (error) {
         return { ok: false, status: 0, error: `Не удалось получить XML: ${error?.message || error}` };
       }
@@ -290,8 +323,25 @@ export async function saveBpmnState(options = {}) {
     if (!nextXml && !useCoordinatorFlush) {
       return { ok: false, status: 0, error: "Пустая BPMN XML." };
     }
-  } else if (!useCoordinatorFlush) {
-    return { ok: false, status: 0, error: "flushSave unavailable for property operation" };
+  } else {
+    if (!useCoordinatorFlush) {
+      return { ok: false, status: 0, error: "flushSave unavailable for property operation" };
+    }
+    // Property operations already mutate the live modeler in App.jsx.
+    // Pre-capture the XML here and pass it to the coordinator as an override.
+    // This avoids calling runtime.getXml() deep inside flushSave, where it can
+    // deadlock/hang during autosave (observed as a stable 10s transport timeout).
+    if (!nextXml && typeof options.getModelerXml === "function") {
+      try {
+        nextXml = toText(await withTimeout(
+          () => options.getModelerXml(),
+          MODELER_XML_CAPTURE_TIMEOUT_MS,
+          "getModelerXml",
+        ));
+      } catch (error) {
+        return { ok: false, status: 0, error: `Не удалось получить XML: ${error?.message || error}` };
+      }
+    }
   }
 
   const baseDiagramStateVersion = resolveBaseDiagramStateVersion(sid, options);
