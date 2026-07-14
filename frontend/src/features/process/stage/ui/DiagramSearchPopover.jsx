@@ -1,3 +1,7 @@
+import { useEffect, useRef } from "react";
+
+import { trapTabKeyEvent } from "../search/focusTrapModel.js";
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -22,6 +26,15 @@ function groupSearchRows(rowsRaw) {
   return groups;
 }
 
+function focusSearchTriggerButton() {
+  if (typeof document === "undefined") return;
+  try {
+    document.querySelector('[data-testid="diagram-action-search"]')?.focus?.();
+  } catch {
+    // trigger button may be absent in embedded contexts
+  }
+}
+
 export default function DiagramSearchPopover({
   open = false,
   popoverRef = null,
@@ -36,6 +49,14 @@ export default function DiagramSearchPopover({
   onSelect = null,
   onClose = null,
 } = {}) {
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const node = inputRef.current;
+    if (node && typeof node.focus === "function") node.focus();
+  }, [open]);
+
   if (!open) return null;
   const rows = asArray(results);
   const hasQuery = toText(query).length > 0;
@@ -49,8 +70,25 @@ export default function DiagramSearchPopover({
     : "Введите запрос: название, id, тип элемента или значение свойства.";
   const groupedRows = groupSearchRows(rows.slice(0, 240));
 
+  const handlePopoverKeyDown = (event) => {
+    if (event.key === "Tab") {
+      trapTabKeyEvent(event, event.currentTarget);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      onClose?.();
+      focusSearchTriggerButton();
+    }
+  };
+
   return (
-    <div className="diagramActionPopover diagramActionPopover--search" ref={popoverRef} data-testid="diagram-action-search-popover">
+    <div
+      className="diagramActionPopover diagramActionPopover--search"
+      ref={popoverRef}
+      data-testid="diagram-action-search-popover"
+      onKeyDown={handlePopoverKeyDown}
+    >
       <div className="diagramActionPopoverHead">
         <span>Поиск на диаграмме</span>
         <button
@@ -87,6 +125,7 @@ export default function DiagramSearchPopover({
           id="diagram-search-query"
           name="diagram_search_query"
           type="text"
+          ref={inputRef}
           className="input h-8 min-h-0 text-xs"
           value={query}
           onChange={(event) => onQueryChange?.(event.target.value)}
