@@ -2945,6 +2945,102 @@
     white-space: nowrap;
   }
 
+  .diagramSearchInlineBox {
+    @apply relative flex h-8 shrink-0 items-center justify-center rounded-full border border-transparent text-fg;
+    width: 104px;
+    transition: width 200ms ease-out, box-shadow 150ms ease, border-color 150ms ease, background-color 150ms ease;
+  }
+
+  .diagramSearchInlineBox.isExpanded {
+    @apply justify-start gap-1.5 border-border bg-panel px-2.5;
+    width: min(320px, 42vw);
+  }
+
+  .diagramSearchInlineBox.isExpanded:focus-within {
+    @apply border-accent/60;
+    box-shadow: 0 0 0 2px hsl(var(--accent) / 0.2);
+  }
+
+  .diagramSearchInlineTrigger {
+    @apply inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-fg transition-colors;
+  }
+
+  .diagramSearchInlineTrigger:hover {
+    @apply bg-accent/10;
+  }
+
+  .diagramSearchInlineLeadIcon {
+    @apply h-4 w-4 shrink-0 text-muted;
+  }
+
+  .diagramSearchInlineInput {
+    @apply h-7 min-w-0 flex-1 bg-transparent text-xs text-fg outline-none placeholder:text-muted;
+  }
+
+  .diagramSearchInlineClear {
+    @apply inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-sm leading-none text-muted transition-colors hover:bg-accent/10 hover:text-fg;
+  }
+
+  .diagramSearchInlineDrop {
+    @apply absolute left-0 right-0 top-[calc(100%+6px)] z-[95] space-y-1.5;
+  }
+
+  .diagramSearchInlineToggle {
+    @apply inline-flex w-fit items-center gap-0.5 rounded-md border border-border/70 bg-panel2/45 p-0.5;
+  }
+
+  .diagramSearchInlineToggleBtn {
+    @apply h-6 rounded px-2.5 text-[11px] font-semibold text-muted transition-colors hover:text-fg;
+  }
+
+  .diagramSearchInlineToggleBtn.isActive {
+    @apply bg-accent text-white;
+  }
+
+  .diagramSearchInlinePanel {
+    @apply max-h-[400px] space-y-1 overflow-auto rounded-lg border border-border bg-panel p-1.5 shadow-panel;
+  }
+
+  .diagramSearchInlinePanelHead {
+    @apply flex items-center justify-between gap-2 px-1 py-0.5 text-[11px] text-muted;
+  }
+
+  .diagramSearchInlineList {
+    @apply space-y-1;
+  }
+
+  .diagramSearchInlineItem {
+    @apply relative flex w-full min-w-0 items-center gap-2 rounded-md border border-l-[3px] border-transparent border-l-muted/30 px-2 py-1.5 text-left text-xs text-fg transition-colors hover:bg-panel2;
+  }
+
+  .diagramSearchInlineItem.isActive {
+    @apply border-l-accent bg-accentSoft;
+  }
+
+  .diagramSearchInlineItemBody {
+    @apply flex min-w-0 flex-1 flex-col;
+  }
+
+  .diagramSearchInlineItemTitle {
+    @apply min-w-0 truncate text-fg;
+  }
+
+  .diagramSearchInlineItemMeta {
+    @apply min-w-0 truncate font-mono text-[10px] text-muted;
+  }
+
+  .diagramSearchInlineItemChips {
+    @apply flex max-w-[38%] shrink-0 items-center gap-1;
+  }
+
+  .diagramSearchInlineItemDrill {
+    @apply ml-1 inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-sm font-semibold text-muted hover:bg-accent/10 hover:text-fg;
+  }
+
+  .diagramSearchInlineEmpty {
+    @apply rounded-md px-2 py-4 text-center text-xs text-muted;
+  }
+
   .diagramActionPopover {
     @apply absolute z-[92] min-w-[280px] max-w-[420px] rounded-xl border border-border bg-panel px-3 py-2 shadow-panel;
     right: 12px;

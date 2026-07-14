@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import LayersPopover from "../components/LayersPopover";
 import TemplatesBottomMenu from "../../../templates/ui/TemplatesBottomMenu";
 import GatewaysPanel from "../../playback/ui/GatewaysPanel";
-import DiagramSearchPopover from "./DiagramSearchPopover";
+import DiagramSearchInlineInput from "../search/diagramSearchInlineInput";
 import NotesAggregateBadge from "../../../../components/NotesAggregateBadge.jsx";
 import { useSessionNoteAggregate } from "../../../../lib/sessionNoteAggregates.js";
 
@@ -634,30 +634,21 @@ export default function ProcessStageDiagramControls({ view = {} }) {
               <circle cx="8" cy="8" r="2.5" />
             </svg>
           </button>
-          <button
-            type="button"
-            className={`secondaryBtn diagramActionBtn ${diagramActionSearchOpen ? "isActive" : ""}`}
-            onClick={() => {
-              const next = !diagramActionSearchOpen;
-              closeDiagramPopovers();
-              setSearchOpenSafe(next);
-            }}
-            title="Поиск элементов диаграммы"
-            data-testid="diagram-action-search"
-          >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 16 16"
-              className="diagramActionBtnIcon"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <circle cx="7" cy="7" r="4.5" />
-              <path d="M10.5 10.5L14 14" strokeLinecap="round" />
-            </svg>
-            <span className="diagramActionBtnLabel">Поиск</span>
-          </button>
+          <DiagramSearchInlineInput
+            open={diagramActionSearchOpen}
+            onOpenChange={setSearchOpenSafe}
+            containerRef={diagramSearchPopoverRef}
+            mode={diagramSearchMode}
+            onModeChange={setDiagramSearchMode}
+            query={diagramSearchQuery}
+            onQueryChange={setDiagramSearchQuery}
+            results={diagramSearchResults}
+            activeIndex={Number.isFinite(Number(diagramSearchActiveIndex)) ? Number(diagramSearchActiveIndex) : -1}
+            onSelect={selectDiagramSearchResult}
+            onMoveActive={moveDiagramSearchActive}
+            onMoveActiveBoundary={moveDiagramSearchActiveBoundary}
+            onActivate={activateDiagramSearchResult}
+          />
           <span className="diagramActionBarSpacer" />
           <button
             type="button"
@@ -1056,23 +1047,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         </div>
       ) : null}
 
-      <DiagramSearchPopover
-        open={diagramActionSearchOpen}
-        popoverRef={diagramSearchPopoverRef}
-        mode={diagramSearchMode}
-        onModeChange={setDiagramSearchMode}
-        query={diagramSearchQuery}
-        onQueryChange={setDiagramSearchQuery}
-        results={diagramSearchResults}
-        activeIndex={Number.isFinite(Number(diagramSearchActiveIndex)) ? Number(diagramSearchActiveIndex) : -1}
-        onPrev={handleDiagramSearchPrev}
-        onNext={handleDiagramSearchNext}
-        onSelect={selectDiagramSearchResult}
-        onMoveActive={moveDiagramSearchActive}
-        onMoveActiveBoundary={moveDiagramSearchActiveBoundary}
-        onActivate={activateDiagramSearchResult}
-        onClose={() => setSearchOpenSafe(false)}
-      />
+
 
       {diagramActionPlaybackOpen ? (
         <div

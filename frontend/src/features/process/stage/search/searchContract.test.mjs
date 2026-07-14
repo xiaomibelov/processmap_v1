@@ -24,7 +24,9 @@ const imperativeApiSource = readSource("../../bpmn/stage/imperative/bpmnStageImp
 const bpmnStageSource = readSource("../../../../components/process/BpmnStage.jsx");
 const searchCssSource = readSource("../../../../styles/app/05/05-02-bpmn-text-contrast.css");
 const controlsSource = readSource("../ui/ProcessStageDiagramControls.jsx");
-const popoverSource = readSource("../ui/DiagramSearchPopover.jsx");
+const inlineSource = readSource("./diagramSearchInlineInput.jsx");
+const panelSource = readSource("./diagramSearchInlinePanel.jsx");
+const modeToggleSource = readSource("./diagramSearchModeToggle.jsx");
 
 // ---------------------------------------------------------------------------
 // A. Element search model contract
@@ -197,39 +199,42 @@ test("contract: search markers are styled in the contrast CSS layer", () => {
 });
 
 // ---------------------------------------------------------------------------
-// D. Popover / controls wiring contract
+// D. Inline search / controls wiring contract
 // ---------------------------------------------------------------------------
 
-test("contract: popover caps rendered rows at 240 and groups rows by process context", () => {
-  assert.equal(popoverSource.includes("rows.slice(0, 240)"), true);
-  assert.equal(popoverSource.includes("groupSearchRows"), true);
-  assert.equal(popoverSource.includes('data-testid="diagram-action-search-group"'), true);
+test("contract: inline panel caps rendered rows at 240 and groups rows by process context", () => {
+  assert.equal(panelSource.includes("SEARCH_RESULTS_CAP"), true);
+  assert.equal(panelSource.includes("groupSearchRows"), true);
+  assert.equal(panelSource.includes('data-testid="diagram-action-search-group"'), true);
 });
 
-test("contract: popover keeps Prev/Next disabled without results and reports active index chip", () => {
-  assert.equal(popoverSource.includes("disabled={rows.length <= 0}"), true);
-  assert.equal(popoverSource.includes('data-testid="diagram-action-search-active-index"'), true);
-  assert.equal(popoverSource.includes("onSelect?.(index)"), true);
+test("contract: inline input reports active index chip and row selection", () => {
+  assert.equal(panelSource.includes('data-testid="diagram-action-search-active-index"'), true);
+  assert.equal(panelSource.includes('data-testid="diagram-action-search-row"'), true);
+  assert.equal(panelSource.includes("onSelect?.(index)"), true);
 });
 
-test("contract: controls wire popover to controller handlers (mode/query/results/prev/next/select)", () => {
+test("contract: controls wire inline search to controller handlers", () => {
   [
     "onModeChange={setDiagramSearchMode}",
     "onQueryChange={setDiagramSearchQuery}",
     "results={diagramSearchResults}",
-    "onPrev={handleDiagramSearchPrev}",
-    "onNext={handleDiagramSearchNext}",
     "onSelect={selectDiagramSearchResult}",
+    "onMoveActive={moveDiagramSearchActive}",
+    "onMoveActiveBoundary={moveDiagramSearchActiveBoundary}",
+    "onActivate={activateDiagramSearchResult}",
+    "<DiagramSearchInlineInput",
   ].forEach((snippet) => {
     assert.equal(controlsSource.includes(snippet), true, `controls must wire ${snippet}`);
   });
 });
 
-test("contract: toolbar exposes the search trigger button with stable test id", () => {
-  assert.equal(controlsSource.includes('data-testid="diagram-action-search"'), true);
-  assert.equal(controlsSource.includes('data-testid="diagram-action-search-popover"'), false, "popover test id lives in the popover component");
-  assert.equal(popoverSource.includes('data-testid="diagram-action-search-popover"'), true);
-  assert.equal(popoverSource.includes('data-testid="diagram-action-search-input"'), true);
+test("contract: toolbar exposes the search trigger and inline input ids", () => {
+  assert.equal(controlsSource.includes("<DiagramSearchInlineInput"), true, "controls render inline search");
+  assert.equal(inlineSource.includes('data-testid="diagram-action-search"'), true, "collapsed trigger testid");
+  assert.equal(inlineSource.includes("diagram-action-search-popover"), true, "expanded popover testid");
+  assert.equal(inlineSource.includes('id="diagram-search-query"'), true, "query input id");
+  assert.equal(inlineSource.includes('data-testid="diagram-action-search-input"'), true, "query input testid");
 });
 
 // ---------------------------------------------------------------------------
@@ -257,12 +262,13 @@ test("contract S2: overflow menu contains a search entry with the Ctrl+K hint", 
   assert.equal(controlsSource.includes("setSearchOpenSafe(true);"), true);
 });
 
-test("contract S2: popover autofocuses the query input and traps Tab inside", () => {
-  assert.equal(popoverSource.includes("inputRef"), true);
-  assert.equal(popoverSource.includes("node.focus()"), true);
-  assert.equal(popoverSource.includes("trapTabKeyEvent(event, event.currentTarget)"), true);
-  assert.equal(popoverSource.includes('event.key === "Escape"'), true);
-  assert.equal(popoverSource.includes("event.stopPropagation()"), true);
+test("contract S2: inline search autofocuses input, Escape stops propagation, blur collapses when empty", () => {
+  assert.equal(inlineSource.includes("inputRef"), true);
+  assert.equal(inlineSource.includes("node.focus()"), true);
+  assert.equal(inlineSource.includes('event.key === "Escape"'), true);
+  assert.equal(inlineSource.includes("event.stopPropagation()"), true);
+  assert.equal(inlineSource.includes("applyTransition(\"blur\")"), true);
+  assert.equal(inlineSource.includes("trapTabKeyEvent"), false, "Tab exits input (focus trap not used in inline widget)");
 });
 
 // ---------------------------------------------------------------------------
@@ -272,14 +278,18 @@ test("contract S2: popover autofocuses the query input and traps Tab inside", ()
 const controllerSource = readSource("./useDiagramSearchController.js");
 const sectionsSource = readSource("../orchestration/buildDiagramControlsSections.js");
 
-test("contract S3: popover debounces the query with a pending indicator", () => {
-  assert.equal(popoverSource.includes("SEARCH_DEBOUNCE_MS"), true);
-  assert.equal(popoverSource.includes("debouncerRef.current?.push(draft)"), true);
-  assert.equal(popoverSource.includes('data-testid="diagram-action-search-pending"'), true);
-  assert.equal(popoverSource.includes("value={draft}"), true);
+test("contract S3: inline input debounces query with raw pass-through", () => {
+  assert.equal(inlineSource.includes("SEARCH_DEBOUNCE_MS"), true);
+  assert.equal(inlineSource.includes("debouncerRef.current?.push(draft)"), true);
+  assert.equal(inlineSource.includes("value={draft}"), true);
+  assert.equal(inlineSource.includes("setDraft(event.target.value)"), true);
+  assert.equal(inlineSource.includes("onQueryChangeRef.current?.(value)"), true);
+  assert.equal(inlineSource.includes("toText(event.target.value)"), false);
+  // Pending indicator lives in the results panel.
+  assert.equal(panelSource.includes('data-testid="diagram-action-search-pending"'), true);
 });
 
-test("contract S3: popover keyboard map — arrows move, Home/End jump, Enter activates", () => {
+test("contract S3: inline keyboard map — arrows move, Home/End jump, Enter activates", () => {
   [
     'event.key === "ArrowDown"',
     'event.key === "ArrowUp"',
@@ -293,7 +303,7 @@ test("contract S3: popover keyboard map — arrows move, Home/End jump, Enter ac
     'onActivate?.("enter")',
     "event.preventDefault()",
   ].forEach((snippet) => {
-    assert.equal(popoverSource.includes(snippet), true, `popover must include ${snippet}`);
+    assert.equal(inlineSource.includes(snippet), true, `inline input must include ${snippet}`);
   });
 });
 
@@ -312,6 +322,38 @@ test("contract S3: controller exposes no-select move + explicit activate", () =>
   assert.notEqual(activateStart, -1);
   const activateBody = controllerSource.slice(activateStart, activateStart + 400);
   assert.equal(activateBody.includes("focusResult(result, source)"), true);
+});
+
+// ---------------------------------------------------------------------------
+// G. Wave 1.1 toolbar redesign contract
+// ---------------------------------------------------------------------------
+
+test("contract redesign: inline input replaces popover and uses the same container ref", () => {
+  assert.equal(controlsSource.includes("DiagramSearchPopover"), false, "controls must not use the old popover");
+  assert.equal(controlsSource.includes("containerRef={diagramSearchPopoverRef}"), true);
+  assert.equal(controlsSource.includes("<DiagramSearchInlineInput"), true);
+});
+
+test("contract redesign: mode toggle is wired with elements/properties tabs", () => {
+  assert.equal(modeToggleSource.includes('data-testid="diagram-action-search-mode-elements"'), true);
+  assert.equal(modeToggleSource.includes('data-testid="diagram-action-search-mode-properties"'), true);
+  assert.equal(modeToggleSource.includes("resolveNextSearchMode"), true);
+  assert.equal(controlsSource.includes("mode={diagramSearchMode}"), true);
+  assert.equal(controlsSource.includes("onModeChange={setDiagramSearchMode}"), true);
+});
+
+test("contract redesign: Focus/Fullscreen are icon-only and moved after zoom controls", () => {
+  const focusIdx = controlsSource.indexOf('data-testid="diagram-action-focus-mode"');
+  const fullscreenIdx = controlsSource.indexOf('data-testid="diagram-action-fullscreen-mode"');
+  const zoomInIdx = controlsSource.indexOf('data-testid="diagram-zoom-in"');
+  const overflowIdx = controlsSource.indexOf('data-testid="diagram-action-overflow"');
+  assert.ok(focusIdx > 0 && fullscreenIdx > 0 && zoomInIdx > 0 && overflowIdx > 0, "all required testids present");
+  assert.ok(zoomInIdx < focusIdx, "Focus appears after zoom-in");
+  assert.ok(focusIdx < overflowIdx, "Focus appears before overflow");
+  assert.ok(zoomInIdx < fullscreenIdx, "Fullscreen appears after zoom-in");
+  assert.ok(fullscreenIdx < overflowIdx, "Fullscreen appears before overflow");
+  assert.equal(controlsSource.includes('className={`secondaryBtn diagramActionBtn diagramActionBtn--icon ${diagramFocusMode ? "isActive" : ""}`}'), true);
+  assert.equal(controlsSource.includes('className={`secondaryBtn diagramActionBtn diagramActionBtn--icon ${diagramFullscreenActive ? "isActive" : ""}`}'), true);
 });
 
 test("contract S3: keyboard handlers are wired through sections and ProcessStage", () => {
