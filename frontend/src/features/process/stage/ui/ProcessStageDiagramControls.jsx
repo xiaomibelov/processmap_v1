@@ -310,6 +310,9 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     handleDiagramSearchPrev,
     handleDiagramSearchNext,
     selectDiagramSearchResult,
+    moveDiagramSearchActive,
+    moveDiagramSearchActiveBoundary,
+    activateDiagramSearchResult,
   } = searchSection;
 
   const {
@@ -1064,6 +1067,9 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         onPrev={handleDiagramSearchPrev}
         onNext={handleDiagramSearchNext}
         onSelect={selectDiagramSearchResult}
+        onMoveActive={moveDiagramSearchActive}
+        onMoveActiveBoundary={moveDiagramSearchActiveBoundary}
+        onActivate={activateDiagramSearchResult}
         onClose={() => setSearchOpenSafe(false)}
       />
 

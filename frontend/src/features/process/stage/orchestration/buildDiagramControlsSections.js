@@ -237,6 +237,9 @@ const SEARCH_KEYS = [
   "handleDiagramSearchPrev",
   "handleDiagramSearchNext",
   "selectDiagramSearchResult",
+  "moveDiagramSearchActive",
+  "moveDiagramSearchActiveBoundary",
+  "activateDiagramSearchResult",
 ];
 
 const REPORTS_TEMPLATES_PROBLEMS_KEYS = [

@@ -264,3 +264,64 @@ test("contract S2: popover autofocuses the query input and traps Tab inside", ()
   assert.equal(popoverSource.includes('event.key === "Escape"'), true);
   assert.equal(popoverSource.includes("event.stopPropagation()"), true);
 });
+
+// ---------------------------------------------------------------------------
+// F. Wave 1 S3 contract: debounce, keyboard navigation, no-select move
+// ---------------------------------------------------------------------------
+
+const controllerSource = readSource("./useDiagramSearchController.js");
+const sectionsSource = readSource("../orchestration/buildDiagramControlsSections.js");
+
+test("contract S3: popover debounces the query with a pending indicator", () => {
+  assert.equal(popoverSource.includes("SEARCH_DEBOUNCE_MS"), true);
+  assert.equal(popoverSource.includes("debouncerRef.current?.push(draft)"), true);
+  assert.equal(popoverSource.includes('data-testid="diagram-action-search-pending"'), true);
+  assert.equal(popoverSource.includes("value={draft}"), true);
+});
+
+test("contract S3: popover keyboard map — arrows move, Home/End jump, Enter activates", () => {
+  [
+    'event.key === "ArrowDown"',
+    'event.key === "ArrowUp"',
+    'event.key === "Home"',
+    'event.key === "End"',
+    'event.key === "Enter"',
+    "onMoveActive?.(1)",
+    "onMoveActive?.(-1)",
+    'onMoveActiveBoundary?.("start")',
+    'onMoveActiveBoundary?.("end")',
+    'onActivate?.("enter")',
+    "event.preventDefault()",
+  ].forEach((snippet) => {
+    assert.equal(popoverSource.includes(snippet), true, `popover must include ${snippet}`);
+  });
+});
+
+test("contract S3: controller exposes no-select move + explicit activate", () => {
+  ["moveActive", "moveActiveBoundary", "activateActive", "clearQuery"].forEach((name) => {
+    assert.equal(controllerSource.includes(name), true, `controller must expose ${name}`);
+  });
+  // moveActive must NOT route through focusResult (no selection.select/zoom on arrows)
+  const moveStart = controllerSource.indexOf("const moveActive = useCallback");
+  assert.notEqual(moveStart, -1);
+  const moveBody = controllerSource.slice(moveStart, moveStart + 700);
+  assert.equal(moveBody.includes("focusResult"), false, "moveActive must not call focusResult");
+  assert.equal(moveBody.includes("resolveMoveIndex"), true);
+  // activateActive is the explicit Enter path and DOES focus
+  const activateStart = controllerSource.indexOf("const activateActive = useCallback");
+  assert.notEqual(activateStart, -1);
+  const activateBody = controllerSource.slice(activateStart, activateStart + 400);
+  assert.equal(activateBody.includes("focusResult(result, source)"), true);
+});
+
+test("contract S3: keyboard handlers are wired through sections and ProcessStage", () => {
+  [
+    "moveDiagramSearchActive",
+    "moveDiagramSearchActiveBoundary",
+    "activateDiagramSearchResult",
+  ].forEach((key) => {
+    assert.equal(sectionsSource.includes(`"${key}"`), true, `SEARCH_KEYS must include ${key}`);
+    assert.equal(processStageSource.includes(`${key}: diagramSearch.`), true, `ProcessStage must pass ${key}`);
+    assert.equal(controlsSource.includes(key), true, `controls must thread ${key}`);
+  });
+});

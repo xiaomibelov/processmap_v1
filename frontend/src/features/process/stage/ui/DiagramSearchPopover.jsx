@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { createDebouncer, SEARCH_DEBOUNCE_MS } from "../search/debounceModel.js";
 import { trapTabKeyEvent } from "../search/focusTrapModel.js";
 
 function asArray(value) {
@@ -47,9 +48,42 @@ export default function DiagramSearchPopover({
   onPrev = null,
   onNext = null,
   onSelect = null,
+  onMoveActive = null,
+  onMoveActiveBoundary = null,
+  onActivate = null,
   onClose = null,
 } = {}) {
   const inputRef = useRef(null);
+
+  // Debounced query (S3): the input edits a local draft; the controller
+  // query (and therefore matching + canvas highlights) updates 300ms after
+  // the last keystroke. Raw draft values pass through untouched.
+  const [draft, setDraft] = useState(query);
+  const lastPushedRef = useRef(query);
+  const onQueryChangeRef = useRef(onQueryChange);
+  onQueryChangeRef.current = onQueryChange;
+  const debouncerRef = useRef(null);
+  if (!debouncerRef.current) {
+    debouncerRef.current = createDebouncer((value) => {
+      lastPushedRef.current = value;
+      onQueryChangeRef.current?.(value);
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  useEffect(() => () => debouncerRef.current?.cancel(), []);
+
+  // Sync externally-driven query changes (session switch, close/reset).
+  useEffect(() => {
+    if (query === lastPushedRef.current) return;
+    lastPushedRef.current = query;
+    setDraft(query);
+  }, [query]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (draft === lastPushedRef.current) return;
+    debouncerRef.current?.push(draft);
+  }, [draft, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -69,6 +103,14 @@ export default function DiagramSearchPopover({
     ? "Введите название или значение свойства."
     : "Введите запрос: название, id, тип элемента или значение свойства.";
   const groupedRows = groupSearchRows(rows.slice(0, 240));
+  const searchPending = toText(draft) !== toText(query);
+
+  const clearSearchQuery = () => {
+    debouncerRef.current?.cancel();
+    lastPushedRef.current = "";
+    setDraft("");
+    onQueryChangeRef.current?.("");
+  };
 
   const handlePopoverKeyDown = (event) => {
     if (event.key === "Tab") {
@@ -77,8 +119,40 @@ export default function DiagramSearchPopover({
     }
     if (event.key === "Escape") {
       event.stopPropagation();
+      // Two-step Escape: first clears the query, second closes the popover.
+      if (toText(draft) || toText(query)) {
+        clearSearchQuery();
+        return;
+      }
       onClose?.();
       focusSearchTriggerButton();
+    }
+  };
+
+  const handleInputKeyDown = (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      onMoveActive?.(1);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      onMoveActive?.(-1);
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      onMoveActiveBoundary?.("start");
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      onMoveActiveBoundary?.("end");
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      onActivate?.("enter");
     }
   };
 
@@ -127,8 +201,9 @@ export default function DiagramSearchPopover({
           type="text"
           ref={inputRef}
           className="input h-8 min-h-0 text-xs"
-          value={query}
-          onChange={(event) => onQueryChange?.(event.target.value)}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={handleInputKeyDown}
           placeholder={queryPlaceholder}
           data-testid="diagram-action-search-input"
         />
@@ -136,6 +211,9 @@ export default function DiagramSearchPopover({
 
       <div className="diagramIssueRow">
         <span data-testid="diagram-action-search-count">Найдено: {rows.length}</span>
+        {searchPending ? (
+          <span className="diagramIssueChip" data-testid="diagram-action-search-pending">поиск…</span>
+        ) : null}
         <span className="diagramIssueChip" data-testid="diagram-action-search-active-index">
           {rows.length > 0 ? `${Math.max(activeIndex + 1, 1)} / ${rows.length}` : "0 / 0"}
         </span>
