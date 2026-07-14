@@ -12,6 +12,7 @@ import { prettyPrintXml } from "./prettyPrintXml";
 import "./BpmnXmlEditor.css";
 
 const BpmnXmlCodeEditor = lazy(() => import("./BpmnXmlCodeEditor"));
+const BpmnXmlStructureView = lazy(() => import("./BpmnXmlStructureView"));
 
 function useDebouncedCallback(callback, delay) {
   const timeoutRef = useRef(null);
@@ -90,6 +91,8 @@ export default function BpmnXmlEditor({
   const [editorValue, setEditorValue] = useState(xmlDraft);
   const [validationError, setValidationError] = useState("");
   const [cursor, setCursor] = useState({ line: 1, col: 1 });
+  const [structureOpen, setStructureOpen] = useState(true);
+  const editorRef = useRef(null);
 
   // Keep editor in sync with external resets / tab loads / saves.
   useEffect(() => {
@@ -140,6 +143,10 @@ export default function BpmnXmlEditor({
     setCursor({ line, col });
   }, []);
 
+  const handleStructureSelect = useCallback((line) => {
+    editorRef.current?.scrollToLine?.(line);
+  }, []);
+
   const statusText = useMemo(() => {
     if (xmlSaveBusy) return "Сохранение…";
     if (isInvalid) return "Ошибка валидации";
@@ -161,6 +168,15 @@ export default function BpmnXmlEditor({
       <div className="bpmnXmlEditorToolbar">
         <span className={`bpmnXmlEditorStatus ${statusClass}`}>{statusText}</span>
         <div className="bpmnXmlEditorActions">
+          <button
+            type="button"
+            className="bpmnXmlEditorBtn secondary"
+            onClick={() => setStructureOpen((v) => !v)}
+            disabled={xmlSaveBusy}
+            title={structureOpen ? "Скрыть структуру" : "Показать структуру"}
+          >
+            {structureOpen ? "Скрыть структуру" : "Структура"}
+          </button>
           <button
             type="button"
             className="bpmnXmlEditorBtn secondary"
@@ -197,16 +213,24 @@ export default function BpmnXmlEditor({
         </div>
       ) : null}
 
-      <div className="bpmnXmlEditorCodeHost">
-        <Suspense fallback={<div className="bpmnXmlEditorFallback">Загрузка редактора…</div>}>
-          <BpmnXmlCodeEditor
-            value={editorValue}
-            onChange={handleEditorChange}
-            onSave={handleSave}
-            onCursorActivity={handleCursorActivity}
-            readOnly={xmlSaveBusy}
-          />
-        </Suspense>
+      <div className="bpmnXmlEditorWorkspace">
+        <div className="bpmnXmlEditorCodeHost">
+          <Suspense fallback={<div className="bpmnXmlEditorFallback">Загрузка редактора…</div>}>
+            <BpmnXmlCodeEditor
+              ref={editorRef}
+              value={editorValue}
+              onChange={handleEditorChange}
+              onSave={handleSave}
+              onCursorActivity={handleCursorActivity}
+              readOnly={xmlSaveBusy}
+            />
+          </Suspense>
+        </div>
+        {structureOpen ? (
+          <Suspense fallback={null}>
+            <BpmnXmlStructureView value={editorValue} onSelectLine={handleStructureSelect} />
+          </Suspense>
+        ) : null}
       </div>
 
       <div className="bpmnXmlEditorStatusBar">

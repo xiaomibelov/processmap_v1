@@ -5899,7 +5899,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         </div>
       ) : null}
 
-      <div className={view === "xml" ? "h-full min-h-0" : "hidden"}>
+      <div className={view === "xml" ? "h-full min-h-0 w-full" : "hidden"}>
         <BpmnXmlEditor
           xmlDraft={xmlDraft}
           xml={xml}
