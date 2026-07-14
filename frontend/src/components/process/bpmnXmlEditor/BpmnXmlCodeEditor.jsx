@@ -10,6 +10,7 @@ import { foldGutter, indentOnInput, syntaxHighlighting, defaultHighlightStyle,
 import { search, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { lintGutter } from "@codemirror/lint";
 import { bpmnXmlLinter } from "./xmlLinter";
+import { bpmnXmlHighlightPlugin } from "./bpmnXmlHighlighting";
 import "./BpmnXmlCodeEditor.css";
 
 function buildLightTheme() {
@@ -28,12 +29,12 @@ function buildLightTheme() {
       borderRight: "1px solid #e5e7eb",
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
     },
-    ".cm-activeLineGutter": { backgroundColor: "#e5e7eb" },
-    ".cm-activeLine": { backgroundColor: "rgba(37, 99, 235, 0.06)" },
-    ".cm-selectionBackground": { background: "rgba(37, 99, 235, 0.2)" },
+    ".cm-activeLineGutter": { backgroundColor: "#f0f9ff" },
+    ".cm-activeLine": { backgroundColor: "#f0f9ff" },
+    ".cm-selectionBackground": { background: "#dbeafe" },
     ".cm-foldPlaceholder": { backgroundColor: "#f3f4f6", borderColor: "#d1d5db", color: "#374151" },
     ".cm-lineNumbers": { color: "#9ca3af" },
-    ".cm-matchingBracket": { borderBottom: "1px solid #2563eb" },
+    ".cm-matchingBracket": { backgroundColor: "#fef3c7" },
     ".cm-nonmatchingBracket": { backgroundColor: "rgba(239, 68, 68, 0.2)" },
   }, { dark: false });
 }
@@ -124,6 +125,7 @@ export default function BpmnXmlCodeEditor({
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         lintGutter(),
         bpmnXmlLinter({ delay: 300 }),
+        bpmnXmlHighlightPlugin(),
         themeCompartment.current.of(buildLightTheme()),
         readOnlyCompartment.current.of(EditorState.readOnly.of(readOnly)),
       ],
