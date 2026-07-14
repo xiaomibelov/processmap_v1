@@ -15,11 +15,11 @@ import {
 } from "../../../features/process/analysis/productActionsModel.js";
 import {
   apiBatchSuggestProductActions,
-  apiLoadBatchDraft,
   apiRagIndexProductActions,
   apiSaveBatchDraft,
   apiSuggestProductActions,
 } from "../../../lib/api.js";
+import { startProductActionsBatchDraftLoad } from "./productActionsBatchDraftLoad.js";
 import { toArray, toText } from "./utils";
 
 const FIELD_CONFIGS = [
@@ -495,13 +495,12 @@ export default function ProductActionsPanel({
 
   useEffect(() => {
     if (!sessionId) return;
-    apiLoadBatchDraft(sessionId).then(result => {
-      if (result?.ok && result?.draft && typeof result.draft === 'object') {
-        setBatchDraft(deserializeBatchDraftFromBackend(result.draft));
-      }
-    }).catch(() => {
-      // Ignore load errors
+    // Guarded load: the result is discarded if the panel unmounts or the
+    // session switches before the request resolves (see startProductActionsBatchDraftLoad).
+    const { cancel } = startProductActionsBatchDraftLoad(sessionId, {
+      apply: (draft) => setBatchDraft(deserializeBatchDraftFromBackend(draft)),
     });
+    return cancel;
   }, [sessionId]);
 
   const selectedBinding = deriveProductActionBindingFromStep(selectedStep);
