@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import { isRefPropertyName } from "../../../features/process/camunda/refsModel";
+
 function PencilIcon({ className = "h-4 w-4" }) {
   return (
     <svg
@@ -44,6 +46,7 @@ export default function InlineBpmnPropertyRow({
   extensionStateBusy = false,
   updatePropertyRow,
   deletePropertyRow,
+  refOptions = [],
 }) {
   const rowId = String(row?.id || "").trim();
   const savedName = String(row?.name || "");
@@ -102,6 +105,13 @@ export default function InlineBpmnPropertyRow({
   }
 
   const isBusy = !!disabled || !!extensionStateBusy;
+  // Ref-named properties (*_ref) offer native autocomplete from the
+  // process-wide ref pool + backend reference options. The datalist is
+  // based on the draft name so renaming a row to a *_ref name picks it up
+  // immediately; with no options the input stays a plain text input.
+  const isRefRow = isRefPropertyName(draftName || savedName);
+  const refListOptions = isRefRow && Array.isArray(refOptions) ? refOptions : [];
+  const refDatalistId = `prop_ref_${rowId}`;
 
   if (!isEditing) {
     return (
@@ -175,11 +185,19 @@ export default function InlineBpmnPropertyRow({
           className="input sidebarInput w-full min-w-0"
           placeholder="Значение"
           value={draftValue}
+          list={refListOptions.length ? refDatalistId : undefined}
           onChange={(event) => setDraftValue(event.target.value)}
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
           disabled={isBusy}
         />
+        {refListOptions.length ? (
+          <datalist id={refDatalistId}>
+            {refListOptions.map((value) => (
+              <option key={`prop_ref_option_${rowId}_${value}`} value={value} />
+            ))}
+          </datalist>
+        ) : null}
       </div>
       <div className="sidebarSchemaPropertyActionCell">
         <button

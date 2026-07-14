@@ -29,6 +29,10 @@ import RecipeSidebar from "../../features/process/recipe/components/RecipeSideba
 import PropertyGroup from "./PropertyGroup.jsx";
 import AdditionalBpmnPropertiesSection from "./sections/AdditionalBpmnPropertiesSection.jsx";
 import InlineBpmnPropertyRow from "./rows/InlineBpmnPropertyRow.jsx";
+import {
+  isRefPropertyName,
+  mergeRefOptions,
+} from "../../features/process/camunda/refsModel";
 import { normalizeDocumentationRows as sharedNormalizeDocumentationRows } from "../../features/process/bpmn/documentation/normalizeDocumentationRows.js";
 
 function toText(value) {
@@ -1179,6 +1183,7 @@ export function CamundaPropertiesSettings({
   dictionaryLoading = false,
   dictionaryError = "",
   dictionaryAddBusyKey = "",
+  refOptions = [],
   operationKey = "",
   operationOptions = [],
   operationSelectionBusy = false,
@@ -1227,7 +1232,7 @@ export function CamundaPropertiesSettings({
     deletePropertyRow,
     quickPropertyNames,
     quickRows,
-    otherAdditionalBpmnRows,
+    additionalBpmnRows,
     userPins,
     isUserPinnedName,
     pinName,
@@ -1263,8 +1268,10 @@ export function CamundaPropertiesSettings({
     [state, dictionaryBundle],
   );
   const hasDictionarySchema = dictionaryEditorModel.hasSchema;
-  // quickPropertyNames / quickRows / otherAdditionalBpmnRows / userPins are
-  // sourced from useBpmnPropertiesController (single source of truth).
+  // quickPropertyNames / quickRows / additionalBpmnRows / userPins are
+  // sourced from useBpmnPropertiesController (single source of truth):
+  // Quick and Additional are two views of ONE draft — Quick shows the pinned
+  // rows, Additional shows the full list (pinned rows included).
 
   // Quick pinned-slot inline create: fill an empty pinned slot (ee_time /
   // ingredient_value) by creating the row with the canonical name (draft-only;
@@ -1278,9 +1285,9 @@ export function CamundaPropertiesSettings({
 
   // Delete-from-Quick semantics: a pinned row (user pin OR default —
   // defaults are initial pins only) is only unpinned: the row stays in the
-  // draft and surfaces in Additional (no data loss). A non-pinned row
-  // (cannot normally appear in Quick) is hard-deleted and flushed (unified
-  // with Additional's auto-save).
+  // draft and remains visible in Additional, which shows the full list (no
+  // data loss). A non-pinned row (cannot normally appear in Quick) is
+  // hard-deleted and flushed (unified with Additional's auto-save).
   function handleQuickDelete(rowId) {
     const row = quickRows.find((r) => String(r?.id || "") === String(rowId || ""));
     const rowName = String(row?.name || "");
@@ -1294,6 +1301,16 @@ export function CamundaPropertiesSettings({
     }
   }
 
+  // Hard delete from Additional: remove from draft AND unpin (so it also
+  // disappears from Quick — no dangling empty pinned slot). The section's own
+  // delete wrapper flushes the auto-save with the returned next state.
+  function handleAdditionalDelete(rowId) {
+    const row = additionalBpmnRows.find((r) => String(r?.id || "") === String(rowId || ""));
+    const rowName = String(row?.name || "");
+    if (rowName && isUserPinnedName(rowName)) unpinName(rowName);
+    return deletePropertyRow(rowId);
+  }
+
   // Generic quick add: create an empty row with the chosen name and pin it so
   // it surfaces in the Quick table (the value is then filled in place).
   function handleQuickAddNamed(name) {
@@ -1301,8 +1318,11 @@ export function CamundaPropertiesSettings({
     pinName(name);
     setAddingQuick(false);
   }
+  // Show ALL active schema rows — including empty ones — so the operation's
+  // parameters can be filled in place (v0.3 Phase 1A). Only rows deactivated
+  // in the dictionary are hidden.
   const visibleSchemaRows = Array.isArray(dictionaryEditorModel?.schemaRows)
-    ? dictionaryEditorModel.schemaRows.filter((row) => String(row?.value ?? "").trim() !== "")
+    ? dictionaryEditorModel.schemaRows.filter((row) => row?.isActive !== false)
     : [];
   const operationPropertiesCount = visibleSchemaRows.length;
   const overlayCompanionSummary = selectedBpmnOverlayCompanionSummary && typeof selectedBpmnOverlayCompanionSummary === "object"
@@ -1624,6 +1644,15 @@ export function CamundaPropertiesSettings({
     const logicalKey = String(row?.propertyKey || row?.name || "");
     const label = String(row?.propertyLabel || logicalKey || "");
     const options = Array.isArray(row?.options) ? row.options : [];
+    // Ref-named properties (*_ref) get autocomplete from the process-wide
+    // ref pool + backend reference options, merged with dictionary options.
+    const isRefRow = isRefPropertyName(logicalKey);
+    const refDatalistValues = isRefRow
+      ? mergeRefOptions(options.map((option) => String(option?.optionValue || "")), refOptions)
+      : [];
+    const hasDatalist = isRefRow
+      ? refDatalistValues.length > 0
+      : (row?.inputMode === "autocomplete" && options.length);
     const datalistId = selectedElementId ? `property_dict_${selectedElementId}_${logicalKey}` : "";
     const canAddTypedValue = shouldOfferAddDictionaryValueAction({
       inputValue: row?.value,
@@ -1631,10 +1660,17 @@ export function CamundaPropertiesSettings({
       allowCustomValue: row?.allowCustomValue,
       busy: dictionaryAddBusyKey === logicalKey,
     });
+    const isRequiredEmpty = !!row?.required && !String(row?.value || "").trim();
     return (
-      <div key={`schema_property_${logicalKey}`} className="sidebarSchemaPropertyRow">
+      <div
+        key={`schema_property_${logicalKey}`}
+        className={isRequiredEmpty ? "sidebarSchemaPropertyRow sidebarSchemaPropertyRow--requiredEmpty" : "sidebarSchemaPropertyRow"}
+      >
         <div className="sidebarSchemaPropertyLabel">
-          <div className="sidebarSchemaPropertyHuman">{label}</div>
+          <div className="sidebarSchemaPropertyHuman">
+            {label}
+            {row?.required ? <span className="sidebarSchemaPropertyRequired" title="Обязательное поле">*</span> : null}
+          </div>
           {logicalKey ? <div className="sidebarSchemaPropertyKey">{logicalKey}</div> : null}
         </div>
         <div className="sidebarSchemaPropertyValueCell">
@@ -1642,7 +1678,7 @@ export function CamundaPropertiesSettings({
             className="input sidebarInput w-full min-w-0 flex-[1_1_220px]"
             placeholder={row?.inputMode === "free_text" ? "Введите значение" : "Выберите или введите значение"}
             value={String(row?.value || "")}
-            list={row?.inputMode === "autocomplete" && options.length ? datalistId : undefined}
+            list={hasDatalist ? datalistId : undefined}
             onChange={(event) => updateSchemaPropertyValue(logicalKey, event.target.value)}
             disabled={!!disabled || !!extensionStateBusy}
             title={String(row?.value || "")}
@@ -1658,17 +1694,24 @@ export function CamundaPropertiesSettings({
             Очистить
           </button>
         </div>
-        {row?.inputMode === "autocomplete" && options.length ? (
+        {hasDatalist ? (
           <datalist id={datalistId}>
-            {options.map((option) => (
-              <option
-                key={`schema_property_option_${logicalKey}_${String(option?.id || option?.optionValue || "")}`}
-                value={String(option?.optionValue || "")}
-              />
-            ))}
+            {isRefRow
+              ? refDatalistValues.map((value) => (
+                <option
+                  key={`schema_property_ref_${logicalKey}_${value}`}
+                  value={value}
+                />
+              ))
+              : options.map((option) => (
+                <option
+                  key={`schema_property_option_${logicalKey}_${String(option?.id || option?.optionValue || "")}`}
+                  value={String(option?.optionValue || "")}
+                />
+              ))}
           </datalist>
         ) : null}
-        {row?.inputMode === "autocomplete" && !options.length ? (
+        {row?.inputMode === "autocomplete" && !options.length && !hasDatalist ? (
           <div className="sidebarFieldHint sidebarSchemaPropertyHint">
             {row?.allowCustomValue ? "Пока нет значений. Можно ввести своё." : "Для этого свойства пока нет значений."}
           </div>
@@ -1739,7 +1782,7 @@ export function CamundaPropertiesSettings({
 
   const showSchemaHint = !hasDictionarySchema && !!normalizedOperationKey && !!dictionaryLoading && !dictionaryError;
   const showFallbackBlock = !hasDictionarySchema && (!normalizedOperationKey || !dictionaryLoading || !!dictionaryError);
-  const additionalBpmnCount = otherAdditionalBpmnRows.length;
+  const additionalBpmnCount = additionalBpmnRows.length;
   const camundaIoCount = camundaInputRows.length + camundaOutputRows.length;
   const zeebeTaskHeadersCount = zeebeTaskHeaderRows.length;
   const propertySections = [
@@ -1955,14 +1998,15 @@ async function handleSaveAll() {
           open={additionalBpmnOpen}
           onToggleOpen={setAdditionalBpmnOpen}
           count={additionalBpmnCount}
-          rows={otherAdditionalBpmnRows}
+          rows={additionalBpmnRows}
           hasDictionarySchema={hasDictionarySchema}
           dictionaryLoading={dictionaryLoading}
           disabled={disabled}
           extensionStateBusy={extensionStateBusy}
           updatePropertyRow={updatePropertyRow}
-          deletePropertyRow={deletePropertyRow}
+          deletePropertyRow={handleAdditionalDelete}
           addPropertyRow={addPropertyRow}
+          refOptions={refOptions}
           onSaveExtensionState={onSaveExtensionState}
         />
 
@@ -2012,6 +2056,7 @@ async function handleSaveAll() {
                       extensionStateBusy={extensionStateBusy}
                       updatePropertyRow={updatePropertyRow}
                       deletePropertyRow={handleQuickDelete}
+                      refOptions={refOptions}
                     />
                   );
                 })}
