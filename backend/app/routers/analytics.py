@@ -988,7 +988,8 @@ def _build_source_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     Emits one row per element that has a numeric ``ee_time``. Missing
     ``ingredient_value`` (the property key is absent) is treated as a multiplier of
     ``1.0``. Empty or unparseable ``ingredient_value`` yields ``Source = "нет данных"``.
-    ``ee_operation`` and ``ingredient_um`` are carried through when present.
+    ``ee_time``, ``ee_operation``, ``ingredient`` and ``ingredient_um`` are carried
+    through when present.
     """
     by_element: Dict[str, Dict[str, Any]] = {}
     for row in rows:
@@ -1046,8 +1047,10 @@ def _build_source_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         out_rows.append({
             "bpmn_id": element["bpmn_id"],
             "bpmn_name": element["bpmn_name"],
+            _EE_TIME_KEY: ee_val,
             _EE_OPERATION_KEY: element.get(_EE_OPERATION_KEY) or "",
             _INGREDIENT_VALUE_KEY: ing_display,
+            _INGREDIENT_KEY: element.get(_INGREDIENT_KEY) or "",
             _INGREDIENT_UM_KEY: element.get(_INGREDIENT_UM_KEY) or "",
             "source": source,
             "session_id": sid,
@@ -1094,8 +1097,10 @@ def export_properties_recalculated_xlsx(
         columns = [
             ("bpmn_id", "BPMN ID"),
             ("bpmn_name", "BPMN Name"),
+            (_EE_TIME_KEY, "ee_time"),
             (_EE_OPERATION_KEY, "ee_operation"),
             (_INGREDIENT_VALUE_KEY, "ingredient_value"),
+            (_INGREDIENT_KEY, "ingredient"),
             (_INGREDIENT_UM_KEY, "ingredient_um"),
             ("source", "Source"),
             ("session_id", "Session ID"),
@@ -1105,6 +1110,7 @@ def export_properties_recalculated_xlsx(
             ("source_url", "Source URL"),
         ]
         formats = {
+            _EE_TIME_KEY: {"num_format": "0.00"},
             _INGREDIENT_VALUE_KEY: {"num_format": "0.00"},
             "source": {"num_format": "0.00"},
         }
