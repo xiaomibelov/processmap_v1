@@ -1777,6 +1777,26 @@ export async function apiGetExport(sessionId) {
   return r.ok ? { ok: true, status: r.status, export: r.data } : r;
 }
 
+// Session export ZIP (process.yml + BPMN XML + sidecars) as a Blob download.
+// Uses raw fetch because the response is binary; auth mirrors apiRequest.
+export async function apiGetExportZip(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  try {
+    const token = String(getAccessToken() || "").trim();
+    const resp = await fetch(apiRoutes.sessions.exportZip(sid), {
+      method: "GET",
+      credentials: "include",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!resp.ok) return { ok: false, status: resp.status, error: `http ${resp.status}` };
+    const blob = await resp.blob();
+    return { ok: true, status: resp.status, blob };
+  } catch (e) {
+    return { ok: false, status: 0, error: String(e?.message || e) };
+  }
+}
+
 // ------- LLM Settings -------
 export async function apiGetLlmSettings() {
   const r = okOrError(await request(apiRoutes.llm.settings()));

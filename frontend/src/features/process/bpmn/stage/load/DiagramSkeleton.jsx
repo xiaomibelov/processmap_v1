@@ -1,4 +1,5 @@
 import React from "react";
+import FlowArcSpinner from "./FlowArcSpinner";
 
 export default function DiagramSkeleton() {
   return (
@@ -6,7 +7,7 @@ export default function DiagramSkeleton() {
       <div className="diagramSkeleton-canvas">
         <div className="diagramSkeleton-pulse" />
       </div>
-      <div className="diagramSkeleton-text">Загрузка диаграммы…</div>
+      <FlowArcSpinner />
     </div>
   );
 }

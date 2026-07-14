@@ -146,6 +146,25 @@ class TestSubprocessSessionCreation(unittest.TestCase):
             '</definitions>'
         )
 
+    def _bpmn_with_subprocess_task(self, sub_id, task_name, extra_ids=None):
+        subs = [
+            f'<subProcess id="{sub_id}" name="Sub {sub_id}">'
+            f'<task id="{sub_id}_task" name="{task_name}" />'
+            f'</subProcess>'
+        ]
+        for sid in extra_ids or []:
+            subs.append(f'<subProcess id="{sid}" name="Sub {sid}" />')
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="ns">'
+            '<process id="p1">'
+            '<startEvent id="start"/>'
+            + "".join(subs)
+            + '<endEvent id="end"/>'
+            '</process>'
+            '</definitions>'
+        )
+
     def _save_bpmn(self, sid, xml, user, org_id):
         # Use the legacy save directly so tests for create_subprocess_sessions
         # run in isolation from the hybrid auto-create-on-save behaviour.
@@ -479,8 +498,53 @@ class TestSubprocessSessionCreation(unittest.TestCase):
         children = list_session_children("org_hybrid_3", "proj_1", sid, user_id=str(editor["id"]))
         self.assertEqual(len(children), 10)
 
+    def test_bpmn_save_refreshes_existing_child_xml(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_refresh_1@local", "editor_refresh_1@local", "org_refresh_1"
+        )
+        sid = self._create_session(str(owner["id"]), "org_refresh_1", project_id="proj_1", title="root")
+        xml_a = self._bpmn_with_subprocess_task("sub_1", "Task A")
+        result = self._hybrid_save_bpmn(sid, xml_a, editor, "org_refresh_1")
+        self.assertTrue(result.get("ok"))
+        children = list_session_children("org_refresh_1", "proj_1", sid, user_id=str(editor["id"]))
+        self.assertEqual(len(children), 1)
+        self.assertIn("Task A", children[0]["bpmn_xml"])
 
-if __name__ == "__main__":
-    unittest.main()
+        xml_b = self._bpmn_with_subprocess_task("sub_1", "Task B")
+        result2 = self._hybrid_save_bpmn(sid, xml_b, editor, "org_refresh_1")
+        self.assertTrue(result2.get("ok"))
+
+        children2 = list_session_children("org_refresh_1", "proj_1", sid, user_id=str(editor["id"]))
+        self.assertEqual(len(children2), 1)
+        self.assertEqual(children2[0]["id"], children[0]["id"])
+        self.assertIn("Task B", children2[0]["bpmn_xml"])
+        self.assertNotIn("Task A", children2[0]["bpmn_xml"])
+
+    def test_bpmn_save_refreshes_restored_child_xml(self):
+        owner, editor = self._setup_org_and_editor(
+            "owner_refresh_2@local", "editor_refresh_2@local", "org_refresh_2"
+        )
+        sid = self._create_session(str(owner["id"]), "org_refresh_2", project_id="proj_1", title="root")
+        xml_a = self._bpmn_with_subprocess_task("sub_1", "Task A", extra_ids=["sub_2"])
+        result = self._hybrid_save_bpmn(sid, xml_a, editor, "org_refresh_2")
+        self.assertTrue(result.get("ok"))
+        self.assertEqual(len(list_session_children("org_refresh_2", "proj_1", sid, user_id=str(editor["id"]))), 2)
+
+        parent = self.st.load(sid, org_id="org_refresh_2", is_admin=True)
+        svc.soft_delete_removed_subprocess_sessions(parent, ["sub_2"], request=_DummyRequest(editor, "org_refresh_2"))
+        self.assertEqual(len(list_session_children("org_refresh_2", "proj_1", sid, user_id=str(editor["id"]))), 1)
+
+        xml_b = self._bpmn_with_subprocess_task("sub_1", "Task B", extra_ids=["sub_2"])
+        result2 = self._hybrid_save_bpmn(sid, xml_b, editor, "org_refresh_2")
+        self.assertTrue(result2.get("ok"))
+
+        children2 = list_session_children("org_refresh_2", "proj_1", sid, user_id=str(editor["id"]))
+        self.assertEqual(len(children2), 2)
+        child_row = self.st.find_by_parent_element(sid, "sub_1", org_id="org_refresh_2")
+        child = self.st.load(child_row.id, org_id="org_refresh_2", is_admin=True)
+        self.assertIn("Task B", child.bpmn_xml)
+        self.assertNotIn("Task A", child.bpmn_xml)
+
+
 if __name__ == "__main__":
     unittest.main()

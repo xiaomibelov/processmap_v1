@@ -127,16 +127,14 @@ export default function useBpmnPropertiesController({
     ? dictionaryEditorModel.schemaRows.filter((row) => String(row?.value ?? "").trim() !== "")
     : [];
 
-  // Single source of truth for the quick/additional split (consumed by
-  // ElementSettingsControls via useElementSettingsController).
+  // Single source of truth for the quick/additional views (consumed by
+  // ElementSettingsControls via useElementSettingsController): Quick and
+  // Additional are two views of ONE draft — quickRows is the pinned subset
+  // of additionalBpmnRows; Additional shows the full list.
   const pinnedNameSet = useMemo(() => new Set(userPins), [userPins]);
   const quickPropertyNames = userPins;
   const quickRows = useMemo(
     () => additionalBpmnRows.filter((row) => pinnedNameSet.has(normalizePinName(row?.name))),
-    [additionalBpmnRows, pinnedNameSet],
-  );
-  const otherAdditionalBpmnRows = useMemo(
-    () => additionalBpmnRows.filter((row) => !pinnedNameSet.has(normalizePinName(row?.name))),
     [additionalBpmnRows, pinnedNameSet],
   );
 
@@ -232,7 +230,6 @@ export default function useBpmnPropertiesController({
     additionalBpmnRows,
     quickPropertyNames,
     quickRows,
-    otherAdditionalBpmnRows,
     userPins,
     visibleSchemaRows,
     operationPropertiesCount: visibleSchemaRows.length,

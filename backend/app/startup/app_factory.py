@@ -20,6 +20,9 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Food Process Copilot MVP",
         description="ProcessMap API. Use the Authorize button to supply a JWT access token.",
+        docs_url="/api/docs",
+        redoc_url="/api/redoc",
+        openapi_url="/api/openapi.json",
         dependencies=[Depends(optional_access_token_payload)],
         security=[{bearer_auth.scheme_name: []}],
     )

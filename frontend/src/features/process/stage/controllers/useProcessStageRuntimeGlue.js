@@ -75,6 +75,7 @@ export default function useProcessStageRuntimeGlue({
   executeAi,
   apiAiQuestions,
   apiGetBpmnXml,
+  apiGetExportZip,
   apiPatchSession,
   getBaseDiagramStateVersion,
   rememberDiagramStateVersion,
@@ -587,12 +588,46 @@ export default function useProcessStageRuntimeGlue({
     }
   }
 
+  async function exportSessionZip() {
+    try {
+      const sessionId = String(sid || "").trim();
+      if (!sessionId) return;
+      setGenErr("");
+      setInfoMsg("Экспортирую ZIP (YAML + BPMN)…");
+      const resp = await apiGetExportZip(sessionId);
+      if (!resp?.ok) {
+        setInfoMsg("");
+        setGenErr(`Экспорт недоступен (HTTP ${resp?.status || 0}).`);
+        return;
+      }
+      const base = String(draft?.title || sessionId || "process")
+        .trim()
+        .replace(/[\\/:*?"<>|]+/g, "_")
+        .replace(/\s+/g, "_")
+        .slice(0, 80) || "process";
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const href = URL.createObjectURL(resp.blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = `${base}_${stamp}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+      setInfoMsg("ZIP экспортирован (YAML + BPMN).");
+    } catch (e) {
+      setInfoMsg("");
+      setGenErr(shortErr(e?.message || e));
+    }
+  }
+
   return {
     openImportDialog,
     runToolbarReset,
     runToolbarClear,
     toggleAiBottlenecks,
     exportBpmn,
+    exportSessionZip,
     openClarifyNode,
     toggleAttentionFilter,
     focusAttentionItem,

@@ -13,6 +13,7 @@ export default function AdditionalBpmnPropertiesSection({
   updatePropertyRow,
   deletePropertyRow,
   addPropertyRow,
+  refOptions = [],
   onSaveExtensionState,
 }) {
   const showFallbackBlock = !hasDictionarySchema;
@@ -65,6 +66,7 @@ export default function AdditionalBpmnPropertiesSection({
                 extensionStateBusy={extensionStateBusy}
                 updatePropertyRow={updatePropertyRow}
                 deletePropertyRow={handleDelete}
+                refOptions={refOptions}
               />
             ))}
           </div>

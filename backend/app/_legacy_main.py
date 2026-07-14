@@ -242,6 +242,11 @@ AUTH_PUBLIC_PATHS = {
     "/api/meta",
     "/api/feature-flags",
     "/api/deployment-notice",
+    # Swagger / OpenAPI endpoints are routed through /api so the frontend nginx
+    # does not serve the SPA fallback for them.
+    "/api/docs",
+    "/api/redoc",
+    "/api/openapi.json",
 }
 
 _ORG_WRITE_ROLES = {"org_owner", "org_admin"}
