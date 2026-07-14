@@ -8,6 +8,7 @@ import {
   resolveBpmnPastePoint,
 } from "../copy-paste/bpmnElementClipboard.js";
 import { normalizeDocumentationRows } from "../documentation/normalizeDocumentationRows.js";
+import { propertyCrudBoundary } from "../../propertyCrudBoundary.js";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -253,7 +254,7 @@ function updateElementDocumentation({
   }
 }
 
-function updateExtensionPropertyValue({
+async function updateExtensionPropertyValue({
   inst,
   modeling,
   element,
@@ -261,11 +262,26 @@ function updateExtensionPropertyValue({
   propertyKeyRaw,
   nextValueRaw,
 }) {
+  const propertyKey = toText(propertyKeyRaw);
+  const propertyName = toText(propertyNameRaw);
+  const elementId = toText(element?.id);
+  const effectiveName = propertyName || propertyKey.split(":").pop();
+
+  // Prefer the unified property CRUD boundary when it has been registered.
+  // This keeps context-menu edits on the same canonical XML path as the sidebar.
+  if (propertyCrudBoundary.runtime && elementId && effectiveName) {
+    const result = await propertyCrudBoundary.setProperty(elementId, effectiveName, nextValueRaw);
+    if (!result.ok) {
+      return { ok: false, error: result.error || "extension_property_update_failed" };
+    }
+    return { ok: true, changed: (result.changedKeys || []).length > 0, propertyName: effectiveName };
+  }
+
+  // Legacy fallback: direct modeler mutation (used in tests and until the
+  // boundary runtime is registered).
   if (!modeling || typeof modeling.updateProperties !== "function") {
     return { ok: false, error: "update_properties_unavailable" };
   }
-  const propertyKey = toText(propertyKeyRaw);
-  const propertyName = toText(propertyNameRaw);
   if (!propertyKey && !propertyName) return { ok: false, error: "missing_property_name" };
   const bo = asObject(element?.businessObject);
   const ext = bo?.extensionElements || null;
@@ -941,7 +957,7 @@ export async function executeBpmnContextMenuAction({
     }
 
     if (actionId === "properties_overlay_update_extension_property") {
-      const result = updateExtensionPropertyValue({
+      const result = await updateExtensionPropertyValue({
         inst,
         modeling,
         element: target,

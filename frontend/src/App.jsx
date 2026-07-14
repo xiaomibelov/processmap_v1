@@ -67,6 +67,7 @@ import {
   upsertCamundaExtensionStateByElementId,
 } from "./features/process/camunda/camundaExtensions";
 import { saveBpmnState } from "./features/process/save/saveBpmnState";
+import { propertyCrudBoundary } from "./features/process/propertyCrudBoundary";
 import { patchInterviewAnalysis } from "./features/process/analysis/interviewAnalysisPatchHelper";
 import {
   emitPropertySaveEvent,
@@ -1166,6 +1167,32 @@ export default function App() {
       bpmnXmlCacheRef.current.set(sid, xml);
     }
   }, [draft?.session_id, draft?.id, draft?.bpmn_xml]);
+
+  // Register runtime callbacks for the unified property CRUD boundary.
+  useEffect(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) {
+      propertyCrudBoundary.reset();
+      return;
+    }
+    propertyCrudBoundary.registerRuntime({
+      getSessionId: () => sid,
+      getCurrentXml: () => draft?.bpmn_xml || bpmnXmlCacheRef.current.get(sid) || "",
+      getCurrentBpmnMeta: () => draft?.bpmn_meta || {},
+      getBaseDiagramStateVersion: () => bpmnStageRef.current?.getBaseDiagramStateVersion?.(),
+      rememberDiagramStateVersion: (version, options) => {
+        bpmnStageRef.current?.rememberDiagramStateVersion?.(version, options);
+      },
+      getElementCamundaExtensionState: (elementId) => (
+        bpmnStageRef.current?.getElementCamundaExtensionState?.(elementId)
+      ),
+      applyElementCamundaExtensionsToModeler: (elementId, state) => (
+        bpmnStageRef.current?.applyElementCamundaExtensionsToModeler?.(elementId, state)
+      ),
+      onSessionSync: (patch) => onSessionSync(patch),
+    });
+    propertyCrudBoundary.syncXml(draft?.bpmn_xml || "");
+  }, [draft?.session_id, draft?.bpmn_xml, draft?.bpmn_meta]);
 
   async function refreshMeta() {
     const r = await apiMeta();
