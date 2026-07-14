@@ -208,10 +208,10 @@ test("contract: inline panel caps rendered rows at 240 and groups rows by proces
   assert.equal(panelSource.includes('data-testid="diagram-action-search-group"'), true);
 });
 
-test("contract: inline input reports active index chip and row selection", () => {
-  assert.equal(panelSource.includes('data-testid="diagram-action-search-active-index"'), true);
+test("contract: inline panel shows result rows and no pagination", () => {
   assert.equal(panelSource.includes('data-testid="diagram-action-search-row"'), true);
   assert.equal(panelSource.includes("onSelect?.(index)"), true);
+  assert.equal(panelSource.includes("diagram-action-search-active-index"), false, "pagination 1/N removed");
 });
 
 test("contract: controls wire inline search to controller handlers", () => {
@@ -285,8 +285,6 @@ test("contract S3: inline input debounces query with raw pass-through", () => {
   assert.equal(inlineSource.includes("setDraft(event.target.value)"), true);
   assert.equal(inlineSource.includes("onQueryChangeRef.current?.(value)"), true);
   assert.equal(inlineSource.includes("toText(event.target.value)"), false);
-  // Pending indicator lives in the results panel.
-  assert.equal(panelSource.includes('data-testid="diagram-action-search-pending"'), true);
 });
 
 test("contract S3: inline keyboard map — arrows move, Home/End jump, Enter activates", () => {
@@ -340,6 +338,8 @@ test("contract redesign: mode toggle is wired with elements/properties tabs", ()
   assert.equal(modeToggleSource.includes("resolveNextSearchMode"), true);
   assert.equal(controlsSource.includes("mode={diagramSearchMode}"), true);
   assert.equal(controlsSource.includes("onModeChange={setDiagramSearchMode}"), true);
+  // Panel also exposes a compact mode chip in its header.
+  assert.equal(panelSource.includes("diagramSearchInlineModeChip"), true);
 });
 
 test("contract redesign: Focus/Fullscreen are icon-only and moved after zoom controls", () => {

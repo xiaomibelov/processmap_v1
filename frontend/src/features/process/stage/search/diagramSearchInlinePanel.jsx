@@ -1,3 +1,5 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+
 import DiagramSearchTypeIcon from "./DiagramSearchTypeIcon.jsx";
 import {
   SEARCH_RESULTS_CAP,
@@ -9,25 +11,41 @@ function toText(value) {
   return String(value || "").trim();
 }
 
-function SearchResultRow({
+function getTypeChip(mode, row) {
+  const isPropertiesMode = toText(mode).toLowerCase() === "properties";
+  if (isPropertiesMode) return "property";
+  const typeLabel = toText(row?.typeLabel || row?.type);
+  if (typeLabel) return typeLabel;
+  return "Элемент";
+}
+
+function ResultItem({
   row,
   index,
-  isPropertiesMode,
+  mode,
   active,
   onSelect,
   onMouseDown,
 }) {
   const elementId = toText(row?.elementId || row?.id);
-  const title = isPropertiesMode
-    ? toText(row?.propertyName || row?.name)
-    : toText(row?.title || row?.name || elementId) || elementId;
-  const meta = isPropertiesMode
-    ? `${toText(row?.propertyValue) || "(пусто)"} · ${toText(row?.elementTitle || row?.title || elementId) || elementId}`
-    : elementId;
-  const typeLabel = isPropertiesMode
-    ? toText(row?.elementTypeLabel || row?.elementType || row?.type)
-    : toText(row?.typeLabel || row?.type);
-  const subprocessPathLabel = toText(row?.subprocessPathLabel);
+  const isPropertiesMode = toText(mode).toLowerCase() === "properties";
+
+  let title;
+  let context;
+  let propertyLine;
+
+  if (isPropertiesMode) {
+    title = toText(row?.elementTitle || row?.title || row?.name || elementId) || elementId;
+    const propName = toText(row?.propertyName || row?.name);
+    const propValue = toText(row?.propertyValue || row?.value);
+    propertyLine = `${propName || "(без имени)"}: ${propValue || "(пусто)"}`;
+    context = toText(row?.subprocessPathLabel) || "Основной процесс";
+  } else {
+    title = toText(row?.title || row?.name || elementId) || elementId;
+    context = toText(row?.subprocessPathLabel);
+  }
+
+  const typeChip = getTypeChip(mode, row);
   const showDrill = isSubprocessSearchRow(row);
 
   return (
@@ -39,19 +57,18 @@ function SearchResultRow({
       title={title}
       data-testid="diagram-action-search-row"
     >
-      <DiagramSearchTypeIcon
-        type={isPropertiesMode ? row?.elementType : row?.type}
-      />
+      <DiagramSearchTypeIcon type={isPropertiesMode ? row?.elementType : row?.type} />
       <span className="diagramSearchInlineItemBody">
         <span className="diagramSearchInlineItemTitle">{title}</span>
-        <span className="diagramSearchInlineItemMeta">
-          {subprocessPathLabel ? `${subprocessPathLabel} · ` : ""}
-          {meta}
-        </span>
+        {propertyLine ? (
+          <span className="diagramSearchInlineItemProperty">{propertyLine}</span>
+        ) : null}
+        {context ? (
+          <span className="diagramSearchInlineItemContext">{context}</span>
+        ) : null}
       </span>
       <span className="diagramSearchInlineItemChips">
-        {typeLabel ? <span className="diagramIssueChip">{typeLabel}</span> : null}
-        {isPropertiesMode ? <span className="diagramIssueChip">property</span> : <span className="diagramIssueChip">Элемент</span>}
+        <span className="diagramSearchInlineItemChip">{typeChip}</span>
       </span>
       {showDrill ? (
         <span
@@ -71,6 +88,51 @@ function SearchResultRow({
   );
 }
 
+function ResultGroup({
+  group,
+  mode,
+  activeIndex,
+  onSelect,
+  onMouseDown,
+  defaultExpanded,
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const toggle = () => setExpanded((prev) => !prev);
+
+  return (
+    <div className="diagramSearchInlineGroup" data-testid="diagram-action-search-group">
+      <button
+        type="button"
+        className="diagramSearchInlineGroupHeader"
+        onClick={toggle}
+        onMouseDown={onMouseDown}
+        data-testid="diagram-action-search-group-header"
+      >
+        <span className="diagramSearchInlineGroupArrow" aria-hidden="true">
+          {expanded ? "▼" : "▶"}
+        </span>
+        <span className="diagramIssueListGroupLabel">{group.label}</span>
+        <span className="diagramSearchInlineGroupCount">{group.rows.length}</span>
+      </button>
+      {expanded ? (
+        <div className="diagramSearchInlineGroupBody">
+          {group.rows.map(({ row, index }) => (
+            <ResultItem
+              key={`inline_search_row_${toText(row?.searchId || row?.elementId || index)}_${index}`}
+              row={row}
+              index={index}
+              mode={mode}
+              active={index === activeIndex}
+              onSelect={onSelect}
+              onMouseDown={onMouseDown}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function DiagramSearchInlinePanel({
   results = [],
   activeIndex = -1,
@@ -78,55 +140,68 @@ export default function DiagramSearchInlinePanel({
   pending = false,
   onSelect = null,
 }) {
-  const rows = groupSearchRows(results.slice(0, SEARCH_RESULTS_CAP));
+  const panelRef = useRef(null);
+  const [mounted, setMounted] = useState(false);
+  const rows = useMemo(() => groupSearchRows(results.slice(0, SEARCH_RESULTS_CAP)), [results]);
   const isPropertiesMode = toText(mode).toLowerCase() === "properties";
   const hasResults = rows.length > 0;
-  const status = pending
-    ? "поиск…"
-    : `${results.length} найдено`;
 
-  const statusChip = pending ? (
-    <span className="diagramIssueChip" data-testid="diagram-action-search-pending">поиск…</span>
-  ) : null;
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   const handleRowMouseDown = (event) => {
-    // Keep focus in the input while clicking a result; click still fires after mouseup.
     event.preventDefault();
   };
 
+  const handleWheel = (event) => {
+    event.stopPropagation();
+  };
+
   return (
-    <div className="diagramSearchInlinePanel" data-testid="diagram-action-search-results">
+    <div
+      ref={panelRef}
+      className={`diagramSearchInlinePanel ${mounted ? "isVisible" : ""}`}
+      onWheel={handleWheel}
+      data-testid="diagram-action-search-results"
+    >
       <div className="diagramSearchInlinePanelHead">
-        <span className="inline-flex items-center gap-1.5" data-testid="diagram-action-search-count">
-          {status}
-          {statusChip}
+        <span className="diagramSearchInlinePanelCount" data-testid="diagram-action-search-count">
+          {pending ? "поиск…" : `${results.length} найдено`}
         </span>
-        <span className="diagramIssueChip" data-testid="diagram-action-search-active-index">
-          {results.length > 0 ? `${Math.max(activeIndex + 1, 1)} / ${results.length}` : "0 / 0"}
+        <span className={`diagramSearchInlineModeChip ${isPropertiesMode ? "isProperties" : ""}`}>
+          {isPropertiesMode ? "Свойства" : "Элементы"}
         </span>
       </div>
       {!hasResults ? (
-        <div className="diagramSearchInlineEmpty">Ничего не найдено.</div>
+        <div className="diagramSearchInlineEmpty">
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 16 16"
+            className="diagramSearchInlineEmptyIcon"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          >
+            <circle cx="7" cy="7" r="4.5" />
+            <path d="M10.5 10.5L14 14" />
+          </svg>
+          <span>Ничего не найдено</span>
+        </div>
       ) : (
         <div className="diagramSearchInlineList">
-          {rows.map((group) => (
-            <div key={`inline_search_group_${group.key}`} className="diagramIssueListGroup" data-testid="diagram-action-search-group">
-              <div className="diagramIssueListGroupHeader" data-testid="diagram-action-search-group-header">
-                <span className="diagramIssueListGroupLabel">{group.label}</span>
-                <span className="diagramIssueChip">{group.rows.length}</span>
-              </div>
-              {group.rows.map(({ row, index }) => (
-                <SearchResultRow
-                  key={`inline_search_row_${toText(row?.searchId || row?.elementId || index)}_${index}`}
-                  row={row}
-                  index={index}
-                  isPropertiesMode={isPropertiesMode}
-                  active={index === activeIndex}
-                  onSelect={onSelect}
-                  onMouseDown={handleRowMouseDown}
-                />
-              ))}
-            </div>
+          {rows.map((group, groupIndex) => (
+            <ResultGroup
+              key={`inline_search_group_${group.key}`}
+              group={group}
+              mode={mode}
+              activeIndex={activeIndex}
+              onSelect={onSelect}
+              onMouseDown={handleRowMouseDown}
+              defaultExpanded={rows.length <= 2 ? true : groupIndex === 0}
+            />
           ))}
         </div>
       )}
