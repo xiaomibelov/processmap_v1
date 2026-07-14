@@ -24,6 +24,7 @@ import { applyFullBpmnDecorSet } from "../../features/process/bpmn/stage/orchest
 import useBpmnSettledDecorFanout from "../../features/process/bpmn/stage/orchestration/useBpmnSettledDecorFanout";
 import useDiagramLoadStateMachine from "../../features/process/bpmn/stage/stateMachine/useDiagramLoadStateMachine";
 import DiagramLoadBoundary from "../../features/process/bpmn/stage/load/DiagramLoadBoundary";
+import BpmnXmlEditor from "./bpmnXmlEditor/BpmnXmlEditor";
 import { useV2OverlayState } from "../../features/process/bpmn/stage/state/useV2OverlayState";
 import { useOverlayLifecycle } from "../../features/process/bpmn/stage/overlay/useOverlayLifecycle";
 import { useViewportResizeController } from "../../features/process/bpmn/stage/viewport/useViewportResizeController";
@@ -372,33 +373,6 @@ ${laneShapesXml}
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>`;
-}
-
-function XmlView({ xmlDraft, xmlDirty, saveBusy, onChange, onSave, onReset }) {
-  return (
-    <div className="xmlWrap">
-      <div className="xmlEditorToolbar">
-        <span className={`xmlEditorStatus ${xmlDirty ? "dirty" : "saved"}`}>
-          {xmlDirty ? "XML: есть несохраненные изменения" : "XML: синхронизировано"}
-        </span>
-        <button type="button" className="secondaryBtn smallBtn" onClick={onReset} disabled={saveBusy || !xmlDirty} title="Вернуть последнее сохранённое состояние XML">
-          Сбросить
-        </button>
-        <button type="button" className="primaryBtn smallBtn" onClick={onSave} disabled={saveBusy || !xmlDirty} title="Сохранить XML в сессию">
-          {saveBusy ? "Сохранение…" : "Сохранить XML"}
-        </button>
-      </div>
-      <div className="xmlScroller">
-        <textarea
-          className="xmlEditorTextarea"
-          value={xmlDraft}
-          onChange={(e) => onChange?.(String(e.target.value || ""))}
-          spellCheck={false}
-          placeholder="Вставьте BPMN XML..."
-        />
-      </div>
-    </div>
-  );
 }
 
 function _getCanvasSnapshotRaw(inst) {
@@ -5256,8 +5230,8 @@ const BpmnStage = forwardRef(function BpmnStage({
     }
   }
 
-  async function saveXmlDraftText() {
-    const raw = String(xmlDraft || "");
+  async function saveXmlDraftText(overrideValue) {
+    const raw = String(overrideValue ?? xmlDraft ?? "");
     const vErr = validateBpmnXmlText(raw);
     if (vErr) {
       setErr(vErr);
@@ -5926,10 +5900,11 @@ const BpmnStage = forwardRef(function BpmnStage({
       ) : null}
 
       <div className={view === "xml" ? "h-full min-h-0" : "hidden"}>
-        <XmlView
+        <BpmnXmlEditor
           xmlDraft={xmlDraft}
+          xml={xml}
           xmlDirty={xmlDirty}
-          saveBusy={xmlSaveBusy}
+          xmlSaveBusy={xmlSaveBusy}
           onChange={updateXmlDraft}
           onSave={saveXmlDraftText}
           onReset={() => applyXmlSnapshot(xml, srcHint || "backend")}
