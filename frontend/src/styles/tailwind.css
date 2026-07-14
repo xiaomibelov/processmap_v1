@@ -3007,48 +3007,151 @@
     @apply bg-accent text-white;
   }
 
+  .diagramSearchInlineDrop {
+    @apply absolute left-0 top-[calc(100%+6px)] z-[95];
+    width: min(480px, calc(100vw - 24px));
+    min-width: min(420px, calc(100vw - 24px));
+  }
+
   .diagramSearchInlinePanel {
-    @apply max-h-[400px] space-y-1 overflow-auto rounded-lg border border-border bg-panel p-1.5 shadow-panel;
+    @apply max-h-[400px] overflow-auto rounded-xl border border-border bg-white p-2;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 150ms ease-out, transform 150ms ease-out;
+  }
+
+  .diagramSearchInlinePanel.isVisible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .diagramSearchInlinePanel::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .diagramSearchInlinePanel::-webkit-scrollbar-thumb {
+    background-color: #D1D5DB;
+    border-radius: 3px;
+  }
+
+  .diagramSearchInlinePanel::-webkit-scrollbar-track {
+    background: transparent;
   }
 
   .diagramSearchInlinePanelHead {
-    @apply flex items-center justify-between gap-2 px-1 py-0.5 text-[11px] text-muted;
+    @apply mb-1.5 flex items-center justify-between gap-2 px-1 pb-1;
+    border-bottom: 1px solid #F3F4F6;
+  }
+
+  .diagramSearchInlinePanelCount {
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+  }
+
+  .diagramSearchInlineModeChip {
+    @apply inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-semibold;
+    background-color: #F3F4F6;
+    color: #6B7280;
+  }
+
+  .diagramSearchInlineModeChip.isProperties {
+    background-color: #EFF6FF;
+    color: #2563EB;
   }
 
   .diagramSearchInlineList {
-    @apply space-y-1;
+    @apply space-y-2;
+  }
+
+  .diagramSearchInlineGroup {
+    @apply rounded-lg;
+    background-color: #FAFAFA;
+  }
+
+  .diagramSearchInlineGroupHeader {
+    @apply flex h-8 w-full items-center gap-1.5 px-3 text-left transition-colors hover:bg-gray-100;
+    background-color: #F9FAFB;
+    border-radius: 8px;
+  }
+
+  .diagramSearchInlineGroupArrow {
+    @apply text-xs text-gray-500;
+  }
+
+  .diagramSearchInlineGroupCount {
+    @apply ml-auto inline-flex items-center rounded-full px-2 text-[10px] font-semibold;
+    background-color: #E5E7EB;
+    color: #374151;
+  }
+
+  .diagramSearchInlineGroupBody {
+    @apply px-0.5 pb-1.5 pt-0.5;
   }
 
   .diagramSearchInlineItem {
-    @apply relative flex w-full min-w-0 items-center gap-2 rounded-md border border-l-[3px] border-transparent border-l-muted/30 px-2 py-1.5 text-left text-xs text-fg transition-colors hover:bg-panel2;
+    @apply relative flex h-12 w-full min-w-0 items-center gap-3 rounded-md border-l-[3px] border-transparent px-3 py-2 text-left transition-colors;
+    background-color: transparent;
+  }
+
+  .diagramSearchInlineItem:hover {
+    background-color: #F3F4F6;
+    cursor: pointer;
   }
 
   .diagramSearchInlineItem.isActive {
-    @apply border-l-accent bg-accentSoft;
+    background-color: #EFF6FF;
+    border-left-color: #2563EB;
+    padding-left: 9px;
+  }
+
+  .diagramSearchInlineItemIcon {
+    @apply inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold leading-none;
   }
 
   .diagramSearchInlineItemBody {
-    @apply flex min-w-0 flex-1 flex-col;
+    @apply flex min-w-0 flex-1 flex-col justify-center;
   }
 
   .diagramSearchInlineItemTitle {
-    @apply min-w-0 truncate text-fg;
+    @apply min-w-0 truncate text-sm font-medium;
+    color: #111827;
   }
 
-  .diagramSearchInlineItemMeta {
-    @apply min-w-0 truncate font-mono text-[10px] text-muted;
+  .diagramSearchInlineItemProperty {
+    @apply min-w-0 truncate font-mono text-[11px];
+    color: #2563EB;
   }
 
-  .diagramSearchInlineItemChips {
-    @apply flex max-w-[38%] shrink-0 items-center gap-1;
+  .diagramSearchInlineItemContext {
+    @apply min-w-0 truncate text-[11px];
+    color: #6B7280;
+  }
+
+  .diagramSearchInlineItemChip {
+    @apply inline-flex shrink-0 items-center rounded px-2 py-0.5 text-[10px] font-semibold;
+    background-color: #F3F4F6;
+    color: #6B7280;
   }
 
   .diagramSearchInlineItemDrill {
-    @apply ml-1 inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-sm font-semibold text-muted hover:bg-accent/10 hover:text-fg;
+    @apply ml-1 inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-sm font-semibold transition-colors;
+    color: #9CA3AF;
+  }
+
+  .diagramSearchInlineItemDrill:hover {
+    color: #2563EB;
+    background-color: #EFF6FF;
   }
 
   .diagramSearchInlineEmpty {
-    @apply rounded-md px-2 py-4 text-center text-xs text-muted;
+    @apply flex flex-col items-center justify-center gap-2 px-4 py-8 text-center text-sm;
+    color: #9CA3AF;
+  }
+
+  .diagramSearchInlineEmptyIcon {
+    @apply h-8 w-8 opacity-30;
   }
 
   .diagramActionPopover {
