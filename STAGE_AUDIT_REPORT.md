@@ -1,7 +1,7 @@
 # Аудит stage.processmap.ru — post-merge regression check
 
-Дата аудита: 2026-07-14  
-Аудитор: Kimi Code CLI  
+Дата аудита: 2026-07-14
+Аудитор: Kimi Code CLI
 Ограничения: read-only audit, без изменения данных на stage.
 
 ---
@@ -13,9 +13,9 @@
 | Stage URL | https://stage.processmap.ru |
 | HTTP status | 200 OK |
 | Last-Modified (HTML) | Tue, 14 Jul 2026 20:56:15 GMT |
-| Frontend assets | `/assets/index-CX7Sq8gA.js` (200, 3.8 MB), `/assets/index-Cit1xvfc.css` (200, 686 KB) |
-| Backend health | `/api/health` → `{"ok":true,"api":"ready","redis":{"state":"healthy"}}` |
-| `/api/meta` | `{"api_version":2,"features":{"bpmn":true,...}}` |
+| Frontend assets | /assets/index-CX7Sq8gA.js (200, 3.8 MB), /assets/index-Cit1xvfc.css (200, 686 KB) |
+| Backend health | /api/health ok: api ready, redis healthy |
+| /api/meta | api_version 2, bpmn enabled |
 
 ### Сравнение с main
 
@@ -34,16 +34,15 @@ git log main -1 --oneline
 | 29363174308 | #540 fix/reference-source-table-prefix | success | 2026-07-14T19:47:34Z | 59s |
 | 29362000688 | #539 fix/unified-cas-version-tracker | success | 2026-07-14T19:29:24Z | 1m12s |
 
-### ⚠️ Stage stale
+### Stage stale
 
-На stage задеплоен код до PR #543 (`feat/sidebar-sections-merge`). В `main` есть 2 коммита, которых нет на stage:
+На stage задеплоен код до PR #543 (feat/sidebar-sections-merge). В main есть 2 коммита, которых нет на stage:
 
-1. `70d80c31 fix: batch-draft 500 - correct session.interview.analysis path`
-2. `d57a85e7 Merge batch-draft 500 fix into main`
+1. 70d80c31 fix: batch-draft 500 - correct session.interview.analysis path
+2. d57a85e7 Merge batch-draft 500 fix into main
 
-**Риск:** баг "batch-draft 500" может проявляться на stage, если он не связан с этими коммитами, или, наоборот, может быть уже пофикшен в main, но не на stage. Deploy-stage для этих коммитов не запускался (нет in-progress/queued run).
-
-**Рекомендация:** дождаться/запустить deploy-stage для `d57a85e7` и перепроверить баги.
+Риск: баг batch-draft 500 может проявляться на stage.
+Рекомендация: дождаться/запустить deploy-stage для d57a85e7.
 
 ---
 
@@ -51,72 +50,88 @@ git log main -1 --oneline
 
 ### Методология
 
-- Без авторизации на stage интерактивное тестирование UI невозможно.
-- Проверены: доступность stage, целостность assets, backend health, API metadata.
-- Создана Playwright E2E-спека для воспроизведения бага с удалением свойства: `frontend/e2e/stage-property-delete-audit.spec.mjs`.
-- Для запуска спеки нужны stage-учётные данные (E2E_USER / E2E_PASS) и установленный Chromium.
+- Авторизация на stage через Playwright E2E (учётки предоставлены).
+- Создана тестовая сессия через API; спека использует свежий fixture для каждого прогона.
+- Playwright spec: frontend/e2e/stage-property-delete-audit.spec.mjs.
+- Собраны: timing операций, console errors/warnings, network requests.
 
 ### Группа A — Property CRUD (HIGH PRIORITY)
 
-#### Баг: удаление свойства → долгое сохранение, без ошибки таймаута, редактирование невозможно
+#### Баг: сохранение свойства → 30 секунд без ответа, после этого удаление/добавление невозможны
 
 **Severity:** P0  
-**Статус:** Не воспроизведён интерактивно (нет stage-авторизации), но воспроизводим по коду.
+**Статус:** Воспроизведён на stage.
 
-**Найденные проблемы в коде frontend:**
+**Шаги воспроизведения (E2E):**
 
-1. **saveCoordinator pipelines используют `debounceMs: 0` и `retryCount: 3`.**
-   - `saveBpmnState.js` (xml pipeline): `debounceMs: 0`, `retryCount: 3`, `retryDelayMs: 1000`
-   - `sessionPatchCasCoordinator.js` (meta pipeline): `debounceMs: 0`, `retryCount: 3`, `retryDelayMs: 1000`
-   - `interviewAnalysisPatchHelper.js` (analysis pipeline): `debounceMs: 0`, `retryCount: 3`, `retryDelayMs: 1000`
-   - `createBpmnPersistence.js` (rawXml pipeline): `debounceMs: 0`, `retryCount: 3`, `retryDelayMs: 1000`
+1. Открыть тестовую сессию, выбрать Task_audit.
+2. В sidebar раскрыть аккордеон "Свойства".
+3. Кликнуть на строку свойства audit_prop → появляется режим редактирования.
+4. Изменить значение на 15, нажать Enter.
+5. Кликнуть кнопку "Сохранить" в нижней части sidebar.
+6. Ожидать завершения сетевого запроса.
 
-2. **Последствия конфигурации:**
-   - Каждое изменение property немедленно отправляет save-запрос (нет debounce).
-   - Если backend возвращает 409 (CAS version mismatch), saveCoordinator делает 3 retry с задержками 1s, 2s, 4s.
-   - Максимальное время одного сохранения при 409: ~7 секунд + время запросов.
-   - Это объясняет "долгое сохранение без ошибки" — запрос в итоге может успеть, но через retry-цикл.
+**Ожидаемое поведение:**
 
-3. **Возможная причина CAS mismatch:**
-   - `casVersionTracker` может не обновляться после успешного save, если `pickDiagramStateVersion` не находит `diagram_state_version` в ответе.
-   - `saveCoordinator` при 409 делает `rollbackTrackedDiagramStateVersion`, но не перезагружает сессию. Следующий save снова шлёт старый base version → снова 409 → retry loop.
-   - Если property удаляется через `propertyCrudBoundary` (P0-3), он пишет в XML и триггерит `saveCoordinator.execute('xml')`. Если в этот момент другой pipeline (meta/analysis) уже занимает queue, save стоит в очереди.
+- Сохранение завершается за < 2 секунды.
+- После сохранения кнопка удаления активна.
+- Можно удалить свойство и сохранить.
+- Можно добавить новое свойство.
 
-4. **Почему редактирование становится невозможным:**
-   - Возможно, UI переводится в состояние "saving" и не снимается флаг из-за долгого/зависшего запроса.
-   - Или saveCoordinator queue заблокирована предыдущим save (особенно при отсутствии debounce).
+**Фактическое поведение:**
 
-**Гипотеза наиболее вероятной причины:**
+- Клик "Сохранить" зависает ровно на 30 секунд (таймаут Playwright waitForResponse).
+- Ответа от сервера не приходит.
+- После таймаута кнопка удаления свойства остаётся disabled.
+- Кнопка "Добавить BPMN-свойство" disabled.
+- Новый input недоступен для редактирования.
+- UI полностью заблокирован для дальнейших property-операций.
 
-`debounceMs: 0` + `retryCount: 3` + CAS version drift → каждое property-изменение вызывает цепочку retry, и queue saveCoordinator быстро saturate. При удалении свойства UI ждёт завершения save, но из-за retry-цикла кажется, что "сохранение висит".
+**Данные с прогона spec:**
+
+```
+[AUDIT] edit save elapsed: 30019 ms
+[AUDIT] edit response status: none
+[AUDIT] delete button enabled: false
+[AUDIT] delete save elapsed: null ms
+[AUDIT] delete response status: none
+[AUDIT] second add save elapsed: null ms
+[AUDIT] can add after delete: false
+[AUDIT] input editable after delete: false
+[AUDIT] console errors: []
+[AUDIT] console warnings: []
+[AUDIT] relevant requests:
+  POST https://stage.processmap.ru/api/sessions/{session_id}/presence  56 ms  200
+```
+
+**Network summary:**
+
+- Единственный запрос во время "сохранения": POST /api/sessions/{id}/presence (200, 56 ms).
+- Запросов PUT /api/sessions/{id} или PATCH /api/sessions/{id}/bpmn не зафиксировано.
+- То есть сохранение не уходит на backend вовсе, либо зависает до отправки.
+
+**Console summary:**
+
+- console.error: отсутствуют.
+- console.warning: отсутствуют.
+- Это указывает на "тихий" deadlock/freeze внутри frontend, а не на явную JS-ошибку.
+
+**Гипотезы причины:**
+
+1. **saveCoordinator deadlock.** При нажатии "Сохранить" saveCoordinator пытается выполнить xml/meta/analysis pipelines, но одна из очередей уже занята или заблокирована ожиданием версии. Из-за debounceMs=0 и отсутствия диагностики UI висит молча.
+2. **casVersionTracker mismatch.** Перед отправкой saveCoordinator ждёт корректной версии, но casVersionTracker не обновился после загрузки сессии → ожидание никогда не завершается.
+3. **XML pipeline infinite loop / sync.** propertyCrudBoundary (P0-3) модифицирует XML; возможно, applyElementCamundaExtensionsToModeler или последующий синхрос XML ↔ bpmnStoreRef зацикливается.
+4. **Старый save path конфликтует с saveCoordinator.** Возможно, кнопка "Сохранить" вызывает старый saveBpmnState, который теперь конфликтует с saveCoordinator (P0-2), и оба ждут друг друга.
+
+**Ответственный:** frontend (saveCoordinator / propertyCrudBoundary / sidebar save button wiring).
 
 **Рекомендация по фиксу:**
 
-1. Немедленно: включить `debounceMs: 300` для xml/meta/analysis pipelines (как планировалось в P0-2).
-2. Добавить метрики/логирование 409 и retry в saveCoordinator.
-3. При 409 после всех retry показывать conflict modal и предлагать reload, а не молчать.
-4. Проверить, что `casVersionTracker` корректно bump'ится после каждого успешного save (включая ответы от `apiPatchSession` для meta pipeline).
-5. Убедиться, что UI не блокирует input'ы на время save (optimistic UI).
-
-### Группа B — Sidebar (редизайн)
-
-**Статус:** Stage задеплоен с PR #543 (`feat/sidebar-sections-merge`). Без авторизации визуальная проверка невозможна. Assets загружаются, 404 нет.
-
-### Группа C — XML-редактор (CodeMirror)
-
-**Статус:** Stage задеплоен с PR #537 (`feat/xml-editor-codemirror`). Assets на месте. Build локально падает на отсутствии `@codemirror/view`, но stage-assets собраны (вероятно, зависимость установлена в CI).
-
-### Группа D — Поиск (Superpower Search Wave 1)
-
-**Статус:** Stage задеплоен с PR #535. Assets на месте. Без авторизации не проверено.
-
-### Группа E — Аналитика (Excel Source)
-
-**Статус:** Stage задеплоен с PR #536. Assets на месте. Без авторизации не проверено.
-
-### Группа F — Save/Deploy (общее)
-
-**Статус:** Backend healthy. Save pipelines зарегистрированы, но конфигурация подозрительна (см. Группа A).
+1. Добавить таймаут и error logging внутрь saveCoordinator.execute (чтобы UI не висел 30+ секунд молча).
+2. Проверить, что кнопка "Сохранить" в sidebar вызывает именно saveCoordinator.execute, а не устаревший saveBpmnState.
+3. Проверить casVersionTracker: при load сессии версия должна быть установлена; при 409/ошибке — сброшена.
+4. Временно включить verbose logging для saveCoordinator на stage (или локально) и повторить сценарий.
+5. Проверить, что propertyCrudBoundary.setProperty не зацикливается на обновлении XML draft.
 
 ---
 
@@ -126,42 +141,49 @@ git log main -1 --oneline
 
 | Severity | Component | Title | Статус | Гипотеза |
 |----------|-----------|-------|--------|----------|
-| P0 | saveCoordinator / Property CRUD | Удаление свойства → долгое сохранение, UI блокируется | Подтверждён по коду | debounce=0 + retry=3 + CAS drift |
+| P0 | saveCoordinator / sidebar save | Сохранение свойства висит 30 секунд, после чего property CRUD блокируется | Воспроизведён на stage | Frontend deadlock/freeze: save не уходит на backend |
 | P1 | Deploy | Stage stale на 2 коммита от main | Подтверждён | Deploy-stage не запущен для d57a85e7 |
 
 ### Performance
 
-| Операция | Норма | Факт (по коду) | Примечание |
-|----------|-------|----------------|------------|
-| Property save | < 1s | до ~7s при 409 | retryCount=3, backoff 1s/2s/4s |
-| Property save frequency | debounced | immediate | debounceMs=0 |
+| Операция | Норма | Факт (stage) | Примечание |
+|----------|-------|--------------|------------|
+| Property edit save | < 2s | 30+ s timeout | Нет ответа от backend |
+| Property delete after edit | < 2s | невозможно | UI disabled |
+| Property add after failed save | < 2s | невозможно | UI disabled |
 
 ### Console summary
 
-Без интерактивного UI-тестирования console errors не собраны.
+- console.error: 0
+- console.warning: 0
+- Поведение: "тихий" freeze без JS-ошибок.
 
 ### Network summary
 
-| Endpoint | Статус | Примечание |
-|----------|--------|------------|
-| GET /api/health | 200 OK | backend healthy |
-| GET /api/meta | 200 OK | api_version=2 |
-| GET /api/auth/me | 401 missing_bearer | ожидаемо без токена |
-| /assets/index-*.js | 200 OK | 3.8 MB |
-| /assets/index-*.css | 200 OK | 687 KB |
+| Endpoint | Метод | Статус | Время | Примечание |
+|----------|-------|--------|-------|------------|
+| /api/sessions/{id}/presence | POST | 200 | 56 ms | периодический heartbeat |
+| /api/sessions/{id} (save) | PUT/PATCH | — | — | не зафиксирован |
+| /api/sessions/{id}/bpmn | PUT/PATCH | — | — | не зафиксирован |
 
 ### Рекомендации по приоритету
 
-1. **P0 — Запустить deploy-stage для `d57a85e7`** и перепроверить баги (возможно, batch-draft 500 fix уже чинит что-то связанное).
-2. **P0 — Проверить конфигурацию saveCoordinator:**
-   - Установить `debounceMs: 300` для xml/meta/analysis pipelines.
-   - Убедиться, что `casVersionTracker.bumpVersion` вызывается для всех pipeline'ов.
-3. **P0 — Запустить Playwright-аудит** `frontend/e2e/stage-property-delete-audit.spec.mjs` со stage-авторизацией, чтобы собрать реальные timing и console/network logs.
-4. **P1 — Добавить логирование 409/retry** в saveCoordinator для диагностики.
-5. **P1 — Проверить optimistic UI:** input'ы не должны блокироваться во время save.
+1. **P0 — Расследовать saveCoordinator deadlock.** Нужны verbose logs или локальное воспроизведение с отладчиком.
+2. **P0 — Запустить deploy-stage для d57a85e7** и перепроверить (хотя баг, скорее всего, на стороне frontend).
+3. **P1 — Добавить diagnostics в saveCoordinator:** timeout, error toast, логирование всех pipeline-вызовов.
+4. **P1 — Проверить wiring кнопки "Сохранить" в sidebar:** вызывает ли она saveCoordinator или старый saveBpmnState.
 
 ### Next steps
 
-- Нужны stage-учётные данные (E2E_USER / E2E_PASS) для запуска E2E-аудита.
-- Нужно решение: включить debounce в saveCoordinator pipelines и перетестировать property CRUD.
-- После deploy-stage d57a85e7 — повторный аудит.
+- Frontend: локально воспроизвести сценарий с включённым логированием saveCoordinator.
+- Frontend: проверить casVersionTracker и propertyCrudBoundary на deadlock/loop.
+- DevOps: запустить deploy-stage для main (d57a85e7).
+- QA: после фикса перезапустить frontend/e2e/stage-property-delete-audit.spec.mjs.
+
+---
+
+## Артефакты
+
+- Playwright spec: frontend/e2e/stage-property-delete-audit.spec.mjs
+- Debug spec (использовался для поиска селекторов): frontend/e2e/_debug-sidebar.spec.mjs
+- PR: #544 feat/stage-property-delete-audit
