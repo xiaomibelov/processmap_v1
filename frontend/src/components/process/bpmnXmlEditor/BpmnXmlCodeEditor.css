@@ -1,0 +1,40 @@
+.bpmnXmlCodeEditor {
+  height: 100%;
+  min-height: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.bpmnXmlCodeEditor .cm-editor {
+  height: 100%;
+}
+
+.bpmnXmlCodeEditor .cm-scroller {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.bpmnXmlCodeEditor .cm-tooltip {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  color: #1f2937;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.bpmnXmlCodeEditor .cm-diagnostic {
+  border-left: 3px solid #ef4444;
+}
+
+.bpmnXmlCodeEditor .cm-diagnostic-error {
+  color: #b91c1c;
+}
+
+.bpmnXmlCodeEditor .cm-lintMarker-error {
+  color: #ef4444;
+}
