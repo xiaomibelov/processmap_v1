@@ -207,6 +207,62 @@
   box-shadow: 0 0 0 2px rgba(59,130,246,.2);
 }
 
+/* CodeMirror XML editor integration */
+.xmlEditorRoot {
+  height: 100%;
+  min-height: 520px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(2,6,23,.55);
+}
+
+.xmlEditorRoot .cm-editor {
+  height: 100%;
+  background: transparent;
+}
+
+.xmlEditorRoot .cm-scroller {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.xmlEditorRoot .cm-gutters {
+  background: rgba(2,6,23,.75);
+  border-right: 1px solid rgba(255,255,255,.10);
+}
+
+.xmlEditorRoot .cm-activeLineGutter,
+.xmlEditorRoot .cm-activeLine {
+  background: rgba(96,165,250,.12);
+}
+
+/* BPMN XML custom highlights */
+.xml-highlight--property {
+  background: rgba(34, 197, 94, .20) !important;
+  border-radius: 3px;
+  color: rgba(134, 239, 172, 1) !important;
+}
+
+.xml-highlight--task {
+  background: rgba(59, 130, 246, .18) !important;
+  border-radius: 3px;
+  color: rgba(147, 197, 253, 1) !important;
+}
+
+.xml-highlight--user-task {
+  background: rgba(168, 85, 247, .18) !important;
+  border-radius: 3px;
+  color: rgba(216, 180, 254, 1) !important;
+}
+
+.xml-highlight--sequence-flow {
+  background: rgba(245, 158, 11, .18) !important;
+  border-radius: 3px;
+  color: rgba(253, 186, 116, 1) !important;
+}
+
 /* Keep original bpmn-js icon colors; dark/light contrast is handled in theme-specific rules */
 .djs-palette, .djs-context-pad{
   filter: none !important;
