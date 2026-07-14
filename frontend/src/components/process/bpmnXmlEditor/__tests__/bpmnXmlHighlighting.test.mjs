@@ -39,6 +39,18 @@ describe("bpmnXmlHighlighting source contract", () => {
     assert.match(source, /"AttributeValue"/);
     assert.match(source, /"Text"/);
   });
+
+  it("guards toLowerCase with null-safe coalescing", () => {
+    assert.match(source, /String\(tagName \|\| ""\)/);
+    assert.match(source, /String\(attrName \|\| ""\)/);
+    assert.match(source, /\.toLowerCase\(\)/);
+  });
+
+  it("wraps buildDecorations in try-catch", () => {
+    assert.match(source, /try\s*\{/);
+    assert.match(source, /catch\s*\(err\)/);
+    assert.match(source, /BpmnXmlHighlightPlugin error/);
+  });
 });
 
 describe("getTagClass", () => {
@@ -90,6 +102,12 @@ describe("getTagClass", () => {
     assert.equal(getTagClass("bpmn:unknown"), null);
     assert.equal(getTagClass("custom:thing"), null);
   });
+
+  it("handles null/undefined/empty tag names", () => {
+    assert.equal(getTagClass(null), null);
+    assert.equal(getTagClass(undefined), null);
+    assert.equal(getTagClass(""), null);
+  });
 });
 
 describe("getAttributeNameClass", () => {
@@ -107,6 +125,12 @@ describe("getAttributeNameClass", () => {
     assert.equal(getAttributeNameClass("value", "camunda:property"), "cm-extension-camunda");
     assert.equal(getAttributeNameClass("key", "pm:robotMeta"), "cm-extension-pm");
     assert.equal(getAttributeNameClass("type", "zeebe:taskDefinition"), "cm-extension-zeebe");
+  });
+
+  it("handles null attribute/tag names", () => {
+    assert.equal(getAttributeNameClass(null, "bpmn:task"), null);
+    assert.equal(getAttributeNameClass("id", null), "cm-attr-id");
+    assert.equal(getAttributeNameClass(null, null), null);
   });
 });
 
@@ -144,6 +168,13 @@ describe("getAttributeValueClass", () => {
   it("returns null for plain text", () => {
     assert.equal(getAttributeValueClass('"sasas"', "value", "bpmn:task"), null);
   });
+
+  it("handles null attribute/tag names", () => {
+    assert.equal(getAttributeValueClass('"Activity_1"', "id", "bpmn:task"), "cm-value-id");
+    assert.equal(getAttributeValueClass('"1"', "value", "bpmn:task"), "cm-value-number");
+    assert.equal(getAttributeValueClass('"x"', null, "bpmn:task"), null);
+    assert.equal(getAttributeValueClass('"x"', "value", null), null);
+  });
 });
 
 describe("getTextContentClass", () => {
@@ -154,5 +185,9 @@ describe("getTextContentClass", () => {
 
   it("returns null for other text", () => {
     assert.equal(getTextContentClass("bpmn:task"), null);
+  });
+
+  it("handles null tag name", () => {
+    assert.equal(getTextContentClass(null), null);
   });
 });
