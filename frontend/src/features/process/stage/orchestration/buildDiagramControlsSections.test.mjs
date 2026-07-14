@@ -17,7 +17,9 @@ test("buildDiagramControlsSections splits controls view into explicit section gr
     diagramActionSearchOpen: true,
     diagramSearchMode: "elements",
     setDiagramSearchMode: () => {},
-    handleDiagramSearchNext: () => {},
+    moveDiagramSearchActive: () => {},
+    moveDiagramSearchActiveBoundary: () => {},
+    activateDiagramSearchResult: () => {},
     templatesMenuOpen: true,
     openReportsFromDiagram: () => {},
     openDocFromDiagram: () => {},
@@ -35,7 +37,9 @@ test("buildDiagramControlsSections splits controls view into explicit section gr
   assert.equal(sections.search.diagramActionSearchOpen, true);
   assert.equal(sections.search.diagramSearchMode, "elements");
   assert.equal(typeof sections.search.setDiagramSearchMode, "function");
-  assert.equal(typeof sections.search.handleDiagramSearchNext, "function");
+  assert.equal(typeof sections.search.moveDiagramSearchActive, "function");
+  assert.equal(typeof sections.search.moveDiagramSearchActiveBoundary, "function");
+  assert.equal(typeof sections.search.activateDiagramSearchResult, "function");
   assert.equal(sections.reportsTemplatesProblems.templatesMenuOpen, true);
   assert.equal(sections.overflowModes.diagramActionOverflowOpen, true);
 });

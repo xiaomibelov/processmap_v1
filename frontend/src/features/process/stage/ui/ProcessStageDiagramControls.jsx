@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import LayersPopover from "../components/LayersPopover";
 import TemplatesBottomMenu from "../../../templates/ui/TemplatesBottomMenu";
 import GatewaysPanel from "../../playback/ui/GatewaysPanel";
-import DiagramSearchPopover from "./DiagramSearchPopover";
+import DiagramSearchInlineInput from "../search/diagramSearchInlineInput";
 import NotesAggregateBadge from "../../../../components/NotesAggregateBadge.jsx";
 import { useSessionNoteAggregate } from "../../../../lib/sessionNoteAggregates.js";
 
@@ -307,8 +307,6 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     setDiagramSearchQuery,
     diagramSearchResults,
     diagramSearchActiveIndex,
-    handleDiagramSearchPrev,
-    handleDiagramSearchNext,
     selectDiagramSearchResult,
     moveDiagramSearchActive,
     moveDiagramSearchActiveBoundary,
@@ -634,100 +632,21 @@ export default function ProcessStageDiagramControls({ view = {} }) {
               <circle cx="8" cy="8" r="2.5" />
             </svg>
           </button>
-          <button
-            type="button"
-            className={`secondaryBtn diagramActionBtn ${diagramActionSearchOpen ? "isActive" : ""}`}
-            onClick={() => {
-              const next = !diagramActionSearchOpen;
-              closeDiagramPopovers();
-              setSearchOpenSafe(next);
-            }}
-            title="Поиск элементов диаграммы"
-            data-testid="diagram-action-search"
-          >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 16 16"
-              className="diagramActionBtnIcon"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <circle cx="7" cy="7" r="4.5" />
-              <path d="M10.5 10.5L14 14" strokeLinecap="round" />
-            </svg>
-            <span className="diagramActionBtnLabel">Поиск</span>
-          </button>
-          <button
-            type="button"
-            className={`secondaryBtn diagramActionBtn ${diagramFocusMode ? "isActive" : ""}`}
-            onClick={() => {
-              setDiagramFocusMode((prev) => !prev);
-              closeDiagramPopovers();
-            }}
-            title="Скрыть второстепенные панели и сфокусироваться на диаграмме"
-            data-testid="diagram-action-focus-mode"
-          >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 16 16"
-              className="diagramActionBtnIcon"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M1.5 6.5h2" />
-              <path d="M1.5 9.5h2" />
-              <path d="M12.5 6.5h2" />
-              <path d="M12.5 9.5h2" />
-              <path d="M6.5 1.5v2" />
-              <path d="M9.5 1.5v2" />
-              <path d="M6.5 12.5v2" />
-              <path d="M9.5 12.5v2" />
-              <circle cx="8" cy="8" r="2.5" />
-            </svg>
-            <span className="diagramActionBtnLabel">{diagramFocusMode ? "Выход из фокуса" : "Фокус"}</span>
-          </button>
-          <button
-            type="button"
-            className={`secondaryBtn diagramActionBtn ${diagramFullscreenActive ? "isActive" : ""}`}
-            onClick={() => {
-              closeDiagramPopovers();
-              void toggleDiagramFullscreen?.();
-            }}
-            title="Fullscreen диаграммы"
-            data-testid="diagram-action-fullscreen-mode"
-          >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 16 16"
-              className="diagramActionBtnIcon"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              {diagramFullscreenActive ? (
-                <>
-                  <path d="M4 6H2V4" />
-                  <path d="M12 6h2V4" />
-                  <path d="M4 10H2v2" />
-                  <path d="M12 10h2v2" />
-                </>
-              ) : (
-                <>
-                  <path d="M2 6V4h3" />
-                  <path d="M14 6V4h-3" />
-                  <path d="M2 10v2h3" />
-                  <path d="M14 10v2h-3" />
-                </>
-              )}
-            </svg>
-            <span className="diagramActionBtnLabel">{diagramFullscreenActive ? "Обычный экран" : "Полный экран"}</span>
-          </button>
+          <DiagramSearchInlineInput
+            open={diagramActionSearchOpen}
+            onOpenChange={setSearchOpenSafe}
+            containerRef={diagramSearchPopoverRef}
+            mode={diagramSearchMode}
+            onModeChange={setDiagramSearchMode}
+            query={diagramSearchQuery}
+            onQueryChange={setDiagramSearchQuery}
+            results={diagramSearchResults}
+            activeIndex={Number.isFinite(Number(diagramSearchActiveIndex)) ? Number(diagramSearchActiveIndex) : -1}
+            onSelect={selectDiagramSearchResult}
+            onMoveActive={moveDiagramSearchActive}
+            onMoveActiveBoundary={moveDiagramSearchActiveBoundary}
+            onActivate={activateDiagramSearchResult}
+          />
           <span className="diagramActionBarSpacer" />
           <button
             type="button"
@@ -792,6 +711,77 @@ export default function ProcessStageDiagramControls({ view = {} }) {
             >
               <path d="M8 3v10" />
               <path d="M3 8h10" />
+            </svg>
+          </button>
+          <span className="diagramActionBarSpacer" />
+          <button
+            type="button"
+            className={`secondaryBtn diagramActionBtn diagramActionBtn--icon ${diagramFocusMode ? "isActive" : ""}`}
+            onClick={() => {
+              setDiagramFocusMode((prev) => !prev);
+              closeDiagramPopovers();
+            }}
+            title="Скрыть второстепенные панели и сфокусироваться на диаграмме"
+            aria-label={diagramFocusMode ? "Выход из фокуса" : "Фокус на диаграмме"}
+            data-testid="diagram-action-focus-mode"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="diagramActionBtnIcon"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M1.5 6.5h2" />
+              <path d="M1.5 9.5h2" />
+              <path d="M12.5 6.5h2" />
+              <path d="M12.5 9.5h2" />
+              <path d="M6.5 1.5v2" />
+              <path d="M9.5 1.5v2" />
+              <path d="M6.5 12.5v2" />
+              <path d="M9.5 12.5v2" />
+              <circle cx="8" cy="8" r="2.5" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className={`secondaryBtn diagramActionBtn diagramActionBtn--icon ${diagramFullscreenActive ? "isActive" : ""}`}
+            onClick={() => {
+              closeDiagramPopovers();
+              void toggleDiagramFullscreen?.();
+            }}
+            title="Fullscreen диаграммы"
+            aria-label={diagramFullscreenActive ? "Обычный экран" : "Полный экран"}
+            data-testid="diagram-action-fullscreen-mode"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="diagramActionBtnIcon"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              {diagramFullscreenActive ? (
+                <>
+                  <path d="M4 6H2V4" />
+                  <path d="M12 6h2V4" />
+                  <path d="M4 10H2v2" />
+                  <path d="M12 10h2v2" />
+                </>
+              ) : (
+                <>
+                  <path d="M2 6V4h3" />
+                  <path d="M14 6V4h-3" />
+                  <path d="M2 10v2h3" />
+                  <path d="M14 10v2h-3" />
+                </>
+              )}
             </svg>
           </button>
           <button
@@ -1055,23 +1045,7 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         </div>
       ) : null}
 
-      <DiagramSearchPopover
-        open={diagramActionSearchOpen}
-        popoverRef={diagramSearchPopoverRef}
-        mode={diagramSearchMode}
-        onModeChange={setDiagramSearchMode}
-        query={diagramSearchQuery}
-        onQueryChange={setDiagramSearchQuery}
-        results={diagramSearchResults}
-        activeIndex={Number.isFinite(Number(diagramSearchActiveIndex)) ? Number(diagramSearchActiveIndex) : -1}
-        onPrev={handleDiagramSearchPrev}
-        onNext={handleDiagramSearchNext}
-        onSelect={selectDiagramSearchResult}
-        onMoveActive={moveDiagramSearchActive}
-        onMoveActiveBoundary={moveDiagramSearchActiveBoundary}
-        onActivate={activateDiagramSearchResult}
-        onClose={() => setSearchOpenSafe(false)}
-      />
+
 
       {diagramActionPlaybackOpen ? (
         <div
