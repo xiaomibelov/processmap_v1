@@ -555,8 +555,10 @@ export default function createBpmnCoordinator(options = {}) {
     const localDirty = state?.dirty === true;
     const localLastSavedRev = asNumber(state?.lastSavedRev, 0);
     const explicitPublishManualSave = isPublishManualSaveReason(reason);
+    const isPropertyOperation = typeof reason === "string" && reason.startsWith("property_");
     if (
       !explicitPublishManualSave
+      && !isPropertyOperation
       && !localDirty
       && currentXmlHash
       && localHash

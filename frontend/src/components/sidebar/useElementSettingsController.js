@@ -189,7 +189,7 @@ export default function useElementSettingsController({
       ...state,
       properties: {
         ...(state.properties || {}),
-        extensionProperties: properties,
+        extensionProperties: Array.isArray(state?.properties?.extensionProperties) ? state.properties.extensionProperties : [],
         extensionListeners: listeners.map((row) => (
           String(row?.id || "") === String(rowId || "")
             ? { ...row, ...patch }
