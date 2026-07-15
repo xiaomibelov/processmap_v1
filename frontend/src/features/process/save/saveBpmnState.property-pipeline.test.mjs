@@ -116,6 +116,7 @@ test("property save passes add/delete source actions to coordinator", async () =
           preservedExtensionElements: [],
         },
       },
+      getModelerXml: async () => `<xml>${operation}</xml>`,
       flushSave: async (reason, opts) => {
         flushCalls.push({ reason, opts });
         return { ok: true, diagramStateVersion: 7, storedRev: 5, xml: `<xml>${operation}</xml>` };
@@ -326,4 +327,39 @@ test("property save returns error when coordinator transport hangs", async () =>
   assert.equal(result?.ok, false);
   assert.ok(String(result?.error).toLowerCase().includes("timeout"), `error=${result?.error}`);
   assert.ok(elapsed < 15000, `elapsed=${elapsed}ms`);
+});
+
+test("property save returns error when getModelerXml returns empty XML", async () => {
+  resetCasVersionTracker();
+  let flushCalled = false;
+  const result = await saveBpmnState({
+    operation: "property_delete",
+    sessionId: "sid-empty-xml",
+    elementId: "Task_1",
+    baseDiagramStateVersion: 1,
+    currentCamundaExtensionsByElementId: {
+      Task_1: {
+        properties: {
+          extensionProperties: [{ id: "p1", name: "priority", value: "high" }],
+          extensionListeners: [],
+        },
+        preservedExtensionElements: [],
+      },
+    },
+    nextCamundaExtensionsByElementId: {},
+    currentMeta: {},
+    nextMeta: {},
+    getModelerXml: async () => "",
+    apiGetBpmnXml: async () => { throw new Error("apiGetBpmnXml should not be called"); },
+    apiPutBpmnXml: async () => { throw new Error("apiPutBpmnXml should not be called"); },
+    flushSave: async () => {
+      flushCalled = true;
+      return { ok: true };
+    },
+    onSessionSync: () => {},
+  });
+
+  assert.equal(result?.ok, false);
+  assert.match(String(result?.error || ""), /пустой результат/i);
+  assert.equal(flushCalled, false, "flushSave must not be called with empty XML");
 });

@@ -342,6 +342,13 @@ export async function saveBpmnState(options = {}) {
         return { ok: false, status: 0, error: `Не удалось получить XML: ${error?.message || error}` };
       }
     }
+    if (!nextXml) {
+      return {
+        ok: false,
+        status: 0,
+        error: "Не удалось получить BPMN XML: сериализация модели вернула пустой результат.",
+      };
+    }
   }
 
   const baseDiagramStateVersion = resolveBaseDiagramStateVersion(sid, options);
