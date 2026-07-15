@@ -2009,6 +2009,13 @@ export async function apiExportAnalyticsPropertiesRecalculatedXlsx(scope, scopeI
   return { ok: true, status: r.status, blob, filename: `properties-recalculated-${scope}-${scopeId}.xlsx` };
 }
 
+export async function apiExportAdvancedCalculationXlsx(scope, scopeId) {
+  const r = await request(apiRoutes.analytics.exportAdvancedCalculationXlsx(scope, scopeId), { method: "GET", responseType: "blob" });
+  if (!r.ok) return r;
+  const blob = r.data instanceof Blob ? r.data : new Blob([String(r.text || "")]);
+  return { ok: true, status: r.status, blob, filename: `advanced-calculation-${scope}-${scopeId}.xlsx` };
+}
+
 export async function apiGetAnalyticsPropertiesRecalculation(scope, scopeId, opts = {}) {
   const r = okOrError(await request(apiRoutes.analytics.propertiesRecalculation(scope, scopeId), { signal: opts.signal }));
   const data = unwrapAnalyticsData(r);
