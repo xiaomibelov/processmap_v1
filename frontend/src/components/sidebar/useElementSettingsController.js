@@ -204,7 +204,7 @@ export default function useElementSettingsController({
       ...state,
       properties: {
         ...(state.properties || {}),
-        extensionProperties: properties,
+        extensionProperties: Array.isArray(state?.properties?.extensionProperties) ? state.properties.extensionProperties : [],
         extensionListeners: [...listeners, {
           id: `listener_draft_${Date.now()}`,
           event: "start",
@@ -220,7 +220,7 @@ export default function useElementSettingsController({
       ...state,
       properties: {
         ...(state.properties || {}),
-        extensionProperties: properties,
+        extensionProperties: Array.isArray(state?.properties?.extensionProperties) ? state.properties.extensionProperties : [],
         extensionListeners: listeners.filter((row) => String(row?.id || "") !== String(rowId || "")),
       },
     });
