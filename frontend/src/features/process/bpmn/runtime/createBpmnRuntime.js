@@ -352,7 +352,13 @@ export default function createBpmnRuntime(options = {}) {
     }
     const opToken = Number(activeToken || 0);
     try {
-      const out = await inst.saveXML({ format: opts?.format !== false });
+      const saveXmlTimeout = Number(opts?.timeoutMs) > 0 ? Number(opts.timeoutMs) : 5000;
+      const out = await Promise.race([
+        inst.saveXML({ format: opts?.format !== false }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("saveXML timeout")), saveXmlTimeout)
+        ),
+      ]);
       if (destroyed || opToken !== activeToken || inst !== instance) {
         return { ok: false, reason: "stale", token: opToken };
       }
