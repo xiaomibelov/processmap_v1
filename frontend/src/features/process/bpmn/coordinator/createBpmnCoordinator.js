@@ -113,6 +113,33 @@ function fnv1aHex(input) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
+function withTimeout(promiseFactory, ms, context) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`${context || "operation"} timeout after ${ms}ms`));
+    }, Math.max(100, Number(ms) || 1000));
+    Promise.resolve()
+      .then(() => promiseFactory())
+      .then(
+        (value) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+  });
+}
+
 export default function createBpmnCoordinator(options = {}) {
   const store = options?.store;
   const getRuntime = typeof options?.getRuntime === "function" ? options.getRuntime : () => null;
@@ -471,7 +498,20 @@ export default function createBpmnCoordinator(options = {}) {
     let runtimeToken = 0;
     let rawXml = xmlOverride;
     if (!rawXml.trim()) {
-      const xmlRes = await runtime.getXml({ format: true });
+      // The durable flush path must never hang indefinitely: a busy or
+      // transiently broken modeler can block runtime.getXml() for 10+ seconds,
+      // which also blocks every subsequent save that queues behind flushPromise.
+      // Cap serialization and treat a timeout the same as a "not_ready" deferral.
+      let xmlRes;
+      try {
+        xmlRes = await withTimeout(
+          () => runtime.getXml({ format: true }),
+          5000,
+          "doFlush.runtime.getXml",
+        );
+      } catch (timeoutError) {
+        xmlRes = { ok: false, reason: "not_ready", error: String(timeoutError?.message || timeoutError) };
+      }
       if (!xmlRes?.ok) {
         if (xmlRes?.reason === "not_ready" || xmlRes?.reason === "stale") {
           setPendingSave({
