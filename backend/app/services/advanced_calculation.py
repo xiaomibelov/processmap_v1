@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
-from app.utils.parsing import parse_recalc_number, text
+from ..utils.parsing import parse_recalc_number, text
 
 
 BPMN_NS = "http://www.omg.org/spec/BPMN/20100524/MODEL"
