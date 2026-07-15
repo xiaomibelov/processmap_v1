@@ -27,7 +27,7 @@ function createFakeFlushSave(overrides = {}) {
   });
 }
 
-test("property save delegates to coordinator and returns the real coordinator XML", async () => {
+test("property save pre-captures XML and passes it to coordinator as override", async () => {
   const calls = [];
   const onSessionSync = (patch) => calls.push(patch);
   const flushCalls = [];
@@ -49,8 +49,7 @@ test("property save delegates to coordinator and returns the real coordinator XM
     },
     currentMeta: {},
     nextMeta: { camunda_extensions_by_element_id: {} },
-    // Direct XML builders should not be invoked because flushSave is present.
-    getModelerXml: async () => { throw new Error("getModelerXml should not be called"); },
+    getModelerXml: async () => "<xml>pre-captured</xml>",
     apiGetBpmnXml: async () => { throw new Error("apiGetBpmnXml should not be called"); },
     apiPutBpmnXml: async () => { throw new Error("apiPutBpmnXml should not be called"); },
     flushSave: async (reason, opts) => {
@@ -64,7 +63,7 @@ test("property save delegates to coordinator and returns the real coordinator XM
   assert.equal(flushCalls.length, 1, "flushSave was called once");
   const call = flushCalls[0];
   assert.equal(call.reason, "property_update", "reason is property_update");
-  assert.ok(!call.opts?.xmlOverride, "no xmlOverride so coordinator uses runtime XML");
+  assert.equal(call.opts?.xmlOverride, "<xml>pre-captured</xml>", "pre-captured XML passed as override");
   assert.equal(typeof call.opts?.bpmnMeta, "object", "bpmnMeta passed to coordinator");
   assert.equal(call.opts?.sourceAction, "property_update", "sourceAction passed");
   assert.equal(result.nextXml, "<xml>from-modeler</xml>", "result carries real coordinator XML");
@@ -257,6 +256,42 @@ test("non-conflict error rolls back tracked version", async () => {
   assert.equal(getTrackedVersion("sid-rollback"), 7);
 });
 
+test("property save returns error when getModelerXml hangs", async () => {
+  resetCasVersionTracker();
+  const startedAt = Date.now();
+  const result = await saveBpmnState({
+    operation: "property_update",
+    sessionId: "sid-xml-hang",
+    elementId: "Task_1",
+    baseDiagramStateVersion: 1,
+    currentCamundaExtensionsByElementId: {},
+    nextCamundaExtensionsByElementId: {
+      Task_1: {
+        properties: {
+          extensionProperties: [{ id: "p1", name: "key", value: "value" }],
+          extensionListeners: [],
+        },
+        preservedExtensionElements: [],
+      },
+    },
+    currentMeta: {},
+    nextMeta: { camunda_extensions_by_element_id: {} },
+    getModelerXml: async () => {
+      await new Promise((resolve) => { setTimeout(resolve, 12000); }); // hang longer than timeout
+      return "<xml>too-late</xml>";
+    },
+    apiGetBpmnXml: async () => { throw new Error("apiGetBpmnXml should not be called"); },
+    apiPutBpmnXml: async () => { throw new Error("apiPutBpmnXml should not be called"); },
+    flushSave: async () => { throw new Error("flushSave should not be called when XML capture hangs"); },
+    onSessionSync: () => {},
+  });
+  const elapsed = Date.now() - startedAt;
+
+  assert.equal(result?.ok, false);
+  assert.ok(String(result?.error).toLowerCase().includes("timeout"), `error=${result?.error}`);
+  assert.ok(elapsed < 15000, `elapsed=${elapsed}ms`);
+});
+
 test("property save returns error when coordinator transport hangs", async () => {
   resetCasVersionTracker();
   const startedAt = Date.now();
@@ -277,7 +312,7 @@ test("property save returns error when coordinator transport hangs", async () =>
     },
     currentMeta: {},
     nextMeta: { camunda_extensions_by_element_id: {} },
-    getModelerXml: async () => { throw new Error("getModelerXml should not be called"); },
+    getModelerXml: async () => "<xml>pre-captured</xml>",
     apiGetBpmnXml: async () => { throw new Error("apiGetBpmnXml should not be called"); },
     apiPutBpmnXml: async () => { throw new Error("apiPutBpmnXml should not be called"); },
     flushSave: async () => {
