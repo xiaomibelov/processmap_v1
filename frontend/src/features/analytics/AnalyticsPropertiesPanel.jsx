@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
+  apiExportAdvancedCalculationXlsx,
   apiExportAnalyticsPropertiesCsv,
   apiExportAnalyticsPropertiesRecalculatedXlsx,
   apiExportAnalyticsPropertiesXlsx,
@@ -362,6 +363,25 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
     setExporting(false);
   }
 
+  async function handleServerExportAdvancedCalculationXlsx() {
+    if (exporting) return;
+    setExporting(true);
+    setError("");
+    const result = await apiExportAdvancedCalculationXlsx(scope, scopeId);
+    if (!result?.ok) {
+      let message = text(result?.error) || "Не удалось выполнить расширенный расчёт.";
+      if (result?.status === 404) message = "Сессия не найдена.";
+      else if (result?.status === 422) message = "Ошибка разбора BPMN XML: " + message;
+      setError(message);
+      setExporting(false);
+      return;
+    }
+    if (result.blob) {
+      downloadBlob(result.blob, result.filename || `advanced-calculation-${scope}-${scopeId}.xlsx`);
+    }
+    setExporting(false);
+  }
+
   function handleSelectedExport() {
     exportRowsToCsv(selectedRowObjects, `properties-selected-${scope}-${scopeId}.csv`);
   }
@@ -554,15 +574,27 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
         <section className="analyticsRecalculationSection">
           <div className="analyticsRecalculationHeader">
             <h3 className="analyticsRecalculationTitle">Расчёт производительности</h3>
-            <button
-              type="button"
-              className="analyticsExportBtn"
-              onClick={handleServerExportRecalculatedXlsx}
-              disabled={exporting}
-            >
-              <DownloadIcon className="w-4 h-4" />
-              {exporting ? "Экспорт…" : "Excel с пересчётом"}
-            </button>
+            <div className="analyticsRecalculationActions">
+              <button
+                type="button"
+                className="analyticsExportBtn"
+                onClick={handleServerExportRecalculatedXlsx}
+                disabled={exporting}
+              >
+                <DownloadIcon className="w-4 h-4" />
+                {exporting ? "Экспорт…" : "Excel с пересчётом"}
+              </button>
+              <button
+                type="button"
+                className="analyticsExportBtn analyticsExportBtn--secondary"
+                onClick={handleServerExportAdvancedCalculationXlsx}
+                disabled={exporting}
+                title="Расширенный расчёт: пути, критический путь, бутылочные горлышки, ингредиенты, ресурсы"
+              >
+                <DownloadIcon className="w-4 h-4" />
+                {exporting ? "Экспорт…" : "Excel расширенный"}
+              </button>
+            </div>
           </div>
           {recalcLoading ? <AnalyticsLoading text="Загрузка расчёта…" /> : null}
           {recalcError ? <AnalyticsError message={recalcError} onRetry={() => loadRecalculation()} /> : null}

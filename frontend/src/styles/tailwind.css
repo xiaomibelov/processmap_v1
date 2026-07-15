@@ -14618,6 +14618,23 @@
   cursor: not-allowed;
 }
 
+.analyticsExportBtn--secondary {
+  background: hsl(var(--bg-soft));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border));
+}
+
+.analyticsExportBtn--secondary:hover {
+  background: hsl(var(--muted));
+}
+
+.analyticsRecalculationActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* Badges & Pills */
 .analyticsBadge,
 .analyticsPill {
