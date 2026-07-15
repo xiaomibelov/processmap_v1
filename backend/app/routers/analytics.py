@@ -19,12 +19,14 @@ from ..analytics_read_model import (
 )
 from ..routers.process_properties_registry import _extract_camunda_rows, _text
 from ..recipe.storage import get_ingredient_values_by_name
+from ..utils.parsing import parse_recalc_number
 from ..routers.product_actions_registry import _registry_row
 from ..analytics_cache import (
     ANALYTICS_CACHE_TTL_SEC,
     cached_analytics,
     invalidate_analytics_scope,
 )
+from ..services.advanced_calculation import BpmnAnalyzer
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -874,31 +876,8 @@ def compute_source(ee_time: float, ingredient_value: Any) -> float | str:
     return "нет данных"
 
 
-def _parse_recalc_number(value: Any) -> float | None:
-    """Parse a numeric string for the recalculated export.
-
-    Accepts commas as decimal separators, the per-unit coefficient form
-    ``"0,33*n"`` (per-unit time/quantity multiplied by ``n`` units), and a leading
-    threshold/comparison prefix (``">10"`` -> ``10``, ``"<5"`` -> ``5``). For the
-    ``*n`` form the leading coefficient is returned (e.g. ``0,33*n`` -> ``0.33``);
-    the caller multiplies it by ``ingredient_value`` (the unit count ``n``), so
-    ``0,33*n`` with ``ingredient_value=10`` yields ``3.3``.
-    """
-    raw = _text(value)
-    if raw in ("", "—"):
-        return None
-    # Threshold/comparison prefix: ">10" / "<5" / "> 10" -> strip the leading sign.
-    if raw[:1] in (">", "<"):
-        raw = raw[1:].strip()
-    # Per-unit coefficient form: "<number>*n" / "<number> * n" (case-insensitive).
-    star = raw.find("*")
-    if star > 0 and raw[star + 1 :].strip().lower() == "n":
-        raw = raw[:star].strip()
-    raw = raw.replace(",", ".")
-    try:
-        return float(raw)
-    except Exception:
-        return None
+# Backward-compatible alias for tests and existing callers.
+_parse_recalc_number = parse_recalc_number
 
 
 def _build_recalculated_rows(
@@ -1278,3 +1257,231 @@ def get_actions_summary(
         )
 
     return cached_analytics("actions_summary", scope, scope_id, oid, params=cache_params, compute=_compute)
+
+
+# ---------------------------------------------------------------------------
+# Advanced calculation export
+# ---------------------------------------------------------------------------
+
+
+def _load_session_bpmn_xml(session_id: str, org_id: str) -> str:
+    with _connect() as con:
+        row = con.execute(
+            "SELECT bpmn_xml FROM sessions WHERE id=? AND org_id=? LIMIT 1",
+            (session_id, org_id),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="session not found")
+    return row["bpmn_xml"] or ""
+
+
+def _advanced_xlsx_response(result, filename: str) -> Response:
+    import io
+
+    import xlsxwriter
+
+    out = io.BytesIO()
+    workbook = xlsxwriter.Workbook(out, {"in_memory": True})
+
+    header_format = workbook.add_format({
+        "bold": True,
+        "bg_color": "#4F46E5",
+        "font_color": "#FFFFFF",
+        "border": 1,
+        "align": "center",
+        "valign": "vcenter",
+    })
+    cell_format = workbook.add_format({"border": 1, "valign": "vcenter"})
+    num_format = workbook.add_format({"border": 1, "valign": "vcenter", "num_format": "0.00"})
+
+    def add_sheet(name: str, headers: List[str], rows: List[List[Any]], formats: List[Any] | None = None):
+        ws = workbook.add_worksheet(name)
+        for col, h in enumerate(headers):
+            ws.write(0, col, h, header_format)
+        fmt = formats or [cell_format] * len(headers)
+        for r_idx, row in enumerate(rows, start=1):
+            for c_idx, value in enumerate(row):
+                f = fmt[c_idx] if c_idx < len(fmt) else cell_format
+                ws.write(r_idx, c_idx, value, f)
+        # Auto-width with cap.
+        for col, h in enumerate(headers):
+            max_len = len(str(h))
+            for row in rows:
+                max_len = max(max_len, len(str(row[col] if col < len(row) else "")))
+            ws.set_column(col, col, min(max_len + 3, 60))
+        if rows:
+            ws.autofilter(0, 0, len(rows), len(headers) - 1)
+
+    # 1. Summary
+    parallel = result.parallel
+    add_sheet(
+        "Summary",
+        ["Metric", "Value"],
+        [
+            ["Total ee_time", result.total_ee_time],
+            ["Sequential time", parallel.sequential_time],
+            ["Parallel time (critical path)", parallel.parallel_time],
+            ["Time saved", parallel.time_saved],
+            ["Efficiency ratio", parallel.efficiency_ratio],
+            ["Paths found", len(result.paths)],
+            ["Critical path time (path enum)", max((p.total_ee_time for p in result.paths), default=0.0)],
+        ],
+        [cell_format, num_format],
+    )
+
+    # 2. Elements
+    add_sheet(
+        "Elements",
+        ["element_id", "element_name", "element_type", "ee_time", "properties"],
+        [
+            [el["element_id"], el["element_name"], el["element_type"], el["ee_time"], json.dumps(el["properties"], ensure_ascii=False)]
+            for el in result.elements
+        ],
+        [cell_format, cell_format, cell_format, num_format, cell_format],
+    )
+
+    # 3. Subprocesses
+    add_sheet(
+        "Subprocesses",
+        ["subprocess_id", "subprocess_name", "total_ee_time"],
+        [[s.subprocess_id, s.subprocess_name, s.total_ee_time] for s in result.subprocesses],
+        [cell_format, cell_format, num_format],
+    )
+
+    # 4. Paths
+    add_sheet(
+        "Paths",
+        ["path_id", "path_description", "total_ee_time", "is_critical"],
+        [[p.path_id, p.description, p.total_ee_time, "Y" if p.is_critical else "N"] for p in result.paths],
+        [cell_format, cell_format, num_format, cell_format],
+    )
+
+    # 5. Parallel
+    add_sheet(
+        "Parallel",
+        ["parallel_time", "sequential_time", "time_saved", "efficiency_ratio"],
+        [[parallel.parallel_time, parallel.sequential_time, parallel.time_saved, parallel.efficiency_ratio]],
+        [num_format, num_format, num_format, num_format],
+    )
+
+    # 6. Bottlenecks
+    add_sheet(
+        "Bottlenecks",
+        ["element_id", "element_name", "ee_time", "slack", "is_bottleneck"],
+        [[b.element_id, b.element_name, b.ee_time, b.slack, "Y" if b.is_bottleneck else "N"] for b in result.bottlenecks],
+        [cell_format, cell_format, num_format, num_format, cell_format],
+    )
+
+    # 7. Utilization
+    add_sheet(
+        "Utilization",
+        ["element_id", "element_name", "ee_time", "process_parallel_time", "utilization_rate"],
+        [[u.element_id, u.element_name, u.ee_time, u.process_parallel_time, u.utilization_rate] for u in result.utilization],
+        [cell_format, cell_format, num_format, num_format, num_format],
+    )
+
+    # 8. Ingredients Summary
+    if result.ingredients_summary:
+        add_sheet(
+            "Ingredients Summary",
+            ["ingredient_name", "total_quantity", "unit"],
+            [[s.ingredient_name, s.total_quantity, s.unit] for s in result.ingredients_summary],
+            [cell_format, num_format, cell_format],
+        )
+    else:
+        add_sheet("Ingredients Summary", ["ingredient_name", "total_quantity", "unit"], [["Нет данных", "", ""]])
+
+    # 9. Ingredients Detail
+    if result.ingredients_detail:
+        add_sheet(
+            "Ingredients Detail",
+            ["element_id", "element_name", "ingredient_name", "quantity", "unit"],
+            [[d.element_id, d.element_name, d.ingredient_name, d.quantity, d.unit] for d in result.ingredients_detail],
+            [cell_format, cell_format, cell_format, num_format, cell_format],
+        )
+    else:
+        add_sheet("Ingredients Detail", ["element_id", "element_name", "ingredient_name", "quantity", "unit"], [["Нет данных", "", "", "", ""]])
+
+    # 10. Resources
+    if result.resources:
+        add_sheet(
+            "Resources",
+            ["resource_name", "peak_consumption", "total_consumption", "unit"],
+            [[r.resource_name, r.peak_consumption, r.total_consumption, r.unit] for r in result.resources],
+            [cell_format, num_format, num_format, cell_format],
+        )
+    else:
+        add_sheet("Resources", ["resource_name", "peak_consumption", "total_consumption", "unit"], [["Нет данных", "", "", ""]])
+
+    # 11. Coverage
+    add_sheet(
+        "Coverage",
+        ["element_id", "element_name", "element_type", "ee_time_present", "operation_code_present",
+         "display_name_present", "recipe_context_present", "params_present", "allowed_outputs_present",
+         "coverage_score", "is_complete"],
+        [
+            [c.element_id, c.element_name, c.element_type,
+             "Y" if c.ee_time_present else "N",
+             "Y" if c.operation_code_present else "N",
+             "Y" if c.display_name_present else "N",
+             "Y" if c.recipe_context_present else "N",
+             "Y" if c.params_present else "N",
+             "Y" if c.allowed_outputs_present else "N",
+             c.coverage_score,
+             "Y" if c.is_complete else "N"]
+            for c in result.coverage
+        ],
+        [cell_format] * 10 + [cell_format],
+    )
+
+    # 12. Coverage Summary
+    cs = result.coverage_summary
+    add_sheet(
+        "Coverage Summary",
+        ["total_elements", "elements_with_ee_time", "elements_without_ee_time",
+         "average_coverage_score", "complete_elements_count", "incomplete_elements_count"],
+        [[cs.total_elements, cs.elements_with_ee_time, cs.elements_without_ee_time,
+          cs.average_coverage_score, cs.complete_elements_count, cs.incomplete_elements_count]],
+        [cell_format] * 6,
+    )
+
+    # 13. Warnings
+    warnings = result.warnings or ["No warnings"]
+    add_sheet("Warnings", ["warning"], [[w] for w in warnings], [cell_format])
+
+    workbook.close()
+    out.seek(0)
+    return Response(
+        content=out.read(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/export-advanced-calculation.xlsx")
+def export_advanced_calculation_xlsx(
+    request: Request,
+    scope: str = Query(..., pattern="^(session)$"),
+    scope_id: str = Query(..., min_length=1),
+    org_id: str | None = Query(None),
+):
+    oid = org_id or _org_id_from_request(request)
+    require_analytics_scope(request, scope, scope_id, oid)
+
+    if scope != "session":
+        raise HTTPException(status_code=400, detail="only session scope is supported for advanced calculation")
+
+    bpmn_xml = _load_session_bpmn_xml(scope_id, oid)
+    if not bpmn_xml.strip():
+        raise HTTPException(status_code=422, detail="session has empty BPMN XML")
+
+    try:
+        analyzer = BpmnAnalyzer(bpmn_xml)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    result = analyzer.calculate()
+    short_id = scope_id[:8]
+    timestamp = int(time.time())
+    filename = f"advanced_calculation_{short_id}_{timestamp}.xlsx"
+    return _advanced_xlsx_response(result, filename)
