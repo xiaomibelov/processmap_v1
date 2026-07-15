@@ -57,6 +57,33 @@ export default function createLocalMutationStaging(options = {}) {
     return command;
   }
 
+  function withTimeout(promiseFactory, ms, context) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new Error(`${context || "operation"} timeout after ${ms}ms`));
+      }, Math.max(100, Number(ms) || 1000));
+      Promise.resolve()
+        .then(() => promiseFactory())
+        .then(
+          (value) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(value);
+          },
+          (error) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            reject(error);
+          },
+        );
+    });
+  }
+
   async function stageRuntimeChange(ev) {
     const store = getStore();
     if (!store) return { ok: false, reason: "missing_store" };
@@ -74,11 +101,22 @@ export default function createLocalMutationStaging(options = {}) {
       // Local interactive staging needs a lightweight snapshot for continuity
       // and autosave eligibility, but formatted export remains canonical only
       // on the durable flush path.
-      const xmlRes = await runtime.getXml({ format: false });
-      if (xmlRes?.ok) {
-        nextXml = asTextOption(xmlRes.xml);
-        xmlAuthority = "staged_local_runtime_snapshot";
-        xmlExportMode = "runtime_unformatted";
+      // Cap the staging export so a transiently busy/broken modeler cannot block
+      // the autosave pipeline indefinitely (observed as a 10s transport timeout
+      // after property mutations that remove extension elements).
+      try {
+        const xmlRes = await withTimeout(
+          () => runtime.getXml({ format: false }),
+          1500,
+          "stageRuntimeChange.getXml",
+        );
+        if (xmlRes?.ok) {
+          nextXml = asTextOption(xmlRes.xml);
+          xmlAuthority = "staged_local_runtime_snapshot";
+          xmlExportMode = "runtime_unformatted";
+        }
+      } catch {
+        // Fallback to the store XML already captured above.
       }
     }
 
