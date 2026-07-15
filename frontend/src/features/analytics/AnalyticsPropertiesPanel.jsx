@@ -365,6 +365,10 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
 
   async function handleServerExportAdvancedCalculationXlsx() {
     if (exporting) return;
+    if (scope !== "session") {
+      setError("Расширенный расчёт доступен только для сессии. Переключитесь на сессию через переключатель scope.");
+      return;
+    }
     setExporting(true);
     setError("");
     const result = await apiExportAdvancedCalculationXlsx(scope, scopeId);
@@ -588,8 +592,8 @@ export default function AnalyticsPropertiesPanel({ scope, scopeId }) {
                 type="button"
                 className="analyticsExportBtn analyticsExportBtn--secondary"
                 onClick={handleServerExportAdvancedCalculationXlsx}
-                disabled={exporting}
-                title="Расширенный расчёт: пути, критический путь, бутылочные горлышки, ингредиенты, ресурсы"
+                disabled={exporting || scope !== "session"}
+                title={scope === "session" ? "Расширенный расчёт: пути, критический путь, бутылочные горлышки, ингредиенты, ресурсы" : "Доступно только для сессии — переключите scope на сессию"}
               >
                 <DownloadIcon className="w-4 h-4" />
                 {exporting ? "Экспорт…" : "Excel расширенный"}
