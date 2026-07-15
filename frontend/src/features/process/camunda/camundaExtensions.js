@@ -1379,9 +1379,7 @@ export function applyCamundaExtensionStateToModeler(elementId, extensionState, m
     const camundaListeners = listenerValues.length ? listenerValues : [];
 
     const nextValues = [...preserved, ...managedProperties, ...camundaListeners];
-    const nextExt = nextValues.length
-      ? moddle.create("bpmn:ExtensionElements", { values: nextValues })
-      : null;
+    const nextExt = moddle.create("bpmn:ExtensionElements", { values: nextValues });
 
     modeling.updateProperties(el, { extensionElements: nextExt });
     return { ok: true };
