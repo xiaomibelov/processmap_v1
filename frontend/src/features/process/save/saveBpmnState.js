@@ -60,6 +60,7 @@ function pickServerCurrentVersionFromError(saveResult) {
 }
 
 saveCoordinator.registerPipeline(XML_PIPELINE_NAME, {
+  transportTimeoutMs: 60000,
   transport: async (sessionId, payload) => {
     const useFlushSave = payload?.useFlushSave === true && typeof payload.flushSave === "function";
     if (useFlushSave) {
