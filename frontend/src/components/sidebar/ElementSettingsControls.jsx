@@ -1299,7 +1299,7 @@ export function CamundaPropertiesSettings({
     }
     const nextState = deletePropertyRow(rowId);
     if (nextState && typeof onSaveExtensionState === "function") {
-      void onSaveExtensionState(nextState);
+      void onSaveExtensionState(nextState, { silent: true });
     }
   }
 

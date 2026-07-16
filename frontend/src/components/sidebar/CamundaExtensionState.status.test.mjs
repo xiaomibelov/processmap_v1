@@ -36,7 +36,7 @@ test("NotesPanel derives camunda extension-state trust state with explicit durab
 });
 
 test("NotesPanel reuses existing camunda extension-state save and reset lifecycle while preserving draft on failure", () => {
-  assert.match(notesPanelSource, /async function saveSelectedCamundaProperties\((draftOverride)?\)/);
+  assert.match(notesPanelSource, /async function saveSelectedCamundaProperties\((draftOverride)?(,\s*options\s*=\s*\{\})?\)/);
   assert.match(notesPanelSource, /setCamundaExtensionLastAction\("save"\);/);
   assert.match(notesPanelSource, /setCamundaExtensionSavePhase\("saving"\);\s*setCamundaPropertiesBusy\(true\);\s*setCamundaExtensionSaveFailed\(false\);\s*setCamundaPropertiesErr\(""\);\s*setCamundaPropertiesInfo\(""\);/);
   assert.match(notesPanelSource, /backgroundSessionRefresh: true/);
