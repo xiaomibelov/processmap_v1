@@ -7,8 +7,6 @@ import {
 import {
   getVersion as getTrackedDiagramStateVersion,
   setVersion as setTrackedDiagramStateVersion,
-  bumpVersion as bumpTrackedDiagramStateVersion,
-  rollbackVersion as rollbackTrackedDiagramStateVersion,
 } from "../../../lib/casVersionTracker.js";
 import { saveCoordinator } from "../../session/saveCoordinator.js";
 
@@ -92,9 +90,10 @@ saveCoordinator.registerPipeline(XML_PIPELINE_NAME, {
     return null;
   },
   onSuccess: (response, sessionId, payload) => {
+    // CAS bump is handled by saveCoordinator._runPipeline (single source of truth).
+    // Only sync the version to external React state here.
     const version = pickDiagramStateVersion(response);
     if (version !== null) {
-      bumpTrackedDiagramStateVersion(sessionId, version);
       try {
         payload?.rememberDiagramStateVersion?.(version, { sessionId });
       } catch {
@@ -103,10 +102,10 @@ saveCoordinator.registerPipeline(XML_PIPELINE_NAME, {
     }
   },
   on409: (response, sessionId, payload) => {
-    rollbackTrackedDiagramStateVersion(sessionId);
+    // CAS rollback + setVersion is handled by saveCoordinator._runPipeline.
+    // Only sync the server version to external React state here.
     const serverVersion = pickServerCurrentVersionFromError(response);
     if (serverVersion !== null) {
-      setTrackedDiagramStateVersion(sessionId, serverVersion);
       try {
         payload?.rememberDiagramStateVersion?.(serverVersion, { sessionId });
       } catch {
@@ -114,8 +113,8 @@ saveCoordinator.registerPipeline(XML_PIPELINE_NAME, {
       }
     }
   },
-  onError: (_response, sessionId) => {
-    rollbackTrackedDiagramStateVersion(sessionId);
+  onError: () => {
+    // CAS rollback is handled by saveCoordinator._runPipeline.
   },
   debounceMs: 0,
   retryCount: 3,
@@ -158,19 +157,6 @@ function rememberDiagramStateVersion(sessionId, version, options = {}) {
   const normalized = toNonNegativeIntOrNull(version);
   if (normalized === null) return;
   setTrackedDiagramStateVersion(sessionId, normalized);
-  if (typeof options.rememberDiagramStateVersion === "function") {
-    try {
-      options.rememberDiagramStateVersion(normalized, { sessionId });
-    } catch {
-      // no-op
-    }
-  }
-}
-
-function bumpDiagramStateVersion(sessionId, version, options = {}) {
-  const normalized = toNonNegativeIntOrNull(version);
-  if (normalized === null) return;
-  bumpTrackedDiagramStateVersion(sessionId, normalized);
   if (typeof options.rememberDiagramStateVersion === "function") {
     try {
       options.rememberDiagramStateVersion(normalized, { sessionId });
