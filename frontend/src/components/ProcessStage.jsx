@@ -288,6 +288,7 @@ const DIAGRAM_UNDO_REDO_VISIBLE_POLL_MS = 5000;
 const BPMN_VERSION_HEADERS_LIMIT = 50;
 const REMOTE_SESSION_SYNC_POLL_MS = 30000;
 const SAVE_ACK_TOAST_HIDE_MS = 4000;
+const SAVE_ACK_TOAST_ERROR_HIDE_MS = 8000;
 
 function logDiscussionFocusDiag(event, payload = {}) {
   try {
@@ -1228,6 +1229,7 @@ function ProcessStage({
       window.clearTimeout(saveAckToastTimerRef.current);
       saveAckToastTimerRef.current = 0;
     }
+    const isErrorOrWarning = tone === "error" || tone === "warning";
     setSaveAckToast({
       visible: true,
       tone,
@@ -1237,18 +1239,21 @@ function ProcessStage({
       onAction: typeof options.onAction === "function" ? options.onAction : null,
       actionDisabled: options.actionDisabled === true,
       persistent,
-      onDismiss: typeof options.onDismiss === "function" ? options.onDismiss : null,
+      onDismiss: isErrorOrWarning
+        ? () => setSaveAckToast((prev) => ({ ...prev, visible: false }))
+        : (typeof options.onDismiss === "function" ? options.onDismiss : null),
       kind: requestedKind,
       remoteUpdateKey: toText(options.remoteUpdateKey),
     });
     if (persistent || typeof window === "undefined") return;
+    const hideMs = isErrorOrWarning ? SAVE_ACK_TOAST_ERROR_HIDE_MS : SAVE_ACK_TOAST_HIDE_MS;
     saveAckToastTimerRef.current = window.setTimeout(() => {
       setSaveAckToast((prev) => ({
         ...prev,
         visible: false,
       }));
       saveAckToastTimerRef.current = 0;
-    }, SAVE_ACK_TOAST_HIDE_MS);
+    }, hideMs);
   }, [toText]);
   useEffect(() => () => {
     if (typeof window === "undefined") return;

@@ -2791,17 +2791,15 @@ export default function NotesPanel({
         },
       }));
       if (result && result.ok === false) {
-        const isConflict = result?.status === 409 || result?.conflict === true;
-        if (isConflict) {
-          setCamundaPropertiesDraft(previousState);
-          if (camundaPropertiesDraftKey) {
-            camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, {
-              draft: previousState,
-              // Conflict restore discards the rejected edits: the draft
-              // is back to the model-derived state, so no pending ops.
-              ops: createCamundaDraftOps(),
-            });
-          }
+        // Always rollback draft to match modeler rollback (App.jsx:2857-2863).
+        setCamundaPropertiesDraft(previousState);
+        if (camundaPropertiesDraftKey) {
+          camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, {
+            draft: previousState,
+            // Conflict restore discards the rejected edits: the draft
+            // is back to the model-derived state, so no pending ops.
+            ops: createCamundaDraftOps(),
+          });
         }
         setCamundaExtensionSavePhase("idle");
         setCamundaExtensionSaveFailed(true);
@@ -2871,17 +2869,15 @@ export default function NotesPanel({
         },
       }));
       if (result && result.ok === false) {
-        const isConflict = result?.status === 409 || result?.conflict === true;
-        if (isConflict) {
-          setCamundaPropertiesDraft(previousState);
-          if (camundaPropertiesDraftKey) {
-            camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, {
-              draft: previousState,
-              // Conflict restore discards the rejected edits: the draft
-              // is back to the model-derived state, so no pending ops.
-              ops: createCamundaDraftOps(),
-            });
-          }
+        // Always rollback draft to match modeler rollback (App.jsx:2857-2863).
+        setCamundaPropertiesDraft(previousState);
+        if (camundaPropertiesDraftKey) {
+          camundaPropertiesDraftCacheRef.current.set(camundaPropertiesDraftKey, {
+            draft: previousState,
+            // Conflict restore discards the rejected edits: the draft
+            // is back to the model-derived state, so no pending ops.
+            ops: createCamundaDraftOps(),
+          });
         }
         setCamundaExtensionSavePhase("idle");
         setCamundaExtensionSaveFailed(true);
