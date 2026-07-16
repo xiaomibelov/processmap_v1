@@ -4522,6 +4522,19 @@ def delete_project_api(project_id: str, request: Request = None):
 
 
 # DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
+def _broadcast_session_deleted(session_id: str) -> None:
+    """Publish session_deleted event to all SSE subscribers (best-effort)."""
+    try:
+        from .services.session_event_bus import get_session_event_bus
+        bus = get_session_event_bus()
+        bus.publish_nowait(session_id, {
+            "type": "session_deleted",
+            "data": {"session_id": session_id},
+        })
+    except Exception:
+        logger.warning("Failed to broadcast session_deleted for %s", session_id, exc_info=True)
+
+
 @app.delete("/api/sessions/{session_id}")
 def delete_session_api(session_id: str, request: Request = None):
     sid = str(session_id or "").strip()
@@ -4549,6 +4562,7 @@ def delete_session_api(session_id: str, request: Request = None):
         session_id=sid,
     )
     _invalidate_session_caches(sess, session_id=sid, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
+    _broadcast_session_deleted(sid)
     return {"ok": True, "session_id": sid, "deleted_files": 1}
 
 
