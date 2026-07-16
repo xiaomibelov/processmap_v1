@@ -26,8 +26,8 @@ function debounceKey(pipelineName, sessionId) {
   return `${pipelineName}::${asText(sessionId)}`;
 }
 
-function queueKey(sessionId) {
-  return asText(sessionId);
+function queueKey(pipelineName, sessionId) {
+  return `${asText(pipelineName)}::${asText(sessionId)}`;
 }
 
 function isConflictResponse(response) {
@@ -222,7 +222,12 @@ class SaveCoordinator {
       return;
     }
 
-    this.sessionQueues.delete(sid);
+    const suffix = `::${sid}`;
+    for (const [key, wrapped] of this.sessionQueues.entries()) {
+      if (key === sid || key.endsWith(suffix)) {
+        this.sessionQueues.delete(key);
+      }
+    }
     for (const [key, timer] of this.debounceTimers.entries()) {
       if (key.endsWith(`::${sid}`)) {
         clearTimeout(timer);
@@ -386,7 +391,7 @@ class SaveCoordinator {
 
   _enqueueRun(pipelineName, sessionId, payload) {
     const sid = asText(sessionId);
-    const qKey = queueKey(sid);
+    const qKey = queueKey(pipelineName, sid);
     const previous = this.sessionQueues.get(qKey) || Promise.resolve();
 
     const run = previous.catch(() => null).then(() => this._runPipeline(pipelineName, sid, payload));
