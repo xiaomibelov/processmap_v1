@@ -2,8 +2,6 @@ import { normalizeDiagramSessionId, normalizeDiagramStateVersion } from "./diagr
 import {
   getVersion as getTrackedDiagramStateVersion,
   setVersion as setTrackedDiagramStateVersion,
-  bumpVersion as bumpTrackedDiagramStateVersion,
-  rollbackVersion as rollbackTrackedDiagramStateVersion,
 } from "../../../../lib/casVersionTracker.js";
 import { saveCoordinator } from "../../../../features/session/saveCoordinator.js";
 
@@ -35,13 +33,17 @@ saveCoordinator.registerPipeline(PIPELINE_NAME, {
     fallbackBaseDiagramStateVersion: payload?.patch?.base_diagram_state_version ?? payload?.patch?.baseDiagramStateVersion,
   }),
   onSuccess: (response, sessionId, payload) => {
-    bumpVersion(payload?.rememberDiagramStateVersion, readSessionPatchAckDiagramStateVersion(response), sessionId);
+    // CAS bump is handled by saveCoordinator._runPipeline (single source of truth).
+    // Only sync the version to external React state here.
+    syncVersionToExternalState(payload?.rememberDiagramStateVersion, readSessionPatchAckDiagramStateVersion(response), sessionId);
   },
   on409: (response, sessionId, payload) => {
-    rememberVersion(payload?.rememberDiagramStateVersion, readSessionPatchConflictServerCurrentVersion(response), sessionId);
+    // CAS rollback + setVersion is handled by saveCoordinator._runPipeline.
+    // Only sync the server version to external React state here.
+    syncVersionToExternalState(payload?.rememberDiagramStateVersion, readSessionPatchConflictServerCurrentVersion(response), sessionId);
   },
-  onError: (_response, sessionId) => {
-    rollbackTrackedDiagramStateVersion(sessionId);
+  onError: () => {
+    // CAS rollback is handled by saveCoordinator._runPipeline.
   },
   debounceMs: 0,
   retryCount: 3,
@@ -87,29 +89,20 @@ export function resolveSessionPatchBaseAtSendTime({
   return normalizeDiagramStateVersion(fallbackBaseDiagramStateVersion);
 }
 
-function rememberVersion(rememberDiagramStateVersion, version, sessionId) {
+function syncVersionToExternalState(rememberDiagramStateVersion, version, sessionId) {
   const normalizedVersion = normalizeDiagramStateVersion(version);
   const sid = normalizeDiagramSessionId(sessionId);
   if (normalizedVersion === null || !sid) return;
+  // The coordinator's generic pickServerCurrentVersion may not cover all response
+  // formats (e.g. meta pipeline returns data.server_current_version without nested
+  // detail). Ensure the tracker is set to the correct version via setVersion which
+  // is idempotent (replaces entire history).
   setTrackedDiagramStateVersion(sid, normalizedVersion);
   if (typeof rememberDiagramStateVersion !== "function") return;
   try {
     rememberDiagramStateVersion(normalizedVersion, { sessionId: sid });
   } catch {
-    // Best-effort monotonic context update; callers still receive the original response.
-  }
-}
-
-function bumpVersion(rememberDiagramStateVersion, version, sessionId) {
-  const normalizedVersion = normalizeDiagramStateVersion(version);
-  const sid = normalizeDiagramSessionId(sessionId);
-  if (normalizedVersion === null || !sid) return;
-  bumpTrackedDiagramStateVersion(sid, normalizedVersion);
-  if (typeof rememberDiagramStateVersion !== "function") return;
-  try {
-    rememberDiagramStateVersion(normalizedVersion, { sessionId: sid });
-  } catch {
-    // no-op
+    // Best-effort external state update.
   }
 }
 
