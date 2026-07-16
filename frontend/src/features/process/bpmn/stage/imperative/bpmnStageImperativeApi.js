@@ -578,7 +578,13 @@ export function createBpmnStageImperativeApi(ctxBase) {
     getRuntimeXmlSnapshot: async (options = {}) => {
       const modeler = refs.modelerRef?.current || refs.modelerRuntimeRef?.current?.getInstance?.();
       if (modeler && typeof modeler.saveXML === "function") {
-        const out = await modeler.saveXML({ format: options?.format !== false });
+        const saveXmlTimeout = Number(options?.timeoutMs) > 0 ? Number(options.timeoutMs) : 5000;
+        const out = await Promise.race([
+          modeler.saveXML({ format: options?.format !== false }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("getRuntimeXmlSnapshot: saveXML timeout")), saveXmlTimeout)
+          ),
+        ]);
         const xml = String(out?.xml || "");
         if (typeof window !== "undefined" && window.__FPC_DEBUG_BPMN__) {
           // eslint-disable-next-line no-console

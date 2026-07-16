@@ -827,7 +827,12 @@ export default function createBpmnCoordinator(options = {}) {
     clearSaveTimer();
     if (!store) return { ok: false, rev: 0, error: "store unavailable" };
     if (flushPromise) {
-      await flushPromise;
+      const hasXmlOverride = asText(options?.xmlOverride).trim().length > 0;
+      const maxWaitMs = hasXmlOverride ? 4000 : 8000;
+      await Promise.race([
+        flushPromise,
+        new Promise((resolve) => setTimeout(resolve, maxWaitMs)),
+      ]);
     }
     const run = (async () => {
       saveInFlight = true;
