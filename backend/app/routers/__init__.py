@@ -20,6 +20,7 @@ from .org import router as org_router
 from .projects import router as projects_router
 from .reports import router as reports_router
 from .sessions import router as sessions_router
+from .session_events import router as session_events_router
 from ..save_services.status_service.status_api import router as status_service_router
 from .system import router as system_router
 from .templates import router as templates_router
@@ -37,6 +38,7 @@ ROUTERS = (
     (explorer_router, ["explorer"]),
     (projects_router, ["projects"]),
     (sessions_router, ["sessions"]),
+    (session_events_router, ["session-events"]),
     (status_service_router, ["save-status"]),
     (product_actions_ai_router, ["product-actions-ai"]),
     (product_actions_registry_router, ["product-actions-registry"]),

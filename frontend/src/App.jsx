@@ -133,6 +133,7 @@ import {
   sessionIdOf,
 } from "./app/projectSessionSelectors";
 import { useChildSessionNoteAggregatesByElementId } from "./lib/sessionNoteAggregates";
+import useSessionEvents from "./hooks/useSessionEvents";
 import {
   emptyBpmnMeta,
   mergeHybridV2Doc,
@@ -1282,6 +1283,26 @@ export default function App() {
     draftSessionId: draft?.session_id,
     activationState,
   });
+
+  // ── Real-time session events (SSE) ────────────────────────
+  useSessionEvents(
+    !isSessionLocalMode ? draftSessionId : "",
+    {
+      onDeleted: useCallback((deletedSessionId) => {
+        setSessionNavNotice({
+          code: "SESSION_DELETED",
+          status: 404,
+          projectId: String(projectId || ""),
+          sessionId: String(deletedSessionId || ""),
+          message: "Другой пользователь удалил эту сессию. Работа с сессией завершена.",
+        });
+        returnToSessionList("session_deleted_by_other", {
+          flushBeforeLeave: false,
+          skipLeaveGuard: true,
+        });
+      }, [projectId, setSessionNavNotice, returnToSessionList]),
+    },
+  );
 
   const leaveNavigationRisk = useMemo(() => {
     const direct = processUiState?.leaveNavigationRisk;
