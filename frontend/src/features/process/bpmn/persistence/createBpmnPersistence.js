@@ -1,8 +1,6 @@
 import {
   getVersion as getTrackedDiagramStateVersion,
   setVersion as setTrackedDiagramStateVersion,
-  bumpVersion as bumpTrackedDiagramStateVersion,
-  rollbackVersion as rollbackTrackedDiagramStateVersion,
 } from "../../../../lib/casVersionTracker.js";
 import { saveCoordinator } from "../../../../features/session/saveCoordinator.js";
 
@@ -46,9 +44,10 @@ saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, {
     return Number.isFinite(base) && base >= 0 ? Math.round(base) : null;
   },
   onSuccess: (response, sessionId, payload) => {
+    // CAS bump is handled by saveCoordinator._runPipeline (single source of truth).
+    // Only sync the version to external React state here.
     const version = pickDiagramStateVersion(response);
     if (version !== null) {
-      bumpTrackedDiagramStateVersion(sessionId, version);
       if (typeof payload?.rememberDiagramStateVersion === "function") {
         try {
           payload.rememberDiagramStateVersion(version, { sessionId });
@@ -59,7 +58,8 @@ saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, {
     }
   },
   on409: (response, sessionId, payload) => {
-    rollbackTrackedDiagramStateVersion(sessionId);
+    // CAS rollback + setVersion is handled by saveCoordinator._runPipeline.
+    // Only sync the server version to external React state here.
     const data = response?.data ?? {};
     const detail = data?.detail ?? data ?? {};
     const serverVersion = Number(
@@ -67,7 +67,6 @@ saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, {
     );
     if (Number.isFinite(serverVersion) && serverVersion >= 0) {
       const normalized = Math.round(serverVersion);
-      setTrackedDiagramStateVersion(sessionId, normalized);
       if (typeof payload?.rememberDiagramStateVersion === "function") {
         try {
           payload.rememberDiagramStateVersion(normalized, { sessionId });
@@ -77,8 +76,8 @@ saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, {
       }
     }
   },
-  onError: (_response, sessionId) => {
-    rollbackTrackedDiagramStateVersion(sessionId);
+  onError: () => {
+    // CAS rollback is handled by saveCoordinator._runPipeline.
   },
   debounceMs: 0,
   retryCount: 3,
@@ -359,21 +358,6 @@ export default function createBpmnPersistence(options = {}) {
     if (!Number.isFinite(next) || next < 0) return null;
     const sid = asText(sessionId).trim();
     setTrackedDiagramStateVersion(sid, next);
-    if (typeof rememberExternalDiagramStateVersion === "function") {
-      try {
-        rememberExternalDiagramStateVersion(next, { sessionId: sid });
-      } catch {
-        // no-op
-      }
-    }
-    return next;
-  }
-
-  function bumpDiagramStateVersion(raw, sessionId = "") {
-    const next = asNumber(raw, -1);
-    if (!Number.isFinite(next) || next < 0) return null;
-    const sid = asText(sessionId).trim();
-    bumpTrackedDiagramStateVersion(sid, next);
     if (typeof rememberExternalDiagramStateVersion === "function") {
       try {
         rememberExternalDiagramStateVersion(next, { sessionId: sid });
