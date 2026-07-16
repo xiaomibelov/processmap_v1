@@ -14,6 +14,12 @@ test("manual save ack toast uses 4-second visibility window", () => {
   assert.equal(source.includes('if (persistent || typeof window === "undefined") return;'), true);
 });
 
+test("error/warning toasts use 8-second visibility window", () => {
+  const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
+  assert.equal(source.includes("const SAVE_ACK_TOAST_ERROR_HIDE_MS = 8000;"), true);
+  assert.equal(source.includes("isErrorOrWarning ? SAVE_ACK_TOAST_ERROR_HIDE_MS : SAVE_ACK_TOAST_HIDE_MS"), true);
+});
+
 test("manual save and BPMN version toasts pass explicit source type", () => {
   const source = fs.readFileSync(path.join(__dirname, "ProcessStage.jsx"), "utf8");
   assert.equal(source.includes('showSaveAckToast("Сохранение...", "info", createRevision ? "bpmn_version" : "save");'), true);
