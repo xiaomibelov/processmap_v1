@@ -260,12 +260,19 @@ def delete_session(
         owner_id = str(getattr(sess, "owner_user_id", "") or "").strip()
         if not ctx_user_id or not owner_id or owner_id != str(ctx_user_id or "").strip():
             raise HTTPException(status_code=403, detail="Только владелец сессии может её удалить.")
-    return session_repo.delete(
+    deleted = session_repo.delete(
         session_id,
         user_id=ctx_user_id,
         org_id=ctx_org_id,
         is_admin=ctx_is_admin,
     )
+    if deleted:
+        try:
+            from .._legacy_main import _broadcast_session_deleted
+            _broadcast_session_deleted(session_id)
+        except Exception:
+            pass
+    return deleted
 
 
 # ── BPMN subdomain ────────────────────────────────────────────────
