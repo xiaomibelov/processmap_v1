@@ -86,6 +86,8 @@ class SaveCoordinator {
     this.debouncePromises = new Map();
     this.subscribers = new Set();
     this.pipelineStatus = new Map();
+    /** @type {Map<string, Set<AbortController>>} session-scoped abort controllers */
+    this._sessionAbortControllers = new Map();
   }
 
   /**
@@ -160,17 +162,72 @@ class SaveCoordinator {
     this.emit("status", status);
   }
 
+  _trackAbortController(sessionId, controller) {
+    const sid = asText(sessionId);
+    if (!sid) return;
+    let set = this._sessionAbortControllers.get(sid);
+    if (!set) {
+      set = new Set();
+      this._sessionAbortControllers.set(sid, set);
+    }
+    set.add(controller);
+  }
+
+  _untrackAbortController(sessionId, controller) {
+    const sid = asText(sessionId);
+    if (!sid) return;
+    const set = this._sessionAbortControllers.get(sid);
+    if (!set) return;
+    set.delete(controller);
+    if (set.size === 0) this._sessionAbortControllers.delete(sid);
+  }
+
+  _abortSessionControllers(sessionId) {
+    const sid = asText(sessionId);
+    if (!sid) {
+      for (const set of this._sessionAbortControllers.values()) {
+        for (const c of set) {
+          try { c.abort(); } catch { /* no-op */ }
+        }
+      }
+      this._sessionAbortControllers.clear();
+      return;
+    }
+    const set = this._sessionAbortControllers.get(sid);
+    if (!set) return;
+    for (const c of set) {
+      try { c.abort(); } catch { /* no-op */ }
+    }
+    this._sessionAbortControllers.delete(sid);
+  }
+
   _runTransportWithTimeout(pipelineName, pipeline, sessionId, payload) {
     const timeoutMs = Math.max(1000, asNumber(pipeline.transportTimeoutMs, 10000));
-    const transportPromise = pipeline.transport(sessionId, payload);
-    const timeoutPromise = new Promise((_, reject) => {
+    const controller = new AbortController();
+    this._trackAbortController(sessionId, controller);
+    const transportPromise = Promise.resolve()
+      .then(() => pipeline.transport(sessionId, payload, controller.signal))
+      .then(
+        (result) => ({ ok: true, value: result }),
+        (error) => ({ ok: false, error }),
+      );
+    const timeoutPromise = new Promise((resolve) => {
       const timer = setTimeout(() => {
-        reject(new Error(`saveCoordinator: pipeline "${pipelineName}" transport timeout after ${timeoutMs}ms`));
+        // Abort the real fetch so the server never receives the request.
+        controller.abort();
+        resolve({
+          ok: false,
+          error: new Error(`saveCoordinator: pipeline "${pipelineName}" transport timeout after ${timeoutMs}ms`),
+        });
       }, timeoutMs);
       // Ensure timer doesn't keep Node process alive in tests.
       if (timer && typeof timer.unref === "function") timer.unref();
     });
-    return Promise.race([transportPromise, timeoutPromise]);
+    return Promise.race([transportPromise, timeoutPromise]).then((outcome) => {
+      this._untrackAbortController(sessionId, controller);
+      if (outcome.ok) return outcome.value;
+      throw outcome.error;
+    });
   }
 
   getStatus(name) {
@@ -204,6 +261,8 @@ class SaveCoordinator {
    */
   clearSession(sessionId) {
     const sid = asText(sessionId);
+    // Abort all in-flight HTTP requests for this session (or all sessions).
+    this._abortSessionControllers(sid);
     if (!sid) {
       for (const timer of this.debounceTimers.values()) {
         clearTimeout(timer);
