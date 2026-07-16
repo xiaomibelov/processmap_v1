@@ -370,3 +370,101 @@ test("queue processes next item after transport error", async () => {
   assert.equal(r2.ok, true);
   assert.deepEqual(order, ["err", "ok"]);
 });
+
+test("transport receives AbortController signal as third argument", async () => {
+  const c = createSaveCoordinator();
+  const signals = [];
+  c.registerPipeline("sig", {
+    debounceMs: 0,
+    transport: async (sessionId, payload, signal) => {
+      signals.push(signal);
+      return { ok: true, status: 200 };
+    },
+    onSuccess: () => {},
+  });
+
+  await c.execute("sig", { sessionId: "s1" });
+
+  assert.equal(signals.length, 1);
+  assert.ok(signals[0] instanceof AbortSignal, "signal must be an AbortSignal");
+  assert.equal(signals[0].aborted, false, "signal should not be aborted on success");
+});
+
+test("timeout aborts the signal passed to transport", async () => {
+  const c = createSaveCoordinator();
+  const signals = [];
+  c.registerPipeline("slow", {
+    debounceMs: 0,
+    retryCount: 0,
+    transportTimeoutMs: 50,
+    transport: async (sessionId, payload, signal) => {
+      signals.push(signal);
+      await sleep(10000);
+      return { ok: true };
+    },
+    onError: () => {},
+  });
+
+  const r = await c.execute("slow", { sessionId: "s1" });
+
+  assert.equal(r.ok, false);
+  assert.ok(String(r.error).includes("timeout"));
+  assert.equal(signals.length, 1);
+  assert.equal(signals[0].aborted, true, "signal must be aborted after timeout");
+});
+
+test("clearSession aborts in-flight transport for that session", async () => {
+  const c = createSaveCoordinator();
+  const signals = [];
+  let resolveTransport;
+  c.registerPipeline("inflight", {
+    debounceMs: 0,
+    retryCount: 0,
+    transportTimeoutMs: 30000,
+    transport: async (sessionId, payload, signal) => {
+      signals.push(signal);
+      return new Promise((resolve) => {
+        resolveTransport = resolve;
+      });
+    },
+    onError: () => {},
+  });
+
+  const savePromise = c.execute("inflight", { sessionId: "sess1" });
+  // Let the transport start.
+  await sleep(10);
+  assert.equal(signals.length, 1);
+  assert.equal(signals[0].aborted, false, "signal should not be aborted before clearSession");
+
+  c.clearSession("sess1");
+  assert.equal(signals[0].aborted, true, "signal must be aborted after clearSession");
+  // Resolve transport so the queue unblocks.
+  resolveTransport({ ok: false, status: 0, error: "aborted" });
+  await savePromise.catch(() => {});
+});
+
+test("each retry attempt gets a fresh AbortController signal", async () => {
+  const c = createSaveCoordinator();
+  const signals = [];
+  c.registerPipeline("retry_sig", {
+    debounceMs: 0,
+    retryCount: 2,
+    retryDelayMs: 5,
+    transport: async (sessionId, payload, signal) => {
+      signals.push(signal);
+      return { ok: false, status: 500, error: "fail" };
+    },
+    onError: () => {},
+  });
+
+  await c.execute("retry_sig", { sessionId: "s1" });
+
+  assert.equal(signals.length, 3, "should have 3 attempts (1 initial + 2 retries)");
+  // Each attempt must get a distinct signal.
+  const unique = new Set(signals);
+  assert.equal(unique.size, 3, "each attempt must have a unique AbortSignal");
+  // None should be aborted since timeouts didn't fire.
+  for (const sig of signals) {
+    assert.equal(sig.aborted, false, "signal should not be aborted on normal error");
+  }
+});

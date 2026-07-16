@@ -58,7 +58,7 @@ function pickServerCurrentVersionFromError(saveResult) {
 }
 
 saveCoordinator.registerPipeline(XML_PIPELINE_NAME, {
-  transport: async (sessionId, payload) => {
+  transport: async (sessionId, payload, signal) => {
     const useFlushSave = payload?.useFlushSave === true && typeof payload.flushSave === "function";
     if (useFlushSave) {
       return payload.flushSave(payload.sourceAction, {
@@ -66,6 +66,7 @@ saveCoordinator.registerPipeline(XML_PIPELINE_NAME, {
         baseDiagramStateVersion: payload.baseDiagramStateVersion,
         sourceAction: payload.sourceAction,
         bpmnMeta: payload.bpmnMeta,
+        signal,
       });
     }
     if (typeof payload.apiPutBpmnXml === "function") {
@@ -73,6 +74,7 @@ saveCoordinator.registerPipeline(XML_PIPELINE_NAME, {
         sourceAction: payload.sourceAction,
         baseDiagramStateVersion: payload.baseDiagramStateVersion,
         bpmnMeta: payload.bpmnMeta,
+        signal,
       });
     }
     return { ok: false, status: 0, error: "xml transport unavailable" };
