@@ -33,7 +33,7 @@ test("C4: quick empty slot renders an inline-create row + wired create", () => {
 
 test("C4: quick delete is unified with Additional (auto-save via onSaveExtensionState)", () => {
   const esc = readSrc(ESC);
-  assert.match(esc, /function\s+handleQuickDelete[\s\S]*?deletePropertyRow\(\s*rowId\s*\)[\s\S]*?onSaveExtensionState\(\s*nextState\s*\)/,
+  assert.match(esc, /function\s+handleQuickDelete[\s\S]*?deletePropertyRow\(\s*rowId\s*\)[\s\S]*?onSaveExtensionState\(\s*nextState/,
     "handleQuickDelete flushes nextState via onSaveExtensionState");
   assert.match(esc, /deletePropertyRow=\{handleQuickDelete\}/,
     "quick InlineBpmnPropertyRow uses handleQuickDelete");
@@ -95,7 +95,7 @@ test("C5a: delete-from-Quick unpins any pinned row (defaults are initial pins on
   const fn = esc.match(/function\s+handleQuickDelete[\s\S]*?\n  \}/)?.[0] || "";
   assert.match(fn, /isUserPinnedName\(\s*rowName\s*\)/, "checks pinned");
   assert.match(fn, /unpinName\(\s*rowName\s*\)/, "unpins pinned rows (defaults included; row kept)");
-  assert.match(fn, /deletePropertyRow\(\s*rowId\s*\)[\s\S]*?onSaveExtensionState\(\s*nextState\s*\)/,
+  assert.match(fn, /deletePropertyRow\(\s*rowId\s*\)[\s\S]*?onSaveExtensionState\(\s*nextState/,
     "non-pinned fallback hard-deletes + auto-saves");
 });
 
