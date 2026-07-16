@@ -1641,7 +1641,7 @@ export async function apiPutBpmnXml(sessionId, xml, options = {}) {
   if (options?.ifMatch !== undefined && options?.ifMatch !== null) {
     headers["If-Match"] = String(options.ifMatch);
   }
-  const r = okOrError(await request(apiRoutes.sessions.bpmn(sid), { method: "PUT", body, headers }));
+  const r = okOrError(await request(apiRoutes.sessions.bpmn(sid), { method: "PUT", body, headers, signal: options.signal }));
   if (!r.ok) return r;
   const storedRev = Number(r?.data?.version);
   const diagramStateVersion = Number(r?.data?.diagram_state_version);

@@ -14,12 +14,12 @@ function pickDiagramStateVersion(response) {
 }
 
 saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, {
-  transport: async (sessionId, payload) => {
+  transport: async (sessionId, payload, signal) => {
     const apiPutBpmnXml = payload?.apiPutBpmnXml;
     if (typeof apiPutBpmnXml !== "function") {
       return { ok: false, status: 0, error: "apiPutBpmnXml unavailable" };
     }
-    return apiPutBpmnXml(sessionId, payload.xml, payload.options);
+    return apiPutBpmnXml(sessionId, payload.xml, { ...payload.options, signal });
   },
   buildPayload: (payload) => {
     const options = {
