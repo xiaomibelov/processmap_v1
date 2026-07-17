@@ -8,6 +8,7 @@ export default function useOverlayPersistBoundary({
   serializeDrawioMeta,
   persistDrawioMeta,
   markPlaybackOverlayInteraction,
+  onPersistError,
 }) {
   const { persistDrawioMetaOrdered } = useDrawioPersistQueue({
     normalizeDrawioMeta,
@@ -21,6 +22,7 @@ export default function useOverlayPersistBoundary({
     serializeDrawioMeta,
     markPlaybackOverlayInteraction,
     persistDrawioMetaOrdered,
+    onPersistError,
   });
 
   return {
