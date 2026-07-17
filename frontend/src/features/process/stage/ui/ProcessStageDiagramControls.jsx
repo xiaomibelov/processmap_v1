@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import LayersPopover from "../components/LayersPopover";
+import LayersPopover, { FloatingDrawioToolbar, FALLBACK_TOOLS } from "../components/LayersPopover";
 import TemplatesBottomMenu from "../../../templates/ui/TemplatesBottomMenu";
 import GatewaysPanel from "../../playback/ui/GatewaysPanel";
 import DiagramSearchInlineInput from "../search/diagramSearchInlineInput";
@@ -1613,6 +1613,16 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         onReorderDrawioElements={reorderDrawioElements}
         onRenameDrawioElement={renameDrawioElement}
         onUndeleteDrawioElement={undeleteDrawioElement}
+      />
+
+      <FloatingDrawioToolbar
+        tools={drawioUiState?.tools?.runtime || FALLBACK_TOOLS}
+        activeTool={toText(drawioUiState?.active_tool || "select")}
+        drawioEnabled={!!drawioUiState?.enabled}
+        drawioMode={toText(drawioModeEffective || drawioUiState?.interaction_mode || "view")}
+        drawioLocked={!!drawioUiState?.locked}
+        setDrawioMode={setDrawioMode}
+        onOpenDrawioEditor={openEmbeddedDrawioEditor}
       />
 
       {diagramActionRobotMetaOpen ? (
