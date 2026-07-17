@@ -33,6 +33,7 @@ export default function DrawioEditorModal({
   const [status, setStatus] = useState("Инициализация редактора…");
   const [ready, setReady] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const startXml = useMemo(() => toText(initialXml) || EMPTY_DRAWIO_DOC, [initialXml]);
 
   const postMessageToEditor = useCallback((payload) => {
@@ -61,8 +62,32 @@ export default function DrawioEditorModal({
     pendingSaveXmlRef.current = "";
     setReady(false);
     setSaving(false);
+    setIsDirty(false);
     setStatus("Инициализация редактора…");
   }, [open, startXml]);
+
+  const guardedClose = useCallback(() => {
+    if (saving) return;
+    if (isDirty) {
+      // eslint-disable-next-line no-alert
+      const confirmed = window.confirm(
+        "У вас есть несохранённые изменения в Draw.io редакторе. Закрыть без сохранения?",
+      );
+      if (!confirmed) return;
+    }
+    setIsDirty(false);
+    onClose?.();
+  }, [isDirty, onClose, saving]);
+
+  useEffect(() => {
+    if (!open || !isDirty) return undefined;
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [open, isDirty]);
 
   useEffect(() => {
     if (!open || typeof window === "undefined") return undefined;
@@ -84,6 +109,7 @@ export default function DrawioEditorModal({
         return;
       }
       if (evtName === "load") {
+        setIsDirty(true);
         setStatus("Редактор готов.");
         return;
       }
@@ -105,6 +131,7 @@ export default function DrawioEditorModal({
         loadedXmlRef.current = nextXml;
         pendingSaveXmlRef.current = "";
         setSaving(false);
+        setIsDirty(false);
         setStatus("Сохранено и применено.");
         onSave?.({
           docXml: nextXml,
@@ -113,25 +140,31 @@ export default function DrawioEditorModal({
         return;
       }
       if (evtName === "exit") {
-        onClose?.();
+        guardedClose();
       }
     };
     window.addEventListener("message", onMessage);
     return () => {
       window.removeEventListener("message", onMessage);
     };
-  }, [loadDocument, onClose, onSave, open, postMessageToEditor]);
+  }, [guardedClose, loadDocument, onSave, open, postMessageToEditor]);
 
   return (
     <Modal
       open={open}
       title={title}
-      onClose={() => {
-        if (!saving) onClose?.();
-      }}
+      onClose={guardedClose}
       footer={(
         <div className="flex w-full items-center justify-between gap-2">
-          <div className="text-xs text-muted" data-testid="drawio-editor-status">{status}</div>
+          <div className="text-xs text-muted" data-testid="drawio-editor-status">
+            {saving
+              ? "\u{1F535} Сохранение…"
+              : isDirty
+                ? "\u{1F7E0} Несохранённые изменения"
+                : status === "Сохранено и применено."
+                  ? "\u{1F7E2} Сохранено"
+                  : status}
+          </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
