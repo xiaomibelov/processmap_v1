@@ -88,6 +88,7 @@ const OverlayRowsSection = memo(function OverlayRowsSection({
   rows,
   emptyText = "Нет элементов.",
   listTestId = "diagram-action-layers-item-list",
+  defaultLimit = 0,
   bpmnRef,
   hybridV2BindingByHybridId,
   setHybridV2ActiveId,
@@ -96,6 +97,10 @@ const OverlayRowsSection = memo(function OverlayRowsSection({
   onDeleteOverlayEntity,
 }) {
   const list = asArray(rows);
+  const [expanded, setExpanded] = useState(false);
+  const hasLimit = defaultLimit > 0 && list.length > defaultLimit;
+  const visibleList = hasLimit && !expanded ? list.slice(0, defaultLimit) : list;
+  const truncatedCount = list.length - visibleList.length;
   return (
     <>
       <div className="diagramToolbarOverlayTitle mt-2">{title}</div>
@@ -103,7 +108,7 @@ const OverlayRowsSection = memo(function OverlayRowsSection({
         <div className="diagramActionPopoverEmpty">{emptyText}</div>
       ) : (
         <div className="hybridLayerPopoverList mt-2" data-testid={listTestId}>
-          {list.map((rowRaw) => {
+          {visibleList.map((rowRaw) => {
             const row = asObject(rowRaw);
             const entityKind = toText(row.entityKind).toLowerCase();
             const entityId = toText(row.entityId);
@@ -206,6 +211,26 @@ const OverlayRowsSection = memo(function OverlayRowsSection({
               </div>
             );
           })}
+          {truncatedCount > 0 && (
+            <button
+              type="button"
+              className="secondaryBtn mt-1 h-7 w-full px-2 text-[11px] text-muted"
+              onClick={() => setExpanded(true)}
+              data-testid="diagram-action-layers-show-all"
+            >
+              +{truncatedCount} скрыто — показать все
+            </button>
+          )}
+          {expanded && hasLimit && (
+            <button
+              type="button"
+              className="secondaryBtn mt-1 h-7 w-full px-2 text-[11px] text-muted"
+              onClick={() => setExpanded(false)}
+              data-testid="diagram-action-layers-collapse"
+            >
+              Свернуть
+            </button>
+          )}
         </div>
       )}
     </>
@@ -983,6 +1008,7 @@ export default function LayersPopover({
           title={`Draw.io elements (${filteredDrawioRows.length}${showImportAffectedOnly ? ` / affected from ${drawioRows.length}` : ""})`}
           rows={filteredDrawioRows}
           emptyText="Нет draw.io элементов."
+          defaultLimit={40}
           bpmnRef={bpmnRef}
           hybridV2BindingByHybridId={hybridV2BindingByHybridId}
           setHybridV2ActiveId={setHybridV2ActiveId}
@@ -1120,6 +1146,7 @@ export default function LayersPopover({
           title={`Hybrid elements (${hybridRows.length})`}
           rows={hybridRows}
           emptyText="Нет элементов Hybrid."
+          defaultLimit={60}
           bpmnRef={bpmnRef}
           hybridV2BindingByHybridId={hybridV2BindingByHybridId}
           setHybridV2ActiveId={setHybridV2ActiveId}
@@ -1130,6 +1157,7 @@ export default function LayersPopover({
           title={`Legacy markers (${legacyRows.length})`}
           rows={legacyRows}
           emptyText="Нет legacy-маркеров."
+          defaultLimit={40}
           bpmnRef={bpmnRef}
           hybridV2BindingByHybridId={hybridV2BindingByHybridId}
           setHybridV2ActiveId={setHybridV2ActiveId}
