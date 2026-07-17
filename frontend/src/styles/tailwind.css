@@ -5790,6 +5790,8 @@
   .sidebarPropertiesRows--table {
     gap: 0;
     border-top: 1px solid #EEF3F9;
+    min-width: 0;
+    overflow-x: auto;
   }
 
   .sidebarPropertiesRow--quick {
@@ -5821,7 +5823,7 @@
 
   .sidebarPropertiesTableHead {
     display: grid;
-    grid-template-columns: minmax(96px, 1fr) minmax(72px, 1.75fr) 84px;
+    grid-template-columns: minmax(60px, 1fr) minmax(48px, 1.5fr) 40px;
     gap: 6px;
     align-items: center;
     min-height: 22px;
@@ -6016,7 +6018,7 @@
 
   .sidebarSchemaPropertyRow {
     display: grid;
-    grid-template-columns: minmax(96px, 1fr) minmax(72px, 1.75fr) 84px;
+    grid-template-columns: minmax(60px, 1fr) minmax(48px, 1.5fr) 40px;
     gap: 6px;
     align-items: center;
     min-height: 40px;
@@ -6077,6 +6079,7 @@
   .sidebarSchemaPropertyValueCell {
     @apply min-w-0;
     overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .sidebarSchemaPropertyValueText {
@@ -6089,7 +6092,7 @@
 
   .sidebarSchemaPropertyActionCell {
     @apply flex items-center justify-end;
-    min-width: 84px;
+    min-width: 0;
   }
 
   .sidebarSchemaPropertyRow--context {
@@ -6263,26 +6266,34 @@
 
   /* BPMN property rows: 4-column grid with checkbox column */
   .sidebarSchemaPropertyRow.sidebarBpmnPropertyItem {
-    grid-template-columns: 28px minmax(96px, 1fr) minmax(72px, 1.75fr) 84px;
+    grid-template-columns: 28px minmax(60px, 1fr) minmax(48px, 1.5fr) 40px;
   }
   .sidebarPropertiesTableHead:has(.sidebarPropertyCheckboxCell) {
-    grid-template-columns: 28px minmax(96px, 1fr) minmax(72px, 1.75fr) 84px;
+    grid-template-columns: 28px minmax(60px, 1fr) minmax(48px, 1.5fr) 40px;
   }
 
-  /* Bulk delete button: fit inside action column without breaking grid */
+  /* Bulk delete button: compact icon + count in narrow action column */
   .sidebarPropertiesTableHead .sidebarPropertyActionBtn--danger {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
     max-width: 100%;
     min-width: auto;
-    padding: 2px 6px;
+    padding: 2px 4px;
     font-size: 11px;
-    line-height: 1.2;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    line-height: 1;
+  }
+  .sidebarBulkDeleteCount {
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
   }
   .sidebarPropertiesTableHead > span:last-child {
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     text-align: right;
+    min-width: 0;
   }
 
   /* Checkbox cell */
