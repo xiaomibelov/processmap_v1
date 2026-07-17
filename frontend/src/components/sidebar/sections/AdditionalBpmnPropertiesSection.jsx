@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import InlineBpmnPropertyRow from "../rows/InlineBpmnPropertyRow";
 import SidebarInfoTip from "../SidebarInfoTip";
 
@@ -16,7 +17,18 @@ export default function AdditionalBpmnPropertiesSection({
   refOptions = [],
   onSaveExtensionState,
   hideHeader = false,
+  // Bulk selection props
+  isRowSelected,
+  onToggleSelect,
+  onShiftClick,
+  isAllSelected = false,
+  isIndeterminate = false,
+  onToggleAllSelection,
+  hasSelection = false,
+  selectionCount = 0,
+  onBulkDelete,
 }) {
+  const headCheckboxRef = useRef(null);
   const showFallbackBlock = !hasDictionarySchema;
 
   function handleDelete(rowId) {
@@ -30,6 +42,10 @@ export default function AdditionalBpmnPropertiesSection({
     }
   }
 
+  function setIndeterminate(el) {
+    if (el) el.indeterminate = isIndeterminate;
+  }
+
   const tableBody = (
     <>
       {!hasDictionarySchema && !showFallbackBlock && dictionaryLoading ? (
@@ -37,11 +53,33 @@ export default function AdditionalBpmnPropertiesSection({
       ) : null}
       <div className="sidebarPropertiesRows sidebarPropertiesRows--table sidebarPropertiesRows--zebra">
         <div className="sidebarPropertiesTableHead" role="presentation">
+          <span className="sidebarPropertyCheckboxCell">
+            <input
+              type="checkbox"
+              checked={isAllSelected}
+              ref={setIndeterminate}
+              onChange={() => onToggleAllSelection?.()}
+              disabled={disabled || extensionStateBusy || rows.length === 0}
+            />
+          </span>
           <span>Свойство</span>
           <span>Значение</span>
-          <span>Действие</span>
+          <span>
+            {hasSelection ? (
+              <button
+                type="button"
+                className="sidebarPropertyActionBtn sidebarPropertyActionBtn--danger"
+                onClick={() => onBulkDelete?.()}
+                disabled={disabled || extensionStateBusy}
+              >
+                Удалить {selectionCount}
+              </button>
+            ) : (
+              "Действие"
+            )}
+          </span>
         </div>
-        {rows.map((row) => (
+        {rows.map((row, index) => (
           <InlineBpmnPropertyRow
             key={String(row?.id || "")}
             row={row}
@@ -50,6 +88,10 @@ export default function AdditionalBpmnPropertiesSection({
             updatePropertyRow={updatePropertyRow}
             deletePropertyRow={handleDelete}
             refOptions={refOptions}
+            isSelected={isRowSelected?.(String(row?.id || "")) ?? false}
+            onToggleSelect={onToggleSelect}
+            onShiftClick={onShiftClick}
+            rowIndex={index}
           />
         ))}
       </div>

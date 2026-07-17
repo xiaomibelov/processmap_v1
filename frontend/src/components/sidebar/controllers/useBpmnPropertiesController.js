@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   buildPropertyDictionaryEditorModel,
   buildVisibleExtensionPropertyRows,
 } from "../../../features/process/camunda/propertyDictionaryModel";
-import { deleteExtensionPropertyRowsByDeleteAction } from "../propertyDeleteSemantics";
+import { deleteExtensionPropertyRowsByDeleteAction, bulkDeleteExtensionPropertyRows } from "../propertyDeleteSemantics";
 import { SHOW_PROPERTIES_FLAG_KEY } from "../useElementSettingsController";
 
 // Pinned (quick) properties = per-user pins (by name, persisted in
@@ -64,6 +64,8 @@ export default function useBpmnPropertiesController({
   const [quickPropsOpen, setQuickPropsOpen] = useState(false);
   const [expandedBpmnRows, setExpandedBpmnRows] = useState({});
   const [userPins, setUserPins] = useState(loadQuickPins);
+  const [selectedRowIds, setSelectedRowIds] = useState(new Set());
+  const lastClickedIndexRef = useRef(-1);
 
   useEffect(() => {
     try {
@@ -88,6 +90,8 @@ export default function useBpmnPropertiesController({
     // «Быстрые свойства» stays collapsed by default (manual toggle only).
     setAdditionalBpmnOpen(true);
     setQuickPropsOpen(false);
+    setSelectedRowIds(new Set());
+    lastClickedIndexRef.current = -1;
   }, [selectedElementId]);
 
   useEffect(() => {
@@ -221,6 +225,60 @@ export default function useBpmnPropertiesController({
     return updateDraft(deleteExtensionPropertyRowsByDeleteAction(properties, rowId));
   }
 
+  function isRowSelected(rowId) {
+    return selectedRowIds.has(String(rowId));
+  }
+
+  function toggleRowSelection(rowId) {
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev);
+      const id = String(rowId);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAllSelection() {
+    const allIds = additionalBpmnRows.map((r) => String(r?.id ?? ""));
+    const allSelected = allIds.length > 0 && allIds.every((id) => selectedRowIds.has(id));
+    setSelectedRowIds(allSelected ? new Set() : new Set(allIds));
+  }
+
+  function handleShiftClick(rowId, rowIndex) {
+    if (lastClickedIndexRef.current < 0) {
+      toggleRowSelection(rowId);
+      lastClickedIndexRef.current = rowIndex;
+      return;
+    }
+    const start = Math.min(lastClickedIndexRef.current, rowIndex);
+    const end = Math.max(lastClickedIndexRef.current, rowIndex);
+    const rangeIds = additionalBpmnRows.slice(start, end + 1).map((r) => String(r?.id ?? ""));
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev);
+      rangeIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedRowIds(new Set());
+  }
+
+  function bulkDeletePropertyRows(rowIds) {
+    const namesToDelete = additionalBpmnRows
+      .filter((r) => rowIds.has(String(r?.id ?? "")))
+      .map((r) => String(r?.name || ""));
+    namesToDelete.forEach((n) => {
+      if (isUserPinnedName(n)) unpinName(n);
+    });
+    return updateDraft(bulkDeleteExtensionPropertyRows(properties, [...rowIds]));
+  }
+
+  const allIds = additionalBpmnRows.map((r) => String(r?.id ?? ""));
+  const isAllSelected = allIds.length > 0 && allIds.every((id) => selectedRowIds.has(id));
+  const isIndeterminate = !isAllSelected && allIds.some((id) => selectedRowIds.has(id));
+
   return {
     additionalBpmnOpen,
     setAdditionalBpmnOpen,
@@ -244,5 +302,16 @@ export default function useBpmnPropertiesController({
     isUserPinnedName,
     pinName,
     unpinName,
+    selectedRowIds,
+    isRowSelected,
+    toggleRowSelection,
+    toggleAllSelection,
+    handleShiftClick,
+    clearSelection,
+    bulkDeletePropertyRows,
+    hasSelection: selectedRowIds.size > 0,
+    selectionCount: selectedRowIds.size,
+    isAllSelected,
+    isIndeterminate,
   };
 }
