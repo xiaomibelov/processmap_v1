@@ -96,10 +96,24 @@ export default function useDrawioRuntimeBridgeActions({
     return overlayMutationGateway.setDrawioElementSize(elementIdRaw, sizeRaw, source);
   }, [overlayMutationGateway]);
 
+  const reorderDrawioElements = useCallback((orderedIds, source = "drawio_element_reorder") => {
+    return overlayMutationGateway.reorderDrawioElements(orderedIds, source);
+  }, [overlayMutationGateway]);
+
+  const renameDrawioElement = useCallback((elementIdRaw, nameRaw, source = "drawio_element_rename") => {
+    return overlayMutationGateway.renameDrawioElement(elementIdRaw, nameRaw, source);
+  }, [overlayMutationGateway]);
+
+  const undeleteDrawioElement = useCallback((elementIdRaw, source = "drawio_element_undelete") => {
+    return overlayMutationGateway.undeleteDrawioElement(elementIdRaw, source);
+  }, [overlayMutationGateway]);
+
   return {
     commitDrawioOverlayMove,
     createDrawioRuntimeElement,
     deleteDrawioOverlayElement,
+    renameDrawioElement,
+    reorderDrawioElements,
     setDrawioElementLocked,
     setDrawioElementSize,
     setDrawioElementStylePreset,
@@ -110,5 +124,6 @@ export default function useDrawioRuntimeBridgeActions({
     setDrawioOpacity,
     toggleDrawioEnabled,
     toggleDrawioLock,
+    undeleteDrawioElement,
   };
 }
