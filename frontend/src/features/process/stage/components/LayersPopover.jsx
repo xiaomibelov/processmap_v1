@@ -44,13 +44,45 @@ function kindLabel(kindRaw) {
   return "unknown";
 }
 
-const FALLBACK_TOOLS = [
+export const FALLBACK_TOOLS = [
   { id: "select", icon: "⌖", label: "Выбор", runtimeSupported: true },
   { id: "rect", icon: "▭", label: "Прямоугольник", runtimeSupported: true },
   { id: "text", icon: "T", label: "Текст", runtimeSupported: true },
   { id: "container", icon: "▣", label: "Контейнер", runtimeSupported: true },
   { id: "note", icon: "🗒", label: "Стикер", runtimeSupported: true },
 ];
+
+export const FloatingDrawioToolbar = memo(function FloatingDrawioToolbar({
+  tools, activeTool, drawioEnabled, drawioMode, drawioLocked,
+  setDrawioMode, onOpenDrawioEditor,
+}) {
+  if (!drawioEnabled || drawioMode !== "edit") return null;
+  const toolList = asArray(tools).length ? asArray(tools) : FALLBACK_TOOLS;
+  return (
+    <div className="floatingDrawioToolbar" data-testid="floating-drawio-toolbar">
+      {toolList.map(rowRaw => {
+        const row = asObject(rowRaw);
+        const toolId = toText(row.id).toLowerCase();
+        const intent = resolveDrawioToolIntent({ toolId, enabled: drawioEnabled, locked: drawioLocked });
+        const isActive = activeTool === toolId;
+        return (
+          <button key={toolId} type="button"
+            className={`secondaryBtn flex h-8 w-8 items-center justify-center p-0 text-[14px] ${isActive ? "ring-2 ring-accent" : ""}`}
+            onClick={() => {
+              if (intent.intent === "blocked") return;
+              if (intent.intent === "mode_edit") { setDrawioMode?.("edit", { toolId }); return; }
+              onOpenDrawioEditor?.();
+            }}
+            disabled={intent.intent === "blocked"}
+            title={`${toText(row.label)} (${toolId.charAt(0).toUpperCase()})`}
+            data-testid={`floating-drawio-tool-${toolId}`}>
+            <span aria-hidden="true">{toText(row.icon)}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+});
 
 function confirmHybridDelete(idsRaw, labelRaw = "") {
   const ids = asArray(idsRaw).map((row) => toText(row)).filter(Boolean);
@@ -684,6 +716,9 @@ export default function LayersPopover({
   const [showImportAffectedOnly, setShowImportAffectedOnly] = useState(false);
   const [serviceOpen, setServiceOpen] = useState(false);
   const [hybridSectionOpen, setHybridSectionOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [isPanelFloating, setIsPanelFloating] = useState(false);
+  const [floatingPos, setFloatingPos] = useState({ x: 200, y: 100 });
   const drawioElementStateMap = useMemo(() => {
     const map = {};
     asArray(drawioState?.drawio_elements_v1).forEach((row) => {
@@ -815,24 +850,51 @@ export default function LayersPopover({
 
   return (
     <div
-      className="diagramActionPopover diagramActionPopover--layers"
+      className={`diagramActionPopover diagramActionPopover--layers${isPanelFloating ? " diagramActionPopover--floating" : ""}`}
       ref={popoverRef}
       data-testid="diagram-action-layers-popover"
-      onMouseDown={onMouseDown}
+      style={isPanelFloating ? { left: floatingPos.x, top: floatingPos.y } : undefined}
+      onMouseDown={isPanelFloating ? undefined : onMouseDown}
     >
       {/* ── Шапка ── */}
-      <div className="diagramActionPopoverHead">
+      <div className="diagramActionPopoverHead"
+        onMouseDown={(e) => {
+          if (!isPanelFloating) { onMouseDown?.(e); return; }
+          e.stopPropagation();
+          const sx = e.clientX - floatingPos.x, sy = e.clientY - floatingPos.y;
+          const onMove = (ev) => setFloatingPos({ x: ev.clientX - sx, y: ev.clientY - sy });
+          const onUp = () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
+          document.addEventListener("mousemove", onMove);
+          document.addEventListener("mouseup", onUp);
+        }}
+      >
         <span className="font-semibold text-[13px]">Overlay</span>
         <div className="diagramActionPopoverActions mt-0">
           <span className="diagramIssueChip text-[10px]" title={drawioStatusLabel}>{drawioStatusLabel}</span>
+          <button type="button" className="secondaryBtn h-6 w-6 p-0 text-[13px]"
+            onClick={() => setIsPanelFloating(p => !p)}
+            title={isPanelFloating ? "Закрепить" : "Открепить"}>
+            {isPanelFloating ? "📌" : "↗"}
+          </button>
           <button type="button" className="secondaryBtn h-6 w-6 p-0 text-[13px]" onClick={onClose} title="Закрыть">✕</button>
         </div>
       </div>
 
-      {/* ── 1. Выбранный объект (работа с элементами — на первом месте) ── */}
+      {/* ── 1. Выбранный объект ── */}
       <div className="diagramToolbarOverlaySection">
         <div className="diagramToolbarOverlayTitle">Выбранный объект</div>
         <div className="diagramIssueRows">
+          {!selectedEntityId ? (
+            <div className="py-4 text-center">
+              <span className="text-[12px] text-slate-500">{selectedObjectUx.summary}</span>
+              <div className="flex justify-center gap-1 mt-2 opacity-50">
+                {runtimeTools.map(t => {
+                  const row = asObject(t);
+                  return <span key={toText(row.id)} title={toText(row.label)} className="text-[14px]">{toText(row.icon)}</span>;
+                })}
+              </div>
+            </div>
+          ) : (<>
           <div className="diagramIssueRow">
             <span className="font-semibold text-[13px]" data-testid="diagram-action-layers-selection-chip">
               {selectedLabel || "—"}
@@ -840,22 +902,7 @@ export default function LayersPopover({
             <span className="diagramIssueChip text-[10px]" data-testid="diagram-action-layers-selected-type-chip">
               {selectedObjectUx.typeLabel}
             </span>
-            {selectedObjectUx.advancedBoundaryLabel ? (
-              <span className="diagramIssueChip text-[10px]" data-testid="diagram-action-layers-selected-advanced-chip">
-                {selectedObjectUx.advancedBoundaryLabel}
-              </span>
-            ) : null}
           </div>
-          {selectedEntityId ? (
-            <div className="diagramIssueRow">
-              <span className="font-mono text-[10px] text-[hsl(var(--muted))]">
-                {selectedEntityId}{selectedLayerId ? ` · ${selectedLayerId}` : ""} · {kindLabel(selectedKind)}
-              </span>
-            </div>
-          ) : null}
-          {selectedObjectUx.summary ? (
-            <div className="diagramActionPopoverEmpty">{selectedObjectUx.summary}</div>
-          ) : null}
 
           {/* Быстрые действия — compact icon-only */}
           <div className="diagramActionPopoverActions mt-0">
@@ -961,98 +1008,10 @@ export default function LayersPopover({
             </div>
           ) : null}
 
-          {/* Anchor (Draw.io) */}
-          {selectedIsDrawio && selectedObjectUx.showAnchorSection ? (
-            <SelectedObjectGroup
-              title="Anchor"
-              hint="explicit BPMN node id"
-              testId="diagram-action-layers-selected-group-anchor"
-            >
-              <div className="diagramIssueRow">
-                <div className="diagramActionPopoverActions mt-0">
-                  <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-anchor-status">
-                    {selectedDrawioAnchorStatusLabel}
-                  </span>
-                  {selectedDrawioAnchorRelation ? (
-                    <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-anchor-relation">
-                      {selectedDrawioAnchorRelation}
-                    </span>
-                  ) : null}
-                  <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-anchor-target">
-                    {selectedDrawioAnchorTargetId || toText(selectedElementContext?.id) || "цель не задана"}
-                  </span>
-                  {selectedElementContext?.id ? (
-                    <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-anchor-selected-bpmn">
-                      sel: {toText(selectedElementContext.id)}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              {toText(selectedDrawioAnchorInfo.issueText) ? (
-                <div className="diagramActionPopoverEmpty">{toText(selectedDrawioAnchorInfo.issueText)}</div>
-              ) : null}
-              <div className="diagramActionPopoverActions mt-0">
-                <button
-                  type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={() => {
-                    if (!canApplyDrawioAnchor) return;
-                    onSetDrawioElementAnchor?.(
-                      selectedEntityId,
-                      {
-                        target_kind: "bpmn_node",
-                        target_id: toText(selectedElementContext?.id),
-                        relation: resolveDefaultDrawioAnchorRelation(selectedDrawioRow),
-                        status: "anchored",
-                        bound_at: new Date().toISOString(),
-                      },
-                      "layers_selected_drawio_anchor_apply",
-                    );
-                  }}
-                  disabled={!canApplyDrawioAnchor}
-                  data-testid="diagram-action-layers-selected-anchor-apply"
-                >
-                  Привязать к BPMN
-                </button>
-                <button
-                  type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={() => {
-                    if (!selectedEntityId) return;
-                    onSetDrawioElementAnchor?.(selectedEntityId, null, "layers_selected_drawio_anchor_clear");
-                  }}
-                  disabled={!selectedEntityId || selectedDrawioAnchorStatus === "unanchored"}
-                  data-testid="diagram-action-layers-selected-anchor-clear"
-                >
-                  Freeform
-                </button>
-                <button
-                  type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={() => {
-                    if (!selectedDrawioAnchorInfo.canJump) return;
-                    bpmnRef?.current?.focusNode?.(selectedDrawioAnchorTargetId, { keepPrevious: false, durationMs: 1200 });
-                  }}
-                  disabled={!selectedDrawioAnchorInfo.canJump}
-                  data-testid="diagram-action-layers-selected-anchor-focus"
-                >
-                  К цели BPMN
-                </button>
-              </div>
-              {!selectedDrawioAnchorInfo.canJump && selectedDrawioAnchorStatus === "anchored" ? (
-                <div className="diagramActionPopoverEmpty" data-testid="diagram-action-layers-selected-anchor-deferred-note">
-                  Jump доступен после проверки target в BPMN.
-                </div>
-              ) : null}
-            </SelectedObjectGroup>
-          ) : null}
-
-
-          {/* Стиль (Draw.io) */}
+          {/* Стиль (Draw.io) — circular swatches */}
           {selectedIsDrawio && selectedObjectUx.showStyleSection ? (
             <SelectedObjectGroup
               title={selectedObjectUx.styleSectionLabel}
-              hint="1 клик"
               testId="diagram-action-layers-selected-group-style"
             >
               <div className="flex min-w-0 flex-1 flex-wrap gap-2">
@@ -1063,72 +1022,161 @@ export default function LayersPopover({
                     <button
                       key={`drawio_style_${preset.id}`}
                       type="button"
-                      className={`secondaryBtn flex h-7 items-center gap-2 px-2 text-[11px] ${isActive ? "ring-1 ring-accent/60" : ""}`}
+                      className={`h-7 w-7 rounded-full border-2 transition-shadow ${isActive ? "border-accent ring-2 ring-accent/40 scale-110" : "border-slate-300 hover:scale-105"}`}
+                      style={{ backgroundColor: swatchColor }}
                       onClick={() => onSetDrawioElementStylePreset?.(selectedEntityId, preset.id, `layers_selected_drawio_style_${preset.id}`)}
                       disabled={!selectedDrawioStyleActionEnabled}
+                      title={toText(preset.label)}
                       data-testid={`diagram-action-layers-selected-style-${preset.id}`}
-                    >
-                      <span aria-hidden="true" className="inline-block h-3 w-3 rounded-full border border-slate-300" style={{ backgroundColor: swatchColor }} />
-                      <span>{toText(preset.label)}</span>
-                    </button>
+                    />
                   );
                 })}
               </div>
             </SelectedObjectGroup>
           ) : null}
 
-          {/* Размер (Draw.io) */}
-          {selectedIsDrawio && selectedObjectUx.showResizeSection ? (
-            <SelectedObjectGroup
-              title={selectedObjectUx.resizeSectionLabel}
-              hint="W / H"
-              testId="diagram-action-layers-selected-group-size"
-            >
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="text-[11px] text-slate-500">W</span>
-                <input
-                  id="layers-selected-width"
-                  name="layers_selected_width"
-                  type="number" min="24" max="1600" step="1"
-                  className="min-w-0 w-20 rounded border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900"
-                  value={selectedDrawioWidthDraft}
-                  onChange={(event) => setSelectedDrawioWidthDraft(event.target.value)}
-                  disabled={!selectedDrawioResizeActionEnabled}
-                  data-testid="diagram-action-layers-selected-width-input"
-                />
-                <span className="text-[11px] text-slate-500">H</span>
-                <input
-                  id="layers-selected-height"
-                  name="layers_selected_height"
-                  type="number" min="24" max="1600" step="1"
-                  className="min-w-0 w-20 rounded border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900"
-                  value={selectedDrawioHeightDraft}
-                  onChange={(event) => setSelectedDrawioHeightDraft(event.target.value)}
-                  disabled={!selectedDrawioResizeActionEnabled}
-                  data-testid="diagram-action-layers-selected-height-input"
-                />
-                <button
-                  type="button"
-                  className="secondaryBtn h-7 px-2 text-[11px]"
-                  onClick={applySelectedDrawioSize}
-                  disabled={
-                    !selectedDrawioResizeActionEnabled
-                    || (String(selectedDrawioWidthDraft || "") === String(selectedDrawioSize?.width)
-                      && String(selectedDrawioHeightDraft || "") === String(selectedDrawioSize?.height))
-                  }
-                  data-testid="diagram-action-layers-selected-size-apply"
-                >
-                  ОК
-                </button>
-              </div>
-            </SelectedObjectGroup>
-          ) : null}
+          {/* ▸ Дополнительно (collapsible Advanced) */}
+          <button className="secondaryBtn h-6 px-2 text-[10px]"
+            onClick={() => setAdvancedOpen(p => !p)}>
+            {advancedOpen ? "▾ Свернуть" : "▸ Дополнительно"}
+          </button>
+          {advancedOpen ? (
+            <>
+              {/* ID row */}
+              {selectedEntityId ? (
+                <div className="diagramIssueRow">
+                  <span className="font-mono text-[10px] text-[hsl(var(--muted))]">
+                    {selectedEntityId}{selectedLayerId ? ` · ${selectedLayerId}` : ""} · {kindLabel(selectedKind)}
+                  </span>
+                </div>
+              ) : null}
 
-          {selectedIsDrawio && selectedObjectUx.advancedHint ? (
-            <div className="diagramActionPopoverEmpty" data-testid="diagram-action-layers-selected-advanced-note">
-              {selectedObjectUx.advancedHint}
-            </div>
+              {/* Anchor (Draw.io) */}
+              {selectedIsDrawio && selectedObjectUx.showAnchorSection ? (
+                <SelectedObjectGroup
+                  title="Anchor"
+                  hint="explicit BPMN node id"
+                  testId="diagram-action-layers-selected-group-anchor"
+                >
+                  <div className="diagramIssueRow">
+                    <div className="diagramActionPopoverActions mt-0">
+                      <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-anchor-status">
+                        {selectedDrawioAnchorStatusLabel}
+                      </span>
+                      {selectedDrawioAnchorRelation ? (
+                        <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-anchor-relation">
+                          {selectedDrawioAnchorRelation}
+                        </span>
+                      ) : null}
+                      <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-anchor-target">
+                        {selectedDrawioAnchorTargetId || toText(selectedElementContext?.id) || "цель не задана"}
+                      </span>
+                      {selectedElementContext?.id ? (
+                        <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-anchor-selected-bpmn">
+                          sel: {toText(selectedElementContext.id)}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  {toText(selectedDrawioAnchorInfo.issueText) ? (
+                    <div className="diagramActionPopoverEmpty">{toText(selectedDrawioAnchorInfo.issueText)}</div>
+                  ) : null}
+                  <div className="diagramActionPopoverActions mt-0">
+                    <button
+                      type="button"
+                      className="secondaryBtn h-7 px-2 text-[11px]"
+                      onClick={() => {
+                        if (!canApplyDrawioAnchor) return;
+                        onSetDrawioElementAnchor?.(
+                          selectedEntityId,
+                          {
+                            target_kind: "bpmn_node",
+                            target_id: toText(selectedElementContext?.id),
+                            relation: resolveDefaultDrawioAnchorRelation(selectedDrawioRow),
+                            status: "anchored",
+                            bound_at: new Date().toISOString(),
+                          },
+                          "layers_selected_drawio_anchor_apply",
+                        );
+                      }}
+                      disabled={!canApplyDrawioAnchor}
+                      data-testid="diagram-action-layers-selected-anchor-apply"
+                    >
+                      Привязать к BPMN
+                    </button>
+                    <button
+                      type="button"
+                      className="secondaryBtn h-7 px-2 text-[11px]"
+                      onClick={() => {
+                        if (!selectedEntityId) return;
+                        onSetDrawioElementAnchor?.(selectedEntityId, null, "layers_selected_drawio_anchor_clear");
+                      }}
+                      disabled={!selectedEntityId || selectedDrawioAnchorStatus === "unanchored"}
+                      data-testid="diagram-action-layers-selected-anchor-clear"
+                    >
+                      Freeform
+                    </button>
+                    <button
+                      type="button"
+                      className="secondaryBtn h-7 px-2 text-[11px]"
+                      onClick={() => {
+                        if (!selectedDrawioAnchorInfo.canJump) return;
+                        bpmnRef?.current?.focusNode?.(selectedDrawioAnchorTargetId, { keepPrevious: false, durationMs: 1200 });
+                      }}
+                      disabled={!selectedDrawioAnchorInfo.canJump}
+                      data-testid="diagram-action-layers-selected-anchor-focus"
+                    >
+                      К цели BPMN
+                    </button>
+                  </div>
+                  {!selectedDrawioAnchorInfo.canJump && selectedDrawioAnchorStatus === "anchored" ? (
+                    <div className="diagramActionPopoverEmpty" data-testid="diagram-action-layers-selected-anchor-deferred-note">
+                      Jump доступен после проверки target в BPMN.
+                    </div>
+                  ) : null}
+                </SelectedObjectGroup>
+              ) : null}
+
+              {/* Размер (Draw.io) — auto-apply, no OK button */}
+              {selectedIsDrawio && selectedObjectUx.showResizeSection ? (
+                <SelectedObjectGroup
+                  title={selectedObjectUx.resizeSectionLabel}
+                  hint="W / H"
+                  testId="diagram-action-layers-selected-group-size"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="text-[11px] text-slate-500">W</span>
+                    <input
+                      id="layers-selected-width"
+                      name="layers_selected_width"
+                      type="number" min="24" max="1600" step="1"
+                      className="min-w-0 w-20 rounded border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900"
+                      value={selectedDrawioWidthDraft}
+                      onChange={(event) => setSelectedDrawioWidthDraft(event.target.value)}
+                      onBlur={applySelectedDrawioSize}
+                      onKeyDown={(e) => { if (e.key === "Enter") applySelectedDrawioSize(); }}
+                      disabled={!selectedDrawioResizeActionEnabled}
+                      data-testid="diagram-action-layers-selected-width-input"
+                    />
+                    <span className="text-[11px] text-slate-500">H</span>
+                    <input
+                      id="layers-selected-height"
+                      name="layers_selected_height"
+                      type="number" min="24" max="1600" step="1"
+                      className="min-w-0 w-20 rounded border border-slate-300 bg-white px-2 py-1 text-[12px] text-slate-900"
+                      value={selectedDrawioHeightDraft}
+                      onChange={(event) => setSelectedDrawioHeightDraft(event.target.value)}
+                      onBlur={applySelectedDrawioSize}
+                      onKeyDown={(e) => { if (e.key === "Enter") applySelectedDrawioSize(); }}
+                      disabled={!selectedDrawioResizeActionEnabled}
+                      data-testid="diagram-action-layers-selected-height-input"
+                    />
+                  </div>
+                </SelectedObjectGroup>
+              ) : null}
+            </>
           ) : null}
+          </>)}
         </div>
       </div>
 
@@ -1152,20 +1200,12 @@ export default function LayersPopover({
             <div className="diagramActionPopoverActions mt-0">
               <button
                 type="button"
-                className={`secondaryBtn h-7 px-2 text-[11px] ${drawioMode === "view" ? "ring-1 ring-accent/60" : ""}`}
-                onClick={() => setDrawioMode?.("view")}
-                data-testid="diagram-action-layers-mode-view"
-              >
-                Просмотр
-              </button>
-              <button
-                type="button"
-                className={`secondaryBtn h-7 px-2 text-[11px] ${drawioMode === "edit" ? "ring-1 ring-accent/60" : ""}`}
-                onClick={() => setDrawioMode?.("edit")}
+                className={`secondaryBtn h-7 px-3 text-[11px] ${drawioMode === "edit" ? "bg-emerald-50 ring-1 ring-emerald-400/60" : ""}`}
+                onClick={() => setDrawioMode?.(drawioMode === "edit" ? "view" : "edit")}
                 disabled={!drawioEnabled || drawioLocked}
-                data-testid="diagram-action-layers-mode-edit"
+                data-testid="diagram-action-layers-mode-toggle"
               >
-                Ред.
+                {drawioMode === "edit" ? "\u2705 Готово" : "\u270f\ufe0f Редактировать"}
               </button>
               <button
                 type="button"
@@ -1193,33 +1233,6 @@ export default function LayersPopover({
             />
             <span className="text-[10px] text-slate-500">{drawioOpacityPct}%</span>
           </div>
-        </div>
-
-        {/* Инструменты */}
-        <div className="mt-1 flex gap-1">
-          {runtimeTools.map((rowRaw) => {
-            const row = asObject(rowRaw);
-            const toolId = toText(row.id).toLowerCase();
-            const toolIntent = resolveDrawioToolIntent({ toolId, enabled: drawioEnabled, locked: drawioLocked });
-            const isActive = drawioMode === "edit" && drawioActiveTool === toolId;
-            return (
-              <button
-                key={`layers_tool_${toolId}`}
-                type="button"
-                className={`secondaryBtn flex h-8 w-8 items-center justify-center p-0 text-[14px] ${isActive ? "ring-2 ring-accent" : ""}`}
-                onClick={() => {
-                  if (toolIntent.intent === "blocked") return;
-                  if (toolIntent.intent === "mode_edit") { setDrawioMode?.("edit", { toolId }); return; }
-                  onOpenDrawioEditor?.();
-                }}
-                disabled={toolIntent.intent === "blocked"}
-                title={toText(row.label || row.id)}
-                data-testid={`diagram-action-layers-tool-${toolId}`}
-              >
-                <span aria-hidden="true">{toText(row.icon)}</span>
-              </button>
-            );
-          })}
         </div>
 
         <OverlayRowsSection
