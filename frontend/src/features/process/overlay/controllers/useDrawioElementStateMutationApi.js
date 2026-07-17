@@ -179,11 +179,85 @@ export default function useDrawioElementStateMutationApi({
     return !!result.changed;
   }, [applyDrawioMutation, drawioMetaRef, normalizeDrawioMeta, publishNormalization, setGenErr, setInfoMsg]);
 
+  const reorderDrawioElements = useCallback((orderedIdsRaw, source = "drawio_element_reorder") => {
+    const orderedIds = asArray(orderedIdsRaw).map((id) => toText(id)).filter(Boolean);
+    if (!orderedIds.length) return false;
+    const result = applyDrawioMutation((prevRaw) => {
+      const prev = normalizeDrawioMeta(prevRaw);
+      const elements = asArray(prev.drawio_elements_v1);
+      const idToIndex = new Map(orderedIds.map((id, i) => [id, i]));
+      const reordered = elements.slice().sort((a, b) => {
+        const aIdx = idToIndex.has(toText(asObject(a).id)) ? idToIndex.get(toText(asObject(a).id)) : Infinity;
+        const bIdx = idToIndex.has(toText(asObject(b).id)) ? idToIndex.get(toText(asObject(b).id)) : Infinity;
+        return aIdx - bIdx;
+      });
+      const updated = reordered.map((row, i) => {
+        const el = asObject(row);
+        if (el.z_index === i) return row;
+        return { ...el, z_index: i };
+      });
+      const changed = updated.some((row, i) => row !== elements[i]);
+      if (!changed) return prev;
+      return { ...prev, drawio_elements_v1: updated };
+    }, {
+      source,
+      playbackStage: source,
+      persist: true,
+    });
+    if (result.changed) publishNormalization(source);
+    return !!result.changed;
+  }, [applyDrawioMutation, normalizeDrawioMeta, publishNormalization]);
+
+  const renameDrawioElement = useCallback((elementIdRaw, nameRaw, source = "drawio_element_rename") => {
+    const elementId = resolveCanonicalDrawioElementId(drawioMetaRef.current, elementIdRaw);
+    if (!elementId) return false;
+    const name = toText(nameRaw);
+    if (!name) return false;
+    const result = applyDrawioMutation((prevRaw) => {
+      const prev = normalizeDrawioMeta(prevRaw);
+      const patch = patchElementById(prev.drawio_elements_v1, elementId, (row) => {
+        if (toText(row.name) === name && toText(row.label) === name) return row;
+        return { ...row, name, label: name };
+      });
+      if (!patch.changed) return prev;
+      return { ...prev, drawio_elements_v1: patch.elements };
+    }, {
+      source,
+      playbackStage: source,
+      persist: true,
+    });
+    if (result.changed) publishNormalization(source);
+    return !!result.changed;
+  }, [applyDrawioMutation, drawioMetaRef, normalizeDrawioMeta, publishNormalization]);
+
+  const undeleteDrawioElement = useCallback((elementIdRaw, source = "drawio_element_undelete") => {
+    const elementId = toText(elementIdRaw);
+    if (!elementId) return false;
+    const result = applyDrawioMutation((prevRaw) => {
+      const prev = normalizeDrawioMeta(prevRaw);
+      const patch = patchElementById(prev.drawio_elements_v1, elementId, (row) => {
+        if (row.deleted !== true) return row;
+        return { ...row, deleted: false };
+      });
+      if (!patch.changed) return prev;
+      return { ...prev, drawio_elements_v1: patch.elements };
+    }, {
+      source,
+      playbackStage: source,
+      persist: true,
+    });
+    if (result.changed) publishNormalization(source);
+    return !!result.changed;
+  }, [applyDrawioMutation, normalizeDrawioMeta, publishNormalization]);
+
   return {
     deleteDrawioElement,
     moveDrawioElement,
+    renameDrawioElement,
+    reorderDrawioElements,
     setDrawioElementAnchor,
     setDrawioElementLocked,
     setDrawioElementVisible,
+    undeleteDrawioElement,
   };
 }

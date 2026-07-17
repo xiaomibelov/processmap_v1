@@ -3810,7 +3810,7 @@
   .hybridLayerPopoverList {
     display: grid;
     gap: 6px;
-    max-height: 180px;
+    max-height: 240px;
     overflow: auto;
     border-top: 1px solid hsl(var(--border) / 0.6);
     padding-top: 8px;
@@ -3823,8 +3823,13 @@
     gap: 8px;
     border: 1px solid hsl(var(--border) / 0.55);
     border-radius: 8px;
-    padding: 6px;
+    padding: 4px;
     background: hsl(var(--panel2) / 0.38);
+    cursor: pointer;
+  }
+
+  .hybridLayerPopoverRow:hover {
+    background: hsl(var(--panel2) / 0.6);
   }
 
   .hybridLayerPopoverMain {
@@ -3858,7 +3863,7 @@
   .hybridLayerPopoverActions {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     flex-shrink: 0;
   }
 
