@@ -5529,15 +5529,11 @@
     border-color: #EDF1F9;
   }
 
-  /* «+10%» requirement (D4, negative inset): the Additional BPMN block
-     bleeds into the accordion body horizontal padding (px-3 = 12px), so its
-     frame spans edge-to-edge and the content reclaims ~24px (~7-10% of the
-     ~300px body) versus sibling blocks. The compensating padding-inline
-     keeps the inner content aligned with the accordion's own inset.
-     Token-only: colors stay on the shared --border token. */
+  /* Wide variant: bleeds into parent's 2px padding so the block frame
+     stretches edge-to-edge within the accordion body. */
   .sidebarPropertiesBlock--wide {
-    margin-inline: -12px;
-    padding-inline: 12px;
+    margin-inline: -2px;
+    padding-inline: 2px;
   }
 
   .sidebarPropertiesBlock--primary {
@@ -5983,8 +5979,8 @@
     max-width: 672px;
     margin-left: auto;
     margin-right: auto;
-    padding-left: 12px;
-    padding-right: 12px;
+    padding-left: 2px;
+    padding-right: 2px;
   }
 
   .sidebarSchemaPropertyRow {
