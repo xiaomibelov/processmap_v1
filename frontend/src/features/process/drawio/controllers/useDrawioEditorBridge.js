@@ -117,6 +117,7 @@ export default function useDrawioEditorBridge({
       source: "drawio_editor_save",
       playbackStage: "drawio_editor_save",
       persist: true,
+      skipPersistErrorCallback: true,
     });
     if (!result.changed) return true;
     const persisted = await Promise.resolve(result.persistPromise).catch((error) => ({

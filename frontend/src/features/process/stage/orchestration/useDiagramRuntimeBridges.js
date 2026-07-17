@@ -77,6 +77,24 @@ export default function useDiagramRuntimeBridges({
     return validated;
   }, [drawioAnchorValidationState, drawioRuntimeToolState, overlay.drawioUiState]);
 
+  const onPersistError = useCallback((errorInfo) => {
+    const status = Number(errorInfo?.status || 0);
+    let message;
+    if (status === 409) {
+      message = "Конфликт версий overlay. Изменение отменено.";
+    } else if (status >= 500) {
+      message = "Ошибка сервера при сохранении overlay.";
+    } else if (
+      String(errorInfo?.error || "").toLowerCase().includes("network")
+      || String(errorInfo?.error || "").toLowerCase().includes("fetch")
+    ) {
+      message = "Нет соединения. Overlay не сохранён.";
+    } else {
+      message = "Ошибка сохранения overlay. Изменение отменено.";
+    }
+    overlay.setGenErr?.(message);
+  }, [overlay.setGenErr]);
+
   const overlayPersistBoundary = useOverlayPersistBoundary({
     drawioMetaRef: overlay.drawioMetaRef,
     setDrawioMeta: overlay.setDrawioMeta,
@@ -84,6 +102,7 @@ export default function useDiagramRuntimeBridges({
     serializeDrawioMeta: overlay.serializeDrawioMeta,
     persistDrawioMeta: overlay.persistDrawioMeta,
     markPlaybackOverlayInteraction: overlay.markPlaybackOverlayInteraction,
+    onPersistError,
   });
 
   const overlayMutationGateway = useOverlayMutationGateway({
