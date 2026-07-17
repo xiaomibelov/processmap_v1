@@ -18,7 +18,11 @@ export default function useDrawioPersistQueue({
   const enqueuePersist = useCallback((nextMeta, source) => {
     const requestSeq = ++persistSeqRef.current;
     persistQueueRef.current = persistQueueRef.current
-      .catch(() => ({ ok: false }))
+      .catch((error) => ({
+        ok: false,
+        error: String(error?.message || error || "drawio_persist_failed"),
+        status: Number(error?.status || error?.response?.status || 0),
+      }))
       .then(async () => {
         if (requestSeq !== persistSeqRef.current) {
           return { ok: true, stale: true, skipped: true };
