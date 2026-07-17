@@ -6,16 +6,35 @@ function normalizeSelectedId(selectedIdRaw) {
   return String(selectedIdRaw || "").trim();
 }
 
+const TOOL_SHORTCUT_MAP = {
+  v: "select",
+  r: "rect",
+  t: "text",
+  c: "container",
+  s: "note",
+};
+
 function resolveDrawioKeyboardAction({
   keyRaw,
   shiftKey,
+  ctrlKey,
   selectedIdRaw,
   editable,
   elementStateRaw,
 }) {
-  const selectedId = normalizeSelectedId(selectedIdRaw);
-  if (!selectedId || !editable) return { type: "none" };
   const key = String(keyRaw || "");
+  const selectedId = normalizeSelectedId(selectedIdRaw);
+
+  if (key === "Escape" && selectedId) {
+    return { type: "deselect" };
+  }
+
+  const toolId = TOOL_SHORTCUT_MAP[key.toLowerCase()];
+  if (toolId && !ctrlKey && !shiftKey) {
+    return { type: "tool", payload: { toolId } };
+  }
+
+  if (!selectedId || !editable) return { type: "none" };
   if (key === "ArrowLeft" || key === "ArrowRight" || key === "ArrowUp" || key === "ArrowDown") {
     const step = shiftKey ? 24 : 12;
     const elementState = asObject(elementStateRaw);
@@ -48,6 +67,7 @@ export default function useDrawioKeyboardActions({
   canEditElement,
   onCommitMove,
   onDeleteElement,
+  onSwitchTool,
   clearSelection,
 }) {
   useEffect(() => {
@@ -56,14 +76,26 @@ export default function useDrawioKeyboardActions({
       const target = event?.target;
       if (target instanceof Element && target.closest("input, textarea, select, [contenteditable='true']")) return;
       const activeId = normalizeSelectedId(selectedIdRef.current);
-      if (!activeId) return;
       const action = resolveDrawioKeyboardAction({
         keyRaw: event?.key,
         shiftKey: event.shiftKey === true,
+        ctrlKey: event.ctrlKey === true || event.metaKey === true,
         selectedIdRaw: activeId,
-        editable: canEditElement(activeId),
-        elementStateRaw: elementMap.get(activeId),
+        editable: activeId ? canEditElement(activeId) : false,
+        elementStateRaw: activeId ? elementMap.get(activeId) : undefined,
       });
+      if (action.type === "deselect") {
+        clearSelection("keyboard_escape");
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (action.type === "tool") {
+        onSwitchTool?.(action.payload.toolId);
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       if (action.type === "move") {
         onCommitMove?.(action.payload);
         event.preventDefault();
@@ -90,6 +122,7 @@ export default function useDrawioKeyboardActions({
     hasRenderable,
     onCommitMove,
     onDeleteElement,
+    onSwitchTool,
     selectedIdRef,
   ]);
 }

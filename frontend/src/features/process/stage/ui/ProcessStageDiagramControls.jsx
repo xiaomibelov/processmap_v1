@@ -263,6 +263,9 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     setDrawioElementStylePreset,
     setDrawioElementSize,
     setDrawioElementAnchor,
+    reorderDrawioElements,
+    renameDrawioElement,
+    undeleteDrawioElement,
     drawioFileInputRef,
     exportEmbeddedDrawio,
     hybridV2DocLive,
@@ -1607,6 +1610,9 @@ export default function ProcessStageDiagramControls({ view = {} }) {
         goToHybridLayerItem={goToHybridLayerItem}
         onHideSelectedHybridItems={hideSelectedHybridItems}
         onLockSelectedHybridItems={lockSelectedHybridItems}
+        onReorderDrawioElements={reorderDrawioElements}
+        onRenameDrawioElement={renameDrawioElement}
+        onUndeleteDrawioElement={undeleteDrawioElement}
       />
 
       {diagramActionRobotMetaOpen ? (

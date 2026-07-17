@@ -25,6 +25,29 @@ function toReadableLabel(raw) {
   return toText(row.label || row.text || row.name || row.title || row.id) || toText(row.id);
 }
 
+const DRAWIO_ID_PREFIX_LABELS = {
+  rect_: "Прямоугольник",
+  text_: "Текст",
+  container_: "Контейнер",
+  note_: "Стикер",
+};
+
+export function humanReadableDrawioLabel(row, index) {
+  const obj = asObject(row);
+  const explicit = toText(obj.label || obj.text || obj.name || obj.title);
+  if (explicit) return explicit.length > 40 ? explicit.slice(0, 37) + "..." : explicit;
+  const id = toText(obj.id);
+  for (const [prefix, label] of Object.entries(DRAWIO_ID_PREFIX_LABELS)) {
+    if (id.startsWith(prefix)) {
+      const n = typeof index === "number" ? ` ${index + 1}` : "";
+      return `${label}${n}`;
+    }
+  }
+  const typeLabel = toText(obj.type);
+  if (typeLabel) return typeLabel.length > 40 ? typeLabel.slice(0, 37) + "..." : typeLabel;
+  return id;
+}
+
 function buildDrawioAnchorUi(raw, options = {}) {
   const row = asObject(raw);
   const described = describeDrawioAnchor(row, {
@@ -53,14 +76,14 @@ export function buildOverlayEntityRows({
   const v2Elements = asArray(asObject(hybridV2Renderable).elements);
   const drawioRows = getDrawioElements(drawioState, { renderableOnly: true });
 
-  drawioRows.forEach((row) => {
+  drawioRows.forEach((row, index) => {
     const id = toText(row.id);
     if (!id) return;
     rows.push({
       key: `drawio_${id}`,
       entityKind: OVERLAY_ENTITY_KINDS.DRAWIO,
       entityId: id,
-      label: toReadableLabel(row),
+      label: humanReadableDrawioLabel(row, index),
       subtitle: `${id}${toText(row.layer_id) ? ` · ${toText(row.layer_id)}` : ""}`,
       layer_id: toText(row.layer_id),
       missing: false,
