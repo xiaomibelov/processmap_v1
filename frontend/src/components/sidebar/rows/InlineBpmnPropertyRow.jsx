@@ -20,26 +20,6 @@ function PencilIcon({ className = "h-4 w-4" }) {
   );
 }
 
-function TrashIcon({ className = "h-4 w-4" }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <path d="M3 6h18" />
-      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-    </svg>
-  );
-}
-
 export default function InlineBpmnPropertyRow({
   row,
   disabled = false,
@@ -47,6 +27,10 @@ export default function InlineBpmnPropertyRow({
   updatePropertyRow,
   deletePropertyRow,
   refOptions = [],
+  isSelected = false,
+  onToggleSelect,
+  onShiftClick,
+  rowIndex = -1,
 }) {
   const rowId = String(row?.id || "").trim();
   const savedName = String(row?.name || "");
@@ -113,10 +97,30 @@ export default function InlineBpmnPropertyRow({
   const refListOptions = isRefRow && Array.isArray(refOptions) ? refOptions : [];
   const refDatalistId = `prop_ref_${rowId}`;
 
+  const checkboxCell = (
+    <div className="sidebarPropertyCheckboxCell">
+      <input
+        type="checkbox"
+        checked={isSelected}
+        onChange={(e) => {
+          e.stopPropagation();
+          onToggleSelect?.(rowId);
+        }}
+        onClick={(e) => {
+          if (e.shiftKey) {
+            e.preventDefault();
+            onShiftClick?.(rowId, rowIndex);
+          }
+        }}
+        disabled={isBusy}
+      />
+    </div>
+  );
+
   if (!isEditing) {
     return (
       <div
-        className="sidebarSchemaPropertyRow sidebarBpmnPropertyItem"
+        className={`sidebarSchemaPropertyRow sidebarBpmnPropertyItem${isSelected ? " isSelected" : ""}`}
         onClick={() => setIsEditing(true)}
         role="button"
         tabIndex={isBusy ? -1 : 0}
@@ -128,6 +132,7 @@ export default function InlineBpmnPropertyRow({
           }
         }}
       >
+        {checkboxCell}
         <div className="sidebarSchemaPropertyLabel">
           <div className="sidebarSchemaPropertyHuman">{savedName.trim() || <span className="text-muted">—</span>}</div>
         </div>
@@ -148,26 +153,14 @@ export default function InlineBpmnPropertyRow({
           >
             <PencilIcon />
           </button>
-          <button
-            type="button"
-            className="sidebarPropertyActionBtn sidebarPropertyActionBtn--danger"
-            onClick={(event) => {
-              event.stopPropagation();
-              deletePropertyRow(rowId);
-            }}
-            disabled={isBusy}
-            aria-label={`Удалить свойство ${savedName || rowId}`}
-            title={`Удалить свойство ${savedName || rowId}`}
-          >
-            <TrashIcon />
-          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div ref={rowRef} className="sidebarSchemaPropertyRow sidebarBpmnPropertyItem isEditing">
+    <div ref={rowRef} className={`sidebarSchemaPropertyRow sidebarBpmnPropertyItem isEditing${isSelected ? " isSelected" : ""}`}>
+      {checkboxCell}
       <div className="sidebarSchemaPropertyValueCell">
         <input
           ref={nameInputRef}
@@ -202,20 +195,16 @@ export default function InlineBpmnPropertyRow({
       <div className="sidebarSchemaPropertyActionCell">
         <button
           type="button"
-          className="sidebarPropertyActionBtn sidebarPropertyActionBtn--danger"
-          onMouseDown={(event) => {
-            // Prevent blur on the input from committing before the click handler runs.
-            event.preventDefault();
-          }}
+          className="sidebarPropertyActionBtn"
           onClick={(event) => {
             event.stopPropagation();
-            deletePropertyRow(rowId);
+            commit();
           }}
           disabled={isBusy}
-          aria-label={`Удалить свойство ${savedName || rowId}`}
-          title={`Удалить свойство ${savedName || rowId}`}
+          aria-label="Сохранить изменения"
+          title="Сохранить изменения"
         >
-          <TrashIcon />
+          ✓
         </button>
       </div>
     </div>

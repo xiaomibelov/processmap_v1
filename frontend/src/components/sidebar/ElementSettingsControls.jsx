@@ -1249,6 +1249,18 @@ export function CamundaPropertiesSettings({
     updateListenerRow,
     addListenerRow,
     deleteListenerRow,
+    selectedRowIds,
+    isRowSelected,
+    toggleRowSelection,
+    toggleAllSelection,
+    handleShiftClick,
+    clearSelection,
+    bulkDeletePropertyRows,
+    hasSelection,
+    selectionCount,
+    isAllSelected,
+    isIndeterminate,
+    properties,
   } = useElementSettingsController({
     selectedElementId,
     extensionStateDraft,
@@ -1256,6 +1268,7 @@ export function CamundaPropertiesSettings({
     onExtensionStateDraftChange,
   });
   const [addingQuick, setAddingQuick] = useState(false);
+  const [undoState, setUndoState] = useState(null);
   // «Вспомогательное» block: collapsible, collapsed by default on entry
   // (local-only state, never persisted).
   const [auxiliaryOpen, setAuxiliaryOpen] = useState(false);
@@ -1320,6 +1333,63 @@ export function CamundaPropertiesSettings({
     pinName(name);
     setAddingQuick(false);
   }
+
+  function handleBulkDeleteWithUndo(selectedIds) {
+    const snapshot = [...properties];
+    const nextState = bulkDeletePropertyRows(selectedIds);
+    if (nextState && typeof onSaveExtensionState === "function") {
+      void onSaveExtensionState(nextState, { silent: true });
+    }
+    clearSelection();
+    if (undoState?.timer) clearTimeout(undoState.timer);
+    const timer = setTimeout(() => setUndoState(null), 5000);
+    setUndoState({ count: selectedIds.size, previousProperties: snapshot, timer });
+  }
+
+  function handleUndo() {
+    if (!undoState) return;
+    clearTimeout(undoState.timer);
+    // updateDraft is internal to the controller, so we call onExtensionStateDraftChange
+    // to restore the snapshot. bulkDeletePropertyRows calls updateDraft which calls
+    // onExtensionStateDraftChange, so we replicate that flow here.
+    const restoredState = {
+      ...state,
+      properties: {
+        ...(state.properties || {}),
+        extensionProperties: undoState.previousProperties,
+        extensionListeners: Array.isArray(state?.properties?.extensionListeners)
+          ? state.properties.extensionListeners
+          : [],
+      },
+    };
+    onExtensionStateDraftChange?.(restoredState);
+    if (typeof onSaveExtensionState === "function") {
+      void onSaveExtensionState(restoredState, { silent: true });
+    }
+    setUndoState(null);
+  }
+
+  function handlePropertySectionKeyDown(e) {
+    if (e.key === "Delete" || e.key === "Backspace") {
+      if (hasSelection && !disabled && !extensionStateBusy) {
+        e.preventDefault();
+        handleBulkDeleteWithUndo(selectedRowIds);
+      }
+    }
+    if (e.key === "Escape") {
+      if (hasSelection) {
+        e.preventDefault();
+        clearSelection();
+      }
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === "a") {
+      if (additionalBpmnRows.length > 0) {
+        e.preventDefault();
+        toggleAllSelection();
+      }
+    }
+  }
+
   // Show ALL active schema rows — including empty ones — so the operation's
   // parameters can be filled in place (v0.3 Phase 1A). Only rows deactivated
   // in the dictionary are hidden.
@@ -2008,8 +2078,14 @@ async function handleSaveAll() {
 
   return (
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
-    <div className="sidebarControlStack sidebarPropertiesLayout sidebarPropertiesLayout--centered" onKeyDown={handlePropertiesKeyDown}>
+    <div className="sidebarControlStack sidebarPropertiesLayout sidebarPropertiesLayout--centered" onKeyDown={(e) => { handlePropertiesKeyDown(e); handlePropertySectionKeyDown(e); }}>
       <section className="sidebarPropertiesForm" data-testid="camunda-properties-group">
+        {undoState ? (
+          <div className="sidebarUndoBar">
+            <span>Удалено {undoState.count} свойств</span>
+            <button type="button" onClick={handleUndo} className="sidebarPropertyActionBtn sidebarPropertyActionBtn--text">Отменить</button>
+          </div>
+        ) : null}
         <PropertySection
           count={propertySectionCount}
           open={additionalBpmnOpen}
@@ -2103,6 +2179,15 @@ async function handleSaveAll() {
                 addPropertyRow={addPropertyRow}
                 refOptions={refOptions}
                 onSaveExtensionState={onSaveExtensionState}
+                isRowSelected={isRowSelected}
+                onToggleSelect={toggleRowSelection}
+                onShiftClick={handleShiftClick}
+                isAllSelected={isAllSelected}
+                isIndeterminate={isIndeterminate}
+                onToggleAllSelection={toggleAllSelection}
+                hasSelection={hasSelection}
+                selectionCount={selectionCount}
+                onBulkDelete={() => handleBulkDeleteWithUndo(selectedRowIds)}
               />
             </>
           )}
