@@ -3343,7 +3343,27 @@ export default function NotesPanel({
                 {isElementMode && selectedCamundaPropertiesEditable && !isProcessLikeSelection && (
                   <LiveCardPreview
                     preview={overlayPreview}
-                    elementName={selectedElementId}
+                    elementName={selectedElementName || selectedElementId}
+                    onPropertyValueChange={(propertyName, newValue) => {
+                      const props = Array.isArray(camundaPropertiesDraft?.properties?.extensionProperties)
+                        ? camundaPropertiesDraft.properties.extensionProperties
+                        : [];
+                      const idx = props.findIndex((p) => String(p?.name || "").trim() === String(propertyName || "").trim());
+                      if (idx < 0) return;
+                      const nextProps = props.map((p, i) => (i === idx ? { ...p, value: newValue } : p));
+                      const nextDraft = {
+                        ...camundaPropertiesDraft,
+                        properties: {
+                          ...camundaPropertiesDraft.properties,
+                          extensionProperties: nextProps,
+                          extensionListeners: Array.isArray(camundaPropertiesDraft?.properties?.extensionListeners)
+                            ? camundaPropertiesDraft.properties.extensionListeners
+                            : [],
+                        },
+                      };
+                      updateCamundaPropertiesDraft(nextDraft);
+                      void saveSelectedCamundaProperties(nextDraft, { silent: true });
+                    }}
                   />
                 )}
                 <CamundaPropertiesSection

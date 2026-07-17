@@ -5013,6 +5013,34 @@
     text-align: right;
   }
 
+  .liveCardPreviewValue--editable {
+    cursor: pointer;
+    border-radius: 3px;
+    padding: 0 3px;
+    transition: background 0.12s;
+  }
+  .liveCardPreviewValue--editable:hover {
+    background: hsl(var(--accent-soft) / 0.18);
+  }
+
+  .liveCardPreviewValueInput {
+    font-size: inherit;
+    font-weight: 500;
+    color: hsl(var(--text));
+    text-align: right;
+    background: hsl(var(--panel));
+    border: 1px solid hsl(var(--accent-soft));
+    border-radius: 3px;
+    padding: 0 3px;
+    min-width: 0;
+    width: 100%;
+    outline: none;
+  }
+  .liveCardPreviewValueInput:focus {
+    border-color: hsl(var(--accent));
+    box-shadow: 0 0 0 2px hsl(var(--accent) / 0.15);
+  }
+
   .liveCardPreviewMore {
     font-size: 11px;
     color: hsl(var(--hint));
@@ -6239,6 +6267,22 @@
   }
   .sidebarPropertiesTableHead:has(.sidebarPropertyCheckboxCell) {
     grid-template-columns: 28px minmax(96px, 1fr) minmax(72px, 1.75fr) 84px;
+  }
+
+  /* Bulk delete button: fit inside action column without breaking grid */
+  .sidebarPropertiesTableHead .sidebarPropertyActionBtn--danger {
+    max-width: 100%;
+    min-width: auto;
+    padding: 2px 6px;
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sidebarPropertiesTableHead > span:last-child {
+    overflow: hidden;
+    text-align: right;
   }
 
   /* Checkbox cell */
