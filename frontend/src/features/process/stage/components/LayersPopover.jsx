@@ -83,6 +83,16 @@ function confirmOverlayDelete(entityRaw = {}) {
   return confirmDrawioDelete(id);
 }
 
+function entityTypeIcon(entityKind, entityId) {
+  if (entityKind !== OVERLAY_ENTITY_KINDS.DRAWIO) return "◆";
+  const id = toText(entityId);
+  if (id.startsWith("rect_")) return "▭";
+  if (id.startsWith("text_")) return "T";
+  if (id.startsWith("container_")) return "▣";
+  if (id.startsWith("note_")) return "🗒";
+  return "◆";
+}
+
 const OverlayRowsSection = memo(function OverlayRowsSection({
   title,
   rows,
@@ -94,109 +104,256 @@ const OverlayRowsSection = memo(function OverlayRowsSection({
   setDrawioSelectedElementId,
   goToHybridLayerItem,
   onDeleteOverlayEntity,
+  onSetElementVisible,
+  onSetElementLocked,
+  elementStateMap,
+  onReorderElements,
+  onRenameElement,
+  onUndeleteElement,
 }) {
   const list = asArray(rows);
+  const [search, setSearch] = useState("");
+  const [editingId, setEditingId] = useState("");
+  const [editValue, setEditValue] = useState("");
+  const [dragOverId, setDragOverId] = useState("");
+  const [undoToast, setUndoToast] = useState(null);
+  const undoTimerRef = React.useRef(0);
+  const stateMap = asObject(elementStateMap);
+  const filteredList = useMemo(() => {
+    if (!search) return list;
+    const q = search.toLowerCase();
+    return list.filter((rowRaw) => {
+      const row = asObject(rowRaw);
+      return toText(row.label).toLowerCase().includes(q)
+        || toText(row.entityId).toLowerCase().includes(q);
+    });
+  }, [list, search]);
+
+  const handleRowClick = (entityKind, entityId) => {
+    if (editingId) return;
+    if (entityKind === OVERLAY_ENTITY_KINDS.LEGACY) {
+      goToHybridLayerItem?.(entityId, "layers_list_go_to_legacy");
+      return;
+    }
+    if (entityKind === OVERLAY_ENTITY_KINDS.HYBRID) {
+      const binding = asObject(hybridV2BindingByHybridId?.[entityId]);
+      const bpmnId = toText(binding.bpmn_id || binding.bpmnId);
+      setHybridV2ActiveId?.(entityId);
+      if (bpmnId) {
+        bpmnRef.current?.focusNode?.(bpmnId, { keepPrevious: false, durationMs: 1200 });
+      }
+      return;
+    }
+    if (entityKind === OVERLAY_ENTITY_KINDS.DRAWIO) {
+      setDrawioSelectedElementId?.(entityId);
+    }
+  };
+
+  const startRename = (entityId, currentLabel) => {
+    setEditingId(entityId);
+    setEditValue(currentLabel);
+  };
+
+  const commitRename = (entityId, originalLabel) => {
+    const trimmed = editValue.trim();
+    setEditingId("");
+    if (!trimmed || trimmed === originalLabel) return;
+    const clamped = trimmed.length > 40 ? trimmed.slice(0, 40) : trimmed;
+    onRenameElement?.(entityId, clamped, `layers_rename_${entityId}`);
+  };
+
+  const cancelRename = () => {
+    setEditingId("");
+    setEditValue("");
+  };
+
+  const handleDeleteWithUndo = (entityKind, entityId, titleText) => {
+    const payload = { entityKind, entityId, entityIds: [entityId], label: titleText };
+    if (!confirmOverlayDelete(payload)) return;
+    const deleted = !!onDeleteOverlayEntity?.(payload, `layers_delete_row_${entityKind}`);
+    pushDeleteTrace("layers_delete_row_result", { rowDeleteId: entityId, rowDeleteKind: entityKind, deleted });
+    if (!deleted || !onUndeleteElement) return;
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+    const timerId = window.setTimeout(() => { setUndoToast(null); undoTimerRef.current = 0; }, 5000);
+    undoTimerRef.current = timerId;
+    setUndoToast({ entityId, entityKind, label: titleText });
+  };
+
+  const handleUndo = () => {
+    if (!undoToast) return;
+    onUndeleteElement?.(undoToast.entityId, `layers_undo_delete_${undoToast.entityId}`);
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = 0;
+    setUndoToast(null);
+  };
+
+  const dismissUndo = () => {
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = 0;
+    setUndoToast(null);
+  };
+
+  const handleDragStart = (e, entityId) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", entityId);
+    e.currentTarget.style.opacity = "0.4";
+  };
+
+  const handleDragEnd = (e) => {
+    e.currentTarget.style.opacity = "";
+    setDragOverId("");
+  };
+
+  const handleDragOver = (e, entityId) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverId !== entityId) setDragOverId(entityId);
+  };
+
+  const handleDrop = (e, targetId) => {
+    e.preventDefault();
+    setDragOverId("");
+    const sourceId = e.dataTransfer.getData("text/plain");
+    if (!sourceId || sourceId === targetId || !onReorderElements) return;
+    const ids = filteredList.map((r) => toText(asObject(r).entityId)).filter(Boolean);
+    const srcIdx = ids.indexOf(sourceId);
+    const tgtIdx = ids.indexOf(targetId);
+    if (srcIdx === -1 || tgtIdx === -1) return;
+    ids.splice(srcIdx, 1);
+    ids.splice(tgtIdx, 0, sourceId);
+    onReorderElements(ids, "layers_dnd_reorder");
+  };
+
+  const canDrag = !!onReorderElements && !search;
+
   return (
     <>
       <div className="diagramToolbarOverlayTitle mt-2">{title}</div>
-      {list.length === 0 ? (
-        <div className="diagramActionPopoverEmpty">{emptyText}</div>
+      {list.length > 8 ? (
+        <div className="relative mt-1">
+          <input
+            type="text"
+            className="w-full rounded border border-[hsl(var(--border)/0.6)] bg-transparent px-2 py-1 text-[11px] outline-none focus:border-[hsl(var(--accent)/0.6)]"
+            placeholder="Найти..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            data-testid="diagram-action-layers-search"
+          />
+          {search ? (
+            <button
+              type="button"
+              className="absolute right-1 top-1/2 -translate-y-1/2 text-[11px] text-[hsl(var(--muted))] hover:text-[hsl(var(--fg))]"
+              onClick={() => setSearch("")}
+              title="Очистить"
+            >
+              ✕
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {filteredList.length === 0 ? (
+        <div className="diagramActionPopoverEmpty">{search ? "Ничего не найдено." : emptyText}</div>
       ) : (
         <div className="hybridLayerPopoverList mt-2" data-testid={listTestId}>
-          {list.map((rowRaw) => {
+          {filteredList.map((rowRaw) => {
             const row = asObject(rowRaw);
             const entityKind = toText(row.entityKind).toLowerCase();
             const entityId = toText(row.entityId);
             const titleText = toText(row.label || entityId);
             if (!entityId) return null;
+            const elState = asObject(stateMap[entityId]);
+            const isVisible = elState.visible !== false;
+            const isLocked = elState.locked === true;
+            const hasToggles = !!onSetElementVisible && !!onSetElementLocked;
+            const isEditing = editingId === entityId;
+            const isDragOver = dragOverId === entityId;
             return (
-              <div key={toText(row.key) || `${entityKind}_${entityId}`} className="hybridLayerPopoverRow">
-                <div className="hybridLayerPopoverMain">
-                  <span className="hybridLayerPopoverTitle" title={titleText}>{titleText || "—"}</span>
-                  <span className="hybridLayerPopoverMeta">
-                    {entityId} · {kindLabel(entityKind)}
-                    {toText(row.subtitle) ? ` · ${toText(row.subtitle)}` : ""}
-                  </span>
-                  {entityKind === OVERLAY_ENTITY_KINDS.DRAWIO && toText(row.anchorIssueText) ? (
-                    <span className="hybridLayerPopoverMeta">{toText(row.anchorIssueText)}</span>
-                  ) : null}
-                </div>
-                <div className="hybridLayerPopoverActions">
-                  {(() => {
-                    const MAX_VISIBLE_CHIPS = 2;
-                    const chips = [];
-                    if (row.missing) chips.push({ key: "missing", text: "нет привязки" });
-                    if (entityKind === OVERLAY_ENTITY_KINDS.DRAWIO && toText(row.anchorStatusLabel)) {
-                      chips.push({ key: "anchor", text: toText(row.anchorStatusLabel), testId: `diagram-action-layers-row-anchor-${entityId}` });
-                    }
-                    if (entityKind === OVERLAY_ENTITY_KINDS.DRAWIO && toText(row.anchorTargetId)) {
-                      chips.push({ key: "target", text: toText(row.anchorTargetId) });
-                    }
-                    const visible = chips.slice(0, MAX_VISIBLE_CHIPS);
-                    const hiddenCount = chips.length - visible.length;
-                    return (
-                      <>
-                        {visible.map((chip) => (
-                          <span key={chip.key} className="diagramIssueChip" data-testid={chip.testId || undefined}>
-                            {chip.text}
-                          </span>
-                        ))}
-                        {hiddenCount > 0 ? (
-                          <span
-                            className="diagramIssueChip"
-                            title={chips.slice(MAX_VISIBLE_CHIPS).map((c) => c.text).join(", ")}
-                          >
-                            +{hiddenCount}
-                          </span>
-                        ) : null}
-                      </>
-                    );
-                  })()}
-                  <button
-                    type="button"
-                    className="secondaryBtn h-7 px-2 text-[11px]"
-                    onClick={() => {
-                      if (entityKind === OVERLAY_ENTITY_KINDS.LEGACY) {
-                        goToHybridLayerItem?.(entityId, "layers_list_go_to_legacy");
-                        return;
-                      }
-                      if (entityKind === OVERLAY_ENTITY_KINDS.HYBRID) {
-                        const binding = asObject(hybridV2BindingByHybridId?.[entityId]);
-                        const bpmnId = toText(binding.bpmn_id || binding.bpmnId);
-                        setHybridV2ActiveId?.(entityId);
-                        if (bpmnId) {
-                          bpmnRef.current?.focusNode?.(bpmnId, { keepPrevious: false, durationMs: 1200 });
-                        }
-                        return;
-                      }
-                      if (entityKind === OVERLAY_ENTITY_KINDS.DRAWIO) {
-                        setDrawioSelectedElementId?.(entityId);
-                        return;
-                      }
-                    }}
-                    disabled={false}
-                    data-testid="diagram-action-layers-go-to"
+              <div
+                key={toText(row.key) || `${entityKind}_${entityId}`}
+                className={`hybridLayerPopoverRow${isDragOver ? " ring-1 ring-accent/60" : ""}`}
+                onClick={() => handleRowClick(entityKind, entityId)}
+                draggable={canDrag}
+                onDragStart={(e) => handleDragStart(e, entityId)}
+                onDragEnd={handleDragEnd}
+                onDragOver={(e) => handleDragOver(e, entityId)}
+                onDrop={(e) => handleDrop(e, entityId)}
+                title={isEditing ? undefined : `${titleText} — click to select`}
+              >
+                {canDrag ? (
+                  <span
+                    className="flex-shrink-0 w-4 cursor-grab text-center text-[10px] text-[hsl(var(--muted))] select-none"
+                    aria-hidden="true"
+                    title="Перетащите для изменения порядка"
                   >
-                    {entityKind === OVERLAY_ENTITY_KINDS.DRAWIO ? "Выбрать" : "Перейти"}
-                  </button>
+                    ⋮⋮
+                  </span>
+                ) : null}
+                <span className="flex-shrink-0 w-5 text-center text-[12px]" aria-hidden="true">
+                  {entityTypeIcon(entityKind, entityId)}
+                </span>
+                <div className="hybridLayerPopoverMain">
+                  {isEditing ? (
+                    <input
+                      autoFocus
+                      type="text"
+                      className="w-full rounded border border-[hsl(var(--accent)/0.6)] bg-transparent px-1 py-0 text-[11px] font-semibold outline-none"
+                      value={editValue}
+                      maxLength={40}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { commitRename(entityId, titleText); e.preventDefault(); }
+                        if (e.key === "Escape") { cancelRename(); e.preventDefault(); }
+                        e.stopPropagation();
+                      }}
+                      onBlur={() => commitRename(entityId, titleText)}
+                      onClick={(e) => e.stopPropagation()}
+                      data-testid={`diagram-action-layers-rename-input-${entityId}`}
+                    />
+                  ) : (
+                    <span
+                      className="hybridLayerPopoverTitle cursor-text hover:underline"
+                      title={`${titleText} — double-click to rename`}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        if (onRenameElement && entityKind === OVERLAY_ENTITY_KINDS.DRAWIO) {
+                          startRename(entityId, titleText);
+                        }
+                      }}
+                    >
+                      {titleText || "—"}
+                    </span>
+                  )}
+                  <span className="hybridLayerPopoverMeta">
+                    {entityId}{toText(row.layer_id) ? ` · ${toText(row.layer_id)}` : ""} · {kindLabel(entityKind)}
+                  </span>
+                </div>
+                <div className="hybridLayerPopoverActions" onClick={(e) => e.stopPropagation()}>
+                  {hasToggles ? (
+                    <>
+                      <button
+                        type="button"
+                        className={`secondaryBtn h-6 w-6 p-0 text-[13px] ${!isVisible ? "opacity-40 line-through" : ""}`}
+                        onClick={() => onSetElementVisible?.(entityId, !isVisible, `layers_row_visible_${entityId}`)}
+                        title={isVisible ? "Скрыть" : "Показать"}
+                        data-testid={`diagram-action-layers-row-visible-${entityId}`}
+                      >
+                        👁
+                      </button>
+                      <button
+                        type="button"
+                        className={`secondaryBtn h-6 w-6 p-0 text-[13px] ${!isLocked ? "opacity-40" : ""}`}
+                        onClick={() => onSetElementLocked?.(entityId, !isLocked, `layers_row_lock_${entityId}`)}
+                        title={isLocked ? "Разблокировать" : "Заблокировать"}
+                        data-testid={`diagram-action-layers-row-lock-${entityId}`}
+                      >
+                        {isLocked ? "🔒" : "🔓"}
+                      </button>
+                    </>
+                  ) : null}
                   <button
                     type="button"
-                    className="secondaryBtn h-7 px-2 text-[11px]"
-                    onClick={() => {
-                      const payload = {
-                        entityKind,
-                        entityId,
-                        entityIds: [entityId],
-                        label: titleText,
-                      };
-                      if (!confirmOverlayDelete(payload)) return;
-                      const deleted = !!onDeleteOverlayEntity?.(payload, `layers_delete_row_${entityKind}`);
-                      pushDeleteTrace("layers_delete_row_result", {
-                        rowDeleteId: entityId,
-                        rowDeleteKind: entityKind,
-                        deleted,
-                      });
-                    }}
+                    className="secondaryBtn h-6 w-6 p-0 text-[13px]"
+                    onClick={() => handleDeleteWithUndo(entityKind, entityId, titleText)}
                     title={`Удалить ${titleText}`}
                     data-testid="diagram-action-layers-delete-item"
                   >
@@ -208,6 +365,29 @@ const OverlayRowsSection = memo(function OverlayRowsSection({
           })}
         </div>
       )}
+      {undoToast ? (
+        <div
+          className="mt-1 flex items-center gap-2 rounded-lg border border-emerald-300/60 bg-emerald-50/90 px-2 py-1.5 text-[11px] text-emerald-900"
+          data-testid="diagram-action-layers-undo-toast"
+        >
+          <span className="min-w-0 flex-1 truncate">{`"${undoToast.label}" удалён`}</span>
+          <button
+            type="button"
+            className="shrink-0 rounded border border-emerald-400/40 bg-white/50 px-2 py-0.5 text-[11px] font-semibold hover:bg-white/80"
+            onClick={handleUndo}
+            data-testid="diagram-action-layers-undo-btn"
+          >
+            Отменить
+          </button>
+          <button
+            type="button"
+            className="shrink-0 text-[11px] opacity-60 hover:opacity-100"
+            onClick={dismissUndo}
+          >
+            ✕
+          </button>
+        </div>
+      ) : null}
     </>
   );
 });
@@ -296,6 +476,9 @@ export default function LayersPopover({
   goToHybridLayerItem,
   onHideSelectedHybridItems,
   onLockSelectedHybridItems,
+  onReorderDrawioElements,
+  onRenameDrawioElement,
+  onUndeleteDrawioElement,
 }) {
   const drawioEnabled = !!drawioState?.enabled;
   const drawioLocked = !!drawioState?.locked;
@@ -476,6 +659,15 @@ export default function LayersPopover({
   const importDiagnostics = asObject(drawioAnchorImportDiagnostics);
   const [showImportAffectedOnly, setShowImportAffectedOnly] = useState(false);
   const [serviceOpen, setServiceOpen] = useState(false);
+  const [hybridSectionOpen, setHybridSectionOpen] = useState(false);
+  const drawioElementStateMap = useMemo(() => {
+    const map = {};
+    asArray(drawioState?.drawio_elements_v1).forEach((row) => {
+      const id = toText(asObject(row).id);
+      if (id) map[id] = { visible: asObject(row).visible, locked: asObject(row).locked };
+    });
+    return map;
+  }, [drawioState?.drawio_elements_v1]);
   const affectedAnchorIds = useMemo(
     () => new Set(asArray(importDiagnostics.affectedObjectIds).map((id) => toText(id)).filter(Boolean)),
     [importDiagnostics.affectedObjectIds],
@@ -573,6 +765,28 @@ export default function LayersPopover({
     && selectedDrawioRow.visible !== false
     && selectedDrawioRow.locked !== true;
 
+  useEffect(() => {
+    if (!open) return undefined;
+    const TOOL_KEYS = { v: "select", r: "rect", t: "text", c: "container", s: "note" };
+    const onPanelKeyDown = (event) => {
+      const target = event?.target;
+      if (target instanceof Element && target.closest("input, textarea, select, [contenteditable='true']")) return;
+      const key = String(event?.key || "").toLowerCase();
+      const toolId = TOOL_KEYS[key];
+      if (toolId && !event.ctrlKey && !event.metaKey && !event.shiftKey && drawioEnabled) {
+        setDrawioMode?.("edit", { toolId });
+        event.preventDefault();
+        return;
+      }
+      if (key === "escape" && selectedEntityId) {
+        setDrawioSelectedElementId?.("");
+        event.preventDefault();
+      }
+    };
+    window.addEventListener("keydown", onPanelKeyDown);
+    return () => window.removeEventListener("keydown", onPanelKeyDown);
+  }, [open, drawioEnabled, selectedEntityId, setDrawioMode, setDrawioSelectedElementId]);
+
   if (!open) return null;
 
   return (
@@ -584,10 +798,10 @@ export default function LayersPopover({
     >
       {/* ── Шапка ── */}
       <div className="diagramActionPopoverHead">
-        <span>Draw.io / Overlay</span>
+        <span className="font-semibold text-[13px]">Overlay</span>
         <div className="diagramActionPopoverActions mt-0">
-          <span className="diagramIssueChip" title={drawioStatusLabel}>{drawioStatusLabel}</span>
-          <button type="button" className="secondaryBtn h-7 px-2 text-[11px]" onClick={onClose}>Закрыть</button>
+          <span className="diagramIssueChip text-[10px]" title={drawioStatusLabel}>{drawioStatusLabel}</span>
+          <button type="button" className="secondaryBtn h-6 w-6 p-0 text-[13px]" onClick={onClose} title="Закрыть">✕</button>
         </div>
       </div>
 
@@ -596,21 +810,21 @@ export default function LayersPopover({
         <div className="diagramToolbarOverlayTitle">Выбранный объект</div>
         <div className="diagramIssueRows">
           <div className="diagramIssueRow">
-            <span className="diagramIssueChip" data-testid="diagram-action-layers-selection-chip">
+            <span className="font-semibold text-[13px]" data-testid="diagram-action-layers-selection-chip">
               {selectedLabel || "—"}
             </span>
-            <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-type-chip">
+            <span className="diagramIssueChip text-[10px]" data-testid="diagram-action-layers-selected-type-chip">
               {selectedObjectUx.typeLabel}
             </span>
             {selectedObjectUx.advancedBoundaryLabel ? (
-              <span className="diagramIssueChip" data-testid="diagram-action-layers-selected-advanced-chip">
+              <span className="diagramIssueChip text-[10px]" data-testid="diagram-action-layers-selected-advanced-chip">
                 {selectedObjectUx.advancedBoundaryLabel}
               </span>
             ) : null}
           </div>
           {selectedEntityId ? (
             <div className="diagramIssueRow">
-              <span className="diagramIssueChip">
+              <span className="font-mono text-[10px] text-[hsl(var(--muted))]">
                 {selectedEntityId}{selectedLayerId ? ` · ${selectedLayerId}` : ""} · {kindLabel(selectedKind)}
               </span>
             </div>
@@ -619,11 +833,11 @@ export default function LayersPopover({
             <div className="diagramActionPopoverEmpty">{selectedObjectUx.summary}</div>
           ) : null}
 
-          {/* Быстрые действия */}
+          {/* Быстрые действия — compact icon-only */}
           <div className="diagramActionPopoverActions mt-0">
             <button
               type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
+              className="secondaryBtn h-6 w-6 p-0 text-[13px]"
               onClick={() => {
                 const payload = {
                   entityKind: selectedKind,
@@ -642,13 +856,14 @@ export default function LayersPopover({
                 });
               }}
               disabled={!selectedKind || !selectedEntityId}
+              title="Удалить"
               data-testid="diagram-action-layers-delete-selected"
             >
-              Удалить
+              🗑
             </button>
             <button
               type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
+              className="secondaryBtn h-6 w-6 p-0 text-[13px]"
               onClick={() => {
                 if (selectedIsDrawio) {
                   onSetDrawioElementVisible?.(selectedEntityId, false, "layers_hide_selected_drawio");
@@ -657,13 +872,14 @@ export default function LayersPopover({
                 onHideSelectedHybridItems?.();
               }}
               disabled={!canHideSelected}
+              title="Скрыть"
               data-testid="diagram-action-layers-hide-selected"
             >
-              Скрыть
+              👁
             </button>
             <button
               type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
+              className="secondaryBtn h-6 w-6 p-0 text-[13px]"
               onClick={() => {
                 if (selectedIsDrawio) {
                   onSetDrawioElementLocked?.(selectedEntityId, true, "layers_lock_selected_drawio");
@@ -672,13 +888,14 @@ export default function LayersPopover({
                 onLockSelectedHybridItems?.();
               }}
               disabled={!canLockSelected}
+              title="Блок"
               data-testid="diagram-action-layers-lock-selected"
             >
-              Блок
+              🔒
             </button>
             <button
               type="button"
-              className="secondaryBtn h-7 px-2 text-[11px]"
+              className="secondaryBtn h-6 w-6 p-0 text-[13px]"
               onClick={() => {
                 if (selectedIsLegacy) {
                   goToHybridLayerItem?.(selectedEntityId, "layers_selected_focus_legacy");
@@ -689,9 +906,10 @@ export default function LayersPopover({
                 }
               }}
               disabled={!selectedIsLegacy && !selectedIsHybrid}
+              title="Фокус"
               data-testid="diagram-action-layers-focus-selected"
             >
-              Фокус
+              🎯
             </button>
           </div>
 
@@ -954,26 +1172,27 @@ export default function LayersPopover({
         </div>
 
         {/* Инструменты */}
-        <div className="mt-1 grid grid-cols-2 gap-1">
+        <div className="mt-1 flex gap-1">
           {runtimeTools.map((rowRaw) => {
             const row = asObject(rowRaw);
             const toolId = toText(row.id).toLowerCase();
             const toolIntent = resolveDrawioToolIntent({ toolId, enabled: drawioEnabled, locked: drawioLocked });
+            const isActive = drawioMode === "edit" && drawioActiveTool === toolId;
             return (
               <button
                 key={`layers_tool_${toolId}`}
                 type="button"
-                className={`secondaryBtn flex h-8 items-center justify-start gap-2 px-2 text-[11px] ${drawioMode === "edit" && drawioActiveTool === toolId ? "ring-1 ring-accent/60" : ""}`}
+                className={`secondaryBtn flex h-8 w-8 items-center justify-center p-0 text-[14px] ${isActive ? "ring-2 ring-accent" : ""}`}
                 onClick={() => {
                   if (toolIntent.intent === "blocked") return;
                   if (toolIntent.intent === "mode_edit") { setDrawioMode?.("edit", { toolId }); return; }
                   onOpenDrawioEditor?.();
                 }}
                 disabled={toolIntent.intent === "blocked"}
+                title={toText(row.label || row.id)}
                 data-testid={`diagram-action-layers-tool-${toolId}`}
               >
                 <span aria-hidden="true">{toText(row.icon)}</span>
-                <span>{toText(row.label || row.id)}</span>
               </button>
             );
           })}
@@ -989,12 +1208,27 @@ export default function LayersPopover({
           setDrawioSelectedElementId={setDrawioSelectedElementId}
           goToHybridLayerItem={goToHybridLayerItem}
           onDeleteOverlayEntity={onDeleteOverlayEntity}
+          onSetElementVisible={onSetDrawioElementVisible}
+          onSetElementLocked={onSetDrawioElementLocked}
+          elementStateMap={drawioElementStateMap}
+          onReorderElements={onReorderDrawioElements}
+          onRenameElement={onRenameDrawioElement}
+          onUndeleteElement={onUndeleteDrawioElement}
         />
       </div>
 
-      {/* ── 3. Hybrid / Legacy (компактно) ── */}
+      {/* ── 3. Hybrid / Legacy (компактно, свёрнуто по умолчанию) ── */}
       <div className="diagramToolbarOverlaySection">
-        <div className="diagramToolbarOverlayTitle">Hybrid / Legacy</div>
+        <button
+          type="button"
+          className="diagramToolbarOverlayTitle w-full text-left"
+          onClick={() => setHybridSectionOpen((prev) => !prev)}
+          style={{ cursor: "pointer" }}
+        >
+          <span>{hybridSectionOpen ? "▾" : "▸"}</span>
+          {" "}Hybrid / Legacy (H {hybridRows.length} · L {legacyRows.length})
+        </button>
+        {hybridSectionOpen ? (<>
         <div className="diagramIssueRows">
           {/* Строка 1: toggle + фокус + opacity */}
           <div className="diagramIssueRow">
@@ -1136,6 +1370,7 @@ export default function LayersPopover({
           goToHybridLayerItem={goToHybridLayerItem}
           onDeleteOverlayEntity={onDeleteOverlayEntity}
         />
+        </>) : null}
       </div>
 
       {/* ── 4. Служебные функции (свёрнуто по умолчанию) ── */}

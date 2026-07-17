@@ -19,6 +19,7 @@ export default function useDrawioOverlayInteraction({
   onCreateElement,
   onDeleteElement,
   onSelectionChange,
+  onSwitchTool,
 }) {
   bumpDrawioPerfCounter("drawio.interaction.hook.renders");
   const rootRef = useRef(null);
@@ -73,6 +74,7 @@ export default function useDrawioOverlayInteraction({
     canEditElement: gate.canEditElement,
     onCommitMove,
     onDeleteElement,
+    onSwitchTool,
     clearSelection: selection.clearSelection,
   });
 
