@@ -98,6 +98,7 @@ const OverlayRowsSection = memo(function OverlayRowsSection({
   rows,
   emptyText = "Нет элементов.",
   listTestId = "diagram-action-layers-item-list",
+  defaultLimit = 0,
   bpmnRef,
   hybridV2BindingByHybridId,
   setHybridV2ActiveId,
@@ -118,16 +119,20 @@ const OverlayRowsSection = memo(function OverlayRowsSection({
   const [dragOverId, setDragOverId] = useState("");
   const [undoToast, setUndoToast] = useState(null);
   const undoTimerRef = React.useRef(0);
+  const [expanded, setExpanded] = useState(false);
   const stateMap = asObject(elementStateMap);
+  const hasLimit = defaultLimit > 0 && list.length > defaultLimit;
+  const baseList = hasLimit && !expanded && !search ? list.slice(0, defaultLimit) : list;
+  const truncatedCount = list.length - baseList.length;
   const filteredList = useMemo(() => {
-    if (!search) return list;
+    if (!search) return baseList;
     const q = search.toLowerCase();
-    return list.filter((rowRaw) => {
+    return baseList.filter((rowRaw) => {
       const row = asObject(rowRaw);
       return toText(row.label).toLowerCase().includes(q)
         || toText(row.entityId).toLowerCase().includes(q);
     });
-  }, [list, search]);
+  }, [baseList, search]);
 
   const handleRowClick = (entityKind, entityId) => {
     if (editingId) return;
@@ -225,7 +230,6 @@ const OverlayRowsSection = memo(function OverlayRowsSection({
   };
 
   const canDrag = !!onReorderElements && !search;
-
   return (
     <>
       <div className="diagramToolbarOverlayTitle mt-2">{title}</div>
@@ -363,6 +367,26 @@ const OverlayRowsSection = memo(function OverlayRowsSection({
               </div>
             );
           })}
+          {truncatedCount > 0 && (
+            <button
+              type="button"
+              className="secondaryBtn mt-1 h-7 w-full px-2 text-[11px] text-muted"
+              onClick={() => setExpanded(true)}
+              data-testid="diagram-action-layers-show-all"
+            >
+              +{truncatedCount} скрыто — показать все
+            </button>
+          )}
+          {expanded && hasLimit && (
+            <button
+              type="button"
+              className="secondaryBtn mt-1 h-7 w-full px-2 text-[11px] text-muted"
+              onClick={() => setExpanded(false)}
+              data-testid="diagram-action-layers-collapse"
+            >
+              Свернуть
+            </button>
+          )}
         </div>
       )}
       {undoToast ? (
@@ -1202,6 +1226,7 @@ export default function LayersPopover({
           title={`Draw.io elements (${filteredDrawioRows.length}${showImportAffectedOnly ? ` / affected from ${drawioRows.length}` : ""})`}
           rows={filteredDrawioRows}
           emptyText="Нет draw.io элементов."
+          defaultLimit={40}
           bpmnRef={bpmnRef}
           hybridV2BindingByHybridId={hybridV2BindingByHybridId}
           setHybridV2ActiveId={setHybridV2ActiveId}
@@ -1354,6 +1379,7 @@ export default function LayersPopover({
           title={`Hybrid elements (${hybridRows.length})`}
           rows={hybridRows}
           emptyText="Нет элементов Hybrid."
+          defaultLimit={60}
           bpmnRef={bpmnRef}
           hybridV2BindingByHybridId={hybridV2BindingByHybridId}
           setHybridV2ActiveId={setHybridV2ActiveId}
@@ -1364,6 +1390,7 @@ export default function LayersPopover({
           title={`Legacy markers (${legacyRows.length})`}
           rows={legacyRows}
           emptyText="Нет legacy-маркеров."
+          defaultLimit={40}
           bpmnRef={bpmnRef}
           hybridV2BindingByHybridId={hybridV2BindingByHybridId}
           setHybridV2ActiveId={setHybridV2ActiveId}

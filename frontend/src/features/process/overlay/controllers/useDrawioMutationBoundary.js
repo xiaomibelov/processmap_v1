@@ -7,6 +7,7 @@ export default function useDrawioMutationBoundary({
   serializeDrawioMeta,
   markPlaybackOverlayInteraction,
   persistDrawioMetaOrdered,
+  onPersistError,
 }) {
   const applyDrawioMutation = useCallback((mutator, options = {}) => {
     const prev = drawioMetaRef.current ?? normalizeDrawioMeta(null);
@@ -34,13 +35,30 @@ export default function useDrawioMutationBoundary({
       ? persistDrawioMetaOrdered(next, { source: options?.source || "overlay_drawio_update" })
       : Promise.resolve({ ok: true, skipped: true });
     if (options?.persist !== false) {
-      void persistPromise;
+      persistPromise.then((result) => {
+        if (
+          result && result.ok === false
+          && !result.skipped && !result.stale && !result.cancelled
+          && options?.skipPersistErrorCallback !== true
+        ) {
+          setDrawioMeta(prev);
+          drawioMetaRef.current = prev;
+          if (typeof onPersistError === "function") {
+            onPersistError({
+              error: String(result.error || "drawio_persist_failed"),
+              status: Number(result.status || 0),
+              source: String(options?.source || ""),
+            });
+          }
+        }
+      });
     }
     return { changed: true, next, persistPromise };
   }, [
     drawioMetaRef,
     markPlaybackOverlayInteraction,
     normalizeDrawioMeta,
+    onPersistError,
     persistDrawioMetaOrdered,
     serializeDrawioMeta,
     setDrawioMeta,

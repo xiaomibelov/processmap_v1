@@ -74,7 +74,7 @@ export function buildOverlayEntityRows({
   const rows = [];
   const legacyRows = asArray(hybridLayerRenderRows);
   const v2Elements = asArray(asObject(hybridV2Renderable).elements);
-  const drawioRows = getDrawioElements(drawioState, { renderableOnly: true }).slice(0, 40);
+  const drawioRows = getDrawioElements(drawioState, { renderableOnly: true });
 
   drawioRows.forEach((row, index) => {
     const id = toText(row.id);
@@ -92,7 +92,7 @@ export function buildOverlayEntityRows({
       }),
     });
   });
-  v2Elements.slice(0, 60).forEach((elementRaw) => {
+  v2Elements.forEach((elementRaw) => {
     const element = asObject(elementRaw);
     const elementId = toText(element.id);
     if (!elementId) return;
@@ -106,7 +106,7 @@ export function buildOverlayEntityRows({
       missing: !toText(binding.bpmn_id || binding.bpmnId),
     });
   });
-  legacyRows.slice(0, 40).forEach((rowRaw) => {
+  legacyRows.forEach((rowRaw) => {
     const row = asObject(rowRaw);
     const elementId = toText(row.elementId);
     if (!elementId) return;
