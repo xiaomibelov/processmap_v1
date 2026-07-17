@@ -21,3 +21,14 @@ export function deleteExtensionPropertyRowsByDeleteAction(rowsRaw, rowIdRaw) {
   // independently in the UI.
   return rows.filter((_, i) => i !== targetIndex);
 }
+
+export function bulkDeleteExtensionPropertyRows(rowsRaw, rowIdsRaw) {
+  const rows = Array.isArray(rowsRaw) ? rowsRaw : [];
+  const ids = new Set(
+    (Array.isArray(rowIdsRaw) ? rowIdsRaw : [])
+      .map((id) => String(id ?? "").trim())
+      .filter(Boolean),
+  );
+  if (ids.size === 0) return rows;
+  return rows.filter((row) => !ids.has(String(row?.id ?? "").trim()));
+}

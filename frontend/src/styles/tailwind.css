@@ -6233,6 +6233,46 @@
     border-bottom: none;
   }
 
+  /* BPMN property rows: 4-column grid with checkbox column */
+  .sidebarSchemaPropertyRow.sidebarBpmnPropertyItem {
+    grid-template-columns: 28px minmax(96px, 1fr) minmax(72px, 1.75fr) 84px;
+  }
+  .sidebarPropertiesTableHead:has(.sidebarPropertyCheckboxCell) {
+    grid-template-columns: 28px minmax(96px, 1fr) minmax(72px, 1.75fr) 84px;
+  }
+
+  /* Checkbox cell */
+  .sidebarPropertyCheckboxCell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    flex-shrink: 0;
+    padding: 0 2px;
+  }
+  .sidebarPropertyCheckboxCell input[type="checkbox"] {
+    cursor: pointer;
+    accent-color: var(--color-primary, #3b82f6);
+  }
+
+  /* Selected row highlight */
+  .sidebarBpmnPropertyItem.isSelected {
+    background: var(--color-selection-bg, rgba(59, 130, 246, 0.08));
+  }
+
+  /* Undo bar */
+  .sidebarUndoBar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: var(--color-info-bg, #eff6ff);
+    border-radius: 4px;
+    font-size: 12px;
+    margin-bottom: 6px;
+    animation: fadeIn 0.15s ease-out;
+  }
+
   .sidebarBpmnPropertySummary {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.85fr) 70px 22px;
@@ -15809,6 +15849,14 @@
 
   .dark .sidebarSchemaPropertyRow.sidebarBpmnPropertyItem:hover:not(.isEditing) {
     background: #1A2840;
+  }
+
+  .dark .sidebarBpmnPropertyItem.isSelected {
+    background: rgba(96, 165, 250, 0.12);
+  }
+
+  .dark .sidebarUndoBar {
+    background: rgba(59, 130, 246, 0.15);
   }
 
   .dark .sidebarLocalBadge {
