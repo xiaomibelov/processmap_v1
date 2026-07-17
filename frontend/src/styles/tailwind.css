@@ -3484,6 +3484,32 @@
     overflow: auto;
   }
 
+  .diagramActionPopover--floating {
+    position: fixed !important;
+    right: auto !important;
+    top: auto !important;
+    cursor: default;
+    z-index: 95;
+  }
+
+  .diagramActionPopover--floating .diagramActionPopoverHead {
+    cursor: grab;
+  }
+
+  .diagramActionPopover--floating .diagramActionPopoverHead:active {
+    cursor: grabbing;
+  }
+
+  .floatingDrawioToolbar {
+    @apply absolute flex items-center gap-1 rounded-full bg-white/90 px-2 py-1.5 shadow-lg;
+    backdrop-filter: blur(8px);
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 91;
+    pointer-events: auto;
+  }
+
   .diagramActionPopover--quality {
     width: min(440px, calc(100% - 24px));
     max-height: min(68vh, 620px);

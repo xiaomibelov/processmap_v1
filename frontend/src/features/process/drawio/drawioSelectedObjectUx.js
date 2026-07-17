@@ -31,7 +31,7 @@ export function resolveSelectedObjectUxModel(options = {}) {
     hasSelection: !!selectedEntityId,
     typeKey: "none",
     typeLabel: "Ничего не выбрано",
-    summary: "Выберите объект на canvas, чтобы увидеть доступные действия.",
+    summary: "Выберите элемент или создайте новый",
     capabilities: [],
     showTextSection: false,
     showTextWidthSection: false,
@@ -53,13 +53,11 @@ export function resolveSelectedObjectUxModel(options = {}) {
         ...base,
         typeKey: "drawio_text",
         typeLabel: "Текстовый блок",
-        summary: selectedLayerId
-          ? `Runtime text в слое ${selectedLayerId}. Основные правки делаются прямо здесь.`
-          : "Runtime text. Основные правки делаются прямо здесь.",
+        summary: "Текстовый элемент",
         capabilities: [
           buildCapability("text", "Текст"),
           buildCapability("text_width", "Ширина текста"),
-          ...(hasStyle ? [buildCapability("style", drawioStyleSurface === "text" ? "Быстрый цвет" : "Быстрый стиль")] : []),
+          ...(hasStyle ? [buildCapability("style", "Цвет")] : []),
           buildCapability("anchor", "Anchor"),
           buildCapability("visibility", "Скрыть"),
           buildCapability("delete", "Удалить"),
@@ -68,9 +66,9 @@ export function resolveSelectedObjectUxModel(options = {}) {
         showTextWidthSection: true,
         showStyleSection: hasStyle,
         showResizeSection: false,
-        styleSectionLabel: drawioStyleSurface === "text" ? "Быстрый цвет" : "Быстрый стиль",
+        styleSectionLabel: "Цвет",
         resizeSectionLabel: "Текстовый блок",
-        advancedHint: "Сложная typography и нестандартные label modes остаются в full editor.",
+        advancedHint: "",
         advancedBoundaryLabel: "Advanced",
       };
     }
@@ -80,11 +78,9 @@ export function resolveSelectedObjectUxModel(options = {}) {
         ...base,
         typeKey: "drawio_box",
         typeLabel: "Блок / контейнер",
-        summary: selectedLayerId
-          ? `Shape-like draw.io объект в слое ${selectedLayerId}. Размер и стиль можно менять без full editor.`
-          : "Shape-like draw.io объект. Размер и стиль можно менять без full editor.",
+        summary: "Графический блок",
         capabilities: [
-          ...(hasStyle ? [buildCapability("style", drawioStyleSurface === "text" ? "Быстрый цвет" : "Быстрый стиль")] : []),
+          ...(hasStyle ? [buildCapability("style", "Цвет")] : []),
           buildCapability("size", "Размер блока"),
           buildCapability("anchor", "Anchor"),
           buildCapability("visibility", "Скрыть"),
@@ -94,9 +90,9 @@ export function resolveSelectedObjectUxModel(options = {}) {
         showTextWidthSection: false,
         showStyleSection: hasStyle,
         showResizeSection: true,
-        styleSectionLabel: drawioStyleSurface === "text" ? "Быстрый цвет" : "Быстрый стиль",
+        styleSectionLabel: "Цвет",
         resizeSectionLabel: "Размер блока",
-        advancedHint: "Сложная геометрия, connectors и произвольные shapes остаются в full editor.",
+        advancedHint: "",
         advancedBoundaryLabel: "Advanced",
       };
     }
@@ -105,7 +101,7 @@ export function resolveSelectedObjectUxModel(options = {}) {
       ...base,
       typeKey: "drawio_other",
       typeLabel: "Draw.io объект",
-      summary: "Этот объект виден на canvas, но базовые session-first правки для него не включены.",
+      summary: "Draw.io элемент",
       capabilities: [
         buildCapability("visibility", "Скрыть"),
         buildCapability("delete", "Удалить"),
@@ -114,9 +110,9 @@ export function resolveSelectedObjectUxModel(options = {}) {
       showTextWidthSection: false,
       showStyleSection: hasStyle,
       showResizeSection: false,
-      styleSectionLabel: drawioStyleSurface === "text" ? "Быстрый цвет" : "Быстрый стиль",
+      styleSectionLabel: "Цвет",
       resizeSectionLabel: "Размер",
-      advancedHint: "Для этого surface продолжайте в full editor.",
+      advancedHint: "",
       advancedBoundaryLabel: "Advanced",
     };
   }
