@@ -278,9 +278,11 @@
   padding: 0 4px;
   overflow: hidden;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  background-color: var(--fpc-overlay-accent, #888888);
-  color: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  /* Neutral light surface: color signal lives on per-row left borders
+     (--fpc-property-accent), not on the card background. */
+  background-color: #f8fafc;
+  color: #1e293b;
   font-size: 9px;
   font-weight: 700;
   line-height: 16px;
@@ -306,7 +308,7 @@
   font-size: 9px;
   line-height: 14px;
   opacity: 0.9;
-  border-top: 1px solid rgba(255, 255, 255, 0.25);
+  border-top: 1px solid rgba(15, 23, 42, 0.15);
   padding-top: 2px;
   margin-top: 2px;
 }
@@ -333,7 +335,7 @@
   display: flex;
   gap: 3px;
   padding: 1px 0 1px 4px;
-  border-left: 2px solid var(--fpc-property-accent, var(--fpc-overlay-accent, #888888));
+  border-left: 3px solid var(--fpc-property-accent, #94a3b8);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -348,12 +350,12 @@
 .fpc-overlay-v2-name {
   flex: 0 0 auto;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: #0f172a;
 }
 
 .fpc-overlay-v2-value {
   flex: 1 1 auto;
-  color: #ffffff;
+  color: #334155;
 }
 
 /* Derived display name (v0.3 P1B): in idle/compact mode the one-line name
@@ -363,11 +365,11 @@
   display: none;
   padding: 1px 0 1px 4px;
   font-weight: 700;
-  color: #ffffff;
+  color: #0f172a;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.15);
   margin-bottom: 2px;
 }
 

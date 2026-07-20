@@ -69,8 +69,6 @@ export function createV2OverlayHost(element, content, expanded = false) {
   const properties = asArray(content?.properties).filter((prop) => asText(prop?.name));
   const titleText = asText(content?.title ?? content?.text);
   const displayName = asText(content?.displayName);
-  const colorKey = asText(content?.colorKey || content?.meta?.type || "property");
-  const colorModel = overlayPropertyColorByKey(colorKey || "property");
 
   const host = document.createElement("div");
   host.classList.add("fpc-overlay-v2-host");
@@ -86,8 +84,9 @@ export function createV2OverlayHost(element, content, expanded = false) {
     // expanded mode keeps the full rows with this as the title line (CSS).
     host.classList.add("fpc-overlay-v2-host--has-display-name");
   }
-  host.style.setProperty("--fpc-overlay-accent", colorModel.accent);
-
+  // Card-level accent is intentionally NOT set: the badge background is a
+  // neutral light surface, and each property row carries its own
+  // --fpc-property-accent (see makeV2PropertyRow) as a colored left border.
   const v2HostWidth = isSequenceFlow
     ? Math.min(Number(element?.width || 0) || SEQUENCE_OVERLAY_MAX_WIDTH, SEQUENCE_OVERLAY_MAX_WIDTH)
     : elWidth;
