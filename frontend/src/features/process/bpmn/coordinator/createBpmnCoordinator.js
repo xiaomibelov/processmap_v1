@@ -419,6 +419,18 @@ export default function createBpmnCoordinator(options = {}) {
     const runtime = getRuntime();
     const status = runtime?.getStatus?.() || {};
     const rev = asNumber(state?.rev, 0);
+
+    // Build persistOptions early so the "runtime not ready" fallback path can
+    // pass metadata (bpmnMeta/sourceAction) to saveRaw without hitting a
+    // temporal dead zone.
+    const persistOptions = {};
+    if (options?.bpmnMeta && typeof options.bpmnMeta === "object") {
+      persistOptions.bpmnMeta = options.bpmnMeta;
+    }
+    if (options?.sourceAction && typeof options.sourceAction === "string") {
+      persistOptions.sourceAction = options.sourceAction;
+    }
+
     emit("SAVE_REQUESTED", {
       sid,
       reason,
@@ -619,13 +631,6 @@ export default function createBpmnCoordinator(options = {}) {
     const startedAt = Date.now();
     const staleConflictRetryEnabled = options?.staleConflictRetryEnabled !== false;
     const staleConflictRetryMaxAttempts = Math.max(0, asNumber(options?.staleConflictRetryMaxAttempts, 1));
-    const persistOptions = {};
-    if (options?.bpmnMeta && typeof options.bpmnMeta === "object") {
-      persistOptions.bpmnMeta = options.bpmnMeta;
-    }
-    if (options?.sourceAction && typeof options.sourceAction === "string") {
-      persistOptions.sourceAction = options.sourceAction;
-    }
     let staleRetryAttempts = 0;
     let staleRetryChangedKeys = [];
     let persisted = await persistRaw(sid, xml, targetRev, reason, persistOptions);
