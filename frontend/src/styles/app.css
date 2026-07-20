@@ -11,8 +11,8 @@
 @import "./app/06-final-structure.css";
 
 /* V2 BPMN extension overlay color modifiers (fixed-palette fallback for
-   well-known overlay types). Dynamic HSL colors are applied inline from
-   overlayPropertyColorByKey for arbitrary property names. */
+   well-known overlay types). Inline colors come from overlayPropertyColorByKey:
+   a structured hue map for well-known property names, neutral slate for the rest. */
 .fpc-overlay-v2--green {
   background-color: #e8f5e9 !important;
   border-color: #4caf50 !important;
