@@ -256,9 +256,33 @@ function applyDrawioLayerRenderStateToDom(rootRaw, metaRaw, draftOffsetRaw = nul
   }
 }
 
+const SVG_PATCH_CACHE_LIMIT = 100;
+const svgPatchCache = new Map();
+
+function buildSvgPatchCacheSignature(metaRaw, draftOffsetRaw) {
+  const meta = asObject(metaRaw);
+  return JSON.stringify([
+    meta.enabled,
+    meta.locked,
+    meta.interaction_mode,
+    meta.mode,
+    meta.drawio_layers_v1,
+    meta.drawio_elements_v1,
+    draftOffsetRaw,
+  ]);
+}
+
+export function clearSvgPatchCache() {
+  svgPatchCache.clear();
+}
+
 function applyDrawioLayerRenderState(bodyRaw, metaRaw, _selectedIdRaw = "", draftOffsetRaw = null, prebuiltMapsRaw = null) {
   const body = String(bodyRaw || "");
   if (!body) return body;
+  const cacheKey = `${body.length}:${body}##${buildSvgPatchCacheSignature(metaRaw, draftOffsetRaw)}`;
+  const cached = svgPatchCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   const prebuilt = prebuiltMapsRaw && prebuiltMapsRaw.layerMap && prebuiltMapsRaw.elementMap
     ? prebuiltMapsRaw
     : buildDrawioLayerRenderMaps(metaRaw);
@@ -270,7 +294,7 @@ function applyDrawioLayerRenderState(bodyRaw, metaRaw, _selectedIdRaw = "", draf
   const draftId = toText(draftOffset.id);
   const draftX = toNumber(draftOffset.offset_x, 0);
   const draftY = toNumber(draftOffset.offset_y, 0);
-  return body.replace(
+  const result = body.replace(
     /<([a-zA-Z][a-zA-Z0-9:_-]*)([^>]*?)\sid\s*=\s*("([^"]+)"|'([^']+)')([^>]*)>/g,
     (fullMatch, tagName, beforeIdAttrs, _idQuoted, idDouble, idSingle, afterIdAttrs) => {
       const elementId = toText(idDouble || idSingle);
@@ -303,6 +327,13 @@ function applyDrawioLayerRenderState(bodyRaw, metaRaw, _selectedIdRaw = "", draf
       return `<${tagName}${patchedAttrs} id="${elementId}"${isSelfClosing ? " />" : ">"}`;
     },
   );
+
+  svgPatchCache.set(cacheKey, result);
+  if (svgPatchCache.size > SVG_PATCH_CACHE_LIMIT) {
+    const firstKey = svgPatchCache.keys().next().value;
+    svgPatchCache.delete(firstKey);
+  }
+  return result;
 }
 
 export {
