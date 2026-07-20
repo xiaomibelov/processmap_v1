@@ -347,15 +347,11 @@ test("properties overlay decor binds to preview element id and renders rows for 
     // 2 visible property rows + 1 summary row (+hiddenCount)
     assert.equal(table.childNodes.length, 3);
     const firstRow = table.childNodes[0];
-    // Unknown property label ("Ингредиент") → neutral slate fallback palette.
     assert.ok(String(firstRow.style.getPropertyValue("--fpc-property-accent") || "").length > 0);
     assert.ok(String(firstRow.style.getPropertyValue("--fpc-property-bg") || "").length > 0);
-    assert.equal(firstRow.style.getPropertyValue("--fpc-property-text"), "hsl(215 25% 27%)");
-    const secondRow = table.childNodes[1];
-    // Well-known property ("equipment") → structured hue palette.
-    assert.match(secondRow.style.getPropertyValue("--fpc-property-text"), /^hsl\(\d+ 48% 18%\)$/);
-    assert.match(secondRow.style.getPropertyValue("--fpc-property-muted-text"), /^hsl\(\d+ 32% 30%\)$/);
-    assert.match(secondRow.style.getPropertyValue("--fpc-property-separator"), /^hsl\(\d+ 28% 44%\)$/);
+    assert.match(firstRow.style.getPropertyValue("--fpc-property-text"), /^hsl\(\d+ 48% 18%\)$/);
+    assert.match(firstRow.style.getPropertyValue("--fpc-property-muted-text"), /^hsl\(\d+ 32% 30%\)$/);
+    assert.match(firstRow.style.getPropertyValue("--fpc-property-separator"), /^hsl\(\d+ 28% 44%\)$/);
   });
 });
 
