@@ -1,21 +1,47 @@
+/**
+ * Coerce a value to a string.
+ * @param {unknown} value
+ * @returns {string}
+ */
 export function asText(value) {
   return String(value || "");
 }
 
+/**
+ * Parse a number, falling back to a default on NaN/Infinity.
+ * @param {unknown} value
+ * @param {number} [fallback=0]
+ * @returns {number}
+ */
 export function asNumber(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Return the value if it is a plain object, otherwise an empty object.
+ * @param {unknown} value
+ * @returns {Object}
+ */
 export function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
+/**
+ * Return the value if it is an array, otherwise an empty array.
+ * @param {unknown} value
+ * @returns {Array}
+ */
 export function asArray(value) {
   if (Array.isArray(value)) return value;
   return [];
 }
 
+/**
+ * Read the changed_keys list from a stale-conflict error detail.
+ * @param {unknown} errorDetails
+ * @returns {string[]}
+ */
 export function readStaleConflictChangedKeys(errorDetails) {
   const details = asObject(errorDetails);
   const lastWrite = asObject(details.server_last_write || details.serverLastWrite);
@@ -24,11 +50,21 @@ export function readStaleConflictChangedKeys(errorDetails) {
     .filter(Boolean);
 }
 
+/**
+ * Normalize an error detail value to an object or null.
+ * @param {unknown} value
+ * @returns {Object | null}
+ */
 export function normalizeErrorDetails(value) {
   const details = asObject(value);
   return Object.keys(details).length ? details : null;
 }
 
+/**
+ * Determine whether a save result is a diagram-state conflict (409).
+ * @param {unknown} result
+ * @returns {boolean}
+ */
 export function isDiagramStateConflictResult(result) {
   const status = asNumber(result?.status, 0);
   if (status !== 409) return false;
@@ -43,18 +79,33 @@ export function isDiagramStateConflictResult(result) {
   );
 }
 
+/**
+ * Check whether a reason string preserves user intent (manual save variants).
+ * @param {unknown} reasonRaw
+ * @returns {boolean}
+ */
 export function isIntentPreservingReason(reasonRaw) {
   const reason = asText(reasonRaw).trim().toLowerCase();
   if (!reason) return false;
   return reason.startsWith("manual_save") || reason.startsWith("publish_manual_save");
 }
 
+/**
+ * Check whether a reason string is a publish-manual-save variant.
+ * @param {unknown} reasonRaw
+ * @returns {boolean}
+ */
 export function isPublishManualSaveReason(reasonRaw) {
   const reason = asText(reasonRaw).trim().toLowerCase();
   if (!reason) return false;
   return reason.startsWith("publish_manual_save");
 }
 
+/**
+ * Append a conflict-replay suffix to an intent-preserving reason.
+ * @param {unknown} reasonRaw
+ * @returns {string}
+ */
 export function buildConflictReplayReason(reasonRaw) {
   const reason = asText(reasonRaw).trim();
   if (!isIntentPreservingReason(reason)) return "";
@@ -62,6 +113,11 @@ export function buildConflictReplayReason(reasonRaw) {
   return `${reason}:conflict_replay`;
 }
 
+/**
+ * Append or normalize a queued suffix for a save reason.
+ * @param {unknown} reasonRaw
+ * @returns {string}
+ */
 export function buildQueuedReplayReason(reasonRaw) {
   const reason = asText(reasonRaw).trim();
   if (!reason || reason === "queued") return "queued";
@@ -69,10 +125,22 @@ export function buildQueuedReplayReason(reasonRaw) {
   return `${reason}:queued`;
 }
 
+/**
+ * Normalize an error code to an uppercase trimmed string.
+ * @param {unknown} value
+ * @returns {string}
+ */
 export function normalizeErrorCode(value) {
   return asText(value).trim().toUpperCase();
 }
 
+/**
+ * Classify a save trigger reason into a high-level category.
+ * @param {string} [reasonRaw=""]
+ * @param {Object} [options]
+ * @param {boolean} [options.fromPending]
+ * @returns {"pending_replay" | "beforeunload_reload_flush" | "hydration_reload" | "autosave" | "manual_save" | "other"}
+ */
 export function classifySaveTrigger(reasonRaw = "", options = {}) {
   const reason = asText(reasonRaw).trim().toLowerCase();
   if (options?.fromPending === true || reason.includes("pending_replay")) return "pending_replay";
@@ -85,6 +153,11 @@ export function classifySaveTrigger(reasonRaw = "", options = {}) {
   return "other";
 }
 
+/**
+ * Determine whether a saved result object represents a stale conflict failure.
+ * @param {unknown} saved
+ * @returns {boolean}
+ */
 export function isStaleConflictFailure(saved = null) {
   const value = saved && typeof saved === "object" ? saved : {};
   const status = asNumber(value?.status, 0);
@@ -98,6 +171,11 @@ export function isStaleConflictFailure(saved = null) {
   );
 }
 
+/**
+ * Compute a 32-bit FNV-1a hash of a string and return it as zero-padded hex.
+ * @param {unknown} input
+ * @returns {string}
+ */
 export function fnv1aHex(input) {
   const src = asText(input);
   let hash = 0x811c9dc5;
@@ -108,6 +186,14 @@ export function fnv1aHex(input) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
+/**
+ * Run a promise factory with a timeout. Rejects if it does not settle in time.
+ * @param {() => Promise<T>} promiseFactory
+ * @param {number} ms
+ * @param {string} [context]
+ * @returns {Promise<T>}
+ * @template T
+ */
 export function withTimeout(promiseFactory, ms, context) {
   return new Promise((resolve, reject) => {
     let settled = false;
