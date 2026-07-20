@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { buildDrawioPlacementPreviewSpec } from "./drawioPlacementPreview.js";
 
-test("drawio placement preview: rect tool produces stable preview geometry", () => {
+test("drawio placement preview: rect tool produces stable preview geometry from default preset", () => {
   const spec = buildDrawioPlacementPreviewSpec("rect", { x: 300, y: 180 });
   assert.deepEqual(spec, {
     toolId: "rect",
@@ -13,7 +13,7 @@ test("drawio placement preview: rect tool produces stable preview geometry", () 
     width: 120,
     height: 60,
     rx: 8,
-    fill: "rgba(59,130,246,0.10)",
+    fill: "rgba(59,130,246,0.24)",
     stroke: "#2563eb",
   });
 });
