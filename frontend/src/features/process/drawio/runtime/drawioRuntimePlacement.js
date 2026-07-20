@@ -1,4 +1,8 @@
 import { promoteRuntimeElementIntoDrawioDoc } from "../drawioDocXml.js";
+import {
+  getDefaultRuntimeStylePreset,
+  resolveRuntimeStyleSurface,
+} from "../drawioRuntimeStylePresets.js";
 import { buildRuntimeWrappedTextMarkup } from "../drawioRuntimeText.js";
 import {
   buildRuntimeNoteElementRow,
@@ -35,17 +39,21 @@ function formatNumber(valueRaw) {
   return String(rounded);
 }
 
-function buildRuntimeMarkupByTool({ toolId, elementId, x, y }) {
+function buildRuntimeMarkupByTool({ toolId, elementId, x, y, styleRaw = null }) {
   const id = escapeAttr(elementId);
+  const surface = resolveRuntimeStyleSurface(toolId);
+  const presetSvg = styleRaw
+    ? styleRaw
+    : getDefaultRuntimeStylePreset(surface)?.svg || {};
   if (toolId === "rect") {
     const left = formatNumber(x - 60);
     const top = formatNumber(y - 30);
-    return `<rect id="${id}" x="${left}" y="${top}" width="120" height="60" rx="8" fill="rgba(59,130,246,0.24)" stroke="#2563eb" stroke-width="2"/>`;
+    return `<rect id="${id}" x="${left}" y="${top}" width="120" height="60" rx="8" fill="${escapeAttr(presetSvg.fill)}" stroke="${escapeAttr(presetSvg.stroke)}" stroke-width="${escapeAttr(presetSvg["stroke-width"])}"/>`;
   }
   if (toolId === "container") {
     const left = formatNumber(x - 100);
     const top = formatNumber(y - 60);
-    return `<rect id="${id}" x="${left}" y="${top}" width="200" height="120" rx="10" fill="rgba(15,23,42,0.04)" stroke="#334155" stroke-width="2" stroke-dasharray="8 4"/>`;
+    return `<rect id="${id}" x="${left}" y="${top}" width="200" height="120" rx="10" fill="${escapeAttr(presetSvg.fill)}" stroke="${escapeAttr(presetSvg.stroke)}" stroke-width="${escapeAttr(presetSvg["stroke-width"])}" stroke-dasharray="${escapeAttr(presetSvg["stroke-dasharray"])}"/>`;
   }
   if (toolId === "text") {
     return buildRuntimeWrappedTextMarkup({
@@ -54,7 +62,7 @@ function buildRuntimeMarkupByTool({ toolId, elementId, x, y }) {
       xRaw: formatNumber(x),
       yRaw: formatNumber(y),
       widthRaw: 120,
-      fillRaw: "#0f172a",
+      fillRaw: presetSvg.fill || "#0f172a",
       fontSizeRaw: 16,
       fontFamilyRaw: "Arial, sans-serif",
     });
@@ -113,6 +121,7 @@ function buildRuntimeElementRow({
   zIndexRaw,
   toolIdRaw,
   pointRaw,
+  styleRaw = null,
 }) {
   const toolId = normalizeRuntimeTool(toolIdRaw);
   if (isDrawioNoteToolId(toolId)) {
@@ -121,8 +130,11 @@ function buildRuntimeElementRow({
       layerIdRaw,
       zIndexRaw,
       pointRaw,
+      styleRaw,
     });
   }
+  const surface = resolveRuntimeStyleSurface(toolId);
+  const defaultStyle = styleRaw || getDefaultRuntimeStylePreset(surface)?.svg || null;
   return {
     id: toText(elementId),
     layer_id: toText(layerIdRaw) || "DL1",
@@ -134,6 +146,7 @@ function buildRuntimeElementRow({
     offset_y: 0,
     z_index: Math.max(0, Math.round(toNumber(zIndexRaw, 0))),
     ...(toolId === "text" ? { text: "Text" } : {}),
+    ...(defaultStyle ? { style: defaultStyle } : {}),
   };
 }
 
@@ -151,11 +164,14 @@ function buildRuntimePlacementPatch({
   const createdId = resolveRuntimeElementId(toolId, rows);
   if (!createdId) return { changed: false, meta, createdId: "" };
   const noteTool = isDrawioNoteToolId(toolId);
+  const surface = resolveRuntimeStyleSurface(toolId);
+  const defaultStyle = getDefaultRuntimeStylePreset(surface)?.svg || null;
   const markup = buildRuntimeMarkupByTool({
     toolId,
     elementId: createdId,
     x,
     y,
+    styleRaw: defaultStyle,
   });
   if (!noteTool && !markup) return { changed: false, meta, createdId: "" };
   const svgCache = noteTool
@@ -171,7 +187,9 @@ function buildRuntimePlacementPatch({
     zIndexRaw: rows.length,
     toolIdRaw: toolId,
     pointRaw: { x, y },
+    styleRaw: defaultStyle,
   }));
+  const createdRow = nextRows[nextRows.length - 1];
   return {
     changed: true,
     createdId,
@@ -186,6 +204,7 @@ function buildRuntimePlacementPatch({
           elementId: createdId,
           toolId,
           point: { x, y },
+          styleRaw: createdRow?.style || null,
         }),
       svg_cache: svgCache,
       drawio_layers_v1: layers,

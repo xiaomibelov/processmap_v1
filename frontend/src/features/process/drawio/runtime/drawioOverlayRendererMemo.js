@@ -36,13 +36,27 @@ function elementRowRenderEqual(aRaw, bRaw) {
   const aType = toText(a.type).toLowerCase();
   const bType = toText(b.type).toLowerCase();
   if (aType !== bType) return false;
+  // Style changes must invalidate the renderer so preset colors update immediately.
+  if (aType === "note") {
+    if (!noteStyleEqual(a.style, b.style)) return false;
+  } else if (!styleShallowEqual(a.style, b.style)) {
+    return false;
+  }
   if (aType === "note") {
     return toNumber(a.width, 160) === toNumber(b.width, 160)
       && toNumber(a.height, 120) === toNumber(b.height, 120)
-      && toText(a.text) === toText(b.text)
-      && noteStyleEqual(a.style, b.style);
+      && toText(a.text) === toText(b.text);
   }
   return true;
+}
+
+function styleShallowEqual(aRaw, bRaw) {
+  const a = aRaw && typeof aRaw === "object" ? aRaw : {};
+  const b = bRaw && typeof bRaw === "object" ? bRaw : {};
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every((key) => toText(a[key]) === toText(b[key]));
 }
 
 /**
