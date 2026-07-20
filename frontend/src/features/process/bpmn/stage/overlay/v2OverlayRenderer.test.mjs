@@ -20,7 +20,13 @@ function createMockElement(tag) {
         return classList.has(cls);
       },
     },
-    style: { setProperty: () => {} },
+    style: (() => {
+      const props = new Map();
+      return {
+        setProperty: (key, value) => { props.set(key, String(value)); },
+        getPropertyValue: (key) => props.get(key) || "",
+      };
+    })(),
     dataset: {},
     children,
     appendChild: (child) => { children.push(child); return child; },
@@ -64,6 +70,34 @@ test("createV2OverlayHost: creates host with property rows", () => {
   const list = findByClass(result.host, "fpc-overlay-v2-list");
   assert.ok(list);
   assert.equal(list.children.length, 2);
+});
+
+test("createV2OverlayHost: each property row carries its own accent and light background", () => {
+  setupMockDom();
+  const result = createV2OverlayHost(
+    { id: "T1", type: "bpmn:Task", x: 0, y: 0, width: 100, height: 80 },
+    {
+      title: "Props",
+      properties: [
+        { name: "ingredient", value: "5" },
+        { name: "ee_time", value: "2.3" },
+        { name: "some_custom_field", value: "x" },
+      ],
+    },
+    false
+  );
+  const list = findByClass(result.host, "fpc-overlay-v2-list");
+  assert.equal(list.children.length, 3);
+
+  const [ingredientRow, eeTimeRow, customRow] = list.children;
+  // Structured map: known properties get their stable hue for both accent and bg.
+  assert.equal(ingredientRow.style.getPropertyValue("--fpc-property-accent"), "hsl(217 62% 46%)");
+  assert.equal(ingredientRow.style.getPropertyValue("--fpc-property-bg"), "hsl(217 74% 95%)");
+  assert.equal(eeTimeRow.style.getPropertyValue("--fpc-property-accent"), "hsl(0 62% 46%)");
+  assert.equal(eeTimeRow.style.getPropertyValue("--fpc-property-bg"), "hsl(0 74% 95%)");
+  // Unknown property → neutral slate fallback.
+  assert.equal(customRow.style.getPropertyValue("--fpc-property-accent"), "hsl(215 16% 47%)");
+  assert.equal(customRow.style.getPropertyValue("--fpc-property-bg"), "hsl(210 20% 96%)");
 });
 
 test("createV2OverlayHost: empty properties renders list with no items", () => {
