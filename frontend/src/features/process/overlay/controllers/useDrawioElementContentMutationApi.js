@@ -32,7 +32,6 @@ import {
   patchDrawioNoteRowSize,
   patchDrawioNoteRowStyle,
   patchDrawioNoteRowText,
-  resolveDrawioNotePresetStyle,
 } from "../../drawio/runtime/drawioRuntimeNote.js";
 import { asObject, patchElementById, toText } from "./drawioMutationShared.js";
 
@@ -155,39 +154,47 @@ export default function useDrawioElementContentMutationApi({
     const elementId = resolveCanonicalDrawioElementId(drawioMetaRef.current, elementIdRaw);
     if (!elementId) return false;
     const presetId = toText(presetIdRaw).toLowerCase();
-    const notePreset = getRuntimeStylePresets("shape").find((row) => toText(row.id).toLowerCase() === presetId) || null;
     let supported = false;
     let changed = false;
     const result = applyDrawioMutation((prevRaw) => {
       const prev = normalizeDrawioMeta(prevRaw);
-      const notePatch = patchElementById(prev.drawio_elements_v1, elementId, (row) => {
-        if (!isDrawioNoteRow(row)) return row;
-        if (!notePreset) return row;
-        supported = true;
-        const nextRow = patchDrawioNoteRowStyle(row, resolveDrawioNotePresetStyle(row, notePreset));
-        if (nextRow !== row) changed = true;
-        return nextRow;
-      });
-      if (notePatch.changed) {
-        return {
-          ...prev,
-          drawio_elements_v1: notePatch.elements,
-        };
-      }
-      if (supported) return prev;
-      const snapshot = readDrawioElementSnapshot(prev.svg_cache, elementId);
-      const surface = resolveRuntimeStyleSurface(snapshot);
-      const preset = getRuntimeStylePresets(surface).find((row) => toText(row.id).toLowerCase() === presetId) || null;
-      if (!snapshot || !surface || !preset) return prev;
+      const elements = Array.isArray(prev.drawio_elements_v1) ? prev.drawio_elements_v1 : [];
+      const rowIndex = elements.findIndex((row) => toText(asObject(row).id) === elementId);
+      const row = rowIndex >= 0 ? asObject(elements[rowIndex]) : {};
+      const isNote = isDrawioNoteRow(row);
+      const surface = isNote
+        ? "note"
+        : resolveRuntimeStyleSurface(readDrawioElementSnapshot(prev.svg_cache, elementId));
+      const preset = getRuntimeStylePresets(surface).find(
+        (p) => toText(p.id).toLowerCase() === presetId,
+      ) || null;
+      if (!surface || !preset) return prev;
       supported = true;
-      const nextSvgCache = updateDrawioElementAttributes(prev.svg_cache, elementId, preset.svg);
+
+      if (isNote) {
+        const nextRow = patchDrawioNoteRowStyle(row, {
+          bg_color: preset.svg.bg_color,
+          border_color: preset.svg.border_color,
+          text_color: preset.svg.text_color,
+        });
+        if (nextRow === row) return prev;
+        changed = true;
+        const nextElements = [...elements];
+        nextElements[rowIndex] = nextRow;
+        return { ...prev, drawio_elements_v1: nextElements };
+      }
+
+      const nextStyle = { ...preset.svg };
+      const nextSvgCache = updateDrawioElementAttributes(prev.svg_cache, elementId, nextStyle);
       const nextDocXml = updateDrawioDocXmlCellStyle(prev.doc_xml, elementId, preset.doc);
-      if (nextSvgCache === toText(prev.svg_cache) && nextDocXml === toText(prev.doc_xml)) return prev;
       changed = true;
+      const nextElements = [...elements];
+      nextElements[rowIndex] = { ...row, style: nextStyle };
       return {
         ...prev,
         svg_cache: nextSvgCache,
         doc_xml: nextDocXml,
+        drawio_elements_v1: nextElements,
       };
     }, {
       source,
