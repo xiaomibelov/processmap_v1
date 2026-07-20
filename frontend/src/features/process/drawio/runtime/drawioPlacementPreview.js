@@ -1,3 +1,8 @@
+import {
+  getDefaultRuntimeStylePreset,
+  resolveRuntimeStyleSurface,
+} from "../drawioRuntimeStylePresets.js";
+
 function toText(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -12,6 +17,8 @@ export function buildDrawioPlacementPreviewSpec(toolIdRaw, pointRaw = {}) {
   const point = pointRaw && typeof pointRaw === "object" ? pointRaw : {};
   const x = toNumber(point.x, 0);
   const y = toNumber(point.y, 0);
+  const surface = resolveRuntimeStyleSurface(toolId);
+  const presetSvg = getDefaultRuntimeStylePreset(surface)?.svg || {};
   if (toolId === "rect") {
     return {
       toolId,
@@ -21,8 +28,8 @@ export function buildDrawioPlacementPreviewSpec(toolIdRaw, pointRaw = {}) {
       width: 120,
       height: 60,
       rx: 8,
-      fill: "rgba(59,130,246,0.10)",
-      stroke: "#2563eb",
+      fill: presetSvg.fill || "rgba(59,130,246,0.10)",
+      stroke: presetSvg.stroke || "#2563eb",
     };
   }
   if (toolId === "container") {
@@ -34,9 +41,9 @@ export function buildDrawioPlacementPreviewSpec(toolIdRaw, pointRaw = {}) {
       width: 200,
       height: 120,
       rx: 10,
-      fill: "rgba(15,23,42,0.03)",
-      stroke: "#334155",
-      strokeDasharray: "8 4",
+      fill: presetSvg.fill || "rgba(15,23,42,0.03)",
+      stroke: presetSvg.stroke || "#334155",
+      strokeDasharray: presetSvg["stroke-dasharray"] || "8 4",
     };
   }
   if (toolId === "text") {
@@ -48,7 +55,7 @@ export function buildDrawioPlacementPreviewSpec(toolIdRaw, pointRaw = {}) {
       width: 120,
       height: 30,
       text: "Text",
-      fill: "#0f172a",
+      fill: presetSvg.fill || "#0f172a",
       guideStroke: "#94a3b8",
     };
   }
@@ -61,10 +68,10 @@ export function buildDrawioPlacementPreviewSpec(toolIdRaw, pointRaw = {}) {
       width: 160,
       height: 120,
       rx: 10,
-      fill: "rgba(254,240,138,0.45)",
-      stroke: "#ca8a04",
+      fill: presetSvg.bg_color || "rgba(254,240,138,0.45)",
+      stroke: presetSvg.border_color || "#ca8a04",
       text: "Заметка",
-      textColor: "#1f2937",
+      textColor: presetSvg.text_color || "#1f2937",
     };
   }
   return null;

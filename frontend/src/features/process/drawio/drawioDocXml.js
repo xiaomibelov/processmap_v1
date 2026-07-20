@@ -21,14 +21,36 @@ function escapeXml(valueRaw) {
 
 export const DRAWIO_EMPTY_DOC_XML = "<mxfile host=\"ProcessMap\" version=\"1\"><diagram id=\"page-1\" name=\"Page-1\"><mxGraphModel dx=\"960\" dy=\"720\" grid=\"1\" gridSize=\"10\" guides=\"1\" tooltips=\"1\" connect=\"1\" arrows=\"1\" fold=\"1\" page=\"1\" pageScale=\"1\" pageWidth=\"1169\" pageHeight=\"827\" math=\"0\" shadow=\"0\"><root><mxCell id=\"0\"/><mxCell id=\"1\" parent=\"0\"/></root></mxGraphModel></diagram></mxfile>";
 
-function buildRuntimeCellSpec({ toolIdRaw, pointRaw = {} }) {
+function svgStyleToDocStyle(styleRaw, toolIdRaw) {
+  const style = styleRaw && typeof styleRaw === "object" ? styleRaw : {};
+  const toolId = toText(toolIdRaw).toLowerCase();
+  if (toolId === "text") {
+    return { fontColor: style.fill || "#0f172a" };
+  }
+  if (toolId === "note" || toolId === "sticky") {
+    return {
+      fillColor: style.bg_color || "#fef08a",
+      strokeColor: style.border_color || "#ca8a04",
+      fontColor: style.text_color || "#1f2937",
+    };
+  }
+  return {
+    fillColor: style.fill || "#dbeafe",
+    strokeColor: style.stroke || "#2563eb",
+    strokeWidth: style["stroke-width"] || "2",
+    dashed: style["stroke-dasharray"] ? "1" : undefined,
+  };
+}
+
+function buildRuntimeCellSpec({ toolIdRaw, pointRaw = {}, styleRaw = null }) {
   const toolId = toText(toolIdRaw).toLowerCase();
   const x = toNumber(pointRaw.x, 0);
   const y = toNumber(pointRaw.y, 0);
+  const doc = svgStyleToDocStyle(styleRaw, toolId);
   if (toolId === "rect") {
     return {
       value: "",
-      style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;strokeWidth=2;",
+      style: `rounded=1;whiteSpace=wrap;html=1;fillColor=${escapeXml(doc.fillColor)};strokeColor=${escapeXml(doc.strokeColor)};strokeWidth=${escapeXml(doc.strokeWidth)};`,
       x: x - 60,
       y: y - 30,
       width: 120,
@@ -36,9 +58,10 @@ function buildRuntimeCellSpec({ toolIdRaw, pointRaw = {} }) {
     };
   }
   if (toolId === "container") {
+    const dashedPart = doc.dashed ? `dashed=${escapeXml(doc.dashed)};` : "";
     return {
       value: "",
-      style: "swimlane;container=1;horizontal=0;startSize=24;collapsible=0;strokeColor=#334155;fillColor=#f8fafc;strokeWidth=2;",
+      style: `swimlane;container=1;horizontal=0;startSize=24;collapsible=0;strokeColor=${escapeXml(doc.strokeColor)};fillColor=${escapeXml(doc.fillColor)};strokeWidth=${escapeXml(doc.strokeWidth)};${dashedPart}`,
       x: x - 100,
       y: y - 60,
       width: 200,
@@ -48,7 +71,7 @@ function buildRuntimeCellSpec({ toolIdRaw, pointRaw = {} }) {
   if (toolId === "text") {
     return {
       value: "Text",
-      style: "text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;",
+      style: `text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontColor=${escapeXml(doc.fontColor)};`,
       x,
       y,
       width: 120,
@@ -58,9 +81,9 @@ function buildRuntimeCellSpec({ toolIdRaw, pointRaw = {} }) {
   return null;
 }
 
-function buildRuntimeCellXml({ elementIdRaw, toolIdRaw, pointRaw }) {
+function buildRuntimeCellXml({ elementIdRaw, toolIdRaw, pointRaw, styleRaw = null }) {
   const elementId = toText(elementIdRaw);
-  const spec = buildRuntimeCellSpec({ toolIdRaw, pointRaw });
+  const spec = buildRuntimeCellSpec({ toolIdRaw, pointRaw, styleRaw });
   if (!elementId || !spec) return "";
   return [
     `<mxCell id="${escapeXml(elementId)}" value="${escapeXml(spec.value)}" style="${escapeXml(spec.style)}" parent="1" vertex="1">`,
@@ -84,6 +107,7 @@ export function promoteRuntimeElementIntoDrawioDoc(docXmlRaw, payloadRaw = {}) {
     elementIdRaw: elementId,
     toolIdRaw: payload.toolId,
     pointRaw: payload.point,
+    styleRaw: payload.styleRaw || null,
   });
   if (!cellXml) return toText(docXmlRaw);
 

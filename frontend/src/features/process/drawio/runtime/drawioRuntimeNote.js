@@ -77,6 +77,7 @@ export function buildRuntimeNoteElementRow({
   layerIdRaw,
   zIndexRaw,
   pointRaw = {},
+  styleRaw = null,
 }) {
   const point = asObject(pointRaw);
   const { width, height } = normalizeDrawioNoteDimensions(
@@ -99,7 +100,7 @@ export function buildRuntimeNoteElementRow({
     width,
     height,
     text: DRAWIO_NOTE_DEFAULT_TEXT,
-    style: normalizeDrawioNoteStyle({}),
+    style: normalizeDrawioNoteStyle(styleRaw || {}),
   };
 }
 
