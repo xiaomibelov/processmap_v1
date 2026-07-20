@@ -3,142 +3,24 @@ import {
   hasDuplicateCamundaProperties,
 } from "../../camunda/camundaExtensions.js";
 import createLocalMutationStaging from "./createLocalMutationStaging.js";
-
-function asText(value) {
-  return String(value || "");
-}
-
-function asNumber(value, fallback = 0) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function asObject(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-
-function asArray(value) {
-  if (Array.isArray(value)) return value;
-  return [];
-}
-
-function readStaleConflictChangedKeys(errorDetails) {
-  const details = asObject(errorDetails);
-  const lastWrite = asObject(details.server_last_write || details.serverLastWrite);
-  return asArray(lastWrite.changed_keys || lastWrite.changedKeys)
-    .map((item) => String(item || "").trim())
-    .filter(Boolean);
-}
-
-function normalizeErrorDetails(value) {
-  const details = asObject(value);
-  return Object.keys(details).length ? details : null;
-}
-
-function isDiagramStateConflictResult(result) {
-  const status = asNumber(result?.status, 0);
-  if (status !== 409) return false;
-  const details = asObject(result?.errorDetails);
-  const code = asText(result?.errorCode || details?.code).trim().toUpperCase();
-  if (!code) return true;
-  return (
-    code === "HTTP_409"
-    || code.includes("DIAGRAM_STATE_CONFLICT")
-    || code.includes("BASE_VERSION_REQUIRED")
-    || code.includes("CONFLICT")
-  );
-}
-
-function isIntentPreservingReason(reasonRaw) {
-  const reason = asText(reasonRaw).trim().toLowerCase();
-  if (!reason) return false;
-  return reason.startsWith("manual_save") || reason.startsWith("publish_manual_save");
-}
-
-function isPublishManualSaveReason(reasonRaw) {
-  const reason = asText(reasonRaw).trim().toLowerCase();
-  if (!reason) return false;
-  return reason.startsWith("publish_manual_save");
-}
-
-function buildConflictReplayReason(reasonRaw) {
-  const reason = asText(reasonRaw).trim();
-  if (!isIntentPreservingReason(reason)) return "";
-  if (reason.endsWith(":conflict_replay")) return reason;
-  return `${reason}:conflict_replay`;
-}
-
-function buildQueuedReplayReason(reasonRaw) {
-  const reason = asText(reasonRaw).trim();
-  if (!reason || reason === "queued") return "queued";
-  if (reason.endsWith(":queued")) return reason;
-  return `${reason}:queued`;
-}
-
-function normalizeErrorCode(value) {
-  return asText(value).trim().toUpperCase();
-}
-
-function classifySaveTrigger(reasonRaw = "", options = {}) {
-  const reason = asText(reasonRaw).trim().toLowerCase();
-  if (options?.fromPending === true || reason.includes("pending_replay")) return "pending_replay";
-  if (reason.includes("beforeunload") || reason.includes("pagehide") || reason.includes("visibility_hidden")) {
-    return "beforeunload_reload_flush";
-  }
-  if (reason.includes("reload")) return "hydration_reload";
-  if (reason.includes("autosave")) return "autosave";
-  if (reason.includes("manual")) return "manual_save";
-  return "other";
-}
-
-function isStaleConflictFailure(saved = null) {
-  const value = saved && typeof saved === "object" ? saved : {};
-  const status = asNumber(value?.status, 0);
-  const errorCode = normalizeErrorCode(value?.errorCode);
-  const errorDetails = normalizeErrorDetails(value?.errorDetails);
-  const detailsCode = normalizeErrorCode(errorDetails?.code);
-  return (
-    status === 409
-    || errorCode === "DIAGRAM_STATE_CONFLICT"
-    || detailsCode === "DIAGRAM_STATE_CONFLICT"
-  );
-}
-function fnv1aHex(input) {
-  const src = asText(input);
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < src.length; i += 1) {
-    hash ^= src.charCodeAt(i);
-    hash = Math.imul(hash >>> 0, 0x01000193) >>> 0;
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
-function withTimeout(promiseFactory, ms, context) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      reject(new Error(`${context || "operation"} timeout after ${ms}ms`));
-    }, Math.max(100, Number(ms) || 1000));
-    Promise.resolve()
-      .then(() => promiseFactory())
-      .then(
-        (value) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          resolve(value);
-        },
-        (error) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          reject(error);
-        },
-      );
-  });
-}
+import {
+  asArray,
+  asNumber,
+  asObject,
+  asText,
+  buildConflictReplayReason,
+  buildQueuedReplayReason,
+  classifySaveTrigger,
+  fnv1aHex,
+  isDiagramStateConflictResult,
+  isIntentPreservingReason,
+  isPublishManualSaveReason,
+  isStaleConflictFailure,
+  normalizeErrorCode,
+  normalizeErrorDetails,
+  readStaleConflictChangedKeys,
+  withTimeout,
+} from "./createBpmnCoordinator.helpers.js";
 
 export default function createBpmnCoordinator(options = {}) {
   const store = options?.store;
@@ -419,6 +301,18 @@ export default function createBpmnCoordinator(options = {}) {
     const runtime = getRuntime();
     const status = runtime?.getStatus?.() || {};
     const rev = asNumber(state?.rev, 0);
+
+    // Build persistOptions early so the "runtime not ready" fallback path can
+    // pass metadata (bpmnMeta/sourceAction) to saveRaw without hitting a
+    // temporal dead zone.
+    const persistOptions = {};
+    if (options?.bpmnMeta && typeof options.bpmnMeta === "object") {
+      persistOptions.bpmnMeta = options.bpmnMeta;
+    }
+    if (options?.sourceAction && typeof options.sourceAction === "string") {
+      persistOptions.sourceAction = options.sourceAction;
+    }
+
     emit("SAVE_REQUESTED", {
       sid,
       reason,
@@ -619,13 +513,6 @@ export default function createBpmnCoordinator(options = {}) {
     const startedAt = Date.now();
     const staleConflictRetryEnabled = options?.staleConflictRetryEnabled !== false;
     const staleConflictRetryMaxAttempts = Math.max(0, asNumber(options?.staleConflictRetryMaxAttempts, 1));
-    const persistOptions = {};
-    if (options?.bpmnMeta && typeof options.bpmnMeta === "object") {
-      persistOptions.bpmnMeta = options.bpmnMeta;
-    }
-    if (options?.sourceAction && typeof options.sourceAction === "string") {
-      persistOptions.sourceAction = options.sourceAction;
-    }
     let staleRetryAttempts = 0;
     let staleRetryChangedKeys = [];
     let persisted = await persistRaw(sid, xml, targetRev, reason, persistOptions);
