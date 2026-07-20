@@ -211,8 +211,9 @@ class SaveCoordinator {
         (result) => ({ ok: true, value: result }),
         (error) => ({ ok: false, error }),
       );
+    let timer = null;
     const timeoutPromise = new Promise((resolve) => {
-      const timer = setTimeout(() => {
+      timer = setTimeout(() => {
         // Abort the real fetch so the server never receives the request.
         controller.abort();
         resolve({
@@ -225,6 +226,7 @@ class SaveCoordinator {
     });
     return Promise.race([transportPromise, timeoutPromise]).then((outcome) => {
       this._untrackAbortController(sessionId, controller);
+      if (timer) clearTimeout(timer);
       if (outcome.ok) return outcome.value;
       throw outcome.error;
     });
