@@ -7,7 +7,8 @@ export default function useDrawioPersistQueue({
   normalizeDrawioMeta,
   persistDrawioMeta,
 }) {
-  const persistQueueRef = useRef(Promise.resolve({ ok: true }));
+  const queueRef = useRef([]);
+  const flushingRef = useRef(false);
   const persistSeqRef = useRef(0);
   const visibilityToggleDebounceRef = useRef({
     timer: null,
@@ -15,26 +16,45 @@ export default function useDrawioPersistQueue({
     pendingResolvers: [],
   });
 
+  const flushQueue = useCallback(async () => {
+    if (flushingRef.current) return;
+    flushingRef.current = true;
+    while (queueRef.current.length > 0) {
+      const item = queueRef.current.shift();
+      try {
+        const result = await item.fn();
+        item.resolve(result);
+      } catch (error) {
+        item.reject(error);
+      }
+    }
+    flushingRef.current = false;
+    if (queueRef.current.length > 0) {
+      flushQueue();
+    }
+  }, []);
+
   const enqueuePersist = useCallback((nextMeta, source) => {
     const requestSeq = ++persistSeqRef.current;
-    persistQueueRef.current = persistQueueRef.current
-      .catch((error) => ({
-        ok: false,
-        error: String(error?.message || error || "drawio_persist_failed"),
-        status: Number(error?.status || error?.response?.status || 0),
-      }))
-      .then(async () => {
-        if (requestSeq !== persistSeqRef.current) {
-          return { ok: true, stale: true, skipped: true };
-        }
-        const result = await persistDrawioMeta(nextMeta, { source });
-        if (requestSeq !== persistSeqRef.current) {
-          return { ok: true, stale: true, dropped: true };
-        }
-        return result;
+    return new Promise((resolve, reject) => {
+      queueRef.current.push({
+        id: requestSeq,
+        fn: async () => {
+          if (requestSeq !== persistSeqRef.current) {
+            return { ok: true, stale: true, skipped: true };
+          }
+          const result = await persistDrawioMeta(nextMeta, { source });
+          if (requestSeq !== persistSeqRef.current) {
+            return { ok: true, stale: true, dropped: true };
+          }
+          return result;
+        },
+        resolve,
+        reject,
       });
-    return persistQueueRef.current;
-  }, [persistDrawioMeta]);
+      flushQueue();
+    });
+  }, [persistDrawioMeta, flushQueue]);
 
   const runVisibilityTogglePersistNow = useCallback(() => {
     const state = visibilityToggleDebounceRef.current;
