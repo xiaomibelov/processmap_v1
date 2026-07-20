@@ -11,10 +11,18 @@ import {
 } from "../features/notes/knowledgeTools";
 import { parseBatchOpsFromNotes } from "../features/process/bpmn/ops/parseBatchOpsFromNotes";
 import { normalizeGlobalNotes as sharedNormalizeGlobalNotes } from "../app/sessionGlobalNotes.js";
+import { normalizeDocumentationText } from "../features/process/bpmn/documentation/normalizeDocumentationRows.js";
 import {
-  normalizeDocumentationRows as sharedNormalizeDocumentationRows,
-  normalizeDocumentationText,
-} from "../features/process/bpmn/documentation/normalizeDocumentationRows.js";
+  asArray,
+  buildCamundaPropertiesDraftKey,
+  isShowPropertiesFlagRow,
+  normalizeDocumentationRows,
+  normalizeNodePathTag,
+  normalizeSequenceKey,
+  readDisplayModeBeforeV2,
+  str,
+  writeDisplayModeBeforeV2,
+} from "./sidebar/elementSettings.utils.js";
 import { useElementThreads } from "../features/notes/useElementThreads";
 import {
   collectBpmnTraversalOrderMeta,
@@ -56,7 +64,6 @@ import {
 import useCamundaPropertiesOverlayPreview from "../features/process/camunda/useCamundaPropertiesOverlayPreview";
 import { isProcessLikeType } from "../features/process/bpmn/stage/interaction/processRootSelection.js";
 import useNotesPanelController from "./notesPanel/useNotesPanelController.js";
-import { SHOW_PROPERTIES_FLAG_KEY } from "./sidebar/useElementSettingsController.js";
 import ExtensionStateMiniIndicator from "./sidebar/displaySettings/ExtensionStateMiniIndicator";
 import DisplaySettingsBlock from "./sidebar/displaySettings/DisplaySettingsBlock";
 import LiveCardPreview from "./sidebar/displaySettings/LiveCardPreview";
@@ -110,57 +117,6 @@ import {
 import { buildExecutionBridgeProjectionV1 } from "../features/execution/executionBridgeV1";
 import ExecutionBridgeSection from "./sidebar/ExecutionBridgeSection";
 
-function asArray(x) {
-  return Array.isArray(x) ? x : [];
-}
-
-function isShowPropertiesFlagRow(row) {
-  return String(row?.name || "").trim().toLowerCase() === SHOW_PROPERTIES_FLAG_KEY;
-}
-
-function str(v) {
-  return String(v || "").trim();
-}
-
-function buildCamundaPropertiesDraftKey(sessionIdRaw, elementIdRaw) {
-  const sessionId = str(sessionIdRaw);
-  const elementId = str(elementIdRaw);
-  if (!sessionId || !elementId) return "";
-  return `${sessionId}:${elementId}:camunda-properties`;
-}
-
-// V2 → display mode coupling (B3): the mode captured before V2 was enabled
-// is persisted per session (same namespacing style as the showAlways flag in
-// App.jsx: `fpc_*_v1:{sid}`) so turning V2 off restores the user's choice.
-const DISPLAY_MODE_BEFORE_V2_KEY_PREFIX = "fpc_display_mode_before_v2_v1:";
-
-function displayModeBeforeV2StorageKey(sessionId) {
-  const sid = str(sessionId);
-  return sid ? `${DISPLAY_MODE_BEFORE_V2_KEY_PREFIX}${sid}` : "";
-}
-
-function readDisplayModeBeforeV2(sessionId) {
-  if (typeof window === "undefined") return null;
-  const key = displayModeBeforeV2StorageKey(sessionId);
-  if (!key) return null;
-  try {
-    const raw = str(window.localStorage?.getItem(key));
-    return raw || null;
-  } catch {
-    return null;
-  }
-}
-
-function writeDisplayModeBeforeV2(sessionId, mode) {
-  if (typeof window === "undefined") return;
-  const key = displayModeBeforeV2StorageKey(sessionId);
-  if (!key) return;
-  try {
-    window.localStorage?.setItem(key, str(mode));
-  } catch {
-  }
-}
-
 function mergeModelerOnlyPropertiesIntoDraft(draftRaw, baselineRaw) {
   const draft = draftRaw && typeof draftRaw === "object" ? draftRaw : createEmptyCamundaExtensionState();
   const baseline = baselineRaw && typeof baselineRaw === "object" ? baselineRaw : createEmptyCamundaExtensionState();
@@ -198,14 +154,6 @@ function normalizeFlowTier(raw) {
 
 const NODE_PATH_TAG_ORDER = ["P0", "P1", "P2"];
 const NODE_PATH_GATEWAY_KINDS = new Set(["exclusivegateway", "inclusivegateway", "parallelgateway", "eventbasedgateway"]);
-
-function normalizeNodePathTag(value) {
-  return normalizePathTier(value);
-}
-
-function normalizeSequenceKey(value) {
-  return normalizePathSequenceKey(value);
-}
 
 function normalizeNodePathEntry(rawEntry) {
   const entry = rawEntry && typeof rawEntry === "object" ? rawEntry : {};
@@ -669,12 +617,6 @@ function parseSelectedBpmnDocumentation(xmlText, elementIdRaw) {
   } catch {
     return [];
   }
-}
-
-function normalizeDocumentationRows(rowsRaw, options = {}) {
-  // Shared implementation; sidebar documentation draft rows always carry a
-  // stable id (fallback documentation_<index+1>).
-  return sharedNormalizeDocumentationRows(rowsRaw, { ...(options || {}), withId: true });
 }
 
 function buildDocumentationSignature(rowsRaw) {

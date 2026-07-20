@@ -12,7 +12,6 @@ import {
 } from "../../features/process/camunda/camundaExtensions";
 import {
   formatPathTierTitle,
-  normalizePathSequenceKey,
   normalizePathTier,
 } from "../../features/process/pathClassification.js";
 import {
@@ -35,11 +34,18 @@ import {
   isRefPropertyName,
   mergeRefOptions,
 } from "../../features/process/camunda/refsModel";
-import { normalizeDocumentationRows as sharedNormalizeDocumentationRows } from "../../features/process/bpmn/documentation/normalizeDocumentationRows.js";
-
-function toText(value) {
-  return String(value || "").trim();
-}
+import {
+  asArray,
+  camundaIoTypeLabel,
+  clampInlineValue,
+  formatSequenceLabel,
+  isTaskLikeBpmnType,
+  NODE_PATH_SEQUENCE_PRESETS,
+  normalizeDocumentationRows,
+  normalizeNodePathTag,
+  normalizeSequenceKey,
+  toText,
+} from "./elementSettings.utils.js";
 
 function TrashIcon({ className = "h-4 w-4" }) {
   return (
@@ -60,75 +66,6 @@ function TrashIcon({ className = "h-4 w-4" }) {
     </svg>
   );
 }
-
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-function clampInlineValue(value, limit = 120) {
-  const text = String(value ?? "").replace(/\s+/g, " ").trim();
-  if (!text) return "";
-  if (text.length <= limit) return text;
-  return `${text.slice(0, Math.max(18, limit - 1)).trimEnd()}…`;
-}
-
-const TASK_LIKE_BPMN_TYPES = new Set([
-  "bpmn:Task",
-  "bpmn:UserTask",
-  "bpmn:ServiceTask",
-  "bpmn:SendTask",
-  "bpmn:ReceiveTask",
-  "bpmn:ManualTask",
-  "bpmn:BusinessRuleTask",
-  "bpmn:ScriptTask",
-  "bpmn:CallActivity",
-]);
-
-function isTaskLikeBpmnType(typeRaw) {
-  return TASK_LIKE_BPMN_TYPES.has(String(typeRaw || "").trim());
-}
-
-function camundaIoTypeLabel(shapeRaw) {
-  const shape = String(shapeRaw || "text").toLowerCase();
-  if (shape === "expression") return "expr";
-  if (shape === "empty") return "empty";
-  if (shape === "script") return "script";
-  if (shape === "nested") return "nested";
-  if (shape === "mapping") return "map";
-  return "text";
-}
-
-function normalizeDocumentationRows(rowsRaw, options = {}) {
-  // Shared implementation; draft rows always carry a stable id
-  // (fallback documentation_<index+1>).
-  return sharedNormalizeDocumentationRows(rowsRaw, { ...(options || {}), withId: true });
-}
-
-function normalizeNodePathTag(value) {
-  return normalizePathTier(value);
-}
-
-function normalizeSequenceKey(value) {
-  return normalizePathSequenceKey(value);
-}
-
-function formatSequenceLabel(value) {
-  const normalized = normalizeSequenceKey(value);
-  if (!normalized) return "Не выбрано";
-  return NODE_PATH_SEQUENCE_PRESETS.find((preset) => preset.key === normalized)?.label || value;
-}
-
-const NODE_PATH_SEQUENCE_PRESETS = [
-  { key: "primary", label: "Основной" },
-  { key: "primary_alt_2", label: "Основной 2" },
-  { key: "primary_alt_3", label: "Основной 3" },
-  { key: "mitigated_1", label: "Смягчённый 1" },
-  { key: "mitigated_2", label: "Смягчённый 2" },
-  { key: "mitigated_3", label: "Смягчённый 3" },
-  { key: "fail_1", label: "Сбой 1" },
-  { key: "fail_2", label: "Сбой 2" },
-  { key: "fail_3", label: "Сбой 3" },
-];
 
 const STEP_TIME_PRESETS = {
   min: [
