@@ -34,12 +34,12 @@ export const DRAWIO_RUNTIME_STYLE_PRESETS = Object.freeze({
       id: "neutral",
       label: "Серый",
       svg: {
-        fill: "rgba(15,23,42,0.04)",
-        stroke: "#334155",
+        fill: "rgba(15,23,42,0.08)",
+        stroke: "#1e293b",
         "stroke-width": "2",
         "stroke-dasharray": "8 4",
       },
-      doc: { fillColor: "#f8fafc", strokeColor: "#334155", strokeWidth: "2", dashed: "1" },
+      doc: { fillColor: "#f1f5f9", strokeColor: "#1e293b", strokeWidth: "2", dashed: "1" },
     },
     {
       id: "accent",
