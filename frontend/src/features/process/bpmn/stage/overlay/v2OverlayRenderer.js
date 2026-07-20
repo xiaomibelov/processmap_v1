@@ -15,6 +15,7 @@ function makeV2PropertyRow(prop) {
   const itemEl = document.createElement("li");
   itemEl.classList.add("fpc-overlay-v2-item");
   itemEl.style.setProperty("--fpc-property-accent", colorModel.accent);
+  itemEl.style.setProperty("--fpc-property-bg", colorModel.background);
 
   const nameEl = document.createElement("span");
   nameEl.classList.add("fpc-overlay-v2-name");

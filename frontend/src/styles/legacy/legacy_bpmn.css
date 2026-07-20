@@ -334,8 +334,12 @@
 .fpc-overlay-v2-item {
   display: flex;
   gap: 3px;
-  padding: 1px 0 1px 4px;
+  padding: 1px 3px 1px 4px;
   border-left: 3px solid var(--fpc-property-accent, #94a3b8);
+  border-radius: 3px;
+  /* Light tinted background from overlayPropertyColorByKey(name).background —
+     the per-row color signal; the card itself stays neutral. */
+  background: var(--fpc-property-bg, transparent);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
