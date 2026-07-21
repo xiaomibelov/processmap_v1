@@ -28,7 +28,7 @@ from ..auto_pass_jobs import redis_queue_enabled
 from ..auth import AuthError, create_user, find_user_by_id, list_users as list_auth_users, update_user
 from ..error_events import redact_context_json
 from ..redis_client import get_client, runtime_status
-from ..session_analytics import get_session_analytics_summary
+from ..session_analytics import get_session_analytics_summary, get_session_analytics_top
 from ..settings import load_llm_settings, save_llm_settings, verify_llm_settings
 from ..storage import (
     count_audit_log,
@@ -1777,6 +1777,30 @@ def admin_analytics_sessions_summary(
     org_id = _as_text(active_org_id) or "org_default"
     refresh_flag = _as_text(refresh).lower() in {"1", "true", "yes"}
     payload = get_session_analytics_summary(org_id=org_id, refresh=refresh_flag)
+    return {"ok": True, **payload}
+
+
+@router.get("/api/admin/analytics/sessions/top")
+def admin_analytics_sessions_top(
+    request: Request,
+    sort_by: str = Query(default="version_count"),
+    sort_order: str = Query(default="desc"),
+    filter_author: str = Query(default=""),
+    page: int = Query(default=1),
+    page_size: int = Query(default=20),
+) -> Any:
+    _uid, _is_admin, active_org_id, _role, err = _telemetry_read_context(request)
+    if err is not None:
+        return err
+    org_id = _as_text(active_org_id) or "org_default"
+    payload = get_session_analytics_top(
+        org_id=org_id,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        filter_author=filter_author,
+        page=page,
+        page_size=page_size,
+    )
     return {"ok": True, **payload}
 
 
