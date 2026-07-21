@@ -4720,9 +4720,13 @@ const BpmnStage = forwardRef(function BpmnStage({
       const previewMapSig = JSON.stringify(previewMap);
       const maybeRemount = (inst, kind) => {
         if (!inst || !hasDefinitionsLoaded(inst)) return;
+        // Extract once per instance: the same list feeds both the change
+        // signature and the mount (previously the mount re-walked the whole
+        // registry — load-freeze audit, fix 1).
+        const extractedOverlays = extractOverlaysFromBpmn(inst, v2OverlaysEnabled);
         const nextSig = JSON.stringify({
           enabled: v2OverlaysEnabled,
-          overlays: extractOverlaysFromBpmn(inst, v2OverlaysEnabled),
+          overlays: extractedOverlays,
           legacyAlways: propertiesOverlayAlwaysEnabled,
           legacyPreviewElementId: selectedPropertiesOverlayPreview?.elementId || null,
           previewMap: previewMapSig,
@@ -4730,7 +4734,7 @@ const BpmnStage = forwardRef(function BpmnStage({
         });
         if (prevOverlaySigRef.current[kind] === nextSig) return;
         prevOverlaySigRef.current[kind] = nextSig;
-        overlayLifecycle.mountFromBpmn(inst, kind);
+        overlayLifecycle.mountFromBpmn(inst, kind, extractedOverlays);
       };
       if (v2OverlaysEnabled) {
         // Entering (or staying in) V2 mode: remove any legacy property
