@@ -220,8 +220,11 @@ export default function useDiagramSearchController({
       return;
     }
     if (mode === "properties") {
+      // Properties mode: dim/highlight every element that owns a matching
+      // property row, not just the active one.
+      const propertyIds = toSearchIdList(activeModel.results);
       bpmnRef?.current?.setSearchHighlights?.({
-        matchElementIds: [],
+        matchElementIds: propertyIds,
         activeElementId,
       });
       return;
@@ -244,11 +247,6 @@ export default function useDiagramSearchController({
     mode,
     searchIds,
   ]);
-
-  useEffect(() => {
-    if (isOpen) return;
-    setModeState("elements");
-  }, [isOpen]);
 
   useEffect(() => () => {
     bpmnRef?.current?.clearSearchHighlights?.();

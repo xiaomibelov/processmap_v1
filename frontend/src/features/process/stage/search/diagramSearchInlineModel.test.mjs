@@ -43,9 +43,9 @@ test("reduceInlineSearchState: escape two-step clears then collapses", () => {
   });
 });
 
-test("reduceInlineSearchState: select collapses and clear keeps open", () => {
+test("reduceInlineSearchState: select keeps open and clear keeps open", () => {
   assert.deepEqual(reduceInlineSearchState({ expanded: true, hasQuery: true }, "select"), {
-    expanded: false,
+    expanded: true,
     clearQuery: false,
   });
   assert.deepEqual(reduceInlineSearchState({ expanded: true, hasQuery: true }, "clear"), {

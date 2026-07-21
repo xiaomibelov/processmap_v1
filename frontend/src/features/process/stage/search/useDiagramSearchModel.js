@@ -84,12 +84,9 @@ export default function useDiagramSearchModel({
   );
   const activeResult = activeIndex >= 0 && activeIndex < results.length ? results[activeIndex] : null;
 
-  useEffect(() => {
-    if (isOpen) return;
-    setQuery("");
-    setActiveIndex(-1);
-    activeElementIdRef.current = "";
-  }, [isOpen]);
+  // NOTE: closing the panel (Escape / blur / toggle) intentionally keeps the
+  // query and the active index — reopening restores the previous search
+  // context. Session switch resets the model explicitly via reset().
 
   useEffect(() => {
     const activeElementId = toText(activeElementIdRef.current);
