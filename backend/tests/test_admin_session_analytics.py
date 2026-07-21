@@ -16,7 +16,7 @@ class _DummyRequest:
         self.headers = {}
 
 
-class AdminSessionAnalyticsSummaryTest(unittest.TestCase):
+class _AnalyticsTestBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.db_path = str(Path(self.tmp.name) / "admin_session_analytics.sqlite3")
@@ -44,11 +44,9 @@ class AdminSessionAnalyticsSummaryTest(unittest.TestCase):
         storage._SCHEMA_DB_FILE = ""
 
         from app.auth import create_user
-        from app.routers.admin import admin_analytics_sessions_summary
         from app.session_analytics import clear_analytics_cache
         from app.storage import _connect, _ensure_schema, get_default_org_id, list_user_org_memberships
 
-        self.endpoint = admin_analytics_sessions_summary
         self._connect = _connect
         self._ensure_schema = _ensure_schema
         self.default_org_id = get_default_org_id()
@@ -70,6 +68,9 @@ class AdminSessionAnalyticsSummaryTest(unittest.TestCase):
                 os.environ[key] = value
         self.tmp.cleanup()
 
+    def _seed(self):
+        raise NotImplementedError
+
     def _insert_session(self, *, sid, created_at, updated_at, bpmn_xml="<x/>", created_by=""):
         with self._connect() as con:
             con.execute(
@@ -81,7 +82,7 @@ class AdminSessionAnalyticsSummaryTest(unittest.TestCase):
             )
             con.commit()
 
-    def _insert_versions(self, *, sid, count, base_ts=1000):
+    def _insert_versions(self, *, sid, count, base_ts=1000, created_by=""):
         with self._connect() as con:
             for idx in range(count):
                 con.execute(
@@ -89,9 +90,17 @@ class AdminSessionAnalyticsSummaryTest(unittest.TestCase):
                     INSERT INTO bpmn_versions (id, session_id, org_id, version_number, created_at, created_by)
                     VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    [f"ver_{sid}_{idx}", sid, self.default_org_id, idx + 1, base_ts + idx, ""],
+                    [f"ver_{sid}_{idx}", sid, self.default_org_id, idx + 1, base_ts + idx, created_by],
                 )
             con.commit()
+
+
+class AdminSessionAnalyticsSummaryTest(_AnalyticsTestBase):
+    def setUp(self):
+        super().setUp()
+        from app.routers.admin import admin_analytics_sessions_summary
+
+        self.endpoint = admin_analytics_sessions_summary
 
     def _seed(self):
         user_a = str(self.user_a.get("id") or "")
@@ -169,6 +178,107 @@ class AdminSessionAnalyticsSummaryTest(unittest.TestCase):
 
     def test_auth_admin_restriction_works(self):
         out = self.endpoint(self.viewer_request, refresh="")
+        self.assertEqual(getattr(out, "status_code", 0), 403)
+
+
+class AdminSessionAnalyticsTopTest(_AnalyticsTestBase):
+    def setUp(self):
+        super().setUp()
+        from app.routers.admin import admin_analytics_sessions_top
+
+        self.endpoint = admin_analytics_sessions_top
+
+    def _seed(self):
+        import time
+
+        user_a = str(self.user_a.get("id") or "")
+        user_b = str(self.user_b.get("id") or "")
+        now = int(time.time())
+        # ta: 8 days lifetime (real_work), 5 versions, author A, updated 2 days ago
+        self._insert_session(sid="ta", created_at=now - 10 * 86400, updated_at=now - 2 * 86400, created_by=user_a)
+        self._insert_versions(sid="ta", count=5)
+        # tb: zero duration (abandoned), 0 versions, author B, updated just now
+        self._insert_session(sid="tb", created_at=now, updated_at=now, created_by=user_b)
+        # tc: 1 hour lifetime (short), 12 versions, author A, updated just now
+        self._insert_session(sid="tc", created_at=now - 3600, updated_at=now, created_by=user_a)
+        self._insert_versions(sid="tc", count=12)
+        # td: 50 seconds (short), 1 version, orphan author, updated 50s ago
+        self._insert_session(sid="td", created_at=now - 100, updated_at=now - 50, created_by="ghost")
+        self._insert_versions(sid="td", count=1)
+
+    def _query(self, **overrides):
+        params = {
+            "sort_by": "version_count",
+            "sort_order": "desc",
+            "filter_author": "",
+            "page": 1,
+            "page_size": 20,
+        }
+        params.update(overrides)
+        return self.endpoint(self.request, **params)
+
+    def test_sort_by_version_count_desc(self):
+        out = self._query()
+        self.assertTrue(bool(out.get("ok")))
+        self.assertEqual(out.get("total"), 4)
+        ids = [item.get("id") for item in (out.get("items") or [])]
+        self.assertEqual(ids, ["tc", "ta", "td", "tb"])
+        counts = [item.get("version_count") for item in (out.get("items") or [])]
+        self.assertEqual(counts, [12, 5, 1, 0])
+
+    def test_sort_by_lifetime_asc(self):
+        out = self._query(sort_by="lifetime", sort_order="asc")
+        ids = [item.get("id") for item in (out.get("items") or [])]
+        self.assertEqual(ids, ["tb", "td", "tc", "ta"])
+
+    def test_sort_by_last_updated_desc(self):
+        out = self._query(sort_by="last_updated", sort_order="desc")
+        ids = [item.get("id") for item in (out.get("items") or [])]
+        self.assertEqual(ids, ["tb", "tc", "td", "ta"])
+
+    def test_sort_by_author_asc(self):
+        out = self._query(sort_by="author", sort_order="asc")
+        emails = [item.get("author_email") for item in (out.get("items") or [])]
+        self.assertEqual(emails, ["", "author.a@local", "author.a@local", "author.b@local"])
+
+    def test_filter_author(self):
+        out = self._query(filter_author="author.a")
+        self.assertEqual(out.get("total"), 2)
+        ids = sorted(item.get("id") for item in (out.get("items") or []))
+        self.assertEqual(ids, ["ta", "tc"])
+
+    def test_pagination_math_and_empty_page(self):
+        page1 = self._query(page=1, page_size=2)
+        self.assertEqual(page1.get("total"), 4)
+        self.assertEqual(page1.get("page"), 1)
+        self.assertEqual(page1.get("page_size"), 2)
+        self.assertEqual(len(page1.get("items") or []), 2)
+        page2 = self._query(page=2, page_size=2)
+        self.assertEqual(len(page2.get("items") or []), 2)
+        page3 = self._query(page=3, page_size=2)
+        self.assertEqual(page3.get("total"), 4)
+        self.assertEqual(page3.get("items"), [])
+        page_size_cap = self._query(page=1, page_size=500)
+        self.assertEqual(page_size_cap.get("page_size"), 100)
+
+    def test_status_and_relative_time(self):
+        out = self._query()
+        by_id = {item.get("id"): item for item in (out.get("items") or [])}
+        self.assertEqual(by_id["ta"].get("status"), "real_work")
+        self.assertEqual(by_id["tb"].get("status"), "abandoned")
+        self.assertEqual(by_id["tc"].get("status"), "short")
+        self.assertEqual(by_id["ta"].get("last_updated_relative"), "2 дня назад")
+        self.assertEqual(by_id["tb"].get("last_updated_relative"), "только что")
+
+    def test_auth_admin_restriction_works(self):
+        out = self.endpoint(
+            self.viewer_request,
+            sort_by="version_count",
+            sort_order="desc",
+            filter_author="",
+            page=1,
+            page_size=20,
+        )
         self.assertEqual(getattr(out, "status_code", 0), 403)
 
 

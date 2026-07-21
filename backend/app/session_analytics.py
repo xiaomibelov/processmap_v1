@@ -73,6 +73,141 @@ _VERSION_BINS: List[Dict[str, Any]] = [
 _ACTIVE_LIFETIME_SECONDS = 7 * 24 * 60 * 60
 
 
+def _plural_ru(n: int, one: str, few: str, many: str) -> str:
+    n = abs(int(n))
+    mod100 = n % 100
+    mod10 = n % 10
+    if 11 <= mod100 <= 14:
+        return many
+    if mod10 == 1:
+        return one
+    if 2 <= mod10 <= 4:
+        return few
+    return many
+
+
+def relative_time_ru(now_ts: int, ts: int) -> str:
+    """Server-computed Russian relative timestamp, e.g. "2 дня назад"."""
+    diff = max(0, int(now_ts) - int(ts))
+    if diff < 60:
+        return "только что"
+    minutes = diff // 60
+    if minutes < 60:
+        return f"{minutes} {_plural_ru(minutes, 'минуту', 'минуты', 'минут')} назад"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours} {_plural_ru(hours, 'час', 'часа', 'часов')} назад"
+    days = hours // 24
+    if days < 30:
+        return f"{days} {_plural_ru(days, 'день', 'дня', 'дней')} назад"
+    months = days // 30
+    if months < 12:
+        return f"{months} {_plural_ru(months, 'месяц', 'месяца', 'месяцев')} назад"
+    years = months // 12
+    return f"{years} {_plural_ru(years, 'год', 'года', 'лет')} назад"
+
+
+def session_status(lifetime_seconds: int) -> str:
+    dur = int(lifetime_seconds)
+    if dur == 0:
+        return "abandoned"
+    if dur > _ACTIVE_LIFETIME_SECONDS:
+        return "real_work"
+    return "short"
+
+
+_TOP_SORT_COLUMNS = {
+    "version_count": "version_count",
+    "lifetime": "lifetime_seconds",
+    "last_updated": "s.updated_at",
+    "author": "u.email",
+}
+
+
+def get_session_analytics_top(
+    *,
+    org_id: str,
+    sort_by: str = "version_count",
+    sort_order: str = "desc",
+    filter_author: str = "",
+    page: int = 1,
+    page_size: int = 20,
+) -> Dict[str, Any]:
+    org = str(org_id or "").strip() or "org_default"
+    sort_column = _TOP_SORT_COLUMNS.get(str(sort_by or "").strip().lower(), "version_count")
+    direction = "ASC" if str(sort_order or "").strip().lower() == "asc" else "DESC"
+    author_filter = str(filter_author or "").strip().lower()
+    page = max(1, _int(page) or 1)
+    page_size = max(1, min(_int(page_size) or 20, 100))
+    offset = (page - 1) * page_size
+
+    where = "s.org_id = ? AND s.deleted_at = 0"
+    params: List[Any] = [org, org]
+    if author_filter:
+        where += " AND LOWER(COALESCE(u.email, '')) LIKE ?"
+        params.append(f"%{author_filter}%")
+
+    base_from = """
+        FROM sessions s
+        LEFT JOIN users u ON u.id = s.created_by
+        LEFT JOIN (
+          SELECT session_id, COUNT(*) AS cnt
+            FROM bpmn_versions
+           WHERE org_id = ?
+           GROUP BY session_id
+        ) v ON v.session_id = s.id
+    """
+
+    _ensure_schema()
+    with _connect() as con:
+        total_row = con.execute(
+            f"SELECT COUNT(*) {base_from} WHERE {where}",
+            params,
+        ).fetchone()
+        total = _int(total_row[0] if total_row else 0)
+        rows = con.execute(
+            f"""
+            SELECT
+              s.id,
+              s.title,
+              s.created_at,
+              s.updated_at,
+              COALESCE(u.email, '') AS author_email,
+              COALESCE(v.cnt, 0) AS version_count,
+              (s.updated_at - s.created_at) AS lifetime_seconds
+            {base_from}
+            WHERE {where}
+            ORDER BY {sort_column} {direction}, s.id ASC
+            LIMIT ? OFFSET ?
+            """,
+            [*params, page_size, offset],
+        ).fetchall()
+
+    now_ts = int(time.time())
+    items = []
+    for row in rows or []:
+        updated_at = _int(row[3])
+        lifetime = _int(row[6])
+        items.append(
+            {
+                "id": str(row[0] or ""),
+                "title": str(row[1] or ""),
+                "author_email": str(row[4] or ""),
+                "version_count": _int(row[5]),
+                "lifetime_seconds": int(lifetime),
+                "last_updated": int(updated_at),
+                "last_updated_relative": relative_time_ru(now_ts, updated_at),
+                "status": session_status(lifetime),
+            }
+        )
+    return {
+        "total": int(total),
+        "page": int(page),
+        "page_size": int(page_size),
+        "items": items,
+    }
+
+
 def _fetch_lifetime_row(con: Any, org_id: str) -> Dict[str, int]:
     row = con.execute(
         """
