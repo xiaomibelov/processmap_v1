@@ -2149,7 +2149,7 @@ const BpmnStage = forwardRef(function BpmnStage({
     try {
       const container = inst.get("canvas")?.getContainer?.();
       if (!container) return;
-      container.querySelectorAll(".fpc-overlay-v2-host.fpcSearchOverlayDim").forEach((host) => {
+      container.querySelectorAll(".fpc-overlay-v2-host.fpcSearchOverlayDim, .fpc-tobe-doc.fpcSearchOverlayDim").forEach((host) => {
         host.classList.remove("fpcSearchOverlayDim");
       });
     } catch {
@@ -2163,8 +2163,11 @@ const BpmnStage = forwardRef(function BpmnStage({
       const container = inst.get("canvas")?.getContainer?.();
       if (!container) return;
       const matchSet = new Set(asArray(matchIds).map((idRaw) => toText(idRaw)).filter(Boolean));
-      container.querySelectorAll(".fpc-overlay-v2-host").forEach((host) => {
+      container.querySelectorAll(".fpc-overlay-v2-host, .fpc-tobe-doc").forEach((host) => {
         const elementId = toText(host?.dataset?.fpcElementId);
+        // Free-floating To-Be documents have no anchor element: keep them
+        // bright instead of dimming them with the non-matches.
+        if (!elementId && host.classList.contains("fpc-tobe-doc")) return;
         host.classList.toggle("fpcSearchOverlayDim", !matchSet.has(elementId));
       });
     } catch {
