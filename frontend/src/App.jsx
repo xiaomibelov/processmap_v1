@@ -71,6 +71,7 @@ import { readV2OverlayEnabled, writeV2OverlayEnabled } from "./features/process/
 import { readTobeLayerEnabled, writeTobeLayerEnabled } from "./features/process/bpmn/stage/utils/tobeLayerToggleStorage.js";
 import { useTobeLayer } from "./features/process/tobe/useTobeLayer.js";
 import { useDocumentPreview } from "./features/process/tobe/useDocumentPreview.js";
+import { startTobeGhost, fixTobeGhost, cancelTobeGhost } from "./features/process/tobe/tobeGhostModel.js";
 import DocumentPreviewPopover from "./features/process/tobe/DocumentPreviewPopover.jsx";
 import TobeDocumentPreviewModal from "./features/process/tobe/TobeDocumentPreviewModal.jsx";
 import { propertyCrudBoundary } from "./features/process/propertyCrudBoundary";
@@ -927,6 +928,19 @@ export default function App() {
   // Shared preview state for To-Be documents: canvas cards and the sidebar
   // list both open the same popover/modal through this hook.
   const tobeDocPreview = useDocumentPreview();
+  // Ghost placement: ephemeral { url, title, x, y } | null — nothing is
+  // persisted until the ghost is fixed on the canvas.
+  const [tobeGhost, setTobeGhost] = useState(null);
+  const tobeGhostRef = useRef(null);
+  useEffect(() => {
+    tobeGhostRef.current = tobeGhost;
+  }, [tobeGhost]);
+  const handleTobeGhostStart = useCallback((payload) => {
+    setTobeGhost((current) => startTobeGhost(current, payload));
+  }, []);
+  const handleTobeGhostCancel = useCallback(() => {
+    setTobeGhost(cancelTobeGhost());
+  }, []);
   const [bpmnModelerSyncEpoch, setBpmnModelerSyncEpoch] = useState(0);
   // Set when an external writer (canvas properties popover) mutates camunda
   // extension properties in the live modeler. NotesPanel uses it to merge
@@ -2343,6 +2357,15 @@ export default function App() {
     setDraftPersisted((d) => ({ ...d, to_be_documents: serverDocs }));
     setToBeDocuments(serverDocs);
     return { ok: true };
+  }
+
+  // Ghost fixed on the canvas: build the real document at the ghost position
+  // (default size, visible) and persist it through the usual path.
+  function handleTobeGhostFix(point) {
+    const { document: doc } = fixTobeGhost(tobeGhostRef.current, point);
+    setTobeGhost(null);
+    if (!doc) return;
+    void persistToBeDocuments([...toBeDocumentsRef.current, doc]);
   }
 
   async function addElementNote(elementId, text) {
@@ -4060,6 +4083,9 @@ export default function App() {
         toBeLayerEnabled={toBeLayerEnabled}
         toBeDocuments={toBeDocuments}
         onTobeDocumentClick={tobeDocPreview.openDocumentPreview}
+        tobeGhostDocument={tobeGhost}
+        onTobeGhostFix={handleTobeGhostFix}
+        onTobeGhostCancel={handleTobeGhostCancel}
         drawioCompanionFocusIntent={drawioCompanionFocusIntent}
         discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
         onDiscussionLinkedElementFocusResult={completeDiscussionLinkedElementFocus}
