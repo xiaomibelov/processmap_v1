@@ -28,6 +28,8 @@ import { useOverlayLifecycle } from "../../features/process/bpmn/stage/overlay/u
 import { setV2OverlayClickHandler, setTobeDocumentClickHandler, setTobeDocumentDoubleClickHandler, setV2DocLinkClickHandler } from "../../features/process/bpmn/stage/overlay/overlayLifecycleManager";
 import { buildTobeDocumentFromUrl } from "../../features/process/tobe/tobeDocumentUrls";
 import { createTobeOverlayCoordinator } from "../../features/process/tobe/tobeOverlayCoordinator";
+import { createTobeGhostHost } from "../../features/process/tobe/tobeOverlayRenderer";
+import { TOBE_DOC_DEFAULT_WIDTH, TOBE_DOC_DEFAULT_HEIGHT } from "../../features/process/tobe/tobeDocumentModel";
 import { useViewportResizeController } from "../../features/process/bpmn/stage/viewport/useViewportResizeController";
 import {
   bindModelerStageEvents,
@@ -938,6 +940,9 @@ const BpmnStage = forwardRef(function BpmnStage({
   toBeDocuments = [],
   onTobeDocumentClick = null,
   onTobeDocumentChange = null,
+  tobeGhostDocument = null,
+  onTobeGhostFix = null,
+  onTobeGhostCancel = null,
   onV2OverlayPropertiesRequest = null,
   onDiagramContextMenuRequest = null,
   onDiagramContextMenuDismiss = null,
@@ -1250,6 +1255,143 @@ const BpmnStage = forwardRef(function BpmnStage({
     mountTobeOnInstance(modelerRef.current, "editor");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toBeLayerEnabled, toBeDocuments]);
+
+  // Ghost placement: while a ghost is active a dashed card follows the mouse
+  // over the canvas (screen space, direct DOM updates — no React state churn
+  // per mousemove). Click on empty canvas or Enter fixes the document at the
+  // pointer position converted to diagram coordinates; Escape cancels.
+  const onTobeGhostFixRef = useRef(onTobeGhostFix);
+  const onTobeGhostCancelRef = useRef(onTobeGhostCancel);
+  useEffect(() => {
+    onTobeGhostFixRef.current = onTobeGhostFix;
+  }, [onTobeGhostFix]);
+  useEffect(() => {
+    onTobeGhostCancelRef.current = onTobeGhostCancel;
+  }, [onTobeGhostCancel]);
+
+  useEffect(() => {
+    if (!tobeGhostDocument || typeof document === "undefined") return undefined;
+
+    let container = null;
+    let canvas = null;
+    let lastClient = null;
+
+    function toDiagramPoint(clientX, clientY) {
+      // Same conversion as the overlay layer's clientToDiagram helper:
+      // subtract the container rect, unscale by zoom, offset by viewbox origin.
+      const rect = container.getBoundingClientRect();
+      let zoom = 1;
+      let originX = 0;
+      let originY = 0;
+      try {
+        const z = Number(canvas?.zoom?.());
+        if (Number.isFinite(z) && z > 0) zoom = z;
+      } catch {
+        // Keep the default zoom.
+      }
+      try {
+        const viewbox = canvas?.viewbox?.();
+        if (Number.isFinite(Number(viewbox?.x))) originX = Number(viewbox.x);
+        if (Number.isFinite(Number(viewbox?.y))) originY = Number(viewbox.y);
+      } catch {
+        // Keep the default origin.
+      }
+      return {
+        x: originX + (clientX - rect.left) / zoom - TOBE_DOC_DEFAULT_WIDTH / 2,
+        y: originY + (clientY - rect.top) / zoom - TOBE_DOC_DEFAULT_HEIGHT / 2,
+      };
+    }
+
+    function fixAt(clientX, clientY) {
+      const point = toDiagramPoint(clientX, clientY);
+      try {
+        onTobeGhostFixRef.current?.(point);
+      } catch {
+        // Ghost fix handler failures are non-critical.
+      }
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        try {
+          onTobeGhostCancelRef.current?.();
+        } catch {
+          // Ghost cancel handler failures are non-critical.
+        }
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        if (lastClient) {
+          fixAt(lastClient.x, lastClient.y);
+          return;
+        }
+        // No pointer position yet: fix at the viewport center.
+        const rect = container?.getBoundingClientRect?.();
+        if (rect) fixAt(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+
+    try {
+      const preferEditor = view !== "viewer";
+      const inst = (preferEditor ? modelerRef.current : viewerRef.current)
+        || modelerRef.current
+        || viewerRef.current;
+      canvas = inst?.get?.("canvas") || null;
+      container = canvas?.getContainer?.() || null;
+    } catch {
+      container = null;
+    }
+
+    const created = container
+      ? createTobeGhostHost({ title: tobeGhostDocument.title || tobeGhostDocument.url })
+      : null;
+    const host = created?.host || null;
+
+    // Without a ready canvas the ghost card cannot follow the mouse, but the
+    // keyboard handling above still lets the user cancel with Escape.
+    if (!container || !host) {
+      return () => document.removeEventListener("keydown", handleKeyDown);
+    }
+
+    function handleMouseMove(event) {
+      lastClient = { x: event.clientX, y: event.clientY };
+      const rect = container.getBoundingClientRect();
+      host.style.left = `${Math.round(event.clientX - rect.left - TOBE_DOC_DEFAULT_WIDTH / 2)}px`;
+      host.style.top = `${Math.round(event.clientY - rect.top - TOBE_DOC_DEFAULT_HEIGHT / 2)}px`;
+    }
+
+    function handleClick(event) {
+      // Only empty canvas fixes the ghost — clicks on diagram shapes or on
+      // real document cards keep their usual behavior.
+      const target = event.target;
+      if (target?.closest?.(".fpc-tobe-doc[data-fpc-tobe-doc-id]")) return;
+      if (target?.closest?.(".djs-element")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      fixAt(event.clientX, event.clientY);
+    }
+
+    container.classList.add("fpc-tobe-ghosting");
+    container.appendChild(host);
+    container.addEventListener("mousemove", handleMouseMove);
+    container.addEventListener("click", handleClick);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      container.removeEventListener("mousemove", handleMouseMove);
+      container.removeEventListener("click", handleClick);
+      container.classList.remove("fpc-tobe-ghosting");
+      try {
+        host.remove?.();
+      } catch {
+        // Ghost teardown is best-effort.
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tobeGhostDocument, view]);
 
   useEffect(() => {
     onElementSelectionChangeRef.current = onElementSelectionChange;

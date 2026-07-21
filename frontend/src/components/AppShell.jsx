@@ -143,6 +143,10 @@ export default function AppShell({
   toBeLayerEnabled = false,
   toBeDocuments = [],
   onTobeDocumentClick = null,
+  onTobeDocumentChange = null,
+  tobeGhostDocument = null,
+  onTobeGhostFix = null,
+  onTobeGhostCancel = null,
   drawioCompanionFocusIntent = null,
   discussionLinkedElementFocusIntent = null,
   onDiscussionLinkedElementFocusResult = null,
@@ -381,6 +385,10 @@ export default function AppShell({
               toBeLayerEnabled={toBeLayerEnabled}
               toBeDocuments={toBeDocuments}
               onTobeDocumentClick={onTobeDocumentClick}
+              onTobeDocumentChange={onTobeDocumentChange}
+              tobeGhostDocument={tobeGhostDocument}
+              onTobeGhostFix={onTobeGhostFix}
+              onTobeGhostCancel={onTobeGhostCancel}
               drawioCompanionFocusIntent={drawioCompanionFocusIntent}
               discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
               onDiscussionLinkedElementFocusResult={onDiscussionLinkedElementFocusResult}
