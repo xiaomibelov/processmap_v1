@@ -385,6 +385,55 @@ class AdminSessionAnalyticsCaseStudiesTest(_AnalyticsTestBase):
         self.assertEqual(getattr(out, "status_code", 0), 403)
 
 
+class AdminSessionAnalyticsAuthorStatsTest(_AnalyticsTestBase):
+    def setUp(self):
+        super().setUp()
+        from app.routers.admin import admin_analytics_sessions_summary
+
+        self.endpoint = admin_analytics_sessions_summary
+
+    def _seed(self):
+        user_a = str(self.user_a.get("id") or "")
+        # author A: one abandoned (dur=0), one real (8d) session, 4 versions total
+        self._insert_session(sid="a1", created_at=1000, updated_at=1000, created_by=user_a)
+        self._insert_session(sid="a2", created_at=1000, updated_at=1000 + 8 * 86400, created_by=user_a)
+        self._insert_versions(sid="a2", count=4)
+        # bot account: flagged as test account server-side
+        from app.auth import create_user
+
+        bot = create_user("smoke.bot@local", "strongpass1", is_admin=False)
+        self._insert_session(sid="b1", created_at=1000, updated_at=2000, created_by=str(bot.get("id") or ""))
+
+    def _query(self, **overrides):
+        params = {"refresh": "", "exclude_test": ""}
+        params.update(overrides)
+        return self.endpoint(self.request, **params)
+
+    def test_author_stats_exact_aggregates(self):
+        out = self._query(refresh="true")
+        stats = out.get("author_stats") or []
+        self.assertEqual(len(stats), 2)
+        first = stats[0]
+        self.assertEqual(first.get("author_email"), "author.a@local")
+        self.assertEqual(first.get("sessions"), 2)
+        self.assertEqual(first.get("avg_versions"), 2.0)
+        self.assertEqual(first.get("avg_lifetime_seconds"), round((0 + 8 * 86400) / 2, 1))
+        self.assertEqual(first.get("abandoned"), 1)
+        self.assertEqual(first.get("real"), 1)
+        self.assertEqual(first.get("is_test_account"), False)
+        second = stats[1]
+        self.assertEqual(second.get("author_email"), "smoke.bot@local")
+        self.assertEqual(second.get("is_test_account"), True)
+
+    def test_exclude_test_filters_test_accounts(self):
+        out = self._query(refresh="true", exclude_test="true")
+        stats = out.get("author_stats") or []
+        self.assertEqual([row.get("author_email") for row in stats], ["author.a@local"])
+        # Cache is keyed by the flag: unfiltered view still contains the bot.
+        out_all = self._query()
+        self.assertEqual(len(out_all.get("author_stats") or []), 2)
+
+
 class BpmnElementCountUnitTest(unittest.TestCase):
     def test_counts_bpmn_prefix(self):
         from app.session_analytics import count_bpmn_elements

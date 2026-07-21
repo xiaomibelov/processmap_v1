@@ -2,8 +2,10 @@ import AdminPageContainer from "../layout/AdminPageContainer";
 import ErrorState from "../components/common/ErrorState";
 import LoadingBlock from "../components/common/LoadingBlock";
 import SectionCard from "../components/common/SectionCard";
+import AuthorAnalytics from "../components/analytics/AuthorAnalytics";
 import LifetimeDistributionChart from "../components/analytics/LifetimeDistributionChart";
 import SessionAnalyticsKpiCards from "../components/analytics/SessionAnalyticsKpiCards";
+import TopSessionsTable from "../components/analytics/TopSessionsTable";
 import VersionDistributionChart from "../components/analytics/VersionDistributionChart";
 
 // Session analytics page: thin client over /api/admin/analytics/sessions/*.
@@ -41,11 +43,18 @@ export default function AdminSessionAnalyticsPage({
         <LifetimeDistributionChart bins={lifetimeBins} />
         <VersionDistributionChart bins={versionBins} />
       </div>
-      <SectionCard title="Топ сессий" data-testid="analytics-top-section">
-        <div className="text-xs text-slate-500" data-testid="analytics-top-placeholder">
-          {topQ.loading ? "Загрузка…" : `Записей: ${topPayload.total ?? 0}`}
-        </div>
-      </SectionCard>
+      <TopSessionsTable
+        payload={topPayload}
+        loading={topQ.loading}
+        filters={filters}
+        onFiltersChange={onFiltersChange}
+        onPagingChange={onPagingChange}
+      />
+      <AuthorAnalytics
+        authorStats={Array.isArray(payload.author_stats) ? payload.author_stats : []}
+        excludeTest={!!filters.excludeTest}
+        onExcludeTestChange={(checked) => onFiltersChange?.({ excludeTest: !!checked })}
+      />
       <SectionCard title="Кейсы" data-testid="analytics-cases-section">
         <div className="text-xs text-slate-500" data-testid="analytics-cases-placeholder">
           {caseStudiesQ.loading ? "Загрузка…" : `Кейсов: ${(casePayload.items || []).length}`}

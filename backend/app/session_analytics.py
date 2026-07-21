@@ -73,6 +73,20 @@ _VERSION_BINS: List[Dict[str, Any]] = [
 # "Active" session: lifetime strictly greater than 7 days.
 _ACTIVE_LIFETIME_SECONDS = 7 * 24 * 60 * 60
 
+# Test/bot accounts are flagged server-side: marker substring in the email or
+# an explicit denylist entry.
+_TEST_ACCOUNT_MARKERS = ("smoke", "test", "bot")
+_TEST_ACCOUNT_DENYLIST = ("noreply@", "no-reply@")
+
+
+def is_test_account(email: str) -> bool:
+    value = str(email or "").strip().lower()
+    if not value:
+        return False
+    if any(marker in value for marker in _TEST_ACCOUNT_MARKERS):
+        return True
+    return any(value.startswith(entry) or value == entry for entry in _TEST_ACCOUNT_DENYLIST)
+
 
 def _plural_ru(n: int, one: str, few: str, many: str) -> str:
     n = abs(int(n))
@@ -280,6 +294,56 @@ def _fetch_total_users(con: Any) -> int:
     return _int(row[0] if row else 0)
 
 
+def _fetch_author_stats(con: Any, org_id: str) -> List[Dict[str, Any]]:
+    rows = con.execute(
+        """
+        SELECT
+          s.created_by,
+          COALESCE(u.email, '') AS email,
+          COUNT(*) AS sessions,
+          AVG(s.updated_at - s.created_at) AS avg_life,
+          SUM(CASE WHEN s.updated_at - s.created_at = 0 THEN 1 ELSE 0 END) AS abandoned,
+          SUM(CASE WHEN s.updated_at - s.created_at > ? THEN 1 ELSE 0 END) AS real
+        FROM sessions s
+        LEFT JOIN users u ON u.id = s.created_by
+        WHERE s.org_id = ? AND s.deleted_at = 0
+        GROUP BY s.created_by
+        ORDER BY sessions DESC, email ASC
+        """,
+        [_ACTIVE_LIFETIME_SECONDS, org_id],
+    ).fetchall()
+    version_rows = con.execute(
+        """
+        SELECT s.created_by, COUNT(v.id) AS vc
+          FROM sessions s
+          JOIN bpmn_versions v ON v.session_id = s.id AND v.org_id = s.org_id
+         WHERE s.org_id = ? AND s.deleted_at = 0
+         GROUP BY s.created_by
+        """,
+        [org_id],
+    ).fetchall()
+    versions_by_author = {str(row[0] or ""): _int(row[1]) for row in version_rows or []}
+
+    out: List[Dict[str, Any]] = []
+    for row in rows or []:
+        created_by = str(row[0] or "")
+        email = str(row[1] or "").strip() or created_by or "unknown"
+        sessions = _int(row[2])
+        versions_total = versions_by_author.get(created_by, 0)
+        out.append(
+            {
+                "author_email": email,
+                "sessions": int(sessions),
+                "avg_versions": round(versions_total / sessions, 1) if sessions else 0.0,
+                "avg_lifetime_seconds": round(float(row[3] or 0), 1),
+                "abandoned": _int(row[4]),
+                "real": _int(row[5]),
+                "is_test_account": is_test_account(email),
+            }
+        )
+    return out
+
+
 def _version_bin_index(cnt: int) -> int:
     if cnt <= 1:
         return 0
@@ -292,13 +356,14 @@ def _version_bin_index(cnt: int) -> int:
     return 4
 
 
-def _build_summary(*, org_id: str) -> Dict[str, Any]:
+def _build_summary(*, org_id: str, exclude_test: bool = False) -> Dict[str, Any]:
     _ensure_schema()
     with _connect() as con:
         life = _fetch_lifetime_row(con, org_id)
         total_versions, version_pairs = _fetch_version_counts(con, org_id)
         orphan_created_by = _fetch_orphan_created_by(con, org_id)
         total_users = _fetch_total_users(con)
+        author_stats = _fetch_author_stats(con, org_id)
 
     total_sessions = life["total"]
     sessions_with_history = sum(sessions for _cnt, sessions in version_pairs)
@@ -356,17 +421,21 @@ def _build_summary(*, org_id: str) -> Dict[str, Any]:
             "no_versions": int(no_versions),
             "no_versions_pct": _pct(no_versions, total_sessions),
         },
+        "author_stats": [
+            row for row in author_stats
+            if not (exclude_test and row.get("is_test_account"))
+        ],
     }
 
 
-def get_session_analytics_summary(*, org_id: str, refresh: bool = False) -> Dict[str, Any]:
+def get_session_analytics_summary(*, org_id: str, refresh: bool = False, exclude_test: bool = False) -> Dict[str, Any]:
     org = str(org_id or "").strip() or "org_default"
-    cache_key = f"summary:{org}"
+    cache_key = f"summary:{org}:{int(bool(exclude_test))}"
     if not refresh:
         cached = _cache_get(cache_key)
         if cached is not None:
             return cached
-    payload = _build_summary(org_id=org)
+    payload = _build_summary(org_id=org, exclude_test=exclude_test)
     _cache_put(cache_key, payload)
     return payload
 
