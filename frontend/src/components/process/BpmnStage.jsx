@@ -25,7 +25,8 @@ import DiagramLoadBoundary from "../../features/process/bpmn/stage/load/DiagramL
 import BpmnXmlEditor from "./bpmnXmlEditor/BpmnXmlEditor";
 import { useV2OverlayState } from "../../features/process/bpmn/stage/state/useV2OverlayState";
 import { useOverlayLifecycle } from "../../features/process/bpmn/stage/overlay/useOverlayLifecycle";
-import { setV2OverlayClickHandler, setTobeDocumentClickHandler } from "../../features/process/bpmn/stage/overlay/overlayLifecycleManager";
+import { setV2OverlayClickHandler, setTobeDocumentClickHandler, setTobeDocumentDoubleClickHandler, setV2DocLinkClickHandler } from "../../features/process/bpmn/stage/overlay/overlayLifecycleManager";
+import { buildTobeDocumentFromUrl } from "../../features/process/tobe/tobeDocumentUrls";
 import { createTobeOverlayCoordinator } from "../../features/process/tobe/tobeOverlayCoordinator";
 import { useViewportResizeController } from "../../features/process/bpmn/stage/viewport/useViewportResizeController";
 import {
@@ -1157,13 +1158,57 @@ const BpmnStage = forwardRef(function BpmnStage({
     onTobeDocumentClickRef.current = onTobeDocumentClick;
   }, [onTobeDocumentClick]);
 
+  function findTobeDocumentById(docId) {
+    const docs = Array.isArray(tobeDocumentsRef.current) ? tobeDocumentsRef.current : [];
+    return docs.find((entry) => String(entry?.id || "") === String(docId || "")) || null;
+  }
+
+  function resolveTobeAnchorElementName(doc) {
+    const anchorId = String(doc?.anchorElementId || "").trim();
+    if (!anchorId) return "";
+    try {
+      const inst = modelerRef.current || viewerRef.current;
+      const el = inst?.get("elementRegistry")?.get?.(anchorId);
+      return String(el?.businessObject?.name || "").trim();
+    } catch {
+      return "";
+    }
+  }
+
+  // Single click opens the first-level popover near the card; double-click
+  // skips it and opens the expanded modal.
   useEffect(() => {
-    setTobeDocumentClickHandler(({ docId }) => {
-      const docs = Array.isArray(tobeDocumentsRef.current) ? tobeDocumentsRef.current : [];
-      const doc = docs.find((entry) => String(entry?.id || "") === String(docId || "")) || null;
-      onTobeDocumentClickRef.current?.(doc);
+    setTobeDocumentClickHandler(({ docId, anchorRect }) => {
+      const doc = findTobeDocumentById(docId);
+      onTobeDocumentClickRef.current?.(doc, {
+        view: "popover",
+        anchorRect: anchorRect || null,
+        anchorElementName: resolveTobeAnchorElementName(doc),
+      });
     });
-    return () => setTobeDocumentClickHandler(null);
+    setTobeDocumentDoubleClickHandler(({ docId, anchorRect }) => {
+      const doc = findTobeDocumentById(docId);
+      onTobeDocumentClickRef.current?.(doc, {
+        view: "modal",
+        anchorRect: anchorRect || null,
+        anchorElementName: resolveTobeAnchorElementName(doc),
+      });
+    });
+    // V2 property rows whose value is a Google Docs link open the same
+    // document preview as layer documents (built ad hoc from the URL).
+    setV2DocLinkClickHandler(({ url, title, elementId, anchorRect }) => {
+      const doc = buildTobeDocumentFromUrl({ url, title, anchorElementId: elementId });
+      onTobeDocumentClickRef.current?.(doc, {
+        view: "popover",
+        anchorRect: anchorRect || null,
+        anchorElementName: resolveTobeAnchorElementName(doc),
+      });
+    });
+    return () => {
+      setTobeDocumentClickHandler(null);
+      setTobeDocumentDoubleClickHandler(null);
+      setV2DocLinkClickHandler(null);
+    };
   }, []);
 
   function setTobeHiddenOnInstance(inst, hidden) {

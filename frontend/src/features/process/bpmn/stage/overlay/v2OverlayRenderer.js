@@ -1,4 +1,5 @@
 import { overlayPropertyColorByKey } from "../decor/overlayColorModel.js";
+import { extractGoogleDocUrl } from "../../../tobe/tobeDocumentUrls.js";
 import { asArray, asText } from "./overlayUtils.js";
 
 const V2_OVERLAY_IDLE_MAX_PROPS = 5;
@@ -7,7 +8,8 @@ const SEQUENCE_OVERLAY_MAX_WIDTH = 160;
 function makeV2PropertyRow(prop) {
   const name = asText(prop?.name);
   if (!name) return null;
-  let value = String(prop?.value ?? "");
+  const rawValue = String(prop?.value ?? "");
+  let value = rawValue;
   if (value.length > 80) value = `${value.slice(0, 80)}...`;
 
   const colorModel = overlayPropertyColorByKey(name || "property");
@@ -16,6 +18,16 @@ function makeV2PropertyRow(prop) {
   itemEl.classList.add("fpc-overlay-v2-item");
   itemEl.style.setProperty("--fpc-property-accent", colorModel.accent);
   itemEl.style.setProperty("--fpc-property-bg", colorModel.background);
+
+  // Rows whose value links to a Google Doc open the document preview instead
+  // of the element properties popover (delegated click handling keys off the
+  // marker class + dataset).
+  const docUrl = extractGoogleDocUrl(rawValue);
+  if (docUrl) {
+    itemEl.classList.add("fpc-overlay-v2-item--doc-link");
+    itemEl.dataset.fpcDocUrl = docUrl;
+    itemEl.dataset.fpcDocTitle = name;
+  }
 
   const nameEl = document.createElement("span");
   nameEl.classList.add("fpc-overlay-v2-name");
