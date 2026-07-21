@@ -103,6 +103,13 @@ const BpmnXmlCodeEditor = forwardRef(function BpmnXmlCodeEditor({
       if (!v) return;
       clearDuplicateHighlightDecorations(v);
     },
+    replaceContent(nextValue) {
+      const v = viewRef.current;
+      if (!v) return;
+      v.dispatch({
+        changes: { from: 0, to: v.state.doc.length, insert: String(nextValue ?? "") },
+      });
+    },
   }), []);
 
   useEffect(() => {
