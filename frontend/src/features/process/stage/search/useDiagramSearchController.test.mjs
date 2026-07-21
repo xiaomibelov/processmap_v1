@@ -301,7 +301,7 @@ test("useDiagramSearchController recomputes results on mutation trigger and clea
   }
 });
 
-test("useDiagramSearchController supports properties mode with active-only highlight and centered focus", async () => {
+test("useDiagramSearchController supports properties mode with match-elements highlight and centered focus", async () => {
   const { root, cleanup } = setupDom();
   const focusCalls = [];
   const highlightCalls = [];
@@ -379,8 +379,9 @@ test("useDiagramSearchController supports properties mode with active-only highl
     assert.equal(latest.results.length, 1);
     assert.equal(latest.activeResult?.elementId, "Task_A");
     assert.equal(latest.activeResult?.propertyName, "container_tara");
+    // Properties mode highlights (and un-dims) every element owning a match.
     assert.deepEqual(highlightCalls.at(-1), {
-      matchElementIds: [],
+      matchElementIds: ["Task_A"],
       activeElementId: "Task_A",
     });
 
@@ -426,8 +427,9 @@ test("useDiagramSearchController supports properties mode with active-only highl
     }, (value) => {
       latest = value;
     });
-    assert.equal(latest.mode, "elements");
-    assert.equal(latest.query, "");
+    // Close preserves the search context: mode and query survive reopen.
+    assert.equal(latest.mode, "properties");
+    assert.equal(latest.query, "r");
     assert.ok(clearCalls.length > 0);
   } finally {
     await cleanup();
