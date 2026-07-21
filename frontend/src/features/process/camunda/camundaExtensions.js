@@ -1353,8 +1353,13 @@ export function applyCamundaExtensionStateToModeler(elementId, extensionState, m
 
     // Drop ALL managed properties containers (both namespaces) for this element
     // so repeated applies never accumulate zeebe + camunda duplicates.
+    // Managed execution listeners are dropped too: they are rebuilt from the
+    // extension state below, so keeping them in `preserved` duplicated every
+    // listener on each apply (preprod audit, blocker 1). This mirrors
+    // syncCamundaExtensionsToBpmn, which filters via isManagedCamundaModelEntry.
     const preserved = existingValues.filter((entry) => (
       !managedPropertiesTypes.has(String(entry?.$type || "").toLowerCase())
+      && !isManagedCamundaModelEntry(entry)
     ));
 
     const normalized = normalizeCamundaExtensionState(extensionState);
