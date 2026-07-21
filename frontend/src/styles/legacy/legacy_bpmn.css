@@ -335,7 +335,7 @@
   display: flex;
   gap: 3px;
   padding: 1px 3px 1px 4px;
-  border-left: 3px solid var(--fpc-property-accent, #94a3b8);
+  border-left: 4px solid var(--fpc-property-accent, #94a3b8);
   border-radius: 3px;
   /* Light tinted background from overlayPropertyColorByKey(name).background —
      the per-row color signal; the card itself stays neutral. */
@@ -354,7 +354,9 @@
 .fpc-overlay-v2-name {
   flex: 0 0 auto;
   font-weight: 600;
-  color: #0f172a;
+  /* Property name tinted with the row accent — a second color channel on top
+     of the left border and tinted background, so similar hues stay tellable. */
+  color: var(--fpc-property-accent, #0f172a);
 }
 
 .fpc-overlay-v2-value {
