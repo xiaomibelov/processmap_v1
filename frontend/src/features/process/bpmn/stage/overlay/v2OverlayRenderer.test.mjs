@@ -95,9 +95,9 @@ test("createV2OverlayHost: each property row carries its own accent and light ba
   assert.equal(ingredientRow.style.getPropertyValue("--fpc-property-bg"), "hsl(217 74% 88%)");
   assert.equal(eeTimeRow.style.getPropertyValue("--fpc-property-accent"), "hsl(0 62% 46%)");
   assert.equal(eeTimeRow.style.getPropertyValue("--fpc-property-bg"), "hsl(0 74% 88%)");
-  // Non-mapped property → deterministic hash hue (104), still visibly colored.
-  assert.equal(customRow.style.getPropertyValue("--fpc-property-accent"), "hsl(104 62% 46%)");
-  assert.equal(customRow.style.getPropertyValue("--fpc-property-bg"), "hsl(104 74% 88%)");
+  // Non-mapped property → fallback grid hue (20), separated from mapped hues.
+  assert.equal(customRow.style.getPropertyValue("--fpc-property-accent"), "hsl(20 62% 46%)");
+  assert.equal(customRow.style.getPropertyValue("--fpc-property-bg"), "hsl(20 74% 88%)");
 });
 
 test("createV2OverlayHost: empty properties renders list with no items", () => {
