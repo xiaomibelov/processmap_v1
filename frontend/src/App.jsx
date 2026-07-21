@@ -2368,6 +2368,21 @@ export default function App() {
     void persistToBeDocuments([...toBeDocumentsRef.current, doc]);
   }
 
+  // Shape interaction commit (drag end / resize end / close): patches the
+  // record and persists the whole list — same path as add/remove. Called
+  // only on gesture end, never per mousemove.
+  function handleTobeDocumentChange(docIdRaw, patchRaw) {
+    const docId = String(docIdRaw || "").trim();
+    const patch = patchRaw && typeof patchRaw === "object" ? patchRaw : null;
+    if (!docId || !patch) return;
+    const current = Array.isArray(toBeDocumentsRef.current) ? toBeDocumentsRef.current : [];
+    if (!current.some((entry) => String(entry?.id || "") === docId)) return;
+    const next = current.map((entry) => (
+      String(entry?.id || "") === docId ? { ...entry, ...patch } : entry
+    ));
+    void persistToBeDocuments(next);
+  }
+
   async function addElementNote(elementId, text) {
     const sid = String(draft?.session_id || "");
     const eid = String(elementId || "").trim();
@@ -4085,6 +4100,7 @@ export default function App() {
         toBeLayerEnabled={toBeLayerEnabled}
         toBeDocuments={toBeDocuments}
         onTobeDocumentClick={tobeDocPreview.openDocumentPreview}
+        onTobeDocumentChange={handleTobeDocumentChange}
         tobeGhostDocument={tobeGhost}
         onTobeGhostFix={handleTobeGhostFix}
         onTobeGhostCancel={handleTobeGhostCancel}
