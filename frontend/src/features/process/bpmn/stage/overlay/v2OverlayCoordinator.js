@@ -290,7 +290,7 @@ export function createV2OverlayCoordinator({
     }
   }
 
-  function mountFromBpmn(inst, kind) {
+  function mountFromBpmn(inst, kind, precomputedOverlayList = null) {
     if (!inst) return;
     const hiddenFields = asArray(hiddenFieldsRef?.current);
     // Per-field chip filter (property-panel-redesign): the BPMN extraction
@@ -298,7 +298,13 @@ export function createV2OverlayCoordinator({
     // extracted list itself. An auto property card whose every field was
     // hidden must not render; name-only cards (no properties to begin with)
     // and authored overlays survive.
-    const overlayList = (extractOverlaysFromBpmn(inst, enabledRef?.current) || [])
+    // precomputedOverlayList: callers that already ran extractOverlaysFromBpmn
+    // (e.g. for a change signature) pass the raw list in — otherwise the same
+    // registry walk would run twice per mount (load-freeze audit, fix 1).
+    const extracted = Array.isArray(precomputedOverlayList)
+      ? precomputedOverlayList
+      : (extractOverlaysFromBpmn(inst, enabledRef?.current) || []);
+    const overlayList = extracted
       .map((ovl) => {
         const original = asArray(ovl?.properties);
         const properties = filterRowsByHiddenFields(original, hiddenFields);
