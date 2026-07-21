@@ -170,7 +170,7 @@ test("collectDiagramPropertySearchResults preserves owner subprocess hierarchy m
   assert.equal(row.isInsideSubprocess, true);
 });
 
-test("useDiagramPropertySearchModel supports wrap-around navigation and clears state on close", async () => {
+test("useDiagramPropertySearchModel supports wrap-around navigation and preserves state on close", async () => {
   const { root, cleanup } = setupDom();
   let latest = null;
   let openState = true;
@@ -231,7 +231,14 @@ test("useDiagramPropertySearchModel supports wrap-around navigation and clears s
     }, (value) => {
       latest = value;
     });
+    // Closing the panel preserves the search context (query + active index).
     assert.equal(openState, false);
+    assert.equal(latest.query, "t");
+    assert.equal(latest.activeIndex >= 0, true);
+    // Explicit reset (session switch) still clears the state.
+    await act(async () => {
+      latest.reset();
+    });
     assert.equal(latest.query, "");
     assert.equal(latest.activeIndex, -1);
   } finally {
