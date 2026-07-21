@@ -56,6 +56,27 @@ function computeContentSig(ovl, el) {
   return JSON.stringify({ ovl, geo });
 }
 
+// Large overlay mounts are split into chunks of this size so each animation
+// frame only pays for a handful of DOM insertions (load-freeze audit, fix 2).
+const MOUNT_CHUNK_SIZE = 12;
+
+function yieldToFrame() {
+  try {
+    if (typeof globalThis?.scheduler?.yield === "function") {
+      return globalThis.scheduler.yield();
+    }
+  } catch {
+    // Fall through to rAF/timeout.
+  }
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
+}
+
 export function createV2OverlayCoordinator({
   enabledRef,
   expandedRef,
@@ -65,6 +86,9 @@ export function createV2OverlayCoordinator({
   hiddenFieldsRef,
 }) {
   const elementOverlayMapRef = { current: { viewer: new Map(), editor: new Map() } };
+  // Supersede token for chunked mounts: a newer mount() invalidates the
+  // remaining chunks of the previous one.
+  let mountEpoch = 0;
 
   function isElementInViewportWithMidpoint(el, viewbox) {
     if (!viewbox || !Number.isFinite(viewbox.x)) return true;
@@ -204,15 +228,55 @@ export function createV2OverlayCoordinator({
     return { overlayId, host: created.host };
   }
 
+  function mountEntry(inst, kind, elementId, ovl, el) {
+    const overlays = inst.get("overlays");
+    const map = elementOverlayMapRef.current[kind];
+    const v2Expanded = expandedRef?.current ?? false;
+    const globalEnabled = enabledRef?.current ?? false;
+    const contentSig = computeContentSig(ovl, el);
+    const existing = map.get(elementId);
+
+    const elementState = {
+      isSequenceFlow: Array.isArray(el.waypoints) && String(el.type).toLowerCase() === "bpmn:sequenceflow",
+      width: Number(el.width || 0),
+      height: Number(el.height || 0),
+      hasLegacyOverlay: hasLegacyPropertyOverlay(inst, elementId),
+    };
+    const canShow = shouldRenderV2Overlay({ elementId, globalEnabled, elementState, content: ovl });
+
+    if (!canShow) {
+      if (existing) {
+        try { overlays.remove(existing.overlayId); } catch {}
+        map.delete(elementId);
+      }
+      removeExistingV2OverlaysForElement(inst, elementId);
+      return;
+    }
+
+    if (existing) {
+      if (existing.contentSig !== contentSig) {
+        const result = renderForElement(inst, el, ovl, v2Expanded);
+        if (result) {
+          map.set(elementId, { overlayId: result.overlayId, contentSig, host: result.host, expanded: v2Expanded });
+        }
+      } else if (existing.expanded !== v2Expanded) {
+        existing.host.classList.toggle("fpc-overlay-v2-host--expanded", v2Expanded);
+        existing.expanded = v2Expanded;
+      }
+      return;
+    }
+
+    const result = renderForElement(inst, el, ovl, v2Expanded);
+    if (result) {
+      map.set(elementId, { overlayId: result.overlayId, contentSig, host: result.host, expanded: v2Expanded });
+    }
+  }
+
   function mount(inst, kind, overlayList) {
     if (!inst || typeof document === "undefined") return;
     if (!useExtensionOverlaysRef?.current) return;
 
     const map = elementOverlayMapRef.current[kind];
-    let removedCount = 0;
-    let addedCount = 0;
-    let updatedCount = 0;
-    let keptCount = 0;
 
     try {
       const overlays = inst.get("overlays");
@@ -233,58 +297,38 @@ export function createV2OverlayCoordinator({
           if (entry) {
             try { overlays.remove(entry.overlayId); } catch {}
             map.delete(elementId);
-            removedCount += 1;
           }
         }
       }
 
-      const v2Expanded = expandedRef?.current ?? false;
-      const globalEnabled = enabledRef?.current ?? false;
-
-      for (const [elementId, { ovl, el }] of desired.entries()) {
-        const contentSig = computeContentSig(ovl, el);
-        const existing = map.get(elementId);
-
-        const elementState = {
-          isSequenceFlow: Array.isArray(el.waypoints) && String(el.type).toLowerCase() === "bpmn:sequenceflow",
-          width: Number(el.width || 0),
-          height: Number(el.height || 0),
-          hasLegacyOverlay: hasLegacyPropertyOverlay(inst, elementId),
-        };
-        const canShow = shouldRenderV2Overlay({ elementId, globalEnabled, elementState, content: ovl });
-
-        if (!canShow) {
-          if (existing) {
-            try { overlays.remove(existing.overlayId); } catch {}
-            map.delete(elementId);
-            removedCount += 1;
-          }
-          removeExistingV2OverlaysForElement(inst, elementId);
-          continue;
+      const entries = Array.from(desired.entries());
+      const epoch = ++mountEpoch;
+      if (entries.length <= MOUNT_CHUNK_SIZE) {
+        for (const [elementId, { ovl, el }] of entries) {
+          mountEntry(inst, kind, elementId, ovl, el);
         }
-
-        if (existing) {
-          if (existing.contentSig !== contentSig) {
-            const result = renderForElement(inst, el, ovl, v2Expanded);
-            if (result) {
-              map.set(elementId, { overlayId: result.overlayId, contentSig, host: result.host, expanded: v2Expanded });
-              updatedCount += 1;
-            }
-          } else if (existing.expanded !== v2Expanded) {
-            existing.host.classList.toggle("fpc-overlay-v2-host--expanded", v2Expanded);
-            existing.expanded = v2Expanded;
-            keptCount += 1;
-          } else {
-            keptCount += 1;
-          }
-        } else {
-          const result = renderForElement(inst, el, ovl, v2Expanded);
-          if (result) {
-            map.set(elementId, { overlayId: result.overlayId, contentSig, host: result.host, expanded: v2Expanded });
-            addedCount += 1;
-          }
-        }
+        return;
       }
+
+      // Large mount: render the first chunk synchronously (instant first
+      // paint), then spread the rest over animation frames so the main
+      // thread stays responsive (load-freeze audit, fix 2). A newer mount
+      // supersedes the remaining chunks via the epoch check.
+      const head = entries.slice(0, MOUNT_CHUNK_SIZE);
+      const tail = entries.slice(MOUNT_CHUNK_SIZE);
+      for (const [elementId, { ovl, el }] of head) {
+        mountEntry(inst, kind, elementId, ovl, el);
+      }
+      void (async () => {
+        for (let idx = 0; idx < tail.length; idx += MOUNT_CHUNK_SIZE) {
+          await yieldToFrame();
+          if (epoch !== mountEpoch) return;
+          const chunk = tail.slice(idx, idx + MOUNT_CHUNK_SIZE);
+          for (const [elementId, { ovl, el }] of chunk) {
+            mountEntry(inst, kind, elementId, ovl, el);
+          }
+        }
+      })();
     } catch {
       // Overlay mount failures are non-critical; keep the diagram usable.
     }
