@@ -68,6 +68,7 @@ import {
 } from "./features/process/camunda/camundaExtensions";
 import { saveBpmnState } from "./features/process/save/saveBpmnState";
 import { readV2OverlayEnabled, writeV2OverlayEnabled } from "./features/process/bpmn/stage/utils/v2OverlayToggleStorage.js";
+import { readTobeLayerEnabled, writeTobeLayerEnabled } from "./features/process/bpmn/stage/utils/tobeLayerToggleStorage.js";
 import { propertyCrudBoundary } from "./features/process/propertyCrudBoundary";
 import { patchInterviewAnalysis } from "./features/process/analysis/interviewAnalysisPatchHelper";
 import {
@@ -904,6 +905,11 @@ export default function App() {
   useEffect(() => {
     writeV2OverlayEnabled(v2OverlaysEnabled);
   }, [v2OverlaysEnabled]);
+  const [toBeLayerEnabled, setToBeLayerEnabled] = useState(() => readTobeLayerEnabled());
+  // Persist the To-Be documents layer toggle across reloads.
+  useEffect(() => {
+    writeTobeLayerEnabled(toBeLayerEnabled);
+  }, [toBeLayerEnabled]);
   const [bpmnModelerSyncEpoch, setBpmnModelerSyncEpoch] = useState(0);
   // Set when an external writer (canvas properties popover) mutates camunda
   // extension properties in the live modeler. NotesPanel uses it to merge
@@ -3522,6 +3528,8 @@ export default function App() {
         onShowV2OverlaysChange={setV2OverlaysEnabled}
         v2OverlaysExpanded={v2OverlaysExpanded}
         onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
+        toBeLayerEnabled={toBeLayerEnabled}
+        onToBeLayerEnabledChange={setToBeLayerEnabled}
         bpmnModelerSyncEpoch={bpmnModelerSyncEpoch}
         bpmnExternalEditToken={bpmnExternalEditToken}
         getElementCamundaExtensionsFromModeler={getElementCamundaExtensionsFromModeler}

@@ -972,6 +972,8 @@ export default function NotesPanel({
   onShowV2OverlaysChange,
   v2OverlaysExpanded = false,
   onShowV2OverlaysExpandedChange,
+  toBeLayerEnabled = false,
+  onToBeLayerEnabledChange,
   overlayHiddenFields = null,
   onOverlayFieldToggle,
   onGoToDiagram,
@@ -3278,6 +3280,8 @@ export default function NotesPanel({
                   onV2EnabledChange={handleV2EnabledChange}
                   v2Mode={v2OverlaysExpanded ? "expanded" : "compact"}
                   onV2ModeChange={(mode) => void onShowV2OverlaysExpandedChange?.(mode === "expanded")}
+                  toBeEnabled={!!toBeLayerEnabled}
+                  onToBeEnabledChange={(next) => void onToBeLayerEnabledChange?.(!!next)}
                   chips={fieldChips}
                   onToggleField={onOverlayFieldToggle}
                   disabled={!!disabled}
