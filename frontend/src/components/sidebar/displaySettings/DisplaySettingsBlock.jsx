@@ -43,6 +43,8 @@ export default function DisplaySettingsBlock({
   onV2EnabledChange,
   v2Mode = "compact",
   onV2ModeChange,
+  toBeEnabled = false,
+  onToBeEnabledChange,
   chips = [],
   onToggleField,
   disabled = false,
@@ -99,6 +101,16 @@ export default function DisplaySettingsBlock({
             />
           </div>
         </div>
+      </div>
+
+      <div className="displaySettingsRow">
+        <ToggleSwitch
+          checked={toBeEnabled}
+          onChange={onToBeEnabledChange}
+          label="Документы"
+          disabled={disabled}
+          testId="tobe-toggle"
+        />
       </div>
 
       {chips.length > 0 && (

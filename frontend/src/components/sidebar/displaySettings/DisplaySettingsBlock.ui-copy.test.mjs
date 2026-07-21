@@ -8,7 +8,7 @@ import test from "node:test";
 const source = fs.readFileSync(new URL("./DisplaySettingsBlock.jsx", import.meta.url), "utf8");
 
 test("DisplaySettingsBlock: RU copy for all segments and controls", () => {
-  ["При наведении", "Всегда", "Скрыто", "V2-оверлеи", "Компактно", "Раскрыто",
+  ["При наведении", "Всегда", "Скрыто", "V2-оверлеи", "Документы", "Компактно", "Раскрыто",
     "Свойства над задачей", "Настройки отображения свойств",
     "Карточка появляется при выделении элемента",
     "Карточки видны над всеми задачами",
@@ -22,6 +22,7 @@ test("DisplaySettingsBlock: uses P0 primitives with stable testids", () => {
   assert.match(source, /import ToggleSwitch from "\.\.\/controls\/ToggleSwitch\.jsx"/);
   assert.match(source, /testIdPrefix="display-mode"/);
   assert.match(source, /testId="v2-toggle"/);
+  assert.match(source, /testId="tobe-toggle"/);
   assert.match(source, /testIdPrefix="v2-mode"/);
   assert.match(source, /data-testid="v2-sub-control"/);
 });
