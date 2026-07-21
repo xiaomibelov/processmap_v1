@@ -68,6 +68,8 @@ import {
 } from "./features/process/camunda/camundaExtensions";
 import { saveBpmnState } from "./features/process/save/saveBpmnState";
 import { readV2OverlayEnabled, writeV2OverlayEnabled } from "./features/process/bpmn/stage/utils/v2OverlayToggleStorage.js";
+import { readTobeLayerEnabled, writeTobeLayerEnabled } from "./features/process/bpmn/stage/utils/tobeLayerToggleStorage.js";
+import { useTobeLayer } from "./features/process/tobe/useTobeLayer.js";
 import { propertyCrudBoundary } from "./features/process/propertyCrudBoundary";
 import { patchInterviewAnalysis } from "./features/process/analysis/interviewAnalysisPatchHelper";
 import {
@@ -904,6 +906,21 @@ export default function App() {
   useEffect(() => {
     writeV2OverlayEnabled(v2OverlaysEnabled);
   }, [v2OverlaysEnabled]);
+  const [toBeLayerEnabled, setToBeLayerEnabled] = useState(() => readTobeLayerEnabled());
+  // Persist the To-Be documents layer toggle across reloads.
+  useEffect(() => {
+    writeTobeLayerEnabled(toBeLayerEnabled);
+  }, [toBeLayerEnabled]);
+  // To-Be documents: hydrated from the session draft once per session;
+  // `toBeDocumentsRef` is what the save pipeline serializes back.
+  const {
+    documents: toBeDocuments,
+    documentsRef: toBeDocumentsRef,
+    setDocuments: setToBeDocuments,
+  } = useTobeLayer({
+    sessionId: draft?.session_id,
+    draftDocuments: draft?.to_be_documents,
+  });
   const [bpmnModelerSyncEpoch, setBpmnModelerSyncEpoch] = useState(0);
   // Set when an external writer (canvas properties popover) mutates camunda
   // extension properties in the live modeler. NotesPanel uses it to merge
@@ -2297,6 +2314,31 @@ export default function App() {
     window.dispatchEvent(new CustomEvent("fpc:diagram_flash", { detail: payload }));
   }
 
+  // To-Be documents persist through the same patch pipeline as
+  // notes_by_element: the backend stores the session JSON blob, so the
+  // top-level `to_be_documents` field needs no backend change. The
+  // useTobeLayer ref is the source of truth; the draft mirrors it.
+  async function persistToBeDocuments(nextDocsRaw) {
+    const sid = String(draft?.session_id || "");
+    const nextDocs = Array.isArray(nextDocsRaw) ? nextDocsRaw : [];
+    setToBeDocuments(nextDocs);
+
+    if (!sid || isLocalSessionId(sid)) {
+      setDraftPersisted((d) => ({ ...d, to_be_documents: nextDocs }));
+      return { ok: true };
+    }
+
+    const r = await apiPatchSession(sid, { to_be_documents: nextDocs });
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "Не удалось сохранить документы.") };
+    }
+    const serverDocs = Array.isArray(r.session?.to_be_documents) ? r.session.to_be_documents : nextDocs;
+    setDraftPersisted((d) => ({ ...d, to_be_documents: serverDocs }));
+    setToBeDocuments(serverDocs);
+    return { ok: true };
+  }
+
   async function addElementNote(elementId, text) {
     const sid = String(draft?.session_id || "");
     const eid = String(elementId || "").trim();
@@ -3522,6 +3564,10 @@ export default function App() {
         onShowV2OverlaysChange={setV2OverlaysEnabled}
         v2OverlaysExpanded={v2OverlaysExpanded}
         onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
+        toBeLayerEnabled={toBeLayerEnabled}
+        onToBeLayerEnabledChange={setToBeLayerEnabled}
+        toBeDocuments={toBeDocuments}
+        onToBeDocumentsChange={persistToBeDocuments}
         bpmnModelerSyncEpoch={bpmnModelerSyncEpoch}
         bpmnExternalEditToken={bpmnExternalEditToken}
         getElementCamundaExtensionsFromModeler={getElementCamundaExtensionsFromModeler}
@@ -4004,6 +4050,8 @@ export default function App() {
         v2OverlaysEnabled={v2OverlaysEnabled}
         v2OverlaysExpanded={v2OverlaysExpanded}
         onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
+        toBeLayerEnabled={toBeLayerEnabled}
+        toBeDocuments={toBeDocuments}
         drawioCompanionFocusIntent={drawioCompanionFocusIntent}
         discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
         onDiscussionLinkedElementFocusResult={completeDiscussionLinkedElementFocus}
