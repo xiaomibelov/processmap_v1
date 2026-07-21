@@ -125,6 +125,7 @@ import usePlaybackController from "../features/process/stage/controllers/usePlay
 import useDiagramShellState from "../features/process/stage/orchestration/useDiagramShellState";
 import useDiagramActionsController from "../features/process/stage/orchestration/useDiagramActionsController";
 import useStableProcessDiagramOverlayLayersProps from "../features/process/stage/orchestration/useStableProcessDiagramOverlayLayersProps";
+import TobeDocumentPreviewModal from "../features/process/tobe/TobeDocumentPreviewModal";
 import useBpmnDiagramContextMenu from "../features/process/stage/hooks/useBpmnDiagramContextMenu";
 import useBpmnPropertiesOverlayController from "../features/process/bpmn/context-menu/properties-overlay/useBpmnPropertiesOverlayController";
 import useBpmnSubprocessPreview from "../features/process/stage/hooks/useBpmnSubprocessPreview";
@@ -553,6 +554,7 @@ function ProcessStage({
   const diagramOverflowPopoverRef = useRef(null);
   const bpmnStageHostRef = useRef(null);
   const [bpmnStageHostElement, setBpmnStageHostElement] = useState(null);
+  const [activeTobeDocument, setActiveTobeDocument] = useState(null);
   const bpmnStageHostRefCallback = useCallback((node) => {
     bpmnStageHostRef.current = node;
     setBpmnStageHostElement((prev) => (prev === node ? prev : node));
@@ -6854,6 +6856,7 @@ function ProcessStage({
     v2OverlaysExpanded,
     toBeLayerEnabled,
     toBeDocuments,
+    onTobeDocumentClick: setActiveTobeDocument,
     reloadKey,
     bpmnXmlCacheRef,
     robotMetaOverlayEnabled,
@@ -7608,6 +7611,10 @@ function ProcessStage({
                   />
                 ) : null}
                 <ProcessDiagramOverlayLayers {...diagramOverlayLayersProps} />
+                <TobeDocumentPreviewModal
+                  doc={activeTobeDocument}
+                  onClose={() => setActiveTobeDocument(null)}
+                />
                 <BottomViewportScrubber
                   active={tab === "diagram" && !isInterview}
                   canvasApi={bpmnCanvasApi}
