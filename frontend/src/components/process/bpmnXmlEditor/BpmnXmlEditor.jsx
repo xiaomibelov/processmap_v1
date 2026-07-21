@@ -93,6 +93,7 @@ export default function BpmnXmlEditor({
   const [validationError, setValidationError] = useState("");
   const [cursor, setCursor] = useState({ line: 1, col: 1 });
   const [structureOpen, setStructureOpen] = useState(true);
+  const [dupScan, setDupScan] = useState({ status: "idle", count: 0 });
   const editorRef = useRef(null);
 
   // Keep editor in sync with external resets / tab loads / saves.
@@ -144,9 +145,23 @@ export default function BpmnXmlEditor({
     setCursor({ line, col });
   }, []);
 
+  const handleScanDuplicates = useCallback(() => {
+    const count = editorRef.current?.highlightDuplicates?.() ?? 0;
+    setDupScan({ status: "scanned", count });
+  }, []);
+
   const handleStructureSelect = useCallback((line) => {
     editorRef.current?.scrollToLine?.(line);
   }, []);
+
+  const dupBadge = useMemo(() => {
+    if (dupScan.status === "scanned") {
+      return dupScan.count > 0
+        ? { text: `Дублей: ${dupScan.count}`, className: "has-dups" }
+        : { text: "✅ Дублей нет", className: "clean" };
+    }
+    return null;
+  }, [dupScan]);
 
   const statusText = useMemo(() => {
     if (xmlSaveBusy) return "Сохранение…";
@@ -198,6 +213,18 @@ export default function BpmnXmlEditor({
           >
             Сбросить
           </button>
+          <button
+            type="button"
+            className="bpmnXmlEditorBtn secondary"
+            onClick={handleScanDuplicates}
+            disabled={!editorValue.trim() || xmlSaveBusy}
+            title="Найти и подсветить дублирующиеся элементы XML"
+          >
+            Подсветить дубли
+          </button>
+          {dupBadge ? (
+            <span className={`bpmnXmlEditorDupBadge ${dupBadge.className}`}>{dupBadge.text}</span>
+          ) : null}
           <button
             type="button"
             className="bpmnXmlEditorBtn primary"
