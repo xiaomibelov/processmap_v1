@@ -282,5 +282,144 @@ class AdminSessionAnalyticsTopTest(_AnalyticsTestBase):
         self.assertEqual(getattr(out, "status_code", 0), 403)
 
 
+XML_TASK = (
+    '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+    '<bpmn:process><bpmn:task id="t1"/></bpmn:process></bpmn:definitions>'
+)
+XML_TASK_GW = (
+    '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+    '<bpmn:process><bpmn:task id="t1"/><bpmn:exclusiveGateway id="g1"/>'
+    '<bpmn:sequenceFlow id="f1" sourceRef="t1" targetRef="g1"/>'
+    '<bpmn:task id="t2"><bpmn:extensionElements>'
+    '<camunda:properties><camunda:property name="ee_time" value="1"/></camunda:properties>'
+    '</bpmn:extensionElements></bpmn:task>'
+    '</bpmn:process></bpmn:definitions>'
+)
+XML_NS0 = (
+    '<ns0:definitions xmlns:ns0="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+    '<ns0:process><ns0:userTask id="u1"/><ns0:startEvent id="e1"/>'
+    '<ns0:subProcess id="sp1"/></ns0:process></ns0:definitions>'
+)
+
+
+class AdminSessionAnalyticsCaseStudiesTest(_AnalyticsTestBase):
+    def setUp(self):
+        super().setUp()
+        from app.routers.admin import admin_analytics_sessions_case_studies
+
+        self.endpoint = admin_analytics_sessions_case_studies
+
+    def _insert_version_xml(self, *, sid, number, xml, created_at):
+        with self._connect() as con:
+            con.execute(
+                """
+                INSERT INTO bpmn_versions (id, session_id, org_id, version_number, created_at, bpmn_xml)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [f"ver_{sid}_{number}", sid, self.default_org_id, number, created_at, xml],
+            )
+            con.commit()
+
+    def _seed(self):
+        user_a = str(self.user_a.get("id") or "")
+        # cs1: 12 versions; changes at v1→v2, then quiet until v12 (ns0 XML).
+        self._insert_session(sid="cs1", created_at=1000, updated_at=2000, created_by=user_a)
+        for number in range(1, 13):
+            xml = XML_TASK if number == 1 else (XML_NS0 if number == 12 else XML_TASK_GW)
+            self._insert_version_xml(sid="cs1", number=number, xml=xml, created_at=1000 + number)
+        # cs2: only 5 versions — below the min-10 threshold.
+        self._insert_session(sid="cs2", created_at=1000, updated_at=1100, created_by=user_a)
+        self._insert_versions(sid="cs2", count=5)
+        # cs3: 11 versions, no element changes at all.
+        self._insert_session(sid="cs3", created_at=1000, updated_at=3000, created_by=user_a)
+        for number in range(1, 12):
+            self._insert_version_xml(sid="cs3", number=number, xml=XML_TASK, created_at=1000 + number)
+
+    def _query(self, **overrides):
+        params = {"limit": 3, "refresh": ""}
+        params.update(overrides)
+        return self.endpoint(self.request, **params)
+
+    def test_top_by_version_count_with_min_threshold(self):
+        out = self._query()
+        self.assertTrue(bool(out.get("ok")))
+        items = out.get("items") or []
+        self.assertEqual([item.get("id") for item in items], ["cs1", "cs3"])
+        self.assertEqual([item.get("version_count") for item in items], [12, 11])
+        self.assertEqual(items[0].get("duration_seconds"), 1000)
+        self.assertEqual(items[0].get("author_email"), "author.a@local")
+        self.assertEqual(out.get("min_versions"), 10)
+
+    def test_limit_respected(self):
+        out = self._query(limit=1)
+        self.assertEqual([item.get("id") for item in (out.get("items") or [])], ["cs1"])
+
+    def test_timeline_compressed_to_change_points_plus_first_last(self):
+        out = self._query()
+        by_id = {item.get("id"): item for item in (out.get("items") or [])}
+        timeline = by_id["cs1"].get("timeline") or []
+        self.assertEqual([point.get("version") for point in timeline], [1, 2, 12])
+        v1 = timeline[0]
+        self.assertEqual((v1.get("tasks"), v1.get("gateways"), v1.get("flows")), (1, 0, 0))
+        v2 = timeline[1]
+        self.assertEqual((v2.get("tasks"), v2.get("gateways"), v2.get("flows"), v2.get("properties")), (2, 1, 1, 1))
+        v12 = timeline[2]
+        self.assertEqual((v12.get("tasks"), v12.get("events"), v12.get("subprocesses")), (1, 1, 1))
+        # cs3: no changes — first + last only.
+        cs3_timeline = by_id["cs3"].get("timeline") or []
+        self.assertEqual([point.get("version") for point in cs3_timeline], [1, 11])
+
+    def test_cache_and_refresh(self):
+        first = self._query()
+        self._insert_version_xml(sid="cs1", number=13, xml=XML_NS0, created_at=2000)
+        second = self._query()
+        timeline = (second.get("items") or [{}])[0].get("timeline") or []
+        self.assertEqual([p.get("version") for p in timeline], [1, 2, 12])
+        third = self._query(refresh="true")
+        timeline = (third.get("items") or [{}])[0].get("timeline") or []
+        self.assertEqual([p.get("version") for p in timeline], [1, 2, 12, 13])
+        self.assertTrue(bool(first.get("ok")))
+
+    def test_auth_admin_restriction_works(self):
+        out = self.endpoint(self.viewer_request, limit=3, refresh="")
+        self.assertEqual(getattr(out, "status_code", 0), 403)
+
+
+class BpmnElementCountUnitTest(unittest.TestCase):
+    def test_counts_bpmn_prefix(self):
+        from app.session_analytics import count_bpmn_elements
+
+        counts = count_bpmn_elements(XML_TASK_GW)
+        self.assertEqual(counts.get("tasks"), 2)
+        self.assertEqual(counts.get("gateways"), 1)
+        self.assertEqual(counts.get("flows"), 1)
+        self.assertEqual(counts.get("properties"), 1)
+        self.assertEqual(counts.get("events"), 0)
+
+    def test_counts_ns_prefix_and_zeebe_property(self):
+        from app.session_analytics import count_bpmn_elements
+
+        xml = XML_NS0.replace("</ns0:process>", '<ns0:task id="t9"><ns0:extensionElements><zeebe:properties><zeebe:property name="a" value="b"/></zeebe:properties></ns0:extensionElements></ns0:task></ns0:process>')
+        counts = count_bpmn_elements(xml)
+        self.assertEqual(counts.get("tasks"), 2)
+        self.assertEqual(counts.get("events"), 1)
+        self.assertEqual(counts.get("subprocesses"), 1)
+        self.assertEqual(counts.get("properties"), 1)
+
+    def test_empty_xml_is_zero(self):
+        from app.session_analytics import count_bpmn_elements
+
+        self.assertEqual(count_bpmn_elements(""), {"tasks": 0, "gateways": 0, "events": 0, "flows": 0, "subprocesses": 0, "properties": 0})
+
+    def test_compress_timeline_caps_and_preserves_first_last(self):
+        from app.session_analytics import compress_timeline
+
+        points = [{"version": idx, "created_at": idx, "tasks": idx, "gateways": 0, "events": 0, "flows": 0, "subprocesses": 0, "properties": 0} for idx in range(1, 41)]
+        out = compress_timeline(points)
+        self.assertLessEqual(len(out), 15)
+        self.assertEqual(out[0].get("version"), 1)
+        self.assertEqual(out[-1].get("version"), 40)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -8,6 +8,7 @@ and works identically on SQLite and PostgreSQL.
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -366,5 +367,152 @@ def get_session_analytics_summary(*, org_id: str, refresh: bool = False) -> Dict
         if cached is not None:
             return cached
     payload = _build_summary(org_id=org)
+    _cache_put(cache_key, payload)
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# Case studies: element counting on bpmn_xml (Python regex, not SQL) and
+# compressed timelines.
+
+_NS = r"(?:bpmn|ns\d+)"
+_TASK_RE = re.compile(
+    r"<" + _NS + r":(?:task|userTask|serviceTask|scriptTask|businessRuleTask|manualTask|receiveTask|sendTask|callActivity)[\s/>]"
+)
+_GATEWAY_RE = re.compile(
+    r"<" + _NS + r":(?:exclusiveGateway|parallelGateway|inclusiveGateway|eventBasedGateway|complexGateway)[\s/>]"
+)
+_EVENT_RE = re.compile(
+    r"<" + _NS + r":(?:startEvent|endEvent|intermediateCatchEvent|intermediateThrowEvent|boundaryEvent)[\s/>]"
+)
+_FLOW_RE = re.compile(r"<" + _NS + r":sequenceFlow[\s/>]")
+_SUBPROCESS_RE = re.compile(r"<" + _NS + r":subProcess[\s/>]")
+_PROPERTY_RE = re.compile(r"<(?:camunda|zeebe|ns\d+):property[\s/>]")
+
+_TIMELINE_CAP = 15
+_CASE_STUDY_MIN_VERSIONS = 10
+
+
+def count_bpmn_elements(xml: str) -> Dict[str, int]:
+    """Counts BPMN elements in a bpmn_xml string. Handles both `bpmn:` and
+    `ns<N>:` namespace prefixes (some exports use ns0:)."""
+    text = str(xml or "")
+    return {
+        "tasks": len(_TASK_RE.findall(text)),
+        "gateways": len(_GATEWAY_RE.findall(text)),
+        "events": len(_EVENT_RE.findall(text)),
+        "flows": len(_FLOW_RE.findall(text)),
+        "subprocesses": len(_SUBPROCESS_RE.findall(text)),
+        "properties": len(_PROPERTY_RE.findall(text)),
+    }
+
+
+def _timeline_key(point: Dict[str, Any]) -> Tuple[int, ...]:
+    return (
+        _int(point.get("tasks")),
+        _int(point.get("gateways")),
+        _int(point.get("events")),
+        _int(point.get("flows")),
+        _int(point.get("subprocesses")),
+        _int(point.get("properties")),
+    )
+
+
+def compress_timeline(points: List[Dict[str, Any]], cap: int = _TIMELINE_CAP) -> List[Dict[str, Any]]:
+    """Keeps the first point, every point where element counts changed, and
+    the last point; then downsamples to `cap` points preserving first/last."""
+    keep: List[Dict[str, Any]] = []
+    prev_key: Optional[Tuple[int, ...]] = None
+    for point in points:
+        key = _timeline_key(point)
+        if key != prev_key:
+            keep.append(point)
+            prev_key = key
+    if points and keep and _int(keep[-1].get("version")) != _int(points[-1].get("version")):
+        keep.append(points[-1])
+    cap = max(2, _int(cap) or _TIMELINE_CAP)
+    if len(keep) <= cap:
+        return keep
+    # Even downsampling that always preserves the first and the last point.
+    step = (len(keep) - 1) / float(cap - 1)
+    sampled = [keep[round(i * step)] for i in range(cap)]
+    deduped: List[Dict[str, Any]] = []
+    for point in sampled:
+        if not deduped or _int(deduped[-1].get("version")) != _int(point.get("version")):
+            deduped.append(point)
+    return deduped
+
+
+def _build_case_study_timeline(con: Any, *, org_id: str, session_id: str) -> List[Dict[str, Any]]:
+    rows = con.execute(
+        """
+        SELECT version_number, created_at, bpmn_xml
+          FROM bpmn_versions
+         WHERE org_id = ? AND session_id = ?
+         ORDER BY version_number ASC
+        """,
+        [org_id, session_id],
+    ).fetchall()
+    points = []
+    for row in rows or []:
+        counts = count_bpmn_elements(row[2])
+        points.append(
+            {
+                "version": _int(row[0]),
+                "created_at": _int(row[1]),
+                **counts,
+            }
+        )
+    return compress_timeline(points)
+
+
+def _build_case_studies(*, org_id: str, limit: int) -> Dict[str, Any]:
+    _ensure_schema()
+    with _connect() as con:
+        rows = con.execute(
+            """
+            SELECT
+              s.id,
+              s.title,
+              s.created_at,
+              s.updated_at,
+              COALESCE(u.email, '') AS author_email,
+              COUNT(v.id) AS version_count
+            FROM sessions s
+            JOIN bpmn_versions v ON v.session_id = s.id AND v.org_id = s.org_id
+            LEFT JOIN users u ON u.id = s.created_by
+            WHERE s.org_id = ? AND s.deleted_at = 0
+            GROUP BY s.id
+            HAVING COUNT(v.id) >= ?
+            ORDER BY version_count DESC, s.id ASC
+            LIMIT ?
+            """,
+            [org_id, _CASE_STUDY_MIN_VERSIONS, limit],
+        ).fetchall()
+        items = []
+        for row in rows or []:
+            session_id = str(row[0] or "")
+            items.append(
+                {
+                    "id": session_id,
+                    "title": str(row[1] or ""),
+                    "author_email": str(row[4] or ""),
+                    "duration_seconds": _int(row[3]) - _int(row[2]),
+                    "version_count": _int(row[5]),
+                    "timeline": _build_case_study_timeline(con, org_id=org_id, session_id=session_id),
+                }
+            )
+    return {"items": items, "min_versions": _CASE_STUDY_MIN_VERSIONS}
+
+
+def get_session_analytics_case_studies(*, org_id: str, limit: int = 3, refresh: bool = False) -> Dict[str, Any]:
+    org = str(org_id or "").strip() or "org_default"
+    limit = max(1, min(_int(limit) or 3, 20))
+    cache_key = f"case:{org}:{limit}"
+    if not refresh:
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            return cached
+    payload = _build_case_studies(org_id=org, limit=limit)
     _cache_put(cache_key, payload)
     return payload
