@@ -69,6 +69,7 @@ import {
 import { saveBpmnState } from "./features/process/save/saveBpmnState";
 import { readV2OverlayEnabled, writeV2OverlayEnabled } from "./features/process/bpmn/stage/utils/v2OverlayToggleStorage.js";
 import { readTobeLayerEnabled, writeTobeLayerEnabled } from "./features/process/bpmn/stage/utils/tobeLayerToggleStorage.js";
+import { useTobeLayer } from "./features/process/tobe/useTobeLayer.js";
 import { propertyCrudBoundary } from "./features/process/propertyCrudBoundary";
 import { patchInterviewAnalysis } from "./features/process/analysis/interviewAnalysisPatchHelper";
 import {
@@ -910,6 +911,16 @@ export default function App() {
   useEffect(() => {
     writeTobeLayerEnabled(toBeLayerEnabled);
   }, [toBeLayerEnabled]);
+  // To-Be documents: hydrated from the session draft once per session;
+  // `toBeDocumentsRef` is what the save pipeline serializes back.
+  const {
+    documents: toBeDocuments,
+    documentsRef: toBeDocumentsRef,
+    setDocuments: setToBeDocuments,
+  } = useTobeLayer({
+    sessionId: draft?.session_id,
+    draftDocuments: draft?.to_be_documents,
+  });
   const [bpmnModelerSyncEpoch, setBpmnModelerSyncEpoch] = useState(0);
   // Set when an external writer (canvas properties popover) mutates camunda
   // extension properties in the live modeler. NotesPanel uses it to merge
@@ -4012,6 +4023,8 @@ export default function App() {
         v2OverlaysEnabled={v2OverlaysEnabled}
         v2OverlaysExpanded={v2OverlaysExpanded}
         onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
+        toBeLayerEnabled={toBeLayerEnabled}
+        toBeDocuments={toBeDocuments}
         drawioCompanionFocusIntent={drawioCompanionFocusIntent}
         discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
         onDiscussionLinkedElementFocusResult={completeDiscussionLinkedElementFocus}

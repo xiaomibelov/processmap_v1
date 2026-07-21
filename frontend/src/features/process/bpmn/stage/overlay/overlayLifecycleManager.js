@@ -6,8 +6,10 @@ let overlayBadgeTooltipHandler = null;
 
 let v2OverlayClickListenerInstalled = false;
 let v2OverlayClickHandler = null;
+let tobeDocumentClickHandler = null;
 
 const V2_OVERLAY_HOST_SELECTOR = ".fpc-overlay-v2-host[data-fpc-element-id]";
+const TOBE_DOC_HOST_SELECTOR = ".fpc-tobe-doc[data-fpc-tobe-doc-id]";
 
 function findV2OverlayHostFromEvent(event) {
   const host = event?.target?.closest?.(V2_OVERLAY_HOST_SELECTOR) || null;
@@ -15,14 +17,35 @@ function findV2OverlayHostFromEvent(event) {
   return elementId ? { host, elementId } : null;
 }
 
+function findTobeDocHostFromEvent(event) {
+  const host = event?.target?.closest?.(TOBE_DOC_HOST_SELECTOR) || null;
+  const docId = String(host?.dataset?.fpcTobeDocId || "").trim();
+  return docId ? { host, docId } : null;
+}
+
 // Pressing on a V2 card must not start a canvas pan / rubber-band selection.
 // Capture phase: the canvas container listens in bubble phase, so stopping
 // here keeps the gesture owned by the overlay.
 function handleV2OverlayMouseDownCapture(event) {
-  if (findV2OverlayHostFromEvent(event)) event.stopPropagation();
+  if (findV2OverlayHostFromEvent(event) || findTobeDocHostFromEvent(event)) {
+    event.stopPropagation();
+  }
 }
 
 function handleV2OverlayClick(event) {
+  const tobeHit = findTobeDocHostFromEvent(event);
+  if (tobeHit) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof tobeDocumentClickHandler === "function") {
+      try {
+        tobeDocumentClickHandler({ docId: tobeHit.docId, event });
+      } catch {
+        // Overlay click handler failures are non-critical.
+      }
+    }
+    return;
+  }
   const hit = findV2OverlayHostFromEvent(event);
   if (!hit) return;
   event.preventDefault();
@@ -54,6 +77,15 @@ function uninstallV2OverlayClickListener() {
 export function setV2OverlayClickHandler(handler) {
   v2OverlayClickHandler = typeof handler === "function" ? handler : null;
   if (v2OverlayClickHandler) {
+    installV2OverlayClickListener();
+  }
+}
+
+// Registers the handler invoked with { docId } when a To-Be document card is
+// clicked. Shares the delegated document listeners with the V2 cards.
+export function setTobeDocumentClickHandler(handler) {
+  tobeDocumentClickHandler = typeof handler === "function" ? handler : null;
+  if (tobeDocumentClickHandler) {
     installV2OverlayClickListener();
   }
 }
