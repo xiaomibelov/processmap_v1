@@ -17,6 +17,7 @@
 
 import { useEffect, useRef } from "react";
 import { apiRoutes } from "../lib/apiRoutes.js";
+import { getAccessToken } from "../lib/apiCore.js";
 
 const POLL_INTERVAL_MS = 15000;
 
@@ -28,10 +29,16 @@ function isLocalSessionId(sid) {
   return /^local_|^new_/.test(asText(sid));
 }
 
-function eventsUrl(sessionId) {
+export function eventsUrl(sessionId) {
   const sid = asText(sessionId);
   if (!sid) return "";
-  return apiRoutes.sessions.events(sid);
+  const base = apiRoutes.sessions.events(sid);
+  // Native EventSource cannot set the Authorization header, so the access
+  // token travels as a query param (accepted by the backend auth guard for
+  // SSE paths only — EVENTS-401 fix).
+  const token = asText(getAccessToken());
+  if (!token) return base;
+  return `${base}?access_token=${encodeURIComponent(token)}`;
 }
 
 /**
