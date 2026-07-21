@@ -978,6 +978,8 @@ export default function NotesPanel({
   toBeDocuments = [],
   onToBeDocumentsChange,
   onTobeDocumentPreview,
+  toBeGhostActive = false,
+  onToBeGhostStart = null,
   overlayHiddenFields = null,
   onOverlayFieldToggle,
   onGoToDiagram,
@@ -3297,6 +3299,8 @@ export default function NotesPanel({
                     onDocumentClick={(doc) => void onTobeDocumentPreview?.(doc, { view: "popover" })}
                     selectedElementId={isElementMode ? selectedElementId : ""}
                     disabled={!!disabled}
+                    ghostActive={!!toBeGhostActive}
+                    onGhostStart={onToBeGhostStart}
                   />
                 ) : null}
                 {isElementMode && selectedCamundaPropertiesEditable && !isProcessLikeSelection && (

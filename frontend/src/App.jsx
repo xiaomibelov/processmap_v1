@@ -71,6 +71,7 @@ import { readV2OverlayEnabled, writeV2OverlayEnabled } from "./features/process/
 import { readTobeLayerEnabled, writeTobeLayerEnabled } from "./features/process/bpmn/stage/utils/tobeLayerToggleStorage.js";
 import { useTobeLayer } from "./features/process/tobe/useTobeLayer.js";
 import { useDocumentPreview } from "./features/process/tobe/useDocumentPreview.js";
+import { startTobeGhost, fixTobeGhost, cancelTobeGhost } from "./features/process/tobe/tobeGhostModel.js";
 import DocumentPreviewPopover from "./features/process/tobe/DocumentPreviewPopover.jsx";
 import TobeDocumentPreviewModal from "./features/process/tobe/TobeDocumentPreviewModal.jsx";
 import { propertyCrudBoundary } from "./features/process/propertyCrudBoundary";
@@ -927,6 +928,19 @@ export default function App() {
   // Shared preview state for To-Be documents: canvas cards and the sidebar
   // list both open the same popover/modal through this hook.
   const tobeDocPreview = useDocumentPreview();
+  // Ghost placement: ephemeral { url, title, x, y } | null — nothing is
+  // persisted until the ghost is fixed on the canvas.
+  const [tobeGhost, setTobeGhost] = useState(null);
+  const tobeGhostRef = useRef(null);
+  useEffect(() => {
+    tobeGhostRef.current = tobeGhost;
+  }, [tobeGhost]);
+  const handleTobeGhostStart = useCallback((payload) => {
+    setTobeGhost((current) => startTobeGhost(current, payload));
+  }, []);
+  const handleTobeGhostCancel = useCallback(() => {
+    setTobeGhost(cancelTobeGhost());
+  }, []);
   const [bpmnModelerSyncEpoch, setBpmnModelerSyncEpoch] = useState(0);
   // Set when an external writer (canvas properties popover) mutates camunda
   // extension properties in the live modeler. NotesPanel uses it to merge
@@ -2345,6 +2359,30 @@ export default function App() {
     return { ok: true };
   }
 
+  // Ghost fixed on the canvas: build the real document at the ghost position
+  // (default size, visible) and persist it through the usual path.
+  function handleTobeGhostFix(point) {
+    const { document: doc } = fixTobeGhost(tobeGhostRef.current, point);
+    setTobeGhost(null);
+    if (!doc) return;
+    void persistToBeDocuments([...toBeDocumentsRef.current, doc]);
+  }
+
+  // Shape interaction commit (drag end / resize end / close): patches the
+  // record and persists the whole list — same path as add/remove. Called
+  // only on gesture end, never per mousemove.
+  function handleTobeDocumentChange(docIdRaw, patchRaw) {
+    const docId = String(docIdRaw || "").trim();
+    const patch = patchRaw && typeof patchRaw === "object" ? patchRaw : null;
+    if (!docId || !patch) return;
+    const current = Array.isArray(toBeDocumentsRef.current) ? toBeDocumentsRef.current : [];
+    if (!current.some((entry) => String(entry?.id || "") === docId)) return;
+    const next = current.map((entry) => (
+      String(entry?.id || "") === docId ? { ...entry, ...patch } : entry
+    ));
+    void persistToBeDocuments(next);
+  }
+
   async function addElementNote(elementId, text) {
     const sid = String(draft?.session_id || "");
     const eid = String(elementId || "").trim();
@@ -3575,6 +3613,8 @@ export default function App() {
         toBeDocuments={toBeDocuments}
         onToBeDocumentsChange={persistToBeDocuments}
         onTobeDocumentPreview={tobeDocPreview.openDocumentPreview}
+        toBeGhostActive={!!tobeGhost}
+        onToBeGhostStart={handleTobeGhostStart}
         bpmnModelerSyncEpoch={bpmnModelerSyncEpoch}
         bpmnExternalEditToken={bpmnExternalEditToken}
         getElementCamundaExtensionsFromModeler={getElementCamundaExtensionsFromModeler}
@@ -4060,6 +4100,10 @@ export default function App() {
         toBeLayerEnabled={toBeLayerEnabled}
         toBeDocuments={toBeDocuments}
         onTobeDocumentClick={tobeDocPreview.openDocumentPreview}
+        onTobeDocumentChange={handleTobeDocumentChange}
+        tobeGhostDocument={tobeGhost}
+        onTobeGhostFix={handleTobeGhostFix}
+        onTobeGhostCancel={handleTobeGhostCancel}
         drawioCompanionFocusIntent={drawioCompanionFocusIntent}
         discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
         onDiscussionLinkedElementFocusResult={completeDiscussionLinkedElementFocus}
