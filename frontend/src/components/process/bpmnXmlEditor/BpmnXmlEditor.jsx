@@ -9,6 +9,7 @@ import {
 } from "react";
 import { validateBpmnXmlText } from "../../../features/process/bpmn/stage/runtimeHelpers/bpmnStagePureHelpers";
 import { prettyPrintXml } from "./prettyPrintXml";
+import { removeDuplicates } from "./xmlDuplicateDetector";
 import "./BpmnXmlEditor.css";
 
 const BpmnXmlCodeEditor = lazy(() => import("./BpmnXmlCodeEditor"));
@@ -150,11 +151,31 @@ export default function BpmnXmlEditor({
     setDupScan({ status: "scanned", count });
   }, []);
 
+  const handleRemoveDuplicates = useCallback(() => {
+    if (dupScan.status !== "scanned" || dupScan.count <= 0) return;
+    if (dupScan.count > 5) {
+      const confirmed = window.confirm(`Найдено дублей: ${dupScan.count}. Удалить их из XML?`);
+      if (!confirmed) return;
+    }
+    const { xml, removedCount } = removeDuplicates(editorValue);
+    if (removedCount > 0 && xml !== editorValue) {
+      // Single full-range dispatch in the code editor; the existing
+      // change pipeline (updateListener -> onChange -> validation/save)
+      // picks it up just like a manual edit or "Форматировать XML".
+      editorRef.current?.replaceContent?.(xml);
+    }
+    editorRef.current?.clearDuplicateHighlights?.();
+    setDupScan({ status: "removed", count: removedCount });
+  }, [dupScan, editorValue]);
+
   const handleStructureSelect = useCallback((line) => {
     editorRef.current?.scrollToLine?.(line);
   }, []);
 
   const dupBadge = useMemo(() => {
+    if (dupScan.status === "removed") {
+      return { text: `✅ Дубли удалены (${dupScan.count})`, className: "clean" };
+    }
     if (dupScan.status === "scanned") {
       return dupScan.count > 0
         ? { text: `Дублей: ${dupScan.count}`, className: "has-dups" }
@@ -225,6 +246,15 @@ export default function BpmnXmlEditor({
           {dupBadge ? (
             <span className={`bpmnXmlEditorDupBadge ${dupBadge.className}`}>{dupBadge.text}</span>
           ) : null}
+          <button
+            type="button"
+            className="bpmnXmlEditorBtn secondary"
+            onClick={handleRemoveDuplicates}
+            disabled={dupScan.status !== "scanned" || dupScan.count <= 0 || xmlSaveBusy}
+            title="Удалить дублирующиеся элементы XML (первое вхождение сохраняется)"
+          >
+            Удалить дубли
+          </button>
           <button
             type="button"
             className="bpmnXmlEditorBtn primary"
