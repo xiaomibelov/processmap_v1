@@ -28,6 +28,7 @@ from ..auto_pass_jobs import redis_queue_enabled
 from ..auth import AuthError, create_user, find_user_by_id, list_users as list_auth_users, update_user
 from ..error_events import redact_context_json
 from ..redis_client import get_client, runtime_status
+from ..session_analytics import get_session_analytics_summary
 from ..settings import load_llm_settings, save_llm_settings, verify_llm_settings
 from ..storage import (
     count_audit_log,
@@ -1763,6 +1764,20 @@ def admin_error_event_detail(event_id: str, request: Request) -> Any:
         "ok": True,
         "item": _error_event_admin_item(row),
     }
+
+
+@router.get("/api/admin/analytics/sessions/summary")
+def admin_analytics_sessions_summary(
+    request: Request,
+    refresh: str = Query(default=""),
+) -> Any:
+    _uid, _is_admin, active_org_id, _role, err = _telemetry_read_context(request)
+    if err is not None:
+        return err
+    org_id = _as_text(active_org_id) or "org_default"
+    refresh_flag = _as_text(refresh).lower() in {"1", "true", "yes"}
+    payload = get_session_analytics_summary(org_id=org_id, refresh=refresh_flag)
+    return {"ok": True, **payload}
 
 
 @router.get("/api/admin/audit")
