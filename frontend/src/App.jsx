@@ -67,6 +67,7 @@ import {
   upsertCamundaExtensionStateByElementId,
 } from "./features/process/camunda/camundaExtensions";
 import { saveBpmnState } from "./features/process/save/saveBpmnState";
+import { readV2OverlayEnabled, writeV2OverlayEnabled } from "./features/process/bpmn/stage/utils/v2OverlayToggleStorage.js";
 import { propertyCrudBoundary } from "./features/process/propertyCrudBoundary";
 import { patchInterviewAnalysis } from "./features/process/analysis/interviewAnalysisPatchHelper";
 import {
@@ -897,8 +898,12 @@ export default function App() {
   const [renameDialog, setRenameDialog] = useState({ open: false, scope: "", value: "", error: "", busy: false });
   const [deleteDialog, setDeleteDialog] = useState({ open: false, scope: "", error: "", busy: false });
   const [showPropertiesOverlayAlways, setShowPropertiesOverlayAlways] = useState(false);
-  const [v2OverlaysEnabled, setV2OverlaysEnabled] = useState(false);
+  const [v2OverlaysEnabled, setV2OverlaysEnabled] = useState(() => readV2OverlayEnabled());
   const [v2OverlaysExpanded, setV2OverlaysExpanded] = useState(false);
+  // Persist the V2 overlay toggle across reloads (it was React-only state).
+  useEffect(() => {
+    writeV2OverlayEnabled(v2OverlaysEnabled);
+  }, [v2OverlaysEnabled]);
   const [bpmnModelerSyncEpoch, setBpmnModelerSyncEpoch] = useState(0);
   // Set when an external writer (canvas properties popover) mutates camunda
   // extension properties in the live modeler. NotesPanel uses it to merge
