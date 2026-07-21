@@ -348,12 +348,13 @@ function AdminAppInner({
           filters={analyticsFilters}
           paging={paging}
           onFiltersChange={(next) => {
+            const merged = { ...analyticsFilters, ...(next || {}) };
             updateSearchState(
               {
-                sort_by: toText(next?.sortBy),
-                sort_order: toText(next?.sortOrder),
-                filter_author: toText(next?.filterAuthor),
-                exclude_test: next?.excludeTest ? "1" : "",
+                sort_by: toText(merged.sortBy),
+                sort_order: toText(merged.sortOrder),
+                filter_author: toText(merged.filterAuthor),
+                exclude_test: merged.excludeTest ? "1" : "",
                 page: "1",
               },
               { replace: true, resetPage: true },

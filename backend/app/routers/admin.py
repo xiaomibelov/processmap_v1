@@ -1774,13 +1774,15 @@ def admin_error_event_detail(event_id: str, request: Request) -> Any:
 def admin_analytics_sessions_summary(
     request: Request,
     refresh: str = Query(default=""),
+    exclude_test: str = Query(default=""),
 ) -> Any:
     _uid, _is_admin, active_org_id, _role, err = _telemetry_read_context(request)
     if err is not None:
         return err
     org_id = _as_text(active_org_id) or "org_default"
     refresh_flag = _as_text(refresh).lower() in {"1", "true", "yes"}
-    payload = get_session_analytics_summary(org_id=org_id, refresh=refresh_flag)
+    exclude_test_flag = _as_text(exclude_test).lower() in {"1", "true", "yes"}
+    payload = get_session_analytics_summary(org_id=org_id, refresh=refresh_flag, exclude_test=exclude_test_flag)
     return {"ok": True, **payload}
 
 
