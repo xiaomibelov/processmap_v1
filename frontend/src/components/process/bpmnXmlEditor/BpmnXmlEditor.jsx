@@ -9,6 +9,7 @@ import {
 } from "react";
 import { validateBpmnXmlText } from "../../../features/process/bpmn/stage/runtimeHelpers/bpmnStagePureHelpers";
 import { prettyPrintXml } from "./prettyPrintXml";
+import { removeDuplicates } from "./xmlDuplicateDetector";
 import "./BpmnXmlEditor.css";
 
 const BpmnXmlCodeEditor = lazy(() => import("./BpmnXmlCodeEditor"));
@@ -93,6 +94,7 @@ export default function BpmnXmlEditor({
   const [validationError, setValidationError] = useState("");
   const [cursor, setCursor] = useState({ line: 1, col: 1 });
   const [structureOpen, setStructureOpen] = useState(true);
+  const [dupScan, setDupScan] = useState({ status: "idle", count: 0 });
   const editorRef = useRef(null);
 
   // Keep editor in sync with external resets / tab loads / saves.
@@ -144,9 +146,43 @@ export default function BpmnXmlEditor({
     setCursor({ line, col });
   }, []);
 
+  const handleScanDuplicates = useCallback(() => {
+    const count = editorRef.current?.highlightDuplicates?.() ?? 0;
+    setDupScan({ status: "scanned", count });
+  }, []);
+
+  const handleRemoveDuplicates = useCallback(() => {
+    if (dupScan.status !== "scanned" || dupScan.count <= 0) return;
+    if (dupScan.count > 5) {
+      const confirmed = window.confirm(`Найдено дублей: ${dupScan.count}. Удалить их из XML?`);
+      if (!confirmed) return;
+    }
+    const { xml, removedCount } = removeDuplicates(editorValue);
+    if (removedCount > 0 && xml !== editorValue) {
+      // Single full-range dispatch in the code editor; the existing
+      // change pipeline (updateListener -> onChange -> validation/save)
+      // picks it up just like a manual edit or "Форматировать XML".
+      editorRef.current?.replaceContent?.(xml);
+    }
+    editorRef.current?.clearDuplicateHighlights?.();
+    setDupScan({ status: "removed", count: removedCount });
+  }, [dupScan, editorValue]);
+
   const handleStructureSelect = useCallback((line) => {
     editorRef.current?.scrollToLine?.(line);
   }, []);
+
+  const dupBadge = useMemo(() => {
+    if (dupScan.status === "removed") {
+      return { text: `✅ Дубли удалены (${dupScan.count})`, className: "clean" };
+    }
+    if (dupScan.status === "scanned") {
+      return dupScan.count > 0
+        ? { text: `Дублей: ${dupScan.count}`, className: "has-dups" }
+        : { text: "✅ Дублей нет", className: "clean" };
+    }
+    return null;
+  }, [dupScan]);
 
   const statusText = useMemo(() => {
     if (xmlSaveBusy) return "Сохранение…";
@@ -197,6 +233,27 @@ export default function BpmnXmlEditor({
             title="Вернуть последнее сохранённое состояние XML"
           >
             Сбросить
+          </button>
+          <button
+            type="button"
+            className="bpmnXmlEditorBtn secondary"
+            onClick={handleScanDuplicates}
+            disabled={!editorValue.trim() || xmlSaveBusy}
+            title="Найти и подсветить дублирующиеся элементы XML"
+          >
+            Подсветить дубли
+          </button>
+          {dupBadge ? (
+            <span className={`bpmnXmlEditorDupBadge ${dupBadge.className}`}>{dupBadge.text}</span>
+          ) : null}
+          <button
+            type="button"
+            className="bpmnXmlEditorBtn secondary"
+            onClick={handleRemoveDuplicates}
+            disabled={dupScan.status !== "scanned" || dupScan.count <= 0 || xmlSaveBusy}
+            title="Удалить дублирующиеся элементы XML (первое вхождение сохраняется)"
+          >
+            Удалить дубли
           </button>
           <button
             type="button"

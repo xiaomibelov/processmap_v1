@@ -12,6 +12,11 @@ import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { lintGutter } from "@codemirror/lint";
 import { bpmnXmlLinter } from "./xmlLinter";
 import { bpmnXmlHighlightPlugin } from "./bpmnXmlHighlighting";
+import {
+  duplicateHighlightField,
+  scanDuplicateHighlights,
+  clearDuplicateHighlightDecorations,
+} from "./xmlDuplicateHighlight";
 import "./BpmnXmlCodeEditor.css";
 
 function buildLightTheme() {
@@ -88,6 +93,23 @@ const BpmnXmlCodeEditor = forwardRef(function BpmnXmlCodeEditor({
         scrollIntoView: true,
       });
     },
+    highlightDuplicates() {
+      const v = viewRef.current;
+      if (!v) return 0;
+      return scanDuplicateHighlights(v);
+    },
+    clearDuplicateHighlights() {
+      const v = viewRef.current;
+      if (!v) return;
+      clearDuplicateHighlightDecorations(v);
+    },
+    replaceContent(nextValue) {
+      const v = viewRef.current;
+      if (!v) return;
+      v.dispatch({
+        changes: { from: 0, to: v.state.doc.length, insert: String(nextValue ?? "") },
+      });
+    },
   }), []);
 
   useEffect(() => {
@@ -152,6 +174,7 @@ const BpmnXmlCodeEditor = forwardRef(function BpmnXmlCodeEditor({
         lintGutter(),
         bpmnXmlLinter({ delay: 300 }),
         bpmnXmlHighlightPlugin(),
+        duplicateHighlightField,
         themeCompartment.current.of(buildLightTheme()),
         readOnlyCompartment.current.of(EditorState.readOnly.of(readOnly)),
       ],
