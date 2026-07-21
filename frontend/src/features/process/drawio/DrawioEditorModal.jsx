@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Modal from "../../../shared/ui/Modal";
+import { shouldMarkDirtyOnEditorEvent } from "./drawioEditorMessages.js";
 
 const DRAWIO_EMBED_SRC = "https://embed.diagrams.net/?embed=1&proto=json&spin=1&configure=1&libraries=1&ui=atlas";
 const EMPTY_DRAWIO_DOC = "<mxfile host=\"ProcessMap\" version=\"1\"><diagram id=\"page-1\" name=\"Page-1\"><mxGraphModel dx=\"960\" dy=\"720\" grid=\"1\" gridSize=\"10\" guides=\"1\" tooltips=\"1\" connect=\"1\" arrows=\"1\" fold=\"1\" page=\"1\" pageScale=\"1\" pageWidth=\"1169\" pageHeight=\"827\" math=\"0\" shadow=\"0\"><root><mxCell id=\"0\"/><mxCell id=\"1\" parent=\"0\"/></root></mxGraphModel></diagram></mxfile>";
@@ -49,7 +50,9 @@ export default function DrawioEditorModal({
     postMessageToEditor({
       action: "load",
       xml,
-      autosave: 0,
+      // autosave: 1 — drawio notifies about real user edits via "autosave"
+      // events; those (not the initial "load") drive the dirty flag.
+      autosave: 1,
       modified: "unsavedChanges",
       saveAndExit: 0,
       noExitBtn: 1,
@@ -109,8 +112,13 @@ export default function DrawioEditorModal({
         return;
       }
       if (evtName === "load") {
-        setIsDirty(true);
+        // Initial document load into the editor — NOT a user edit. Dirty is
+        // set only on drawio "autosave" edit notifications (blocker 3 fix).
         setStatus("Редактор готов.");
+        return;
+      }
+      if (shouldMarkDirtyOnEditorEvent(evtName)) {
+        setIsDirty(true);
         return;
       }
       if (evtName === "save") {
