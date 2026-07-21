@@ -25,7 +25,8 @@ import DiagramLoadBoundary from "../../features/process/bpmn/stage/load/DiagramL
 import BpmnXmlEditor from "./bpmnXmlEditor/BpmnXmlEditor";
 import { useV2OverlayState } from "../../features/process/bpmn/stage/state/useV2OverlayState";
 import { useOverlayLifecycle } from "../../features/process/bpmn/stage/overlay/useOverlayLifecycle";
-import { setV2OverlayClickHandler } from "../../features/process/bpmn/stage/overlay/overlayLifecycleManager";
+import { setV2OverlayClickHandler, setTobeDocumentClickHandler } from "../../features/process/bpmn/stage/overlay/overlayLifecycleManager";
+import { createTobeOverlayCoordinator } from "../../features/process/tobe/tobeOverlayCoordinator";
 import { useViewportResizeController } from "../../features/process/bpmn/stage/viewport/useViewportResizeController";
 import {
   bindModelerStageEvents,
@@ -932,6 +933,9 @@ const BpmnStage = forwardRef(function BpmnStage({
   overlayHiddenFields = null,
   v2OverlaysEnabled = false,
   v2OverlaysExpanded = false,
+  toBeLayerEnabled = false,
+  toBeDocuments = [],
+  onTobeDocumentClick = null,
   onV2OverlayPropertiesRequest = null,
   onDiagramContextMenuRequest = null,
   onDiagramContextMenuDismiss = null,
@@ -1137,6 +1141,61 @@ const BpmnStage = forwardRef(function BpmnStage({
     });
     return () => setV2OverlayClickHandler(null);
   }, []);
+
+  // To-Be documents layer: refs, coordinator and delegated click wiring.
+  // The toggle hides/shows cards via a CSS class (no unmount), so the mount
+  // only runs while the layer is enabled or the document list changes.
+  const tobeEnabledRef = useRef(!!toBeLayerEnabled);
+  const tobeDocumentsRef = useRef(Array.isArray(toBeDocuments) ? toBeDocuments : []);
+  const onTobeDocumentClickRef = useRef(onTobeDocumentClick);
+  const tobeCoordinatorRef = useRef(null);
+  if (!tobeCoordinatorRef.current) {
+    tobeCoordinatorRef.current = createTobeOverlayCoordinator({ enabledRef: tobeEnabledRef });
+  }
+
+  useEffect(() => {
+    onTobeDocumentClickRef.current = onTobeDocumentClick;
+  }, [onTobeDocumentClick]);
+
+  useEffect(() => {
+    setTobeDocumentClickHandler(({ docId }) => {
+      const docs = Array.isArray(tobeDocumentsRef.current) ? tobeDocumentsRef.current : [];
+      const doc = docs.find((entry) => String(entry?.id || "") === String(docId || "")) || null;
+      onTobeDocumentClickRef.current?.(doc);
+    });
+    return () => setTobeDocumentClickHandler(null);
+  }, []);
+
+  function setTobeHiddenOnInstance(inst, hidden) {
+    if (!inst) return;
+    try {
+      const container = inst.get("canvas")?.getContainer?.();
+      if (container) container.classList.toggle("fpc-tobe-hidden", !!hidden);
+    } catch {
+      // Hidden-class toggle is best-effort.
+    }
+  }
+
+  function mountTobeOnInstance(inst, kind) {
+    if (!inst || !hasDefinitionsLoaded(inst)) return;
+    try {
+      tobeCoordinatorRef.current?.mount(inst, kind, tobeDocumentsRef.current);
+    } catch {
+      // To-Be mount failures are non-critical; keep the diagram usable.
+    }
+  }
+
+  useEffect(() => {
+    tobeEnabledRef.current = !!toBeLayerEnabled;
+    tobeDocumentsRef.current = Array.isArray(toBeDocuments) ? toBeDocuments : [];
+    // Toggle without unmount: the CSS class hides every card instantly.
+    setTobeHiddenOnInstance(viewerRef.current, !toBeLayerEnabled);
+    setTobeHiddenOnInstance(modelerRef.current, !toBeLayerEnabled);
+    if (!toBeLayerEnabled) return;
+    mountTobeOnInstance(viewerRef.current, "viewer");
+    mountTobeOnInstance(modelerRef.current, "editor");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toBeLayerEnabled, toBeDocuments]);
 
   useEffect(() => {
     onElementSelectionChangeRef.current = onElementSelectionChange;
@@ -4692,6 +4751,10 @@ const BpmnStage = forwardRef(function BpmnStage({
     if (useExtensionOverlays && result?.ok !== false) {
       overlayLifecycle.mountFromBpmn(viewerRef.current, "viewer");
     }
+    if (result?.ok !== false) {
+      setTobeHiddenOnInstance(viewerRef.current, !tobeEnabledRef.current);
+      mountTobeOnInstance(viewerRef.current, "viewer");
+    }
     return result;
   }
 
@@ -4700,6 +4763,10 @@ const BpmnStage = forwardRef(function BpmnStage({
     applyPendingFocusAndViewport();
     if (useExtensionOverlays && result?.ok !== false) {
       overlayLifecycle.mountFromBpmn(modelerRef.current, "editor");
+    }
+    if (result?.ok !== false) {
+      setTobeHiddenOnInstance(modelerRef.current, !tobeEnabledRef.current);
+      mountTobeOnInstance(modelerRef.current, "editor");
     }
     return result;
   }
