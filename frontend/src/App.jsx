@@ -2314,6 +2314,31 @@ export default function App() {
     window.dispatchEvent(new CustomEvent("fpc:diagram_flash", { detail: payload }));
   }
 
+  // To-Be documents persist through the same patch pipeline as
+  // notes_by_element: the backend stores the session JSON blob, so the
+  // top-level `to_be_documents` field needs no backend change. The
+  // useTobeLayer ref is the source of truth; the draft mirrors it.
+  async function persistToBeDocuments(nextDocsRaw) {
+    const sid = String(draft?.session_id || "");
+    const nextDocs = Array.isArray(nextDocsRaw) ? nextDocsRaw : [];
+    setToBeDocuments(nextDocs);
+
+    if (!sid || isLocalSessionId(sid)) {
+      setDraftPersisted((d) => ({ ...d, to_be_documents: nextDocs }));
+      return { ok: true };
+    }
+
+    const r = await apiPatchSession(sid, { to_be_documents: nextDocs });
+    if (!r.ok) {
+      markFail(r.error);
+      return { ok: false, error: String(r.error || "Не удалось сохранить документы.") };
+    }
+    const serverDocs = Array.isArray(r.session?.to_be_documents) ? r.session.to_be_documents : nextDocs;
+    setDraftPersisted((d) => ({ ...d, to_be_documents: serverDocs }));
+    setToBeDocuments(serverDocs);
+    return { ok: true };
+  }
+
   async function addElementNote(elementId, text) {
     const sid = String(draft?.session_id || "");
     const eid = String(elementId || "").trim();
