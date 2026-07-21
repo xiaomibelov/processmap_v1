@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { isEditableKeydownTarget } from "./keydownEditableTarget.js";
 import {
   canonicalizeRobotMeta,
   getRobotMetaStatus,
@@ -1307,6 +1308,11 @@ export function CamundaPropertiesSettings({
   }
 
   function handlePropertySectionKeyDown(e) {
+    // Editable-target guard (preprod audit, blocker 2): with rows selected,
+    // Backspace/Delete inside an input/textarea/contentEditable must edit the
+    // field, NOT bulk-delete the selected properties. Same guard as
+    // handlePropertiesKeyDown, shared via isEditableKeydownTarget.
+    if (isEditableKeydownTarget(e.target)) return;
     if (e.key === "Delete" || e.key === "Backspace") {
       if (hasSelection && !disabled && !extensionStateBusy) {
         e.preventDefault();
@@ -1986,8 +1992,7 @@ export function CamundaPropertiesSettings({
 
   function handlePropertiesKeyDown(event) {
     if (event.key !== "Enter") return;
-    const tag = (event.target?.tagName || "").toLowerCase();
-    if (tag === "input" || tag === "textarea" || tag === "button" || tag === "select") return;
+    if (isEditableKeydownTarget(event.target)) return;
     event.preventDefault();
     void onSaveExtensionState?.();
   }
