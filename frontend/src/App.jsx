@@ -3598,6 +3598,8 @@ export default function App() {
         toBeDocuments={toBeDocuments}
         onToBeDocumentsChange={persistToBeDocuments}
         onTobeDocumentPreview={tobeDocPreview.openDocumentPreview}
+        toBeGhostActive={!!tobeGhost}
+        onToBeGhostStart={handleTobeGhostStart}
         bpmnModelerSyncEpoch={bpmnModelerSyncEpoch}
         bpmnExternalEditToken={bpmnExternalEditToken}
         getElementCamundaExtensionsFromModeler={getElementCamundaExtensionsFromModeler}
