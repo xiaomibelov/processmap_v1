@@ -256,6 +256,15 @@
   height: 20px;
   z-index: 1000;
   pointer-events: auto;
+  transition: opacity 0.25s ease, filter 0.25s ease;
+}
+
+/* While a diagram search has matches, every overlay card whose element is not
+   a match gets dimmed so the matching cards are the only bright ones. */
+.fpc-overlay-v2-host.fpcSearchOverlayDim {
+  opacity: 0.18;
+  filter: grayscale(0.6);
+  pointer-events: none;
 }
 
 .fpc-overlay-v2-badge {

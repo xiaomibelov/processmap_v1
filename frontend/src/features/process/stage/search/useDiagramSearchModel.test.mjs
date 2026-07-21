@@ -139,7 +139,7 @@ test("collectDiagramSearchResults preserves subprocess hierarchy metadata", () =
   assert.equal(row.isInsideSubprocess, true);
 });
 
-test("useDiagramSearchModel supports wrap-around next/prev and clears state on close", async () => {
+test("useDiagramSearchModel supports wrap-around next/prev and preserves state on close", async () => {
   const { root, cleanup } = setupDom();
   let latest = null;
   let openState = true;
@@ -188,7 +188,14 @@ test("useDiagramSearchModel supports wrap-around next/prev and clears state on c
     }, (value) => {
       latest = value;
     });
+    // Closing the panel preserves the search context (query + active index).
     assert.equal(openState, false);
+    assert.equal(latest.query, "task");
+    assert.equal(latest.activeIndex >= 0, true);
+    // Explicit reset (session switch) still clears the state.
+    await act(async () => {
+      latest.reset();
+    });
     assert.equal(latest.query, "");
     assert.equal(latest.activeIndex, -1);
   } finally {

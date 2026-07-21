@@ -92,12 +92,8 @@ export default function useDiagramPropertySearchModel({
   );
   const activeResult = activeIndex >= 0 && activeIndex < results.length ? results[activeIndex] : null;
 
-  useEffect(() => {
-    if (isOpen) return;
-    setQuery("");
-    setActiveIndex(-1);
-    activeSearchIdRef.current = "";
-  }, [isOpen]);
+  // NOTE: closing the panel keeps the query and the active index (see
+  // useDiagramSearchModel); session switch resets via reset().
 
   useEffect(() => {
     const activeSearchId = toText(activeSearchIdRef.current);

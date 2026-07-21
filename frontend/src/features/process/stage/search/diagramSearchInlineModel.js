@@ -23,7 +23,10 @@ export function reduceInlineSearchState(state, event) {
         ? { expanded: true, clearQuery: true }
         : { expanded: false, clearQuery: false };
     case "select":
-      return { expanded: false, clearQuery: false };
+      // Keep the panel open on result activation: the user typically refines
+      // the same query or navigates between several matches. Query, results
+      // and active index are preserved; canvas focus happens upstream.
+      return { expanded: true, clearQuery: false };
     case "clear":
       return { expanded: true, clearQuery: true };
     default:
