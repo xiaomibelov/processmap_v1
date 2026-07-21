@@ -120,6 +120,27 @@
   border-color: #1d4ed8;
 }
 
+.bpmnXmlEditorDupBadge {
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.bpmnXmlEditorDupBadge.has-dups {
+  background: rgba(234, 179, 8, 0.12);
+  border-color: rgba(234, 179, 8, 0.35);
+  color: #a16207;
+}
+
+.bpmnXmlEditorDupBadge.clean {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.25);
+  color: #15803d;
+}
+
 .bpmnXmlEditorValidationBanner {
   padding: 8px 12px;
   font-size: 13px;
