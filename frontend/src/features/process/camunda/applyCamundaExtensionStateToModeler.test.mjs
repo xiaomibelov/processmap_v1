@@ -96,3 +96,40 @@ test("repeated apply does not duplicate properties (idempotent per namespace)", 
   assert.equal(containers[0].values.length, 1);
   assert.equal(containers[0].values[0].value, "b");
 });
+
+test("apply does not duplicate execution listeners already present in the model", () => {
+  const { modeler, el } = createMockModeler([
+    { $type: "camunda:ExecutionListener", event: "start", class: "com.example.Listener" },
+  ]);
+  const state = {
+    properties: {
+      extensionProperties: [],
+      extensionListeners: [{ id: "l1", event: "start", type: "class", value: "com.example.Listener" }],
+    },
+  };
+  applyCamundaExtensionStateToModeler("Task_1", state, modeler);
+  const listeners = (el.businessObject.extensionElements.values || []).filter(
+    (entry) => entry?.$type === "camunda:ExecutionListener"
+  );
+  assert.equal(listeners.length, 1, "listener must not be duplicated on apply");
+  assert.equal(listeners[0].class, "com.example.Listener");
+});
+
+test("repeated apply with listeners is idempotent", () => {
+  const { modeler, el } = createMockModeler([
+    { $type: "camunda:ExecutionListener", event: "end", expression: "${done()}" },
+  ]);
+  const state = {
+    properties: {
+      extensionProperties: [{ id: "p1", name: "priority", value: "high" }],
+      extensionListeners: [{ id: "l1", event: "end", type: "expression", value: "${done()}" }],
+    },
+  };
+  applyCamundaExtensionStateToModeler("Task_1", state, modeler);
+  applyCamundaExtensionStateToModeler("Task_1", state, modeler);
+  const listeners = (el.businessObject.extensionElements.values || []).filter(
+    (entry) => entry?.$type === "camunda:ExecutionListener"
+  );
+  assert.equal(listeners.length, 1, "repeated applies must not grow listeners (2->4->8)");
+  assert.equal(listeners[0].expression, "${done()}");
+});
