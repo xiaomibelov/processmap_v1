@@ -347,10 +347,10 @@ test("properties overlay decor binds to preview element id and renders rows for 
     // 2 visible property rows + 1 summary row (+hiddenCount)
     assert.equal(table.childNodes.length, 3);
     const firstRow = table.childNodes[0];
-    // Non-mapped property label ("Ингредиент" → hash hue 72) → visible colored palette.
+    // Non-mapped property label ("Ингредиент" → fallback grid hue 300) → visible colored palette.
     assert.ok(String(firstRow.style.getPropertyValue("--fpc-property-accent") || "").length > 0);
     assert.ok(String(firstRow.style.getPropertyValue("--fpc-property-bg") || "").length > 0);
-    assert.equal(firstRow.style.getPropertyValue("--fpc-property-text"), "hsl(72 48% 18%)");
+    assert.equal(firstRow.style.getPropertyValue("--fpc-property-text"), "hsl(300 48% 18%)");
     const secondRow = table.childNodes[1];
     // Well-known property ("equipment") → structured hue palette.
     assert.match(secondRow.style.getPropertyValue("--fpc-property-text"), /^hsl\(\d+ 48% 18%\)$/);
