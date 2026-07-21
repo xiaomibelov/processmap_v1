@@ -98,6 +98,28 @@ def _auth_error_response(detail: str = "unauthorized") -> JSONResponse:
     return JSONResponse(status_code=401, content={"detail": str(detail or "unauthorized")})
 
 
+# SSE endpoints reachable via native EventSource, which cannot send custom
+# headers. Only these paths may authenticate with ?access_token= instead of
+# the Authorization header (EVENTS-401 audit).
+_SSE_EVENTS_PATH_RE = re.compile(r"^/api/sessions/[^/]+/events/?$")
+
+
+def bearer_authorization_from_request(request: Request) -> str:
+    """Resolve the Authorization value for the auth guard.
+
+    Header first; for SSE event streams only, fall back to the access_token
+    query parameter (native EventSource cannot set headers).
+    """
+    authorization = str(request.headers.get("authorization", "") or "").strip()
+    if authorization:
+        return authorization
+    if _SSE_EVENTS_PATH_RE.match(str(request.url.path or "")):
+        token = str(request.query_params.get("access_token", "") or "").strip()
+        if token:
+            return f"Bearer {token}"
+    return ""
+
+
 def register_auth_guard(app: FastAPI, *, public_paths: set[str]) -> None:
     @app.middleware("http")
     async def auth_guard_middleware(request: Request, call_next):
@@ -115,7 +137,7 @@ def register_auth_guard(app: FastAPI, *, public_paths: set[str]) -> None:
                 pop_storage_request_scope(scope_tokens)
 
         try:
-            user = user_from_bearer_header(request.headers.get("authorization", ""))
+            user = user_from_bearer_header(bearer_authorization_from_request(request))
             request.state.auth_user = user
             user_id = str(user.get("id") or "").strip()
             is_admin = bool(user.get("is_admin", False))
