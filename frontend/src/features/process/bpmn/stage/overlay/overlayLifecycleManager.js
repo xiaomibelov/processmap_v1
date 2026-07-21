@@ -7,6 +7,7 @@ let overlayBadgeTooltipHandler = null;
 let v2OverlayClickListenerInstalled = false;
 let v2OverlayClickHandler = null;
 let tobeDocumentClickHandler = null;
+let tobeDocumentDoubleClickHandler = null;
 
 const V2_OVERLAY_HOST_SELECTOR = ".fpc-overlay-v2-host[data-fpc-element-id]";
 const TOBE_DOC_HOST_SELECTOR = ".fpc-tobe-doc[data-fpc-tobe-doc-id]";
@@ -21,6 +22,14 @@ function findTobeDocHostFromEvent(event) {
   const host = event?.target?.closest?.(TOBE_DOC_HOST_SELECTOR) || null;
   const docId = String(host?.dataset?.fpcTobeDocId || "").trim();
   return docId ? { host, docId } : null;
+}
+
+function hostAnchorRect(host) {
+  try {
+    return typeof host?.getBoundingClientRect === "function" ? host.getBoundingClientRect() : null;
+  } catch {
+    return null;
+  }
 }
 
 // Pressing on a V2 card must not start a canvas pan / rubber-band selection.
@@ -39,7 +48,7 @@ function handleV2OverlayClick(event) {
     event.stopPropagation();
     if (typeof tobeDocumentClickHandler === "function") {
       try {
-        tobeDocumentClickHandler({ docId: tobeHit.docId, event });
+        tobeDocumentClickHandler({ docId: tobeHit.docId, anchorRect: hostAnchorRect(tobeHit.host), event });
       } catch {
         // Overlay click handler failures are non-critical.
       }
@@ -58,10 +67,26 @@ function handleV2OverlayClick(event) {
   }
 }
 
+// Double-click on a To-Be document card skips the popover and opens the
+// expanded modal directly.
+function handleTobeDocumentDoubleClick(event) {
+  const hit = findTobeDocHostFromEvent(event);
+  if (!hit) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (typeof tobeDocumentDoubleClickHandler !== "function") return;
+  try {
+    tobeDocumentDoubleClickHandler({ docId: hit.docId, anchorRect: hostAnchorRect(hit.host), event });
+  } catch {
+    // Overlay click handler failures are non-critical.
+  }
+}
+
 function installV2OverlayClickListener() {
   if (v2OverlayClickListenerInstalled || typeof document === "undefined") return;
   document.addEventListener("mousedown", handleV2OverlayMouseDownCapture, true);
   document.addEventListener("click", handleV2OverlayClick);
+  document.addEventListener("dblclick", handleTobeDocumentDoubleClick);
   v2OverlayClickListenerInstalled = true;
 }
 
@@ -69,6 +94,7 @@ function uninstallV2OverlayClickListener() {
   if (!v2OverlayClickListenerInstalled || typeof document === "undefined") return;
   document.removeEventListener("mousedown", handleV2OverlayMouseDownCapture, true);
   document.removeEventListener("click", handleV2OverlayClick);
+  document.removeEventListener("dblclick", handleTobeDocumentDoubleClick);
   v2OverlayClickListenerInstalled = false;
 }
 
@@ -81,11 +107,21 @@ export function setV2OverlayClickHandler(handler) {
   }
 }
 
-// Registers the handler invoked with { docId } when a To-Be document card is
-// clicked. Shares the delegated document listeners with the V2 cards.
+// Registers the handler invoked with { docId, anchorRect } when a To-Be
+// document card is clicked. Shares the delegated document listeners with the
+// V2 cards.
 export function setTobeDocumentClickHandler(handler) {
   tobeDocumentClickHandler = typeof handler === "function" ? handler : null;
   if (tobeDocumentClickHandler) {
+    installV2OverlayClickListener();
+  }
+}
+
+// Registers the handler invoked with { docId, anchorRect } when a To-Be
+// document card is double-clicked.
+export function setTobeDocumentDoubleClickHandler(handler) {
+  tobeDocumentDoubleClickHandler = typeof handler === "function" ? handler : null;
+  if (tobeDocumentDoubleClickHandler) {
     installV2OverlayClickListener();
   }
 }

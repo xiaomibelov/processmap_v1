@@ -70,6 +70,9 @@ import { saveBpmnState } from "./features/process/save/saveBpmnState";
 import { readV2OverlayEnabled, writeV2OverlayEnabled } from "./features/process/bpmn/stage/utils/v2OverlayToggleStorage.js";
 import { readTobeLayerEnabled, writeTobeLayerEnabled } from "./features/process/bpmn/stage/utils/tobeLayerToggleStorage.js";
 import { useTobeLayer } from "./features/process/tobe/useTobeLayer.js";
+import { useDocumentPreview } from "./features/process/tobe/useDocumentPreview.js";
+import DocumentPreviewPopover from "./features/process/tobe/DocumentPreviewPopover.jsx";
+import TobeDocumentPreviewModal from "./features/process/tobe/TobeDocumentPreviewModal.jsx";
 import { propertyCrudBoundary } from "./features/process/propertyCrudBoundary";
 import { patchInterviewAnalysis } from "./features/process/analysis/interviewAnalysisPatchHelper";
 import {
@@ -921,6 +924,9 @@ export default function App() {
     sessionId: draft?.session_id,
     draftDocuments: draft?.to_be_documents,
   });
+  // Shared preview state for To-Be documents: canvas cards and the sidebar
+  // list both open the same popover/modal through this hook.
+  const tobeDocPreview = useDocumentPreview();
   const [bpmnModelerSyncEpoch, setBpmnModelerSyncEpoch] = useState(0);
   // Set when an external writer (canvas properties popover) mutates camunda
   // extension properties in the live modeler. NotesPanel uses it to merge
@@ -3568,6 +3574,7 @@ export default function App() {
         onToBeLayerEnabledChange={setToBeLayerEnabled}
         toBeDocuments={toBeDocuments}
         onToBeDocumentsChange={persistToBeDocuments}
+        onTobeDocumentPreview={tobeDocPreview.openDocumentPreview}
         bpmnModelerSyncEpoch={bpmnModelerSyncEpoch}
         bpmnExternalEditToken={bpmnExternalEditToken}
         getElementCamundaExtensionsFromModeler={getElementCamundaExtensionsFromModeler}
@@ -4052,6 +4059,7 @@ export default function App() {
         onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
         toBeLayerEnabled={toBeLayerEnabled}
         toBeDocuments={toBeDocuments}
+        onTobeDocumentClick={tobeDocPreview.openDocumentPreview}
         drawioCompanionFocusIntent={drawioCompanionFocusIntent}
         discussionLinkedElementFocusIntent={discussionLinkedElementFocusIntent}
         onDiscussionLinkedElementFocusResult={completeDiscussionLinkedElementFocus}
@@ -4075,6 +4083,23 @@ export default function App() {
         onOpenMentionNotification={openMentionNotification}
         onRefreshMentionNotifications={refreshMentionNotifications}
       />
+
+      {tobeDocPreview.view === "popover" ? (
+        <DocumentPreviewPopover
+          doc={tobeDocPreview.activeDocument}
+          anchorRect={tobeDocPreview.anchorRect}
+          onExpand={tobeDocPreview.expand}
+          onClose={tobeDocPreview.close}
+        />
+      ) : null}
+      {tobeDocPreview.view === "modal" ? (
+        <TobeDocumentPreviewModal
+          doc={tobeDocPreview.activeDocument}
+          anchorElementName={tobeDocPreview.anchorElementName}
+          onCollapse={tobeDocPreview.collapse}
+          onClose={tobeDocPreview.close}
+        />
+      ) : null}
 
       <NotesMvpPanel
         ref={notesPanelRef}
