@@ -92,12 +92,12 @@ test("createV2OverlayHost: each property row carries its own accent and light ba
   const [ingredientRow, eeTimeRow, customRow] = list.children;
   // Structured map: known properties get their stable hue for both accent and bg.
   assert.equal(ingredientRow.style.getPropertyValue("--fpc-property-accent"), "hsl(217 62% 46%)");
-  assert.equal(ingredientRow.style.getPropertyValue("--fpc-property-bg"), "hsl(217 74% 95%)");
+  assert.equal(ingredientRow.style.getPropertyValue("--fpc-property-bg"), "hsl(217 74% 88%)");
   assert.equal(eeTimeRow.style.getPropertyValue("--fpc-property-accent"), "hsl(0 62% 46%)");
-  assert.equal(eeTimeRow.style.getPropertyValue("--fpc-property-bg"), "hsl(0 74% 95%)");
-  // Unknown property → neutral slate fallback.
-  assert.equal(customRow.style.getPropertyValue("--fpc-property-accent"), "hsl(215 16% 47%)");
-  assert.equal(customRow.style.getPropertyValue("--fpc-property-bg"), "hsl(210 20% 96%)");
+  assert.equal(eeTimeRow.style.getPropertyValue("--fpc-property-bg"), "hsl(0 74% 88%)");
+  // Non-mapped property → deterministic hash hue (104), still visibly colored.
+  assert.equal(customRow.style.getPropertyValue("--fpc-property-accent"), "hsl(104 62% 46%)");
+  assert.equal(customRow.style.getPropertyValue("--fpc-property-bg"), "hsl(104 74% 88%)");
 });
 
 test("createV2OverlayHost: empty properties renders list with no items", () => {
