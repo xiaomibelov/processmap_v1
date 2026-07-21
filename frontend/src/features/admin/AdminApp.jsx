@@ -16,9 +16,11 @@ import useAdminSessionDetailData from "./hooks/useAdminSessionDetailData";
 import useAdminSessionsData from "./hooks/useAdminSessionsData";
 import { useAdminTelemetryErrorEventDetailData, useAdminTelemetryErrorEventsData } from "./hooks/useAdminTelemetryData";
 import AdminAuditPage from "./pages/AdminAuditPage";
+import AdminSessionAnalyticsPage from "./pages/AdminSessionAnalyticsPage";
 import AdminAiModulesPage from "./pages/AdminAiModulesPage";
 import AdminRagPage from "./pages/AdminRagPage";
 import useAdminRagData from "./hooks/useAdminRagData";
+import useAdminSessionAnalyticsData from "./hooks/useAdminSessionAnalyticsData";
 import useAdminAgentRunsData from "./api/adminAgentRunsApi";
 import useAdminAgentRunDetailData from "./hooks/useAdminAgentRunDetailData";
 import AdminAgentRunsPage from "./pages/AdminAgentRunsPage";
@@ -93,6 +95,18 @@ function AdminAppInner({
 
   const telemetryFilters = useMemo(() => parseTelemetryFiltersFromSearch(rawSearch), [rawSearch]);
 
+  const analyticsFilters = useMemo(() => {
+    const params = new URLSearchParams(rawSearch);
+    return {
+      sortBy: toText(params.get("sort_by")) || "version_count",
+      sortOrder: toText(params.get("sort_order")) || "desc",
+      filterAuthor: toText(params.get("filter_author")),
+      excludeTest: toText(params.get("exclude_test")) === "1",
+      refresh: toText(params.get("refresh")),
+      refreshNonce: toText(params.get("r")),
+    };
+  }, [rawSearch]);
+
   const updateSearchState = useCallback((patch = {}, { replace = false, resetPage = false } = {}) => {
     const params = mergeSearchParams(rawSearch, patch, { resetPage });
     const nextRaw = params.toString();
@@ -152,6 +166,17 @@ function AdminAppInner({
     eventId: telemetryFilters.event_id,
   });
   const ragQ = useAdminRagData({ enabled: route.section === "rag" });
+  const analyticsQ = useAdminSessionAnalyticsData({
+    enabled: route.section === "analytics",
+    refresh: analyticsFilters.refresh,
+    refreshNonce: analyticsFilters.refreshNonce,
+    excludeTest: analyticsFilters.excludeTest ? "1" : "",
+    sortBy: analyticsFilters.sortBy,
+    sortOrder: analyticsFilters.sortOrder,
+    filterAuthor: analyticsFilters.filterAuthor,
+    page: paging.page,
+    pageSize: paging.pageSize,
+  });
   const agentRunsQ = useAdminAgentRunsData({ enabled: route.section === "agent-runs" && !toText(route.runId) });
   const agentRunDetailQ = useAdminAgentRunDetailData({
     enabled: route.section === "agent-runs" && Boolean(toText(route.runId)),
@@ -178,6 +203,7 @@ function AdminAppInner({
     if (route.section === "sessions") return sessionsQ;
     if (route.section === "jobs") return jobsQ;
     if (route.section === "audit") return auditQ;
+    if (route.section === "analytics") return analyticsQ.summaryQ;
     if (route.section === "telemetry") return telemetryQ;
     if (route.section === "ai-modules") return { loading: false, error: "", data: null };
     if (route.section === "rag") return { loading: false, error: "", data: null };
@@ -315,9 +341,42 @@ function AdminAppInner({
         />
       );
     }
-    if (route.section === "telemetry") {
+    if (route.section === "analytics") {
       return (
-        <AdminTelemetryEventsPage
+        <AdminSessionAnalyticsPage
+          analytics={analyticsQ}
+          filters={analyticsFilters}
+          paging={paging}
+          onFiltersChange={(next) => {
+            updateSearchState(
+              {
+                sort_by: toText(next?.sortBy),
+                sort_order: toText(next?.sortOrder),
+                filter_author: toText(next?.filterAuthor),
+                exclude_test: next?.excludeTest ? "1" : "",
+                page: "1",
+              },
+              { replace: true, resetPage: true },
+            );
+          }}
+          onPagingChange={(next) => {
+            const hasPageSize = Number(next?.pageSize || 0) > 0;
+            updateSearchState(
+              {
+                page: String(hasPageSize ? 1 : parsePage(next?.page, paging.page)),
+                page_size: String(hasPageSize ? parsePageSize(next?.pageSize, paging.pageSize) : paging.pageSize),
+              },
+              { replace: false },
+            );
+          }}
+          onRefresh={() => {
+            updateSearchState({ refresh: "1", r: String(Date.now()) }, { replace: false });
+          }}
+        />
+      );
+    }
+    if (route.section === "telemetry") {
+      return (        <AdminTelemetryEventsPage
           payload={telemetryQ.data || {}}
           filters={telemetryFilters}
           loading={telemetryQ.loading}

@@ -138,6 +138,24 @@ export async function apiAdminGetErrorEvent(eventId) {
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
 
+export async function apiAdminGetSessionAnalyticsSummary(params = {}) {
+  const endpoint = apiRoutes.admin.sessionAnalyticsSummary(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminGetSessionAnalyticsTop(params = {}) {
+  const endpoint = apiRoutes.admin.sessionAnalyticsTop(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminGetSessionAnalyticsCaseStudies(params = {}) {
+  const endpoint = apiRoutes.admin.sessionAnalyticsCaseStudies(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
 export async function apiAdminGetAiModules() {
   const r = okOrError(await request(apiRoutes.admin.aiModules(), { method: "GET" }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
