@@ -25,7 +25,8 @@ import DiagramLoadBoundary from "../../features/process/bpmn/stage/load/DiagramL
 import BpmnXmlEditor from "./bpmnXmlEditor/BpmnXmlEditor";
 import { useV2OverlayState } from "../../features/process/bpmn/stage/state/useV2OverlayState";
 import { useOverlayLifecycle } from "../../features/process/bpmn/stage/overlay/useOverlayLifecycle";
-import { setV2OverlayClickHandler, setTobeDocumentClickHandler, setTobeDocumentDoubleClickHandler } from "../../features/process/bpmn/stage/overlay/overlayLifecycleManager";
+import { setV2OverlayClickHandler, setTobeDocumentClickHandler, setTobeDocumentDoubleClickHandler, setV2DocLinkClickHandler } from "../../features/process/bpmn/stage/overlay/overlayLifecycleManager";
+import { buildTobeDocumentFromUrl } from "../../features/process/tobe/tobeDocumentUrls";
 import { createTobeOverlayCoordinator } from "../../features/process/tobe/tobeOverlayCoordinator";
 import { useViewportResizeController } from "../../features/process/bpmn/stage/viewport/useViewportResizeController";
 import {
@@ -1193,9 +1194,20 @@ const BpmnStage = forwardRef(function BpmnStage({
         anchorElementName: resolveTobeAnchorElementName(doc),
       });
     });
+    // V2 property rows whose value is a Google Docs link open the same
+    // document preview as layer documents (built ad hoc from the URL).
+    setV2DocLinkClickHandler(({ url, title, elementId, anchorRect }) => {
+      const doc = buildTobeDocumentFromUrl({ url, title, anchorElementId: elementId });
+      onTobeDocumentClickRef.current?.(doc, {
+        view: "popover",
+        anchorRect: anchorRect || null,
+        anchorElementName: resolveTobeAnchorElementName(doc),
+      });
+    });
     return () => {
       setTobeDocumentClickHandler(null);
       setTobeDocumentDoubleClickHandler(null);
+      setV2DocLinkClickHandler(null);
     };
   }, []);
 

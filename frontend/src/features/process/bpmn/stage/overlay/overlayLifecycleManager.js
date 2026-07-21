@@ -8,9 +8,11 @@ let v2OverlayClickListenerInstalled = false;
 let v2OverlayClickHandler = null;
 let tobeDocumentClickHandler = null;
 let tobeDocumentDoubleClickHandler = null;
+let v2DocLinkClickHandler = null;
 
 const V2_OVERLAY_HOST_SELECTOR = ".fpc-overlay-v2-host[data-fpc-element-id]";
 const TOBE_DOC_HOST_SELECTOR = ".fpc-tobe-doc[data-fpc-tobe-doc-id]";
+const V2_DOC_LINK_ROW_SELECTOR = ".fpc-overlay-v2-item--doc-link[data-fpc-doc-url]";
 
 function findV2OverlayHostFromEvent(event) {
   const host = event?.target?.closest?.(V2_OVERLAY_HOST_SELECTOR) || null;
@@ -22,6 +24,22 @@ function findTobeDocHostFromEvent(event) {
   const host = event?.target?.closest?.(TOBE_DOC_HOST_SELECTOR) || null;
   const docId = String(host?.dataset?.fpcTobeDocId || "").trim();
   return docId ? { host, docId } : null;
+}
+
+// A V2 property row whose value is a Google Docs link. Checked BEFORE the
+// generic V2 host match so doc-link rows open the document preview instead
+// of the element properties popover.
+function findV2DocLinkRowFromEvent(event) {
+  const row = event?.target?.closest?.(V2_DOC_LINK_ROW_SELECTOR) || null;
+  const url = String(row?.dataset?.fpcDocUrl || "").trim();
+  if (!url) return null;
+  const host = row.closest?.(V2_OVERLAY_HOST_SELECTOR) || null;
+  return {
+    row,
+    url,
+    title: String(row?.dataset?.fpcDocTitle || "").trim(),
+    elementId: String(host?.dataset?.fpcElementId || "").trim(),
+  };
 }
 
 function hostAnchorRect(host) {
@@ -49,6 +67,25 @@ function handleV2OverlayClick(event) {
     if (typeof tobeDocumentClickHandler === "function") {
       try {
         tobeDocumentClickHandler({ docId: tobeHit.docId, anchorRect: hostAnchorRect(tobeHit.host), event });
+      } catch {
+        // Overlay click handler failures are non-critical.
+      }
+    }
+    return;
+  }
+  const docLinkHit = findV2DocLinkRowFromEvent(event);
+  if (docLinkHit) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof v2DocLinkClickHandler === "function") {
+      try {
+        v2DocLinkClickHandler({
+          url: docLinkHit.url,
+          title: docLinkHit.title,
+          elementId: docLinkHit.elementId,
+          anchorRect: hostAnchorRect(docLinkHit.row),
+          event,
+        });
       } catch {
         // Overlay click handler failures are non-critical.
       }
@@ -122,6 +159,17 @@ export function setTobeDocumentClickHandler(handler) {
 export function setTobeDocumentDoubleClickHandler(handler) {
   tobeDocumentDoubleClickHandler = typeof handler === "function" ? handler : null;
   if (tobeDocumentDoubleClickHandler) {
+    installV2OverlayClickListener();
+  }
+}
+
+// Registers the handler invoked with { url, title, elementId, anchorRect }
+// when a V2 property row carrying a Google Docs link is clicked. Checked
+// before the generic V2 host click, so these rows never open the element
+// properties popover.
+export function setV2DocLinkClickHandler(handler) {
+  v2DocLinkClickHandler = typeof handler === "function" ? handler : null;
+  if (v2DocLinkClickHandler) {
     installV2OverlayClickListener();
   }
 }
