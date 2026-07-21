@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { analyticsStatusMeta, formatDurationSeconds } from "./analyticsFormat.js";
+import { analyticsStatusMeta, formatDateRu, formatDurationSeconds } from "./analyticsFormat.js";
 
 test("formatDurationSeconds: minutes, hours, days", () => {
   assert.equal(formatDurationSeconds(0), "0мин");
@@ -19,4 +19,11 @@ test("analyticsStatusMeta maps server statuses", () => {
   assert.equal(analyticsStatusMeta("abandoned").label, "Заброшена");
   assert.equal(analyticsStatusMeta("short").label, "Короткая");
   assert.equal(analyticsStatusMeta("nope").label, "nope");
+});
+
+test("formatDateRu formats epoch seconds, guards bad input", () => {
+  assert.equal(formatDateRu(0), "—");
+  assert.equal(formatDateRu("x"), "—");
+  const formatted = formatDateRu(1700000000);
+  assert.match(formatted, /^\d{2}\.\d{2}\.\d{4}$/);
 });
