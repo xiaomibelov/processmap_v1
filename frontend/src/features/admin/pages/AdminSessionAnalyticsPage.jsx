@@ -1,8 +1,9 @@
 import AdminPageContainer from "../layout/AdminPageContainer";
 import ErrorState from "../components/common/ErrorState";
 import LoadingBlock from "../components/common/LoadingBlock";
-import SectionCard from "../components/common/SectionCard";
 import AuthorAnalytics from "../components/analytics/AuthorAnalytics";
+import CaseStudyCards from "../components/analytics/CaseStudyCards";
+import DataQualityPanel from "../components/analytics/DataQualityPanel";
 import LifetimeDistributionChart from "../components/analytics/LifetimeDistributionChart";
 import SessionAnalyticsKpiCards from "../components/analytics/SessionAnalyticsKpiCards";
 import TopSessionsTable from "../components/analytics/TopSessionsTable";
@@ -55,28 +56,12 @@ export default function AdminSessionAnalyticsPage({
         excludeTest={!!filters.excludeTest}
         onExcludeTestChange={(checked) => onFiltersChange?.({ excludeTest: !!checked })}
       />
-      <SectionCard title="Кейсы" data-testid="analytics-cases-section">
-        <div className="text-xs text-slate-500" data-testid="analytics-cases-placeholder">
-          {caseStudiesQ.loading ? "Загрузка…" : `Кейсов: ${(casePayload.items || []).length}`}
-        </div>
-      </SectionCard>
-      <SectionCard
-        title="Качество данных"
-        action={(
-          <button
-            type="button"
-            className="secondaryBtn h-7 min-h-0 rounded-lg px-3 py-0 text-xs"
-            onClick={() => onRefresh?.()}
-            data-testid="analytics-refresh"
-          >
-            Обновить данные
-          </button>
-        )}
-      >
-        <div className="text-xs text-slate-500" data-testid="analytics-quality-placeholder">
-          {`Пустой XML: ${dataQuality.empty_xml ?? 0} · Без версий: ${dataQuality.no_versions ?? 0}`}
-        </div>
-      </SectionCard>
+      <CaseStudyCards payload={casePayload} loading={caseStudiesQ.loading} />
+      <DataQualityPanel
+        dataQuality={dataQuality}
+        generatedAt={payload.generated_at}
+        onRefresh={onRefresh}
+      />
     </AdminPageContainer>
   );
 }

@@ -26,3 +26,14 @@ export function analyticsStatusMeta(status) {
   const key = String(status || "").trim();
   return ANALYTICS_STATUS_META[key] || { label: key || "—", className: "border-slate-200 bg-slate-50 text-slate-600" };
 }
+
+// Epoch-seconds → "DD.MM.YYYY" (ru-RU), presentation only.
+export function formatDateRu(tsRaw) {
+  const ts = Number(tsRaw) || 0;
+  if (ts <= 0) return "—";
+  try {
+    return new Date(ts * 1000).toLocaleDateString("ru-RU");
+  } catch {
+    return "—";
+  }
+}
