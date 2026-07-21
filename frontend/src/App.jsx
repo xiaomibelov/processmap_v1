@@ -3566,6 +3566,8 @@ export default function App() {
         onShowV2OverlaysExpandedChange={setV2OverlaysExpanded}
         toBeLayerEnabled={toBeLayerEnabled}
         onToBeLayerEnabledChange={setToBeLayerEnabled}
+        toBeDocuments={toBeDocuments}
+        onToBeDocumentsChange={persistToBeDocuments}
         bpmnModelerSyncEpoch={bpmnModelerSyncEpoch}
         bpmnExternalEditToken={bpmnExternalEditToken}
         getElementCamundaExtensionsFromModeler={getElementCamundaExtensionsFromModeler}
