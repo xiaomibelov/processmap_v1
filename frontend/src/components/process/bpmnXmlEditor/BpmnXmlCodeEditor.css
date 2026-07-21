@@ -105,3 +105,11 @@
   color: #6b7280;
   font-style: italic;
 }
+
+/* Duplicate element highlight */
+.cm-duplicate-highlight {
+  background-color: rgba(234, 179, 8, 0.2);
+  text-decoration: underline wavy #f97316;
+  text-decoration-thickness: 2px;
+  text-decoration-skip-ink: none;
+}
