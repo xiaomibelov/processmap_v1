@@ -66,6 +66,7 @@ import { isProcessLikeType } from "../features/process/bpmn/stage/interaction/pr
 import useNotesPanelController from "./notesPanel/useNotesPanelController.js";
 import ExtensionStateMiniIndicator from "./sidebar/displaySettings/ExtensionStateMiniIndicator";
 import DisplaySettingsBlock from "./sidebar/displaySettings/DisplaySettingsBlock";
+import TobeDocumentsSection from "../features/process/tobe/TobeDocumentsSection";
 import LiveCardPreview from "./sidebar/displaySettings/LiveCardPreview";
 import ToBeBuilder from "./sidebar/displaySettings/ToBeBuilder";
 import { deriveToBeModel } from "./sidebar/displaySettings/toBeBuilderModel";
@@ -974,6 +975,8 @@ export default function NotesPanel({
   onShowV2OverlaysExpandedChange,
   toBeLayerEnabled = false,
   onToBeLayerEnabledChange,
+  toBeDocuments = [],
+  onToBeDocumentsChange,
   overlayHiddenFields = null,
   onOverlayFieldToggle,
   onGoToDiagram,
@@ -3286,6 +3289,14 @@ export default function NotesPanel({
                   onToggleField={onOverlayFieldToggle}
                   disabled={!!disabled}
                 />
+                {toBeLayerEnabled ? (
+                  <TobeDocumentsSection
+                    documents={toBeDocuments}
+                    onDocumentsChange={onToBeDocumentsChange}
+                    selectedElementId={isElementMode ? selectedElementId : ""}
+                    disabled={!!disabled}
+                  />
+                ) : null}
                 {isElementMode && selectedCamundaPropertiesEditable && !isProcessLikeSelection && (
                   <LiveCardPreview
                     preview={overlayPreview}
