@@ -28,8 +28,10 @@ function yieldToFrame() {
 export function createTobeOverlayCoordinator({ enabledRef } = {}) {
   const docOverlayMapRef = { current: { viewer: new Map(), editor: new Map() } };
   // Supersede token for chunked mounts: a newer mount() invalidates the
-  // remaining chunks of the previous one.
-  let mountEpoch = 0;
+  // remaining chunks of the previous one. Tracked PER KIND so the viewer and
+  // editor mounts never cancel each other's tail chunks (same fix as
+  // v2OverlayCoordinator, preprod audit blocker 4).
+  const mountEpochByKind = { viewer: 0, editor: 0 };
 
   function resolveOverlayTargetId(inst, doc) {
     const anchorId = String(doc?.anchorElementId || "").trim();
@@ -125,7 +127,7 @@ export function createTobeOverlayCoordinator({ enabledRef } = {}) {
         }
       }
 
-      const epoch = ++mountEpoch;
+      const epoch = ++mountEpochByKind[kind];
       if (docs.length <= MOUNT_CHUNK_SIZE) {
         docs.forEach((doc) => mountOne(inst, kind, doc));
         return;
@@ -140,7 +142,7 @@ export function createTobeOverlayCoordinator({ enabledRef } = {}) {
       void (async () => {
         for (let idx = 0; idx < tail.length; idx += MOUNT_CHUNK_SIZE) {
           await yieldToFrame();
-          if (epoch !== mountEpoch) return;
+          if (epoch !== mountEpochByKind[kind]) return;
           tail.slice(idx, idx + MOUNT_CHUNK_SIZE).forEach((doc) => mountOne(inst, kind, doc));
         }
       })();
@@ -152,7 +154,7 @@ export function createTobeOverlayCoordinator({ enabledRef } = {}) {
   function clear(inst, kind) {
     if (!inst) return;
     // Invalidate any pending chunks before tearing down.
-    mountEpoch += 1;
+    mountEpochByKind[kind] += 1;
     try {
       const overlays = inst.get("overlays");
       const map = docOverlayMapRef.current[kind];
