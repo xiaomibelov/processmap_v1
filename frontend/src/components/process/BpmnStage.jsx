@@ -937,6 +937,7 @@ const BpmnStage = forwardRef(function BpmnStage({
   toBeLayerEnabled = false,
   toBeDocuments = [],
   onTobeDocumentClick = null,
+  onTobeDocumentChange = null,
   onV2OverlayPropertiesRequest = null,
   onDiagramContextMenuRequest = null,
   onDiagramContextMenuDismiss = null,
@@ -1149,14 +1150,22 @@ const BpmnStage = forwardRef(function BpmnStage({
   const tobeEnabledRef = useRef(!!toBeLayerEnabled);
   const tobeDocumentsRef = useRef(Array.isArray(toBeDocuments) ? toBeDocuments : []);
   const onTobeDocumentClickRef = useRef(onTobeDocumentClick);
+  const onTobeDocumentChangeRef = useRef(onTobeDocumentChange);
   const tobeCoordinatorRef = useRef(null);
   if (!tobeCoordinatorRef.current) {
-    tobeCoordinatorRef.current = createTobeOverlayCoordinator({ enabledRef: tobeEnabledRef });
+    tobeCoordinatorRef.current = createTobeOverlayCoordinator({
+      enabledRef: tobeEnabledRef,
+      interactionsRef: onTobeDocumentChangeRef,
+    });
   }
 
   useEffect(() => {
     onTobeDocumentClickRef.current = onTobeDocumentClick;
   }, [onTobeDocumentClick]);
+
+  useEffect(() => {
+    onTobeDocumentChangeRef.current = onTobeDocumentChange;
+  }, [onTobeDocumentChange]);
 
   function findTobeDocumentById(docId) {
     const docs = Array.isArray(tobeDocumentsRef.current) ? tobeDocumentsRef.current : [];

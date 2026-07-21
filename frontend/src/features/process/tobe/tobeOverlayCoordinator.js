@@ -25,7 +25,7 @@ function yieldToFrame() {
   });
 }
 
-export function createTobeOverlayCoordinator({ enabledRef } = {}) {
+export function createTobeOverlayCoordinator({ enabledRef, interactionsRef } = {}) {
   const docOverlayMapRef = { current: { viewer: new Map(), editor: new Map() } };
   // Supersede token for chunked mounts: a newer mount() invalidates the
   // remaining chunks of the previous one.
@@ -94,7 +94,24 @@ export function createTobeOverlayCoordinator({ enabledRef } = {}) {
 
     const targetId = resolveOverlayTargetId(inst, doc);
     if (!targetId) return;
-    const created = createTobeDocumentHost(doc);
+    const created = createTobeDocumentHost(doc, {
+      getScale: () => {
+        try {
+          const zoom = Number(inst.get("canvas")?.zoom?.());
+          return Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+        } catch {
+          return 1;
+        }
+      },
+      onCommit: (patch) => {
+        try {
+          const handler = interactionsRef?.current;
+          if (typeof handler === "function") handler(doc.id, patch);
+        } catch {
+          // Interaction commits are non-critical; the next mount resyncs.
+        }
+      },
+    });
     if (!created) return;
     const overlayId = overlays.add(targetId, { position: created.position, html: created.host });
     map.set(doc.id, { overlayId, contentSig });
