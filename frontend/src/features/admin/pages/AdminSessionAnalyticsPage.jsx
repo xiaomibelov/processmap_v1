@@ -2,6 +2,9 @@ import AdminPageContainer from "../layout/AdminPageContainer";
 import ErrorState from "../components/common/ErrorState";
 import LoadingBlock from "../components/common/LoadingBlock";
 import SectionCard from "../components/common/SectionCard";
+import LifetimeDistributionChart from "../components/analytics/LifetimeDistributionChart";
+import SessionAnalyticsKpiCards from "../components/analytics/SessionAnalyticsKpiCards";
+import VersionDistributionChart from "../components/analytics/VersionDistributionChart";
 
 // Session analytics page: thin client over /api/admin/analytics/sessions/*.
 // All aggregation is server-side; this page only maps payloads to sections.
@@ -32,29 +35,11 @@ export default function AdminSessionAnalyticsPage({
 
   return (
     <AdminPageContainer
-      summary={(
-        <SectionCard
-          title="KPI сессий"
-          subtitle="Сводка по организации"
-          data-testid="analytics-kpi-section"
-        >
-          <div className="text-xs text-slate-500" data-testid="analytics-kpi-placeholder">
-            {`Сессий: ${summary.total_sessions ?? "—"} · Версий: ${summary.total_versions ?? "—"} · Пользователей: ${summary.total_users ?? "—"}`}
-          </div>
-        </SectionCard>
-      )}
+      summary={<SessionAnalyticsKpiCards summary={summary} />}
     >
       <div className="grid gap-3 lg:grid-cols-2">
-        <SectionCard title="Время жизни сессий" data-testid="analytics-lifetime-section">
-          <div className="text-xs text-slate-500" data-testid="analytics-lifetime-placeholder">
-            {lifetimeBins.map((row) => `${row.bin}: ${row.count}`).join(" · ") || "Нет данных"}
-          </div>
-        </SectionCard>
-        <SectionCard title="Глубина истории версий" data-testid="analytics-versions-section">
-          <div className="text-xs text-slate-500" data-testid="analytics-versions-placeholder">
-            {versionBins.map((row) => `${row.bin}: ${row.count}`).join(" · ") || "Нет данных"}
-          </div>
-        </SectionCard>
+        <LifetimeDistributionChart bins={lifetimeBins} />
+        <VersionDistributionChart bins={versionBins} />
       </div>
       <SectionCard title="Топ сессий" data-testid="analytics-top-section">
         <div className="text-xs text-slate-500" data-testid="analytics-top-placeholder">
