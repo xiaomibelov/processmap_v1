@@ -2085,10 +2085,39 @@ const BpmnStage = forwardRef(function BpmnStage({
     }
   }
 
+  function clearSearchOverlayDimOnInstance(inst) {
+    if (!inst) return;
+    try {
+      const container = inst.get("canvas")?.getContainer?.();
+      if (!container) return;
+      container.querySelectorAll(".fpc-overlay-v2-host.fpcSearchOverlayDim").forEach((host) => {
+        host.classList.remove("fpcSearchOverlayDim");
+      });
+    } catch {
+      // DOM dim cleanup is best-effort.
+    }
+  }
+
+  function applySearchOverlayDimOnInstance(inst, matchIds) {
+    if (!inst) return;
+    try {
+      const container = inst.get("canvas")?.getContainer?.();
+      if (!container) return;
+      const matchSet = new Set(asArray(matchIds).map((idRaw) => toText(idRaw)).filter(Boolean));
+      container.querySelectorAll(".fpc-overlay-v2-host").forEach((host) => {
+        const elementId = toText(host?.dataset?.fpcElementId);
+        host.classList.toggle("fpcSearchOverlayDim", !matchSet.has(elementId));
+      });
+    } catch {
+      // DOM dim is best-effort; canvas markers remain the source of truth.
+    }
+  }
+
   function clearSearchHighlightsOnInstance(inst, kind) {
     if (!inst) return false;
     const mode = kind === "editor" ? "editor" : "viewer";
     const runtime = asObject(searchHighlightMarkerStateRef.current[mode]);
+    clearSearchOverlayDimOnInstance(inst);
     try {
       const canvas = inst.get("canvas");
       asArray(runtime.passive).forEach((elementId) => {
@@ -2133,6 +2162,9 @@ const BpmnStage = forwardRef(function BpmnStage({
       if (activeId) {
         canvas.addMarker(activeId, "fpcSearchActive");
       }
+      // Dim every V2 overlay card whose element is NOT a search match, so the
+      // matching property cards are the only ones that stay bright.
+      applySearchOverlayDimOnInstance(inst, activeId && !ids.includes(activeId) ? [...ids, activeId] : ids);
       searchHighlightMarkerStateRef.current[mode] = {
         passive,
         active: activeId,
