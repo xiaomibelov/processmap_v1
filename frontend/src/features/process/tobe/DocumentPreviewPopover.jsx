@@ -62,19 +62,26 @@ export default function DocumentPreviewPopover({ doc, anchorRect, onExpand, onCl
 
   // Close on Escape and on mousedown outside the popover (covers canvas pan
   // start; canvas cards stop propagation earlier so card clicks replace the
-  // document instead of closing).
+  // document instead of closing). Wheel-zoom on the BPMN canvas also closes
+  // the popover — the anchor position becomes stale as the canvas transforms.
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
     const onMouseDown = (event) => {
       if (rootRef.current && !rootRef.current.contains(event.target)) onClose?.();
     };
+    const onWheel = (event) => {
+      if (rootRef.current?.contains(event.target)) return;
+      if (event.target?.closest?.(".djs-container")) onClose?.();
+    };
     const onKeyDown = (event) => {
       if (event.key === "Escape") onClose?.();
     };
     document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("wheel", onWheel, { passive: true });
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("wheel", onWheel);
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [onClose]);
