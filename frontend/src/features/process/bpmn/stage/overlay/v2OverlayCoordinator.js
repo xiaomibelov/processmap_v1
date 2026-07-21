@@ -87,8 +87,10 @@ export function createV2OverlayCoordinator({
 }) {
   const elementOverlayMapRef = { current: { viewer: new Map(), editor: new Map() } };
   // Supersede token for chunked mounts: a newer mount() invalidates the
-  // remaining chunks of the previous one.
-  let mountEpoch = 0;
+  // remaining chunks of the previous one. Tracked PER KIND: the coordinator
+  // serves both the viewer and the editor instance, and their mounts must not
+  // cancel each other's tail chunks (preprod audit, blocker 4).
+  const mountEpochByKind = { viewer: 0, editor: 0 };
 
   function isElementInViewportWithMidpoint(el, viewbox) {
     if (!viewbox || !Number.isFinite(viewbox.x)) return true;
@@ -302,7 +304,7 @@ export function createV2OverlayCoordinator({
       }
 
       const entries = Array.from(desired.entries());
-      const epoch = ++mountEpoch;
+      const epoch = ++mountEpochByKind[kind];
       if (entries.length <= MOUNT_CHUNK_SIZE) {
         for (const [elementId, { ovl, el }] of entries) {
           mountEntry(inst, kind, elementId, ovl, el);
@@ -322,7 +324,7 @@ export function createV2OverlayCoordinator({
       void (async () => {
         for (let idx = 0; idx < tail.length; idx += MOUNT_CHUNK_SIZE) {
           await yieldToFrame();
-          if (epoch !== mountEpoch) return;
+          if (epoch !== mountEpochByKind[kind]) return;
           const chunk = tail.slice(idx, idx + MOUNT_CHUNK_SIZE);
           for (const [elementId, { ovl, el }] of chunk) {
             mountEntry(inst, kind, elementId, ovl, el);
@@ -366,6 +368,9 @@ export function createV2OverlayCoordinator({
 
   function clear(inst, kind) {
     if (!inst) return;
+    // Invalidate any pending chunked mount for this kind so its tail cannot
+    // re-mount overlays onto the cleared instance.
+    mountEpochByKind[kind] += 1;
     try {
       const overlays = inst.get("overlays");
       const map = elementOverlayMapRef.current[kind];
