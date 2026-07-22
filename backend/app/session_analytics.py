@@ -307,7 +307,7 @@ def _fetch_author_stats(con: Any, org_id: str) -> List[Dict[str, Any]]:
         FROM sessions s
         LEFT JOIN users u ON u.id = s.created_by
         WHERE s.org_id = ? AND s.deleted_at = 0
-        GROUP BY s.created_by
+        GROUP BY s.created_by, u.email
         ORDER BY sessions DESC, email ASC
         """,
         [_ACTIVE_LIFETIME_SECONDS, org_id],
@@ -551,7 +551,7 @@ def _build_case_studies(*, org_id: str, limit: int) -> Dict[str, Any]:
             JOIN bpmn_versions v ON v.session_id = s.id AND v.org_id = s.org_id
             LEFT JOIN users u ON u.id = s.created_by
             WHERE s.org_id = ? AND s.deleted_at = 0
-            GROUP BY s.id
+            GROUP BY s.id, u.email
             HAVING COUNT(v.id) >= ?
             ORDER BY version_count DESC, s.id ASC
             LIMIT ?
