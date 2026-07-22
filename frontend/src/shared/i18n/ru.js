@@ -124,6 +124,7 @@ export const ru = {
       sessions: "Сессии",
       jobs: "Задания",
       audit: "Аудит",
+      analytics: "Аналитика сессий",
       telemetry: "Телеметрия",
       aiModules: "AI модули",
       agentRuns: "Запуски агентов",
@@ -156,6 +157,10 @@ export const ru = {
         title: "Аудит",
         subtitle: "Журнал действий по организациям, проектам, сессиям и админ-операциям",
       },
+      analytics: {
+        title: "Аналитика сессий",
+        subtitle: "Время жизни сессий, глубина истории версий и качество данных по организации",
+      },
       telemetry: {
         title: "Telemetry timeline",
         subtitle: "Поиск error_events по request/session/user/org/runtime без curl и DB shell",
@@ -182,6 +187,7 @@ export const ru = {
       sessionDetail: "Сессия",
       jobs: "Задания",
       audit: "Аудит",
+      analytics: "Аналитика сессий",
       telemetry: "Телеметрия",
       aiModules: "AI модули",
       agentRuns: "Запуски агентов",
