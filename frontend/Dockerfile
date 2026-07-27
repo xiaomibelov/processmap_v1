@@ -1,8 +1,6 @@
 # Multi-stage production build: Vite static bundle → nginx:alpine
 FROM node:20-alpine AS build
 
-RUN apk add --no-cache git
-
 ARG VITE_BUILD_ID=dev
 ARG VITE_BUILD_TIME=unknown
 ARG VITE_BUILD_BRANCH=unknown
