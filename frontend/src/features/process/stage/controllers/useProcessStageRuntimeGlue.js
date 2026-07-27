@@ -74,7 +74,6 @@ export default function useProcessStageRuntimeGlue({
   createAiInputHash,
   executeAi,
   apiAiQuestions,
-  apiGetBpmnXml,
   apiGetExportZip,
   apiPatchSession,
   getBaseDiagramStateVersion,
@@ -196,13 +195,7 @@ export default function useProcessStageRuntimeGlue({
         return;
       }
 
-      let xml = String(prepared.xml || "");
-      const rawResp = await apiGetBpmnXml(sid, { raw: true, cacheBust: true });
-      if (rawResp?.ok) {
-        const rawXml = String(rawResp.xml || "");
-        if (rawXml.trim()) xml = rawXml;
-      }
-
+      const xml = String(prepared.xml || "");
       if (!xml.trim()) {
         setGenErr("Нет BPMN для экспорта.");
         return;
