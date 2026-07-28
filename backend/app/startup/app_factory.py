@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI
 
 from .. import _legacy_main
 from ..auth import bearer_auth, optional_access_token_payload, seed_admin_user_if_enabled
+from ..middleware.logging_middleware import LoggingMiddleware
 from ..routers import ROUTERS
 from .boot_checks import register_boot_events
 from .middleware import (
@@ -30,6 +31,7 @@ def create_app() -> FastAPI:
     register_auth_guard(app, public_paths=set(_legacy_main.AUTH_PUBLIC_PATHS))
     register_deprecated_alias_middleware(app)
     register_backend_exception_capture(app)
+    app.add_middleware(LoggingMiddleware)
     mount_static_assets(app)
 
     for router, tags in ROUTERS:
