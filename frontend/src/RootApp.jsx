@@ -9,6 +9,7 @@ import LoginPage from "./features/auth/LoginPage";
 import PublicHomePage from "./features/auth/PublicHomePage";
 import AnalyticsApp from "./features/analytics/AnalyticsApp.jsx";
 import ImportBpmn from "./features/technologist/import/ImportBpmn";
+import TechnologistCatalog from "./features/technologist/catalog/Catalog";
 import { canAccessAdminConsole } from "./features/admin/adminUtils";
 import {
   buildAnalyticsPath,
@@ -232,6 +233,7 @@ function AppRoutes() {
   const wantsAnalytics = pathname.startsWith("/analytics");
   const wantsAdmin = pathname.startsWith("/admin");
   const wantsTechnologistImport = pathname.startsWith("/technologist/import-bpmn");
+  const wantsTechnologistCatalog = pathname.startsWith("/technologist/catalog");
 
   useEffect(() => {
     if (!isAuthed || !wantsWorkspace) return;
@@ -250,6 +252,31 @@ function AppRoutes() {
   }
 
   const showWorkspace = wantsWorkspace && isAuthed;
+
+  // E2: standalone technologist catalog page (same minimal mount as import page).
+  if (wantsTechnologistCatalog) {
+    return (
+      <>
+        {isAuthed ? (
+          <TechnologistCatalog />
+        ) : (
+          <LoginPage
+            onBack={() => navigate("/")}
+            onSuccess={() => {
+              setReauthRequired(false);
+              navigate("/technologist/catalog", { replace: true });
+            }}
+          />
+        )}
+        <LoginModal
+          open={loginModalOpen}
+          locked={!isAuthed}
+          onClose={handleModalClose}
+          onSuccess={handleLoginSuccess}
+        />
+      </>
+    );
+  }
 
   // E3.5: standalone technologist import page (no react-router; minimal top-level path check).
   if (wantsTechnologistImport) {

@@ -72,6 +72,7 @@
   border-radius: 8px;
   padding: 20px;
   background: #f8f9fa;
+  color: #212529;
   max-height: 600px;
   overflow-y: auto;
 }
@@ -104,7 +105,8 @@
 
 .parameter-schema pre,
 .resource-requirements pre {
-  background: #f8f9fa;
+  background: #e9ecef;
+  color: #212529;
   padding: 10px;
   border-radius: 4px;
   font-size: 12px;

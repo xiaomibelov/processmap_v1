@@ -71,6 +71,7 @@ CAMUNDA_LEGACY_KEYS = {
     "coordinates",
     "pose",
     "trajectory_id",
+    "operation_id",
 }
 
 # Legacy v0.2 fields that must be flagged inside pm:metadata JSON.
@@ -188,7 +189,31 @@ def _parse_camunda_properties(
                 if not name:
                     continue
                 props[name] = value
-                if name in _CAMUNDA_RECOGNIZED_EXACT or name.startswith(_CAMUNDA_RECOGNIZED_PREFIXES):
+                recognized = (
+                    name in _CAMUNDA_RECOGNIZED_EXACT
+                    or name.startswith(_CAMUNDA_RECOGNIZED_PREFIXES)
+                    or name.endswith("_ref")
+                )
+                # value-level checks apply to non-param keys (params.*/outputs.*
+                # values are validated downstream with full context)
+                if not name.startswith(_CAMUNDA_RECOGNIZED_PREFIXES):
+                    if value.strip() == "-":
+                        report.error(
+                            "PLACEHOLDER_VALUE",
+                            element_id,
+                            f"camunda:property '{name}' содержит заглушку '-'",
+                            "заполнить значение или удалить свойство",
+                            element_name,
+                        )
+                    elif _DOLLAR_RE.search(value):
+                        report.error(
+                            "DOLLAR_SUBSTITUTION",
+                            element_id,
+                            f"${{...}}-подстановка в значении camunda:property '{name}': {value}",
+                            "удалить/заменить на имя переменной recipe_context",
+                            element_name,
+                        )
+                if recognized:
                     continue
                 if name in CAMUNDA_LEGACY_KEYS:
                     report.error(
@@ -515,6 +540,9 @@ def parse_bpmn(xml_text: str) -> ImportResult:
                         params[key[len("params."):]] = value
                     elif key.startswith("outputs."):
                         outputs[key[len("outputs."):]] = value
+                    elif key.endswith("_ref"):
+                        # bare *_ref keys (v0.2 dialect) are entity references
+                        params[key] = value
                 raw_recipe_params = camunda_props.get("recipe_params") or ""
                 recipe_params = [p.strip() for p in raw_recipe_params.split(";") if p.strip()]
 

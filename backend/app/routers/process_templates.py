@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 
+from ..middleware.role_middleware import require_role
 from ..process_template.bpmn_import import BpmnImportError, parse_bpmn
 from ..process_template.service import ProcessTemplateService
 from ..process_template.models import ProcessTemplateCreate, ProcessTemplateUpdate
@@ -81,6 +82,8 @@ async def import_bpmn(
     file: Optional[UploadFile] = File(None),
 ) -> Dict[str, Any]:
     user = get_current_user(request)
+    # E2.0b: импорт BPMN — admin-only метод (analyst/admin); technologist → 403
+    require_role(["analyst", "admin"])(request)
     if file is not None:
         raw = await file.read()
     else:

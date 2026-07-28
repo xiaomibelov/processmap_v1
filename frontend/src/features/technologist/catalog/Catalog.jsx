@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useRole } from "../../../contexts/RoleContext";
+import { apiRequest } from "../../../lib/apiCore";
 import "./Catalog.css";
 
 export function Catalog() {
@@ -14,9 +15,9 @@ export function Catalog() {
 
   const fetchOperations = async () => {
     try {
-      const response = await fetch("/api/operation-catalog");
-      const data = await response.json();
-      setOperations(data);
+      const r = await apiRequest("/api/operation-catalog");
+      const data = r && r.ok ? r.data : null;
+      setOperations(Array.isArray(data) ? data : []);
       setLoading(false);
     } catch (error) {
       console.error("Error fetching operations:", error);
@@ -28,33 +29,54 @@ export function Catalog() {
     setSelectedOperation(operation);
   };
 
+  // E2: человеко-читаемые русские формулировки для кодов execution_contract
+  const CONTRACT_TERM_RU = {
+    storage_available: "хранилище доступно",
+    container_exists: "тара существует",
+    quantity_valid: "количество корректно",
+    container_type_match: "тип тары соответствует",
+    container_in_transit: "тара в перемещении",
+    containers_ready: "тара подготовлена",
+    transfer_path_clear: "путь перетаривания свободен",
+    container_compatibility: "совместимость тары",
+    transfer_validation: "контроль перетаривания (без пролива)",
+    transfer_completed: "перетаривание завершено",
+    equipment_available: "оборудование доступно",
+    equipment_ready: "оборудование готово",
+    temperature_in_range: "температура в норме",
+    measurement_valid: "измерение корректно",
+  };
+
+  const humanizeContractTerm = (term) =>
+    CONTRACT_TERM_RU[term] || String(term).replaceAll("_", " ");
+
   const renderExecutionContract = (contract) => {
     if (!contract) return null;
 
     return (
       <div className="execution-contract">
-        <h4>Execution Contract</h4>
+        <h4>Контракт выполнения</h4>
         <div className="contract-section">
-          <h5>Preconditions:</h5>
+          <h5>Предусловия:</h5>
           <ul>
             {contract.preconditions?.map((condition, index) => (
-              <li key={index}>{condition}</li>
+              <li key={index}>{humanizeContractTerm(condition)}</li>
             ))}
           </ul>
         </div>
         <div className="contract-section">
-          <h5>Postconditions:</h5>
+          <h5>Постусловия:</h5>
           <ul>
             {contract.postconditions?.map((condition, index) => (
-              <li key={index}>{condition}</li>
+              <li key={index}>{humanizeContractTerm(condition)}</li>
             ))}
           </ul>
         </div>
         <div className="contract-section">
-          <h5>Checks:</h5>
+          <h5>Включённые проверки:</h5>
           <ul>
             {contract.checks?.map((check, index) => (
-              <li key={index}>{check}</li>
+              <li key={index}>{humanizeContractTerm(check)}</li>
             ))}
           </ul>
         </div>
