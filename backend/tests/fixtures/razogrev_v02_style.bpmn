@@ -1,0 +1,66 @@
+<?xml version="1.0" ?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:pm="http://processmap.local/schema/v0.3" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_razogrev_v02" targetNamespace="http://processmap.local/schema/v0.2">
+  <bpmn:collaboration id="Collaboration_02">
+    <bpmn:participant id="Participant_02" name="Разогрев" processRef="Process_razogrev"/>
+  </bpmn:collaboration>
+  <bpmn:process id="Process_razogrev" isExecutable="true">
+    <bpmn:extensionElements>
+      <pm:metadata>{"process_template_id": "razogrev_v02", "validator_profile_id": "hotline_default", "process_entities": {"containers": {"soup_container": {"type_id": "soup_container"}}}, "recipe_context": {"has_sauce": false}}</pm:metadata>
+    </bpmn:extensionElements>
+    <bpmn:startEvent id="StartEvent_02" name="Начало">
+      <bpmn:outgoing>Flow_s1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Activity_heat" name="Разогреть суп">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="actor_role" value="cook"/>
+          <camunda:property name="validator_profile_id" value="hotline_default"/>
+        </camunda:properties>
+        <pm:metadata>{"display_name": "Разогреть суп", "operation_code": "set_equipment", "outputs": {}, "params": {"equipment_ref": "microwave_01", "duration_sec": "${heating_time}", "power_level": "high"}}</pm:metadata>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_s1</bpmn:incoming>
+      <bpmn:outgoing>Flow_s2</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="Flow_s1" sourceRef="StartEvent_02" targetRef="Activity_heat"/>
+    <bpmn:serviceTask id="Activity_notify" name="Уведомить систему">
+      <bpmn:extensionElements>
+        <pm:metadata>{"display_name": "Уведомить систему", "operation_code": "cook_soup", "outputs": {}, "params": {"equipment_ref": "soup_container"}}</pm:metadata>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_s2</bpmn:incoming>
+      <bpmn:outgoing>Flow_s3</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="Flow_s2" sourceRef="Activity_heat" targetRef="Activity_notify"/>
+    <bpmn:exclusiveGateway id="Gateway_sauce" name="Нужен соус?">
+      <bpmn:incoming>Flow_s3</bpmn:incoming>
+      <bpmn:outgoing>Flow_s4</bpmn:outgoing>
+      <bpmn:outgoing>Flow_s5</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sequenceFlow id="Flow_s3" sourceRef="Activity_notify" targetRef="Gateway_sauce"/>
+    <bpmn:task id="Activity_add_sauce" name="Добавить соус">
+      <bpmn:extensionElements>
+        <pm:metadata>{"display_name": "Добавить соус", "operation_code": "transfer", "outputs": {}, "params": {"source_container_ref": "soup_container", "target_container_ref": "sauce_container"}}</pm:metadata>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_s4</bpmn:incoming>
+      <bpmn:outgoing>Flow_s6</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_s4" name="да" sourceRef="Gateway_sauce" targetRef="Activity_add_sauce">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">${has_sauce}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:endEvent id="EndEvent_02" name="Конец">
+      <bpmn:incoming>Flow_s5</bpmn:incoming>
+      <bpmn:incoming>Flow_s6</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_s5" name="нет" sourceRef="Gateway_sauce" targetRef="EndEvent_02"/>
+    <bpmn:sequenceFlow id="Flow_s6" sourceRef="Activity_add_sauce" targetRef="EndEvent_02"/>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_02">
+    <bpmndi:BPMNPlane id="BPMNPlane_02" bpmnElement="Collaboration_02">
+      <bpmndi:BPMNShape id="Shape_start" bpmnElement="StartEvent_02"><dc:Bounds x="100" y="200" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_heat" bpmnElement="Activity_heat"><dc:Bounds x="200" y="180" width="140" height="70"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_notify" bpmnElement="Activity_notify"><dc:Bounds x="400" y="180" width="140" height="70"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_gw" bpmnElement="Gateway_sauce"><dc:Bounds x="600" y="190" width="50" height="50"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_sauce" bpmnElement="Activity_add_sauce"><dc:Bounds x="720" y="180" width="140" height="70"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_end" bpmnElement="EndEvent_02"><dc:Bounds x="920" y="200" width="36" height="36"/></bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
