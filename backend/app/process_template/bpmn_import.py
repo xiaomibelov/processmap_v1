@@ -47,7 +47,33 @@ LEGACY_TASK_TYPES = {
 _EVENT_TYPES = {"startEvent", "endEvent", "intermediateCatchEvent", "intermediateThrowEvent"}
 _GATEWAY_TYPES = {"exclusiveGateway", "parallelGateway", "inclusiveGateway", "eventBasedGateway"}
 
-# Legacy v0.2 fields that must be flagged for removal/replacement.
+# camunda:property keys that encode v0.3 semantics (produce NO findings).
+#   operation_code, params.<key>, outputs.<key>, recipe_params
+_CAMUNDA_RECOGNIZED_EXACT = {"operation_code", "recipe_params"}
+_CAMUNDA_RECOGNIZED_PREFIXES = ("params.", "outputs.")
+
+# camunda:property keys from legacy v0.2 dialect -> LEGACY_CAMUNDA_PROPERTY error.
+CAMUNDA_LEGACY_KEYS = {
+    "actor_role",
+    "duration_min",
+    "equipment",
+    "section",
+    "validator_profile_id",
+    "actor_kind",
+    "equipment_type_id",
+    "seal_method",
+    "dish_sku_id",
+    "grasp_object",
+    "equipment_id",
+    "robot_id",
+    "serial_number",
+    "opcua_node_id",
+    "coordinates",
+    "pose",
+    "trajectory_id",
+}
+
+# Legacy v0.2 fields that must be flagged inside pm:metadata JSON.
 LEGACY_METADATA_FIELDS = {
     "validator_profile_id",
     "actor_kind",
@@ -63,8 +89,9 @@ LEGACY_METADATA_FIELDS = {
 
 _ENTITY_CATEGORIES = ("containers", "equipment", "zones")
 
-_DOLLAR_RE = re.compile(r"\$\{[^}]*\}")
-_SNAKE_CASE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+_DOLLAR_RE = re.compile(r"\$\{([^}]*)\}")
+_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_CONDITION_KEYWORDS = {"true", "false", "and", "or", "not", "null", "none"}
 
 
 class BpmnImportError(ValueError):
@@ -141,6 +168,47 @@ def _parse_metadata_json(element: ET.Element) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _parse_camunda_properties(
+    element: ET.Element,
+    element_id: str,
+    element_name: str,
+    report: _ReportBuilder,
+) -> Dict[str, str]:
+    """Collect camunda:property name->value, flagging legacy/unknown keys.
+
+    Recognized v0.3 keys (operation_code, params.*, outputs.*, recipe_params)
+    produce no findings. Known-legacy keys are errors; anything else is a warning.
+    """
+    props: Dict[str, str] = {}
+    for ext in element.findall(f"{{{BPMN_NS}}}extensionElements"):
+        for container in ext.findall(f"{{{CAMUNDA_NS}}}properties"):
+            for prop in container.findall(f"{{{CAMUNDA_NS}}}property"):
+                name = prop.get("name") or ""
+                value = prop.get("value") or ""
+                if not name:
+                    continue
+                props[name] = value
+                if name in _CAMUNDA_RECOGNIZED_EXACT or name.startswith(_CAMUNDA_RECOGNIZED_PREFIXES):
+                    continue
+                if name in CAMUNDA_LEGACY_KEYS:
+                    report.error(
+                        "LEGACY_CAMUNDA_PROPERTY",
+                        element_id,
+                        f"camunda:property '{name}' не используется в v0.3",
+                        "удалить/заменить",
+                        element_name,
+                    )
+                else:
+                    report.warning(
+                        "UNKNOWN_CAMUNDA_PROPERTY",
+                        element_id,
+                        f"нераспознанная camunda:property '{name}'",
+                        "проверить: переименовать в params.*/outputs.* или удалить",
+                        element_name,
+                    )
+    return props
+
+
 def _iter_metadata_strings(value: Any, path: str = "") -> List[Tuple[str, str]]:
     """Flatten all (path, string-value) pairs inside a metadata dict."""
     out: List[Tuple[str, str]] = []
@@ -188,6 +256,18 @@ def _guess_category(param_key: str) -> str:
     return "zones"
 
 
+def _condition_identifiers(condition: str) -> List[str]:
+    """Extract candidate output identifiers from a conditionExpression."""
+    # strip ${...} wrappers, keep the inner expression text
+    inner = _DOLLAR_RE.sub(lambda m: f" {m.group(1)} ", condition)
+    identifiers = []
+    for token in _IDENTIFIER_RE.findall(inner):
+        if token.lower() in _CONDITION_KEYWORDS:
+            continue
+        identifiers.append(token)
+    return identifiers
+
+
 def _collect_di_layout(root: ET.Element) -> Tuple[Dict[str, Dict[str, float]], Dict[str, List[Dict[str, float]]]]:
     """Collect BPMNDI bounds for shapes and waypoints for edges."""
     shapes: Dict[str, Dict[str, float]] = {}
@@ -211,20 +291,6 @@ def _collect_di_layout(root: ET.Element) -> Tuple[Dict[str, Dict[str, float]], D
             waypoints.append({"x": float(wp.get("x", 0) or 0), "y": float(wp.get("y", 0) or 0)})
         edges[element_ref] = waypoints
     return shapes, edges
-
-
-def _check_camunda_properties(element: ET.Element, element_id: str, element_name: str, report: _ReportBuilder) -> None:
-    for ext in element.findall(f"{{{BPMN_NS}}}extensionElements"):
-        for props in ext.findall(f"{{{CAMUNDA_NS}}}properties"):
-            for prop in props.findall(f"{{{CAMUNDA_NS}}}property"):
-                prop_name = prop.get("name") or ""
-                report.error(
-                    "LEGACY_CAMUNDA_PROPERTY",
-                    element_id,
-                    f"camunda:property '{prop_name}' не используется в v0.3",
-                    "удалить/заменить на pm:metadata",
-                    element_name,
-                )
 
 
 def _check_metadata_strings(
@@ -333,7 +399,7 @@ def parse_bpmn(xml_text: str) -> ImportResult:
     if process is not None:
         proc_meta = _parse_metadata_json(process)
         if proc_meta is None:
-            report.error(
+            report.warning(
                 "MISSING_PROCESS_METADATA",
                 process_id,
                 "отсутствует pm:metadata на уровне процесса",
@@ -342,19 +408,19 @@ def parse_bpmn(xml_text: str) -> ImportResult:
         else:
             process_template_id = str(proc_meta.get("process_template_id") or "")
             if not process_template_id:
-                report.error(
+                report.warning(
                     "MISSING_PROCESS_METADATA",
                     process_id,
                     "pm:metadata не содержит process_template_id",
-                    "добавить process_template_id",
+                    "добавить pm:metadata с process_template_id и process_entities",
                 )
             entities = proc_meta.get("process_entities")
             if not isinstance(entities, dict) or not entities:
-                report.error(
+                report.warning(
                     "MISSING_PROCESS_METADATA",
                     process_id,
-                    "pm:metadata не содержит обязательный блок process_entities",
-                    "добавить process_entities (containers/equipment/zones)",
+                    "pm:metadata не содержит блок process_entities",
+                    "добавить pm:metadata с process_template_id и process_entities",
                 )
             else:
                 process_entities = entities
@@ -369,9 +435,33 @@ def parse_bpmn(xml_text: str) -> ImportResult:
             else:
                 recipe_context = ctx
             _check_metadata_strings(proc_meta, process_id, process.get("name") or "", report)
-        _check_camunda_properties(process, process_id, process.get("name") or "", report)
+        _parse_camunda_properties(process, process_id, process.get("name") or "", report)
+
+    # --- lanes ---------------------------------------------------------------
+    lanes: List[Dict[str, Any]] = []
+    if process is not None:
+        for lane_set in process.findall(f"{{{BPMN_NS}}}laneSet"):
+            for lane in lane_set.findall(f"{{{BPMN_NS}}}lane"):
+                lane_id = lane.get("id") or ""
+                bounds = shapes.get(lane_id, {})
+                lanes.append(
+                    {
+                        "id": lane_id,
+                        "name": lane.get("name") or "",
+                        "flow_node_refs": [
+                            (ref.text or "").strip()
+                            for ref in lane.findall(f"{{{BPMN_NS}}}flowNodeRef")
+                            if (ref.text or "").strip()
+                        ],
+                        "x": bounds.get("x", 0.0),
+                        "y": bounds.get("y", 0.0),
+                        "width": bounds.get("width", 0.0),
+                        "height": bounds.get("height", 0.0),
+                    }
+                )
 
     declared = _declared_refs(process_entities, recipe_context)
+    declared_outputs: set = set()  # output variable names declared by tasks
     draft_index: Dict[str, Dict[str, Any]] = {}
 
     # --- flow nodes ----------------------------------------------------------
@@ -393,6 +483,7 @@ def parse_bpmn(xml_text: str) -> ImportResult:
             display_name: Optional[str] = None
             params: Dict[str, Any] = {}
             outputs: Dict[str, Any] = {}
+            recipe_params: List[str] = []
 
             if local in LEGACY_TASK_TYPES:
                 report.error(
@@ -404,45 +495,33 @@ def parse_bpmn(xml_text: str) -> ImportResult:
                 )
 
             if is_task_like:
-                _check_camunda_properties(el, element_id, element_name, report)
+                camunda_props = _parse_camunda_properties(el, element_id, element_name, report)
                 meta = _parse_metadata_json(el)
-                if meta is None:
-                    report.error(
-                        "UNKNOWN_OPERATION_CODE",
-                        element_id,
-                        "отсутствует pm:metadata или operation_code у задачи",
-                        "добавить pm:metadata с operation_code из каталога",
-                        element_name,
-                    )
-                else:
+                if meta is not None:
                     _check_metadata_strings(meta, element_id, element_name, report)
+
+                # operation_code: camunda property first, pm:metadata fallback
+                operation_code = camunda_props.get("operation_code")
+                if not operation_code and meta is not None:
                     operation_code = meta.get("operation_code")
-                    if not operation_code:
-                        report.error(
-                            "UNKNOWN_OPERATION_CODE",
-                            element_id,
-                            "operation_code отсутствует в pm:metadata",
-                            "указать operation_code из каталога",
-                            element_name,
-                        )
-                    elif operation_code in FORBIDDEN_OPERATION_CODES:
-                        report.error(
-                            "FORBIDDEN_OPERATION",
-                            element_id,
-                            f"операция '{operation_code}' запрещена в v0.3",
-                            "заменить на допустимую операцию каталога",
-                            element_name,
-                        )
-                    elif operation_code not in ALLOWED_OPERATION_CODES:
-                        report.error(
-                            "UNKNOWN_OPERATION_CODE",
-                            element_id,
-                            f"неизвестный operation_code '{operation_code}'",
-                            "использовать operation_code из каталога",
-                            element_name,
-                        )
+
+                # params / outputs: pm:metadata merged with camunda params.*/outputs.*
+                if meta is not None and isinstance(meta.get("params"), dict):
+                    params.update(meta["params"])
+                if meta is not None and isinstance(meta.get("outputs"), dict):
+                    outputs.update(meta["outputs"])
+                for key, value in camunda_props.items():
+                    if key.startswith("params."):
+                        params[key[len("params."):]] = value
+                    elif key.startswith("outputs."):
+                        outputs[key[len("outputs."):]] = value
+                raw_recipe_params = camunda_props.get("recipe_params") or ""
+                recipe_params = [p.strip() for p in raw_recipe_params.split(";") if p.strip()]
+
+                # display_name: pm:metadata, then BPMN name as fallback
+                if meta is not None:
                     display_name = meta.get("display_name")
-                    if not display_name or not str(display_name).strip():
+                    if "display_name" in meta and not str(meta.get("display_name") or "").strip():
                         report.warning(
                             "EMPTY_DISPLAY_NAME",
                             element_id,
@@ -450,12 +529,48 @@ def parse_bpmn(xml_text: str) -> ImportResult:
                             "заполнить display_name",
                             element_name,
                         )
-                    raw_params = meta.get("params")
-                    if isinstance(raw_params, dict):
-                        params = raw_params
-                    raw_outputs = meta.get("outputs")
-                    if isinstance(raw_outputs, dict):
-                        outputs = raw_outputs
+                if not display_name or not str(display_name).strip():
+                    display_name = element_name or None
+                if display_name is None and meta is None and not camunda_props:
+                    report.warning(
+                        "EMPTY_DISPLAY_NAME",
+                        element_id,
+                        "display_name пустой",
+                        "заполнить display_name",
+                        element_name,
+                    )
+
+                # operation_code validation
+                if not operation_code:
+                    report.error(
+                        "UNKNOWN_OPERATION_CODE",
+                        element_id,
+                        "operation_code отсутствует (ни camunda:property, ни pm:metadata)",
+                        "указать operation_code из каталога",
+                        element_name,
+                    )
+                elif operation_code in FORBIDDEN_OPERATION_CODES:
+                    report.error(
+                        "FORBIDDEN_OPERATION",
+                        element_id,
+                        f"операция '{operation_code}' запрещена в v0.3",
+                        "заменить на допустимую операцию каталога",
+                        element_name,
+                    )
+                elif operation_code not in ALLOWED_OPERATION_CODES:
+                    report.error(
+                        "UNKNOWN_OPERATION_CODE",
+                        element_id,
+                        f"неизвестный operation_code '{operation_code}'",
+                        "использовать operation_code из каталога",
+                        element_name,
+                    )
+
+                # declared outputs feed gateway-condition validation
+                for out_key, out_value in outputs.items():
+                    declared_outputs.add(str(out_key))
+                    if isinstance(out_value, str) and out_value:
+                        declared_outputs.add(out_value)
 
                 # validate *_ref params and build draft entities
                 for key, value in params.items():
@@ -466,11 +581,11 @@ def parse_bpmn(xml_text: str) -> ImportResult:
                     if _DOLLAR_RE.search(value) or value.startswith("recipe_context."):
                         continue  # already reported as substitution errors
                     if value not in declared:
-                        report.error(
+                        report.warning(
                             "UNDECLARED_ENTITY_REF",
                             element_id,
                             f"параметр '{key}' ссылается на необъявленную сущность '{value}'",
-                            "объявить сущность в process_entities или recipe_context",
+                            "объявить сущность в process_entities или recipe_context (создан черновик)",
                             element_name,
                         )
                         draft = draft_index.setdefault(
@@ -489,6 +604,7 @@ def parse_bpmn(xml_text: str) -> ImportResult:
                     "display_name": display_name,
                     "params": params,
                     "outputs": outputs,
+                    "recipe_params": recipe_params,
                     "x": bounds.get("x", 0.0),
                     "y": bounds.get("y", 0.0),
                     "width": bounds.get("width", 0.0),
@@ -506,14 +622,17 @@ def parse_bpmn(xml_text: str) -> ImportResult:
             cond_el = flow.find(f"{{{BPMN_NS}}}conditionExpression")
             if cond_el is not None and cond_el.text:
                 condition = cond_el.text.strip()
-                if _DOLLAR_RE.search(condition):
-                    report.error(
-                        "DOLLAR_SUBSTITUTION",
-                        flow_id,
-                        f"${{...}} подстановка в conditionExpression: {condition}",
-                        "удалить/заменить на plain-условие (например 'requires_sauce == true')",
-                        flow_name,
-                    )
+                # Gateway conditions reference task outputs; every identifier
+                # must be declared in some task's outputs.* (v0.3).
+                for identifier in _condition_identifiers(condition):
+                    if identifier not in declared_outputs:
+                        report.error(
+                            "GATEWAY_CONDITION_UNKNOWN_OUTPUT",
+                            flow_id,
+                            f"условие шлюза ссылается на необъявленный output '{identifier}'",
+                            "объявить output в outputs.* задачи или исправить условие",
+                            flow_name,
+                        )
             flows.append(
                 {
                     "id": flow_id,
@@ -532,6 +651,7 @@ def parse_bpmn(xml_text: str) -> ImportResult:
         "nodes": nodes,
         "flows": flows,
         "participant": participant,
+        "lanes": lanes,
     }
     report_dict = {
         "summary": {

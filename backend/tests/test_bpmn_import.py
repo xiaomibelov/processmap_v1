@@ -1,5 +1,6 @@
 import os
 import sys
+from collections import Counter
 from unittest.mock import patch
 
 import pytest
@@ -20,7 +21,7 @@ def _load_fixture(name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# (a) v0.3 file imports cleanly
+# (a) v0.3 pm:metadata file imports cleanly
 # ---------------------------------------------------------------------------
 
 def test_v0_3_file_imports_without_errors():
@@ -61,6 +62,82 @@ def test_v0_3_ui_model_structure():
 
 
 # ---------------------------------------------------------------------------
+# (a2) REAL acceptance file: v0.3 encoded via camunda:properties
+# ---------------------------------------------------------------------------
+
+def test_acceptance_file_imports_with_zero_errors():
+    result = parse_bpmn(_load_fixture("tobe_razogrev_supa_rtk_v03.bpmn"))
+
+    assert result.report["summary"]["errors"] == 0, result.report["findings"]
+    assert result.report["summary"]["nodes"] == 35
+    assert result.report["summary"]["flows"] == 36
+
+
+def test_acceptance_file_operation_codes():
+    result = parse_bpmn(_load_fixture("tobe_razogrev_supa_rtk_v03.bpmn"))
+    task_nodes = [n for n in result.ui_model["nodes"] if n["bpmn_type"] == "task"]
+    assert len(task_nodes) == 24
+
+    counts = Counter(n["operation_code"] for n in task_nodes)
+    assert counts == {
+        "move": 8,
+        "get_from_storage": 2,
+        "open_equipment": 2,
+        "close_equipment": 3,
+        "set_equipment": 1,
+        "start_equipment": 2,
+        "measure_temperature": 1,
+        "check": 1,
+        "open_container": 1,
+        "close_container": 1,
+        "transfer": 1,
+        "publish_event": 1,
+    }
+    for node in task_nodes:
+        assert node["operation_code"] in ALLOWED_OPERATION_CODES
+
+
+def test_acceptance_file_camunda_encoding_details():
+    result = parse_bpmn(_load_fixture("tobe_razogrev_supa_rtk_v03.bpmn"))
+    nodes = {n["id"]: n for n in result.ui_model["nodes"]}
+
+    # params.* decoded into params dict
+    assert nodes["Act_get1"]["params"] == {"item_ref": "container_1", "target_ref": "storage_1"}
+    # recipe_params "a; b" decoded into a list
+    assert nodes["Act_set_mw"]["recipe_params"] == ["heating_power", "heat_time_sec"]
+    assert nodes["Act_measure"]["recipe_params"] == ["target_temp_c"]
+    # outputs.* decoded into outputs dict
+    assert nodes["Act_measure"]["outputs"] == {
+        "measured_temp_c": "measured_temp_c",
+        "temperature_ok": "temperature_ok",
+    }
+    # display_name falls back to the BPMN name
+    assert nodes["Act_get1"]["display_name"] == "Получить контейнер-1 из хранения"
+
+
+def test_acceptance_file_lanes_and_drafts():
+    result = parse_bpmn(_load_fixture("tobe_razogrev_supa_rtk_v03.bpmn"))
+
+    lanes = {l["id"]: l for l in result.ui_model["lanes"]}
+    assert set(lanes.keys()) == {"Lane_equip", "Lane_wf", "Lane_robot"}
+    assert lanes["Lane_equip"]["name"] == "Оборудование и станции"
+    assert "Act_get1" in lanes["Lane_equip"]["flow_node_refs"]
+    assert "Event_start" in lanes["Lane_wf"]["flow_node_refs"]
+
+    drafts = {d["ref"] for d in result.draft_entities}
+    assert {"container_1", "container_2", "heating_equipment_1", "storage_1"} <= drafts
+    assert len(result.draft_entities) == 10
+
+    # no pm:metadata on process level -> warning, not error
+    proc_findings = [f for f in result.report["findings"] if f["code"] == "MISSING_PROCESS_METADATA"]
+    assert proc_findings and all(f["severity"] == "warning" for f in proc_findings)
+
+    # undeclared refs are warnings (draft_entities covers auto-creation)
+    undeclared = [f for f in result.report["findings"] if f["code"] == "UNDECLARED_ENTITY_REF"]
+    assert undeclared and all(f["severity"] == "warning" for f in undeclared)
+
+
+# ---------------------------------------------------------------------------
 # (b) v0.2-style file produces the expected mismatch findings
 # ---------------------------------------------------------------------------
 
@@ -72,11 +149,13 @@ def test_v0_2_fixture_findings_cover_all_mismatch_kinds():
     # legacy task types (userTask + serviceTask)
     legacy_task = [f for f in findings if f["code"] == "LEGACY_TASK_TYPE"]
     assert {f["element_id"] for f in legacy_task} == {"Activity_heat", "Activity_notify"}
+    assert all(f["severity"] == "error" for f in legacy_task)
 
-    # camunda properties (actor_role + validator_profile_id)
+    # camunda properties (actor_role + validator_profile_id) are legacy keys
     camunda = [f for f in findings if f["code"] == "LEGACY_CAMUNDA_PROPERTY"]
     assert len(camunda) == 2
     assert all(f["element_id"] == "Activity_heat" for f in camunda)
+    assert all(f["severity"] == "error" for f in camunda)
     assert any("actor_role" in f["message"] for f in camunda)
     assert any("validator_profile_id" in f["message"] for f in camunda)
 
@@ -85,15 +164,24 @@ def test_v0_2_fixture_findings_cover_all_mismatch_kinds():
     assert any("validator_profile_id" in f["message"] for f in legacy_field)
     assert any(f["element_id"] == "Process_razogrev" for f in legacy_field)
 
-    # ${...} substitution in a param and in a conditionExpression
+    # ${...} substitution in a PARAM VALUE stays an error
     dollar = [f for f in findings if f["code"] == "DOLLAR_SUBSTITUTION"]
-    assert any(f["element_id"] == "Activity_heat" for f in dollar)
-    assert any(f["element_id"] == "Flow_s4" for f in dollar)
+    assert len(dollar) == 1
+    assert dollar[0]["element_id"] == "Activity_heat"
+    assert dollar[0]["severity"] == "error"
 
-    # undeclared entity refs
+    # ${has_sauce} gateway condition: identifier not declared in any task outputs
+    gw = [f for f in findings if f["code"] == "GATEWAY_CONDITION_UNKNOWN_OUTPUT"]
+    assert len(gw) == 1
+    assert gw[0]["element_id"] == "Flow_s4"
+    assert gw[0]["severity"] == "error"
+    assert "has_sauce" in gw[0]["message"]
+
+    # undeclared entity refs are warnings now (draft_entities covers them)
     undeclared = [f for f in findings if f["code"] == "UNDECLARED_ENTITY_REF"]
     assert any("microwave_01" in f["message"] for f in undeclared)
     assert any("sauce_container" in f["message"] for f in undeclared)
+    assert all(f["severity"] == "warning" for f in undeclared)
 
     # unknown operation code
     unknown_op = [f for f in findings if f["code"] == "UNKNOWN_OPERATION_CODE"]
@@ -106,12 +194,17 @@ def test_v0_2_fixture_findings_cover_all_mismatch_kinds():
         assert finding["element_id"]
         assert finding["severity"] in ("error", "warning")
 
-    assert "LEGACY_TASK_TYPE" in codes
-    assert "LEGACY_CAMUNDA_PROPERTY" in codes
-    assert "LEGACY_FIELD" in codes
-    assert "DOLLAR_SUBSTITUTION" in codes
-    assert "UNDECLARED_ENTITY_REF" in codes
-    assert "UNKNOWN_OPERATION_CODE" in codes
+    assert codes >= {
+        "LEGACY_TASK_TYPE",
+        "LEGACY_CAMUNDA_PROPERTY",
+        "LEGACY_FIELD",
+        "DOLLAR_SUBSTITUTION",
+        "UNDECLARED_ENTITY_REF",
+        "UNKNOWN_OPERATION_CODE",
+        "GATEWAY_CONDITION_UNKNOWN_OUTPUT",
+    }
+    # the fixture must still produce errors
+    assert result.report["summary"]["errors"] > 0
 
 
 def test_v0_2_draft_entities_built_from_undeclared_refs():
@@ -131,6 +224,9 @@ def test_v0_2_parse_is_lossless_despite_errors():
     assert result.report["summary"]["flows"] == 6
     assert result.report["summary"]["errors"] == len(
         [f for f in result.report["findings"] if f["severity"] == "error"]
+    )
+    assert result.report["summary"]["warnings"] == len(
+        [f for f in result.report["findings"] if f["severity"] == "warning"]
     )
 
 
@@ -182,6 +278,30 @@ def test_import_bpmn_endpoint_multipart_returns_200():
     assert body["report"]["summary"]["nodes"] == 12
     assert body["ui_model"]["process_template_id"] == "chicken_soup_v0_3"
     assert "draft_entities" in body
+
+
+def test_import_bpmn_endpoint_accepts_acceptance_file():
+    client = TestClient(app)
+    patches = _auth_patches()
+    for p in patches:
+        p.start()
+    try:
+        response = client.post(
+            "/api/process-templates/import-bpmn",
+            files={"file": ("tobe.bpmn", _load_fixture("tobe_razogrev_supa_rtk_v03.bpmn"), "text/xml")},
+            headers={"Authorization": "Bearer fake-token"},
+        )
+    finally:
+        for p in patches:
+            p.stop()
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["report"]["summary"]["errors"] == 0
+    assert body["report"]["summary"]["nodes"] == 35
+    assert body["report"]["summary"]["flows"] == 36
+    assert len(body["ui_model"]["lanes"]) == 3
+    assert body["draft_entities"]
 
 
 def test_import_bpmn_endpoint_raw_xml_body_returns_200():
