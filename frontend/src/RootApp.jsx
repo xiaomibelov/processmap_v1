@@ -8,6 +8,7 @@ import LoginModal from "./features/auth/LoginModal";
 import LoginPage from "./features/auth/LoginPage";
 import PublicHomePage from "./features/auth/PublicHomePage";
 import AnalyticsApp from "./features/analytics/AnalyticsApp.jsx";
+import ImportBpmn from "./features/technologist/import/ImportBpmn";
 import { canAccessAdminConsole } from "./features/admin/adminUtils";
 import {
   buildAnalyticsPath,
@@ -29,7 +30,7 @@ function readLocation() {
 function sanitizeNextPath(raw) {
   const src = String(raw || "").trim();
   if (!src.startsWith("/")) return "/app";
-  if (!src.startsWith("/app") && !src.startsWith("/admin")) return "/app";
+  if (!src.startsWith("/app") && !src.startsWith("/admin") && !src.startsWith("/technologist")) return "/app";
   return src;
 }
 
@@ -140,7 +141,7 @@ function AppRoutes() {
       return;
     }
 
-    if (!isAuthed && (pathname.startsWith("/app") || pathname.startsWith("/admin") || pathname.startsWith("/analytics")) && !reauthRequired) {
+    if (!isAuthed && (pathname.startsWith("/app") || pathname.startsWith("/admin") || pathname.startsWith("/analytics") || pathname.startsWith("/technologist")) && !reauthRequired) {
       const next = encodeURIComponent(`${pathname}${search}${hash}`);
       navigate(`/?next=${next}`, { replace: true });
     }
@@ -188,7 +189,7 @@ function AppRoutes() {
   }, [isAuthed, loading, pathname, reauthRequired, setReauthRequired]);
 
   function resolvePostLoginPath() {
-    if (pathname.startsWith("/app")) return `${pathname}${search}${hash}`;
+    if (pathname.startsWith("/app") || pathname.startsWith("/technologist")) return `${pathname}${search}${hash}`;
     if (nextFromQuery) return sanitizeNextPath(nextFromQuery);
     return "/app";
   }
@@ -230,6 +231,7 @@ function AppRoutes() {
   const wantsWorkspace = pathname.startsWith("/app");
   const wantsAnalytics = pathname.startsWith("/analytics");
   const wantsAdmin = pathname.startsWith("/admin");
+  const wantsTechnologistImport = pathname.startsWith("/technologist/import-bpmn");
 
   useEffect(() => {
     if (!isAuthed || !wantsWorkspace) return;
@@ -248,6 +250,31 @@ function AppRoutes() {
   }
 
   const showWorkspace = wantsWorkspace && isAuthed;
+
+  // E3.5: standalone technologist import page (no react-router; minimal top-level path check).
+  if (wantsTechnologistImport) {
+    return (
+      <>
+        {isAuthed ? (
+          <ImportBpmn />
+        ) : (
+          <LoginPage
+            onBack={() => navigate("/")}
+            onSuccess={() => {
+              setReauthRequired(false);
+              navigate("/technologist/import-bpmn", { replace: true });
+            }}
+          />
+        )}
+        <LoginModal
+          open={loginModalOpen}
+          locked={!isAuthed}
+          onClose={handleModalClose}
+          onSuccess={handleLoginSuccess}
+        />
+      </>
+    );
+  }
   const showAnalytics = wantsAnalytics && isAuthed;
   const showAdmin = wantsAdmin && isAuthed;
 

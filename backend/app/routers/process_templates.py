@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 
+from ..process_template.bpmn_import import BpmnImportError, parse_bpmn
 from ..process_template.service import ProcessTemplateService
 from ..process_template.models import ProcessTemplateCreate, ProcessTemplateUpdate
 
@@ -72,6 +73,30 @@ async def publish_template(
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
     return template
+
+
+@router.post("/import-bpmn")
+async def import_bpmn(
+    request: Request,
+    file: Optional[UploadFile] = File(None),
+) -> Dict[str, Any]:
+    user = get_current_user(request)
+    if file is not None:
+        raw = await file.read()
+    else:
+        raw = await request.body()
+    xml_text = raw.decode("utf-8", errors="replace")
+    if not xml_text.strip():
+        raise HTTPException(status_code=422, detail="Empty BPMN payload")
+    try:
+        result = parse_bpmn(xml_text)
+    except BpmnImportError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {
+        "ui_model": result.ui_model,
+        "report": result.report,
+        "draft_entities": result.draft_entities,
+    }
 
 
 @router.post("/{template_id}/validate")

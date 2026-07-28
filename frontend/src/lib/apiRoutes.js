@@ -83,6 +83,9 @@ export const apiRoutes = {
     create: () => "/api/templates",
     item: (id) => `/api/templates/${encode(id)}`,
   },
+  processTemplates: {
+    importBpmn: () => "/api/process-templates/import-bpmn",
+  },
   templateFolders: {
     list: (scope = "personal", orgId = "") => withQuery("/api/template-folders", {
       scope: String(scope || "personal").trim(),
