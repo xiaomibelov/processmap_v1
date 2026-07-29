@@ -45,19 +45,40 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
     )
     # Backfill kitchen_ids из E1-полей (rollout_kitchen_ids или одиночный kitchen_id).
-    op.execute(
-        """
-        UPDATE sku_binding
-           SET kitchen_ids = COALESCE(
-               rollout_kitchen_ids,
-               CASE WHEN kitchen_id IS NOT NULL AND kitchen_id <> ''
-                    THEN jsonb_build_array(kitchen_id)
-                    ELSE '[]'::jsonb
-               END
-           )
-         WHERE kitchen_ids IS NULL
-        """
-    )
+    # Колонка rollout_kitchen_ids может отсутствовать в legacy-форме таблицы
+    # (stage: схема наполнялась вне alembic) — проверяем наличие.
+    bind = op.get_bind()
+    has_rollout_kitchen_ids = bind.execute(
+        sa.text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='sku_binding' AND column_name='rollout_kitchen_ids' LIMIT 1"
+        )
+    ).fetchone()
+    if has_rollout_kitchen_ids:
+        op.execute(
+            """
+            UPDATE sku_binding
+               SET kitchen_ids = COALESCE(
+                   rollout_kitchen_ids,
+                   CASE WHEN kitchen_id IS NOT NULL AND kitchen_id <> ''
+                        THEN jsonb_build_array(kitchen_id)
+                        ELSE '[]'::jsonb
+                   END
+               )
+             WHERE kitchen_ids IS NULL
+            """
+        )
+    else:
+        op.execute(
+            """
+            UPDATE sku_binding
+               SET kitchen_ids = CASE WHEN kitchen_id IS NOT NULL AND kitchen_id <> ''
+                        THEN jsonb_build_array(kitchen_id)
+                        ELSE '[]'::jsonb
+                   END
+             WHERE kitchen_ids IS NULL
+            """
+        )
     op.create_index(
         "idx_sku_binding_status", "sku_binding", ["status"], if_not_exists=True
     )
