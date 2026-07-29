@@ -1,11 +1,13 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiTransformAsis } from "../../../lib/api";
 import GraphCanvas from "../graph/GraphCanvas";
+import WorkflowBar from "../workflow/WorkflowBar";
 import { t } from "../i18n";
 import "./TransformReview.css";
 
 const E4_HANDOFF_KEY = "fpc_e4_handoff";
+const ASIS_FILE_KEY = "fpc_asis_file_handoff";
 
 const FATE_META = {
   transformed_to: { icon: "🔁", label: "Трансформирован" },
@@ -37,6 +39,26 @@ export default function TransformReview() {
   const [rejectedIds, setRejectedIds] = useState(() => new Set());
   const asisRefs = useRef({});
   const draftRefs = useRef({});
+  const formRef = useRef(null);
+
+  // UX1/U1.1: handoff файла с экрана импорта — автозагрузка и автостарт
+  useEffect(() => {
+    try {
+      const raw = window.sessionStorage?.getItem(ASIS_FILE_KEY);
+      if (!raw) return;
+      window.sessionStorage?.removeItem(ASIS_FILE_KEY);
+      const payload = JSON.parse(raw);
+      if (payload?.content) {
+        const handoffFile = new File([payload.content], payload.name || "as_is.bpmn", { type: "text/xml" });
+        setFile(handoffFile);
+        // автостарт трансформации сразу (без клика)
+        void doTransform(handoffFile);
+      }
+    } catch {
+      // ignore storage errors
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const traceMap = useMemo(() => asArray(result?.trace_map), [result]);
   const traceById = useMemo(() => {
@@ -87,16 +109,15 @@ export default function TransformReview() {
     return ids.find((id) => remaining.has(id)) || "";
   }, [selectedTrace, effectiveDraft]);
 
-  async function handleSubmit(event) {
-    event.preventDefault();
-    if (!file || loading) return;
+  async function doTransform(targetFile) {
+    if (!targetFile || loading) return;
     setLoading(true);
     setError("");
     setResult(null);
     setSelectedAsisId("");
     setRejectedIds(new Set());
     try {
-      const r = await apiTransformAsis(file);
+      const r = await apiTransformAsis(targetFile);
       if (r?.ok) {
         setResult(r.result || {});
       } else {
@@ -107,6 +128,11 @@ export default function TransformReview() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    await doTransform(file);
   }
 
   function handleSelectAsis(elementId) {
@@ -154,9 +180,10 @@ export default function TransformReview() {
 
   return (
     <div className="transform-review">
+      <WorkflowBar current="transform" />
       <h1 className="transform-review__title">{t("transform.title")}</h1>
 
-      <form className="transform-review__form" onSubmit={handleSubmit}>
+      <form className="transform-review__form" onSubmit={handleSubmit} ref={formRef}>
         <label className="transform-review__file-btn" data-testid="file-choose">
           {file ? file.name : t("import.choose")}
           <input

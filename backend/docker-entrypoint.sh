@@ -31,9 +31,13 @@ for attempt in 1 2 3; do
 done
 
 if [ "$MIGRATIONS_OK" = "1" ]; then
-  echo "[entrypoint] reference seeds (operation catalog + dictionaries)"
+  echo "[entrypoint] reference seeds (operation catalog + dictionaries + kitchens)"
   python backend/seed_operations.py || echo "[entrypoint] WARN: seed_operations failed"
   python backend/seed_dictionaries.py || echo "[entrypoint] WARN: seed_dictionaries failed"
+  python backend/seed_kitchens.py || echo "[entrypoint] WARN: seed_kitchens failed"
+  echo "[entrypoint] demo seeds (UX1: technologist-demo + workflow demo data)"
+  python backend/seed_technologist_user.py || echo "[entrypoint] WARN: seed_technologist_user failed"
+  python backend/seed_demo_workflow.py || echo "[entrypoint] WARN: seed_demo_workflow failed"
 else
   echo "[entrypoint] ERROR: migrations FAILED — degraded start (схема БД старше кода)"
 fi

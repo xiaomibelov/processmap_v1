@@ -277,3 +277,16 @@
   font-size: 13px;
   color: var(--muted, #9aa0a6);
 }
+.recipes__next-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-top: 10px;
+  background: #1d2c47;
+  border: 1px solid #3f6fd1;
+  border-radius: 8px;
+  color: #d5e0ee;
+}
+.recipes__next-step a { text-decoration: none; }
+.recipes-empty { padding: 10px 0; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }

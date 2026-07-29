@@ -115,8 +115,9 @@ describe("ImportBpmn", () => {
 
   it("posts multipart file to /api/process-templates/import-bpmn", async () => {
     await renderAndImport();
-    expect(fetch).toHaveBeenCalledTimes(1);
-    const [url, init] = fetch.mock.calls[0];
+    const importCalls = fetch.mock.calls.filter(([u]) => String(u).includes("/api/process-templates/import-bpmn"));
+    expect(importCalls).toHaveLength(1);
+    const [url, init] = importCalls[0];
     expect(String(url)).toContain("/api/process-templates/import-bpmn");
     expect(String(init.method)).toBe("POST");
     expect(init.body).toBeInstanceOf(FormData);

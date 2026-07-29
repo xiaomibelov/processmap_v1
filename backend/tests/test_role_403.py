@@ -110,13 +110,26 @@ def _post_import(token: str):
     )
 
 
-def test_technologist_gets_403_on_import_bpmn(technologist_token):
+def test_technologist_can_import_bpmn(technologist_token):
+    """U5: technologist допущен к воркфлоу-импорту AS IS (без admin-функций)."""
     response = _post_import(technologist_token)
-    assert response.status_code == 403, response.text
-    detail = response.json().get("detail")
-    assert isinstance(detail, dict)
-    assert detail.get("error") == "insufficient_permissions"
-    assert detail.get("actual") == "technologist"
+    assert response.status_code == 200, response.text
+    assert response.json()["report"]["summary"]["nodes"] == 3
+
+
+def test_technologist_gets_403_on_admin_only(technologist_token):
+    """U5: admin-only остаётся 403 для technologist (кухни, словари, правила)."""
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {technologist_token}"}
+    # кухни — реестр (analyst/admin)
+    r = client.post("/api/kitchens", json={"name": "x"}, headers=headers)
+    assert r.status_code == 403, r.text
+    # словарь параметров рецепта (analyst/admin)
+    r = client.put("/api/recipe-params/heat_time_sec", json={"min": 1}, headers=headers)
+    assert r.status_code == 403, r.text
+    # сид правил трансформации (admin)
+    r = client.post("/api/process-templates/transformation-rules/seed", headers=headers)
+    assert r.status_code == 403, r.text
 
 
 def test_analyst_gets_200_on_import_bpmn(analyst_token):

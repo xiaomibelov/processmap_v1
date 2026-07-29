@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { apiRequest } from "../../../lib/apiCore";
 import { t, tf } from "../i18n";
+import WorkflowBar from "../workflow/WorkflowBar";
 import GraphCanvas from "../graph/GraphCanvas";
 import CheckPanel from "./CheckPanel";
 import {
@@ -394,7 +395,7 @@ function EntitiesPanel({ model, dicts, onModelChange, onRenameRequest, onDeleteB
 
   return (
     <div className="ctor-entities" data-testid="entities-panel">
-      <h3>{t("ctor.entities")}</h3>
+      <h3 title={t("ctor.entitiesHint")}>{t("ctor.entities")}</h3>
       {error ? <div className="ctor-hint ctor-hint--error">{error}</div> : null}
       {ENTITY_CATEGORIES.map((category) => {
         const items = refs.filter((r) => r.category === category);
@@ -559,7 +560,7 @@ function TemplatePanel({
         />
       </label>
       <div className="ctor-field">
-        <span className="ctor-field-label">{t("ctor.recipeContext")}</span>
+        <span className="ctor-field-label" title={t("ctor.recipeContextHint")}>{t("ctor.recipeContext")}</span>
         {recipeKeys.length === 0 ? <div className="ctor-hint">{t("ctor.recipeContextEmpty")}</div> : null}
         {recipeKeys.map((key) => (
           <div className="ctor-recipe-row" key={key} data-recipe-key={key}>
@@ -648,6 +649,7 @@ export function Constructor() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [saveBusy, setSaveBusy] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const [openList, setOpenList] = useState(null); // null | "loading" | array
   const [renameConfirm, setRenameConfirm] = useState(null); // {category, oldRef, newRef, usages}
   const [deleteBlocked, setDeleteBlocked] = useState(null); // {category, ref, usages}
@@ -712,6 +714,10 @@ export function Constructor() {
         await loadTemplate(templateParam);
       } else if (fromHandoff) {
         loadHandoff();
+      }
+      // UX1/U1.3: ?check=1 — авто-запуск «Проверить» после загрузки
+      if (String(query.get("check") || "") === "1") {
+        setTimeout(() => { void handleCheckRef.current?.(); }, 600);
       }
     }
 
@@ -910,6 +916,7 @@ export function Constructor() {
           setTemplateId(String(data.id || ""));
           setTemplateStatus("draft");
           setNotice(tf("ctor.savedDraft", { version: templateVersion }));
+          setJustSaved(true);
         } else {
           setError(`Ошибка сохранения: ${String(r?.error || "unknown")}`);
         }
@@ -925,6 +932,7 @@ export function Constructor() {
         });
         if (r?.ok) {
           setNotice(tf("ctor.savedDraft", { version: templateVersion }));
+          setJustSaved(true);
         } else {
           setError(`Ошибка сохранения: ${String(r?.error || "unknown")}`);
         }
@@ -1058,6 +1066,7 @@ export function Constructor() {
     }
   }
 
+  const handleCheckRef = useRef(null);
   // ---- E6.5: «Проверить» = dry-run validate + feasibility pre-check ----
 
   async function runPrecheck(kitchenIds, mode, model) {
@@ -1113,6 +1122,8 @@ export function Constructor() {
     }
   }
 
+  handleCheckRef.current = handleCheck;
+
   function handleToggleKitchen(id) {
     setSelectedKitchenIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
@@ -1163,6 +1174,8 @@ export function Constructor() {
   return (
     <div className="ctor">
       <h1 className="ctor__title">{t("ctor.title")}</h1>
+
+      <WorkflowBar current="constructor" />
 
       <div className="ctor__toolbar">
         <button type="button" className="ctor-btn" data-testid="template-new" onClick={handleNew}>
@@ -1241,6 +1254,18 @@ export function Constructor() {
       {notice ? (
         <div className="ctor__notice" data-testid="ctor-notice">
           {notice}
+        </div>
+      ) : null}
+      {justSaved && templateId ? (
+        <div className="ctor__next-step" data-testid="next-step-banner">
+          <span>{t("wf.next")}</span>
+          <a
+            className="ctor-btn ctor-btn--primary"
+            data-testid="next-create-recipe"
+            href={`/technologist/recipes?template=${encodeURIComponent(templateId)}`}
+          >
+            {t("wf.nextRecipe")}
+          </a>
         </div>
       ) : null}
       {connectHint ? (

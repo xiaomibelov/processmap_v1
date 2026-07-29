@@ -1,0 +1,66 @@
+[
+  {
+    "name": "app_main",
+    "path": "/app",
+    "status": "ok",
+    "title": "Выберите организацию",
+    "consoleErrors": [],
+    "failedReqs": []
+  },
+  {
+    "name": "catalog",
+    "path": "/technologist/catalog",
+    "status": "ok",
+    "title": "Каталог операций",
+    "consoleErrors": [],
+    "failedReqs": []
+  },
+  {
+    "name": "import",
+    "path": "/technologist/import-bpmn",
+    "status": "ok",
+    "title": "Импорт BPMN (AS IS)",
+    "consoleErrors": [],
+    "failedReqs": []
+  },
+  {
+    "name": "transform",
+    "path": "/technologist/transform",
+    "status": "ok",
+    "title": "AI-трансформация AS IS → TO BE",
+    "consoleErrors": [],
+    "failedReqs": []
+  },
+  {
+    "name": "constructor",
+    "path": "/technologist/constructor",
+    "status": "ok",
+    "title": "Конструктор процессов",
+    "consoleErrors": [],
+    "failedReqs": []
+  },
+  {
+    "name": "recipes",
+    "path": "/technologist/recipes",
+    "status": "ok",
+    "title": "Рецепты",
+    "consoleErrors": [],
+    "failedReqs": []
+  },
+  {
+    "name": "pilots",
+    "path": "/technologist/pilots",
+    "status": "ok",
+    "title": "Пилоты SKU-привязок",
+    "consoleErrors": [],
+    "failedReqs": []
+  },
+  {
+    "name": "audit",
+    "path": "/technologist/audit",
+    "status": "ok",
+    "title": "Аудит действий",
+    "consoleErrors": [],
+    "failedReqs": []
+  }
+]

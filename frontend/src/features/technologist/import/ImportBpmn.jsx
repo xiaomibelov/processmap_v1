@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from "react";
 
 import { apiImportBpmn } from "../../../lib/api";
 import GraphCanvas from "../graph/GraphCanvas";
+import WorkflowBar from "../workflow/WorkflowBar";
 import { t, tf } from "../i18n";
 import "./ImportBpmn.css";
 
@@ -36,10 +37,21 @@ function normalizeResult(raw) {
 }
 
 export const E4_HANDOFF_KEY = "fpc_e4_handoff";
+export const ASIS_FILE_KEY = "fpc_asis_file_handoff";
 
 function navigateToConstructor() {
   if (typeof window === "undefined") return;
   window.history.pushState({}, "/technologist/constructor?from=import", "/technologist/constructor?from=import");
+  try {
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  } catch {
+    window.dispatchEvent(new Event("popstate"));
+  }
+}
+
+function navigateToTransform() {
+  if (typeof window === "undefined") return;
+  window.history.pushState({}, "/technologist/transform", "/technologist/transform");
   try {
     window.dispatchEvent(new PopStateEvent("popstate"));
   } catch {
@@ -68,6 +80,24 @@ export default function ImportBpmn() {
       // ignore storage errors
     }
     navigateToConstructor();
+  }
+
+  // UX1/U1.1: handoff исходного файла в AI-трансформацию
+  function handleGoToTransform() {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        window.sessionStorage?.setItem(
+          ASIS_FILE_KEY,
+          JSON.stringify({ name: file.name, content: String(reader.result || "") }),
+        );
+      } catch {
+        // ignore storage errors
+      }
+      navigateToTransform();
+    };
+    reader.readAsText(file);
   }
 
   async function handleSubmit(event) {
@@ -103,6 +133,7 @@ export default function ImportBpmn() {
 
   return (
     <div className="import-bpmn">
+      <WorkflowBar current="import" />
       <h1 className="import-bpmn__title">{t("import.title")}</h1>
 
       <form className="import-bpmn__form" onSubmit={handleSubmit}>
@@ -140,6 +171,19 @@ export default function ImportBpmn() {
             <section className="import-bpmn__preview">
               <h2>{t("import.preview")}</h2>
               <div className="import-bpmn__preview-actions">
+                {parsed.summary.errors > 0 ? (
+                  <div className="import-bpmn__legacy-hint" data-testid="legacy-transform-hint">
+                    {t("wf.legacyHint")}
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  className="import-bpmn__to-constructor import-bpmn__to-transform"
+                  data-testid="go-to-transform"
+                  onClick={handleGoToTransform}
+                >
+                  {t("wf.nextTransform")}
+                </button>
                 <button
                   type="button"
                   className="import-bpmn__to-constructor"
