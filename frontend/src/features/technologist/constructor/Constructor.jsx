@@ -1113,7 +1113,6 @@ export function Constructor() {
       if (kitchenIds.length > 0) {
         await runPrecheck(kitchenIds, precheckMode, uiModel);
       }
-      handleCheckRef.current = handleCheck;
       if (unreachable.length > 0) {
         const names = unreachable.map((id) => nodeLabel(findNode(uiModel, id)) || id).join(", ");
         setNotice(tf("ctor.unreachable", { names }));
@@ -1122,6 +1121,8 @@ export function Constructor() {
       setCheckBusy(false);
     }
   }
+
+  handleCheckRef.current = handleCheck;
 
   function handleToggleKitchen(id) {
     setSelectedKitchenIds((prev) =>

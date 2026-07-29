@@ -71,9 +71,10 @@ async def get_operation(
         "id": row[0],
         "code": row[1],
         "name": row[2],
-        "parameter_schema": row[3],
-        "allowed_outputs": row[4],
-        "execution_contract": row[5],
-        "resource_requirements": row[6],
-        "category": row[7]
+        "name_ru": row[3],
+        "parameter_schema": row[4],
+        "allowed_outputs": row[5],
+        "execution_contract": row[6],
+        "resource_requirements": row[7],
+        "category": row[8]
     }
