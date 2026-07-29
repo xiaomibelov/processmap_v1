@@ -1,0 +1,36 @@
+[
+  {
+    "id": "ee2c810d-3909-4838-bbf6-466a244ff807",
+    "recipe_id": "01eae93a-3ff8-4330-968f-667e5440b60d",
+    "version": "1.0.1",
+    "status": "published",
+    "parameters_json": {
+      "qty": 20,
+      "dish_sku_id": "food_container",
+      "heat_time_sec": 100,
+      "heating_power": "medium",
+      "target_temp_c": 75
+    },
+    "template_id": "cafe1633-fa48-4a76-ba33-c3a262978e78",
+    "template_version": "0.1.0",
+    "created_by": "mvp_technologist@local",
+    "created_at": "2026-07-29T18:10:05.279695"
+  },
+  {
+    "id": "afe403fc-3763-4969-b6f4-b2e4d3bb23dd",
+    "recipe_id": "01eae93a-3ff8-4330-968f-667e5440b60d",
+    "version": "1.0.0",
+    "status": "published",
+    "parameters_json": {
+      "qty": 20,
+      "dish_sku_id": "food_container",
+      "heat_time_sec": 90,
+      "heating_power": "medium",
+      "target_temp_c": 75
+    },
+    "template_id": "cafe1633-fa48-4a76-ba33-c3a262978e78",
+    "template_version": "0.1.0",
+    "created_by": "mvp_technologist@local",
+    "created_at": "2026-07-29T18:10:01.447498"
+  }
+]

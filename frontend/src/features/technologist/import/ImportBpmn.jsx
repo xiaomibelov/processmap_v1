@@ -1,6 +1,8 @@
 import React, { useMemo, useRef, useState } from "react";
 
 import { apiImportBpmn } from "../../../lib/api";
+import GraphCanvas from "../graph/GraphCanvas";
+import { t, tf } from "../i18n";
 import "./ImportBpmn.css";
 
 const SEVERITY_META = {
@@ -33,45 +35,16 @@ function normalizeResult(raw) {
   };
 }
 
-function computeViewBox(nodes) {
-  const pad = 40;
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  nodes.forEach((n) => {
-    const x = Number(n?.x) || 0;
-    const y = Number(n?.y) || 0;
-    const w = Number(n?.width) || 100;
-    const h = Number(n?.height) || 60;
-    minX = Math.min(minX, x);
-    minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x + w);
-    maxY = Math.max(maxY, y + h);
-  });
-  if (!Number.isFinite(minX)) {
-    minX = 0; minY = 0; maxX = 400; maxY = 200;
+export const E4_HANDOFF_KEY = "fpc_e4_handoff";
+
+function navigateToConstructor() {
+  if (typeof window === "undefined") return;
+  window.history.pushState({}, "/technologist/constructor?from=import", "/technologist/constructor?from=import");
+  try {
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  } catch {
+    window.dispatchEvent(new Event("popstate"));
   }
-  return `${minX - pad} ${minY - pad} ${Math.max(maxX - minX + pad * 2, 100)} ${Math.max(maxY - minY + pad * 2, 100)}`;
-}
-
-function nodeCenter(node) {
-  const x = Number(node?.x) || 0;
-  const y = Number(node?.y) || 0;
-  const w = Number(node?.width) || 100;
-  const h = Number(node?.height) || 60;
-  return { cx: x + w / 2, cy: y + h / 2, x, y, w, h };
-}
-
-function flowPoints(source, target) {
-  const s = nodeCenter(source);
-  const t = nodeCenter(target);
-  const sx = s.x + s.w;
-  const sy = s.cy;
-  const tx = t.x;
-  const ty = t.cy;
-  const midX = sx + Math.max((tx - sx) / 2, 24);
-  return `${sx},${sy} ${midX},${sy} ${midX},${ty} ${tx},${ty}`;
 }
 
 export default function ImportBpmn() {
@@ -83,12 +56,19 @@ export default function ImportBpmn() {
   const nodeRefs = useRef({});
 
   const parsed = useMemo(() => (result ? normalizeResult(result) : null), [result]);
-  const viewBox = useMemo(() => (parsed ? computeViewBox(parsed.uiModel.nodes) : "0 0 400 200"), [parsed]);
-  const nodesById = useMemo(() => {
-    const map = new Map();
-    (parsed?.uiModel.nodes || []).forEach((n) => map.set(String(n?.id || ""), n));
-    return map;
-  }, [parsed]);
+
+  function handleOpenInConstructor() {
+    if (!parsed) return;
+    try {
+      window.sessionStorage?.setItem(
+        E4_HANDOFF_KEY,
+        JSON.stringify({ ui_model: parsed.uiModel, draft_entities: parsed.draftEntities }),
+      );
+    } catch {
+      // ignore storage errors
+    }
+    navigateToConstructor();
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -102,10 +82,10 @@ export default function ImportBpmn() {
       if (r?.ok) {
         setResult(r.result || {});
       } else {
-        setError(String(r?.error || "Ошибка импорта"));
+        setError(String(r?.error || t("import.failed")));
       }
     } catch (err) {
-      setError(String(err?.message || err || "Ошибка импорта"));
+      setError(String(err?.message || err || t("import.failed")));
     } finally {
       setLoading(false);
     }
@@ -123,17 +103,21 @@ export default function ImportBpmn() {
 
   return (
     <div className="import-bpmn">
-      <h1 className="import-bpmn__title">Импорт BPMN-шаблона</h1>
+      <h1 className="import-bpmn__title">{t("import.title")}</h1>
 
       <form className="import-bpmn__form" onSubmit={handleSubmit}>
-        <input
-          type="file"
-          accept=".bpmn,.xml"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-          aria-label="BPMN-файл"
-        />
+        <label className="import-bpmn__file-btn" data-testid="file-choose">
+          {file ? file.name : t("import.choose")}
+          <input
+            type="file"
+            accept=".bpmn,.xml"
+            hidden
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            aria-label="BPMN-файл"
+          />
+        </label>
         <button type="submit" disabled={!file || loading}>
-          {loading ? "Импорт..." : "Импортировать"}
+          {loading ? t("import.loading") : t("import.submit")}
         </button>
       </form>
 
@@ -142,81 +126,41 @@ export default function ImportBpmn() {
       {parsed ? (
         <>
           <div className="import-bpmn__summary" data-testid="import-summary">
-            <span className="import-bpmn__summary-item">узлов {parsed.summary.nodes}</span>
-            <span className="import-bpmn__summary-item">потоков {parsed.summary.flows}</span>
+            <span className="import-bpmn__summary-item">{t("import.nodes")} {parsed.summary.nodes}</span>
+            <span className="import-bpmn__summary-item">{t("import.flows")} {parsed.summary.flows}</span>
             <span className="import-bpmn__summary-item import-bpmn__summary-item--errors">
-              ошибок {parsed.summary.errors}
+              {t("import.errors")} {parsed.summary.errors}
             </span>
             <span className="import-bpmn__summary-item import-bpmn__summary-item--warnings">
-              предупреждений {parsed.summary.warnings}
+              {t("import.warnings")} {parsed.summary.warnings}
             </span>
           </div>
 
           <div className="import-bpmn__content">
             <section className="import-bpmn__preview">
-              <h2>Предпросмотр графа</h2>
-              <svg
-                className="import-bpmn__svg"
-                viewBox={viewBox}
-                role="img"
-                aria-label="Предпросмотр графа процесса"
-              >
-                <defs>
-                  <marker
-                    id="import-bpmn-arrow"
-                    viewBox="0 0 10 10"
-                    refX="9"
-                    refY="5"
-                    markerWidth="8"
-                    markerHeight="8"
-                    orient="auto-start-reverse"
-                  >
-                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#555" />
-                  </marker>
-                </defs>
-                {parsed.uiModel.flows.map((flow) => {
-                  const source = nodesById.get(String(flow?.source_ref || ""));
-                  const target = nodesById.get(String(flow?.target_ref || ""));
-                  if (!source || !target) return null;
-                  return (
-                    <polyline
-                      key={String(flow?.id || `${flow?.source_ref}->${flow?.target_ref}`)}
-                      points={flowPoints(source, target)}
-                      fill="none"
-                      stroke="#555"
-                      strokeWidth="1.5"
-                      markerEnd="url(#import-bpmn-arrow)"
-                    />
-                  );
-                })}
-                {parsed.uiModel.nodes.map((node) => {
-                  const id = String(node?.id || "");
-                  const { x, y, w, h, cx, cy } = nodeCenter(node);
-                  const label = String(node?.display_name || node?.name || id || "").trim();
-                  const selected = id && id === selectedElementId;
-                  return (
-                    <g
-                      key={id || `${x}_${y}`}
-                      ref={(el) => { if (id) nodeRefs.current[id] = el; }}
-                      data-element-id={id}
-                      data-selected={selected ? "true" : "false"}
-                      className={`import-bpmn__node${selected ? " import-bpmn__node--selected" : ""}`}
-                      onClick={() => id && setSelectedElementId(id)}
-                    >
-                      <rect x={x} y={y} width={w} height={h} rx={6} />
-                      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle">
-                        {label}
-                      </text>
-                    </g>
-                  );
-                })}
-              </svg>
+              <h2>{t("import.preview")}</h2>
+              <div className="import-bpmn__preview-actions">
+                <button
+                  type="button"
+                  className="import-bpmn__to-constructor"
+                  onClick={handleOpenInConstructor}
+                >
+                  {t("import.toConstructor")}
+                </button>
+              </div>
+              <GraphCanvas
+                uiModel={parsed.uiModel}
+                selectedElementId={selectedElementId}
+                onSelectNode={setSelectedElementId}
+                nodeRefs={nodeRefs}
+                ariaLabel={t("import.previewAria")}
+              />
             </section>
 
             <section className="import-bpmn__findings">
-              <h2>Замечания</h2>
+              <h2>{t("import.findings")}</h2>
               {parsed.report.findings.length === 0 ? (
-                <div className="import-bpmn__empty">Замечаний нет</div>
+                <div className="import-bpmn__empty">{t("import.findingsEmpty")}</div>
               ) : (
                 <ul className="import-bpmn__findings-list">
                   {parsed.report.findings.map((finding, idx) => {
@@ -235,16 +179,19 @@ export default function ImportBpmn() {
                           onClick={() => handleSelectElement(elementId)}
                         >
                           <span className="import-bpmn__finding-head">
-                            <span className="import-bpmn__finding-icon" title={meta.label}>{meta.icon}</span>
-                            <span className="import-bpmn__finding-code">{String(finding?.code || "")}</span>
+                            <span className="import-bpmn__finding-icon" title={meta.icon ? meta.label : meta.label}>{meta.icon}</span>
                             {finding?.element_name ? (
                               <span className="import-bpmn__finding-element">{String(finding.element_name)}</span>
                             ) : null}
                           </span>
                           <span className="import-bpmn__finding-message">{String(finding?.message || "")}</span>
+                          {/* L10N (критерий 4): код — мелким после message */}
+                          <span className="import-bpmn__finding-code" title={String(finding?.code || "")}>
+                            {String(finding?.code || "")}
+                          </span>
                           {finding?.recommendation ? (
                             <span className="import-bpmn__finding-recommendation">
-                              Рекомендация: {String(finding.recommendation)}
+                              {tf("check.recommendation", { text: String(finding.recommendation) })}
                             </span>
                           ) : null}
                         </button>
@@ -258,13 +205,13 @@ export default function ImportBpmn() {
 
           {parsed.draftEntities.length > 0 ? (
             <section className="import-bpmn__drafts">
-              <h2>Черновые сущности</h2>
+              <h2>{t("import.draftEntities")}</h2>
               <table className="import-bpmn__drafts-table">
                 <thead>
                   <tr>
-                    <th>Ссылка (ref)</th>
-                    <th>Категория (предположение)</th>
-                    <th>Используется в</th>
+                    <th>{t("import.draftRef")}</th>
+                    <th>{t("import.draftCategory")}</th>
+                    <th>{t("import.draftUsedBy")}</th>
                   </tr>
                 </thead>
                 <tbody>

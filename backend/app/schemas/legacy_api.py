@@ -23,6 +23,7 @@ class AuthMeOut(BaseModel):
     id: str = Field(examples=["user_123"])
     email: str = Field(examples=["admin@local"])
     is_admin: bool = False
+    role: str = ""
     active_org_id: str = ""
     default_org_id: str = ""
     orgs: List[Dict[str, Any]] = []

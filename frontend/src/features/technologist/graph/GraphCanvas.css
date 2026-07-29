@@ -1,0 +1,90 @@
+/* Shared graph canvas styles (E3 preview + E4 constructor). */
+.graph-canvas {
+  width: 100%;
+  max-height: 620px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+  touch-action: none;
+}
+
+.graph-canvas__lane rect {
+  fill: #f4f7fb;
+  stroke: #c3d0e0;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.graph-canvas__lane text {
+  font-size: 11px;
+  fill: #5a6b80;
+  pointer-events: none;
+}
+
+.graph-canvas__node {
+  cursor: pointer;
+}
+
+.graph-canvas__node .graph-canvas__shape {
+  fill: #fff;
+  stroke: #4a6fa5;
+  stroke-width: 1.5;
+}
+
+.graph-canvas__node .graph-canvas__shape--event {
+  stroke: #2e7d32;
+}
+
+.graph-canvas__node .graph-canvas__shape--end {
+  stroke-width: 3.5;
+}
+
+.graph-canvas__node .graph-canvas__shape--gateway {
+  stroke: #b8860b;
+  fill: #fffaf0;
+}
+
+.graph-canvas__node:hover .graph-canvas__shape {
+  fill: #eef4ff;
+}
+
+.import-bpmn__node--selected .graph-canvas__shape {
+  stroke: #c0392b;
+  stroke-width: 3;
+  fill: #fdecea;
+}
+
+.graph-canvas__node--connect-source .graph-canvas__shape {
+  stroke: #007bff;
+  stroke-width: 3;
+  stroke-dasharray: 5 3;
+}
+
+.graph-canvas__node text {
+  font-size: 11px;
+  fill: #333;
+  pointer-events: none;
+}
+
+.graph-canvas__node .graph-canvas__marker {
+  font-size: 14px;
+  font-weight: 700;
+  fill: #7a5c00;
+  pointer-events: none;
+}
+
+.graph-canvas__warning {
+  font-size: 13px;
+  fill: #b8860b;
+  pointer-events: none;
+}
+
+.graph-canvas__flow--selected {
+  stroke: #c0392b;
+}
+
+.graph-canvas__flow-label {
+  font-size: 10px;
+  fill: #555;
+  pointer-events: none;
+}

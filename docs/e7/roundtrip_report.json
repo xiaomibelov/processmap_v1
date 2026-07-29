@@ -1,0 +1,107 @@
+{
+  "fixture": "tobe_razogrev_supa_rtk_v03.bpmn",
+  "summary": {
+    "nodes": 35,
+    "flows": 36,
+    "spot_checks": 12,
+    "all_match": true
+  },
+  "spot_check": [
+    {
+      "operation_code": "measure_temperature",
+      "node_id": "Act_measure",
+      "operation_code_match": true,
+      "params_match": true,
+      "outputs_match": true,
+      "recipe_params_match": true
+    },
+    {
+      "operation_code": "set_equipment",
+      "node_id": "Act_set_mw",
+      "operation_code_match": true,
+      "params_match": true,
+      "outputs_match": true,
+      "recipe_params_match": true
+    },
+    {
+      "operation_code": "transfer",
+      "node_id": "Act_transfer",
+      "operation_code_match": true,
+      "params_match": true,
+      "outputs_match": true,
+      "recipe_params_match": true
+    },
+    {
+      "operation_code": "move",
+      "node_id": "Act_move1",
+      "operation_code_match": true,
+      "params_match": true,
+      "outputs_match": true,
+      "recipe_params_match": true
+    },
+    {
+      "operation_code": "move",
+      "node_id": "Act_move2",
+      "operation_code_match": true,
+      "params_match": true,
+      "outputs_match": true,
+      "recipe_params_match": true
+    },
+    {
+      "operation_code": "move",
+      "node_id": "Act_move2c",
+      "operation_code_match": true,
+      "params_match": true,
+      "outputs_match": true,
+      "recipe_params_match": true
+    },
+    {
+      "operation_code": "move",
+      "node_id": "Act_move3",
+      "operation_code_match": true,
+      "params_match": true,
+      "outputs_match": true,
+      "recipe_params_match": true
+    },
+    {
+      "operation_code": "move",
+      "node_id": "Act_dispose_def",
+      "operation_code_match": true,
+      "params_match": true,
+      "outputs_match": true,
+      "recipe_params_match": true
+    },
+    {
+      "operation_code": "move",
+      "node_id": "Act_move4",
+      "operation_code_match": true,
+      "params_match": true,
+      "outputs_match": true,
+      "recipe_params_match": true
+    },
+    {
+      "operation_code": "move",
+      "node_id": "Act_move5",
+      "operation_code_match": true,
+      "params_match": true,
+      "outputs_match": true,
+      "recipe_params_match": true
+    },
+    {
+      "operation_code": "move",
+      "node_id": "Act_move6",
+      "operation_code_match": true,
+      "params_match": true,
+      "outputs_match": true,
+      "recipe_params_match": true
+    },
+    {
+      "operation_code": "publish_event",
+      "node_id": "Act_publish",
+      "operation_code_match": true,
+      "params_match": true,
+      "outputs_match": true,
+      "recipe_params_match": true
+    }
+  ]
+}

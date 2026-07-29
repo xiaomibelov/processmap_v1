@@ -1,0 +1,11 @@
+{
+  "valid": true,
+  "summary": {
+    "errors": 0,
+    "warnings": 0,
+    "nodes": 26,
+    "flows": 27
+  },
+  "findings": [],
+  "draft_entities": []
+}

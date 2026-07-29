@@ -4,6 +4,24 @@ url = os.environ.get("DATABASE_URL")
 conn = psycopg.connect(url)
 cur = conn.cursor()
 
+# L10N (миграция 009): русские названия операций для UI технолога.
+# Код операции — технический идентификатор, не переводится.
+NAME_RU = {
+    "get_from_storage": "Выдать из хранилища",
+    "move": "Перенести",
+    "open_container": "Вскрыть контейнер",
+    "close_container": "Закрыть контейнер",
+    "open_equipment": "Открыть оборудование",
+    "close_equipment": "Закрыть оборудование",
+    "start_equipment": "Запустить оборудование",
+    "set_equipment": "Настроить оборудование",
+    "transfer": "Перетарить",
+    "measure_temperature": "Измерить температуру",
+    "check": "Проверить",
+    "publish_event": "Опубликовать событие",
+    "wait": "Выждать",
+}
+
 operations = [
     {
         "code": "get_from_storage",
@@ -324,15 +342,46 @@ operations = [
     }
 ]
 
+# v0.3 §9: канонические parameter_schema (refs как *_ref — нужны dropdown'ам E4.3).
+# Переопределяют устаревшие схемы выше; единственный источник правды — эта таблица.
+V03_PARAMETER_SCHEMA = {
+    "get_from_storage": {"item_type": ("string", False), "item_ref": ("string", False), "target_ref": ("string", True)},
+    "move": {"object_ref": ("string", True), "target_ref": ("string", True)},
+    "hold": {"object_ref": ("string", True), "purpose": ("string", False)},
+    "open_equipment": {"equipment_ref": ("string", False), "equipment_type": ("string", False)},
+    "close_equipment": {"equipment_ref": ("string", False), "equipment_type": ("string", False)},
+    "set_equipment": {"equipment_ref": ("string", True), "duration_sec": ("number", False), "power_level": ("string", False)},
+    "start_equipment": {"equipment_ref": ("string", True)},
+    "wait": {"duration_sec": ("number", False), "event_code": ("string", False)},
+    "open_container": {"container_ref": ("string", True)},
+    "close_container": {"container_ref": ("string", True), "target_ref": ("string", False)},
+    "transfer": {"source_container_ref": ("string", True), "target_container_ref": ("string", True), "content_ref": ("string", False)},
+    "measure_temperature": {"object_ref": ("string", False), "container_ref": ("string", False), "target_temp_c": ("number", False)},
+    "check": {"check_code": ("string", True), "object_ref": ("string", True), "expected_value": ("string", True)},
+    "publish_event": {"event_code": ("string", True), "payload": ("object", False)},
+}
+
+for op in operations:
+    schema = V03_PARAMETER_SCHEMA.get(op["code"])
+    if schema:
+        op["parameter_schema"] = {
+            key: {"type": typ, "required": req} for key, (typ, req) in schema.items()
+        }
+
+# Полная перезапись каталога (идемпотентно): старые строки с устаревшими схемами заменяются
+for op in operations:
+    cur.execute("DELETE FROM operation_catalog WHERE code = %s", (op["code"],))
+
 # Insert operations into operation_catalog
 for op in operations:
     cur.execute("""
-        INSERT INTO operation_catalog (id, code, name, parameter_schema, allowed_outputs, execution_contract, resource_requirements, category)
-        VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO operation_catalog (id, code, name, name_ru, parameter_schema, allowed_outputs, execution_contract, resource_requirements, category)
+        VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (code) DO NOTHING
     """, (
         op["code"],
         op["name"],
+        NAME_RU.get(op["code"], op["name"]),
         json.dumps(op["parameter_schema"]),
         json.dumps(op["allowed_outputs"]),
         json.dumps(op["execution_contract"]),

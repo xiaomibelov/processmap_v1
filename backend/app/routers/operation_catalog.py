@@ -19,7 +19,7 @@ async def list_operations(
     
     if category:
         result = conn.execute("""
-            SELECT id, code, name, parameter_schema, allowed_outputs, execution_contract, resource_requirements, category
+            SELECT id, code, name, name_ru, parameter_schema, allowed_outputs, execution_contract, resource_requirements, category
             FROM operation_catalog
             WHERE category = %s
             ORDER BY code
@@ -27,7 +27,7 @@ async def list_operations(
         """, (category, limit, offset))
     else:
         result = conn.execute("""
-            SELECT id, code, name, parameter_schema, allowed_outputs, execution_contract, resource_requirements, category
+            SELECT id, code, name, name_ru, parameter_schema, allowed_outputs, execution_contract, resource_requirements, category
             FROM operation_catalog
             ORDER BY code
             LIMIT %s OFFSET %s
@@ -39,11 +39,12 @@ async def list_operations(
             "id": row[0],
             "code": row[1],
             "name": row[2],
-            "parameter_schema": row[3],
-            "allowed_outputs": row[4],
-            "execution_contract": row[5],
-            "resource_requirements": row[6],
-            "category": row[7]
+            "name_ru": row[3],
+            "parameter_schema": row[4],
+            "allowed_outputs": row[5],
+            "execution_contract": row[6],
+            "resource_requirements": row[7],
+            "category": row[8]
         })
     
     return operations
@@ -57,7 +58,7 @@ async def get_operation(
     conn = _connect()
     
     result = conn.execute("""
-        SELECT id, code, name, parameter_schema, allowed_outputs, execution_contract, resource_requirements, category
+        SELECT id, code, name, name_ru, parameter_schema, allowed_outputs, execution_contract, resource_requirements, category
         FROM operation_catalog
         WHERE code = %s
     """, (code,))

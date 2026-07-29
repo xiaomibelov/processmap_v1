@@ -24,27 +24,3 @@ class ProcessTemplateService:
 
     def publish_template(self, template_id: str) -> Optional[Dict[str, Any]]:
         return self.repository.publish(template_id)
-
-    def validate_template(self, template_id: str) -> Dict[str, Any]:
-        # Placeholder for validation logic
-        template = self.repository.get_by_id(template_id)
-        if not template:
-            return {"valid": False, "errors": ["Template not found"]}
-        
-        errors = []
-        
-        # Basic validation
-        if not template.get("name"):
-            errors.append("Name is required")
-        
-        if not template.get("version"):
-            errors.append("Version is required")
-        
-        if not template.get("ui_model"):
-            errors.append("UI model is required")
-        
-        return {
-            "valid": len(errors) == 0,
-            "errors": errors,
-            "template_id": template_id
-        }

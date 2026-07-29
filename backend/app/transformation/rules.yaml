@@ -1,0 +1,285 @@
+# E3.5 — Библиотека правил трансформации AS IS -> TO BE (формат v0.3).
+# Редактируемый артефакт: правила НЕ зашиты в промпты; LLM получает этот список.
+#
+# Схема правила:
+#   id              стабильный идентификатор (Rxx_...)
+#   name            человекочитаемое имя (RU)
+#   priority        больше = раньше; при совпадении camunda_props добавляется +1000
+#   as_is_pattern:
+#     task_types      список bpmn-типов (необязательно; по умолчанию любые task-like)
+#     name_keywords   список regex (case-insensitive), достаточно одного совпадения
+#     camunda_props   {prop_name: [допустимые значения]} — ВСЕ перечисленные props
+#                     должны присутствовать и значение должно быть в списке;
+#                     суффикс '*' в значении = префиксное совпадение
+#   to_be_action    map_to_operation | push_below | drop |
+#                   extract_to_recipe | extract_to_contract | extract_to_event
+#   operation_code  код из Operation Catalog (для map_to_operation)
+#   params_map      {AS IS camunda prop -> TO BE params.<key>}
+#   static_params   {params.<key>: значение} — добавляются всегда
+#   recipe_params_map {recipe_context var AS IS -> var TO BE}
+#   outputs         список output-имён, объявляемых задачей (outputs.<name>)
+#   recipe_params   список имён переменных recipe_context для узла
+#   emit_event      event_code — после узла добавить publish_event (extract_to_event)
+#   open_question   шаблон открытого вопроса (RU), {name} = имя AS IS задачи
+#   rationale       обоснование (RU)
+#   format_ref      ссылка на параграф формата v0.3
+version: 1
+rules:
+  - id: R01_move
+    name: Перемещение объекта/тары
+    priority: 70
+    as_is_pattern:
+      name_keywords: ["перенести", "переместить", "отнести", "взять .* отнести"]
+      camunda_props:
+        operation_code: ["move_object", "move"]
+    to_be_action: map_to_operation
+    operation_code: move
+    params_map:
+      object_ref: object_ref
+      target_ref: target_ref
+    rationale: "«Взять X и отнести в Y» — атомарная операция move каталога; захват/перехват не моделируется."
+    format_ref: "v0.3 §6 (move)"
+
+  - id: R02_get_from_storage
+    name: Выдача тары из хранения/устройства выдачи
+    priority: 90
+    as_is_pattern:
+      name_keywords: ["выдать", "получить .* (хранилищ|холодильник|устройства выдачи)"]
+      camunda_props:
+        operation_id: ["issue_from_storage*", "get_from_storage*"]
+    to_be_action: map_to_operation
+    operation_code: get_from_storage
+    params_map:
+      target_object_ref: item_ref
+      object_ref: item_ref
+      equipment_ref: target_ref
+    rationale: "Выдача исходной/новой тары — get_from_storage; конкретный equipment_ref назначает шедулер."
+    format_ref: "v0.3 §6 (get_from_storage)"
+
+  - id: R03_open_bin_below
+    name: Открытие урны — ниже схемы
+    priority: 100
+    as_is_pattern:
+      name_keywords: ["урн"]
+      camunda_props:
+        operation_code: ["open_equipment"]
+        equipment_type_id: ["waste_bin"]
+    to_be_action: push_below
+    rationale: "Открытие урны — часть execution_contract перемещения в зону утилизации, отдельной задачей не моделируется."
+    format_ref: "v0.3 §9 (execution_contract)"
+
+  - id: R04_open_equipment
+    name: Открыть оборудование
+    priority: 80
+    as_is_pattern:
+      name_keywords: ["открыть"]
+      camunda_props:
+        operation_code: ["open_equipment"]
+    to_be_action: map_to_operation
+    operation_code: open_equipment
+    params_map:
+      equipment_ref: equipment_ref
+    rationale: "Открытие СВЧ/оборудования — open_equipment каталога."
+    format_ref: "v0.3 §6 (open_equipment)"
+
+  - id: R05_close_equipment
+    name: Закрыть оборудование
+    priority: 80
+    as_is_pattern:
+      name_keywords: ["закрыть"]
+      camunda_props:
+        operation_code: ["close_equipment"]
+    to_be_action: map_to_operation
+    operation_code: close_equipment
+    params_map:
+      equipment_ref: equipment_ref
+    rationale: "Закрытие СВЧ/оборудования — close_equipment каталога."
+    format_ref: "v0.3 §6 (close_equipment)"
+
+  - id: R06_open_container
+    name: Вскрыть тару
+    priority: 80
+    as_is_pattern:
+      name_keywords: ["вскрыть"]
+      camunda_props:
+        operation_code: ["open_container"]
+    to_be_action: map_to_operation
+    operation_code: open_container
+    params_map:
+      container_ref: container_ref
+    rationale: "Вскрытие исходной тары — open_container; метод вскрытия выбирает САУ РТК по source_container_type."
+    format_ref: "v0.3 §6 (open_container)"
+
+  - id: R07_seal_container
+    name: Запайка/закрытие тары покупателя
+    priority: 90
+    as_is_pattern:
+      name_keywords: ["запай", "запаять", "запечат"]
+      camunda_props:
+        operation_code: ["seal_container", "close_container"]
+    to_be_action: map_to_operation
+    operation_code: close_container
+    params_map:
+      target_container_ref: container_ref
+      container_ref: container_ref
+      equipment_ref: target_ref
+    rationale: "Метод закрытия (крышка/запайка) НЕ указывается: выбирается по типу тары и конфигурации кухни; seal_method удаляется."
+    format_ref: "v0.3 §6 (close_container)"
+
+  - id: R08_configure_equipment
+    name: Настройка режима оборудования
+    priority: 90
+    as_is_pattern:
+      name_keywords: ["настроить", "установить режим", "задать режим"]
+      camunda_props:
+        operation_code: ["configure_equipment", "set_equipment"]
+    to_be_action: map_to_operation
+    operation_code: set_equipment
+    params_map:
+      equipment_ref: equipment_ref
+    recipe_params_map:
+      power_mode: heating_power
+      heat_time_sec: heat_time_sec
+    rationale: "Режим нагрева — из recipe_context (heating_power, heat_time_sec) без ${}-подстановок; operation configure_equipment -> set_equipment."
+    format_ref: "v0.3 §6 (set_equipment), §11 (recipe_params)"
+
+  - id: R09_start_equipment
+    name: Запуск оборудования
+    priority: 80
+    as_is_pattern:
+      name_keywords: ["запустить", "включить"]
+      camunda_props:
+        operation_code: ["start_equipment"]
+    to_be_action: map_to_operation
+    operation_code: start_equipment
+    params_map:
+      equipment_ref: equipment_ref
+    rationale: "Запуск СВЧ/оборудования — start_equipment; режим задаётся recipe_context или политикой исполнения."
+    format_ref: "v0.3 §6 (start_equipment)"
+
+  - id: R10_transfer
+    name: Перетаривание содержимого
+    priority: 90
+    as_is_pattern:
+      name_keywords: ["перетарить", "перелить", "пересыпать"]
+      camunda_props:
+        operation_code: ["transfer_contents", "transfer"]
+    to_be_action: map_to_operation
+    operation_code: transfer
+    params_map:
+      source_container_ref: source_container_ref
+      target_container_ref: target_container_ref
+    rationale: "Перелив из исходной тары в тару покупателя — transfer; контроль пролива — execution_contract + Quality Policy."
+    format_ref: "v0.3 §6 (transfer), §9 (execution_contract)"
+
+  - id: R11_grasp_below
+    name: Захват/поднести — декомпозиция move
+    priority: 100
+    as_is_pattern:
+      name_keywords: ["поднести", "захватить", "перехватить"]
+      camunda_props:
+        operation_code: ["grasp_object"]
+    to_be_action: push_below
+    rationale: "Захват/перехват — стандартная декомпозиция move на уровне САУ РТК, на схеме не моделируется."
+    format_ref: "v0.3 §6 (move), §9 (execution_contract)"
+
+  - id: R12_measure_temperature
+    name: Рецептурная проверка температуры
+    priority: 90
+    as_is_pattern:
+      name_keywords: ["температур"]
+    to_be_action: map_to_operation
+    operation_code: measure_temperature
+    params_map:
+      container_ref: container_ref
+      object_ref: container_ref
+    outputs: ["measured_temp_c", "temperature_ok"]
+    recipe_params: ["target_temp_c"]
+    open_question: "В AS IS («{name}») температура контролируется вручную/щупом — подтвердите capability измерения температуры на целевой кухне (датчик/тепловизор)."
+    rationale: "«Проверить температуру» — measure_temperature + exclusiveGateway по outputs temperature_ok; порог — target_temp_c из recipe_context."
+    format_ref: "v0.3 §6 (measure_temperature), §8 (gateway conditions)"
+
+  - id: R13_check_integrity
+    name: Проверка целостности тары
+    priority: 90
+    as_is_pattern:
+      name_keywords: ["целостн", "протечк", "деформац"]
+    to_be_action: map_to_operation
+    operation_code: check
+    static_params:
+      check_code: container_integrity
+      expected_value: intact
+    params_map:
+      object_ref: object_ref
+      container_ref: object_ref
+    outputs: ["container_intact"]
+    rationale: "Проверка целостности/протечки — check(container_integrity) + gateway; метод (СТЗ/датчики) — ниже схемы."
+    format_ref: "v0.3 §6 (check), §8 (gateway conditions)"
+
+  - id: R14_verify_closed_contract
+    name: «Убедиться, что закрыто» — контракт исполнения
+    priority: 90
+    as_is_pattern:
+      name_keywords: ["убедиться", "плотно закрыт", "проверить закрыт"]
+    to_be_action: extract_to_contract
+    rationale: "Контроль «закрыто/герметично» — execution_contract операций close_* и Quality Policy; исчезает из схемы."
+    format_ref: "v0.3 §9 (execution_contract), §14 (Quality Policy)"
+
+  - id: R15_container_type_recipe
+    name: Ветвление по типу тары — в рецепт
+    priority: 90
+    as_is_pattern:
+      name_keywords: ["тип тары", "типа тары", "тип контейнера"]
+    to_be_action: extract_to_recipe
+    recipe_params: ["source_container_type"]
+    rationale: "Ветвление по типу тары не моделируется: тип — source_container_type в recipe_context, метод выбирает САУ РТК."
+    format_ref: "v0.3 §11 (recipe_context)"
+
+  - id: R16_human_loop_drop
+    name: Ручные действия человека — вне схемы РТК
+    priority: 90
+    as_is_pattern:
+      name_keywords: ["педал", "салфет", "перчат", "вручную", "руками"]
+    to_be_action: drop
+    rationale: "Педали/салфетки/перчатки — human loop оператора, в схеме РТК не моделируется."
+    format_ref: "v0.3 §3 (область моделирования)"
+
+  - id: R17_packaging_event
+    name: Упаковка/этикетка — событие внешнему процессу
+    priority: 60
+    as_is_pattern:
+      name_keywords: ["упаковать", "упаковка заказа", "этикет", "наклеить"]
+    to_be_action: extract_to_event
+    operation_code: publish_event
+    static_params:
+      event_code: ready_for_packaging
+    rationale: "Упаковка заказа — отдельный общий процесс; текущий процесс завершается событием ready_for_packaging."
+    format_ref: "v0.3 §16 (межпроцессные события)"
+
+  - id: R18_move_to_packaging
+    name: Перемещение в зону упаковки + событие готовности
+    priority: 95
+    as_is_pattern:
+      camunda_props:
+        operation_code: ["move_object", "move"]
+        target_ref: ["packaging_zone*"]
+    to_be_action: map_to_operation
+    operation_code: move
+    params_map:
+      object_ref: object_ref
+      target_ref: target_ref
+    emit_event: ready_for_packaging
+    rationale: "После перемещения тары в зону упаковки процесс публикует ready_for_packaging для процесса упаковки."
+    format_ref: "v0.3 §16 (межпроцессные события)"
+
+  - id: R19_wait
+    name: Ожидание/выдержка
+    priority: 70
+    as_is_pattern:
+      name_keywords: ["ждать", "ожидать", "выдержать", "подождать"]
+      camunda_props:
+        operation_code: ["wait"]
+    to_be_action: map_to_operation
+    operation_code: wait
+    rationale: "Ожидание события/таймера — wait каталога; события оборудования приходят из САУ РТК."
+    format_ref: "v0.3 §6 (wait)"
