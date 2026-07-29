@@ -32,6 +32,7 @@ from .process_templates import router as process_templates_router
 from .operation_catalog import router as operation_catalog_router
 from .dictionaries import router as dictionaries_router
 from .health import router as health_router
+from .transformation import router as transformation_router
 
 # (router, openapi_tags).  Routers that already set their own tags keep them;
 # the tuple provides a fallback/default tag for Swagger UI grouping.
@@ -66,6 +67,7 @@ ROUTERS = (
     (reference_resolver_router, ["reference-resolver"]),
     (deployment_notices_router, ["deployment-notices"]),
     (recipes_router, ["recipes"]),
+    (transformation_router, ["transformation"]),
     (process_templates_router, ["process-templates"]),
     (operation_catalog_router, ["operation-catalog"]),
     (dictionaries_router, ["dictionaries"]),
