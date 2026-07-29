@@ -249,6 +249,30 @@ export function Recipes() {
     }
   }
 
+  async function handleNewVersion() {
+    // E8-gap1: «Новая версия» — published → draft (паттерн «Новый черновик» E7)
+    if (busy || !selectedId) return;
+    setBusy(true);
+    setErrors([]);
+    setNotice("");
+    try {
+      const r = await apiRequest(`/api/recipes/${encodeURIComponent(selectedId)}/new-version`, { method: "POST" });
+      if (r?.ok && r.data) {
+        const sourceV = r.data.source_version || "?";
+        const nextV = r.data.next_version || "?";
+        setActiveTab("params"); // переход в форму черновика
+        await refreshList(selectedId);
+        // notice/статус — ПОСЛЕ refreshList: он перечитывает форму и чистит notice
+        setSelectedStatus("draft");
+        setNotice(`Создан черновик новой версии: из v${sourceV} → v${nextV}`);
+      } else {
+        setErrors(extractErrors(r));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleClone() {
     if (busy || !selectedId) return;
     const nextSku = String(window.prompt("SKU для клона рецепта:", `${skuId}_copy`) || "").trim();
@@ -477,6 +501,17 @@ export function Recipes() {
             >
               Опубликовать
             </button>
+            {selectedStatus === "published" ? (
+              <button
+                type="button"
+                className="recipes-btn"
+                data-testid="new-version-recipe"
+                disabled={busy || !selectedId}
+                onClick={handleNewVersion}
+              >
+                Новая версия
+              </button>
+            ) : null}
             <button
               type="button"
               className="recipes-btn"
