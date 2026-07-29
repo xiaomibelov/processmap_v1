@@ -27,7 +27,7 @@ from ..sku_bindings.repository import SkuBindingRepository
 router = APIRouter(prefix="/api/sku-bindings", tags=["sku-bindings"])
 repository = SkuBindingRepository()
 
-WRITE_ROLES = ["analyst", "admin"]
+WRITE_ROLES = ["analyst", "admin", "technologist"]
 
 
 class BindingCreate(BaseModel):
