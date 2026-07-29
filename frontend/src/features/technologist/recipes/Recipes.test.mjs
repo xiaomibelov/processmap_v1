@@ -207,4 +207,55 @@ describe("Recipes screen (E5)", () => {
     expect(result.blocks).toHaveLength(2);
     expect(result.blocks[0].missing_params).toEqual(["target_temp_c"]);
   });
+
+  it("E8-gap1: «Новая версия» на published → POST new-version → форма черновика", async () => {
+    const RECIPE_PUB = { ...RECIPE_MISSING, id: "rcp_pub", status: "published" };
+    let newVersionCalled = false;
+    vi.stubGlobal("fetch", vi.fn(async (url, init = {}) => {
+      const u = String(url);
+      const method = String(init.method || "GET").toUpperCase();
+      if (u.includes("/api/recipe-params")) return jsonResponse(PARAM_DEFS);
+      if (u.includes("/api/dictionaries/container-types")) return jsonResponse(CONTAINER_TYPES);
+      if (u.includes("/api/process-templates/tpl_1")) return jsonResponse(TEMPLATE);
+      if (u.includes("/api/process-templates")) return jsonResponse([TEMPLATE]);
+      if (u.includes("/api/recipes/rcp_pub/new-version") && method === "POST") {
+        newVersionCalled = true;
+        return jsonResponse({ ...RECIPE_PUB, status: "draft", source_version: "1.0.0", next_version: "1.0.1" });
+      }
+      if (u.includes("/api/recipes/rcp_pub") && method === "GET") {
+        // после new-version бэкенд отдаёт draft (та же строка, паттерн E7 new-draft)
+        return jsonResponse(newVersionCalled ? { ...RECIPE_PUB, status: "draft" } : RECIPE_PUB);
+      }
+      if (u.includes("/api/recipes") && method === "GET") return jsonResponse([RECIPE_PUB]);
+      return jsonResponse({ error: `unmocked ${method} ${u}` }, 404);
+    }));
+
+    await act(async () => {
+      root.render(React.createElement(Recipes));
+    });
+    await flush();
+    await flush();
+
+    // выбрать published-рецепт в списке
+    await act(async () => {
+      q("recipe-item-rcp_pub").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+    await flush();
+
+    const btn = q("new-version-recipe");
+    expect(btn).toBeTruthy();
+    expect(btn.disabled).toBe(false);
+    await act(async () => {
+      btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+    await flush();
+
+    expect(newVersionCalled).toBe(true);
+    expect(q("form-notice").textContent).toContain("из v1.0.0 → v1.0.1");
+    // статус в заголовке формы — draft, кнопка «Опубликовать» снова активна
+    expect(container.textContent).toContain("Рецепт (draft)");
+    expect(q("publish-recipe").disabled).toBe(false);
+  });
 });

@@ -160,7 +160,8 @@ def update_recipe(recipe_id: str, data: RecipeUpdate, request: Request) -> Dict[
     if recipe.get("status") == "published":
         raise HTTPException(
             status_code=409,
-            detail="Рецепт опубликован — редактирование запрещено, клонируйте его на новый SKU",
+            detail="Рецепт опубликован — редактирование запрещено; "
+            "новая версия: POST /api/recipes/{id}/new-version",
         )
     patch = data.model_dump(exclude_unset=True)
     if "parameters_json" in patch:
@@ -275,6 +276,55 @@ def list_recipe_versions(recipe_id: str, request: Request) -> List[Dict[str, Any
     if not recipe:
         raise HTTPException(status_code=404, detail="Рецепт не найден")
     return recipe_versions_repo.list_for_recipe(recipe_id)
+
+
+@router.post("/recipes/{recipe_id}/new-version")
+def new_version_recipe(recipe_id: str, request: Request) -> Dict[str, Any]:
+    """E8-gap1: легальный путь «новая версия» опубликованного рецепта.
+
+    Паттерн new-draft шаблона (E7): та же строка recipe переводится
+    published → draft; sku_id/template_id/template_version/parameters_json
+    наследуются; опубликованные снапшоты неизменны в recipe_version;
+    следующий publish = patch-автоинкремент (v1.0.0 → v1.0.1).
+    От draft → 409 (черновик редактируется напрямую).
+    """
+    require_role(["analyst", "admin"])(request)
+    user = _current_user(request)
+    recipe = recipes_repo.get_by_id(recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Рецепт не найден")
+    if recipe.get("status") != "published":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Новая версия создаётся только из опубликованного рецепта — "
+                "черновик редактируйте напрямую",
+                "status": recipe.get("status"),
+            },
+        )
+    versions = recipe_versions_repo.list_for_recipe(recipe_id)
+    source_version = str(versions[0].get("version") or "") if versions else ""
+    updated = recipes_repo.update(recipe_id, {"status": "draft"})
+    next_version = recipe_versions_repo.next_version(recipe_id)
+    # E8.1/G1.3: journal entry — new_version с привязкой к версии-источнику
+    write_event(
+        actor_user_id=str(user.get("id") or ""),
+        org_id=request_active_org_id(request),
+        action="new_version",
+        entity_type="recipe",
+        entity_id=recipe_id,
+        meta_json={
+            "sku_id": recipe.get("sku_id"),
+            "source_version": source_version,
+            "next_version": next_version,
+            "diff_summary": f"создано из v{source_version}" if source_version else "создано из published",
+        },
+    )
+    return {
+        **_with_analysis(updated),
+        "source_version": source_version,
+        "next_version": next_version,
+    }
 
 
 @router.post("/recipes/{recipe_id}/clone", status_code=201)
