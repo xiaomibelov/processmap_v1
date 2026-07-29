@@ -22,8 +22,8 @@ sed "s|^sqlalchemy.url =.*|sqlalchemy.url = ${ALEMBIC_DB_URL}|" backend/alembic.
 
 MIGRATIONS_OK=0
 for attempt in 1 2 3; do
-  echo "[entrypoint] alembic upgrade head (attempt ${attempt}/3)"
-  if python -m alembic -c "$TMP_INI" upgrade head; then
+  echo "[entrypoint] db_bootstrap → alembic head (attempt ${attempt}/3)"
+  if python backend/scripts/db_bootstrap.py "$TMP_INI"; then
     MIGRATIONS_OK=1
     break
   fi
