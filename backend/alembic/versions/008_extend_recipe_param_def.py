@@ -11,6 +11,7 @@ AI-трансформированные шаблоны (E3.5) требуют rec
 """
 from alembic import op
 import sqlalchemy as sa
+import json
 from sqlalchemy.dialects import postgresql
 
 revision = "008"
@@ -26,31 +27,26 @@ _SEED = [
 
 
 def upgrade() -> None:
-    table = sa.table(
-        "recipe_param_def",
-        sa.column("name", sa.String),
-        sa.column("type", sa.String),
-        sa.column("unit", sa.String),
-        sa.column("min", sa.Float),
-        sa.column("max", sa.Float),
-        sa.column("enum_json", postgresql.JSONB),
-        sa.column("dict_ref", sa.String),
-    )
-    op.bulk_insert(
-        table,
-        [
+    # ON CONFLICT DO NOTHING: идемпотентно даже при частично применённых данных
+    # (stage: строки могли быть добавлены вручную/прошлым прогоном).
+    bind = op.get_bind()
+    for name, ptype, unit, pmin, pmax, enum, dict_ref in _SEED:
+        bind.execute(
+            sa.text(
+                "INSERT INTO recipe_param_def (name, type, unit, min, max, enum_json, dict_ref) "
+                "VALUES (:name, :type, :unit, :min, :max, :enum_json, :dict_ref) "
+                "ON CONFLICT (name) DO NOTHING"
+            ),
             {
                 "name": name,
                 "type": ptype,
                 "unit": unit,
                 "min": pmin,
                 "max": pmax,
-                "enum_json": enum,
+                "enum_json": json.dumps(enum) if enum is not None else None,
                 "dict_ref": dict_ref,
-            }
-            for name, ptype, unit, pmin, pmax, enum, dict_ref in _SEED
-        ],
-    )
+            },
+        )
 
 
 def downgrade() -> None:
