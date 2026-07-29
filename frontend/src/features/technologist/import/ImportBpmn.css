@@ -237,3 +237,17 @@
   cursor: pointer;
   font-size: 14px;
 }
+.import-bpmn__to-transform {
+  background: #3f6fd1;
+  color: #fff;
+  border-color: #3f6fd1;
+}
+.import-bpmn__legacy-hint {
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  background: #4a3a1c;
+  border: 1px solid #8a6d2c;
+  border-radius: 6px;
+  color: #f0d78a;
+  font-size: 13px;
+}

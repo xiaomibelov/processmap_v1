@@ -456,7 +456,7 @@ export default function TopBar({
 
   function openTechnologist() {
     if (typeof window === "undefined") return;
-    window.location.assign("/technologist/catalog");
+    window.location.assign("/technologist");
   }
 
   function openProfileSoon() {

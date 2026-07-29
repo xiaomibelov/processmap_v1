@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 import { apiRequest } from "../../../lib/apiCore";
 import { t, tf } from "../i18n";
+import WorkflowBar from "../workflow/WorkflowBar";
 import "./Pilots.css";
 
 // ---------- helpers -----------------------------------------------------------
@@ -156,6 +157,7 @@ export default function Pilots() {
   return (
     <div className="pilots" data-testid="pilots-screen">
       <h2 className="pilots__title">{t("pilots.title")}</h2>
+      <WorkflowBar current="pilot" />
       <div className="pilots__main">
         <aside className="pilots__list" data-testid="pilots-list">
           <div className="pilots__list-head">
@@ -178,7 +180,14 @@ export default function Pilots() {
               </span>
             </button>
           ))}
-          {!bindings.length && <div className="pilots__empty">{t("pilots.empty")}</div>}
+          {!bindings.length && (
+            <div className="pilots__empty" data-testid="pilots-empty">
+              <div>{t("wf.pilotsEmpty")}</div>
+              <a className="pilots__empty-link" data-testid="empty-go-recipes" href="/technologist/recipes">
+                {t("wf.pilotsEmptyAction")}
+              </a>
+            </div>
+          )}
         </aside>
         <div className="pilots__detail">
           {error && <div className="pilots__error" data-testid="pilots-error">{error}</div>}
