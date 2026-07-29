@@ -1,0 +1,61 @@
+{
+  "id": "01eae93a-3ff8-4330-968f-667e5440b60d",
+  "template_id": "cafe1633-fa48-4a76-ba33-c3a262978e78",
+  "sku_id": "borsch_mvp",
+  "template_version": "0.1.0",
+  "parameters_json": {
+    "qty": 20,
+    "dish_sku_id": "food_container",
+    "heat_time_sec": 90,
+    "heating_power": "medium",
+    "target_temp_c": 75
+  },
+  "status": "draft",
+  "created_by": "mvp_technologist@local",
+  "updated_at": "2026-07-29T18:10:03.100710",
+  "blocks_analysis": {
+    "required_params": [
+      "dish_sku_id",
+      "heat_time_sec",
+      "heating_power",
+      "qty"
+    ],
+    "missing_params": [],
+    "unused_params": [
+      "target_temp_c"
+    ],
+    "blocks": [
+      {
+        "node_id": "Activity_171znbt",
+        "node_name": "Перетарить (содержимое) контейнер-1 в контейнер-2",
+        "operation_code": "transfer",
+        "recipe_params": [
+          "dish_sku_id"
+        ],
+        "missing_params": []
+      },
+      {
+        "node_id": "Activity_0238wyw",
+        "node_name": "Настроить СВЧ-1",
+        "operation_code": "set_equipment",
+        "recipe_params": [
+          "heating_power",
+          "heat_time_sec"
+        ],
+        "missing_params": []
+      },
+      {
+        "node_id": "Activity_1i8s5wl",
+        "node_name": "Выдать контейнер-2 из устройства-выдачи-1",
+        "operation_code": "get_from_storage",
+        "recipe_params": [
+          "dish_sku_id",
+          "qty"
+        ],
+        "missing_params": []
+      }
+    ]
+  },
+  "source_version": "1.0.0",
+  "next_version": "1.0.1"
+}

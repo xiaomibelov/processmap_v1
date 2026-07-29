@@ -2048,6 +2048,16 @@ export async function apiImportBpmn(file) {
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
+// POST /api/process-templates/transform-asis (multipart file field `file`).
+// Returns { as_is_ui_model, draft_ui_model, trace_map, open_questions, validation_report, ... }.
+export async function apiTransformAsis(file) {
+  if (!file) return { ok: false, status: 0, error: "missing file" };
+  const form = new FormData();
+  form.append("file", file, String(file.name || "asis.bpmn"));
+  const r = okOrError(await request(apiRoutes.processTemplates.transformAsis(), { method: "POST", body: form }));
+  return r.ok ? { ok: true, status: r.status, result: r.data } : r;
+}
+
 // ------- Recipes -------
 export async function apiListRecipes() {
   const r = okOrError(await request(apiRoutes.recipes.list()));

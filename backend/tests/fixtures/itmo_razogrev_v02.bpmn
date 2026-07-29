@@ -1,0 +1,760 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:pm="http://processmap.ai/schema/bpmn/1.0" id="Definitions_0ddkqgr" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.43.1">
+  <bpmn:collaboration id="Collaboration_06ftemy">
+    <bpmn:participant id="Participant_08pyz2p" name="AS IS Супы" processRef="Process_1eviy9t" />
+    <bpmn:textAnnotation id="TextAnnotation_itmo_tara_props">
+      <bpmn:text>Свойства тары держим явно: source_container_ref / source_container_type_id / source_container_state=legacy|new. Для тары покупателя: target_container_ref / target_container_type_id / target_container_state=new.</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:textAnnotation id="TextAnnotation_itmo_refs">
+      <bpmn:text>Сквозные идентификаторы для интеграции: equipment_ref, source_container_ref, target_container_ref, package_ref, courier_label_ref.</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:textAnnotation id="TextAnnotation_itmo_recipe">
+      <bpmn:text>recipe_context позже задаёт sku, qty, режим нагрева, тип тары и оснастки; scheduler назначает конкретные equipment_ref и storage_slot_ref.</bpmn:text>
+    </bpmn:textAnnotation>
+  </bpmn:collaboration>
+  <bpmn:process id="Process_1eviy9t" isExecutable="false">
+    <bpmn:documentation>AS IS схема сохранена как текущий процесс супов с комментариями ИТМО. Блок упаковки заказа пока оставлен внутри текущей AS IS модели. Комментарии ИТМО внесены как documentation, camunda properties и text annotations. На уровне свойств дополнительно зафиксировано различие тары: source_container_state=legacy|new и target_container_state=new. Сквозные идентификаторы для будущей интеграции: equipment_ref, source_container_ref, target_container_ref, package_ref, courier_label_ref.</bpmn:documentation>
+    <bpmn:laneSet id="LaneSet_0y5h62c">
+      <bpmn:lane id="Lane_1e3l9p9" name="Работа манипуляторов">
+        <bpmn:flowNodeRef>Event_05ckyt4</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Event_0n3sbnt</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_171znbt</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_0eqhdco</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_1grwh4i</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Event_1pqduoq</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_164zb9r</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_1tsk3kf</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_1r18m6r</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_12cgz6a</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_1nmuo3d</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_03dntrc" name="Работа оборудования">
+        <bpmn:flowNodeRef>Gateway_0vjlz9j</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Event_1h56up5</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_1k9t4a7</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_1vz1obl</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_1gmqktc</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_1h1jttk</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_1spcm9y</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_0eh2m0x</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_1tghc67</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_0238wyw</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_1jw2q8u</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_0onqk3g</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_1epghx4</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_0flva8y</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_07dw2ru</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_1i8s5wl</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_1m49673" name="Работа оператора">
+        <bpmn:flowNodeRef>Activity_03kv40i</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_0jv0gg5</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_020el8s</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Event_05ckyt4" name="Заказ на суп">
+      <bpmn:outgoing>Flow_1f9se1h</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="Flow_1f9se1h" sourceRef="Event_05ckyt4" targetRef="Event_0n3sbnt" />
+    <bpmn:sequenceFlow id="Flow_1ywuavn" sourceRef="Event_1h56up5" targetRef="Gateway_0vjlz9j" />
+    <bpmn:sequenceFlow id="Flow_1ths047" sourceRef="Gateway_0vjlz9j" targetRef="Activity_1k9t4a7" />
+    <bpmn:exclusiveGateway id="Gateway_0vjlz9j" name="Решение 1">
+      <bpmn:incoming>Flow_1ywuavn</bpmn:incoming>
+      <bpmn:incoming>Flow_0tq27op</bpmn:incoming>
+      <bpmn:outgoing>Flow_1ths047</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:intermediateCatchEvent id="Event_0n3sbnt" name="Звуковой сигнал о новом заказе">
+      <bpmn:incoming>Flow_1f9se1h</bpmn:incoming>
+      <bpmn:outgoing>Flow_0tq27op</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_1rxgwk8" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="Event_1h56up5" name="RESTART_SOUP">
+      <bpmn:outgoing>Flow_1ywuavn</bpmn:outgoing>
+      <bpmn:linkEventDefinition id="LinkEventDefinition_02oung4" name="" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:manualTask id="Activity_1k9t4a7" name="Выдать контейнер-1 из холодильника">
+      <bpmn:documentation>Комментарий ИТМО: даже если холодильный комплекс в итоге будет единым, на уровне данных нужна роль/тип оборудования. Конкретный equipment_ref может назначаться шедулером.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="target_object_ref" value="container_1" />
+          <camunda:property name="equipment_type_id" value="fridge" />
+          <camunda:property name="equipment_ref" value="scheduler_or_fixed_runtime" />
+          <camunda:property name="operation_id" value="issue_from_storage_1" />
+        </camunda:properties>
+        <pm:RobotMeta version="v1">{"exec":{"action_key":"move","executor":"manual_ui","mode":"human","retry":{"backoff_sec":0,"max_attempts":1},"timeout_sec":null},"mat":{"from_zone":null,"inputs":[],"outputs":[],"to_zone":null},"qc":{"checks":[],"critical":false},"robot_meta_version":"v1"}</pm:RobotMeta>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1ths047</bpmn:incoming>
+      <bpmn:outgoing>Flow_1c08hib</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:sequenceFlow id="Flow_1c08hib" sourceRef="Activity_1k9t4a7" targetRef="Activity_0eqhdco" />
+    <bpmn:sequenceFlow id="Flow_0tq27op" sourceRef="Event_0n3sbnt" targetRef="Gateway_0vjlz9j" />
+    <bpmn:manualTask id="Activity_171znbt" name="Перетарить (содержимое) контейнер-1 в контейнер-2">
+      <bpmn:documentation>Комментарий ИТМО: операция перелива должна явно знать обе тары — старую исходную и новую тару покупателя.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_id" value="op_transfer_soup" />
+          <camunda:property name="actor_kind" value="robot" />
+          <camunda:property name="source_container_ref" value="container_1" />
+          <camunda:property name="target_container_ref" value="container_2" />
+          <camunda:property name="dish_sku_id" value="${recipe_context.dish_sku_id}" />
+          <camunda:property name="validator_profile_id" value="transfer_contents.default.v1" />
+          <camunda:property name="source_container_state" value="legacy" />
+          <camunda:property name="target_container_state" value="new" />
+          <camunda:property name="operation_code" value="transfer_contents" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_10st7o7</bpmn:incoming>
+      <bpmn:outgoing>Flow_0751kfw</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:manualTask id="Activity_0eqhdco" name="Перенести контейнер-1 в устройство-вскрытия-1">
+      <bpmn:documentation>Комментарий ИТМО: даже если холодильный комплекс в итоге будет единым, на уровне данных нужна роль/тип оборудования. Конкретный equipment_ref может назначаться шедулером.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="actor_kind" value="robot" />
+          <camunda:property name="object_ref" value="container_1" />
+          <camunda:property name="target_ref" value="opener_1" />
+          <camunda:property name="target_kind" value="equipment" />
+          <camunda:property name="validator_profile_id" value="move_object.container.default.v1" />
+          <camunda:property name="operation_id" value="op_move_to_lid_opener" />
+          <camunda:property name="operation_code" value="move_object" />
+        </camunda:properties>
+        <pm:RobotMeta version="v1">{"exec":{"action_key":"move","executor":"manual_ui","mode":"human","retry":{"backoff_sec":0,"max_attempts":1},"timeout_sec":null},"mat":{"from_zone":null,"inputs":[],"outputs":[],"to_zone":null},"qc":{"checks":[],"critical":false},"robot_meta_version":"v1"}</pm:RobotMeta>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1c08hib</bpmn:incoming>
+      <bpmn:outgoing>Flow_1wjdjuf</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:manualTask id="Activity_1grwh4i" name="Перенести контейнер-2 в зону упаковки">
+      <bpmn:documentation>AS IS: взять крышку новой тары покупателя.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_id" value="op_move_to_packaging_zone" />
+          <camunda:property name="actor_kind" value="robot" />
+          <camunda:property name="object_ref" value="container_2" />
+          <camunda:property name="target_ref" value="packaging_zone_1" />
+          <camunda:property name="target_kind" value="zone" />
+          <camunda:property name="validator_profile_id" value="move_object.container.default.v1" />
+          <camunda:property name="operation_code" value="move_object" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1c33hou</bpmn:incoming>
+      <bpmn:outgoing>Flow_1wjo177</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:endEvent id="Event_1pqduoq" name="Процесс завершён">
+      <bpmn:incoming>Flow_1wjo177</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_1wjo177" sourceRef="Activity_1grwh4i" targetRef="Event_1pqduoq" />
+    <bpmn:manualTask id="Activity_1vz1obl" name="Открыть урну-1">
+      <bpmn:documentation>AS IS: взять крышку новой тары покупателя.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_id" value="op_open_bin" />
+          <camunda:property name="operation_code" value="open_equipment" />
+          <camunda:property name="actor_kind" value="equipment" />
+          <camunda:property name="equipment_type_id" value="waste_bin" />
+          <camunda:property name="equipment_ref" value="bin_1" />
+          <camunda:property name="validator_profile_id" value="equipment_action.default.v1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_0751kfw</bpmn:incoming>
+      <bpmn:outgoing>Flow_0rhxz7j</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:manualTask id="Activity_1gmqktc" name="Открыть СВЧ-1">
+      <bpmn:documentation>AS IS: открыть СВЧ после разогрева.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="actor_kind" value="equipment" />
+          <camunda:property name="equipment_type_id" value="microwave" />
+          <camunda:property name="equipment_ref" value="microwave_1" />
+          <camunda:property name="validator_profile_id" value="equipment_action.default.v1" />
+          <camunda:property name="operation_id" value="op_open_microwave_unload" />
+          <camunda:property name="operation_code" value="open_equipment" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1bxawcq</bpmn:incoming>
+      <bpmn:outgoing>Flow_0hae0rs</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:manualTask id="Activity_164zb9r" name="Перенести контейнер-2 в запайщик-1">
+      <bpmn:documentation>AS IS: взять крышку новой тары покупателя.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="actor_kind" value="robot" />
+          <camunda:property name="object_ref" value="container_2" />
+          <camunda:property name="target_ref" value="sealer_1" />
+          <camunda:property name="target_kind" value="equipment" />
+          <camunda:property name="validator_profile_id" value="move_object.container.default.v1" />
+          <camunda:property name="operation_id" value="op_move_to_sealer" />
+          <camunda:property name="operation_code" value="move_object" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_10nubd7</bpmn:incoming>
+      <bpmn:outgoing>Flow_0sfduiq</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:parallelGateway id="Gateway_1h1jttk" name="Решение 1">
+      <bpmn:incoming>Flow_1cyaaxm</bpmn:incoming>
+      <bpmn:incoming>Flow_0p2pgt1</bpmn:incoming>
+      <bpmn:outgoing>Flow_1bxawcq</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:sequenceFlow id="Flow_1bxawcq" sourceRef="Gateway_1h1jttk" targetRef="Activity_1gmqktc" />
+    <bpmn:sequenceFlow id="Flow_0751kfw" sourceRef="Activity_171znbt" targetRef="Activity_1vz1obl" />
+    <bpmn:sequenceFlow id="Flow_1wjdjuf" sourceRef="Activity_0eqhdco" targetRef="Activity_1spcm9y" />
+    <bpmn:sequenceFlow id="Flow_16hvrsl" sourceRef="Activity_1spcm9y" targetRef="Activity_1tghc67" />
+    <bpmn:manualTask id="Activity_1spcm9y" name="Вскрыть контейнер-1 в устройство-вскрытия-1">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="container_ref" value="container_1" />
+          <camunda:property name="operation_id" value="op_open_1" />
+          <camunda:property name="operation_code" value="open_container" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1wjdjuf</bpmn:incoming>
+      <bpmn:outgoing>Flow_16hvrsl</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:sequenceFlow id="Flow_1c33hou" sourceRef="Activity_0eh2m0x" targetRef="Activity_1grwh4i" />
+    <bpmn:manualTask id="Activity_0eh2m0x" name="Запустить запайщик-1">
+      <bpmn:documentation>AS IS: взять крышку новой тары покупателя.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="actor_kind" value="equipment" />
+          <camunda:property name="target_container_ref" value="container_2" />
+          <camunda:property name="equipment_type_id" value="sealer" />
+          <camunda:property name="equipment_ref" value="sealer_1" />
+          <camunda:property name="validator_profile_id" value="equipment_action.default.v1" />
+          <camunda:property name="operation_id" value="op_close_lid_container_2" />
+          <camunda:property name="operation_code" value="seal_container" />
+          <camunda:property name="seal_method" value="close_lid" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_0sfduiq</bpmn:incoming>
+      <bpmn:outgoing>Flow_1c33hou</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:sequenceFlow id="Flow_0rhxz7j" sourceRef="Activity_1vz1obl" targetRef="Activity_12cgz6a" />
+    <bpmn:manualTask id="Activity_1tsk3kf" name="Перенести контейнер-1 в СВЧ-1">
+      <bpmn:documentation>AS IS: установить исходную тару в СВЧ. Для будущей интеграции нужен equipment_ref и source_container_ref.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_id" value="op_load_container_to_microwave" />
+          <camunda:property name="actor_kind" value="robot" />
+          <camunda:property name="object_ref" value="container_1" />
+          <camunda:property name="target_ref" value="microwave_1" />
+          <camunda:property name="target_kind" value="equipment" />
+          <camunda:property name="equipment_type_id" value="microwave" />
+          <camunda:property name="validator_profile_id" value="move_object.container.default.v1" />
+          <camunda:property name="source_container_ref" value="required" />
+          <camunda:property name="equipment_ref" value="required_runtime" />
+          <camunda:property name="operation_code" value="move_object" />
+        </camunda:properties>
+        <pm:RobotMeta version="v1">{"exec":{"action_key":"transfer","executor":"manual_ui","mode":"human","retry":{"backoff_sec":0,"max_attempts":1},"timeout_sec":null},"mat":{"from_zone":null,"inputs":[],"outputs":[],"to_zone":null},"qc":{"checks":[],"critical":false},"robot_meta_version":"v1"}</pm:RobotMeta>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_002q8sl</bpmn:incoming>
+      <bpmn:outgoing>Flow_0jat0ia</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:manualTask id="Activity_1tghc67" name="Открыть СВЧ-1">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="container_ref" value="opener_1" />
+          <camunda:property name="actor_kind" value="equipment" />
+          <camunda:property name="equipment_type_id" value="microwave" />
+          <camunda:property name="equipment_ref" value="microwave_1" />
+          <camunda:property name="validator_profile_id" value="equipment_action.default.v1" />
+          <camunda:property name="operation_id" value="op_open_microwave_load" />
+          <camunda:property name="operation_code" value="open_equipment" />
+        </camunda:properties>
+        <pm:RobotMeta version="v1">{"exec":{"action_key":"open_container","executor":"manual_ui","mode":"human","retry":{"backoff_sec":0,"max_attempts":1},"timeout_sec":null},"mat":{"from_zone":null,"inputs":[],"outputs":[],"to_zone":null},"qc":{"checks":[],"critical":false},"robot_meta_version":"v1"}</pm:RobotMeta>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_16hvrsl</bpmn:incoming>
+      <bpmn:outgoing>Flow_002q8sl</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:sequenceFlow id="Flow_002q8sl" sourceRef="Activity_1tghc67" targetRef="Activity_1tsk3kf" />
+    <bpmn:manualTask id="Activity_0238wyw" name="Настроить СВЧ-1">
+      <bpmn:documentation>Комментарий ИТМО: режим нагрева в идеале задается recipe_context, а конкретный equipment_ref назначается шедулером.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_id" value="op_configure_microwave" />
+          <camunda:property name="actor_kind" value="equipment" />
+          <camunda:property name="equipment_ref" value="microwave_1" />
+          <camunda:property name="equipment_type_id" value="microwave" />
+          <camunda:property name="power_mode" value="${recipe_context.power_mode}" />
+          <camunda:property name="heat_time_sec" value="${recipe_context.heat_time_sec}" />
+          <camunda:property name="validator_profile_id" value="configure_equipment.default.v1" />
+          <camunda:property name="recipe_context.power_mode" value="required_future" />
+          <camunda:property name="recipe_context.heat_time_sec" value="required_future" />
+          <camunda:property name="operation_code" value="configure_equipment" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_0bpycud</bpmn:incoming>
+      <bpmn:outgoing>Flow_1l3471u</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:manualTask id="Activity_1jw2q8u" name="Закрыть СВЧ-1">
+      <bpmn:documentation>AS IS: закрыть СВЧ перед запуском.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="actor_kind" value="equipment" />
+          <camunda:property name="equipment_type_id" value="microwave" />
+          <camunda:property name="equipment_ref" value="microwave_1" />
+          <camunda:property name="validator_profile_id" value="equipment_action.default.v1" />
+          <camunda:property name="operation_id" value="op_close_microwave" />
+          <camunda:property name="operation_code" value="close_equipment" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1rtjto3</bpmn:incoming>
+      <bpmn:outgoing>Flow_0bpycud</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:sequenceFlow id="Flow_1l3471u" sourceRef="Activity_0238wyw" targetRef="Activity_07dw2ru" />
+    <bpmn:sequenceFlow id="Flow_0bpycud" sourceRef="Activity_1jw2q8u" targetRef="Activity_0238wyw" />
+    <bpmn:manualTask id="Activity_1r18m6r" name="Перенести контейнер-2 в устройство-перетаривания-1">
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="actor_kind" value="robot" />
+          <camunda:property name="object_ref" value="container_2" />
+          <camunda:property name="target_ref" value="assembly_zone_1" />
+          <camunda:property name="target_kind" value="zone" />
+          <camunda:property name="validator_profile_id" value="move_object.container.default.v1 " />
+          <camunda:property name="operation_id" value="op_move_container2_to_assembly" />
+          <camunda:property name="operation_code" value="move_object" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_0c7c67s</bpmn:incoming>
+      <bpmn:outgoing>Flow_0p2pgt1</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:sequenceFlow id="Flow_0jat0ia" sourceRef="Activity_1tsk3kf" targetRef="Gateway_0onqk3g" />
+    <bpmn:parallelGateway id="Gateway_0onqk3g" name="Решение 2">
+      <bpmn:incoming>Flow_0jat0ia</bpmn:incoming>
+      <bpmn:outgoing>Flow_1rtjto3</bpmn:outgoing>
+      <bpmn:outgoing>Flow_0bx8s67</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:sequenceFlow id="Flow_1rtjto3" sourceRef="Gateway_0onqk3g" targetRef="Activity_1jw2q8u" />
+    <bpmn:sequenceFlow id="Flow_0bx8s67" sourceRef="Gateway_0onqk3g" targetRef="Activity_1i8s5wl" />
+    <bpmn:sequenceFlow id="Flow_1cyaaxm" sourceRef="Activity_07dw2ru" targetRef="Gateway_1h1jttk" />
+    <bpmn:sequenceFlow id="Flow_0c7c67s" sourceRef="Activity_1i8s5wl" targetRef="Activity_1r18m6r" />
+    <bpmn:sequenceFlow id="Flow_0p2pgt1" sourceRef="Activity_1r18m6r" targetRef="Gateway_1h1jttk" />
+    <bpmn:sequenceFlow id="Flow_0hae0rs" sourceRef="Activity_1gmqktc" targetRef="Activity_1nmuo3d" />
+    <bpmn:sequenceFlow id="Flow_1ub7e5f" sourceRef="Activity_1nmuo3d" targetRef="Activity_0flva8y" />
+    <bpmn:sequenceFlow id="Flow_10st7o7" sourceRef="Activity_0flva8y" targetRef="Activity_171znbt" />
+    <bpmn:manualTask id="Activity_1epghx4" name="Открыть урну-1">
+      <bpmn:documentation>AS IS: взять крышку новой тары покупателя.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_id" value="op_open_bin" />
+          <camunda:property name="operation_code" value="open_equipment" />
+          <camunda:property name="actor_kind" value="equipment" />
+          <camunda:property name="equipment_type_id" value="waste_bin" />
+          <camunda:property name="equipment_ref" value="bin_1" />
+          <camunda:property name="validator_profile_id" value="equipment_action.default.v1" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1kb9qr6</bpmn:incoming>
+      <bpmn:outgoing>Flow_10nubd7</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:sequenceFlow id="Flow_1kb9qr6" sourceRef="Activity_12cgz6a" targetRef="Activity_1epghx4" />
+    <bpmn:sequenceFlow id="Flow_10nubd7" sourceRef="Activity_1epghx4" targetRef="Activity_164zb9r" />
+    <bpmn:sequenceFlow id="Flow_0sfduiq" sourceRef="Activity_164zb9r" targetRef="Activity_0eh2m0x" />
+    <bpmn:manualTask id="Activity_12cgz6a" name="Перенести контейнер-1 в урну-1">
+      <bpmn:documentation>AS IS: взять крышку новой тары покупателя.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="actor_kind" value="robot" />
+          <camunda:property name="object_ref" value="container_1" />
+          <camunda:property name="target_kind" value="equipment" />
+          <camunda:property name="target_ref" value="bin_1" />
+          <camunda:property name="validator_profile_id" value="move_object.container.default.v1" />
+          <camunda:property name="operation_id" value="op_dispose_container_1_b" />
+          <camunda:property name="operation_code" value="move_object" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_0rhxz7j</bpmn:incoming>
+      <bpmn:outgoing>Flow_1kb9qr6</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:manualTask id="Activity_0flva8y" name="Закрыть СВЧ-1">
+      <bpmn:documentation>AS IS: закрыть дверцу СВЧ.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="actor_kind" value="equipment" />
+          <camunda:property name="equipment_type_id" value="microwave" />
+          <camunda:property name="equipment_ref" value="microwave_1" />
+          <camunda:property name="validator_profile_id" value="equipment_action.default.v1" />
+          <camunda:property name="operation_id" value="op_close_microwave_2" />
+          <camunda:property name="operation_code" value="close_equipment" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1ub7e5f</bpmn:incoming>
+      <bpmn:outgoing>Flow_10st7o7</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:manualTask id="Activity_1nmuo3d" name="Поднести контейнер-1 к устройству-перетаривания-1">
+      <bpmn:documentation>AS IS: взять горячую исходную тару для перелива.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="actor_kind" value="robot" />
+          <camunda:property name="object_ref" value="container_1" />
+          <camunda:property name="purpose" value="-" />
+          <camunda:property name="validator_profile_id" value="-" />
+          <camunda:property name="source_container_ref" value="required" />
+          <camunda:property name="source_container_state" value="legacy" />
+          <camunda:property name="operation_id" value="op_grasp_container_1_transfer" />
+          <camunda:property name="operation_code" value="grasp_object" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_0hae0rs</bpmn:incoming>
+      <bpmn:outgoing>Flow_1ub7e5f</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:manualTask id="Activity_07dw2ru" name="Запустить СВЧ-1">
+      <bpmn:documentation>AS IS: запуск СВЧ. Комментарий ИТМО: запуск должен опираться на recipe_context и конкретный equipment_ref.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="operation_id" value="op_start_microwave" />
+          <camunda:property name="actor_kind" value="equipment" />
+          <camunda:property name="equipment_ref" value="microwave_1" />
+          <camunda:property name="object_ref" value="container_1" />
+          <camunda:property name="validator_profile_id" value="start_equipment.default.v1" />
+          <camunda:property name="equipment_type_id" value="microwave" />
+          <camunda:property name="source_container_ref" value="required" />
+          <camunda:property name="operation_code" value="start_equipment" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1l3471u</bpmn:incoming>
+      <bpmn:outgoing>Flow_1cyaaxm</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:manualTask id="Activity_1i8s5wl" name="Выдать контейнер-2 из устройства-выдачи-1">
+      <bpmn:documentation>AS IS: запуск СВЧ. Комментарий ИТМО: запуск должен опираться на recipe_context и конкретный equipment_ref.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:properties>
+          <camunda:property name="actor_kind" value="equipment" />
+          <camunda:property name="target_object_ref" value="container_2" />
+          <camunda:property name="equipment_type_id" value="-" />
+          <camunda:property name="dish_sku_id" value="${recipe_context.dish_sku_id}" />
+          <camunda:property name="qty" value="${recipe_context.qty}" />
+          <camunda:property name="validator_profile_id" value="-" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_0bx8s67</bpmn:incoming>
+      <bpmn:outgoing>Flow_0c7c67s</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:task id="Activity_03kv40i">
+      <bpmn:outgoing>Flow_1unfm5e</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_0jv0gg5">
+      <bpmn:incoming>Flow_1unfm5e</bpmn:incoming>
+      <bpmn:outgoing>Flow_1kew779</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_1unfm5e" sourceRef="Activity_03kv40i" targetRef="Activity_0jv0gg5" />
+    <bpmn:task id="Activity_020el8s">
+      <bpmn:incoming>Flow_1kew779</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_1kew779" sourceRef="Activity_0jv0gg5" targetRef="Activity_020el8s" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_06ftemy">
+      <bpmndi:BPMNShape id="Participant_08pyz2p_di" bpmnElement="Participant_08pyz2p" isHorizontal="true">
+        <dc:Bounds x="-330" y="-80" width="6120" height="2340" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_1m49673_di" bpmnElement="Lane_1m49673" isHorizontal="true">
+        <dc:Bounds x="-300" y="1430" width="6090" height="830" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_03dntrc_di" bpmnElement="Lane_03dntrc" isHorizontal="true">
+        <dc:Bounds x="-300" y="-80" width="6090" height="610" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_1e3l9p9_di" bpmnElement="Lane_1e3l9p9" isHorizontal="true">
+        <dc:Bounds x="-300" y="530" width="6090" height="900" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_05ckyt4_di" bpmnElement="Event_05ckyt4">
+        <dc:Bounds x="-148" y="732" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="-163" y="708" width="65" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_15o9tj0_di" bpmnElement="Gateway_0vjlz9j" isMarkerVisible="true">
+        <dc:Bounds x="125" y="185" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_1mka1if_di" bpmnElement="Event_0n3sbnt">
+        <dc:Bounds x="-148" y="992" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="-243" y="997" width="85" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_13ecg35_di" bpmnElement="Event_1h56up5">
+        <dc:Bounds x="-28" y="192" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="-54" y="168" width="88" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1bkbr4h_di" bpmnElement="Activity_1k9t4a7">
+        <dc:Bounds x="100" y="50" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0tzt2yp_di" bpmnElement="Activity_171znbt">
+        <dc:Bounds x="3410" y="620" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_14is3dz" bpmnElement="Activity_0eqhdco">
+        <dc:Bounds x="690" y="740" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_0rs1o7i" bpmnElement="Activity_1grwh4i">
+        <dc:Bounds x="5210" y="700" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_1pqduoq_di" bpmnElement="Event_1pqduoq">
+        <dc:Bounds x="5582" y="722" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="5575" y="765" width="51" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_0p3f81w" bpmnElement="Activity_1vz1obl">
+        <dc:Bounds x="3830" y="380" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0gz1u45_di" bpmnElement="Activity_1gmqktc">
+        <dc:Bounds x="2300" y="380" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_0b9nrnv" bpmnElement="Activity_164zb9r">
+        <dc:Bounds x="4440" y="700" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_18xdfop" bpmnElement="Gateway_1h1jttk">
+        <dc:Bounds x="2085" y="395" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2019" y="413" width="56" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0778oxz_di" bpmnElement="Activity_1spcm9y">
+        <dc:Bounds x="970" y="380" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_06cz5c1" bpmnElement="Activity_0eh2m0x">
+        <dc:Bounds x="4780" y="380" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_10x94dh_di" bpmnElement="Activity_1tsk3kf">
+        <dc:Bounds x="1330" y="840" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0a2iq7w_di" bpmnElement="Activity_1tghc67">
+        <dc:Bounds x="1180" y="380" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1iz522c_di" bpmnElement="Activity_0238wyw">
+        <dc:Bounds x="1720" y="210" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0lcdibl_di" bpmnElement="Activity_1jw2q8u">
+        <dc:Bounds x="1570" y="210" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0ip69pv_di" bpmnElement="Activity_1r18m6r">
+        <dc:Bounds x="1860" y="590" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_1nlnhbr" bpmnElement="Gateway_0onqk3g">
+        <dc:Bounds x="1495" y="325" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1566" y="337" width="56" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_0prm0vt" bpmnElement="Activity_1epghx4">
+        <dc:Bounds x="4320" y="380" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_1mlnt9u" bpmnElement="Activity_12cgz6a">
+        <dc:Bounds x="4130" y="700" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1ydd13k_di" bpmnElement="Activity_0flva8y">
+        <dc:Bounds x="2940" y="380" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0ucdw7t_di" bpmnElement="Activity_1nmuo3d">
+        <dc:Bounds x="2550" y="620" width="130" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_0if4b73" bpmnElement="Activity_07dw2ru">
+        <dc:Bounds x="1970" y="210" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_1uiq47f" bpmnElement="Activity_1i8s5wl">
+        <dc:Bounds x="1570" y="440" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_03kv40i_di" bpmnElement="Activity_03kv40i">
+        <dc:Bounds x="3650" y="1820" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0jv0gg5_di" bpmnElement="Activity_0jv0gg5">
+        <dc:Bounds x="3800" y="1820" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_020el8s_di" bpmnElement="Activity_020el8s">
+        <dc:Bounds x="3950" y="1820" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1f9se1h_di" bpmnElement="Flow_1f9se1h">
+        <di:waypoint x="-130" y="768" />
+        <di:waypoint x="-130" y="992" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="48" y="1056" width="44" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1ywuavn_di" bpmnElement="Flow_1ywuavn">
+        <di:waypoint x="8" y="210" />
+        <di:waypoint x="125" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1ths047_di" bpmnElement="Flow_1ths047">
+        <di:waypoint x="150" y="185" />
+        <di:waypoint x="150" y="130" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1c08hib_di" bpmnElement="Flow_1c08hib">
+        <di:waypoint x="200" y="90" />
+        <di:waypoint x="300" y="90" />
+        <di:waypoint x="300" y="780" />
+        <di:waypoint x="690" y="780" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0tq27op_di" bpmnElement="Flow_0tq27op">
+        <di:waypoint x="-112" y="1010" />
+        <di:waypoint x="150" y="1010" />
+        <di:waypoint x="150" y="235" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1wjo177_di" bpmnElement="Flow_1wjo177">
+        <di:waypoint x="5310" y="740" />
+        <di:waypoint x="5582" y="740" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1bxawcq_di" bpmnElement="Flow_1bxawcq">
+        <di:waypoint x="2135" y="420" />
+        <di:waypoint x="2300" y="420" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0751kfw_di" bpmnElement="Flow_0751kfw">
+        <di:waypoint x="3510" y="660" />
+        <di:waypoint x="3780" y="660" />
+        <di:waypoint x="3780" y="420" />
+        <di:waypoint x="3830" y="420" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1wjdjuf_di" bpmnElement="Flow_1wjdjuf">
+        <di:waypoint x="790" y="780" />
+        <di:waypoint x="880" y="780" />
+        <di:waypoint x="880" y="420" />
+        <di:waypoint x="970" y="420" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_16hvrsl_di" bpmnElement="Flow_16hvrsl">
+        <di:waypoint x="1070" y="420" />
+        <di:waypoint x="1180" y="420" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1c33hou_di" bpmnElement="Flow_1c33hou">
+        <di:waypoint x="4880" y="420" />
+        <di:waypoint x="5020" y="420" />
+        <di:waypoint x="5020" y="740" />
+        <di:waypoint x="5210" y="740" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0rhxz7j_di" bpmnElement="Flow_0rhxz7j">
+        <di:waypoint x="3930" y="420" />
+        <di:waypoint x="4050" y="420" />
+        <di:waypoint x="4050" y="740" />
+        <di:waypoint x="4130" y="740" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_002q8sl_di" bpmnElement="Flow_002q8sl">
+        <di:waypoint x="1280" y="420" />
+        <di:waypoint x="1305" y="420" />
+        <di:waypoint x="1305" y="880" />
+        <di:waypoint x="1330" y="880" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1l3471u_di" bpmnElement="Flow_1l3471u">
+        <di:waypoint x="1820" y="250" />
+        <di:waypoint x="1970" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0bpycud_di" bpmnElement="Flow_0bpycud">
+        <di:waypoint x="1670" y="250" />
+        <di:waypoint x="1720" y="250" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1655" y="143" width="81" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0jat0ia_di" bpmnElement="Flow_0jat0ia">
+        <di:waypoint x="1430" y="880" />
+        <di:waypoint x="1450" y="880" />
+        <di:waypoint x="1450" y="350" />
+        <di:waypoint x="1495" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1rtjto3_di" bpmnElement="Flow_1rtjto3">
+        <di:waypoint x="1520" y="325" />
+        <di:waypoint x="1520" y="250" />
+        <di:waypoint x="1570" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0bx8s67_di" bpmnElement="Flow_0bx8s67">
+        <di:waypoint x="1520" y="375" />
+        <di:waypoint x="1520" y="480" />
+        <di:waypoint x="1570" y="480" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1cyaaxm_di" bpmnElement="Flow_1cyaaxm">
+        <di:waypoint x="2070" y="250" />
+        <di:waypoint x="2110" y="250" />
+        <di:waypoint x="2110" y="395" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0c7c67s_di" bpmnElement="Flow_0c7c67s">
+        <di:waypoint x="1670" y="480" />
+        <di:waypoint x="1770" y="480" />
+        <di:waypoint x="1770" y="630" />
+        <di:waypoint x="1860" y="630" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0p2pgt1_di" bpmnElement="Flow_0p2pgt1">
+        <di:waypoint x="1960" y="630" />
+        <di:waypoint x="2110" y="630" />
+        <di:waypoint x="2110" y="445" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0hae0rs_di" bpmnElement="Flow_0hae0rs">
+        <di:waypoint x="2400" y="420" />
+        <di:waypoint x="2490" y="420" />
+        <di:waypoint x="2490" y="660" />
+        <di:waypoint x="2550" y="660" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1ub7e5f_di" bpmnElement="Flow_1ub7e5f">
+        <di:waypoint x="2680" y="660" />
+        <di:waypoint x="2755" y="660" />
+        <di:waypoint x="2755" y="420" />
+        <di:waypoint x="2940" y="420" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_10st7o7_di" bpmnElement="Flow_10st7o7">
+        <di:waypoint x="3040" y="420" />
+        <di:waypoint x="3170" y="420" />
+        <di:waypoint x="3170" y="660" />
+        <di:waypoint x="3410" y="660" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1kb9qr6_di" bpmnElement="Flow_1kb9qr6">
+        <di:waypoint x="4230" y="740" />
+        <di:waypoint x="4295" y="740" />
+        <di:waypoint x="4295" y="420" />
+        <di:waypoint x="4320" y="420" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_10nubd7_di" bpmnElement="Flow_10nubd7">
+        <di:waypoint x="4420" y="420" />
+        <di:waypoint x="4430" y="420" />
+        <di:waypoint x="4430" y="740" />
+        <di:waypoint x="4440" y="740" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0sfduiq_di" bpmnElement="Flow_0sfduiq">
+        <di:waypoint x="4540" y="740" />
+        <di:waypoint x="4660" y="740" />
+        <di:waypoint x="4660" y="420" />
+        <di:waypoint x="4780" y="420" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1unfm5e_di" bpmnElement="Flow_1unfm5e">
+        <di:waypoint x="3750" y="1860" />
+        <di:waypoint x="3800" y="1860" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1kew779_di" bpmnElement="Flow_1kew779">
+        <di:waypoint x="3900" y="1860" />
+        <di:waypoint x="3950" y="1860" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="TextAnnotation_itmo_tara_props_di" bpmnElement="TextAnnotation_itmo_tara_props">
+        <dc:Bounds x="400" y="-60" width="290" height="120" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TextAnnotation_itmo_refs_di" bpmnElement="TextAnnotation_itmo_refs">
+        <dc:Bounds x="1720" y="780" width="200" height="102" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TextAnnotation_itmo_recipe_di" bpmnElement="TextAnnotation_itmo_recipe">
+        <dc:Bounds x="400" y="70" width="200" height="100" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
+

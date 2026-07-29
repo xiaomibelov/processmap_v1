@@ -1,0 +1,58 @@
+{
+  "id": "6951cce6-1b77-4569-929d-3e6135ec852b",
+  "template_id": "a5f9fbe0-4612-459c-a71e-1fd7432927f6",
+  "sku_id": "tom_yam",
+  "template_version": "1.0.0",
+  "parameters_json": {
+    "portion_qty": 2,
+    "heat_time_sec": 120,
+    "heating_power": "high",
+    "target_temp_c": 85,
+    "source_container_type": "food_container"
+  },
+  "status": "published",
+  "created_by": "admin@local",
+  "updated_at": "2026-07-29T10:00:38.897995",
+  "blocks_analysis": {
+    "required_params": [
+      "heat_time_sec",
+      "heating_power",
+      "portion_qty",
+      "source_container_type",
+      "target_temp_c"
+    ],
+    "missing_params": [],
+    "unused_params": [],
+    "blocks": [
+      {
+        "node_id": "Task_heat",
+        "node_name": "Нагрев",
+        "operation_code": "heat",
+        "recipe_params": [
+          "heat_time_sec",
+          "target_temp_c",
+          "heating_power"
+        ],
+        "missing_params": []
+      },
+      {
+        "node_id": "Task_transfer",
+        "node_name": "Перелив",
+        "operation_code": "transfer",
+        "recipe_params": [
+          "source_container_type"
+        ],
+        "missing_params": []
+      },
+      {
+        "node_id": "Task_serve",
+        "node_name": "Подача",
+        "operation_code": "serve",
+        "recipe_params": [
+          "portion_qty"
+        ],
+        "missing_params": []
+      }
+    ]
+  }
+}

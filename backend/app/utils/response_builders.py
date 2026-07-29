@@ -24,11 +24,13 @@ def build_auth_me_payload(
     default_org_id: str,
     orgs: List[Dict[str, Any]],
     groups: List[Dict[str, Any]] = None,
+    role: str = "",
 ) -> Dict[str, Any]:
     return {
         "id": str(user_id or ""),
         "email": str(email or ""),
         "is_admin": bool(is_admin),
+        "role": str(role or ""),
         "active_org_id": str(active_org_id or ""),
         "default_org_id": str(default_org_id or ""),
         "orgs": list(orgs or []),

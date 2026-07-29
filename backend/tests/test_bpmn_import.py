@@ -342,3 +342,42 @@ def test_import_bpmn_endpoint_unparseable_xml_returns_422():
             p.stop()
 
     assert response.status_code == 422
+
+
+class TestItmoV02Acceptance:
+    """Исходный файл ИТМО (AS IS «Разогрев супа V3») — обязательные классы отчёта."""
+
+    @pytest.fixture(scope="class")
+    def result(self):
+        xml = open(os.path.join(FIXTURES_DIR, "itmo_razogrev_v02.bpmn"), encoding="utf-8").read()
+        return parse_bpmn(xml)
+
+    def test_lossless(self, result):
+        assert result.report["summary"]["nodes"] == 30
+        assert result.report["summary"]["flows"] == 29
+
+    def test_required_finding_classes(self, result):
+        codes = {f["code"] for f in result.report["findings"]}
+        # Классы из критерия E3.2: validator_profile_id/actor_kind → LEGACY_CAMUNDA_PROPERTY
+        assert "LEGACY_CAMUNDA_PROPERTY" in codes
+        assert "UNKNOWN_OPERATION_CODE" in codes  # move_object, transfer_contents, ...
+        assert "DOLLAR_SUBSTITUTION" in codes  # ${recipe_context.*}
+        assert "UNDECLARED_ENTITY_REF" in codes
+        assert "PLACEHOLDER_VALUE" in codes  # заглушки "-"
+
+    def test_legacy_props_named(self, result):
+        legacy = [f for f in result.report["findings"] if f["code"] == "LEGACY_CAMUNDA_PROPERTY"]
+        text = " ".join(f["message"] for f in legacy)
+        for key in ("validator_profile_id", "actor_kind", "seal_method", "dish_sku_id", "operation_id"):
+            assert key in text, key
+        for f in result.report["findings"]:
+            assert f["element_id"], f
+
+    def test_unknown_operation_codes(self, result):
+        unknown = [f for f in result.report["findings"] if f["code"] == "UNKNOWN_OPERATION_CODE"]
+        text = " ".join(f["message"] for f in unknown)
+        for code in ("move_object", "transfer_contents", "seal_container", "grasp_object"):
+            assert code in text, code
+
+    def test_draft_entities_created(self, result):
+        assert len(result.draft_entities) > 0

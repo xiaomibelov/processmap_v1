@@ -3033,6 +3033,7 @@ def _auth_user_row_to_dict(row: Any) -> Dict[str, Any]:
         "activation_expires_at": int(_row_value(row, "activation_expires_at") or 0),
         "full_name": str(_row_value(row, "full_name") or "").strip(),
         "job_title": str(_row_value(row, "job_title") or "").strip(),
+        "role": str(_row_value(row, "role") or "analyst").strip() or "analyst",
     }
 
 
@@ -3113,15 +3114,34 @@ def _ensure_auth_users_backfill(con: Any) -> None:
     _meta_set(con, _AUTH_USERS_BACKFILL_MARK, "done")
 
 
+_USERS_ROLE_COLUMN_CACHE: Optional[bool] = None
+
+
+def _users_has_role_column(con: Any) -> bool:
+    """True if users.role exists (alembic 001 applied). Cached per process."""
+    global _USERS_ROLE_COLUMN_CACHE
+    if _USERS_ROLE_COLUMN_CACHE is None:
+        try:
+            row = con.execute(
+                "SELECT COUNT(*) AS c FROM information_schema.columns "
+                "WHERE table_name = 'users' AND column_name = 'role'"
+            ).fetchone()
+            _USERS_ROLE_COLUMN_CACHE = bool(row and int(_row_value(row, "c") or 0) > 0)
+        except Exception:
+            _USERS_ROLE_COLUMN_CACHE = False
+    return _USERS_ROLE_COLUMN_CACHE
+
+
 def _get_auth_user_by_id_with_connection(con: Any, user_id: str) -> Optional[Dict[str, Any]]:
     uid = str(user_id or "").strip()
     if not uid:
         return None
+    role_col = ", role" if _users_has_role_column(con) else ""
     row = con.execute(
-        """
+        f"""
         SELECT id, email, password_hash, is_active, is_admin, created_at, updated_at,
                activation_pending, activated_at, activation_required, activation_token_hash,
-               activation_expires_at, full_name, job_title
+               activation_expires_at, full_name, job_title{role_col}
           FROM users
          WHERE id = ?
          LIMIT 1
@@ -3135,11 +3155,12 @@ def _get_auth_user_by_email_with_connection(con: Any, email: str) -> Optional[Di
     em = _normalize_email(email)
     if not em:
         return None
+    role_col = ", role" if _users_has_role_column(con) else ""
     row = con.execute(
-        """
+        f"""
         SELECT id, email, password_hash, is_active, is_admin, created_at, updated_at,
                activation_pending, activated_at, activation_required, activation_token_hash,
-               activation_expires_at, full_name, job_title
+               activation_expires_at, full_name, job_title{role_col}
           FROM users
          WHERE email = ?
          LIMIT 1

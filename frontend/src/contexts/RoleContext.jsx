@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { apiRequest } from "../lib/apiCore";
 
 const RoleContext = createContext({
   role: "analyst",
@@ -13,10 +14,10 @@ export function RoleProvider({ children }) {
 
   useEffect(() => {
     // Fetch user role from API
-    fetch("/api/me")
-      .then((res) => res.json())
+    apiRequest("/api/auth/me")
+      .then((r) => (r && r.ok ? r.data : null))
       .then((data) => {
-        setRole(data.role || "analyst");
+        setRole((data && data.role) || "analyst");
         setLoading(false);
       })
       .catch(() => {

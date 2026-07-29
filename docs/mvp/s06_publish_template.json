@@ -1,0 +1,114 @@
+{
+  "id": "cafe1633-fa48-4a76-ba33-c3a262978e78",
+  "status": "published",
+  "version": "0.1.0",
+  "version_id": "dd43c226-9a82-476c-a8ab-1ac33c0034b0",
+  "published_at": "2026-07-29T18:09:55.246301",
+  "warnings_count": 1,
+  "precheck": {
+    "mode": "warning",
+    "summary": {
+      "kitchens": 3,
+      "ok": 2,
+      "warning": 1,
+      "blocked": 0
+    },
+    "required_equipment": [
+      {
+        "operation_code": "check",
+        "equipment": [
+          "measurement_device"
+        ]
+      },
+      {
+        "operation_code": "close_container",
+        "equipment": [
+          "container_closing_station"
+        ]
+      },
+      {
+        "operation_code": "close_equipment",
+        "equipment": [
+          "target_equipment"
+        ]
+      },
+      {
+        "operation_code": "get_from_storage",
+        "equipment": [
+          "storage_unit"
+        ]
+      },
+      {
+        "operation_code": "move",
+        "equipment": [
+          "transport_system"
+        ]
+      },
+      {
+        "operation_code": "open_container",
+        "equipment": [
+          "container_opener"
+        ]
+      },
+      {
+        "operation_code": "open_equipment",
+        "equipment": [
+          "target_equipment"
+        ]
+      },
+      {
+        "operation_code": "set_equipment",
+        "equipment": [
+          "target_equipment"
+        ]
+      },
+      {
+        "operation_code": "start_equipment",
+        "equipment": [
+          "target_equipment"
+        ]
+      },
+      {
+        "operation_code": "transfer",
+        "equipment": [
+          "transfer_station"
+        ]
+      }
+    ],
+    "kitchens": [
+      {
+        "kitchen_id": "4369f4db-7976-45b7-91a8-a83c0f8ad131",
+        "name": "Кухня №1 (центральная)",
+        "verdict": "ok",
+        "unmet": []
+      },
+      {
+        "kitchen_id": "f43310e5-dec1-4a64-9537-64ebf5e3791b",
+        "name": "Кухня №2 (линия РТК)",
+        "verdict": "ok",
+        "unmet": []
+      },
+      {
+        "kitchen_id": "90c2ca8f-027c-4170-98aa-d8cb46aab1d1",
+        "name": "Кухня №3 (без датчиков)",
+        "verdict": "warning",
+        "unmet": [
+          {
+            "operation_code": "check",
+            "requirement": "measurement_device",
+            "detail_ru": "Операция 'check' требует оборудование 'measurement_device' — отсутствует на кухне"
+          }
+        ]
+      }
+    ]
+  },
+  "dry_run": {
+    "summary": {
+      "errors": 0,
+      "warnings": 0,
+      "nodes": 26,
+      "flows": 27
+    },
+    "findings": []
+  }
+}

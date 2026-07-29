@@ -1,0 +1,109 @@
+{
+  "template_id": "6a734730-c501-4d9f-a586-84d8b8eda732",
+  "mode": "strict",
+  "summary": {
+    "kitchens": 3,
+    "ok": 2,
+    "warning": 0,
+    "blocked": 1
+  },
+  "required_equipment": [
+    {
+      "operation_code": "check",
+      "equipment": [
+        "measurement_device"
+      ]
+    },
+    {
+      "operation_code": "close_container",
+      "equipment": [
+        "container_closing_station"
+      ]
+    },
+    {
+      "operation_code": "close_equipment",
+      "equipment": [
+        "target_equipment"
+      ]
+    },
+    {
+      "operation_code": "get_from_storage",
+      "equipment": [
+        "storage_unit"
+      ]
+    },
+    {
+      "operation_code": "measure_temperature",
+      "equipment": [
+        "temperature_sensor"
+      ]
+    },
+    {
+      "operation_code": "move",
+      "equipment": [
+        "transport_system"
+      ]
+    },
+    {
+      "operation_code": "open_container",
+      "equipment": [
+        "container_opener"
+      ]
+    },
+    {
+      "operation_code": "open_equipment",
+      "equipment": [
+        "target_equipment"
+      ]
+    },
+    {
+      "operation_code": "set_equipment",
+      "equipment": [
+        "target_equipment"
+      ]
+    },
+    {
+      "operation_code": "start_equipment",
+      "equipment": [
+        "target_equipment"
+      ]
+    },
+    {
+      "operation_code": "transfer",
+      "equipment": [
+        "transfer_station"
+      ]
+    }
+  ],
+  "kitchens": [
+    {
+      "kitchen_id": "4369f4db-7976-45b7-91a8-a83c0f8ad131",
+      "name": "Кухня №1 (центральная)",
+      "verdict": "ok",
+      "unmet": []
+    },
+    {
+      "kitchen_id": "f43310e5-dec1-4a64-9537-64ebf5e3791b",
+      "name": "Кухня №2 (линия РТК)",
+      "verdict": "ok",
+      "unmet": []
+    },
+    {
+      "kitchen_id": "90c2ca8f-027c-4170-98aa-d8cb46aab1d1",
+      "name": "Кухня №3 (без датчиков)",
+      "verdict": "blocked",
+      "unmet": [
+        {
+          "operation_code": "check",
+          "requirement": "measurement_device",
+          "detail_ru": "Операция 'check' требует оборудование 'measurement_device' — отсутствует на кухне"
+        },
+        {
+          "operation_code": "measure_temperature",
+          "requirement": "temperature_sensor",
+          "detail_ru": "Операция 'measure_temperature' требует оборудование 'temperature_sensor' (или capability 'temperature_measurement') — отсутствует на кухне"
+        }
+      ]
+    }
+  ]
+}

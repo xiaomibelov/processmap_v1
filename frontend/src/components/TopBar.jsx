@@ -374,6 +374,8 @@ export default function TopBar({
   const hasMultiOrg = orgList.length > 1;
   const sessionStatusMeta = getManualSessionStatusMeta(normalizedSessionStatus);
   const canOpenOrgSettings = Boolean(user?.is_admin) || ["org_owner", "org_admin", "auditor"].includes(activeOrgRole);
+  // Точка входа в technologist-воркфлоу (E1–E9): роли analyst/admin (роль из /api/auth/me)
+  const canOpenTechnologist = Boolean(user?.is_admin) || ["analyst", "admin"].includes(String(user?.role || "").trim().toLowerCase());
   const mentionItems = asArray(mentionNotifications);
   const noteNotificationItems = asArray(noteNotifications);
   const hasBackendNotificationFeed = noteNotificationsAvailable === true;
@@ -450,6 +452,11 @@ export default function TopBar({
   function openAdminConsole() {
     if (typeof window === "undefined") return;
     window.location.assign("/admin/dashboard");
+  }
+
+  function openTechnologist() {
+    if (typeof window === "undefined") return;
+    window.location.assign("/technologist/catalog");
   }
 
   function openProfileSoon() {
@@ -777,6 +784,17 @@ export default function TopBar({
               <span className="text-[10px] font-semibold uppercase tracking-[0.12em]">Org</span>
               <span className="max-w-[190px] truncate text-sm font-medium text-fg" title={currentOrgLabel}>{currentOrgLabel}</span>
             </div>
+          ) : null}
+          {canOpenTechnologist ? (
+            <button
+              type="button"
+              className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-2.5 py-0 text-sm"
+              onClick={openTechnologist}
+              data-testid="topbar-technologist-button"
+              title="Открыть воркфлоу технолога"
+            >
+              Технолог
+            </button>
           ) : null}
           {canOpenOrgSettings ? (
             <button

@@ -85,6 +85,7 @@ export const apiRoutes = {
   },
   processTemplates: {
     importBpmn: () => "/api/process-templates/import-bpmn",
+    transformAsis: () => "/api/process-templates/transform-asis",
   },
   templateFolders: {
     list: (scope = "personal", orgId = "") => withQuery("/api/template-folders", {

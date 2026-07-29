@@ -1,0 +1,22 @@
+{
+  "id": "af4300c0-abc0-42d0-8cd5-4126bd28f686",
+  "recipe_id": "01eae93a-3ff8-4330-968f-667e5440b60d",
+  "recipe_version": "1.0.1",
+  "kitchen_ids": [
+    "4369f4db-7976-45b7-91a8-a83c0f8ad131",
+    "f43310e5-dec1-4a64-9537-64ebf5e3791b",
+    "90c2ca8f-027c-4170-98aa-d8cb46aab1d1"
+  ],
+  "pilot_kitchen_id": "4369f4db-7976-45b7-91a8-a83c0f8ad131",
+  "status": "active",
+  "pilot_exit_criteria_json": {
+    "min_orders": 20,
+    "max_critical_errors": 0,
+    "max_defect_rate_pct": 2
+  },
+  "valid_from": null,
+  "valid_to": null,
+  "created_by": "mvp_technologist@local",
+  "created_at": "2026-07-29T18:10:07.688595",
+  "updated_at": "2026-07-29T18:10:13.241300"
+}

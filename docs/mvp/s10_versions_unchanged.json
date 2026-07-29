@@ -1,0 +1,10 @@
+{
+  "note": "раскатка НЕ создаёт новых версий шаблона/recipe",
+  "template_versions": [
+    "0.1.0:published"
+  ],
+  "recipe_versions": [
+    "1.0.1:published",
+    "1.0.0:published"
+  ]
+}

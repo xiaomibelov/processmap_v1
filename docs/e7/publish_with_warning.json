@@ -1,0 +1,48 @@
+{
+  "id": "6d8a079f-abf5-4e22-bc35-87692b025faa",
+  "status": "published",
+  "version": "0.1.0",
+  "version_id": "5a902448-9cc2-4265-a74f-060c0021e665",
+  "published_at": "2026-07-29T15:07:05.947717",
+  "warnings_count": 1,
+  "precheck": {
+    "mode": "warning",
+    "summary": {
+      "kitchens": 1,
+      "ok": 0,
+      "warning": 1,
+      "blocked": 0
+    },
+    "required_equipment": [
+      {
+        "operation_code": "measure_temperature",
+        "equipment": [
+          "temperature_sensor"
+        ]
+      }
+    ],
+    "kitchens": [
+      {
+        "kitchen_id": "5a35de76-2ee9-4b5b-b498-9bca8e731f14",
+        "name": "E7 пустая кухня e35870",
+        "verdict": "warning",
+        "unmet": [
+          {
+            "operation_code": "measure_temperature",
+            "requirement": "temperature_sensor",
+            "detail_ru": "Операция 'measure_temperature' требует оборудование 'temperature_sensor' (или capability 'temperature_measurement') — отсутствует на кухне"
+          }
+        ]
+      }
+    ]
+  },
+  "dry_run": {
+    "summary": {
+      "errors": 0,
+      "warnings": 0,
+      "nodes": 3,
+      "flows": 2
+    },
+    "findings": []
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "detail": {
+    "error": "pilot_criteria_not_met",
+    "message": "критерии выхода из пилота не выполнены",
+    "unmet": [
+      "min_orders не выполнен: 14/20"
+    ],
+    "totals": {
+      "orders": 14,
+      "critical_errors": 0,
+      "defect_count": 0,
+      "defect_rate_pct": 0
+    },
+    "criteria": {
+      "min_orders": 20,
+      "max_critical_errors": 0,
+      "max_defect_rate_pct": 2
+    }
+  }
+}

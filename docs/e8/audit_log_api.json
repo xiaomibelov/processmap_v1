@@ -1,0 +1,115 @@
+{
+  "items": [
+    {
+      "id": "aud_36529ddf93c8",
+      "ts": 1785342118,
+      "actor_user_id": "534892d617044dc78c72039fd0dafe85",
+      "org_id": "org_default",
+      "project_id": "",
+      "session_id": "",
+      "action": "recipe.create",
+      "entity_type": "recipe",
+      "entity_id": "71999a11-56fa-4d6b-a6d9-930bbf5a58fa",
+      "status": "ok",
+      "meta": {
+        "sku_id": "e8_audit_soup",
+        "template_id": "4b5b0f75-8bc2-4f5a-8346-5212687cc0d5",
+        "diff_json": {
+          "heat_time_sec": {
+            "old": null,
+            "new": 90
+          },
+          "heating_power": {
+            "old": null,
+            "new": "medium"
+          },
+          "target_temp_c": {
+            "old": null,
+            "new": 75
+          }
+        },
+        "diff_lines": [
+          "heat_time_sec: — → 90",
+          "heating_power: — → medium",
+          "target_temp_c: — → 75"
+        ]
+      },
+      "actor_email": "e8_art_534892@local",
+      "actor_display": "e8_art_534892@local",
+      "actor_resolved": true
+    },
+    {
+      "id": "aud_1229bdeaf8b8",
+      "ts": 1785342118,
+      "actor_user_id": "534892d617044dc78c72039fd0dafe85",
+      "org_id": "org_default",
+      "project_id": "",
+      "session_id": "",
+      "action": "publish",
+      "entity_type": "recipe",
+      "entity_id": "71999a11-56fa-4d6b-a6d9-930bbf5a58fa",
+      "status": "ok",
+      "meta": {
+        "version": "1.0.1",
+        "diff_summary": "sku=e8_audit_soup template_version=1.0.1 params=3",
+        "warnings_count": 0,
+        "previous_version": "1.0.0",
+        "diff_json": {
+          "heat_time_sec": {
+            "old": 90,
+            "new": 100
+          }
+        },
+        "diff_lines": [
+          "heat_time_sec: 90 → 100"
+        ]
+      },
+      "actor_email": "e8_art_534892@local",
+      "actor_display": "e8_art_534892@local",
+      "actor_resolved": true
+    },
+    {
+      "id": "aud_073daa99f905",
+      "ts": 1785342118,
+      "actor_user_id": "534892d617044dc78c72039fd0dafe85",
+      "org_id": "org_default",
+      "project_id": "",
+      "session_id": "",
+      "action": "publish",
+      "entity_type": "recipe",
+      "entity_id": "71999a11-56fa-4d6b-a6d9-930bbf5a58fa",
+      "status": "ok",
+      "meta": {
+        "version": "1.0.0",
+        "diff_summary": "sku=e8_audit_soup template_version=1.0.1 params=3",
+        "warnings_count": 0,
+        "previous_version": "",
+        "diff_json": {
+          "heat_time_sec": {
+            "old": null,
+            "new": 90
+          },
+          "heating_power": {
+            "old": null,
+            "new": "medium"
+          },
+          "target_temp_c": {
+            "old": null,
+            "new": 75
+          }
+        },
+        "diff_lines": [
+          "heat_time_sec: — → 90",
+          "heating_power: — → medium",
+          "target_temp_c: — → 75"
+        ]
+      },
+      "actor_email": "e8_art_534892@local",
+      "actor_display": "e8_art_534892@local",
+      "actor_resolved": true
+    }
+  ],
+  "limit": 100,
+  "offset": 0,
+  "count": 3
+}

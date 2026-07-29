@@ -9,6 +9,12 @@ import LoginPage from "./features/auth/LoginPage";
 import PublicHomePage from "./features/auth/PublicHomePage";
 import AnalyticsApp from "./features/analytics/AnalyticsApp.jsx";
 import ImportBpmn from "./features/technologist/import/ImportBpmn";
+import TechnologistCatalog from "./features/technologist/catalog/Catalog";
+import TechnologistConstructor from "./features/technologist/constructor/Constructor";
+import TransformReview from "./features/technologist/transform/TransformReview";
+import TechnologistRecipes from "./features/technologist/recipes/Recipes";
+import TechnologistAudit from "./features/technologist/audit/AuditPage";
+import TechnologistPilots from "./features/technologist/pilots/Pilots";
 import { canAccessAdminConsole } from "./features/admin/adminUtils";
 import {
   buildAnalyticsPath,
@@ -232,6 +238,12 @@ function AppRoutes() {
   const wantsAnalytics = pathname.startsWith("/analytics");
   const wantsAdmin = pathname.startsWith("/admin");
   const wantsTechnologistImport = pathname.startsWith("/technologist/import-bpmn");
+  const wantsTechnologistCatalog = pathname.startsWith("/technologist/catalog");
+  const wantsTechnologistConstructor = pathname.startsWith("/technologist/constructor");
+  const wantsTechnologistTransform = pathname.startsWith("/technologist/transform");
+  const wantsTechnologistRecipes = pathname.startsWith("/technologist/recipes");
+  const wantsTechnologistAudit = pathname.startsWith("/technologist/audit");
+  const wantsTechnologistPilots = pathname.startsWith("/technologist/pilots");
 
   useEffect(() => {
     if (!isAuthed || !wantsWorkspace) return;
@@ -250,6 +262,156 @@ function AppRoutes() {
   }
 
   const showWorkspace = wantsWorkspace && isAuthed;
+
+  // E2: standalone technologist catalog page (same minimal mount as import page).
+  if (wantsTechnologistCatalog) {
+    return (
+      <>
+        {isAuthed ? (
+          <TechnologistCatalog />
+        ) : (
+          <LoginPage
+            onBack={() => navigate("/")}
+            onSuccess={() => {
+              setReauthRequired(false);
+              navigate("/technologist/catalog", { replace: true });
+            }}
+          />
+        )}
+        <LoginModal
+          open={loginModalOpen}
+          locked={!isAuthed}
+          onClose={handleModalClose}
+          onSuccess={handleLoginSuccess}
+        />
+      </>
+    );
+  }
+
+  // E4: standalone technologist process constructor page (same minimal mount as catalog).
+  if (wantsTechnologistConstructor) {
+    return (
+      <>
+        {isAuthed ? (
+          <TechnologistConstructor />
+        ) : (
+          <LoginPage
+            onBack={() => navigate("/")}
+            onSuccess={() => {
+              setReauthRequired(false);
+              navigate(`/technologist/constructor${search}${hash}`, { replace: true });
+            }}
+          />
+        )}
+        <LoginModal
+          open={loginModalOpen}
+          locked={!isAuthed}
+          onClose={handleModalClose}
+          onSuccess={handleLoginSuccess}
+        />
+      </>
+    );
+  }
+
+  // E5: standalone technologist recipes page (same minimal mount as constructor).
+  if (wantsTechnologistRecipes) {
+    return (
+      <>
+        {isAuthed ? (
+          <TechnologistRecipes />
+        ) : (
+          <LoginPage
+            onBack={() => navigate("/")}
+            onSuccess={() => {
+              setReauthRequired(false);
+              navigate(`/technologist/recipes${search}${hash}`, { replace: true });
+            }}
+          />
+        )}
+        <LoginModal
+          open={loginModalOpen}
+          locked={!isAuthed}
+          onClose={handleModalClose}
+          onSuccess={handleLoginSuccess}
+        />
+      </>
+    );
+  }
+
+  // E9.6: standalone technologist pilots page (same minimal mount as recipes).
+  if (wantsTechnologistPilots) {
+    return (
+      <>
+        {isAuthed ? (
+          <TechnologistPilots />
+        ) : (
+          <LoginPage
+            onBack={() => navigate("/")}
+            onSuccess={() => {
+              setReauthRequired(false);
+              navigate(`/technologist/pilots${search}${hash}`, { replace: true });
+            }}
+          />
+        )}
+        <LoginModal
+          open={loginModalOpen}
+          locked={!isAuthed}
+          onClose={handleModalClose}
+          onSuccess={handleLoginSuccess}
+        />
+      </>
+    );
+  }
+
+  // E8: standalone technologist audit log page (same minimal mount as recipes).
+  if (wantsTechnologistAudit) {
+    return (
+      <>
+        {isAuthed ? (
+          <TechnologistAudit />
+        ) : (
+          <LoginPage
+            onBack={() => navigate("/")}
+            onSuccess={() => {
+              setReauthRequired(false);
+              navigate(`/technologist/audit${search}${hash}`, { replace: true });
+            }}
+          />
+        )}
+        <LoginModal
+          open={loginModalOpen}
+          locked={!isAuthed}
+          onClose={handleModalClose}
+          onSuccess={handleLoginSuccess}
+        />
+      </>
+    );
+  }
+
+  // E3.5: standalone transformation review page (same minimal mount as constructor).
+  if (wantsTechnologistTransform) {
+    return (
+      <>
+        {isAuthed ? (
+          <TransformReview />
+        ) : (
+          <LoginPage
+            onBack={() => navigate("/")}
+            onSuccess={() => {
+              setReauthRequired(false);
+              navigate("/technologist/transform", { replace: true });
+            }}
+          />
+        )}
+        <LoginModal
+          open={loginModalOpen}
+          locked={!isAuthed}
+          onClose={handleModalClose}
+          onSuccess={handleLoginSuccess}
+        />
+      </>
+    );
+  }
 
   // E3.5: standalone technologist import page (no react-router; minimal top-level path check).
   if (wantsTechnologistImport) {

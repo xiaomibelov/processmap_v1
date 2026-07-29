@@ -83,3 +83,37 @@ class ProcessEntity(ProcessEntityBase):
 
     class Config:
         from_attributes = True
+
+
+# --- E6: dry-run validate + feasibility pre-check ---------------------------
+
+
+class ValidateDraftRequest(BaseModel):
+    """POST /api/process-templates/validate — несохранённый черновик (ui_model в теле)."""
+    ui_model: Dict[str, Any]
+    check_reachability: bool = True
+
+
+class PrecheckRequest(BaseModel):
+    """POST /api/process-templates[/<id>]/precheck.
+
+    mode: 'warning' (default, locked decision) | 'strict' (E7 будет
+    блокировать publish при verdict='blocked').
+    kitchen_ids пустой = все кухни реестра.
+    """
+    ui_model: Optional[Dict[str, Any]] = None
+    kitchen_ids: List[str] = Field(default_factory=list)
+    mode: str = "warning"
+
+
+class PublishRequest(BaseModel):
+    """POST /api/process-templates/<id>/publish (E7.2).
+
+    target_kitchen_ids пустой = все кухни реестра (привязки шаблона к
+    кухням нет — реестр целиком). mode: pre-check режим ('warning'
+    default | 'strict'). bump: 'patch' (default, автоинкремент) |
+    'minor' | 'major' (ручной bump, locked decision).
+    """
+    target_kitchen_ids: List[str] = Field(default_factory=list)
+    mode: str = "warning"
+    bump: str = "patch"

@@ -1,0 +1,398 @@
+{
+  "valid": true,
+  "template_id": "6a734730-c501-4d9f-a586-84d8b8eda732",
+  "summary": {
+    "errors": 0,
+    "warnings": 36,
+    "nodes": 35,
+    "flows": 36
+  },
+  "findings": [
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_publish",
+      "element_name": "Опубликовать событие ready_for_packaging",
+      "message": "параметр 'payload_ref' ссылается на необъявленную сущность 'container_2'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_get1",
+      "element_name": "Получить контейнер-1 из хранения",
+      "message": "параметр 'item_ref' ссылается на необъявленную сущность 'container_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_get1",
+      "element_name": "Получить контейнер-1 из хранения",
+      "message": "параметр 'target_ref' ссылается на необъявленную сущность 'storage_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_open_c1",
+      "element_name": "Вскрыть контейнер-1",
+      "message": "параметр 'container_ref' ссылается на необъявленную сущность 'container_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_open_mw1",
+      "element_name": "Открыть СВЧ",
+      "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'heating_equipment_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_close_mw1",
+      "element_name": "Закрыть СВЧ",
+      "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'heating_equipment_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_set_mw",
+      "element_name": "Установить режим нагрева",
+      "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'heating_equipment_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_start_mw",
+      "element_name": "Запустить СВЧ",
+      "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'heating_equipment_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_get2",
+      "element_name": "Получить контейнер-2 из устройства выдачи",
+      "message": "параметр 'item_ref' ссылается на необъявленную сущность 'container_2'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_get2",
+      "element_name": "Получить контейнер-2 из устройства выдачи",
+      "message": "параметр 'target_ref' ссылается на необъявленную сущность 'dispensing_equipment_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_open_mw2",
+      "element_name": "Открыть СВЧ после нагрева",
+      "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'heating_equipment_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_measure",
+      "element_name": "Измерить температуру супа",
+      "message": "параметр 'container_ref' ссылается на необъявленную сущность 'container_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_close_mw2",
+      "element_name": "Закрыть СВЧ (догрев)",
+      "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'heating_equipment_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_start_mw2",
+      "element_name": "Запустить СВЧ (догрев)",
+      "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'heating_equipment_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_check",
+      "element_name": "Проверить целостность контейнера-1",
+      "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_close_mw3",
+      "element_name": "Закрыть СВЧ",
+      "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'heating_equipment_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_close_cont",
+      "element_name": "Закрыть контейнер-2",
+      "message": "параметр 'target_ref' ссылается на необъявленную сущность 'closing_equipment_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_close_cont",
+      "element_name": "Закрыть контейнер-2",
+      "message": "параметр 'container_ref' ссылается на необъявленную сущность 'container_2'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_move1",
+      "element_name": "Перенести контейнер-1 в устройство вскрытия",
+      "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_move1",
+      "element_name": "Перенести контейнер-1 в устройство вскрытия",
+      "message": "параметр 'target_ref' ссылается на необъявленную сущность 'opening_equipment_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_move2",
+      "element_name": "Перенести контейнер-1 в СВЧ",
+      "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_move2",
+      "element_name": "Перенести контейнер-1 в СВЧ",
+      "message": "параметр 'target_ref' ссылается на необъявленную сущность 'heating_equipment_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_move2c",
+      "element_name": "Перенести контейнер-2 в станцию перетаривания",
+      "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_2'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_move2c",
+      "element_name": "Перенести контейнер-2 в станцию перетаривания",
+      "message": "параметр 'target_ref' ссылается на необъявленную сущность 'transfer_station_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_move3",
+      "element_name": "Перенести контейнер-1 в станцию перетаривания",
+      "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_move3",
+      "element_name": "Перенести контейнер-1 в станцию перетаривания",
+      "message": "параметр 'target_ref' ссылается на необъявленную сущность 'transfer_station_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_dispose_def",
+      "element_name": "Утилизировать контейнер-1 (дефект)",
+      "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_dispose_def",
+      "element_name": "Утилизировать контейнер-1 (дефект)",
+      "message": "параметр 'target_ref' ссылается на необъявленную сущность 'waste_zone_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_transfer",
+      "element_name": "Перетарить суп из контейнера-1 в контейнер-2",
+      "message": "параметр 'source_container_ref' ссылается на необъявленную сущность 'container_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_transfer",
+      "element_name": "Перетарить суп из контейнера-1 в контейнер-2",
+      "message": "параметр 'target_container_ref' ссылается на необъявленную сущность 'container_2'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_move4",
+      "element_name": "Переместить контейнер-1 в зону утилизации",
+      "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_move4",
+      "element_name": "Переместить контейнер-1 в зону утилизации",
+      "message": "параметр 'target_ref' ссылается на необъявленную сущность 'waste_zone_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_move5",
+      "element_name": "Перенести контейнер-2 в станцию закрытия",
+      "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_2'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_move5",
+      "element_name": "Перенести контейнер-2 в станцию закрытия",
+      "message": "параметр 'target_ref' ссылается на необъявленную сущность 'closing_equipment_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_move6",
+      "element_name": "Перенести контейнер-2 в зону упаковки",
+      "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_2'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    },
+    {
+      "severity": "warning",
+      "code": "UNDECLARED_ENTITY_REF",
+      "element_id": "Act_move6",
+      "element_name": "Перенести контейнер-2 в зону упаковки",
+      "message": "параметр 'target_ref' ссылается на необъявленную сущность 'packaging_zone_1'",
+      "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+    }
+  ],
+  "draft_entities": [
+    {
+      "ref": "container_2",
+      "guessed_category": "zones",
+      "used_by": [
+        "Act_publish",
+        "Act_get2",
+        "Act_close_cont",
+        "Act_move2c",
+        "Act_transfer",
+        "Act_move5",
+        "Act_move6"
+      ]
+    },
+    {
+      "ref": "container_1",
+      "guessed_category": "containers",
+      "used_by": [
+        "Act_get1",
+        "Act_open_c1",
+        "Act_measure",
+        "Act_check",
+        "Act_move1",
+        "Act_move2",
+        "Act_move3",
+        "Act_dispose_def",
+        "Act_transfer",
+        "Act_move4"
+      ]
+    },
+    {
+      "ref": "storage_1",
+      "guessed_category": "zones",
+      "used_by": [
+        "Act_get1"
+      ]
+    },
+    {
+      "ref": "heating_equipment_1",
+      "guessed_category": "equipment",
+      "used_by": [
+        "Act_open_mw1",
+        "Act_close_mw1",
+        "Act_set_mw",
+        "Act_start_mw",
+        "Act_open_mw2",
+        "Act_close_mw2",
+        "Act_start_mw2",
+        "Act_close_mw3",
+        "Act_move2"
+      ]
+    },
+    {
+      "ref": "dispensing_equipment_1",
+      "guessed_category": "zones",
+      "used_by": [
+        "Act_get2"
+      ]
+    },
+    {
+      "ref": "closing_equipment_1",
+      "guessed_category": "zones",
+      "used_by": [
+        "Act_close_cont",
+        "Act_move5"
+      ]
+    },
+    {
+      "ref": "opening_equipment_1",
+      "guessed_category": "zones",
+      "used_by": [
+        "Act_move1"
+      ]
+    },
+    {
+      "ref": "transfer_station_1",
+      "guessed_category": "zones",
+      "used_by": [
+        "Act_move2c",
+        "Act_move3"
+      ]
+    },
+    {
+      "ref": "waste_zone_1",
+      "guessed_category": "zones",
+      "used_by": [
+        "Act_dispose_def",
+        "Act_move4"
+      ]
+    },
+    {
+      "ref": "packaging_zone_1",
+      "guessed_category": "zones",
+      "used_by": [
+        "Act_move6"
+      ]
+    }
+  ]
+}
