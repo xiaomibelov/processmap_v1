@@ -1,0 +1,203 @@
+{
+  "items": [
+    {
+      "id": "aud_f12b410d5326",
+      "ts": 1785348605,
+      "actor_user_id": "ddd6f7ab469e4218afa4a3424578278d",
+      "org_id": "org_default",
+      "project_id": "",
+      "session_id": "",
+      "action": "publish",
+      "entity_type": "recipe",
+      "entity_id": "01eae93a-3ff8-4330-968f-667e5440b60d",
+      "status": "ok",
+      "meta": {
+        "version": "1.0.1",
+        "diff_summary": "sku=borsch_mvp template_version=0.1.0 params=5",
+        "warnings_count": 0,
+        "previous_version": "1.0.0",
+        "diff_json": {
+          "heat_time_sec": {
+            "old": 90,
+            "new": 100
+          }
+        },
+        "diff_lines": [
+          "heat_time_sec: 90 → 100"
+        ]
+      },
+      "actor_email": "mvp_technologist@local",
+      "actor_display": "mvp_technologist@local",
+      "actor_resolved": true
+    },
+    {
+      "id": "aud_de0c75a9a776",
+      "ts": 1785348604,
+      "actor_user_id": "ddd6f7ab469e4218afa4a3424578278d",
+      "org_id": "org_default",
+      "project_id": "",
+      "session_id": "",
+      "action": "recipe.update",
+      "entity_type": "recipe",
+      "entity_id": "01eae93a-3ff8-4330-968f-667e5440b60d",
+      "status": "ok",
+      "meta": {
+        "sku_id": "borsch_mvp",
+        "diff_json": {
+          "heat_time_sec": {
+            "old": 90,
+            "new": 100
+          }
+        },
+        "diff_lines": [
+          "heat_time_sec: 90 → 100"
+        ]
+      },
+      "actor_email": "mvp_technologist@local",
+      "actor_display": "mvp_technologist@local",
+      "actor_resolved": true
+    },
+    {
+      "id": "aud_73ed22cbb072",
+      "ts": 1785348603,
+      "actor_user_id": "ddd6f7ab469e4218afa4a3424578278d",
+      "org_id": "org_default",
+      "project_id": "",
+      "session_id": "",
+      "action": "new_version",
+      "entity_type": "recipe",
+      "entity_id": "01eae93a-3ff8-4330-968f-667e5440b60d",
+      "status": "ok",
+      "meta": {
+        "sku_id": "borsch_mvp",
+        "source_version": "1.0.0",
+        "next_version": "1.0.1",
+        "diff_summary": "создано из v1.0.0"
+      },
+      "actor_email": "mvp_technologist@local",
+      "actor_display": "mvp_technologist@local",
+      "actor_resolved": true
+    },
+    {
+      "id": "aud_d4e3d40b5463",
+      "ts": 1785348601,
+      "actor_user_id": "ddd6f7ab469e4218afa4a3424578278d",
+      "org_id": "org_default",
+      "project_id": "",
+      "session_id": "",
+      "action": "publish",
+      "entity_type": "recipe",
+      "entity_id": "01eae93a-3ff8-4330-968f-667e5440b60d",
+      "status": "ok",
+      "meta": {
+        "version": "1.0.0",
+        "diff_summary": "sku=borsch_mvp template_version=0.1.0 params=5",
+        "warnings_count": 0,
+        "previous_version": "",
+        "diff_json": {
+          "dish_sku_id": {
+            "old": null,
+            "new": "food_container"
+          },
+          "heat_time_sec": {
+            "old": null,
+            "new": 90
+          },
+          "heating_power": {
+            "old": null,
+            "new": "medium"
+          },
+          "qty": {
+            "old": null,
+            "new": 20
+          },
+          "target_temp_c": {
+            "old": null,
+            "new": 75
+          }
+        },
+        "diff_lines": [
+          "dish_sku_id: — → food_container",
+          "heat_time_sec: — → 90",
+          "heating_power: — → medium",
+          "qty: — → 20",
+          "target_temp_c: — → 75"
+        ]
+      },
+      "actor_email": "mvp_technologist@local",
+      "actor_display": "mvp_technologist@local",
+      "actor_resolved": true
+    },
+    {
+      "id": "aud_acfee644fe54",
+      "ts": 1785348598,
+      "actor_user_id": "ddd6f7ab469e4218afa4a3424578278d",
+      "org_id": "org_default",
+      "project_id": "",
+      "session_id": "",
+      "action": "recipe.update",
+      "entity_type": "recipe",
+      "entity_id": "01eae93a-3ff8-4330-968f-667e5440b60d",
+      "status": "ok",
+      "meta": {
+        "sku_id": "borsch_mvp",
+        "diff_json": {},
+        "diff_lines": []
+      },
+      "actor_email": "mvp_technologist@local",
+      "actor_display": "mvp_technologist@local",
+      "actor_resolved": true
+    },
+    {
+      "id": "aud_317d2b91ba3b",
+      "ts": 1785348584,
+      "actor_user_id": "ddd6f7ab469e4218afa4a3424578278d",
+      "org_id": "org_default",
+      "project_id": "",
+      "session_id": "",
+      "action": "recipe.create",
+      "entity_type": "recipe",
+      "entity_id": "01eae93a-3ff8-4330-968f-667e5440b60d",
+      "status": "ok",
+      "meta": {
+        "sku_id": "borsch_mvp",
+        "template_id": "cafe1633-fa48-4a76-ba33-c3a262978e78",
+        "diff_json": {
+          "dish_sku_id": {
+            "old": null,
+            "new": "food_container"
+          },
+          "heat_time_sec": {
+            "old": null,
+            "new": 90
+          },
+          "heating_power": {
+            "old": null,
+            "new": "medium"
+          },
+          "qty": {
+            "old": null,
+            "new": 20
+          },
+          "target_temp_c": {
+            "old": null,
+            "new": 75
+          }
+        },
+        "diff_lines": [
+          "dish_sku_id: — → food_container",
+          "heat_time_sec: — → 90",
+          "heating_power: — → medium",
+          "qty: — → 20",
+          "target_temp_c: — → 75"
+        ]
+      },
+      "actor_email": "mvp_technologist@local",
+      "actor_display": "mvp_technologist@local",
+      "actor_resolved": true
+    }
+  ],
+  "limit": 100,
+  "offset": 0,
+  "count": 6
+}

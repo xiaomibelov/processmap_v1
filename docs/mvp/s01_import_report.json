@@ -1,0 +1,2251 @@
+{
+  "ui_model": {
+    "process_template_id": "",
+    "recipe_context": {},
+    "process_entities": {},
+    "nodes": [
+      {
+        "id": "Event_05ckyt4",
+        "bpmn_type": "startEvent",
+        "name": "Заказ на суп",
+        "operation_code": null,
+        "display_name": null,
+        "params": {},
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": -148,
+        "y": 732,
+        "width": 36,
+        "height": 36
+      },
+      {
+        "id": "Gateway_0vjlz9j",
+        "bpmn_type": "exclusiveGateway",
+        "name": "Решение 1",
+        "operation_code": null,
+        "display_name": null,
+        "params": {},
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 125,
+        "y": 185,
+        "width": 50,
+        "height": 50
+      },
+      {
+        "id": "Event_0n3sbnt",
+        "bpmn_type": "intermediateCatchEvent",
+        "name": "Звуковой сигнал о новом заказе",
+        "operation_code": null,
+        "display_name": null,
+        "params": {},
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [
+          "messageEventDefinition"
+        ],
+        "x": -148,
+        "y": 992,
+        "width": 36,
+        "height": 36
+      },
+      {
+        "id": "Event_1h56up5",
+        "bpmn_type": "intermediateCatchEvent",
+        "name": "RESTART_SOUP",
+        "operation_code": null,
+        "display_name": null,
+        "params": {},
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [
+          "linkEventDefinition"
+        ],
+        "x": -28,
+        "y": 192,
+        "width": 36,
+        "height": 36
+      },
+      {
+        "id": "Activity_1k9t4a7",
+        "bpmn_type": "manualTask",
+        "name": "Выдать контейнер-1 из холодильника",
+        "operation_code": null,
+        "display_name": "Выдать контейнер-1 из холодильника",
+        "params": {
+          "target_object_ref": "container_1",
+          "equipment_ref": "scheduler_or_fixed_runtime"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 100,
+        "y": 50,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_171znbt",
+        "bpmn_type": "manualTask",
+        "name": "Перетарить (содержимое) контейнер-1 в контейнер-2",
+        "operation_code": "transfer_contents",
+        "display_name": "Перетарить (содержимое) контейнер-1 в контейнер-2",
+        "params": {
+          "source_container_ref": "container_1",
+          "target_container_ref": "container_2"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 3410,
+        "y": 620,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_0eqhdco",
+        "bpmn_type": "manualTask",
+        "name": "Перенести контейнер-1 в устройство-вскрытия-1",
+        "operation_code": "move_object",
+        "display_name": "Перенести контейнер-1 в устройство-вскрытия-1",
+        "params": {
+          "object_ref": "container_1",
+          "target_ref": "opener_1"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 690,
+        "y": 740,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_1grwh4i",
+        "bpmn_type": "manualTask",
+        "name": "Перенести контейнер-2 в зону упаковки",
+        "operation_code": "move_object",
+        "display_name": "Перенести контейнер-2 в зону упаковки",
+        "params": {
+          "object_ref": "container_2",
+          "target_ref": "packaging_zone_1"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 5210,
+        "y": 700,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Event_1pqduoq",
+        "bpmn_type": "endEvent",
+        "name": "Процесс завершён",
+        "operation_code": null,
+        "display_name": null,
+        "params": {},
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 5582,
+        "y": 722,
+        "width": 36,
+        "height": 36
+      },
+      {
+        "id": "Activity_1vz1obl",
+        "bpmn_type": "manualTask",
+        "name": "Открыть урну-1",
+        "operation_code": "open_equipment",
+        "display_name": "Открыть урну-1",
+        "params": {
+          "equipment_ref": "bin_1"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 3830,
+        "y": 380,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_1gmqktc",
+        "bpmn_type": "manualTask",
+        "name": "Открыть СВЧ-1",
+        "operation_code": "open_equipment",
+        "display_name": "Открыть СВЧ-1",
+        "params": {
+          "equipment_ref": "microwave_1"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 2300,
+        "y": 380,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_164zb9r",
+        "bpmn_type": "manualTask",
+        "name": "Перенести контейнер-2 в запайщик-1",
+        "operation_code": "move_object",
+        "display_name": "Перенести контейнер-2 в запайщик-1",
+        "params": {
+          "object_ref": "container_2",
+          "target_ref": "sealer_1"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 4440,
+        "y": 700,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Gateway_1h1jttk",
+        "bpmn_type": "parallelGateway",
+        "name": "Решение 1",
+        "operation_code": null,
+        "display_name": null,
+        "params": {},
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 2085,
+        "y": 395,
+        "width": 50,
+        "height": 50
+      },
+      {
+        "id": "Activity_1spcm9y",
+        "bpmn_type": "manualTask",
+        "name": "Вскрыть контейнер-1 в устройство-вскрытия-1",
+        "operation_code": "open_container",
+        "display_name": "Вскрыть контейнер-1 в устройство-вскрытия-1",
+        "params": {
+          "container_ref": "container_1"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 970,
+        "y": 380,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_0eh2m0x",
+        "bpmn_type": "manualTask",
+        "name": "Запустить запайщик-1",
+        "operation_code": "seal_container",
+        "display_name": "Запустить запайщик-1",
+        "params": {
+          "target_container_ref": "container_2",
+          "equipment_ref": "sealer_1"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 4780,
+        "y": 380,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_1tsk3kf",
+        "bpmn_type": "manualTask",
+        "name": "Перенести контейнер-1 в СВЧ-1",
+        "operation_code": "move_object",
+        "display_name": "Перенести контейнер-1 в СВЧ-1",
+        "params": {
+          "object_ref": "container_1",
+          "target_ref": "microwave_1",
+          "source_container_ref": "required",
+          "equipment_ref": "required_runtime"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 1330,
+        "y": 840,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_1tghc67",
+        "bpmn_type": "manualTask",
+        "name": "Открыть СВЧ-1",
+        "operation_code": "open_equipment",
+        "display_name": "Открыть СВЧ-1",
+        "params": {
+          "container_ref": "opener_1",
+          "equipment_ref": "microwave_1"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 1180,
+        "y": 380,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_0238wyw",
+        "bpmn_type": "manualTask",
+        "name": "Настроить СВЧ-1",
+        "operation_code": "configure_equipment",
+        "display_name": "Настроить СВЧ-1",
+        "params": {
+          "equipment_ref": "microwave_1"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 1720,
+        "y": 210,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_1jw2q8u",
+        "bpmn_type": "manualTask",
+        "name": "Закрыть СВЧ-1",
+        "operation_code": "close_equipment",
+        "display_name": "Закрыть СВЧ-1",
+        "params": {
+          "equipment_ref": "microwave_1"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 1570,
+        "y": 210,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_1r18m6r",
+        "bpmn_type": "manualTask",
+        "name": "Перенести контейнер-2 в устройство-перетаривания-1",
+        "operation_code": "move_object",
+        "display_name": "Перенести контейнер-2 в устройство-перетаривания-1",
+        "params": {
+          "object_ref": "container_2",
+          "target_ref": "assembly_zone_1"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 1860,
+        "y": 590,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Gateway_0onqk3g",
+        "bpmn_type": "parallelGateway",
+        "name": "Решение 2",
+        "operation_code": null,
+        "display_name": null,
+        "params": {},
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 1495,
+        "y": 325,
+        "width": 50,
+        "height": 50
+      },
+      {
+        "id": "Activity_1epghx4",
+        "bpmn_type": "manualTask",
+        "name": "Открыть урну-1",
+        "operation_code": "open_equipment",
+        "display_name": "Открыть урну-1",
+        "params": {
+          "equipment_ref": "bin_1"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 4320,
+        "y": 380,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_12cgz6a",
+        "bpmn_type": "manualTask",
+        "name": "Перенести контейнер-1 в урну-1",
+        "operation_code": "move_object",
+        "display_name": "Перенести контейнер-1 в урну-1",
+        "params": {
+          "object_ref": "container_1",
+          "target_ref": "bin_1"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 4130,
+        "y": 700,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_0flva8y",
+        "bpmn_type": "manualTask",
+        "name": "Закрыть СВЧ-1",
+        "operation_code": "close_equipment",
+        "display_name": "Закрыть СВЧ-1",
+        "params": {
+          "equipment_ref": "microwave_1"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 2940,
+        "y": 380,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_1nmuo3d",
+        "bpmn_type": "manualTask",
+        "name": "Поднести контейнер-1 к устройству-перетаривания-1",
+        "operation_code": "grasp_object",
+        "display_name": "Поднести контейнер-1 к устройству-перетаривания-1",
+        "params": {
+          "object_ref": "container_1",
+          "source_container_ref": "required"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 2550,
+        "y": 620,
+        "width": 130,
+        "height": 80
+      },
+      {
+        "id": "Activity_07dw2ru",
+        "bpmn_type": "manualTask",
+        "name": "Запустить СВЧ-1",
+        "operation_code": "start_equipment",
+        "display_name": "Запустить СВЧ-1",
+        "params": {
+          "equipment_ref": "microwave_1",
+          "object_ref": "container_1",
+          "source_container_ref": "required"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 1970,
+        "y": 210,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_1i8s5wl",
+        "bpmn_type": "manualTask",
+        "name": "Выдать контейнер-2 из устройства-выдачи-1",
+        "operation_code": null,
+        "display_name": "Выдать контейнер-2 из устройства-выдачи-1",
+        "params": {
+          "target_object_ref": "container_2"
+        },
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 1570,
+        "y": 440,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_03kv40i",
+        "bpmn_type": "task",
+        "name": "",
+        "operation_code": null,
+        "display_name": null,
+        "params": {},
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 3650,
+        "y": 1820,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_0jv0gg5",
+        "bpmn_type": "task",
+        "name": "",
+        "operation_code": null,
+        "display_name": null,
+        "params": {},
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 3800,
+        "y": 1820,
+        "width": 100,
+        "height": 80
+      },
+      {
+        "id": "Activity_020el8s",
+        "bpmn_type": "task",
+        "name": "",
+        "operation_code": null,
+        "display_name": null,
+        "params": {},
+        "outputs": {},
+        "recipe_params": [],
+        "event_definitions": [],
+        "x": 3950,
+        "y": 1820,
+        "width": 100,
+        "height": 80
+      }
+    ],
+    "flows": [
+      {
+        "id": "Flow_1f9se1h",
+        "source_ref": "Event_05ckyt4",
+        "target_ref": "Event_0n3sbnt",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_1ywuavn",
+        "source_ref": "Event_1h56up5",
+        "target_ref": "Gateway_0vjlz9j",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_1ths047",
+        "source_ref": "Gateway_0vjlz9j",
+        "target_ref": "Activity_1k9t4a7",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_1c08hib",
+        "source_ref": "Activity_1k9t4a7",
+        "target_ref": "Activity_0eqhdco",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_0tq27op",
+        "source_ref": "Event_0n3sbnt",
+        "target_ref": "Gateway_0vjlz9j",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_1wjo177",
+        "source_ref": "Activity_1grwh4i",
+        "target_ref": "Event_1pqduoq",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_1bxawcq",
+        "source_ref": "Gateway_1h1jttk",
+        "target_ref": "Activity_1gmqktc",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_0751kfw",
+        "source_ref": "Activity_171znbt",
+        "target_ref": "Activity_1vz1obl",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_1wjdjuf",
+        "source_ref": "Activity_0eqhdco",
+        "target_ref": "Activity_1spcm9y",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_16hvrsl",
+        "source_ref": "Activity_1spcm9y",
+        "target_ref": "Activity_1tghc67",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_1c33hou",
+        "source_ref": "Activity_0eh2m0x",
+        "target_ref": "Activity_1grwh4i",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_0rhxz7j",
+        "source_ref": "Activity_1vz1obl",
+        "target_ref": "Activity_12cgz6a",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_002q8sl",
+        "source_ref": "Activity_1tghc67",
+        "target_ref": "Activity_1tsk3kf",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_1l3471u",
+        "source_ref": "Activity_0238wyw",
+        "target_ref": "Activity_07dw2ru",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_0bpycud",
+        "source_ref": "Activity_1jw2q8u",
+        "target_ref": "Activity_0238wyw",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_0jat0ia",
+        "source_ref": "Activity_1tsk3kf",
+        "target_ref": "Gateway_0onqk3g",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_1rtjto3",
+        "source_ref": "Gateway_0onqk3g",
+        "target_ref": "Activity_1jw2q8u",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_0bx8s67",
+        "source_ref": "Gateway_0onqk3g",
+        "target_ref": "Activity_1i8s5wl",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_1cyaaxm",
+        "source_ref": "Activity_07dw2ru",
+        "target_ref": "Gateway_1h1jttk",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_0c7c67s",
+        "source_ref": "Activity_1i8s5wl",
+        "target_ref": "Activity_1r18m6r",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_0p2pgt1",
+        "source_ref": "Activity_1r18m6r",
+        "target_ref": "Gateway_1h1jttk",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_0hae0rs",
+        "source_ref": "Activity_1gmqktc",
+        "target_ref": "Activity_1nmuo3d",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_1ub7e5f",
+        "source_ref": "Activity_1nmuo3d",
+        "target_ref": "Activity_0flva8y",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_10st7o7",
+        "source_ref": "Activity_0flva8y",
+        "target_ref": "Activity_171znbt",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_1kb9qr6",
+        "source_ref": "Activity_12cgz6a",
+        "target_ref": "Activity_1epghx4",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_10nubd7",
+        "source_ref": "Activity_1epghx4",
+        "target_ref": "Activity_164zb9r",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_0sfduiq",
+        "source_ref": "Activity_164zb9r",
+        "target_ref": "Activity_0eh2m0x",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_1unfm5e",
+        "source_ref": "Activity_03kv40i",
+        "target_ref": "Activity_0jv0gg5",
+        "name": "",
+        "condition": ""
+      },
+      {
+        "id": "Flow_1kew779",
+        "source_ref": "Activity_0jv0gg5",
+        "target_ref": "Activity_020el8s",
+        "name": "",
+        "condition": ""
+      }
+    ],
+    "participant": {
+      "id": "Participant_08pyz2p",
+      "name": "AS IS Супы",
+      "process_ref": "Process_1eviy9t",
+      "x": -330,
+      "y": -80,
+      "width": 6120,
+      "height": 2340
+    },
+    "lanes": [
+      {
+        "id": "Lane_1e3l9p9",
+        "name": "Работа манипуляторов",
+        "flow_node_refs": [
+          "Event_05ckyt4",
+          "Event_0n3sbnt",
+          "Activity_171znbt",
+          "Activity_0eqhdco",
+          "Activity_1grwh4i",
+          "Event_1pqduoq",
+          "Activity_164zb9r",
+          "Activity_1tsk3kf",
+          "Activity_1r18m6r",
+          "Activity_12cgz6a",
+          "Activity_1nmuo3d"
+        ],
+        "x": -300,
+        "y": 530,
+        "width": 6090,
+        "height": 900
+      },
+      {
+        "id": "Lane_03dntrc",
+        "name": "Работа оборудования",
+        "flow_node_refs": [
+          "Gateway_0vjlz9j",
+          "Event_1h56up5",
+          "Activity_1k9t4a7",
+          "Activity_1vz1obl",
+          "Activity_1gmqktc",
+          "Gateway_1h1jttk",
+          "Activity_1spcm9y",
+          "Activity_0eh2m0x",
+          "Activity_1tghc67",
+          "Activity_0238wyw",
+          "Activity_1jw2q8u",
+          "Gateway_0onqk3g",
+          "Activity_1epghx4",
+          "Activity_0flva8y",
+          "Activity_07dw2ru",
+          "Activity_1i8s5wl"
+        ],
+        "x": -300,
+        "y": -80,
+        "width": 6090,
+        "height": 610
+      },
+      {
+        "id": "Lane_1m49673",
+        "name": "Работа оператора",
+        "flow_node_refs": [
+          "Activity_03kv40i",
+          "Activity_0jv0gg5",
+          "Activity_020el8s"
+        ],
+        "x": -300,
+        "y": 1430,
+        "width": 6090,
+        "height": 830
+      }
+    ]
+  },
+  "report": {
+    "summary": {
+      "errors": 114,
+      "warnings": 54,
+      "nodes": 30,
+      "flows": 29
+    },
+    "findings": [
+      {
+        "severity": "warning",
+        "code": "MISSING_PROCESS_METADATA",
+        "element_id": "Process_1eviy9t",
+        "element_name": "",
+        "message": "отсутствует pm:metadata на уровне процесса",
+        "recommendation": "добавить pm:metadata с process_template_id и process_entities"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_1k9t4a7",
+        "element_name": "Выдать контейнер-1 из холодильника",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1k9t4a7",
+        "element_name": "Выдать контейнер-1 из холодильника",
+        "message": "camunda:property 'equipment_type_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1k9t4a7",
+        "element_name": "Выдать контейнер-1 из холодильника",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_171znbt",
+        "element_name": "Перетарить (содержимое) контейнер-1 в контейнер-2",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_171znbt",
+        "element_name": "Перетарить (содержимое) контейнер-1 в контейнер-2",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_171znbt",
+        "element_name": "Перетарить (содержимое) контейнер-1 в контейнер-2",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "DOLLAR_SUBSTITUTION",
+        "element_id": "Activity_171znbt",
+        "element_name": "Перетарить (содержимое) контейнер-1 в контейнер-2",
+        "message": "${...}-подстановка в значении camunda:property 'dish_sku_id': ${recipe_context.dish_sku_id}",
+        "recommendation": "удалить/заменить на имя переменной recipe_context"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_171znbt",
+        "element_name": "Перетарить (содержимое) контейнер-1 в контейнер-2",
+        "message": "camunda:property 'dish_sku_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_171znbt",
+        "element_name": "Перетарить (содержимое) контейнер-1 в контейнер-2",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "warning",
+        "code": "UNKNOWN_CAMUNDA_PROPERTY",
+        "element_id": "Activity_171znbt",
+        "element_name": "Перетарить (содержимое) контейнер-1 в контейнер-2",
+        "message": "нераспознанная camunda:property 'source_container_state'",
+        "recommendation": "проверить: переименовать в params.*/outputs.* или удалить"
+      },
+      {
+        "severity": "warning",
+        "code": "UNKNOWN_CAMUNDA_PROPERTY",
+        "element_id": "Activity_171znbt",
+        "element_name": "Перетарить (содержимое) контейнер-1 в контейнер-2",
+        "message": "нераспознанная camunda:property 'target_container_state'",
+        "recommendation": "проверить: переименовать в params.*/outputs.* или удалить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_0eqhdco",
+        "element_name": "Перенести контейнер-1 в устройство-вскрытия-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0eqhdco",
+        "element_name": "Перенести контейнер-1 в устройство-вскрытия-1",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "warning",
+        "code": "UNKNOWN_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0eqhdco",
+        "element_name": "Перенести контейнер-1 в устройство-вскрытия-1",
+        "message": "нераспознанная camunda:property 'target_kind'",
+        "recommendation": "проверить: переименовать в params.*/outputs.* или удалить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0eqhdco",
+        "element_name": "Перенести контейнер-1 в устройство-вскрытия-1",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0eqhdco",
+        "element_name": "Перенести контейнер-1 в устройство-вскрытия-1",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_1grwh4i",
+        "element_name": "Перенести контейнер-2 в зону упаковки",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1grwh4i",
+        "element_name": "Перенести контейнер-2 в зону упаковки",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1grwh4i",
+        "element_name": "Перенести контейнер-2 в зону упаковки",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "warning",
+        "code": "UNKNOWN_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1grwh4i",
+        "element_name": "Перенести контейнер-2 в зону упаковки",
+        "message": "нераспознанная camunda:property 'target_kind'",
+        "recommendation": "проверить: переименовать в params.*/outputs.* или удалить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1grwh4i",
+        "element_name": "Перенести контейнер-2 в зону упаковки",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_1vz1obl",
+        "element_name": "Открыть урну-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1vz1obl",
+        "element_name": "Открыть урну-1",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1vz1obl",
+        "element_name": "Открыть урну-1",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1vz1obl",
+        "element_name": "Открыть урну-1",
+        "message": "camunda:property 'equipment_type_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1vz1obl",
+        "element_name": "Открыть урну-1",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_1gmqktc",
+        "element_name": "Открыть СВЧ-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1gmqktc",
+        "element_name": "Открыть СВЧ-1",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1gmqktc",
+        "element_name": "Открыть СВЧ-1",
+        "message": "camunda:property 'equipment_type_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1gmqktc",
+        "element_name": "Открыть СВЧ-1",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1gmqktc",
+        "element_name": "Открыть СВЧ-1",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_164zb9r",
+        "element_name": "Перенести контейнер-2 в запайщик-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_164zb9r",
+        "element_name": "Перенести контейнер-2 в запайщик-1",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "warning",
+        "code": "UNKNOWN_CAMUNDA_PROPERTY",
+        "element_id": "Activity_164zb9r",
+        "element_name": "Перенести контейнер-2 в запайщик-1",
+        "message": "нераспознанная camunda:property 'target_kind'",
+        "recommendation": "проверить: переименовать в params.*/outputs.* или удалить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_164zb9r",
+        "element_name": "Перенести контейнер-2 в запайщик-1",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_164zb9r",
+        "element_name": "Перенести контейнер-2 в запайщик-1",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_1spcm9y",
+        "element_name": "Вскрыть контейнер-1 в устройство-вскрытия-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1spcm9y",
+        "element_name": "Вскрыть контейнер-1 в устройство-вскрытия-1",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_0eh2m0x",
+        "element_name": "Запустить запайщик-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0eh2m0x",
+        "element_name": "Запустить запайщик-1",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0eh2m0x",
+        "element_name": "Запустить запайщик-1",
+        "message": "camunda:property 'equipment_type_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0eh2m0x",
+        "element_name": "Запустить запайщик-1",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0eh2m0x",
+        "element_name": "Запустить запайщик-1",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0eh2m0x",
+        "element_name": "Запустить запайщик-1",
+        "message": "camunda:property 'seal_method' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_1tsk3kf",
+        "element_name": "Перенести контейнер-1 в СВЧ-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1tsk3kf",
+        "element_name": "Перенести контейнер-1 в СВЧ-1",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1tsk3kf",
+        "element_name": "Перенести контейнер-1 в СВЧ-1",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "warning",
+        "code": "UNKNOWN_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1tsk3kf",
+        "element_name": "Перенести контейнер-1 в СВЧ-1",
+        "message": "нераспознанная camunda:property 'target_kind'",
+        "recommendation": "проверить: переименовать в params.*/outputs.* или удалить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1tsk3kf",
+        "element_name": "Перенести контейнер-1 в СВЧ-1",
+        "message": "camunda:property 'equipment_type_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1tsk3kf",
+        "element_name": "Перенести контейнер-1 в СВЧ-1",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_1tghc67",
+        "element_name": "Открыть СВЧ-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1tghc67",
+        "element_name": "Открыть СВЧ-1",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1tghc67",
+        "element_name": "Открыть СВЧ-1",
+        "message": "camunda:property 'equipment_type_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1tghc67",
+        "element_name": "Открыть СВЧ-1",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1tghc67",
+        "element_name": "Открыть СВЧ-1",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_0238wyw",
+        "element_name": "Настроить СВЧ-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0238wyw",
+        "element_name": "Настроить СВЧ-1",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0238wyw",
+        "element_name": "Настроить СВЧ-1",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0238wyw",
+        "element_name": "Настроить СВЧ-1",
+        "message": "camunda:property 'equipment_type_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "DOLLAR_SUBSTITUTION",
+        "element_id": "Activity_0238wyw",
+        "element_name": "Настроить СВЧ-1",
+        "message": "${...}-подстановка в значении camunda:property 'power_mode': ${recipe_context.power_mode}",
+        "recommendation": "удалить/заменить на имя переменной recipe_context"
+      },
+      {
+        "severity": "warning",
+        "code": "UNKNOWN_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0238wyw",
+        "element_name": "Настроить СВЧ-1",
+        "message": "нераспознанная camunda:property 'power_mode'",
+        "recommendation": "проверить: переименовать в params.*/outputs.* или удалить"
+      },
+      {
+        "severity": "error",
+        "code": "DOLLAR_SUBSTITUTION",
+        "element_id": "Activity_0238wyw",
+        "element_name": "Настроить СВЧ-1",
+        "message": "${...}-подстановка в значении camunda:property 'heat_time_sec': ${recipe_context.heat_time_sec}",
+        "recommendation": "удалить/заменить на имя переменной recipe_context"
+      },
+      {
+        "severity": "warning",
+        "code": "UNKNOWN_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0238wyw",
+        "element_name": "Настроить СВЧ-1",
+        "message": "нераспознанная camunda:property 'heat_time_sec'",
+        "recommendation": "проверить: переименовать в params.*/outputs.* или удалить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0238wyw",
+        "element_name": "Настроить СВЧ-1",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "warning",
+        "code": "UNKNOWN_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0238wyw",
+        "element_name": "Настроить СВЧ-1",
+        "message": "нераспознанная camunda:property 'recipe_context.power_mode'",
+        "recommendation": "проверить: переименовать в params.*/outputs.* или удалить"
+      },
+      {
+        "severity": "warning",
+        "code": "UNKNOWN_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0238wyw",
+        "element_name": "Настроить СВЧ-1",
+        "message": "нераспознанная camunda:property 'recipe_context.heat_time_sec'",
+        "recommendation": "проверить: переименовать в params.*/outputs.* или удалить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_1jw2q8u",
+        "element_name": "Закрыть СВЧ-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1jw2q8u",
+        "element_name": "Закрыть СВЧ-1",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1jw2q8u",
+        "element_name": "Закрыть СВЧ-1",
+        "message": "camunda:property 'equipment_type_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1jw2q8u",
+        "element_name": "Закрыть СВЧ-1",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1jw2q8u",
+        "element_name": "Закрыть СВЧ-1",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_1r18m6r",
+        "element_name": "Перенести контейнер-2 в устройство-перетаривания-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1r18m6r",
+        "element_name": "Перенести контейнер-2 в устройство-перетаривания-1",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "warning",
+        "code": "UNKNOWN_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1r18m6r",
+        "element_name": "Перенести контейнер-2 в устройство-перетаривания-1",
+        "message": "нераспознанная camunda:property 'target_kind'",
+        "recommendation": "проверить: переименовать в params.*/outputs.* или удалить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1r18m6r",
+        "element_name": "Перенести контейнер-2 в устройство-перетаривания-1",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1r18m6r",
+        "element_name": "Перенести контейнер-2 в устройство-перетаривания-1",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_1epghx4",
+        "element_name": "Открыть урну-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1epghx4",
+        "element_name": "Открыть урну-1",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1epghx4",
+        "element_name": "Открыть урну-1",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1epghx4",
+        "element_name": "Открыть урну-1",
+        "message": "camunda:property 'equipment_type_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1epghx4",
+        "element_name": "Открыть урну-1",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_12cgz6a",
+        "element_name": "Перенести контейнер-1 в урну-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_12cgz6a",
+        "element_name": "Перенести контейнер-1 в урну-1",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "warning",
+        "code": "UNKNOWN_CAMUNDA_PROPERTY",
+        "element_id": "Activity_12cgz6a",
+        "element_name": "Перенести контейнер-1 в урну-1",
+        "message": "нераспознанная camunda:property 'target_kind'",
+        "recommendation": "проверить: переименовать в params.*/outputs.* или удалить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_12cgz6a",
+        "element_name": "Перенести контейнер-1 в урну-1",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_12cgz6a",
+        "element_name": "Перенести контейнер-1 в урну-1",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_0flva8y",
+        "element_name": "Закрыть СВЧ-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0flva8y",
+        "element_name": "Закрыть СВЧ-1",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0flva8y",
+        "element_name": "Закрыть СВЧ-1",
+        "message": "camunda:property 'equipment_type_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0flva8y",
+        "element_name": "Закрыть СВЧ-1",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_0flva8y",
+        "element_name": "Закрыть СВЧ-1",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_1nmuo3d",
+        "element_name": "Поднести контейнер-1 к устройству-перетаривания-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1nmuo3d",
+        "element_name": "Поднести контейнер-1 к устройству-перетаривания-1",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "PLACEHOLDER_VALUE",
+        "element_id": "Activity_1nmuo3d",
+        "element_name": "Поднести контейнер-1 к устройству-перетаривания-1",
+        "message": "camunda:property 'purpose' содержит заглушку '-'",
+        "recommendation": "заполнить значение или удалить свойство"
+      },
+      {
+        "severity": "warning",
+        "code": "UNKNOWN_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1nmuo3d",
+        "element_name": "Поднести контейнер-1 к устройству-перетаривания-1",
+        "message": "нераспознанная camunda:property 'purpose'",
+        "recommendation": "проверить: переименовать в params.*/outputs.* или удалить"
+      },
+      {
+        "severity": "error",
+        "code": "PLACEHOLDER_VALUE",
+        "element_id": "Activity_1nmuo3d",
+        "element_name": "Поднести контейнер-1 к устройству-перетаривания-1",
+        "message": "camunda:property 'validator_profile_id' содержит заглушку '-'",
+        "recommendation": "заполнить значение или удалить свойство"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1nmuo3d",
+        "element_name": "Поднести контейнер-1 к устройству-перетаривания-1",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "warning",
+        "code": "UNKNOWN_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1nmuo3d",
+        "element_name": "Поднести контейнер-1 к устройству-перетаривания-1",
+        "message": "нераспознанная camunda:property 'source_container_state'",
+        "recommendation": "проверить: переименовать в params.*/outputs.* или удалить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1nmuo3d",
+        "element_name": "Поднести контейнер-1 к устройству-перетаривания-1",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_07dw2ru",
+        "element_name": "Запустить СВЧ-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_07dw2ru",
+        "element_name": "Запустить СВЧ-1",
+        "message": "camunda:property 'operation_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_07dw2ru",
+        "element_name": "Запустить СВЧ-1",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_07dw2ru",
+        "element_name": "Запустить СВЧ-1",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_07dw2ru",
+        "element_name": "Запустить СВЧ-1",
+        "message": "camunda:property 'equipment_type_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_TASK_TYPE",
+        "element_id": "Activity_1i8s5wl",
+        "element_name": "Выдать контейнер-2 из устройства-выдачи-1",
+        "message": "устаревший тип задачи bpmn:manualTask; в v0.3 допустим только bpmn:task",
+        "recommendation": "заменить на bpmn:task с operation_code"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1i8s5wl",
+        "element_name": "Выдать контейнер-2 из устройства-выдачи-1",
+        "message": "camunda:property 'actor_kind' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "PLACEHOLDER_VALUE",
+        "element_id": "Activity_1i8s5wl",
+        "element_name": "Выдать контейнер-2 из устройства-выдачи-1",
+        "message": "camunda:property 'equipment_type_id' содержит заглушку '-'",
+        "recommendation": "заполнить значение или удалить свойство"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1i8s5wl",
+        "element_name": "Выдать контейнер-2 из устройства-выдачи-1",
+        "message": "camunda:property 'equipment_type_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "DOLLAR_SUBSTITUTION",
+        "element_id": "Activity_1i8s5wl",
+        "element_name": "Выдать контейнер-2 из устройства-выдачи-1",
+        "message": "${...}-подстановка в значении camunda:property 'dish_sku_id': ${recipe_context.dish_sku_id}",
+        "recommendation": "удалить/заменить на имя переменной recipe_context"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1i8s5wl",
+        "element_name": "Выдать контейнер-2 из устройства-выдачи-1",
+        "message": "camunda:property 'dish_sku_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "error",
+        "code": "DOLLAR_SUBSTITUTION",
+        "element_id": "Activity_1i8s5wl",
+        "element_name": "Выдать контейнер-2 из устройства-выдачи-1",
+        "message": "${...}-подстановка в значении camunda:property 'qty': ${recipe_context.qty}",
+        "recommendation": "удалить/заменить на имя переменной recipe_context"
+      },
+      {
+        "severity": "warning",
+        "code": "UNKNOWN_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1i8s5wl",
+        "element_name": "Выдать контейнер-2 из устройства-выдачи-1",
+        "message": "нераспознанная camunda:property 'qty'",
+        "recommendation": "проверить: переименовать в params.*/outputs.* или удалить"
+      },
+      {
+        "severity": "error",
+        "code": "PLACEHOLDER_VALUE",
+        "element_id": "Activity_1i8s5wl",
+        "element_name": "Выдать контейнер-2 из устройства-выдачи-1",
+        "message": "camunda:property 'validator_profile_id' содержит заглушку '-'",
+        "recommendation": "заполнить значение или удалить свойство"
+      },
+      {
+        "severity": "error",
+        "code": "LEGACY_CAMUNDA_PROPERTY",
+        "element_id": "Activity_1i8s5wl",
+        "element_name": "Выдать контейнер-2 из устройства-выдачи-1",
+        "message": "camunda:property 'validator_profile_id' не используется в v0.3",
+        "recommendation": "удалить/заменить"
+      },
+      {
+        "severity": "warning",
+        "code": "EMPTY_DISPLAY_NAME",
+        "element_id": "Activity_03kv40i",
+        "element_name": "",
+        "message": "display_name пустой",
+        "recommendation": "заполнить display_name"
+      },
+      {
+        "severity": "warning",
+        "code": "EMPTY_DISPLAY_NAME",
+        "element_id": "Activity_0jv0gg5",
+        "element_name": "",
+        "message": "display_name пустой",
+        "recommendation": "заполнить display_name"
+      },
+      {
+        "severity": "warning",
+        "code": "EMPTY_DISPLAY_NAME",
+        "element_id": "Activity_020el8s",
+        "element_name": "",
+        "message": "display_name пустой",
+        "recommendation": "заполнить display_name"
+      },
+      {
+        "severity": "error",
+        "code": "UNKNOWN_OPERATION_CODE",
+        "element_id": "Activity_1k9t4a7",
+        "element_name": "Выдать контейнер-1 из холодильника",
+        "message": "operation_code отсутствует",
+        "recommendation": "указать operation_code из каталога"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1k9t4a7",
+        "element_name": "Выдать контейнер-1 из холодильника",
+        "message": "параметр 'target_object_ref' ссылается на необъявленную сущность 'container_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1k9t4a7",
+        "element_name": "Выдать контейнер-1 из холодильника",
+        "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'scheduler_or_fixed_runtime'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "error",
+        "code": "UNKNOWN_OPERATION_CODE",
+        "element_id": "Activity_171znbt",
+        "element_name": "Перетарить (содержимое) контейнер-1 в контейнер-2",
+        "message": "неизвестный operation_code 'transfer_contents'",
+        "recommendation": "использовать operation_code из каталога"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_171znbt",
+        "element_name": "Перетарить (содержимое) контейнер-1 в контейнер-2",
+        "message": "параметр 'source_container_ref' ссылается на необъявленную сущность 'container_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_171znbt",
+        "element_name": "Перетарить (содержимое) контейнер-1 в контейнер-2",
+        "message": "параметр 'target_container_ref' ссылается на необъявленную сущность 'container_2'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "error",
+        "code": "UNKNOWN_OPERATION_CODE",
+        "element_id": "Activity_0eqhdco",
+        "element_name": "Перенести контейнер-1 в устройство-вскрытия-1",
+        "message": "неизвестный operation_code 'move_object'",
+        "recommendation": "использовать operation_code из каталога"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_0eqhdco",
+        "element_name": "Перенести контейнер-1 в устройство-вскрытия-1",
+        "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_0eqhdco",
+        "element_name": "Перенести контейнер-1 в устройство-вскрытия-1",
+        "message": "параметр 'target_ref' ссылается на необъявленную сущность 'opener_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "error",
+        "code": "UNKNOWN_OPERATION_CODE",
+        "element_id": "Activity_1grwh4i",
+        "element_name": "Перенести контейнер-2 в зону упаковки",
+        "message": "неизвестный operation_code 'move_object'",
+        "recommendation": "использовать operation_code из каталога"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1grwh4i",
+        "element_name": "Перенести контейнер-2 в зону упаковки",
+        "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_2'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1grwh4i",
+        "element_name": "Перенести контейнер-2 в зону упаковки",
+        "message": "параметр 'target_ref' ссылается на необъявленную сущность 'packaging_zone_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1vz1obl",
+        "element_name": "Открыть урну-1",
+        "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'bin_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1gmqktc",
+        "element_name": "Открыть СВЧ-1",
+        "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'microwave_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "error",
+        "code": "UNKNOWN_OPERATION_CODE",
+        "element_id": "Activity_164zb9r",
+        "element_name": "Перенести контейнер-2 в запайщик-1",
+        "message": "неизвестный operation_code 'move_object'",
+        "recommendation": "использовать operation_code из каталога"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_164zb9r",
+        "element_name": "Перенести контейнер-2 в запайщик-1",
+        "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_2'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_164zb9r",
+        "element_name": "Перенести контейнер-2 в запайщик-1",
+        "message": "параметр 'target_ref' ссылается на необъявленную сущность 'sealer_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1spcm9y",
+        "element_name": "Вскрыть контейнер-1 в устройство-вскрытия-1",
+        "message": "параметр 'container_ref' ссылается на необъявленную сущность 'container_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "error",
+        "code": "UNKNOWN_OPERATION_CODE",
+        "element_id": "Activity_0eh2m0x",
+        "element_name": "Запустить запайщик-1",
+        "message": "неизвестный operation_code 'seal_container'",
+        "recommendation": "использовать operation_code из каталога"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_0eh2m0x",
+        "element_name": "Запустить запайщик-1",
+        "message": "параметр 'target_container_ref' ссылается на необъявленную сущность 'container_2'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_0eh2m0x",
+        "element_name": "Запустить запайщик-1",
+        "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'sealer_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "error",
+        "code": "UNKNOWN_OPERATION_CODE",
+        "element_id": "Activity_1tsk3kf",
+        "element_name": "Перенести контейнер-1 в СВЧ-1",
+        "message": "неизвестный operation_code 'move_object'",
+        "recommendation": "использовать operation_code из каталога"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1tsk3kf",
+        "element_name": "Перенести контейнер-1 в СВЧ-1",
+        "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1tsk3kf",
+        "element_name": "Перенести контейнер-1 в СВЧ-1",
+        "message": "параметр 'target_ref' ссылается на необъявленную сущность 'microwave_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1tsk3kf",
+        "element_name": "Перенести контейнер-1 в СВЧ-1",
+        "message": "параметр 'source_container_ref' ссылается на необъявленную сущность 'required'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1tsk3kf",
+        "element_name": "Перенести контейнер-1 в СВЧ-1",
+        "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'required_runtime'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1tghc67",
+        "element_name": "Открыть СВЧ-1",
+        "message": "параметр 'container_ref' ссылается на необъявленную сущность 'opener_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1tghc67",
+        "element_name": "Открыть СВЧ-1",
+        "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'microwave_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "error",
+        "code": "UNKNOWN_OPERATION_CODE",
+        "element_id": "Activity_0238wyw",
+        "element_name": "Настроить СВЧ-1",
+        "message": "неизвестный operation_code 'configure_equipment'",
+        "recommendation": "использовать operation_code из каталога"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_0238wyw",
+        "element_name": "Настроить СВЧ-1",
+        "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'microwave_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1jw2q8u",
+        "element_name": "Закрыть СВЧ-1",
+        "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'microwave_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "error",
+        "code": "UNKNOWN_OPERATION_CODE",
+        "element_id": "Activity_1r18m6r",
+        "element_name": "Перенести контейнер-2 в устройство-перетаривания-1",
+        "message": "неизвестный operation_code 'move_object'",
+        "recommendation": "использовать operation_code из каталога"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1r18m6r",
+        "element_name": "Перенести контейнер-2 в устройство-перетаривания-1",
+        "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_2'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1r18m6r",
+        "element_name": "Перенести контейнер-2 в устройство-перетаривания-1",
+        "message": "параметр 'target_ref' ссылается на необъявленную сущность 'assembly_zone_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1epghx4",
+        "element_name": "Открыть урну-1",
+        "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'bin_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "error",
+        "code": "UNKNOWN_OPERATION_CODE",
+        "element_id": "Activity_12cgz6a",
+        "element_name": "Перенести контейнер-1 в урну-1",
+        "message": "неизвестный operation_code 'move_object'",
+        "recommendation": "использовать operation_code из каталога"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_12cgz6a",
+        "element_name": "Перенести контейнер-1 в урну-1",
+        "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_12cgz6a",
+        "element_name": "Перенести контейнер-1 в урну-1",
+        "message": "параметр 'target_ref' ссылается на необъявленную сущность 'bin_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_0flva8y",
+        "element_name": "Закрыть СВЧ-1",
+        "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'microwave_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "error",
+        "code": "UNKNOWN_OPERATION_CODE",
+        "element_id": "Activity_1nmuo3d",
+        "element_name": "Поднести контейнер-1 к устройству-перетаривания-1",
+        "message": "неизвестный operation_code 'grasp_object'",
+        "recommendation": "использовать operation_code из каталога"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1nmuo3d",
+        "element_name": "Поднести контейнер-1 к устройству-перетаривания-1",
+        "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1nmuo3d",
+        "element_name": "Поднести контейнер-1 к устройству-перетаривания-1",
+        "message": "параметр 'source_container_ref' ссылается на необъявленную сущность 'required'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_07dw2ru",
+        "element_name": "Запустить СВЧ-1",
+        "message": "параметр 'equipment_ref' ссылается на необъявленную сущность 'microwave_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_07dw2ru",
+        "element_name": "Запустить СВЧ-1",
+        "message": "параметр 'object_ref' ссылается на необъявленную сущность 'container_1'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_07dw2ru",
+        "element_name": "Запустить СВЧ-1",
+        "message": "параметр 'source_container_ref' ссылается на необъявленную сущность 'required'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "error",
+        "code": "UNKNOWN_OPERATION_CODE",
+        "element_id": "Activity_1i8s5wl",
+        "element_name": "Выдать контейнер-2 из устройства-выдачи-1",
+        "message": "operation_code отсутствует",
+        "recommendation": "указать operation_code из каталога"
+      },
+      {
+        "severity": "warning",
+        "code": "UNDECLARED_ENTITY_REF",
+        "element_id": "Activity_1i8s5wl",
+        "element_name": "Выдать контейнер-2 из устройства-выдачи-1",
+        "message": "параметр 'target_object_ref' ссылается на необъявленную сущность 'container_2'",
+        "recommendation": "объявить сущность в process_entities или recipe_context (создан черновик)"
+      },
+      {
+        "severity": "error",
+        "code": "UNKNOWN_OPERATION_CODE",
+        "element_id": "Activity_03kv40i",
+        "element_name": "",
+        "message": "operation_code отсутствует",
+        "recommendation": "указать operation_code из каталога"
+      },
+      {
+        "severity": "error",
+        "code": "UNKNOWN_OPERATION_CODE",
+        "element_id": "Activity_0jv0gg5",
+        "element_name": "",
+        "message": "operation_code отсутствует",
+        "recommendation": "указать operation_code из каталога"
+      },
+      {
+        "severity": "error",
+        "code": "UNKNOWN_OPERATION_CODE",
+        "element_id": "Activity_020el8s",
+        "element_name": "",
+        "message": "operation_code отсутствует",
+        "recommendation": "указать operation_code из каталога"
+      }
+    ]
+  },
+  "draft_entities": [
+    {
+      "ref": "container_1",
+      "guessed_category": "zones",
+      "used_by": [
+        "Activity_1k9t4a7",
+        "Activity_171znbt",
+        "Activity_0eqhdco",
+        "Activity_1spcm9y",
+        "Activity_1tsk3kf",
+        "Activity_12cgz6a",
+        "Activity_1nmuo3d",
+        "Activity_07dw2ru"
+      ]
+    },
+    {
+      "ref": "scheduler_or_fixed_runtime",
+      "guessed_category": "equipment",
+      "used_by": [
+        "Activity_1k9t4a7"
+      ]
+    },
+    {
+      "ref": "container_2",
+      "guessed_category": "containers",
+      "used_by": [
+        "Activity_171znbt",
+        "Activity_1grwh4i",
+        "Activity_164zb9r",
+        "Activity_0eh2m0x",
+        "Activity_1r18m6r",
+        "Activity_1i8s5wl"
+      ]
+    },
+    {
+      "ref": "opener_1",
+      "guessed_category": "zones",
+      "used_by": [
+        "Activity_0eqhdco",
+        "Activity_1tghc67"
+      ]
+    },
+    {
+      "ref": "packaging_zone_1",
+      "guessed_category": "zones",
+      "used_by": [
+        "Activity_1grwh4i"
+      ]
+    },
+    {
+      "ref": "bin_1",
+      "guessed_category": "equipment",
+      "used_by": [
+        "Activity_1vz1obl",
+        "Activity_1epghx4",
+        "Activity_12cgz6a"
+      ]
+    },
+    {
+      "ref": "microwave_1",
+      "guessed_category": "equipment",
+      "used_by": [
+        "Activity_1gmqktc",
+        "Activity_1tsk3kf",
+        "Activity_1tghc67",
+        "Activity_0238wyw",
+        "Activity_1jw2q8u",
+        "Activity_0flva8y",
+        "Activity_07dw2ru"
+      ]
+    },
+    {
+      "ref": "sealer_1",
+      "guessed_category": "zones",
+      "used_by": [
+        "Activity_164zb9r",
+        "Activity_0eh2m0x"
+      ]
+    },
+    {
+      "ref": "required",
+      "guessed_category": "containers",
+      "used_by": [
+        "Activity_1tsk3kf",
+        "Activity_1nmuo3d",
+        "Activity_07dw2ru"
+      ]
+    },
+    {
+      "ref": "required_runtime",
+      "guessed_category": "equipment",
+      "used_by": [
+        "Activity_1tsk3kf"
+      ]
+    },
+    {
+      "ref": "assembly_zone_1",
+      "guessed_category": "zones",
+      "used_by": [
+        "Activity_1r18m6r"
+      ]
+    }
+  ]
+}
