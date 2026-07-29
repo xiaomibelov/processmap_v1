@@ -1,0 +1,180 @@
+.audit-history {
+  color: var(--fg, #e8e8e8);
+}
+
+.audit-history__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  padding: 10px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border, #3a3a3a);
+  border-radius: 10px;
+  background: var(--panel, #1d1f24);
+}
+
+.audit-history__filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted, #9aa0a6);
+}
+
+.audit-history__filter input,
+.audit-history__filter select {
+  padding: 5px 8px;
+  border: 1px solid var(--border, #3a3a3a);
+  border-radius: 6px;
+  background: #14161a;
+  color: #e8e8e8;
+  font-size: 13px;
+}
+
+.audit-history__apply {
+  padding: 6px 14px;
+  border: 1px solid #5b9dff;
+  border-radius: 6px;
+  background: rgba(91, 157, 255, 0.15);
+  color: #cfe1ff;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.audit-history__apply:hover {
+  background: rgba(91, 157, 255, 0.3);
+}
+
+.audit-history__hint {
+  color: var(--muted, #9aa0a6);
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+.audit-history__error {
+  color: #ff9a9a;
+  background: rgba(255, 107, 107, 0.12);
+  border: 1px solid rgba(255, 107, 107, 0.4);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.audit-history__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.audit-history__event {
+  border: 1px solid var(--border, #3a3a3a);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--panel, #1d1f24);
+}
+
+.audit-history__event-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.audit-history__action {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(91, 157, 255, 0.15);
+  color: #9cc2ff;
+  border: 1px solid rgba(91, 157, 255, 0.35);
+}
+
+.audit-history__action--publish {
+  background: rgba(105, 219, 124, 0.12);
+  color: #8ce99a;
+  border-color: rgba(105, 219, 124, 0.4);
+}
+
+.audit-history__version {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 212, 59, 0.1);
+  color: #ffe066;
+  border: 1px solid rgba(255, 212, 59, 0.35);
+}
+
+.audit-history__line {
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12.5px;
+  color: #d5d9e0;
+  padding: 2px 0;
+  word-break: break-word;
+}
+
+/* ---------- standalone page ---------- */
+
+.audit-page {
+  padding: 16px 20px;
+  color: var(--fg, #e8e8e8);
+}
+
+.audit-page__title {
+  font-size: 20px;
+  margin: 0 0 12px;
+}
+
+/* ---------- version diff block (recipe history tab) ---------- */
+
+.audit-diff {
+  margin-bottom: 14px;
+  border: 1px solid var(--border, #3a3a3a);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--panel, #1d1f24);
+}
+
+.audit-diff__head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.audit-diff__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted, #9aa0a6);
+}
+
+.audit-diff__field select {
+  padding: 5px 8px;
+  border: 1px solid var(--border, #3a3a3a);
+  border-radius: 6px;
+  background: #14161a;
+  color: #e8e8e8;
+  font-size: 13px;
+}
+
+.audit-diff__line {
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12.5px;
+  color: #d5d9e0;
+  padding: 2px 0;
+}
+
+.audit-diff__arrow {
+  color: var(--muted, #9aa0a6);
+  align-self: center;
+}
