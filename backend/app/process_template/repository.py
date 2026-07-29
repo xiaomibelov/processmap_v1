@@ -105,17 +105,23 @@ class ProcessTemplateRepository:
             con.commit()
         return _row_to_dict(row) if row else None
 
-    def publish(self, template_id: str) -> Optional[Dict[str, Any]]:
+    def publish(self, template_id: str, version: Optional[str] = None) -> Optional[Dict[str, Any]]:
         now = datetime.utcnow()
+        set_parts = ["status = 'published'", "published_at = ?", "updated_at = ?"]
+        values: List[Any] = [now, now]
+        if version is not None:
+            set_parts.append("version = ?")
+            values.append(version)
+        values.append(template_id)
         with _connect() as con:
             row = con.execute(
                 f"""
                 UPDATE process_template
-                SET status = 'published', published_at = ?, updated_at = ?
+                SET {", ".join(set_parts)}
                 WHERE id = ?
                 RETURNING {_COLUMNS}
                 """,
-                [now, now, template_id],
+                values,
             ).fetchone()
             con.commit()
         return _row_to_dict(row) if row else None

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiRequest } from "../../../lib/apiCore";
 import GraphCanvas from "../graph/GraphCanvas";
@@ -511,6 +511,9 @@ function TemplatePanel({
   onNameChange,
   onVersionChange,
   onModelChange,
+  versions = [],
+  onRefreshVersions,
+  onDownloadBpmn,
 }) {
   const [newKey, setNewKey] = useState("");
   const recipeKeys = Object.keys(asObject(model.recipe_context));
@@ -583,6 +586,43 @@ function TemplatePanel({
           </button>
         </div>
       </div>
+
+      <div className="ctor-field ctor-versions" data-testid="versions-panel">
+        <span className="ctor-field-label">
+          Версии шаблона{" "}
+          <button
+            type="button"
+            className="ctor-btn ctor-btn--small"
+            data-testid="versions-refresh"
+            onClick={() => onRefreshVersions && onRefreshVersions()}
+          >
+            Обновить
+          </button>
+        </span>
+        {versions.length === 0 ? <div className="ctor-hint">версий нет</div> : null}
+        {versions.map((v) => (
+          <div
+            className="ctor-version-row"
+            key={`${String(v.version)}_${String(v.status)}`}
+            data-testid={`version-row-${String(v.version)}`}
+          >
+            <span className="ctor-version-num">v{String(v.version || "")}</span>
+            <span className={`ctor-version-status ctor-version-status--${String(v.status || "")}`}>
+              {String(v.status || "")}
+            </span>
+            {v.status !== "draft" && onDownloadBpmn ? (
+              <button
+                type="button"
+                className="ctor-btn ctor-btn--small"
+                data-testid={`version-bpmn-${String(v.version)}`}
+                onClick={() => onDownloadBpmn(String(v.version || ""))}
+              >
+                BPMN
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -618,6 +658,10 @@ export function Constructor() {
   const [selectedKitchenIds, setSelectedKitchenIds] = useState([]);
   const [precheckMode, setPrecheckMode] = useState("warning"); // default = warning (locked)
   const [precheck, setPrecheck] = useState(null);
+  // E7: publish & версии
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publishResult, setPublishResult] = useState(null); // {ok:true, version, warningsCount} | {ok:false, message, findings}
+  const [templateVersions, setTemplateVersions] = useState([]);
   const nodeRefs = useRef({});
 
   // initial load: catalog + dictionaries, then bootstrap from query/handoff
@@ -712,6 +756,21 @@ export function Constructor() {
 
   const declaredRefs = useMemo(() => listDeclaredRefs(uiModel), [uiModel]);
   const recipeKeys = useMemo(() => Object.keys(asObject(uiModel.recipe_context)), [uiModel]);
+
+  // E7: версии шаблона — подгружаем при смене templateId
+  const loadVersions = useCallback(async (idOverride) => {
+    const tid = String(idOverride || templateId || "").trim();
+    if (!tid) {
+      setTemplateVersions([]);
+      return;
+    }
+    const r = await apiRequest(`/api/process-templates/${encodeURIComponent(tid)}/versions`);
+    setTemplateVersions(r?.ok && Array.isArray(r.data) ? r.data : []);
+  }, [templateId]);
+
+  useEffect(() => {
+    void loadVersions();
+  }, [loadVersions]);
 
   // ---- canvas interactions ----
 
@@ -871,6 +930,94 @@ export function Constructor() {
       setError(`Ошибка сохранения: ${String(err?.message || err)}`);
     } finally {
       setSaveBusy(false);
+    }
+  }
+
+  // ---- E7: publish & версии ----
+
+  async function handlePublish() {
+    if (!templateId || publishBusy) return;
+    setPublishBusy(true);
+    setError("");
+    setNotice("");
+    setPublishResult(null);
+    try {
+      // сначала сохраняем черновик — публикуется сохранённая модель
+      const sr = await apiRequest(`/api/process-templates/${encodeURIComponent(templateId)}`, {
+        method: "PUT",
+        body: { name: templateName, version: templateVersion, status: templateStatus || "draft", ui_model: uiModel },
+      });
+      if (!sr?.ok) {
+        setError(`Ошибка сохранения перед публикацией: ${String(sr?.error || "unknown")}`);
+        return;
+      }
+      const r = await apiRequest(`/api/process-templates/${encodeURIComponent(templateId)}/publish`, {
+        method: "POST",
+        body: { bump: "patch", mode: "warning", target_kitchen_ids: [] },
+      });
+      if (r?.ok) {
+        const data = asObject(r.data);
+        const version = String(data.version || "");
+        const warningsCount = Number(data.warnings_count || 0);
+        setTemplateStatus("published");
+        if (version) setTemplateVersion(version);
+        setPublishResult({ ok: true, version, warningsCount });
+        setNotice(
+          `Опубликовано: v${version || "?"}` + (warningsCount > 0 ? ` (pre-check warnings: ${warningsCount})` : ""),
+        );
+        await loadVersions();
+      } else {
+        const detail = asObject(r?.data?.detail);
+        setPublishResult({
+          ok: false,
+          stage: String(detail.stage || ""),
+          message: String(detail.message || r?.error || "publish failed"),
+          findings: Array.isArray(detail.findings) ? detail.findings : [],
+          precheck: detail.precheck || null,
+        });
+      }
+    } catch (err) {
+      setError(`Ошибка публикации: ${String(err?.message || err)}`);
+    } finally {
+      setPublishBusy(false);
+    }
+  }
+
+  async function handleNewDraft() {
+    if (!templateId) return;
+    setError("");
+    const r = await apiRequest(`/api/process-templates/${encodeURIComponent(templateId)}/new-draft`, {
+      method: "POST",
+    });
+    if (r?.ok) {
+      const data = asObject(r.data);
+      setTemplateStatus("draft");
+      setTemplateVersion(String(data.version || templateVersion));
+      setNotice(`Создан новый черновик v${String(data.version || "?")} — редактирование доступно`);
+      await loadVersions();
+    } else {
+      setError(`Не удалось создать черновик: ${String(r?.error || "unknown")}`);
+    }
+  }
+
+  async function handleDownloadBpmn(versionOverride) {
+    const version = String(versionOverride || templateVersion || "").trim();
+    if (!templateId || !version) return;
+    const r = await apiRequest(
+      `/api/process-templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(version)}/bpmn`,
+      { responseType: "blob" },
+    );
+    if (r?.ok && r.data) {
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${templateName || "process_template"}_v${version}.bpmn`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } else {
+      setError(`Не удалось скачать BPMN v${version}: ${String(r?.error || "unknown")}`);
     }
   }
 
@@ -1045,8 +1192,38 @@ export function Constructor() {
         <button type="button" className="ctor-btn" data-testid="check-reachability" onClick={handleCheck}>
           Проверить
         </button>
+        <button
+          type="button"
+          className="ctor-btn ctor-btn--primary"
+          data-testid="template-publish"
+          disabled={!templateId || publishBusy || templateStatus === "published"}
+          title={!templateId ? "Сначала сохраните шаблон" : ""}
+          onClick={handlePublish}
+        >
+          {publishBusy ? "Публикация…" : "Опубликовать"}
+        </button>
+        {templateStatus === "published" ? (
+          <>
+            <button
+              type="button"
+              className="ctor-btn"
+              data-testid="template-new-draft"
+              onClick={handleNewDraft}
+            >
+              Новый черновик
+            </button>
+            <button
+              type="button"
+              className="ctor-btn"
+              data-testid="template-download-bpmn"
+              onClick={() => handleDownloadBpmn()}
+            >
+              Скачать BPMN
+            </button>
+          </>
+        ) : null}
         <span className="ctor__version" data-testid="version-label">
-          Черновик · v{templateVersion}
+          {templateStatus === "published" ? "Опубликован" : "Черновик"} · v{templateVersion}
           {templateId ? ` · id ${templateId}` : " · новый"}
         </span>
       </div>
@@ -1081,6 +1258,40 @@ export function Constructor() {
           onSelectFinding={handleFindingNavigate}
           onClose={() => setCheckOpen(false)}
         />
+      ) : null}
+
+      {publishResult && !publishResult.ok ? (
+        <div className="ctor-modal" data-testid="publish-result-dialog">
+          <div className="ctor-modal__box">
+            <h3>Публикация отклонена</h3>
+            <p>{publishResult.message}</p>
+            {publishResult.findings.length > 0 ? (
+              <ul data-testid="publish-findings">
+                {publishResult.findings.map((f, idx) => (
+                  <li key={`${f.element_id || "el"}_${idx}`}>
+                    <strong>{String(f.severity || "")}</strong> [{String(f.code || "")}]{" "}
+                    {String(f.element_name || f.element_id || "")}: {String(f.message || "")}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {publishResult.precheck ? (
+              <p className="ctor-hint">
+                Pre-check: {JSON.stringify(asObject(publishResult.precheck.summary))}
+              </p>
+            ) : null}
+            <div className="ctor-actions">
+              <button
+                type="button"
+                className="ctor-btn"
+                data-testid="publish-result-close"
+                onClick={() => setPublishResult(null)}
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       <div className="ctor__main">
@@ -1176,6 +1387,9 @@ export function Constructor() {
               onNameChange={setTemplateName}
               onVersionChange={setTemplateVersion}
               onModelChange={setUiModel}
+              versions={templateVersions}
+              onRefreshVersions={() => loadVersions()}
+              onDownloadBpmn={handleDownloadBpmn}
             />
           ) : null}
 

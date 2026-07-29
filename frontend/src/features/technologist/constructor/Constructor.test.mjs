@@ -93,6 +93,8 @@ function jsonResponse(payload, status = 200) {
   });
 }
 
+let publishBehavior = "ok"; // E7: "ok" | "fail" — ответ POST /publish
+
 function makeFetchMock() {
   return vi.fn(async (url, init = {}) => {
     const u = String(url);
@@ -105,6 +107,45 @@ function makeFetchMock() {
     if (u.includes("/api/operation-catalog")) return jsonResponse(OP_LIST);
     for (const [dict, items] of Object.entries(DICTS)) {
       if (u.includes(`/api/dictionaries/${dict}`)) return jsonResponse(items);
+    }
+    // E7: версии и publish — до общих tpl_1-матчеров
+    if (u.includes("/api/process-templates/tpl_1/versions") && method === "GET") {
+      return jsonResponse([
+        { id: null, template_id: "tpl_1", version: "0.2.0", status: "draft" },
+        { id: "v1", template_id: "tpl_1", version: "0.1.0", status: "published" },
+      ]);
+    }
+    if (u.includes("/api/process-templates/tpl_1/publish") && method === "POST") {
+      if (publishBehavior === "fail") {
+        return jsonResponse(
+          {
+            detail: {
+              message: "Dry-run валидация не пройдена — публикация запрещена",
+              stage: "dry_run",
+              findings: [
+                {
+                  severity: "error",
+                  code: "UNKNOWN_OPERATION_CODE",
+                  element_id: "Task_1",
+                  element_name: "Нарезка",
+                  message: "неизвестный operation_code 'cut'",
+                  recommendation: "",
+                },
+              ],
+            },
+          },
+          422,
+        );
+      }
+      return jsonResponse({
+        id: "tpl_1",
+        status: "published",
+        version: "0.2.0",
+        version_id: "v2",
+        warnings_count: 0,
+        precheck: { summary: {} },
+        dry_run: { summary: { errors: 0 }, findings: [] },
+      });
     }
     if (u.includes("/api/process-templates/tpl_1") && method === "GET") return jsonResponse(TEMPLATE_FULL);
     if (u.includes("/api/process-templates/tpl_1") && method === "PUT") {
@@ -165,6 +206,7 @@ async function selectFlow(container, flowId) {
 
 describe("Constructor (E4)", () => {
   beforeEach(() => {
+    publishBehavior = "ok";
     vi.stubGlobal("fetch", makeFetchMock());
     window.sessionStorage.clear();
     setLocation("/technologist/constructor");
@@ -418,5 +460,53 @@ describe("Constructor (E4)", () => {
     expect(container.querySelectorAll("polyline").length).toBe(1);
     const flowForm = container.querySelector('[data-testid="flow-form"]');
     expect(flowForm).toBeTruthy();
+  });
+
+  it("E7: publish — кнопка публикует, появляются 'Новый черновик' и 'Скачать BPMN'", async () => {
+    setLocation("/technologist/constructor?template=tpl_1");
+    const { container } = await renderConstructor();
+    await act(async () => {}); // template + versions load
+
+    const publishBtn = container.querySelector('[data-testid="template-publish"]');
+    expect(publishBtn).toBeTruthy();
+    expect(publishBtn.disabled).toBe(false);
+    // список версий на вкладке «Шаблон»
+    expect(container.querySelector('[data-testid="versions-panel"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="version-row-0.1.0"]')).toBeTruthy();
+
+    await click(publishBtn);
+    await act(async () => {});
+
+    expect(container.querySelector('[data-testid="ctor-notice"]').textContent).toContain("Опубликовано: v0.2.0");
+    expect(container.querySelector('[data-testid="version-label"]').textContent).toContain("Опубликован");
+    expect(container.querySelector('[data-testid="template-new-draft"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="template-download-bpmn"]')).toBeTruthy();
+  });
+
+  it("E7: publish 422 — dry-run findings списком в диалоге", async () => {
+    publishBehavior = "fail";
+    setLocation("/technologist/constructor?template=tpl_1");
+    const { container } = await renderConstructor();
+    await act(async () => {});
+
+    await click(container.querySelector('[data-testid="template-publish"]'));
+    await act(async () => {});
+
+    const dialog = container.querySelector('[data-testid="publish-result-dialog"]');
+    expect(dialog).toBeTruthy();
+    expect(dialog.textContent).toContain("Dry-run валидация не пройдена");
+    const findings = dialog.querySelectorAll('[data-testid="publish-findings"] li');
+    expect(findings.length).toBe(1);
+    expect(findings[0].textContent).toContain("UNKNOWN_OPERATION_CODE");
+    // статус остался «Черновик»
+    expect(container.querySelector('[data-testid="version-label"]').textContent).toContain("Черновик");
+  });
+
+  it("E7: publish disabled для несохранённого шаблона", async () => {
+    setLocation("/technologist/constructor");
+    const { container } = await renderConstructor();
+    await act(async () => {});
+    expect(container.querySelector('[data-testid="template-publish"]').disabled).toBe(true);
+    expect(container.querySelector('[data-testid="template-download-bpmn"]')).toBe(null);
   });
 });
