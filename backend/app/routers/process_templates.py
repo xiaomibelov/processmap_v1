@@ -28,7 +28,7 @@ kitchen_repository = KitchenRepository()
 def get_current_user(request: Request) -> dict:
     user = getattr(request.state, "auth_user", None)
     if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        raise HTTPException(status_code=401, detail="Требуется аутентификация")
     return user
 
 
@@ -60,7 +60,7 @@ async def get_template(
     user = get_current_user(request)
     template = service.get_template(template_id)
     if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise HTTPException(status_code=404, detail="Шаблон процесса не найден")
     return template
 
 
@@ -73,7 +73,7 @@ async def update_template(
     user = get_current_user(request)
     existing = service.get_template(template_id)
     if not existing:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise HTTPException(status_code=404, detail="Шаблон процесса не найден")
     # E7.4: published-шаблон не редактируется — новая версия через new-draft
     if str(existing.get("status") or "") == "published":
         raise HTTPException(
@@ -83,7 +83,7 @@ async def update_template(
         )
     template = service.update_template(template_id, data)
     if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise HTTPException(status_code=404, detail="Шаблон процесса не найден")
     return template
 
 
@@ -186,7 +186,7 @@ async def import_bpmn(
         raw = await request.body()
     xml_text = raw.decode("utf-8", errors="replace")
     if not xml_text.strip():
-        raise HTTPException(status_code=422, detail="Empty BPMN payload")
+        raise HTTPException(status_code=422, detail="Пустой BPMN-файл")
     try:
         result = parse_bpmn(xml_text)
     except BpmnImportError as exc:
@@ -224,7 +224,7 @@ async def validate_template(
     user = get_current_user(request)
     template = service.get_template(template_id)
     if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise HTTPException(status_code=404, detail="Шаблон процесса не найден")
     result = validate_with_catalog(template.get("ui_model") or {})
     return {
         "valid": result["summary"]["errors"] == 0,
@@ -236,7 +236,7 @@ async def validate_template(
 def _run_precheck(ui_model: Dict[str, Any], data: PrecheckRequest) -> Dict[str, Any]:
     mode = (data.mode or "warning").strip().lower()
     if mode not in ("strict", "warning"):
-        raise HTTPException(status_code=422, detail="mode must be 'strict' or 'warning'")
+        raise HTTPException(status_code=422, detail="mode должен быть 'strict' или 'warning'")
     kitchens = kitchen_repository.list_kitchens()
     if data.kitchen_ids:
         wanted = {str(k) for k in data.kitchen_ids}
@@ -252,7 +252,7 @@ async def precheck_draft(
     """E6.4: feasibility pre-check несохранённого черновика (конструктор)."""
     user = get_current_user(request)
     if not isinstance(data.ui_model, dict):
-        raise HTTPException(status_code=422, detail="ui_model is required")
+        raise HTTPException(status_code=422, detail="Требуется ui_model")
     return _run_precheck(data.ui_model, data)
 
 
@@ -266,6 +266,6 @@ async def precheck_template(
     user = get_current_user(request)
     template = service.get_template(template_id)
     if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise HTTPException(status_code=404, detail="Шаблон процесса не найден")
     result = _run_precheck(template.get("ui_model") or {}, data)
     return {"template_id": template_id, **result}

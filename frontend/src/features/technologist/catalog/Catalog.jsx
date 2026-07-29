@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useRole } from "../../../contexts/RoleContext";
 import { apiRequest } from "../../../lib/apiCore";
+import { t } from "../i18n";
 import "./Catalog.css";
 
 export function Catalog() {
@@ -29,6 +30,11 @@ export function Catalog() {
     setSelectedOperation(operation);
   };
 
+  // L10N: русское имя операции — из поля name_ru каталога (миграция 009),
+  // фолбэк на EN name; код и категория — технические значения из API.
+  const opName = (op) => String(op?.name_ru || op?.name || op?.code || "");
+  const categoryLabel = (cat) => t(`category.${String(cat || "").trim()}`);
+
   // E2: человеко-читаемые русские формулировки для кодов execution_contract
   const CONTRACT_TERM_RU = {
     storage_available: "хранилище доступно",
@@ -55,9 +61,9 @@ export function Catalog() {
 
     return (
       <div className="execution-contract">
-        <h4>Контракт выполнения</h4>
+        <h4>{t("catalog.contract")}</h4>
         <div className="contract-section">
-          <h5>Предусловия:</h5>
+          <h5>{t("catalog.preconditions")}</h5>
           <ul>
             {contract.preconditions?.map((condition, index) => (
               <li key={index}>{humanizeContractTerm(condition)}</li>
@@ -65,7 +71,7 @@ export function Catalog() {
           </ul>
         </div>
         <div className="contract-section">
-          <h5>Постусловия:</h5>
+          <h5>{t("catalog.postconditions")}</h5>
           <ul>
             {contract.postconditions?.map((condition, index) => (
               <li key={index}>{humanizeContractTerm(condition)}</li>
@@ -73,7 +79,7 @@ export function Catalog() {
           </ul>
         </div>
         <div className="contract-section">
-          <h5>Включённые проверки:</h5>
+          <h5>{t("catalog.checks")}</h5>
           <ul>
             {contract.checks?.map((check, index) => (
               <li key={index}>{humanizeContractTerm(check)}</li>
@@ -85,66 +91,67 @@ export function Catalog() {
   };
 
   if (loading) {
-    return <div className="loading">Loading operations...</div>;
+    return <div className="loading">{t("catalog.loading")}</div>;
   }
 
   return (
     <div className="catalog">
-      <h2>Operation Catalog</h2>
-      <p>Browse available operations for process templates.</p>
-      
+      <h2>{t("catalog.title")}</h2>
+      <p>{t("catalog.subtitle")}</p>
+
       {isTechnologist && (
         <div className="read-only-notice">
-          <p>You have read-only access to the operation catalog.</p>
+          <p>{t("catalog.readOnly")}</p>
         </div>
       )}
 
       <div className="catalog-content">
         <div className="operations-list">
-          <h3>Available Operations</h3>
+          <h3>{t("catalog.available")}</h3>
           <div className="operations-grid">
             {operations.map((operation) => (
               <div
                 key={operation.code}
                 className="operation-card"
+                data-testid={`catalog-op-${operation.code}`}
                 onClick={() => handleOperationClick(operation)}
               >
-                <h4>{operation.name}</h4>
+                <h4>{opName(operation)}</h4>
                 <p className="operation-code">{operation.code}</p>
-                <p className="operation-category">{operation.category}</p>
+                <p className="operation-category">{categoryLabel(operation.category)}</p>
               </div>
             ))}
           </div>
         </div>
 
         {selectedOperation && (
-          <div className="operation-details">
-            <h3>Operation Details</h3>
+          <div className="operation-details" data-testid="catalog-details">
+            <h3>{t("catalog.details")}</h3>
             <div className="operation-info">
-              <h4>{selectedOperation.name}</h4>
-              <p><strong>Code:</strong> {selectedOperation.code}</p>
-              <p><strong>Category:</strong> {selectedOperation.category}</p>
-              
+              <h4>{opName(selectedOperation)}</h4>
+              <p><strong>{t("catalog.code")}</strong> {selectedOperation.code}</p>
+              <p><strong>{t("catalog.category")}</strong> {categoryLabel(selectedOperation.category)}</p>
+
               <div className="parameter-schema">
-                <h5>Parameters:</h5>
+                <h5>{t("catalog.parameters")}</h5>
                 <pre>{JSON.stringify(selectedOperation.parameter_schema, null, 2)}</pre>
               </div>
-              
+
               <div className="allowed-outputs">
-                <h5>Allowed Outputs:</h5>
+                <h5>{t("catalog.allowedOutputs")}</h5>
                 <ul>
                   {selectedOperation.allowed_outputs?.map((output, index) => (
                     <li key={index} className={output.type === "success" ? "output-success" : "output-error"}>
-                      {output.name} ({output.type})
+                      {output.name} ({output.type === "success" ? t("catalog.outputSuccess") : t("catalog.outputError")})
                     </li>
                   ))}
                 </ul>
               </div>
-              
+
               {renderExecutionContract(selectedOperation.execution_contract)}
-              
+
               <div className="resource-requirements">
-                <h5>Resource Requirements:</h5>
+                <h5>{t("catalog.resources")}</h5>
                 <pre>{JSON.stringify(selectedOperation.resource_requirements, null, 2)}</pre>
               </div>
             </div>

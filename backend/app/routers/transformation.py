@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/process-templates", tags=["transformation"])
 def get_current_user(request: Request) -> dict:
     user = getattr(request.state, "auth_user", None)
     if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        raise HTTPException(status_code=401, detail="Требуется аутентификация")
     return user
 
 
@@ -37,7 +37,7 @@ async def transform_asis_endpoint(
         raw = await request.body()
     xml_text = raw.decode("utf-8", errors="replace")
     if not xml_text.strip():
-        raise HTTPException(status_code=422, detail="Empty BPMN payload")
+        raise HTTPException(status_code=422, detail="Пустой BPMN-файл")
     try:
         result = transform_asis(xml_text)
     except BpmnImportError as exc:

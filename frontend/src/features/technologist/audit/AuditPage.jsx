@@ -1,6 +1,7 @@
 import React from "react";
 
 import AuditHistory from "./AuditHistory";
+import { t } from "../i18n";
 import "./AuditHistory.css";
 
 // E8.3 — standalone-страница журнала аудита (/technologist/audit):
@@ -8,7 +9,7 @@ import "./AuditHistory.css";
 export function AuditPage() {
   return (
     <div className="audit-page">
-      <h1 className="audit-page__title">Журнал аудита</h1>
+      <h1 className="audit-page__title">{t("audit.pageTitle")}</h1>
       <AuditHistory showFilters />
     </div>
   );

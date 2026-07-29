@@ -4,6 +4,24 @@ url = os.environ.get("DATABASE_URL")
 conn = psycopg.connect(url)
 cur = conn.cursor()
 
+# L10N (миграция 009): русские названия операций для UI технолога.
+# Код операции — технический идентификатор, не переводится.
+NAME_RU = {
+    "get_from_storage": "Выдать из хранилища",
+    "move": "Перенести",
+    "open_container": "Вскрыть контейнер",
+    "close_container": "Закрыть контейнер",
+    "open_equipment": "Открыть оборудование",
+    "close_equipment": "Закрыть оборудование",
+    "start_equipment": "Запустить оборудование",
+    "set_equipment": "Настроить оборудование",
+    "transfer": "Перетарить",
+    "measure_temperature": "Измерить температуру",
+    "check": "Проверить",
+    "publish_event": "Опубликовать событие",
+    "wait": "Выждать",
+}
+
 operations = [
     {
         "code": "get_from_storage",
@@ -357,12 +375,13 @@ for op in operations:
 # Insert operations into operation_catalog
 for op in operations:
     cur.execute("""
-        INSERT INTO operation_catalog (id, code, name, parameter_schema, allowed_outputs, execution_contract, resource_requirements, category)
-        VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO operation_catalog (id, code, name, name_ru, parameter_schema, allowed_outputs, execution_contract, resource_requirements, category)
+        VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (code) DO NOTHING
     """, (
         op["code"],
         op["name"],
+        NAME_RU.get(op["code"], op["name"]),
         json.dumps(op["parameter_schema"]),
         json.dumps(op["allowed_outputs"]),
         json.dumps(op["execution_contract"]),

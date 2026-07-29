@@ -185,7 +185,8 @@
 
 .import-bpmn__finding-code {
   font-family: monospace;
-  font-weight: 700;
+  font-size: 12px;
+  opacity: 0.65;
 }
 
 .import-bpmn__finding-element {
@@ -225,4 +226,14 @@
 
 .import-bpmn__drafts-table th {
   background: #f2f2f2;
+}
+.import-bpmn__file-btn {
+  display: inline-block;
+  padding: 6px 14px;
+  border: 1px solid var(--border, #3a4657);
+  border-radius: 6px;
+  background: var(--panel2, #1c2534);
+  color: var(--fg, #e8edf5);
+  cursor: pointer;
+  font-size: 14px;
 }

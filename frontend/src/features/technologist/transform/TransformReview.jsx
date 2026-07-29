@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from "react";
 
 import { apiTransformAsis } from "../../../lib/api";
 import GraphCanvas from "../graph/GraphCanvas";
+import { t } from "../i18n";
 import "./TransformReview.css";
 
 const E4_HANDOFF_KEY = "fpc_e4_handoff";
@@ -99,10 +100,10 @@ export default function TransformReview() {
       if (r?.ok) {
         setResult(r.result || {});
       } else {
-        setError(String(r?.error || "Ошибка трансформации"));
+        setError(String(r?.error || t("transform.failed")));
       }
     } catch (err) {
-      setError(String(err?.message || err || "Ошибка трансформации"));
+      setError(String(err?.message || err || t("transform.failed")));
     } finally {
       setLoading(false);
     }
@@ -153,17 +154,21 @@ export default function TransformReview() {
 
   return (
     <div className="transform-review">
-      <h1 className="transform-review__title">Трансформация AS IS → TO BE (draft)</h1>
+      <h1 className="transform-review__title">{t("transform.title")}</h1>
 
       <form className="transform-review__form" onSubmit={handleSubmit}>
-        <input
-          type="file"
-          accept=".bpmn,.xml"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-          aria-label="BPMN-файл AS IS"
-        />
+        <label className="transform-review__file-btn" data-testid="file-choose">
+          {file ? file.name : t("import.choose")}
+          <input
+            type="file"
+            accept=".bpmn,.xml"
+            hidden
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            aria-label="BPMN-файл AS IS"
+          />
+        </label>
         <button type="submit" disabled={!file || loading}>
-          {loading ? "Трансформация..." : "Трансформировать"}
+          {loading ? t("transform.loading") : t("transform.submit")}
         </button>
       </form>
 
@@ -172,17 +177,17 @@ export default function TransformReview() {
       {result ? (
         <>
           <div className="transform-review__summary" data-testid="transform-summary">
-            <span>draft узлов {asArray(effectiveDraft?.nodes).length}</span>
-            <span>потоков {asArray(effectiveDraft?.flows).length}</span>
+            <span>{t("transform.draftNodes")} {asArray(effectiveDraft?.nodes).length}</span>
+            <span>{t("import.flows")} {asArray(effectiveDraft?.flows).length}</span>
             <span className="transform-review__summary-item--errors">
-              ошибок валидатора {Number(validationSummary.errors) || 0}
+              {t("transform.validatorErrors")} {Number(validationSummary.errors) || 0}
             </span>
             <span className="transform-review__summary-item--warnings">
-              предупреждений {Number(validationSummary.warnings) || 0}
+              {t("import.warnings")} {Number(validationSummary.warnings) || 0}
             </span>
             <span>LLM: {llmStatus || "n/a"}</span>
             <button type="button" className="transform-review__to-constructor" onClick={handleOpenInConstructor}>
-              Открыть в конструкторе
+              {t("transform.toConstructor")}
             </button>
           </div>
 
@@ -194,28 +199,28 @@ export default function TransformReview() {
                 selectedElementId={selectedAsisId}
                 onSelectNode={handleSelectAsis}
                 nodeRefs={asisRefs}
-                ariaLabel="Граф AS IS"
+                ariaLabel={t("transform.asIsAria")}
               />
             </section>
             <section className="transform-review__pane">
-              <h2>TO BE (draft)</h2>
+              <h2>{t("transform.toBeDraft")}</h2>
               <GraphCanvas
                 uiModel={effectiveDraft}
                 selectedElementId={selectedDraftId}
                 onSelectNode={handleSelectDraft}
                 nodeRefs={draftRefs}
-                ariaLabel="Граф TO BE (draft)"
+                ariaLabel={t("transform.toBeAria")}
               />
             </section>
           </div>
 
           <div className="transform-review__bottom">
             <section className="transform-review__decisions">
-              <h2>Решения трансформации</h2>
+              <h2>{t("transform.decisions")}</h2>
               <ul className="transform-review__decision-list">
-                {decisions.map((t) => {
-                  const id = String(t?.element_id || "");
-                  const fate = String(t?.fate || "");
+                {decisions.map((tr) => {
+                  const id = String(tr?.element_id || "");
+                  const fate = String(tr?.fate || "");
                   const meta = FATE_META[fate] || { icon: "•", label: fate };
                   const rejected = rejectedIds.has(id);
                   return (
@@ -228,9 +233,9 @@ export default function TransformReview() {
                     >
                       <button type="button" className="transform-review__decision-main" onClick={() => handleSelectAsis(id)}>
                         <span className="transform-review__decision-icon" title={meta.label}>{meta.icon}</span>
-                        <span className="transform-review__decision-name">{String(t?.name || id)}</span>
-                        <span className="transform-review__decision-rule">{String(t?.rule_id || "—")}</span>
-                        <span className="transform-review__decision-note">{String(t?.note || "")}</span>
+                        <span className="transform-review__decision-name">{String(tr?.name || id)}</span>
+                        <span className="transform-review__decision-rule">{String(tr?.rule_id || "—")}</span>
+                        <span className="transform-review__decision-note">{String(tr?.note || "")}</span>
                       </button>
                       <span className="transform-review__decision-actions">
                         <button
@@ -239,7 +244,7 @@ export default function TransformReview() {
                           disabled={!rejected}
                           onClick={() => toggleDecision(id, true)}
                         >
-                          Принять
+                          {t("transform.accept")}
                         </button>
                         <button
                           type="button"
@@ -247,7 +252,7 @@ export default function TransformReview() {
                           disabled={rejected}
                           onClick={() => toggleDecision(id, false)}
                         >
-                          Отклонить
+                          {t("transform.reject")}
                         </button>
                       </span>
                     </li>
@@ -257,9 +262,9 @@ export default function TransformReview() {
             </section>
 
             <section className="transform-review__questions">
-              <h2>Открытые вопросы ({openQuestions.length})</h2>
+              <h2>{t("transform.openQuestions")} ({openQuestions.length})</h2>
               {openQuestions.length === 0 ? (
-                <div className="transform-review__empty">Открытых вопросов нет</div>
+                <div className="transform-review__empty">{t("transform.noQuestions")}</div>
               ) : (
                 <ul className="transform-review__question-list">
                   {openQuestions.map((q) => (

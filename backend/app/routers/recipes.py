@@ -69,7 +69,7 @@ class ParamDefUpdate(BaseModel):
 def _current_user(request: Request) -> Dict[str, Any]:
     user = getattr(request.state, "auth_user", None)
     if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        raise HTTPException(status_code=401, detail="Требуется аутентификация")
     return user
 
 

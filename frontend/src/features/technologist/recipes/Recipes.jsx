@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 import { apiRequest } from "../../../lib/apiCore";
 import AuditHistory from "../audit/AuditHistory";
+import { t, tf } from "../i18n";
 import VersionDiff from "../audit/VersionDiff";
 import "./Recipes.css";
 
@@ -219,7 +220,7 @@ export function Recipes() {
         r = await apiRequest("/api/recipes", { method: "POST", body: { ...body, template_id: templateId } });
       }
       if (r?.ok && r.data) {
-        setNotice(selectedId ? "Рецепт сохранён" : "Рецепт создан (черновик)");
+        setNotice(selectedId ? t("recipes.saved") : t("recipes.created"));
         const id = String(r.data.id || selectedId);
         await refreshList(id);
       } else {
@@ -238,7 +239,7 @@ export function Recipes() {
     try {
       const r = await apiRequest(`/api/recipes/${encodeURIComponent(selectedId)}/publish`, { method: "POST" });
       if (r?.ok && r.data) {
-        setNotice("Рецепт опубликован");
+        setNotice(t("recipes.published"));
         setSelectedStatus("published");
         await refreshList(selectedId);
       } else {
@@ -264,7 +265,7 @@ export function Recipes() {
         await refreshList(selectedId);
         // notice/статус — ПОСЛЕ refreshList: он перечитывает форму и чистит notice
         setSelectedStatus("draft");
-        setNotice(`Создан черновик новой версии: из v${sourceV} → v${nextV}`);
+        setNotice(tf("recipes.newVersionCreated", { source: sourceV, next: nextV }));
       } else {
         setErrors(extractErrors(r));
       }
@@ -275,7 +276,7 @@ export function Recipes() {
 
   async function handleClone() {
     if (busy || !selectedId) return;
-    const nextSku = String(window.prompt("SKU для клона рецепта:", `${skuId}_copy`) || "").trim();
+    const nextSku = String(window.prompt(t("recipes.clonePrompt"), `${skuId}_copy`) || "").trim();
     if (!nextSku) return;
     setBusy(true);
     setErrors([]);
@@ -286,7 +287,7 @@ export function Recipes() {
         body: { sku_id: nextSku },
       });
       if (r?.ok && r.data) {
-        setNotice(`Создан клон на SKU «${nextSku}»`);
+        setNotice(tf("recipes.cloneCreated", { sku: nextSku }));
         await refreshList(String(r.data.id || ""));
       } else {
         setErrors(extractErrors(r));
@@ -305,7 +306,7 @@ export function Recipes() {
           value={value}
           onChange={(e) => setParam(def.name, e.target.value)}
         >
-          <option value="">— не задано —</option>
+          <option value="">{t("recipes.notSet")}</option>
           {asArray(def.enum_json).map((opt) => (
             <option key={String(opt)} value={String(opt)}>
               {String(opt)}
@@ -321,7 +322,7 @@ export function Recipes() {
           value={value}
           onChange={(e) => setParam(def.name, e.target.value)}
         >
-          <option value="">— не задано —</option>
+          <option value="">{t("recipes.notSet")}</option>
           {containerTypes.map((item) => (
             <option key={String(item?.code)} value={String(item?.code)}>
               {String(item?.name || item?.code || "")}
@@ -354,17 +355,17 @@ export function Recipes() {
 
   return (
     <div className="recipes">
-      <h1 className="recipes__title">Рецепты</h1>
+      <h1 className="recipes__title">{t("recipes.title")}</h1>
 
       <div className="recipes__main">
         <aside className="recipes__list" data-testid="recipes-list">
           <div className="recipes__list-head">
-            <h3>Список рецептов</h3>
+            <h3>{t("recipes.list")}</h3>
             <button type="button" className="recipes-btn recipes-btn--small" data-testid="new-recipe" onClick={resetForm}>
-              Новый
+              {t("recipes.new")}
             </button>
           </div>
-          {recipes.length === 0 ? <div className="recipes-hint">рецептов нет</div> : null}
+          {recipes.length === 0 ? <div className="recipes-hint">{t("recipes.empty")}</div> : null}
           {recipes.map((recipe) => (
             <button
               type="button"
@@ -374,15 +375,15 @@ export function Recipes() {
               onClick={() => handleSelect(recipe)}
             >
               <span className="recipes__item-sku">{String(recipe.sku_id || "")}</span>
-              <span className={`recipes__item-status recipes__item-status--${String(recipe.status || "draft")}`}>
-                {String(recipe.status || "draft")}
+              <span className={`recipes__item-status recipes__item-status--${t(`status.${String(recipe.status || "draft")}`)}`}>
+                {t(`status.${String(recipe.status || "draft")}`)}
               </span>
             </button>
           ))}
         </aside>
 
         <section className="recipes__form" data-testid="recipe-form">
-          <h3>{selectedId ? `Рецепт (${selectedStatus})` : "Новый рецепт"}</h3>
+          <h3>{selectedId ? t("recipes.formEdit").replace("{status}", t(`status.${selectedStatus}`)) : t("recipes.formNew")}</h3>
 
           {selectedId ? (
             <div className="recipes__tabs" data-testid="recipe-tabs">
@@ -392,7 +393,7 @@ export function Recipes() {
                 data-testid="tab-params"
                 onClick={() => setActiveTab("params")}
               >
-                Параметры
+                {t("recipes.tabParams")}
               </button>
               <button
                 type="button"
@@ -400,16 +401,16 @@ export function Recipes() {
                 data-testid="tab-history"
                 onClick={() => setActiveTab("history")}
               >
-                История
+                {t("recipes.tabHistory")}
               </button>
             </div>
           ) : null}
 
           {selectedId && activeTab === "history" ? (
             <div className="recipes__history" data-testid="history-tab">
-              <h4>Diff версий</h4>
+              <h4>{t("diff.title")}</h4>
               <VersionDiff recipeId={selectedId} />
-              <h4>Журнал изменений</h4>
+              <h4>{t("audit.title")}</h4>
               <AuditHistory entityType="recipe" entityId={selectedId} />
             </div>
           ) : null}
@@ -417,7 +418,7 @@ export function Recipes() {
           {activeTab === "params" ? (
           <>
           <label className="recipes-field">
-            <span className="recipes-field-label">SKU</span>
+            <span className="recipes-field-label">{t("recipes.fieldSku")}</span>
             <input
               type="text"
               data-testid="field-sku-id"
@@ -427,14 +428,14 @@ export function Recipes() {
           </label>
 
           <label className="recipes-field">
-            <span className="recipes-field-label">Шаблон процесса</span>
+            <span className="recipes-field-label">{t("recipes.fieldTemplate")}</span>
             <select
               data-testid="field-template"
               value={templateId}
               disabled={Boolean(selectedId)}
               onChange={(e) => handleTemplateChange(e.target.value)}
             >
-              <option value="">— выберите шаблон —</option>
+              <option value="">{t("recipes.templateSelect")}</option>
               {templates.map((tpl) => (
                 <option key={String(tpl?.id)} value={String(tpl?.id)}>
                   {String(tpl?.name || tpl?.id)} (v{String(tpl?.version || "")})
@@ -454,7 +455,7 @@ export function Recipes() {
           </label>
 
           <div className="recipes-field">
-            <span className="recipes-field-label">Параметры рецепта</span>
+            <span className="recipes-field-label">{t("recipes.tabParams")}</span>
             {paramDefs.length === 0 ? <div className="recipes-hint">словарь параметров загружается…</div> : null}
             {paramDefs.map((def) => (
               <label className="recipes-param" key={def.name} data-param-name={def.name}>
@@ -490,7 +491,7 @@ export function Recipes() {
               disabled={busy || !skuId.trim() || (!selectedId && !templateId)}
               onClick={handleSave}
             >
-              {busy ? "Сохранение…" : "Сохранить"}
+              {busy ? t("recipes.saving") : t("recipes.save")}
             </button>
             <button
               type="button"
@@ -499,7 +500,7 @@ export function Recipes() {
               disabled={busy || !selectedId || selectedStatus === "published"}
               onClick={handlePublish}
             >
-              Опубликовать
+              {t("recipes.publish")}
             </button>
             {selectedStatus === "published" ? (
               <button
@@ -509,7 +510,7 @@ export function Recipes() {
                 disabled={busy || !selectedId}
                 onClick={handleNewVersion}
               >
-                Новая версия
+                {t("recipes.newVersion")}
               </button>
             ) : null}
             <button
@@ -519,17 +520,17 @@ export function Recipes() {
               disabled={busy || !selectedId}
               onClick={handleClone}
             >
-              Клонировать на SKU
+              {t("recipes.clone")}
             </button>
           </div>
 
           <div className="recipes__analysis" data-testid="blocks-analysis">
-            <h4>Используется в блоках</h4>
+            <h4>{t("recipes.analysis")}</h4>
             {!templateId ? (
-              <div className="recipes-hint">выберите шаблон, чтобы увидеть связанные блоки</div>
+              <div className="recipes-hint">{t("recipes.analysisNoTemplate")}</div>
             ) : null}
             {templateId && analysis.blocks.length === 0 ? (
-              <div className="recipes-hint">в блоках шаблона нет recipe_params</div>
+              <div className="recipes-hint">{t("recipes.analysisEmpty")}</div>
             ) : null}
             {analysis.blocks.map((block) => (
               <div
@@ -550,7 +551,7 @@ export function Recipes() {
                   ))}
                 </span>
                 {block.missing_params.length ? (
-                  <span className="recipes-analysis__warn">нет в рецепте: {block.missing_params.join(", ")}</span>
+                  <span className="recipes-analysis__warn">{tf("recipes.analysisMissing", { params: block.missing_params.join(", ") })}</span>
                 ) : null}
               </div>
             ))}

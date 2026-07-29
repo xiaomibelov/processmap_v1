@@ -190,6 +190,6 @@ describe("Pilots screen (E9.6)", () => {
     expect(statusLabel("draft")).toBe("Черновик");
     expect(statusLabel("pilot")).toBe("Пилот");
     expect(statusLabel("active")).toBe("Активен");
-    expect(statusLabel("retired")).toBe("Выведен");
+    expect(statusLabel("retired")).toBe("Снят с эксплуатации"); // L3 глоссарий
   });
 });

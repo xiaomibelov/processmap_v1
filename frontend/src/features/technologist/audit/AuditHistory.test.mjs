@@ -109,7 +109,7 @@ function qAll(testid) {
 
 describe("audit helpers", () => {
   it("formats ts as YYYY-MM-DD HH:MM", () => {
-    expect(formatTs(1785336428)).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    expect(formatTs(1785336428)).toMatch(/^\d{2}\.\d{2}\.\d{4}, \d{2}:\d{2}$/); // L5: русская локаль
     expect(formatTs(0)).toBe("—");
   });
 
