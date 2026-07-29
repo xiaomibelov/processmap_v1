@@ -331,14 +331,14 @@ def test_start_pilot_on_non_draft_409(client, analyst_token):
 # RBAC
 # ---------------------------------------------------------------------------
 
-def test_technologist_gets_403_on_writes(client, technologist_token, analyst_token):
+def test_technologist_can_write_bindings(client, technologist_token, analyst_token):
+    """U5: technologist допущен к записям пилотного контура (воркфлоу)."""
     r = client.post(
         "/api/sku-bindings",
         json={"recipe_id": _recipe_id()},
         headers=_auth(technologist_token),
     )
-    assert r.status_code == 403, r.text
-    assert r.json()["detail"]["error"] == "insufficient_permissions"
+    assert r.status_code == 201, r.text
 
     # чтение доступно любой авторизованной роли
     binding = _create_binding(client, analyst_token)
@@ -347,13 +347,21 @@ def test_technologist_gets_403_on_writes(client, technologist_token, analyst_tok
         assert r.status_code == 200, r.text
         r = client.get(f"/api/sku-bindings/{binding['id']}/pilot-metrics", headers=_auth(technologist_token))
         assert r.status_code == 200, r.text
-        # а писать метрики technologist не может
+        # и метрики пилота technologist писать может (воркфлоу); 409 — статус-гейт, не роль
+        binding2 = _create_binding(client, analyst_token)
         r = client.post(
-            f"/api/sku-bindings/{binding['id']}/metrics",
+            f"/api/sku-bindings/{binding2['id']}/start-pilot",
+            json={"pilot_kitchen_id": _kitchen_ids()[0], "criteria": {"min_orders": 1}},
+            headers=_auth(technologist_token),
+        )
+        assert r.status_code == 200, r.text
+        r = client.post(
+            f"/api/sku-bindings/{binding2['id']}/metrics",
             json={"orders_count": 1},
             headers=_auth(technologist_token),
         )
-        assert r.status_code == 403, r.text
+        assert r.status_code == 201, r.text
+        _cleanup(binding2["id"])
     finally:
         _cleanup(binding["id"])
 
