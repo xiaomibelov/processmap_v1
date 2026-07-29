@@ -1,0 +1,22 @@
+{
+  "id": "cafe1633-fa48-4a76-ba33-c3a262978e78",
+  "name": "Супы РТК MVP",
+  "version": "0.1.0",
+  "status": "draft",
+  "check_flows": [
+    {
+      "id": "Flow_17",
+      "name": "",
+      "condition": "",
+      "source_ref": "Activity_171znbt",
+      "target_ref": "Task_1"
+    },
+    {
+      "id": "Flow_18",
+      "name": "",
+      "condition": "",
+      "source_ref": "Task_1",
+      "target_ref": "Event_1pqduoq"
+    }
+  ]
+}
