@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../../../lib/apiCore";
 import AuditHistory from "../audit/AuditHistory";
 import { t, tf } from "../i18n";
+import WorkflowBar from "../workflow/WorkflowBar";
 import VersionDiff from "../audit/VersionDiff";
 import "./Recipes.css";
 
@@ -116,7 +117,19 @@ export function Recipes() {
       if (!canceled) setContainerTypes(r?.ok && Array.isArray(r.data) ? r.data : []);
     }).catch(() => {});
     apiRequest("/api/process-templates").then((r) => {
-      if (!canceled) setTemplates(r?.ok && Array.isArray(r.data) ? r.data : []);
+      if (canceled) return;
+      const list = r?.ok && Array.isArray(r.data) ? r.data : [];
+      setTemplates(list);
+      // UX1/U1.3: preselect шаблона из ?template=<id> (next-step «Создать рецепт»)
+      try {
+        const q = new URLSearchParams(window.location.search);
+        const preselect = String(q.get("template") || "").trim();
+        if (preselect && list.some((tpl) => String(tpl.id) === preselect)) {
+          setTemplateId(preselect);
+          const tpl = list.find((x) => String(x.id) === preselect);
+          setTemplateVersion(String(tpl?.version || ""));
+        }
+      } catch { /* ignore */ }
     }).catch(() => {});
     return () => {
       canceled = true;
@@ -274,6 +287,50 @@ export function Recipes() {
     }
   }
 
+  async function handleCreatePilot() {
+    // UX1/U1.3 (G7): publish → пилот в 1 клик (дефолтные критерии, задокументированы в title)
+    if (busy || !selectedId) return;
+    setBusy(true);
+    setErrors([]);
+    setNotice("");
+    try {
+      const kr = await apiRequest("/api/kitchens");
+      const kitchens = kr?.ok && Array.isArray(kr.data) ? kr.data : [];
+      const firstKitchen = kitchens[0];
+      if (!firstKitchen) {
+        setErrors([t("pilots.noKitchens")]);
+        return;
+      }
+      const selected = recipes.find((r) => String(r.id) === String(selectedId)) || {};
+      const br = await apiRequest("/api/sku-bindings", {
+        method: "POST",
+        body: {
+          recipe_id: selectedId,
+          recipe_version: String(selected.template_version || ""),
+          kitchen_ids: [String(firstKitchen.id)],
+        },
+      });
+      if (!br?.ok || !br.data?.id) {
+        setErrors(extractErrors(br));
+        return;
+      }
+      const sp = await apiRequest(`/api/sku-bindings/${encodeURIComponent(br.data.id)}/start-pilot`, {
+        method: "POST",
+        body: {
+          pilot_kitchen_id: String(firstKitchen.id),
+          criteria: { min_orders: 20, max_critical_errors: 0, max_defect_rate_pct: 2 },
+        },
+      });
+      if (!sp?.ok) {
+        setErrors(extractErrors(sp));
+        return;
+      }
+      window.location.assign("/technologist/pilots");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleClone() {
     if (busy || !selectedId) return;
     const nextSku = String(window.prompt(t("recipes.clonePrompt"), `${skuId}_copy`) || "").trim();
@@ -357,6 +414,8 @@ export function Recipes() {
     <div className="recipes">
       <h1 className="recipes__title">{t("recipes.title")}</h1>
 
+      <WorkflowBar current="recipe" />
+
       <div className="recipes__main">
         <aside className="recipes__list" data-testid="recipes-list">
           <div className="recipes__list-head">
@@ -365,7 +424,16 @@ export function Recipes() {
               {t("recipes.new")}
             </button>
           </div>
-          {recipes.length === 0 ? <div className="recipes-hint">{t("recipes.empty")}</div> : null}
+          {recipes.length === 0 ? (
+            <div className="recipes-empty" data-testid="recipes-empty">
+              <div className="recipes-hint">{templates.length === 0 ? t("wf.recipesNoTemplates") : t("wf.recipesEmpty")}</div>
+              {templates.length === 0 ? (
+                <a className="recipes-btn recipes-btn--small" data-testid="empty-go-import" href="/technologist/import-bpmn">
+                  {t("wf.templatesEmptyAction")}
+                </a>
+              ) : null}
+            </div>
+          ) : null}
           {recipes.map((recipe) => (
             <button
               type="button"
@@ -523,6 +591,34 @@ export function Recipes() {
               {t("recipes.clone")}
             </button>
           </div>
+
+          {selectedId && selectedStatus !== "published" ? (
+            <div className="recipes__next-step" data-testid="next-step-check">
+              <span>{t("wf.next")}</span>
+              <a
+                className="recipes-btn recipes-btn--primary"
+                data-testid="next-check-process"
+                href={`/technologist/constructor?template=${encodeURIComponent(templateId)}&check=1`}
+              >
+                {t("wf.nextCheck")}
+              </a>
+            </div>
+          ) : null}
+          {selectedId && selectedStatus === "published" ? (
+            <div className="recipes__next-step" data-testid="next-step-pilot">
+              <span>{t("wf.next")}</span>
+              <button
+                type="button"
+                className="recipes-btn recipes-btn--primary"
+                data-testid="next-create-pilot"
+                disabled={busy}
+                title={t("pilots.createPilotHint")}
+                onClick={handleCreatePilot}
+              >
+                {t("wf.nextPilot")}
+              </button>
+            </div>
+          ) : null}
 
           <div className="recipes__analysis" data-testid="blocks-analysis">
             <h4>{t("recipes.analysis")}</h4>

@@ -178,8 +178,9 @@ async def import_bpmn(
     file: Optional[UploadFile] = File(None),
 ) -> Dict[str, Any]:
     user = get_current_user(request)
-    # E2.0b: импорт BPMN — admin-only метод (analyst/admin); technologist → 403
-    require_role(["analyst", "admin"])(request)
+    # U5: импорт BPMN — воркфлоу-метод (analyst/admin/technologist);
+    # admin-функции (словари, кухни, правила трансформации) technologist → 403
+    require_role(["analyst", "admin", "technologist"])(request)
     if file is not None:
         raw = await file.read()
     else:

@@ -107,8 +107,9 @@ describe("TransformReview", () => {
 
   it("posts file to /api/process-templates/transform-asis", async () => {
     await renderAndTransform();
-    expect(fetch).toHaveBeenCalledTimes(1);
-    const [url, init] = fetch.mock.calls[0];
+    const transformCalls = fetch.mock.calls.filter(([u]) => String(u).includes("/api/process-templates/transform-asis"));
+    expect(transformCalls).toHaveLength(1);
+    const [url, init] = transformCalls[0];
     expect(String(url)).toContain("/api/process-templates/transform-asis");
     expect(String(init.method)).toBe("POST");
     expect(init.body).toBeInstanceOf(FormData);
