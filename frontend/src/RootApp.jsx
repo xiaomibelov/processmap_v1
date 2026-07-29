@@ -15,6 +15,7 @@ import TransformReview from "./features/technologist/transform/TransformReview";
 import TechnologistRecipes from "./features/technologist/recipes/Recipes";
 import TechnologistAudit from "./features/technologist/audit/AuditPage";
 import TechnologistPilots from "./features/technologist/pilots/Pilots";
+import TechnologistHome from "./features/technologist/home/Home";
 import { canAccessAdminConsole } from "./features/admin/adminUtils";
 import {
   buildAnalyticsPath,
@@ -244,6 +245,7 @@ function AppRoutes() {
   const wantsTechnologistRecipes = pathname.startsWith("/technologist/recipes");
   const wantsTechnologistAudit = pathname.startsWith("/technologist/audit");
   const wantsTechnologistPilots = pathname.startsWith("/technologist/pilots");
+  const wantsTechnologistHome = pathname === "/technologist" || pathname === "/technologist/home";
 
   useEffect(() => {
     if (!isAuthed || !wantsWorkspace) return;
@@ -262,6 +264,31 @@ function AppRoutes() {
   }
 
   const showWorkspace = wantsWorkspace && isAuthed;
+
+  // UX1/U3: главный экран технолога «Мои процессы».
+  if (wantsTechnologistHome) {
+    return (
+      <>
+        {isAuthed ? (
+          <TechnologistHome />
+        ) : (
+          <LoginPage
+            onBack={() => navigate("/")}
+            onSuccess={() => {
+              setReauthRequired(false);
+              navigate("/technologist", { replace: true });
+            }}
+          />
+        )}
+        <LoginModal
+          open={loginModalOpen}
+          locked={!isAuthed}
+          onClose={handleModalClose}
+          onSuccess={handleLoginSuccess}
+        />
+      </>
+    );
+  }
 
   // E2: standalone technologist catalog page (same minimal mount as import page).
   if (wantsTechnologistCatalog) {

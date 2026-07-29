@@ -50,7 +50,7 @@ export default function CheckPanel({
       </div>
 
       <section className="ctor-check__section" data-testid="check-findings">
-        <h3>{t("check.dryRun")}</h3>
+        <h3 title={t("check.dryRunHint")}>{t("check.dryRun")}</h3>
         <div className="ctor-check__summary" data-testid="check-summary">
           <span>{t("check.nodes")} {Number(summary.nodes) || 0}</span>
           <span>{t("check.flows")} {Number(summary.flows) || 0}</span>
@@ -102,7 +102,7 @@ export default function CheckPanel({
       </section>
 
       <section className="ctor-check__section" data-testid="check-precheck">
-        <h3>{t("check.precheck")}</h3>
+        <h3 title={t("check.precheckHint")}>{t("check.precheck")}</h3>
         <div className="ctor-check__precheck-controls">
           <span className="ctor-field-label">{t("check.kitchens")}</span>
           {asArray(kitchens).map((kitchen) => {

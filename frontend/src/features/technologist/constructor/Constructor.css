@@ -677,3 +677,15 @@
 .ctor-version-status--published { color: #1a7f37; }
 .ctor-version-status--draft { color: #9a6700; }
 .ctor-version-status--retired { color: #6e7781; text-decoration: line-through; }
+.ctor__next-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  background: #1d2c47;
+  border: 1px solid #3f6fd1;
+  border-radius: 8px;
+  color: #d5e0ee;
+}
+.ctor__next-step a { text-decoration: none; }
