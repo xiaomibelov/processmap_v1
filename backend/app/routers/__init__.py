@@ -34,6 +34,8 @@ from .dictionaries import router as dictionaries_router
 from .health import router as health_router
 from .transformation import router as transformation_router
 from .kitchens import router as kitchens_router
+from .sku_bindings import router as sku_bindings_router
+from .audit_log import router as audit_log_router
 
 # (router, openapi_tags).  Routers that already set their own tags keep them;
 # the tuple provides a fallback/default tag for Swagger UI grouping.
@@ -73,5 +75,7 @@ ROUTERS = (
     (operation_catalog_router, ["operation-catalog"]),
     (dictionaries_router, ["dictionaries"]),
     (kitchens_router, ["kitchens"]),
+    (sku_bindings_router, ["sku-bindings"]),
+    (audit_log_router, ["audit-log"]),
     (health_router, ["health"]),
 )

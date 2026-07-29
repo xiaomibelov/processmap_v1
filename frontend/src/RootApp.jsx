@@ -13,6 +13,8 @@ import TechnologistCatalog from "./features/technologist/catalog/Catalog";
 import TechnologistConstructor from "./features/technologist/constructor/Constructor";
 import TransformReview from "./features/technologist/transform/TransformReview";
 import TechnologistRecipes from "./features/technologist/recipes/Recipes";
+import TechnologistAudit from "./features/technologist/audit/AuditPage";
+import TechnologistPilots from "./features/technologist/pilots/Pilots";
 import { canAccessAdminConsole } from "./features/admin/adminUtils";
 import {
   buildAnalyticsPath,
@@ -240,6 +242,8 @@ function AppRoutes() {
   const wantsTechnologistConstructor = pathname.startsWith("/technologist/constructor");
   const wantsTechnologistTransform = pathname.startsWith("/technologist/transform");
   const wantsTechnologistRecipes = pathname.startsWith("/technologist/recipes");
+  const wantsTechnologistAudit = pathname.startsWith("/technologist/audit");
+  const wantsTechnologistPilots = pathname.startsWith("/technologist/pilots");
 
   useEffect(() => {
     if (!isAuthed || !wantsWorkspace) return;
@@ -321,6 +325,56 @@ function AppRoutes() {
             onSuccess={() => {
               setReauthRequired(false);
               navigate(`/technologist/recipes${search}${hash}`, { replace: true });
+            }}
+          />
+        )}
+        <LoginModal
+          open={loginModalOpen}
+          locked={!isAuthed}
+          onClose={handleModalClose}
+          onSuccess={handleLoginSuccess}
+        />
+      </>
+    );
+  }
+
+  // E9.6: standalone technologist pilots page (same minimal mount as recipes).
+  if (wantsTechnologistPilots) {
+    return (
+      <>
+        {isAuthed ? (
+          <TechnologistPilots />
+        ) : (
+          <LoginPage
+            onBack={() => navigate("/")}
+            onSuccess={() => {
+              setReauthRequired(false);
+              navigate(`/technologist/pilots${search}${hash}`, { replace: true });
+            }}
+          />
+        )}
+        <LoginModal
+          open={loginModalOpen}
+          locked={!isAuthed}
+          onClose={handleModalClose}
+          onSuccess={handleLoginSuccess}
+        />
+      </>
+    );
+  }
+
+  // E8: standalone technologist audit log page (same minimal mount as recipes).
+  if (wantsTechnologistAudit) {
+    return (
+      <>
+        {isAuthed ? (
+          <TechnologistAudit />
+        ) : (
+          <LoginPage
+            onBack={() => navigate("/")}
+            onSuccess={() => {
+              setReauthRequired(false);
+              navigate(`/technologist/audit${search}${hash}`, { replace: true });
             }}
           />
         )}
