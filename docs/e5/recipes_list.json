@@ -1,0 +1,34 @@
+[
+  {
+    "id": "6951cce6-1b77-4569-929d-3e6135ec852b",
+    "template_id": "a5f9fbe0-4612-459c-a71e-1fd7432927f6",
+    "sku_id": "tom_yam",
+    "template_version": "1.0.0",
+    "parameters_json": {
+      "portion_qty": 2,
+      "heat_time_sec": 120,
+      "heating_power": "high",
+      "target_temp_c": 85,
+      "source_container_type": "food_container"
+    },
+    "status": "published",
+    "created_by": "admin@local",
+    "updated_at": "2026-07-29T10:00:38.897995"
+  },
+  {
+    "id": "49165cc0-1412-4419-96c9-82f718aa4cdf",
+    "template_id": "a5f9fbe0-4612-459c-a71e-1fd7432927f6",
+    "sku_id": "borsch_classic",
+    "template_version": "1.0.0",
+    "parameters_json": {
+      "portion_qty": 2,
+      "heat_time_sec": 90,
+      "heating_power": "medium",
+      "target_temp_c": 85,
+      "source_container_type": "food_container"
+    },
+    "status": "published",
+    "created_by": "admin@local",
+    "updated_at": "2026-07-29T10:00:38.878981"
+  }
+]

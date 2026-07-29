@@ -1,0 +1,14 @@
+{
+  "status": 422,
+  "body": {
+    "detail": {
+      "message": "Рецепт неполон: не заданы параметры, требуемые блоками шаблона: heating_power, portion_qty, source_container_type",
+      "missing_params": [
+        "heating_power",
+        "portion_qty",
+        "source_container_type"
+      ]
+    }
+  },
+  "recipe_id": "da3e8d03-f3b3-4f1f-8be8-c079f1372743"
+}
