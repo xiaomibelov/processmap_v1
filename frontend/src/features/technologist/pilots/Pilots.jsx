@@ -143,7 +143,7 @@ export default function Pilots() {
       const allKitchenIds = Object.keys(kitchensById);
       const resp = await apiRequest(`/api/sku-bindings/${encodeURIComponent(binding.id)}/rollout`, {
         method: "POST",
-        body: JSON.stringify({ kitchen_ids: allKitchenIds }),
+        body: { kitchen_ids: allKitchenIds },
       });
       if (!resp?.ok) {
         const detail = resp?.data?.detail;
