@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ProcessMap Technologist Interface</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+        .interface { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .header { background: #e67e22; color: white; padding: 15px; margin: -20px -20px 20px -20px; border-radius: 8px 8px 0 0; }
+        .menu { display: flex; gap: 10px; margin: 20px 0; flex-wrap: wrap; }
+        .menu-item { padding: 10px 20px; background: #e67e22; color: white; border-radius: 4px; text-decoration: none; }
+        .menu-item:hover { background: #d35400; }
+        .menu-item.disabled { background: #bdc3c7; cursor: not-allowed; }
+        .section { margin: 20px 0; padding: 15px; background: #ecf0f1; border-radius: 4px; }
+        .endpoint { background: #fff3cd; padding: 10px; margin: 5px 0; border-left: 4px solid #e67e22; }
+        .endpoint.disabled { background: #f8d7da; border-left-color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="interface">
+        <div class="header">
+            <h1>ProcessMap - Technologist Interface</h1>
+            <p>Role: technologist | Limited access (read-only for most features)</p>
+        </div>
+        
+        <div class="section">
+            <h2>Navigation Menu</h2>
+            <div class="menu">
+                <a href="#" class="menu-item">Catalog</a>
+                <a href="#" class="menu-item">Constructor</a>
+                <a href="#" class="menu-item">Recipe</a>
+                <a href="#" class="menu-item disabled">Operation Catalog</a>
+                <a href="#" class="menu-item disabled">Import BPMN</a>
+                <a href="#" class="menu-item disabled">XML Editor</a>
+                <a href="#" class="menu-item disabled">Dictionaries</a>
+                <a href="#" class="menu-item">Publish</a>
+                <a href="#" class="menu-item">Pilot</a>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Available Endpoints</h2>
+            <div class="endpoint">GET /api/operation-catalog (read)</div>
+            <div class="endpoint">GET /api/dictionaries/* (read)</div>
+            <div class="endpoint">GET /api/process-templates (read)</div>
+            <div class="endpoint">POST /api/process-templates (write)</div>
+            <div class="endpoint disabled">POST /api/operation-catalog (write) - 403 Forbidden</div>
+            <div class="endpoint disabled">POST /api/dictionaries/* (write) - 403 Forbidden</div>
+            <div class="endpoint disabled">POST /api/process-templates/import-bpmn (write) - 403 Forbidden</div>
+        </div>
+        
+        <div class="section">
+            <h2>Capabilities</h2>
+            <ul>
+                <li>View operation catalog (read-only)</li>
+                <li>View dictionaries (read-only)</li>
+                <li>Create and edit process templates</li>
+                <li>Use constructor with available blocks</li>
+                <li>Publish templates</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
