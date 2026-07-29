@@ -249,14 +249,31 @@ def test_publish_blocked_when_template_param_missing(client, analyst_token, temp
     assert r.json()["status"] == "published"
 
 
-def test_publish_requires_analyst_or_admin(client, technologist_token, analyst_token, template):
+def test_publish_allowed_for_technologist_role(client, technologist_token, analyst_token, template):
+    """U5: technologist допущен к воркфлоу-публикации (admin-only — отдельные 403)."""
     r = _create_recipe(client, analyst_token, template)
     rid = r.json()["id"]
+    r = client.put(
+        f"/api/recipes/{rid}",
+        json={"parameters_json": {"heat_time_sec": 90, "target_temp_c": 85}},
+        headers=_auth(analyst_token),
+    )
+    assert r.status_code == 200, r.text
+    from backend.app.process_template.version_repository import ProcessTemplateVersionRepository
+
+    ProcessTemplateVersionRepository().create(
+        {
+            "template_id": template["id"],
+            "version": template["version"],
+            "status": "published",
+            "ui_model": template.get("ui_model"),
+            "bpmn_xml": "",
+            "created_by": "e5-test",
+        }
+    )
     r = client.post(f"/api/recipes/{rid}/publish", headers=_auth(technologist_token))
-    assert r.status_code == 403, r.text
-    detail = r.json().get("detail")
-    assert isinstance(detail, dict)
-    assert detail.get("error") == "insufficient_permissions"
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "published"
 
 
 def test_clone_to_new_sku(client, analyst_token, template):
