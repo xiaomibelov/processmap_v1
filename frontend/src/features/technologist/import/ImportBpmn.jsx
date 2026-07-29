@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 
 import { apiImportBpmn } from "../../../lib/api";
+import GraphCanvas from "../graph/GraphCanvas";
 import "./ImportBpmn.css";
 
 const SEVERITY_META = {
@@ -33,45 +34,16 @@ function normalizeResult(raw) {
   };
 }
 
-function computeViewBox(nodes) {
-  const pad = 40;
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  nodes.forEach((n) => {
-    const x = Number(n?.x) || 0;
-    const y = Number(n?.y) || 0;
-    const w = Number(n?.width) || 100;
-    const h = Number(n?.height) || 60;
-    minX = Math.min(minX, x);
-    minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x + w);
-    maxY = Math.max(maxY, y + h);
-  });
-  if (!Number.isFinite(minX)) {
-    minX = 0; minY = 0; maxX = 400; maxY = 200;
+export const E4_HANDOFF_KEY = "fpc_e4_handoff";
+
+function navigateToConstructor() {
+  if (typeof window === "undefined") return;
+  window.history.pushState({}, "/technologist/constructor?from=import", "/technologist/constructor?from=import");
+  try {
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  } catch {
+    window.dispatchEvent(new Event("popstate"));
   }
-  return `${minX - pad} ${minY - pad} ${Math.max(maxX - minX + pad * 2, 100)} ${Math.max(maxY - minY + pad * 2, 100)}`;
-}
-
-function nodeCenter(node) {
-  const x = Number(node?.x) || 0;
-  const y = Number(node?.y) || 0;
-  const w = Number(node?.width) || 100;
-  const h = Number(node?.height) || 60;
-  return { cx: x + w / 2, cy: y + h / 2, x, y, w, h };
-}
-
-function flowPoints(source, target) {
-  const s = nodeCenter(source);
-  const t = nodeCenter(target);
-  const sx = s.x + s.w;
-  const sy = s.cy;
-  const tx = t.x;
-  const ty = t.cy;
-  const midX = sx + Math.max((tx - sx) / 2, 24);
-  return `${sx},${sy} ${midX},${sy} ${midX},${ty} ${tx},${ty}`;
 }
 
 export default function ImportBpmn() {
@@ -83,12 +55,19 @@ export default function ImportBpmn() {
   const nodeRefs = useRef({});
 
   const parsed = useMemo(() => (result ? normalizeResult(result) : null), [result]);
-  const viewBox = useMemo(() => (parsed ? computeViewBox(parsed.uiModel.nodes) : "0 0 400 200"), [parsed]);
-  const nodesById = useMemo(() => {
-    const map = new Map();
-    (parsed?.uiModel.nodes || []).forEach((n) => map.set(String(n?.id || ""), n));
-    return map;
-  }, [parsed]);
+
+  function handleOpenInConstructor() {
+    if (!parsed) return;
+    try {
+      window.sessionStorage?.setItem(
+        E4_HANDOFF_KEY,
+        JSON.stringify({ ui_model: parsed.uiModel, draft_entities: parsed.draftEntities }),
+      );
+    } catch {
+      // ignore storage errors
+    }
+    navigateToConstructor();
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -155,62 +134,22 @@ export default function ImportBpmn() {
           <div className="import-bpmn__content">
             <section className="import-bpmn__preview">
               <h2>Предпросмотр графа</h2>
-              <svg
-                className="import-bpmn__svg"
-                viewBox={viewBox}
-                role="img"
-                aria-label="Предпросмотр графа процесса"
-              >
-                <defs>
-                  <marker
-                    id="import-bpmn-arrow"
-                    viewBox="0 0 10 10"
-                    refX="9"
-                    refY="5"
-                    markerWidth="8"
-                    markerHeight="8"
-                    orient="auto-start-reverse"
-                  >
-                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#555" />
-                  </marker>
-                </defs>
-                {parsed.uiModel.flows.map((flow) => {
-                  const source = nodesById.get(String(flow?.source_ref || ""));
-                  const target = nodesById.get(String(flow?.target_ref || ""));
-                  if (!source || !target) return null;
-                  return (
-                    <polyline
-                      key={String(flow?.id || `${flow?.source_ref}->${flow?.target_ref}`)}
-                      points={flowPoints(source, target)}
-                      fill="none"
-                      stroke="#555"
-                      strokeWidth="1.5"
-                      markerEnd="url(#import-bpmn-arrow)"
-                    />
-                  );
-                })}
-                {parsed.uiModel.nodes.map((node) => {
-                  const id = String(node?.id || "");
-                  const { x, y, w, h, cx, cy } = nodeCenter(node);
-                  const label = String(node?.display_name || node?.name || id || "").trim();
-                  const selected = id && id === selectedElementId;
-                  return (
-                    <g
-                      key={id || `${x}_${y}`}
-                      ref={(el) => { if (id) nodeRefs.current[id] = el; }}
-                      data-element-id={id}
-                      data-selected={selected ? "true" : "false"}
-                      className={`import-bpmn__node${selected ? " import-bpmn__node--selected" : ""}`}
-                      onClick={() => id && setSelectedElementId(id)}
-                    >
-                      <rect x={x} y={y} width={w} height={h} rx={6} />
-                      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle">
-                        {label}
-                      </text>
-                    </g>
-                  );
-                })}
-              </svg>
+              <div className="import-bpmn__preview-actions">
+                <button
+                  type="button"
+                  className="import-bpmn__to-constructor"
+                  onClick={handleOpenInConstructor}
+                >
+                  Открыть в конструкторе
+                </button>
+              </div>
+              <GraphCanvas
+                uiModel={parsed.uiModel}
+                selectedElementId={selectedElementId}
+                onSelectNode={setSelectedElementId}
+                nodeRefs={nodeRefs}
+                ariaLabel="Предпросмотр графа процесса"
+              />
             </section>
 
             <section className="import-bpmn__findings">
