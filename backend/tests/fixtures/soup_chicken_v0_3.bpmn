@@ -1,0 +1,188 @@
+<?xml version="1.0" ?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:pm="http://processmap.local/schema/v0.3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_fe94bfa7" targetNamespace="http://processmap.local/schema/v0.3" xsi:schemaLocation="http://www.omg.org/spec/BPMN/20100524/MODEL BPMN20.xsd">
+  <bpmn:collaboration id="Collaboration_08b89ef0">
+    <bpmn:participant id="Participant_099d27b4" name="Process" processRef="Process_3c2b1417"/>
+  </bpmn:collaboration>
+  <bpmn:process id="Process_3c2b1417" isExecutable="true">
+    <bpmn:extensionElements>
+      <pm:metadata>{&quot;process_entities&quot;: {&quot;containers&quot;: {&quot;sauce_container&quot;: {&quot;type_id&quot;: &quot;sauce_container&quot;}, &quot;source_container&quot;: {&quot;type_id&quot;: &quot;soup_container&quot;}, &quot;target_container&quot;: {&quot;type_id&quot;: &quot;serving_container&quot;}}, &quot;equipment&quot;: {&quot;freezer&quot;: {&quot;type_id&quot;: &quot;freezer&quot;}, &quot;fridge&quot;: {&quot;type_id&quot;: &quot;refrigerator&quot;}, &quot;heating_equipment&quot;: {&quot;type_id&quot;: &quot;microwave&quot;}, &quot;hot_cabinet&quot;: {&quot;type_id&quot;: &quot;hot_cabinet&quot;}}, &quot;zones&quot;: {&quot;marking_zone&quot;: {&quot;type_id&quot;: &quot;marking_zone&quot;}, &quot;pickup_zone&quot;: {&quot;type_id&quot;: &quot;pickup_zone&quot;}, &quot;waste_zone&quot;: {&quot;type_id&quot;: &quot;disposal_zone&quot;}, &quot;work_zone&quot;: {&quot;type_id&quot;: &quot;work_zone&quot;}}}, &quot;process_template_id&quot;: &quot;chicken_soup_v0_3&quot;, &quot;recipe_context&quot;: {&quot;dish_name&quot;: &quot;Куриный суп&quot;, &quot;has_default_topping&quot;: false, &quot;has_paid_topping&quot;: false, &quot;heating_duration_sec&quot;: 300, &quot;heating_power_level&quot;: &quot;high&quot;, &quot;order_id&quot;: &quot;order_placeholder&quot;, &quot;portion_qty&quot;: 1, &quot;requires_sauce&quot;: false, &quot;target_temp_c&quot;: 75}}</pm:metadata>
+    </bpmn:extensionElements>
+    <bpmn:startEvent id="StartEvent_8dbd71c4" name="Начало">
+      <bpmn:outgoing>Flow_202eca2e</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:endEvent id="EndEvent_f32ac5ed" name="Конец">
+      <bpmn:incoming>Flow_81d29484</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Activity_0afc5c8a" name="Достать порционный контейнер с куриным супом из морозильника">
+      <bpmn:extensionElements>
+        <pm:metadata>{&quot;display_name&quot;: &quot;Достать порционный контейнер с куриным супом из морозильника&quot;, &quot;operation_code&quot;: &quot;get_from_storage&quot;, &quot;outputs&quot;: {}, &quot;params&quot;: {&quot;item_ref&quot;: &quot;source_container&quot;, &quot;target_ref&quot;: &quot;work_zone&quot;}, &quot;tags&quot;: [&quot;storage&quot;]}</pm:metadata>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_202eca2e</bpmn:incoming>
+      <bpmn:outgoing>Flow_e59ffb00</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_202eca2e" sourceRef="StartEvent_8dbd71c4" targetRef="Activity_0afc5c8a"/>
+    <bpmn:task id="Activity_7bb4bc22" name="Вскрыть / приоткрыть плёнку на контейнере с куриным супом">
+      <bpmn:extensionElements>
+        <pm:metadata>{&quot;display_name&quot;: &quot;Вскрыть / приоткрыть плёнку на контейнере с куриным супом&quot;, &quot;operation_code&quot;: &quot;open_container&quot;, &quot;outputs&quot;: {}, &quot;params&quot;: {&quot;container_ref&quot;: &quot;source_container&quot;}, &quot;tags&quot;: [&quot;assembly&quot;]}</pm:metadata>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_e59ffb00</bpmn:incoming>
+      <bpmn:outgoing>Flow_31d8c2a8</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_e59ffb00" sourceRef="Activity_0afc5c8a" targetRef="Activity_7bb4bc22"/>
+    <bpmn:task id="Activity_c67e7e3d" name="Положить контейнер с куриным супом в микроволновку">
+      <bpmn:extensionElements>
+        <pm:metadata>{&quot;display_name&quot;: &quot;Положить контейнер с куриным супом в микроволновку&quot;, &quot;operation_code&quot;: &quot;move&quot;, &quot;outputs&quot;: {}, &quot;params&quot;: {&quot;object_ref&quot;: &quot;source_container&quot;, &quot;target_ref&quot;: &quot;heating_equipment&quot;}, &quot;tags&quot;: [&quot;heating&quot;]}</pm:metadata>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_31d8c2a8</bpmn:incoming>
+      <bpmn:outgoing>Flow_5443205b</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_31d8c2a8" sourceRef="Activity_7bb4bc22" targetRef="Activity_c67e7e3d"/>
+    <bpmn:task id="Activity_a447d587" name="Выставить время и мощность микроволновки">
+      <bpmn:extensionElements>
+        <pm:metadata>{&quot;display_name&quot;: &quot;Выставить время и мощность микроволновки&quot;, &quot;operation_code&quot;: &quot;set_equipment&quot;, &quot;outputs&quot;: {}, &quot;params&quot;: {&quot;duration_sec&quot;: &quot;heating_duration_sec&quot;, &quot;equipment_ref&quot;: &quot;heating_equipment&quot;, &quot;power_level&quot;: &quot;heating_power_level&quot;}, &quot;tags&quot;: [&quot;heating&quot;]}</pm:metadata>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_5443205b</bpmn:incoming>
+      <bpmn:outgoing>Flow_2731844f</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_5443205b" sourceRef="Activity_c67e7e3d" targetRef="Activity_a447d587"/>
+    <bpmn:task id="Activity_5956e330" name="Запустить разогрев">
+      <bpmn:extensionElements>
+        <pm:metadata>{&quot;display_name&quot;: &quot;Запустить разогрев&quot;, &quot;operation_code&quot;: &quot;start_equipment&quot;, &quot;outputs&quot;: {}, &quot;params&quot;: {&quot;equipment_ref&quot;: &quot;heating_equipment&quot;}, &quot;tags&quot;: [&quot;heating&quot;]}</pm:metadata>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_2731844f</bpmn:incoming>
+      <bpmn:outgoing>Flow_e4109eab</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_2731844f" sourceRef="Activity_a447d587" targetRef="Activity_5956e330"/>
+    <bpmn:task id="Activity_23954537" name="Достать контейнер из микроволновки">
+      <bpmn:extensionElements>
+        <pm:metadata>{&quot;display_name&quot;: &quot;Достать контейнер из микроволновки&quot;, &quot;operation_code&quot;: &quot;move&quot;, &quot;outputs&quot;: {}, &quot;params&quot;: {&quot;object_ref&quot;: &quot;source_container&quot;, &quot;target_ref&quot;: &quot;work_zone&quot;}, &quot;tags&quot;: [&quot;heating&quot;]}</pm:metadata>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_e4109eab</bpmn:incoming>
+      <bpmn:outgoing>Flow_f6a359d3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_e4109eab" sourceRef="Activity_5956e330" targetRef="Activity_23954537"/>
+    <bpmn:task id="Activity_c46ae73e" name="Перелить борщ в итоговый контейнер">
+      <bpmn:extensionElements>
+        <pm:metadata>{&quot;display_name&quot;: &quot;Перелить борщ в итоговый контейнер&quot;, &quot;operation_code&quot;: &quot;transfer&quot;, &quot;outputs&quot;: {}, &quot;params&quot;: {&quot;source_container_ref&quot;: &quot;source_container&quot;, &quot;target_container_ref&quot;: &quot;target_container&quot;}, &quot;tags&quot;: [&quot;assembly&quot;]}</pm:metadata>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_f6a359d3</bpmn:incoming>
+      <bpmn:outgoing>Flow_cdf8b23a</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_f6a359d3" sourceRef="Activity_23954537" targetRef="Activity_c46ae73e"/>
+    <bpmn:task id="Activity_c9a60ec1" name="Закрыть итоговый контейнер крышкой">
+      <bpmn:extensionElements>
+        <pm:metadata>{&quot;display_name&quot;: &quot;Закрыть итоговый контейнер крышкой&quot;, &quot;operation_code&quot;: &quot;close_container&quot;, &quot;outputs&quot;: {}, &quot;params&quot;: {&quot;container_ref&quot;: &quot;target_container&quot;}, &quot;tags&quot;: [&quot;assembly&quot;]}</pm:metadata>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_cdf8b23a</bpmn:incoming>
+      <bpmn:outgoing>Flow_1b3c0936</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_cdf8b23a" sourceRef="Activity_c46ae73e" targetRef="Activity_c9a60ec1"/>
+    <bpmn:task id="Activity_509cee51" name="Перенести контейнер на маркировочный стол">
+      <bpmn:extensionElements>
+        <pm:metadata>{&quot;display_name&quot;: &quot;Перенести контейнер на маркировочный стол&quot;, &quot;operation_code&quot;: &quot;move&quot;, &quot;outputs&quot;: {}, &quot;params&quot;: {&quot;object_ref&quot;: &quot;target_container&quot;, &quot;target_ref&quot;: &quot;marking_zone&quot;}, &quot;tags&quot;: [&quot;assembly&quot;]}</pm:metadata>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1b3c0936</bpmn:incoming>
+      <bpmn:outgoing>Flow_4e5fb194</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_1b3c0936" sourceRef="Activity_c9a60ec1" targetRef="Activity_509cee51"/>
+    <bpmn:task id="Activity_9eab222c" name="Заказ готов к упаковке">
+      <bpmn:extensionElements>
+        <pm:metadata>{&quot;display_name&quot;: &quot;Заказ готов к упаковке&quot;, &quot;operation_code&quot;: &quot;publish_event&quot;, &quot;outputs&quot;: {}, &quot;params&quot;: {&quot;event_code&quot;: &quot;ready_for_packaging&quot;}, &quot;tags&quot;: [&quot;dispatch&quot;]}</pm:metadata>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_4e5fb194</bpmn:incoming>
+      <bpmn:outgoing>Flow_81d29484</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_4e5fb194" sourceRef="Activity_509cee51" targetRef="Activity_9eab222c"/>
+    <bpmn:sequenceFlow id="Flow_81d29484" sourceRef="Activity_9eab222c" targetRef="EndEvent_f32ac5ed"/>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_e3130dcb">
+    <bpmndi:BPMNPlane id="BPMNPlane_ad4f36db" bpmnElement="Collaboration_08b89ef0">
+      <bpmndi:BPMNShape id="Participant_di_826c6efe" bpmnElement="Participant_099d27b4" isHorizontal="true">
+        <dc:Bounds x="60" y="175" width="2756" height="150"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_16385482" bpmnElement="StartEvent_8dbd71c4">
+        <dc:Bounds x="100" y="232" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ed70db5b" bpmnElement="Activity_0afc5c8a">
+        <dc:Bounds x="320" y="215" width="180" height="70"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_7faf13ff" bpmnElement="Flow_202eca2e">
+        <di:waypoint x="136" y="250"/>
+        <di:waypoint x="320" y="250"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Shape_5131b795" bpmnElement="Activity_7bb4bc22">
+        <dc:Bounds x="540" y="215" width="180" height="70"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_76d8d6d3" bpmnElement="Flow_e59ffb00">
+        <di:waypoint x="500" y="250"/>
+        <di:waypoint x="540" y="250"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Shape_bbaa1238" bpmnElement="Activity_c67e7e3d">
+        <dc:Bounds x="760" y="215" width="180" height="70"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_c81e5bdd" bpmnElement="Flow_31d8c2a8">
+        <di:waypoint x="720" y="250"/>
+        <di:waypoint x="760" y="250"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Shape_1e7448fa" bpmnElement="Activity_a447d587">
+        <dc:Bounds x="980" y="215" width="180" height="70"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_72268ad5" bpmnElement="Flow_5443205b">
+        <di:waypoint x="940" y="250"/>
+        <di:waypoint x="980" y="250"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Shape_570b8e97" bpmnElement="Activity_5956e330">
+        <dc:Bounds x="1200" y="215" width="180" height="70"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_df57ac31" bpmnElement="Flow_2731844f">
+        <di:waypoint x="1160" y="250"/>
+        <di:waypoint x="1200" y="250"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Shape_37955def" bpmnElement="Activity_23954537">
+        <dc:Bounds x="1420" y="215" width="180" height="70"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_4e953639" bpmnElement="Flow_e4109eab">
+        <di:waypoint x="1380" y="250"/>
+        <di:waypoint x="1420" y="250"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Shape_654669e1" bpmnElement="Activity_c46ae73e">
+        <dc:Bounds x="1640" y="215" width="180" height="70"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_44aaf989" bpmnElement="Flow_f6a359d3">
+        <di:waypoint x="1600" y="250"/>
+        <di:waypoint x="1640" y="250"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Shape_1c78db53" bpmnElement="Activity_c9a60ec1">
+        <dc:Bounds x="1860" y="215" width="180" height="70"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_7587ca36" bpmnElement="Flow_cdf8b23a">
+        <di:waypoint x="1820" y="250"/>
+        <di:waypoint x="1860" y="250"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Shape_f3c0fe5c" bpmnElement="Activity_509cee51">
+        <dc:Bounds x="2080" y="215" width="180" height="70"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_669e2387" bpmnElement="Flow_1b3c0936">
+        <di:waypoint x="2040" y="250"/>
+        <di:waypoint x="2080" y="250"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Shape_e31ed77c" bpmnElement="Activity_9eab222c">
+        <dc:Bounds x="2300" y="215" width="180" height="70"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_795c97b4" bpmnElement="Activity_9eab222c">
+        <dc:Bounds x="2520" y="215" width="180" height="70"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_fe44af37" bpmnElement="Flow_4e5fb194">
+        <di:waypoint x="2260" y="250"/>
+        <di:waypoint x="2300" y="250"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Shape_a060505c" bpmnElement="EndEvent_f32ac5ed">
+        <dc:Bounds x="2740" y="232" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_b571f832" bpmnElement="Flow_81d29484">
+        <di:waypoint x="2480" y="250"/>
+        <di:waypoint x="2740" y="250"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

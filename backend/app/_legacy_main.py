@@ -239,6 +239,7 @@ AUTH_PUBLIC_PATHS = {
     "/api/invite/activate",
     "/api/invites/accept",
     "/api/health",
+    "/api/health/process-template",
     "/api/meta",
     "/api/feature-flags",
     "/api/deployment-notice",

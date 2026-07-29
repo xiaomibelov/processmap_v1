@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ProcessMap Analyst Interface</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+        .interface { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .header { background: #2c3e50; color: white; padding: 15px; margin: -20px -20px 20px -20px; border-radius: 8px 8px 0 0; }
+        .menu { display: flex; gap: 10px; margin: 20px 0; flex-wrap: wrap; }
+        .menu-item { padding: 10px 20px; background: #3498db; color: white; border-radius: 4px; text-decoration: none; }
+        .menu-item:hover { background: #2980b9; }
+        .section { margin: 20px 0; padding: 15px; background: #ecf0f1; border-radius: 4px; }
+        .endpoint { background: #e8f4fd; padding: 10px; margin: 5px 0; border-left: 4px solid #3498db; }
+    </style>
+</head>
+<body>
+    <div class="interface">
+        <div class="header">
+            <h1>ProcessMap - Analyst Interface</h1>
+            <p>Role: analyst | Full access to all features</p>
+        </div>
+        
+        <div class="section">
+            <h2>Navigation Menu</h2>
+            <div class="menu">
+                <a href="#" class="menu-item">Catalog</a>
+                <a href="#" class="menu-item">Constructor</a>
+                <a href="#" class="menu-item">Recipe</a>
+                <a href="#" class="menu-item">Operation Catalog</a>
+                <a href="#" class="menu-item">Import BPMN</a>
+                <a href="#" class="menu-item">XML Editor</a>
+                <a href="#" class="menu-item">Dictionaries</a>
+                <a href="#" class="menu-item">Publish</a>
+                <a href="#" class="menu-item">Pilot</a>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Available Endpoints</h2>
+            <div class="endpoint">GET /api/operation-catalog (read)</div>
+            <div class="endpoint">POST /api/operation-catalog (write)</div>
+            <div class="endpoint">GET /api/dictionaries/* (read)</div>
+            <div class="endpoint">POST /api/dictionaries/* (write)</div>
+            <div class="endpoint">POST /api/process-templates/import-bpmn (write)</div>
+            <div class="endpoint">GET /api/process-templates (read)</div>
+            <div class="endpoint">POST /api/process-templates (write)</div>
+        </div>
+        
+        <div class="section">
+            <h2>Capabilities</h2>
+            <ul>
+                <li>View and edit operation catalog</li>
+                <li>Import BPMN files</li>
+                <li>Edit dictionaries</li>
+                <li>Create and edit process templates</li>
+                <li>Access all system features</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

@@ -2037,6 +2037,17 @@ export async function apiExportAnalyticsActionsXlsx(scope, scopeId) {
   return { ok: true, status: r.status, blob, filename: `actions-${scope}-${scopeId}.xlsx` };
 }
 
+// ------- Process Templates (Technologist) -------
+// POST /api/process-templates/import-bpmn (multipart file field `file`).
+// Returns { ui_model, report, draft_entities }.
+export async function apiImportBpmn(file) {
+  if (!file) return { ok: false, status: 0, error: "missing file" };
+  const form = new FormData();
+  form.append("file", file, String(file.name || "import.bpmn"));
+  const r = okOrError(await request(apiRoutes.processTemplates.importBpmn(), { method: "POST", body: form }));
+  return r.ok ? { ok: true, status: r.status, result: r.data } : r;
+}
+
 // ------- Recipes -------
 export async function apiListRecipes() {
   const r = okOrError(await request(apiRoutes.recipes.list()));
