@@ -16,10 +16,9 @@ COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 
 COPY backend /app/backend
-RUN chmod +x /app/backend/docker-entrypoint.sh
 
 RUN mkdir -p /app/workspace/processes /app/workspace/.session_store
 
 EXPOSE 8000
 
-CMD ["/app/backend/docker-entrypoint.sh"]
+CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
