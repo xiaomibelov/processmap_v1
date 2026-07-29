@@ -193,7 +193,7 @@ def update_recipe(recipe_id: str, data: RecipeUpdate, request: Request) -> Dict[
 
 @router.post("/recipes/{recipe_id}/publish")
 def publish_recipe(recipe_id: str, request: Request) -> Dict[str, Any]:
-    require_role(["analyst", "admin"])(request)
+    require_role(["analyst", "admin", "technologist"])(request)
     user = _current_user(request)
     recipe = recipes_repo.get_by_id(recipe_id)
     if not recipe:
@@ -288,7 +288,7 @@ def new_version_recipe(recipe_id: str, request: Request) -> Dict[str, Any]:
     следующий publish = patch-автоинкремент (v1.0.0 → v1.0.1).
     От draft → 409 (черновик редактируется напрямую).
     """
-    require_role(["analyst", "admin"])(request)
+    require_role(["analyst", "admin", "technologist"])(request)
     user = _current_user(request)
     recipe = recipes_repo.get_by_id(recipe_id)
     if not recipe:
