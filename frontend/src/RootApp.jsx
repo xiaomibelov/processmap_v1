@@ -10,6 +10,7 @@ import PublicHomePage from "./features/auth/PublicHomePage";
 import AnalyticsApp from "./features/analytics/AnalyticsApp.jsx";
 import ImportBpmn from "./features/technologist/import/ImportBpmn";
 import TechnologistCatalog from "./features/technologist/catalog/Catalog";
+import TechnologistConstructor from "./features/technologist/constructor/Constructor";
 import { canAccessAdminConsole } from "./features/admin/adminUtils";
 import {
   buildAnalyticsPath,
@@ -234,6 +235,7 @@ function AppRoutes() {
   const wantsAdmin = pathname.startsWith("/admin");
   const wantsTechnologistImport = pathname.startsWith("/technologist/import-bpmn");
   const wantsTechnologistCatalog = pathname.startsWith("/technologist/catalog");
+  const wantsTechnologistConstructor = pathname.startsWith("/technologist/constructor");
 
   useEffect(() => {
     if (!isAuthed || !wantsWorkspace) return;
@@ -265,6 +267,31 @@ function AppRoutes() {
             onSuccess={() => {
               setReauthRequired(false);
               navigate("/technologist/catalog", { replace: true });
+            }}
+          />
+        )}
+        <LoginModal
+          open={loginModalOpen}
+          locked={!isAuthed}
+          onClose={handleModalClose}
+          onSuccess={handleLoginSuccess}
+        />
+      </>
+    );
+  }
+
+  // E4: standalone technologist process constructor page (same minimal mount as catalog).
+  if (wantsTechnologistConstructor) {
+    return (
+      <>
+        {isAuthed ? (
+          <TechnologistConstructor />
+        ) : (
+          <LoginPage
+            onBack={() => navigate("/")}
+            onSuccess={() => {
+              setReauthRequired(false);
+              navigate(`/technologist/constructor${search}${hash}`, { replace: true });
             }}
           />
         )}
