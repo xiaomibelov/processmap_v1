@@ -1,0 +1,4 @@
+SELECT id, ts, actor_user_id, org_id, action, entity_type, entity_id, status, meta_json
+FROM audit_log WHERE entity_type = 'sku_binding' AND entity_id = 'a8425a3a-ed78-40c2-a34f-58f5f0871e57' ORDER BY ts;
+
+aud_8293e937b335 | 1785337826 | 79aae5f873d94a1e89659e55c584aea6 | org_default | rollout | sku_binding | a8425a3a-ed78-40c2-a34f-58f5f0871e57 | ok | {"recipe_id": "49165cc0-1412-4419-96c9-82f718aa4cdf", "recipe_version": "1.0.0", "kitchen_ids": ["4369f4db-7976-45b7-91a8-a83c0f8ad131", "f43310e5-dec1-4a64-9537-64ebf5e3791b"], "pilot_kitchen_id": "4369f4db-7976-45b7-91a8-a83c0f8ad131", "totals": {"orders": 20, "critical_errors": 0, "defect_count": 0, "defect_rate_pct": 0.0}, "criteria": {"min_orders": 20, "max_critical_errors": 0, "max_defect_rate_pct": 2.0}}
