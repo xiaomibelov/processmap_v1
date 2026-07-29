@@ -705,10 +705,11 @@ export function Constructor() {
     async function bootstrap() {
       const query = readQuery();
       const templateParam = String(query.get("template") || "").trim();
-      const fromImport = String(query.get("from") || "").trim() === "import";
+      const fromValue = String(query.get("from") || "").trim();
+      const fromHandoff = fromValue === "import" || fromValue === "transform"; // E3/E3.5 handoff
       if (templateParam) {
         await loadTemplate(templateParam);
-      } else if (fromImport) {
+      } else if (fromHandoff) {
         loadHandoff();
       }
     }
