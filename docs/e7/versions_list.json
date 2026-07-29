@@ -1,0 +1,18 @@
+[
+  {
+    "id": "6f35b1f3-44ce-4177-819d-d1ee8b76deb6",
+    "template_id": "4b5b0f75-8bc2-4f5a-8346-5212687cc0d5",
+    "version": "1.0.1",
+    "status": "published",
+    "created_by": "3db56b7f47ba4a0c881bae139bad916d",
+    "created_at": "2026-07-29T15:07:05.849208"
+  },
+  {
+    "id": "cd60a07a-2dde-4b2a-ae27-fd36ec8c9ea9",
+    "template_id": "4b5b0f75-8bc2-4f5a-8346-5212687cc0d5",
+    "version": "1.0.0",
+    "status": "retired",
+    "created_by": "3db56b7f47ba4a0c881bae139bad916d",
+    "created_at": "2026-07-29T15:07:05.785468"
+  }
+]

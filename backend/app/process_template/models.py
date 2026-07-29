@@ -104,3 +104,16 @@ class PrecheckRequest(BaseModel):
     ui_model: Optional[Dict[str, Any]] = None
     kitchen_ids: List[str] = Field(default_factory=list)
     mode: str = "warning"
+
+
+class PublishRequest(BaseModel):
+    """POST /api/process-templates/<id>/publish (E7.2).
+
+    target_kitchen_ids пустой = все кухни реестра (привязки шаблона к
+    кухням нет — реестр целиком). mode: pre-check режим ('warning'
+    default | 'strict'). bump: 'patch' (default, автоинкремент) |
+    'minor' | 'major' (ручной bump, locked decision).
+    """
+    target_kitchen_ids: List[str] = Field(default_factory=list)
+    mode: str = "warning"
+    bump: str = "patch"

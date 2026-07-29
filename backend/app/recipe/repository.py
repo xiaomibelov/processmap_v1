@@ -109,3 +109,78 @@ class RecipeRepository:
             ).fetchone()
             con.commit()
         return _row_to_dict(row) if row else None
+
+
+# --- E7.3 — recipe_version (история публикаций рецепта) ----------------------
+
+_VERSION_COLUMNS = (
+    "id, recipe_id, version, status, parameters_json, "
+    "template_id, template_version, created_by, created_at"
+)
+
+
+def _version_row_to_dict(row: Any) -> Dict[str, Any]:
+    return {
+        "id": str(row.get("id") or ""),
+        "recipe_id": str(row.get("recipe_id") or ""),
+        "version": row.get("version"),
+        "status": row.get("status"),
+        "parameters_json": _json_field(row.get("parameters_json")) or {},
+        "template_id": str(row.get("template_id") or ""),
+        "template_version": row.get("template_version"),
+        "created_by": row.get("created_by"),
+        "created_at": row.get("created_at"),
+    }
+
+
+class RecipeVersionRepository:
+    """Snapshot-история публикаций рецепта (E7.3)."""
+
+    def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        version_id = str(uuid.uuid4())
+        now = datetime.utcnow()
+        with _connect() as con:
+            row = con.execute(
+                f"""
+                INSERT INTO recipe_version ({_VERSION_COLUMNS})
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                RETURNING {_VERSION_COLUMNS}
+                """,
+                [
+                    version_id,
+                    data["recipe_id"],
+                    data["version"],
+                    data.get("status", "published"),
+                    json.dumps(data.get("parameters_json") or {}),
+                    data.get("template_id") or None,
+                    data.get("template_version") or "",
+                    data.get("created_by") or "",
+                    now,
+                ],
+            ).fetchone()
+            con.commit()
+        return _version_row_to_dict(row)
+
+    def list_for_recipe(self, recipe_id: str) -> List[Dict[str, Any]]:
+        with _connect() as con:
+            rows = con.execute(
+                f"SELECT {_VERSION_COLUMNS} FROM recipe_version WHERE recipe_id = ? "
+                "ORDER BY created_at DESC, version DESC",
+                [recipe_id],
+            ).fetchall()
+        return [_version_row_to_dict(row) for row in rows]
+
+    def next_version(self, recipe_id: str) -> str:
+        """patch-автоинкремент от последней версии (первый publish — 1.0.0)."""
+        with _connect() as con:
+            row = con.execute(
+                "SELECT version FROM recipe_version WHERE recipe_id = ? "
+                "ORDER BY created_at DESC LIMIT 1",
+                [recipe_id],
+            ).fetchone()
+        last = str(row.get("version") or "") if row else ""
+        parts = last.split(".")
+        if len(parts) == 3 and all(p.isdigit() for p in parts):
+            return f"{parts[0]}.{parts[1]}.{int(parts[2]) + 1}"
+        return "1.0.0"
+

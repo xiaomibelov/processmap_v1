@@ -224,12 +224,26 @@ def test_publish_blocked_when_template_param_missing(client, analyst_token, temp
     assert payload["detail"]["missing_params"] == ["target_temp_c"]
 
     # after adding the missing param, publish succeeds
+    # (E7.3: требуется published-версия шаблона — вставляем её напрямую,
+    # ui_model фикстуры не проходит полный publish-flow с dry-run каталога)
     r = client.put(
         f"/api/recipes/{rid}",
         json={"parameters_json": {"heat_time_sec": 90, "target_temp_c": 85}},
         headers=_auth(analyst_token),
     )
     assert r.status_code == 200, r.text
+    from backend.app.process_template.version_repository import ProcessTemplateVersionRepository
+
+    ProcessTemplateVersionRepository().create(
+        {
+            "template_id": template["id"],
+            "version": template["version"],
+            "status": "published",
+            "ui_model": template.get("ui_model"),
+            "bpmn_xml": "",
+            "created_by": "e5-test",
+        }
+    )
     r = client.post(f"/api/recipes/{rid}/publish", headers=_auth(analyst_token))
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "published"
