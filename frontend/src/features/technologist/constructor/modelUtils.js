@@ -254,12 +254,29 @@ export function mergeDraftEntities(model, draftEntities) {
 export function computeReachable(model) {
   const nodes = asArray(model?.nodes);
   const flows = asArray(model?.flows);
+  const hasIncoming = new Set(flows.map((f) => String(f?.target_ref || "")));
   const starts = nodes.filter((n) => String(n?.bpmn_type || "") === "startEvent");
   let roots = starts;
   if (roots.length === 0) {
-    const hasIncoming = new Set(flows.map((f) => String(f?.target_ref || "")));
     roots = nodes.filter((n) => !hasIncoming.has(String(n?.id || "")));
   }
+  // E6: link-catch события — дополнительные корни (та же семантика, что R6 на
+  // сервере: linkEventDefinition в event_definitions, либо catch без входящих
+  // потоков для моделей без event_definitions).
+  const isLinkCatch = (n) => {
+    if (String(n?.bpmn_type || "") !== "intermediateCatchEvent") return false;
+    const defs = asArray(n?.event_definitions);
+    if (defs.length > 0) return defs.includes("linkEventDefinition");
+    return !hasIncoming.has(String(n?.id || ""));
+  };
+  const rootIds = new Set(roots.map((n) => String(n?.id || "")));
+  nodes.forEach((n) => {
+    const id = String(n?.id || "");
+    if (id && !rootIds.has(id) && isLinkCatch(n)) {
+      roots = [...roots, n];
+      rootIds.add(id);
+    }
+  });
   const outgoing = new Map();
   flows.forEach((f) => {
     const src = String(f?.source_ref || "");

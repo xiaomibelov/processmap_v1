@@ -25,18 +25,14 @@ import xml.etree.ElementTree as ET
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..process_template.bpmn_import import (
-    ALLOWED_OPERATION_CODES,
     BPMN_NS,
     CAMUNDA_NS,
-    FORBIDDEN_OPERATION_CODES,
     LEGACY_TASK_TYPES,
     _DOLLAR_RE,
-    _condition_identifiers,
-    _declared_refs,
-    _guess_category,
     _local_name,
     parse_bpmn,
 )
+from ..validation.service import validate_ui_model
 from .rules_loader import load_rules, rule_summary
 
 # camunda:property значения-заглушки AS IS — не переносим в draft.
@@ -374,87 +370,17 @@ def _rewire_flows(
 
 
 def validate_draft_ui_model(ui_model: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
-    """Валидатор draft ui_model — семантика bpmn_import (v0.3).
+    """Валидатор draft ui_model — E6.1: делегирует validation service (v0.3).
 
     Коды операций — из каталога; *_ref ссылки — объявлены в process_entities /
     recipe_context (иначе warning + draft entity); условия шлюзов — только из
-    объявленных outputs задач. Возвращает (report, draft_entities).
+    объявленных outputs задач. check_reachability=False: pipeline исторически
+    не проверяет достижимость (это делает dry-run endpoint E6).
+    Возвращает (report, draft_entities).
     """
-    findings: List[Dict[str, Any]] = []
-
-    def add(severity: str, code: str, element_id: str, message: str, recommendation: str = "", element_name: str = "") -> None:
-        findings.append(
-            {
-                "severity": severity,
-                "code": code,
-                "element_id": element_id or "",
-                "element_name": element_name or "",
-                "message": message,
-                "recommendation": recommendation,
-            }
-        )
-
-    declared = _declared_refs(ui_model.get("process_entities") or {}, ui_model.get("recipe_context") or {})
-    declared_outputs: set = set()
-    draft_index: Dict[str, Dict[str, Any]] = {}
-
-    nodes = ui_model.get("nodes") or []
-    for node in nodes:
-        element_id = str(node.get("id") or "")
-        name = str(node.get("name") or node.get("display_name") or "")
-        if str(node.get("bpmn_type") or "") not in _TASK_LIKE:
-            continue
-        op_code = node.get("operation_code")
-        if not op_code:
-            add("error", "UNKNOWN_OPERATION_CODE", element_id, "operation_code отсутствует", "указать operation_code из каталога", name)
-        elif op_code in FORBIDDEN_OPERATION_CODES:
-            add("error", "FORBIDDEN_OPERATION", element_id, f"операция '{op_code}' запрещена в v0.3", "заменить на допустимую операцию каталога", name)
-        elif op_code not in ALLOWED_OPERATION_CODES:
-            add("error", "UNKNOWN_OPERATION_CODE", element_id, f"неизвестный operation_code '{op_code}'", "использовать operation_code из каталога", name)
-        for out_key, out_value in (node.get("outputs") or {}).items():
-            declared_outputs.add(str(out_key))
-            if isinstance(out_value, str) and out_value:
-                declared_outputs.add(out_value)
-        for key, value in (node.get("params") or {}).items():
-            if not str(key).endswith("_ref"):
-                continue
-            if not isinstance(value, str) or not value:
-                continue
-            if value not in declared:
-                add(
-                    "warning",
-                    "UNDECLARED_ENTITY_REF",
-                    element_id,
-                    f"параметр '{key}' ссылается на необъявленную сущность '{value}'",
-                    "объявить сущность в process_entities или recipe_context (создан черновик)",
-                    name,
-                )
-                draft = draft_index.setdefault(value, {"ref": value, "guessed_category": _guess_category(str(key)), "used_by": []})
-                if element_id not in draft["used_by"]:
-                    draft["used_by"].append(element_id)
-
-    for flow in ui_model.get("flows") or []:
-        condition = str(flow.get("condition") or "").strip()
-        if not condition:
-            continue
-        for identifier in _condition_identifiers(condition):
-            if identifier not in declared_outputs:
-                add(
-                    "error",
-                    "GATEWAY_CONDITION_UNKNOWN_OUTPUT",
-                    str(flow.get("id") or ""),
-                    f"условие шлюза ссылается на необъявленный output '{identifier}'",
-                    "объявить output в outputs.* задачи или исправить условие",
-                    str(flow.get("name") or ""),
-                )
-
-    errors = sum(1 for f in findings if f["severity"] == "error")
-    warnings = sum(1 for f in findings if f["severity"] == "warning")
-    report = {
-        "summary": {"errors": errors, "warnings": warnings, "nodes": len(nodes), "flows": len(ui_model.get("flows") or [])},
-        "findings": findings,
-    }
-    return report, list(draft_index.values())
+    result = validate_ui_model(ui_model, catalog=None, check_reachability=False)
+    report = {"summary": result["summary"], "findings": result["findings"]}
+    return report, result["draft_entities"]
 
 
 def build_draft(

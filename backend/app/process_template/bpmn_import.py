@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -13,35 +12,26 @@ DI_NS = "http://www.omg.org/spec/DD/20100524/DI"
 PM_NS = "http://processmap.local/schema/v0.3"
 CAMUNDA_NS = "http://camunda.org/schema/1.0/bpmn"
 
-# Operation catalog (v0.3). package_meal is explicitly forbidden.
-ALLOWED_OPERATION_CODES = {
-    "get_from_storage",
-    "move",
-    "hold",
-    "open_equipment",
-    "close_equipment",
-    "set_equipment",
-    "start_equipment",
-    "wait",
-    "open_container",
-    "close_container",
-    "transfer",
-    "measure_temperature",
-    "check",
-    "publish_event",
-}
-FORBIDDEN_OPERATION_CODES = {"package_meal"}
-
-# Only plain bpmn:task is allowed in v0.3; these legacy task types are errors.
-LEGACY_TASK_TYPES = {
-    "userTask",
-    "manualTask",
-    "receiveTask",
-    "serviceTask",
-    "sendTask",
-    "scriptTask",
-    "businessRuleTask",
-}
+# E6.1 REFACTOR: правила валидации вынесены в app/validation/service.py.
+# Импорт занимается ПАРСИНГОМ XML и import-специфичными dialect/legacy
+# findings (LEGACY_*, DOLLAR_SUBSTITUTION, RECIPE_CONTEXT_PREFIX,
+# UNKNOWN_CAMUNDA_PROPERTY, EMPTY_DISPLAY_NAME, MISSING_PROCESS_METADATA,
+# MISSING_RECIPE_CONTEXT, MULTIPLE_PROCESSES, PLACEHOLDER_VALUE для не-params
+# camunda-ключей); проверки правил R1/R3/R5 (operation_code из каталога,
+# *_ref объявлены, условия шлюзов из outputs) делегированы сервису
+# (check_reachability=False: импорт исторически не проверяет достижимость —
+# это делает dry-run endpoint E6). Имена ре-экспортируются для совместимости
+# (transformation/pipeline импортирует их отсюда).
+from ..validation.service import (  # noqa: E402
+    ALLOWED_OPERATION_CODES,
+    FORBIDDEN_OPERATION_CODES,
+    LEGACY_TASK_TYPES,
+    _DOLLAR_RE,
+    _condition_identifiers,
+    _declared_refs,
+    _guess_category,
+    validate_ui_model,
+)
 
 # Flow node types parsed into ui_model nodes (lossless).
 _EVENT_TYPES = {"startEvent", "endEvent", "intermediateCatchEvent", "intermediateThrowEvent"}
@@ -89,10 +79,6 @@ LEGACY_METADATA_FIELDS = {
 }
 
 _ENTITY_CATEGORIES = ("containers", "equipment", "zones")
-
-_DOLLAR_RE = re.compile(r"\$\{([^}]*)\}")
-_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-_CONDITION_KEYWORDS = {"true", "false", "and", "or", "not", "null", "none"}
 
 
 class BpmnImportError(ValueError):
@@ -258,39 +244,6 @@ def _iter_metadata_keys(value: Any) -> List[str]:
         for item in value:
             keys.extend(_iter_metadata_keys(item))
     return keys
-
-
-def _declared_refs(process_entities: Dict[str, Any], recipe_context: Dict[str, Any]) -> set:
-    refs = set()
-    for category in _ENTITY_CATEGORIES:
-        entries = process_entities.get(category) or {}
-        if isinstance(entries, dict):
-            refs.update(str(k) for k in entries.keys())
-    refs.update(str(k) for k in (recipe_context or {}).keys())
-    return refs
-
-
-def _guess_category(param_key: str) -> str:
-    key = param_key.lower()
-    if "equipment" in key:
-        return "equipment"
-    if "container" in key or key in ("item_ref", "object_ref"):
-        return "containers"
-    if "zone" in key or key in ("target_ref", "source_ref"):
-        return "zones"
-    return "zones"
-
-
-def _condition_identifiers(condition: str) -> List[str]:
-    """Extract candidate output identifiers from a conditionExpression."""
-    # strip ${...} wrappers, keep the inner expression text
-    inner = _DOLLAR_RE.sub(lambda m: f" {m.group(1)} ", condition)
-    identifiers = []
-    for token in _IDENTIFIER_RE.findall(inner):
-        if token.lower() in _CONDITION_KEYWORDS:
-            continue
-        identifiers.append(token)
-    return identifiers
 
 
 def _collect_di_layout(root: ET.Element) -> Tuple[Dict[str, Dict[str, float]], Dict[str, List[Dict[str, float]]]]:
@@ -485,11 +438,7 @@ def parse_bpmn(xml_text: str) -> ImportResult:
                     }
                 )
 
-    declared = _declared_refs(process_entities, recipe_context)
-    declared_outputs: set = set()  # output variable names declared by tasks
-    draft_index: Dict[str, Dict[str, Any]] = {}
-
-    # --- flow nodes ----------------------------------------------------------
+# --- flow nodes ----------------------------------------------------------
     nodes: List[Dict[str, Any]] = []
     if process is not None:
         for el in process:
@@ -568,60 +517,13 @@ def parse_bpmn(xml_text: str) -> ImportResult:
                         element_name,
                     )
 
-                # operation_code validation
-                if not operation_code:
-                    report.error(
-                        "UNKNOWN_OPERATION_CODE",
-                        element_id,
-                        "operation_code отсутствует (ни camunda:property, ни pm:metadata)",
-                        "указать operation_code из каталога",
-                        element_name,
-                    )
-                elif operation_code in FORBIDDEN_OPERATION_CODES:
-                    report.error(
-                        "FORBIDDEN_OPERATION",
-                        element_id,
-                        f"операция '{operation_code}' запрещена в v0.3",
-                        "заменить на допустимую операцию каталога",
-                        element_name,
-                    )
-                elif operation_code not in ALLOWED_OPERATION_CODES:
-                    report.error(
-                        "UNKNOWN_OPERATION_CODE",
-                        element_id,
-                        f"неизвестный operation_code '{operation_code}'",
-                        "использовать operation_code из каталога",
-                        element_name,
-                    )
-
-                # declared outputs feed gateway-condition validation
-                for out_key, out_value in outputs.items():
-                    declared_outputs.add(str(out_key))
-                    if isinstance(out_value, str) and out_value:
-                        declared_outputs.add(out_value)
-
-                # validate *_ref params and build draft entities
-                for key, value in params.items():
-                    if not str(key).endswith("_ref"):
-                        continue
-                    if not isinstance(value, str) or not value:
-                        continue
-                    if _DOLLAR_RE.search(value) or value.startswith("recipe_context."):
-                        continue  # already reported as substitution errors
-                    if value not in declared:
-                        report.warning(
-                            "UNDECLARED_ENTITY_REF",
-                            element_id,
-                            f"параметр '{key}' ссылается на необъявленную сущность '{value}'",
-                            "объявить сущность в process_entities или recipe_context (создан черновик)",
-                            element_name,
-                        )
-                        draft = draft_index.setdefault(
-                            value,
-                            {"ref": value, "guessed_category": _guess_category(str(key)), "used_by": []},
-                        )
-                        if element_id not in draft["used_by"]:
-                            draft["used_by"].append(element_id)
+            # event definitions (linkEventDefinition и пр.) — для R6 сервиса
+            event_definitions: List[str] = []
+            if local in _EVENT_TYPES:
+                for child in el:
+                    child_local = _local_name(str(child.tag))
+                    if child_local.endswith("EventDefinition"):
+                        event_definitions.append(child_local)
 
             nodes.append(
                 {
@@ -633,6 +535,7 @@ def parse_bpmn(xml_text: str) -> ImportResult:
                     "params": params,
                     "outputs": outputs,
                     "recipe_params": recipe_params,
+                    "event_definitions": event_definitions,
                     "x": bounds.get("x", 0.0),
                     "y": bounds.get("y", 0.0),
                     "width": bounds.get("width", 0.0),
@@ -650,17 +553,6 @@ def parse_bpmn(xml_text: str) -> ImportResult:
             cond_el = flow.find(f"{{{BPMN_NS}}}conditionExpression")
             if cond_el is not None and cond_el.text:
                 condition = cond_el.text.strip()
-                # Gateway conditions reference task outputs; every identifier
-                # must be declared in some task's outputs.* (v0.3).
-                for identifier in _condition_identifiers(condition):
-                    if identifier not in declared_outputs:
-                        report.error(
-                            "GATEWAY_CONDITION_UNKNOWN_OUTPUT",
-                            flow_id,
-                            f"условие шлюза ссылается на необъявленный output '{identifier}'",
-                            "объявить output в outputs.* задачи или исправить условие",
-                            flow_name,
-                        )
             flows.append(
                 {
                     "id": flow_id,
@@ -671,7 +563,6 @@ def parse_bpmn(xml_text: str) -> ImportResult:
                 }
             )
 
-    errors, warnings = report.counts()
     ui_model = {
         "process_template_id": process_template_id,
         "recipe_context": recipe_context,
@@ -681,6 +572,12 @@ def parse_bpmn(xml_text: str) -> ImportResult:
         "participant": participant,
         "lanes": lanes,
     }
+    # E6.1: правила R1/R3/R5 — из validation service (импорт добавляет только
+    # свои dialect/legacy findings выше). check_reachability=False: проверка
+    # достижимости — ответственность dry-run endpoint'а (POST .../validate).
+    validation = validate_ui_model(ui_model, catalog=None, check_reachability=False)
+    report.findings.extend(validation["findings"])
+    errors, warnings = report.counts()
     report_dict = {
         "summary": {
             "errors": errors,
@@ -690,4 +587,4 @@ def parse_bpmn(xml_text: str) -> ImportResult:
         },
         "findings": report.findings,
     }
-    return ImportResult(ui_model=ui_model, report=report_dict, draft_entities=list(draft_index.values()))
+    return ImportResult(ui_model=ui_model, report=report_dict, draft_entities=validation["draft_entities"])

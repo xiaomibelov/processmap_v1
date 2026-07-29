@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiRequest } from "../../../lib/apiCore";
 import GraphCanvas from "../graph/GraphCanvas";
+import CheckPanel from "./CheckPanel";
 import {
   DICTIONARY_BY_CATEGORY,
   ENTITY_CATEGORIES,
@@ -609,6 +610,15 @@ export function Constructor() {
   const [openList, setOpenList] = useState(null); // null | "loading" | array
   const [renameConfirm, setRenameConfirm] = useState(null); // {category, oldRef, newRef, usages}
   const [deleteBlocked, setDeleteBlocked] = useState(null); // {category, ref, usages}
+  // E6.5: панель «Проверить» (dry-run + pre-check по кухням)
+  const [checkOpen, setCheckOpen] = useState(false);
+  const [checkBusy, setCheckBusy] = useState(false);
+  const [validation, setValidation] = useState(null); // {summary, findings}
+  const [kitchens, setKitchens] = useState([]);
+  const [selectedKitchenIds, setSelectedKitchenIds] = useState([]);
+  const [precheckMode, setPrecheckMode] = useState("warning"); // default = warning (locked)
+  const [precheck, setPrecheck] = useState(null);
+  const nodeRefs = useRef({});
 
   // initial load: catalog + dictionaries, then bootstrap from query/handoff
   useEffect(() => {
@@ -896,14 +906,89 @@ export function Constructor() {
     }
   }
 
-  function handleCheck() {
+  // ---- E6.5: «Проверить» = dry-run validate + feasibility pre-check ----
+
+  async function runPrecheck(kitchenIds, mode, model) {
+    const r = await apiRequest("/api/process-templates/precheck", {
+      method: "POST",
+      body: { ui_model: model, kitchen_ids: kitchenIds, mode },
+    });
+    if (r?.ok) {
+      setPrecheck(r.data);
+    } else {
+      setError(`Ошибка pre-check: ${String(r?.error || "unknown")}`);
+    }
+  }
+
+  async function handleCheck() {
+    // локальная подсветка недостижимых (та же семантика корней, что и R6 на
+    // сервере; ⚠ известное дублирование — см. docs/e6/rules_coverage.md)
     const { unreachable } = computeReachable(uiModel);
     setUnreachableIds(unreachable);
-    if (unreachable.length > 0) {
-      const names = unreachable.map((id) => nodeLabel(findNode(uiModel, id)) || id).join(", ");
-      setNotice(`⚠ Недостижимые из старта блоки: ${names}`);
-    } else {
-      setNotice("Проверка: все блоки достижимы из старта");
+    setCheckOpen(true);
+    setCheckBusy(true);
+    setError("");
+    try {
+      // (а) dry-run валидация текущего черновика (body-variant, без сохранения)
+      const r = await apiRequest("/api/process-templates/validate", {
+        method: "POST",
+        body: { ui_model: uiModel },
+      });
+      if (r?.ok) {
+        setValidation(r.data);
+      } else {
+        setError(`Ошибка валидации: ${String(r?.error || "unknown")}`);
+      }
+      // (б) pre-check: загрузить кухни, по умолчанию выбраны все
+      let kitchenIds = selectedKitchenIds;
+      const kr = await apiRequest("/api/kitchens");
+      if (kr?.ok && Array.isArray(kr.data)) {
+        setKitchens(kr.data);
+        if (kitchenIds.length === 0) {
+          kitchenIds = kr.data.map((k) => String(k?.id || "")).filter(Boolean);
+          setSelectedKitchenIds(kitchenIds);
+        }
+      }
+      if (kitchenIds.length > 0) {
+        await runPrecheck(kitchenIds, precheckMode, uiModel);
+      }
+      if (unreachable.length > 0) {
+        const names = unreachable.map((id) => nodeLabel(findNode(uiModel, id)) || id).join(", ");
+        setNotice(`⚠ Недостижимые из старта блоки: ${names}`);
+      }
+    } finally {
+      setCheckBusy(false);
+    }
+  }
+
+  function handleToggleKitchen(id) {
+    setSelectedKitchenIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+
+  async function handleRunPrecheck() {
+    setCheckBusy(true);
+    try {
+      await runPrecheck(selectedKitchenIds, precheckMode, uiModel);
+    } finally {
+      setCheckBusy(false);
+    }
+  }
+
+  function handleFindingNavigate(elementId) {
+    const id = String(elementId || "").trim();
+    if (!id) return;
+    if (findNode(uiModel, id)) {
+      setSelectedNodeId(id);
+      setSelectedFlowId("");
+      const el = nodeRefs.current[id];
+      if (el && typeof el.scrollIntoView === "function") {
+        el.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+      }
+    } else if (findFlow(uiModel, id)) {
+      setSelectedFlowId(id);
+      setSelectedNodeId("");
     }
   }
 
@@ -982,6 +1067,22 @@ export function Constructor() {
         </div>
       ) : null}
 
+      {checkOpen ? (
+        <CheckPanel
+          validation={validation}
+          kitchens={kitchens}
+          selectedKitchenIds={selectedKitchenIds}
+          onToggleKitchen={handleToggleKitchen}
+          mode={precheckMode}
+          onModeChange={setPrecheckMode}
+          precheck={precheck}
+          busy={checkBusy}
+          onRunPrecheck={handleRunPrecheck}
+          onSelectFinding={handleFindingNavigate}
+          onClose={() => setCheckOpen(false)}
+        />
+      ) : null}
+
       <div className="ctor__main">
         <aside className="ctor__palette">
           <h3>Каталог операций</h3>
@@ -1024,6 +1125,7 @@ export function Constructor() {
             onNodeMove={handleNodeMove}
             connectSourceId={connectSourceId}
             unreachableNodeIds={unreachableIds}
+            nodeRefs={nodeRefs}
             ariaLabel="Редактор графа процесса"
           />
         </section>
