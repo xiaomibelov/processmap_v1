@@ -1,0 +1,30 @@
+{
+  "endpoint": "POST /api/sku-bindings/a8425a3a-ed78-40c2-a34f-58f5f0871e57/rollout",
+  "request": {
+    "kitchen_ids": [
+      "f43310e5-dec1-4a64-9537-64ebf5e3791b"
+    ]
+  },
+  "status": 409,
+  "response": {
+    "detail": {
+      "error": "pilot_criteria_not_met",
+      "message": "критерии выхода из пилота не выполнены",
+      "unmet": [
+        "min_orders не выполнен: 14/20"
+      ],
+      "totals": {
+        "orders": 14,
+        "critical_errors": 0,
+        "defect_count": 0,
+        "defect_rate_pct": 0.0
+      },
+      "criteria": {
+        "min_orders": 20,
+        "max_critical_errors": 0,
+        "max_defect_rate_pct": 2.0
+      }
+    }
+  },
+  "note": "orders 14/20 → min_orders не выполнен"
+}
