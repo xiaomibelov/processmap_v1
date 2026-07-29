@@ -69,16 +69,10 @@ deprecate_old api
 deprecate_old frontend
 
 # 6. Start new containers
+# NB: миграции БД + сиды — в entrypoint api-контейнера (backend/docker-entrypoint.sh),
+# единая точка для любого пути деплоя. Здесь НЕ дублировать: прямой вызов
+# `alembic -c backend/alembic.ini` не работает (в ini placeholder fpc:***@postgres).
 docker compose up -d api frontend
-
-# 6a. DB migrations + reference seeds (идемпотентно). Без этого новый код
-# падает на старой схеме БД (инцидент stage 2026-07-29: 500 /api/operation-catalog
-# из-за неприменённой миграции 009 — деплой миграции не запускал).
-echo "[DEPLOY] alembic upgrade head"
-docker compose exec -T api python -m alembic -c backend/alembic.ini upgrade head
-echo "[DEPLOY] reference seeds (operation catalog + dictionaries)"
-docker compose exec -T api python backend/seed_operations.py
-docker compose exec -T api python backend/seed_dictionaries.py
 
 # 7. Healthcheck: wait for /version 200
 HEALTH_URL="http://localhost:${HOST_PORT:-8011}/version"
