@@ -11,6 +11,8 @@ import AnalyticsApp from "./features/analytics/AnalyticsApp.jsx";
 import ImportBpmn from "./features/technologist/import/ImportBpmn";
 import TechnologistCatalog from "./features/technologist/catalog/Catalog";
 import TechnologistConstructor from "./features/technologist/constructor/Constructor";
+import TransformReview from "./features/technologist/transform/TransformReview";
+import TechnologistRecipes from "./features/technologist/recipes/Recipes";
 import { canAccessAdminConsole } from "./features/admin/adminUtils";
 import {
   buildAnalyticsPath,
@@ -236,6 +238,8 @@ function AppRoutes() {
   const wantsTechnologistImport = pathname.startsWith("/technologist/import-bpmn");
   const wantsTechnologistCatalog = pathname.startsWith("/technologist/catalog");
   const wantsTechnologistConstructor = pathname.startsWith("/technologist/constructor");
+  const wantsTechnologistTransform = pathname.startsWith("/technologist/transform");
+  const wantsTechnologistRecipes = pathname.startsWith("/technologist/recipes");
 
   useEffect(() => {
     if (!isAuthed || !wantsWorkspace) return;
@@ -292,6 +296,56 @@ function AppRoutes() {
             onSuccess={() => {
               setReauthRequired(false);
               navigate(`/technologist/constructor${search}${hash}`, { replace: true });
+            }}
+          />
+        )}
+        <LoginModal
+          open={loginModalOpen}
+          locked={!isAuthed}
+          onClose={handleModalClose}
+          onSuccess={handleLoginSuccess}
+        />
+      </>
+    );
+  }
+
+  // E5: standalone technologist recipes page (same minimal mount as constructor).
+  if (wantsTechnologistRecipes) {
+    return (
+      <>
+        {isAuthed ? (
+          <TechnologistRecipes />
+        ) : (
+          <LoginPage
+            onBack={() => navigate("/")}
+            onSuccess={() => {
+              setReauthRequired(false);
+              navigate(`/technologist/recipes${search}${hash}`, { replace: true });
+            }}
+          />
+        )}
+        <LoginModal
+          open={loginModalOpen}
+          locked={!isAuthed}
+          onClose={handleModalClose}
+          onSuccess={handleLoginSuccess}
+        />
+      </>
+    );
+  }
+
+  // E3.5: standalone transformation review page (same minimal mount as constructor).
+  if (wantsTechnologistTransform) {
+    return (
+      <>
+        {isAuthed ? (
+          <TransformReview />
+        ) : (
+          <LoginPage
+            onBack={() => navigate("/")}
+            onSuccess={() => {
+              setReauthRequired(false);
+              navigate("/technologist/transform", { replace: true });
             }}
           />
         )}
