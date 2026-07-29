@@ -509,6 +509,7 @@ export async function apiAuthMe() {
       id: String(r.data?.id || ""),
       email: String(r.data?.email || ""),
       is_admin: Boolean(r.data?.is_admin),
+      role: String(r.data?.role || ""),
       active_org_id,
       default_org_id,
       orgs,

@@ -3895,6 +3895,7 @@ def auth_me(request: Request):
         default_org_id=get_default_org_id(),
         orgs=memberships,
         groups=groups,
+        role=str(user.get("role") or ""),
     )
 
 
