@@ -248,3 +248,32 @@
   color: var(--muted, #9aa0a6);
   margin-top: 6px;
 }
+
+/* E8.3 — вкладки «Параметры»/«История» */
+.recipes__tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.recipes__tab {
+  padding: 6px 14px;
+  border: 1px solid var(--border, #3a3a3a);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted, #9aa0a6);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.recipes__tab--active {
+  border-color: #5b9dff;
+  background: rgba(91, 157, 255, 0.12);
+  color: #cfe1ff;
+}
+
+.recipes__history h4 {
+  margin: 10px 0 6px;
+  font-size: 13px;
+  color: var(--muted, #9aa0a6);
+}

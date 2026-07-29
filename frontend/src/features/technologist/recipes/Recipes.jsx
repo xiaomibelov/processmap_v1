@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import { apiRequest } from "../../../lib/apiCore";
+import AuditHistory from "../audit/AuditHistory";
+import VersionDiff from "../audit/VersionDiff";
 import "./Recipes.css";
 
 // ---------- helpers -----------------------------------------------------------
@@ -98,6 +100,7 @@ export function Recipes() {
   const [errors, setErrors] = useState([]);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [activeTab, setActiveTab] = useState("params"); // params | history (E8.3)
 
   // initial load
   useEffect(() => {
@@ -139,6 +142,7 @@ export function Recipes() {
 
   function resetForm() {
     setSelectedId("");
+    setActiveTab("params");
     setSelectedStatus("draft");
     setSkuId("");
     setTemplateId("");
@@ -163,7 +167,12 @@ export function Recipes() {
     setNotice("");
   }
 
-  async function handleSelect(recipe) {
+  function handleSelect(recipe) {
+    setActiveTab("params");
+    return selectRecipe(recipe);
+  }
+
+  async function selectRecipe(recipe) {
     setErrors([]);
     setNotice("");
     const r = await apiRequest(`/api/recipes/${encodeURIComponent(recipe.id)}`);
@@ -351,6 +360,38 @@ export function Recipes() {
         <section className="recipes__form" data-testid="recipe-form">
           <h3>{selectedId ? `Рецепт (${selectedStatus})` : "Новый рецепт"}</h3>
 
+          {selectedId ? (
+            <div className="recipes__tabs" data-testid="recipe-tabs">
+              <button
+                type="button"
+                className={`recipes__tab${activeTab === "params" ? " recipes__tab--active" : ""}`}
+                data-testid="tab-params"
+                onClick={() => setActiveTab("params")}
+              >
+                Параметры
+              </button>
+              <button
+                type="button"
+                className={`recipes__tab${activeTab === "history" ? " recipes__tab--active" : ""}`}
+                data-testid="tab-history"
+                onClick={() => setActiveTab("history")}
+              >
+                История
+              </button>
+            </div>
+          ) : null}
+
+          {selectedId && activeTab === "history" ? (
+            <div className="recipes__history" data-testid="history-tab">
+              <h4>Diff версий</h4>
+              <VersionDiff recipeId={selectedId} />
+              <h4>Журнал изменений</h4>
+              <AuditHistory entityType="recipe" entityId={selectedId} />
+            </div>
+          ) : null}
+
+          {activeTab === "params" ? (
+          <>
           <label className="recipes-field">
             <span className="recipes-field-label">SKU</span>
             <input
@@ -484,6 +525,8 @@ export function Recipes() {
               </div>
             ) : null}
           </div>
+          </>
+          ) : null}
         </section>
       </div>
     </div>
