@@ -1,18 +1,20 @@
 import React from "react";
+import { t, tf } from "../i18n";
 
 // E6.5 — панель результатов «Проверить»: (а) dry-run findings (клик → подсветка
 // элемента в GraphCanvas, UX как в E3 ImportBpmn), (б) pre-check по кухням
 // (мультивыбор + таблица покрытия с бейджами ok/warning/blocked).
+// L10N: строки — из словаря i18n; у finding primary — message (RU), код — мелким.
 
 const SEVERITY_META = {
-  error: { icon: "⛔", label: "Ошибка", className: "ctor-check__finding--error" },
-  warning: { icon: "⚠️", label: "Предупреждение", className: "ctor-check__finding--warning" },
+  error: { icon: "⛔", labelKey: "check.severityError", className: "ctor-check__finding--error" },
+  warning: { icon: "⚠️", labelKey: "check.severityWarning", className: "ctor-check__finding--warning" },
 };
 
 const VERDICT_META = {
-  ok: { label: "OK", className: "ctor-check__badge--ok" },
-  warning: { label: "Предупреждение", className: "ctor-check__badge--warning" },
-  blocked: { label: "Заблокировано", className: "ctor-check__badge--blocked" },
+  ok: { labelKey: "check.verdictOk", className: "ctor-check__badge--ok" },
+  warning: { labelKey: "check.verdictWarning", className: "ctor-check__badge--warning" },
+  blocked: { labelKey: "check.verdictBlocked", className: "ctor-check__badge--blocked" },
 };
 
 function asArray(value) {
@@ -40,29 +42,29 @@ export default function CheckPanel({
   return (
     <div className="ctor-check" data-testid="check-panel">
       <div className="ctor-check__head">
-        <h2 className="ctor-check__title">Результаты проверки</h2>
-        {busy ? <span className="ctor-hint" data-testid="check-busy">Проверяем…</span> : null}
+        <h2 className="ctor-check__title">{t("check.title")}</h2>
+        {busy ? <span className="ctor-hint" data-testid="check-busy">{t("check.busy")}</span> : null}
         <button type="button" className="ctor-btn ctor-btn--small" data-testid="check-close" onClick={onClose}>
-          Скрыть
+          {t("check.hide")}
         </button>
       </div>
 
       <section className="ctor-check__section" data-testid="check-findings">
-        <h3>Сухой прогон (dry-run)</h3>
+        <h3>{t("check.dryRun")}</h3>
         <div className="ctor-check__summary" data-testid="check-summary">
-          <span>узлов {Number(summary.nodes) || 0}</span>
-          <span>потоков {Number(summary.flows) || 0}</span>
-          <span className="ctor-check__summary-errors">ошибок {Number(summary.errors) || 0}</span>
-          <span className="ctor-check__summary-warnings">предупреждений {Number(summary.warnings) || 0}</span>
+          <span>{t("check.nodes")} {Number(summary.nodes) || 0}</span>
+          <span>{t("check.flows")} {Number(summary.flows) || 0}</span>
+          <span className="ctor-check__summary-errors">{t("check.errors")} {Number(summary.errors) || 0}</span>
+          <span className="ctor-check__summary-warnings">{t("check.warnings")} {Number(summary.warnings) || 0}</span>
         </div>
         {findings.length === 0 ? (
-          <div className="ctor-hint" data-testid="check-findings-empty">Замечаний нет</div>
+          <div className="ctor-hint" data-testid="check-findings-empty">{t("check.findingsEmpty")}</div>
         ) : (
           <ul className="ctor-check__findings-list">
             {findings.map((finding, idx) => {
               const meta = SEVERITY_META[String(finding?.severity || "")] || {
                 icon: "ℹ️",
-                label: "Инфо",
+                labelKey: "check.severityInfo",
                 className: "ctor-check__finding--info",
               };
               const elementId = String(finding?.element_id || "");
@@ -76,16 +78,19 @@ export default function CheckPanel({
                     onClick={() => onSelectFinding(elementId)}
                   >
                     <span className="ctor-check__finding-head">
-                      <span className="ctor-check__finding-icon" title={meta.label}>{meta.icon}</span>
-                      <span className="ctor-check__finding-code">{String(finding?.code || "")}</span>
+                      <span className="ctor-check__finding-icon" title={t(meta.labelKey)}>{meta.icon}</span>
                       {finding?.element_name ? (
                         <span className="ctor-check__finding-element">{String(finding.element_name)}</span>
                       ) : null}
                     </span>
                     <span className="ctor-check__finding-message">{String(finding?.message || "")}</span>
+                    {/* L10N (критерий 4): код finding — мелким после человеко-читаемого message */}
+                    <span className="ctor-check__finding-code" title={String(finding?.code || "")}>
+                      {String(finding?.code || "")}
+                    </span>
                     {finding?.recommendation ? (
                       <span className="ctor-check__finding-recommendation">
-                        Рекомендация: {String(finding.recommendation)}
+                        {tf("check.recommendation", { text: String(finding.recommendation) })}
                       </span>
                     ) : null}
                   </button>
@@ -97,9 +102,9 @@ export default function CheckPanel({
       </section>
 
       <section className="ctor-check__section" data-testid="check-precheck">
-        <h3>Pre-check по кухням</h3>
+        <h3>{t("check.precheck")}</h3>
         <div className="ctor-check__precheck-controls">
-          <span className="ctor-field-label">Кухни:</span>
+          <span className="ctor-field-label">{t("check.kitchens")}</span>
           {asArray(kitchens).map((kitchen) => {
             const id = String(kitchen?.id || "");
             return (
@@ -114,10 +119,10 @@ export default function CheckPanel({
             );
           })}
           <label className="ctor-check__mode">
-            <span className="ctor-field-label">Режим:</span>
+            <span className="ctor-field-label">{t("check.mode")}</span>
             <select data-testid="precheck-mode" value={mode} onChange={(e) => onModeChange(e.target.value)}>
-              <option value="warning">warning (по умолчанию)</option>
-              <option value="strict">strict</option>
+              <option value="warning">{t("check.modeWarning")}</option>
+              <option value="strict">{t("check.modeStrict")}</option>
             </select>
           </label>
           <button
@@ -127,7 +132,7 @@ export default function CheckPanel({
             disabled={busy || selected.size === 0}
             onClick={onRunPrecheck}
           >
-            Обновить pre-check
+            {t("check.precheckRun")}
           </button>
         </div>
 
@@ -135,9 +140,9 @@ export default function CheckPanel({
           <table className="ctor-check__table" data-testid="precheck-table">
             <thead>
               <tr>
-                <th>Кухня</th>
-                <th>Вердикт</th>
-                <th>Непокрытые требования</th>
+                <th>{t("check.kitchen")}</th>
+                <th>{t("check.verdict")}</th>
+                <th>{t("check.unmet")}</th>
               </tr>
             </thead>
             <tbody>
@@ -155,12 +160,12 @@ export default function CheckPanel({
                         data-testid={`precheck-verdict-${id}`}
                         data-verdict={verdict}
                       >
-                        {meta.label}
+                        {t(meta.labelKey)}
                       </span>
                     </td>
                     <td>
                       {unmet.length === 0 ? (
-                        <span className="ctor-hint">все требования покрыты</span>
+                        <span className="ctor-hint">{t("check.allCovered")}</span>
                       ) : (
                         <ul className="ctor-check__unmet">
                           {unmet.map((item, idx) => (
@@ -177,7 +182,7 @@ export default function CheckPanel({
             </tbody>
           </table>
         ) : (
-          <div className="ctor-hint" data-testid="precheck-empty">Pre-check ещё не запускался</div>
+          <div className="ctor-hint" data-testid="precheck-empty">{t("check.precheckEmpty")}</div>
         )}
       </section>
     </div>

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 
 import { apiRequest } from "../../../lib/apiCore";
+import { t } from "../i18n";
 import "./AuditHistory.css";
 
 // E8.3 — поимённый diff двух опубликованных версий рецепта
@@ -41,7 +42,7 @@ export function VersionDiff({ recipeId }) {
     if (r?.ok && r.data) setLines(Array.isArray(r.data.lines) ? r.data.lines : []);
     else {
       setLines([]);
-      setError("Не удалось загрузить diff версий");
+      setError(t("diff.error"));
     }
   }, [recipeId, fromVersion, toVersion]);
 
@@ -53,7 +54,7 @@ export function VersionDiff({ recipeId }) {
   if (versions.length === 0) {
     return (
       <div className="audit-diff" data-testid="version-diff-empty">
-        <div className="audit-history__hint">нет опубликованных версий — diff появится после публикации</div>
+        <div className="audit-history__hint">{t("diff.empty")}</div>
       </div>
     );
   }
@@ -62,9 +63,9 @@ export function VersionDiff({ recipeId }) {
     <div className="audit-diff" data-testid="version-diff">
       <div className="audit-diff__head">
         <label className="audit-diff__field">
-          <span>От версии</span>
+          <span>{t("diff.from")}</span>
           <select data-testid="diff-from" value={fromVersion} onChange={(e) => setFromVersion(e.target.value)}>
-            <option value="">— (пусто)</option>
+            <option value="">{t("diff.none")}</option>
             {versions.map((v) => (
               <option key={`from_${v.version}`} value={String(v.version)}>
                 v{String(v.version)}
@@ -74,7 +75,7 @@ export function VersionDiff({ recipeId }) {
         </label>
         <span className="audit-diff__arrow">→</span>
         <label className="audit-diff__field">
-          <span>До версии</span>
+          <span>{t("diff.to")}</span>
           <select data-testid="diff-to" value={toVersion} onChange={(e) => setToVersion(e.target.value)}>
             {versions.map((v) => (
               <option key={`to_${v.version}`} value={String(v.version)}>
@@ -89,7 +90,7 @@ export function VersionDiff({ recipeId }) {
           {error}
         </div>
       ) : null}
-      {!error && lines.length === 0 ? <div className="audit-history__hint">параметры не отличаются</div> : null}
+      {!error && lines.length === 0 ? <div className="audit-history__hint">{t("diff.noChanges")}</div> : null}
       {lines.map((line, idx) => (
         <div className="audit-diff__line" data-testid="version-diff-line" key={`diff_${idx}`}>
           {line}

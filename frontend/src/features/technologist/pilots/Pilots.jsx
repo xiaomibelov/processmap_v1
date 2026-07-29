@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import { apiRequest } from "../../../lib/apiCore";
+import { t, tf } from "../i18n";
 import "./Pilots.css";
 
 // ---------- helpers -----------------------------------------------------------
@@ -9,15 +10,10 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-const STATUS_LABELS = {
-  draft: "Черновик",
-  pilot: "Пилот",
-  active: "Активен",
-  retired: "Выведен",
-};
-
 export function statusLabel(status) {
-  return STATUS_LABELS[status] || String(status || "—");
+  const key = `status.${String(status || "")}`;
+  const label = t(key);
+  return label === key ? String(status || "—") : label;
 }
 
 function fmtKitchen(kitchensById, id) {
@@ -35,13 +31,13 @@ export function PilotCard({ binding, metrics, kitchensById, busy, onRollout }) {
   return (
     <section className="pilots__card" data-testid="pilot-card">
       <header className="pilots__card-head">
-        <h3>Пилот: {binding?.recipe_id ? `${binding.recipe_id.slice(0, 8)}…` : "—"}</h3>
+        <h3>{tf("pilots.card", { id: binding?.recipe_id ? `${binding.recipe_id.slice(0, 8)}…` : "—" })}</h3>
         <span className={`pilots__badge pilots__badge--${binding?.status || "draft"}`}>
           {statusLabel(binding?.status)}
         </span>
       </header>
       <div className="pilots__card-row">
-        Пилотная кухня: <b>{fmtKitchen(kitchensById, binding?.pilot_kitchen_id)}</b>
+        {t("pilots.kitchenLabel")} <b>{fmtKitchen(kitchensById, binding?.pilot_kitchen_id)}</b>
       </div>
       <ul className="pilots__checks">
         {checks.map((check) => (
@@ -55,7 +51,7 @@ export function PilotCard({ binding, metrics, kitchensById, busy, onRollout }) {
             <span className="pilots__check-mark">{check.met ? "✓" : "✗"}</span>
           </li>
         ))}
-        {!checks.length && <li className="pilots__check">Критерии не заданы</li>}
+        {!checks.length && <li className="pilots__check">{t("pilots.noCriteria")}</li>}
       </ul>
       {!allMet && unmet.length > 0 && (
         <div className="pilots__unmet" data-testid="pilot-unmet">
@@ -70,10 +66,10 @@ export function PilotCard({ binding, metrics, kitchensById, busy, onRollout }) {
           className="pilots__rollout"
           data-testid="rollout-button"
           disabled={!allMet || busy}
-          title={allMet ? "Раскатать на все кухни" : disabledReason || "Критерии не выполнены"}
+          title={allMet ? t("pilots.rolloutAll") : disabledReason || t("pilots.criteriaUnmet")}
           onClick={() => onRollout?.(binding)}
         >
-          {busy ? "Раскатываем…" : "Раскатать"}
+          {busy ? t("pilots.rollingOut") : t("pilots.rollout")}
         </button>
       )}
     </section>
@@ -148,7 +144,7 @@ export default function Pilots() {
       if (!resp?.ok) {
         const detail = resp?.data?.detail;
         const reasons = Array.isArray(detail?.unmet) ? detail.unmet.join("; ") : "";
-        setError(reasons || detail?.message || "Не удалось раскатать");
+        setError(reasons || detail?.message || t("pilots.rolloutFailed"));
       } else {
         reloadBindings();
       }
@@ -159,11 +155,11 @@ export default function Pilots() {
 
   return (
     <div className="pilots" data-testid="pilots-screen">
-      <h2 className="pilots__title">Пилоты SKU-привязок</h2>
+      <h2 className="pilots__title">{t("pilots.title")}</h2>
       <div className="pilots__main">
         <aside className="pilots__list" data-testid="pilots-list">
           <div className="pilots__list-head">
-            <h3>Привязки</h3>
+            <h3>{t("pilots.list")}</h3>
             <span>{bindings.length}</span>
           </div>
           {bindings.map((binding) => (
@@ -182,7 +178,7 @@ export default function Pilots() {
               </span>
             </button>
           ))}
-          {!bindings.length && <div className="pilots__empty">Привязок пока нет</div>}
+          {!bindings.length && <div className="pilots__empty">{t("pilots.empty")}</div>}
         </aside>
         <div className="pilots__detail">
           {error && <div className="pilots__error" data-testid="pilots-error">{error}</div>}
@@ -195,7 +191,7 @@ export default function Pilots() {
               onRollout={handleRollout}
             />
           ) : (
-            <div className="pilots__empty">Выберите привязку слева</div>
+            <div className="pilots__empty">{t("pilots.selectBinding")}</div>
           )}
         </div>
       </div>

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 
 import { apiRequest } from "../../../lib/apiCore";
+import { t } from "../i18n";
 import "./AuditHistory.css";
 
 // ---------- helpers -----------------------------------------------------------
@@ -9,21 +10,25 @@ export function formatTs(ts) {
   const num = Number(ts);
   if (!Number.isFinite(num) || num <= 0) return "—";
   const d = new Date(num * 1000);
-  const pad = (v) => String(v).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return d.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
-const ACTION_LABELS = {
-  "recipe.create": "Создание рецепта",
-  "recipe.update": "Изменение рецепта",
-  "recipe.clone": "Клонирование рецепта",
-  publish: "Публикация",
-  "process_template.create": "Создание шаблона",
-  "process_template.update": "Изменение шаблона",
-};
-
 export function actionLabel(action) {
-  return ACTION_LABELS[String(action || "")] || String(action || "");
+  const key = `action.${String(action || "")}`;
+  const label = t(key);
+  return label === key ? String(action || "") : label;
+}
+
+export function entityTypeLabel(entityType) {
+  const key = `entityType.${String(entityType || "")}`;
+  const label = t(key);
+  return label === key ? String(entityType || "") : label;
 }
 
 // Поимённые diff-строки события: сначала meta.diff_lines, иначе из meta.diff_json.
@@ -48,7 +53,7 @@ export function buildEventLine(event, diffLine) {
   const parts = [];
   if (diffLine) parts.push(diffLine);
   else parts.push(actionLabel(event?.action));
-  parts.push(String(event?.actor_display || "пользователь удалён/внешний"));
+  parts.push(String(event?.actor_display || t("audit.deletedUser")));
   parts.push(formatTs(event?.ts));
   const version = event?.meta?.version;
   if (version) parts.push(`v${version}`);
@@ -84,9 +89,9 @@ export function AuditHistory({ entityType = "", entityId = "", showFilters = fal
       params.set("limit", "100");
       const r = await apiRequest(`/api/audit-log?${params.toString()}`);
       if (r?.ok && r.data) setItems(Array.isArray(r.data.items) ? r.data.items : []);
-      else setError("Не удалось загрузить журнал");
+      else setError(t("audit.error"));
     } catch (e) {
-      setError("Не удалось загрузить журнал");
+      setError(t("audit.error"));
     } finally {
       setLoading(false);
     }
@@ -101,19 +106,19 @@ export function AuditHistory({ entityType = "", entityId = "", showFilters = fal
       {showFilters ? (
         <div className="audit-history__filters" data-testid="audit-filters">
           <label className="audit-history__filter">
-            <span>Тип сущности</span>
+            <span>{t("audit.entityType")}</span>
             <select
               data-testid="filter-entity-type"
               value={fEntityType}
               onChange={(e) => setFEntityType(e.target.value)}
             >
-              <option value="">все</option>
-              <option value="recipe">recipe</option>
-              <option value="process_template">process_template</option>
+              <option value="">{t("audit.all")}</option>
+              <option value="recipe">{t("entityType.recipe")}</option>
+              <option value="process_template">{t("entityType.process_template")}</option>
             </select>
           </label>
           <label className="audit-history__filter">
-            <span>ID сущности</span>
+            <span>{t("audit.entityId")}</span>
             <input
               type="text"
               data-testid="filter-entity-id"
@@ -123,21 +128,23 @@ export function AuditHistory({ entityType = "", entityId = "", showFilters = fal
             />
           </label>
           <label className="audit-history__filter">
-            <span>Действие</span>
+            <span>{t("audit.action")}</span>
             <select
               data-testid="filter-action"
               value={fAction}
               onChange={(e) => setFAction(e.target.value)}
             >
-              <option value="">все</option>
-              <option value="recipe.create">recipe.create</option>
-              <option value="recipe.update">recipe.update</option>
-              <option value="recipe.clone">recipe.clone</option>
-              <option value="publish">publish</option>
+              <option value="">{t("audit.all")}</option>
+              <option value="recipe.create">{t("action.recipe.create")}</option>
+              <option value="recipe.update">{t("action.recipe.update")}</option>
+              <option value="recipe.clone">{t("action.recipe.clone")}</option>
+              <option value="publish">{t("action.publish")}</option>
+              <option value="new_version">{t("action.new_version")}</option>
+              <option value="rollout">{t("action.rollout")}</option>
             </select>
           </label>
           <label className="audit-history__filter">
-            <span>Автор</span>
+            <span>{t("audit.actor")}</span>
             <input
               type="text"
               data-testid="filter-actor"
@@ -147,7 +154,7 @@ export function AuditHistory({ entityType = "", entityId = "", showFilters = fal
             />
           </label>
           <label className="audit-history__filter">
-            <span>С даты</span>
+            <span>{t("audit.dateFrom")}</span>
             <input
               type="date"
               data-testid="filter-date-from"
@@ -156,7 +163,7 @@ export function AuditHistory({ entityType = "", entityId = "", showFilters = fal
             />
           </label>
           <label className="audit-history__filter">
-            <span>По дату</span>
+            <span>{t("audit.dateTo")}</span>
             <input
               type="date"
               data-testid="filter-date-to"
@@ -165,12 +172,12 @@ export function AuditHistory({ entityType = "", entityId = "", showFilters = fal
             />
           </label>
           <button type="button" className="audit-history__apply" data-testid="filter-apply" onClick={load}>
-            Применить
+            {t("audit.apply")}
           </button>
         </div>
       ) : null}
 
-      {loading ? <div className="audit-history__hint">загрузка…</div> : null}
+      {loading ? <div className="audit-history__hint">{t("audit.loading")}</div> : null}
       {error ? (
         <div className="audit-history__error" role="alert" data-testid="audit-error">
           {error}
@@ -178,7 +185,7 @@ export function AuditHistory({ entityType = "", entityId = "", showFilters = fal
       ) : null}
       {!loading && !error && items.length === 0 ? (
         <div className="audit-history__hint" data-testid="audit-empty">
-          записей нет
+          {t("audit.empty")}
         </div>
       ) : null}
 

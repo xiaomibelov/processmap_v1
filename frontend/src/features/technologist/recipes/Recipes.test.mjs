@@ -255,7 +255,7 @@ describe("Recipes screen (E5)", () => {
     expect(newVersionCalled).toBe(true);
     expect(q("form-notice").textContent).toContain("из v1.0.0 → v1.0.1");
     // статус в заголовке формы — draft, кнопка «Опубликовать» снова активна
-    expect(container.textContent).toContain("Рецепт (draft)");
+    expect(container.textContent).toContain("Рецепт (Черновик)");
     expect(q("publish-recipe").disabled).toBe(false);
   });
 });

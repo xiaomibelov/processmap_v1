@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiRequest } from "../../../lib/apiCore";
+import { t, tf } from "../i18n";
 import GraphCanvas from "../graph/GraphCanvas";
 import CheckPanel from "./CheckPanel";
 import {
@@ -39,8 +40,8 @@ import "./Constructor.css";
 export const E4_HANDOFF_KEY = "fpc_e4_handoff";
 
 const STRUCTURAL_BLOCKS = [
-  { bpmn_type: "exclusiveGateway", label: "Шлюз «исключающий»", prefix: "Gateway", width: 60, height: 60 },
-  { bpmn_type: "parallelGateway", label: "Шлюз «параллельный»", prefix: "Gateway", width: 60, height: 60 },
+  { bpmn_type: "exclusiveGateway", label: "Развилка «исключающая»", prefix: "Gateway", width: 60, height: 60 },
+  { bpmn_type: "parallelGateway", label: "Развилка «параллельная»", prefix: "Gateway", width: 60, height: 60 },
   { bpmn_type: "startEvent", label: "Событие «старт»", prefix: "StartEvent", width: 40, height: 40 },
   { bpmn_type: "endEvent", label: "Событие «завершение»", prefix: "EndEvent", width: 40, height: 40 },
   { bpmn_type: "intermediateCatchEvent", label: "Событие «промежуточное»", prefix: "IntermediateEvent", width: 40, height: 40 },
@@ -122,13 +123,13 @@ function BlockForm({ node, opDetail, declaredRefs, recipeKeys, onSave, onDelete 
 
   return (
     <div className="ctor-block" data-testid="block-form" data-node-id={String(node?.id || "")}>
-      <h3>Блок: {nodeLabel(node)}</h3>
+      <h3>{t("ctor.blockTitle")}: {nodeLabel(node)}</h3>
       <div className="ctor-field">
         <span className="ctor-field-label">operation_code</span>
         <code>{String(node?.operation_code || "—")}</code>
       </div>
       <label className="ctor-field">
-        <span className="ctor-field-label">Название блока (display_name)</span>
+        <span className="ctor-field-label">{t("ctor.blockDisplayName")}</span>
         <input
           type="text"
           data-testid="block-display-name"
@@ -138,12 +139,12 @@ function BlockForm({ node, opDetail, declaredRefs, recipeKeys, onSave, onDelete 
       </label>
 
       <div className="ctor-field">
-        <span className="ctor-field-label">Параметры (params.*)</span>
+        <span className="ctor-field-label">{t("ctor.blockParams")}</span>
         {opDetail === undefined ? (
-          <div className="ctor-hint">Загрузка схемы операции…</div>
+          <div className="ctor-hint">{t("ctor.blockParamsLoading")}</div>
         ) : null}
         {paramKeys.length === 0 && opDetail !== undefined ? (
-          <div className="ctor-hint">Параметров нет</div>
+          <div className="ctor-hint">{t("ctor.blockParamsEmpty")}</div>
         ) : null}
         {paramKeys.map((key) => {
           const spec = asObject(schema[key]);
@@ -162,7 +163,7 @@ function BlockForm({ node, opDetail, declaredRefs, recipeKeys, onSave, onDelete 
                   value={value}
                   onChange={(e) => setParam(key, e.target.value)}
                 >
-                  <option value="">— выберите сущность —</option>
+                  <option value="">{t("ctor.entitySelectPlaceholder")}</option>
                   {declaredRefs.map((ref) => (
                     <option key={ref} value={ref}>
                       {ref}
@@ -189,13 +190,13 @@ function BlockForm({ node, opDetail, declaredRefs, recipeKeys, onSave, onDelete 
       </div>
 
       <div className="ctor-field">
-        <span className="ctor-field-label">Выходы (outputs.*)</span>
+        <span className="ctor-field-label">{t("ctor.blockOutputs")}</span>
         {outputRows.map((row, idx) => (
           <div className="ctor-output-row" key={`out_${idx}`}>
             <input
               type="text"
               data-testid="output-key"
-              placeholder="ключ"
+              placeholder={t("ctor.blockOutputKey")}
               value={row.key}
               onChange={(e) =>
                 setOutputRows((prev) => prev.map((r, i) => (i === idx ? { ...r, key: e.target.value } : r)))
@@ -204,7 +205,7 @@ function BlockForm({ node, opDetail, declaredRefs, recipeKeys, onSave, onDelete 
             <input
               type="text"
               data-testid="output-value"
-              placeholder="значение"
+              placeholder={t("ctor.blockOutputValue")}
               value={row.value}
               onChange={(e) =>
                 setOutputRows((prev) => prev.map((r, i) => (i === idx ? { ...r, value: e.target.value } : r)))
@@ -225,12 +226,12 @@ function BlockForm({ node, opDetail, declaredRefs, recipeKeys, onSave, onDelete 
           data-testid="output-add"
           onClick={() => setOutputRows((prev) => [...prev, { key: "", value: "" }])}
         >
-          Добавить output
+          {t("ctor.blockOutputAdd")}
         </button>
       </div>
 
       <label className="ctor-field">
-        <span className="ctor-field-label">Параметры рецепта (recipe_params)</span>
+        <span className="ctor-field-label">{t("ctor.blockRecipeParams")}</span>
         <select
           multiple
           data-testid="block-recipe-params"
@@ -246,7 +247,7 @@ function BlockForm({ node, opDetail, declaredRefs, recipeKeys, onSave, onDelete 
           ))}
         </select>
         {recipeKeys.length === 0 ? (
-          <span className="ctor-hint">recipe_context пуст — добавьте переменные на вкладке «Шаблон»</span>
+          <span className="ctor-hint">{t("ctor.blockRecipeContextEmpty")}</span>
         ) : null}
       </label>
 
@@ -258,10 +259,10 @@ function BlockForm({ node, opDetail, declaredRefs, recipeKeys, onSave, onDelete 
           disabled={missing.length > 0}
           onClick={handleSave}
         >
-          Сохранить блок
+          {t("ctor.blockSave")}
         </button>
         <button type="button" className="ctor-btn ctor-btn--danger" data-testid="block-delete" onClick={onDelete}>
-          Удалить блок
+          {t("ctor.blockDelete")}
         </button>
       </div>
     </div>
@@ -279,14 +280,14 @@ function FlowForm({ model, flow, onChange, onDelete }) {
 
   return (
     <div className="ctor-flow" data-testid="flow-form" data-flow-id={String(flow?.id || "")}>
-      <h3>Поток {String(flow?.id || "")}</h3>
+      <h3>{t("ctor.flowTitle")} {String(flow?.id || "")}</h3>
       <div className="ctor-field">
         <span className="ctor-field-label">
           {nodeLabel(source)} → {nodeLabel(target)}
         </span>
       </div>
       <label className="ctor-field">
-        <span className="ctor-field-label">Название потока</span>
+        <span className="ctor-field-label">{t("ctor.flowName")}</span>
         <input
           type="text"
           data-testid="flow-name"
@@ -296,13 +297,13 @@ function FlowForm({ model, flow, onChange, onDelete }) {
       </label>
       {sourceIsGateway ? (
         <label className="ctor-field">
-          <span className="ctor-field-label">Условие (output предыдущих блоков)</span>
+          <span className="ctor-field-label">{t("ctor.flowCondition")}</span>
           <select
             data-testid="flow-condition"
             value={String(flow?.condition || "")}
             onChange={(e) => onChange({ condition: e.target.value })}
           >
-            <option value="">— без условия —</option>
+            <option value="">{t("ctor.flowNoCondition")}</option>
             {allowedOutputs.map((name) => (
               <option key={name} value={name}>
                 {name}
@@ -319,7 +320,7 @@ function FlowForm({ model, flow, onChange, onDelete }) {
       ) : null}
       <div className="ctor-actions">
         <button type="button" className="ctor-btn ctor-btn--danger" data-testid="flow-delete" onClick={onDelete}>
-          Удалить поток
+          {t("ctor.flowDelete")}
         </button>
       </div>
     </div>
@@ -393,7 +394,7 @@ function EntitiesPanel({ model, dicts, onModelChange, onRenameRequest, onDeleteB
 
   return (
     <div className="ctor-entities" data-testid="entities-panel">
-      <h3>Сущности процесса</h3>
+      <h3>{t("ctor.entities")}</h3>
       {error ? <div className="ctor-hint ctor-hint--error">{error}</div> : null}
       {ENTITY_CATEGORIES.map((category) => {
         const items = refs.filter((r) => r.category === category);
@@ -424,7 +425,7 @@ function EntitiesPanel({ model, dicts, onModelChange, onRenameRequest, onDeleteB
                   ) : (
                     <span className="ctor-entity-name">
                       {ref}
-                      {isDraft ? <span className="ctor-entity-draft-badge">черновик</span> : null}
+                      {isDraft ? <span className="ctor-entity-draft-badge">{t("status.draft").toLowerCase()}</span> : null}
                     </span>
                   )}
                   <select
@@ -433,7 +434,7 @@ function EntitiesPanel({ model, dicts, onModelChange, onRenameRequest, onDeleteB
                     value={String(entry?.type_id || "")}
                     onChange={(e) => handleTypeChange(category, ref, e.target.value)}
                   >
-                    <option value="">— тип —</option>
+                    <option value="">{t("ctor.entityTypePlaceholder")}</option>
                     {dictFor(category).map((item) => (
                       <option key={String(item?.code || item?.id || item?.name)} value={String(item?.code || "")}>
                         {String(item?.name || item?.code || "")}
@@ -454,7 +455,7 @@ function EntitiesPanel({ model, dicts, onModelChange, onRenameRequest, onDeleteB
                     data-testid={`entity-delete-${ref}`}
                     onClick={() => handleDelete(category, ref)}
                   >
-                    Удалить
+                    {t("ctor.entityDelete")}
                   </button>
                 </div>
               );
@@ -464,7 +465,7 @@ function EntitiesPanel({ model, dicts, onModelChange, onRenameRequest, onDeleteB
       })}
 
       <div className="ctor-entity-add">
-        <h4>Добавить сущность</h4>
+        <h4>{t("ctor.entityAdd")}</h4>
         <select
           data-testid="entity-add-category"
           value={newCategory}
@@ -482,12 +483,12 @@ function EntitiesPanel({ model, dicts, onModelChange, onRenameRequest, onDeleteB
         <input
           type="text"
           data-testid="entity-add-ref"
-          placeholder="ref (например, tank_1)"
+          placeholder={t("ctor.entityRefPlaceholder")}
           value={newRef}
           onChange={(e) => setNewRef(e.target.value)}
         />
         <select data-testid="entity-add-type" value={newType} onChange={(e) => setNewType(e.target.value)}>
-          <option value="">— тип —</option>
+          <option value="">{t("ctor.entityTypePlaceholder")}</option>
           {dictFor(newCategory).map((item) => (
             <option key={String(item?.code || item?.id || item?.name)} value={String(item?.code || "")}>
               {String(item?.name || item?.code || "")}
@@ -495,7 +496,7 @@ function EntitiesPanel({ model, dicts, onModelChange, onRenameRequest, onDeleteB
           ))}
         </select>
         <button type="button" className="ctor-btn" data-testid="entity-add" onClick={handleAdd}>
-          Добавить сущность
+          {t("ctor.entityAdd")}
         </button>
       </div>
     </div>
@@ -538,9 +539,9 @@ function TemplatePanel({
 
   return (
     <div className="ctor-template" data-testid="template-panel">
-      <h3>Шаблон</h3>
+      <h3>{t("ctor.templatePanel")}</h3>
       <label className="ctor-field">
-        <span className="ctor-field-label">Название шаблона</span>
+        <span className="ctor-field-label">{t("ctor.templateName")}</span>
         <input
           type="text"
           data-testid="template-name"
@@ -549,7 +550,7 @@ function TemplatePanel({
         />
       </label>
       <label className="ctor-field">
-        <span className="ctor-field-label">Версия</span>
+        <span className="ctor-field-label">{t("ctor.templateVersion")}</span>
         <input
           type="text"
           data-testid="template-version"
@@ -558,8 +559,8 @@ function TemplatePanel({
         />
       </label>
       <div className="ctor-field">
-        <span className="ctor-field-label">recipe_context (переменные рецепта)</span>
-        {recipeKeys.length === 0 ? <div className="ctor-hint">переменных нет</div> : null}
+        <span className="ctor-field-label">{t("ctor.recipeContext")}</span>
+        {recipeKeys.length === 0 ? <div className="ctor-hint">{t("ctor.recipeContextEmpty")}</div> : null}
         {recipeKeys.map((key) => (
           <div className="ctor-recipe-row" key={key} data-recipe-key={key}>
             <span>{key}</span>
@@ -577,29 +578,29 @@ function TemplatePanel({
           <input
             type="text"
             data-testid="recipe-add-key"
-            placeholder="имя переменной"
+            placeholder={t("ctor.recipeAddKey")}
             value={newKey}
             onChange={(e) => setNewKey(e.target.value)}
           />
           <button type="button" className="ctor-btn ctor-btn--small" data-testid="recipe-add" onClick={handleAddKey}>
-            Добавить
+            {t("ctor.recipeAdd")}
           </button>
         </div>
       </div>
 
       <div className="ctor-field ctor-versions" data-testid="versions-panel">
         <span className="ctor-field-label">
-          Версии шаблона{" "}
+          {t("ctor.versions")}{" "}
           <button
             type="button"
             className="ctor-btn ctor-btn--small"
             data-testid="versions-refresh"
             onClick={() => onRefreshVersions && onRefreshVersions()}
           >
-            Обновить
+            {t("ctor.versionsRefresh")}
           </button>
         </span>
-        {versions.length === 0 ? <div className="ctor-hint">версий нет</div> : null}
+        {versions.length === 0 ? <div className="ctor-hint">{t("ctor.versionsEmpty")}</div> : null}
         {versions.map((v) => (
           <div
             className="ctor-version-row"
@@ -608,7 +609,7 @@ function TemplatePanel({
           >
             <span className="ctor-version-num">v{String(v.version || "")}</span>
             <span className={`ctor-version-status ctor-version-status--${String(v.status || "")}`}>
-              {String(v.status || "")}
+              {t(`status.${String(v.status || "")}`)}
             </span>
             {v.status !== "draft" && onDownloadBpmn ? (
               <button
@@ -695,7 +696,7 @@ export function Constructor() {
         setTemplateName("Импортированный шаблон");
         setTemplateVersion("0.1.0");
         setTemplateStatus("draft");
-        setNotice("ui_model загружен из импорта BPMN");
+        setNotice(t("ctor.handoffLoaded"));
         return true;
       } catch {
         return false;
@@ -813,9 +814,10 @@ export function Constructor() {
     const node = {
       id: nextId(uiModel, "Task"),
       bpmn_type: "task",
-      name: String(op?.name || op?.code || ""),
+      name: String(op?.name_ru || op?.name || op?.code || ""),
       operation_code: String(op?.code || ""),
-      display_name: String(op?.name || op?.code || ""),
+      // display_name — на языке UI (name_ru), переименовывается в блоке
+      display_name: String(op?.name_ru || op?.name || op?.code || ""),
       params: {},
       outputs: {},
       recipe_params: [],
@@ -883,7 +885,7 @@ export function Constructor() {
     setTemplateId("");
     setTemplateName((prev) => `${prev} (копия)`);
     setTemplateStatus("draft");
-    setNotice("Шаблон клонирован — сохраните, чтобы создать новый черновик");
+    setNotice(t("ctor.templateCloned"));
   }
 
   async function handleSave() {
@@ -907,7 +909,7 @@ export function Constructor() {
           const data = asObject(r.data);
           setTemplateId(String(data.id || ""));
           setTemplateStatus("draft");
-          setNotice(`Сохранено: черновик v${templateVersion}`);
+          setNotice(tf("ctor.savedDraft", { version: templateVersion }));
         } else {
           setError(`Ошибка сохранения: ${String(r?.error || "unknown")}`);
         }
@@ -922,7 +924,7 @@ export function Constructor() {
           },
         });
         if (r?.ok) {
-          setNotice(`Сохранено: черновик v${templateVersion}`);
+          setNotice(tf("ctor.savedDraft", { version: templateVersion }));
         } else {
           setError(`Ошибка сохранения: ${String(r?.error || "unknown")}`);
         }
@@ -964,7 +966,9 @@ export function Constructor() {
         if (version) setTemplateVersion(version);
         setPublishResult({ ok: true, version, warningsCount });
         setNotice(
-          `Опубликовано: v${version || "?"}` + (warningsCount > 0 ? ` (pre-check warnings: ${warningsCount})` : ""),
+          warningsCount > 0
+            ? tf("ctor.publishedWithWarnings", { version: version || "?", count: warningsCount })
+            : tf("ctor.published", { version: version || "?" }),
         );
         await loadVersions();
       } else {
@@ -994,7 +998,7 @@ export function Constructor() {
       const data = asObject(r.data);
       setTemplateStatus("draft");
       setTemplateVersion(String(data.version || templateVersion));
-      setNotice(`Создан новый черновик v${String(data.version || "?")} — редактирование доступно`);
+      setNotice(tf("ctor.newDraftCreated", { version: String(data.version || "?") }));
       await loadVersions();
     } else {
       setError(`Не удалось создать черновик: ${String(r?.error || "unknown")}`);
@@ -1102,7 +1106,7 @@ export function Constructor() {
       }
       if (unreachable.length > 0) {
         const names = unreachable.map((id) => nodeLabel(findNode(uiModel, id)) || id).join(", ");
-        setNotice(`⚠ Недостижимые из старта блоки: ${names}`);
+        setNotice(tf("ctor.unreachable", { names }));
       }
     } finally {
       setCheckBusy(false);
@@ -1152,20 +1156,20 @@ export function Constructor() {
 
   const connectHint = connectArmed
     ? connectSourceId
-      ? `Режим связи: выберите целевой блок для «${nodeLabel(findNode(uiModel, connectSourceId))}»`
-      : "Режим связи: выберите блок-источник"
+      ? tf("ctor.connectHintTarget", { name: nodeLabel(findNode(uiModel, connectSourceId)) })
+      : t("ctor.connectHintSource")
     : "";
 
   return (
     <div className="ctor">
-      <h1 className="ctor__title">Конструктор процессов</h1>
+      <h1 className="ctor__title">{t("ctor.title")}</h1>
 
       <div className="ctor__toolbar">
         <button type="button" className="ctor-btn" data-testid="template-new" onClick={handleNew}>
-          Новый
+          {t("ctor.new")}
         </button>
         <button type="button" className="ctor-btn" data-testid="template-clone" onClick={handleClone}>
-          Клонировать
+          {t("ctor.clone")}
         </button>
         <button
           type="button"
@@ -1174,10 +1178,10 @@ export function Constructor() {
           disabled={saveBusy}
           onClick={handleSave}
         >
-          {saveBusy ? "Сохранение…" : "Сохранить"}
+          {saveBusy ? t("ctor.saving") : t("ctor.save")}
         </button>
         <button type="button" className="ctor-btn" data-testid="template-open" onClick={handleOpenList}>
-          Открыть
+          {t("ctor.open")}
         </button>
         <button
           type="button"
@@ -1188,20 +1192,20 @@ export function Constructor() {
             setConnectSourceId("");
           }}
         >
-          Связать
+          {t("ctor.connect")}
         </button>
         <button type="button" className="ctor-btn" data-testid="check-reachability" onClick={handleCheck}>
-          Проверить
+          {t("ctor.check")}
         </button>
         <button
           type="button"
           className="ctor-btn ctor-btn--primary"
           data-testid="template-publish"
           disabled={!templateId || publishBusy || templateStatus === "published"}
-          title={!templateId ? "Сначала сохраните шаблон" : ""}
+          title={!templateId ? t("ctor.saveFirst") : ""}
           onClick={handlePublish}
         >
-          {publishBusy ? "Публикация…" : "Опубликовать"}
+          {publishBusy ? t("ctor.publishing") : t("ctor.publish")}
         </button>
         {templateStatus === "published" ? (
           <>
@@ -1211,7 +1215,7 @@ export function Constructor() {
               data-testid="template-new-draft"
               onClick={handleNewDraft}
             >
-              Новый черновик
+              {t("ctor.newDraft")}
             </button>
             <button
               type="button"
@@ -1219,13 +1223,13 @@ export function Constructor() {
               data-testid="template-download-bpmn"
               onClick={() => handleDownloadBpmn()}
             >
-              Скачать BPMN
+              {t("ctor.downloadBpmn")}
             </button>
           </>
         ) : null}
         <span className="ctor__version" data-testid="version-label">
-          {templateStatus === "published" ? "Опубликован" : "Черновик"} · v{templateVersion}
-          {templateId ? ` · id ${templateId}` : " · новый"}
+          {templateStatus === "published" ? t("ctor.statusPublished") : t("ctor.statusDraft")} · v{templateVersion}
+          {templateId ? ` · id ${templateId}` : ` · ${t("ctor.newTemplate")}`}
         </span>
       </div>
 
@@ -1264,7 +1268,7 @@ export function Constructor() {
       {publishResult && !publishResult.ok ? (
         <div className="ctor-modal" data-testid="publish-result-dialog">
           <div className="ctor-modal__box">
-            <h3>Публикация отклонена</h3>
+            <h3>{t("ctor.publishResultTitle")}</h3>
             <p>{publishResult.message}</p>
             {publishResult.findings.length > 0 ? (
               <ul data-testid="publish-findings">
@@ -1297,11 +1301,11 @@ export function Constructor() {
 
       <div className="ctor__main">
         <aside className="ctor__palette">
-          <h3>Каталог операций</h3>
-          {catalog.length === 0 ? <div className="ctor-hint">Каталог пуст или загружается…</div> : null}
+          <h3>{t("ctor.palette")}</h3>
+          {catalog.length === 0 ? <div className="ctor-hint">{t("ctor.paletteEmpty")}</div> : null}
           {catalog.map((op) => (
             <div className="ctor-palette-item" key={String(op?.code || op?.name)}>
-              <div className="ctor-palette-item-name">{String(op?.name || op?.code || "")}</div>
+              <div className="ctor-palette-item-name">{String(op?.name_ru || op?.name || op?.code || "")}</div>
               <div className="ctor-palette-item-code">{String(op?.code || "")}</div>
               <button
                 type="button"
@@ -1309,11 +1313,11 @@ export function Constructor() {
                 data-testid={`palette-add-${String(op?.code || "")}`}
                 onClick={() => handleAddOperation(op)}
               >
-                Добавить блок
+                {t("ctor.addBlock")}
               </button>
             </div>
           ))}
-          <h3>Шлюзы и события</h3>
+          <h3>{t("ctor.paletteStructural")}</h3>
           {STRUCTURAL_BLOCKS.map((spec) => (
             <button
               type="button"
@@ -1338,7 +1342,7 @@ export function Constructor() {
             connectSourceId={connectSourceId}
             unreachableNodeIds={unreachableIds}
             nodeRefs={nodeRefs}
-            ariaLabel="Редактор графа процесса"
+            ariaLabel={t("ctor.canvasAria")}
           />
         </section>
 
@@ -1350,7 +1354,7 @@ export function Constructor() {
               data-testid="tab-template"
               onClick={() => setPanelTab("template")}
             >
-              Шаблон
+              {t("ctor.tabTemplate")}
             </button>
             <button
               type="button"
@@ -1358,7 +1362,7 @@ export function Constructor() {
               data-testid="tab-entities"
               onClick={() => setPanelTab("entities")}
             >
-              Сущности
+              {t("ctor.tabEntities")}
             </button>
             <button
               type="button"
@@ -1367,7 +1371,7 @@ export function Constructor() {
               disabled={!selectedNode}
               onClick={() => selectedNode && setPanelTab("block")}
             >
-              Блок
+              {t("ctor.tabBlock")}
             </button>
             <button
               type="button"
@@ -1376,7 +1380,7 @@ export function Constructor() {
               disabled={!selectedFlow}
               onClick={() => selectedFlow && setPanelTab("flow")}
             >
-              Поток
+              {t("ctor.tabFlow")}
             </button>
           </div>
 
@@ -1416,7 +1420,7 @@ export function Constructor() {
                 recipeKeys={recipeKeys}
                 onSave={(patch) => {
                   setUiModel((prev) => updateNode(prev, selectedNode.id, patch));
-                  setNotice(`Блок «${patch.display_name || selectedNode.id}» сохранён`);
+                  setNotice(tf("ctor.blockSaved", { name: patch.display_name || selectedNode.id }));
                 }}
                 onDelete={() => handleDeleteNode(selectedNode.id)}
               />
@@ -1443,7 +1447,7 @@ export function Constructor() {
                     data-testid="node-delete"
                     onClick={() => handleDeleteNode(selectedNode.id)}
                   >
-                    Удалить
+                    {t("ctor.entityDelete")}
                   </button>
                 </div>
               </div>
@@ -1464,10 +1468,10 @@ export function Constructor() {
       {openList !== null ? (
         <div className="ctor-modal" data-testid="open-dialog">
           <div className="ctor-modal__box">
-            <h3>Открыть черновик</h3>
-            {openList === "loading" ? <div className="ctor-hint">Загрузка…</div> : null}
+            <h3>{t("ctor.openListTitle")}</h3>
+            {openList === "loading" ? <div className="ctor-hint">{t("ctor.loading")}</div> : null}
             {Array.isArray(openList) && openList.length === 0 ? (
-              <div className="ctor-hint">Черновиков нет</div>
+              <div className="ctor-hint">{t("ctor.openListEmpty")}</div>
             ) : null}
             {Array.isArray(openList)
               ? openList.map((t) => (
@@ -1497,13 +1501,13 @@ export function Constructor() {
       {renameConfirm ? (
         <div className="ctor-modal" data-testid="rename-confirm-dialog">
           <div className="ctor-modal__box">
-            <h3>Переименовать сущность</h3>
+            <h3>{t("ctor.entityRename")}</h3>
             <p>
               «{renameConfirm.oldRef}» → «{renameConfirm.newRef}»
             </p>
             {renameConfirm.usages.length > 0 ? (
               <div>
-                <p>Будут обновлены блоки:</p>
+                <p>{t("ctor.renameAffected")}</p>
                 <ul data-testid="rename-affected-blocks">
                   {renameConfirm.usages.map((u, idx) => (
                     <li key={`${u.nodeId}_${u.paramKey}_${idx}`}>
@@ -1513,7 +1517,7 @@ export function Constructor() {
                 </ul>
               </div>
             ) : (
-              <p className="ctor-hint">Ссылок на сущность нет</p>
+              <p className="ctor-hint">{t("ctor.renameNoRefs")}</p>
             )}
             <div className="ctor-actions">
               <button

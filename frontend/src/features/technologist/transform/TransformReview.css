@@ -157,3 +157,13 @@
 
 .transform-review__question-id { font-family: monospace; color: #b45309; }
 .transform-review__empty { color: #64748b; font-size: 13px; }
+.transform-review__file-btn {
+  display: inline-block;
+  padding: 6px 14px;
+  border: 1px solid var(--border, #3a4657);
+  border-radius: 6px;
+  background: var(--panel2, #1c2534);
+  color: var(--fg, #e8edf5);
+  cursor: pointer;
+  font-size: 14px;
+}

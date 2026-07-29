@@ -57,7 +57,7 @@ class RolloutIn(BaseModel):
 def get_current_user(request: Request) -> dict:
     user = getattr(request.state, "auth_user", None)
     if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        raise HTTPException(status_code=401, detail="Требуется аутентификация")
     return user
 
 
@@ -68,7 +68,7 @@ def _require_write(request: Request) -> dict:
 def _get_or_404(binding_id: str) -> Dict[str, Any]:
     binding = repository.get(binding_id)
     if binding is None:
-        raise HTTPException(status_code=404, detail="sku_binding not found")
+        raise HTTPException(status_code=404, detail="SKU-привязка не найдена")
     return binding
 
 
@@ -114,10 +114,10 @@ async def list_bindings(request: Request, status: Optional[str] = None) -> List[
 async def create_binding(request: Request, data: BindingCreate) -> Dict[str, Any]:
     user = _require_write(request)
     if not repository.recipe_exists(data.recipe_id):
-        raise HTTPException(status_code=404, detail="recipe not found")
+        raise HTTPException(status_code=404, detail="Рецепт не найден")
     for kitchen_id in data.kitchen_ids:
         if not repository.kitchen_exists(kitchen_id):
-            raise HTTPException(status_code=404, detail=f"kitchen not found: {kitchen_id}")
+            raise HTTPException(status_code=404, detail=f"Кухня не найдена: {kitchen_id}")
     return repository.create(
         {
             "recipe_id": data.recipe_id,
@@ -137,7 +137,8 @@ async def start_pilot(request: Request, binding_id: str, data: StartPilot) -> Di
     if binding["status"] != "draft":
         raise HTTPException(
             status_code=409,
-            detail={"error": "invalid_status", "status": binding["status"], "expected": "draft"},
+            detail={"error": "invalid_status", "status": binding["status"], "expected": "draft",
+                        "message": "пилот можно запустить только из статуса «Черновик»"},
         )
     # E9.3 — пилот ровно на ОДНОЙ кухне
     raw = data.pilot_kitchen_id
@@ -153,7 +154,7 @@ async def start_pilot(request: Request, binding_id: str, data: StartPilot) -> Di
         )
     pilot_kitchen_id = kitchen_ids[0]
     if not repository.kitchen_exists(pilot_kitchen_id):
-        raise HTTPException(status_code=404, detail=f"kitchen not found: {pilot_kitchen_id}")
+        raise HTTPException(status_code=404, detail=f"Кухня не найдена: {pilot_kitchen_id}")
     try:
         criteria = validate_criteria(data.criteria)
     except CriteriaError as exc:
@@ -168,7 +169,8 @@ async def add_metric_sample(request: Request, binding_id: str, data: MetricSampl
     if binding["status"] != "pilot":
         raise HTTPException(
             status_code=409,
-            detail={"error": "invalid_status", "status": binding["status"], "expected": "pilot"},
+            detail={"error": "invalid_status", "status": binding["status"], "expected": "pilot",
+                        "message": "операция доступна только в статусе «Пилот»"},
         )
     for field_name, value in (
         ("orders_count", data.orders_count),
@@ -204,7 +206,8 @@ async def rollout(request: Request, binding_id: str, data: RolloutIn) -> Dict[st
     if binding["status"] != "pilot":
         raise HTTPException(
             status_code=409,
-            detail={"error": "invalid_status", "status": binding["status"], "expected": "pilot"},
+            detail={"error": "invalid_status", "status": binding["status"], "expected": "pilot",
+                        "message": "операция доступна только в статусе «Пилот»"},
         )
     # E9.5 — блокировка, пока критерии не выполнены (с явными причинами)
     progress = compute_progress(binding.get("pilot_exit_criteria_json"), repository.totals(binding_id))
@@ -221,7 +224,7 @@ async def rollout(request: Request, binding_id: str, data: RolloutIn) -> Dict[st
         )
     for kitchen_id in data.kitchen_ids:
         if not repository.kitchen_exists(kitchen_id):
-            raise HTTPException(status_code=404, detail=f"kitchen not found: {kitchen_id}")
+            raise HTTPException(status_code=404, detail=f"Кухня не найдена: {kitchen_id}")
     # Раскатка расширяет kitchen_ids БЕЗ новых версий шаблона/рецепта (E9.5).
     updated = repository.rollout(binding_id, data.kitchen_ids)
     _write_rollout_audit(request, updated, progress)  # type: ignore[arg-type]
@@ -235,6 +238,7 @@ async def retire(request: Request, binding_id: str) -> Dict[str, Any]:
     if binding["status"] == "retired":
         raise HTTPException(
             status_code=409,
-            detail={"error": "invalid_status", "status": "retired", "expected": "draft|pilot|active"},
+            detail={"error": "invalid_status", "status": "retired", "expected": "draft|pilot|active",
+                        "message": "привязка уже снята с эксплуатации"},
         )
     return repository.retire(binding_id)  # type: ignore[return-value]

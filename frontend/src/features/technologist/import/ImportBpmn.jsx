@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from "react";
 
 import { apiImportBpmn } from "../../../lib/api";
 import GraphCanvas from "../graph/GraphCanvas";
+import { t, tf } from "../i18n";
 import "./ImportBpmn.css";
 
 const SEVERITY_META = {
@@ -81,10 +82,10 @@ export default function ImportBpmn() {
       if (r?.ok) {
         setResult(r.result || {});
       } else {
-        setError(String(r?.error || "Ошибка импорта"));
+        setError(String(r?.error || t("import.failed")));
       }
     } catch (err) {
-      setError(String(err?.message || err || "Ошибка импорта"));
+      setError(String(err?.message || err || t("import.failed")));
     } finally {
       setLoading(false);
     }
@@ -102,17 +103,21 @@ export default function ImportBpmn() {
 
   return (
     <div className="import-bpmn">
-      <h1 className="import-bpmn__title">Импорт BPMN-шаблона</h1>
+      <h1 className="import-bpmn__title">{t("import.title")}</h1>
 
       <form className="import-bpmn__form" onSubmit={handleSubmit}>
-        <input
-          type="file"
-          accept=".bpmn,.xml"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-          aria-label="BPMN-файл"
-        />
+        <label className="import-bpmn__file-btn" data-testid="file-choose">
+          {file ? file.name : t("import.choose")}
+          <input
+            type="file"
+            accept=".bpmn,.xml"
+            hidden
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            aria-label="BPMN-файл"
+          />
+        </label>
         <button type="submit" disabled={!file || loading}>
-          {loading ? "Импорт..." : "Импортировать"}
+          {loading ? t("import.loading") : t("import.submit")}
         </button>
       </form>
 
@@ -121,26 +126,26 @@ export default function ImportBpmn() {
       {parsed ? (
         <>
           <div className="import-bpmn__summary" data-testid="import-summary">
-            <span className="import-bpmn__summary-item">узлов {parsed.summary.nodes}</span>
-            <span className="import-bpmn__summary-item">потоков {parsed.summary.flows}</span>
+            <span className="import-bpmn__summary-item">{t("import.nodes")} {parsed.summary.nodes}</span>
+            <span className="import-bpmn__summary-item">{t("import.flows")} {parsed.summary.flows}</span>
             <span className="import-bpmn__summary-item import-bpmn__summary-item--errors">
-              ошибок {parsed.summary.errors}
+              {t("import.errors")} {parsed.summary.errors}
             </span>
             <span className="import-bpmn__summary-item import-bpmn__summary-item--warnings">
-              предупреждений {parsed.summary.warnings}
+              {t("import.warnings")} {parsed.summary.warnings}
             </span>
           </div>
 
           <div className="import-bpmn__content">
             <section className="import-bpmn__preview">
-              <h2>Предпросмотр графа</h2>
+              <h2>{t("import.preview")}</h2>
               <div className="import-bpmn__preview-actions">
                 <button
                   type="button"
                   className="import-bpmn__to-constructor"
                   onClick={handleOpenInConstructor}
                 >
-                  Открыть в конструкторе
+                  {t("import.toConstructor")}
                 </button>
               </div>
               <GraphCanvas
@@ -148,14 +153,14 @@ export default function ImportBpmn() {
                 selectedElementId={selectedElementId}
                 onSelectNode={setSelectedElementId}
                 nodeRefs={nodeRefs}
-                ariaLabel="Предпросмотр графа процесса"
+                ariaLabel={t("import.previewAria")}
               />
             </section>
 
             <section className="import-bpmn__findings">
-              <h2>Замечания</h2>
+              <h2>{t("import.findings")}</h2>
               {parsed.report.findings.length === 0 ? (
-                <div className="import-bpmn__empty">Замечаний нет</div>
+                <div className="import-bpmn__empty">{t("import.findingsEmpty")}</div>
               ) : (
                 <ul className="import-bpmn__findings-list">
                   {parsed.report.findings.map((finding, idx) => {
@@ -174,16 +179,19 @@ export default function ImportBpmn() {
                           onClick={() => handleSelectElement(elementId)}
                         >
                           <span className="import-bpmn__finding-head">
-                            <span className="import-bpmn__finding-icon" title={meta.label}>{meta.icon}</span>
-                            <span className="import-bpmn__finding-code">{String(finding?.code || "")}</span>
+                            <span className="import-bpmn__finding-icon" title={meta.icon ? meta.label : meta.label}>{meta.icon}</span>
                             {finding?.element_name ? (
                               <span className="import-bpmn__finding-element">{String(finding.element_name)}</span>
                             ) : null}
                           </span>
                           <span className="import-bpmn__finding-message">{String(finding?.message || "")}</span>
+                          {/* L10N (критерий 4): код — мелким после message */}
+                          <span className="import-bpmn__finding-code" title={String(finding?.code || "")}>
+                            {String(finding?.code || "")}
+                          </span>
                           {finding?.recommendation ? (
                             <span className="import-bpmn__finding-recommendation">
-                              Рекомендация: {String(finding.recommendation)}
+                              {tf("check.recommendation", { text: String(finding.recommendation) })}
                             </span>
                           ) : null}
                         </button>
@@ -197,13 +205,13 @@ export default function ImportBpmn() {
 
           {parsed.draftEntities.length > 0 ? (
             <section className="import-bpmn__drafts">
-              <h2>Черновые сущности</h2>
+              <h2>{t("import.draftEntities")}</h2>
               <table className="import-bpmn__drafts-table">
                 <thead>
                   <tr>
-                    <th>Ссылка (ref)</th>
-                    <th>Категория (предположение)</th>
-                    <th>Используется в</th>
+                    <th>{t("import.draftRef")}</th>
+                    <th>{t("import.draftCategory")}</th>
+                    <th>{t("import.draftUsedBy")}</th>
                   </tr>
                 </thead>
                 <tbody>
