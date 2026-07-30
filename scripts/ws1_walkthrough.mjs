@@ -129,6 +129,11 @@ try {
   if (hp) await hp.selectOption("medium");
   const sku = await page.$('[data-testid="recipe-param-dish_sku_id"]');
   if (sku) {
+    await page.waitForFunction(
+      (tid) => document.querySelectorAll(`[data-testid="${tid}"] option`).length > 1,
+      "recipe-param-dish_sku_id",
+      { timeout: 15000 },
+    );
     const vals = await sku.$$eval("option", (os) => os.map((o) => o.value).filter(Boolean));
     if (vals.length) await sku.selectOption(vals[0]);
   }
