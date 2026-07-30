@@ -324,4 +324,6 @@ export default {
   "ws.recipePublishNeedsTemplate": "Recipe publish requires a published template",
   "ws.pilotNoRecipe": "No published recipe on this template",
   "ws.pilotNeedsPublish": "Pilot available after template publish",
+  "ws.backToSession": "← Back to session",
+  "ws.asIsFromSession": "AS IS loaded from a ProcessMap session",
 };

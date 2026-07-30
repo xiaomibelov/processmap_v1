@@ -30,14 +30,27 @@ def main() -> None:
     if existing:
         with psycopg.connect(url) as con:
             con.execute("UPDATE users SET role = %s WHERE email = %s", (ROLE, EMAIL))
+            # WS3: членство в org_default (editor) — доступ к сессиям /app
+            con.execute(
+                "INSERT INTO org_memberships (org_id, user_id, role, created_at) "
+                "SELECT 'org_default', %s, 'editor', 0 "
+                "WHERE NOT EXISTS (SELECT 1 FROM org_memberships WHERE org_id='org_default' AND user_id=%s)",
+                (existing["id"], existing["id"]),
+            )
             con.commit()
-        print(f"technologist-demo: уже существует (id={existing['id']}), role={ROLE} подтверждена")
+        print(f"technologist-demo: уже существует (id={existing['id']}), role={ROLE} + org_default editor подтверждены")
         return
     user = create_user(EMAIL, password, is_admin=False, is_active=True)
     with psycopg.connect(url) as con:
         con.execute("UPDATE users SET role = %s WHERE id = %s", (ROLE, user["id"]))
+        con.execute(
+            "INSERT INTO org_memberships (org_id, user_id, role, created_at) "
+            "SELECT 'org_default', %s, 'editor', 0 "
+            "WHERE NOT EXISTS (SELECT 1 FROM org_memberships WHERE org_id='org_default' AND user_id=%s)",
+            (user["id"], user["id"]),
+        )
         con.commit()
-    print(f"technologist-demo: создан id={user['id']} email={EMAIL} role={ROLE}")
+    print(f"technologist-demo: создан id={user['id']} email={EMAIL} role={ROLE} + org_default editor")
 
 
 if __name__ == "__main__":

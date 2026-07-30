@@ -145,7 +145,7 @@ export async function apiListProjectSessions(projectId, mode, options = {}) {
   return r.ok ? { ok: true, status: r.status, sessions: list } : r;
 }
 
-export async function apiCreateProjectSession(projectId, mode, title, roles, start_role, ai_prep_questions) {
+export async function apiCreateProjectSession(projectId, mode, title, roles, start_role, ai_prep_questions, extra = undefined) {
   const pid = String(projectId || "").trim();
   if (!pid) return { ok: false, status: 0, error: "missing project_id" };
 
@@ -160,6 +160,9 @@ export async function apiCreateProjectSession(projectId, mode, title, roles, sta
   if (startRole !== undefined) body.start_role = startRole;
   if (Array.isArray(ai_prep_questions)) {
     body.ai_prep_questions = ai_prep_questions;
+  }
+  if (extra && typeof extra === "object") {
+    Object.assign(body, extra); // CreateSessionIn: extra="allow" (WS3: process_layer, derived_from_session_id)
   }
 
   const r = okOrError(await request(apiRoutes.projects.sessions(pid, m), { method: "POST", body }));

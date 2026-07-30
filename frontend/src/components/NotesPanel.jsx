@@ -795,6 +795,7 @@ const SIDEBAR_LAST_OPEN_KEY = "ui.sidebar.last_open.v2";
 const SIDEBAR_ACCORDION_KEYS = ["properties", "paths", "time", "robotmeta", "execution", "ai", "notes", "advanced"];
 
 const DEFAULT_SECTIONS_STATE = {
+  tobe: true,
   paths: false,
   time: false,
   robotmeta: false,
@@ -925,6 +926,10 @@ function dispatchBatchApply(payload = {}, timeoutMs = 16000) {
 }
 
 export default function NotesPanel({
+  tobeActive = false,
+  tobeSessions = [],
+  onOpenTobeWorkspace,
+  onCloseTobeWorkspace,
   draft,
   projectId = "",
   projectTitle = "",
@@ -1078,6 +1083,7 @@ export default function NotesPanel({
   const timeSectionRef = useRef(null);
   const robotMetaSectionRef = useRef(null);
   const executionSectionRef = useRef(null);
+  const tobeSectionRef = useRef(null);
   const camundaPropertiesSectionRef = useRef(null);
   const aiSectionRef = useRef(null);
   const notesSectionRef = useRef(null);
@@ -3249,6 +3255,23 @@ export default function NotesPanel({
               <div className="sidebarSectionCaption">Настройки элемента</div>
             </div>
             <div className="sidebarAccordionStack">
+              <div ref={tobeSectionRef}>
+                <SidebarAccordion
+                sectionKey="tobe"
+                title="TO BE"
+                subtitle="Рабочее место технолога"
+                open={!!sectionsOpen.tobe}
+                onToggle={toggleSection}
+              >
+                <TobeSection
+                  active={tobeActive}
+                  sessions={tobeSessions}
+                  currentSessionId={String(draft?.session_id || "")}
+                  onOpen={onOpenTobeWorkspace}
+                  onClose={onCloseTobeWorkspace}
+                />
+              </SidebarAccordion>
+              </div>
               <div ref={camundaPropertiesSectionRef}>
                 <SidebarAccordion
                 sectionKey="properties"
@@ -3683,6 +3706,54 @@ export default function NotesPanel({
           </section>
         </div>
       </SidebarShell>
+    </div>
+  );
+}
+
+// WS3: секция «TO BE» в левом сайдбаре — вход в рабочее место технолога
+// на хост-канвасе (AS IS из реальных сессий проекта или с чистого листа).
+function TobeSection({ active, sessions, currentSessionId, onOpen, onClose }) {
+  const list = Array.isArray(sessions) ? sessions : [];
+  return (
+    <div className="tobeSection" data-testid="tobe-section">
+      {active ? (
+        <button
+          type="button"
+          className="secondaryBtn"
+          data-testid="tobe-close"
+          onClick={() => onClose?.()}
+        >
+          ← Вернуться к сессии
+        </button>
+      ) : (
+        <>
+          <div className="sidebarHint">AS IS — процесс из ProcessMap:</div>
+          {list.length === 0 ? (
+            <div className="sidebarHint">В проекте пока нет процессов — начните с чистого листа.</div>
+          ) : (
+            list.map((session) => (
+              <button
+                key={String(session.id)}
+                type="button"
+                className="secondaryBtn"
+                data-testid={`tobe-open-${String(session.id)}`}
+                onClick={() => onOpen?.(session)}
+              >
+                TO BE из «{String(session.title || "процесс")}»
+                {String(session.id) === currentSessionId ? " (текущая)" : ""}
+              </button>
+            ))
+          )}
+          <button
+            type="button"
+            className="secondaryBtn"
+            data-testid="tobe-open-blank"
+            onClick={() => onOpen?.(null)}
+          >
+            TO BE с чистого листа
+          </button>
+        </>
+      )}
     </div>
   );
 }
