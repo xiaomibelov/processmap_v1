@@ -59,7 +59,13 @@ export default function PilotPanel({ templateId, templateStatus }) {
         .filter((x) => String(x.template_id) === String(templateId));
       const published = fresh.find((r) => r.status === "published");
       if (!published) { setError(t("ws.pilotNoRecipe")); return; }
-      const firstKitchen = Object.values(kitchensById)[0];
+      let kitchenMap = kitchensById;
+      if (Object.keys(kitchenMap).length === 0) {
+        const kr = await apiRequest("/api/kitchens");
+        (kr?.ok && Array.isArray(kr.data) ? kr.data : []).forEach((k) => { kitchenMap = { ...kitchenMap, [String(k.id)]: k }; });
+        setKitchensById(kitchenMap);
+      }
+      const firstKitchen = Object.values(kitchenMap)[0];
       if (!firstKitchen) { setError(t("pilots.noKitchens")); return; }
       const br = await apiRequest("/api/sku-bindings", {
         method: "POST",
