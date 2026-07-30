@@ -16,6 +16,7 @@ import TechnologistRecipes from "./features/technologist/recipes/Recipes";
 import TechnologistAudit from "./features/technologist/audit/AuditPage";
 import TechnologistPilots from "./features/technologist/pilots/Pilots";
 import TechnologistHome from "./features/technologist/home/Home";
+import TechnologistWorkspace from "./features/technologist/workspace/Workspace";
 import { canAccessAdminConsole } from "./features/admin/adminUtils";
 import {
   buildAnalyticsPath,
@@ -246,6 +247,7 @@ function AppRoutes() {
   const wantsTechnologistAudit = pathname.startsWith("/technologist/audit");
   const wantsTechnologistPilots = pathname.startsWith("/technologist/pilots");
   const wantsTechnologistHome = pathname === "/technologist" || pathname === "/technologist/home";
+  const wantsTechnologistWorkspace = pathname.startsWith("/technologist/workspace");
 
   useEffect(() => {
     if (!isAuthed || !wantsWorkspace) return;
@@ -264,6 +266,31 @@ function AppRoutes() {
   }
 
   const showWorkspace = wantsWorkspace && isAuthed;
+
+  // WS1: рабочее место TO BE на канвасе.
+  if (wantsTechnologistWorkspace) {
+    return (
+      <>
+        {isAuthed ? (
+          <TechnologistWorkspace />
+        ) : (
+          <LoginPage
+            onBack={() => navigate("/")}
+            onSuccess={() => {
+              setReauthRequired(false);
+              navigate("/technologist/workspace", { replace: true });
+            }}
+          />
+        )}
+        <LoginModal
+          open={loginModalOpen}
+          locked={!isAuthed}
+          onClose={handleModalClose}
+          onSuccess={handleLoginSuccess}
+        />
+      </>
+    );
+  }
 
   // UX1/U3: главный экран технолога «Мои процессы».
   if (wantsTechnologistHome) {
