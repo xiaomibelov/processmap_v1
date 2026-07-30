@@ -3,6 +3,7 @@
 // конструирование, рецепт, проверка, публикация, пилот — без смены маршрута.
 // Эволюция: GraphCanvas + panels.jsx (E4) + WorkflowBar (UX1) + E6/E7/E8/E9 API.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { apiRequest } from "../../../lib/apiCore";
 import { apiGetBpmnXml } from "../../../lib/api";
@@ -116,21 +117,37 @@ export default function Workspace({
       try {
         const r = await apiGetBpmnXml(asIsSource.sessionId);
         if (canceled) return;
-        if (!r?.ok || !r.xml) { setError(String(r?.error || "bpmn load failed")); return; }
-        setAsIsXmlText(String(r.xml));
+        // B0.1: пустая/невалидная сессия — понятное сообщение, НЕ «bpmn load failed»
+        const xmlText = String(r?.xml || "").trim();
+        if (!r?.ok || !xmlText) {
+          setError("");
+          setNotice(t("ws.asIsEmpty"));
+          setAsIsModel(null);
+          setImportReport(null);
+          setLayerMode("tobe");
+          return;
+        }
+        setAsIsXmlText(xmlText);
         const ir = await apiRequest("/api/process-templates/import-bpmn", {
           method: "POST",
-          body: String(r.xml),
+          body: xmlText,
           headers: { "Content-Type": "application/octet-stream" },
         });
         if (canceled) return;
-        if (ir?.ok && ir.data) {
+        const nodesCount = asArray(ir?.data?.ui_model?.nodes).length;
+        if (ir?.ok && ir.data && nodesCount > 0) {
           setAsIsModel(normalizeUiModel(ir.data.ui_model));
           setImportReport(asObject(ir.data.report));
           setLayerMode("split");
           setPanelTab("findings");
           setNotice(t("ws.asIsFromSession"));
-        } else setError(String(ir?.error || "import failed"));
+        } else {
+          setError("");
+          setNotice(t("ws.asIsEmpty"));
+          setAsIsModel(null);
+          setImportReport(null);
+          setLayerMode("tobe");
+        }
       } finally { if (!canceled) setBusy(false); }
     })();
     return () => { canceled = true; };
@@ -173,6 +190,26 @@ export default function Workspace({
     const r = await apiRequest(`/api/process-templates/${encodeURIComponent(id)}/versions`);
     if (r?.ok && Array.isArray(r.data)) setVersions(r.data);
   }, []);
+
+  // ---- W4.9: данные сессионного прогресса (рецепты + привязки текущего шаблона) ----
+  const [progressData, setProgressData] = useState({ recipeCount: 0, pilotCount: 0 });
+  useEffect(() => {
+    if (!templateId) { setProgressData({ recipeCount: 0, pilotCount: 0 }); return undefined; }
+    let canceled = false;
+    (async () => {
+      const rr = await apiRequest("/api/recipes?limit=100");
+      const tplRecipes = (rr?.ok && Array.isArray(rr.data) ? rr.data : [])
+        .filter((x) => String(x.template_id) === String(templateId));
+      let pilotCount = 0;
+      if (tplRecipes.length > 0) {
+        const rb = await apiRequest("/api/sku-bindings");
+        const all = rb?.ok && Array.isArray(rb.data) ? rb.data : [];
+        pilotCount = all.filter((b) => tplRecipes.some((x) => String(x.id) === String(b.recipe_id))).length;
+      }
+      if (!canceled) setProgressData({ recipeCount: tplRecipes.length, pilotCount });
+    })().catch(() => {});
+    return () => { canceled = true; };
+  }, [templateId, templateStatus, panelTab]);
 
   // opDetail для выделенного блока
   useEffect(() => {
@@ -291,6 +328,13 @@ export default function Workspace({
 
   async function handlePublishTemplate() {
     if (!templateId || busy) return;
+    // W4.10: статус проверки влияет на публикацию
+    const checkErrors = validation?.summary ? Number(validation.summary.errors) || 0 : null;
+    if (checkErrors === null) {
+      if (!window.confirm(t("ws.publishNoCheck"))) return;
+    } else if (checkErrors > 0) {
+      if (!window.confirm(tf("ws.publishWithErrors", { count: checkErrors }))) return;
+    }
     setBusy(true); setError(""); setNotice("");
     try {
       const sr = await apiRequest(`/api/process-templates/${encodeURIComponent(templateId)}`, {
@@ -500,6 +544,27 @@ export default function Workspace({
     if (asisId) setSelectedAsisId(asisId);
   }
 
+  // ---- W4.9: сессионные шаги (прогресс ЭТОЙ сессии/шаблона, не глобальный) ----
+  const sessionSteps = useMemo(() => {
+    const taskBlocks = asArray(effectiveModel.nodes).filter((n) => String(n?.bpmn_type || "") === "task").length;
+    const blankChosen = !asIsSource?.sessionId && !traceMap.length && taskBlocks > 0;
+    const checkOk = validation?.summary && Number(validation.summary.errors) === 0;
+    const published = versions.some((v) => String(v?.status || "") === "published");
+    return [
+      { id: "import", state: asIsModel ? "done" : "todo", check: "AS IS выбрана и загружена (не пустая)" },
+      {
+        id: "transform",
+        state: traceMap.length > 0 ? "done" : blankChosen ? "na" : "todo",
+        check: "черновик TO BE создан (≥1 решение) ИЛИ осознанно пропущена (чистый лист)",
+      },
+      { id: "constructor", state: taskBlocks > 0 && templateId && !dirty ? "done" : "todo", check: "≥1 блок TO BE на канвасе + сохранено" },
+      { id: "recipe", state: progressData.recipeCount > 0 ? "done" : "todo", check: "≥1 рецепт привязан" },
+      { id: "check", state: checkOk ? "done" : "todo", check: "dry-run без error (реальный вызов)" },
+      { id: "publish", state: published ? "done" : "todo", check: "published-версия существует" },
+      { id: "pilot", state: progressData.pilotCount > 0 ? "done" : "todo", check: "создан пилот (binding)" },
+    ];
+  }, [asIsModel, asIsSource, traceMap.length, effectiveModel, templateId, dirty, progressData, validation, versions]);
+
   // ---- действие тулбара по шагу ----
   const hasTemplate = Boolean(templateId) || asArray(uiModel.nodes).length > 0;
   const action = useMemo(() => {
@@ -543,7 +608,26 @@ export default function Workspace({
   return (
     <div className="ws">
       <header className="ws__head">
-        <WorkflowBar current="" />
+        {embedded ? (
+          <div className="wfbar" data-testid="session-step-bar">
+            {sessionSteps.map((step, idx) => (
+              <React.Fragment key={step.id}>
+                {idx > 0 ? <span className="wfbar__sep">→</span> : null}
+                <span
+                  className={`wfbar__step ${step.state === "done" ? "wfbar__step--done" : ""} ${step.state === "todo" ? "wfbar__step--current" : ""}`}
+                  data-testid={`session-step-${step.id}`}
+                  data-state={step.state}
+                  title={`${t(`wf.step.${step.id}`)}: ${step.check}`}
+                >
+                  <span className="wfbar__num">{step.state === "done" ? "✓" : step.state === "na" ? "—" : idx + 1}</span>
+                  <span className="wfbar__label">{t(`wf.step.${step.id}`)}{step.state === "na" ? ` (${t("ws.stepNa")})` : ""}</span>
+                </span>
+              </React.Fragment>
+            ))}
+          </div>
+        ) : (
+          <WorkflowBar current="" />
+        )}
         <div className="ws__toolbar">
           {action.id !== "import" ? (
             <button
@@ -629,8 +713,8 @@ export default function Workspace({
       <div className="ws__main">
         <div className={`ws__canvases ws__canvases--${layerMode}`}>
           {layerMode !== "tobe" && asIsModel ? (
-            <div className="ws__canvas ws__canvas--asis" data-testid="canvas-asis">
-              <div className="ws__canvas-label">AS IS</div>
+            <div className="ws__canvas ws__canvas--asis" data-testid="canvas-asis" data-readonly="true">
+              <div className="ws__canvas-label">AS IS · {t("ws.asIsReadonly")}</div>
               <GraphCanvas
                 uiModel={asIsModel}
                 selectedElementId={selectedAsisId}
@@ -658,7 +742,23 @@ export default function Workspace({
           ) : null}
         </div>
 
-        <WorkspacePanel title={t("ws.panel")} tabs={tabs} activeTab={panelTab} onTabChange={setPanelTab}>
+        {(() => {
+          const panelContent = (
+            <>
+              <div className="ws-panel__tabs" data-testid="panel-tabs">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    className={`ws-panel__tab${panelTab === tab.id ? " ws-panel__tab--active" : ""}`}
+                    data-testid={`panel-tab-${tab.id}`}
+                    onClick={() => setPanelTab(tab.id)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <div className="ws-panel__body">
           {panelTab === "step" ? (
             <div data-testid="panel-step">
               <h3>{t("wf.aria")}</h3>
@@ -867,7 +967,242 @@ export default function Workspace({
           {panelTab === "pilot" ? (
             <PilotPanel templateId={templateId} templateStatus={templateStatus} />
           ) : null}
-        </WorkspacePanel>
+        
+              </div>
+            </>
+          );
+          // W4.7: в embedded-режиме параметры — в левом сайдбаре хоста (портал);
+          // правая панель не рендерится.
+          if (embedded) {
+            const slot = typeof document !== "undefined" ? document.getElementById("tobe-sidebar-slot") : null;
+            if (slot) {
+              return createPortal(
+                <div className="ws-panel ws-panel--sidebar" data-testid="tobe-params-sidebar" data-mode="sidebar">
+                  <div className="ws-panel__head">
+                    <span className="ws-panel__title">{t("ws.panel")}</span>
+                  </div>
+                  {panelContent}
+                </div>,
+                slot,
+              );
+            }
+            return null;
+          }
+          return (
+            <WorkspacePanel title={t("ws.panel")} tabs={tabs} activeTab={panelTab} onTabChange={setPanelTab}>
+              
+          {panelTab === "step" ? (
+            <div data-testid="panel-step">
+              <h3>{t("wf.aria")}</h3>
+              <p className="ctor-hint">{t("ws.stepHint")}</p>
+              <button type="button" className="ctor-btn ctor-btn--primary" onClick={handleAction}>
+                {action.label}
+              </button>
+              <p className="ctor-hint" style={{ marginTop: 12 }}>
+                {t("ws.diskImportHint")}{" "}
+                <button
+                  type="button"
+                  className="ctor-btn ctor-btn--small"
+                  data-testid="ws-disk-import"
+                  onClick={() => document.getElementById("ws-file-input")?.click()}
+                >
+                  {t("ws.diskImport")}
+                </button>
+              </p>
+            </div>
+          ) : null}
+
+          {panelTab === "block" && selectedNode ? (
+            <BlockForm
+              node={selectedNode}
+              opDetail={opDetails[String(selectedNode?.operation_code || "")]}
+              declaredRefs={listDeclaredRefs(uiModel)}
+              recipeKeys={Object.keys(uiModel?.recipe_context || {})}
+              onSave={(patch) => {
+                markDirty(updateNode(uiModel, selectedNodeId, patch));
+                setNotice(tf("ctor.blockSaved", { name: patch.display_name || selectedNodeId }));
+              }}
+              onDelete={() => handleDeleteNode(selectedNodeId)}
+            />
+          ) : null}
+          {panelTab === "block" && !selectedNode ? <div className="ctor-hint">{t("ws.selectBlock")}</div> : null}
+
+          {panelTab === "flow" && selectedFlow ? (
+            <FlowForm
+              model={uiModel}
+              flow={selectedFlow}
+              onChange={(patch) => markDirty(updateFlow(uiModel, selectedFlowId, patch))}
+              onDelete={() => handleDeleteFlow(selectedFlowId)}
+            />
+          ) : null}
+          {panelTab === "flow" && !selectedFlow ? <div className="ctor-hint">{t("ws.selectFlow")}</div> : null}
+
+          {panelTab === "template" ? (
+            <TemplatePanel
+              model={uiModel}
+              templateName={templateName}
+              templateVersion={templateVersion}
+              onNameChange={(v) => { setTemplateName(v); setDirty(true); }}
+              onVersionChange={(v) => { setTemplateVersion(v); setDirty(true); }}
+              versions={versions}
+              onRefreshVersions={() => templateId && loadVersionsFor(templateId)}
+              onDownloadBpmn={handleDownloadBpmn}
+            />
+          ) : null}
+
+          {panelTab === "entities" ? (
+            <EntitiesPanel
+              model={uiModel}
+              dicts={dicts}
+              onModelChange={(m) => markDirty(m)}
+              onRenameRequest={() => {}}
+              onDeleteBlocked={() => {}}
+            />
+          ) : null}
+
+          {panelTab === "decisions" ? (
+            <div data-testid="panel-decisions">
+              <h3>{t("ws.tabDecisions")}</h3>
+              {traceMap.length === 0 ? <div className="ctor-hint">{t("ws.noDecisions")}</div> : null}
+              <ul className="ws-decisions">
+                {traceMap
+                  .filter((tr) => !["sequenceFlow", "textAnnotation"].includes(String(tr?.element_type || "")))
+                  .map((tr) => {
+                    const id = String(tr?.element_id || "");
+                    const rejected = rejectedIds.has(id);
+                    return (
+                      <li
+                        key={id}
+                        className={`ws-decision${rejected ? " ws-decision--rejected" : ""}`}
+                        data-testid={`decision-${id}`}
+                      >
+                        <button type="button" className="ws-decision__main" onClick={() => handleSelectDecisionNode(id)}>
+                          <b>{String(tr?.name || id)}</b>
+                          <span className="ws-decision__rule">{String(tr?.rule_id || "—")}</span>
+                          <span className="ws-decision__note">{String(tr?.note || "")}</span>
+                        </button>
+                        <span className="ws-decision__actions">
+                          <button
+                            type="button"
+                            data-testid={`decision-accept-${id}`}
+                            disabled={!rejected}
+                            onClick={() => toggleDecision(id, true)}
+                          >
+                            {t("transform.accept")}
+                          </button>
+                          <button
+                            type="button"
+                            data-testid={`decision-reject-${id}`}
+                            disabled={rejected}
+                            onClick={() => toggleDecision(id, false)}
+                          >
+                            {t("transform.reject")}
+                          </button>
+                        </span>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </div>
+          ) : null}
+
+          {panelTab === "findings" ? (
+            <div data-testid="panel-findings">
+              {importFindings.length > 0 ? (
+                <>
+                  <h3>{t("import.findings")}</h3>
+                  <ul className="ctor-check__findings-list">
+                    {importFindings.map((f, idx) => (
+                      <li key={`imp_${idx}`}>
+                        <button type="button" className="ctor-check__finding" onClick={() => {
+                          const id = String(f?.element_id || "");
+                          setSelectedAsisId(id);
+                          setLayerMode((m) => (m === "tobe" ? "asis" : m));
+                        }}>
+                          <span className="ctor-check__finding-message">{String(f?.message || "")}</span>
+                          <span className="ctor-check__finding-code">{String(f?.code || "")}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+              <CheckPanel
+                validation={validation}
+                kitchens={kitchens}
+                selectedKitchenIds={selectedKitchenIds}
+                onToggleKitchen={(id) => setSelectedKitchenIds((prev) =>
+                  prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])}
+                mode="warning"
+                onModeChange={() => {}}
+                precheck={precheck}
+                busy={busy}
+                onRunPrecheck={handleCheck}
+                onSelectFinding={handleFindingNavigate}
+                onClose={() => setPanelTab("step")}
+              />
+            </div>
+          ) : null}
+
+          {panelTab === "recipe" ? (
+            <RecipePanel
+              templateId={templateId}
+              templateVersion={templateVersion}
+              templateStatus={templateStatus}
+              onPublished={() => { setPanelTab("versions"); }}
+            />
+          ) : null}
+
+          {panelTab === "versions" ? (
+            <div data-testid="panel-versions">
+              <h3>{t("ctor.versions")}</h3>
+              {templateStatus === "draft" && templateId ? (
+                <button
+                  type="button"
+                  className="ctor-btn ctor-btn--primary"
+                  data-testid="ws-publish"
+                  disabled={busy}
+                  onClick={handlePublishTemplate}
+                >
+                  {t("ctor.publish")}
+                </button>
+              ) : null}
+              {templateStatus === "published" ? (
+                <>
+                  <button type="button" className="ctor-btn" data-testid="ws-new-draft" onClick={handleNewDraft}>
+                    {t("ctor.newDraft")}
+                  </button>
+                  <button
+                    type="button"
+                    className="ctor-btn"
+                    data-testid="ws-download-bpmn"
+                    onClick={() => handleDownloadBpmn(templateVersion)}
+                  >
+                    {t("ctor.downloadBpmn")}
+                  </button>
+                </>
+              ) : null}
+              <ul className="ctor-versions__list">
+                {versions.map((v) => (
+                  <li key={`${v.version}_${v.status}`}>
+                    v{String(v.version)} · {t(`status.${String(v.status || "")}`)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {panelTab === "history" ? (
+            <AuditHistory entityType="process_template" entityId={templateId} />
+          ) : null}
+
+          {panelTab === "pilot" ? (
+            <PilotPanel templateId={templateId} templateStatus={templateStatus} />
+          ) : null}
+        
+            </WorkspacePanel>
+          );
+        })()}
       </div>
 
       {paletteOpen ? (

@@ -3715,6 +3715,8 @@ export default function NotesPanel({
 // на хост-канвасе (AS IS из реальных сессий проекта или с чистого листа).
 function TobeSection({ active, sessions, currentSessionId, onOpen, onClose }) {
   const list = Array.isArray(sessions) ? sessions : [];
+  const tobeSessions = list.filter((x) => String(x?.process_layer || "as_is") === "to_be");
+  const asisSessions = list.filter((x) => String(x?.process_layer || "as_is") !== "to_be");
   return (
     <div className="tobeSection" data-testid="tobe-section">
       {active ? (
@@ -3728,11 +3730,27 @@ function TobeSection({ active, sessions, currentSessionId, onOpen, onClose }) {
         </button>
       ) : (
         <>
+          {tobeSessions.length > 0 ? (
+            <>
+              <div className="sidebarHint">TO BE-сессии проекта:</div>
+              {tobeSessions.map((session) => (
+                <button
+                  key={String(session.id)}
+                  type="button"
+                  className="secondaryBtn"
+                  data-testid={`tobe-open-${String(session.id)}`}
+                  onClick={() => onOpen?.(session)}
+                >
+                  Открыть TO BE «{String(session.title || "процесс")}»
+                </button>
+              ))}
+            </>
+          ) : null}
           <div className="sidebarHint">AS IS — процесс из ProcessMap:</div>
-          {list.length === 0 ? (
+          {asisSessions.length === 0 ? (
             <div className="sidebarHint">В проекте пока нет процессов — начните с чистого листа.</div>
           ) : (
-            list.map((session) => (
+            asisSessions.map((session) => (
               <button
                 key={String(session.id)}
                 type="button"

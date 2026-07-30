@@ -4101,6 +4101,13 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
         sess = st.load(sid, org_id=oid, is_admin=True)
         if sess is None:
             raise HTTPException(status_code=500, detail="session not persisted")
+        # W4: тип сессии (as_is|to_be) + связь с AS IS (extra="allow" в CreateSessionIn)
+        process_layer = str(getattr(inp, "process_layer", "") or "as_is").strip() or "as_is"
+        derived_from = str(getattr(inp, "derived_from_session_id", "") or "").strip()
+        if process_layer not in ("as_is", "to_be"):
+            process_layer = "as_is"
+        sess.process_layer = process_layer
+        sess.derived_from_session_id = derived_from
         if prep_questions:
             sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
             st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
