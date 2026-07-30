@@ -165,7 +165,9 @@ export default function AppShell({
   onRestoreViewportSnapshotApplied = null,
 }) {
   const hasActiveSession = String(shellSessionId || sessionId || "").trim().length > 0;
-  const effectiveLeftHidden = hasActiveSession ? !!leftHidden : true;
+  // W4: в режиме TO BE (stageOverride) панель рабочего места живёт в левом
+  // сайдбаре — его нельзя прятать, иначе панель становится невидимой.
+  const effectiveLeftHidden = stageOverride ? false : (hasActiveSession ? !!leftHidden : true);
   const workspaceClass = `workspace ${effectiveLeftHidden ? "workspace--leftHidden" : leftCompact ? "workspace--leftCompact" : ""}`.trim();
   const workspaceBackHandler = hasActiveSession
     ? (() => onReturnToSessionList?.())
