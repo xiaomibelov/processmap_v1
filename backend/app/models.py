@@ -104,6 +104,8 @@ class Session(BaseModel):
     navigation_stack: List[Dict[str, Any]] = Field(default_factory=list)
     parent_session_id: str = ""
     element_id_in_parent: str = ""
+    process_layer: str = "as_is"
+    derived_from_session_id: str = ""
     activity_count: int = 0
     deleted_at: int = Field(default=0, exclude=True)
 # -----------------------------

@@ -119,8 +119,11 @@ function logAiUi(tag, payload = {}) {
   console.debug(`[AI_UI] ${String(tag || "trace")} ${suffix}`.trim());
 }
 
-export default function SessionFlowModal({ open, busy, projectId, onClose, onSubmit }) {
+export default function SessionFlowModal({ open, busy, projectId, onClose, onSubmit, projectSessions = [] }) {
   const [model, setModel] = useState(defaultModel());
+  // W4: тип сессии (as_is|to_be) + опциональный выбор AS IS проекта
+  const [processLayer, setProcessLayer] = useState("as_is");
+  const [derivedFrom, setDerivedFrom] = useState("");
   const [err, setErr] = useState("");
   const [aiQuestions, setAiQuestions] = useState([]);
   const [aiBusy, setAiBusy] = useState(false);
@@ -389,6 +392,8 @@ export default function SessionFlowModal({ open, busy, projectId, onClose, onSub
       await onSubmit?.({
         title: toText(model.title),
         mode: "quick_skeleton",
+        process_layer: processLayer,
+        derived_from_session_id: processLayer === "to_be" ? derivedFrom : "",
         ai_prep_questions: toArray(aiQuestions)
           .map((q, i) => ({
             id: toText(q.id) || `Q${i + 1}`,
@@ -429,6 +434,47 @@ export default function SessionFlowModal({ open, busy, projectId, onClose, onSub
         <div className="field">
           <div className="label">Название сессии</div>
           <div className="sessionFlowTitleRow">
+            <div className="label" style={{ marginTop: 12 }}>Тип сессии</div>
+            <div className="sessionFlowTitleRow" data-testid="session-type-row">
+              <label className="secondaryBtn" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                <input
+                  type="radio"
+                  name="process_layer"
+                  data-testid="session-type-as-is"
+                  checked={processLayer === "as_is"}
+                  onChange={() => setProcessLayer("as_is")}
+                />
+                AS IS (как есть)
+              </label>
+              <label className="secondaryBtn" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                <input
+                  type="radio"
+                  name="process_layer"
+                  data-testid="session-type-to-be"
+                  checked={processLayer === "to_be"}
+                  onChange={() => setProcessLayer("to_be")}
+                />
+                TO BE (как будет)
+              </label>
+            </div>
+            {processLayer === "to_be" ? (
+              <div className="field" style={{ marginTop: 10 }} data-testid="session-asis-picker">
+                <div className="label">Из какой сессии AS IS? (можно выбрать позже)</div>
+                <select
+                  className="input"
+                  data-testid="session-asis-select"
+                  value={derivedFrom}
+                  onChange={(e) => setDerivedFrom(e.target.value)}
+                >
+                  <option value="">— выбрать позже (с чистого листа) —</option>
+                  {projectSessions.map((sess) => (
+                    <option key={String(sess.id)} value={String(sess.id)}>
+                      {String(sess.title || "процесс")}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <input
               className="input"
               value={model.title}
