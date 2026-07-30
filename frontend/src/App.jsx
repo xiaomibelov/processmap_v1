@@ -3502,7 +3502,7 @@ export default function App() {
         ? (ensureArray(sessions).find((x) => String(x?.id || "") === derivedId) || null)
         : null;
       setTobeMode({
-        asIsSessionId: derived ? String(derived.id || "") : "",
+        asIsSessionId: derived ? String(derived.id || "") : derivedId,
         asIsTitle: derived ? String(derived.title || "") : "",
       });
       return;
@@ -3524,7 +3524,28 @@ export default function App() {
     const sess = (ensureArray(sessions) || []).find((x) => String(x?.id || "") === sid);
     if (sess && String(sess?.process_layer || "as_is") === "to_be") {
       if (!tobeMode) openTobeWorkspace(sess);
-    } else if (tobeMode) {
+      return;
+    }
+    if (!sess) {
+      // сессия могла быть создана только что и ещё не попасть в список —
+      // дочитываем её напрямую, иначе авто-вход в рабочее место TO BE не сработает
+      let cancelled = false;
+      (async () => {
+        const r = await apiGetSession(sid);
+        if (cancelled || !r?.ok) return;
+        const fresh = r.session || {};
+        if (String(fresh?.process_layer || "as_is") === "to_be") {
+          openTobeWorkspace({
+            id: sid,
+            title: String(fresh?.title || ""),
+            process_layer: "to_be",
+            derived_from_session_id: String(fresh?.derived_from_session_id || ""),
+          });
+        }
+      })();
+      return () => { cancelled = true; };
+    }
+    if (tobeMode) {
       setTobeMode(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
