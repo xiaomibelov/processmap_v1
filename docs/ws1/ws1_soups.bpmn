@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_55f773688b5a" targetNamespace="http://bpmn.io/schema/bpmn" exporter="ProcessMap" exporterVersion="0.3">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_b8d31b8ef526" targetNamespace="http://bpmn.io/schema/bpmn" exporter="ProcessMap" exporterVersion="0.3">
   <bpmn:collaboration id="Collaboration_1">
     <bpmn:participant id="Participant_08pyz2p" name="AS IS Супы" processRef="Process_1eviy9t" />
   </bpmn:collaboration>
   <bpmn:process id="Process_1eviy9t" isExecutable="false">
-    <bpmn:documentation>Супы WS1 (ms7eye3y) — сгенерировано ProcessMap (publish E7).</bpmn:documentation>
+    <bpmn:documentation>Супы WS1 (ms7gj4y4) — сгенерировано ProcessMap (publish E7).</bpmn:documentation>
     <bpmn:textAnnotation id="TA_entities">
       <bpmn:text>Справочник сущностей процесса (process_entities): containers: container_1, container_2; equipment: microwave_1; zones: bin_1, opener_1, sealer_1, assembly_zone_1, packaging_zone_1.</bpmn:text>
     </bpmn:textAnnotation>
