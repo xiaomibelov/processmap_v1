@@ -340,4 +340,6 @@ export default {
   "ws.recipePublishNeedsTemplate": "Публикация рецепта возможна после публикации шаблона",
   "ws.pilotNoRecipe": "Нет опубликованного рецепта на этом шаблоне",
   "ws.pilotNeedsPublish": "Пилот доступен после публикации шаблона",
+  "ws.backToSession": "← К сессии",
+  "ws.asIsFromSession": "AS IS загружен из сессии ProcessMap",
 };

@@ -85,6 +85,7 @@ function AppUpdatesPage({ onClose }) {
 }
 
 export default function AppShell({
+  stageOverride = null, // WS3: замена основной области (режим TO BE)
   draft,
   shellSessionId = "",
   locked,
@@ -336,7 +337,9 @@ export default function AppShell({
           ) : null}
         </div>
         <div className="workspaceMain relative rounded-xl2 border border-border bg-panel">
-          {updatesOpen ? (
+          {stageOverride ? (
+            stageOverride
+          ) : updatesOpen ? (
             <AppUpdatesPage onClose={closeUpdatesPage} />
           ) : (
             <ProcessStage
