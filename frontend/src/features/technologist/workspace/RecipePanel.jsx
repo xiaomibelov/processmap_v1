@@ -29,6 +29,8 @@ export default function RecipePanel({ templateId, templateVersion, templateStatu
       const list = (r?.ok && Array.isArray(r.data) ? r.data : [])
         .filter((x) => String(x.template_id) === String(templateId));
       setRecipes(list);
+      // WS1: при ремаунте панели — автовыбор рецепта (форма не пустая)
+      if (list.length > 0 && !selectedId) fillForm(list[0]);
     }).catch(() => {});
     return () => { canceled = true; };
   }, [templateId, selectedId]);
@@ -51,11 +53,26 @@ export default function RecipePanel({ templateId, templateVersion, templateStatu
     setNotice(""); setError("");
   }
 
+  function coercedParams() {
+    const out = {};
+    paramDefs.forEach((def) => {
+      const raw = params[def.name];
+      if (raw === undefined || raw === "") return;
+      if (def.type === "number" || def.type === "int") {
+        const num = Number(raw);
+        if (!Number.isNaN(num)) out[def.name] = num;
+      } else {
+        out[def.name] = raw;
+      }
+    });
+    return out;
+  }
+
   async function handleSave() {
     if (busy || !skuId.trim() || !templateId) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      const body = { sku_id: skuId.trim(), template_version: templateVersion, parameters_json: params };
+      const body = { sku_id: skuId.trim(), template_version: templateVersion, parameters_json: coercedParams() };
       let r;
       if (selectedId) {
         r = await apiRequest(`/api/recipes/${encodeURIComponent(selectedId)}`, { method: "PUT", body });

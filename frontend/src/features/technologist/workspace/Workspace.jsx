@@ -297,16 +297,20 @@ export default function Workspace() {
     if (!templateId) return;
     const r = await apiRequest(
       `/api/process-templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(version)}/bpmn`,
-      { responseType: "text" },
+      { responseType: "blob" },
     );
-    const xml = typeof r?.data === "string" ? r.data : "";
-    if (!xml) return;
-    const blob = new Blob([xml], { type: "application/xml" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${templateName}_v${version}.bpmn`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    if (r?.ok && r.data) {
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${templateName || "process"}_v${version}.bpmn`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } else {
+      setError(String(r?.error || "bpmn download failed"));
+    }
   }
 
   // ---- проверка (E6) ----
@@ -434,13 +438,14 @@ export default function Workspace() {
     return byDraft;
   }, [traceMap, rejectedIds]);
 
-  // выбор решения на канвасе → подсветка источников AS IS
+  // выбор решения на канвасе → подсветка источников AS IS (вкладку панели
+  // НЕ переключаем: блок важнее для редактирования; решения — через список)
   function handleSelectDecisionNode(id) {
+    if (!decisionBadges[id]) return;
     setSelectedDecisionId(id);
-    const trace = traceMap.find((tr) => String(tr?.element_id || "") === String(id));
+    const trace = traceMap.find((tr) => asArray(tr?.draft_node_ids).map(String).includes(String(id)));
     const asisId = String(trace?.element_id || "");
     if (asisId) setSelectedAsisId(asisId);
-    setPanelTab("decisions");
   }
 
   // ---- действие тулбара по шагу ----
