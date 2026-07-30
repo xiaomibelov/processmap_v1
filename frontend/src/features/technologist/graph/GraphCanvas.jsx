@@ -93,7 +93,8 @@ function NodeShape({ node }) {
 
 // Shared SVG graph renderer for ui_model (E3 preview + E4 constructor).
 // Editable extras are optional: onNodeMove (drag), onSelectFlow, connectSourceId,
-// unreachableNodeIds (warning badges), nodeRefs (external element registry).
+// unreachableNodeIds (warning badges), nodeRefs (external element registry),
+// nodeBadges ({id: {text, className}} — статусные бейджи блоков, WS1).
 export default function GraphCanvas({
   uiModel,
   selectedElementId = "",
@@ -102,6 +103,7 @@ export default function GraphCanvas({
   onNodeMove,
   connectSourceId = "",
   unreachableNodeIds = [],
+  nodeBadges = {},
   selectedFlowId = "",
   nodeRefs = null,
   ariaLabel = "Граф процесса",
@@ -290,6 +292,17 @@ export default function GraphCanvas({
             >
               {label}
             </text>
+            {nodeBadges[id] ? (
+              <text
+                className={`graph-canvas__badge ${nodeBadges[id].className || ""}`}
+                x={x + w - 4}
+                y={y - 4}
+                textAnchor="end"
+                data-badge-for={id}
+              >
+                {nodeBadges[id].text}
+              </text>
+            ) : null}
             {unreachable ? (
               <text className="graph-canvas__warning" x={x + w - 4} y={y + 12} textAnchor="end">
                 ⚠
