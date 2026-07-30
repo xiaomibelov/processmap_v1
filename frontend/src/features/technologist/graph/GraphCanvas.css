@@ -88,3 +88,8 @@
   fill: #555;
   pointer-events: none;
 }
+.graph-canvas__badge { font-size: 14px; font-weight: 700; }
+.graph-canvas__badge--accepted { fill: #2e9e5b; }
+.graph-canvas__badge--rejected { fill: #c0392b; }
+.graph-canvas__badge--proposed { fill: #b8860b; }
+.graph-canvas__badge--dimmed { opacity: 0.45; }
