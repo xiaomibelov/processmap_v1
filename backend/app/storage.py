@@ -3672,6 +3672,8 @@ def _session_row_to_model(row: sqlite3.Row) -> Session:
         ),
         "parent_session_id": str((row["parent_session_id"] if "parent_session_id" in keys else "") or ""),
         "element_id_in_parent": str((row["element_id_in_parent"] if "element_id_in_parent" in keys else "") or ""),
+        "process_layer": str((row["process_layer"] if "process_layer" in keys else "as_is") or "as_is"),
+        "derived_from_session_id": str((row["derived_from_session_id"] if "derived_from_session_id" in keys else "") or ""),
         "activity_count": int((row["activity_count"] if "activity_count" in keys else 0) or 0),
         "deleted_at": int((row["deleted_at"] if "deleted_at" in keys else 0) or 0),
     }
@@ -4267,6 +4269,8 @@ class Storage:
                 "navigation_stack": _json_dumps(getattr(s, "navigation_stack", []) or [], []),
                 "parent_session_id": str(getattr(s, "parent_session_id", "") or ""),
                 "element_id_in_parent": str(getattr(s, "element_id_in_parent", "") or ""),
+                "process_layer": str(getattr(s, "process_layer", "") or "as_is") or "as_is",
+                "derived_from_session_id": str(getattr(s, "derived_from_session_id", "") or ""),
                 "activity_count": int(getattr(s, "activity_count", 0) or 0),
                 "deleted_at": int(getattr(s, "deleted_at", 0) or 0),
             }
@@ -4280,7 +4284,8 @@ class Storage:
                   diagram_last_write_actor_user_id, diagram_last_write_actor_label, diagram_last_write_at,
                   diagram_last_write_changed_keys_json, bpmn_graph_fingerprint, bpmn_meta_json, version,
                   owner_user_id, org_id, created_by, updated_by, created_at, updated_at,
-                  navigation_stack, parent_session_id, element_id_in_parent, activity_count
+                  navigation_stack, parent_session_id, element_id_in_parent, process_layer,
+                  derived_from_session_id, activity_count
                 ) VALUES (
                   :id, :title, :roles_json, :start_role, :project_id, :mode, :notes, :notes_by_element_json,
                   :interview_json, :nodes_json, :edges_json, :questions_json, :mermaid, :mermaid_simple, :mermaid_lanes,
@@ -4289,7 +4294,8 @@ class Storage:
                   :diagram_last_write_actor_user_id, :diagram_last_write_actor_label, :diagram_last_write_at,
                   :diagram_last_write_changed_keys_json, :bpmn_graph_fingerprint, :bpmn_meta_json, :version,
                   :owner_user_id, :org_id, :created_by, :updated_by, :created_at, :updated_at,
-                  :navigation_stack, :parent_session_id, :element_id_in_parent, :activity_count
+                  :navigation_stack, :parent_session_id, :element_id_in_parent, :process_layer,
+                  :derived_from_session_id, :activity_count
                 )
                 ON CONFLICT(id) DO UPDATE SET
                   title=excluded.title,
@@ -4329,6 +4335,8 @@ class Storage:
                   navigation_stack=excluded.navigation_stack,
                   parent_session_id=excluded.parent_session_id,
                   element_id_in_parent=excluded.element_id_in_parent,
+                  process_layer=excluded.process_layer,
+                  derived_from_session_id=excluded.derived_from_session_id,
                   activity_count=excluded.activity_count,
                   deleted_at=excluded.deleted_at
                 """,

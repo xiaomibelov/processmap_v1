@@ -1666,7 +1666,7 @@ export default function App() {
     shellTransitionReason,
   ]);
 
-  async function createBackendSession(preferredTitle = "", projectIdOverride = "", aiPrepQuestions = undefined) {
+  async function createBackendSession(preferredTitle = "", projectIdOverride = "", aiPrepQuestions = undefined, options = undefined) {
     const pid = String(projectIdOverride || projectId || "");
     if (!pid) return;
 
@@ -1692,7 +1692,10 @@ export default function App() {
       mode: SESSION_MODE,
       prepCount: ensureArray(aiPrepQuestions).length,
     });
-    const create = await apiCreateProjectSession(pid, SESSION_MODE, title, undefined, undefined, aiPrepQuestions);
+    const create = await apiCreateProjectSession(pid, SESSION_MODE, title, undefined, undefined, aiPrepQuestions, {
+      process_layer: String(options?.processLayer || "as_is"),
+      derived_from_session_id: String(options?.derivedFromSessionId || ""),
+    });
     if (!create.ok) {
       logCreateTrace("CREATE_SESSION", {
         phase: "done",
@@ -1735,8 +1738,20 @@ export default function App() {
     setSessionFlowBusy(true);
     let success = false;
     try {
-      const sid = await createBackendSession(title, pid, prepQuestions);
+      const processLayer = String(payload?.process_layer || "as_is").trim() || "as_is";
+      const derivedFrom = String(payload?.derived_from_session_id || "").trim();
+      const sid = await createBackendSession(title, pid, prepQuestions, {
+        processLayer,
+        derivedFromSessionId: derivedFrom,
+      });
       if (!sid) return false;
+      if (processLayer === "to_be") {
+        // W4: новая TO BE-сессия → сразу рабочее место (AS IS из связи или чистый лист)
+        const asIsSess = derivedFrom
+          ? (ensureArray(sessions).find((x) => String(x?.id || "") === derivedFrom) || null)
+          : null;
+        openTobeWorkspace(asIsSess ? { id: derivedFrom, title: String(asIsSess.title || "") } : null);
+      }
 
       if (action === "generate") {
         const recomputeExec = await executeAi({
@@ -3479,11 +3494,24 @@ export default function App() {
   const [tobeMode, setTobeMode] = useState(null); // {asIsSessionId, asIsTitle} | null
 
   const openTobeWorkspace = useCallback((asIsSession) => {
+    // W4.3: TO BE-сессия открывается со СВОЕЙ связанной AS IS (derived_from),
+    // а не с самой собой в роли AS IS.
+    if (asIsSession && String(asIsSession?.process_layer || "") === "to_be") {
+      const derivedId = String(asIsSession.derived_from_session_id || "").trim();
+      const derived = derivedId
+        ? (ensureArray(sessions).find((x) => String(x?.id || "") === derivedId) || null)
+        : null;
+      setTobeMode({
+        asIsSessionId: derived ? String(derived.id || "") : "",
+        asIsTitle: derived ? String(derived.title || "") : "",
+      });
+      return;
+    }
     setTobeMode({
       asIsSessionId: asIsSession ? String(asIsSession.id || "") : "",
       asIsTitle: asIsSession ? String(asIsSession.title || "") : "",
     });
-  }, []);
+  }, [sessions]);
 
   const closeTobeWorkspace = useCallback(() => setTobeMode(null), []);
 
@@ -3967,7 +3995,12 @@ export default function App() {
         draft={draft}
         shellSessionId={shellSessionId}
         locked={locked}
-        left={left}
+        left={(
+          <>
+            {left}
+            {tobeMode ? <div id="tobe-sidebar-slot" data-testid="tobe-sidebar-slot" /> : null}
+          </>
+        )}
         leftHidden={leftHidden}
         leftCompact={phase === "notes" ? leftCompact : false}
         sidebarHandleSections={sidebarHandleSections}
@@ -4124,6 +4157,7 @@ export default function App() {
         projectId={projectId}
         onClose={() => setSessionFlowOpen(false)}
         onSubmit={runSessionFlow}
+        projectSessions={sessions}
       />
 
       <DeploymentNoticeModal />

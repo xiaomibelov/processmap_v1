@@ -342,6 +342,11 @@ export default {
   "ws.pilotNeedsPublish": "Пилот доступен после публикации шаблона",
   "ws.backToSession": "← К сессии",
   "ws.asIsFromSession": "AS IS загружен из сессии ProcessMap",
+  "ws.asIsEmpty": "Сессия AS IS пуста — начните TO BE с чистого листа или выберите другую сессию",
+  "ws.asIsReadonly": "AS IS — только просмотр (редактируется TO BE)",
+  "ws.stepNa": "не требуется",
+  "ws.publishNoCheck": "Проверка схемы ещё не запускалась. Опубликовать без проверки?",
+  "ws.publishWithErrors": "Проверка схемы даёт ошибок: {count}. Опубликовать всё равно?",
   "ws.diskImport": "Загрузить BPMN с диска",
   "ws.diskImportHint": "Если процесса нет в системе:",
 };

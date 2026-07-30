@@ -169,6 +169,8 @@ def build_projection(
         "diagram_state_version": _int("diagram_state_version"),
         "bpmn_graph_fingerprint": _str("bpmn_graph_fingerprint"),
         "bpmn_meta": bpmn_meta,
+        "process_layer": _str("process_layer", "as_is") or "as_is",
+        "derived_from_session_id": _str("derived_from_session_id"),
         "version": _int("version"),
         "owner_user_id": _str("owner_user_id"),
         "org_id": _str("org_id"),
