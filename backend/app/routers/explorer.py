@@ -234,6 +234,8 @@ class CreateSessionBody(BaseModel):
     roles: List[str] = Field(default_factory=list)
     start_role: str = ""
     mode: str = "quick_skeleton"
+    process_layer: str = "as_is"
+    derived_from_session_id: str = ""
 
 
 class CreateWorkspaceBody(BaseModel):
@@ -1158,6 +1160,12 @@ def create_session_in_project(
     if not start_role:
         start_role = roles[0]
 
+    # W4: тип сессии + связь с AS IS (extra-поля тела)
+    process_layer = str(getattr(body, "process_layer", "") or "as_is").strip() or "as_is"
+    if process_layer not in ("as_is", "to_be"):
+        process_layer = "as_is"
+    derived_from = str(getattr(body, "derived_from_session_id", "") or "").strip()
+
     sid = sess_storage.create(
         title=str(body.name or "").strip() or "Сессия",
         roles=roles,
@@ -1167,6 +1175,12 @@ def create_session_in_project(
         user_id=user_id,
         org_id=oid,
     )
+    if process_layer != "as_is" or derived_from:
+        sess = sess_storage.load(sid, org_id=oid, is_admin=True)
+        if sess is not None:
+            sess.process_layer = process_layer
+            sess.derived_from_session_id = derived_from
+            sess_storage.save(sess, user_id=user_id, org_id=oid, is_admin=True)
 
     # ── invalidation ──────────────────────────────────────────────────────────
     explorer_invalidate_sessions(pid)                     # session list is now stale
