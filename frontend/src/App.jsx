@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AppShell from "./components/AppShell";
+import { apiRequest } from "./lib/apiCore";
+import TechnologistWorkspace from "./features/technologist/workspace/Workspace";
 import NotesPanel from "./components/NotesPanel";
 import NotesMvpPanel from "./components/NotesMvpPanel";
 import NoSession from "./components/stages/NoSession";
@@ -3473,6 +3475,45 @@ export default function App() {
     setDrawioCompanionFocusIntent(null);
   }, [projectId, draft?.session_id]);
 
+  // ---- WS3: режим TO BE на хост-канвасе ----
+  const [tobeMode, setTobeMode] = useState(null); // {asIsSessionId, asIsTitle} | null
+
+  const openTobeWorkspace = useCallback((asIsSession) => {
+    setTobeMode({
+      asIsSessionId: asIsSession ? String(asIsSession.id || "") : "",
+      asIsTitle: asIsSession ? String(asIsSession.title || "") : "",
+    });
+  }, []);
+
+  const closeTobeWorkspace = useCallback(() => setTobeMode(null), []);
+
+  // WS3.6: TO BE как отдельная сессия проекта (derived_from на уровне процесса)
+  const handleTobePublished = useCallback(async ({ templateId, version, templateName }) => {
+    try {
+      const bpmn = await apiRequest(`/api/process-templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(version)}/bpmn`, { responseType: "blob" });
+      const xml = bpmn?.ok && bpmn.data ? await bpmn.data.text() : "";
+      if (!xml) return;
+      const created = await apiCreateProjectSession(
+        projectId,
+        "quick_skeleton",
+        `TO BE: ${templateName} v${version}`,
+        undefined,
+        undefined,
+        undefined,
+        {
+          process_layer: "to_be",
+          derived_from_session_id: String(tobeMode?.asIsSessionId || ""),
+          process_template_id: String(templateId),
+        },
+      );
+      const newSid = String(created?.session_id || created?.data?.id || "").trim();
+      if (!created?.ok || !newSid) return;
+      await apiPutBpmnXml(newSid, xml, { source_action: "tobe_publish" });
+    } catch {
+      // best-effort: связанная сессия — не блокер публикации
+    }
+  }, [projectId, tobeMode]);
+
   const left = useMemo(() => {
     if (phase === "no_session") {
       return (
@@ -3544,6 +3585,10 @@ export default function App() {
           if (!sid) return;
           void openSessionWithLeaveGuard(sid, { source: "breadcrumb_session" });
         }}
+        tobeActive={!!tobeMode}
+        tobeSessions={sessions}
+        onOpenTobeWorkspace={openTobeWorkspace}
+        onCloseTobeWorkspace={closeTobeWorkspace}
         sidebarHidden={leftHidden}
         sidebarCompact={leftCompact}
         onToggleSidebarCompact={handleSidebarCompact}
@@ -3911,6 +3956,14 @@ export default function App() {
   return (
     <>
       <AppShell
+        stageOverride={tobeMode ? (
+          <TechnologistWorkspace
+            embedded
+            asIsSource={tobeMode.asIsSessionId ? { sessionId: tobeMode.asIsSessionId, title: tobeMode.asIsTitle } : null}
+            onClose={closeTobeWorkspace}
+            onPublishedTobe={handleTobePublished}
+          />
+        ) : null}
         draft={draft}
         shellSessionId={shellSessionId}
         locked={locked}
