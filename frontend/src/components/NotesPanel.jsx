@@ -792,7 +792,7 @@ const NOTES_BATCH_RESULT_PREFIX = "fpc:batch_ops_result:";
 const NOTES_COVERAGE_OPEN_EVENT = "fpc:coverage_open";
 const SIDEBAR_SECTIONS_STATE_KEY = "fpc_left_sidebar_sections";
 const SIDEBAR_LAST_OPEN_KEY = "ui.sidebar.last_open.v2";
-const SIDEBAR_ACCORDION_KEYS = ["properties", "paths", "time", "robotmeta", "execution", "ai", "notes", "advanced"];
+const SIDEBAR_ACCORDION_KEYS = ["tobe", "properties", "paths", "time", "robotmeta", "execution", "ai", "notes", "advanced"];
 
 const DEFAULT_SECTIONS_STATE = {
   tobe: true,
@@ -2005,6 +2005,7 @@ export default function NotesPanel({
 
   function sectionRefById(sectionId) {
     const key = str(sectionId);
+    if (key === "tobe") return tobeSectionRef;
     if (key === "paths") return pathsSectionRef;
     if (key === "time") return timeSectionRef;
     if (key === "robotmeta") return robotMetaSectionRef;

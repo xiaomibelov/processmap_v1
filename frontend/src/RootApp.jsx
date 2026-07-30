@@ -16,7 +16,6 @@ import TechnologistRecipes from "./features/technologist/recipes/Recipes";
 import TechnologistAudit from "./features/technologist/audit/AuditPage";
 import TechnologistPilots from "./features/technologist/pilots/Pilots";
 import TechnologistHome from "./features/technologist/home/Home";
-import TechnologistWorkspace from "./features/technologist/workspace/Workspace";
 import { canAccessAdminConsole } from "./features/admin/adminUtils";
 import {
   buildAnalyticsPath,
@@ -267,29 +266,12 @@ function AppRoutes() {
 
   const showWorkspace = wantsWorkspace && isAuthed;
 
-  // WS1: рабочее место TO BE на канвасе.
+  // CL1: единая истина — TO BE на хост-канвасе /app; старый маршрут WS1 → redirect.
   if (wantsTechnologistWorkspace) {
-    return (
-      <>
-        {isAuthed ? (
-          <TechnologistWorkspace />
-        ) : (
-          <LoginPage
-            onBack={() => navigate("/")}
-            onSuccess={() => {
-              setReauthRequired(false);
-              navigate("/technologist/workspace", { replace: true });
-            }}
-          />
-        )}
-        <LoginModal
-          open={loginModalOpen}
-          locked={!isAuthed}
-          onClose={handleModalClose}
-          onSuccess={handleLoginSuccess}
-        />
-      </>
-    );
+    if (typeof window !== "undefined") {
+      window.location.replace(`/app${search || ""}`);
+    }
+    return null;
   }
 
   // UX1/U3: главный экран технолога «Мои процессы».

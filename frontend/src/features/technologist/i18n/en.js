@@ -326,4 +326,6 @@ export default {
   "ws.pilotNeedsPublish": "Pilot available after template publish",
   "ws.backToSession": "← Back to session",
   "ws.asIsFromSession": "AS IS loaded from a ProcessMap session",
+  "ws.diskImport": "Upload BPMN from disk",
+  "ws.diskImportHint": "If the process is not in the system:",
 };

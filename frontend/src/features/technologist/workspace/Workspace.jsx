@@ -545,15 +545,28 @@ export default function Workspace({
       <header className="ws__head">
         <WorkflowBar current="" />
         <div className="ws__toolbar">
-          <button
-            type="button"
-            className="ctor-btn ctor-btn--primary"
-            data-testid="ws-action"
-            disabled={busy}
-            onClick={handleAction}
-          >
-            {action.label}
-          </button>
+          {action.id !== "import" ? (
+            <button
+              type="button"
+              className="ctor-btn ctor-btn--primary"
+              data-testid="ws-action"
+              disabled={busy}
+              onClick={handleAction}
+            >
+              {action.label}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="ctor-btn"
+              data-testid="ws-action"
+              disabled={busy}
+              title={t("ws.diskImportHint")}
+              onClick={handleAction}
+            >
+              {t("ws.diskImport")}
+            </button>
+          )}
           <input
             id="ws-file-input"
             type="file"
@@ -653,6 +666,17 @@ export default function Workspace({
               <button type="button" className="ctor-btn ctor-btn--primary" onClick={handleAction}>
                 {action.label}
               </button>
+              <p className="ctor-hint" style={{ marginTop: 12 }}>
+                {t("ws.diskImportHint")}{" "}
+                <button
+                  type="button"
+                  className="ctor-btn ctor-btn--small"
+                  data-testid="ws-disk-import"
+                  onClick={() => document.getElementById("ws-file-input")?.click()}
+                >
+                  {t("ws.diskImport")}
+                </button>
+              </p>
             </div>
           ) : null}
 
