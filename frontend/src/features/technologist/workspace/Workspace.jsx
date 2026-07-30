@@ -5,6 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiRequest } from "../../../lib/apiCore";
+import { apiGetBpmnXml } from "../../../lib/api";
 import { t, tf } from "../i18n";
 import GraphCanvas from "../graph/GraphCanvas";
 import WorkflowBar, { WORKFLOW_STEPS } from "../workflow/WorkflowBar";
@@ -47,7 +48,12 @@ function readQuery() {
   return new URLSearchParams(window.location.search);
 }
 
-export default function Workspace() {
+export default function Workspace({
+  embedded = false,
+  asIsSource = null, // {sessionId, title} — WS3: AS IS из сессии ProcessMap
+  onClose = null,
+  onPublishedTobe = null,
+} = {}) {
   // ---- модель процесса (TO BE) ----
   const [uiModel, setUiModel] = useState(() => emptyUiModel());
   const [templateId, setTemplateId] = useState("");
@@ -61,6 +67,7 @@ export default function Workspace() {
   const [asIsModel, setAsIsModel] = useState(null);
   const [importReport, setImportReport] = useState(null);
   const [importFile, setImportFile] = useState(null);
+  const [asIsXmlText, setAsIsXmlText] = useState("");
   const [layerMode, setLayerMode] = useState("tobe"); // tobe | asis | split
 
   // ---- трансформация ----
@@ -99,6 +106,36 @@ export default function Workspace() {
 
   const selectedNode = useMemo(() => findNode(uiModel, selectedNodeId), [uiModel, selectedNodeId]);
   const selectedFlow = useMemo(() => findFlow(uiModel, selectedFlowId), [uiModel, selectedFlowId]);
+
+  // ---- WS3: AS IS из реальной сессии ProcessMap (embedded) ----
+  useEffect(() => {
+    if (!asIsSource?.sessionId) return undefined;
+    let canceled = false;
+    (async () => {
+      setBusy(true); setError("");
+      try {
+        const r = await apiGetBpmnXml(asIsSource.sessionId);
+        if (canceled) return;
+        if (!r?.ok || !r.xml) { setError(String(r?.error || "bpmn load failed")); return; }
+        setAsIsXmlText(String(r.xml));
+        const ir = await apiRequest("/api/process-templates/import-bpmn", {
+          method: "POST",
+          body: String(r.xml),
+          headers: { "Content-Type": "application/octet-stream" },
+        });
+        if (canceled) return;
+        if (ir?.ok && ir.data) {
+          setAsIsModel(normalizeUiModel(ir.data.ui_model));
+          setImportReport(asObject(ir.data.report));
+          setLayerMode("split");
+          setPanelTab("findings");
+          setNotice(t("ws.asIsFromSession"));
+        } else setError(String(ir?.error || "import failed"));
+      } finally { if (!canceled) setBusy(false); }
+    })();
+    return () => { canceled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asIsSource?.sessionId]);
 
   // ---- загрузка справочников + шаблона из ?template= ----
   useEffect(() => {
@@ -273,6 +310,13 @@ export default function Workspace() {
         setDirty(false);
         loadVersionsFor(templateId);
         setPanelTab("versions");
+        if (onPublishedTobe) {
+          void onPublishedTobe({
+            templateId,
+            version: String(data.version || ""),
+            templateName,
+          });
+        }
       } else {
         const detail = asObject(r?.data?.detail);
         setError(String(detail.message || r?.error || "publish failed"));
@@ -376,12 +420,20 @@ export default function Workspace() {
 
   // ---- трансформация на канвасе ----
   async function handleTransform() {
-    if (!importFile || busy) return;
+    if (busy) return;
+    if (!importFile && !asIsXmlText) return;
     setBusy(true); setError("");
     try {
-      const form = new FormData();
-      form.append("file", importFile);
-      const r = await apiRequest("/api/process-templates/transform-asis", { method: "POST", body: form });
+      const r = importFile
+        ? await apiRequest("/api/process-templates/transform-asis", {
+            method: "POST",
+            body: (() => { const f = new FormData(); f.append("file", importFile); return f; })(),
+          })
+        : await apiRequest("/api/process-templates/transform-asis", {
+            method: "POST",
+            body: asIsXmlText,
+            headers: { "Content-Type": "application/octet-stream" },
+          });
       if (r?.ok && r.data) {
         const draft = normalizeUiModel(r.data.draft_ui_model);
         setUiModel(mergeDraftEntities(draft, asArray(r.data.draft_entities)));
@@ -451,7 +503,11 @@ export default function Workspace() {
   // ---- действие тулбара по шагу ----
   const hasTemplate = Boolean(templateId) || asArray(uiModel.nodes).length > 0;
   const action = useMemo(() => {
-    if (!asIsModel && !hasTemplate) return { id: "import", label: t("ws.actionImport") };
+    if (!asIsModel && !hasTemplate) {
+      return asIsSource?.sessionId
+        ? { id: "transform", label: t("wf.nextTransform") }
+        : { id: "import", label: t("ws.actionImport") };
+    }
     if (asIsModel && importReport && Number(importReport?.summary?.errors) > 0 && !traceMap.length)
       return { id: "transform", label: t("wf.nextTransform") };
     if (!templateId) return { id: "save", label: t("ctor.save") };
@@ -538,6 +594,11 @@ export default function Workspace() {
                 </button>
               ))}
             </span>
+          ) : null}
+          {embedded && onClose ? (
+            <button type="button" className="ctor-btn" data-testid="ws-close" onClick={onClose}>
+              {t("ws.backToSession")}
+            </button>
           ) : null}
           <span className="ws__status" data-testid="ws-status">
             {t(`status.${templateStatus}`)} · v{templateVersion}
