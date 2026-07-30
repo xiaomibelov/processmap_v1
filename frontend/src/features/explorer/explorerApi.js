@@ -167,9 +167,9 @@ export async function apiFindProjectWorkspace(workspaceIds, projectId) {
   return "";
 }
 
-export async function apiCreateSession(workspaceId, projectId, { name, roles = [], start_role = "", mode = "quick_skeleton" }) {
+export async function apiCreateSession(workspaceId, projectId, { name, roles = [], start_role = "", mode = "quick_skeleton", process_layer = "as_is", derived_from_session_id = "" }) {
   return call(
     `/api/projects/${encodeURIComponent(projectId)}/explorer/sessions${q({ workspace_id: workspaceId })}`,
-    { method: "POST", body: { name, roles, start_role, mode } }
+    { method: "POST", body: { name, roles, start_role, mode, process_layer, derived_from_session_id } }
   );
 }
