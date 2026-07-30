@@ -342,4 +342,6 @@ export default {
   "ws.pilotNeedsPublish": "Пилот доступен после публикации шаблона",
   "ws.backToSession": "← К сессии",
   "ws.asIsFromSession": "AS IS загружен из сессии ProcessMap",
+  "ws.diskImport": "Загрузить BPMN с диска",
+  "ws.diskImportHint": "Если процесса нет в системе:",
 };
