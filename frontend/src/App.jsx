@@ -3515,6 +3515,21 @@ export default function App() {
 
   const closeTobeWorkspace = useCallback(() => setTobeMode(null), []);
 
+  // W4: открытие to_be-сессии автоматически включает рабочее место TO BE
+  // (её естественный вид — канвас TO BE с AS IS из derived_from);
+  // переход на as_is-сессию — выход из режима.
+  useEffect(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) return;
+    const sess = (ensureArray(sessions) || []).find((x) => String(x?.id || "") === sid);
+    if (sess && String(sess?.process_layer || "as_is") === "to_be") {
+      if (!tobeMode) openTobeWorkspace(sess);
+    } else if (tobeMode) {
+      setTobeMode(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft?.session_id, sessions, tobeMode, openTobeWorkspace]);
+
   // WS3.6: TO BE как отдельная сессия проекта (derived_from на уровне процесса)
   const handleTobePublished = useCallback(async ({ templateId, version, templateName }) => {
     try {
