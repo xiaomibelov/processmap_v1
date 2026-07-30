@@ -4110,7 +4110,8 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
         sess.derived_from_session_id = derived_from
         if prep_questions:
             sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
-            st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+        # W4: сохранять всегда — process_layer/derived_from обязаны персиститься
+        st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
         _audit_log_safe(
             request,
             org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
@@ -4133,6 +4134,12 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
             sess.project_id = project_id
         if hasattr(sess, "mode"):
             sess.mode = mode
+        # W4: тип сессии + связь AS IS (fallback-путь)
+        if hasattr(sess, "process_layer"):
+            _pl = str(getattr(inp, "process_layer", "") or "as_is").strip() or "as_is"
+            sess.process_layer = _pl if _pl in ("as_is", "to_be") else "as_is"
+        if hasattr(sess, "derived_from_session_id"):
+            sess.derived_from_session_id = str(getattr(inp, "derived_from_session_id", "") or "").strip()
         if prep_questions:
             sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
         st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
@@ -10537,9 +10544,17 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
         sess = st.load(sid, org_id=oid, is_admin=True)
         if sess is None:
             raise HTTPException(status_code=500, detail="session not persisted")
+        # W4: тип сессии (as_is|to_be) + связь с AS IS (extra="allow" в CreateSessionIn)
+        process_layer = str(getattr(inp, "process_layer", "") or "as_is").strip() or "as_is"
+        derived_from = str(getattr(inp, "derived_from_session_id", "") or "").strip()
+        if process_layer not in ("as_is", "to_be"):
+            process_layer = "as_is"
+        sess.process_layer = process_layer
+        sess.derived_from_session_id = derived_from
         if prep_questions:
             sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
-            st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+        # W4: сохранять всегда — process_layer/derived_from обязаны персиститься
+        st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
         _audit_log_safe(
             request,
             org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
@@ -10562,6 +10577,12 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
             sess.project_id = project_id
         if hasattr(sess, "mode"):
             sess.mode = mode
+        # W4: тип сессии + связь AS IS (fallback-путь)
+        if hasattr(sess, "process_layer"):
+            _pl = str(getattr(inp, "process_layer", "") or "as_is").strip() or "as_is"
+            sess.process_layer = _pl if _pl in ("as_is", "to_be") else "as_is"
+        if hasattr(sess, "derived_from_session_id"):
+            sess.derived_from_session_id = str(getattr(inp, "derived_from_session_id", "") or "").strip()
         if prep_questions:
             sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
         st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
