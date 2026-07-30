@@ -1566,6 +1566,10 @@ def _ensure_schema() -> None:
                 con.execute("ALTER TABLE sessions ADD COLUMN element_id_in_parent TEXT")
             if not _column_exists(con, "sessions", "activity_count"):
                 con.execute("ALTER TABLE sessions ADD COLUMN activity_count INTEGER NOT NULL DEFAULT 0")
+            if not _column_exists(con, "sessions", "process_layer"):
+                con.execute("ALTER TABLE sessions ADD COLUMN process_layer TEXT NOT NULL DEFAULT 'as_is'")
+            if not _column_exists(con, "sessions", "derived_from_session_id"):
+                con.execute("ALTER TABLE sessions ADD COLUMN derived_from_session_id TEXT NOT NULL DEFAULT ''")
             if not _column_exists(con, "sessions", "deleted_at"):
                 con.execute("ALTER TABLE sessions ADD COLUMN deleted_at INTEGER NOT NULL DEFAULT 0")
             con.execute("CREATE INDEX IF NOT EXISTS idx_sessions_parent_element ON sessions(parent_session_id, element_id_in_parent)")
@@ -4638,6 +4642,8 @@ class Storage:
                   start_role,
                   project_id,
                   mode,
+                  process_layer,
+                  derived_from_session_id,
                   bpmn_xml_version,
                   diagram_state_version,
                   bpmn_graph_fingerprint,
@@ -4677,6 +4683,8 @@ class Storage:
                 "start_role": str(_row_value(row, "start_role") or "").strip() or None,
                 "project_id": str(_row_value(row, "project_id") or "").strip(),
                 "mode": str(_row_value(row, "mode") or "").strip() or None,
+                "process_layer": str(_row_value(row, "process_layer") or "as_is") or "as_is",
+                "derived_from_session_id": str(_row_value(row, "derived_from_session_id") or ""),
                 "bpmn_xml_version": int(_row_value(row, "bpmn_xml_version") or 0),
                 "diagram_state_version": int(_row_value(row, "diagram_state_version") or 0),
                 "bpmn_graph_fingerprint": str(_row_value(row, "bpmn_graph_fingerprint") or ""),
