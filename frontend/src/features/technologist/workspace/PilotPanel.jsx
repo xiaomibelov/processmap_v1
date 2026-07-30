@@ -51,12 +51,16 @@ export default function PilotPanel({ templateId, templateStatus }) {
   }, [selected]);
 
   async function handleCreatePilot() {
-    const published = recipes.find((r) => r.status === "published");
-    if (!published) { setError(t("ws.pilotNoRecipe")); return; }
-    const firstKitchen = Object.values(kitchensById)[0];
-    if (!firstKitchen) { setError(t("pilots.noKitchens")); return; }
     setBusy(true); setError(""); setNotice("");
     try {
+      // свежие данные (панель могла только что смонтироваться — state ещё пуст)
+      const rr = await apiRequest("/api/recipes?limit=100");
+      const fresh = (rr?.ok && Array.isArray(rr.data) ? rr.data : [])
+        .filter((x) => String(x.template_id) === String(templateId));
+      const published = fresh.find((r) => r.status === "published");
+      if (!published) { setError(t("ws.pilotNoRecipe")); return; }
+      const firstKitchen = Object.values(kitchensById)[0];
+      if (!firstKitchen) { setError(t("pilots.noKitchens")); return; }
       const br = await apiRequest("/api/sku-bindings", {
         method: "POST",
         body: {
