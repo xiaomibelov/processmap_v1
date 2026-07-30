@@ -326,6 +326,11 @@ export default {
   "ws.pilotNeedsPublish": "Pilot available after template publish",
   "ws.backToSession": "← Back to session",
   "ws.asIsFromSession": "AS IS loaded from a ProcessMap session",
+  "ws.asIsEmpty": "The AS IS session is empty — start TO BE from scratch or pick another session",
+  "ws.asIsReadonly": "AS IS is read-only (edit TO BE instead)",
+  "ws.stepNa": "not required",
+  "ws.publishNoCheck": "Schema check has not been run. Publish anyway?",
+  "ws.publishWithErrors": "Schema check has {count} errors. Publish anyway?",
   "ws.diskImport": "Upload BPMN from disk",
   "ws.diskImportHint": "If the process is not in the system:",
 };

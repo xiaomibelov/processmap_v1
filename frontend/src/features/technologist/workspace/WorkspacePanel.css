@@ -26,3 +26,18 @@
 .ws-panel__tab { border: 1px solid #c9d3e2; background: #fff; border-radius: 5px; padding: 3px 9px; font-size: 12.5px; cursor: pointer; color: #3c4c66; }
 .ws-panel__tab--active { background: #3f6fd1; border-color: #3f6fd1; color: #fff; }
 .ws-panel__body { overflow: auto; padding: 10px 12px; flex: 1; }
+/* W4.7: панель в левом сайдбаре хост-канваса */
+.ws-panel--sidebar {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: none;
+  border: none;
+  border-top: 1px solid #d5dce6;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.ws-panel--sidebar .ws-panel__head { background: transparent; border-bottom: none; padding: 10px 12px 4px; }
+.ws-panel--sidebar .ws-panel__tabs { background: transparent; }
+.ws-panel--sidebar .ws-panel__body { padding: 8px 12px; }
