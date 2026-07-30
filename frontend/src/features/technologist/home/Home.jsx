@@ -51,11 +51,11 @@ export default function TechnologistHome() {
   function hrefForStep(tpl, stepId) {
     const id = encodeURIComponent(String(tpl.id));
     switch (stepId) {
-      case "import": return "/technologist/workspace";
+      case "import": return "/app";
       case "transform": return "/technologist/transform";
-      case "constructor": return `/technologist/workspace?template=${id}`;
+      case "constructor": return "/app";
       case "recipe": return `/technologist/recipes?template=${id}`;
-      case "check": return `/technologist/workspace?template=${id}`;
+      case "check": return "/app";
       case "publish": return `/technologist/recipes?template=${id}`;
       case "pilot": return "/technologist/pilots";
       default: return `/technologist/constructor?template=${id}`;
@@ -73,7 +73,7 @@ export default function TechnologistHome() {
       <WorkflowBar current="" />
       <div className="tech-home__head">
         <h1>{t("wf.home.title")}</h1>
-        <a className="tech-home__new" data-testid="home-new-process" href="/technologist/workspace">
+        <a className="tech-home__new" data-testid="home-new-process" href="/app">
           {t("wf.home.new")}
         </a>
       </div>
@@ -82,7 +82,7 @@ export default function TechnologistHome() {
       {!loading && templates.length === 0 ? (
         <div className="tech-home__empty" data-testid="home-empty">
           <p>{t("wf.home.empty")}</p>
-          <a className="tech-home__new" href="/technologist/workspace">{t("wf.home.new")}</a>
+          <a className="tech-home__new" href="/app">{t("wf.home.new")}</a>
         </div>
       ) : null}
 
