@@ -3122,17 +3122,121 @@ function ProjectPane({ workspaceId, projectId, onBack, onOpenSession, breadcrumb
       )}
 
       {creating && permissions?.canCreate ? (
-        <InputModal
-          title="Новая сессия"
-          placeholder="Название сессии"
+        <SessionCreateModal
+          sessions={sessions}
           onClose={() => setCreating(false)}
-          onSubmit={async (name) => {
-            const resp = await apiCreateSession(workspaceId, projectId, { name });
+          onSubmit={async ({ name, processLayer, derivedFrom }) => {
+            const resp = await apiCreateSession(workspaceId, projectId, {
+              name,
+              process_layer: processLayer,
+              derived_from_session_id: derivedFrom,
+            });
             if (!resp?.ok) throw new Error(resp?.error || "Не удалось создать сессию");
             load();
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+// ─── W4: модалка создания сессии с типом (as_is|to_be) + выбор AS IS ─────────
+
+function SessionCreateModal({ sessions = [], onClose, onSubmit }) {
+  const [name, setName] = React.useState("");
+  const [processLayer, setProcessLayer] = React.useState("as_is");
+  const [derivedFrom, setDerivedFrom] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const asisList = (Array.isArray(sessions) ? sessions : []).filter(
+    (x) => String(x?.process_layer || "as_is") !== "to_be",
+  );
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!String(name || "").trim() || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await onSubmit?.({
+        name: String(name || "").trim(),
+        processLayer,
+        derivedFrom: processLayer === "to_be" ? derivedFrom : "",
+      });
+    } catch (err) {
+      setError(String(err?.message || err || "error"));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="modalOverlay" data-testid="session-create-modal" onClick={onClose}>
+      <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
+        <div className="modalTitle">Новая сессия</div>
+        <div className="field">
+          <div className="label">Название сессии</div>
+          <input
+            className="input"
+            data-testid="session-create-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Название сессии"
+            autoFocus
+          />
+        </div>
+        <div className="field">
+          <div className="label">Тип сессии</div>
+          <div style={{ display: "flex", gap: 10 }} data-testid="session-type-row">
+            <label className="secondaryBtn" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+              <input
+                type="radio"
+                name="w4_process_layer"
+                data-testid="session-type-as-is"
+                checked={processLayer === "as_is"}
+                onChange={() => setProcessLayer("as_is")}
+              />
+              AS IS (как есть)
+            </label>
+            <label className="secondaryBtn" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+              <input
+                type="radio"
+                name="w4_process_layer"
+                data-testid="session-type-to-be"
+                checked={processLayer === "to_be"}
+                onChange={() => setProcessLayer("to_be")}
+              />
+              TO BE (как будет)
+            </label>
+          </div>
+        </div>
+        {processLayer === "to_be" ? (
+          <div className="field" data-testid="session-asis-picker">
+            <div className="label">Из какой сессии AS IS? (можно выбрать позже)</div>
+            <select
+              className="input"
+              data-testid="session-asis-select"
+              value={derivedFrom}
+              onChange={(e) => setDerivedFrom(e.target.value)}
+            >
+              <option value="">— выбрать позже (с чистого листа) —</option>
+              {asisList.map((sess) => (
+                <option key={String(sess.id)} value={String(sess.id)}>
+                  {String(sess.title || sess.name || "процесс")}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+        {error ? <div className="formError">{error}</div> : null}
+        <div className="modalFooter">
+          <button type="button" className="secondaryBtn" onClick={onClose} disabled={busy}>
+            Отмена
+          </button>
+          <button type="submit" className="primaryBtn" data-testid="session-create-submit" disabled={busy || !String(name || "").trim()}>
+            {busy ? "Создаю…" : "Создать"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
