@@ -3860,7 +3860,9 @@ class Storage:
             updated_at,
             navigation_stack,
             parent_session_id,
-            element_id_in_parent
+            element_id_in_parent,
+            process_layer,
+            derived_from_session_id
         """
         with _connect() as con:
             row = con.execute(
