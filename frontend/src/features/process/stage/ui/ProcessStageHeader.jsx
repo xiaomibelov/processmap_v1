@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import ProcessPanels from "./ProcessPanels";
 import BpmnFpsMeter from "../../../../components/process/BpmnFpsMeter";
 import { getFirstPickedFile } from "./fileInputEvent.js";
@@ -51,6 +52,32 @@ export default function ProcessStageHeader({ view = {} }) {
     featureFlags,
     tobeEntry,
   } = view;
+  const exportBpmn = topPanelsView?.exportBpmn;
+  const exportSessionZip = topPanelsView?.exportSessionZip;
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef(null);
+  useEffect(() => {
+    if (!exportMenuOpen) return undefined;
+    const handlePointerDown = (event) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
+        setExportMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        // Capture-фаза + stopPropagation: Escape закрывает только это меню,
+        // не доходя до глобальных обработчиков (напр., сворачивания сайдбара).
+        event.stopPropagation();
+        setExportMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [exportMenuOpen]);
   const publishedRevisionBadge = resolvePublishedRevisionBadgeView(sessionRevisionHistorySnapshot);
   const latestPublishedRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestPublishedRevisionNumber || 0);
   const latestRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestRevisionNumber || 0);
@@ -119,49 +146,6 @@ export default function ProcessStageHeader({ view = {} }) {
               {diagramStateVersionChipLabel}
             </span>
           ) : null}
-          {hasSession ? (
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-                onClick={handleCreateRevisionAction}
-                disabled={!canCreateRevisionFromCurrentState}
-                title={revisionActionTitle}
-                data-testid="diagram-toolbar-create-revision"
-              >
-                {resolvedCreateRevisionActionText}
-              </button>
-              {showCreateRevisionNoDiffHint ? (
-                <span
-                  className="badge text-[11px] text-muted truncate max-w-[220px]"
-                  title={revisionActionTitle}
-                  data-testid="diagram-toolbar-create-revision-no-diff-hint"
-                >
-                  {toText(createRevisionNoDiffHintText) || "Нет изменений сессии после последней версии BPMN"}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-          {hasSession ? (
-            <button
-              type="button"
-              className="primaryBtn processSaveBtn h-8 whitespace-nowrap px-2.5 text-xs"
-              onClick={handleSaveCurrentTab}
-              title={workbench.saveTooltip}
-              data-testid="diagram-toolbar-save"
-            >
-              {resolvedSaveActionText}
-            </button>
-          ) : (
-              <button
-                type="button"
-                className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-                disabled
-                title={workbench.saveTooltip}
-              >
-                {workbench.labels.save}
-              </button>
-            )}
           {featureFlags?.bpmn_fps_meter_enabled ? (
             <div className="ml-2" style={{ display: "inline-block", verticalAlign: "middle" }}>
               <BpmnFpsMeter enabled={true} />
@@ -240,6 +224,119 @@ export default function ProcessStageHeader({ view = {} }) {
               {toText(tobeEntry.label) || "Открыть TO BE"}
             </button>
           ) : null}
+          {hasSession ? (
+            <button
+              type="button"
+              className="primaryBtn processSaveBtn h-8 whitespace-nowrap px-2.5 text-xs"
+              onClick={handleSaveCurrentTab}
+              title={workbench.saveTooltip}
+              data-testid="diagram-toolbar-save"
+            >
+              {resolvedSaveActionText}
+            </button>
+          ) : (
+              <button
+                type="button"
+                className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+                disabled
+                title={workbench.saveTooltip}
+              >
+                {workbench.labels.save}
+              </button>
+            )}
+          {hasSession ? (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+                onClick={handleCreateRevisionAction}
+                disabled={!canCreateRevisionFromCurrentState}
+                title={revisionActionTitle}
+                data-testid="diagram-toolbar-create-revision"
+              >
+                {resolvedCreateRevisionActionText}
+              </button>
+              {showCreateRevisionNoDiffHint ? (
+                <span
+                  className="badge text-[11px] text-muted truncate max-w-[220px]"
+                  title={revisionActionTitle}
+                  data-testid="diagram-toolbar-create-revision-no-diff-hint"
+                >
+                  {toText(createRevisionNoDiffHintText) || "Нет изменений сессии после последней версии BPMN"}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          <div ref={exportMenuRef} className="inline-flex">
+            <button
+              type="button"
+              className="secondaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+              onClick={() => setExportMenuOpen((prev) => !prev)}
+              disabled={!hasSession}
+              aria-expanded={exportMenuOpen ? "true" : "false"}
+              aria-label="Экспорт"
+              data-testid="diagram-toolbar-export-menu"
+            >
+              Экспорт ▾
+            </button>
+            {exportMenuOpen && hasSession ? (
+              <div
+                className="absolute right-2 top-[calc(100%+6px)] z-[70] w-56 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
+                role="menu"
+                aria-label="Экспорт"
+                data-testid="diagram-toolbar-export-panel"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="diagramToolbarMenuItem"
+                  onClick={() => {
+                    setExportMenuOpen(false);
+                    void exportBpmn?.();
+                  }}
+                  data-testid="diagram-toolbar-export-xml"
+                >
+                  <span className="diagramToolbarMenuLabel">XML (.bpmn)</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="diagramToolbarMenuItem"
+                  onClick={() => {
+                    setExportMenuOpen(false);
+                    void exportSessionZip?.();
+                  }}
+                  data-testid="diagram-toolbar-export-zip"
+                >
+                  <span className="diagramToolbarMenuLabel">ZIP (YAML + BPMN)</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="diagramToolbarMenuItem"
+                  onClick={() => {
+                    setExportMenuOpen(false);
+                    void switchTab?.("doc");
+                  }}
+                  data-testid="diagram-toolbar-export-doc"
+                >
+                  <span className="diagramToolbarMenuLabel">DOC (.md)</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="diagramToolbarMenuItem"
+                  onClick={() => {
+                    setExportMenuOpen(false);
+                    void switchTab?.("dod");
+                  }}
+                  data-testid="diagram-toolbar-export-dod"
+                >
+                  <span className="diagramToolbarMenuLabel">DOD</span>
+                </button>
+              </div>
+            ) : null}
+          </div>
           {hasSession ? (
             <>
               <button

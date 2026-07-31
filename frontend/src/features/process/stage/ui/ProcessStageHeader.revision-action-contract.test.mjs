@@ -19,10 +19,13 @@ test("header exposes distinct actions for session save and revision creation", (
   assert.ok(source.includes("{resolvedSaveActionText}"));
   assert.ok(source.includes("{resolvedCreateRevisionActionText}"));
   const versionChipIdx = source.indexOf('data-testid="diagram-toolbar-version-chip"');
-  const createVersionIdx = source.indexOf('data-testid="diagram-toolbar-create-revision"');
   const saveIdx = source.indexOf('data-testid="diagram-toolbar-save"');
-  assert.ok(versionChipIdx !== -1 && createVersionIdx !== -1 && saveIdx !== -1);
-  assert.ok(versionChipIdx < createVersionIdx && createVersionIdx < saveIdx);
+  const createVersionIdx = source.indexOf('data-testid="diagram-toolbar-create-revision"');
+  const exportMenuIdx = source.indexOf('data-testid="diagram-toolbar-export-menu"');
+  assert.ok(versionChipIdx !== -1 && saveIdx !== -1 && createVersionIdx !== -1 && exportMenuIdx !== -1);
+  // A4 layout: version chips stay in left slot; right slot order is
+  // Сохранить → Создать версию BPMN → Экспорт ▾.
+  assert.ok(versionChipIdx < saveIdx && saveIdx < createVersionIdx && createVersionIdx < exportMenuIdx);
 });
 
 test("revision action availability is separated from session-save copy", () => {
