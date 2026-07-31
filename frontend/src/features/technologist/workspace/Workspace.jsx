@@ -38,6 +38,7 @@ import {
 import WorkspacePanel from "./WorkspacePanel";
 import RecipePanel from "./RecipePanel";
 import PilotPanel from "./PilotPanel";
+import { decorateSteps } from "./stepStates";
 import "./Workspace.css";
 
 const STRUCTURAL_BLOCKS = [
@@ -78,6 +79,10 @@ export default function Workspace({
     && (() => { try { return window.localStorage?.getItem("ws_split_debug") === "1"; } catch { return false; } })();
   const [showAsIsLayer, setShowAsIsLayer] = useState(true); // OL1.4: подложка AS IS (дефолт видна)
   const [traceLinksMode, setTraceLinksMode] = useState("selection"); // OL1.4: selection | always
+  // UXF/B1: сессия AS IS выбрана, но пуста/не распознана — трансформация недоступна
+  const [asIsEmpty, setAsIsEmpty] = useState(false);
+  // UXF/B1+B5: пользователь осознанно выбрал «с чистого листа» поверх пустой AS IS
+  const [blankOverride, setBlankOverride] = useState(false);
 
   // ---- трансформация ----
   const [traceMap, setTraceMap] = useState([]);
@@ -126,6 +131,8 @@ export default function Workspace({
     let canceled = false;
     (async () => {
       setBusy(true); setError("");
+      setAsIsEmpty(false);
+      setBlankOverride(false); // UXF: новая сессия-источник — сброс «с чистого листа»
       try {
         const r = await apiGetBpmnXml(asIsSource.sessionId);
         if (canceled) return;
@@ -136,6 +143,7 @@ export default function Workspace({
           setNotice(t("ws.asIsEmpty"));
           setAsIsModel(null);
           setImportReport(null);
+          setAsIsEmpty(true);
           setLayerMode("tobe");
           return;
         }
@@ -154,10 +162,13 @@ export default function Workspace({
           setPanelTab("findings");
           setNotice(t("ws.asIsFromSession"));
         } else {
+          // UXF/B2: XML есть, но не распознан — это НЕ «пустая сессия»,
+          // показываем честную причину (раньше маскировалось под asIsEmpty)
           setError("");
-          setNotice(t("ws.asIsEmpty"));
+          setNotice(ir?.ok ? t("ws.asIsImportNoNodes") : t("ws.asIsImportFailed"));
           setAsIsModel(null);
           setImportReport(null);
+          setAsIsEmpty(true);
           setLayerMode("tobe");
         }
       } finally { if (!canceled) setBusy(false); }
@@ -570,14 +581,18 @@ export default function Workspace({
   // ---- W4.9: сессионные шаги (прогресс ЭТОЙ сессии/шаблона, не глобальный) ----
   const sessionSteps = useMemo(() => {
     const taskBlocks = asArray(effectiveModel.nodes).filter((n) => String(n?.bpmn_type || "") === "task").length;
-    const blankChosen = !asIsSource?.sessionId && !traceMap.length && taskBlocks > 0;
+    const blankChosen = (!asIsSource?.sessionId || blankOverride) && !traceMap.length && taskBlocks > 0;
     const checkOk = validation?.summary && Number(validation.summary.errors) === 0;
     const published = versions.some((v) => String(v?.status || "") === "published");
     return [
-      { id: "import", state: asIsModel ? "done" : "todo", check: "AS IS выбрана и загружена (не пустая)" },
+      {
+        id: "import",
+        state: asIsModel ? "done" : blankOverride ? "na" : "todo",
+        check: blankOverride ? "осознанно выбран путь «с чистого листа»" : "AS IS выбрана и загружена (не пустая)",
+      },
       {
         id: "transform",
-        state: traceMap.length > 0 ? "done" : blankChosen ? "na" : "todo",
+        state: traceMap.length > 0 ? "done" : blankOverride || blankChosen ? "na" : "todo",
         check: "черновик TO BE создан (≥1 решение) ИЛИ осознанно пропущена (чистый лист)",
       },
       { id: "constructor", state: taskBlocks > 0 && templateId && !dirty ? "done" : "todo", check: "≥1 блок TO BE на канвасе + сохранено" },
@@ -586,25 +601,41 @@ export default function Workspace({
       { id: "publish", state: published ? "done" : "todo", check: "published-версия существует" },
       { id: "pilot", state: progressData.pilotCount > 0 ? "done" : "todo", check: "создан пилот (binding)" },
     ];
-  }, [asIsModel, asIsSource, traceMap.length, effectiveModel, templateId, dirty, progressData, validation, versions]);
+  }, [asIsModel, asIsSource, blankOverride, traceMap.length, effectiveModel, templateId, dirty, progressData, validation, versions]);
 
   // ---- действие тулбара по шагу ----
   const hasTemplate = Boolean(templateId) || asArray(uiModel.nodes).length > 0;
   const action = useMemo(() => {
     if (!asIsModel && !hasTemplate) {
-      return asIsSource?.sessionId
-        ? { id: "transform", label: t("wf.nextTransform") }
-        : { id: "import", label: t("ws.actionImport") };
+      if (asIsSource?.sessionId && !blankOverride) {
+        // UXF/B1: AS IS пуста — главное действие «с чистого листа»,
+        // трансформация показывается отдельно (disabled + причина), а не мёртвой кнопкой
+        return asIsEmpty
+          ? { id: "blank", label: t("ws.actionBlank") }
+          : { id: "transform", label: t("wf.nextTransform") };
+      }
+      // UXF/B5: чистый лист без блоков — главное действие «открыть палитру/каталог»
+      if (blankOverride) return { id: "palette", label: t("ctor.palette") };
+      return { id: "import", label: t("ws.actionImport") };
     }
     if (asIsModel && importReport && Number(importReport?.summary?.errors) > 0 && !traceMap.length)
       return { id: "transform", label: t("wf.nextTransform") };
     if (!templateId) return { id: "save", label: t("ctor.save") };
     if (templateStatus === "draft") return { id: "check", label: t("ctor.check") };
     return { id: "pilot", label: t("wf.nextPilot") };
-  }, [asIsModel, hasTemplate, importReport, traceMap.length, templateId, templateStatus]);
+  }, [asIsModel, hasTemplate, asIsEmpty, blankOverride, asIsSource, importReport, traceMap.length, templateId, templateStatus]);
+
+  // UXF/B1: осознанный выбор «с чистого листа» поверх пустой AS IS
+  function handleBlankStart() {
+    setBlankOverride(true);
+    setNotice("");
+    setPanelTab("block");
+  }
 
   async function handleAction() {
     if (action.id === "import") { document.getElementById("ws-file-input")?.click(); return; }
+    if (action.id === "blank") { handleBlankStart(); return; }
+    if (action.id === "palette") { setPaletteOpen(true); return; }
     if (action.id === "transform") return handleTransform();
     if (action.id === "save") return handleSave();
     if (action.id === "check") return handleCheck();
@@ -633,13 +664,14 @@ export default function Workspace({
       <header className="ws__head">
         {embedded ? (
           <div className="wfbar" data-testid="session-step-bar">
-            {sessionSteps.map((step, idx) => (
+            {decorateSteps(sessionSteps).map((step, idx) => (
               <React.Fragment key={step.id}>
                 {idx > 0 ? <span className="wfbar__sep">→</span> : null}
                 <span
-                  className={`wfbar__step ${step.state === "done" ? "wfbar__step--done" : ""} ${step.state === "todo" ? "wfbar__step--current" : ""}`}
+                  className={`wfbar__step wfbar__step--${step.visual}`}
                   data-testid={`session-step-${step.id}`}
                   data-state={step.state}
+                  data-visual={step.visual}
                   title={`${t(`wf.step.${step.id}`)}: ${step.check}`}
                 >
                   <span className="wfbar__num">{step.state === "done" ? "✓" : step.state === "na" ? "—" : idx + 1}</span>
@@ -674,6 +706,17 @@ export default function Workspace({
               {t("ws.diskImport")}
             </button>
           )}
+          {asIsEmpty && asIsSource?.sessionId && !blankOverride ? (
+            <button
+              type="button"
+              className="ctor-btn"
+              data-testid="ws-transform-disabled"
+              disabled
+              title={t("ws.transformDisabledEmpty")}
+            >
+              {t("wf.nextTransform")}
+            </button>
+          ) : null}
           <input
             id="ws-file-input"
             type="file"
@@ -697,9 +740,11 @@ export default function Workspace({
           >
             {t("ctor.connect")}
           </button>
-          <button type="button" className="ctor-btn" data-testid="ws-palette" onClick={() => setPaletteOpen((p) => !p)}>
-            {t("ctor.palette")}
-          </button>
+          {action.id !== "palette" ? (
+            <button type="button" className="ctor-btn" data-testid="ws-palette" onClick={() => setPaletteOpen((p) => !p)}>
+              {t("ctor.palette")}
+            </button>
+          ) : null}
           {asIsModel && !splitDebug ? (
             <span className="ws__layers" data-testid="overlay-toggles">
               <button
@@ -811,6 +856,42 @@ export default function Workspace({
               nodeRefs={nodeRefs}
               ariaLabel="TO BE поверх AS IS"
             />
+            {asIsEmpty && asIsSource?.sessionId && !blankOverride ? (
+              <div className="ws__empty" data-testid="ws-empty">
+                <div className="ws__empty-title">{t("ws.emptyAsIsTitle")}</div>
+                <div className="ws__empty-hint">{t("ws.emptyAsIsHint")}</div>
+                <div className="ws__empty-actions">
+                  <button
+                    type="button"
+                    className="ctor-btn ctor-btn--primary"
+                    data-testid="ws-blank-start"
+                    onClick={handleBlankStart}
+                  >
+                    {t("ws.actionBlank")}
+                  </button>
+                  {embedded && onClose ? (
+                    <button type="button" className="ctor-btn" data-testid="ws-empty-back" onClick={onClose}>
+                      {t("ws.emptyBack")}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : !busy && !asIsModel && asArray(effectiveModel.nodes).length === 0 ? (
+              <div className="ws__empty" data-testid="ws-empty">
+                <div className="ws__empty-title">{t("ws.emptyCanvasTitle")}</div>
+                <div className="ws__empty-hint">{t("ws.emptyCanvasHint")}</div>
+                <div className="ws__empty-actions">
+                  <button
+                    type="button"
+                    className="ctor-btn ctor-btn--primary"
+                    data-testid="ws-empty-palette"
+                    onClick={() => setPaletteOpen(true)}
+                  >
+                    {t("ctor.palette")}
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
         )}

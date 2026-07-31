@@ -41,4 +41,8 @@
   background: #1d2c47;
 }
 .wfbar__step--current .wfbar__num { background: #3f6fd1; color: #fff; }
+/* UXF/B3: недоступные шаги приглушены, «не требуется» — ещё слабее */
+.wfbar__step--pending { opacity: 0.55; }
+.wfbar__step--na { opacity: 0.4; }
+.wfbar__step--na .wfbar__num { background: transparent; }
 .wfbar__step--next { border-color: #6b5bd2; }

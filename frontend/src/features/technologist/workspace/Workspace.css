@@ -29,3 +29,13 @@
 .ctor-versions__list { list-style: none; padding: 0; margin-top: 10px; }
 .ctor-versions__list li { padding: 4px 0; font-size: 13.5px; }
 .ws-recipe .ctor-field, .ws-pilot .ctor-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+/* UXF/B5: пустое состояние канваса — с действием, не белое поле */
+.ws__empty {
+  position: absolute; inset: 0; z-index: 20;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 24px; text-align: center;
+  background: rgba(238, 241, 246, 0.72);
+}
+.ws__empty-title { font-size: 17px; font-weight: 600; color: #2a3a52; }
+.ws__empty-hint { font-size: 13.5px; color: #4a5a72; max-width: 420px; }
+.ws__empty-actions { display: flex; gap: 8px; margin-top: 10px; }
