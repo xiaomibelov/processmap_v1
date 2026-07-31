@@ -2,10 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import createBpmnPersistence from "./createBpmnPersistence.js";
+import { saveCoordinator } from "../../../session/saveCoordinator.js";
 import { __resetForTests as resetCasVersionTracker, getVersion as getTrackedVersion } from "../../../../lib/casVersionTracker.js";
 
 test.beforeEach(() => {
   resetCasVersionTracker();
+  saveCoordinator.clearSession();
 });
 
 function createLocalStorageMock() {
@@ -338,9 +340,10 @@ test("saveRaw bumps tracked diagram state version on successful ack", async () =
   assert.equal(getTrackedVersion("sid_track_bump"), 6);
 });
 
-test("saveRaw rolls back tracked version and stores server current version on 409", async () => {
+test("saveRaw does NOT adopt tracked base on 409; conflict gate blocks next save until resolution", async () => {
   window.localStorage.clear();
   let remembered = null;
+  let putCalls = 0;
   const persistence = createBpmnPersistence({
     getSessionDraft: () => ({
       bpmn_xml: "<bpmn:baseline/>",
@@ -348,16 +351,19 @@ test("saveRaw rolls back tracked version and stores server current version on 40
       version: 1,
       diagram_state_version: 5,
     }),
-    apiPutBpmnXml: async () => ({
-      ok: false,
-      status: 409,
-      data: {
-        detail: {
-          code: "DIAGRAM_STATE_CONFLICT",
-          server_current_version: 9,
+    apiPutBpmnXml: async () => {
+      putCalls += 1;
+      return {
+        ok: false,
+        status: 409,
+        data: {
+          detail: {
+            code: "DIAGRAM_STATE_CONFLICT",
+            server_current_version: 9,
+          },
         },
-      },
-    }),
+      };
+    },
     rememberDiagramStateVersion: (version) => {
       remembered = version;
     },
@@ -366,6 +372,19 @@ test("saveRaw rolls back tracked version and stores server current version on 40
   const saved = await persistence.saveRaw("sid_track_rollback", "<bpmn:new/>", 1, "manual_save");
   assert.equal(saved.ok, false);
   assert.equal(saved.status, 409);
+  // внешнее состояние получает серверную версию (для конфликт-UI)
   assert.equal(remembered, 9);
+  // P1: tracked-base НЕ подменяется молча серверной версией
+  assert.notEqual(getTrackedVersion("sid_track_rollback"), 9);
+
+  // следующий saveRaw заблокирован conflict gate и не доходит до транспорта
+  const blocked = await persistence.saveRaw("sid_track_rollback", "<bpmn:new2/>", 1, "autosave");
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.status, 409);
+  assert.equal(putCalls, 1, "transport must not run while conflict gate is active");
+
+  // явное решение пользователя принимает серверную базу
+  const resolved = saveCoordinator.resolveConflict("sid_track_rollback", "overwrite");
+  assert.equal(resolved.ok, true);
   assert.equal(getTrackedVersion("sid_track_rollback"), 9);
 });
