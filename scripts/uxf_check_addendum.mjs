@@ -93,9 +93,12 @@ try {
   }
   if (!header.saveTitle || !header.createTitle) fail("A7: у иконок нет тултипов");
   if (header.exportMenu) fail("A5: меню «Экспорт ▾» не удалено из хедера");
-  const seq = ["diagram-toolbar-tobe-entry", "diagram-toolbar-undo", "diagram-toolbar-redo", "diagram-toolbar-overflow-toggle"];
+  // addendum-4 B2: «Создать TO BE» убрана из хедера (дубль) — входы: сегмент + сайдбар
+  const tobeEntryGone = await page.evaluate(() => !document.querySelector('[data-testid="diagram-toolbar-tobe-entry"]'));
+  if (!tobeEntryGone) fail("B2: «Создать TO BE» всё ещё в среднем хедере");
+  const seq = ["diagram-toolbar-undo", "diagram-toolbar-redo", "diagram-toolbar-overflow-toggle"];
   const pos = seq.map((t) => header.order.indexOf(t));
-  if (pos.some((p) => p < 0) || !(pos[0] < pos[1] && pos[1] < pos[2] && pos[2] < pos[3])) {
+  if (pos.some((p) => p < 0) || !(pos[0] < pos[1] && pos[1] < pos[2])) {
     fail(`A4: порядок справа неверный: ${header.order.join(",")}`);
   }
   await shot("a4_header_icons_left");
