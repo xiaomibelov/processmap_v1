@@ -54,13 +54,15 @@ try {
   if (!ms.seg || !ms.schemaSelected || ms.tobeSelected) fail("сегмент: режим «Схема» не активен");
   if (ms.tobeDisabled) fail("сегмент: TO BE недоступен для сессии с BPMN");
 
+  // addendum-4 B2: кнопка «Создать TO BE» удалена из тулбара — вход через сегмент «Схема|TO BE»
   const entry = await page.evaluate(() => {
-    const b = document.querySelector('[data-testid="diagram-toolbar-tobe-entry"]');
-    return { shown: Boolean(b), label: (b?.textContent || "").trim(), title: b?.getAttribute("title") || "" };
+    const gone = !document.querySelector('[data-testid="diagram-toolbar-tobe-entry"]');
+    const seg = document.querySelector('.diagramToolbarSlot--center [data-testid="mode-switch-tobe"]');
+    return { gone, segShown: Boolean(seg), segEnabled: seg ? !seg.disabled : false };
   });
-  log("1. точка входа:", JSON.stringify(entry));
-  if (!entry.shown) fail("точка входа TO BE не показана в тулбаре диаграммы");
-  if (!/^(Создать|Открыть) TO BE$/.test(entry.label)) fail(`точка входа: неожиданный ярлык «${entry.label}»`);
+  log("1. вход TO BE (addendum-4):", JSON.stringify(entry));
+  if (!entry.gone) fail("B2: «Создать TO BE» всё ещё в тулбаре диаграммы");
+  if (!entry.segShown || !entry.segEnabled) fail("сегмент TO BE не показан/недоступен в группе представлений");
 
   const tokens = await page.evaluate(() => {
     const cs = getComputedStyle(document.documentElement);
@@ -125,8 +127,8 @@ try {
   if (!ms.schemaSelected || !backState.leftPanelGone || !backState.headerBack) fail("возврат в «Схему» за 1 клик не сработал");
   await shot("3_back_to_schema");
 
-  // ---- 4. Вход через кнопку тулбара «Открыть TO BE» ----
-  await page.click('[data-testid="diagram-toolbar-tobe-entry"]');
+  // ---- 4. Вход через сегмент «TO BE» в группе представлений (addendum-4) ----
+  await page.click('.diagramToolbarSlot--center [data-testid="mode-switch-tobe"]');
   await page.waitForSelector('[data-testid="session-step-bar"]', { timeout: 30000 });
   await page.waitForTimeout(6000);
   const ctx2 = await page.evaluate(() => (document.querySelector(".tobeLeft__title")?.textContent || "").trim());
