@@ -3491,7 +3491,12 @@ export default function App() {
   }, [projectId, draft?.session_id]);
 
   // ---- WS3: режим TO BE на хост-канвасе ----
-  const [tobeMode, setTobeMode] = useState(null); // {asIsSessionId, asIsTitle} | null
+  const [tobeMode, setTobeMode] = useState(null); // {asIsSessionId, asIsTitle, hostSid} | null
+  // fix(w4-current): эффект авто-входа/выхода реагирует ТОЛЬКО на смену session_id.
+  // Иначе он мгновенно гасил ручной вход в TO BE из сайдбара для текущей
+  // as_is-сессии (setTobeMode → re-run эффекта → setTobeMode(null) → моргание).
+  const tobeSidRef = useRef("");
+  const tobeClosedSidRef = useRef(""); // сессия, для которой пользователь сам закрыл TO BE
 
   const openTobeWorkspace = useCallback((asIsSession) => {
     // W4.3: TO BE-сессия открывается со СВОЕЙ связанной AS IS (derived_from),
@@ -3504,37 +3509,51 @@ export default function App() {
       setTobeMode({
         asIsSessionId: derived ? String(derived.id || "") : derivedId,
         asIsTitle: derived ? String(derived.title || "") : "",
+        hostSid: String(asIsSession.id || ""),
       });
       return;
     }
     setTobeMode({
       asIsSessionId: asIsSession ? String(asIsSession.id || "") : "",
       asIsTitle: asIsSession ? String(asIsSession.title || "") : "",
+      hostSid: asIsSession ? String(asIsSession.id || "") : "",
     });
   }, [sessions]);
 
-  const closeTobeWorkspace = useCallback(() => setTobeMode(null), []);
+  const closeTobeWorkspace = useCallback(() => {
+    // запоминаем ручное закрытие, чтобы эффект не переоткрыл TO BE автоматически
+    tobeClosedSidRef.current = String(draft?.session_id || "").trim();
+    setTobeMode(null);
+  }, [draft?.session_id]);
 
   // W4: открытие to_be-сессии автоматически включает рабочее место TO BE
   // (её естественный вид — канвас TO BE с AS IS из derived_from);
-  // переход на as_is-сессию — выход из режима.
+  // переход на ДРУГУЮ as_is-сессию — выход из режима.
   useEffect(() => {
     const sid = String(draft?.session_id || "").trim();
-    if (!sid) return;
+    if (!sid) { tobeSidRef.current = ""; return undefined; }
+    const sidChanged = tobeSidRef.current !== sid;
+    if (sidChanged) {
+      tobeSidRef.current = sid;
+      tobeClosedSidRef.current = ""; // новая сессия — сброс ручного закрытия
+    }
     const sess = (ensureArray(sessions) || []).find((x) => String(x?.id || "") === sid);
     if (sess && String(sess?.process_layer || "as_is") === "to_be") {
-      if (!tobeMode) openTobeWorkspace(sess);
-      return;
+      if (tobeClosedSidRef.current !== sid && String(tobeMode?.hostSid || "") !== sid) {
+        openTobeWorkspace(sess);
+      }
+      return undefined;
     }
     if (!sess) {
       // сессия могла быть создана только что и ещё не попасть в список —
       // дочитываем её напрямую, иначе авто-вход в рабочее место TO BE не сработает
+      if (tobeClosedSidRef.current === sid) return undefined;
       let cancelled = false;
       (async () => {
         const r = await apiGetSession(sid);
         if (cancelled || !r?.ok) return;
         const fresh = r.session || {};
-        if (String(fresh?.process_layer || "as_is") === "to_be") {
+        if (String(fresh?.process_layer || "as_is") === "to_be" && tobeClosedSidRef.current !== sid) {
           openTobeWorkspace({
             id: sid,
             title: String(fresh?.title || ""),
@@ -3545,9 +3564,12 @@ export default function App() {
       })();
       return () => { cancelled = true; };
     }
-    if (tobeMode) {
+    // as_is: выход из TO BE только при реальной СМЕНЕ сессии
+    // (ручной вход из сайдбара для текущей сессии не гасим)
+    if (sidChanged && tobeMode) {
       setTobeMode(null);
     }
+    return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft?.session_id, sessions, tobeMode, openTobeWorkspace]);
 
