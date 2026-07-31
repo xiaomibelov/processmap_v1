@@ -509,6 +509,7 @@ function ProcessStage({
   restoreViewportSnapshot = null,
   onRestoreViewportSnapshotApplied = null,
   tobeEntry = null, // UXF: точка входа «Создать/Открыть TO BE»
+  modeSwitch = null, // UXF addendum-3: сегмент «Схема | TO BE»
 }) {
   const sid = String(sessionId || "");
 
@@ -7162,6 +7163,7 @@ function ProcessStage({
       ?? draft?.diagramStateVersion
       ?? 0),
     tobeEntry,
+    modeSwitch,
     asArray,
   });
 

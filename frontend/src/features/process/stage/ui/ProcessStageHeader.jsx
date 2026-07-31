@@ -1,5 +1,7 @@
+import { Fragment } from "react";
 import ProcessPanels from "./ProcessPanels";
 import BpmnFpsMeter from "../../../../components/process/BpmnFpsMeter";
+import ModeSwitchSegment from "../../../../components/ModeSwitchSegment";
 import { getFirstPickedFile } from "./fileInputEvent.js";
 import { resolvePublishedRevisionBadgeView } from "./revisionBadgePolicy.js";
 
@@ -72,6 +74,7 @@ export default function ProcessStageHeader({ view = {} }) {
     diagramStateConflictActorLabel,
     featureFlags,
     tobeEntry,
+    modeSwitch, // UXF addendum-3: сегмент «Схема | TO BE» справа от вкладки Diagram
   } = view;
   const publishedRevisionBadge = resolvePublishedRevisionBadgeView(sessionRevisionHistorySnapshot);
   const latestPublishedRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestPublishedRevisionNumber || 0);
@@ -198,9 +201,9 @@ export default function ProcessStageHeader({ view = {} }) {
             const isActive = isEnabled && tab === x.id;
             const isDisabled = !isEnabled;
             return (
+            <Fragment key={x.id}>
             <button
               type="button"
-              key={x.id}
               className={`segBtn rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${isActive ? "on bg-accent text-white" : isDisabled ? "isDisabled text-muted" : "text-muted hover:bg-accentSoft hover:text-fg"}`}
               role="tab"
               aria-selected={isActive}
@@ -213,6 +216,14 @@ export default function ProcessStageHeader({ view = {} }) {
             >
               {x.label}
             </button>
+            {x.id === "diagram" && modeSwitch ? (
+              <>
+                <span className="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden="true" />
+                <ModeSwitchSegment modeSwitch={modeSwitch} />
+                <span className="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden="true" />
+              </>
+            ) : null}
+            </Fragment>
             );
           })}
         </div>
