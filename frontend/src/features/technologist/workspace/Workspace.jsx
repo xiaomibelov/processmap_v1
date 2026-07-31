@@ -256,12 +256,17 @@ export default function Workspace({
     }
     setSelectedNodeId(id);
     setSelectedFlowId("");
+    // OL1: вкладку переключаем сразу — эффект не сработает при повторном
+    // клике по тому же узлу (selectedNodeId не меняется), и панель оставалась
+    // на «Шаблоне» вместо «Блока»
+    if (id) setPanelTab("block");
   }
 
   function handleSelectFlow(id) {
     if (connectArmed) return;
     setSelectedFlowId(id);
     setSelectedNodeId("");
+    if (id) setPanelTab("flow");
   }
 
   function handleNodeMove(id, x, y) {
