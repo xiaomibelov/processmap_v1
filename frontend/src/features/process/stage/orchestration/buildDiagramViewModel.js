@@ -401,6 +401,7 @@ export function buildDiagramHeaderView({
   remoteSaveHighlightView,
   diagramStateVersion = 0,
   saveUploadStatus,
+  tobeEntry = null, // UXF: точка входа «Создать/Открыть TO BE»
   asArray,
 } = {}) {
   const localDiagramStateVersion = Number.isFinite(Number(diagramStateVersion))
@@ -450,6 +451,7 @@ export function buildDiagramHeaderView({
     diagramStateConflict: isConflictFromSave || isConflictFromRemote,
     diagramStateConflictServerVersion: serverVersion,
     diagramStateConflictActorLabel: String(remoteSaveHighlightView?.actorLabel || "").trim(),
+    tobeEntry: tobeEntry && typeof tobeEntry === "object" ? tobeEntry : null,
     asArray,
   };
 }

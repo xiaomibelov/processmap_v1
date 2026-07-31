@@ -661,6 +661,26 @@ export default function Workspace({
 
   return (
     <div className="ws">
+      {embedded && typeof document !== "undefined" && document.getElementById("tobe-steps-slot")
+        ? createPortal(
+            <div className="tobeSteps" data-testid="tobe-steps-mirror">
+              <div className="tobeSteps__head">{t("wf.aria")}</div>
+              {decorateSteps(sessionSteps).map((step, idx) => (
+                <div
+                  key={step.id}
+                  className={`tobeSteps__item tobeSteps__item--${step.visual}`}
+                  data-testid={`tobe-steps-mirror-${step.id}`}
+                  data-state={step.state}
+                  title={`${t(`wf.step.${step.id}`)}: ${step.check}`}
+                >
+                  <span className="tobeSteps__num">{step.state === "done" ? "✓" : step.state === "na" ? "—" : idx + 1}</span>
+                  <span className="tobeSteps__label">{t(`wf.step.${step.id}`)}</span>
+                </div>
+              ))}
+            </div>,
+            document.getElementById("tobe-steps-slot"),
+          )
+        : null}
       <header className="ws__head">
         {embedded ? (
           <div className="wfbar" data-testid="session-step-bar">

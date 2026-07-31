@@ -156,6 +156,7 @@ export default function TopBar({
   noteNotificationsAvailable = false,
   onOpenMentionNotification,
   onRefreshMentionNotifications,
+  modeSwitch = null,
 }) {
   const { logout, user } = useAuth();
   const orgList = useMemo(() => asArray(orgs), [orgs]);
@@ -756,7 +757,35 @@ export default function TopBar({
         ) : null}
       </div>
 
-      <div className="topCenter hidden min-w-[140px] justify-center md:flex" />
+      <div className="topCenter hidden min-w-[140px] justify-center md:flex">
+        {modeSwitch ? (
+          <div className="seg" role="tablist" aria-label="Режим экрана" aria-orientation="horizontal" data-testid="mode-switch">
+            <button
+              type="button"
+              className={`segBtn rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${modeSwitch.mode === "schema" ? "on bg-accent text-white" : "text-muted hover:bg-accentSoft hover:text-fg"}`}
+              role="tab"
+              aria-selected={modeSwitch.mode === "schema"}
+              data-testid="mode-switch-schema"
+              title={modeSwitch.mode === "tobe" ? "Вернуться к схеме (bpmn.io, версии, аналитика)" : "Режим редактора схемы"}
+              onClick={() => { if (modeSwitch.mode === "tobe") modeSwitch.onExitTobe?.(); }}
+            >
+              Схема
+            </button>
+            <button
+              type="button"
+              className={`segBtn rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${modeSwitch.mode === "tobe" ? "on bg-accent text-white" : !modeSwitch.canEnterTobe ? "isDisabled text-muted" : "text-muted hover:bg-accentSoft hover:text-fg"}`}
+              role="tab"
+              aria-selected={modeSwitch.mode === "tobe"}
+              data-testid="mode-switch-tobe"
+              disabled={modeSwitch.mode !== "tobe" && !modeSwitch.canEnterTobe}
+              title={toText(modeSwitch.enterTobeTitle) || "Открыть рабочее место TO BE"}
+              onClick={() => { if (modeSwitch.mode !== "tobe") modeSwitch.onEnterTobe?.(); }}
+            >
+              TO BE
+            </button>
+          </div>
+        ) : null}
+      </div>
 
       <div className="topbarNavRight relative flex min-w-0 shrink-0 items-center justify-end gap-1.5 overflow-visible whitespace-nowrap">
         <div className="topGroup flex shrink-0 items-center gap-1.5">
