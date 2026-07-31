@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildDerivedSet, classifySourceSessions } from "../lib/tobeSources.js";
+import { computeProcessSummary } from "../lib/processSummary.js";
 import {
   elementNotesForId,
   normalizeElementNotesMap,
@@ -55,7 +56,7 @@ import {
   collectProcessRefs,
   mergeRefOptions,
 } from "../features/process/camunda/refsModel";
-import { apiGetReferenceOptions } from "../lib/api.js";
+import { apiGetReferenceOptions, apiGetBpmnXml } from "../lib/api.js";
 import {
   finalizeExtensionStateWithDictionary,
   buildPropertiesOverlayPreview,
@@ -1139,6 +1140,29 @@ export default function NotesPanel({
   const selectedElementName = str(selectedElement?.name || selectedElementId);
   const selectedElementType = str(selectedElement?.type);
   const selectedElementLaneName = str(selectedElement?.laneName || selectedElement?.lane || selectedElement?.actorRole);
+  // UXF addendum A2: сводка процесса для «Доп. информации».
+  // draft.bpmn_xml часто пуст (xml грузится отдельно) — дочитываем один раз на сессию.
+  const [processSummaryXml, setProcessSummaryXml] = useState("");
+  useEffect(() => {
+    const sid2 = str(draft?.session_id || "");
+    const inline = str(draft?.bpmn_xml || "");
+    if (inline) { setProcessSummaryXml(inline); return undefined; }
+    if (!sid2) { setProcessSummaryXml(""); return undefined; }
+    let cancelled = false;
+    setProcessSummaryXml("");
+    apiGetBpmnXml(sid2).then((r) => {
+      if (!cancelled) setProcessSummaryXml(r?.ok ? str(r?.xml || "") : "");
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [draft?.session_id, draft?.bpmn_xml]);
+  const processSummary = useMemo(
+    () => computeProcessSummary(processSummaryXml),
+    [processSummaryXml],
+  );
+  const currentSessionMeta = useMemo(() => {
+    const list = Array.isArray(tobeSessions) ? tobeSessions : [];
+    return list.find((x) => str(x?.id) === str(draft?.session_id || "")) || null;
+  }, [tobeSessions, draft?.session_id]);
   const selectedElementNode = useMemo(
     () => asArray(draft?.nodes).find((node) => str(node?.id) === selectedElementId) || null,
     [draft?.nodes, selectedElementId],
@@ -3673,38 +3697,88 @@ export default function NotesPanel({
             robotMetaMissing={selectedRobotMetaMissing}
           />
 
-          <section className="sidebarSupplementaryInfo" aria-label="Дополнительная информация">
+          <section className="sidebarSupplementaryInfo" aria-label="Дополнительная информация" data-testid="process-summary">
             <div className="sidebarSectionCaption">Доп. информация</div>
             <div className="sidebarInfoList">
               <div className="sidebarInfoRow">
-                <span className="sidebarInfoLabel">Тип элемента</span>
-                <span className="sidebarInfoValue">{isElementMode ? (selectedElementType || "—") : "—"}</span>
-              </div>
-              <div className="sidebarInfoRow">
-                <span className="sidebarInfoLabel">Внутренний ID</span>
-                <span className="sidebarInfoValue">{isElementMode ? (selectedElementId || "—") : "—"}</span>
-              </div>
-              <div className="sidebarInfoRow">
-                <span className="sidebarInfoLabel">Роль / lane</span>
-                <span className="sidebarInfoValue">{isElementMode ? (selectedElementLaneName || "—") : "—"}</span>
-              </div>
-              <div className="sidebarInfoRow">
-                <span className="sidebarInfoLabel">Связи</span>
-                <span className="sidebarInfoValue">
-                  {isElementMode
-                    ? `in ${Number(selectedElementFlowCounts.incoming || 0)} / out ${Number(selectedElementFlowCounts.outgoing || 0)}`
-                    : "—"}
+                <span className="sidebarInfoLabel">Статус</span>
+                <span className="sidebarInfoValue" data-testid="ps-status">
+                  {SESSION_STATUS_LABELS[str(currentSessionMeta?.status || "draft")] || "Черновик"}
+                  {str(currentSessionMeta?.process_layer) === "to_be" ? " · TO BE" : ""}
                 </span>
               </div>
               <div className="sidebarInfoRow">
-                <span className="sidebarInfoLabel">robot</span>
-                <span className="sidebarInfoValue">{isElementMode ? (selectedRobotMetaStatus || "none") : "—"}</span>
+                <span className="sidebarInfoLabel">Состав</span>
+                <span className="sidebarInfoValue" data-testid="ps-composition">
+                  {processSummary.hasXml
+                    ? `задачи ${processSummary.tasks} · развилки ${processSummary.gateways} · подпроцессы ${processSummary.subprocesses} · события ${processSummary.events}`
+                    : "нет схемы"}
+                </span>
               </div>
               <div className="sidebarInfoRow">
-                <span className="sidebarInfoLabel">Операция</span>
-                <span className="sidebarInfoValue">{isElementMode ? (selectedOperationKey || "—") : "—"}</span>
+                <span className="sidebarInfoLabel">Дорожки</span>
+                <span className="sidebarInfoValue" data-testid="ps-lanes">
+                  {processSummary.lanes.length
+                    ? `${processSummary.lanes.length}: ${processSummary.lanes.join(", ")}`
+                    : "—"}
+                </span>
               </div>
+              {processSummary.ee.present ? (
+                <>
+                  <div className="sidebarInfoRow">
+                    <span className="sidebarInfoLabel">Время (ee_time)</span>
+                    <span className="sidebarInfoValue" data-testid="ps-eetime">
+                      Σ {processSummary.ee.total} · крит. путь {processSummary.ee.criticalPath}
+                    </span>
+                  </div>
+                  <div className="sidebarInfoRow">
+                    <span className="sidebarInfoLabel">Разрез</span>
+                    <span className="sidebarInfoValue" data-testid="ps-eetime-split">
+                      ручное {processSummary.ee.manual} · оборудование {processSummary.ee.equipment}
+                      {processSummary.ee.unclassified > 0 ? ` · прочее ${processSummary.ee.unclassified}` : ""}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="sidebarInfoRow">
+                  <span className="sidebarInfoLabel">Время (ee_time)</span>
+                  <span className="sidebarInfoValue sidebarInfoValue--muted" data-testid="ps-eetime-empty">нет данных ee_time</span>
+                </div>
+              )}
             </div>
+            <details className="sidebarTechDetails" data-testid="ps-tech-details">
+              <summary className="sidebarHint">Технические детали</summary>
+              <div className="sidebarInfoList">
+                <div className="sidebarInfoRow">
+                  <span className="sidebarInfoLabel">Тип элемента</span>
+                  <span className="sidebarInfoValue">{isElementMode ? (selectedElementType || "—") : "—"}</span>
+                </div>
+                <div className="sidebarInfoRow">
+                  <span className="sidebarInfoLabel">Внутренний ID</span>
+                  <span className="sidebarInfoValue">{isElementMode ? (selectedElementId || "—") : "—"}</span>
+                </div>
+                <div className="sidebarInfoRow">
+                  <span className="sidebarInfoLabel">Роль / lane</span>
+                  <span className="sidebarInfoValue">{isElementMode ? (selectedElementLaneName || "—") : "—"}</span>
+                </div>
+                <div className="sidebarInfoRow">
+                  <span className="sidebarInfoLabel">Связи</span>
+                  <span className="sidebarInfoValue">
+                    {isElementMode
+                      ? `in ${Number(selectedElementFlowCounts.incoming || 0)} / out ${Number(selectedElementFlowCounts.outgoing || 0)}`
+                      : "—"}
+                  </span>
+                </div>
+                <div className="sidebarInfoRow">
+                  <span className="sidebarInfoLabel">robot</span>
+                  <span className="sidebarInfoValue">{isElementMode ? (selectedRobotMetaStatus || "none") : "—"}</span>
+                </div>
+                <div className="sidebarInfoRow">
+                  <span className="sidebarInfoLabel">Операция</span>
+                  <span className="sidebarInfoValue">{isElementMode ? (selectedOperationKey || "—") : "—"}</span>
+                </div>
+              </div>
+            </details>
           </section>
         </div>
       </SidebarShell>
@@ -3713,9 +3787,39 @@ export default function NotesPanel({
 }
 
 // WS3: секция «TO BE» в левом сайдбаре — вход в рабочее место технолога
+const SESSION_STATUS_LABELS = {
+  draft: "Черновик",
+  in_progress: "В работе",
+  review: "На ревью",
+  ready: "Готова",
+  archived: "В архиве",
+};
 // на хост-канвасе (AS IS из реальных сессий проекта или с чистого листа).
 // UXF/B4: статусы «Создать/Открыть» (не плодим дубликаты), служебные
 // сессии/подпроцессы — в свёрнутые «Прочие», пустые источники помечены.
+// WS3: секция «TO BE» в левом сайдбаре — вход в рабочее место технолога
+// на хост-канвасе (AS IS из реальных сессий проекта или с чистого листа).
+// UXF/B4: статусы «Создать/Открыть» (не плодим дубликаты), служебные
+// сессии/подпроцессы — в свёрнутые «Прочие», пустые источники помечены.
+// UXF addendum A1: паттерн списка действий — одна строка: иконка · имя · статус;
+// заголовок «AS IS — процесс из ProcessMap:» убран; «с чистого листа» — primary.
+function TobeActionRow({ testid, icon, name, status, primary = false, title, tobeExists, onClick }) {
+  return (
+    <button
+      type="button"
+      className={`tobeRow${primary ? " tobeRow--primary" : ""}`}
+      data-testid={testid}
+      data-tobe-exists={tobeExists}
+      title={title || name}
+      onClick={onClick}
+    >
+      <span className="tobeRow__icon" aria-hidden="true">{icon}</span>
+      <span className="tobeRow__name">{name}</span>
+      <span className="tobeRow__status">{status}</span>
+    </button>
+  );
+}
+
 function TobeSection({ active, sessions, currentSessionId, onOpen, onClose }) {
   const list = Array.isArray(sessions) ? sessions : [];
   const tobeSessions = list.filter((x) => String(x?.process_layer || "as_is") === "to_be");
@@ -3726,20 +3830,21 @@ function TobeSection({ active, sessions, currentSessionId, onOpen, onClose }) {
     const sid = String(session.id);
     const exists = derivedSet.has(sid);
     const empty = session.has_bpmn_xml === false;
+    const isCurrent = sid === currentSessionId;
+    const status = isCurrent ? "текущая" : exists ? "TO BE существует → Открыть" : "Создать";
     return (
-      <button
+      <TobeActionRow
         key={sid}
-        type="button"
-        className="secondaryBtn"
-        data-testid={`tobe-open-${sid}`}
-        data-tobe-exists={exists ? "1" : "0"}
-        title={empty ? "В сессии нет BPMN-схемы — TO BE начнётся с чистого листа" : undefined}
+        testid={`tobe-open-${sid}`}
+        icon="◦"
+        name={String(session.title || "процесс")}
+        status={empty ? `${status} · пустая` : status}
+        tobeExists={exists ? "1" : "0"}
+        title={empty
+          ? `«${String(session.title || "процесс")}»: в сессии нет BPMN-схемы — TO BE начнётся с чистого листа`
+          : `${exists ? "Открыть" : "Создать"} TO BE из «${String(session.title || "процесс")}»`}
         onClick={() => onOpen?.(session)}
-      >
-        {exists ? "Открыть" : "Создать"} TO BE из «{String(session.title || "процесс")}»
-        {sid === currentSessionId ? " (текущая)" : ""}
-        {empty ? " (пустая)" : ""}
-      </button>
+      />
     );
   };
   return (
@@ -3755,42 +3860,36 @@ function TobeSection({ active, sessions, currentSessionId, onOpen, onClose }) {
         </button>
       ) : (
         <>
-          {tobeSessions.length > 0 ? (
-            <>
-              <div className="sidebarHint">TO BE-сессии проекта:</div>
-              {tobeSessions.map((session) => (
-                <button
-                  key={String(session.id)}
-                  type="button"
-                  className="secondaryBtn"
-                  data-testid={`tobe-open-${String(session.id)}`}
-                  onClick={() => onOpen?.(session)}
-                >
-                  Открыть TO BE «{String(session.title || "процесс")}»
-                </button>
-              ))}
-            </>
-          ) : null}
-          <div className="sidebarHint">AS IS — процесс из ProcessMap:</div>
-          {asisMain.length === 0 ? (
+          {tobeSessions.map((session) => (
+            <TobeActionRow
+              key={String(session.id)}
+              testid={`tobe-open-${String(session.id)}`}
+              icon="◆"
+              name={String(session.title || "процесс")}
+              status="Открыть"
+              title={`Открыть TO BE «${String(session.title || "процесс")}»`}
+              onClick={() => onOpen?.(session)}
+            />
+          ))}
+          {asisMain.length === 0 && tobeSessions.length === 0 ? (
             <div className="sidebarHint">В проекте пока нет процессов — начните с чистого листа.</div>
           ) : (
             asisMain.map(renderSource)
           )}
           {asisOther.length > 0 ? (
             <details className="tobeSection__other" data-testid="tobe-other">
-              <summary className="sidebarHint">Прочие (служебные, подпроцессы): {asisOther.length}</summary>
+              <summary className="sidebarHint">Прочие (служебные): {asisOther.length}</summary>
               {asisOther.map(renderSource)}
             </details>
           ) : null}
-          <button
-            type="button"
-            className="secondaryBtn"
-            data-testid="tobe-open-blank"
+          <TobeActionRow
+            testid="tobe-open-blank"
+            icon="＋"
+            name="TO BE с чистого листа"
+            status="Создать"
+            primary
             onClick={() => onOpen?.(null)}
-          >
-            TO BE с чистого листа
-          </button>
+          />
         </>
       )}
     </div>
