@@ -460,12 +460,9 @@ export default function TopBar({
     window.location.assign("/app");
   }
 
-  function openProfileSoon() {
-    setAccountMenuOpen(false);
-    setNotificationCenterOpen(false);
-    if (typeof window === "undefined") return;
-    window.alert("Раздел «Профиль» будет доступен в следующих релизах.");
-  }
+  // A7: на странице /app кнопка «Технолог» дублирует текущее местоположение — скрываем.
+  const isOnTechnologistPath = typeof window !== "undefined"
+    && String(window.location?.pathname || "").startsWith("/app");
 
   function preferredNotificationFilter() {
     if (accountNotificationCenter.unviewedCount > 0) return "unviewed";
@@ -814,7 +811,7 @@ export default function TopBar({
               <span className="max-w-[190px] truncate text-sm font-medium text-fg" title={currentOrgLabel}>{currentOrgLabel}</span>
             </div>
           ) : null}
-          {canOpenTechnologist ? (
+          {canOpenTechnologist && !isOnTechnologistPath ? (
             <button
               type="button"
               className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-2.5 py-0 text-sm"
@@ -948,16 +945,6 @@ export default function TopBar({
                 </button>
               </div>
               <div className="grid gap-1 p-2" data-testid="topbar-account-actions">
-                <button
-                  type="button"
-                  className="secondaryBtn h-8 w-full min-w-0 justify-start gap-2 overflow-hidden px-2.5 text-left text-sm"
-                  onClick={openProfileSoon}
-                  title="Профиль пользователя"
-                  data-testid="topbar-account-profile-soon"
-                >
-                  <span className="min-w-0 flex-1 truncate">Профиль</span>
-                  <span className="ml-auto shrink-0 text-[11px] text-muted">скоро</span>
-                </button>
                 <button
                   type="button"
                   role="switch"

@@ -275,6 +275,7 @@ function readOrgSettingsTabFromUrl() {
 
 const LEFT_PANEL_OPEN_KEY = "ui.sidebar.left.open";
 const LEFT_PANEL_COMPACT_KEY = "fpc_leftpanel_compact";
+const SIDEBAR_DOCK_SIDE_KEY = "ui.sidebar.dock_side";
 const STEP_TIME_UNIT_KEY = "fpc_step_time_unit_v1";
 const BPMN_META_LOCAL_KEY_PREFIX = "fpc_bpmn_meta_v1:";
 const PROPERTIES_OVERLAY_ALWAYS_KEY_PREFIX = "fpc_properties_overlay_always_v1:";
@@ -390,6 +391,16 @@ function readLeftPanelHidden() {
 
 function readLeftPanelCompact() {
   return false;
+}
+
+// A8: сторона дока левой панели, persist localStorage (default left).
+function readSidebarDockSide() {
+  if (typeof window === "undefined") return "left";
+  try {
+    return String(window.localStorage?.getItem(SIDEBAR_DOCK_SIDE_KEY) || "").trim() === "right" ? "right" : "left";
+  } catch {
+    return "left";
+  }
 }
 
 function ensureDraftShape(sessionId) {
@@ -1480,6 +1491,8 @@ export default function App() {
     leftHidden,
     setLeftHidden,
     leftCompact,
+    dockSide,
+    handleToggleDockSide,
     stepTimeUnit,
     handleStepTimeUnitChange,
     handleToggleLeft,
@@ -1490,12 +1503,14 @@ export default function App() {
     initialOrgSettingsTab: readOrgSettingsTabFromUrl,
     initialLeftHidden: readLeftPanelHidden,
     initialLeftCompact: readLeftPanelCompact,
+    initialDockSide: readSidebarDockSide,
     initialStepTimeUnit: readStepTimeUnit,
     normalizeOrgSettingsTab,
     normalizeStepTimeUnit,
     writeStepTimeUnit,
     leftPanelOpenKey: LEFT_PANEL_OPEN_KEY,
     leftPanelCompactKey: LEFT_PANEL_COMPACT_KEY,
+    dockSideKey: SIDEBAR_DOCK_SIDE_KEY,
     setSidebarActiveSection,
     setSidebarShortcutRequest,
   });
@@ -1565,55 +1580,44 @@ export default function App() {
     return out;
   }, [showPropertiesOverlayAlways, draft?.bpmn_meta, selectedPropertiesOverlayAlwaysPreview, overlayHiddenFields]);
 
+  // A9: иконки свёрнутого сайдбара отражают реальный состав секций сайдбара
+  // (ид = ключ аккордеона — клик открывает панель сразу к нужной секции).
   const sidebarHandleSections = useMemo(() => {
     const hasActiveSession = !!String(shellSessionId || "").trim();
     const selectedElementId = String(selectedBpmnElement?.id || "").trim();
     const notesMap = normalizeElementNotesMap(draft?.notes_by_element || draft?.notesByElementId);
+    const selectedNotesRaw = notesMap && typeof notesMap === "object" ? notesMap[selectedElementId] : null;
+    const selectedNotesCount = Array.isArray(selectedNotesRaw) ? selectedNotesRaw.length : 0;
     const aiMapRaw = draft?.interview?.ai_questions_by_element || draft?.interview?.aiQuestionsByElementId || {};
     const selectedAiRaw = aiMapRaw && typeof aiMapRaw === "object" ? aiMapRaw[selectedElementId] : null;
     const selectedAiCount = Array.isArray(selectedAiRaw)
       ? selectedAiRaw.length
       : (Array.isArray(selectedAiRaw?.items) ? selectedAiRaw.items.length : 0);
-    const actorsCount = Array.isArray(draft?.actors_derived) && draft.actors_derived.length
-      ? draft.actors_derived.length
-      : (Array.isArray(draft?.roles) ? draft.roles.length : 0);
+    const elementMuted = !hasActiveSession || !selectedElementId;
+    const item = (id, title, count, muted) => ({
+      id,
+      title,
+      count: Number(count || 0),
+      active: sidebarActiveSection === id,
+      muted,
+    });
     return [
-      {
-        id: "selected",
-        title: selectedElementId ? "Выбранный узел" : "Узел не выбран",
-        count: selectedElementId ? 1 : 0,
-        active: sidebarActiveSection === "selected",
-        muted: !hasActiveSession || !selectedElementId,
-      },
-      {
-        id: "ai",
-        title: "AI-вопросы",
-        count: selectedAiCount,
-        active: sidebarActiveSection === "ai",
-        muted: !hasActiveSession,
-      },
-      {
-        id: "actors",
-        title: "Акторы",
-        count: actorsCount,
-        active: sidebarActiveSection === "actors",
-        muted: !hasActiveSession,
-      },
-      {
-        id: "templates",
-        title: "Шаблоны",
-        count: selectedElementId ? 1 : 0,
-        active: sidebarActiveSection === "templates",
-        muted: !hasActiveSession,
-      },
+      item("tobe", "TO BE", 0, !hasActiveSession),
+      item("properties", "Свойства", 0, !hasActiveSession),
+      item("paths", "Пути", 0, elementMuted),
+      item("time", "Время шага", 0, elementMuted),
+      item("robotmeta", "Robot Meta", 0, elementMuted),
+      item("notes", "Заметки", selectedNotesCount, elementMuted),
+      item("ai", "AI-вопросы", selectedAiCount, elementMuted),
+      item("advanced", "Шаблоны", 0, !hasActiveSession),
     ];
   }, [
     shellSessionId,
     selectedBpmnElement?.id,
+    draft?.notes_by_element,
+    draft?.notesByElementId,
     draft?.interview?.ai_questions_by_element,
     draft?.interview?.aiQuestionsByElementId,
-    draft?.actors_derived,
-    draft?.roles,
     sidebarActiveSection,
   ]);
 
@@ -3742,6 +3746,8 @@ export default function App() {
         onCloseTobeWorkspace={closeTobeWorkspace}
         sidebarHidden={leftHidden}
         sidebarCompact={leftCompact}
+        sidebarDockSide={dockSide}
+        onToggleDockSide={handleToggleDockSide}
         onToggleSidebarCompact={handleSidebarCompact}
         onToggleSidebarHidden={() => handleToggleLeft("sidebar_header")}
         activeSectionId={sidebarActiveSection}
@@ -4123,6 +4129,7 @@ export default function App() {
         left={tobeMode ? tobeLeftPanel : left}
         leftHidden={leftHidden}
         leftCompact={phase === "notes" ? leftCompact : false}
+        dockSide={dockSide}
         sidebarHandleSections={sidebarHandleSections}
         onToggleLeft={handleToggleLeft}
         onPatchDraft={patchDraft}

@@ -67,43 +67,38 @@ try {
   if (!seg1) fail("A3: сегмент режимов не виден на экране «Схема»");
   log("A3 схема: сегмент виден");
 
-  // ---- A4 ----
+  // ---- A4/A7 (addendum-2): слева [Сохранить][Версия BPMN] иконки + V/Rev-чипы;
+  // справа tobe-entry → undo/redo → ⋯; меню «Экспорт ▾» удалено (A5) ----
   const header = await page.evaluate(() => {
     const left = document.querySelector(".diagramToolbarSlot--left");
     const right = document.querySelector(".diagramToolbarRightActions");
     const order = right ? Array.from(right.querySelectorAll("[data-testid]")).map((el) => el.getAttribute("data-testid")) : [];
+    const leftOrder = left ? Array.from(left.querySelectorAll("[data-testid]")).map((el) => el.getAttribute("data-testid")) : [];
     const save = document.querySelector('[data-testid="diagram-toolbar-save"]');
+    const create = document.querySelector('[data-testid="diagram-toolbar-create-revision"]');
     return {
-      leftHasSave: Boolean(left?.querySelector('[data-testid="diagram-toolbar-save"]')),
-      leftHasCreate: Boolean(left?.querySelector('[data-testid="diagram-toolbar-create-revision"]')),
-      leftChips: Boolean(left?.querySelector('[data-testid="diagram-toolbar-version-chip"]')),
+      leftOrder,
       order,
-      saveClipped: save ? save.scrollWidth > save.clientWidth + 2 : null,
+      saveTitle: save?.getAttribute("title") || "",
+      createTitle: create?.getAttribute("title") || "",
+      saveAria: save?.getAttribute("aria-label") || "",
+      exportMenu: Boolean(document.querySelector('[data-testid="diagram-toolbar-export-menu"]')),
     };
   });
-  log("A4 хедер:", JSON.stringify(header));
-  if (header.leftHasSave || header.leftHasCreate) fail("A4: слева остались кнопки действий (должны быть только V/Rev)");
-  if (!header.leftChips) fail("A4: слева нет версионных чипов");
-  const seq = ["diagram-toolbar-tobe-entry", "diagram-toolbar-save", "diagram-toolbar-create-revision", "diagram-toolbar-export-menu"];
+  log("A4/A7 хедер:", JSON.stringify(header));
+  const leftSeq = ["diagram-toolbar-save", "diagram-toolbar-create-revision", "diagram-toolbar-version-chip"];
+  const leftPos = leftSeq.map((t) => header.leftOrder.indexOf(t));
+  if (leftPos.some((p) => p < 0) || !(leftPos[0] < leftPos[1] && leftPos[1] < leftPos[2])) {
+    fail(`A7: порядок слева неверный (Сохранить → Версия → чипы): ${header.leftOrder.join(",")}`);
+  }
+  if (!header.saveTitle || !header.createTitle) fail("A7: у иконок нет тултипов");
+  if (header.exportMenu) fail("A5: меню «Экспорт ▾» не удалено из хедера");
+  const seq = ["diagram-toolbar-tobe-entry", "diagram-toolbar-undo", "diagram-toolbar-redo", "diagram-toolbar-overflow-toggle"];
   const pos = seq.map((t) => header.order.indexOf(t));
   if (pos.some((p) => p < 0) || !(pos[0] < pos[1] && pos[1] < pos[2] && pos[2] < pos[3])) {
     fail(`A4: порядок справа неверный: ${header.order.join(",")}`);
   }
-  if (header.saveClipped) fail("A4: кнопка «Сохранить» обрезана");
-  // «Экспорт ▾» — меню с XML/DOC/DOD
-  await page.click('[data-testid="diagram-toolbar-export-menu"]');
-  await page.waitForTimeout(400);
-  const exportItems = await page.evaluate(() =>
-    ["diagram-toolbar-export-xml", "diagram-toolbar-export-zip", "diagram-toolbar-export-doc", "diagram-toolbar-export-dod"]
-      .map((t) => Boolean(document.querySelector(`[data-testid="${t}"]`))));
-  if (!exportItems.every(Boolean)) fail(`A4: меню экспорта неполное: ${exportItems}`);
-  await shot("a4_header_export_menu");
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(400);
-  // Страховка: Escape не должен прятать левую панель (app-фикс capture+stopPropagation),
-  // но если спрятал — переоткрываем, чтобы замеры A1 шли по видимым строкам.
-  const hiddenHandle = await page.$('[data-testid="left-sidebar-handle"] button.leftSidebarHandleOpenBtn');
-  if (hiddenHandle) { await hiddenHandle.click(); await page.waitForTimeout(1200); }
+  await shot("a4_header_icons_left");
 
   // ---- A1 ----
   await openTobeAccordion();

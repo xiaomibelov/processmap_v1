@@ -9,12 +9,14 @@ export default function useAppShellController({
   initialOrgSettingsTab = "members",
   initialLeftHidden = false,
   initialLeftCompact = false,
+  initialDockSide = "left",
   initialStepTimeUnit = "min",
   normalizeOrgSettingsTab,
   normalizeStepTimeUnit,
   writeStepTimeUnit,
   leftPanelOpenKey = "ui.sidebar.left.open",
   leftPanelCompactKey = "fpc_leftpanel_compact",
+  dockSideKey = "ui.sidebar.dock_side",
   setSidebarActiveSection,
   setSidebarShortcutRequest,
 }) {
@@ -26,7 +28,25 @@ export default function useAppShellController({
 
   const [leftHidden, setLeftHidden] = useState(() => resolveInitial(initialLeftHidden));
   const [leftCompact, setLeftCompact] = useState(() => resolveInitial(initialLeftCompact));
+  // A8: сторона дока левой панели (left|right), persist в localStorage.
+  const [dockSide, setDockSide] = useState(() => {
+    const raw = resolveInitial(initialDockSide);
+    return raw === "right" ? "right" : "left";
+  });
   const [stepTimeUnit, setStepTimeUnit] = useState(() => resolveInitial(initialStepTimeUnit));
+
+  const handleToggleDockSide = useCallback(() => {
+    setDockSide((prev) => {
+      const next = prev === "right" ? "left" : "right";
+      try {
+        window.localStorage?.setItem(dockSideKey, next);
+      } catch {
+      }
+      // eslint-disable-next-line no-console
+      console.debug(`[UI] sidebar.dock_side next=${next}`);
+      return next;
+    });
+  }, [dockSideKey]);
 
   const handleStepTimeUnitChange = useCallback((nextUnitRaw) => {
     const nextUnit = normalizeStepTimeUnit(nextUnitRaw);
@@ -156,6 +176,8 @@ export default function useAppShellController({
     leftHidden,
     setLeftHidden,
     leftCompact,
+    dockSide,
+    handleToggleDockSide,
     stepTimeUnit,
     handleStepTimeUnitChange,
     handleToggleLeft,
