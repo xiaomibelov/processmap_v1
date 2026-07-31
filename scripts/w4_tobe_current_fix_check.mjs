@@ -11,7 +11,7 @@ const require = createRequire("/root/node_modules/");
 const { chromium } = require("playwright");
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const BASE = "https://stage.processmap.ru";
+const BASE = process.env.E2E_BASE || "https://stage.processmap.ru";
 const OUT = path.join(ROOT, "docs", "fix");
 const VIDEO_TMP = "/tmp/w4_fix_video";
 const TOKEN = process.env.W4_TOKEN;

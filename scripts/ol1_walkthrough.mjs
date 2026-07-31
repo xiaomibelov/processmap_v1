@@ -9,7 +9,7 @@ const require = createRequire("/root/node_modules/");
 const { chromium } = require("playwright");
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const BASE = "https://stage.processmap.ru";
+const BASE = process.env.E2E_BASE || "https://stage.processmap.ru";
 const OUT = path.join(ROOT, "docs", "ol1");
 const VIDEO_TMP = "/tmp/ol1_video";
 const TOKEN = process.env.W4_TOKEN;
@@ -298,9 +298,16 @@ try {
   await page.click('[data-testid="panel-tab-recipe"]');
   await page.waitForSelector('[data-testid="recipe-sku"]', { timeout: 15000 });
   await page.fill('[data-testid="recipe-sku"]', RECIPE_SKU);
-  await page.click('[data-testid="recipe-save"]');
+  const [saveRcp] = await Promise.all([
+    page.waitForResponse((r) => r.url().includes("/api/recipes") && r.request().method() === "POST", { timeout: 30000 }),
+    page.click('[data-testid="recipe-save"]'),
+  ]);
   await page.waitForSelector('[data-testid="recipe-notice"]', { timeout: 15000 });
-  log("recipe saved");
+  // id свежесозданного рецепта — выбираем его в recipe-switch точно, без fallback
+  // на «последний в списке» (может быть чужим уже опубликованным → 422)
+  let myRecipeId = "";
+  try { myRecipeId = String((await saveRcp.json())?.id || (await saveRcp.json())?.data?.id || ""); } catch {}
+  log("recipe saved", myRecipeId ? `id=${myRecipeId}` : "(id не извлечён)");
   await page.click('[data-testid="ws-action"]'); // проверка
   await page.waitForSelector('[data-testid="panel-findings"]', { timeout: 30000 });
   await page.waitForTimeout(2500);
@@ -318,7 +325,7 @@ try {
   const switchSel = await page.$('[data-testid="recipe-switch"]');
   if (switchSel) {
     const opts = await switchSel.$$eval("option", (os) => os.map((o) => ({ v: o.value, t: o.textContent })));
-    const mine = opts.find((o) => o.t.includes(RECIPE_SKU)) || opts[opts.length - 1];
+    const mine = (myRecipeId && opts.find((o) => o.v === myRecipeId)) || opts.find((o) => o.t.includes(RECIPE_SKU));
     if (mine?.v) await switchSel.selectOption(mine.v);
     await page.waitForTimeout(800);
   }

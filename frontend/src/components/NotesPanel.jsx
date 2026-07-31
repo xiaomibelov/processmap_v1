@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { buildDerivedSet, classifySourceSessions } from "../lib/tobeSources.js";
 import {
   elementNotesForId,
   normalizeElementNotesMap,
@@ -3713,10 +3714,34 @@ export default function NotesPanel({
 
 // WS3: секция «TO BE» в левом сайдбаре — вход в рабочее место технолога
 // на хост-канвасе (AS IS из реальных сессий проекта или с чистого листа).
+// UXF/B4: статусы «Создать/Открыть» (не плодим дубликаты), служебные
+// сессии/подпроцессы — в свёрнутые «Прочие», пустые источники помечены.
 function TobeSection({ active, sessions, currentSessionId, onOpen, onClose }) {
   const list = Array.isArray(sessions) ? sessions : [];
   const tobeSessions = list.filter((x) => String(x?.process_layer || "as_is") === "to_be");
   const asisSessions = list.filter((x) => String(x?.process_layer || "as_is") !== "to_be");
+  const derivedSet = buildDerivedSet(tobeSessions);
+  const { main: asisMain, other: asisOther } = classifySourceSessions(asisSessions);
+  const renderSource = (session) => {
+    const sid = String(session.id);
+    const exists = derivedSet.has(sid);
+    const empty = session.has_bpmn_xml === false;
+    return (
+      <button
+        key={sid}
+        type="button"
+        className="secondaryBtn"
+        data-testid={`tobe-open-${sid}`}
+        data-tobe-exists={exists ? "1" : "0"}
+        title={empty ? "В сессии нет BPMN-схемы — TO BE начнётся с чистого листа" : undefined}
+        onClick={() => onOpen?.(session)}
+      >
+        {exists ? "Открыть" : "Создать"} TO BE из «{String(session.title || "процесс")}»
+        {sid === currentSessionId ? " (текущая)" : ""}
+        {empty ? " (пустая)" : ""}
+      </button>
+    );
+  };
   return (
     <div className="tobeSection" data-testid="tobe-section">
       {active ? (
@@ -3747,22 +3772,17 @@ function TobeSection({ active, sessions, currentSessionId, onOpen, onClose }) {
             </>
           ) : null}
           <div className="sidebarHint">AS IS — процесс из ProcessMap:</div>
-          {asisSessions.length === 0 ? (
+          {asisMain.length === 0 ? (
             <div className="sidebarHint">В проекте пока нет процессов — начните с чистого листа.</div>
           ) : (
-            asisSessions.map((session) => (
-              <button
-                key={String(session.id)}
-                type="button"
-                className="secondaryBtn"
-                data-testid={`tobe-open-${String(session.id)}`}
-                onClick={() => onOpen?.(session)}
-              >
-                TO BE из «{String(session.title || "процесс")}»
-                {String(session.id) === currentSessionId ? " (текущая)" : ""}
-              </button>
-            ))
+            asisMain.map(renderSource)
           )}
+          {asisOther.length > 0 ? (
+            <details className="tobeSection__other" data-testid="tobe-other">
+              <summary className="sidebarHint">Прочие (служебные, подпроцессы): {asisOther.length}</summary>
+              {asisOther.map(renderSource)}
+            </details>
+          ) : null}
           <button
             type="button"
             className="secondaryBtn"
