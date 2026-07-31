@@ -65,7 +65,7 @@ try {
   await page.waitForSelector('[data-testid="session-step-bar"]', { timeout: 90000 });
   await page.waitForTimeout(2500);
   const a = await page.evaluate(() => ({
-    asisBadge: document.querySelector('[data-testid="canvas-asis"] .ws__canvas-label')?.textContent || "",
+    asisBadge: document.querySelector('[data-testid="canvas-overlay"] .ws__canvas-label')?.textContent || document.querySelector('[data-testid="canvas-asis"] .ws__canvas-label')?.textContent || "",
     asisReadonly: document.querySelector('[data-testid="canvas-asis"]')?.getAttribute("data-readonly"),
     panelInSidebar: !!document.querySelector('[data-testid="tobe-sidebar-slot"] [data-testid="panel-tabs"]')
       || !!document.querySelector(".workspaceLeft [data-testid='panel-tabs']"),
