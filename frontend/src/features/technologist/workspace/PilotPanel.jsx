@@ -5,7 +5,7 @@ import { apiRequest } from "../../../lib/apiCore";
 import { t } from "../i18n";
 import { PilotCard } from "../pilots/Pilots";
 
-export default function PilotPanel({ templateId, templateStatus }) {
+export default function PilotPanel({ templateId, templateStatus, onPilotCreated }) {
   const [recipes, setRecipes] = useState([]);
   const [bindings, setBindings] = useState([]);
   const [kitchensById, setKitchensById] = useState({});
@@ -87,6 +87,7 @@ export default function PilotPanel({ templateId, templateStatus }) {
       setNotice(t("pilots.createPilotHint"));
       setSelectedId(String(br.data.id));
       reload();
+      if (typeof onPilotCreated === "function") onPilotCreated();
     } finally { setBusy(false); }
   }
 
