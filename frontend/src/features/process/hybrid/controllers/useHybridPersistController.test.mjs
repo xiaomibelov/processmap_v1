@@ -35,14 +35,31 @@ test("retry success clears pending draft and error", () => {
   assert.equal(state.shouldAutoRetry, false);
 });
 
-test("retry exceeds auto attempts keeps pending LOCK_BUSY", () => {
+test("409 -> CONFLICT: pending draft kept, NO auto-retry (только решение пользователя)", () => {
   const prev = {
-    lastError: "LOCK_BUSY",
+    lastError: null,
     pendingDraft: makePendingHybridDraft({ schema_version: "2.0", elements: [{ id: "E3" }] }, { reason: "hybrid_v2_resize_end" }),
   };
   const state = reduceHybridPersistState(
     prev,
-    { ok: false, status: 409, error: "lock busy" },
+    { ok: false, status: 409, error: "DIAGRAM_STATE_CONFLICT" },
+    prev.pendingDraft,
+    { maxAutoRetries: 2, retryAttempt: 0 },
+  );
+  assert.equal(state.lastError, "CONFLICT");
+  assert.equal(state.code, "CONFLICT");
+  assert.equal(Boolean(state.pendingDraft), true);
+  assert.equal(state.shouldAutoRetry, false, "409 must never be auto-retried");
+});
+
+test("retry exceeds auto attempts keeps pending LOCK_BUSY (423 only)", () => {
+  const prev = {
+    lastError: "LOCK_BUSY",
+    pendingDraft: makePendingHybridDraft({ schema_version: "2.0", elements: [{ id: "E4" }] }, { reason: "hybrid_v2_resize_end" }),
+  };
+  const state = reduceHybridPersistState(
+    prev,
+    { ok: false, status: 423, error: "lock busy" },
     prev.pendingDraft,
     { maxAutoRetries: 2, retryAttempt: 2 },
   );

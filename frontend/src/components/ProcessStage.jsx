@@ -179,6 +179,7 @@ import {
 } from "../features/process/stage/ui/revisionHistoryUiModel";
 import useHybridStore from "../features/process/hybrid/controllers/useHybridStore";
 import useHybridPersistController from "../features/process/hybrid/controllers/useHybridPersistController";
+import { saveCoordinator } from "../features/session/saveCoordinator";
 import { extractPublishGitMirrorSnapshot } from "../shared/publishGitMirrorStatus";
 import {
   isDrawioXml,
@@ -2200,6 +2201,8 @@ function ProcessStage({
         setGenErr(warning);
         return { ok: false, error: warning };
       }
+      // P1: конфликт разрешён пользователем («Обновить и продолжить») — снимаем gate.
+      saveCoordinator.resolveConflict(sid, "refresh");
       return { ok: true };
     } catch (error) {
       const message = shortErr(error?.message || error || "Не удалось обновить сессию после конфликта.");
@@ -2217,6 +2220,80 @@ function ProcessStage({
   const handleSaveConflictDiscardLocal = useCallback(() => {
     void reloadSessionAfterSaveConflict({ discardLocal: true });
   }, [reloadSessionAfterSaveConflict]);
+
+  // P1: осознанный force — «Перезаписать мои изменения». Единственный путь,
+  // где база принудительно выставляется в серверную версию: вызывается ТОЛЬКО
+  // из обработчика кнопки конфликт-модала, никогда автоматически. Действие
+  // фиксируется на бэке через source_action=manual_save_overwrite_conflict
+  // (видно в bpmn_versions/логах: кто перезаписал и поверх какой ревизии).
+  const handleSaveConflictOverwrite = useCallback(async () => {
+    if (!sid || saveConflictActionBusy) return;
+    const localXml = toText(bpmnRef.current?.getXmlDraft?.() || draftRef.current?.bpmn_xml || "");
+    if (!localXml) {
+      setGenErr("Не удалось определить локальный XML для сохранения.");
+      return;
+    }
+    const serverVersion = toNonNegativeVersion(
+      saveUploadStatus?.conflict?.serverCurrentVersion
+        ?? saveCoordinator.getConflict(sid)?.serverVersion,
+    );
+    if (serverVersion <= 0) {
+      setGenErr("Не удалось определить серверную версию для перезаписи.");
+      return;
+    }
+    setSaveConflictActionBusy(true);
+    setGenErr("");
+    try {
+      // Снимаем conflict gate с явным принятием серверной базы (overwrite).
+      saveCoordinator.resolveConflict(sid, "overwrite");
+      const saved = await apiPutBpmnXml(sid, localXml, {
+        baseDiagramStateVersion: serverVersion,
+        sourceAction: "manual_save_overwrite_conflict",
+      });
+      if (!saved?.ok) {
+        const status = Number(saved?.status || 0);
+        if (status === 409) {
+          setSaveUploadLifecycleEvent((prev) => ({
+            ...prev,
+            payload: {
+              ...(prev?.payload || {}),
+              status: 409,
+              error_code: "DIAGRAM_STATE_CONFLICT",
+              error_details: saved?.data || saved,
+            },
+          }));
+          setSaveConflictNoticeDismissed(false);
+          setGenErr("Конфликт обновился. Повторите выбор.");
+        } else {
+          setGenErr(shortErr(saved?.error || "Не удалось сохранить версию поверх серверной."));
+        }
+        return;
+      }
+      if (saved?.diagramStateVersion) {
+        rememberDiagramStateVersion(saved.diagramStateVersion, { sessionId: sid });
+      }
+      await bpmnSync.resetBackend();
+      setSaveDirtyHint(false);
+      setSaveUploadLifecycleEvent(IDLE_SAVE_UPLOAD_EVENT);
+      setInfoMsg("Ваша версия сохранена поверх серверной. Действие зафиксировано в истории (overwrite).");
+    } catch (error) {
+      setGenErr(shortErr(error?.message || error || "Не удалось сохранить версию поверх серверной."));
+    } finally {
+      setSaveConflictActionBusy(false);
+    }
+  }, [
+    sid,
+    saveConflictActionBusy,
+    bpmnRef,
+    draftRef,
+    saveUploadStatus?.conflict,
+    apiPutBpmnXml,
+    rememberDiagramStateVersion,
+    bpmnSync,
+    setGenErr,
+    setInfoMsg,
+    toText,
+  ]);
 
   const closeMergePanel = useCallback(() => {
     setMergePanelOpen(false);
@@ -2254,6 +2331,9 @@ function ProcessStage({
     }
     setMergePanelBusy(true);
     try {
+      // Merge-panel «keep mine» — тоже осознанный force: снимаем conflict gate
+      // с явным принятием серверной базы.
+      saveCoordinator.resolveConflict(sid, "overwrite");
       const saved = await apiPutBpmnXml(sid, localXml, {
         baseDiagramStateVersion: serverVersion,
         reason: "manual_save",
@@ -3513,6 +3593,41 @@ function ProcessStage({
   const persistHybridLayerMap = hybridPersist.persistHybridLayerMap;
   const persistHybridV2Doc = hybridPersist.saveHybrid;
   const persistDrawioMeta = hybridPersist.persistDrawioMeta;
+  // P1: hybrid-пайплайн использует тот же конфликт-UX (единая модель) —
+  // 409 показывается в общем конфликт-модале, без молчаливых ретраев.
+  const hybridSaveConflictOpen = !!hybridPersist.conflictNotice?.open;
+  const hybridSaveConflictModalView = useMemo(() => buildSaveConflictModalView({
+    conflictRaw: {
+      serverCurrentVersion: hybridPersist.conflictNotice?.serverVersion,
+    },
+    currentUserRaw: user,
+    currentUserIdRaw: toText(user?.id || user?.user_id || user?.email),
+    fallbackTextRaw: hybridPersist.conflictNotice?.message,
+  }), [
+    hybridPersist.conflictNotice?.message,
+    hybridPersist.conflictNotice?.serverVersion,
+    toText,
+    user,
+  ]);
+  const handleHybridConflictOverwrite = useCallback(() => {
+    setSaveConflictActionBusy(true);
+    void hybridPersist.resolveConflictOverwrite()
+      .then((result) => {
+        if (result?.ok) {
+          setInfoMsg("Ваша hybrid-версия сохранена поверх серверной (overwrite).");
+          return;
+        }
+        if (Number(result?.status || 0) === 409 || String(result?.code || result?.errorCode || "") === "CONFLICT") {
+          setGenErr("Конфликт обновился. Повторите выбор.");
+          return;
+        }
+        if (result?.skipped) return;
+        setGenErr(shortErr(result?.error || "Не удалось сохранить hybrid-версию поверх серверной."));
+      })
+      .finally(() => {
+        setSaveConflictActionBusy(false);
+      });
+  }, [hybridPersist, setGenErr, setInfoMsg]);
   const robotMetaListItems = useMemo(() => {
     const tab = toText(robotMetaListTab).toLowerCase() === "incomplete" ? "incomplete" : "ready";
     const query = toText(robotMetaListSearch).toLowerCase();
@@ -7723,22 +7838,41 @@ function ProcessStage({
         view={shellVm.dialogsProps}
       />
       <ProcessStageSaveConflictModal
-        open={showSaveConflictModal || propertySaveConflictOpen}
+        open={showSaveConflictModal || propertySaveConflictOpen || hybridSaveConflictOpen}
         busy={saveConflictActionBusy === true}
-        view={showSaveConflictModal ? saveConflictModalView : propertySaveConflictView}
+        view={showSaveConflictModal
+          ? saveConflictModalView
+          : (hybridSaveConflictOpen ? hybridSaveConflictModalView : propertySaveConflictView)}
         onRefreshSession={() => {
           setPropertySaveConflictOpen(false);
+          if (hybridSaveConflictOpen && !showSaveConflictModal) {
+            hybridPersist.dismissConflictNotice();
+            hybridPersist.discardDraft();
+          }
           handleSaveConflictRefresh();
         }}
+        onOverwrite={showSaveConflictModal
+          ? handleSaveConflictOverwrite
+          : (hybridSaveConflictOpen ? handleHybridConflictOverwrite : null)}
         onStay={() => {
           setPropertySaveConflictOpen(false);
+          if (hybridSaveConflictOpen && !showSaveConflictModal) {
+            hybridPersist.dismissConflictNotice();
+            return;
+          }
           dismissSaveConflictNotice();
         }}
         onDiscardLocalChanges={() => {
           setPropertySaveConflictOpen(false);
+          if (hybridSaveConflictOpen && !showSaveConflictModal) {
+            hybridPersist.dismissConflictNotice();
+            hybridPersist.discardDraft();
+          }
           handleSaveConflictDiscardLocal();
         }}
-        onCompare={() => void openMergePanel("save_conflict_modal")}
+        onCompare={(showSaveConflictModal || propertySaveConflictOpen)
+          ? () => void openMergePanel("save_conflict_modal")
+          : null}
       />
       <BpmnMergePanel
         open={mergePanelOpen}
