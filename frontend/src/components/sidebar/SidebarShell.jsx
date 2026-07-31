@@ -23,6 +23,8 @@ export default function SidebarShell({
   tierLabel,
   onToggleCollapse,
   onCloseSidebar,
+  dockSide = "left",
+  onToggleDockSide,
   sections,
   showQuickNav = false,
   onSectionShortcut,
@@ -110,6 +112,8 @@ export default function SidebarShell({
         tierLabel={tierLabel}
         onToggleCollapse={onToggleCollapse}
         onCloseSidebar={onCloseSidebar}
+        dockSide={dockSide}
+        onToggleDockSide={onToggleDockSide}
       />
       {showQuickNav && Array.isArray(sections) && sections.length ? (
         <div className="sidebarQuickNav border-b border-border/70 px-3 py-1.5">

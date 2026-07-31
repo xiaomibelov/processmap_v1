@@ -2432,6 +2432,33 @@
     @apply hidden;
   }
 
+  /* A8: док левой панели справа (persist ui.sidebar.dock_side) */
+  .workspace--dockRight {
+    @apply lg:grid-cols-[minmax(0,1fr)_var(--left-panel-width,336px)];
+  }
+
+  .workspace--dockRight.workspace--leftHidden {
+    @apply grid-cols-[minmax(0,1fr)_56px] lg:grid-cols-[minmax(0,1fr)_56px];
+  }
+
+  .workspace--dockRight.workspace--leftCompact {
+    @apply lg:grid-cols-[minmax(0,1fr)_72px];
+  }
+
+  .workspace--dockRight .workspaceLeft {
+    order: 2;
+  }
+
+  .workspace--dockRight .workspaceMain {
+    order: 1;
+  }
+
+  .workspace--dockRight .sidebarResizeHandle {
+    right: auto;
+    left: 0;
+    box-shadow: -2px 0 4px rgba(0, 0, 0, 0.1);
+  }
+
   .workspaceMain {
     @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden;
   }
@@ -4719,6 +4746,11 @@
 
   .sidebarBreadcrumbSep {
     color: #7E8AA3;
+  }
+
+  .sidebarBreadcrumbCurrent {
+    @apply min-w-0 truncate px-1.5 py-0.5 font-medium;
+    color: #1F2A44;
   }
 
   .sidebarHeaderMenu {
@@ -7165,6 +7197,34 @@
     cursor: pointer;
   }
 
+  /* UXF addendum-2 A6: структурированные группы меню TO BE */
+  .tobeSection__group {
+    @apply mb-2;
+  }
+
+  .tobeSection__caption {
+    @apply px-2 pb-1;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #8896B0;
+  }
+
+  .tobeSection__footer {
+    @apply mt-2 border-t border-border/60 pt-2;
+  }
+
+  .tobeRow:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+
+  .tobeRow:disabled:hover {
+    border-color: transparent;
+    background: transparent;
+  }
+
   /* UXF addendum A2: сводка процесса */
   .sidebarInfoValue--muted {
     color: #8896B0;
@@ -7236,6 +7296,10 @@
 
   .dark .sidebarBreadcrumbBtn:hover {
     background: #22314B;
+    color: #EAF1FF;
+  }
+
+  .dark .sidebarBreadcrumbCurrent {
     color: #EAF1FF;
   }
 

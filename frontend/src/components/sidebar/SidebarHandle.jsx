@@ -6,7 +6,7 @@ export default function SidebarHandle({
   title = "Открыть панель",
   disabled = false,
 }) {
-  const items = Array.isArray(sections) ? sections.slice(0, 5) : [];
+  const items = Array.isArray(sections) ? sections : [];
   return (
     <div className="leftSidebarHandleRail" data-testid="left-sidebar-handle">
       <button

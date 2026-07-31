@@ -16,16 +16,20 @@ test("header exposes distinct actions for session save and revision creation", (
   assert.ok(source.includes('data-testid="diagram-toolbar-save"'));
   assert.ok(source.includes('data-testid="diagram-toolbar-create-revision"'));
   assert.ok(source.includes('data-testid="diagram-toolbar-version-chip"'));
-  assert.ok(source.includes("{resolvedSaveActionText}"));
-  assert.ok(source.includes("{resolvedCreateRevisionActionText}"));
-  const versionChipIdx = source.indexOf('data-testid="diagram-toolbar-version-chip"');
+  // A7: действия — иконки с тултипами/aria-label, текстовых кнопок нет.
+  assert.ok(source.includes("<SaveIcon"));
+  assert.ok(source.includes("<VersionIcon"));
+  assert.ok(source.includes('aria-label={toText(saveActionText) || "Сохранить сессию"}'));
+  assert.ok(source.includes('aria-label={toText(createRevisionActionText) || "Создать версию BPMN"}'));
   const saveIdx = source.indexOf('data-testid="diagram-toolbar-save"');
   const createVersionIdx = source.indexOf('data-testid="diagram-toolbar-create-revision"');
-  const exportMenuIdx = source.indexOf('data-testid="diagram-toolbar-export-menu"');
-  assert.ok(versionChipIdx !== -1 && saveIdx !== -1 && createVersionIdx !== -1 && exportMenuIdx !== -1);
-  // A4 layout: version chips stay in left slot; right slot order is
-  // Сохранить → Создать версию BPMN → Экспорт ▾.
-  assert.ok(versionChipIdx < saveIdx && saveIdx < createVersionIdx && createVersionIdx < exportMenuIdx);
+  const versionChipIdx = source.indexOf('data-testid="diagram-toolbar-version-chip"');
+  assert.ok(versionChipIdx !== -1 && saveIdx !== -1 && createVersionIdx !== -1);
+  // A7 layout: слева [Сохранить][Версия BPMN] затем чипы V/Rev.
+  assert.ok(saveIdx < createVersionIdx && createVersionIdx < versionChipIdx);
+  // A5: меню «Экспорт ▾» удалено из среднего хедера.
+  assert.equal(source.includes('data-testid="diagram-toolbar-export-menu"'), false);
+  assert.equal(source.includes("exportMenuOpen"), false);
 });
 
 test("revision action availability is separated from session-save copy", () => {
