@@ -94,7 +94,7 @@ function writeWidth(storage, width) {
   }
 }
 
-export default function useSidebarWidth() {
+export default function useSidebarWidth({ invert = false } = {}) {
   const [width, setWidth] = useState(() =>
     readWidth(typeof window === "undefined" ? null : window.localStorage),
   );
@@ -104,6 +104,8 @@ export default function useSidebarWidth() {
   const startWidthRef = useRef(width);
   const widthRef = useRef(width);
   widthRef.current = width; // fresh for handleEnd without re-registering listeners
+  const invertRef = useRef(invert);
+  invertRef.current = invert; // A8: при доке справа дельта ресайза инвертируется
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -119,7 +121,7 @@ export default function useSidebarWidth() {
       if (!isDraggingRef.current) return;
       // Level 1 — update React state for the live UI only; no storage write here.
       const delta = getClientX(event) - startXRef.current;
-      setWidth(clampWidth(startWidthRef.current + delta));
+      setWidth(clampWidth(startWidthRef.current + (invertRef.current ? -delta : delta)));
     }
 
     function handleEnd() {

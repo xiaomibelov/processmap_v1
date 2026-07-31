@@ -986,6 +986,8 @@ export default function NotesPanel({
   onSessionBreadcrumbClick,
   sidebarHidden,
   sidebarCompact,
+  sidebarDockSide = "left",
+  onToggleDockSide,
   onToggleSidebarCompact,
   onToggleSidebarHidden,
   activeSectionId,
@@ -2046,6 +2048,7 @@ export default function NotesPanel({
     const rawKey = str(sidebarShortcutRequest);
     const keyMap = {
       selected: "paths",
+      tobe: "tobe",
       ai: "ai",
       notes: "notes",
       actors: "advanced",
@@ -3194,19 +3197,42 @@ export default function NotesPanel({
     void onShowV2OverlaysChange?.(next);
   }
 
+  // A9: rail свёрнутого сайдбара отражает реальный состав секций аккордеона;
+  // клик открывает сайдбар сразу к конкретной секции (openSectionShortcut).
   const sectionShortcuts = [
+    {
+      id: "tobe",
+      title: "TO BE",
+      count: 0,
+      active: !!sectionsOpen.tobe || String(activeSectionId || "") === "tobe",
+      muted: false,
+    },
+    {
+      id: "properties",
+      title: "Свойства",
+      count: 0,
+      active: !!sectionsOpen.properties || String(activeSectionId || "") === "properties",
+      muted: false,
+    },
     {
       id: "paths",
       title: "Пути",
-      count: isElementMode ? 1 : 0,
+      count: 0,
       active: !!sectionsOpen.paths || String(activeSectionId || "") === "paths",
       muted: !isElementMode,
     },
     {
-      id: "ai",
-      title: "AI-вопросы",
-      count: selectedElementAiQuestions.length,
-      active: !!sectionsOpen.ai || String(activeSectionId || "") === "ai",
+      id: "time",
+      title: "Время шага",
+      count: 0,
+      active: !!sectionsOpen.time || String(activeSectionId || "") === "time",
+      muted: !isElementMode,
+    },
+    {
+      id: "robotmeta",
+      title: "Robot Meta",
+      count: 0,
+      active: !!sectionsOpen.robotmeta || String(activeSectionId || "") === "robotmeta",
       muted: !isElementMode,
     },
     {
@@ -3217,9 +3243,16 @@ export default function NotesPanel({
       muted: !isElementMode,
     },
     {
+      id: "ai",
+      title: "AI-вопросы",
+      count: selectedElementAiQuestions.length,
+      active: !!sectionsOpen.ai || String(activeSectionId || "") === "ai",
+      muted: !isElementMode,
+    },
+    {
       id: "advanced",
-      title: "Шаблоны и акторы",
-      count: undefined,
+      title: "Шаблоны",
+      count: 0,
       active: !!sectionsOpen.advanced || String(activeSectionId || "") === "advanced",
       muted: false,
     },
@@ -3246,6 +3279,8 @@ export default function NotesPanel({
         onDeleteSession={onDeleteSession}
         tierLabel={selectedElementTierLabel}
         collapsed={!!sidebarCompact}
+        dockSide={sidebarDockSide}
+        onToggleDockSide={onToggleDockSide}
         onToggleCollapse={onToggleCollapseCallback}
         onCloseSidebar={onCloseSidebarCallback}
         sections={sectionShortcuts}
@@ -3803,7 +3838,10 @@ const SESSION_STATUS_LABELS = {
 // сессии/подпроцессы — в свёрнутые «Прочие», пустые источники помечены.
 // UXF addendum A1: паттерн списка действий — одна строка: иконка · имя · статус;
 // заголовок «AS IS — процесс из ProcessMap:» убран; «с чистого листа» — primary.
-function TobeActionRow({ testid, icon, name, status, primary = false, title, tobeExists, onClick }) {
+// UXF addendum-2 A6: структурированный вид — «Из этого процесса» (1 главная строка),
+// «Из проекта» (список источников, статус-действие справа), «Прочие» свёрнуты счётчиком,
+// футер «TO BE с чистого листа». Пустые источники — disabled со статусом «пустая».
+function TobeActionRow({ testid, icon, name, status, primary = false, disabled = false, title, tobeExists, onClick }) {
   return (
     <button
       type="button"
@@ -3811,6 +3849,7 @@ function TobeActionRow({ testid, icon, name, status, primary = false, title, tob
       data-testid={testid}
       data-tobe-exists={tobeExists}
       title={title || name}
+      disabled={disabled}
       onClick={onClick}
     >
       <span className="tobeRow__icon" aria-hidden="true">{icon}</span>
@@ -3826,27 +3865,30 @@ function TobeSection({ active, sessions, currentSessionId, onOpen, onClose }) {
   const asisSessions = list.filter((x) => String(x?.process_layer || "as_is") !== "to_be");
   const derivedSet = buildDerivedSet(tobeSessions);
   const { main: asisMain, other: asisOther } = classifySourceSessions(asisSessions);
+  const currentSource = asisSessions.find((x) => String(x?.id || "") === String(currentSessionId || "")) || null;
+  const projectSources = asisMain.filter((x) => String(x?.id || "") !== String(currentSessionId || ""));
   const renderSource = (session) => {
     const sid = String(session.id);
     const exists = derivedSet.has(sid);
     const empty = session.has_bpmn_xml === false;
-    const isCurrent = sid === currentSessionId;
-    const status = isCurrent ? "текущая" : exists ? "TO BE существует → Открыть" : "Создать";
+    const status = empty ? "пустая" : exists ? "Открыть" : "Создать";
     return (
       <TobeActionRow
         key={sid}
         testid={`tobe-open-${sid}`}
         icon="◦"
         name={String(session.title || "процесс")}
-        status={empty ? `${status} · пустая` : status}
+        status={status}
+        disabled={empty}
         tobeExists={exists ? "1" : "0"}
         title={empty
-          ? `«${String(session.title || "процесс")}»: в сессии нет BPMN-схемы — TO BE начнётся с чистого листа`
+          ? `«${String(session.title || "процесс")}»: в сессии нет BPMN-схемы` 
           : `${exists ? "Открыть" : "Создать"} TO BE из «${String(session.title || "процесс")}»`}
         onClick={() => onOpen?.(session)}
       />
     );
   };
+  const currentDerivedExists = currentSource ? derivedSet.has(String(currentSource.id)) : false;
   return (
     <div className="tobeSection" data-testid="tobe-section">
       {active ? (
@@ -3860,36 +3902,56 @@ function TobeSection({ active, sessions, currentSessionId, onOpen, onClose }) {
         </button>
       ) : (
         <>
-          {tobeSessions.map((session) => (
-            <TobeActionRow
-              key={String(session.id)}
-              testid={`tobe-open-${String(session.id)}`}
-              icon="◆"
-              name={String(session.title || "процесс")}
-              status="Открыть"
-              title={`Открыть TO BE «${String(session.title || "процесс")}»`}
-              onClick={() => onOpen?.(session)}
-            />
-          ))}
-          {asisMain.length === 0 && tobeSessions.length === 0 ? (
-            <div className="sidebarHint">В проекте пока нет процессов — начните с чистого листа.</div>
-          ) : (
-            asisMain.map(renderSource)
-          )}
+          {currentSource ? (
+            <div className="tobeSection__group" data-testid="tobe-current-process">
+              <div className="tobeSection__caption">Из этого процесса</div>
+              <TobeActionRow
+                testid={`tobe-open-${String(currentSource.id)}`}
+                icon="◦"
+                name={String(currentSource.title || "процесс")}
+                status={currentDerivedExists ? "Открыть TO BE" : "Создать TO BE"}
+                primary={!currentDerivedExists}
+                tobeExists={currentDerivedExists ? "1" : "0"}
+                title={`${currentDerivedExists ? "Открыть" : "Создать"} TO BE из «${String(currentSource.title || "процесс")}»`}
+                onClick={() => onOpen?.(currentSource)}
+              />
+            </div>
+          ) : null}
+          <div className="tobeSection__group" data-testid="tobe-project-list">
+            <div className="tobeSection__caption">Из проекта</div>
+            {tobeSessions.map((session) => (
+              <TobeActionRow
+                key={String(session.id)}
+                testid={`tobe-open-${String(session.id)}`}
+                icon="◆"
+                name={String(session.title || "процесс")}
+                status="Открыть"
+                title={`Открыть TO BE «${String(session.title || "процесс")}»`}
+                onClick={() => onOpen?.(session)}
+              />
+            ))}
+            {projectSources.length === 0 && tobeSessions.length === 0 ? (
+              <div className="sidebarHint">В проекте пока нет других процессов.</div>
+            ) : (
+              projectSources.map(renderSource)
+            )}
+          </div>
           {asisOther.length > 0 ? (
             <details className="tobeSection__other" data-testid="tobe-other">
               <summary className="sidebarHint">Прочие (служебные): {asisOther.length}</summary>
               {asisOther.map(renderSource)}
             </details>
           ) : null}
-          <TobeActionRow
-            testid="tobe-open-blank"
-            icon="＋"
-            name="TO BE с чистого листа"
-            status="Создать"
-            primary
-            onClick={() => onOpen?.(null)}
-          />
+          <div className="tobeSection__footer">
+            <TobeActionRow
+              testid="tobe-open-blank"
+              icon="＋"
+              name="TO BE с чистого листа"
+              status="Создать"
+              primary
+              onClick={() => onOpen?.(null)}
+            />
+          </div>
         </>
       )}
     </div>

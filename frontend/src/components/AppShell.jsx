@@ -92,6 +92,7 @@ export default function AppShell({
   left,
   leftHidden,
   leftCompact,
+  dockSide = "left",
   sidebarHandleSections,
   onToggleLeft,
   onPatchDraft,
@@ -170,7 +171,7 @@ export default function AppShell({
   // W4: в режиме TO BE (stageOverride) панель рабочего места живёт в левом
   // сайдбаре — его нельзя прятать, иначе панель становится невидимой.
   const effectiveLeftHidden = stageOverride ? false : (hasActiveSession ? !!leftHidden : true);
-  const workspaceClass = `workspace ${effectiveLeftHidden ? "workspace--leftHidden" : leftCompact ? "workspace--leftCompact" : ""}`.trim();
+  const workspaceClass = `workspace ${effectiveLeftHidden ? "workspace--leftHidden" : leftCompact ? "workspace--leftCompact" : ""} ${dockSide === "right" ? "workspace--dockRight" : ""}`.trim();
   const workspaceBackHandler = hasActiveSession
     ? (() => onReturnToSessionList?.())
     : (() => onProjectChange?.(""));
@@ -185,7 +186,7 @@ export default function AppShell({
     return String(window.location.pathname || "").startsWith("/analytics");
   });
   const appUpdate = useAppUpdateAvailable();
-  const { width: sidebarWidth, startDragging } = useSidebarWidth();
+  const { width: sidebarWidth, startDragging } = useSidebarWidth({ invert: dockSide === "right" });
   const showResizeHandle = !effectiveLeftHidden && !leftCompact;
 
   useEffect(() => {
