@@ -1,0 +1,20 @@
+{
+  "contour": "feat/ol1-overlay",
+  "type": "feat",
+  "state": "APPROVED",
+  "commits": ["7e9a03c1", "f8d66a1c"],
+  "merged_via": ["PR#630", "PR#631"],
+  "stage_build": "c1846c2f 2026-07-31T06:55:17Z",
+  "verified_at": "2026-07-31T09:06Z",
+  "criteria": {"1": "pass", "2": "pass", "3": "pass", "4": "pass", "5": "pass", "6": "pass", "7": "pass", "8": "pass"},
+  "deviations": 7,
+  "gates": {"READY_FOR_EXECUTION": true, "READY_FOR_REVIEW": true, "REVIEWED": true},
+  "approval": {
+    "date": "2026-07-31",
+    "deviation_1_layout_under_source": "accepted",
+    "deviation_2_theme": "accepted -> backlog (trace color css-var, saturation param)",
+    "deviation_3_transformreview_legacy": "accepted (leave as legacy tool, deprecate on next touch)",
+    "deviation_4_artifacts": "commit per rule artifact=file-in-repo",
+    "future_note": "single consolidated screencast 'entry -> overlay -> full path' for technologists"
+  }
+}

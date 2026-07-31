@@ -298,6 +298,28 @@ try {
   await page.click('[data-testid="panel-tab-recipe"]');
   await page.waitForSelector('[data-testid="recipe-sku"]', { timeout: 15000 });
   await page.fill('[data-testid="recipe-sku"]', RECIPE_SKU);
+  await page.waitForSelector('[data-testid="recipe-param-heat_time_sec"]', { timeout: 15000 });
+  const setParam = async (tid, v) => page.evaluate(([t3, val]) => {
+    const el = document.querySelector(`[data-testid="${t3}"]`);
+    const proto = el instanceof HTMLSelectElement ? HTMLSelectElement : HTMLInputElement;
+    Object.getOwnPropertyDescriptor(proto.prototype, "value").set.call(el, val);
+    el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }));
+  }, [tid, v]);
+  await setParam("recipe-param-heat_time_sec", "90");
+  await setParam("recipe-param-target_temp_c", "75");
+  await setParam("recipe-param-qty", "20");
+  const hp = await page.$('[data-testid="recipe-param-heating_power"]');
+  if (hp) await hp.selectOption("medium");
+  const sku = await page.$('[data-testid="recipe-param-dish_sku_id"]');
+  if (sku) {
+    await page.waitForFunction(
+      (tid) => document.querySelectorAll(`[data-testid="${tid}"] option`).length > 1,
+      "recipe-param-dish_sku_id",
+      { timeout: 15000 },
+    );
+    const vals = await sku.$$eval("option", (os) => os.map((o) => o.value).filter(Boolean));
+    if (vals.length) await sku.selectOption(vals[0]);
+  }
   await page.click('[data-testid="recipe-save"]');
   await page.waitForSelector('[data-testid="recipe-notice"]', { timeout: 15000 });
   log("recipe saved");
@@ -326,7 +348,7 @@ try {
     page.waitForResponse((r) => r.url().includes("/publish") && r.request().method() === "POST", { timeout: 60000 }),
     page.click('[data-testid="recipe-publish"]'),
   ]);
-  log("recipe publish:", pubRcp.status());
+  log("recipe publish:", pubRcp.status(), pubRcp.status() !== 200 ? (await pubRcp.text()).slice(0, 300) : "");
   if (pubRcp.status() !== 200) fail("recipe publish failed");
   await page.click('[data-testid="panel-tab-pilot"]');
   await page.waitForSelector('[data-testid="pilot-create"]', { timeout: 15000 });
