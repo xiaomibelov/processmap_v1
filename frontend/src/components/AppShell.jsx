@@ -163,6 +163,8 @@ export default function AppShell({
   onFocusElementApplied = null,
   restoreViewportSnapshot = null,
   onRestoreViewportSnapshotApplied = null,
+  modeSwitch = null, // UXF: сегмент «Схема | TO BE» в шапке
+  tobeEntry = null,  // UXF: точка входа «Создать/Открыть TO BE» в тулбаре диаграммы
 }) {
   const hasActiveSession = String(shellSessionId || sessionId || "").trim().length > 0;
   // W4: в режиме TO BE (stageOverride) панель рабочего места живёт в левом
@@ -280,6 +282,7 @@ export default function AppShell({
           noteNotificationsAvailable={noteNotificationsAvailable}
           onOpenMentionNotification={onOpenMentionNotification}
           onRefreshMentionNotifications={onRefreshMentionNotifications}
+          modeSwitch={modeSwitch}
         />
 
         <AppUpdateBanner
@@ -396,6 +399,7 @@ export default function AppShell({
               onFocusElementApplied={onFocusElementApplied}
               restoreViewportSnapshot={restoreViewportSnapshot}
               onRestoreViewportSnapshotApplied={onRestoreViewportSnapshotApplied}
+              tobeEntry={tobeEntry}
             />
           )}
         </div>

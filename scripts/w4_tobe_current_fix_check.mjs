@@ -11,7 +11,7 @@ const require = createRequire("/root/node_modules/");
 const { chromium } = require("playwright");
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const BASE = "https://stage.processmap.ru";
+const BASE = process.env.E2E_BASE || "https://stage.processmap.ru";
 const OUT = path.join(ROOT, "docs", "fix");
 const VIDEO_TMP = "/tmp/w4_fix_video";
 const TOKEN = process.env.W4_TOKEN;
@@ -92,8 +92,8 @@ try {
   if (asisNodes === 0) fail("AS IS не отрисован в рабочем месте");
   await page.screenshot({ path: path.join(OUT, "fix_1_current_opens_workspace.png") });
 
-  // 3. «Вернуться к сессии» — хост-канвас обратно, стабильно
-  await page.click('[data-testid="tobe-close"]');
+  // 3. «← К схеме» (UXF Блок 2: левая панель TO BE; ранее — tobe-close в NotesPanel) — хост-канвас обратно, стабильно
+  await page.click('[data-testid="tobe-left-back"]');
   await page.waitForSelector(".bjs-container", { timeout: 15000 });
   await page.waitForTimeout(3000);
   if (await page.$('[data-testid="session-step-bar"]')) fail("TO BE переоткрылся после ручного закрытия");

@@ -508,6 +508,7 @@ function ProcessStage({
   onFocusElementApplied = null,
   restoreViewportSnapshot = null,
   onRestoreViewportSnapshotApplied = null,
+  tobeEntry = null, // UXF: точка входа «Создать/Открыть TO BE»
 }) {
   const sid = String(sessionId || "");
 
@@ -7160,6 +7161,7 @@ function ProcessStage({
       ?? draft?.diagram_state_version
       ?? draft?.diagramStateVersion
       ?? 0),
+    tobeEntry,
     asArray,
   });
 
