@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AppShell from "./components/AppShell";
+import ModeSwitchSegment from "./components/ModeSwitchSegment";
 import { apiRequest } from "./lib/apiCore";
 import TechnologistWorkspace from "./features/technologist/workspace/Workspace";
 import NotesPanel from "./components/NotesPanel";
@@ -3647,6 +3648,9 @@ export default function App() {
 
   const tobeLeftPanel = tobeMode ? (
     <div className="tobeLeft" data-testid="tobe-left-panel">
+      <div className="seg mb-2" role="presentation" data-testid="tobe-left-mode-switch-wrap">
+        <ModeSwitchSegment modeSwitch={modeSwitchView} className="w-full" />
+      </div>
       <button
         type="button"
         className="secondaryBtn tobeLeft__back"
