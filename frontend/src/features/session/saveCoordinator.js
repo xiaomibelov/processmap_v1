@@ -12,6 +12,10 @@ import {
   rollbackVersion as rollbackTrackedDiagramStateVersion,
   setVersion as setTrackedDiagramStateVersion,
 } from "../../lib/casVersionTracker.js";
+import {
+  SAVE_CONFLICT_RESOLUTION,
+  isSaveConflictStatus,
+} from "./conflictModel.js";
 
 function asText(value) {
   return String(value || "").trim();
@@ -32,7 +36,7 @@ function queueKey(pipelineName, sessionId) {
 
 function isConflictResponse(response) {
   if (!response || typeof response !== "object") return false;
-  if (Number(response.status) === 409) return true;
+  if (isSaveConflictStatus(response.status)) return true;
   const text = `${String(response.error || "")} ${String(response.text || "")}`.toUpperCase();
   return text.includes("DIAGRAM_STATE_CONFLICT");
 }
@@ -86,6 +90,8 @@ class SaveCoordinator {
     this.debouncePromises = new Map();
     this.subscribers = new Set();
     this.pipelineStatus = new Map();
+    /** @type {Map<string, Object>} session-scoped unresolved 409 conflicts (P1: conflict gate) */
+    this.conflicts = new Map();
     /** @type {Map<string, Set<AbortController>>} session-scoped abort controllers */
     this._sessionAbortControllers = new Map();
   }
@@ -241,6 +247,68 @@ class SaveCoordinator {
     };
   }
 
+  /**
+   * Return the unresolved save conflict for a session, or null.
+   * While a conflict is recorded, all saves for the session are blocked
+   * (conflict gate) until resolveConflict() is called by an explicit user
+   * action. See features/session/conflictModel.js.
+   *
+   * @param {string} sessionId
+   * @returns {Object|null}
+   */
+  getConflict(sessionId) {
+    return this.conflicts.get(asText(sessionId)) || null;
+  }
+
+  /**
+   * Resolve an unresolved save conflict for a session. Lifts the conflict
+   * gate. With action "overwrite" the tracked CAS base is explicitly adopted
+   * to the conflict's server version — the ONLY place where the tracked base
+   * is replaced with the server version (conscious force, user action only).
+   *
+   * @param {string} sessionId
+   * @param {"refresh"|"overwrite"|"cancel"} [action]
+   * @returns {{ok: boolean, action?: string, serverVersion?: number|null, error?: string}}
+   */
+  resolveConflict(sessionId, action = SAVE_CONFLICT_RESOLUTION.REFRESH) {
+    const sid = asText(sessionId);
+    if (!sid) return { ok: false, error: "missing_session" };
+    const conflict = this.conflicts.get(sid);
+    if (!conflict) return { ok: false, error: "no_conflict" };
+    const resolvedAction = asText(action) || SAVE_CONFLICT_RESOLUTION.REFRESH;
+    const serverVersion = conflict.serverVersion ?? null;
+    if (resolvedAction === SAVE_CONFLICT_RESOLUTION.OVERWRITE && serverVersion !== null) {
+      setTrackedDiagramStateVersion(sid, serverVersion);
+    }
+    this.conflicts.delete(sid);
+    this.emit("conflict_resolved", {
+      sessionId: sid,
+      action: resolvedAction,
+      serverVersion,
+    });
+    return { ok: true, action: resolvedAction, serverVersion };
+  }
+
+  /**
+   * Result returned for saves blocked by an unresolved conflict gate.
+   * Mirrors a real 409 so callers surface the conflict UI again instead of
+   * silently proceeding.
+   */
+  _buildConflictGateResult(conflict) {
+    const response = conflict?.response && typeof conflict.response === "object"
+      ? conflict.response
+      : {};
+    return {
+      ...response,
+      ok: false,
+      status: 409,
+      conflict: true,
+      blockedByConflict: true,
+      error: "DIAGRAM_STATE_CONFLICT: сохранение приостановлено до разрешения конфликта",
+      server_current_version: conflict?.serverVersion ?? response?.server_current_version,
+    };
+  }
+
   getGlobalStatus() {
     const statuses = Array.from(this.pipelineStatus.values());
     const busy = statuses.some((s) => s.state === "busy");
@@ -280,10 +348,12 @@ class SaveCoordinator {
       }
       this.debouncePromises.clear();
       this.sessionQueues.clear();
+      this.conflicts.clear();
       return;
     }
 
     const suffix = `::${sid}`;
+    this.conflicts.delete(sid);
     for (const [key, wrapped] of this.sessionQueues.entries()) {
       if (key === sid || key.endsWith(suffix)) {
         this.sessionQueues.delete(key);
@@ -358,6 +428,15 @@ class SaveCoordinator {
       throw new Error(`saveCoordinator: sessionId is required for pipeline "${pipelineName}"`);
     }
 
+    // Conflict gate (P1): while a 409 conflict is unresolved, no save for this
+    // session may reach the transport — a stale local XML with a fresh server
+    // base would silently overwrite someone else's changes.
+    const activeConflict = this.conflicts.get(sid);
+    if (activeConflict) {
+      this._setPipelineStatus(pipelineName, sid, "idle", { outcome: "conflict_blocked" });
+      return this._buildConflictGateResult(activeConflict);
+    }
+
     this._setPipelineStatus(pipelineName, sid, "busy", { stage: "build" });
 
     let builtPayload = pipeline.buildPayload(payload, sid);
@@ -393,9 +472,17 @@ class SaveCoordinator {
           this._setPipelineStatus(pipelineName, sid, "busy", { stage: "409" });
           rollbackTrackedDiagramStateVersion(sid);
           const serverVersion = pickServerCurrentVersion(result);
-          if (serverVersion !== null) {
-            setTrackedDiagramStateVersion(sid, serverVersion);
-          }
+          // P1 fix: tracked-base is NOT silently adopted to the server version.
+          // Arm the conflict gate so queued saves/autosave pause until the user
+          // resolves the conflict (refresh/overwrite/cancel).
+          this.conflicts.set(sid, {
+            pipeline: pipelineName,
+            sessionId: sid,
+            response: result,
+            serverVersion,
+            clientBaseVersion: builtPayload.base_diagram_state_version ?? null,
+            at: Date.now(),
+          });
           if (pipeline.on409) {
             try {
               pipeline.on409(result, sid, payload);
@@ -404,7 +491,7 @@ class SaveCoordinator {
             }
           }
           this._setPipelineStatus(pipelineName, sid, "idle", { outcome: "conflict" });
-          this.emit("conflict", { pipeline: pipelineName, sessionId: sid, response: result });
+          this.emit("conflict", { pipeline: pipelineName, sessionId: sid, response: result, serverVersion });
           return result;
         }
 
@@ -484,6 +571,12 @@ class SaveCoordinator {
     const sessionId = asText(payload?.sessionId);
     if (!sessionId) {
       return Promise.reject(new Error(`saveCoordinator: payload.sessionId is required for pipeline "${pipelineName}"`));
+    }
+
+    // Conflict gate fast-path (authoritative check lives in _runPipeline).
+    const activeConflict = this.conflicts.get(sessionId);
+    if (activeConflict) {
+      return Promise.resolve(this._buildConflictGateResult(activeConflict));
     }
 
     if (pipeline.debounceMs > 0) {

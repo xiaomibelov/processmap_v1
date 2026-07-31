@@ -206,6 +206,8 @@ test("emits status, success, error and conflict events", async () => {
 
   await c.execute("ev", { sessionId: "s1", failOnce: true });
   await c.execute("ev", { sessionId: "s1", conflict: true });
+  // P1: после 409 очередь на паузе (conflict gate) — снимаем явным решением.
+  c.resolveConflict("s1", "refresh");
   await c.execute("ev", { sessionId: "s1" });
 
   const statusEvents = events.filter((e) => e.event === "status");
