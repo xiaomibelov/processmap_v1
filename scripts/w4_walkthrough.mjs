@@ -79,7 +79,7 @@ try {
   log("session steps:", stepsState);
 
   // 3. AS IS read-only: бейдж + попытка правки невозможна (нет хендлеров)
-  const roBadge = await page.evaluate(() => document.querySelector('[data-testid="canvas-asis"] .ws__canvas-label')?.textContent || "");
+  const roBadge = await page.evaluate(() => document.querySelector('[data-testid="canvas-overlay"] .ws__canvas-label')?.textContent || document.querySelector('[data-testid="canvas-asis"] .ws__canvas-label')?.textContent || "");
   log("AS IS badge:", roBadge);
   await shot(page, "04_asis_readonly.png");
 

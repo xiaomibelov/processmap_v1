@@ -93,3 +93,37 @@
 .graph-canvas__badge--rejected { fill: #c0392b; }
 .graph-canvas__badge--proposed { fill: #b8860b; }
 .graph-canvas__badge--dimmed { opacity: 0.45; }
+
+/* ─── OL1: overlay-режим (единый канвас со слоями AS IS / TO BE) ─── */
+
+/* AS IS-подложка: приглушение — параметр темы (CSS-переменная, не хардкод) */
+.graph-canvas__layer--asis {
+  opacity: var(--graph-canvas-asis-opacity, 0.35);
+}
+
+/* AS IS-узлы кликабельны (read-only карточка), но не drag */
+.graph-canvas__layer--asis .graph-canvas__node {
+  cursor: default;
+}
+
+/* выделенная AS IS (просмотр) — спокойная рамка */
+.graph-canvas__layer--asis .graph-canvas__node[data-selected="true"] .graph-canvas__shape {
+  stroke: #4a6fa5;
+  stroke-width: 3;
+}
+
+/* ореол подсветки трассировки (OL1.3) — в обе стороны */
+.graph-canvas__node--trace-highlight .graph-canvas__shape {
+  stroke: #7b5cff;
+  stroke-width: 3.5;
+  filter: drop-shadow(0 0 5px rgba(123, 92, 255, 0.7));
+}
+
+/* пунктирные связи происхождения (OL1.4) */
+.graph-canvas__trace-link {
+  stroke: #7b5cff;
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  fill: none;
+  pointer-events: none;
+}
