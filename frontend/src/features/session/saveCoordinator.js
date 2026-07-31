@@ -46,6 +46,8 @@ function pickServerCurrentVersion(response) {
   const candidates = [
     response.server_current_version,
     response.serverCurrentVersion,
+    response.data?.server_current_version,
+    response.data?.serverCurrentVersion,
     response.data?.detail?.server_current_version,
     response.data?.detail?.serverCurrentVersion,
     response.errorDetails?.server_current_version,
