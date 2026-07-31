@@ -158,4 +158,22 @@
   --registry-purple-primary: #7c3aed;
   --registry-green-complete: #10b981;
   --registry-orange-partial: #f59e0b;
+
+  /* UXF: рабочее место технолога + хвосты OL1 (ux_concept.md §6) */
+  --graph-canvas-trace-color: #7b5cff;
+  --graph-canvas-trace-glow: rgba(123, 92, 255, 0.7);
+  --graph-canvas-asis-opacity: 0.35;
+  --graph-canvas-asis-saturation: 0.7;
+  --ws-canvas-asis-opacity: 0.55;
+  --ws-step-text: #9fb0c8;
+  --ws-step-hover: #d5e0ee;
+  --ws-step-num-bg: #2a3648;
+  --ws-step-num-text: #b8c6da;
+  --ws-step-done: #7fce9b;
+  --ws-step-done-bg: #1e4630;
+  --ws-step-current: #ffffff;
+  --ws-step-current-border: #3f6fd1;
+  --ws-step-current-bg: #1d2c47;
+  --ws-step-current-num-bg: #3f6fd1;
+  --ws-step-next-border: #6b5bd2;
 }

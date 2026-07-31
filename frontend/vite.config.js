@@ -106,5 +106,17 @@ export default defineConfig({
         secure: false
       }
     }
+  },
+  preview: {
+    host: true,
+    port: Number(process.env.VITE_PREVIEW_PORT || 5198),
+    strictPort: true,
+    proxy: {
+      "/api": {
+        target: apiProxyTarget,
+        changeOrigin: true,
+        secure: false
+      }
+    }
   }
 });

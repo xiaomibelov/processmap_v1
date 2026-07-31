@@ -3600,6 +3600,71 @@ export default function App() {
     }
   }, [projectId, tobeMode]);
 
+  // ---- UXF Блок 2: сегмент «Схема | TO BE» + точка входа (ux_concept.md §1/§3) ----
+  const tobeEntryView = useMemo(() => {
+    const sid = String(draft?.session_id || "").trim();
+    if (!sid) return null;
+    const list = ensureArray(sessions);
+    const sess = list.find((x) => String(x?.id || "") === sid);
+    if (!sess) return null;
+    if (String(sess?.process_layer || "as_is") === "to_be") {
+      return {
+        label: "Открыть TO BE",
+        title: "Открыть рабочее место TO BE текущей сессии",
+        onEnter: () => openTobeWorkspace(sess),
+      };
+    }
+    const derived = list.find((x) => String(x?.process_layer || "") === "to_be"
+      && String(x?.derived_from_session_id || "") === sid);
+    if (derived) {
+      return {
+        label: "Открыть TO BE",
+        title: `Открыть существующий TO BE «${String(derived.title || "").trim()}»`,
+        onEnter: () => openTobeWorkspace(derived),
+      };
+    }
+    return {
+      label: "Создать TO BE",
+      title: "Создать TO BE из текущей схемы (рабочее место технолога)",
+      onEnter: () => openTobeWorkspace(sess),
+    };
+  }, [draft?.session_id, sessions, openTobeWorkspace]);
+
+  const modeSwitchView = useMemo(() => {
+    if (!tobeMode && !tobeEntryView) return null;
+    return {
+      mode: tobeMode ? "tobe" : "schema",
+      canEnterTobe: !!tobeEntryView,
+      enterTobeTitle: String(tobeEntryView?.title || ""),
+      onEnterTobe: () => tobeEntryView?.onEnter?.(),
+      onExitTobe: closeTobeWorkspace,
+    };
+  }, [tobeMode, tobeEntryView, closeTobeWorkspace]);
+
+  const tobeLeftPanel = tobeMode ? (
+    <div className="tobeLeft" data-testid="tobe-left-panel">
+      <button
+        type="button"
+        className="secondaryBtn tobeLeft__back"
+        onClick={closeTobeWorkspace}
+        data-testid="tobe-left-back"
+        title="Вернуться в режим «Схема»"
+      >
+        ← К схеме
+      </button>
+      <div className="tobeLeft__context">
+        <div className="tobeLeft__title">
+          {tobeMode.asIsSessionId
+            ? `TO BE из «${String(tobeMode.asIsTitle || "…").trim()}»`
+            : "TO BE с чистого листа"}
+        </div>
+        <div className="tobeLeft__hint">Рабочее место технолога</div>
+      </div>
+      <div id="tobe-steps-slot" data-testid="tobe-steps-slot" />
+      <div id="tobe-sidebar-slot" data-testid="tobe-sidebar-slot" />
+    </div>
+  ) : null;
+
   const left = useMemo(() => {
     if (phase === "no_session") {
       return (
@@ -4050,15 +4115,12 @@ export default function App() {
             onPublishedTobe={handleTobePublished}
           />
         ) : null}
+        modeSwitch={modeSwitchView}
+        tobeEntry={tobeMode ? null : tobeEntryView}
         draft={draft}
         shellSessionId={shellSessionId}
         locked={locked}
-        left={(
-          <>
-            {left}
-            {tobeMode ? <div id="tobe-sidebar-slot" data-testid="tobe-sidebar-slot" /> : null}
-          </>
-        )}
+        left={tobeMode ? tobeLeftPanel : left}
         leftHidden={leftHidden}
         leftCompact={phase === "notes" ? leftCompact : false}
         sidebarHandleSections={sidebarHandleSections}
@@ -4172,6 +4234,8 @@ export default function App() {
         onRefreshMentionNotifications={refreshMentionNotifications}
       />
 
+      {/* UXF Блок 2: в TO BE-режиме обсуждения скрыты (ux_concept.md §1, принцип 2) */}
+      {!tobeMode ? (
       <NotesMvpPanel
         ref={notesPanelRef}
         sessionId={String(draft?.session_id || "")}
@@ -4193,6 +4257,7 @@ export default function App() {
         mentionNotifications={mentionNotifications}
         onOpenMentionNotification={openMentionNotification}
       />
+      ) : null}
 
       <OrgSettingsModal
         open={orgSettingsOpen}
