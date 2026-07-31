@@ -61,7 +61,7 @@ function isEventType(bpmnType) {
   return t.endsWith("Event");
 }
 
-function NodeShape({ node }) {
+export function NodeShape({ node }) {
   const { x, y, w, h, cx, cy } = nodeCenter(node);
   const type = String(node?.bpmn_type || "task");
   if (isGatewayType(type)) {

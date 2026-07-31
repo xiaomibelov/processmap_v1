@@ -9,6 +9,8 @@ import { apiRequest } from "../../../lib/apiCore";
 import { apiGetBpmnXml } from "../../../lib/api";
 import { t, tf } from "../i18n";
 import GraphCanvas from "../graph/GraphCanvas";
+import OverlayGraphCanvas from "../graph/OverlayGraphCanvas";
+import { applyOverlayLayout, buildTraceIndex } from "../graph/overlay";
 import WorkflowBar, { WORKFLOW_STEPS } from "../workflow/WorkflowBar";
 import CheckPanel from "../constructor/CheckPanel";
 import AuditHistory from "../audit/AuditHistory";
@@ -69,7 +71,13 @@ export default function Workspace({
   const [importReport, setImportReport] = useState(null);
   const [importFile, setImportFile] = useState(null);
   const [asIsXmlText, setAsIsXmlText] = useState("");
-  const [layerMode, setLayerMode] = useState("tobe"); // tobe | asis | split
+  const [layerMode, setLayerMode] = useState("tobe"); // tobe | asis | split (OL1: legacy, только debug)
+  // OL1: overlay — единый канвас со слоями. Split из UI удалён;
+  // legacy split-рендер — только скрытый debug-флаг localStorage.ws_split_debug=1
+  const splitDebug = typeof window !== "undefined"
+    && (() => { try { return window.localStorage?.getItem("ws_split_debug") === "1"; } catch { return false; } })();
+  const [showAsIsLayer, setShowAsIsLayer] = useState(true); // OL1.4: подложка AS IS (дефолт видна)
+  const [traceLinksMode, setTraceLinksMode] = useState("selection"); // OL1.4: selection | always
 
   // ---- трансформация ----
   const [traceMap, setTraceMap] = useState([]);
@@ -106,6 +114,10 @@ export default function Workspace({
   }, []);
 
   const selectedNode = useMemo(() => findNode(uiModel, selectedNodeId), [uiModel, selectedNodeId]);
+  const selectedAsisNode = useMemo(
+    () => (asIsModel ? findNode(asIsModel, selectedAsisId) : null),
+    [asIsModel, selectedAsisId],
+  );
   const selectedFlow = useMemo(() => findFlow(uiModel, selectedFlowId), [uiModel, selectedFlowId]);
 
   // ---- WS3: AS IS из реальной сессии ProcessMap (embedded) ----
@@ -480,7 +492,9 @@ export default function Workspace({
             headers: { "Content-Type": "application/octet-stream" },
           });
       if (r?.ok && r.data) {
-        const draft = normalizeUiModel(r.data.draft_ui_model);
+        const draftRaw = normalizeUiModel(r.data.draft_ui_model);
+        // OL1.2: начальная overlay-раскладка — TO BE под своими AS IS-источниками
+        const draft = asIsModel ? applyOverlayLayout(draftRaw, asIsModel) : draftRaw;
         setUiModel(mergeDraftEntities(draft, asArray(r.data.draft_entities)));
         setTraceMap(asArray(r.data.trace_map));
         setRejectedIds(new Set());
@@ -534,6 +548,9 @@ export default function Workspace({
     });
     return byDraft;
   }, [traceMap, rejectedIds]);
+
+  // OL1.3: индекс трассировки derived_from (обе стороны) для overlay-подсветки
+  const traceIndex = useMemo(() => buildTraceIndex(traceMap, effectiveModel), [traceMap, effectiveModel]);
 
   // выбор решения на канвасе → подсветка источников AS IS (вкладку панели
   // НЕ переключаем: блок важнее для редактирования; решения — через список)
@@ -678,7 +695,29 @@ export default function Workspace({
           <button type="button" className="ctor-btn" data-testid="ws-palette" onClick={() => setPaletteOpen((p) => !p)}>
             {t("ctor.palette")}
           </button>
-          {asIsModel ? (
+          {asIsModel && !splitDebug ? (
+            <span className="ws__layers" data-testid="overlay-toggles">
+              <button
+                type="button"
+                className={`ws__layer-btn${showAsIsLayer ? " ws__layer-btn--active" : ""}`}
+                data-testid="toggle-asis-layer"
+                title={t("ws.asisLayerHint")}
+                onClick={() => setShowAsIsLayer((p) => !p)}
+              >
+                AS IS
+              </button>
+              <button
+                type="button"
+                className={`ws__layer-btn${traceLinksMode === "always" ? " ws__layer-btn--active" : ""}`}
+                data-testid="toggle-trace-links"
+                title={t("ws.traceLinksHint")}
+                onClick={() => setTraceLinksMode((m) => (m === "always" ? "selection" : "always"))}
+              >
+                {t("ws.traceLinks")}
+              </button>
+            </span>
+          ) : null}
+          {asIsModel && splitDebug ? (
             <span className="ws__layers" data-testid="layer-toggle">
               {[["tobe", "TO BE"], ["asis", "AS IS"], ["split", t("ws.layerBoth")]].map(([mode, label]) => (
                 <button
@@ -712,6 +751,7 @@ export default function Workspace({
       ) : null}
 
       <div className="ws__main">
+        {splitDebug && asIsModel ? (
         <div className={`ws__canvases ws__canvases--${layerMode}`}>
           {layerMode !== "tobe" && asIsModel ? (
             <div className="ws__canvas ws__canvas--asis" data-testid="canvas-asis" data-readonly="true">
@@ -742,6 +782,33 @@ export default function Workspace({
             </div>
           ) : null}
         </div>
+        ) : (
+        /* OL1: единый overlay-канвас — AS IS подложка + TO BE поверх */
+        <div className="ws__canvases ws__canvases--overlay">
+          <div className="ws__canvas ws__canvas--overlay" data-testid="canvas-overlay">
+            {asIsModel && showAsIsLayer ? (
+              <div className="ws__canvas-label">AS IS · {t("ws.asIsReadonly")}</div>
+            ) : null}
+            <OverlayGraphCanvas
+              asIsModel={showAsIsLayer ? asIsModel : null}
+              tobeModel={effectiveModel}
+              traceIndex={traceIndex}
+              traceLinksMode={traceLinksMode}
+              selectedTobeId={selectedNodeId}
+              selectedAsisId={selectedAsisId}
+              selectedFlowId={selectedFlowId}
+              onSelectTobeNode={traceMap.length ? (id) => { handleSelectNode(id); handleSelectDecisionNode(id); } : handleSelectNode}
+              onSelectAsisNode={(id) => { setSelectedAsisId(id); setSelectedNodeId(""); setSelectedFlowId(""); setPanelTab("block"); }}
+              onSelectFlow={handleSelectFlow}
+              onNodeMove={handleNodeMove}
+              connectSourceId={connectSourceId}
+              nodeBadges={decisionBadges}
+              nodeRefs={nodeRefs}
+              ariaLabel="TO BE поверх AS IS"
+            />
+          </div>
+        </div>
+        )}
 
         {(() => {
           const panelContent = (
@@ -794,7 +861,21 @@ export default function Workspace({
               onDelete={() => handleDeleteNode(selectedNodeId)}
             />
           ) : null}
-          {panelTab === "block" && !selectedNode ? <div className="ctor-hint">{t("ws.selectBlock")}</div> : null}
+          {panelTab === "block" && !selectedNode && selectedAsisNode ? (
+            <div className="ctor-block" data-testid="asis-card" data-node-id={String(selectedAsisNode?.id || "")}>
+              <h3>{t("ws.asisCardTitle")}: {String(selectedAsisNode?.display_name || selectedAsisNode?.name || selectedAsisNode?.id || "")}</h3>
+              <div className="ctor-field">
+                <span className="ctor-field-label">bpmn_type</span>
+                <code>{String(selectedAsisNode?.bpmn_type || "—")}</code>
+              </div>
+              <div className="ctor-field">
+                <span className="ctor-field-label">{t("ctor.blockDisplayName")}</span>
+                <code>{String(selectedAsisNode?.display_name || selectedAsisNode?.name || "—")}</code>
+              </div>
+              <div className="ctor-hint">{t("ws.asisCardReadonly")}</div>
+            </div>
+          ) : null}
+          {panelTab === "block" && !selectedNode && !selectedAsisNode ? <div className="ctor-hint">{t("ws.selectBlock")}</div> : null}
 
           {panelTab === "flow" && selectedFlow ? (
             <FlowForm
@@ -1026,7 +1107,21 @@ export default function Workspace({
               onDelete={() => handleDeleteNode(selectedNodeId)}
             />
           ) : null}
-          {panelTab === "block" && !selectedNode ? <div className="ctor-hint">{t("ws.selectBlock")}</div> : null}
+          {panelTab === "block" && !selectedNode && selectedAsisNode ? (
+            <div className="ctor-block" data-testid="asis-card" data-node-id={String(selectedAsisNode?.id || "")}>
+              <h3>{t("ws.asisCardTitle")}: {String(selectedAsisNode?.display_name || selectedAsisNode?.name || selectedAsisNode?.id || "")}</h3>
+              <div className="ctor-field">
+                <span className="ctor-field-label">bpmn_type</span>
+                <code>{String(selectedAsisNode?.bpmn_type || "—")}</code>
+              </div>
+              <div className="ctor-field">
+                <span className="ctor-field-label">{t("ctor.blockDisplayName")}</span>
+                <code>{String(selectedAsisNode?.display_name || selectedAsisNode?.name || "—")}</code>
+              </div>
+              <div className="ctor-hint">{t("ws.asisCardReadonly")}</div>
+            </div>
+          ) : null}
+          {panelTab === "block" && !selectedNode && !selectedAsisNode ? <div className="ctor-hint">{t("ws.selectBlock")}</div> : null}
 
           {panelTab === "flow" && selectedFlow ? (
             <FlowForm
