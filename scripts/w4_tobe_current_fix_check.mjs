@@ -60,8 +60,17 @@ try {
   await page.waitForTimeout(1200);
   const curBtn = `[data-testid="tobe-open-${SID}"]`;
   await page.waitForSelector(curBtn, { timeout: 15000 });
-  const label = (await page.locator(curBtn).textContent()) || "";
-  if (!label.includes("(текущая)")) fail(`текущая сессия не помечена: ${label}`);
+  // A6 (addendum-2): текущая сессия помечена группой «Из этого процесса»
+  // (ранее — суффикс «(текущая)» в подписи строки).
+  const marked = await page.evaluate((sid) => {
+    const btn = document.querySelector(`[data-testid="tobe-open-${sid}"]`);
+    if (!btn) return { ok: false, label: "" };
+    return {
+      ok: Boolean(btn.closest('[data-testid="tobe-current-process"]')) || (btn.textContent || "").includes("текущая"),
+      label: (btn.textContent || "").trim(),
+    };
+  }, SID);
+  if (!marked.ok) fail(`текущая сессия не помечена: ${marked.label}`);
   apiChurn.length = 0;
   await page.click(curBtn);
 
@@ -110,7 +119,11 @@ try {
   const otherBtn = await page.evaluate(() => {
     const btns = Array.from(document.querySelectorAll('[data-testid^="tobe-open-"]'))
       .filter((b) => !["tobe-open-blank"].includes(b.getAttribute("data-testid")));
-    const other = btns.find((b) => (b.textContent || "").startsWith("Открыть TO BE"));
+    // A6: статус в .tobeRow__status («Открыть»); legacy — текст кнопки «Открыть TO BE …».
+    const other = btns.find((b) => {
+      const st = (b.querySelector(".tobeRow__status")?.textContent || "").trim();
+      return st === "Открыть" || (b.textContent || "").startsWith("Открыть TO BE");
+    });
     return other ? other.getAttribute("data-testid") : "";
   });
   if (!otherBtn) fail("нет другой TO BE-сессии в списке");

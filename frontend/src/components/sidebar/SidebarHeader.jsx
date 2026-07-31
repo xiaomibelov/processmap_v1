@@ -27,6 +27,8 @@ export default function SidebarHeader({
   onDeleteSession,
   onToggleCollapse,
   onCloseSidebar,
+  dockSide = "left",
+  onToggleDockSide,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -70,6 +72,26 @@ export default function SidebarHeader({
           >
             ⋯
           </button>
+          {typeof onToggleDockSide === "function" ? (
+            <button
+              type="button"
+              className="sidebarIconBtn"
+              title={dockSide === "right" ? "Переместить панель налево" : "Переместить панель направо"}
+              aria-label={dockSide === "right" ? "Переместить панель налево" : "Переместить панель направо"}
+              data-testid="sidebar-dock-toggle"
+              onClick={() => onToggleDockSide?.()}
+            >
+              {dockSide === "right" ? (
+                <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
+                  <path d="M2 2.5v11M2 8h8.5M7.5 4.8 10.7 8l-3.2 3.2" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 16 16" className={"h-3.5 w-3.5"} aria-hidden="true">
+                  <path d="M14 2.5v11M14 8H5.5M8.5 4.8 5.3 8l3.2 3.2" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </button>
+          ) : null}
           {menuOpen ? (
             <div ref={menuRef} className="sidebarHeaderMenu">
               {typeof onRenameProject === "function" ? (
@@ -117,32 +139,25 @@ export default function SidebarHeader({
       </div>
 
       <div className="sidebarBreadcrumbRow">
+        {/* A8: крошки — только реальные переходы. Проект → список сессий
+            проекта; текущая сессия — текст (мы уже здесь). */}
         <button
           type="button"
           className="sidebarBreadcrumbBtn"
-          title={projectTitle || "Проект"}
+          title={`К списку сессий проекта «${projectTitle || "Проект"}»`}
+          data-testid="breadcrumb-project"
           onClick={() => onProjectBreadcrumbClick?.()}
         >
           {projectTitle || "Проект"}
         </button>
         <span className="sidebarBreadcrumbSep">/</span>
-        <button
-          type="button"
-          className="sidebarBreadcrumbBtn"
+        <span
+          className="sidebarBreadcrumbCurrent"
           title={sessionTitle || sessionId || "Сессия"}
-          onClick={() => onSessionBreadcrumbClick?.()}
+          data-testid="breadcrumb-session"
         >
           {sessionTitle || sessionId || "Сессия"}
-        </button>
-        <span className="sidebarBreadcrumbSep">/</span>
-        <button
-          type="button"
-          className="sidebarBreadcrumbBtn"
-          title={processTitle || "Процесс"}
-          onClick={() => onProcessBreadcrumbClick?.()}
-        >
-          {processTitle || "Процесс"}
-        </button>
+        </span>
       </div>
     </div>
   );
