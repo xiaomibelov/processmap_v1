@@ -98,6 +98,41 @@ class ProjectSessionsSummaryTests(unittest.TestCase):
             self.list_project_sessions(self.project_id, view="tiny")
         self.assertEqual(ctx.exception.status_code, 422)
 
+    def test_process_layer_in_summary_projection_and_cache(self):
+        """W4/R3: process_layer и derived_from_session_id обязаны присутствовать
+        во ВСЕХ read-path'ах сессии (класс бага «explicit SELECT без новой
+        колонки» — встретился в summary, load_session_projection и кэше)."""
+        storage = self.get_storage()
+        session = storage.load(self.session_id, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(session)
+        session.process_layer = "to_be"
+        session.derived_from_session_id = "asis_sid_1"
+        storage.save(session, org_id=self.org_id, is_admin=True)
+
+        # 1. summary-список сессий проекта
+        rows = self.list_project_sessions(self.project_id, view="summary")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].get("process_layer"), "to_be")
+        self.assertEqual(rows[0].get("derived_from_session_id"), "asis_sid_1")
+
+        # 2. projection (read-path GET /api/sessions/{id})
+        proj = storage.load_session_projection(
+            self.session_id, org_id=self.org_id, is_admin=True,
+        )
+        self.assertIsNotNone(proj)
+        self.assertEqual(str(proj.get("process_layer") or ""), "to_be")
+        self.assertEqual(str(proj.get("derived_from_session_id") or ""), "asis_sid_1")
+
+        # 3. cache-проекция (то, что реально отдаёт GET /api/sessions/{id})
+        from app.services.session_service import _build_session_projection
+        cached = _build_session_projection(proj)
+        self.assertEqual(cached.get("process_layer"), "to_be")
+        self.assertEqual(cached.get("derived_from_session_id"), "asis_sid_1")
+
+        # 4. as_is по умолчанию — не None и не пустая строка-None
+        rows2 = self.list_project_sessions(self.project_id, view="summary")
+        self.assertNotIn(rows2[0].get("process_layer"), (None, "None"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -193,6 +193,7 @@ export default function Workspace({
 
   // ---- W4.9: данные сессионного прогресса (рецепты + привязки текущего шаблона) ----
   const [progressData, setProgressData] = useState({ recipeCount: 0, pilotCount: 0 });
+  const [progressNonce, setProgressNonce] = useState(0); // W4: bump после создания пилота → шаг «Пилот» сразу done
   useEffect(() => {
     if (!templateId) { setProgressData({ recipeCount: 0, pilotCount: 0 }); return undefined; }
     let canceled = false;
@@ -209,7 +210,7 @@ export default function Workspace({
       if (!canceled) setProgressData({ recipeCount: tplRecipes.length, pilotCount });
     })().catch(() => {});
     return () => { canceled = true; };
-  }, [templateId, templateStatus, panelTab]);
+  }, [templateId, templateStatus, panelTab, progressNonce]);
 
   // opDetail для выделенного блока
   useEffect(() => {
@@ -965,7 +966,7 @@ export default function Workspace({
           ) : null}
 
           {panelTab === "pilot" ? (
-            <PilotPanel templateId={templateId} templateStatus={templateStatus} />
+            <PilotPanel templateId={templateId} templateStatus={templateStatus} onPilotCreated={() => setProgressNonce((n) => n + 1)} />
           ) : null}
         
               </div>
@@ -1197,7 +1198,7 @@ export default function Workspace({
           ) : null}
 
           {panelTab === "pilot" ? (
-            <PilotPanel templateId={templateId} templateStatus={templateStatus} />
+            <PilotPanel templateId={templateId} templateStatus={templateStatus} onPilotCreated={() => setProgressNonce((n) => n + 1)} />
           ) : null}
         
             </WorkspacePanel>
