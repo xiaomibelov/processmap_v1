@@ -31,6 +31,23 @@ function VersionIcon({ className = "" }) {
   );
 }
 
+// B3 (addendum-4): пометки «in progress» для незавершённых представлений.
+// «Diagram (BPMN)» и «XML» — готовые, без пометки. Пометка информативна, не блокирует.
+const IN_PROGRESS_TABS = new Set(["interview", "doc", "dod"]);
+const IN_PROGRESS_HINT = "Представление в разработке — часть функций может отсутствовать";
+
+function InProgressBadge({ testid }) {
+  return (
+    <span
+      className="pointer-events-auto absolute left-1 top-[1px] rounded-sm bg-warning/90 px-1 text-[6px] font-bold lowercase leading-[9px] tracking-normal text-black"
+      title={IN_PROGRESS_HINT}
+      data-testid={testid}
+    >
+      in progress
+    </span>
+  );
+}
+
 export default function ProcessStageHeader({ view = {} }) {
   const {
     canCreateRevisionNow,
@@ -125,16 +142,57 @@ export default function ProcessStageHeader({ view = {} }) {
       <div className="diagramToolbarSlot diagramToolbarSlot--left">
         <div className="flex items-center gap-2">
           {hasSession ? (
-            <button
-              type="button"
-              className="primaryBtn processSaveBtn grid h-8 w-8 shrink-0 place-items-center px-0"
-              onClick={handleSaveCurrentTab}
-              title={workbench.saveTooltip}
-              aria-label={toText(saveActionText) || "Сохранить сессию"}
-              data-testid="diagram-toolbar-save"
-            >
-              <SaveIcon className="h-4 w-4" />
-            </button>
+            <>
+              {/* B1: пара «Сохранить · Rev» — единый паттерн иконка+счётчик */}
+              <span
+                className="headerActionPair flex h-8 items-center gap-1.5 rounded-lg border border-border/60 bg-panel2/40 py-0.5 pl-0.5 pr-2"
+                title={`Сохранить · ревизия ${localDiagramStateVersion > 0 ? localDiagramStateVersion : "—"}`}
+                data-testid="diagram-toolbar-save-pair"
+              >
+                <button
+                  type="button"
+                  className="primaryBtn processSaveBtn grid h-7 w-7 shrink-0 place-items-center px-0"
+                  onClick={handleSaveCurrentTab}
+                  title={workbench.saveTooltip}
+                  aria-label={toText(saveActionText) || "Сохранить сессию"}
+                  data-testid="diagram-toolbar-save"
+                >
+                  <SaveIcon className="h-4 w-4" />
+                </button>
+                <span
+                  className={`whitespace-nowrap text-[11px] font-semibold leading-none ${isDiagramStateConflict ? "text-danger animate-pulse" : "text-muted"}`}
+                  data-testid="diagram-toolbar-diagram-state-version-chip"
+                  title={diagramStateVersionChipTitle}
+                >
+                  {diagramStateVersionChipLabel}
+                </span>
+              </span>
+              {/* B1: пара «Новая версия · V» — тот же паттерн */}
+              <span
+                className="headerActionPair flex h-8 items-center gap-1.5 rounded-lg border border-border/60 bg-panel2/40 py-0.5 pl-0.5 pr-2"
+                title={`Новая версия · текущая ${resolvedVersionNumber > 0 ? `V.${resolvedVersionNumber}` : "V.—"}`}
+                data-testid="diagram-toolbar-version-pair"
+              >
+                <button
+                  type="button"
+                  className="secondaryBtn grid h-7 w-7 shrink-0 place-items-center px-0"
+                  onClick={handleCreateRevisionAction}
+                  disabled={!canCreateRevisionFromCurrentState}
+                  title={revisionActionTitle}
+                  aria-label={toText(createRevisionActionText) || "Создать версию BPMN"}
+                  data-testid="diagram-toolbar-create-revision"
+                >
+                  <VersionIcon className="h-4 w-4" />
+                </button>
+                <span
+                  className="whitespace-nowrap text-[11px] font-semibold leading-none text-muted"
+                  data-testid="diagram-toolbar-version-chip"
+                  title={versionChipTitle}
+                >
+                  {versionChipLabel}
+                </span>
+              </span>
+            </>
           ) : (
             <button
               type="button"
@@ -146,19 +204,6 @@ export default function ProcessStageHeader({ view = {} }) {
               <SaveIcon className="h-4 w-4" />
             </button>
           )}
-          {hasSession ? (
-            <button
-              type="button"
-              className="secondaryBtn grid h-8 w-8 shrink-0 place-items-center px-0"
-              onClick={handleCreateRevisionAction}
-              disabled={!canCreateRevisionFromCurrentState}
-              title={revisionActionTitle}
-              aria-label={toText(createRevisionActionText) || "Создать версию BPMN"}
-              data-testid="diagram-toolbar-create-revision"
-            >
-              <VersionIcon className="h-4 w-4" />
-            </button>
-          ) : null}
           {hasSession && showCreateRevisionNoDiffHint ? (
             <span
               className="badge text-[11px] text-muted truncate max-w-[220px]"
@@ -166,24 +211,6 @@ export default function ProcessStageHeader({ view = {} }) {
               data-testid="diagram-toolbar-create-revision-no-diff-hint"
             >
               {toText(createRevisionNoDiffHintText) || "Нет изменений сессии после последней версии BPMN"}
-            </span>
-          ) : null}
-          {hasSession ? (
-            <span
-              className="badge text-[11px] info"
-              data-testid="diagram-toolbar-version-chip"
-              title={versionChipTitle}
-            >
-              {versionChipLabel}
-            </span>
-          ) : null}
-          {hasSession ? (
-            <span
-              className={`badge text-[11px] ${isDiagramStateConflict ? "err animate-pulse" : "info"}`}
-              data-testid="diagram-toolbar-diagram-state-version-chip"
-              title={diagramStateVersionChipTitle}
-            >
-              {diagramStateVersionChipLabel}
             </span>
           ) : null}
           {featureFlags?.bpmn_fps_meter_enabled ? (
@@ -204,16 +231,18 @@ export default function ProcessStageHeader({ view = {} }) {
             <Fragment key={x.id}>
             <button
               type="button"
-              className={`segBtn rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${isActive ? "on bg-accent text-white" : isDisabled ? "isDisabled text-muted" : "text-muted hover:bg-accentSoft hover:text-fg"}`}
+              className={`segBtn relative rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${isActive ? "on bg-accent text-white" : isDisabled ? "isDisabled text-muted" : "text-muted hover:bg-accentSoft hover:text-fg"}`}
               role="tab"
               aria-selected={isActive}
               aria-current={isActive ? "page" : undefined}
               tabIndex={isActive ? 0 : -1}
               disabled={!hasSession || isSwitchingTab || isFlushingTab}
+              title={IN_PROGRESS_TABS.has(x.id) ? IN_PROGRESS_HINT : undefined}
               onClick={async () => {
                 await switchTab(x.id);
               }}
             >
+              {IN_PROGRESS_TABS.has(x.id) ? <InProgressBadge testid={`tab-in-progress-${x.id}`} /> : null}
               {x.label}
             </button>
             {x.id === "diagram" && modeSwitch ? (
@@ -260,18 +289,8 @@ export default function ProcessStageHeader({ view = {} }) {
           ) : null}
         </div>
         <div className="diagramToolbarRightActions">
-          {hasSession && tobeEntry ? (
-            <button
-              type="button"
-              className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
-              onClick={() => tobeEntry.onEnter?.()}
-              disabled={tobeEntry.disabled === true}
-              title={toText(tobeEntry.title) || "Открыть рабочее место TO BE"}
-              data-testid="diagram-toolbar-tobe-entry"
-            >
-              {toText(tobeEntry.label) || "Открыть TO BE"}
-            </button>
-          ) : null}
+          {/* B2 (addendum-4): «Создать TO BE» убрана из хедера — дубль; входы:
+              переключатель «Схема|TO BE» в группе представлений + секция TO BE в сайдбаре. */}
           {hasSession ? (
             <>
               <button

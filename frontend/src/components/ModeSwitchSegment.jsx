@@ -40,14 +40,21 @@ export default function ModeSwitchSegment({ modeSwitch = null, className = "" })
       </button>
       <button
         type="button"
-        className={`segBtn rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${modeSwitch.mode === "tobe" ? "on bg-accent text-white" : !modeSwitch.canEnterTobe ? "isDisabled text-muted" : "text-muted hover:bg-accentSoft hover:text-fg"}`}
+        className={`segBtn relative rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${modeSwitch.mode === "tobe" ? "on bg-accent text-white" : !modeSwitch.canEnterTobe ? "isDisabled text-muted" : "text-muted hover:bg-accentSoft hover:text-fg"}`}
         role="tab"
         aria-selected={modeSwitch.mode === "tobe"}
         data-testid="mode-switch-tobe"
         disabled={modeSwitch.mode !== "tobe" && !modeSwitch.canEnterTobe}
-        title={toText(modeSwitch.enterTobeTitle) || "Открыть рабочее место TO BE"}
+        title={`${toText(modeSwitch.enterTobeTitle) || "Открыть рабочее место TO BE"} · Представление в разработке — часть функций может отсутствовать`}
         onClick={() => { if (modeSwitch.mode !== "tobe") modeSwitch.onEnterTobe?.(); }}
       >
+        <span
+          className="pointer-events-auto absolute left-1 top-[1px] rounded-sm bg-warning/90 px-1 text-[6px] font-bold lowercase leading-[9px] tracking-normal text-black"
+          title="Представление в разработке — часть функций может отсутствовать"
+          data-testid="tab-in-progress-tobe"
+        >
+          in progress
+        </span>
         TO BE
       </button>
     </span>
