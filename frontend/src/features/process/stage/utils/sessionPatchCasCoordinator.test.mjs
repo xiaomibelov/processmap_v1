@@ -8,6 +8,7 @@ import {
   resetSessionPatchCasCoordinator,
   resolveSessionPatchBaseAtSendTime,
 } from "./sessionPatchCasCoordinator.js";
+import { saveCoordinator } from "../../../session/saveCoordinator.js";
 import { __resetForTests as resetCasVersionTracker, getVersion as getTrackedVersion } from "../../../../lib/casVersionTracker.js";
 
 test.beforeEach(() => {
@@ -108,17 +109,21 @@ test("session PATCH coordinator bumps tracked version on successful ack", async 
   assert.equal(getTrackedVersion("sid_ack"), 11);
 });
 
-test("session PATCH coordinator rolls back tracked version and stores server current version on 409", async () => {
+test("session PATCH coordinator does NOT adopt tracked base on 409; conflict gate blocks next write", async () => {
   let remembered = null;
+  let patchCalls = 0;
   const response = await enqueueSessionPatchCasWrite({
     sessionId: "sid_conflict_track",
     patch: { interview: {}, base_diagram_state_version: 10 },
-    apiPatchSession: async () => ({
-      ok: false,
-      status: 409,
-      error: "DIAGRAM_STATE_CONFLICT",
-      data: { server_current_version: 12 },
-    }),
+    apiPatchSession: async () => {
+      patchCalls += 1;
+      return {
+        ok: false,
+        status: 409,
+        error: "DIAGRAM_STATE_CONFLICT",
+        data: { server_current_version: 12 },
+      };
+    },
     rememberDiagramStateVersion: (version) => {
       remembered = version;
     },
@@ -126,6 +131,27 @@ test("session PATCH coordinator rolls back tracked version and stores server cur
 
   assert.equal(response.ok, false);
   assert.equal(response.status, 409);
+  // внешнее состояние получает серверную версию (для конфликт-UI)
   assert.equal(remembered, 12);
+  // P1: tracked-base НЕ подменяется молча серверной версией
+  assert.equal(getTrackedVersion("sid_conflict_track"), null);
+  assert.ok(saveCoordinator.getConflict("sid_conflict_track"), "conflict gate must be armed");
+
+  // следующий save заблокирован gate'ом и не доходит до транспорта
+  const blocked = await enqueueSessionPatchCasWrite({
+    sessionId: "sid_conflict_track",
+    patch: { interview: {}, base_diagram_state_version: 10 },
+    apiPatchSession: async () => {
+      patchCalls += 1;
+      return { ok: true, session: { diagram_state_version: 13 } };
+    },
+  });
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.blockedByConflict, true);
+  assert.equal(patchCalls, 1, "transport must not run while conflict gate is active");
+
+  // явное решение пользователя: overwrite принимает серверную базу
+  const resolved = saveCoordinator.resolveConflict("sid_conflict_track", "overwrite");
+  assert.equal(resolved.ok, true);
   assert.equal(getTrackedVersion("sid_conflict_track"), 12);
 });

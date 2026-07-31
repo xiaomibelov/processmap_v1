@@ -58,7 +58,7 @@ saveCoordinator.registerPipeline(RAW_XML_PIPELINE_NAME, {
     }
   },
   on409: (response, sessionId, payload) => {
-    // CAS rollback + setVersion is handled by saveCoordinator._runPipeline.
+    // P1: tracked-base НЕ подменяется (conflict gate в saveCoordinator).
     // Only sync the server version to external React state here.
     const data = response?.data ?? {};
     const detail = data?.detail ?? data ?? {};

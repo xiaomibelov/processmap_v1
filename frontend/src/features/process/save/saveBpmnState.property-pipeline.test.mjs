@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { saveBpmnState } from "./saveBpmnState.js";
+import { saveCoordinator } from "../../session/saveCoordinator.js";
 import { __resetForTests as resetCasVersionTracker, getVersion as getTrackedVersion } from "../../../lib/casVersionTracker.js";
 
 test.beforeEach(() => {
@@ -190,7 +191,7 @@ test("successful save bumps tracked diagram state version", async () => {
   assert.equal(getTrackedVersion("sid-track"), 7);
 });
 
-test("409 conflict rolls back and stores server current version", async () => {
+test("409 conflict does NOT adopt tracked base; arms conflict gate until explicit resolution", async () => {
   let remembered = null;
   const result = await saveBpmnState({
     operation: "session_save",
@@ -217,7 +218,14 @@ test("409 conflict rolls back and stores server current version", async () => {
 
   assert.equal(result?.ok, false);
   assert.equal(result?.conflict, true);
+  // внешнее состояние получает серверную версию (для конфликт-UI)
   assert.equal(remembered, 9);
+  // P1: tracked-base НЕ подменяется молча серверной версией
+  assert.notEqual(getTrackedVersion("sid-conflict"), 9);
+  assert.ok(saveCoordinator.getConflict("sid-conflict"), "conflict gate must be armed");
+  // явное решение пользователя (кнопка «Перезаписать») принимает базу
+  const resolved = saveCoordinator.resolveConflict("sid-conflict", "overwrite");
+  assert.equal(resolved.ok, true);
   assert.equal(getTrackedVersion("sid-conflict"), 9);
 });
 
