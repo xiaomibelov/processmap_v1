@@ -90,6 +90,19 @@ try {
   await page.waitForSelector('[data-testid="block-form"]', { timeout: 15000 });
   const nodeId = await page.locator(nodeSel).first().getAttribute("data-element-id");
   const selected = await page.locator(nodeSel).first().getAttribute("data-selected");
+  // заполнить пустые required-параметры (иначе block-save disabled по гигиене)
+  const emptySelects = await page.$$('[data-testid="block-form"] select[data-testid^="param-"]');
+  for (const sel of emptySelects) {
+    const v = await sel.inputValue();
+    if (!v) {
+      const opts = await sel.$$eval("option", (os) => os.map((o) => o.value).filter(Boolean));
+      if (opts.length) await sel.selectOption(opts[0]);
+    }
+  }
+  await page.waitForTimeout(500);
+  const saveDisabled = await page.locator('[data-testid="block-save"]').isDisabled();
+  log(`(c) узел ${nodeId}: selected=${selected}, required заполнены, saveDisabled=${saveDisabled}`);
+  if (saveDisabled) throw new Error("(c) block-save остался disabled после заполнения required");
   await page.fill('[data-testid="block-display-name"]', NEW_NAME);
   await shot(page, "canvas_c1_before_save.png");
   await page.click('[data-testid="block-save"]');
