@@ -39,7 +39,7 @@ const IN_PROGRESS_HINT = "Представление в разработке —
 function InProgressBadge({ testid }) {
   return (
     <span
-      className="pointer-events-auto absolute left-1 top-[1px] rounded-sm bg-warning/90 px-1 text-[6px] font-bold lowercase leading-[9px] tracking-normal text-black"
+      className="pointer-events-auto absolute left-1 top-[1px] rounded-sm border border-warning/40 bg-warning/20 px-1 text-[6px] font-bold lowercase leading-[9px] tracking-normal text-warning"
       title={IN_PROGRESS_HINT}
       data-testid={testid}
     >
