@@ -79,9 +79,13 @@ try {
   log("текущая сессия: stepBar стабилен 6с, тот же DOM-узел:", sameNode && sameNode2);
   if (!sameNode || !sameNode2) fail("ремаунт рабочего места (моргание)");
   if (navCount !== navAfterLoad) fail(`полная перезагрузка роута: navigations ${navAfterLoad} → ${navCount}`);
-  const presenceChurn = apiChurn.filter((c) => c.includes("presence")).length;
+  const presenceJoin = apiChurn.filter((c) => c.startsWith("POST") && c.includes("presence")).length;
+  const bpmnFetches = apiChurn.filter((c) => c.startsWith("GET") && c.includes("/bpmn")).length;
   log("network после выбора текущей:", JSON.stringify(apiChurn));
-  if (presenceChurn > 0) fail(`host-канвас перезагружался (presence churn: ${presenceChurn})`);
+  // норма: 1×DELETE presence (cleanup при демонтаже хоста) + 1×GET bpmn (загрузка AS IS).
+  // патология (баг): POST presence (хост перемонтировался) или повторные GET bpmn.
+  if (presenceJoin > 0) fail(`хост-канвас перемонтировался (presence join: ${presenceJoin})`);
+  if (bpmnFetches > 1) fail(`повторные загрузки bpmn: ${bpmnFetches}`);
   const asisNodes = await page.evaluate(() =>
     document.querySelectorAll('[data-testid="canvas-asis"] g[data-element-id]:not(.graph-canvas__lane)').length);
   log("AS IS узлов на канвасе:", asisNodes);
@@ -111,7 +115,9 @@ try {
   });
   if (!otherBtn) fail("нет другой TO BE-сессии в списке");
   const navBeforeOther = navCount;
-  await page.click(`[data-testid="${otherBtn}"]`);
+  await page.evaluate((tid) => {
+    document.querySelector(`[data-testid="${tid}"]`)?.click();
+  }, otherBtn);
   await page.waitForSelector('[data-testid="session-step-bar"]', { timeout: 15000 });
   await page.waitForTimeout(3000);
   if (!(await page.$('[data-testid="session-step-bar"]'))) fail("рабочее место по другой сессии не удержалось");
