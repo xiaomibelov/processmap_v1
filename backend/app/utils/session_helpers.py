@@ -160,3 +160,76 @@ def _resolve_actor_context(request: Request = None) -> Tuple[Dict[str, Any], str
     actor_user_id = str(user.get("id") or "").strip()
     actor_label = _resolve_actor_label_from_user(user, actor_user_id)
     return user, actor_user_id, actor_label
+
+
+def _effective_sql_cas_base(client_base_version: Optional[int]) -> Optional[int]:
+    """Base version to enforce at SQL level, or None for the legacy non-CAS path."""
+    if client_base_version is None:
+        return None
+    if os.environ.get("FPC_E2E_CAS_BYPASS") == "1":
+        return None
+    try:
+        return int(client_base_version)
+    except (TypeError, ValueError):
+        return None
+
+
+def _save_session_with_cas(
+    storage,
+    sess,
+    *,
+    client_base_version: Optional[int],
+    user_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+    bpmn_snapshot: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Save session with SQL-level CAS on diagram_state_version when a base is available.
+
+    Closes the check-then-act race between the in-memory CAS guard and the row
+    upsert (audit P2 / T2-T3): a concurrent writer that committed in between
+    makes the UPDATE affect zero rows -> 409 DIAGRAM_STATE_CONFLICT instead of
+    a silent last-writer-wins overwrite. Paths without a base version keep the
+    legacy full-row upsert behavior.
+    """
+    from ..storage import DiagramStateConflictError  # local import to avoid cycles
+
+    base = _effective_sql_cas_base(client_base_version)
+    if base is None:
+        storage.save(
+            sess,
+            user_id=user_id,
+            is_admin=is_admin,
+            org_id=org_id,
+            bpmn_snapshot=bpmn_snapshot,
+        )
+        return
+    try:
+        storage.save(
+            sess,
+            user_id=user_id,
+            is_admin=is_admin,
+            org_id=org_id,
+            expected_diagram_state_version=base,
+            bpmn_snapshot=bpmn_snapshot,
+        )
+    except DiagramStateConflictError as exc:
+        current_version = exc.current
+        server_sess = sess
+        try:
+            reloaded = storage.load(exc.session_id, is_admin=True)
+            if reloaded is not None:
+                server_sess = reloaded
+                current_version = int(getattr(reloaded, "diagram_state_version", 0) or 0)
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=409,
+            detail=_diagram_state_conflict_payload(
+                code="DIAGRAM_STATE_CONFLICT",
+                session_id=exc.session_id,
+                client_base_version=base,
+                server_current_version=int(current_version if current_version is not None else 0),
+                sess=server_sess,
+            ),
+        ) from exc
