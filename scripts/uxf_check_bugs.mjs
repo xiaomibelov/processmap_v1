@@ -70,9 +70,11 @@ try {
   // B4: список источников — статусы + фильтр служебных (ДО входа в рабочее место)
   const listState = await page.evaluate(() => {
     const btns = Array.from(document.querySelectorAll("[data-testid^='tobe-open-']"));
+    // A1-редизайн: статус в .tobeRow__status (иконка·название·статус); fallback — текст кнопки.
+    const statusOf = (b) => (b.querySelector(".tobeRow__status")?.textContent || b.textContent || "").trim();
     return {
-      statuses: btns.slice(0, 8).map((b) => (b.textContent || "").trim().slice(0, 55)),
-      withStatus: btns.filter((b) => /^(Открыть|Создать) TO BE/.test((b.textContent || "").trim())).length,
+      statuses: btns.slice(0, 8).map((b) => statusOf(b).slice(0, 55)),
+      withStatus: btns.filter((b) => /^(Открыть|Создать)/.test(statusOf(b))).length,
       total: btns.length,
       other: Boolean(document.querySelector('[data-testid="tobe-other"]')),
     };

@@ -2475,7 +2475,7 @@
 
   .diagramToolbarHeader {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto;
     align-items: center;
     column-gap: 8px;
     min-height: 46px;
@@ -2493,7 +2493,7 @@
   .diagramToolbarSlot--center {
     @apply flex min-w-0 items-center justify-center;
     justify-self: center;
-    width: max-content;
+    max-width: 100%;
   }
 
   .diagramToolbarSlot--center .seg {
@@ -7116,6 +7116,67 @@
     @apply rounded-[12px] px-3 py-2.5;
     border: 1px solid #DDE7F3;
     background: #FAFCFF;
+  }
+
+  /* UXF addendum A1: список действий TO BE — одна строка */
+  .tobeRow {
+    @apply mb-1 flex w-full items-center gap-2 rounded-[8px] px-2 text-left;
+    height: 34px;
+    border: 1px solid transparent;
+    background: transparent;
+    cursor: pointer;
+    color: inherit;
+  }
+
+  .tobeRow:hover {
+    border-color: #DDE7F3;
+    background: #F1F6FD;
+  }
+
+  .tobeRow__icon {
+    @apply shrink-0 text-center;
+    width: 18px;
+    color: #8896B0;
+  }
+
+  .tobeRow__name {
+    @apply min-w-0 flex-1 truncate;
+    font-size: 13px;
+  }
+
+  .tobeRow__status {
+    @apply shrink-0;
+    font-size: 11px;
+    color: #66769A;
+    white-space: nowrap;
+  }
+
+  .tobeRow--primary {
+    border-color: hsl(var(--accent, 220 90% 56%) / 0.45);
+    background: hsl(var(--accent, 220 90% 56%) / 0.08);
+  }
+
+  .tobeRow--primary .tobeRow__status {
+    color: hsl(var(--accent, 220 90% 56%));
+    font-weight: 600;
+  }
+
+  .tobeSection__other summary {
+    cursor: pointer;
+  }
+
+  /* UXF addendum A2: сводка процесса */
+  .sidebarInfoValue--muted {
+    color: #8896B0;
+    font-style: italic;
+  }
+
+  .sidebarTechDetails {
+    @apply mt-2;
+  }
+
+  .sidebarTechDetails summary {
+    cursor: pointer;
   }
 
   .sidebarInfoList {
