@@ -38,6 +38,8 @@ from .normalizer import load_seed_glossary, normalize_nodes
 from .resources import build_resources_report
 from .storage import (
     Storage,
+    SessionTitleConflictError,
+    _is_integrity_error,
     get_storage,
     get_project_storage,
     list_user_org_memberships,
@@ -219,6 +221,7 @@ from .overlay_cache import get_overlay, invalidate_overlay
 from . import overlay_cache
 from .services import auth_service as _auth_service
 from .utils.auth_helpers import set_refresh_cookie, clear_refresh_cookie
+from .utils.session_helpers import _save_session_with_cas
 # DEPRECATED: auth routes moved to routers/auth.py — kept for backward compatibility during migration.
 # from .routers.auth import router as _auth_router
 
@@ -905,6 +908,30 @@ def _user_is_member_of_org(user_id: str, org_id: str, *, is_admin: bool = False)
 
 _DIAGRAM_TRUTH_PATCH_KEYS = {"bpmn_meta", "interview", "nodes", "edges", "questions"}
 _DIAGRAM_TRUTH_PUT_CHANGED_KEYS = ["interview", "nodes", "edges", "questions", "bpmn_meta"]
+
+
+def _reject_draft_graph_write_on_xml_session(sess: Session, explicit_data: Dict[str, Any]) -> None:
+    """Audit P6: the nodes/edges draft model is dead for BPMN-XML-truth sessions
+    (truth lives in bpmn_xml; nodes_json/edges_json stay empty). Previously such
+    writes returned 200 but were silently dropped. Reject them explicitly so
+    API consumers do not mistake a no-op for persistence.
+    Sessions without bpmn_xml keep the legacy draft-model behavior.
+    """
+    xml = str(getattr(sess, "bpmn_xml", "") or "").strip()
+    if not xml:
+        return
+    requested = [key for key in ("nodes", "edges") if explicit_data.get(key)]
+    if not requested:
+        return
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "DRAFT_GRAPH_READ_ONLY_XML_TRUTH",
+            "session_id": str(getattr(sess, "id", "") or ""),
+            "keys": requested,
+            "message": "nodes/edges are not persisted for BPMN-XML sessions; use PUT /api/sessions/{id}/bpmn",
+        },
+    )
 
 
 def _to_non_negative_int(value: Any) -> Optional[int]:
@@ -4095,23 +4122,32 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
     else:
         sr = None
     prep_questions = _norm_prep_questions(getattr(inp, "ai_prep_questions", None))
+    # W4: тип сессии (as_is|to_be) + связь с AS IS (extra="allow" в CreateSessionIn)
+    process_layer = str(getattr(inp, "process_layer", "") or "as_is").strip() or "as_is"
+    derived_from = str(getattr(inp, "derived_from_session_id", "") or "").strip()
+    if process_layer not in ("as_is", "to_be"):
+        process_layer = "as_is"
     # prefer storage-native create signature if it supports project_id/mode
     try:
-        sid = st.create(title=title, roles=roles, start_role=sr, project_id=project_id, mode=mode, user_id=user_id, org_id=oid)
+        # process_layer/derived_from задаются атомарно при INSERT (audit P3):
+        # TO BE-дедуп по derived_from_session_id не оставляет сирот при гонке.
+        sid = st.create(
+            title=title,
+            roles=roles,
+            start_role=sr,
+            project_id=project_id,
+            mode=mode,
+            process_layer=process_layer,
+            derived_from_session_id=derived_from,
+            user_id=user_id,
+            org_id=oid,
+        )
         sess = st.load(sid, org_id=oid, is_admin=True)
         if sess is None:
             raise HTTPException(status_code=500, detail="session not persisted")
-        # W4: тип сессии (as_is|to_be) + связь с AS IS (extra="allow" в CreateSessionIn)
-        process_layer = str(getattr(inp, "process_layer", "") or "as_is").strip() or "as_is"
-        derived_from = str(getattr(inp, "derived_from_session_id", "") or "").strip()
-        if process_layer not in ("as_is", "to_be"):
-            process_layer = "as_is"
-        sess.process_layer = process_layer
-        sess.derived_from_session_id = derived_from
         if prep_questions:
             sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
-        # W4: сохранять всегда — process_layer/derived_from обязаны персиститься
-        st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+            st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
         _audit_log_safe(
             request,
             org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
@@ -4124,6 +4160,10 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
         )
         _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
         return _session_api_dump(sess)
+    except SessionTitleConflictError:
+        # Race-safe dedup (audit P3): concurrent create with the same natural
+        # key hits the unique index -> same 409 contract as the title pre-check.
+        raise HTTPException(status_code=409, detail="session title already exists")
     except TypeError:
         # fallback: create base session then attach fields
         sid = st.create(title=title, roles=roles, start_role=sr, user_id=user_id, org_id=oid)
@@ -4346,6 +4386,8 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
         from .save_services.status_service import change_session_status
         return change_session_status(session_id, inp, request)
 
+    _reject_draft_graph_write_on_xml_session(sess, data)
+
     diagram_changed_keys = sorted({key for key in data.keys() if key in _DIAGRAM_TRUTH_PATCH_KEYS})
     diagram_write_requested = len(diagram_changed_keys) > 0
     client_base_diagram_state_version = _resolve_base_diagram_state_version(request=request, payload=data)
@@ -4373,7 +4415,10 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
             }
             if title in sibling_titles:
                 raise HTTPException(status_code=409, detail="session title already exists")
-            sess2 = st.rename(session_id, title, user_id=user_id, is_admin=True, org_id=oid)
+            try:
+                sess2 = st.rename(session_id, title, user_id=user_id, is_admin=True, org_id=oid)
+            except SessionTitleConflictError:
+                raise HTTPException(status_code=409, detail="session title already exists")
             if not sess2:
                 return {"error": "not found"}
             sess = sess2
@@ -4466,7 +4511,16 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
             actor_user_id=user_id,
             actor_label=_resolve_actor_label_from_user(user, user_id),
         )
-    st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+    # SQL-CAS for diagram-truth writes (audit P2): loses the race -> 409,
+    # never a silent mixed-path overwrite.
+    _save_session_with_cas(
+        st,
+        sess,
+        client_base_version=client_base_diagram_state_version if diagram_write_requested else None,
+        user_id=user_id,
+        org_id=oid,
+        is_admin=True,
+    )
     if auto_pass_state_write_requested:
         _capture_persisted_auto_pass_failed_state(
             sess,
@@ -4594,6 +4648,8 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
     _require_org_active_for_writes(request, oid)
 
     data = inp.model_dump()
+    explicit_data = inp.model_dump(exclude_unset=True)
+    _reject_draft_graph_write_on_xml_session(sess, explicit_data)
     client_base_diagram_state_version = _resolve_base_diagram_state_version(request=request, payload=data)
     _require_diagram_cas_or_409(
         sess=sess,
@@ -4605,7 +4661,10 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
     if data.get("title") is not None:
         title = str(data["title"]).strip()
         if title:
-            sess2 = st.rename(session_id, title, org_id=oid)
+            try:
+                sess2 = st.rename(session_id, title, org_id=oid)
+            except SessionTitleConflictError:
+                raise HTTPException(status_code=409, detail="session title already exists")
             if not sess2:
                 return {"error": "not found"}
             sess = sess2
@@ -4655,7 +4714,16 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
         actor_user_id=user_id,
         actor_label=_resolve_actor_label_from_user(user, user_id),
     )
-    st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+    # SQL-CAS (audit P2): PUT /sessions races with PUT /bpmn on the same row;
+    # a lost race must surface 409 instead of silently dropping one of the writes.
+    _save_session_with_cas(
+        st,
+        sess,
+        client_base_version=client_base_diagram_state_version,
+        user_id=user_id,
+        org_id=oid,
+        is_admin=True,
+    )
     if auto_pass_state_write_requested:
         _capture_persisted_auto_pass_failed_state(
             sess,
@@ -7433,9 +7501,6 @@ def session_bpmn_export(
         if result.status == 503:
             return JSONResponse(content=result.body, status_code=503, headers={"Retry-After": "2"})
 
-    user = _request_auth_user(request) if request is not None else {}
-    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
-
     xml_stored = str(getattr(s, "bpmn_xml", "") or "")
     has_graph = len(getattr(s, "nodes", []) or []) > 0 or len(getattr(s, "edges", []) or []) > 0
     current_graph_fp = _session_graph_fingerprint(s)
@@ -7443,30 +7508,11 @@ def session_bpmn_export(
     raw_mode = bool(int(raw or 0))
     overlay_mode = bool(int(include_overlay or 0))
 
-    def _persist_regenerated(xml_text: str) -> None:
-        previous_xml = str(getattr(s, "bpmn_xml", "") or "")
-        regenerated_xml = str(xml_text or "")
-        current_diagram_state_version = int(getattr(s, "diagram_state_version", 0) or 0)
-        s.bpmn_xml = str(xml_text or "")
-        s.bpmn_xml_version = int(getattr(s, "version", 0) or 0)
-        s.bpmn_graph_fingerprint = current_graph_fp
-        _mark_diagram_truth_write(
-            s,
-            changed_keys=["bpmn_xml"],
-            actor_user_id=user_id,
-            actor_label=_resolve_actor_label_from_user(user, user_id) or "system:export_regenerate",
-        )
-        _create_bpmn_revision_snapshot_if_needed(
-            storage=st,
-            session=s,
-            previous_xml=previous_xml,
-            next_xml=regenerated_xml,
-            source_action="export_regenerate",
-            created_by=user_id,
-            org_id=oid,
-            diagram_state_version=current_diagram_state_version + 1,
-        )
-        st.save(s, user_id=user_id, org_id=oid, is_admin=True)
+    # Audit P5: GET /bpmn is READ-ONLY. When the stored fingerprint diverges,
+    # the XML is regenerated in memory and returned, but NEVER persisted here
+    # (the old `_persist_regenerated` wrote to the DB from a read request
+    # without lock/CAS/cache-invalidation and created export_regenerate
+    # revisions). Persistence happens only on explicit save paths.
 
     if raw_mode:
         if xml_stored.strip():
@@ -7476,7 +7522,6 @@ def session_bpmn_export(
         else:
             from .exporters.bpmn import export_session_to_bpmn_xml
             xml = export_session_to_bpmn_xml(s)
-            _persist_regenerated(xml)
     else:
         if xml_stored.strip():
             # Auto-upgrade old start->end skeletons for fresh sessions with empty graph.
@@ -7491,7 +7536,6 @@ def session_bpmn_export(
             if should_regenerate:
                 from .exporters.bpmn import export_session_to_bpmn_xml
                 xml = export_session_to_bpmn_xml(s)
-                _persist_regenerated(xml)
             else:
                 xml = xml_stored
         else:
@@ -7502,7 +7546,6 @@ def session_bpmn_export(
             else:
                 from .exporters.bpmn import export_session_to_bpmn_xml
                 xml = export_session_to_bpmn_xml(s)
-                _persist_regenerated(xml)
 
     # Keep imported BPMN layout intact, but overlay Interview annotations only when requested.
     if (not raw_mode) and overlay_mode:
@@ -7566,7 +7609,7 @@ def _latest_user_facing_bpmn_version(
     return None
 
 
-def _create_bpmn_revision_snapshot_if_needed(
+def _plan_bpmn_revision_snapshot_if_needed(
     *,
     storage: Storage,
     session: Session,
@@ -7578,6 +7621,11 @@ def _create_bpmn_revision_snapshot_if_needed(
     import_note: str = "",
     diagram_state_version: int,
 ) -> Optional[Dict[str, Any]]:
+    """Decide whether a bpmn_versions snapshot is needed and return a plan dict
+    suitable for ``Storage.save(..., bpmn_snapshot=...)`` (inserted in the same
+    transaction as the session row — audit P4). Returns None when no snapshot
+    is needed.
+    """
     prev = str(previous_xml or "")
     nxt = str(next_xml or "")
     if not nxt.strip():
@@ -7602,17 +7650,55 @@ def _create_bpmn_revision_snapshot_if_needed(
         )
     if not should_snapshot:
         return None
-    return storage.create_bpmn_version_snapshot(
-        session_id,
-        bpmn_xml=nxt,
-        source_action=action,
-        diagram_state_version=max(0, int(diagram_state_version or 0)),
-        session_payload_hash=session_hash,
-        session_version=int(getattr(session, "version", 0) or 0),
-        session_updated_at=int(getattr(session, "updated_at", 0) or 0),
+    return {
+        "bpmn_xml": nxt,
+        "source_action": action,
+        "diagram_state_version": max(0, int(diagram_state_version or 0)),
+        "session_payload_hash": session_hash,
+        "session_version": int(getattr(session, "version", 0) or 0),
+        "session_updated_at": int(getattr(session, "updated_at", 0) or 0),
+        "created_by": str(created_by or ""),
+        "org_id": str(org_id or ""),
+        "import_note": str(import_note or ""),
+    }
+
+
+def _create_bpmn_revision_snapshot_if_needed(
+    *,
+    storage: Storage,
+    session: Session,
+    previous_xml: Any,
+    next_xml: Any,
+    source_action: str,
+    created_by: str = "",
+    org_id: Optional[str] = None,
+    import_note: str = "",
+    diagram_state_version: int,
+) -> Optional[Dict[str, Any]]:
+    plan = _plan_bpmn_revision_snapshot_if_needed(
+        storage=storage,
+        session=session,
+        previous_xml=previous_xml,
+        next_xml=next_xml,
+        source_action=source_action,
         created_by=created_by,
         org_id=org_id,
         import_note=import_note,
+        diagram_state_version=diagram_state_version,
+    )
+    if plan is None:
+        return None
+    return storage.create_bpmn_version_snapshot(
+        str(getattr(session, "id", "") or "").strip(),
+        bpmn_xml=plan["bpmn_xml"],
+        source_action=plan["source_action"],
+        diagram_state_version=plan["diagram_state_version"],
+        session_payload_hash=plan["session_payload_hash"],
+        session_version=plan["session_version"],
+        session_updated_at=plan["session_updated_at"],
+        created_by=plan["created_by"],
+        org_id=org_id,
+        import_note=plan["import_note"],
     )
 
 
@@ -7681,7 +7767,7 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
             actor_user_id=user_id,
             actor_label=_resolve_actor_label_from_user(user, user_id),
         )
-        bpmn_version_snapshot = _create_bpmn_revision_snapshot_if_needed(
+        bpmn_version_snapshot = _plan_bpmn_revision_snapshot_if_needed(
             storage=st,
             session=s,
             previous_xml=previous_xml,
@@ -7744,7 +7830,18 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
                     exc_info=True,
                 )
 
-        st.save(s, user_id=user_id, org_id=oid_locked, is_admin=True)
+        # SQL-CAS + snapshot in one transaction (audit P2/P4): a concurrent
+        # writer between the in-memory CAS check and this write yields 409
+        # instead of a silent last-writer-wins overwrite.
+        _save_session_with_cas(
+            st,
+            s,
+            client_base_version=client_base_diagram_state_version,
+            user_id=user_id,
+            org_id=oid_locked,
+            is_admin=True,
+            bpmn_snapshot=bpmn_version_snapshot,
+        )
         try:
             invalidate_overlay(session_id)
         except Exception:
@@ -8040,7 +8137,7 @@ def session_bpmn_restore(
             actor_user_id=user_id,
             actor_label=_resolve_actor_label_from_user(user, user_id),
         )
-        restored_snapshot = _create_bpmn_revision_snapshot_if_needed(
+        restored_snapshot = _plan_bpmn_revision_snapshot_if_needed(
             storage=st,
             session=s,
             previous_xml=previous_xml,
@@ -8050,7 +8147,16 @@ def session_bpmn_restore(
             org_id=oid_locked,
             diagram_state_version=current_diagram_state_version + 1,
         )
-        st.save(s, user_id=user_id, org_id=oid_locked, is_admin=True)
+        # SQL-CAS + snapshot in one transaction (audit P2/P4).
+        _save_session_with_cas(
+            st,
+            s,
+            client_base_version=client_base_diagram_state_version,
+            user_id=user_id,
+            org_id=oid_locked,
+            is_admin=True,
+            bpmn_snapshot=restored_snapshot,
+        )
         _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
         _audit_log_safe(
             request,
@@ -8102,11 +8208,12 @@ def session_bpmn_clear(session_id: str, request: Request = None) -> Dict[str, An
     s = st.load(session_id)
     if not s:
         return {"error": "not found"}
+    client_base_diagram_state_version = _resolve_base_diagram_state_version(request=request)
     _require_diagram_cas_or_409(
         sess=s,
         session_id=session_id,
         request=request,
-        client_base_version=_resolve_base_diagram_state_version(request=request),
+        client_base_version=client_base_diagram_state_version,
     )
     user = _request_auth_user(request) if request is not None else {}
     actor_user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
@@ -8115,14 +8222,19 @@ def session_bpmn_clear(session_id: str, request: Request = None) -> Dict[str, An
     current_diagram_state_version = int(getattr(s, "diagram_state_version", 0) or 0)
     cleared_snapshot: Optional[Dict[str, Any]] = None
     if previous_xml.strip():
-        cleared_snapshot = st.create_bpmn_version_snapshot(
-            str(getattr(s, "id", "") or session_id),
-            bpmn_xml=previous_xml,
-            source_action="clear_bpmn",
-            diagram_state_version=current_diagram_state_version + 1,
-            created_by=actor_user_id,
-            org_id=str(getattr(s, "org_id", "") or get_default_org_id()),
-        )
+        # Snapshot of the pre-clear XML, inserted in the same transaction as
+        # the clearing save (audit P4).
+        cleared_snapshot = {
+            "bpmn_xml": previous_xml,
+            "source_action": "clear_bpmn",
+            "diagram_state_version": current_diagram_state_version + 1,
+            "session_payload_hash": "",
+            "session_version": int(getattr(s, "version", 0) or 0),
+            "session_updated_at": int(getattr(s, "updated_at", 0) or 0),
+            "created_by": actor_user_id,
+            "org_id": str(getattr(s, "org_id", "") or get_default_org_id()),
+            "import_note": "",
+        }
 
     s.bpmn_xml = ""
     s.bpmn_xml_version = 0
@@ -8134,7 +8246,12 @@ def session_bpmn_clear(session_id: str, request: Request = None) -> Dict[str, An
         actor_user_id=actor_user_id,
         actor_label=actor_label,
     )
-    st.save(s)
+    _save_session_with_cas(
+        st,
+        s,
+        client_base_version=client_base_diagram_state_version,
+        bpmn_snapshot=cleared_snapshot,
+    )
     _invalidate_session_caches(s, session_id=session_id, org_id=getattr(s, "org_id", "") or get_default_org_id())
     out = {
         "ok": True,
@@ -10538,23 +10655,32 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
     else:
         sr = None
     prep_questions = _norm_prep_questions(getattr(inp, "ai_prep_questions", None))
+    # W4: тип сессии (as_is|to_be) + связь с AS IS (extra="allow" в CreateSessionIn)
+    process_layer = str(getattr(inp, "process_layer", "") or "as_is").strip() or "as_is"
+    derived_from = str(getattr(inp, "derived_from_session_id", "") or "").strip()
+    if process_layer not in ("as_is", "to_be"):
+        process_layer = "as_is"
     # prefer storage-native create signature if it supports project_id/mode
     try:
-        sid = st.create(title=title, roles=roles, start_role=sr, project_id=project_id, mode=mode, user_id=user_id, org_id=oid)
+        # process_layer/derived_from задаются атомарно при INSERT (audit P3):
+        # TO BE-дедуп по derived_from_session_id не оставляет сирот при гонке.
+        sid = st.create(
+            title=title,
+            roles=roles,
+            start_role=sr,
+            project_id=project_id,
+            mode=mode,
+            process_layer=process_layer,
+            derived_from_session_id=derived_from,
+            user_id=user_id,
+            org_id=oid,
+        )
         sess = st.load(sid, org_id=oid, is_admin=True)
         if sess is None:
             raise HTTPException(status_code=500, detail="session not persisted")
-        # W4: тип сессии (as_is|to_be) + связь с AS IS (extra="allow" в CreateSessionIn)
-        process_layer = str(getattr(inp, "process_layer", "") or "as_is").strip() or "as_is"
-        derived_from = str(getattr(inp, "derived_from_session_id", "") or "").strip()
-        if process_layer not in ("as_is", "to_be"):
-            process_layer = "as_is"
-        sess.process_layer = process_layer
-        sess.derived_from_session_id = derived_from
         if prep_questions:
             sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
-        # W4: сохранять всегда — process_layer/derived_from обязаны персиститься
-        st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
+            st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
         _audit_log_safe(
             request,
             org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
@@ -10567,6 +10693,10 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
         )
         _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
         return _session_api_dump(sess)
+    except SessionTitleConflictError:
+        # Race-safe dedup (audit P3): concurrent create with the same natural
+        # key hits the unique index -> same 409 contract as the title pre-check.
+        raise HTTPException(status_code=409, detail="session title already exists")
     except TypeError:
         # fallback: create base session then attach fields
         sid = st.create(title=title, roles=roles, start_role=sr, user_id=user_id, org_id=oid)

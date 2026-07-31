@@ -611,6 +611,7 @@ from ..utils.session_helpers import (
     _resolve_base_diagram_state_version,
     _resolve_actor_context,
     _mark_diagram_truth_write,
+    _save_session_with_cas,
 )
 
 
@@ -625,14 +626,15 @@ def patch_node(session_id: str, node_id: str, inp, request=None) -> Dict[str, An
     if not node:
         return {"error": "node not found"}
 
+    client_base_version = _resolve_base_diagram_state_version(
+        request=request,
+        payload=inp.model_dump(exclude_unset=True),
+    )
     _require_diagram_cas_or_409(
         sess=s,
         session_id=session_id,
         request=request,
-        client_base_version=_resolve_base_diagram_state_version(
-            request=request,
-            payload=inp.model_dump(exclude_unset=True),
-        ),
+        client_base_version=client_base_version,
     )
     _, actor_user_id, actor_label = _resolve_actor_context(request)
 
@@ -671,7 +673,7 @@ def patch_node(session_id: str, node_id: str, inp, request=None) -> Dict[str, An
         actor_user_id=actor_user_id,
         actor_label=actor_label,
     )
-    st.save(s)
+    _save_session_with_cas(st, s, client_base_version=client_base_version)
     session_cache.invalidate_session(session_id)
     return s.model_dump()
 
@@ -683,14 +685,15 @@ def add_node(session_id: str, inp, request=None) -> Dict[str, Any]:
     if not s:
         return {"error": "not found"}
 
+    client_base_version = _resolve_base_diagram_state_version(
+        request=request,
+        payload=inp.model_dump(exclude_unset=True),
+    )
     _require_diagram_cas_or_409(
         sess=s,
         session_id=session_id,
         request=request,
-        client_base_version=_resolve_base_diagram_state_version(
-            request=request,
-            payload=inp.model_dump(exclude_unset=True),
-        ),
+        client_base_version=client_base_version,
     )
     _, actor_user_id, actor_label = _resolve_actor_context(request)
 
@@ -723,7 +726,7 @@ def add_node(session_id: str, inp, request=None) -> Dict[str, Any]:
         actor_user_id=actor_user_id,
         actor_label=actor_label,
     )
-    st.save(s)
+    _save_session_with_cas(st, s, client_base_version=client_base_version)
     session_cache.invalidate_session(session_id)
     return s.model_dump()
 
@@ -735,11 +738,12 @@ def delete_node(session_id: str, node_id: str, request=None) -> Dict[str, Any]:
     if not s:
         return {"error": "not found"}
 
+    client_base_version = _resolve_base_diagram_state_version(request=request)
     _require_diagram_cas_or_409(
         sess=s,
         session_id=session_id,
         request=request,
-        client_base_version=_resolve_base_diagram_state_version(request=request),
+        client_base_version=client_base_version,
     )
     _, actor_user_id, actor_label = _resolve_actor_context(request)
 
@@ -758,7 +762,7 @@ def delete_node(session_id: str, node_id: str, request=None) -> Dict[str, Any]:
         actor_user_id=actor_user_id,
         actor_label=actor_label,
     )
-    st.save(s)
+    _save_session_with_cas(st, s, client_base_version=client_base_version)
     session_cache.invalidate_session(session_id)
     return s.model_dump()
 
@@ -770,14 +774,15 @@ def add_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
     if not s:
         return {"error": "not found"}
 
+    client_base_version = _resolve_base_diagram_state_version(
+        request=request,
+        payload=inp.model_dump(exclude_unset=True),
+    )
     _require_diagram_cas_or_409(
         sess=s,
         session_id=session_id,
         request=request,
-        client_base_version=_resolve_base_diagram_state_version(
-            request=request,
-            payload=inp.model_dump(exclude_unset=True),
-        ),
+        client_base_version=client_base_version,
     )
     _, actor_user_id, actor_label = _resolve_actor_context(request)
 
@@ -803,7 +808,7 @@ def add_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
         actor_user_id=actor_user_id,
         actor_label=actor_label,
     )
-    st.save(s)
+    _save_session_with_cas(st, s, client_base_version=client_base_version)
     session_cache.invalidate_session(session_id)
     return s.model_dump()
 
@@ -815,14 +820,15 @@ def delete_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
     if not s:
         return {"error": "not found"}
 
+    client_base_version = _resolve_base_diagram_state_version(
+        request=request,
+        payload=inp.model_dump(exclude_unset=True),
+    )
     _require_diagram_cas_or_409(
         sess=s,
         session_id=session_id,
         request=request,
-        client_base_version=_resolve_base_diagram_state_version(
-            request=request,
-            payload=inp.model_dump(exclude_unset=True),
-        ),
+        client_base_version=client_base_version,
     )
     _, actor_user_id, actor_label = _resolve_actor_context(request)
 
@@ -842,7 +848,7 @@ def delete_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
         actor_user_id=actor_user_id,
         actor_label=actor_label,
     )
-    st.save(s)
+    _save_session_with_cas(st, s, client_base_version=client_base_version)
     session_cache.invalidate_session(session_id)
     return s.model_dump()
 
