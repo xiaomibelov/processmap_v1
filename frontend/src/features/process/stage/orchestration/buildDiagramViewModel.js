@@ -402,6 +402,7 @@ export function buildDiagramHeaderView({
   diagramStateVersion = 0,
   saveUploadStatus,
   tobeEntry = null, // UXF: точка входа «Создать/Открыть TO BE»
+  modeSwitch = null, // UXF addendum-3: сегмент «Схема | TO BE»
   asArray,
 } = {}) {
   const localDiagramStateVersion = Number.isFinite(Number(diagramStateVersion))
@@ -452,6 +453,7 @@ export function buildDiagramHeaderView({
     diagramStateConflictServerVersion: serverVersion,
     diagramStateConflictActorLabel: String(remoteSaveHighlightView?.actorLabel || "").trim(),
     tobeEntry: tobeEntry && typeof tobeEntry === "object" ? tobeEntry : null,
+    modeSwitch: modeSwitch && typeof modeSwitch === "object" ? modeSwitch : null,
     asArray,
   };
 }
