@@ -146,11 +146,15 @@ try {
   if (!hl1.asisHalo) fail("(3) нет подсветки AS IS-источника");
   if (hl1.traceLinks < 1) fail("(3) нет пунктирной связи при выделении");
   await shot(page, "ol1_3a_select_tobe_highlights_asis.png");
-  // выделение AS IS (клик по чистой AS IS-области)
-  const asisOnly = await page.evaluate(() => {
-    const gs = [...document.querySelectorAll('[data-layer="asis"] g[data-element-id][data-bpmn-type="task"]')];
-    return gs[1]?.getAttribute("data-element-id") || gs[0]?.getAttribute("data-element-id") || "";
-  });
+  // выделение AS IS (клик по чистой AS IS-области) — берём узел, у которого
+  // ЕСТЬ TO BE-потомок (id совпадает для 1:1 трансформации), не равный firstDerived
+  const asisOnly = await page.evaluate((exclude) => {
+    const tobeIds = new Set([...document.querySelectorAll('[data-layer="tobe"] g[data-element-id][data-bpmn-type]')].map((g) => g.getAttribute("data-element-id")));
+    const gs = [...document.querySelectorAll('[data-layer="asis"] g[data-element-id][data-bpmn-type]')];
+    const hit = gs.find((g) => tobeIds.has(g.getAttribute("data-element-id")) && g.getAttribute("data-element-id") !== exclude);
+    return hit?.getAttribute("data-element-id") || "";
+  }, firstDerived);
+  if (!asisOnly) fail("(3) нет AS IS-узла с TO BE-потомком для проверки");
   await page.locator(`[data-layer="asis"] g[data-element-id="${asisOnly}"]`).click({ force: true });
   await page.waitForTimeout(1000);
   const hl2 = await page.evaluate((id) => ({
@@ -183,10 +187,13 @@ try {
   await page.waitForTimeout(800);
   const hit = await page.evaluate((id) => ({
     tobeSelected: document.querySelector(`[data-layer="tobe"] g[data-element-id="${id}"]`)?.getAttribute("data-selected") === "true",
-    asisSelected: document.querySelector(`[data-layer="asis"] g[data-element-id="${id}"]`)?.getAttribute("data-selected") === "true",
+    blockFormTobe: document.querySelector('[data-testid="block-form"]')?.getAttribute("data-node-id") === id,
+    asisCardShown: !!document.querySelector('[data-testid="asis-card"]'),
   }), dragId);
   log("(4) hit-testing пересечения:", JSON.stringify(hit));
-  if (!hit.tobeSelected || hit.asisSelected) fail(`(4) пересечение выделило не TO BE: ${JSON.stringify(hit)}`);
+  // приоритет TO BE: выделен TO BE-узел и в сайдбаре — ЕГО форма (не AS IS-карточка);
+  // data-selected на AS IS-источнике при этом — легальная подсветка трассировки (OL1.3)
+  if (!hit.tobeSelected || !hit.blockFormTobe || hit.asisCardShown) fail(`(4) пересечение выделило не TO BE: ${JSON.stringify(hit)}`);
   // негативный: drag AS IS заблокирован
   const aBefore = await asisBox(dragId);
   const aScr = await page.evaluate((id) => {
@@ -223,28 +230,29 @@ try {
   await page.waitForTimeout(800);
 
   // ── (6) трансформация: бейджи + reject исчезает со слоя TO BE
+  await page.click('[data-testid="panel-tab-decisions"]'); // вкладка могла уйти на «Блок» в (3)-(4)
+  await page.waitForSelector('[data-testid="panel-decisions"]', { state: "visible", timeout: 15000 });
+  await page.waitForTimeout(800);
   const badges = await page.evaluate(() => document.querySelectorAll('[data-layer="tobe"] [data-badge-for]').length);
   const nodesBefore = await page.evaluate(() => document.querySelectorAll('[data-layer="tobe"] g[data-element-id][data-bpmn-type]').length);
   log("(6) бейджей на TO BE:", badges, "узлов:", nodesBefore);
   if (badges === 0) fail("(6) нет бейджей решений на TO BE-слое");
   const rejected = await page.evaluate(() => {
-    const btns = [...document.querySelectorAll('[data-testid="panel-decisions"] button')];
-    const rej = btns.find((b) => /отклон|reject/i.test(b.textContent || ""));
+    const rej = document.querySelector('[data-testid^="decision-reject-"]:not([disabled])');
     if (!rej) return "";
-    const li = rej.closest("li");
+    const id = rej.getAttribute("data-testid").replace("decision-reject-", "");
     rej.click();
-    return li?.querySelector("code, .ws-decisions__id")?.textContent || "rejected-one";
+    return id;
   });
   await page.waitForTimeout(1200);
   const nodesAfter = await page.evaluate(() => document.querySelectorAll('[data-layer="tobe"] g[data-element-id][data-bpmn-type]').length);
   log("(6) reject:", rejected || "?", "узлов", nodesBefore, "→", nodesAfter);
+  if (!rejected) fail("(6) не найдена активная кнопка reject");
   if (nodesAfter !== nodesBefore - 1) fail("(6) отклонённый элемент не исчез со слоя TO BE");
   // вернуть решение (accept), чтобы полный путь не пострадал
-  await page.evaluate(() => {
-    const btns = [...document.querySelectorAll('[data-testid="panel-decisions"] button')];
-    const acc = btns.find((b) => /принят|accept/i.test(b.textContent || ""));
-    acc?.click();
-  });
+  await page.evaluate((id) => {
+    document.querySelector(`[data-testid="decision-accept-${id}"]`)?.click();
+  }, rejected);
   await page.waitForTimeout(1000);
   await shot(page, "ol1_6_decisions.png");
 
@@ -262,7 +270,20 @@ try {
     const g = await page.$(`[data-layer="tobe"] g[data-element-id="${nid}"]`);
     if (!g) continue;
     await g.click();
-    await page.waitForSelector('[data-testid="block-form"]', { timeout: 10000 });
+    try {
+      await page.waitForSelector('[data-testid="block-form"]', { timeout: 10000 });
+    } catch (e) {
+      const dbg = await page.evaluate((id) => ({
+        nodeId: id,
+        tobeSel: document.querySelector(`[data-layer="tobe"] g[data-element-id="${id}"]`)?.getAttribute("data-selected"),
+        blockForms: document.querySelectorAll('[data-testid="block-form"]').length,
+        activeTab: document.querySelector('.ws-panel__tab--active')?.getAttribute("data-testid"),
+        panelTabs: [...document.querySelectorAll('.ws-panel__tab--active')].map((x) => x.getAttribute("data-testid")),
+        asisCard: !!document.querySelector('[data-testid="asis-card"]'),
+      }), nid);
+      log("DEBUG block-form:", JSON.stringify(dbg));
+      throw e;
+    }
     const sel = await page.$('[data-testid="param-target_ref"]');
     if (sel) {
       const vals = await sel.$$eval("option", (os) => os.map((o) => o.value).filter(Boolean));
