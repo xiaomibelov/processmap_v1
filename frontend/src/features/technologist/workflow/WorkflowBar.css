@@ -18,10 +18,10 @@
   padding: 4px 10px;
   border-radius: 6px;
   text-decoration: none;
-  color: #9fb0c8;
+  color: var(--ws-step-text, #9fb0c8);
   border: 1px solid transparent;
 }
-.wfbar__step:hover { border-color: #3a4a62; color: #d5e0ee; }
+.wfbar__step:hover { border-color: #3a4a62; color: var(--ws-step-hover, #d5e0ee); }
 .wfbar__num {
   display: inline-flex;
   align-items: center;
@@ -29,20 +29,20 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #2a3648;
-  color: #b8c6da;
+  background: var(--ws-step-num-bg, #2a3648);
+  color: var(--ws-step-num-text, #b8c6da);
   font-size: 12px;
 }
-.wfbar__step--done { color: #7fce9b; }
-.wfbar__step--done .wfbar__num { background: #1e4630; color: #7fce9b; }
+.wfbar__step--done { color: var(--ws-step-done, #7fce9b); }
+.wfbar__step--done .wfbar__num { background: var(--ws-step-done-bg, #1e4630); color: var(--ws-step-done, #7fce9b); }
 .wfbar__step--current {
-  color: #ffffff;
-  border-color: #3f6fd1;
-  background: #1d2c47;
+  color: var(--ws-step-current, #ffffff);
+  border-color: var(--ws-step-current-border, #3f6fd1);
+  background: var(--ws-step-current-bg, #1d2c47);
 }
-.wfbar__step--current .wfbar__num { background: #3f6fd1; color: #fff; }
+.wfbar__step--current .wfbar__num { background: var(--ws-step-current-num-bg, #3f6fd1); color: var(--ws-step-current, #fff); }
 /* UXF/B3: недоступные шаги приглушены, «не требуется» — ещё слабее */
 .wfbar__step--pending { opacity: 0.55; }
 .wfbar__step--na { opacity: 0.4; }
 .wfbar__step--na .wfbar__num { background: transparent; }
-.wfbar__step--next { border-color: #6b5bd2; }
+.wfbar__step--next { border-color: var(--ws-step-next-border, #6b5bd2); }

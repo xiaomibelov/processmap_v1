@@ -49,6 +49,7 @@ export default function ProcessStageHeader({ view = {} }) {
     diagramStateConflictServerVersion,
     diagramStateConflictActorLabel,
     featureFlags,
+    tobeEntry,
   } = view;
   const publishedRevisionBadge = resolvePublishedRevisionBadgeView(sessionRevisionHistorySnapshot);
   const latestPublishedRevisionNumber = Number(sessionRevisionHistorySnapshot?.latestPublishedRevisionNumber || 0);
@@ -227,6 +228,18 @@ export default function ProcessStageHeader({ view = {} }) {
           ) : null}
         </div>
         <div className="diagramToolbarRightActions">
+          {hasSession && tobeEntry ? (
+            <button
+              type="button"
+              className="primaryBtn h-8 whitespace-nowrap px-2.5 text-xs"
+              onClick={() => tobeEntry.onEnter?.()}
+              disabled={tobeEntry.disabled === true}
+              title={toText(tobeEntry.title) || "Открыть рабочее место TO BE"}
+              data-testid="diagram-toolbar-tobe-entry"
+            >
+              {toText(tobeEntry.label) || "Открыть TO BE"}
+            </button>
+          ) : null}
           {hasSession ? (
             <>
               <button

@@ -108,20 +108,20 @@
 
 /* выделенная AS IS (просмотр) — спокойная рамка */
 .graph-canvas__layer--asis .graph-canvas__node[data-selected="true"] .graph-canvas__shape {
-  stroke: #4a6fa5;
+  stroke: var(--graph-canvas-asis-selected, #4a6fa5);
   stroke-width: 3;
 }
 
-/* ореол подсветки трассировки (OL1.3) — в обе стороны */
+/* ореол подсветки трассировки (OL1.3) — в обе стороны; цвет — токен (--graph-canvas-trace-*) */
 .graph-canvas__node--trace-highlight .graph-canvas__shape {
-  stroke: #7b5cff;
+  stroke: var(--graph-canvas-trace-color, #7b5cff);
   stroke-width: 3.5;
-  filter: drop-shadow(0 0 5px rgba(123, 92, 255, 0.7));
+  filter: drop-shadow(0 0 5px var(--graph-canvas-trace-glow, rgba(123, 92, 255, 0.7)));
 }
 
 /* пунктирные связи происхождения (OL1.4) */
 .graph-canvas__trace-link {
-  stroke: #7b5cff;
+  stroke: var(--graph-canvas-trace-color, #7b5cff);
   stroke-width: 1.5;
   stroke-dasharray: 5 4;
   fill: none;

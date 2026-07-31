@@ -15,8 +15,8 @@ const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const BASE = process.env.UXF_BASE || "http://127.0.0.1:5199";
 const OUT = path.join(ROOT, "docs", "uxf");
 const TOKEN = process.env.W4_TOKEN;
-const PID = "c0494e0667";
-const EMPTY_SID = process.env.UXF_EMPTY_SID || "e790842747";
+const PID = "c0494e0667"; // проект на РЕАЛЬНОМ stage (stage.processmap.ru)
+const EMPTY_SID = process.env.UXF_EMPTY_SID || "e790842747"; // «UXF probe empty AS IS»
 const SOUP_SID = "13f1f10b20"; // «Разогрев супа» — непустая AS IS
 const PREFIX = process.env.UXF_PREFIX || "after";
 
