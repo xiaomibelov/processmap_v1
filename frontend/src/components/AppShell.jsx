@@ -164,7 +164,7 @@ export default function AppShell({
   onFocusElementApplied = null,
   restoreViewportSnapshot = null,
   onRestoreViewportSnapshotApplied = null,
-  modeSwitch = null, // UXF: сегмент «Схема | TO BE» в шапке
+  modeSwitch = null, // UXF addendum-3: сегмент «Схема | TO BE» (в среднем хедере и в панели TO BE)
   tobeEntry = null,  // UXF: точка входа «Создать/Открыть TO BE» в тулбаре диаграммы
 }) {
   const hasActiveSession = String(shellSessionId || sessionId || "").trim().length > 0;
@@ -283,7 +283,6 @@ export default function AppShell({
           noteNotificationsAvailable={noteNotificationsAvailable}
           onOpenMentionNotification={onOpenMentionNotification}
           onRefreshMentionNotifications={onRefreshMentionNotifications}
-          modeSwitch={modeSwitch}
         />
 
         <AppUpdateBanner
@@ -401,6 +400,7 @@ export default function AppShell({
               restoreViewportSnapshot={restoreViewportSnapshot}
               onRestoreViewportSnapshotApplied={onRestoreViewportSnapshotApplied}
               tobeEntry={tobeEntry}
+              modeSwitch={modeSwitch}
             />
           )}
         </div>

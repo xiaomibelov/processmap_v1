@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../features/auth/AuthProvider";
-import { getManualSessionStatusMeta, MANUAL_SESSION_STATUSES } from "../features/workspace/workspacePermissions";
-import { getAllowedNextStatuses, normalizeManualSessionStatus } from "../features/workspace/sessionStatus.js";
+import { getManualSessionStatusMeta } from "../features/workspace/workspacePermissions";
+import { normalizeManualSessionStatus } from "../features/workspace/sessionStatus.js";
 import {
   buildAccountDiscussionNotificationGroups,
   filterDiscussionNotificationGroups,
@@ -156,7 +156,6 @@ export default function TopBar({
   noteNotificationsAvailable = false,
   onOpenMentionNotification,
   onRefreshMentionNotifications,
-  modeSwitch = null,
 }) {
   const { logout, user } = useAuth();
   const orgList = useMemo(() => asArray(orgs), [orgs]);
@@ -174,22 +173,13 @@ export default function TopBar({
   const [notificationFilter, setNotificationFilter] = useState("unviewed");
   const [notificationActionPending, setNotificationActionPending] = useState("");
   const [notificationActionError, setNotificationActionError] = useState({ rowId: "", text: "" });
-  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
-  const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
-  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+  // UXF addendum-3: статус в верхнем хедере — информационный, без действий
+  // (смена статуса — в списке сессий); меню проекта/сессии убраны (дубли
+  // рабочих действий, живут в сайдбаре/списках).
   const normalizedSessionStatus = useMemo(
     () => normalizeManualSessionStatus(sessionStatus, "draft"),
     [sessionStatus],
   );
-  const allowedNextStatuses = useMemo(
-    () => getAllowedNextStatuses(normalizedSessionStatus),
-    [normalizedSessionStatus],
-  );
-  const statusOptions = useMemo(
-    () => MANUAL_SESSION_STATUSES.filter((s) => allowedNextStatuses.has(s.value)),
-    [allowedNextStatuses],
-  );
-  const hasStatusAlternatives = statusOptions.length > 1 || (statusOptions.length === 1 && statusOptions[0].value !== normalizedSessionStatus);
   const notesAggregate = useSessionNoteAggregate(effectiveSessionId);
   const sessionAggregateIds = useMemo(
     () => ((accountMenuOpen || notificationCenterOpen) ? sessList.map((item) => sessionIdFrom(item)).filter(Boolean) : []),
@@ -198,28 +188,6 @@ export default function TopBar({
   const sessionAggregatesBySessionId = useSessionNoteAggregates(sessionAggregateIds);
   const accountMenuRef = useRef(null);
   const accountButtonRef = useRef(null);
-  const projectMenuRef = useRef(null);
-  const projectMenuButtonRef = useRef(null);
-  const sessionMenuRef = useRef(null);
-  const sessionMenuButtonRef = useRef(null);
-  const statusMenuRef = useRef(null);
-  const statusMenuButtonRef = useRef(null);
-  useEffect(() => {
-    if (!statusMenuOpen) return;
-    function onDocClick(event) {
-      const target = event.target;
-      if (!statusMenuRef.current || !statusMenuButtonRef.current) return;
-      if (
-        statusMenuRef.current.contains(target) ||
-        statusMenuButtonRef.current.contains(target)
-      ) {
-        return;
-      }
-      setStatusMenuOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [statusMenuOpen]);
 
   useEffect(() => {
     try {
@@ -265,69 +233,6 @@ export default function TopBar({
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [notificationCenterOpen]);
-
-  useEffect(() => {
-    if (!projectMenuOpen) return undefined;
-    function onPointerDown(event) {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      const menu = projectMenuRef.current;
-      const button = projectMenuButtonRef.current;
-      if (menu?.contains(target) || button?.contains(target)) return;
-      setProjectMenuOpen(false);
-    }
-    function onKeyDown(event) {
-      if (event.key === "Escape") setProjectMenuOpen(false);
-    }
-    window.addEventListener("mousedown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("mousedown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [projectMenuOpen]);
-
-  useEffect(() => {
-    if (!sessionMenuOpen) return undefined;
-    function onPointerDown(event) {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      const menu = sessionMenuRef.current;
-      const button = sessionMenuButtonRef.current;
-      if (menu?.contains(target) || button?.contains(target)) return;
-      setSessionMenuOpen(false);
-    }
-    function onKeyDown(event) {
-      if (event.key === "Escape") setSessionMenuOpen(false);
-    }
-    window.addEventListener("mousedown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("mousedown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [sessionMenuOpen]);
-
-  useEffect(() => {
-    if (!statusMenuOpen) return undefined;
-    function onPointerDown(event) {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      const menu = statusMenuRef.current;
-      const button = statusMenuButtonRef.current;
-      if (menu?.contains(target) || button?.contains(target)) return;
-      setStatusMenuOpen(false);
-    }
-    function onKeyDown(event) {
-      if (event.key === "Escape") setStatusMenuOpen(false);
-    }
-    window.addEventListener("mousedown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("mousedown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [statusMenuOpen]);
 
   function toggleTheme() {
     const next = uiTheme === "dark" ? "light" : "dark";
@@ -549,238 +454,75 @@ export default function TopBar({
   }
 
   return (
-    <div className="topbar sticky left-0 right-0 top-0 z-40 flex h-auto min-h-12 w-full min-w-0 shrink-0 items-center gap-2 border-b border-border bg-panel/95 px-3 py-2 backdrop-blur md:gap-3">
-      <div className="topbarNavLeft flex min-w-0 shrink-0 items-center gap-2">
+    <div className="topbar sticky left-0 right-0 top-0 z-40 flex h-auto min-h-10 w-full min-w-0 shrink-0 items-center gap-2 border-b border-border bg-panel/95 px-3 py-1.5 backdrop-blur md:gap-3">
+      <div className="topbarNavLeft flex min-w-0 flex-1 items-center gap-2">
         <div
-          className="brand mr-1 inline-flex shrink-0 items-center text-xl font-black uppercase tracking-[0.08em] text-fg"
+          className="brand mr-1 inline-flex shrink-0 items-center text-lg font-black uppercase tracking-[0.08em] text-fg"
           data-testid="topbar-brand-text"
         >
           <span className="bg-gradient-to-r from-fg via-fg to-accent bg-clip-text text-transparent [text-shadow:0_1px_0_rgba(0,0,0,.14)]">ProcessMap</span>
         </div>
         <button
           type="button"
-          className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-3 py-0 text-sm"
+          className="secondaryBtn h-8 min-h-0 shrink-0 whitespace-nowrap px-2.5 py-0 text-xs"
           onClick={() => onOpenWorkspace?.()}
           title={hasActiveSession ? "Вернуться к проекту" : "Вернуться к списку проектов"}
           data-testid="topbar-back-projects"
         >
           {hasActiveSession ? "← К проекту" : "← Проекты"}
         </button>
-      </div>
-
-      <div className="topbarNavCenter flex min-w-0 flex-1 items-center justify-end gap-1.5 overflow-visible md:gap-2">
         {hasActiveSession ? (
-          <>
-            <div
-              className="topGroup relative flex min-w-[100px] max-w-[180px] flex-1 items-center gap-1.5 rounded-full border border-border/70 bg-panel2/40 px-2 py-1"
-              title={selectedProjectTitle}
+          <nav
+            className="topbarCrumbs flex min-w-0 items-center gap-0.5 text-xs"
+            aria-label="Контекст: проект и сессия"
+            data-testid="topbar-breadcrumbs"
+          >
+            <button
+              type="button"
+              className="min-w-0 max-w-[180px] truncate rounded-md px-1.5 py-1 font-semibold text-fg transition hover:bg-accentSoft hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              title={`Проект: ${selectedProjectTitle} — к списку сессий`}
+              onClick={() => onOpenWorkspace?.()}
+              data-testid="topbar-crumb-project"
             >
-              <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted">ПРОЕКТ</span>
-              <div className="min-w-0 flex-1 truncate px-1 text-[13px] font-semibold text-fg" data-testid="topbar-project-title">
-                {effectiveProjectId ? shortLabel(selectedProjectTitle, 48) : "Проект не выбран"}
-              </div>
-              <button
-                ref={projectMenuButtonRef}
-                type="button"
-                className="inline-flex h-6 w-6 min-w-6 items-center justify-center rounded-full text-[12px] text-muted transition hover:text-fg"
-                onClick={() => setProjectMenuOpen((prev) => !prev)}
-                title="Действия проекта"
-                data-testid="topbar-project-actions-button"
-                aria-label="Действия проекта"
-              >
-                ▾
-              </button>
-              {projectMenuOpen ? (
-                <div
-                  ref={projectMenuRef}
-                  className="absolute right-1 top-[calc(100%+8px)] z-[130] grid min-w-[220px] gap-1 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
-                  data-testid="topbar-project-actions-menu"
-                >
-                  <button
-                    type="button"
-                    className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
-                    onClick={() => {
-                      setProjectMenuOpen(false);
-                      onOpenWorkspace?.();
-                    }}
-                  >
-                    ← Проекты
-                  </button>
-                  <button
-                    type="button"
-                    className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
-                    onClick={() => {
-                      setProjectMenuOpen(false);
-                      onNewProject?.();
-                    }}
-                    data-testid="topbar-new-project"
-                  >
-                    Новый проект
-                  </button>
-                  {canManageProjectEntities ? (
-                    <button
-                      type="button"
-                      className="secondaryBtn h-9 w-full justify-start border-danger/45 bg-danger/10 px-3 text-left text-sm text-danger hover:border-danger/60 hover:bg-danger/20"
-                      onClick={() => {
-                        setProjectMenuOpen(false);
-                        onDeleteProject?.();
-                      }}
-                      disabled={!effectiveProjectId}
-                    >
-                      Удалить проект
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-
-            <div
-              className="topGroup relative flex min-w-[120px] max-w-[200px] flex-1 items-center gap-1.5 rounded-full border border-border/70 bg-panel2/40 px-2 py-1"
-              title={selectedSessionTitle}
+              {effectiveProjectId ? shortLabel(selectedProjectTitle, 48) : "Проект не выбран"}
+            </button>
+            <span className="shrink-0 text-muted" aria-hidden="true">/</span>
+            <span
+              className="min-w-0 max-w-[200px] truncate px-1.5 py-1 text-muted"
+              title={`Сессия: ${selectedSessionTitle}`}
+              data-testid="topbar-crumb-session"
             >
-              <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.1em] text-muted">СЕССИЯ</span>
-              <div className="min-w-0 flex-1 truncate px-1 text-[13px] font-semibold text-fg" data-testid="topbar-session-title">
-                {shortLabel(selectedSessionTitle, 36)}
-              </div>
-              <button
-                ref={sessionMenuButtonRef}
-                type="button"
-                className="inline-flex h-6 w-6 min-w-6 items-center justify-center rounded-full text-[12px] text-muted transition hover:text-fg"
-                onClick={() => setSessionMenuOpen((prev) => !prev)}
-                title="Действия сессии"
-                data-testid="topbar-session-actions-button"
-                aria-label="Действия сессии"
-              >
-                ▾
-              </button>
-              {sessionMenuOpen ? (
-                <div
-                  ref={sessionMenuRef}
-                  className="absolute right-1 top-[calc(100%+8px)] z-[130] grid min-w-[220px] gap-1 rounded-xl border border-border bg-panel p-1.5 shadow-panel"
-                  data-testid="topbar-session-actions-menu"
-                >
-                  <button
-                    type="button"
-                    className="secondaryBtn h-9 w-full justify-start px-3 text-left text-sm"
-                    onClick={() => {
-                      setSessionMenuOpen(false);
-                      onOpenWorkspace?.();
-                    }}
-                  >
-                    К списку сессий
-                  </button>
-                  {canManageProjectEntities ? (
-                    <button
-                      type="button"
-                      className="secondaryBtn h-9 w-full justify-start border-danger/45 bg-danger/10 px-3 text-left text-sm text-danger hover:border-danger/60 hover:bg-danger/20"
-                      onClick={() => {
-                        setSessionMenuOpen(false);
-                        onDeleteSession?.();
-                      }}
-                      disabled={!effectiveSessionId}
-                    >
-                      Удалить сессию
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="relative shrink-0">
-              <button
-                ref={statusMenuButtonRef}
-                type="button"
-                className="statusComboPill inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm font-medium transition hover:opacity-90"
-                style={{
-                  backgroundColor: STATUS_CHIP_STYLES[normalizedSessionStatus]?.bg || "#F3F4F6",
-                  color: STATUS_CHIP_STYLES[normalizedSessionStatus]?.text || "#4B5563",
-                  borderColor: STATUS_CHIP_STYLES[normalizedSessionStatus]?.border || "#E5E7EB",
-                }}
-                title={hasStatusAlternatives && !isChangingSessionStatus ? "Статус сессии — нажмите чтобы изменить" : "Статус сессии"}
-                data-testid="topbar-session-status"
-                onClick={() => hasStatusAlternatives && !isChangingSessionStatus && setStatusMenuOpen((prev) => !prev)}
-                disabled={isChangingSessionStatus || !hasStatusAlternatives}
-              >
-                {isChangingSessionStatus ? (
-                  <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
-                    <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                  </svg>
-                ) : (
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: STATUS_CHIP_STYLES[normalizedSessionStatus]?.dot || "#9CA3AF" }}
-                  />
-                )}
-                <span className="whitespace-nowrap">{isChangingSessionStatus ? "Сохранение…" : sessionStatusMeta.label}</span>
-                {hasStatusAlternatives && !isChangingSessionStatus ? (
-                  <svg viewBox="0 0 10 6" className="ml-0.5 h-2.5 w-2.5 opacity-70" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M1 1l4 4 4-4" />
-                  </svg>
-                ) : null}
-              </button>
-              {statusMenuOpen ? (
-                <div
-                  ref={statusMenuRef}
-                  className="absolute left-0 top-[calc(100%+4px)] z-[130] min-w-[160px] max-w-[200px] overflow-hidden rounded-md border border-[#E5E7EB] bg-white py-1 shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
-                  data-testid="topbar-status-change-menu"
-                  style={{ animation: "statusMenuFade 150ms ease-out" }}
-                >
-                  {statusOptions.map((s) => {
-                    const style = STATUS_CHIP_STYLES[s.value] || STATUS_CHIP_STYLES.draft;
-                    return (
-                      <button
-                        key={s.value}
-                        type="button"
-                        className="flex h-7 w-full items-center gap-2 px-2 text-left text-xs font-medium transition hover:bg-[#F9FAFB]"
-                        style={{ color: normalizedSessionStatus === s.value ? style.text : "#374151" }}
-                        onClick={() => {
-                          setStatusMenuOpen(false);
-                          if (normalizedSessionStatus !== s.value) {
-                            onChangeSessionStatus?.(s.value);
-                          }
-                        }}
-                        disabled={isChangingSessionStatus}
-                      >
-                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: style.dot }} />
-                        <span>{s.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </div>
-          </>
+              {shortLabel(selectedSessionTitle, 36)}
+            </span>
+          </nav>
         ) : null}
       </div>
 
-      <div className="topCenter hidden min-w-[140px] justify-center md:flex">
-        {modeSwitch ? (
-          <div className="seg" role="tablist" aria-label="Режим экрана" aria-orientation="horizontal" data-testid="mode-switch">
-            <button
-              type="button"
-              className={`segBtn rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${modeSwitch.mode === "schema" ? "on bg-accent text-white" : "text-muted hover:bg-accentSoft hover:text-fg"}`}
-              role="tab"
-              aria-selected={modeSwitch.mode === "schema"}
-              data-testid="mode-switch-schema"
-              title={modeSwitch.mode === "tobe" ? "Вернуться к схеме (bpmn.io, версии, аналитика)" : "Режим редактора схемы"}
-              onClick={() => { if (modeSwitch.mode === "tobe") modeSwitch.onExitTobe?.(); }}
-            >
-              Схема
-            </button>
-            <button
-              type="button"
-              className={`segBtn rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${modeSwitch.mode === "tobe" ? "on bg-accent text-white" : !modeSwitch.canEnterTobe ? "isDisabled text-muted" : "text-muted hover:bg-accentSoft hover:text-fg"}`}
-              role="tab"
-              aria-selected={modeSwitch.mode === "tobe"}
-              data-testid="mode-switch-tobe"
-              disabled={modeSwitch.mode !== "tobe" && !modeSwitch.canEnterTobe}
-              title={toText(modeSwitch.enterTobeTitle) || "Открыть рабочее место TO BE"}
-              onClick={() => { if (modeSwitch.mode !== "tobe") modeSwitch.onEnterTobe?.(); }}
-            >
-              TO BE
-            </button>
-          </div>
+      <div className="topCenter flex shrink-0 items-center justify-center">
+        {hasActiveSession ? (
+          <span
+            className="statusComboPill inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium"
+            style={{
+              backgroundColor: STATUS_CHIP_STYLES[normalizedSessionStatus]?.bg || "#F3F4F6",
+              color: STATUS_CHIP_STYLES[normalizedSessionStatus]?.text || "#4B5563",
+              borderColor: STATUS_CHIP_STYLES[normalizedSessionStatus]?.border || "#E5E7EB",
+            }}
+            title="Статус сессии"
+            data-testid="topbar-session-status"
+          >
+            {isChangingSessionStatus ? (
+              <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+                <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: STATUS_CHIP_STYLES[normalizedSessionStatus]?.dot || "#9CA3AF" }}
+              />
+            )}
+            <span className="whitespace-nowrap">{isChangingSessionStatus ? "Сохранение…" : sessionStatusMeta.label}</span>
+          </span>
         ) : null}
       </div>
 
@@ -808,13 +550,13 @@ export default function TopBar({
           ) : currentOrgLabel ? (
             <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-panel2/40 px-3 py-1 text-xs text-muted">
               <span className="text-[10px] font-semibold uppercase tracking-[0.12em]">Org</span>
-              <span className="max-w-[190px] truncate text-sm font-medium text-fg" title={currentOrgLabel}>{currentOrgLabel}</span>
+              <span className="max-w-[150px] truncate text-sm font-medium text-fg" title={currentOrgLabel}>{currentOrgLabel}</span>
             </div>
           ) : null}
           {canOpenTechnologist && !isOnTechnologistPath ? (
             <button
               type="button"
-              className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-2.5 py-0 text-sm"
+              className="secondaryBtn h-8 min-h-0 whitespace-nowrap px-2.5 py-0 text-xs"
               onClick={openTechnologist}
               data-testid="topbar-technologist-button"
               title="Открыть воркфлоу технолога"
@@ -825,7 +567,7 @@ export default function TopBar({
           {canOpenOrgSettings ? (
             <button
               type="button"
-              className="secondaryBtn h-9 min-h-0 whitespace-nowrap px-2.5 py-0 text-sm"
+              className="secondaryBtn h-8 min-h-0 whitespace-nowrap px-2.5 py-0 text-xs"
               onClick={openAdminConsole}
               data-testid="topbar-admin-button"
               title="Открыть admin dashboard"
@@ -839,7 +581,7 @@ export default function TopBar({
           <button
             type="button"
             ref={accountButtonRef}
-            className={`iconBtn relative h-9 w-9 min-w-9 rounded-full border ${accountNotificationCount > 0 ? "border-danger/55 bg-danger/15 text-danger" : "border-border bg-panel2/70 text-fg"}`}
+            className={`iconBtn relative h-8 w-8 min-w-8 rounded-full border ${accountNotificationCount > 0 ? "border-danger/55 bg-danger/15 text-danger" : "border-border bg-panel2/70 text-fg"}`}
             onClick={() => {
               const nextOpen = !accountMenuOpen;
               setAccountMenuOpen(nextOpen);
@@ -865,7 +607,7 @@ export default function TopBar({
           {accountMenuOpen ? (
             <div
               ref={accountMenuRef}
-              className="fixed right-3 top-14 z-[140] flex max-h-[calc(100vh-4.25rem)] w-[360px] max-w-[calc(100vw-1.5rem)] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-panel backdrop-blur"
+              className="fixed right-3 top-12 z-[140] flex max-h-[calc(100vh-4.25rem)] w-[360px] max-w-[calc(100vw-1.5rem)] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-panel shadow-panel backdrop-blur"
               data-testid="topbar-account-menu"
             >
               <div className="min-w-0 border-b border-border/70 px-4 py-3">
