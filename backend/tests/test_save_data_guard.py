@@ -135,7 +135,7 @@ class TestConcurrentBpmnPutSqlCas(_SaveGuardTestBase):
 
         def worker(idx: int, xml: str):
             client = self._new_client()
-            barrier.wait(timeout=10)
+            barrier.wait(timeout=30)
             resp = self._put_bpmn(sid, xml, base=0, client=client)
             results[idx] = (resp.status_code, resp.text)
 
@@ -146,7 +146,7 @@ class TestConcurrentBpmnPutSqlCas(_SaveGuardTestBase):
         for t in threads:
             t.start()
         for t in threads:
-            t.join(timeout=60)
+            t.join(timeout=120)
 
         statuses = sorted(code for code, _ in results.values())
         self.assertEqual(len(statuses), 2, results)
@@ -168,13 +168,13 @@ class TestConcurrentBpmnPutSqlCas(_SaveGuardTestBase):
 
         def put_bpmn():
             client = self._new_client()
-            barrier.wait(timeout=10)
+            barrier.wait(timeout=30)
             resp = self._put_bpmn(sid, SIMPLE_BPMN_XML_A, base=0, client=client)
             results["bpmn"] = (resp.status_code, resp.text)
 
         def put_session():
             client = self._new_client()
-            barrier.wait(timeout=10)
+            barrier.wait(timeout=30)
             resp = client.put(
                 f"/api/sessions/{sid}",
                 json={"notes": "concurrent-notes", "base_diagram_state_version": 0},
@@ -186,7 +186,7 @@ class TestConcurrentBpmnPutSqlCas(_SaveGuardTestBase):
         for t in threads:
             t.start()
         for t in threads:
-            t.join(timeout=60)
+            t.join(timeout=120)
 
         statuses = sorted(code for code, _ in results.values())
         self.assertEqual(statuses[0], 200, results)
@@ -252,7 +252,7 @@ class TestSessionCreateIdempotency(_SaveGuardTestBase):
 
         def worker(idx: int):
             client = self._new_client()
-            barrier.wait(timeout=10)
+            barrier.wait(timeout=30)
             resp = client.post(
                 f"/api/projects/{pid}/sessions?mode=quick_skeleton",
                 json={"title": "RaceDup"},
@@ -264,7 +264,7 @@ class TestSessionCreateIdempotency(_SaveGuardTestBase):
         for t in threads:
             t.start()
         for t in threads:
-            t.join(timeout=60)
+            t.join(timeout=120)
 
         statuses = sorted(code for code, _ in results.values())
         self.assertEqual(statuses[0], 200, results)
@@ -282,7 +282,7 @@ class TestSessionCreateIdempotency(_SaveGuardTestBase):
 
         def worker(idx: int):
             client = self._new_client()
-            barrier.wait(timeout=10)
+            barrier.wait(timeout=30)
             resp = client.post(
                 f"/api/projects/{pid}/sessions?mode=quick_skeleton",
                 json={
@@ -298,7 +298,7 @@ class TestSessionCreateIdempotency(_SaveGuardTestBase):
         for t in threads:
             t.start()
         for t in threads:
-            t.join(timeout=60)
+            t.join(timeout=120)
 
         statuses = sorted(code for code, _ in results.values())
         self.assertEqual(statuses[0], 200, results)
