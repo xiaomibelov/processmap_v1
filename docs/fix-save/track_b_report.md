@@ -87,6 +87,8 @@
 
 Плюс sys.path-shim в `test_save_data_guard.py` (паттерн из test_diagram_cas_guard.py) для root-mode импорта `app.*`.
 
+4. **Reload-stale классы исключений (2 флакующих падения: parallel-create тесты).** Pre-existing тесты `test_admin_agent_runs.py`/`test_admin_rag_settings.py` делают `importlib.reload(app.storage)` — после этого `Storage` поднимает НОВЫЙ класс `SessionTitleConflictError`, а `except SessionTitleConflictError` в `_legacy_main.py` (from-import, старая ссылка) его не ловит → 500 вместо 409 при гонке create. Воспроизводилось детерминированно комбо `test_admin_agent_runs + test_admin_rag_settings + test_api_meta_runtime + test_save_data_guard` (500 SessionTitleConflictError в middleware), в полных прогонах проявлялось флаком в зависимости от таймингов. **Фикс:** except'ы переведены на позднее связывание через модуль (`except _storage_mod.SessionTitleConflictError`, 4 места в `_legacy_main.py` — прод-поведение без reload идентично); в `test_save_data_guard.py` классы для `assertRaises`/`patch.object` резолвятся через `storage_mod.*` в момент вызова + defensive setUp-guard восстанавливает `_legacy_main.get_storage`, если он остался отравлен чужим monkeypatch'ем. Комбо-прогон 35/35 зелёный, финальный solo full-run (22f/921p/1e) подтвердил числа таблицы выше.
+
 ## ⚠️ Отклонения и оговорки
 
 1. **Индексы dup-guarded, НЕ дедуплицируют данные.** На БД с существующими дублями (на stage остались dup-probe сессии аудита `2fdeed83c8`/`ddc19bc3e3`) unique-индекс будет пропущен с warning в логах, защита не включится до ручной чистки дублей владельцем. Деструктивную миграцию данных сознательно не делал.
