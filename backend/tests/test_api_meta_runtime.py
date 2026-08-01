@@ -38,6 +38,8 @@ class ApiMetaRuntimeTest(unittest.TestCase):
         import app.startup.app_factory as app_factory
         import app.routers as routers
 
+        orig_runtime_status = legacy_main.runtime_status
+        orig_get_storage = legacy_main.get_storage
         legacy_main.runtime_status = lambda force_ping=True: {
             "mode": "FALLBACK",
             "state": "fallback_unavailable",
@@ -51,10 +53,17 @@ class ApiMetaRuntimeTest(unittest.TestCase):
         importlib.reload(routers)
         importlib.reload(app_factory)
 
-        app = app_factory.create_app()
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-            return await client.get("/api/meta")
+        try:
+            app = app_factory.create_app()
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                return await client.get("/api/meta")
+        finally:
+            # Restore monkeypatched attributes: leaking them poisons every
+            # later test in the same pytest process (any endpoint going
+            # through _legacy_main.get_storage fails with AssertionError).
+            legacy_main.runtime_status = orig_runtime_status
+            legacy_main.get_storage = orig_get_storage
 
     def test_runtime_build_meta_uses_processmap_env(self):
         os.environ["PROCESSMAP_APP_VERSION"] = "v1.2.3"
