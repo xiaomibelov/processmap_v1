@@ -17,23 +17,33 @@ Covers:
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import threading
 import unittest
 import uuid
+from pathlib import Path
 from unittest.mock import patch
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 from fastapi.testclient import TestClient
 
+import app.storage as storage_mod
 from app.auth import create_access_token, create_user
 from app.main import app
 from app.models import Node
 from app.storage import (
-    DiagramStateConflictError,
-    Storage,
     get_default_org_id,
     get_storage,
 )
+
+# NOTE: other test modules in this suite call ``importlib.reload(app.storage)``
+# (e.g. test_admin_agent_runs), which re-creates class objects in-place.
+# Always resolve exception classes / the Storage class through the module at
+# call time so assertRaises / patch.object stay correct after such reloads.
 
 
 SIMPLE_BPMN_XML_A = """<?xml version="1.0" encoding="UTF-8"?>
@@ -328,7 +338,7 @@ class TestBpmnSnapshotAtomicity(_SaveGuardTestBase):
         s2 = self.st.load(sid, is_admin=True)
         s2.bpmn_xml = SIMPLE_BPMN_XML_B
         s2.diagram_state_version = 2
-        with self.assertRaises(DiagramStateConflictError):
+        with self.assertRaises(storage_mod.DiagramStateConflictError):
             self.st.save(s2, is_admin=True, expected_diagram_state_version=0, bpmn_snapshot=self._snapshot_plan(SIMPLE_BPMN_XML_B, 2))
 
         reloaded = self.st.load(sid, is_admin=True)
@@ -341,7 +351,7 @@ class TestBpmnSnapshotAtomicity(_SaveGuardTestBase):
         s = self.st.load(sid, is_admin=True)
         s.bpmn_xml = SIMPLE_BPMN_XML_A
         s.diagram_state_version = 1
-        with patch.object(Storage, "_insert_bpmn_version_row", side_effect=RuntimeError("boom")):
+        with patch.object(storage_mod.Storage, "_insert_bpmn_version_row", side_effect=RuntimeError("boom")):
             with self.assertRaises(RuntimeError):
                 self.st.save(s, is_admin=True, expected_diagram_state_version=0, bpmn_snapshot=self._snapshot_plan(SIMPLE_BPMN_XML_A, 1))
 

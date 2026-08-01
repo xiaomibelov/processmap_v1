@@ -1463,9 +1463,15 @@ def _ensure_schema() -> None:
                 """
             )
             # P3 guard: idempotent session create. Unique natural key for project-scoped
-            # root sessions (subprocess children are guarded by idx_sessions_parent_element_unique).
+            # root sessions created through the API (mode is always set there, e.g.
+            # 'quick_skeleton'). mode-less rows (internal/direct storage creates, e.g.
+            # seeds and fixtures that intentionally reuse titles) are out of scope.
+            # Subprocess children are guarded by idx_sessions_parent_element_unique.
             # Created only when no duplicates exist; otherwise skipped with a warning
             # (never silently mutate user data — see docs/fix-save/track_b_report.md).
+            # SAVEPOINT: on postgres a failed statement aborts the whole transaction;
+            # keep the guard isolated so schema bootstrap can continue.
+            con.execute("SAVEPOINT pm_ix_sessions_natural_key")
             try:
                 dup_row = con.execute(
                     """
@@ -1474,8 +1480,9 @@ def _ensure_schema() -> None:
                       FROM sessions
                      WHERE (parent_session_id IS NULL OR parent_session_id = '')
                        AND project_id IS NOT NULL AND project_id != ''
+                       AND mode IS NOT NULL AND mode != ''
                      GROUP BY org_id, pid, lt, m
-                    HAVING c > 1
+                    HAVING COUNT(*) > 1
                      LIMIT 1
                     """
                 ).fetchone()
@@ -1486,6 +1493,7 @@ def _ensure_schema() -> None:
                         ON sessions(org_id, COALESCE(project_id,''), lower(title), COALESCE(mode,''))
                         WHERE (parent_session_id IS NULL OR parent_session_id = '')
                           AND project_id IS NOT NULL AND project_id != ''
+                          AND mode IS NOT NULL AND mode != ''
                         """
                     )
                 else:
@@ -1494,7 +1502,12 @@ def _ensure_schema() -> None:
                         _row_value(dup_row, "org_id", 0), _row_value(dup_row, "pid", 1),
                         _row_value(dup_row, "lt", 2), _row_value(dup_row, "m", 3), _row_value(dup_row, "c", 4),
                     )
+                con.execute("RELEASE SAVEPOINT pm_ix_sessions_natural_key")
             except Exception as exc:
+                try:
+                    con.execute("ROLLBACK TO SAVEPOINT pm_ix_sessions_natural_key")
+                except Exception:
+                    pass
                 logger.warning("sessions natural-key unique index not created: %s", exc)
             con.execute(
                 """
@@ -1652,6 +1665,8 @@ def _ensure_schema() -> None:
             )
             # P3 guard (TO BE): one TO BE copy per (org, project, source AS IS session).
             # Placed AFTER the ALTERs above so process_layer/derived_from_session_id exist.
+            # SAVEPOINT: on postgres a failed statement aborts the whole transaction.
+            con.execute("SAVEPOINT pm_ix_sessions_tobe_derived")
             try:
                 dup_tobe = con.execute(
                     """
@@ -1662,7 +1677,7 @@ def _ensure_schema() -> None:
                        AND process_layer = 'to_be'
                        AND (parent_session_id IS NULL OR parent_session_id = '')
                      GROUP BY org_id, pid, src
-                    HAVING c > 1
+                    HAVING COUNT(*) > 1
                      LIMIT 1
                     """
                 ).fetchone()
@@ -1682,7 +1697,12 @@ def _ensure_schema() -> None:
                         _row_value(dup_tobe, "org_id", 0), _row_value(dup_tobe, "pid", 1),
                         _row_value(dup_tobe, "src", 2), _row_value(dup_tobe, "c", 3),
                     )
+                con.execute("RELEASE SAVEPOINT pm_ix_sessions_tobe_derived")
             except Exception as exc:
+                try:
+                    con.execute("ROLLBACK TO SAVEPOINT pm_ix_sessions_tobe_derived")
+                except Exception:
+                    pass
                 logger.warning("sessions tobe-derived unique index not created: %s", exc)
             con.execute(
                 """

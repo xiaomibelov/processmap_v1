@@ -30,6 +30,7 @@ SELECT org_id, COALESCE(project_id,''), lower(title), COALESCE(mode,''), COUNT(*
   FROM sessions
  WHERE (parent_session_id IS NULL OR parent_session_id = '')
    AND project_id IS NOT NULL AND project_id != ''
+   AND mode IS NOT NULL AND mode != ''
  GROUP BY 1, 2, 3, 4
 HAVING COUNT(*) > 1
  LIMIT 1
@@ -58,6 +59,7 @@ def upgrade() -> None:
             ON sessions(org_id, COALESCE(project_id,''), lower(title), COALESCE(mode,''))
             WHERE (parent_session_id IS NULL OR parent_session_id = '')
               AND project_id IS NOT NULL AND project_id != ''
+              AND mode IS NOT NULL AND mode != ''
             """
         )
     else:
