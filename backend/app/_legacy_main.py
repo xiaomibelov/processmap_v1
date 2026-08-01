@@ -219,6 +219,7 @@ from .utils.response_builders import (
 from .startup.static_mounts import GLOSSARY_SEED, STATIC_DIR, WORKSPACE_DIR as WORKSPACE
 from .overlay_cache import get_overlay, invalidate_overlay
 from . import overlay_cache
+from . import storage as _storage_mod
 from .services import auth_service as _auth_service
 from .utils.auth_helpers import set_refresh_cookie, clear_refresh_cookie
 from .utils.session_helpers import _save_session_with_cas
@@ -4160,7 +4161,7 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
         )
         _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
         return _session_api_dump(sess)
-    except SessionTitleConflictError:
+    except _storage_mod.SessionTitleConflictError:
         # Race-safe dedup (audit P3): concurrent create with the same natural
         # key hits the unique index -> same 409 contract as the title pre-check.
         raise HTTPException(status_code=409, detail="session title already exists")
@@ -4417,7 +4418,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
                 raise HTTPException(status_code=409, detail="session title already exists")
             try:
                 sess2 = st.rename(session_id, title, user_id=user_id, is_admin=True, org_id=oid)
-            except SessionTitleConflictError:
+            except _storage_mod.SessionTitleConflictError:
                 raise HTTPException(status_code=409, detail="session title already exists")
             if not sess2:
                 return {"error": "not found"}
@@ -4663,7 +4664,7 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
         if title:
             try:
                 sess2 = st.rename(session_id, title, org_id=oid)
-            except SessionTitleConflictError:
+            except _storage_mod.SessionTitleConflictError:
                 raise HTTPException(status_code=409, detail="session title already exists")
             if not sess2:
                 return {"error": "not found"}
@@ -10693,7 +10694,7 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
         )
         _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
         return _session_api_dump(sess)
-    except SessionTitleConflictError:
+    except _storage_mod.SessionTitleConflictError:
         # Race-safe dedup (audit P3): concurrent create with the same natural
         # key hits the unique index -> same 409 contract as the title pre-check.
         raise HTTPException(status_code=409, detail="session title already exists")

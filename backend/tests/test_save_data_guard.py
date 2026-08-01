@@ -64,6 +64,18 @@ SIMPLE_BPMN_XML_B = SIMPLE_BPMN_XML_A.replace("guard_a", "guard_b").replace("Tas
 
 class _SaveGuardTestBase(unittest.TestCase):
     def setUp(self):
+        # Suite-isolation guard: earlier test modules (test_api_meta_runtime)
+        # monkeypatch ``app._legacy_main.get_storage`` and, depending on suite
+        # ordering/state, the original may not be restored — every endpoint
+        # going through _legacy_main then fails with AssertionError -> 500.
+        # Restore the real factory defensively so these tests are
+        # order-independent. Same for importlib.reload(app.storage) users:
+        # always resolve classes via ``storage_mod`` (see note at imports).
+        import app._legacy_main as _legacy_main_mod
+
+        if getattr(_legacy_main_mod.get_storage, "__module__", "") != "app.storage":
+            _legacy_main_mod.get_storage = storage_mod.get_storage
+
         self.tmp = tempfile.TemporaryDirectory()
         os.environ["PROCESS_STORAGE_DIR"] = self.tmp.name
         os.environ.setdefault("JWT_SECRET", "test-secret")
