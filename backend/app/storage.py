@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -18,6 +19,8 @@ import xml.etree.ElementTree as ET
 
 from .db import get_db_runtime_config, redact_database_url
 from .models import Project, Session
+
+logger = logging.getLogger(__name__)
 
 try:
     import psycopg
@@ -445,6 +448,30 @@ def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
 
 def _json_text(value: Any) -> str:
     return _json_dumps(value, None)
+
+
+class DiagramStateConflictError(RuntimeError):
+    """Raised when a CAS-guarded session write loses the race on diagram_state_version."""
+
+    def __init__(self, session_id: str, expected: int, current: Optional[int] = None) -> None:
+        super().__init__(
+            f"diagram state conflict for session {session_id}: expected={expected} current={current}"
+        )
+        self.session_id = str(session_id or "")
+        self.expected = int(expected or 0)
+        self.current = current
+
+
+class SessionTitleConflictError(RuntimeError):
+    """Raised when a session natural-key (org/project/title/mode) unique constraint is violated."""
+
+
+def _is_integrity_error(exc: Exception) -> bool:
+    if isinstance(exc, sqlite3.IntegrityError):
+        return True
+    if PsycopgIntegrityError is not None and isinstance(exc, PsycopgIntegrityError):
+        return True
+    return False
 
 
 def _parse_json_text(text: Any) -> Any:
@@ -1435,6 +1462,53 @@ def _ensure_schema() -> None:
                 WHERE parent_session_id IS NOT NULL AND parent_session_id != ''
                 """
             )
+            # P3 guard: idempotent session create. Unique natural key for project-scoped
+            # root sessions created through the API (mode is always set there, e.g.
+            # 'quick_skeleton'). mode-less rows (internal/direct storage creates, e.g.
+            # seeds and fixtures that intentionally reuse titles) are out of scope.
+            # Subprocess children are guarded by idx_sessions_parent_element_unique.
+            # Created only when no duplicates exist; otherwise skipped with a warning
+            # (never silently mutate user data — see docs/fix-save/track_b_report.md).
+            # SAVEPOINT: on postgres a failed statement aborts the whole transaction;
+            # keep the guard isolated so schema bootstrap can continue.
+            con.execute("SAVEPOINT pm_ix_sessions_natural_key")
+            try:
+                dup_row = con.execute(
+                    """
+                    SELECT org_id, COALESCE(project_id,'') AS pid, lower(title) AS lt, COALESCE(mode,'') AS m,
+                           COUNT(*) AS c
+                      FROM sessions
+                     WHERE (parent_session_id IS NULL OR parent_session_id = '')
+                       AND project_id IS NOT NULL AND project_id != ''
+                       AND mode IS NOT NULL AND mode != ''
+                     GROUP BY org_id, pid, lt, m
+                    HAVING COUNT(*) > 1
+                     LIMIT 1
+                    """
+                ).fetchone()
+                if dup_row is None:
+                    con.execute(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_natural_key_unique
+                        ON sessions(org_id, COALESCE(project_id,''), lower(title), COALESCE(mode,''))
+                        WHERE (parent_session_id IS NULL OR parent_session_id = '')
+                          AND project_id IS NOT NULL AND project_id != ''
+                          AND mode IS NOT NULL AND mode != ''
+                        """
+                    )
+                else:
+                    logger.warning(
+                        "sessions natural-key unique index skipped: duplicates exist org=%s project=%s title=%s mode=%s count=%s",
+                        _row_value(dup_row, "org_id", 0), _row_value(dup_row, "pid", 1),
+                        _row_value(dup_row, "lt", 2), _row_value(dup_row, "m", 3), _row_value(dup_row, "c", 4),
+                    )
+                con.execute("RELEASE SAVEPOINT pm_ix_sessions_natural_key")
+            except Exception as exc:
+                try:
+                    con.execute("ROLLBACK TO SAVEPOINT pm_ix_sessions_natural_key")
+                except Exception:
+                    pass
+                logger.warning("sessions natural-key unique index not created: %s", exc)
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS session_presence (
@@ -1589,6 +1663,47 @@ def _ensure_schema() -> None:
                 WHERE parent_session_id IS NOT NULL AND parent_session_id != ''
                 """
             )
+            # P3 guard (TO BE): one TO BE copy per (org, project, source AS IS session).
+            # Placed AFTER the ALTERs above so process_layer/derived_from_session_id exist.
+            # SAVEPOINT: on postgres a failed statement aborts the whole transaction.
+            con.execute("SAVEPOINT pm_ix_sessions_tobe_derived")
+            try:
+                dup_tobe = con.execute(
+                    """
+                    SELECT org_id, COALESCE(project_id,'') AS pid, derived_from_session_id AS src,
+                           COUNT(*) AS c
+                      FROM sessions
+                     WHERE derived_from_session_id IS NOT NULL AND derived_from_session_id != ''
+                       AND process_layer = 'to_be'
+                       AND (parent_session_id IS NULL OR parent_session_id = '')
+                     GROUP BY org_id, pid, src
+                    HAVING COUNT(*) > 1
+                     LIMIT 1
+                    """
+                ).fetchone()
+                if dup_tobe is None:
+                    con.execute(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_tobe_derived_unique
+                        ON sessions(org_id, COALESCE(project_id,''), derived_from_session_id)
+                        WHERE derived_from_session_id IS NOT NULL AND derived_from_session_id != ''
+                          AND process_layer = 'to_be'
+                          AND (parent_session_id IS NULL OR parent_session_id = '')
+                        """
+                    )
+                else:
+                    logger.warning(
+                        "sessions tobe-derived unique index skipped: duplicates exist org=%s project=%s src=%s count=%s",
+                        _row_value(dup_tobe, "org_id", 0), _row_value(dup_tobe, "pid", 1),
+                        _row_value(dup_tobe, "src", 2), _row_value(dup_tobe, "c", 3),
+                    )
+                con.execute("RELEASE SAVEPOINT pm_ix_sessions_tobe_derived")
+            except Exception as exc:
+                try:
+                    con.execute("ROLLBACK TO SAVEPOINT pm_ix_sessions_tobe_derived")
+                except Exception:
+                    pass
+                logger.warning("sessions tobe-derived unique index not created: %s", exc)
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS note_comment_mentions (
@@ -3724,6 +3839,8 @@ class Storage:
         start_role: Optional[str] = None,
         project_id: Optional[str] = None,
         mode: Optional[str] = None,
+        process_layer: Optional[str] = None,
+        derived_from_session_id: Optional[str] = None,
         user_id: Optional[str] = None,
         is_admin: Optional[bool] = None,
         org_id: Optional[str] = None,
@@ -3768,7 +3885,20 @@ class Storage:
             created_at=now,
             updated_at=now,
         )
-        self.save(sess, user_id=owner, is_admin=is_admin, org_id=org)
+        if process_layer is not None:
+            sess.process_layer = str(process_layer or "as_is").strip() or "as_is"
+        if derived_from_session_id is not None:
+            sess.derived_from_session_id = str(derived_from_session_id or "").strip()
+        try:
+            self.save(sess, user_id=owner, is_admin=is_admin, org_id=org)
+        except Exception as exc:
+            if _is_integrity_error(exc):
+                # Natural-key unique index (org/project/lower(title)/mode) — race-safe
+                # dedup for concurrent creates (audit P3).
+                raise SessionTitleConflictError(
+                    f"session title already exists: {sess.title!r} (project={project_id!r}, mode={mode!r})"
+                ) from exc
+            raise
         return sid
 
     def load(
@@ -4200,7 +4330,21 @@ class Storage:
         user_id: Optional[str] = None,
         is_admin: Optional[bool] = None,
         org_id: Optional[str] = None,
+        expected_diagram_state_version: Optional[int] = None,
+        bpmn_snapshot: Optional[Dict[str, Any]] = None,
     ) -> None:
+        """Persist a session row.
+
+        When ``expected_diagram_state_version`` is provided (and the row already
+        exists), the write is a SQL-level CAS:
+        ``UPDATE ... WHERE id=? AND diagram_state_version=?``. Zero affected rows
+        raises :class:`DiagramStateConflictError` instead of silently overwriting
+        a concurrent writer (last-writer-wins fix, audit P2).
+
+        When ``bpmn_snapshot`` is provided, the bpmn_versions row is inserted in
+        the SAME transaction as the session row (audit P4); the passed dict is
+        updated in place with the inserted row (id/version_number/created_at).
+        """
         _ensure_schema()
         owner_scope = _scope_user_id(user_id)
         admin = _scope_is_admin(is_admin)
@@ -4280,74 +4424,159 @@ class Storage:
                 "activity_count": int(getattr(s, "activity_count", 0) or 0),
                 "deleted_at": int(getattr(s, "deleted_at", 0) or 0),
             }
-            con.execute(
-                """
-                INSERT INTO sessions (
-                  id, title, roles_json, start_role, project_id, mode, notes, notes_by_element_json,
-                  interview_json, nodes_json, edges_json, questions_json, mermaid, mermaid_simple, mermaid_lanes,
-                  normalized_json, resources_json, analytics_json, ai_llm_state_json,
-                  bpmn_xml, bpmn_xml_version, diagram_state_version,
-                  diagram_last_write_actor_user_id, diagram_last_write_actor_label, diagram_last_write_at,
-                  diagram_last_write_changed_keys_json, bpmn_graph_fingerprint, bpmn_meta_json, version,
-                  owner_user_id, org_id, created_by, updated_by, created_at, updated_at,
-                  navigation_stack, parent_session_id, element_id_in_parent, process_layer,
-                  derived_from_session_id, activity_count
-                ) VALUES (
-                  :id, :title, :roles_json, :start_role, :project_id, :mode, :notes, :notes_by_element_json,
-                  :interview_json, :nodes_json, :edges_json, :questions_json, :mermaid, :mermaid_simple, :mermaid_lanes,
-                  :normalized_json, :resources_json, :analytics_json, :ai_llm_state_json,
-                  :bpmn_xml, :bpmn_xml_version, :diagram_state_version,
-                  :diagram_last_write_actor_user_id, :diagram_last_write_actor_label, :diagram_last_write_at,
-                  :diagram_last_write_changed_keys_json, :bpmn_graph_fingerprint, :bpmn_meta_json, :version,
-                  :owner_user_id, :org_id, :created_by, :updated_by, :created_at, :updated_at,
-                  :navigation_stack, :parent_session_id, :element_id_in_parent, :process_layer,
-                  :derived_from_session_id, :activity_count
-                )
-                ON CONFLICT(id) DO UPDATE SET
-                  title=excluded.title,
-                  roles_json=excluded.roles_json,
-                  start_role=excluded.start_role,
-                  project_id=excluded.project_id,
-                  mode=excluded.mode,
-                  notes=excluded.notes,
-                  notes_by_element_json=excluded.notes_by_element_json,
-                  interview_json=excluded.interview_json,
-                  nodes_json=excluded.nodes_json,
-                  edges_json=excluded.edges_json,
-                  questions_json=excluded.questions_json,
-                  mermaid=excluded.mermaid,
-                  mermaid_simple=excluded.mermaid_simple,
-                  mermaid_lanes=excluded.mermaid_lanes,
-                  normalized_json=excluded.normalized_json,
-                  resources_json=excluded.resources_json,
-                  analytics_json=excluded.analytics_json,
-                  ai_llm_state_json=excluded.ai_llm_state_json,
-                  bpmn_xml=excluded.bpmn_xml,
-                  bpmn_xml_version=excluded.bpmn_xml_version,
-                  diagram_state_version=excluded.diagram_state_version,
-                  diagram_last_write_actor_user_id=excluded.diagram_last_write_actor_user_id,
-                  diagram_last_write_actor_label=excluded.diagram_last_write_actor_label,
-                  diagram_last_write_at=excluded.diagram_last_write_at,
-                  diagram_last_write_changed_keys_json=excluded.diagram_last_write_changed_keys_json,
-                  bpmn_graph_fingerprint=excluded.bpmn_graph_fingerprint,
-                  bpmn_meta_json=excluded.bpmn_meta_json,
-                  version=excluded.version,
-                  owner_user_id=excluded.owner_user_id,
-                  org_id=excluded.org_id,
-                  created_by=excluded.created_by,
-                  updated_by=excluded.updated_by,
-                  created_at=excluded.created_at,
-                  updated_at=excluded.updated_at,
-                  navigation_stack=excluded.navigation_stack,
-                  parent_session_id=excluded.parent_session_id,
-                  element_id_in_parent=excluded.element_id_in_parent,
-                  process_layer=excluded.process_layer,
-                  derived_from_session_id=excluded.derived_from_session_id,
-                  activity_count=excluded.activity_count,
-                  deleted_at=excluded.deleted_at
-                """,
-                values,
+            cas_base = (
+                int(expected_diagram_state_version)
+                if (existing is not None and expected_diagram_state_version is not None)
+                else None
             )
+            if cas_base is not None:
+                update_values = dict(values)
+                update_values["__cas_base"] = cas_base
+                cur = con.execute(
+                    """
+                    UPDATE sessions
+                       SET title=:title,
+                         roles_json=:roles_json,
+                         start_role=:start_role,
+                         project_id=:project_id,
+                         mode=:mode,
+                         notes=:notes,
+                         notes_by_element_json=:notes_by_element_json,
+                         interview_json=:interview_json,
+                         nodes_json=:nodes_json,
+                         edges_json=:edges_json,
+                         questions_json=:questions_json,
+                         mermaid=:mermaid,
+                         mermaid_simple=:mermaid_simple,
+                         mermaid_lanes=:mermaid_lanes,
+                         normalized_json=:normalized_json,
+                         resources_json=:resources_json,
+                         analytics_json=:analytics_json,
+                         ai_llm_state_json=:ai_llm_state_json,
+                         bpmn_xml=:bpmn_xml,
+                         bpmn_xml_version=:bpmn_xml_version,
+                         diagram_state_version=:diagram_state_version,
+                         diagram_last_write_actor_user_id=:diagram_last_write_actor_user_id,
+                         diagram_last_write_actor_label=:diagram_last_write_actor_label,
+                         diagram_last_write_at=:diagram_last_write_at,
+                         diagram_last_write_changed_keys_json=:diagram_last_write_changed_keys_json,
+                         bpmn_graph_fingerprint=:bpmn_graph_fingerprint,
+                         bpmn_meta_json=:bpmn_meta_json,
+                         version=:version,
+                         owner_user_id=:owner_user_id,
+                         org_id=:org_id,
+                         created_by=:created_by,
+                         updated_by=:updated_by,
+                         created_at=:created_at,
+                         updated_at=:updated_at,
+                         navigation_stack=:navigation_stack,
+                         parent_session_id=:parent_session_id,
+                         element_id_in_parent=:element_id_in_parent,
+                         process_layer=:process_layer,
+                         derived_from_session_id=:derived_from_session_id,
+                         activity_count=:activity_count,
+                         deleted_at=:deleted_at
+                     WHERE id = :id
+                       AND diagram_state_version = :__cas_base
+                    """,
+                    update_values,
+                )
+                if int(cur.rowcount or 0) == 0:
+                    current_row = con.execute(
+                        "SELECT diagram_state_version FROM sessions WHERE id = ? LIMIT 1",
+                        [sid],
+                    ).fetchone()
+                    current_version = int(_row_value(current_row, "diagram_state_version", 0) or 0) if current_row else None
+                    con.rollback()
+                    raise DiagramStateConflictError(sid, cas_base, current_version)
+            else:
+                con.execute(
+                    """
+                    INSERT INTO sessions (
+                      id, title, roles_json, start_role, project_id, mode, notes, notes_by_element_json,
+                      interview_json, nodes_json, edges_json, questions_json, mermaid, mermaid_simple, mermaid_lanes,
+                      normalized_json, resources_json, analytics_json, ai_llm_state_json,
+                      bpmn_xml, bpmn_xml_version, diagram_state_version,
+                      diagram_last_write_actor_user_id, diagram_last_write_actor_label, diagram_last_write_at,
+                      diagram_last_write_changed_keys_json, bpmn_graph_fingerprint, bpmn_meta_json, version,
+                      owner_user_id, org_id, created_by, updated_by, created_at, updated_at,
+                      navigation_stack, parent_session_id, element_id_in_parent, process_layer,
+                      derived_from_session_id, activity_count
+                    ) VALUES (
+                      :id, :title, :roles_json, :start_role, :project_id, :mode, :notes, :notes_by_element_json,
+                      :interview_json, :nodes_json, :edges_json, :questions_json, :mermaid, :mermaid_simple, :mermaid_lanes,
+                      :normalized_json, :resources_json, :analytics_json, :ai_llm_state_json,
+                      :bpmn_xml, :bpmn_xml_version, :diagram_state_version,
+                      :diagram_last_write_actor_user_id, :diagram_last_write_actor_label, :diagram_last_write_at,
+                      :diagram_last_write_changed_keys_json, :bpmn_graph_fingerprint, :bpmn_meta_json, :version,
+                      :owner_user_id, :org_id, :created_by, :updated_by, :created_at, :updated_at,
+                      :navigation_stack, :parent_session_id, :element_id_in_parent, :process_layer,
+                      :derived_from_session_id, :activity_count
+                    )
+                    ON CONFLICT(id) DO UPDATE SET
+                      title=excluded.title,
+                      roles_json=excluded.roles_json,
+                      start_role=excluded.start_role,
+                      project_id=excluded.project_id,
+                      mode=excluded.mode,
+                      notes=excluded.notes,
+                      notes_by_element_json=excluded.notes_by_element_json,
+                      interview_json=excluded.interview_json,
+                      nodes_json=excluded.nodes_json,
+                      edges_json=excluded.edges_json,
+                      questions_json=excluded.questions_json,
+                      mermaid=excluded.mermaid,
+                      mermaid_simple=excluded.mermaid_simple,
+                      mermaid_lanes=excluded.mermaid_lanes,
+                      normalized_json=excluded.normalized_json,
+                      resources_json=excluded.resources_json,
+                      analytics_json=excluded.analytics_json,
+                      ai_llm_state_json=excluded.ai_llm_state_json,
+                      bpmn_xml=excluded.bpmn_xml,
+                      bpmn_xml_version=excluded.bpmn_xml_version,
+                      diagram_state_version=excluded.diagram_state_version,
+                      diagram_last_write_actor_user_id=excluded.diagram_last_write_actor_user_id,
+                      diagram_last_write_actor_label=excluded.diagram_last_write_actor_label,
+                      diagram_last_write_at=excluded.diagram_last_write_at,
+                      diagram_last_write_changed_keys_json=excluded.diagram_last_write_changed_keys_json,
+                      bpmn_graph_fingerprint=excluded.bpmn_graph_fingerprint,
+                      bpmn_meta_json=excluded.bpmn_meta_json,
+                      version=excluded.version,
+                      owner_user_id=excluded.owner_user_id,
+                      org_id=excluded.org_id,
+                      created_by=excluded.created_by,
+                      updated_by=excluded.updated_by,
+                      created_at=excluded.created_at,
+                      updated_at=excluded.updated_at,
+                      navigation_stack=excluded.navigation_stack,
+                      parent_session_id=excluded.parent_session_id,
+                      element_id_in_parent=excluded.element_id_in_parent,
+                      process_layer=excluded.process_layer,
+                      derived_from_session_id=excluded.derived_from_session_id,
+                      activity_count=excluded.activity_count,
+                      deleted_at=excluded.deleted_at
+                    """,
+                    values,
+                )
+            if bpmn_snapshot:
+                snap_xml = str(bpmn_snapshot.get("bpmn_xml") or "")
+                snap_action = str(bpmn_snapshot.get("source_action") or "").strip().lower()
+                if snap_xml.strip() and snap_action:
+                    snap_row = self._insert_bpmn_version_row(
+                        con,
+                        session_id=sid,
+                        org_id=str(values.get("org_id") or _default_org_id()),
+                        bpmn_xml=snap_xml,
+                        source_action=snap_action,
+                        diagram_state_version=int(bpmn_snapshot.get("diagram_state_version") or 0),
+                        session_payload_hash=str(bpmn_snapshot.get("session_payload_hash") or ""),
+                        session_version=int(bpmn_snapshot.get("session_version") or 0),
+                        session_updated_at=int(bpmn_snapshot.get("session_updated_at") or 0),
+                        created_by=str(bpmn_snapshot.get("created_by") or ""),
+                        import_note=str(bpmn_snapshot.get("import_note") or ""),
+                    )
+                    bpmn_snapshot.clear()
+                    bpmn_snapshot.update(snap_row)
             next_diagram_state_version = int(values.get("diagram_state_version") or 0)
             accepted_diagram_write = bool(existing) and next_diagram_state_version > existing_diagram_state_version
             bpmn_xml_changed = str(values.get("bpmn_xml") or "") != existing_bpmn_xml
@@ -4548,7 +4777,12 @@ class Storage:
         if not t:
             return sess
         sess.title = t
-        self.save(sess, user_id=user_id, is_admin=is_admin, org_id=org_id)
+        try:
+            self.save(sess, user_id=user_id, is_admin=is_admin, org_id=org_id)
+        except Exception as exc:
+            if _is_integrity_error(exc):
+                raise SessionTitleConflictError(f"session title already exists: {t!r}") from exc
+            raise
         return self.load(session_id, user_id=user_id, is_admin=is_admin, org_id=org_id)
 
     def list(
@@ -4910,6 +5144,87 @@ class Storage:
             })
         return out
 
+    def _insert_bpmn_version_row(
+        self,
+        con: Any,
+        *,
+        session_id: str,
+        org_id: str,
+        bpmn_xml: str,
+        source_action: str,
+        diagram_state_version: int,
+        session_payload_hash: str,
+        session_version: int,
+        session_updated_at: int,
+        created_by: str,
+        import_note: str,
+    ) -> Dict[str, Any]:
+        """Insert one bpmn_versions row on an EXISTING connection/transaction.
+
+        version_number is computed as MAX+1 inside the caller's transaction; the
+        UNIQUE(session_id, org_id, version_number) index protects against races.
+        """
+        sid = str(session_id or "").strip()
+        scope_org = str(org_id or "").strip() or _default_org_id()
+        xml = str(bpmn_xml or "")
+        action = str(source_action or "").strip().lower()
+        diagram_version = max(0, int(diagram_state_version or 0))
+        payload_hash = str(session_payload_hash or "").strip()
+        sess_version = max(0, int(session_version or 0))
+        sess_updated_at = max(0, int(session_updated_at or 0))
+        actor = str(created_by or "").strip()
+        note = str(import_note or "").strip()
+        now = _now_ts()
+        row = con.execute(
+            """
+            SELECT COALESCE(MAX(version_number), 0) AS max_version
+              FROM bpmn_versions
+             WHERE session_id = ?
+               AND org_id = ?
+            """,
+            [sid, scope_org],
+        ).fetchone()
+        next_version = int((_row_value(row, "max_version", 0) if row else 0) or 0) + 1
+        snapshot_id = uuid.uuid4().hex[:12]
+        con.execute(
+            """
+            INSERT INTO bpmn_versions (
+              id, session_id, org_id, version_number, diagram_state_version, bpmn_xml,
+              session_payload_hash, session_version, session_updated_at,
+              source_action, import_note, created_at, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                snapshot_id,
+                sid,
+                scope_org,
+                next_version,
+                diagram_version,
+                xml,
+                payload_hash,
+                sess_version,
+                sess_updated_at,
+                action,
+                note,
+                now,
+                actor,
+            ],
+        )
+        return {
+            "id": snapshot_id,
+            "session_id": sid,
+            "org_id": scope_org,
+            "version_number": next_version,
+            "diagram_state_version": diagram_version,
+            "session_payload_hash": payload_hash,
+            "session_version": sess_version,
+            "session_updated_at": sess_updated_at,
+            "source_action": action,
+            "created_at": now,
+            "created_by": actor,
+            "import_note": note,
+        }
+
     def create_bpmn_version_snapshot(
         self,
         session_id: str,
@@ -4934,15 +5249,6 @@ class Storage:
         action = str(source_action or "").strip().lower()
         if not action:
             raise ValueError("source_action required")
-        actor = str(created_by or "").strip()
-        note = str(import_note or "").strip()
-        diagram_version: int = int(diagram_state_version or 0)
-        if diagram_version < 0:
-            diagram_version = 0
-        payload_hash = str(session_payload_hash or "").strip()
-        sess_version = max(0, int(session_version or 0))
-        sess_updated_at = max(0, int(session_updated_at or 0))
-        now = _now_ts()
 
         with _connect() as con:
             sess_row = con.execute(
@@ -4956,57 +5262,21 @@ class Storage:
             if scope_org != session_org:
                 raise ValueError("session belongs to another org")
 
-            row = con.execute(
-                """
-                SELECT COALESCE(MAX(version_number), 0) AS max_version
-                  FROM bpmn_versions
-                 WHERE session_id = ?
-                   AND org_id = ?
-                """,
-                [sid, scope_org],
-            ).fetchone()
-            next_version = int((row["max_version"] if row else 0) or 0) + 1
-            snapshot_id = uuid.uuid4().hex[:12]
-            con.execute(
-                """
-                INSERT INTO bpmn_versions (
-                  id, session_id, org_id, version_number, diagram_state_version, bpmn_xml,
-                  session_payload_hash, session_version, session_updated_at,
-                  source_action, import_note, created_at, created_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    snapshot_id,
-                    sid,
-                    scope_org,
-                    next_version,
-                    diagram_version,
-                    xml,
-                    payload_hash,
-                    sess_version,
-                    sess_updated_at,
-                    action,
-                    note,
-                    now,
-                    actor,
-                ],
+            result = self._insert_bpmn_version_row(
+                con,
+                session_id=sid,
+                org_id=scope_org,
+                bpmn_xml=xml,
+                source_action=action,
+                diagram_state_version=int(diagram_state_version or 0),
+                session_payload_hash=str(session_payload_hash or ""),
+                session_version=int(session_version or 0),
+                session_updated_at=int(session_updated_at or 0),
+                created_by=str(created_by or ""),
+                import_note=str(import_note or ""),
             )
             con.commit()
-
-        return {
-            "id": snapshot_id,
-            "session_id": sid,
-            "org_id": scope_org,
-            "version_number": next_version,
-            "diagram_state_version": diagram_version,
-            "session_payload_hash": payload_hash,
-            "session_version": sess_version,
-            "session_updated_at": sess_updated_at,
-            "source_action": action,
-            "created_at": now,
-            "created_by": actor,
-            "import_note": note,
-        }
+        return result
 
     def list_bpmn_versions(
         self,
