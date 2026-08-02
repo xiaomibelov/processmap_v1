@@ -38,9 +38,14 @@ saveCoordinator.registerPipeline(PIPELINE_NAME, {
     syncVersionToExternalState(payload?.rememberDiagramStateVersion, readSessionPatchAckDiagramStateVersion(response), sessionId);
   },
   on409: (response, sessionId, payload) => {
-    // CAS rollback + setVersion is handled by saveCoordinator._runPipeline.
-    // Only sync the server version to external React state here.
-    syncVersionToExternalState(payload?.rememberDiagramStateVersion, readSessionPatchConflictServerCurrentVersion(response), sessionId);
+    // P1: tracked-base НЕ подменяется серверной версией — saveCoordinator
+    // ставит conflict gate; синхронизируем только внешнее React-состояние.
+    syncVersionToExternalState(
+      payload?.rememberDiagramStateVersion,
+      readSessionPatchConflictServerCurrentVersion(response),
+      sessionId,
+      { updateTracker: false },
+    );
   },
   onError: () => {
     // CAS rollback is handled by saveCoordinator._runPipeline.
@@ -89,15 +94,18 @@ export function resolveSessionPatchBaseAtSendTime({
   return normalizeDiagramStateVersion(fallbackBaseDiagramStateVersion);
 }
 
-function syncVersionToExternalState(rememberDiagramStateVersion, version, sessionId) {
+function syncVersionToExternalState(rememberDiagramStateVersion, version, sessionId, options = {}) {
   const normalizedVersion = normalizeDiagramStateVersion(version);
   const sid = normalizeDiagramSessionId(sessionId);
   if (normalizedVersion === null || !sid) return;
   // The coordinator's generic pickServerCurrentVersion may not cover all response
   // formats (e.g. meta pipeline returns data.server_current_version without nested
-  // detail). Ensure the tracker is set to the correct version via setVersion which
-  // is idempotent (replaces entire history).
-  setTrackedDiagramStateVersion(sid, normalizedVersion);
+  // detail). On success the tracker is set to the acked version via setVersion
+  // which is idempotent (replaces entire history). On 409 the tracker must NOT
+  // be touched (P1: no silent base adoption — conflict gate instead).
+  if (options?.updateTracker !== false) {
+    setTrackedDiagramStateVersion(sid, normalizedVersion);
+  }
   if (typeof rememberDiagramStateVersion !== "function") return;
   try {
     rememberDiagramStateVersion(normalizedVersion, { sessionId: sid });

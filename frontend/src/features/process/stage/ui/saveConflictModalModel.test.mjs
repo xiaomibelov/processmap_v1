@@ -88,8 +88,10 @@ test("buildSaveConflictModalView returns actor-aware copy and explicit action hi
   assert.match(view.contextLines.join(" "), /Изменения на сервере:/i);
   assert.match(view.contextLines.join(" "), /Изменена схема/i);
   assert.equal(/bpmn_xml|nodes/i.test(view.contextLines.join(" ")), false);
-  assert.equal(view.actions.refreshLabel, "Обновить сессию");
+  assert.equal(view.actions.refreshLabel, "Обновить и продолжить");
   assert.match(view.actions.refreshHint, /заменены/i);
+  assert.equal(view.actions.overwriteLabel, "Перезаписать мои изменения");
+  assert.equal(view.actions.stayLabel, "Отмена");
 });
 
 test("buildSaveConflictModalView keeps neutral copy for fallback_unknown", () => {
