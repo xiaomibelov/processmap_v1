@@ -192,7 +192,7 @@ def _save_session_with_cas(
     a silent last-writer-wins overwrite. Paths without a base version keep the
     legacy full-row upsert behavior.
     """
-    from ..storage import DiagramStateConflictError  # local import to avoid cycles
+    from ..storage import DiagramStateConflictError, SessionNotFoundError  # local import to avoid cycles
 
     base = _effective_sql_cas_base(client_base_version)
     if base is None:
@@ -213,6 +213,18 @@ def _save_session_with_cas(
             expected_diagram_state_version=base,
             bpmn_snapshot=bpmn_snapshot,
         )
+    except SessionNotFoundError as exc:
+        # P-1: the row was deleted between the pre-load and the CAS write.
+        # A deleted session is a terminal 404, NOT a 409 version conflict —
+        # the frontend must show the dead-session screen, not the conflict modal.
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "SESSION_NOT_FOUND",
+                "session_id": exc.session_id,
+                "message": "session not found (deleted?)",
+            },
+        ) from exc
     except DiagramStateConflictError as exc:
         current_version = exc.current
         server_sess = sess
