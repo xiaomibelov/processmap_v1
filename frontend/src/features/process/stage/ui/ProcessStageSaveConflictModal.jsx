@@ -9,6 +9,7 @@ export default function ProcessStageSaveConflictModal({
   busy = false,
   view = null,
   onRefreshSession = null,
+  onOverwrite = null,
   onStay = null,
   onDiscardLocalChanges = null,
   onCompare = null,
@@ -37,8 +38,20 @@ export default function ProcessStageSaveConflictModal({
             data-testid="diagram-save-conflict-modal-refresh"
             title={toText(actions.refreshHint)}
           >
-            {toText(actions.refreshLabel) || "Обновить сессию"}
+            {toText(actions.refreshLabel) || "Обновить и продолжить"}
           </button>
+          {typeof onOverwrite === "function" ? (
+            <button
+              type="button"
+              className="secondaryBtn h-9 px-3 text-xs"
+              onClick={onOverwrite}
+              disabled={busy === true}
+              data-testid="diagram-save-conflict-modal-overwrite"
+              title={toText(actions.overwriteHint)}
+            >
+              {toText(actions.overwriteLabel) || "Перезаписать мои изменения"}
+            </button>
+          ) : null}
           <button
             type="button"
             className="secondaryBtn h-9 px-3 text-xs"
@@ -47,7 +60,7 @@ export default function ProcessStageSaveConflictModal({
             data-testid="diagram-save-conflict-modal-stay"
             title={toText(actions.stayHint)}
           >
-            {toText(actions.stayLabel) || "Остаться"}
+            {toText(actions.stayLabel) || "Отмена"}
           </button>
           <button
             type="button"
@@ -59,16 +72,18 @@ export default function ProcessStageSaveConflictModal({
           >
             {toText(actions.discardLabel) || "Отбросить локальные изменения"}
           </button>
-          <button
-            type="button"
-            className="secondaryBtn h-9 px-3 text-xs"
-            onClick={onCompare}
-            disabled={busy === true}
-            data-testid="diagram-save-conflict-modal-compare"
-            title={toText(actions.compareHint)}
-          >
-            {toText(actions.compareLabel) || "Сравнить и выбрать"}
-          </button>
+          {typeof onCompare === "function" ? (
+            <button
+              type="button"
+              className="secondaryBtn h-9 px-3 text-xs"
+              onClick={onCompare}
+              disabled={busy === true}
+              data-testid="diagram-save-conflict-modal-compare"
+              title={toText(actions.compareHint)}
+            >
+              {toText(actions.compareLabel) || "Сравнить и выбрать"}
+            </button>
+          ) : null}
         </>
       )}
     >
@@ -86,10 +101,15 @@ export default function ProcessStageSaveConflictModal({
           </ul>
         ) : null}
         <div className="text-[11px] text-muted">
-          {toText(actions.refreshLabel) || "Обновить сессию"}: {toText(actions.refreshHint)}
+          {toText(actions.refreshLabel) || "Обновить и продолжить"}: {toText(actions.refreshHint)}
         </div>
+        {typeof onOverwrite === "function" ? (
+          <div className="text-[11px] text-muted">
+            {toText(actions.overwriteLabel) || "Перезаписать мои изменения"}: {toText(actions.overwriteHint)}
+          </div>
+        ) : null}
         <div className="text-[11px] text-muted">
-          {toText(actions.stayLabel) || "Остаться"}: {toText(actions.stayHint)}
+          {toText(actions.stayLabel) || "Отмена"}: {toText(actions.stayHint)}
         </div>
         <div className="text-[11px] text-muted">
           {toText(actions.discardLabel) || "Отбросить локальные изменения"}: {toText(actions.discardHint)}

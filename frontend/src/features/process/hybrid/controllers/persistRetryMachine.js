@@ -1,3 +1,8 @@
+import {
+  SAVE_FAILURE_KIND,
+  classifySaveHttpStatus,
+} from "../../../session/conflictModel.js";
+
 function toText(value) {
   return String(value || "").trim();
 }
@@ -13,14 +18,19 @@ export function parsePersistStatus(resultRaw) {
 }
 
 export function isLockBusyStatus(statusRaw) {
-  const status = Number(statusRaw || 0);
-  return status === 409 || status === 423;
+  // P1: только 423 (временная блокировка) — авто-ретрай безопасен.
+  // 409 (CAS-конфликт = чужая запись) — НЕ lock-busy, только решение пользователя.
+  return classifySaveHttpStatus(statusRaw) === SAVE_FAILURE_KIND.LOCK_BUSY;
 }
 
 export function mapPersistErrorCode(resultRaw) {
   const result = resultRaw && typeof resultRaw === "object" ? resultRaw : {};
   const status = parsePersistStatus(result);
-  if (isLockBusyStatus(status)) {
+  const kind = classifySaveHttpStatus(status);
+  if (kind === SAVE_FAILURE_KIND.CONFLICT) {
+    return { status, code: "CONFLICT" };
+  }
+  if (kind === SAVE_FAILURE_KIND.LOCK_BUSY) {
     return { status, code: "LOCK_BUSY" };
   }
   if (result?.ok === true) {
@@ -69,6 +79,18 @@ export function reduceHybridPersistState(stateRaw, resultRaw, draftRaw = null, o
       status,
       code: "LOCK_BUSY",
       shouldAutoRetry: !!pendingDraft && canAutoRetry,
+    };
+  }
+  if (code === "CONFLICT") {
+    // P1: 409 — чужая запись на сервере. Черновик сохраняем, но НИКАКИХ
+    // молчаливых ретраев: только явное решение пользователя (conflict-UX).
+    const pendingDraft = draftRaw || state.pendingDraft || null;
+    return {
+      lastError: "CONFLICT",
+      pendingDraft,
+      status,
+      code: "CONFLICT",
+      shouldAutoRetry: false,
     };
   }
   return {

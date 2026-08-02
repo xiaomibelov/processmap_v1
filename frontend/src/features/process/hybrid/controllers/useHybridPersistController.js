@@ -5,6 +5,9 @@ import {
   parsePersistStatus,
   reduceHybridPersistState,
 } from "./persistRetryMachine.js";
+import { saveCoordinator } from "../../../session/saveCoordinator.js";
+
+const HYBRID_CONFLICT_MESSAGE = "Conflict: session was changed in another window. Saving is paused until you resolve it.";
 
 function toText(value) {
   return String(value || "").trim();
@@ -47,6 +50,7 @@ export default function useHybridPersistController({
   const [lastError, setLastError] = useState(null);
   const [pendingDraft, setPendingDraft] = useState(false);
   const [lockBusyNoticeOpen, setLockBusyNoticeOpen] = useState(false);
+  const [conflictNoticeOpen, setConflictNoticeOpen] = useState(false);
 
   const pendingDraftRef = useRef(null);
   const retryInFlightRef = useRef(false);
@@ -72,14 +76,21 @@ export default function useHybridPersistController({
       setInfoMsg?.("Session is being updated. Retry in a moment.");
       setLockBusyNoticeOpen(true);
     }
+    if (reduced.code === "CONFLICT") {
+      // P1: 409 — конфликт версий виден пользователю, без молчаливых ретраев.
+      setInfoMsg?.(HYBRID_CONFLICT_MESSAGE);
+      setConflictNoticeOpen(true);
+    }
     if (resultRaw?.ok) {
       setLockBusyNoticeOpen(false);
+      setConflictNoticeOpen(false);
     }
     return reduced;
   }, [maxAutoRetries, setInfoMsg]);
 
   const notifyLockBusy = useCallback((status) => {
-    if (status !== 409 && status !== 423) return;
+    // P1: индикатор «Сохранение… повтор» — только для 423 (временная блокировка).
+    if (status !== 423) return;
     setInfoMsg?.("Session is being updated. Retry in a moment.");
   }, [setInfoMsg]);
 
@@ -174,6 +185,25 @@ export default function useHybridPersistController({
     setLockBusyNoticeOpen(false);
   }, []);
 
+  const dismissConflictNotice = useCallback(() => {
+    // «Отмена»: диалог закрыт, но conflict gate в saveCoordinator остаётся —
+    // следующий save снова покажет конфликт, пока пользователь не выберет
+    // refresh/overwrite.
+    setConflictNoticeOpen(false);
+  }, []);
+
+  // P1: «Перезаписать мои изменения» для hybrid-документа — осознанный force:
+  // снимаем conflict gate с явным принятием серверной базы и повторяем
+  // отложенный черновик. Вызывается ТОЛЬКО из обработчика кнопки.
+  const resolveConflictOverwrite = useCallback(async () => {
+    const resolved = saveCoordinator.resolveConflict(sessionId, "overwrite");
+    setConflictNoticeOpen(false);
+    if (resolved?.ok !== true && resolved?.error !== "no_conflict") {
+      return { ok: false, error: String(resolved?.error || "conflict_resolve_failed") };
+    }
+    return retryLastHybridV2Save();
+  }, [sessionId, retryLastHybridV2Save]);
+
   const persistDrawioMetaSafe = useCallback(async (nextRaw, options = {}) => {
     const result = normalizeResult(await persistDrawioMeta(nextRaw, options));
     notifyLockBusy(Number(result.status || 0));
@@ -210,12 +240,21 @@ export default function useHybridPersistController({
     retryLast: retryLastHybridV2Save,
     discardDraft,
     dismissLockBusyNotice,
+    dismissConflictNotice,
+    resolveConflictOverwrite,
     pendingDraft,
     lockBusyNotice: {
       open: lockBusyNoticeOpen,
       message: "Session is being updated. Retry in a moment.",
       sessionId: toText(sessionId),
       pendingDraft,
+    },
+    conflictNotice: {
+      open: conflictNoticeOpen,
+      message: HYBRID_CONFLICT_MESSAGE,
+      sessionId: toText(sessionId),
+      pendingDraft,
+      serverVersion: saveCoordinator.getConflict(sessionId)?.serverVersion ?? null,
     },
     get lastError() {
       return toText(lastError) || null;
