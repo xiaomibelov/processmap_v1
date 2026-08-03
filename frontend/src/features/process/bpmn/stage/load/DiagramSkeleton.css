@@ -1,0 +1,134 @@
+/* FIX-V (блок 3): стили скелетона загрузки канваса.
+   Все анимации — только transform/opacity (композитор, без влияния на FPS). */
+
+.diagramSkeleton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  height: 100%;
+  padding: 24px;
+  background: var(--c-bg, #f8fafc);
+  pointer-events: none;
+  user-select: none;
+}
+
+.dark .diagramSkeleton {
+  background: var(--c-bg, #0f172a);
+}
+
+.diagramSkeleton-canvas {
+  position: relative;
+  width: min(72%, 720px);
+  height: min(56%, 420px);
+  border: 1px dashed rgba(100, 116, 139, 0.35);
+  border-radius: 14px;
+  background: rgba(100, 116, 139, 0.06);
+  overflow: hidden;
+}
+
+.dark .diagramSkeleton-canvas {
+  border-color: rgba(148, 163, 184, 0.28);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.diagramSkeleton-pulse {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    rgba(100, 116, 139, 0) 20%,
+    rgba(100, 116, 139, 0.14) 50%,
+    rgba(100, 116, 139, 0) 80%
+  );
+  transform: translateX(-100%);
+  animation: diagramSkeleton-shimmer 1.8s ease-in-out infinite;
+  will-change: transform;
+}
+
+.dark .diagramSkeleton-pulse {
+  background: linear-gradient(
+    100deg,
+    rgba(148, 163, 184, 0) 20%,
+    rgba(148, 163, 184, 0.16) 50%,
+    rgba(148, 163, 184, 0) 80%
+  );
+}
+
+.diagramSkeleton-node {
+  position: absolute;
+  border-radius: 8px;
+  background: rgba(100, 116, 139, 0.16);
+  animation: diagramSkeleton-node-fade 2.4s ease-in-out infinite;
+  will-change: opacity;
+}
+
+.dark .diagramSkeleton-node {
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.diagramSkeleton-node--a {
+  left: 12%;
+  top: 30%;
+  width: 18%;
+  height: 16%;
+}
+
+.diagramSkeleton-node--b {
+  left: 42%;
+  top: 52%;
+  width: 20%;
+  height: 16%;
+  animation-delay: 0.4s;
+}
+
+.diagramSkeleton-node--c {
+  left: 72%;
+  top: 24%;
+  width: 16%;
+  height: 16%;
+  animation-delay: 0.8s;
+}
+
+.diagramSkeleton-caption {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-text-muted, #64748b);
+}
+
+.dark .diagramSkeleton-caption {
+  color: var(--c-text-muted, #94a3b8);
+}
+
+@keyframes diagramSkeleton-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes diagramSkeleton-node-fade {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diagramSkeleton-pulse,
+  .diagramSkeleton-node {
+    animation: none;
+  }
+
+  .diagramSkeleton-pulse {
+    opacity: 0.4;
+    transform: none;
+  }
+}
