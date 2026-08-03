@@ -18,6 +18,7 @@
 import { useEffect, useRef } from "react";
 import { apiRoutes } from "../lib/apiRoutes.js";
 import { getAccessToken } from "../lib/apiCore.js";
+import { markSessionNotFound } from "../features/session/sessionLiveness.js";
 
 const POLL_INTERVAL_MS = 15000;
 
@@ -91,6 +92,9 @@ export default function useSessionEvents(sessionIdRaw, handlers = {}, options = 
       eventSource.addEventListener("session_deleted", (event) => {
         try {
           const data = JSON.parse(event.data || "{}");
+          // P-1: фиксируем в реестре — поллеры (presence/remote-poll/save)
+          // останавливаются даже если UX-редирект по какой-то причине не сработал.
+          markSessionNotFound(data.session_id || sid, { source: "session_events" });
           if (!stopped && onDeletedRef.current) {
             onDeletedRef.current(data.session_id || sid);
           }
@@ -115,11 +119,27 @@ export default function useSessionEvents(sessionIdRaw, handlers = {}, options = 
       eventSource.onerror = () => {
         // Browser will auto-reconnect for transient errors.
         // If the session was deleted while offline, the 404 on reconnect
-        // won't trigger session_deleted — so after N consecutive errors
-        // we proactively check.
+        // won't trigger session_deleted — делаем одноразовую HEAD-проверку
+        // (P-1: иначе presence/remote-poll 404'ятся бесконечно, см. frequency_map).
         if (onConnectionErrorRef.current) {
           onConnectionErrorRef.current(eventSource);
         }
+        if (stopped) return;
+        fetch(url, { method: "HEAD", credentials: "include" })
+          .then((resp) => {
+            if (resp.status === 404 && !stopped) {
+              markSessionNotFound(sid, { source: "session_events_head" });
+              if (onDeletedRef.current) onDeletedRef.current(sid);
+              stopped = true;
+              if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+              }
+            }
+          })
+          .catch(() => {
+            // сетевая ошибка — браузер продолжит reconnect сам
+          });
       };
     }
 
@@ -130,8 +150,11 @@ export default function useSessionEvents(sessionIdRaw, handlers = {}, options = 
         if (stopped) return;
         try {
           const resp = await fetch(url, { method: "HEAD", credentials: "include" });
-          if (resp.status === 404 && onDeletedRef.current) {
-            onDeletedRef.current(sid);
+          if (resp.status === 404) {
+            markSessionNotFound(sid, { source: "session_events_poll" });
+            if (onDeletedRef.current) {
+              onDeletedRef.current(sid);
+            }
             stopped = true;
             return;
           }

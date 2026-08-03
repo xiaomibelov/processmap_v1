@@ -16,6 +16,7 @@ import {
   SAVE_CONFLICT_RESOLUTION,
   isSaveConflictStatus,
 } from "./conflictModel.js";
+import { noteSessionApiResult } from "./sessionLiveness.js";
 
 function asText(value) {
   return String(value || "").trim();
@@ -470,6 +471,15 @@ class SaveCoordinator {
       const result = lastError ? { ok: false, status: 0, error: String(lastError?.message || lastError) } : lastResult;
 
       if (!result?.ok) {
+        // P-1: терминальный 404 (сессия удалена) — пометить глобально, НЕ
+        // ретраить и НЕ путать с конфликтом 409 (конфликт-модал — только 409).
+        const deadInfo = noteSessionApiResult(sid, result, `save:${pipelineName}`);
+        if (deadInfo) {
+          rollbackTrackedDiagramStateVersion(sid);
+          this._setPipelineStatus(pipelineName, sid, "idle", { outcome: "session_not_found" });
+          this.emit("session_not_found", { pipeline: pipelineName, sessionId: sid, response: result });
+          return result;
+        }
         if (isConflictResponse(result)) {
           this._setPipelineStatus(pipelineName, sid, "busy", { stage: "409" });
           rollbackTrackedDiagramStateVersion(sid);
