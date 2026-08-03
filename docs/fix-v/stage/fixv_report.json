@@ -1,0 +1,14 @@
+{
+  "base": "https://stage.processmap.ru",
+  "sid": "5ae321f04f",
+  "mutate": true,
+  "at": "2026-08-03T23:10:42.661Z",
+  "failures": [],
+  "notes": [
+    "OK: канвас готов за ~2444мс",
+    "OK: скелетон скрылся после готовности канваса",
+    "OK: микро-правка применена через modeler API",
+    "OK: 409 на PATCH/PUT сессии за прогон НЕТ"
+  ],
+  "patchResponses": []
+}
