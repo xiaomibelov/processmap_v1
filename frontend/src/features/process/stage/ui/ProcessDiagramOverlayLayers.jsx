@@ -6,7 +6,6 @@ import DrawioEditorModal from "../../drawio/DrawioEditorModal";
 import { bumpDrawioPerfCounter } from "../../drawio/runtime/drawioRuntimeProbes.js";
 import HybridOverlayRenderer from "../../hybrid/renderers/HybridOverlayRenderer";
 import HybridContextMenu from "../../hybrid/tools/HybridContextMenu";
-import HybridPersistToast from "../../hybrid/ui/HybridPersistToast";
 import BpmnDiagramContextMenu from "../../bpmn/context-menu/BpmnDiagramContextMenu";
 import BpmnSubprocessPreviewModal from "../../bpmn/context-menu/BpmnSubprocessPreviewModal";
 
@@ -18,7 +17,6 @@ const ProcessDiagramOverlayLayers = forwardRef(function ProcessDiagramOverlayLay
   drawioOverlayProps,
   hybridOverlayProps,
   hybridContextMenuProps,
-  hybridPersistToastProps,
   drawioEditorModalProps,
 }, ref) {
   bumpDrawioPerfCounter("overlay.renderer.layers.renders");
@@ -31,7 +29,7 @@ const ProcessDiagramOverlayLayers = forwardRef(function ProcessDiagramOverlayLay
       <DrawioOverlayRenderer {...drawioOverlayProps} />
       <HybridOverlayRenderer {...hybridOverlayProps} />
       <HybridContextMenu {...hybridContextMenuProps} />
-      <HybridPersistToast {...hybridPersistToastProps} />
+      {/* FIX-V (блок 2): HybridPersistToast перенесён в единый ProcessToastViewport на уровне ProcessStage. */}
       <DrawioEditorModal {...drawioEditorModalProps} />
     </>
   );

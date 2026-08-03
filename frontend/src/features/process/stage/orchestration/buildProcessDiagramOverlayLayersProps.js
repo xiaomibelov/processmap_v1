@@ -173,7 +173,6 @@ export function buildHybridDiagramOverlayLayersProps({
   closeHybridContextMenu,
   commitHybridTextEditor,
   deleteSelectedHybridIds,
-  dismissHybridLockBusyNotice,
   getHybridLayerCardRefCallback,
   handleHybridLayerItemPointerDown,
   handleHybridV2ElementContextMenu,
@@ -192,9 +191,6 @@ export function buildHybridDiagramOverlayLayersProps({
   hybridLayerRenderRows,
   hybridModeEffective,
   hybridOpacityValue,
-  hybridPersistLockBusyNoticeMessage,
-  hybridPersistLockBusyNoticeOpen,
-  hybridPersistPendingDraft,
   hybridPlacementHitLayerActive,
   hybridSelectionCount,
   hybridTextEditor,
@@ -211,7 +207,6 @@ export function buildHybridDiagramOverlayLayersProps({
   onHybridOverlayPointerLeave,
   onHybridOverlayPointerMove,
   renameHybridItem,
-  retryHybridPersist,
   setHybridLayerActiveElementId,
   tab,
   toText,
@@ -295,15 +290,8 @@ export function buildHybridDiagramOverlayLayersProps({
         closeHybridContextMenu();
       },
     },
-    hybridPersistToastProps: {
-      visible: tab === "diagram" && !!hybridPersistLockBusyNoticeOpen,
-      message: hybridPersistLockBusyNoticeMessage,
-      pendingDraft: !!hybridPersistPendingDraft,
-      onRetry: () => {
-        void retryHybridPersist?.();
-      },
-      onDismiss: dismissHybridLockBusyNotice,
-    },
+    // FIX-V (блок 2): hybridPersistToastProps удалён — тост перенесён
+    // в единый ProcessToastViewport на уровне ProcessStage.
   };
 }
 
