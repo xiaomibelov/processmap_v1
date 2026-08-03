@@ -2540,10 +2540,19 @@ export default function App() {
       return { ok: true };
     }
 
+    // FIX-V: для XML-truth сессий nodes/edges не персистятся сервером
+    // (FIX-SAVE B5 отвечает 409 DRAFT_GRAPH_READ_ONLY_XML_TRUTH). Время шага
+    // для таких сессий сохраняется через interview.steps; nodes обновляются
+    // только локально (уже применено выше через setDraftPersisted).
+    const isXmlTruthSession = String(draft?.bpmn_xml || "").trim() !== "";
     const payload = {
-      nodes: nextNodes,
+      ...(isXmlTruthSession ? {} : { nodes: nextNodes }),
       ...(stepsChanged ? { interview: nextInterview } : {}),
     };
+    if (Object.keys(payload).length === 0) {
+      markOk("Время шага сохранено.");
+      return { ok: true, local: true };
+    }
     const r = await apiPatchSession(sid, payload);
     if (!r.ok) {
       setDraftPersisted((prev) => ({
