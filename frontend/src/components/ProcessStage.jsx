@@ -2564,8 +2564,8 @@ function ProcessStage({
                   session_id: sid,
                   actors_derived: asArray(manualProjectionPlan.derivedActors),
                   ...(projectionPatch.interview ? { interview: manualProjectionPlan.nextInterview } : {}),
-                  ...(projectionPatch.nodes ? { nodes: manualProjectionPlan.nextNodes } : {}),
-                  ...(projectionPatch.edges ? { edges: manualProjectionPlan.nextEdges } : {}),
+                  ...(manualProjectionPlan.nodesChanged ? { nodes: manualProjectionPlan.nextNodes } : {}),
+                  ...(manualProjectionPlan.edgesChanged ? { edges: manualProjectionPlan.nextEdges } : {}),
                   _sync_source: "manual_save_projection_sync",
                 });
                 if (!isLocal) {

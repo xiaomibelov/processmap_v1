@@ -52,14 +52,28 @@ export function buildManualSaveProjectionSyncPlan({
     nextEdgesRaw: nextEdges,
     draftEdgesRaw: draftValue?.edges,
   });
+  const patch = asObject(patchPlan?.patch);
+  // FIX-V (V1/H2): план всегда строится по непустому XML → сессия XML-truth.
+  // Для XML-truth сессий nodes/edges НЕ персистятся сервером (аудит P6: раньше
+  // silent no-op; после FIX-SAVE B5 — явный 409 DRAFT_GRAPH_READ_ONLY_XML_TRUTH,
+  // который давал ложный companionError и тост «Метаданные версии пока не
+  // синхронизированы» сразу после создания версии). Локальная проекция
+  // (nextNodes/nextEdges) остаётся для React-состояния; в серверный patch
+  // они не идут.
+  delete patch.nodes;
+  delete patch.edges;
+  const planMeta = patchPlan && typeof patchPlan === "object" ? patchPlan : {};
   return {
     ok: true,
     xml,
     nextInterview,
     nextNodes,
     nextEdges,
-    patch: asObject(patchPlan?.patch),
-    patchPlan: patchPlan && typeof patchPlan === "object" ? patchPlan : {},
+    patch,
+    patchPlan: planMeta,
+    interviewChanged: planMeta.interviewChanged === true,
+    nodesChanged: planMeta.nodesChanged === true,
+    edgesChanged: planMeta.edgesChanged === true,
     derivedActors: deriveActorsFromBpmn(xml),
   };
 }

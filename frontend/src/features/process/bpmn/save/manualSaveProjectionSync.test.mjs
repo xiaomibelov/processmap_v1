@@ -131,7 +131,7 @@ const extendedXml = `<?xml version="1.0" encoding="UTF-8"?>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>`;
 
-test("manual save projection sync builds nodes patch for graph-changing BPMN save", () => withDom(() => {
+test("manual save projection sync keeps nodes/edges local-only for XML-truth sessions (FIX-V)", () => withDom(() => {
   const plan = buildManualSaveProjectionSyncPlan({
     xmlText: extendedXml,
     draft: {
@@ -144,11 +144,16 @@ test("manual save projection sync builds nodes patch for graph-changing BPMN sav
   });
   assert.equal(plan.ok, true);
   assert.equal(Array.isArray(plan.nextNodes), true);
-  assert.equal(Array.isArray(plan.patch.nodes), true);
+  // FIX-V: серверный patch для XML-truth сессии не должен содержать nodes/edges
+  // (иначе FIX-SAVE B5 отвечает 409 DRAFT_GRAPH_READ_ONLY_XML_TRUTH → ложный
+  // тост «Метаданные версии пока не синхронизированы» после создания версии).
+  assert.equal(Object.prototype.hasOwnProperty.call(plan.patch, "nodes"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(plan.patch, "edges"), false);
+  // Локальная проекция для React-состояния сохраняется.
   assert.equal(plan.nextNodes.some((row) => String(row?.id || "") === "Activity_new"), true);
 }));
 
-test("manual save projection sync builds nodes patch for property rename path", () => withDom(() => {
+test("manual save projection sync keeps interview in server patch while stripping nodes/edges", () => withDom(() => {
   const plan = buildManualSaveProjectionSyncPlan({
     xmlText: baseXml("A4_renamed_task"),
     draft: {
@@ -162,8 +167,14 @@ test("manual save projection sync builds nodes patch for property rename path", 
     projectionHelpers,
   });
   assert.equal(plan.ok, true);
-  assert.equal(Array.isArray(plan.patch.nodes), true);
-  assert.equal(plan.patch.nodes.some((row) => String(row?.title || "") === "A4_renamed_task"), true);
+  assert.equal(Object.prototype.hasOwnProperty.call(plan.patch, "nodes"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(plan.patch, "edges"), false);
+  // Проекция переименования доступна локально.
+  assert.equal(plan.nextNodes.some((row) => String(row?.title || "") === "A4_renamed_task"), true);
+  // Interview-проекция по-прежнему уходит на сервер (разрешено B5-гардом).
+  if (Object.keys(plan.patch).length > 0) {
+    assert.deepEqual(Object.keys(plan.patch).sort(), ["interview"]);
+  }
 }));
 
 test("manual save projection sync returns empty patch when projection already matches durable BPMN", () => withDom(() => {
