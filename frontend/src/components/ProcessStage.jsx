@@ -146,6 +146,8 @@ import ProcessPanels from "../features/process/stage/ui/ProcessPanels";
 import ProcessDialogs from "../features/process/stage/ui/ProcessDialogs";
 import ProcessStageHeader from "../features/process/stage/ui/ProcessStageHeader";
 import ProcessSaveAckToast from "../features/process/stage/ui/ProcessSaveAckToast";
+import ProcessToastViewport from "../features/process/stage/ui/ProcessToastViewport";
+import HybridPersistToast from "../features/process/hybrid/ui/HybridPersistToast";
 import { resolveProcessToastView } from "../features/process/stage/ui/processToastMessage";
 import {
   buildRemoteUpdateToastKey,
@@ -2594,8 +2596,8 @@ function ProcessStage({
                   session_id: sid,
                   actors_derived: asArray(manualProjectionPlan.derivedActors),
                   ...(projectionPatch.interview ? { interview: manualProjectionPlan.nextInterview } : {}),
-                  ...(projectionPatch.nodes ? { nodes: manualProjectionPlan.nextNodes } : {}),
-                  ...(projectionPatch.edges ? { edges: manualProjectionPlan.nextEdges } : {}),
+                  ...(manualProjectionPlan.nodesChanged ? { nodes: manualProjectionPlan.nextNodes } : {}),
+                  ...(manualProjectionPlan.edgesChanged ? { edges: manualProjectionPlan.nextEdges } : {}),
                   _sync_source: "manual_save_projection_sync",
                 });
                 if (!isLocal) {
@@ -7315,21 +7317,39 @@ function ProcessStage({
   return (
     <ProcessStageShell className={shellClassName}>
       <ProcessStageHeader view={headerView} />
-      <ProcessSaveAckToast
-        visible={saveAckToast.visible === true}
-        message={saveAckToast.message}
-        tone={saveAckToast.tone}
-        description={saveAckToast.description}
-        actionLabel={saveAckToast.kind === "remote_update" && remoteSaveHighlightBusy === true
-          ? "Обновляем..."
-          : saveAckToast.actionLabel}
-        onAction={saveAckToast.onAction}
-        actionDisabled={saveAckToast.kind === "remote_update"
-          ? remoteSaveHighlightBusy === true
-          : saveAckToast.actionDisabled === true}
-        persistent={saveAckToast.persistent === true}
-        onDismiss={saveAckToast.onDismiss}
-      />
+      {/* FIX-V (блок 2, U1/U2): единый toast-viewport — стек под тулбаром,
+          не перекрывает контролы, pointer-events только у карточек. */}
+      <ProcessToastViewport
+        visible={saveAckToast.visible === true
+          || (tab === "diagram" && !!hybridPersist.lockBusyNotice?.open)}
+      >
+        <ProcessSaveAckToast
+          layout="stack"
+          visible={saveAckToast.visible === true}
+          message={saveAckToast.message}
+          tone={saveAckToast.tone}
+          description={saveAckToast.description}
+          actionLabel={saveAckToast.kind === "remote_update" && remoteSaveHighlightBusy === true
+            ? "Обновляем..."
+            : saveAckToast.actionLabel}
+          onAction={saveAckToast.onAction}
+          actionDisabled={saveAckToast.kind === "remote_update"
+            ? remoteSaveHighlightBusy === true
+            : saveAckToast.actionDisabled === true}
+          persistent={saveAckToast.persistent === true}
+          onDismiss={saveAckToast.onDismiss}
+        />
+        <HybridPersistToast
+          layout="stack"
+          visible={tab === "diagram" && !!hybridPersist.lockBusyNotice?.open}
+          message={hybridPersist.lockBusyNotice?.message}
+          pendingDraft={!!hybridPersist.pendingDraft}
+          onRetry={() => {
+            void hybridPersist.retryLast?.();
+          }}
+          onDismiss={hybridPersist.dismissLockBusyNotice}
+        />
+      </ProcessToastViewport>
 
       <div
         className={finalBodyClassName}

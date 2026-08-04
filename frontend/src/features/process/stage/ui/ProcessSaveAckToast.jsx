@@ -32,7 +32,12 @@ export default function ProcessSaveAckToast({
   actionDisabled = false,
   persistent = false,
   onDismiss,
+  layout = "",
 } = {}) {
+  // FIX-V (блок 2): layout="stack" — рендер in-flow карточкой внутри
+  // ProcessToastViewport (единый стек под тулбаром); self-positioning
+  // и anchor-эффект в этом режиме отключены. Режим по умолчанию не изменён.
+  const isStackLayout = layout === "stack";
   const normalizedMessage = String(message || "").trim();
   const normalizedDescription = String(description || "").trim();
   const normalizedActionLabel = String(actionLabel || "").trim();
@@ -76,8 +81,8 @@ export default function ProcessSaveAckToast({
   }, [isMounted, shouldRender]);
 
   useEffect(() => {
-    if (isMounted !== true) {
-      setToolbarRect(null);
+    if (isMounted !== true || isStackLayout) {
+      if (isMounted !== true) setToolbarRect(null);
       return undefined;
     }
     if (typeof document === "undefined" || typeof window === "undefined") return undefined;
@@ -158,6 +163,7 @@ export default function ProcessSaveAckToast({
   }, [isMounted]);
 
   const containerStyle = useMemo(() => {
+    if (isStackLayout) return null;
     if (!toolbarRect || typeof window === "undefined") return null;
 
     const viewportWidth = Number(window.innerWidth || 0);
@@ -246,13 +252,15 @@ export default function ProcessSaveAckToast({
       top: `${Math.round(top)}px`,
       width: `${Math.round(width)}px`,
     };
-  }, [toolbarRect]);
+  }, [toolbarRect, isStackLayout]);
 
   if (!isMounted) return null;
 
-  const containerClassName = containerStyle
-    ? "pointer-events-none fixed z-[130] w-[min(92vw,420px)]"
-    : "pointer-events-none fixed bottom-5 left-1/2 z-[130] w-[min(92vw,420px)] -translate-x-1/2 sm:bottom-6";
+  const containerClassName = isStackLayout
+    ? "w-full"
+    : containerStyle
+      ? "pointer-events-none fixed z-[130] w-[min(92vw,420px)]"
+      : "pointer-events-none fixed bottom-5 left-1/2 z-[130] w-[min(92vw,420px)] -translate-x-1/2 sm:bottom-6";
   const toneClass = resolveToneClass(String(tone || "").trim());
   return (
     <div
