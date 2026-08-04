@@ -462,6 +462,20 @@ class DiagramStateConflictError(RuntimeError):
         self.current = current
 
 
+class SessionNotFoundError(RuntimeError):
+    """Raised when a CAS-guarded session write targets a missing (deleted) row.
+
+    Distinct from :class:`DiagramStateConflictError`: the row does not exist at
+    all (deleted between the pre-load and the write, or never existed), so the
+    API contract must surface 404 SESSION_NOT_FOUND — not a 409 conflict
+    (audit P-1: save into a deleted session masqueraded as DIAGRAM_STATE_CONFLICT).
+    """
+
+    def __init__(self, session_id: str) -> None:
+        super().__init__(f"session not found for CAS-guarded write: {session_id}")
+        self.session_id = str(session_id or "")
+
+
 class SessionTitleConflictError(RuntimeError):
     """Raised when a session natural-key (org/project/title/mode) unique constraint is violated."""
 
@@ -4429,6 +4443,12 @@ class Storage:
                 if (existing is not None and expected_diagram_state_version is not None)
                 else None
             )
+            if existing is None and expected_diagram_state_version is not None:
+                # A CAS write presumes an existing row: the session was deleted
+                # between the pre-load and this write (or never existed).
+                # Surface 404 instead of silently INSERTing a zombie row with a
+                # resurrected deleted id (audit P-1).
+                raise SessionNotFoundError(sid)
             if cas_base is not None:
                 update_values = dict(values)
                 update_values["__cas_base"] = cas_base
@@ -4486,8 +4506,13 @@ class Storage:
                         "SELECT diagram_state_version FROM sessions WHERE id = ? LIMIT 1",
                         [sid],
                     ).fetchone()
-                    current_version = int(_row_value(current_row, "diagram_state_version", 0) or 0) if current_row else None
                     con.rollback()
+                    if current_row is None:
+                        # Row disappeared between the initial SELECT and the
+                        # UPDATE: deleted concurrently. This is a 404, not a
+                        # version conflict (audit P-1).
+                        raise SessionNotFoundError(sid)
+                    current_version = int(_row_value(current_row, "diagram_state_version", 0) or 0)
                     raise DiagramStateConflictError(sid, cas_base, current_version)
             else:
                 con.execute(
