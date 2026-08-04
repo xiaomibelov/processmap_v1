@@ -128,6 +128,14 @@ from .auth import (
     set_invited_identity_password,
     user_from_bearer_header,
 )
+from .auth import (  # noqa: F401  # re-export facade (PR-6 auth)
+    AUTH_PUBLIC_PATHS,
+    _RATE_LIMIT_BUCKETS,
+    _RATE_LIMIT_LOCK,
+    _clear_refresh_cookie,
+    _rate_limit_check,
+    _set_refresh_cookie,
+)
 from .schemas.legacy_api import (
     AiQuestionsIn,
     AnswerIn,
@@ -221,6 +229,15 @@ from .overlay_cache import get_overlay, invalidate_overlay
 from . import overlay_cache
 from . import storage as _storage_mod
 from .services import auth_service as _auth_service
+from .services.audit import _audit_log_safe
+from .services.auth_service import (  # noqa: F401  # re-export facade (PR-6 auth)
+    auth_invite_activate,
+    auth_invite_preview,
+    auth_login,
+    auth_logout,
+    auth_me,
+    auth_refresh,
+)
 from .utils.auth_helpers import set_refresh_cookie, clear_refresh_cookie
 from .utils.session_helpers import (
     _build_server_last_write_payload,
@@ -292,8 +309,8 @@ from .shared.payloads import (  # noqa: F401  # re-export facade (PR-5)
     _pick_current_org_invite,
     _with_invite_links,
 )
-# DEPRECATED: auth routes moved to routers/auth.py — kept for backward compatibility during migration.
-# from .routers.auth import router as _auth_router
+# /api/auth/* handler implementations live in app/services/auth_service.py (PR-6);
+# they are re-registered on this app below (see "auth" route registrations).
 
 
 app = FastAPI(title="Food Process Copilot MVP")
@@ -301,27 +318,6 @@ from .metrics import start_polling
 start_polling(overlay_cache.r)
 logger = logging.getLogger(__name__)
 _auth_logger = logging.getLogger("auth_debug")
-
-AUTH_PUBLIC_PATHS = {
-    "/api/auth/login",
-    "/api/auth/refresh",
-    "/api/auth/logout",
-    "/api/auth/invite/preview",
-    "/api/auth/invite/activate",
-    "/api/invite/resolve",
-    "/api/invite/activate",
-    "/api/invites/accept",
-    "/api/health",
-    "/api/health/process-template",
-    "/api/meta",
-    "/api/feature-flags",
-    "/api/deployment-notice",
-    # Swagger / OpenAPI endpoints are routed through /api so the frontend nginx
-    # does not serve the SPA fallback for them.
-    "/api/docs",
-    "/api/redoc",
-    "/api/openapi.json",
-}
 
 _ORG_WRITE_ROLES = {"org_owner", "org_admin"}
 _ORG_EDITOR_ROLES = {"org_owner", "org_admin", "project_manager", "editor"}
@@ -335,8 +331,6 @@ _ORG_TEMPLATE_WRITE_ROLES = {"org_owner", "org_admin", "project_manager"}
 _WORKSPACE_ADMIN_ROLES = {"org_owner", "org_admin"}
 _WORKSPACE_EDITOR_ROLES = {"org_owner", "org_admin", "project_manager", "editor"}
 _WORKSPACE_VIEWER_ROLES = {"viewer", "org_viewer", "auditor"}
-_RATE_LIMIT_LOCK = threading.RLock()
-_RATE_LIMIT_BUCKETS: Dict[str, deque] = {}
 
 
 def _to_epoch_iso(value: Any) -> str:
@@ -431,26 +425,6 @@ def _validate_session_status_transition(current_raw: Any, next_raw: Any, *, role
     )
 
 
-def _rate_limit_check(key: str, limit: int, window_sec: int = 60) -> bool:
-    bucket_key = str(key or "").strip()
-    if not bucket_key:
-        return True
-    cap = max(1, int(limit or 1))
-    now = int(time.time())
-    with _RATE_LIMIT_LOCK:
-        bucket = _RATE_LIMIT_BUCKETS.get(bucket_key)
-        if bucket is None:
-            bucket = deque()
-            _RATE_LIMIT_BUCKETS[bucket_key] = bucket
-        threshold = now - max(1, int(window_sec or 60))
-        while bucket and int(bucket[0] or 0) <= threshold:
-            bucket.popleft()
-        if len(bucket) >= cap:
-            return False
-        bucket.append(now)
-    return True
-
-
 _REPORT_LOCKS_GUARD = threading.RLock()
 _REPORT_LOCKS_BY_SESSION: Dict[str, threading.RLock] = {}
 _PATH_REPORT_STALE_RUNNING_SEC = max(30, int(os.environ.get("PATH_REPORT_STALE_RUNNING_SEC", "180")))
@@ -485,48 +459,6 @@ def _is_report_active(report_id: str) -> bool:
         return False
     with _REPORT_ACTIVE_GUARD:
         return rid in _REPORT_ACTIVE_IDS
-
-
-# DEPRECATED: moved to utils/auth_helpers.py — kept for backward compatibility during migration.
-def _set_refresh_cookie(resp: Response, refresh_token: str, max_age_seconds: int) -> None:
-    secure = refresh_cookie_secure()
-    samesite = refresh_cookie_samesite()
-    # Use root path so the cookie is visible and replaceable on every route.
-    # Also clear any legacy cookie scoped to /api/auth/ to avoid duplicate cookies.
-    resp.set_cookie(
-        key="refresh_token",
-        value=str(refresh_token or ""),
-        httponly=True,
-        secure=secure,
-        samesite=samesite,
-        max_age=max(1, int(max_age_seconds)),
-        path="/",
-    )
-    resp.delete_cookie(
-        key="refresh_token",
-        path="/api/auth/",
-        secure=secure,
-        samesite=samesite,
-    )
-
-
-# DEPRECATED: moved to utils/auth_helpers.py — kept for backward compatibility during migration.
-def _clear_refresh_cookie(resp: Response) -> None:
-    secure = refresh_cookie_secure()
-    samesite = refresh_cookie_samesite()
-    # Clear both current root path and legacy /api/auth/ path.
-    resp.delete_cookie(
-        key="refresh_token",
-        path="/",
-        secure=secure,
-        samesite=samesite,
-    )
-    resp.delete_cookie(
-        key="refresh_token",
-        path="/api/auth/",
-        secure=secure,
-        samesite=samesite,
-    )
 
 
 def _overlay_interview_annotations_on_bpmn_xml(sess: Session, xml_text: str) -> str:
@@ -3269,216 +3201,17 @@ def metrics_endpoint():
     return Response(content=metrics(), media_type="text/plain")
 
 
-# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
-@app.post("/api/auth/login", response_model=AuthTokenOut)
-def auth_login(inp: AuthLoginIn, request: Request):
-    login_limit = max(1, _env_int("RL_LOGIN_PER_MIN", 30))
-    ip_key = str(_request_client_ip(request) or "ip_unknown")
-    if not _rate_limit_check(f"login:{ip_key}", login_limit, 60):
-        raise HTTPException(status_code=429, detail="too_many_requests")
-    try:
-        user = authenticate_user(inp.email, inp.password)
-    except AuthError as _e:
-        import logging
-        logging.getLogger("auth_debug").warning(f"auth_login failed: email={inp.email} error={_e}")
-        raise HTTPException(status_code=401, detail="invalid_credentials")
-
-    issued = issue_login_tokens(
-        user=user,
-        user_agent=request.headers.get("user-agent", ""),
-        ip=_request_client_ip(request),
-    )
-    max_age = max(1, int(issued.get("refresh_expires_at", 0)) - int(time.time()))
-    payload = {
-        "access_token": str(issued.get("access_token") or ""),
-        "token_type": "bearer",
-    }
-    try:
-        uid = str(user.get("id") or "").strip()
-        oid = resolve_active_org_id(
-            uid,
-            requested_org_id=_extract_org_from_headers(request),
-            is_admin=bool(user.get("is_admin", False)),
-        )
-        if uid and oid:
-            append_audit_log(
-                actor_user_id=uid,
-                org_id=oid,
-                action="login",
-                entity_type="auth",
-                entity_id=uid,
-                status="ok",
-                meta={"ip": _request_client_ip(request), "user_agent": str(request.headers.get("user-agent") or "")[:180]},
-            )
-    except Exception:
-        pass
-    resp = JSONResponse(status_code=200, content=payload)
-    _set_refresh_cookie(resp, str(issued.get("refresh_token") or ""), max_age)
-    return resp
-
-
-# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
-@app.post("/api/auth/refresh", response_model=AuthTokenOut)
-def auth_refresh(request: Request):
-    refresh_token = str(request.cookies.get("refresh_token") or "").strip()
-    if not refresh_token:
-        _auth_logger.warning("refresh_failed: missing_refresh_token ip=%s ua=%s", _request_client_ip(request), str(request.headers.get("user-agent", ""))[:120])
-        resp = JSONResponse(status_code=401, content={"detail": "missing_refresh_token"})
-        _clear_refresh_cookie(resp)
-        return resp
-
-    try:
-        rotated = rotate_refresh_token(
-            refresh_token,
-            user_agent=request.headers.get("user-agent", ""),
-            ip=_request_client_ip(request),
-        )
-    except AuthError as e:
-        _auth_logger.warning("refresh_failed: %s ip=%s ua=%s", e, _request_client_ip(request), str(request.headers.get("user-agent", ""))[:120])
-        resp = JSONResponse(status_code=401, content={"detail": str(e)})
-        _clear_refresh_cookie(resp)
-        return resp
-
-    max_age = max(1, int(rotated.get("refresh_expires_at", 0)) - int(time.time()))
-    payload = {
-        "access_token": str(rotated.get("access_token") or ""),
-        "token_type": "bearer",
-    }
-    resp = JSONResponse(status_code=200, content=payload)
-    _set_refresh_cookie(resp, str(rotated.get("refresh_token") or ""), max_age)
-    return resp
-
-
-# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
-@app.post("/api/auth/logout")
-def auth_logout(request: Request):
-    refresh_token = str(request.cookies.get("refresh_token") or "").strip()
-    if refresh_token:
-        revoke_refresh_from_token(refresh_token)
-    resp = JSONResponse(status_code=200, content={"ok": True})
-    _clear_refresh_cookie(resp)
-    return resp
-
-
-# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
-@app.get("/api/auth/me", response_model=AuthMeOut)
-def auth_me(request: Request):
-    user = getattr(request.state, "auth_user", None)
-    if not isinstance(user, dict):
-        try:
-            user = user_from_bearer_header(request.headers.get("authorization", ""))
-        except AuthError:
-            raise HTTPException(status_code=401, detail="unauthorized")
-    user_id = str(user.get("id") or "").strip()
-    is_admin = bool(user.get("is_admin", False))
-    memberships = list_user_org_memberships(user_id, is_admin=is_admin)
-    requested_org_id = _extract_org_from_headers(request)
-    active_org_id = resolve_active_org_id(user_id, requested_org_id=requested_org_id, is_admin=is_admin)
-    groups = list_user_groups(user_id, org_id=active_org_id)
-    return build_auth_me_payload(
-        user_id=user_id,
-        email=str(user.get("email") or ""),
-        is_admin=is_admin,
-        active_org_id=active_org_id,
-        default_org_id=get_default_org_id(),
-        orgs=memberships,
-        groups=groups,
-        role=str(user.get("role") or ""),
-    )
-
-
-# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
-@app.post("/api/auth/invite/preview")
-@app.post("/api/invite/resolve")
-def auth_invite_preview(inp: InvitePreviewIn, request: Request):
-    token = extract_invite_token(inp)
-    if not token:
-        return _enterprise_error(422, "validation_error", "token is required")
-    try:
-        invite = preview_org_invite(token)
-    except ValueError as exc:
-        return _invite_error_to_response(str(exc or "").strip().lower())
-
-    identity = find_user_by_email(str(invite.get("email") or "").strip().lower())
-    return build_invite_preview_payload(
-        invite,
-        identity_state=invited_identity_state(identity),
-        single_org_mode=count_org_records() <= 1,
-    )
-
-
-# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
-@app.post("/api/auth/invite/activate")
-@app.post("/api/invite/activate")
-def auth_invite_activate(inp: InviteActivateIn, request: Request):
-    token = extract_invite_token(inp)
-    password = str(getattr(inp, "password", "") or "")
-    password_confirm = str(getattr(inp, "password_confirm", "") or "")
-    if not token:
-        return _enterprise_error(422, "validation_error", "token is required")
-    if not password:
-        return _enterprise_error(422, "validation_error", "password_required")
-    if len(password) < 8:
-        return _enterprise_error(422, "validation_error", "password_too_short")
-    if password_confirm and password_confirm != password:
-        return _enterprise_error(422, "validation_error", "password_mismatch")
-
-    accept_limit = max(1, _env_int("RL_ACCEPT_PER_MIN", 30))
-    ip_key = str(_request_client_ip(request) or "ip_unknown")
-    if not _rate_limit_check(f"auth:invite_activate:{ip_key}", accept_limit, 60):
-        return _enterprise_error(429, "too_many_requests", "too_many_requests")
-
-    try:
-        invite = preview_org_invite(token)
-    except ValueError as exc:
-        return _invite_error_to_response(str(exc or "").strip().lower())
-
-    invited_email = str(invite.get("email") or "").strip().lower()
-    identity = find_user_by_email(invited_email)
-    if isinstance(identity, dict):
-        if bool(identity.get("is_active", False)) and str(identity.get("password_hash") or "").strip():
-            return _invite_error_to_response("identity_already_active")
-    try:
-        base_identity = ensure_invited_identity(invited_email)
-        accepted = accept_org_invite(
-            str(invite.get("org_id") or "") or None,
-            token,
-            accepted_by=str(base_identity.get("id") or ""),
-            accepted_email=invited_email,
-        )
-        activated_user = set_invited_identity_password(invited_email, password)
-    except (ValueError, AuthError) as exc:
-        return _invite_error_to_response(str(exc or "").strip().lower())
-
-    issued = issue_login_tokens(
-        user=activated_user,
-        user_agent=request.headers.get("user-agent", ""),
-        ip=_request_client_ip(request),
-    )
-    max_age = max(1, int(issued.get("refresh_expires_at", 0)) - int(time.time()))
-    payload = build_invite_activate_payload(
-        issued=issued,
-        accepted=accepted,
-        activated_user=activated_user,
-        invited_email=invited_email,
-    )
-    _audit_log_safe(
-        request,
-        org_id=str(accepted.get("org_id") or get_default_org_id()),
-        action="invite.activate",
-        entity_type="org_invite",
-        entity_id=str(accepted.get("id") or ""),
-        status="ok",
-        meta={
-            "email": invited_email,
-            "role": str(accepted.get("role") or ""),
-            "team_name": str(accepted.get("team_name") or ""),
-            "subgroup_name": str(accepted.get("subgroup_name") or ""),
-        },
-    )
-    resp = JSONResponse(status_code=200, content=payload)
-    _set_refresh_cookie(resp, str(issued.get("refresh_token") or ""), max_age)
-    return resp
+# /api/auth/* handlers live in app/services/auth_service.py (PR-6 auth) and are
+# re-registered here so LEGACY_ROUTE_EXPORT keeps the same routes, methods,
+# registration order and endpoint objects as before the extraction.
+app.post("/api/auth/login", response_model=AuthTokenOut)(auth_login)
+app.post("/api/auth/refresh", response_model=AuthTokenOut)(auth_refresh)
+app.post("/api/auth/logout")(auth_logout)
+app.get("/api/auth/me", response_model=AuthMeOut)(auth_me)
+app.post("/api/invite/resolve")(auth_invite_preview)
+app.post("/api/auth/invite/preview")(auth_invite_preview)
+app.post("/api/invite/activate")(auth_invite_activate)
+app.post("/api/auth/invite/activate")(auth_invite_activate)
 
 
 # DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
@@ -7330,37 +7063,6 @@ def _should_reveal_invite_token(request: Optional[Request]) -> bool:
     return bool((user or {}).get("is_admin", False))
 
 
-def _audit_log_safe(
-    request: Optional[Request],
-    *,
-    org_id: str,
-    action: str,
-    entity_type: str,
-    entity_id: str,
-    status: str = "ok",
-    project_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-    meta: Optional[Dict[str, Any]] = None,
-) -> None:
-    uid, _ = _request_user_meta(request)
-    if not uid:
-        return
-    try:
-        append_audit_log(
-            actor_user_id=uid,
-            org_id=str(org_id or "").strip() or _request_active_org_id(request),
-            action=action,
-            entity_type=entity_type,
-            entity_id=str(entity_id or "").strip() or "-",
-            status=status,
-            project_id=project_id,
-            session_id=session_id,
-            meta=meta if isinstance(meta, dict) else {},
-        )
-    except Exception as exc:
-        print(f"[AUDIT] write_failed action={action} entity={entity_type}:{entity_id} err={exc}")
-
-
 def _enrich_members_with_email(items_raw: Any) -> List[Dict[str, Any]]:
     items = items_raw if isinstance(items_raw, list) else []
     out: List[Dict[str, Any]] = []
@@ -9450,7 +9152,14 @@ def leave_session_presence_api(
 # existing legacy implementations to avoid recursion.
 try:
     if 'auth_invite_activate' not in globals():
-        from app.routers.auth import auth_invite_activate, auth_invite_preview, auth_me  # noqa: F401
+        from app.services.auth_service import (  # noqa: F401
+            auth_invite_activate,
+            auth_invite_preview,
+            auth_login,
+            auth_logout,
+            auth_me,
+            auth_refresh,
+        )
     if 'cleanup_org_audit_endpoint' not in globals():
         from app.routers.org import (
             cleanup_org_audit_endpoint,
