@@ -6,6 +6,7 @@ import {
   reduceHybridPersistState,
 } from "./persistRetryMachine.js";
 import { saveCoordinator } from "../../../session/saveCoordinator.js";
+import { noteSessionApiResult } from "../../../session/sessionLiveness.js";
 
 const HYBRID_CONFLICT_MESSAGE = "Conflict: session was changed in another window. Saving is paused until you resolve it.";
 
@@ -72,6 +73,12 @@ export default function useHybridPersistController({
     setLastError(reduced.lastError || null);
     pendingDraftRef.current = reduced.pendingDraft || null;
     setPendingDraft(!!pendingDraftRef.current);
+    if (reduced.code === "SESSION_NOT_FOUND") {
+      // P-1: терминальный 404/410 — пометить реестр мёртвых сессий.
+      // Conflict/lock-нотисы НЕ открываем: это не конфликт версий.
+      noteSessionApiResult(sessionId, resultRaw, "save:hybrid");
+      setInfoMsg?.("Сессия была удалена. Сохранение остановлено.");
+    }
     if (reduced.code === "LOCK_BUSY") {
       setInfoMsg?.("Session is being updated. Retry in a moment.");
       setLockBusyNoticeOpen(true);
@@ -86,7 +93,7 @@ export default function useHybridPersistController({
       setConflictNoticeOpen(false);
     }
     return reduced;
-  }, [maxAutoRetries, setInfoMsg]);
+  }, [maxAutoRetries, sessionId, setInfoMsg]);
 
   const notifyLockBusy = useCallback((status) => {
     // P1: индикатор «Сохранение… повтор» — только для 423 (временная блокировка).

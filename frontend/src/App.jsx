@@ -1308,6 +1308,13 @@ export default function App() {
     !isSessionLocalMode ? draftSessionId : "",
     {
       onDeleted: useCallback((deletedSessionId) => {
+        // P-1: если удалена ОТКРЫТАЯ сессия — НЕ навигируем принудительно:
+        // useSessionEvents уже пометил её в реестре мёртвых, и ProcessStage
+        // покажет экран мёртвой сессии с опциями восстановления (черновик,
+        // актуальная сессия). Редирект сохраняем для любой другой сессии.
+        if (String(deletedSessionId || "") === String(draftSessionId || "")) {
+          return;
+        }
         setSessionNavNotice({
           code: "SESSION_DELETED",
           status: 404,
@@ -1319,7 +1326,7 @@ export default function App() {
           flushBeforeLeave: false,
           skipLeaveGuard: true,
         });
-      }, [projectId, setSessionNavNotice, returnToSessionList]),
+      }, [draftSessionId, projectId, setSessionNavNotice, returnToSessionList]),
     },
   );
 

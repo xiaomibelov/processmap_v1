@@ -222,7 +222,7 @@ from . import overlay_cache
 from . import storage as _storage_mod
 from .services import auth_service as _auth_service
 from .utils.auth_helpers import set_refresh_cookie, clear_refresh_cookie
-from .utils.session_helpers import _save_session_with_cas
+from .utils.session_helpers import _save_session_with_cas, raise_session_not_found
 # DEPRECATED: auth routes moved to routers/auth.py — kept for backward compatibility during migration.
 # from .routers.auth import router as _auth_router
 
@@ -4219,7 +4219,7 @@ def list_sessions(q: Optional[str] = None, limit: int = 200, request: Request = 
 def get_session(session_id: str, request: Request = None) -> Dict[str, Any]:
     sess, _, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
     sid = str(getattr(sess, "id", "") or session_id).strip()
     version_token = session_open_version_token(sess)
     cache_key = session_open_cache_key(sid, version_token)
@@ -4343,7 +4343,7 @@ def leave_session_presence_api(
 def get_session_tldr(session_id: str, request: Request = None) -> Dict[str, Any]:
     sess, _, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
     sid = str(getattr(sess, "id", "") or session_id).strip()
     cached = cache_get_json(tldr_cache_key(sid))
     if isinstance(cached, dict):
@@ -4361,7 +4361,7 @@ def get_session_analytics(session_id: str, request: Request = None) -> dict:
     st = get_storage()
     sess, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
     if not getattr(sess, "analytics", None):
         sess = _recompute_session(sess)
         st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
@@ -4378,7 +4378,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
     st = get_storage()
     sess, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
     role = _org_role_for_request(request, oid) if request is not None and oid else ("org_admin" if effective_is_admin else "")
     _require_org_active_for_writes(request, oid)
 
@@ -4421,7 +4421,7 @@ def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None
             except _storage_mod.SessionTitleConflictError:
                 raise HTTPException(status_code=409, detail="session title already exists")
             if not sess2:
-                return {"error": "not found"}
+                raise_session_not_found(session_id)
             sess = sess2
             handled = True
 
@@ -4645,7 +4645,7 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
     st = get_storage()
     sess, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
     _require_org_active_for_writes(request, oid)
 
     data = inp.model_dump()
@@ -4667,7 +4667,7 @@ def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) 
             except _storage_mod.SessionTitleConflictError:
                 raise HTTPException(status_code=409, detail="session title already exists")
             if not sess2:
-                return {"error": "not found"}
+                raise_session_not_found(session_id)
             sess = sess2
 
     sess.roles = _norm_roles(data.get("roles"))
@@ -5827,7 +5827,7 @@ def post_notes(session_id: str, inp: NotesIn, request: Request = None) -> Dict[s
     st = get_storage()
     s = st.load(session_id)
     if not s:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
     _require_diagram_cas_or_409(
         sess=s,
         session_id=session_id,
@@ -6704,7 +6704,7 @@ def answer(session_id: str, inp: AnswerIn, request: Request = None) -> Dict[str,
     st = get_storage()
     s = st.load(session_id)
     if not s:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
 
     try:
         _apply_answer(s, inp)
@@ -7157,7 +7157,7 @@ def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn, request: Requ
     st = get_storage()
     s = st.load(session_id)
     if not s:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
     inp_payload = inp.model_dump(exclude_unset=True)
     _require_diagram_cas_or_409(
         sess=s,
@@ -7713,7 +7713,7 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
 
     sess_pre, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not sess_pre:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
     role = _org_role_for_request(request, oid) if request is not None and oid else ("org_admin" if effective_is_admin else "")
     if not _can_edit_workspace(role, is_admin=effective_is_admin):
         raise HTTPException(status_code=403, detail="forbidden")
@@ -7736,7 +7736,7 @@ def session_bpmn_save(session_id: str, inp: BpmnXmlIn, request: Request = None) 
         st = get_storage()
         s, oid_locked, _ = _legacy_load_session_scoped(session_id, request)
         if not s:
-            return {"error": "not found"}
+            raise_session_not_found(session_id)
         _require_diagram_cas_or_409(
             sess=s,
             session_id=session_id,
@@ -8056,7 +8056,7 @@ def session_bpmn_restore(
 
     sess_pre, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not sess_pre:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
     role = _org_role_for_request(request, oid) if request is not None and oid else ("org_admin" if effective_is_admin else "")
     if not _can_edit_workspace(role, is_admin=effective_is_admin):
         raise HTTPException(status_code=403, detail="forbidden")
@@ -8208,7 +8208,7 @@ def session_bpmn_clear(session_id: str, request: Request = None) -> Dict[str, An
     st = get_storage()
     s = st.load(session_id)
     if not s:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
     client_base_diagram_state_version = _resolve_base_diagram_state_version(request=request)
     _require_diagram_cas_or_409(
         sess=s,

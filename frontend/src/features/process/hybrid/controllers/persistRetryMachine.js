@@ -12,7 +12,7 @@ export function parsePersistStatus(resultRaw) {
   const explicit = Number(result.status || 0);
   if (Number.isFinite(explicit) && explicit > 0) return explicit;
   const text = `${toText(result.error)} ${toText(result.message)}`;
-  const match = text.match(/\b(409|423)\b/);
+  const match = text.match(/\b(404|409|410|423)\b/);
   if (match) return Number(match[1] || 0);
   return 0;
 }
@@ -35,6 +35,10 @@ export function mapPersistErrorCode(resultRaw) {
   }
   if (result?.ok === true) {
     return { status, code: null };
+  }
+  // P-1: терминальный 404/410 — сессия удалена (не путать с VALIDATION).
+  if (status === 404 || status === 410) {
+    return { status, code: "SESSION_NOT_FOUND" };
   }
   if (status >= 400 && status < 500) {
     return { status, code: "VALIDATION" };
@@ -67,6 +71,17 @@ export function reduceHybridPersistState(stateRaw, resultRaw, draftRaw = null, o
       pendingDraft: null,
       status,
       code: null,
+      shouldAutoRetry: false,
+    };
+  }
+  if (code === "SESSION_NOT_FOUND") {
+    // P-1: терминальный 404/410 — сессия удалена. Черновик сохраняем
+    // (его можно восстановить с экрана мёртвой сессии), ретраев нет.
+    return {
+      lastError: "SESSION_NOT_FOUND",
+      pendingDraft: draftRaw || state.pendingDraft || null,
+      status,
+      code: "SESSION_NOT_FOUND",
       shouldAutoRetry: false,
     };
   }
