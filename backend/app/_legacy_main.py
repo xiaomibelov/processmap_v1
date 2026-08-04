@@ -8749,116 +8749,6 @@ def get_org_git_mirror_endpoint(org_id: str, request: Request) -> Dict[str, Any]
     return {"ok": True, "org_id": oid, "config": config}
 
 
-@app.patch("/api/orgs/{org_id}/git-mirror")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def patch_org_git_mirror_endpoint(org_id: str, inp: OrgGitMirrorPatchIn, request: Request) -> Dict[str, Any]:
-    oid = str(org_id or "").strip()
-    role, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
-    if err is not None:
-        return err
-    uid, is_admin = _request_user_meta(request)
-    if not _can_manage_workspace(role, is_admin=is_admin):
-        return _enterprise_error(403, "forbidden", "insufficient_permissions")
-
-    try:
-        current = get_org_git_mirror_config(oid)
-    except ValueError:
-        return _enterprise_error(404, "not_found", "not_found")
-
-    patch = inp.model_dump(exclude_unset=True)
-    candidate = {
-        "git_mirror_enabled": bool(current.get("git_mirror_enabled")),
-        "git_provider": current.get("git_provider"),
-        "git_repository": current.get("git_repository"),
-        "git_branch": current.get("git_branch"),
-        "git_base_path": current.get("git_base_path"),
-    }
-    if "git_mirror_enabled" in patch:
-        candidate["git_mirror_enabled"] = bool(patch.get("git_mirror_enabled"))
-    if "git_provider" in patch:
-        candidate["git_provider"] = patch.get("git_provider")
-    if "git_repository" in patch:
-        candidate["git_repository"] = patch.get("git_repository")
-    if "git_branch" in patch:
-        candidate["git_branch"] = patch.get("git_branch")
-    if "git_base_path" in patch:
-        candidate["git_base_path"] = patch.get("git_base_path")
-
-    evaluated = evaluate_org_git_mirror_config(candidate)
-    try:
-        saved = update_org_git_mirror_config(
-            oid,
-            git_mirror_enabled=bool(evaluated.get("git_mirror_enabled")),
-            git_provider=evaluated.get("git_provider"),
-            git_repository=evaluated.get("git_repository"),
-            git_branch=evaluated.get("git_branch"),
-            git_base_path=evaluated.get("git_base_path"),
-            git_health_status=evaluated.get("git_health_status"),
-            git_health_message=evaluated.get("git_health_message"),
-            git_updated_by=uid,
-        )
-    except ValueError:
-        return _enterprise_error(404, "not_found", "not_found")
-
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="org.git_mirror_update",
-        entity_type="org",
-        entity_id=oid,
-        meta={
-            "actor_user_id": uid,
-            "git_mirror_enabled": bool(saved.get("git_mirror_enabled")),
-            "git_provider": str(saved.get("git_provider") or ""),
-            "git_repository": str(saved.get("git_repository") or ""),
-            "git_branch": str(saved.get("git_branch") or ""),
-            "git_base_path": str(saved.get("git_base_path") or ""),
-            "git_health_status": str(saved.get("git_health_status") or "unknown"),
-        },
-    )
-    _invalidate_workspace_cache_for_org(oid)
-    return {"ok": True, "org_id": oid, "config": saved}
-
-
-@app.post("/api/orgs/{org_id}/git-mirror/validate")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def validate_org_git_mirror_endpoint(org_id: str, inp: OrgGitMirrorPatchIn, request: Request) -> Dict[str, Any]:
-    oid = str(org_id or "").strip()
-    role, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
-    if err is not None:
-        return err
-    _uid, is_admin = _request_user_meta(request)
-    if not _can_manage_workspace(role, is_admin=is_admin):
-        return _enterprise_error(403, "forbidden", "insufficient_permissions")
-
-    try:
-        current = get_org_git_mirror_config(oid)
-    except ValueError:
-        return _enterprise_error(404, "not_found", "not_found")
-
-    patch = inp.model_dump(exclude_unset=True)
-    candidate = {
-        "git_mirror_enabled": bool(current.get("git_mirror_enabled")),
-        "git_provider": current.get("git_provider"),
-        "git_repository": current.get("git_repository"),
-        "git_branch": current.get("git_branch"),
-        "git_base_path": current.get("git_base_path"),
-    }
-    if "git_mirror_enabled" in patch:
-        candidate["git_mirror_enabled"] = bool(patch.get("git_mirror_enabled"))
-    if "git_provider" in patch:
-        candidate["git_provider"] = patch.get("git_provider")
-    if "git_repository" in patch:
-        candidate["git_repository"] = patch.get("git_repository")
-    if "git_branch" in patch:
-        candidate["git_branch"] = patch.get("git_branch")
-    if "git_base_path" in patch:
-        candidate["git_base_path"] = patch.get("git_base_path")
-
-    evaluated = evaluate_org_git_mirror_config(candidate)
-    return {"ok": True, "org_id": oid, "config": evaluated}
-
-
 def list_org_members_endpoint(org_id: str, request: Request) -> Dict[str, Any]:
     oid = str(org_id or "").strip()
     role, err = _enterprise_require_org_member(request, oid)
@@ -10024,22 +9914,6 @@ def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | No
 
 
 # DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
-@app.get("/api/sessions")
-def list_sessions(q: Optional[str] = None, limit: int = 200, request: Request = None) -> Dict[str, Any]:
-    oid = _request_active_org_id(request) if request is not None else ""
-    scope = _project_scope_for_request(request, oid or get_default_org_id())
-    allowed = _scope_allowed_project_ids(scope)
-    st = get_storage()
-    items = st.list(query=q, limit=min(max(int(limit), 1), 500), org_id=(oid or None), is_admin=True)
-    if allowed:
-        items = [
-            item for item in items
-            if str((item or {}).get("project_id") or "").strip() in allowed
-        ]
-    return {"items": items, "count": len(items)}
-
-
-# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
 @app.get("/api/sessions/{session_id}")
 def get_session(session_id: str, request: Request = None) -> Dict[str, Any]:
     sess, _, _ = _legacy_load_session_scoped(session_id, request)
@@ -10163,226 +10037,6 @@ def leave_session_presence_api(
     }
 
 
-@app.get("/api/sessions/{session_id}/tldr")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def patch_node(session_id: str, node_id: str, inp: NodePatchIn, request: Request = None) -> Dict[str, Any]:
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-
-    node = next((n for n in s.nodes if n.id == node_id), None)
-    if not node:
-        return {"error": "node not found"}
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=_resolve_base_diagram_state_version(
-            request=request,
-            payload=inp.model_dump(exclude_unset=True),
-        ),
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    data = inp.model_dump(exclude_unset=True)
-
-    if "title" in data:
-        node.title = data["title"] or node.title
-        node.parameters["_manual_title"] = True
-    if "type" in data:
-        node.type = data["type"] or node.type
-        node.parameters["_manual_type"] = True
-    if "actor_role" in data:
-        node.actor_role = data["actor_role"] or None
-        node.parameters["_manual_actor"] = True
-    if "recipient_role" in data:
-        node.recipient_role = data["recipient_role"] or None
-        node.parameters["_manual_recipient"] = True
-    if "equipment" in data and data["equipment"] is not None:
-        node.equipment = data["equipment"]
-        node.parameters["_manual_equipment"] = True
-    if "duration_min" in data:
-        node.duration_min = data["duration_min"]
-        node.parameters["_manual_duration"] = True
-    if "parameters" in data and data["parameters"] is not None:
-        node.parameters = data["parameters"]
-        node.parameters["_manual_parameters"] = True
-    if "disposition" in data and data["disposition"] is not None:
-        node.disposition = data["disposition"]
-        node.parameters["_manual_disposition"] = True
-
-    s = _recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["nodes"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    st.save(s)
-    return s.model_dump()
-
-
-@app.post("/api/sessions/{session_id}/nodes")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def add_node(session_id: str, inp: CreateNodeIn, request: Request = None) -> Dict[str, Any]:
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=_resolve_base_diagram_state_version(
-            request=request,
-            payload=inp.model_dump(exclude_unset=True),
-        ),
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    node_id = (inp.id or "").strip() or f"n_{uuid.uuid4().hex[:8]}"
-    if any(n.id == node_id for n in s.nodes):
-        return {"error": "node already exists", "node_id": node_id}
-
-    node = Node(
-        id=node_id,
-        title=inp.title,
-        type=inp.type or "step",
-        actor_role=inp.actor_role,
-        recipient_role=inp.recipient_role,
-        equipment=list(inp.equipment or []),
-        parameters=dict(inp.parameters or {}),
-        duration_min=inp.duration_min,
-        disposition=dict(inp.disposition or {}),
-        qc=[],
-        exceptions=[],
-        evidence=[],
-        confidence=0.0,
-    )
-    s.nodes.append(node)
-
-    s = _recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["nodes"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    st.save(s)
-    return s.model_dump()
-
-
-@app.delete("/api/sessions/{session_id}/nodes/{node_id}")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def delete_node(session_id: str, node_id: str, request: Request = None) -> Dict[str, Any]:
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=_resolve_base_diagram_state_version(request=request),
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    before_n = len(s.nodes)
-    s.nodes = [n for n in s.nodes if n.id != node_id]
-    if len(s.nodes) == before_n:
-        return {"error": "node not found"}
-
-    s.edges = [e for e in s.edges if e.from_id != node_id and e.to_id != node_id]
-
-    s = _recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["nodes", "edges"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    st.save(s)
-    return s.model_dump()
-
-
-@app.post("/api/sessions/{session_id}/edges")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def add_edge(session_id: str, inp: CreateEdgeIn, request: Request = None) -> Dict[str, Any]:
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=_resolve_base_diagram_state_version(
-            request=request,
-            payload=inp.model_dump(exclude_unset=True),
-        ),
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    if not any(n.id == inp.from_id for n in s.nodes):
-        return {"error": "from_id not found", "from_id": inp.from_id}
-    if not any(n.id == inp.to_id for n in s.nodes):
-        return {"error": "to_id not found", "to_id": inp.to_id}
-
-    exists = any((e.from_id == inp.from_id and e.to_id == inp.to_id and (e.when or None) == (inp.when or None)) for e in s.edges)
-    if exists:
-        return {"error": "edge already exists"}
-
-    s.edges.append(Edge(from_id=inp.from_id, to_id=inp.to_id, when=inp.when))
-
-    s = _recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["edges"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    st.save(s)
-    return s.model_dump()
-
-
-@app.delete("/api/sessions/{session_id}/edges")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def delete_edge(session_id: str, inp: CreateEdgeIn, request: Request = None) -> Dict[str, Any]:
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=_resolve_base_diagram_state_version(
-            request=request,
-            payload=inp.model_dump(exclude_unset=True),
-        ),
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    before = len(s.edges)
-    s.edges = [
-        e for e in s.edges
-        if not (e.from_id == inp.from_id and e.to_id == inp.to_id and (e.when or None) == (inp.when or None))
-    ]
-    if len(s.edges) == before:
-        return {"error": "edge not found"}
-
-    s = _recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["edges"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    st.save(s)
-    return s.model_dump()
-
-
 def _coerce_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
@@ -10407,6 +10061,8 @@ try:
             patch_org_endpoint,
             patch_org_git_mirror_endpoint,
         )  # noqa: F401
+    if 'patch_org_git_mirror_endpoint' not in globals():
+        from app.routers.org import patch_org_git_mirror_endpoint  # noqa: F401
     if 'create_session' not in globals():
         from app.routers.sessions import create_session  # noqa: F401
     if 'create_org_project' not in globals():
@@ -10417,16 +10073,12 @@ try:
         'add_edge', 'add_node', 'create_project_session', 'delete_edge', 'delete_node',
         'get_session', 'list_project_sessions', 'patch_node',
     }
-    if not _session_reexports.issubset(globals()):
-        from app.services.session_service import (
-            add_edge,
-            add_node,
-            create_project_session,
-            delete_edge,
-            delete_node,
-            get_session,
-            list_project_sessions,
-            patch_node,
-        )  # noqa: F401
+    # Per-name back-fill: never shadow legacy implementations that still live
+    # in this module (session_service delegates some of them back here).
+    _missing_session_reexports = _session_reexports - set(globals())
+    if _missing_session_reexports:
+        from app.services import session_service as _session_service_mod
+        for _reexport_name in _missing_session_reexports:
+            globals()[_reexport_name] = getattr(_session_service_mod, _reexport_name)
 except Exception:  # pragma: no cover
     pass
