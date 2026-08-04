@@ -6,13 +6,15 @@ import hmac
 import json
 import os
 import secrets
+import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import Depends
+from fastapi import Depends, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 try:
@@ -25,6 +27,27 @@ DEFAULT_JWT_SECRET = "dev-insecure-change-me"
 ACCESS_TOKEN_TTL_MIN = 15
 REFRESH_TOKEN_TTL_DAYS = 14
 PBKDF2_ITERATIONS = 390_000
+
+AUTH_PUBLIC_PATHS = {
+    "/api/auth/login",
+    "/api/auth/refresh",
+    "/api/auth/logout",
+    "/api/auth/invite/preview",
+    "/api/auth/invite/activate",
+    "/api/invite/resolve",
+    "/api/invite/activate",
+    "/api/invites/accept",
+    "/api/health",
+    "/api/health/process-template",
+    "/api/meta",
+    "/api/feature-flags",
+    "/api/deployment-notice",
+    # Swagger / OpenAPI endpoints are routed through /api so the frontend nginx
+    # does not serve the SPA fallback for them.
+    "/api/docs",
+    "/api/redoc",
+    "/api/openapi.json",
+}
 
 
 class AuthError(Exception):
@@ -140,6 +163,70 @@ def refresh_cookie_samesite() -> str:
     if raw in {"strict", "none", "lax"}:
         return raw
     return "lax"
+
+
+def _set_refresh_cookie(resp: Response, refresh_token: str, max_age_seconds: int) -> None:
+    secure = refresh_cookie_secure()
+    samesite = refresh_cookie_samesite()
+    # Use root path so the cookie is visible and replaceable on every route.
+    # Also clear any legacy cookie scoped to /api/auth/ to avoid duplicate cookies.
+    resp.set_cookie(
+        key="refresh_token",
+        value=str(refresh_token or ""),
+        httponly=True,
+        secure=secure,
+        samesite=samesite,
+        max_age=max(1, int(max_age_seconds)),
+        path="/",
+    )
+    resp.delete_cookie(
+        key="refresh_token",
+        path="/api/auth/",
+        secure=secure,
+        samesite=samesite,
+    )
+
+
+def _clear_refresh_cookie(resp: Response) -> None:
+    secure = refresh_cookie_secure()
+    samesite = refresh_cookie_samesite()
+    # Clear both current root path and legacy /api/auth/ path.
+    resp.delete_cookie(
+        key="refresh_token",
+        path="/",
+        secure=secure,
+        samesite=samesite,
+    )
+    resp.delete_cookie(
+        key="refresh_token",
+        path="/api/auth/",
+        secure=secure,
+        samesite=samesite,
+    )
+
+
+_RATE_LIMIT_LOCK = threading.RLock()
+_RATE_LIMIT_BUCKETS: Dict[str, deque] = {}
+
+
+def _rate_limit_check(key: str, limit: int, window_sec: int = 60) -> bool:
+    bucket_key = str(key or "").strip()
+    if not bucket_key:
+        return True
+    cap = max(1, int(limit or 1))
+    now = int(time.time())
+    with _RATE_LIMIT_LOCK:
+        bucket = _RATE_LIMIT_BUCKETS.get(bucket_key)
+        if bucket is None:
+            bucket = deque()
+            _RATE_LIMIT_BUCKETS[bucket_key] = bucket
+        threshold = now - max(1, int(window_sec or 60))
+        while bucket and int(bucket[0] or 0) <= threshold:
+            bucket.popleft()
+        if len(bucket) >= cap:
+            return False
+        bucket.append(now)
+    return True
 
 
 def _b64url_encode(raw: bytes) -> str:
