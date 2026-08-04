@@ -230,6 +230,68 @@ from .utils.session_helpers import (
     _save_session_with_cas,
     raise_session_not_found,
 )
+from .shared.text_utils import (  # noqa: F401  # re-export facade (PR-5)
+    _clean_name,
+    _to_epoch_ms,
+    _looks_like_technical_actor_id,
+    _resolve_actor_label_from_user,
+    _redact_notes_preview_message,
+    _ln_tag,
+    _ws_path,
+    _canon_path,
+    _primitive_path_value,
+    _normalize_sequence_key,
+)
+from .shared.coerce import (  # noqa: F401  # re-export facade (PR-5)
+    _env_bool,
+    _env_int,
+    _coerce_bool,
+    _to_non_negative_int,
+    _as_dict_obj,
+    _as_list_obj,
+    _safe_json_dict,
+    _norm_project_sessions_view,
+    _normalize_session_status,
+    _notes_apply_flag,
+    _llm_question_status_to_interview,
+    _is_retryable_report_generation_error,
+    _request_client_ip,
+    _auth_error_response,
+    _ensure_dict_at_path,
+)
+from .shared.entities import (  # noqa: F401  # re-export facade (PR-5)
+    _safe_model_dump,
+    _safe_model_dump_list,
+    _entity_key,
+    _stable_entity_signature,
+    _list_diff_by_id,
+    _role_diff,
+    _edge_identity,
+    _merge_nodes,
+    _merge_hybrid_layer,
+    _ensure_loss_dict,
+)
+from .shared.robot_meta import (  # noqa: F401  # re-export facade (PR-5)
+    _robot_meta_as_text,
+    _robot_meta_as_nullable_text,
+    _robot_meta_as_non_negative_int,
+    _robot_meta_as_nullable_non_negative_int,
+    _stable_robot_meta_value,
+    _normalize_robot_meta_v1,
+    _normalize_robot_meta_map,
+    _is_legacy_seed_bpmn,
+)
+from .shared.payloads import (  # noqa: F401  # re-export facade (PR-5)
+    _set_latest_path_report_pointer,
+    _clear_latest_path_report_pointer,
+    _report_version_summary,
+    _report_version_detail_payload,
+    _workspace_needs_attention_count,
+    _workspace_parse_owner_ids,
+    _build_invite_link,
+    _pick_current_org_invite,
+    _with_invite_links,
+)
 # DEPRECATED: auth routes moved to routers/auth.py — kept for backward compatibility during migration.
 # from .routers.auth import router as _auth_router
 
@@ -277,23 +339,6 @@ _RATE_LIMIT_LOCK = threading.RLock()
 _RATE_LIMIT_BUCKETS: Dict[str, deque] = {}
 
 
-def _clean_name(value: Any) -> str:
-    return " ".join(str(value or "").split()).strip()
-
-
-def _to_epoch_ms(value: Any) -> int:
-    try:
-        ts = int(value or 0)
-    except Exception:
-        ts = 0
-    if ts <= 0:
-        return 0
-    # Storage persists unix seconds; UI metadata expects milliseconds.
-    if ts < 10_000_000_000:
-        return ts * 1000
-    return ts
-
-
 def _to_epoch_iso(value: Any) -> str:
     ts_ms = _to_epoch_ms(value)
     if ts_ms <= 0:
@@ -302,17 +347,6 @@ def _to_epoch_iso(value: Any) -> str:
         return datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc).isoformat()
     except Exception:
         return ""
-
-
-def _looks_like_technical_actor_id(value: Any) -> bool:
-    text = str(value or "").strip().lower()
-    if not text:
-        return False
-    if re.fullmatch(r"[0-9a-f]{12,}", text):
-        return True
-    if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f-]{9,}", text):
-        return True
-    return False
 
 
 def _build_bpmn_version_author(created_by: Any) -> Dict[str, str]:
@@ -388,10 +422,6 @@ def _can_delete_workspace_content(role_raw: Any, is_admin: bool = False) -> bool
     return _practical_role_for_org(role_raw, is_admin=is_admin) == "admin"
 
 
-def _normalize_session_status(raw: Any) -> str:
-    return _normalize_session_status_base(raw)
-
-
 def _validate_session_status_transition(current_raw: Any, next_raw: Any, *, role_raw: Any, is_admin: bool = False) -> str:
     return _validate_session_status_transition_base(
         current_raw,
@@ -399,22 +429,6 @@ def _validate_session_status_transition(current_raw: Any, next_raw: Any, *, role
         can_edit=_can_edit_workspace(role_raw, is_admin=is_admin),
         can_archive=_can_manage_workspace(role_raw, is_admin=is_admin),
     )
-
-
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = str(os.environ.get(name, "") or "").strip().lower()
-    if not raw:
-        return bool(default)
-    return raw in {"1", "true", "yes", "on"}
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = str(os.environ.get(name, "") or "").strip()
-    try:
-        value = int(raw or default)
-    except Exception:
-        value = int(default)
-    return value
 
 
 def _rate_limit_check(key: str, limit: int, window_sec: int = 60) -> bool:
@@ -513,57 +527,6 @@ def _clear_refresh_cookie(resp: Response) -> None:
         secure=secure,
         samesite=samesite,
     )
-
-
-def _request_client_ip(request: Request) -> str:
-    headers = getattr(request, "headers", {}) or {}
-    forwarded = headers.get("x-forwarded-for") if hasattr(headers, "get") else None
-    if forwarded:
-        return str(forwarded).split(",")[0].strip()[:120]
-    client = getattr(request, "client", None)
-    host = getattr(client, "host", "") if client is not None else ""
-    if host:
-        return str(host)[:120]
-    return ""
-
-
-def _auth_error_response(detail: str = "unauthorized") -> JSONResponse:
-    return JSONResponse(status_code=401, content={"detail": str(detail or "unauthorized")})
-
-
-def _is_legacy_seed_bpmn(xml_text: str) -> bool:
-    raw = (xml_text or "").strip()
-    if not raw:
-        return False
-    try:
-        root = ET.fromstring(raw)
-    except Exception:
-        return False
-
-    def _ln(tag: str) -> str:
-        if "}" in tag:
-            return tag.rsplit("}", 1)[-1].lower()
-        return tag.lower()
-
-    counts: Dict[str, int] = {}
-    for el in root.iter():
-        name = _ln(str(getattr(el, "tag", "") or ""))
-        counts[name] = counts.get(name, 0) + 1
-
-    start_n = counts.get("startevent", 0)
-    end_n = counts.get("endevent", 0)
-    flow_n = counts.get("sequenceflow", 0)
-    task_n = sum(counts.get(k, 0) for k in ("task", "usertask", "servicetask", "manualtask", "scripttask", "businessruletask", "sendtask", "receivetask"))
-    gw_n = sum(counts.get(k, 0) for k in ("exclusivegateway", "parallelgateway", "inclusivegateway", "eventbasedgateway"))
-    sub_n = counts.get("subprocess", 0) + counts.get("callactivity", 0)
-
-    if start_n == 1 and end_n == 1 and gw_n == 0 and sub_n == 0:
-        if task_n == 0 and flow_n <= 1:
-            return True
-        # Old frontend seed: Start -> "Опишите первый шаг процесса" -> End.
-        if task_n == 1 and flow_n <= 2 and "опишите первый шаг процесса" in raw.lower():
-            return True
-    return False
 
 
 def _overlay_interview_annotations_on_bpmn_xml(sess: Session, xml_text: str) -> str:
@@ -877,15 +840,6 @@ def _session_api_dump(sess: Session) -> Dict[str, Any]:
     return d
 
 
-def _norm_project_sessions_view(value: Any) -> str:
-    text = str(value or "").strip().lower()
-    if text in {"", "full"}:
-        return "full"
-    if text == "summary":
-        return "summary"
-    return ""
-
-
 _SESSION_PRESENCE_TTL_SECONDS = SESSION_PRESENCE_TTL_SECONDS
 _SESSION_PRESENCE_CLIENT_ID_RE = re.compile(r"[^A-Za-z0-9_.:-]+")
 _SESSION_PRESENCE_SURFACE_RE = re.compile(r"[^A-Za-z0-9_.:-]+")
@@ -940,29 +894,6 @@ def _reject_draft_graph_write_on_xml_session(sess: Session, explicit_data: Dict[
             "message": "nodes/edges are not persisted for BPMN-XML sessions; use PUT /api/sessions/{id}/bpmn",
         },
     )
-
-
-def _to_non_negative_int(value: Any) -> Optional[int]:
-    try:
-        parsed = int(value)
-    except Exception:
-        return None
-    if parsed < 0:
-        return None
-    return parsed
-
-
-
-
-def _resolve_actor_label_from_user(user: Any, fallback_user_id: str = "") -> str:
-    actor = user if isinstance(user, dict) else {}
-    for key in ("name", "username", "email", "id"):
-        value = str(actor.get(key) or "").strip()
-        if value:
-            return value
-    return str(fallback_user_id or "").strip()
-
-
 
 
 def _diagram_state_conflict_payload(
@@ -1141,51 +1072,6 @@ def _next_report_version(by_path: Dict[str, List[Dict[str, Any]]], path_id: str)
     return max_ver + 1
 
 
-def _set_latest_path_report_pointer(sess: Session, path_id: str, row_raw: Any) -> None:
-    pid = str(path_id or "").strip()
-    row = row_raw if isinstance(row_raw, dict) else {}
-    if not pid:
-        return
-    interview = dict(getattr(sess, "interview", {}) or {})
-    latest_raw = interview.get("path_reports")
-    latest_by_path = dict(latest_raw) if isinstance(latest_raw, dict) else {}
-    payload_normalized = row.get("payload_normalized") or row.get("report_json") or {}
-    payload_raw = row.get("payload_raw")
-    latest_by_path[pid] = {
-        "id": str(row.get("id") or ""),
-        "version": int(row.get("version") or 0),
-        "steps_hash": str(row.get("steps_hash") or ""),
-        "created_at": int(row.get("created_at") or 0),
-        "status": str(row.get("status") or "error"),
-        "model": str(row.get("model") or "deepseek-chat"),
-        "prompt_template_version": str(row.get("prompt_template_version") or "v2"),
-        "payload_normalized": payload_normalized,
-        "payload_raw": payload_raw if payload_raw is not None else {},
-        "report_json": payload_normalized,
-        "raw_json": row.get("raw_json") or (payload_raw if isinstance(payload_raw, dict) else {}),
-        "report_markdown": str(row.get("report_markdown") or row.get("raw_text") or ""),
-        "recommendations": row.get("recommendations_json") or payload_normalized.get("recommendations") or [],
-        "missing_data": row.get("missing_data_json") or payload_normalized.get("missing_data") or [],
-        "risks": row.get("risks_json") or payload_normalized.get("risks") or [],
-        "warnings": row.get("warnings_json") or [],
-    }
-    interview["path_reports"] = latest_by_path
-    sess.interview = interview
-
-
-def _clear_latest_path_report_pointer(sess: Session, path_id: str) -> None:
-    pid = str(path_id or "").strip()
-    if not pid:
-        return
-    interview = dict(getattr(sess, "interview", {}) or {})
-    latest_raw = interview.get("path_reports")
-    latest_by_path = dict(latest_raw) if isinstance(latest_raw, dict) else {}
-    if pid in latest_by_path:
-        latest_by_path.pop(pid, None)
-    interview["path_reports"] = latest_by_path
-    sess.interview = interview
-
-
 def _recompute_latest_path_report_pointer(sess: Session, path_id: str, rows_raw: Any) -> None:
     pid = str(path_id or "").strip()
     rows = list(rows_raw or [])
@@ -1196,24 +1082,6 @@ def _recompute_latest_path_report_pointer(sess: Session, path_id: str, rows_raw:
         return
     ordered = sorted(rows, key=lambda x: int((x or {}).get("version") or 0), reverse=True)
     _set_latest_path_report_pointer(sess, pid, ordered[0])
-
-
-def _is_retryable_report_generation_error(exc: Exception) -> bool:
-    msg = str(exc or "").strip().lower()
-    if not msg:
-        return False
-    tokens = (
-        "response ended prematurely",
-        "incomplete read",
-        "connection aborted",
-        "connection reset",
-        "timed out",
-        "temporarily unavailable",
-        "remote disconnected",
-        "chunkedencodingerror",
-        "read timed out",
-    )
-    return any(tok in msg for tok in tokens)
 
 
 def _compact_path_report_payload(payload_raw: Any, *, max_steps: int = 90, notes_limit: int = 240) -> Tuple[Dict[str, Any], bool]:
@@ -1845,12 +1713,6 @@ def _find_report_version_global(
     return None
 
 
-def _ln_tag(tag: str) -> str:
-    if "}" in str(tag or ""):
-        return str(tag).rsplit("}", 1)[-1].lower()
-    return str(tag or "").lower()
-
-
 def _collect_sequence_flow_meta(xml_text: str) -> Dict[str, Any]:
     raw = str(xml_text or "").strip()
     if not raw:
@@ -2000,21 +1862,6 @@ _PATH_TIER_ALIASES: Dict[str, str] = {
 }
 
 
-def _primitive_path_value(value: Any, keys: Tuple[str, ...] = ("value", "key", "code", "tier", "path")) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, (str, int, float, bool)):
-        return str(value or "").strip()
-    if isinstance(value, dict):
-        for key in keys:
-            if key not in value:
-                continue
-            nested = _primitive_path_value(value.get(key), keys)
-            if nested:
-                return nested
-    return ""
-
-
 def _normalize_flow_tier(value: Any) -> Optional[str]:
     txt = _primitive_path_value(value).upper()
     if txt in _FLOW_TIERS:
@@ -2094,19 +1941,6 @@ def _normalize_node_paths(value: Any) -> List[str]:
     return out
 
 
-def _normalize_sequence_key(value: Any) -> str:
-    raw = _primitive_path_value(
-        value,
-        ("key", "value", "sequence_key", "sequenceKey", "id"),
-    ).lower()
-    if not raw:
-        return ""
-    compact = re.sub(r"\s+", "_", raw)
-    compact = re.sub(r"[^a-z0-9_\-]+", "_", compact)
-    compact = re.sub(r"_+", "_", compact).strip("_")
-    return compact[:64]
-
-
 def _normalize_node_path_source(value: Any) -> str:
     src = str(value or "").strip().lower()
     if src in _NODE_PATH_SOURCE_SET:
@@ -2131,112 +1965,6 @@ def _normalize_node_path_entry(entry_raw: Any) -> Optional[Dict[str, Any]]:
     }
     if sequence_key:
         out["sequence_key"] = sequence_key
-    return out
-
-
-def _robot_meta_as_text(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def _robot_meta_as_nullable_text(value: Any) -> Optional[str]:
-    text = _robot_meta_as_text(value)
-    return text or None
-
-
-def _robot_meta_as_non_negative_int(value: Any, fallback: int) -> int:
-    try:
-        num = int(round(float(value)))
-    except Exception:
-        num = int(fallback)
-    return max(num, 0)
-
-
-def _robot_meta_as_nullable_non_negative_int(value: Any) -> Optional[int]:
-    if value is None:
-        return None
-    if isinstance(value, str) and not value.strip():
-        return None
-    try:
-        num = int(round(float(value)))
-    except Exception:
-        return None
-    return max(num, 0)
-
-
-def _stable_robot_meta_value(value: Any) -> Any:
-    if isinstance(value, list):
-        return [_stable_robot_meta_value(item) for item in value]
-    if isinstance(value, dict):
-        out: Dict[str, Any] = {}
-        for key in sorted(value.keys(), key=lambda x: str(x)):
-            out[str(key)] = _stable_robot_meta_value(value[key])
-        return out
-    return value
-
-
-def _normalize_robot_meta_v1(entry_raw: Any) -> Optional[Dict[str, Any]]:
-    entry = entry_raw if isinstance(entry_raw, dict) else {}
-    exec_raw = entry.get("exec") if isinstance(entry.get("exec"), dict) else {}
-    retry_raw = exec_raw.get("retry") if isinstance(exec_raw.get("retry"), dict) else {}
-    mat_raw = entry.get("mat") if isinstance(entry.get("mat"), dict) else {}
-    qc_raw = entry.get("qc") if isinstance(entry.get("qc"), dict) else {}
-
-    mode = str(exec_raw.get("mode") or "").strip().lower()
-    if mode not in {"human", "machine", "hybrid"}:
-        mode = "human"
-
-    executor = _robot_meta_as_text(exec_raw.get("executor") or "manual_ui") or "manual_ui"
-    action_key = _robot_meta_as_nullable_text(exec_raw.get("action_key"))
-    timeout_sec = _robot_meta_as_nullable_non_negative_int(exec_raw.get("timeout_sec"))
-    max_attempts = _robot_meta_as_non_negative_int(retry_raw.get("max_attempts"), 1)
-    backoff_sec = _robot_meta_as_non_negative_int(retry_raw.get("backoff_sec"), 0)
-
-    inputs = entry_raw.get("mat", {}).get("inputs") if isinstance(entry_raw, dict) and isinstance(entry_raw.get("mat"), dict) else None
-    outputs = entry_raw.get("mat", {}).get("outputs") if isinstance(entry_raw, dict) and isinstance(entry_raw.get("mat"), dict) else None
-    checks = qc_raw.get("checks")
-
-    return {
-        "robot_meta_version": "v1",
-        "exec": {
-            "mode": mode,
-            "executor": executor,
-            "action_key": action_key,
-            "timeout_sec": timeout_sec,
-            "retry": {
-                "max_attempts": max_attempts,
-                "backoff_sec": backoff_sec,
-            },
-        },
-        "mat": {
-            "from_zone": _robot_meta_as_nullable_text(mat_raw.get("from_zone")),
-            "to_zone": _robot_meta_as_nullable_text(mat_raw.get("to_zone")),
-            "inputs": _stable_robot_meta_value(inputs) if isinstance(inputs, list) else [],
-            "outputs": _stable_robot_meta_value(outputs) if isinstance(outputs, list) else [],
-        },
-        "qc": {
-            "critical": bool(qc_raw.get("critical")),
-            "checks": _stable_robot_meta_value(checks) if isinstance(checks, list) else [],
-        },
-    }
-
-
-def _normalize_robot_meta_map(
-    value: Any,
-    *,
-    allowed_node_ids: Optional[Set[str]] = None,
-) -> Dict[str, Dict[str, Any]]:
-    raw = value if isinstance(value, dict) else {}
-    out: Dict[str, Dict[str, Any]] = {}
-    for element_id_raw in sorted(raw.keys(), key=lambda x: str(x)):
-        element_id = str(element_id_raw or "").strip()
-        if not element_id:
-            continue
-        if allowed_node_ids is not None and element_id not in allowed_node_ids:
-            continue
-        normalized_entry = _normalize_robot_meta_v1(raw.get(element_id_raw))
-        if not normalized_entry:
-            continue
-        out[element_id] = normalized_entry
     return out
 
 
@@ -3074,14 +2802,6 @@ def _capture_persisted_auto_pass_failed_state(
     )
 
 
-def _merge_hybrid_layer(current: Any, incoming: Any) -> Any:
-    if isinstance(incoming, dict):
-        if not incoming and isinstance(current, dict) and current:
-            return current
-        return incoming
-    return current
-
-
 def _merge_hybrid_v2(current: Any, incoming: Any) -> Any:
     if isinstance(incoming, dict):
         incoming_size = _hybrid_v2_payload_size(incoming)
@@ -3253,15 +2973,7 @@ def _session_graph_fingerprint(sess: Session) -> str:
     return hashlib.sha1(packed.encode("utf-8")).hexdigest()
 
 # == delete helpers (projects/sessions) ==
-def _ws_path(*parts: str) -> Path:
-    # workspace is mounted to /app/workspace in docker; on host it is ./workspace
-    return Path("workspace").joinpath(*parts)
 
-def _canon_path(p: Path) -> str:
-    try:
-        return str(p.resolve())
-    except Exception:
-        return str(p)
 
 def _session_storage_dirs() -> list[Path]:
     out: list[Path] = []
@@ -3401,50 +3113,6 @@ def _delete_sessions_by_project(project_id: str) -> list[str]:
         if _delete_session_files(sid) > 0:
             deleted_ids.append(sid)
     return deleted_ids
-
-def _merge_nodes(existing: List[Node], extracted: List[Node]) -> List[Node]:
-    by_id = {n.id: n for n in existing}
-    merged: List[Node] = []
-    for nn in extracted:
-        old = by_id.get(nn.id)
-        if not old:
-            merged.append(nn)
-            continue
-
-        p = dict(old.parameters or {})
-        if p.get("_manual_title"):
-            nn.title = old.title
-        if p.get("_manual_type"):
-            nn.type = old.type
-        if p.get("_manual_actor"):
-            nn.actor_role = old.actor_role
-        if p.get("_manual_recipient"):
-            nn.recipient_role = old.recipient_role
-        if p.get("_manual_equipment"):
-            nn.equipment = list(old.equipment or [])
-        if p.get("_manual_duration"):
-            nn.duration_min = old.duration_min
-        if p.get("_manual_parameters"):
-            nn.parameters = dict(old.parameters or {})
-        if p.get("_manual_disposition"):
-            nn.disposition = dict(old.disposition or {})
-
-        if not p.get("_manual_equipment") and old.equipment and not nn.equipment:
-            nn.equipment = list(old.equipment)
-        if not p.get("_manual_actor") and old.actor_role and not nn.actor_role:
-            nn.actor_role = old.actor_role
-        if not p.get("_manual_duration") and old.duration_min is not None and nn.duration_min is None:
-            nn.duration_min = old.duration_min
-        if not p.get("_manual_disposition") and old.disposition and not nn.disposition:
-            nn.disposition = dict(old.disposition)
-
-        if old.qc:
-            nn.qc = list(old.qc)
-        if old.exceptions:
-            nn.exceptions = list(old.exceptions)
-
-        merged.append(nn)
-    return merged
 
 
 def _merge_question_states(old_questions, new_questions):
@@ -4332,15 +4000,6 @@ def _prune_node_llm_questions(s: Session, node_id: str, keep_max: int = 5) -> Li
     return kept_for_node
 
 
-def _llm_question_status_to_interview(status: Any) -> str:
-    s = str(status or "").strip().lower()
-    if s == "answered":
-        return "подтверждено"
-    if s == "open":
-        return "уточнить"
-    return "неизвестно"
-
-
 def _sync_interview_ai_questions_for_node(
     s: Session,
     node_id: str,
@@ -4866,50 +4525,6 @@ def ai_questions(session_id: str, inp: AiQuestionsIn, request: Request = None) -
         status="success",
         output_summary=f"generated={len(new_qs or [])} mode={mode}",
     )
-
-
-def _report_version_summary(row_raw: Any) -> Dict[str, Any]:
-    row = row_raw if isinstance(row_raw, dict) else {}
-    error_message = str(row.get("error_message") or "").strip()
-    return {
-        "id": str(row.get("id") or ""),
-        "version": int(row.get("version") or 0),
-        "created_at": int(row.get("created_at") or 0),
-        "status": str(row.get("status") or "error"),
-        "steps_hash": str(row.get("steps_hash") or ""),
-        "provider": "deepseek",
-        "error": error_message or None,
-        "model": str(row.get("model") or "deepseek-chat"),
-        "prompt_template_version": str(row.get("prompt_template_version") or "v2"),
-    }
-
-
-def _report_version_detail_payload(row_raw: Any) -> Dict[str, Any]:
-    found = row_raw if isinstance(row_raw, dict) else {}
-    payload_normalized = found.get("payload_normalized") or found.get("report_json") or {}
-    payload_raw = found.get("payload_raw")
-    return {
-        "id": str(found.get("id") or ""),
-        "session_id": str(found.get("session_id") or ""),
-        "path_id": str(found.get("path_id") or ""),
-        "version": int(found.get("version") or 0),
-        "steps_hash": str(found.get("steps_hash") or ""),
-        "created_at": int(found.get("created_at") or 0),
-        "status": str(found.get("status") or "error"),
-        "model": str(found.get("model") or "deepseek-chat"),
-        "prompt_template_version": str(found.get("prompt_template_version") or "v2"),
-        "request_payload_json": found.get("request_payload_json") or {},
-        "payload_normalized": payload_normalized,
-        "payload_raw": payload_raw if payload_raw is not None else {},
-        "report_json": payload_normalized,
-        "raw_json": found.get("raw_json") or (payload_raw if isinstance(payload_raw, dict) else {}),
-        "report_markdown": str(found.get("report_markdown") or found.get("raw_text") or ""),
-        "recommendations_json": found.get("recommendations_json") or payload_normalized.get("recommendations") or [],
-        "missing_data_json": found.get("missing_data_json") or payload_normalized.get("missing_data") or [],
-        "risks_json": found.get("risks_json") or payload_normalized.get("risks") or [],
-        "warnings_json": found.get("warnings_json") or [],
-        "error_message": found.get("error_message"),
-    }
 
 
 def _resolve_report_scope(
@@ -5439,78 +5054,11 @@ def _record_notes_preview_execution_safe(**kwargs: Any) -> None:
         logging.getLogger(__name__).warning("failed to record notes extraction ai execution", exc_info=True)
 
 
-def _safe_model_dump(value: Any) -> Dict[str, Any]:
-    if hasattr(value, "model_dump"):
-        try:
-            dumped = value.model_dump()
-            return dumped if isinstance(dumped, dict) else {}
-        except Exception:
-            return {}
-    return dict(value or {}) if isinstance(value, dict) else {}
-
-
-def _safe_model_dump_list(values: Any) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
-    for item in values or []:
-        dumped = _safe_model_dump(item)
-        if dumped:
-            out.append(dumped)
-    return out
-
-
-def _entity_key(value: Any) -> str:
-    row = _safe_model_dump(value)
-    if not row and isinstance(value, dict):
-        row = value
-    if row:
-        return str(row.get("id") or row.get("question_id") or row.get("from_id") or "").strip()
-    return ""
-
-
-def _stable_entity_signature(value: Any) -> str:
-    row = _safe_model_dump(value)
-    if not row and isinstance(value, dict):
-        row = value
-    try:
-        return json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    except Exception:
-        return str(row)
-
-
 def _edge_key(value: Any) -> str:
     row = _safe_model_dump(value)
     if not row and isinstance(value, dict):
         row = value
     return f"{str(row.get('from_id') or '').strip()}->{str(row.get('to_id') or '').strip()}"
-
-
-def _list_diff_by_id(current: Any, candidate: Any) -> Dict[str, Any]:
-    current_rows = list(current or [])
-    candidate_rows = list(candidate or [])
-    current_by_id = {_entity_key(item): item for item in current_rows if _entity_key(item)}
-    candidate_by_id = {_entity_key(item): item for item in candidate_rows if _entity_key(item)}
-    added: List[str] = []
-    updated: List[str] = []
-    unchanged: List[str] = []
-    for item_id, cand in candidate_by_id.items():
-        cur = current_by_id.get(item_id)
-        if cur is None:
-            added.append(item_id)
-        elif _stable_entity_signature(cur) == _stable_entity_signature(cand):
-            unchanged.append(item_id)
-        else:
-            updated.append(item_id)
-    removed = [item_id for item_id in current_by_id.keys() if item_id not in candidate_by_id]
-    return {
-        "added": sorted(added),
-        "updated": sorted(updated),
-        "unchanged": sorted(unchanged),
-        "removed": sorted(removed),
-        "added_count": len(added),
-        "updated_count": len(updated),
-        "unchanged_count": len(unchanged),
-        "removed_count": len(removed),
-    }
 
 
 def _edge_diff(current: Any, candidate: Any) -> Dict[str, Any]:
@@ -5526,30 +5074,6 @@ def _edge_diff(current: Any, candidate: Any) -> Dict[str, Any]:
         "removed_count": len(current_keys - candidate_keys),
         "unchanged_count": len(candidate_keys & current_keys),
     }
-
-
-def _role_diff(current_roles: Any, candidate_roles: Any) -> Dict[str, Any]:
-    current = set(_norm_roles(current_roles))
-    candidate = set(_norm_roles(candidate_roles))
-    return {
-        "added": sorted(candidate - current),
-        "removed": sorted(current - candidate),
-        "unchanged": sorted(candidate & current),
-        "added_count": len(candidate - current),
-        "removed_count": len(current - candidate),
-        "unchanged_count": len(candidate & current),
-    }
-
-
-def _redact_notes_preview_message(message: Any, *, api_key: str = "", base_url: str = "") -> str:
-    text = str(message or "").strip()
-    for secret in (api_key,):
-        secret_text = str(secret or "")
-        if secret_text:
-            text = text.replace(secret_text, "[redacted]")
-    if base_url:
-        text = text.replace(f"Bearer {base_url}", "Bearer [redacted]")
-    return text
 
 
 def _sanitize_notes_preview_warnings(warnings: Any, *, api_key: str = "", base_url: str = "") -> List[Dict[str, str]]:
@@ -5630,16 +5154,6 @@ def _notes_preview_response_from_extraction(
     }
 
 
-def _notes_apply_flag(inp: NotesExtractionApplyIn, name: str) -> bool:
-    value = getattr(inp, name, None)
-    if value is not None:
-        return bool(value)
-    options = getattr(inp, "options", None)
-    if isinstance(options, dict) and name in options:
-        return bool(options.get(name))
-    return False
-
-
 def _notes_apply_require_cas(
     *,
     sess: Session,
@@ -5674,10 +5188,6 @@ def _notes_apply_require_cas(
                 sess=sess,
             ),
         )
-
-
-def _edge_identity(edge: Edge) -> str:
-    return f"{str(edge.from_id or '').strip()}->{str(edge.to_id or '').strip()}::{str(edge.when or '').strip()}"
 
 
 def _merge_selected_edges(existing: Any, selected: Any) -> List[Edge]:
@@ -6020,15 +5530,6 @@ def _map_disposition_answer(answer: str) -> Optional[str]:
     return None
 
 
-def _ensure_loss_dict(node: Node) -> Dict[str, Any]:
-    node.parameters = dict(node.parameters or {})
-    loss = node.parameters.get("loss")
-    if not isinstance(loss, dict):
-        loss = {}
-    node.parameters["loss"] = loss
-    return loss
-
-
 def _parse_equipment_list(answer: str) -> List[str]:
     items = [x.strip() for x in re.split(r"[\n,;]+", (answer or "")) if x.strip()]
     out = []
@@ -6077,17 +5578,6 @@ def _normalize_choice(answer: str, allowed: List[str]) -> str:
         if (opt or "").strip().lower() == low:
             return opt
     return a
-
-
-def _ensure_dict_at_path(root: Dict[str, Any], keys: List[str]) -> Dict[str, Any]:
-    cur = root
-    for k in keys:
-        v = cur.get(k)
-        if not isinstance(v, dict):
-            v = {}
-            cur[k] = v
-        cur = v
-    return cur
 
 
 def _apply_target_to_node(s: Session, node: Node, q, answer: str) -> None:
@@ -7795,16 +7285,6 @@ def _resolve_invite_base_url(request: Optional[Request], *, explicit_base_url: s
     return ""
 
 
-def _build_invite_link(base_url: str, token: str) -> str:
-    base = str(base_url or "").strip().rstrip("/")
-    invite_token = str(token or "").strip()
-    if not invite_token:
-        return f"{base}/accept-invite" if base else "/accept-invite"
-    return f"{base}/accept-invite?token={invite_token}"
-
-
-
-
 def _send_org_invite_email(
     *,
     to_email: str,
@@ -8015,15 +7495,6 @@ def _accessible_session_ids_for_request(
     return out
 
 
-def _workspace_parse_owner_ids(raw: str) -> List[str]:
-    out: List[str] = []
-    for part in str(raw or "").split(","):
-        value = str(part or "").strip()
-        if value:
-            out.append(value)
-    return sorted(set(out))
-
-
 def _workspace_reports_count(interview_raw: Any) -> int:
     interview = interview_raw if isinstance(interview_raw, dict) else {}
     by_path = _get_report_versions_by_path(interview)
@@ -8032,28 +7503,6 @@ def _workspace_reports_count(interview_raw: Any) -> int:
         if isinstance(rows, list):
             total += len(rows)
     return int(total)
-
-
-def _workspace_needs_attention_count(interview_raw: Any) -> int:
-    interview = interview_raw if isinstance(interview_raw, dict) else {}
-    candidates = [
-        interview.get("needs_attention"),
-        interview.get("needs_attention_count"),
-        interview.get("attention_count"),
-        interview.get("attention_total"),
-        interview.get("missing_count"),
-    ]
-    for raw in candidates:
-        try:
-            value = int(raw or 0)
-        except Exception:
-            value = 0
-        if value > 0:
-            return value
-    attention_items = interview.get("attention_items")
-    if isinstance(attention_items, list):
-        return len(attention_items)
-    return 0
 
 
 def _workspace_attention_markers_info(bpmn_meta_raw: Any, user_id: str) -> Dict[str, Any]:
@@ -8115,24 +7564,6 @@ def _workspace_session_status(
     interview = interview_raw if isinstance(interview_raw, dict) else {}
     manual = _normalize_session_status(interview.get("status"))
     return manual or derived
-
-
-def _as_dict_obj(value: Any) -> Dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _as_list_obj(value: Any) -> List[Any]:
-    return value if isinstance(value, list) else []
-
-
-def _safe_json_dict(raw: Any) -> Dict[str, Any]:
-    if isinstance(raw, dict):
-        return raw
-    try:
-        parsed = json.loads(str(raw or "{}"))
-    except Exception:
-        parsed = {}
-    return parsed if isinstance(parsed, dict) else {}
 
 
 def _workspace_collect_dod_artifacts(
@@ -9050,29 +8481,6 @@ def delete_org_project_member(org_id: str, project_id: str, user_id: str, reques
         meta={"target_user_id": uid},
     )
     return Response(status_code=204)
-
-
-def _with_invite_links(items_raw: Any, *, base_url: str) -> List[Dict[str, Any]]:
-    rows = items_raw if isinstance(items_raw, list) else []
-    out: List[Dict[str, Any]] = []
-    for row_raw in rows:
-        row = dict(row_raw or {}) if isinstance(row_raw, dict) else {}
-        token = str(row.get("invite_key") or "").strip()
-        status = str(row.get("status") or "").strip().lower()
-        row["invite_link"] = _build_invite_link(base_url, token) if (token and status == "pending") else ""
-        out.append(row)
-    return out
-
-
-def _pick_current_org_invite(items_raw: Any) -> Dict[str, Any]:
-    rows = items_raw if isinstance(items_raw, list) else []
-    for row_raw in rows:
-        row = row_raw if isinstance(row_raw, dict) else {}
-        status = str(row.get("status") or "").strip().lower()
-        token = str(row.get("invite_key") or "").strip()
-        if status == "pending" and token:
-            return dict(row)
-    return {}
 
 
 @app.get("/api/orgs/{org_id}/invites")
@@ -10035,16 +9443,6 @@ def leave_session_presence_api(
         "session_id": sid,
         "removed": removed,
     }
-
-
-def _coerce_bool(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return False
 
 
 # Legacy test compatibility re-exports (router/service split).
