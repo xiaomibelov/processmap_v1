@@ -223,6 +223,106 @@ export async function apiAdminArchiveAiPrompt(promptId) {
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
 
+// ------- Admin LLM gateway -------
+export async function apiAdminLlmListProviders() {
+  const r = okOrError(await request(apiRoutes.admin.llmProviders(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmCreateProvider(payload = {}) {
+  const body = {
+    name: String(payload?.name || "").trim(),
+    base_url: String(payload?.base_url || payload?.baseUrl || "").trim(),
+    model: String(payload?.model || "").trim(),
+    priority: Number.isFinite(Number(payload?.priority)) ? Math.round(Number(payload.priority)) : 0,
+    enabled: payload?.enabled !== false,
+  };
+  if (String(payload?.api_key || payload?.apiKey || "")) body.api_key = String(payload?.api_key || payload?.apiKey);
+  const r = okOrError(await request(apiRoutes.admin.llmProviders(), { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmPatchProvider(id, payload = {}) {
+  const pid = String(id || "").trim();
+  if (!pid) return { ok: false, status: 0, error: "missing provider_id" };
+  const body = {};
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "name")) body.name = String(payload?.name || "").trim();
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "base_url")) body.base_url = String(payload?.base_url || "").trim();
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "model")) body.model = String(payload?.model || "").trim();
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "priority")) body.priority = Math.round(Number(payload?.priority || 0));
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "enabled")) body.enabled = Boolean(payload?.enabled);
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "api_key")) body.api_key = String(payload?.api_key || "");
+  const r = okOrError(await request(apiRoutes.admin.llmProvider(pid), { method: "PATCH", body }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmDeleteProvider(id) {
+  const pid = String(id || "").trim();
+  if (!pid) return { ok: false, status: 0, error: "missing provider_id" };
+  const r = okOrError(await request(apiRoutes.admin.llmProvider(pid), { method: "DELETE" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmTestProvider(id) {
+  const pid = String(id || "").trim();
+  if (!pid) return { ok: false, status: 0, error: "missing provider_id" };
+  const r = okOrError(await request(apiRoutes.admin.llmProviderTest(pid), { method: "POST" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmListPrompts(params = {}) {
+  const endpoint = apiRoutes.admin.llmPrompts(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmCreatePrompt(payload = {}) {
+  const body = {
+    feature: String(payload?.feature || "").trim(),
+    system: String(payload?.system || ""),
+    template: String(payload?.template || ""),
+    max_tokens: Number.isFinite(Number(payload?.max_tokens)) ? Math.round(Number(payload.max_tokens)) : 0,
+    model_class: String(payload?.model_class || "primary").trim() || "primary",
+  };
+  const r = okOrError(await request(apiRoutes.admin.llmPrompts(), { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmActivatePrompt(id) {
+  const pid = String(id || "").trim();
+  if (!pid) return { ok: false, status: 0, error: "missing prompt_id" };
+  const r = okOrError(await request(apiRoutes.admin.llmPromptActivate(pid), { method: "POST" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmRollbackPrompt(id) {
+  const pid = String(id || "").trim();
+  if (!pid) return { ok: false, status: 0, error: "missing prompt_id" };
+  const r = okOrError(await request(apiRoutes.admin.llmPromptRollback(pid), { method: "POST" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmListFeatures() {
+  const r = okOrError(await request(apiRoutes.admin.llmFeatures(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmPatchFeature(feature, payload = {}) {
+  const name = String(feature || "").trim();
+  if (!name) return { ok: false, status: 0, error: "missing feature" };
+  const body = {};
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "enabled")) body.enabled = Boolean(payload?.enabled);
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "daily_token_limit")) body.daily_token_limit = Math.round(Number(payload?.daily_token_limit || 0));
+  const r = okOrError(await request(apiRoutes.admin.llmFeature(name), { method: "PATCH", body }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmUsage(params = {}) {
+  const endpoint = apiRoutes.admin.llmUsage(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
 export async function apiAdminListAgentRuns() {
   const r = okOrError(await request(apiRoutes.admin.agentRuns(), { method: "GET" }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
