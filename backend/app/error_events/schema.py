@@ -1,271 +1,36 @@
 from __future__ import annotations
 
-import hashlib
-import json
-import traceback
 import uuid
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, Mapping, MutableMapping, Optional
-from urllib.parse import urlsplit
 
 from fastapi import Request
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import Field
 
-SCHEMA_VERSION = 1
-_ALLOWED_SEVERITIES = {"fatal", "error", "warn", "info"}
-_ALLOWED_SOURCES = {"frontend", "backend", "server", "worker"}
-_MAX_TEXT = 2000
-_MAX_ROUTE = 512
-_MAX_ID = 128
-_MAX_CONTEXT_DEPTH = 6
-_MAX_CONTEXT_KEYS = 50
-_MAX_CONTEXT_LIST = 20
-_MAX_STACK_FRAMES = 8
-_REDACTED = "[REDACTED]"
-_TRUNCATED = "...[truncated]"
-_SENSITIVE_KEYS = {
-    "authorization",
-    "cookie",
-    "cookies",
-    "set-cookie",
-    "x-api-key",
-    "api_key",
-    "access_token",
-    "refresh_token",
-    "id_token",
-    "bearer",
-}
-_PAYLOAD_REDACT_KEYS = {
-    "body",
-    "request_body",
-    "response_body",
-    "payload",
-    "draft_payload",
-    "session_payload",
-}
+from ..shared.dto.error_event_dto import (
+    SCHEMA_VERSION,
+    _ALLOWED_SEVERITIES,
+    _ALLOWED_SOURCES,
+    ErrorEventIn,
+    ErrorEventOut,
+)
+from ..shared.dto.error_event_helpers import (
+    _MAX_TEXT,
+    _compact_exception_frames,
+    _normalize_nullable_id,
+    _normalize_occurred_at,
+    _normalize_route,
+    _normalize_slug,
+    _normalize_text,
+    _now_ts,
+    compute_fingerprint,
+    redact_context_json,
+)
 
 
-class ErrorEventIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class ErrorEventStored(ErrorEventOut):
+    """Stored error event; unlike ErrorEventOut, context_json may be omitted."""
 
-    schema_version: int = Field(default=SCHEMA_VERSION)
-    event_type: str
-    severity: str
-    message: str
-    occurred_at: int | float | str | None = None
-    source: str
-    user_id: Optional[str] = None
-    org_id: Optional[str] = None
-    session_id: Optional[str] = None
-    project_id: Optional[str] = None
-    route: Optional[str] = None
-    runtime_id: Optional[str] = None
-    tab_id: Optional[str] = None
-    request_id: Optional[str] = None
-    correlation_id: Optional[str] = None
-    app_version: Optional[str] = None
-    git_sha: Optional[str] = None
-    fingerprint: Optional[str] = None
     context_json: Dict[str, Any] = Field(default_factory=dict)
-
-    @field_validator("event_type", "source")
-    @classmethod
-    def _validate_slug(cls, value: str) -> str:
-        normalized = _normalize_slug(value)
-        if not normalized:
-            raise ValueError("must be a non-empty slug")
-        return normalized
-
-    @field_validator("severity")
-    @classmethod
-    def _validate_severity(cls, value: str) -> str:
-        normalized = str(value or "").strip().lower()
-        if normalized not in _ALLOWED_SEVERITIES:
-            raise ValueError(f"severity must be one of {sorted(_ALLOWED_SEVERITIES)}")
-        return normalized
-
-    @field_validator("message")
-    @classmethod
-    def _validate_message(cls, value: str) -> str:
-        text = _normalize_text(value, max_len=_MAX_TEXT)
-        if not text:
-            raise ValueError("message is required")
-        return text
-
-    @model_validator(mode="after")
-    def _validate_schema_version(self) -> "ErrorEventIn":
-        if int(self.schema_version or 0) != SCHEMA_VERSION:
-            raise ValueError(f"schema_version must be {SCHEMA_VERSION}")
-        return self
-
-
-class ErrorEventStored(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: str
-    schema_version: int
-    occurred_at: int
-    ingested_at: int
-    source: str
-    event_type: str
-    severity: str
-    message: str
-    user_id: Optional[str] = None
-    org_id: Optional[str] = None
-    session_id: Optional[str] = None
-    project_id: Optional[str] = None
-    route: Optional[str] = None
-    runtime_id: Optional[str] = None
-    tab_id: Optional[str] = None
-    request_id: Optional[str] = None
-    correlation_id: Optional[str] = None
-    app_version: Optional[str] = None
-    git_sha: Optional[str] = None
-    fingerprint: str
-    context_json: Dict[str, Any] = Field(default_factory=dict)
-
-
-def _now_ts() -> int:
-    return int(datetime.now(timezone.utc).timestamp())
-
-
-def _normalize_slug(value: Any) -> str:
-    raw = str(value or "").strip().lower()
-    if not raw:
-        return ""
-    cleaned = []
-    for ch in raw:
-        if ch.isalnum() or ch in {"_", "-", ".", "/"}:
-            cleaned.append(ch)
-        elif ch.isspace():
-            cleaned.append("_")
-    normalized = "".join(cleaned).strip("._/-")
-    normalized = normalized.replace("__", "_")
-    return normalized[:_MAX_ID]
-
-
-def _normalize_text(value: Any, *, max_len: int) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    if len(text) <= max_len:
-        return text
-    return text[:max_len] + _TRUNCATED
-
-
-def _normalize_nullable_id(value: Any) -> str | None:
-    text = _normalize_text(value, max_len=_MAX_ID)
-    return text or None
-
-
-def _normalize_route(value: Any, *, fallback: str = "") -> str:
-    raw = _normalize_text(value, max_len=_MAX_ROUTE)
-    if raw:
-        return raw
-    fb = _normalize_text(fallback, max_len=_MAX_ROUTE)
-    if fb.startswith("http://") or fb.startswith("https://"):
-        try:
-            split = urlsplit(fb)
-            path = str(split.path or "").strip()
-            query = str(split.query or "").strip()
-            return f"{path}?{query}" if query else path
-        except Exception:
-            return fb
-    return fb
-
-
-def _normalize_occurred_at(value: Any, *, default_ts: int) -> int:
-    if value is None or value == "":
-        return default_ts
-    if isinstance(value, (int, float)):
-        ts = int(value)
-        return ts if ts > 0 else default_ts
-    raw = str(value or "").strip()
-    if not raw:
-        return default_ts
-    try:
-        ts = int(raw)
-        return ts if ts > 0 else default_ts
-    except Exception:
-        pass
-    try:
-        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return int(parsed.timestamp())
-    except Exception:
-        return default_ts
-
-
-def _json_size_hint(value: Any) -> int:
-    try:
-        return len(json.dumps(value, ensure_ascii=False))
-    except Exception:
-        return len(str(value or ""))
-
-
-def _redacted_summary(kind: str, value: Any) -> Dict[str, Any]:
-    return {"_redacted": kind, "size_hint": _json_size_hint(value)}
-
-
-def redact_context_json(value: Mapping[str, Any] | None) -> Dict[str, Any]:
-    source = dict(value or {})
-    sanitized = _sanitize_context_value(source, depth=0, parent_key="context")
-    return sanitized if isinstance(sanitized, dict) else {}
-
-
-def _sanitize_context_value(value: Any, *, depth: int, parent_key: str) -> Any:
-    if depth >= _MAX_CONTEXT_DEPTH:
-        return _redacted_summary("max_depth", value)
-    if isinstance(value, Mapping):
-        out: Dict[str, Any] = {}
-        for idx, (key, item) in enumerate(value.items()):
-            if idx >= _MAX_CONTEXT_KEYS:
-                out["_truncated_keys"] = len(value) - _MAX_CONTEXT_KEYS
-                break
-            key_text = _normalize_text(key, max_len=_MAX_ID) or f"key_{idx}"
-            lowered = key_text.lower()
-            if lowered in _SENSITIVE_KEYS or lowered.endswith("token"):
-                out[key_text] = _REDACTED
-                continue
-            if lowered == "bpmn_xml" or lowered.endswith("bpmn_xml"):
-                out[key_text] = _redacted_summary("bpmn_xml", item)
-                continue
-            if lowered in _PAYLOAD_REDACT_KEYS or lowered.endswith("_payload") or lowered.endswith("_draft"):
-                out[key_text] = _redacted_summary("payload", item)
-                continue
-            out[key_text] = _sanitize_context_value(item, depth=depth + 1, parent_key=lowered)
-        return out
-    if isinstance(value, list):
-        items = []
-        for idx, item in enumerate(value[:_MAX_CONTEXT_LIST]):
-            items.append(_sanitize_context_value(item, depth=depth + 1, parent_key=parent_key))
-        if len(value) > _MAX_CONTEXT_LIST:
-            items.append({"_truncated_items": len(value) - _MAX_CONTEXT_LIST})
-        return items
-    if isinstance(value, tuple):
-        return _sanitize_context_value(list(value), depth=depth, parent_key=parent_key)
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        if isinstance(value, str):
-            return _normalize_text(value, max_len=_MAX_TEXT)
-        return value
-    return _normalize_text(repr(value), max_len=_MAX_TEXT)
-
-
-def compute_fingerprint(event: Mapping[str, Any]) -> str:
-    basis = {
-        "schema_version": int(event.get("schema_version") or SCHEMA_VERSION),
-        "source": str(event.get("source") or ""),
-        "event_type": str(event.get("event_type") or ""),
-        "severity": str(event.get("severity") or ""),
-        "message": str(event.get("message") or ""),
-        "route": str(event.get("route") or ""),
-        "session_id": str(event.get("session_id") or ""),
-        "project_id": str(event.get("project_id") or ""),
-    }
-    raw = json.dumps(basis, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _request_state_dict(request: Request) -> Any:
@@ -316,20 +81,6 @@ def _request_route_template(request: Request) -> str:
     route = request.scope.get("route") if isinstance(getattr(request, "scope", None), dict) else None
     route_path = _normalize_route(getattr(route, "path", ""))
     return route_path or _normalize_route(str(getattr(request.url, "path", "") or ""))
-
-
-def _compact_exception_frames(exc: Exception) -> list[Dict[str, Any]]:
-    frames = traceback.extract_tb(exc.__traceback__) if exc.__traceback__ is not None else []
-    compact = []
-    for frame in list(frames)[-_MAX_STACK_FRAMES:]:
-        compact.append(
-            {
-                "file": _normalize_text(Path(str(frame.filename or "")).name, max_len=160),
-                "function": _normalize_text(frame.name, max_len=160),
-                "line": int(frame.lineno or 0),
-            }
-        )
-    return compact
 
 
 def build_stored_error_event(payload: ErrorEventIn, request: Request) -> ErrorEventStored:
