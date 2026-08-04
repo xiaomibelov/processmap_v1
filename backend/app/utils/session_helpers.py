@@ -9,6 +9,21 @@ from fastapi import HTTPException, Request
 from ..legacy.request_context import request_auth_user as _request_auth_user
 
 
+def build_session_not_found_detail(session_id) -> Dict[str, Any]:
+    return {
+        "code": "SESSION_NOT_FOUND",
+        "session_id": str(session_id or ""),
+        "message": "session not found (deleted?)",
+    }
+
+
+def raise_session_not_found(session_id) -> None:
+    """P-1: missing/deleted session is a terminal 404 (never a bare 200-dict
+    or a 500). Session-scoped handlers must use this instead of
+    `return {"error": "not found"}`."""
+    raise HTTPException(status_code=404, detail=build_session_not_found_detail(session_id))
+
+
 def _to_non_negative_int(value: Any) -> Optional[int]:
     if value is None:
         return None
@@ -192,19 +207,23 @@ def _save_session_with_cas(
     a silent last-writer-wins overwrite. Paths without a base version keep the
     legacy full-row upsert behavior.
     """
-    from ..storage import DiagramStateConflictError, SessionNotFoundError  # local import to avoid cycles
+    from ..storage import (  # local import to avoid cycles
+        DiagramStateConflictError,
+        SessionNotFoundError,
+        _is_integrity_error,
+    )
 
     base = _effective_sql_cas_base(client_base_version)
-    if base is None:
-        storage.save(
-            sess,
-            user_id=user_id,
-            is_admin=is_admin,
-            org_id=org_id,
-            bpmn_snapshot=bpmn_snapshot,
-        )
-        return
     try:
+        if base is None:
+            storage.save(
+                sess,
+                user_id=user_id,
+                is_admin=is_admin,
+                org_id=org_id,
+                bpmn_snapshot=bpmn_snapshot,
+            )
+            return
         storage.save(
             sess,
             user_id=user_id,
@@ -219,11 +238,7 @@ def _save_session_with_cas(
         # the frontend must show the dead-session screen, not the conflict modal.
         raise HTTPException(
             status_code=404,
-            detail={
-                "code": "SESSION_NOT_FOUND",
-                "session_id": exc.session_id,
-                "message": "session not found (deleted?)",
-            },
+            detail=build_session_not_found_detail(exc.session_id),
         ) from exc
     except DiagramStateConflictError as exc:
         current_version = exc.current
@@ -245,3 +260,15 @@ def _save_session_with_cas(
                 sess=server_sess,
             ),
         ) from exc
+    except Exception as exc:
+        if _is_integrity_error(exc):
+            # Unique constraint (e.g. alembic-011 indexes) — clean 409, never a 500.
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "SESSION_WRITE_CONFLICT",
+                    "session_id": str(getattr(sess, "id", "") or ""),
+                    "message": "write conflicts with a uniqueness constraint",
+                },
+            ) from exc
+        raise

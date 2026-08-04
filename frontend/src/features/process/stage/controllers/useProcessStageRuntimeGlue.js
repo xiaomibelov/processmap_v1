@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from "react";
 import { enqueueSessionPatchCasWrite } from "../utils/sessionPatchCasCoordinator";
+import { isSessionNotFound } from "../../../session/sessionLiveness.js";
 
 export default function useProcessStageRuntimeGlue({
   importInputRef,
@@ -495,6 +496,8 @@ export default function useProcessStageRuntimeGlue({
     const prevSig = serializeHybridLayerMap(hybridLayerPersistedMapRef.current);
     if (nextSig === prevSig) return undefined;
     const timerId = window.setTimeout(() => {
+      // P-1: мёртвая сессия не должна порождать новые autosave-запросы.
+      if (isSessionNotFound(sid)) return;
       void persistHybridLayerMap(hybridLayerByElementId, { source: "hybrid_layer_autosave" });
     }, 220);
     return () => window.clearTimeout(timerId);
@@ -505,6 +508,7 @@ export default function useProcessStageRuntimeGlue({
     hybridVisible,
     persistHybridLayerMap,
     serializeHybridLayerMap,
+    sid,
   ]);
 
   useEffect(() => {
@@ -514,10 +518,12 @@ export default function useProcessStageRuntimeGlue({
     const prevSig = docToComparableJson(hybridV2PersistedDocRef.current);
     if (nextSig === prevSig) return undefined;
     const timerId = window.setTimeout(() => {
+      // P-1: мёртвая сессия не должна порождать новые autosave-запросы.
+      if (isSessionNotFound(sid)) return;
       void persistHybridV2Doc(hybridV2Doc, { source: "hybrid_v2_autosave" });
     }, 220);
     return () => window.clearTimeout(timerId);
-  }, [docToComparableJson, hybridV2Doc, hybridV2PersistedDocRef, hybridVisible, persistHybridV2Doc]);
+  }, [docToComparableJson, hybridV2Doc, hybridV2PersistedDocRef, hybridVisible, persistHybridV2Doc, sid]);
 
   function openPathsFromDiagram() {
     const intent = {

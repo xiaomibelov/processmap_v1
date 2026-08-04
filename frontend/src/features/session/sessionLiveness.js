@@ -1,7 +1,7 @@
 /**
- * P-1 «Мёртвые сессии»: единый реестр терминального 404 по сессиям.
+ * P-1 «Мёртвые сессии»: единый реестр терминального 404/410 по сессиям.
  *
- * Терминальный 404 (сессия удалена / не существует) — НЕ сетевая ошибка:
+ * Терминальный 404/410 (сессия удалена / не существует) — НЕ сетевая ошибка:
  * - любой подсистемный вызов (presence heartbeat, GET meta, note-aggregate,
  *   remote-poll, save, первичная загрузка) помечает сессию мёртвой через
  *   noteSessionApiResult();
@@ -16,6 +16,7 @@
  */
 
 export const SESSION_NOT_FOUND_HTTP_STATUS = 404;
+export const SESSION_GONE_HTTP_STATUS = 410;
 
 const deadSessions = new Map();
 const listeners = new Set();
@@ -49,7 +50,8 @@ function isSubresourceNotFound(errorTextRaw) {
 export function isSessionNotFoundResult(result) {
   if (!result || typeof result !== "object") return false;
   if (result.ok !== false) return false;
-  if (Number(result.status) !== SESSION_NOT_FOUND_HTTP_STATUS) return false;
+  const status = Number(result.status);
+  if (status !== SESSION_NOT_FOUND_HTTP_STATUS && status !== SESSION_GONE_HTTP_STATUS) return false;
   if (isSubresourceNotFound(result.error)) return false;
   return true;
 }

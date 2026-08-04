@@ -13,6 +13,9 @@ export default function ProcessStageDeadSessionModal({
   view = null,
   onBackToList = null,
   onCreateNew = null,
+  onOpenCurrent = null,
+  onRestoreDraft = null,
+  busy = false,
 }) {
   const resolvedView = view && typeof view === "object" ? view : {};
   const contextLines = Array.isArray(resolvedView.contextLines) ? resolvedView.contextLines : [];
@@ -31,6 +34,7 @@ export default function ProcessStageDeadSessionModal({
             type="button"
             className="primaryBtn h-9 px-3 text-xs"
             onClick={onBackToList}
+            disabled={busy === true}
             data-testid="dead-session-back-to-list"
             title={toText(actions.backHint)}
           >
@@ -41,10 +45,35 @@ export default function ProcessStageDeadSessionModal({
               type="button"
               className="secondaryBtn h-9 px-3 text-xs"
               onClick={onCreateNew}
+              disabled={busy === true}
               data-testid="dead-session-create-new"
               title={toText(actions.createHint)}
             >
               {toText(actions.createLabel) || "Создать новую"}
+            </button>
+          ) : null}
+          {typeof onOpenCurrent === "function" ? (
+            <button
+              type="button"
+              className="secondaryBtn h-9 px-3 text-xs"
+              onClick={onOpenCurrent}
+              disabled={busy === true}
+              data-testid="dead-session-open-current"
+              title={toText(actions.openCurrentHint)}
+            >
+              {toText(actions.openCurrentLabel) || "Открыть актуальную"}
+            </button>
+          ) : null}
+          {typeof onRestoreDraft === "function" ? (
+            <button
+              type="button"
+              className="secondaryBtn h-9 px-3 text-xs"
+              onClick={onRestoreDraft}
+              disabled={busy === true}
+              data-testid="dead-session-restore-draft"
+              title={toText(actions.restoreHint)}
+            >
+              {toText(actions.restoreLabel) || "Восстановить черновик"}
             </button>
           ) : null}
         </>
