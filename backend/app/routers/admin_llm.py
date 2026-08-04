@@ -107,13 +107,18 @@ def admin_llm_test_provider(request: Request, provider_id: str) -> Any:
     """Тестовый вызов провайдера (verify_llm_settings-паттерн): latency + preview.
 
     Ключ берётся из БД на бэке и НЕ возвращается; ошибки — без тела запроса.
+    Отключённый провайдер — честный статус без вызова (не 500).
+    Вызов учитывается в llm_usage (feature='admin_provider_test') — виден в «Расходе».
     """
-    uid, _oid, err = _platform_admin_context(request)
+    uid, oid, err = _platform_admin_context(request)
     if err is not None:
         return err
     provider = llm_store.get_provider(provider_id)
     if provider is None:
         return _legacy_main._enterprise_error(404, "not_found", "provider not found")
+    if not provider.get("enabled"):
+        return {"ok": True, "item": {"ok": False, "latency_ms": 0, "model": provider.get("model") or "",
+                                     "preview": "", "error": "provider is disabled"}}
     api_key = str(provider.get("api_key") or "").strip()
     if not api_key:
         return {"ok": True, "item": {"ok": False, "latency_ms": 0, "model": provider.get("model") or "",
@@ -135,11 +140,24 @@ def admin_llm_test_provider(request: Request, provider_id: str) -> Any:
             preview = str(((resp.get("choices") or [{}])[0].get("message") or {}).get("content") or "")[:120]
         except Exception:
             preview = ""
+        usage_raw = resp.get("usage") or {}
+        model = str(resp.get("model") or provider.get("model") or "")
+        llm_store.record_usage(
+            org_id=oid or "org_default", feature="admin_provider_test", model=model,
+            provider_id=provider_id, prompt_tokens=int(usage_raw.get("prompt_tokens") or 0),
+            completion_tokens=int(usage_raw.get("completion_tokens") or 0),
+            user_id=uid or "", latency_ms=latency_ms, status="ok",
+        )
         return {"ok": True, "item": {"ok": True, "latency_ms": latency_ms,
-                                     "model": str(resp.get("model") or provider.get("model") or ""),
+                                     "model": model,
                                      "preview": preview, "error": ""}}
     except Exception as exc:
         latency_ms = int((time.monotonic() - started) * 1000)
+        llm_store.record_usage(
+            org_id=oid or "org_default", feature="admin_provider_test",
+            model=str(provider.get("model") or ""), provider_id=provider_id,
+            user_id=uid or "", latency_ms=latency_ms, status="error",
+        )
         return {"ok": True, "item": {"ok": False, "latency_ms": latency_ms,
                                      "model": provider.get("model") or "", "preview": "",
                                      "error": f"{exc.__class__.__name__}: {exc}"}}
