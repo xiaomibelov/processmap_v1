@@ -28,6 +28,7 @@ from ..services.bpmn_navigation import (
     element_type,
     find_subprocess_elements,
 )
+from .session_recompute import _recompute_session
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +75,10 @@ def create_session(
     if prep_questions:
         sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
         session_repo.save(sess, user_id=user_id, org_id=org_id, is_admin=is_admin)
-    # Note: _recompute_session and _session_api_dump are still in _legacy_main.py
-    # Full extraction requires moving those helpers first.
+    # Note: _session_api_dump is still in _legacy_main.py
+    # Full extraction requires moving that helper first.
     import app._legacy_main as _lm
-    sess = _lm._recompute_session(sess)
+    sess = _recompute_session(sess)
     session_repo.save(sess, user_id=user_id, org_id=org_id, is_admin=is_admin)
     _lm._invalidate_session_caches(sess, org_id=org_id or getattr(sess, "org_id", "") or "")
     return _lm._session_api_dump(sess)
@@ -667,7 +668,7 @@ def patch_node(session_id: str, node_id: str, inp, request=None) -> Dict[str, An
         node.parameters["_manual_disposition"] = True
 
     import app._legacy_main as _lm
-    s = _lm._recompute_session(s)
+    s = _recompute_session(s)
     _mark_diagram_truth_write(
         s,
         changed_keys=["nodes"],
@@ -720,7 +721,7 @@ def add_node(session_id: str, inp, request=None) -> Dict[str, Any]:
     s.nodes.append(node)
 
     import app._legacy_main as _lm
-    s = _lm._recompute_session(s)
+    s = _recompute_session(s)
     _mark_diagram_truth_write(
         s,
         changed_keys=["nodes"],
@@ -756,7 +757,7 @@ def delete_node(session_id: str, node_id: str, request=None) -> Dict[str, Any]:
     s.edges = [e for e in s.edges if e.from_id != node_id and e.to_id != node_id]
 
     import app._legacy_main as _lm
-    s = _lm._recompute_session(s)
+    s = _recompute_session(s)
     _mark_diagram_truth_write(
         s,
         changed_keys=["nodes", "edges"],
@@ -802,7 +803,7 @@ def add_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
     s.edges.append(Edge(from_id=inp.from_id, to_id=inp.to_id, when=inp.when))
 
     import app._legacy_main as _lm
-    s = _lm._recompute_session(s)
+    s = _recompute_session(s)
     _mark_diagram_truth_write(
         s,
         changed_keys=["edges"],
@@ -842,7 +843,7 @@ def delete_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
         return {"error": "edge not found"}
 
     import app._legacy_main as _lm
-    s = _lm._recompute_session(s)
+    s = _recompute_session(s)
     _mark_diagram_truth_write(
         s,
         changed_keys=["edges"],
@@ -1010,7 +1011,7 @@ def recompute_session(session_id: str, request: Optional[Request] = None):
     sess, oid, _ = _lm._legacy_load_session_scoped(session_id, request)
     if not sess:
         return {"error": "not found"}
-    sess = _lm._recompute_session(sess)
+    sess = _recompute_session(sess)
     get_storage().save(sess)
     try:
         refresh_analytics_for_session(

@@ -243,6 +243,7 @@ from .utils.session_helpers import (
     _build_server_last_write_payload,
     _mark_diagram_truth_write,
     _require_diagram_cas_or_409,
+    _resolve_actor_context,
     _resolve_base_diagram_state_version,
     _save_session_with_cas,
     raise_session_not_found,
@@ -395,6 +396,7 @@ from .sessions_core import (  # noqa: F401  # re-export facade (PR-9 sessions-co
     put_session,
     touch_session_presence_api,
 )
+from .services.session_recompute import _merge_question_states, _recompute_session  # noqa: F401  # re-export facade (PR-pre)
 # /api/auth/* handler implementations live in app/services/auth_service.py (PR-6);
 # they are re-registered on this app below (see "auth" route registrations).
 
@@ -888,14 +890,6 @@ def _diagram_state_conflict_payload(
     }
 
 
-
-
-def _resolve_actor_context(request: Request = None) -> Tuple[Dict[str, Any], str, str]:
-    user = _request_auth_user(request) if request is not None else {}
-    user = user if isinstance(user, dict) else {}
-    actor_user_id = str(user.get("id") or "").strip()
-    actor_label = _resolve_actor_label_from_user(user, actor_user_id)
-    return user, actor_user_id, actor_label
 
 
 _PUBLISH_GIT_MIRROR_STATES = {
@@ -3090,34 +3084,6 @@ def _delete_sessions_by_project(project_id: str) -> list[str]:
     return deleted_ids
 
 
-def _merge_question_states(old_questions, new_questions):
-    old_by_id = {q.id: q for q in (old_questions or [])}
-
-    merged = []
-    for q in new_questions:
-        old = old_by_id.get(q.id)
-        if old:
-            q.status = old.status
-            q.answer = old.answer
-        q.orphaned = False
-        merged.append(q)
-
-    seen_ids = {q.id for q in merged}
-
-    orphans = []
-    for old in (old_questions or []):
-        if old.id in seen_ids:
-            continue
-        if old.status != "answered":
-            continue
-        keep = old.model_copy(deep=True)
-        keep.orphaned = True
-        orphans.append(keep)
-
-    merged.extend(orphans[:300])
-    return merged[:900]
-
-
 def _disposition_report(s: Session) -> Dict[str, Any]:
     nodes = []
     open_nodes = []
@@ -3140,45 +3106,6 @@ def _disposition_report(s: Session) -> Dict[str, Any]:
         if not isinstance(eq_actions, dict) or len(eq_actions) == 0:
             open_nodes.append({"id": n.id, "title": n.title, "equipment": eq})
     return {"nodes": nodes, "open": open_nodes, "open_count": len(open_nodes)}
-
-
-def _recompute_session(s: Session) -> Session:
-    seed = load_seed_glossary(GLOSSARY_SEED)
-    s.normalized = normalize_nodes(s.nodes, seed)
-
-    resources_report, conflict_questions = build_resources_report(s.nodes, s.edges)
-    s.resources = resources_report
-
-    base_questions = build_questions(s.nodes, roles=s.roles)
-    disp_questions = build_disposition_questions(s.nodes)
-    loss_questions = build_loss_questions(s.nodes)
-
-    new_questions = base_questions + conflict_questions + disp_questions + loss_questions
-
-    keep_llm = [q for q in (s.questions or []) if (getattr(q, 'id', '') or '').startswith('llm_')]
-    new_questions = new_questions + keep_llm
-
-    seen = set()
-    dedup = []
-    for q in new_questions:
-        qid = getattr(q, 'id', None)
-        if not qid or qid in seen:
-            continue
-        seen.add(qid)
-        dedup.append(q)
-    new_questions = dedup
-
-    s.questions = _merge_question_states(s.questions, new_questions)
-
-    s.mermaid_simple = render_mermaid(s.nodes, s.edges, roles=s.roles, mode="simple")
-    s.mermaid_lanes = render_mermaid(s.nodes, s.edges, roles=s.roles, mode="lanes")
-    s.mermaid = s.mermaid_lanes
-
-
-    s.analytics = compute_analytics(s)
-
-    s.version += 1
-    return s
 
 
 @app.get("/")
