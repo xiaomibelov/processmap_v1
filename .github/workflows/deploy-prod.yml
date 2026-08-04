@@ -140,17 +140,30 @@ jobs:
               -p app \
               up -d --no-deps --force-recreate -V celery-worker
 
-            # Post-deploy freshness proof
-            echo "[deploy-prod] waiting for prod gateway to come up..."
-            sleep 15
+            # Post-deploy freshness proof: poll /version (api стартует не мгновенно —
+            # entrypoint гонит миграции/сиды; 502 первые N секунд — норма, не fail).
+            echo "[deploy-prod] waiting for prod gateway/api to come up (poll up to 180s)..."
+            VERSION_RESPONSE=""
+            LAST_HTTP="000"
+            for attempt in $(seq 1 18); do
+              VERSION_RESPONSE=$(curl -sS -m 10 -w '\n__HTTP__%{http_code}' https://processmap.ru/version 2>&1 || true)
+              LAST_HTTP=$(echo "${VERSION_RESPONSE}" | grep -o '__HTTP__[0-9]*' | tail -1 | cut -c8-)
+              if [ "${LAST_HTTP}" = "200" ]; then break; fi
+              echo "[deploy-prod] /version not ready (http=${LAST_HTTP:-000}, attempt ${attempt}/18) — retry in 10s"
+              sleep 10
+            done
             echo "=== Prod /version ==="
-            VERSION_RESPONSE=$(curl -fsS https://processmap.ru/version || echo "ERROR")
-            echo "${VERSION_RESPONSE}" | head -c 500
+            echo "${VERSION_RESPONSE}" | sed 's/__HTTP__[0-9]*//' | head -c 500
             echo
+            if [ "${LAST_HTTP}" != "200" ]; then
+              echo "ERROR: api unhealthy — /version http=${LAST_HTTP:-000} после 180s ожидания."
+              echo "Проверьте: docker ps -a --filter name=app-api-1 ; docker logs app-api-1 --tail 100"
+              exit 1
+            fi
             if echo "${VERSION_RESPONSE}" | grep -q "\"commit\":\"${GIT_SHA}\""; then
               echo "OK: /version commit matches ${GIT_SHA}"
             else
-              echo "ERROR: /version commit does not match ${GIT_SHA}"
+              echo "ERROR: /version отвечает 200, но commit != ${GIT_SHA} (запущен старый api-образ?)"
               exit 1
             fi
 
