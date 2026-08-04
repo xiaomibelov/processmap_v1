@@ -14,6 +14,7 @@
  */
 
 import { apiGetBpmnXml, apiGetSession } from "../../lib/api.js";
+import { noteSessionApiResult } from "./sessionLiveness.js";
 import { isLocalSessionId } from "../../components/process/interview/utils.js";
 import { extractCamundaExtensionsMapFromBpmnXml } from "../process/camunda/camundaExtensions.js";
 import {
@@ -160,6 +161,8 @@ class SessionLoader {
     ]);
 
     if (!sessionResult.ok) {
+      // P-1: первичная загрузка — тоже точка терминального 404 (мёртвая сессия).
+      noteSessionApiResult(sid, sessionResult, "session_loader");
       return {
         ok: false,
         error: sessionResult.error || "failed to load session",

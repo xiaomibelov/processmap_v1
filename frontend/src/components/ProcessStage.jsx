@@ -155,6 +155,14 @@ import {
 import ProcessStageDiagramControls from "../features/process/stage/ui/ProcessStageDiagramControls";
 import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDiagramOverlayLayers";
 import ProcessStageSaveConflictModal from "../features/process/stage/ui/ProcessStageSaveConflictModal";
+import ProcessStageDeadSessionModal from "../features/process/stage/ui/ProcessStageDeadSessionModal";
+import { buildDeadSessionView } from "../features/process/stage/ui/deadSessionModel.js";
+import {
+  getSessionNotFoundInfo,
+  isSessionNotFound,
+  noteSessionApiResult,
+  subscribeSessionNotFound,
+} from "../features/session/sessionLiveness.js";
 import BpmnMergePanel from "../features/process/stage/ui/BpmnMergePanel";
 import { buildMergePanelView } from "../features/process/stage/ui/BpmnMergePanel.model.js";
 import BpmnVersionDiffOverlay from "../features/process/stage/ui/BpmnVersionDiffOverlay";
@@ -599,6 +607,8 @@ function ProcessStage({
   const [drawioAnchorImportDiagnostics, setDrawioAnchorImportDiagnostics] = useState(null);
   const [saveUploadLifecycleEvent, setSaveUploadLifecycleEvent] = useState(IDLE_SAVE_UPLOAD_EVENT);
   const [saveConflictNoticeDismissed, setSaveConflictNoticeDismissed] = useState(false);
+  // P-1 D3: терминальный 404 текущей сессии → экран мёртвой сессии.
+  const [deadSessionInfo, setDeadSessionInfo] = useState(() => getSessionNotFoundInfo(sid));
   const [saveConflictActionBusy, setSaveConflictActionBusy] = useState(false);
   const [propertySaveConflictOpen, setPropertySaveConflictOpen] = useState(false);
   const [propertySaveConflictFallback, setPropertySaveConflictFallback] = useState("");
@@ -1362,6 +1372,22 @@ function ProcessStage({
     [hasSession, saveUploadStatus, sessionSaveReadSnapshot],
   );
   const showSaveConflictModal = saveUploadStatus?.state === "conflict" && !saveConflictNoticeDismissed;
+  useEffect(() => {
+    // P-1 D3: пересчитать при смене сессии + подписаться на пометки из любых
+    // подсистем (presence, remote-poll, save, loader).
+    setDeadSessionInfo(getSessionNotFoundInfo(sid));
+    if (!sid) return undefined;
+    return subscribeSessionNotFound((deadSid, info) => {
+      if (deadSid === sid) setDeadSessionInfo(info || getSessionNotFoundInfo(sid));
+    });
+  }, [sid]);
+
+  const deadSessionView = useMemo(() => buildDeadSessionView({
+    info: deadSessionInfo,
+    sessionTitle: toText(draft?.title || draft?.name),
+    canCreate: typeof onCreateWorkspaceSession === "function",
+  }), [deadSessionInfo, draft?.title, draft?.name, onCreateWorkspaceSession, toText]);
+
   const saveConflictModalView = useMemo(() => buildSaveConflictModalView({
     conflictRaw: saveUploadStatus?.conflict,
     currentUserRaw: user,
@@ -1731,6 +1757,8 @@ function ProcessStage({
 
   const pollRemoteSessionSnapshot = useCallback(async (reason = "interval") => {
     if (!sid || !hasSession || isLocal) return { ok: false, reason: "poll_disabled" };
+    // P-1: мёртвая сессия (терминальный 404) — фоновый опрос не возобновляем.
+    if (isSessionNotFound(sid)) return { ok: false, reason: "session_deleted" };
     if (remoteSessionPollInFlightRef.current) return { ok: false, reason: "poll_busy" };
     if (typeof document !== "undefined" && document.visibilityState === "hidden") {
       return { ok: false, reason: "poll_hidden" };
@@ -1739,6 +1767,8 @@ function ProcessStage({
     try {
       const head = await apiGetBpmnVersions(sid, { limit: 1 });
       if (!head?.ok) {
+        // P-1: 404 помечает сессию мёртвой глобально (presence/save/UX подхватят).
+        noteSessionApiResult(sid, head, "remote_poll");
         return { ok: false, reason: "head_fetch_failed", status: Number(head?.status || 0) };
       }
       const headItems = Array.isArray(head?.versions)
@@ -7836,6 +7866,17 @@ function ProcessStage({
 
       <ProcessDialogs
         view={shellVm.dialogsProps}
+      />
+      <ProcessStageDeadSessionModal
+        open={hasSession && !!deadSessionInfo}
+        view={deadSessionView}
+        onBackToList={() => onClearWorkspaceProject?.()}
+        onCreateNew={typeof onCreateWorkspaceSession === "function"
+          ? () => {
+            onClearWorkspaceProject?.();
+            onCreateWorkspaceSession();
+          }
+          : null}
       />
       <ProcessStageSaveConflictModal
         open={showSaveConflictModal || propertySaveConflictOpen || hybridSaveConflictOpen}

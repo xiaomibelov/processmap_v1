@@ -2,6 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiLeaveSessionPresence, apiTouchSessionPresence } from "../../../../lib/api.js";
 import {
+  isSessionNotFound,
+  noteSessionApiResult,
+  subscribeSessionNotFound,
+} from "../../../session/sessionLiveness.js";
+import {
   SESSION_PRESENCE_HEARTBEAT_MS,
   SESSION_PRESENCE_TTL_MS,
 } from "./sessionPresenceConstants.js";
@@ -65,7 +70,10 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
   const sessionId = toText(sessionIdRaw);
   const currentUser = currentUserRaw && typeof currentUserRaw === "object" ? currentUserRaw : {};
   const currentUserId = toText(currentUser.id || currentUser.user_id || currentUser.email);
-  const heartbeatMs = Math.max(5000, Number(options.heartbeatMs || SESSION_PRESENCE_HEARTBEAT_MS));
+  // Явный override (тесты) honour'им до 10мс; дефолт клампим снизу 5с (антиспам).
+  const heartbeatMs = options.heartbeatMs
+    ? Math.max(10, Number(options.heartbeatMs))
+    : Math.max(5000, Number(SESSION_PRESENCE_HEARTBEAT_MS));
   const surface = toText(options.surface) || "process_stage";
   const touchPresence = typeof options.apiTouch === "function" ? options.apiTouch : apiTouchSessionPresence;
   const leavePresenceApi = typeof options.apiLeave === "function" ? options.apiLeave : apiLeaveSessionPresence;
@@ -82,6 +90,9 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
   );
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [lastError, setLastError] = useState("");
+  // P-1: терминальный 404 — сессия удалена. Heartbeat останавливается,
+  // опрос не возобновляется (404 ≠ сетевая ошибка).
+  const [sessionDead, setSessionDead] = useState(() => isSessionNotFound(sessionId));
 
   const clearPresence = useCallback(() => {
     setActiveUsers([]);
@@ -90,6 +101,7 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
 
   const heartbeat = useCallback(async (reason = "interval") => {
     if (!sessionId || !currentUserId) return { ok: false, reason: "disabled" };
+    if (isSessionNotFound(sessionId)) return { ok: false, reason: "session_deleted" };
     if (typeof document !== "undefined" && document.visibilityState === "hidden" && reason === "interval") {
       return { ok: false, reason: "hidden" };
     }
@@ -99,6 +111,14 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
       const out = await touchPresence(sessionId, { clientId, surface });
       if (!mountedRef.current) return out;
       if (!out?.ok) {
+        // P-1: терминальный 404 помечает сессию мёртвой — таймер снимается
+        // через sessionDead-эффект, дальнейшие heartbeat не уходят в сеть.
+        const deadInfo = noteSessionApiResult(sessionId, out, "presence");
+        if (deadInfo) {
+          setSessionDead(true);
+          setLastError("session_not_found");
+          return out;
+        }
         setLastError(toText(out?.error || out?.reason || "presence_failed"));
         return out;
       }
@@ -120,6 +140,8 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
 
   const leavePresence = useCallback(async (reason = "leave", leaveOptions = {}) => {
     if (!sessionId || !currentUserId) return { ok: false, reason: "disabled" };
+    // P-1: мёртвая сессия — leave бессмысленен (гарантированный 404-шум).
+    if (isSessionNotFound(sessionId)) return { ok: false, reason: "session_deleted" };
     const clientId = clientIdRef.current || getSessionPresenceClientId();
     clientIdRef.current = clientId;
     if (!clientId) return { ok: false, reason: "missing_client_id" };
@@ -137,6 +159,17 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
   }, [currentUserId, leavePresenceApi, sessionId, surface]);
 
   useEffect(() => {
+    // Смена сессии: пересчитать dead-флаг (реестр глобальный).
+    setSessionDead(isSessionNotFound(sessionId));
+    if (!sessionId) return undefined;
+    return subscribeSessionNotFound((deadSid) => {
+      if (deadSid === sessionId && mountedRef.current) {
+        setSessionDead(true);
+      }
+    });
+  }, [sessionId]);
+
+  useEffect(() => {
     mountedRef.current = true;
     if (typeof window === "undefined" || typeof document === "undefined") {
       clearPresence();
@@ -144,7 +177,7 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
         mountedRef.current = false;
       };
     }
-    if (!sessionId || !currentUserId) {
+    if (!sessionId || !currentUserId || sessionDead) {
       clearPresence();
       return () => {
         mountedRef.current = false;
@@ -179,7 +212,7 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
       window.removeEventListener("beforeunload", handlePageExit);
       clearPresence();
     };
-  }, [clearPresence, currentUserId, heartbeat, heartbeatMs, leavePresence, sessionId, skipMountHeartbeat]);
+  }, [clearPresence, currentUserId, heartbeat, heartbeatMs, leavePresence, sessionDead, sessionId, skipMountHeartbeat]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -199,15 +232,20 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
     };
   }, [activeUsers, currentUserId, nowMs, sessionId, ttlMs]);
 
+  // P-1: cleanup эффекта (clearPresence) стирает lastError — для мёртвой
+  // сессии возвращаем sticky-маркер, чтобы UI мог отличить терминальный 404.
+  const effectiveLastError = sessionDead && !lastError ? "session_not_found" : lastError;
+
   return useMemo(() => ({
     activeUsers,
     clientId: clientIdRef.current,
     ttlMs,
     nowMs,
-    lastError,
+    lastError: effectiveLastError,
+    sessionDead,
     heartbeat,
     leavePresence,
     setActiveUsers,
     setTtlMs,
-  }), [activeUsers, heartbeat, lastError, leavePresence, nowMs, ttlMs]);
+  }), [activeUsers, effectiveLastError, heartbeat, leavePresence, nowMs, sessionDead, ttlMs]);
 }
