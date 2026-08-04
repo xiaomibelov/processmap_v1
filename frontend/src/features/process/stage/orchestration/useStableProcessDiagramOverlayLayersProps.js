@@ -150,7 +150,6 @@ const HYBRID_BASE_KEYS = [
   "tab",
   "hybridVisible",
   "hybridContextMenu",
-  "hybridPersistLockBusyNoticeOpen",
 ];
 
 const HYBRID_OVERLAY_KEYS = [
@@ -204,15 +203,6 @@ const HYBRID_MENU_KEYS = [
   "toText",
 ];
 
-const HYBRID_TOAST_KEYS = [
-  "dismissHybridLockBusyNotice",
-  "hybridPersistLockBusyNoticeMessage",
-  "hybridPersistLockBusyNoticeOpen",
-  "hybridPersistPendingDraft",
-  "retryHybridPersist",
-  "tab",
-];
-
 function selectDrawioInput(input) {
   const selected = pickInput(input, DRAWIO_BASE_KEYS);
   if (input?.tab === "diagram" && input?.drawioVisible) {
@@ -232,9 +222,7 @@ function selectHybridInput(input) {
   if (input?.hybridContextMenu) {
     Object.assign(selected, pickInput(input, HYBRID_MENU_KEYS));
   }
-  if (input?.tab === "diagram" && input?.hybridPersistLockBusyNoticeOpen) {
-    Object.assign(selected, pickInput(input, HYBRID_TOAST_KEYS));
-  }
+  // FIX-V (блок 2): HYBRID_TOAST_KEYS удалены — toast вынесен в ProcessToastViewport.
   return selected;
 }
 
