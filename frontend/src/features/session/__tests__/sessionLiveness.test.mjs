@@ -33,6 +33,16 @@ test("404 result marks session as not found; network failure does not", () => {
   assert.equal(isSessionNotFoundResult({ ok: false, status: 404, error: "session not found" }), true);
 });
 
+test("410 Gone — тоже терминальное состояние сессии (F2)", () => {
+  assert.equal(isSessionNotFoundResult({ ok: false, status: 410, error: "session deleted" }), true);
+  // 410 саб-ресурса — по-прежнему НЕ смерть сессии.
+  assert.equal(isSessionNotFoundResult({ ok: false, status: 410, error: "node not found" }), false);
+  // 410 помечает реестр через единую точку.
+  const info = noteSessionApiResult("sess_gone_410", { ok: false, status: 410, error: "session deleted" }, "save:xml");
+  assert.ok(info);
+  assert.equal(isSessionNotFound("sess_gone_410"), true);
+});
+
 test("404 of a sub-resource (node/edge/version) does NOT kill the session", () => {
   assert.equal(isSessionNotFoundResult({ ok: false, status: 404, error: "node not found" }), false);
   assert.equal(isSessionNotFoundResult({ ok: false, status: 404, error: "version not found" }), false);
