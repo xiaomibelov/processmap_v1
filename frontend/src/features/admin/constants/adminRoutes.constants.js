@@ -9,6 +9,7 @@ export const ADMIN_SECTIONS = {
   audit: "audit",
   telemetry: "telemetry",
   aiModules: "ai-modules",
+  llm: "llm",
   agentRuns: "agent-runs",
   rag: "rag",
 };
@@ -53,6 +54,11 @@ export const ADMIN_ROUTE_META = {
     title: ru.admin.route.aiModules.title,
     subtitle: ru.admin.route.aiModules.subtitle,
     path: "/admin/ai-modules",
+  },
+  [ADMIN_SECTIONS.llm]: {
+    title: ru.admin.route.llm.title,
+    subtitle: ru.admin.route.llm.subtitle,
+    path: "/admin/llm",
   },
   [ADMIN_SECTIONS.agentRuns]: {
     title: ru.admin.route.agentRuns.title,
