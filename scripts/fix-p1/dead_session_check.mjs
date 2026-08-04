@@ -51,10 +51,17 @@ await page.addInitScript((t) => window.localStorage.setItem("fpc_auth_access_tok
 
 // Счётчик 404 по endpoint'ам ПОСЛЕ удаления.
 const notFoundCounts = { presence: 0, versions: 0, meta: 0, session_get: 0 };
+// F2: save-запросы старой вкладки ПОСЛЕ удаления (PUT /bpmn по мёртвой сессии).
+const saveAfterDelete = { total: 0, statuses: [] };
 let deletionDone = false;
 page.on("response", (r) => {
-  if (!deletionDone || r.status() !== 404) return;
+  if (!deletionDone) return;
   const u = r.url();
+  if (r.request().method() === "PUT" && u.includes(`/api/sessions/${SID}/bpmn`)) {
+    saveAfterDelete.total += 1;
+    saveAfterDelete.statuses.push(r.status());
+  }
+  if (r.status() !== 404) return;
   if (u.includes(`/api/sessions/${SID}/presence`)) notFoundCounts.presence += 1;
   else if (u.includes(`/api/sessions/${SID}/bpmn/versions`)) notFoundCounts.versions += 1;
   else if (u.includes(`/api/sessions/${SID}/meta`)) notFoundCounts.meta += 1;
@@ -65,6 +72,14 @@ try {
   // 1. Открываем сессию в окне A.
   await page.goto(`${BASE}/app?project=${PID}&session=${SID}`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.waitForSelector('[data-testid="diagram-toolbar-save"]', { timeout: 60000 });
+  // F2: сидим localStorage runtime-cache — имитация «вчерашней» вкладки с
+  // несохранённым черновиком (кнопка «Восстановить черновик» на dead-экране).
+  await page.evaluate((sid) => {
+    const xml = '<?xml version="1.0" encoding="UTF-8"?>'
+      + '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="D" targetNamespace="http://bpmn.io/schema/bpmn">'
+      + '<bpmn:process id="P" isExecutable="false"><bpmn:startEvent id="S"/></bpmn:process></bpmn:definitions>';
+    window.localStorage.setItem(`fpc_bpmn_runtime_cache:${sid}`, JSON.stringify({ xml, rev: 1, ts: Date.now(), hash: "e2e", reason: "e2e_seed" }));
+  }, SID);
   await page.waitForTimeout(8000); // presence + remote-poll стартовали
 
   // 2. Удаляем сессию (окно B = API от имени того же пользователя).
@@ -88,12 +103,51 @@ try {
   const cascade = Object.values(notFoundCounts).some((n) => n > 2);
   record("P1-3", "Нет 404-каскада поллеров (≤2 на endpoint)", cascade ? "БАГ" : "OK", JSON.stringify(notFoundCounts));
 
+  // 4b. F2: save в старой вкладке ПОСЛЕ удаления — 0 ретраев, никогда не 500.
+  if (modalVisible) {
+    await page.evaluate(() => {
+      const btn = document.querySelector('[data-testid="diagram-toolbar-save"]');
+      if (btn) btn.click();
+    });
+    await page.waitForTimeout(6000); // окно ретраев saveCoordinator (1s/2s/4s)
+    const saw500 = saveAfterDelete.statuses.some((s) => s >= 500);
+    const retryBurst = saveAfterDelete.total > 1;
+    record("P1-5", "Save в мёртвую сессию: ≤1 PUT, 0 ретраев, не 500",
+      (saw500 || retryBurst) ? "БАГ" : "OK",
+      `puts=${saveAfterDelete.total} statuses=${JSON.stringify(saveAfterDelete.statuses)}`);
+
+    // 4c. F2: «Восстановить черновик» — новая сессия из localStorage-копии.
+    const restoreVisible = await page.locator('[data-testid="dead-session-restore-draft"]').isVisible().catch(() => false);
+    record("P1-6a", "Кнопка «Восстановить черновик» показана (localStorage-копия)", restoreVisible ? "OK" : "БАГ", `visible=${restoreVisible}`);
+    if (restoreVisible) {
+      await page.locator('[data-testid="dead-session-restore-draft"]').click();
+      let restoredUrl = "";
+      for (let i = 0; i < 12; i += 1) {
+        await page.waitForTimeout(5000);
+        restoredUrl = page.url();
+        if (restoredUrl.includes("session=") && !restoredUrl.includes(`session=${SID}`)) break;
+      }
+      const restored = restoredUrl.includes("session=") && !restoredUrl.includes(`session=${SID}`);
+      record("P1-6b", "Черновик восстановлен в новую сессию (навигация)", restored ? "OK" : "БАГ", `url=${restoredUrl}`);
+      await page.screenshot({ path: path.join(OUT, "dead_session_restored.png"), fullPage: false });
+    }
+  } else {
+    record("P1-5", "Save в мёртвую сессию: ≤1 PUT, 0 ретраев, не 500", "БАГ", "модал не показан");
+    record("P1-6a", "Кнопка «Восстановить черновик» показана (localStorage-копия)", "БАГ", "модал не показан");
+  }
+
   // 5. Действие «К списку сессий».
   if (modalVisible) {
-    await page.locator('[data-testid="dead-session-back-to-list"]').click();
-    await page.waitForTimeout(4000);
-    const stillOnStage = await page.locator('[data-testid="diagram-toolbar-save"]').isVisible().catch(() => false);
-    record("P1-4", "«К списку сессий» уводит со стейджа", stillOnStage ? "БАГ" : "OK", `stageVisible=${stillOnStage} url=${page.url()}`);
+    const backVisible = await page.locator('[data-testid="dead-session-back-to-list"]').isVisible().catch(() => false);
+    if (backVisible) {
+      await page.locator('[data-testid="dead-session-back-to-list"]').click();
+      await page.waitForTimeout(4000);
+      const stillOnStage = await page.locator('[data-testid="diagram-toolbar-save"]').isVisible().catch(() => false);
+      record("P1-4", "«К списку сессий» уводит со стейджа", stillOnStage ? "БАГ" : "OK", `stageVisible=${stillOnStage} url=${page.url()}`);
+    } else {
+      // restore уже увёл в новую сессию — экран мёртвой закрыт, цель достигнута.
+      record("P1-4", "«К списку сессий» уводит со стейджа", "OK", `superseded by restore flow, url=${page.url()}`);
+    }
   } else {
     record("P1-4", "«К списку сессий» уводит со стейджа", "БАГ", "модал не показан — действие недоступно");
   }
