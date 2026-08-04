@@ -19,7 +19,29 @@ ENV VITE_DEPLOY_RESOLVED_SHA=${VITE_DEPLOY_RESOLVED_SHA}
 
 WORKDIR /app
 COPY package*.json .npmrc ./
-RUN npm ci --include=dev
+# Deploy resilience (fix/deploy-build-resilience):
+# - npm can die on network flakes with exit code 0 ("Exit handler never
+#   called!"), letting the build reach `npm run build` without devDeps
+#   (vite: not found, exit 127). Verify a real artifact after install.
+# - Retry with backoff to ride out transient DNS/registry failures.
+# - BuildKit cache mount keeps tarballs between --no-cache deploy builds,
+#   reducing network exposure on rebuilds.
+# - NPM_REGISTRY build-arg allows pointing npm at an internal mirror
+#   without code changes (empty = default registry).
+ARG NPM_REGISTRY=
+RUN --mount=type=cache,target=/root/.npm \
+    set -e; \
+    if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi; \
+    attempt=1; \
+    until npm ci --include=dev && test -x node_modules/.bin/vite; do \
+      if [ "$attempt" -ge 3 ]; then \
+        echo "[build] npm ci failed after $attempt attempts (or node_modules/.bin/vite missing) — dependency stage FAILED" >&2; \
+        exit 1; \
+      fi; \
+      echo "[build] npm ci attempt $attempt failed; retrying in $((attempt * 15))s..." >&2; \
+      sleep $((attempt * 15)); \
+      attempt=$((attempt + 1)); \
+    done
 COPY . .
 RUN npm run build
 
