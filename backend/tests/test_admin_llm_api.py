@@ -220,7 +220,8 @@ def test_provider_test_call(client, admin_token, sandbox):
                                     base_url="https://api.deepseek.com", model="deepseek-chat",
                                     api_key=SECRET_KEY_VALUE)
     fake_resp = {"model": "deepseek-chat",
-                 "choices": [{"message": {"content": "pong"}}], "usage": {}}
+                 "choices": [{"message": {"content": "pong"}}],
+                 "usage": {"prompt_tokens": 3, "completion_tokens": 1}}
     with mock.patch.object(admin_llm, "_deepseek_chat_request", return_value=fake_resp) as mocked:
         resp = client.post(f"/api/admin/llm/providers/{row['id']}/test", headers=_auth(admin_token))
     item = resp.json()["item"]
@@ -228,6 +229,36 @@ def test_provider_test_call(client, admin_token, sandbox):
     assert item["preview"] == "pong" and isinstance(item["latency_ms"], int)
     assert SECRET_KEY_VALUE not in resp.text
     assert mocked.call_args.kwargs["api_key"] == SECRET_KEY_VALUE, "ключ берётся из БД на бэке"
+
+    # тест-вызов учитывается в llm_usage (виден в «Расходе»)
+    import psycopg
+    with psycopg.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT status, prompt_tokens, completion_tokens FROM llm_usage "
+                "WHERE feature = 'admin_provider_test' AND provider_id = %s",
+                (row["id"],),
+            )
+            usage_rows = cur.fetchall()
+            cur.execute("DELETE FROM llm_usage WHERE feature = 'admin_provider_test' "
+                        "AND provider_id = %s", (row["id"],))
+        conn.commit()
+    assert usage_rows == [("ok", 3, 1)], "тест-вызов записан в llm_usage с токенами"
+
+    # ошибка провайдера — usage со status=error, не 500
+    with mock.patch.object(admin_llm, "_deepseek_chat_request",
+                           side_effect=RuntimeError("boom")):
+        resp = client.post(f"/api/admin/llm/providers/{row['id']}/test", headers=_auth(admin_token))
+    assert resp.status_code == 200 and resp.json()["item"]["ok"] is False
+
+    # отключённый провайдер — честный статус, вызова нет
+    llm_store.update_provider(row["id"], {"enabled": False})
+    with mock.patch.object(admin_llm, "_deepseek_chat_request") as mocked2:
+        resp = client.post(f"/api/admin/llm/providers/{row['id']}/test", headers=_auth(admin_token))
+    assert resp.status_code == 200
+    assert resp.json()["item"]["ok"] is False
+    assert resp.json()["item"]["error"] == "provider is disabled"
+    mocked2.assert_not_called()
 
     # без ключа — честная ошибка, не 500
     row2 = llm_store.create_provider(org_id="org_default", name=sandbox["name"] + "-nokey",
