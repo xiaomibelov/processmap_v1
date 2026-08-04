@@ -21,6 +21,7 @@ from ...services.org_workspace import org_role_for_request as _org_role_for_requ
 from ...services.publish_git_mirror import execute_git_mirror_publish
 from ...session_status import validate_session_status_transition
 from ...storage import get_storage
+from ...utils.session_helpers import raise_session_not_found
 
 
 def change_session_status(
@@ -35,7 +36,7 @@ def change_session_status(
     """
     sess, oid, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
 
     user = _request_auth_user(request) if request is not None else {}
     user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""

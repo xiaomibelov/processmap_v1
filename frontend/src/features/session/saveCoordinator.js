@@ -16,7 +16,10 @@ import {
   SAVE_CONFLICT_RESOLUTION,
   isSaveConflictStatus,
 } from "./conflictModel.js";
-import { noteSessionApiResult } from "./sessionLiveness.js";
+import {
+  isSessionNotFound,
+  noteSessionApiResult,
+} from "./sessionLiveness.js";
 
 function asText(value) {
   return String(value || "").trim();
@@ -438,6 +441,15 @@ class SaveCoordinator {
     if (activeConflict) {
       this._setPipelineStatus(pipelineName, sid, "idle", { outcome: "conflict_blocked" });
       return this._buildConflictGateResult(activeConflict);
+    }
+
+    // P-1: known-dead session must not produce new requests — short-circuit
+    // with a synthetic 404 BEFORE any transport call.
+    if (isSessionNotFound(sid)) {
+      const result = { ok: false, status: 404, error: "session_not_found", code: "SESSION_NOT_FOUND" };
+      this._setPipelineStatus(pipelineName, sid, "idle", { outcome: "session_not_found" });
+      this.emit("session_not_found", { pipeline: pipelineName, sessionId: sid, response: result });
+      return result;
     }
 
     this._setPipelineStatus(pipelineName, sid, "busy", { stage: "build" });
