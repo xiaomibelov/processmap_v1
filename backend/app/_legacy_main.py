@@ -222,7 +222,14 @@ from . import overlay_cache
 from . import storage as _storage_mod
 from .services import auth_service as _auth_service
 from .utils.auth_helpers import set_refresh_cookie, clear_refresh_cookie
-from .utils.session_helpers import _save_session_with_cas, raise_session_not_found
+from .utils.session_helpers import (
+    _build_server_last_write_payload,
+    _mark_diagram_truth_write,
+    _require_diagram_cas_or_409,
+    _resolve_base_diagram_state_version,
+    _save_session_with_cas,
+    raise_session_not_found,
+)
 # DEPRECATED: auth routes moved to routers/auth.py — kept for backward compatibility during migration.
 # from .routers.auth import router as _auth_router
 
@@ -945,36 +952,6 @@ def _to_non_negative_int(value: Any) -> Optional[int]:
     return parsed
 
 
-def _resolve_base_diagram_state_version(*, request: Request = None, payload: Dict[str, Any] | None = None) -> Optional[int]:
-    body = payload if isinstance(payload, dict) else {}
-
-    for key in ("base_diagram_state_version", "base_bpmn_xml_version", "rev"):
-        parsed = _to_non_negative_int(body.get(key))
-        if parsed is not None:
-            return parsed
-
-    if request is not None:
-        for key in ("x-base-diagram-state-version", "x-base-bpmn-xml-version"):
-            parsed = _to_non_negative_int((request.headers or {}).get(key))
-            if parsed is not None:
-                return parsed
-        if_match = str((request.headers or {}).get("if-match") or "").strip()
-        if if_match:
-            if if_match.startswith("W/"):
-                if_match = if_match[2:].strip()
-            if if_match.startswith('"') and if_match.endswith('"') and len(if_match) >= 2:
-                if_match = if_match[1:-1].strip()
-            parsed_if_match = _to_non_negative_int(if_match)
-            if parsed_if_match is not None:
-                return parsed_if_match
-        query_params = getattr(request, "query_params", {}) or {}
-        for key in ("base_diagram_state_version", "base_bpmn_xml_version", "rev"):
-            raw_value = query_params.get(key) if hasattr(query_params, "get") else None
-            parsed = _to_non_negative_int(raw_value)
-            if parsed is not None:
-                return parsed
-
-    return None
 
 
 def _resolve_actor_label_from_user(user: Any, fallback_user_id: str = "") -> str:
@@ -986,20 +963,6 @@ def _resolve_actor_label_from_user(user: Any, fallback_user_id: str = "") -> str
     return str(fallback_user_id or "").strip()
 
 
-def _build_server_last_write_payload(sess: Session) -> Dict[str, Any]:
-    changed_keys_raw = getattr(sess, "diagram_last_write_changed_keys", [])
-    changed_keys = []
-    if isinstance(changed_keys_raw, list):
-        for item in changed_keys_raw:
-            key = str(item or "").strip()
-            if key:
-                changed_keys.append(key)
-    return {
-        "actor_user_id": str(getattr(sess, "diagram_last_write_actor_user_id", "") or ""),
-        "actor_label": str(getattr(sess, "diagram_last_write_actor_label", "") or ""),
-        "at": int(getattr(sess, "diagram_last_write_at", 0) or 0),
-        "changed_keys": changed_keys,
-    }
 
 
 def _diagram_state_conflict_payload(
@@ -1019,67 +982,6 @@ def _diagram_state_conflict_payload(
     }
 
 
-def _require_diagram_cas_or_409(
-    *,
-    sess: Session,
-    session_id: str,
-    request: Request = None,
-    client_base_version: Optional[int],
-) -> None:
-    # Compatibility bridge for direct function-call harnesses used in unit tests.
-    # Real HTTP requests always provide `.scope`; CAS stays strict there.
-    if request is None or not hasattr(request, "scope"):
-        return
-    # SECURITY: E2E CAS bypass. MUST be unset in production.
-    # Controlled test environments only (CI, local e2e).
-    if os.environ.get("FPC_E2E_CAS_BYPASS") == "1":
-        return
-    current_version = int(getattr(sess, "diagram_state_version", 0) or 0)
-    if client_base_version is None:
-        raise HTTPException(
-            status_code=409,
-            detail=_diagram_state_conflict_payload(
-                code="DIAGRAM_STATE_BASE_VERSION_REQUIRED",
-                session_id=str(getattr(sess, "id", "") or session_id),
-                client_base_version=None,
-                server_current_version=current_version,
-                sess=sess,
-            ),
-        )
-    if int(client_base_version) != current_version:
-        raise HTTPException(
-            status_code=409,
-            detail=_diagram_state_conflict_payload(
-                code="DIAGRAM_STATE_CONFLICT",
-                session_id=str(getattr(sess, "id", "") or session_id),
-                client_base_version=int(client_base_version),
-                server_current_version=current_version,
-                sess=sess,
-            ),
-        )
-
-
-def _mark_diagram_truth_write(
-    sess: Session,
-    *,
-    changed_keys: List[str],
-    actor_user_id: str = "",
-    actor_label: str = "",
-) -> None:
-    current_version = int(getattr(sess, "diagram_state_version", 0) or 0)
-    next_version = max(0, current_version) + 1
-    normalized_keys = sorted(
-        {
-            str(key or "").strip()
-            for key in (changed_keys or [])
-            if str(key or "").strip()
-        }
-    )
-    sess.diagram_state_version = next_version
-    sess.diagram_last_write_actor_user_id = str(actor_user_id or "").strip()
-    sess.diagram_last_write_actor_label = str(actor_label or actor_user_id or "").strip()
-    sess.diagram_last_write_at = int(time.time())
-    sess.diagram_last_write_changed_keys = normalized_keys
 
 
 def _resolve_actor_context(request: Request = None) -> Tuple[Dict[str, Any], str, str]:
