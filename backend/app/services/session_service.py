@@ -111,7 +111,7 @@ def get_session(
 
     sid = str(session_id or "").strip()
     if not sid:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
 
     # Try cached projection first.
     cached = session_cache.get_projection(sid)
@@ -130,7 +130,7 @@ def get_session(
             candidate = st.load(sid, org_id=ctx_org_id, is_admin=True)
             if candidate:
                 raise SessionAccessDenied()
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
 
     projection = _build_session_projection(row)
     session_cache.set_projection(sid, projection)
@@ -368,7 +368,7 @@ def get_session_meta(
 
     sid = str(session_id or "").strip()
     if not sid:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
 
     cached = session_cache.get_meta(sid)
     if isinstance(cached, dict) and str(cached.get("session_id") or "").strip() == sid:
@@ -382,7 +382,7 @@ def get_session_meta(
         is_admin=ctx_is_admin,
     )
     if not row:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
 
     session_org_id = str(row.get("org_id") or ctx_org_id or "").strip() or None
     projection = _build_session_projection(row)
@@ -472,11 +472,11 @@ def get_session_graph(
 
     sid = str(session_id or "").strip()
     if not sid:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
 
     sess = session_repo.load(sid, user_id=ctx_user_id, org_id=ctx_org_id, is_admin=ctx_is_admin)
     if not sess:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
 
     return {
         "session_id": sid,
@@ -612,6 +612,7 @@ from ..utils.session_helpers import (
     _resolve_actor_context,
     _mark_diagram_truth_write,
     _save_session_with_cas,
+    raise_session_not_found,
 )
 
 
@@ -620,7 +621,7 @@ def patch_node(session_id: str, node_id: str, inp, request=None) -> Dict[str, An
     st = get_storage()
     s = st.load(session_id)
     if not s:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
 
     node = next((n for n in s.nodes if n.id == node_id), None)
     if not node:
@@ -683,7 +684,7 @@ def add_node(session_id: str, inp, request=None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
     if not s:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
 
     client_base_version = _resolve_base_diagram_state_version(
         request=request,
@@ -736,7 +737,7 @@ def delete_node(session_id: str, node_id: str, request=None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
     if not s:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
 
     client_base_version = _resolve_base_diagram_state_version(request=request)
     _require_diagram_cas_or_409(
@@ -772,7 +773,7 @@ def add_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
     if not s:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
 
     client_base_version = _resolve_base_diagram_state_version(
         request=request,
@@ -818,7 +819,7 @@ def delete_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
     st = get_storage()
     s = st.load(session_id)
     if not s:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
 
     client_base_version = _resolve_base_diagram_state_version(
         request=request,
