@@ -126,6 +126,7 @@ export const ru = {
       audit: "Аудит",
       telemetry: "Телеметрия",
       aiModules: "AI модули",
+      llm: "LLM",
       agentRuns: "Запуски агентов",
       rag: "RAG / База знаний",
       orgs: "Пользователи и доступ",
@@ -168,6 +169,10 @@ export const ru = {
         title: "Запуски агентов",
         subtitle: "Мониторинг активных запусков агентов и их статусов",
       },
+      llm: {
+        title: "LLM",
+        subtitle: "Провайдеры, промты, фичи и расход токенов LLM-шлюза",
+      },
       rag: {
         title: "RAG / База знаний",
         subtitle: "Настройки и статус RAG-слоя поиска по знаниям",
@@ -184,6 +189,7 @@ export const ru = {
       audit: "Аудит",
       telemetry: "Телеметрия",
       aiModules: "AI модули",
+      llm: "LLM",
       agentRuns: "Запуски агентов",
     },
     topbar: {

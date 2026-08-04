@@ -4,6 +4,7 @@ export default function AdminTabs({
   tabs = [],
   activeTab = "",
   onChange,
+  testIdPrefix = "",
 }) {
   return (
     <div className="flex flex-wrap gap-4 border-b border-slate-200">
@@ -19,6 +20,7 @@ export default function AdminTabs({
                 : "text-slate-500 hover:text-slate-950"
             }`}
             onClick={() => onChange?.(toText(tab?.id))}
+            data-testid={testIdPrefix ? `${testIdPrefix}${toText(tab?.id)}` : undefined}
           >
             {toText(tab?.label || tab?.id)}
           </button>
