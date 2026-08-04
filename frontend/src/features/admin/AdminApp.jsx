@@ -17,6 +17,7 @@ import useAdminSessionsData from "./hooks/useAdminSessionsData";
 import { useAdminTelemetryErrorEventDetailData, useAdminTelemetryErrorEventsData } from "./hooks/useAdminTelemetryData";
 import AdminAuditPage from "./pages/AdminAuditPage";
 import AdminAiModulesPage from "./pages/AdminAiModulesPage";
+import AdminLlmPage from "./pages/AdminLlmPage";
 import AdminRagPage from "./pages/AdminRagPage";
 import useAdminRagData from "./hooks/useAdminRagData";
 import useAdminAgentRunsData from "./api/adminAgentRunsApi";
@@ -180,6 +181,7 @@ function AdminAppInner({
     if (route.section === "audit") return auditQ;
     if (route.section === "telemetry") return telemetryQ;
     if (route.section === "ai-modules") return { loading: false, error: "", data: null };
+    if (route.section === "llm") return { loading: false, error: "", data: null };
     if (route.section === "rag") return { loading: false, error: "", data: null };
     if (route.section === "agent-runs" && !toText(route.runId)) return agentRunsQ;
     if (route.section === "agent-runs" && Boolean(toText(route.runId))) return agentRunDetailQ;
@@ -372,6 +374,9 @@ function AdminAppInner({
     }
     if (route.section === "ai-modules") {
       return <AdminAiModulesPage />;
+    }
+    if (route.section === "llm") {
+      return <AdminLlmPage />;
     }
     if (route.section === "rag") {
       return <AdminRagPage payload={ragQ} />;
