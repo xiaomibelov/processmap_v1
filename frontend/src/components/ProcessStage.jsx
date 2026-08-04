@@ -22,7 +22,11 @@ import {
   apiGetAutoPassPrecheck,
   apiGetAutoPassStatus,
 } from "../lib/api/sessionApi";
-import { apiGetExportZip } from "../lib/api.js";
+import {
+  apiCreateProjectSession,
+  apiGetExportZip,
+  apiListProjectSessions,
+} from "../lib/api.js";
 import { seedSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
 import {
   apiGetBpmnMeta,
@@ -466,6 +470,50 @@ function readServerLastWriteFromSession(sessionLikeRaw = null) {
 function toNonNegativeVersion(value) {
   const n = Number(value);
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
+}
+
+/**
+ * P-1 F2: лучшая локальная копия XML мёртвой сессии (для «Восстановить черновик»).
+ * Порядок: runtime-cache (last-known-good) → черновик fpc_bpmn_xml_ → snapshots.
+ */
+function readDeadSessionLocalXml(sidRaw, projectIdRaw = "") {
+  if (typeof window === "undefined") return "";
+  const sid = String(sidRaw || "").trim();
+  if (!sid) return "";
+  const readKey = (key) => {
+    try {
+      return window.localStorage?.getItem(key) || "";
+    } catch {
+      return "";
+    }
+  };
+  try {
+    const raw = readKey(`fpc_bpmn_runtime_cache:${sid}`);
+    if (raw) {
+      const xml = String(JSON.parse(raw)?.xml || "").trim();
+      if (xml) return xml;
+    }
+  } catch {
+    // fallthrough к следующему источнику
+  }
+  const draftXml = String(readKey(`fpc_bpmn_xml_${sid}`) || "").trim();
+  if (draftXml) return draftXml;
+  const pid = String(projectIdRaw || "").trim();
+  if (pid) {
+    try {
+      const raw = readKey(`fpc_bpmn_snapshots:snapshots:${pid}:${sid}`);
+      const parsed = raw ? JSON.parse(raw) : null;
+      const items = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.items) ? parsed.items : []);
+      const withXml = items
+        .filter((item) => String(item?.xml || "").trim())
+        .sort((a, b) => Number(b?.ts || b?.created_at || 0) - Number(a?.ts || a?.created_at || 0));
+      const xml = String(withXml[0]?.xml || "").trim();
+      if (xml) return xml;
+    } catch {
+      // no-op
+    }
+  }
+  return "";
 }
 
 function ProcessStage({
@@ -1374,6 +1422,81 @@ function ProcessStage({
     [hasSession, saveUploadStatus, sessionSaveReadSnapshot],
   );
   const showSaveConflictModal = saveUploadStatus?.state === "conflict" && !saveConflictNoticeDismissed;
+  // P-1 F2: dead-session recovery — кандидат-замена + локальный черновик.
+  const [deadSessionRecovery, setDeadSessionRecovery] = useState({ replacement: null, hasLocalDraft: false, busy: false });
+  useEffect(() => {
+    if (!deadSessionInfo || !sid) {
+      setDeadSessionRecovery({ replacement: null, hasLocalDraft: false, busy: false });
+      return undefined;
+    }
+    let cancelled = false;
+    const localXml = readDeadSessionLocalXml(sid, activeProjectId);
+    setDeadSessionRecovery((prev) => ({ ...prev, replacement: null, hasLocalDraft: !!localXml, busy: false }));
+    const pid = toText(activeProjectId);
+    if (pid) {
+      (async () => {
+        try {
+          const result = await apiListProjectSessions(pid);
+          if (cancelled || !result?.ok) return;
+          const items = Array.isArray(result.sessions) ? result.sessions : [];
+          const candidate = items
+            .filter((item) => {
+              const itemId = toText(item?.id || item?.session_id);
+              return itemId && itemId !== toText(sid);
+            })
+            .sort((a, b) => Number(b?.updated_at || b?.updatedAt || b?.created_at || 0)
+              - Number(a?.updated_at || a?.updatedAt || a?.created_at || 0))[0] || null;
+          if (!cancelled && candidate) {
+            setDeadSessionRecovery((prev) => ({ ...prev, replacement: candidate }));
+          }
+        } catch {
+          // best-effort: кнопка «Открыть актуальную» просто не появится
+        }
+      })();
+    }
+    return () => { cancelled = true; };
+  }, [deadSessionInfo, sid, activeProjectId, toText]);
+  const handleDeadSessionOpenCurrent = useCallback(() => {
+    const candidate = deadSessionRecovery.replacement;
+    const nextId = toText(candidate?.id || candidate?.session_id);
+    if (!nextId || typeof onOpenWorkspaceSession !== "function") return;
+    onOpenWorkspaceSession({
+      id: nextId,
+      session_id: nextId,
+      project_id: toText(activeProjectId),
+      workspace_id: toText(activeProjectWorkspaceId),
+    }, { openTab: "diagram", source: "dead_session_open_current", bypassLeaveGuard: true });
+  }, [deadSessionRecovery.replacement, onOpenWorkspaceSession, activeProjectId, activeProjectWorkspaceId, toText]);
+  const handleDeadSessionRestoreDraft = useCallback(async () => {
+    const pid = toText(activeProjectId);
+    const xml = readDeadSessionLocalXml(sid, pid);
+    if (!pid || !xml || deadSessionRecovery.busy) return;
+    setDeadSessionRecovery((prev) => ({ ...prev, busy: true }));
+    try {
+      const baseTitle = toText(draft?.title || draft?.name) || "process";
+      const created = await apiCreateProjectSession(pid, "", `${baseTitle} (восстановлено)`);
+      const newSid = toText(created?.session_id || created?.session?.id);
+      if (!created?.ok || !newSid) throw new Error(created?.error || "create_failed");
+      const baseVersion = Number(created?.session?.diagram_state_version ?? 0);
+      const saved = await apiPutBpmnXml(newSid, xml, {
+        baseDiagramStateVersion: Number.isFinite(baseVersion) && baseVersion >= 0 ? baseVersion : 0,
+        sourceAction: "dead_session_restore_draft",
+      });
+      if (!saved?.ok) throw new Error(saved?.error || "save_failed");
+      if (typeof onOpenWorkspaceSession === "function") {
+        onOpenWorkspaceSession({
+          id: newSid,
+          session_id: newSid,
+          project_id: pid,
+          workspace_id: toText(activeProjectWorkspaceId),
+        }, { openTab: "diagram", source: "dead_session_restore_draft", bypassLeaveGuard: true });
+      }
+    } catch (err) {
+      setGenErr?.(`Не удалось восстановить черновик: ${String(err?.message || err)}`);
+    } finally {
+      setDeadSessionRecovery((prev) => ({ ...prev, busy: false }));
+    }
+  }, [activeProjectId, activeProjectWorkspaceId, deadSessionRecovery.busy, draft?.title, draft?.name, onOpenWorkspaceSession, sid, toText]);
   useEffect(() => {
     // P-1 D3: пересчитать при смене сессии + подписаться на пометки из любых
     // подсистем (presence, remote-poll, save, loader).
@@ -1388,7 +1511,9 @@ function ProcessStage({
     info: deadSessionInfo,
     sessionTitle: toText(draft?.title || draft?.name),
     canCreate: typeof onCreateWorkspaceSession === "function",
-  }), [deadSessionInfo, draft?.title, draft?.name, onCreateWorkspaceSession, toText]);
+    hasReplacement: !!deadSessionRecovery.replacement,
+    hasLocalDraft: deadSessionRecovery.hasLocalDraft === true,
+  }), [deadSessionInfo, deadSessionRecovery.hasLocalDraft, deadSessionRecovery.replacement, draft?.title, draft?.name, onCreateWorkspaceSession, toText]);
 
   const saveConflictModalView = useMemo(() => buildSaveConflictModalView({
     conflictRaw: saveUploadStatus?.conflict,
@@ -7890,6 +8015,7 @@ function ProcessStage({
       <ProcessStageDeadSessionModal
         open={hasSession && !!deadSessionInfo}
         view={deadSessionView}
+        busy={deadSessionRecovery.busy === true}
         onBackToList={() => onClearWorkspaceProject?.()}
         onCreateNew={typeof onCreateWorkspaceSession === "function"
           ? () => {
@@ -7897,6 +8023,8 @@ function ProcessStage({
             onCreateWorkspaceSession();
           }
           : null}
+        onOpenCurrent={deadSessionRecovery.replacement ? handleDeadSessionOpenCurrent : null}
+        onRestoreDraft={deadSessionRecovery.hasLocalDraft ? handleDeadSessionRestoreDraft : null}
       />
       <ProcessStageSaveConflictModal
         open={showSaveConflictModal || propertySaveConflictOpen || hybridSaveConflictOpen}

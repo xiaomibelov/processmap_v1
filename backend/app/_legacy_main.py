@@ -7155,7 +7155,9 @@ def session_bpmn_meta_get(session_id: str) -> Dict[str, Any]:
 @app.patch("/api/sessions/{session_id}/bpmn_meta")
 def session_bpmn_meta_patch(session_id: str, inp: BpmnMetaPatchIn, request: Request = None) -> Dict[str, Any]:
     st = get_storage()
-    s = st.load(session_id)
+    # Scoped load (как у session_bpmn_save): plain st.load() без request-scope
+    # даёт ложный not-found для сессий с owner_user_id.
+    s, _, _ = _legacy_load_session_scoped(session_id, request)
     if not s:
         raise_session_not_found(session_id)
     inp_payload = inp.model_dump(exclude_unset=True)
@@ -10752,7 +10754,7 @@ def list_sessions(q: Optional[str] = None, limit: int = 200, request: Request = 
 def get_session(session_id: str, request: Request = None) -> Dict[str, Any]:
     sess, _, _ = _legacy_load_session_scoped(session_id, request)
     if not sess:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
     sid = str(getattr(sess, "id", "") or session_id).strip()
     version_token = session_open_version_token(sess)
     cache_key = session_open_cache_key(sid, version_token)
@@ -10877,7 +10879,7 @@ def patch_node(session_id: str, node_id: str, inp: NodePatchIn, request: Request
     st = get_storage()
     s = st.load(session_id)
     if not s:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
 
     node = next((n for n in s.nodes if n.id == node_id), None)
     if not node:
@@ -10937,7 +10939,7 @@ def add_node(session_id: str, inp: CreateNodeIn, request: Request = None) -> Dic
     st = get_storage()
     s = st.load(session_id)
     if not s:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
     _require_diagram_cas_or_409(
         sess=s,
         session_id=session_id,
@@ -10987,7 +10989,7 @@ def delete_node(session_id: str, node_id: str, request: Request = None) -> Dict[
     st = get_storage()
     s = st.load(session_id)
     if not s:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
     _require_diagram_cas_or_409(
         sess=s,
         session_id=session_id,
@@ -11020,7 +11022,7 @@ def add_edge(session_id: str, inp: CreateEdgeIn, request: Request = None) -> Dic
     st = get_storage()
     s = st.load(session_id)
     if not s:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
     _require_diagram_cas_or_409(
         sess=s,
         session_id=session_id,
@@ -11060,7 +11062,7 @@ def delete_edge(session_id: str, inp: CreateEdgeIn, request: Request = None) -> 
     st = get_storage()
     s = st.load(session_id)
     if not s:
-        return {"error": "not found"}
+        raise_session_not_found(session_id)
     _require_diagram_cas_or_409(
         sess=s,
         session_id=session_id,

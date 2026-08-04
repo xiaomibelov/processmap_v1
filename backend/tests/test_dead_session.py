@@ -66,10 +66,13 @@ class DeadSessionContractTests(unittest.TestCase):
             UpdateSessionIn,
             create_session,
             delete_session_api,
+            get_session,
             get_storage,
+            patch_session,
             put_session,
             session_bpmn_save,
         )
+        from app.services import session_service
         from app.storage import SessionNotFoundError, get_default_org_id
         from app.utils.session_helpers import _save_session_with_cas
 
@@ -78,9 +81,12 @@ class DeadSessionContractTests(unittest.TestCase):
         self.UpdateSessionIn = UpdateSessionIn
         self.create_session = create_session
         self.delete_session_api = delete_session_api
+        self.get_session = get_session
         self.get_storage = get_storage
+        self.patch_session = patch_session
         self.put_session = put_session
         self.session_bpmn_save = session_bpmn_save
+        self.session_service = session_service
         self.SessionNotFoundError = SessionNotFoundError
         self._save_session_with_cas = _save_session_with_cas
         self.default_org_id = get_default_org_id()
@@ -127,28 +133,32 @@ class DeadSessionContractTests(unittest.TestCase):
         deleted = self.delete_session_api(self.sid, self.req)
         self.assertEqual(deleted.get("ok"), True)
 
-        # Handler-level: мёртвая сессия → «not found» (фронт мапит в HTTP 404
-        # через okOrError), и НИКОГДА не 409 HTTPException.
-        out = self.session_bpmn_save(
-            self.sid,
-            self.BpmnXmlIn(xml=SAMPLE_BPMN_XML, base_diagram_state_version=1),
-            self.req,
-        )
-        self.assertIsInstance(out, dict)
-        self.assertEqual(str(out.get("error") or ""), "not found")
-        self.assertNotEqual(out.get("ok"), True)
+        # Контракт F1 (fix/dead-session-save-500): мёртвая сессия → настоящий
+        # HTTP 404 SESSION_NOT_FOUND (а не 200-dict и НИКОГДА не 409/500).
+        with self.assertRaises(HTTPException) as cm:
+            self.session_bpmn_save(
+                self.sid,
+                self.BpmnXmlIn(xml=SAMPLE_BPMN_XML, base_diagram_state_version=1),
+                self.req,
+            )
+        self.assertEqual(int(getattr(cm.exception, "status_code", 0) or 0), 404)
+        detail = getattr(cm.exception, "detail", {}) or {}
+        self.assertEqual(str(detail.get("code") or ""), "SESSION_NOT_FOUND")
+        self.assertEqual(str(detail.get("session_id") or ""), self.sid)
 
     def test_put_session_on_deleted_session_is_not_found_not_409(self):
         self._save_ok(base=0)
         self.delete_session_api(self.sid, self.req)
 
-        out = self.put_session(
-            self.sid,
-            self.UpdateSessionIn(title="zombie?", base_diagram_state_version=1),
-            self.req,
-        )
-        self.assertIsInstance(out, dict)
-        self.assertEqual(str(out.get("error") or ""), "not found")
+        with self.assertRaises(HTTPException) as cm:
+            self.put_session(
+                self.sid,
+                self.UpdateSessionIn(title="zombie?", base_diagram_state_version=1),
+                self.req,
+            )
+        self.assertEqual(int(getattr(cm.exception, "status_code", 0) or 0), 404)
+        detail = getattr(cm.exception, "detail", {}) or {}
+        self.assertEqual(str(detail.get("code") or ""), "SESSION_NOT_FOUND")
 
         # И сессия не воскресла.
         self.assertIsNone(self.get_storage().load(self.sid, is_admin=True))
@@ -179,6 +189,39 @@ class DeadSessionContractTests(unittest.TestCase):
         with self.assertRaises(self.SessionNotFoundError):
             st.save(sess, is_admin=True, expected_diagram_state_version=0)
         self.assertIsNone(st.load("dead_session_never_existed", is_admin=True))
+
+    def _assert_404_session_not_found(self, fn, *args):
+        with self.assertRaises(HTTPException) as cm:
+            fn(*args)
+        self.assertEqual(int(getattr(cm.exception, "status_code", 0) or 0), 404)
+        detail = getattr(cm.exception, "detail", {}) or {}
+        self.assertEqual(str(detail.get("code") or ""), "SESSION_NOT_FOUND")
+
+    def test_get_session_on_deleted_session_is_404(self):
+        """F1: GET на удалённую сессию → настоящий 404, не 200-dict."""
+        self.delete_session_api(self.sid, self.req)
+        self._assert_404_session_not_found(self.get_session, self.sid, self.req)
+
+    def test_patch_session_on_deleted_session_is_404(self):
+        """F1: PATCH (title) на удалённую сессию → 404, не 200-dict и не 500."""
+        self.delete_session_api(self.sid, self.req)
+        self._assert_404_session_not_found(
+            self.patch_session,
+            self.sid,
+            self.UpdateSessionIn(title="zombie patch"),
+            self.req,
+        )
+
+    def test_node_op_on_deleted_session_is_404(self):
+        """F1: node-op на удалённой сессии → 404 SESSION_NOT_FOUND."""
+        self.delete_session_api(self.sid, self.req)
+        self._assert_404_session_not_found(
+            self.session_service.patch_node,
+            self.sid,
+            "node_1",
+            SimpleNamespace(name="x"),
+            self.req,
+        )
 
     def test_existing_session_stale_base_still_409(self):
         """FIX-SAVE регрессионный гейт: реальный CAS-конфликт остаётся 409."""
