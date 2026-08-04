@@ -29,3 +29,22 @@ test("dead session view: null-info → unknown source, модал всё рав�
   assert.equal(view.title, "Сессия удалена или недоступна");
   assert.ok(view.contextLines.some((l) => l.includes("запрос к серверу")));
 });
+
+test("dead session view: hasReplacement → действие «Открыть актуальную», без него — пусто", () => {
+  const withReplacement = buildDeadSessionView({ info: { source: "save" }, hasReplacement: true });
+  assert.equal(withReplacement.actions.openCurrentLabel, "Открыть актуальную");
+  assert.ok(withReplacement.actions.openCurrentHint);
+
+  const without = buildDeadSessionView({ info: { source: "save" }, hasReplacement: false });
+  assert.equal(without.actions.openCurrentLabel, "");
+});
+
+test("dead session view: hasLocalDraft → действие «Восстановить черновик» + контекстная строка", () => {
+  const withDraft = buildDeadSessionView({ info: { source: "save" }, hasLocalDraft: true });
+  assert.equal(withDraft.actions.restoreLabel, "Восстановить черновик");
+  assert.ok(withDraft.contextLines.some((l) => l.includes("локальная копия") && l.includes("можно восстановить")));
+
+  const without = buildDeadSessionView({ info: { source: "save" }, hasLocalDraft: false });
+  assert.equal(without.actions.restoreLabel, "");
+  assert.ok(without.contextLines.some((l) => l.includes("не найдена")));
+});

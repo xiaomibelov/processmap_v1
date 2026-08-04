@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  SESSION_GONE_HTTP_STATUS,
   SESSION_NOT_FOUND_HTTP_STATUS,
   clearSessionNotFound,
   getSessionNotFoundInfo,
@@ -68,6 +69,22 @@ test("noteSessionApiResult marks only on terminal 404 and keeps source/error", (
   assert.equal(info.error, "not found");
   assert.equal(isSessionNotFound("s1"), true);
   assert.equal(getSessionNotFoundInfo("s1").source, "presence");
+});
+
+test("410 Gone is terminal too (P-1); 410 of a sub-resource is not", () => {
+  assert.equal(SESSION_GONE_HTTP_STATUS, 410);
+
+  // Терминальный 410 (сессия удалена окончательно).
+  assert.equal(isSessionNotFoundResult({ ok: false, status: 410, error: "gone" }), true);
+  assert.equal(isSessionNotFoundResult({ ok: false, status: 410, error: "session not found" }), true);
+  // 410 саб-ресурса — не смерть сессии.
+  assert.equal(isSessionNotFoundResult({ ok: false, status: 410, error: "version not found" }), false);
+
+  // noteSessionApiResult помечает по 410.
+  const info = noteSessionApiResult("s410", { ok: false, status: 410, error: "gone" }, "remote_poll");
+  assert.ok(info);
+  assert.equal(info.source, "remote_poll");
+  assert.equal(isSessionNotFound("s410"), true);
 });
 
 test("clearSessionNotFound resets single entry and the whole registry", () => {
