@@ -22,7 +22,7 @@ import {
   apiGetAutoPassPrecheck,
   apiGetAutoPassStatus,
 } from "../lib/api/sessionApi";
-import { apiGetExportZip } from "../lib/api.js";
+import { apiCreateProjectSession, apiGetExportZip, apiListProjectSessions } from "../lib/api.js";
 import { seedSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
 import {
   apiGetBpmnMeta,
@@ -35,6 +35,7 @@ import {
 import { apiAiQuestions } from "../lib/api/interviewApi";
 import { createAiInputHash, executeAi } from "../features/ai/aiExecutor";
 import {
+  getLatestBpmnSnapshot,
   shortSnapshotHash,
 } from "../features/process/bpmn/snapshots/bpmnSnapshots";
 import {
@@ -159,6 +160,7 @@ import ProcessDiagramOverlayLayers from "../features/process/stage/ui/ProcessDia
 import ProcessStageSaveConflictModal from "../features/process/stage/ui/ProcessStageSaveConflictModal";
 import ProcessStageDeadSessionModal from "../features/process/stage/ui/ProcessStageDeadSessionModal";
 import { buildDeadSessionView } from "../features/process/stage/ui/deadSessionModel.js";
+import { readDeadSessionLocalDraft } from "../features/process/stage/ui/deadSessionLocalDraft.js";
 import {
   getSessionNotFoundInfo,
   isSessionNotFound,
@@ -611,6 +613,9 @@ function ProcessStage({
   const [saveConflictNoticeDismissed, setSaveConflictNoticeDismissed] = useState(false);
   // P-1 D3: терминальный 404 текущей сессии → экран мёртвой сессии.
   const [deadSessionInfo, setDeadSessionInfo] = useState(() => getSessionNotFoundInfo(sid));
+  const [deadSessionReplacement, setDeadSessionReplacement] = useState(null);
+  const [deadSessionDraft, setDeadSessionDraft] = useState(null);
+  const [deadSessionBusy, setDeadSessionBusy] = useState(false);
   const [saveConflictActionBusy, setSaveConflictActionBusy] = useState(false);
   const [propertySaveConflictOpen, setPropertySaveConflictOpen] = useState(false);
   const [propertySaveConflictFallback, setPropertySaveConflictFallback] = useState("");
@@ -1384,11 +1389,102 @@ function ProcessStage({
     });
   }, [sid]);
 
+  useEffect(() => {
+    // P-1 D3: при появлении dead-session — проверить локальный черновик
+    // (runtime cache → fpc_bpmn_xml_{sid} → снапшоты) и сессию-замену.
+    if (!deadSessionInfo || !sid) {
+      setDeadSessionReplacement(null);
+      setDeadSessionDraft(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const pid = toText(draft?.project_id || draft?.projectId || activeProjectId);
+    const syncDraft = readDeadSessionLocalDraft({ sessionId: sid });
+    if (syncDraft) {
+      setDeadSessionDraft(syncDraft);
+    } else {
+      getLatestBpmnSnapshot({ projectId: pid, sessionId: sid })
+        .then((snap) => {
+          if (cancelled) return;
+          const xml = toText(snap?.xml);
+          setDeadSessionDraft(xml ? { xml, source: "snapshot", ts: Number(snap?.ts) || 0 } : null);
+        })
+        .catch(() => {
+          if (!cancelled) setDeadSessionDraft(null);
+        });
+    }
+    if (pid) {
+      apiListProjectSessions(pid)
+        .then((res) => {
+          if (cancelled) return;
+          const list = res?.ok && Array.isArray(res?.sessions) ? res.sessions : [];
+          const candidate = list
+            .filter((item) => {
+              const id = toText(item?.session_id || item?.id);
+              return id && id !== sid;
+            })
+            .sort((a, b) => (Date.parse(b?.updated_at || b?.created_at || "") || 0)
+              - (Date.parse(a?.updated_at || a?.created_at || "") || 0))[0] || null;
+          setDeadSessionReplacement(candidate);
+        })
+        .catch(() => {
+          if (!cancelled) setDeadSessionReplacement(null);
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId, deadSessionInfo, draft?.projectId, draft?.project_id, sid]);
+
+  const handleDeadSessionOpenCurrent = useCallback(async () => {
+    if (deadSessionBusy || !deadSessionReplacement) return;
+    if (typeof onOpenWorkspaceSession !== "function") return;
+    const targetSid = toText(deadSessionReplacement?.session_id || deadSessionReplacement?.id);
+    if (!targetSid) return;
+    setDeadSessionBusy(true);
+    try {
+      await onOpenWorkspaceSession({
+        ...deadSessionReplacement,
+        id: targetSid,
+        session_id: targetSid,
+        project_id: toText(deadSessionReplacement?.project_id || deadSessionReplacement?.projectId
+          || draft?.project_id || draft?.projectId || activeProjectId),
+      }, { source: "dead_session_open_current", bypassLeaveGuard: true, openTab: "diagram" });
+    } finally {
+      setDeadSessionBusy(false);
+    }
+  }, [activeProjectId, deadSessionBusy, deadSessionReplacement, draft?.projectId, draft?.project_id, onOpenWorkspaceSession]);
+
+  const handleDeadSessionRestoreDraft = useCallback(async () => {
+    if (deadSessionBusy) return;
+    const xml = toText(deadSessionDraft?.xml);
+    const pid = toText(draft?.project_id || draft?.projectId || activeProjectId);
+    if (!xml || !pid || typeof onOpenWorkspaceSession !== "function") return;
+    setDeadSessionBusy(true);
+    try {
+      const baseTitle = toText(draft?.title || draft?.name) || "process";
+      const created = await apiCreateProjectSession(pid, "", `${baseTitle} (восстановлено)`);
+      const newSid = toText(created?.session_id || created?.session?.id);
+      if (!created?.ok || !newSid) return;
+      const saved = await apiPutBpmnXml(newSid, xml, { sourceAction: "dead_session_restore_draft" });
+      if (!saved?.ok) return;
+      await onOpenWorkspaceSession({
+        id: newSid,
+        session_id: newSid,
+        project_id: pid,
+      }, { source: "dead_session_restore_draft", bypassLeaveGuard: true, openTab: "diagram" });
+    } finally {
+      setDeadSessionBusy(false);
+    }
+  }, [activeProjectId, deadSessionBusy, deadSessionDraft, draft?.name, draft?.projectId, draft?.project_id, draft?.title, onOpenWorkspaceSession]);
+
   const deadSessionView = useMemo(() => buildDeadSessionView({
     info: deadSessionInfo,
     sessionTitle: toText(draft?.title || draft?.name),
     canCreate: typeof onCreateWorkspaceSession === "function",
-  }), [deadSessionInfo, draft?.title, draft?.name, onCreateWorkspaceSession, toText]);
+    hasReplacement: !!deadSessionReplacement,
+    hasLocalDraft: !!deadSessionDraft?.xml,
+  }), [deadSessionDraft, deadSessionInfo, deadSessionReplacement, draft?.title, draft?.name, onCreateWorkspaceSession, toText]);
 
   const saveConflictModalView = useMemo(() => buildSaveConflictModalView({
     conflictRaw: saveUploadStatus?.conflict,
@@ -7890,6 +7986,7 @@ function ProcessStage({
       <ProcessStageDeadSessionModal
         open={hasSession && !!deadSessionInfo}
         view={deadSessionView}
+        busy={deadSessionBusy}
         onBackToList={() => onClearWorkspaceProject?.()}
         onCreateNew={typeof onCreateWorkspaceSession === "function"
           ? () => {
@@ -7897,6 +7994,8 @@ function ProcessStage({
             onCreateWorkspaceSession();
           }
           : null}
+        onOpenCurrent={deadSessionReplacement ? handleDeadSessionOpenCurrent : null}
+        onRestoreDraft={deadSessionDraft?.xml ? handleDeadSessionRestoreDraft : null}
       />
       <ProcessStageSaveConflictModal
         open={showSaveConflictModal || propertySaveConflictOpen || hybridSaveConflictOpen}

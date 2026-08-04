@@ -43,10 +43,12 @@ test("404 on save marks session dead: no retry, no conflict gate, no conflict ev
   assert.ok(events.some((e) => e.event === "session_not_found"));
   assert.ok(!events.some((e) => e.event === "conflict"), "конфликт-события нет");
 
-  // последующие save по-прежнему идут в транспорт (сервер ответит 404),
-  // но поллеры/UX уже остановлены реестром — это ответственность подсистем.
+  // Entry-гейт (P-1): уже мёртвая сессия НЕ доходит до транспорта —
+  // short-circuit с синтетическим 404 до любого сетевого вызова.
   const again = await c.execute("xml", { sessionId: "s_dead" });
   assert.equal(again.status, 404);
+  assert.equal(again.code, "SESSION_NOT_FOUND");
+  assert.equal(transportCalls, 1, "повторный save мёртвой сессии не должен вызывать транспорт");
   assert.ok(!again.blockedByConflict);
 });
 
