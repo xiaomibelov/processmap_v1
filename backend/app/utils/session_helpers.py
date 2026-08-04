@@ -117,8 +117,12 @@ def _require_diagram_cas_or_409(
     request: Request = None,
     client_base_version: Optional[int] = None,
 ) -> None:
+    # Compatibility bridge for direct function-call harnesses used in unit tests.
+    # Real HTTP requests always provide `.scope`; CAS stays strict there.
     if request is None or not hasattr(request, "scope"):
         return
+    # SECURITY: E2E CAS bypass. MUST be unset in production.
+    # Controlled test environments only (CI, local e2e).
     if os.environ.get("FPC_E2E_CAS_BYPASS") == "1":
         return
     current_version = int(getattr(sess, "diagram_state_version", 0) or 0)
