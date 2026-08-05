@@ -284,11 +284,11 @@ assert в тесте), ни в телеметрии.
   схему напрямую (критерий «не ломать»).
 
 ### Критерии LLM2
-- [ ] Без ключа: pipeline работает как раньше (offline + open_questions) — тест
-- [ ] С ключом (stage): golden метрики не хуже эталона; отчёт в docs/llm/
-- [ ] derived_from/trace_map инвариантны (дифф transform_result до/после — структура та же)
-- [ ] Токены: LLM вызывается только для unmatched/tie (лог llm_usage: счётчик вызовов ≤ N на golden-фикстуру)
-- [ ] CI зелёный с замоканным gateway; регрессия пустая
+- [x] Без ключа: pipeline работает как раньше (offline + open_questions) — `test_offline_without_provider_preserves_old_behavior` + `test_default_llm_call_raises_on_gateway_failure` (no_provider/disabled/rate_limited/error → raise → offline)
+- [ ] С ключом (stage): golden метрики не хуже эталона; отчёт в docs/llm/ — **после мержа+деплоя** (скрипт `backend/tests/golden_llm2_stage.py` → `docs/llm/golden_llm2_report.json`)
+- [x] derived_from/trace_map инвариантны (`test_result_structure_unchanged`; контракт matches[] не тронут, фильтры дополнены confidence-порогом 0.6)
+- [x] Токены: LLM вызывается только для unmatched/tie (tie-детектор `match_deterministic_winners`; golden-фикстура: 20 deterministic / 3 unmatched пустых — LLM не дёргается совсем, 0 tie; счётчик на golden — на stage-прогоне)
+- [x] CI зелёный с замоканным gateway (mock-фолбэк `llm_call` сохранён; сьют 27/27 по transformation+resilience); регрессия backend пустая (26≡26)
 
 ---
 
