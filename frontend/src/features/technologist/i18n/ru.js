@@ -348,6 +348,8 @@ export default {
   "ws.backToSession": "← К сессии",
   "ws.asIsFromSession": "AS IS загружен из сессии ProcessMap",
   "ws.asIsEmpty": "Сессия AS IS пуста — начните TO BE с чистого листа или выберите другую сессию",
+  "tobe.source.noBpmn": "нет BPMN-схемы",
+  "tobe.source.noBpmnHint": "«{name}»: в сессии нет BPMN-схемы",
   "ws.asIsImportNoNodes": "Схема AS IS загружена, но блоки не распознаны — начните с чистого листа или выберите другую сессию",
   "ws.asIsImportFailed": "Не удалось разобрать схему AS IS — начните с чистого листа или выберите другую сессию",
   "ws.actionBlank": "Начать с чистого листа",
