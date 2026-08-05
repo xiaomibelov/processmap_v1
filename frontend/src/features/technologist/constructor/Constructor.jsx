@@ -39,6 +39,7 @@ import {
 } from "./modelUtils";
 import "./Constructor.css";
 import { BlockForm, FlowForm, EntitiesPanel, TemplatePanel } from "./panels";
+import OperationPalette from "./OperationPalette";
 
 export const E4_HANDOFF_KEY = "fpc_e4_handoff";
 
@@ -775,33 +776,12 @@ export function Constructor() {
       <div className="ctor__main">
         <aside className="ctor__palette">
           <h3>{t("ctor.palette")}</h3>
-          {catalog.length === 0 ? <div className="ctor-hint">{t("ctor.paletteEmpty")}</div> : null}
-          {catalog.map((op) => (
-            <div className="ctor-palette-item" key={String(op?.code || op?.name)}>
-              <div className="ctor-palette-item-name">{String(op?.name_ru || op?.name || op?.code || "")}</div>
-              <div className="ctor-palette-item-code">{String(op?.code || "")}</div>
-              <button
-                type="button"
-                className="ctor-btn ctor-btn--small"
-                data-testid={`palette-add-${String(op?.code || "")}`}
-                onClick={() => handleAddOperation(op)}
-              >
-                {t("ctor.addBlock")}
-              </button>
-            </div>
-          ))}
-          <h3>{t("ctor.paletteStructural")}</h3>
-          {STRUCTURAL_BLOCKS.map((spec) => (
-            <button
-              type="button"
-              key={spec.bpmn_type}
-              className="ctor-btn ctor-palette-struct"
-              data-testid={`palette-${spec.bpmn_type}`}
-              onClick={() => handleAddStructural(spec)}
-            >
-              {spec.label}
-            </button>
-          ))}
+          <OperationPalette
+            catalog={catalog}
+            structuralBlocks={STRUCTURAL_BLOCKS}
+            onAddOperation={handleAddOperation}
+            onAddStructural={handleAddStructural}
+          />
         </aside>
 
         <section className="ctor__canvas">
