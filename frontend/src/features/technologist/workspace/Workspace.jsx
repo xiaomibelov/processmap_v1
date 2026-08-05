@@ -36,6 +36,8 @@ import {
   updateNode,
 } from "../constructor/modelUtils";
 import WorkspacePanel from "./WorkspacePanel";
+import { attachProcessStageFlushBeforeLeaveListener } from "../../process/navigation/processLeaveFlush";
+import { buildTobeLeaveFlushHandler } from "./tobeLeaveFlush";
 import RecipePanel from "./RecipePanel";
 import PilotPanel from "./PilotPanel";
 import { decorateSteps } from "./stepStates";
@@ -327,33 +329,56 @@ export default function Workspace({
   }
 
   // ---- сохранение / версии / публикация ----
+  // T0: save-путь вынесен в saveDraft (возвращает {ok,error}) — его же
+  // вызывает flush-before-leave при уходе «К проекту» (см. эффект ниже).
+  async function saveDraft() {
+    if (!templateId) {
+      const r = await apiRequest("/api/process-templates", {
+        method: "POST",
+        body: { name: templateName, version: templateVersion, status: "draft", ui_model: uiModel, created_by: "" },
+      });
+      if (r?.ok) {
+        const data = asObject(r.data);
+        setTemplateId(String(data.id || ""));
+        setTemplateStatus("draft");
+        setDirty(false);
+        loadVersionsFor(String(data.id || ""));
+        return { ok: true };
+      }
+      return { ok: false, error: String(r?.error || "save failed") };
+    }
+    const r = await apiRequest(`/api/process-templates/${encodeURIComponent(templateId)}`, {
+      method: "PUT",
+      body: { name: templateName, version: templateVersion, status: templateStatus || "draft", ui_model: uiModel },
+    });
+    if (r?.ok) { setDirty(false); return { ok: true }; }
+    return { ok: false, error: String(r?.error || "save failed") };
+  }
+
   async function handleSave() {
     if (busy) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      if (!templateId) {
-        const r = await apiRequest("/api/process-templates", {
-          method: "POST",
-          body: { name: templateName, version: templateVersion, status: "draft", ui_model: uiModel, created_by: "" },
-        });
-        if (r?.ok) {
-          const data = asObject(r.data);
-          setTemplateId(String(data.id || ""));
-          setTemplateStatus("draft");
-          setNotice(tf("ctor.savedDraft", { version: templateVersion }));
-          setDirty(false);
-          loadVersionsFor(String(data.id || ""));
-        } else setError(String(r?.error || "save failed"));
-      } else {
-        const r = await apiRequest(`/api/process-templates/${encodeURIComponent(templateId)}`, {
-          method: "PUT",
-          body: { name: templateName, version: templateVersion, status: templateStatus || "draft", ui_model: uiModel },
-        });
-        if (r?.ok) { setNotice(tf("ctor.savedDraft", { version: templateVersion })); setDirty(false); }
-        else setError(String(r?.error || "save failed"));
-      }
+      const r = await saveDraft();
+      if (r.ok) setNotice(tf("ctor.savedDraft", { version: templateVersion }));
+      else setError(r.error);
     } finally { setBusy(false); }
   }
+
+  // T0: в TO BE-режиме ProcessStage демонтирован — на flush-before-leave
+  // («К проекту») отвечает рабочее место: чистое → skipped, грязное → saveDraft.
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  const saveDraftRef = useRef(saveDraft);
+  saveDraftRef.current = saveDraft;
+  useEffect(() => {
+    if (!embedded) return undefined;
+    const handler = buildTobeLeaveFlushHandler({
+      isDirty: () => dirtyRef.current,
+      saveDraft: () => saveDraftRef.current(),
+    });
+    return attachProcessStageFlushBeforeLeaveListener(handler);
+  }, [embedded]);
 
   async function handlePublishTemplate() {
     if (!templateId || busy) return;
