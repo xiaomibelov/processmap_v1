@@ -16,14 +16,27 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "sessions",
-        sa.Column("process_layer", sa.String(20), nullable=False, server_default="as_is"),
-    )
-    op.add_column(
-        "sessions",
-        sa.Column("derived_from_session_id", sa.String(64), nullable=True),
-    )
+    # F1 (инцидент 04.08, docs/deploy/STAGE_DEGRADED_START_ROOT_VERDICT.md):
+    # рантайм _ensure_schema добавляет эти колонки вне alembic → миграция
+    # обязана быть идемпотентной, иначе stamped-down база умирает на upgrade
+    # и entrypoint уходит в хронический degraded-старт.
+    conn = op.get_bind()
+    cols = {
+        str(row[0])
+        for row in conn.exec_driver_sql(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'sessions'"
+        ).fetchall()
+    }
+    if "process_layer" not in cols:
+        op.add_column(
+            "sessions",
+            sa.Column("process_layer", sa.String(20), nullable=False, server_default="as_is"),
+        )
+    if "derived_from_session_id" not in cols:
+        op.add_column(
+            "sessions",
+            sa.Column("derived_from_session_id", sa.String(64), nullable=True),
+        )
 
 
 def downgrade() -> None:

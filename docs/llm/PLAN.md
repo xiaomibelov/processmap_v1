@@ -14,6 +14,11 @@
 6. llm_providers — мульти-провайдер: строка = (base_url, api_key, model,
    priority, enabled); порядок фолбэка = priority, редактируется из админки
    без редеплоя.
+7. **БЛОКЕР ПРОД-ДЕПЛОЯ (2026-08-05): до мержа PR «F1–F3 устойчивость
+   миграций» (fix/migrations-idempotency-and-observability: идемпотентная 010
+   + маркеры db_bootstrap + migrations в /api/health) LLM-код на прод НЕ
+   выкатывается.** Основание: инцидент 04.08 (degraded-старт, 012 не
+   применилась), вердикт — docs/deploy/STAGE_DEGRADED_START_ROOT_VERDICT.md.
 
 Режим: план → апрув владельца → реализация по эпикам, каждый эпик — отдельный
 PR с протоколом апрувов. Артефакты — docs/llm/. Секреты не публикуются.
