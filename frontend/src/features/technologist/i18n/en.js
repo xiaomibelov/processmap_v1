@@ -332,8 +332,6 @@ export default {
   "ws.backToSession": "← Back to session",
   "ws.asIsFromSession": "AS IS loaded from a ProcessMap session",
   "ws.asIsEmpty": "The AS IS session is empty — start TO BE from scratch or pick another session",
-  "tobe.source.noBpmn": "no BPMN diagram",
-  "tobe.source.noBpmnHint": "“{name}”: session has no BPMN diagram",
   "ws.asIsImportNoNodes": "The AS IS diagram loaded but no blocks were recognized — start from scratch or pick another session",
   "ws.asIsImportFailed": "Failed to parse the AS IS diagram — start from scratch or pick another session",
   "ws.actionBlank": "Start from scratch",

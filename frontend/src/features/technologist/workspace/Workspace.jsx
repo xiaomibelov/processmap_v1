@@ -59,6 +59,7 @@ export default function Workspace({
   asIsSource = null, // {sessionId, title} — WS3: AS IS из сессии ProcessMap
   onClose = null,
   onPublishedTobe = null,
+  onDirtyChange = null, // T2: dirty наружу (App строит leave-guard выхода из TO BE)
 } = {}) {
   // ---- модель процесса (TO BE) ----
   const [uiModel, setUiModel] = useState(() => emptyUiModel());
@@ -68,6 +69,11 @@ export default function Workspace({
   const [templateStatus, setTemplateStatus] = useState("draft");
   const [versions, setVersions] = useState([]);
   const [dirty, setDirty] = useState(false);
+
+  // T2: транслируем dirty наружу (единый leave-guard выхода из TO BE в App).
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   // ---- AS IS слой + отчёт ----
   const [asIsModel, setAsIsModel] = useState(null);
