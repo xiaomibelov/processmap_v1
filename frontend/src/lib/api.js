@@ -1079,6 +1079,24 @@ export async function apiAiQuestions(sessionId, payload, options = {}) {
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
+// LLM1 — анализ процесса через LLM-гейтвей. Только по клику (никаких авто-вызовов).
+export async function apiLlmAnalysis(sessionId, options = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.llmAnalysis(sid, { force: options?.force === true }), {
+    method: "POST",
+    body: {},
+    signal: options?.signal,
+  }));
+  return r.ok ? { ok: true, status: r.status, result: r.data } : r;
+}
+
+// Каталог операций (расшифровка operation_code в блоке «Анализ LLM»).
+export async function apiGetOperationCatalog(options = {}) {
+  const r = okOrError(await request(apiRoutes.operationCatalog.list(), { signal: options?.signal }));
+  return r.ok ? { ok: true, status: r.status, result: Array.isArray(r.data) ? r.data : [] } : r;
+}
+
 function resolveReportOrgId(options = {}) {
   const explicit = String(options?.orgId || "").trim();
   if (explicit) return explicit;

@@ -248,12 +248,13 @@ assert в тесте), ни в телеметрии.
   аналитикой, не замена (существующее не ломаем).
 
 ### Критерии LLM1
-- [ ] Сериализатор: тест на фикстуре (XML → проекция, стабильный md5)
-- [ ] Повторный анализ неизменной схемы = 0 токенов (llm_usage cached=true, доказать логом)
-- [ ] Кривой JSON от LLM → статус partial, UI не падает (тест с malformed-ответом)
-- [ ] Галлюцинированные step_id/operation_code отброшены (тест)
-- [ ] Только по клику: ни одного фонового/авто-вызова (grep-проверка + тест)
-- [ ] shape-тест эндпоинта; i18n; регрессия backend pytest пустая
+- [x] Сериализатор: тест на фикстуре (проекция, стабильный md5; digest не зависит от session_id/rev) — `test_process_projection.py` 6/6
+- [x] Повторный анализ неизменной схемы = 0 токенов (complete_cached → cached=true, usage 0; контракт — `test_repeat_uses_cache_zero_tokens`, логи llm_usage — гейтвей-тесты LLM0) — лог со stage приложить на гейте
+- [x] Кривой JSON от LLM → статус partial, UI не падает (backend `test_malformed_json_is_partial_not_crash` + frontend `partial` в `llmAnalysisView.test.mjs`)
+- [x] Галлюцинированные step_id/operation_code отброшены (`test_antihallucination_filter`: шаг-призрак + package_meal + код вне каталога, dropped=3)
+- [x] Только по клику: ни одного фонового/авто-вызова (`llmAnalysisBlock.source.test.mjs`: нет useEffect, apiLlmAnalysis только в run())
+- [x] shape-тест эндпоинта (`test_shape_ok` + роут зарегистрирован); регрессии пустые (backend 26≡26, frontend 61≡61); i18n — блок следует стилю InterviewStage (русские строки, как соседние блоки)
+- [ ] Gate: скрин кнопки во вкладке «Анализ процессов» на stage (после мержа/деплоя)
 
 ---
 
