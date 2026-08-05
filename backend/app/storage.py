@@ -4905,6 +4905,8 @@ class Storage:
                   mode,
                   process_layer,
                   derived_from_session_id,
+                  parent_session_id,
+                  element_id_in_parent,
                   bpmn_xml_version,
                   diagram_state_version,
                   bpmn_graph_fingerprint,
@@ -4935,6 +4937,7 @@ class Storage:
                 xml_len = max(0, int(xml_len_raw or 0))
             except Exception:
                 xml_len = 0
+            parent_session_id = str(_row_value(row, "parent_session_id") or "").strip()
             out.append({
                 "id": sid,
                 "session_id": sid,
@@ -4946,6 +4949,9 @@ class Storage:
                 "mode": str(_row_value(row, "mode") or "").strip() or None,
                 "process_layer": str(_row_value(row, "process_layer") or "as_is") or "as_is",
                 "derived_from_session_id": str(_row_value(row, "derived_from_session_id") or ""),
+                "parent_session_id": parent_session_id,
+                "element_id_in_parent": str(_row_value(row, "element_id_in_parent") or ""),
+                "is_subprocess": parent_session_id != "",
                 "bpmn_xml_version": int(_row_value(row, "bpmn_xml_version") or 0),
                 "diagram_state_version": int(_row_value(row, "diagram_state_version") or 0),
                 "bpmn_graph_fingerprint": str(_row_value(row, "bpmn_graph_fingerprint") or ""),

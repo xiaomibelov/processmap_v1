@@ -128,6 +128,14 @@ from .auth import (
     set_invited_identity_password,
     user_from_bearer_header,
 )
+from .auth import (  # noqa: F401  # re-export facade (PR-6 auth)
+    AUTH_PUBLIC_PATHS,
+    _RATE_LIMIT_BUCKETS,
+    _RATE_LIMIT_LOCK,
+    _clear_refresh_cookie,
+    _rate_limit_check,
+    _set_refresh_cookie,
+)
 from .schemas.legacy_api import (
     AiQuestionsIn,
     AnswerIn,
@@ -221,10 +229,221 @@ from .overlay_cache import get_overlay, invalidate_overlay
 from . import overlay_cache
 from . import storage as _storage_mod
 from .services import auth_service as _auth_service
+from .services.audit import _audit_log_safe
+from .services.auth_service import (  # noqa: F401  # re-export facade (PR-6 auth)
+    auth_invite_activate,
+    auth_invite_preview,
+    auth_login,
+    auth_logout,
+    auth_me,
+    auth_refresh,
+)
 from .utils.auth_helpers import set_refresh_cookie, clear_refresh_cookie
-from .utils.session_helpers import _save_session_with_cas, raise_session_not_found
-# DEPRECATED: auth routes moved to routers/auth.py — kept for backward compatibility during migration.
-# from .routers.auth import router as _auth_router
+from .utils.session_helpers import (
+    _build_server_last_write_payload,
+    _mark_diagram_truth_write,
+    _require_diagram_cas_or_409,
+    _resolve_actor_context,
+    _resolve_base_diagram_state_version,
+    _save_session_with_cas,
+    raise_session_not_found,
+)
+from .shared.text_utils import (  # noqa: F401  # re-export facade (PR-5)
+    _clean_name,
+    _to_epoch_ms,
+    _looks_like_technical_actor_id,
+    _resolve_actor_label_from_user,
+    _redact_notes_preview_message,
+    _ln_tag,
+    _ws_path,
+    _canon_path,
+    _primitive_path_value,
+    _normalize_sequence_key,
+)
+from .shared.coerce import (  # noqa: F401  # re-export facade (PR-5)
+    _env_bool,
+    _env_int,
+    _coerce_bool,
+    _to_non_negative_int,
+    _as_dict_obj,
+    _as_list_obj,
+    _safe_json_dict,
+    _norm_project_sessions_view,
+    _normalize_session_status,
+    _notes_apply_flag,
+    _llm_question_status_to_interview,
+    _is_retryable_report_generation_error,
+    _request_client_ip,
+    _auth_error_response,
+    _ensure_dict_at_path,
+)
+from .shared.entities import (  # noqa: F401  # re-export facade (PR-5)
+    _safe_model_dump,
+    _safe_model_dump_list,
+    _entity_key,
+    _stable_entity_signature,
+    _list_diff_by_id,
+    _role_diff,
+    _edge_identity,
+    _merge_nodes,
+    _merge_hybrid_layer,
+    _ensure_loss_dict,
+)
+from .shared.robot_meta import (  # noqa: F401  # re-export facade (PR-5)
+    _robot_meta_as_text,
+    _robot_meta_as_nullable_text,
+    _robot_meta_as_non_negative_int,
+    _robot_meta_as_nullable_non_negative_int,
+    _stable_robot_meta_value,
+    _normalize_robot_meta_v1,
+    _normalize_robot_meta_map,
+    _is_legacy_seed_bpmn,
+)
+from .shared.payloads import (  # noqa: F401  # re-export facade (PR-5)
+    _set_latest_path_report_pointer,
+    _clear_latest_path_report_pointer,
+    _report_version_summary,
+    _report_version_detail_payload,
+    _workspace_needs_attention_count,
+    _workspace_parse_owner_ids,
+    _build_invite_link,
+    _pick_current_org_invite,
+    _with_invite_links,
+)
+from .orgs import (  # noqa: F401  # re-export facade (PR-7 orgs)
+    _ORG_AUDIT_READ_ROLES,
+    _ORG_EDITOR_ROLES,
+    _ORG_INVITE_MANAGE_ROLES,
+    _ORG_MEMBER_MANAGE_ROLES,
+    _ORG_READ_ROLES,
+    _ORG_REPORT_DELETE_ROLES,
+    _ORG_WRITE_ROLES,
+    _accept_org_invite_response,
+    _audit_retention_days,
+    _enrich_members_with_email,
+    _invalidate_workspace_cache_for_org,
+    _invite_cleanup_keep_days,
+    _invite_email_config,
+    _invite_email_config_ready,
+    _invite_email_enabled,
+    _invite_ttl_hours_default,
+    _request_org_candidates,
+    _require_org_active_for_writes,
+    _resolved_org_for_cache,
+    _resolve_invite_base_url,
+    _send_org_invite_email,
+    _should_reveal_invite_token,
+    _user_is_member_of_org,
+    _validate_invite_email_config_on_boot,
+    accept_invite_endpoint,
+    accept_org_invite_endpoint,
+    build_org_session_report,
+    cleanup_org_audit_endpoint,
+    cleanup_org_invites_endpoint,
+    create_org_endpoint,
+    create_org_invite_endpoint,
+    create_org_project,
+    create_org_project_member,
+    create_org_project_session,
+    delete_org_project_member,
+    delete_org_session_report_version,
+    get_org_git_mirror_endpoint,
+    get_org_project,
+    get_org_session_report_version,
+    list_org_audit_endpoint,
+    list_org_invites_endpoint,
+    list_org_members_endpoint,
+    list_org_project_members,
+    list_org_project_sessions,
+    list_org_projects,
+    list_org_session_report_versions,
+    list_orgs_endpoint,
+    patch_org_endpoint,
+    patch_org_member_endpoint,
+    patch_org_project_member,
+    revoke_org_invite_endpoint,
+)
+from .projects import (  # noqa: F401  # re-export facade (PR-8 projects)
+    _invalidate_explorer_children_for_project,
+    _legacy_load_project_scoped,
+    create_project,
+    create_project_session,
+    delete_project_api,
+    get_project,
+    list_project_sessions,
+    list_projects,
+    patch_project,
+    put_project,
+)
+from .sessions_core import (  # noqa: F401  # re-export facade (PR-9 sessions-core)
+    _SESSION_PRESENCE_CLIENT_ID_RE,
+    _SESSION_PRESENCE_SURFACE_RE,
+    _SESSION_PRESENCE_TTL_SECONDS,
+    _broadcast_session_deleted,
+    _invalidate_session_caches,
+    _invalidate_session_open_cache_for_session,
+    _invalidate_tldr_cache_for_session,
+    _legacy_load_session_scoped,
+    _normalize_session_presence_client_id,
+    _normalize_session_presence_surface,
+    _session_api_dump,
+    create_session,
+    delete_session_api,
+    get_session,
+    leave_session_presence_api,
+    patch_session,
+    patch_session,
+    put_session,
+    touch_session_presence_api,
+)
+from .services.session_recompute import _merge_question_states, _recompute_session  # noqa: F401  # re-export facade (PR-pre)
+from .notes_extraction import (  # noqa: F401  # re-export facade (PR-10A notes-extraction)
+    _NOTES_EXTRACTION_MODULE_ID,
+    _edge_diff,
+    _edge_key,
+    _entity_list_signature,
+    _merge_selected_edges,
+    _merge_selected_nodes,
+    _notes_apply_require_cas,
+    _notes_preview_response_from_extraction,
+    _notes_preview_scope,
+    _record_notes_preview_execution_safe,
+    _sanitize_notes_preview_warnings,
+    post_notes,
+    post_notes_extraction_apply,
+    post_notes_extraction_preview,
+)
+from .ai_questions import (  # noqa: F401  # re-export facade (PR-10B ai-questions)
+    _AI_QUESTIONS_ELEMENT_MODES,
+    _ai_questions_actor_user_id,
+    _ai_questions_active_prompt,
+    _ai_questions_module_id,
+    _ai_questions_scope,
+    _collect_node_llm_questions,
+    _merge_interview_analysis_namespace,
+    _preserve_current_interview_analysis_before_save,
+    _prune_node_llm_questions,
+    _record_ai_questions_execution_safe,
+    _sync_interview_ai_questions_for_node,
+    ai_questions,
+)
+from .session_answers import (  # noqa: F401  # re-export facade (PR-10C session-answers)
+    _apply_answer,
+    _apply_target_to_node,
+    _map_disposition_answer,
+    answer,
+    answer_v2,
+)
+from .sessions_graph import (  # noqa: F401  # re-export facade (PR-11 sessions-graph)
+    add_edge,
+    add_node,
+    delete_edge,
+    delete_node,
+    get_session_graph,
+    patch_node,
+)
+# /api/auth/* handler implementations live in app/services/auth_service.py (PR-6);
+# they are re-registered on this app below (see "auth" route registrations).
 
 
 app = FastAPI(title="Food Process Copilot MVP")
@@ -233,58 +452,11 @@ start_polling(overlay_cache.r)
 logger = logging.getLogger(__name__)
 _auth_logger = logging.getLogger("auth_debug")
 
-AUTH_PUBLIC_PATHS = {
-    "/api/auth/login",
-    "/api/auth/refresh",
-    "/api/auth/logout",
-    "/api/auth/invite/preview",
-    "/api/auth/invite/activate",
-    "/api/invite/resolve",
-    "/api/invite/activate",
-    "/api/invites/accept",
-    "/api/health",
-    "/api/health/process-template",
-    "/api/meta",
-    "/api/feature-flags",
-    "/api/deployment-notice",
-    # Swagger / OpenAPI endpoints are routed through /api so the frontend nginx
-    # does not serve the SPA fallback for them.
-    "/api/docs",
-    "/api/redoc",
-    "/api/openapi.json",
-}
-
-_ORG_WRITE_ROLES = {"org_owner", "org_admin"}
-_ORG_EDITOR_ROLES = {"org_owner", "org_admin", "project_manager", "editor"}
-_ORG_READ_ROLES = {"org_owner", "org_admin", "project_manager", "editor", "viewer", "org_viewer", "auditor"}
-_ORG_REPORT_DELETE_ROLES = {"org_owner", "org_admin", "project_manager"}
 _ORG_PROJECT_MEMBER_MANAGE_ROLES = {"org_owner", "org_admin", "project_manager"}
-_ORG_MEMBER_MANAGE_ROLES = {"org_owner", "org_admin"}
-_ORG_INVITE_MANAGE_ROLES = {"org_owner", "org_admin"}
-_ORG_AUDIT_READ_ROLES = {"org_owner", "org_admin", "auditor", "project_manager"}
 _ORG_TEMPLATE_WRITE_ROLES = {"org_owner", "org_admin", "project_manager"}
 _WORKSPACE_ADMIN_ROLES = {"org_owner", "org_admin"}
 _WORKSPACE_EDITOR_ROLES = {"org_owner", "org_admin", "project_manager", "editor"}
 _WORKSPACE_VIEWER_ROLES = {"viewer", "org_viewer", "auditor"}
-_RATE_LIMIT_LOCK = threading.RLock()
-_RATE_LIMIT_BUCKETS: Dict[str, deque] = {}
-
-
-def _clean_name(value: Any) -> str:
-    return " ".join(str(value or "").split()).strip()
-
-
-def _to_epoch_ms(value: Any) -> int:
-    try:
-        ts = int(value or 0)
-    except Exception:
-        ts = 0
-    if ts <= 0:
-        return 0
-    # Storage persists unix seconds; UI metadata expects milliseconds.
-    if ts < 10_000_000_000:
-        return ts * 1000
-    return ts
 
 
 def _to_epoch_iso(value: Any) -> str:
@@ -295,17 +467,6 @@ def _to_epoch_iso(value: Any) -> str:
         return datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc).isoformat()
     except Exception:
         return ""
-
-
-def _looks_like_technical_actor_id(value: Any) -> bool:
-    text = str(value or "").strip().lower()
-    if not text:
-        return False
-    if re.fullmatch(r"[0-9a-f]{12,}", text):
-        return True
-    if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f-]{9,}", text):
-        return True
-    return False
 
 
 def _build_bpmn_version_author(created_by: Any) -> Dict[str, str]:
@@ -365,24 +526,11 @@ def _can_edit_workspace(role_raw: Any, is_admin: bool = False) -> bool:
     return _practical_role_for_org(role_raw, is_admin=is_admin) in {"admin", "editor"}
 
 
-def _require_org_active_for_writes(request: Optional[Request], org_id: str) -> None:
-    if not org_id:
-        return
-    user = _request_auth_user(request) if request is not None else {}
-    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
-    if is_admin:
-        return
-    if not is_org_active(org_id):
-        raise HTTPException(status_code=403, detail="organization_inactive")
 
 
   # DEPRECATED: moved to utils/authz.py
 def _can_delete_workspace_content(role_raw: Any, is_admin: bool = False) -> bool:
     return _practical_role_for_org(role_raw, is_admin=is_admin) == "admin"
-
-
-def _normalize_session_status(raw: Any) -> str:
-    return _normalize_session_status_base(raw)
 
 
 def _validate_session_status_transition(current_raw: Any, next_raw: Any, *, role_raw: Any, is_admin: bool = False) -> str:
@@ -392,42 +540,6 @@ def _validate_session_status_transition(current_raw: Any, next_raw: Any, *, role
         can_edit=_can_edit_workspace(role_raw, is_admin=is_admin),
         can_archive=_can_manage_workspace(role_raw, is_admin=is_admin),
     )
-
-
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = str(os.environ.get(name, "") or "").strip().lower()
-    if not raw:
-        return bool(default)
-    return raw in {"1", "true", "yes", "on"}
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = str(os.environ.get(name, "") or "").strip()
-    try:
-        value = int(raw or default)
-    except Exception:
-        value = int(default)
-    return value
-
-
-def _rate_limit_check(key: str, limit: int, window_sec: int = 60) -> bool:
-    bucket_key = str(key or "").strip()
-    if not bucket_key:
-        return True
-    cap = max(1, int(limit or 1))
-    now = int(time.time())
-    with _RATE_LIMIT_LOCK:
-        bucket = _RATE_LIMIT_BUCKETS.get(bucket_key)
-        if bucket is None:
-            bucket = deque()
-            _RATE_LIMIT_BUCKETS[bucket_key] = bucket
-        threshold = now - max(1, int(window_sec or 60))
-        while bucket and int(bucket[0] or 0) <= threshold:
-            bucket.popleft()
-        if len(bucket) >= cap:
-            return False
-        bucket.append(now)
-    return True
 
 
 _REPORT_LOCKS_GUARD = threading.RLock()
@@ -464,99 +576,6 @@ def _is_report_active(report_id: str) -> bool:
         return False
     with _REPORT_ACTIVE_GUARD:
         return rid in _REPORT_ACTIVE_IDS
-
-
-# DEPRECATED: moved to utils/auth_helpers.py — kept for backward compatibility during migration.
-def _set_refresh_cookie(resp: Response, refresh_token: str, max_age_seconds: int) -> None:
-    secure = refresh_cookie_secure()
-    samesite = refresh_cookie_samesite()
-    # Use root path so the cookie is visible and replaceable on every route.
-    # Also clear any legacy cookie scoped to /api/auth/ to avoid duplicate cookies.
-    resp.set_cookie(
-        key="refresh_token",
-        value=str(refresh_token or ""),
-        httponly=True,
-        secure=secure,
-        samesite=samesite,
-        max_age=max(1, int(max_age_seconds)),
-        path="/",
-    )
-    resp.delete_cookie(
-        key="refresh_token",
-        path="/api/auth/",
-        secure=secure,
-        samesite=samesite,
-    )
-
-
-# DEPRECATED: moved to utils/auth_helpers.py — kept for backward compatibility during migration.
-def _clear_refresh_cookie(resp: Response) -> None:
-    secure = refresh_cookie_secure()
-    samesite = refresh_cookie_samesite()
-    # Clear both current root path and legacy /api/auth/ path.
-    resp.delete_cookie(
-        key="refresh_token",
-        path="/",
-        secure=secure,
-        samesite=samesite,
-    )
-    resp.delete_cookie(
-        key="refresh_token",
-        path="/api/auth/",
-        secure=secure,
-        samesite=samesite,
-    )
-
-
-def _request_client_ip(request: Request) -> str:
-    headers = getattr(request, "headers", {}) or {}
-    forwarded = headers.get("x-forwarded-for") if hasattr(headers, "get") else None
-    if forwarded:
-        return str(forwarded).split(",")[0].strip()[:120]
-    client = getattr(request, "client", None)
-    host = getattr(client, "host", "") if client is not None else ""
-    if host:
-        return str(host)[:120]
-    return ""
-
-
-def _auth_error_response(detail: str = "unauthorized") -> JSONResponse:
-    return JSONResponse(status_code=401, content={"detail": str(detail or "unauthorized")})
-
-
-def _is_legacy_seed_bpmn(xml_text: str) -> bool:
-    raw = (xml_text or "").strip()
-    if not raw:
-        return False
-    try:
-        root = ET.fromstring(raw)
-    except Exception:
-        return False
-
-    def _ln(tag: str) -> str:
-        if "}" in tag:
-            return tag.rsplit("}", 1)[-1].lower()
-        return tag.lower()
-
-    counts: Dict[str, int] = {}
-    for el in root.iter():
-        name = _ln(str(getattr(el, "tag", "") or ""))
-        counts[name] = counts.get(name, 0) + 1
-
-    start_n = counts.get("startevent", 0)
-    end_n = counts.get("endevent", 0)
-    flow_n = counts.get("sequenceflow", 0)
-    task_n = sum(counts.get(k, 0) for k in ("task", "usertask", "servicetask", "manualtask", "scripttask", "businessruletask", "sendtask", "receivetask"))
-    gw_n = sum(counts.get(k, 0) for k in ("exclusivegateway", "parallelgateway", "inclusivegateway", "eventbasedgateway"))
-    sub_n = counts.get("subprocess", 0) + counts.get("callactivity", 0)
-
-    if start_n == 1 and end_n == 1 and gw_n == 0 and sub_n == 0:
-        if task_n == 0 and flow_n <= 1:
-            return True
-        # Old frontend seed: Start -> "Опишите первый шаг процесса" -> End.
-        if task_n == 1 and flow_n <= 2 and "опишите первый шаг процесса" in raw.lower():
-            return True
-    return False
 
 
 def _overlay_interview_annotations_on_bpmn_xml(sess: Session, xml_text: str) -> str:
@@ -861,50 +880,14 @@ def _compute_overlays_json(sess: Session, xml_text: str) -> list[dict[str, Any]]
     return overlays
 
 
-def _session_api_dump(sess: Session) -> Dict[str, Any]:
-    d = sess.model_dump()
-    d["notes"] = _notes_decode(d.get("notes"))
-    d["bpmn_meta"] = _normalize_bpmn_meta(d.get("bpmn_meta"))
-    d["publish_git_mirror"] = _extract_publish_git_mirror(d.get("interview"))
-    d["navigation_stack"] = list(d.get("navigation_stack") or [])
-    return d
 
 
-def _norm_project_sessions_view(value: Any) -> str:
-    text = str(value or "").strip().lower()
-    if text in {"", "full"}:
-        return "full"
-    if text == "summary":
-        return "summary"
-    return ""
 
 
-_SESSION_PRESENCE_TTL_SECONDS = SESSION_PRESENCE_TTL_SECONDS
-_SESSION_PRESENCE_CLIENT_ID_RE = re.compile(r"[^A-Za-z0-9_.:-]+")
-_SESSION_PRESENCE_SURFACE_RE = re.compile(r"[^A-Za-z0-9_.:-]+")
 
 
-def _normalize_session_presence_client_id(value: Any) -> str:
-    text = _SESSION_PRESENCE_CLIENT_ID_RE.sub("", str(value or "").strip())
-    return text[:128]
 
 
-def _normalize_session_presence_surface(value: Any) -> str:
-    text = _SESSION_PRESENCE_SURFACE_RE.sub("", str(value or "").strip())
-    return (text[:64] or "process_stage")
-
-
-def _user_is_member_of_org(user_id: str, org_id: str, *, is_admin: bool = False) -> bool:
-    uid = str(user_id or "").strip()
-    oid = str(org_id or "").strip()
-    if not uid or not oid:
-        return False
-    if bool(is_admin):
-        return True
-    for row in list_user_org_memberships(uid, is_admin=is_admin):
-        if str((row or {}).get("org_id") or "").strip() == oid:
-            return True
-    return False
 
 
 _DIAGRAM_TRUTH_PATCH_KEYS = {"bpmn_meta", "interview", "nodes", "edges", "questions"}
@@ -935,73 +918,6 @@ def _reject_draft_graph_write_on_xml_session(sess: Session, explicit_data: Dict[
     )
 
 
-def _to_non_negative_int(value: Any) -> Optional[int]:
-    try:
-        parsed = int(value)
-    except Exception:
-        return None
-    if parsed < 0:
-        return None
-    return parsed
-
-
-def _resolve_base_diagram_state_version(*, request: Request = None, payload: Dict[str, Any] | None = None) -> Optional[int]:
-    body = payload if isinstance(payload, dict) else {}
-
-    for key in ("base_diagram_state_version", "base_bpmn_xml_version", "rev"):
-        parsed = _to_non_negative_int(body.get(key))
-        if parsed is not None:
-            return parsed
-
-    if request is not None:
-        for key in ("x-base-diagram-state-version", "x-base-bpmn-xml-version"):
-            parsed = _to_non_negative_int((request.headers or {}).get(key))
-            if parsed is not None:
-                return parsed
-        if_match = str((request.headers or {}).get("if-match") or "").strip()
-        if if_match:
-            if if_match.startswith("W/"):
-                if_match = if_match[2:].strip()
-            if if_match.startswith('"') and if_match.endswith('"') and len(if_match) >= 2:
-                if_match = if_match[1:-1].strip()
-            parsed_if_match = _to_non_negative_int(if_match)
-            if parsed_if_match is not None:
-                return parsed_if_match
-        query_params = getattr(request, "query_params", {}) or {}
-        for key in ("base_diagram_state_version", "base_bpmn_xml_version", "rev"):
-            raw_value = query_params.get(key) if hasattr(query_params, "get") else None
-            parsed = _to_non_negative_int(raw_value)
-            if parsed is not None:
-                return parsed
-
-    return None
-
-
-def _resolve_actor_label_from_user(user: Any, fallback_user_id: str = "") -> str:
-    actor = user if isinstance(user, dict) else {}
-    for key in ("name", "username", "email", "id"):
-        value = str(actor.get(key) or "").strip()
-        if value:
-            return value
-    return str(fallback_user_id or "").strip()
-
-
-def _build_server_last_write_payload(sess: Session) -> Dict[str, Any]:
-    changed_keys_raw = getattr(sess, "diagram_last_write_changed_keys", [])
-    changed_keys = []
-    if isinstance(changed_keys_raw, list):
-        for item in changed_keys_raw:
-            key = str(item or "").strip()
-            if key:
-                changed_keys.append(key)
-    return {
-        "actor_user_id": str(getattr(sess, "diagram_last_write_actor_user_id", "") or ""),
-        "actor_label": str(getattr(sess, "diagram_last_write_actor_label", "") or ""),
-        "at": int(getattr(sess, "diagram_last_write_at", 0) or 0),
-        "changed_keys": changed_keys,
-    }
-
-
 def _diagram_state_conflict_payload(
     *,
     code: str,
@@ -1019,75 +935,6 @@ def _diagram_state_conflict_payload(
     }
 
 
-def _require_diagram_cas_or_409(
-    *,
-    sess: Session,
-    session_id: str,
-    request: Request = None,
-    client_base_version: Optional[int],
-) -> None:
-    # Compatibility bridge for direct function-call harnesses used in unit tests.
-    # Real HTTP requests always provide `.scope`; CAS stays strict there.
-    if request is None or not hasattr(request, "scope"):
-        return
-    # SECURITY: E2E CAS bypass. MUST be unset in production.
-    # Controlled test environments only (CI, local e2e).
-    if os.environ.get("FPC_E2E_CAS_BYPASS") == "1":
-        return
-    current_version = int(getattr(sess, "diagram_state_version", 0) or 0)
-    if client_base_version is None:
-        raise HTTPException(
-            status_code=409,
-            detail=_diagram_state_conflict_payload(
-                code="DIAGRAM_STATE_BASE_VERSION_REQUIRED",
-                session_id=str(getattr(sess, "id", "") or session_id),
-                client_base_version=None,
-                server_current_version=current_version,
-                sess=sess,
-            ),
-        )
-    if int(client_base_version) != current_version:
-        raise HTTPException(
-            status_code=409,
-            detail=_diagram_state_conflict_payload(
-                code="DIAGRAM_STATE_CONFLICT",
-                session_id=str(getattr(sess, "id", "") or session_id),
-                client_base_version=int(client_base_version),
-                server_current_version=current_version,
-                sess=sess,
-            ),
-        )
-
-
-def _mark_diagram_truth_write(
-    sess: Session,
-    *,
-    changed_keys: List[str],
-    actor_user_id: str = "",
-    actor_label: str = "",
-) -> None:
-    current_version = int(getattr(sess, "diagram_state_version", 0) or 0)
-    next_version = max(0, current_version) + 1
-    normalized_keys = sorted(
-        {
-            str(key or "").strip()
-            for key in (changed_keys or [])
-            if str(key or "").strip()
-        }
-    )
-    sess.diagram_state_version = next_version
-    sess.diagram_last_write_actor_user_id = str(actor_user_id or "").strip()
-    sess.diagram_last_write_actor_label = str(actor_label or actor_user_id or "").strip()
-    sess.diagram_last_write_at = int(time.time())
-    sess.diagram_last_write_changed_keys = normalized_keys
-
-
-def _resolve_actor_context(request: Request = None) -> Tuple[Dict[str, Any], str, str]:
-    user = _request_auth_user(request) if request is not None else {}
-    user = user if isinstance(user, dict) else {}
-    actor_user_id = str(user.get("id") or "").strip()
-    actor_label = _resolve_actor_label_from_user(user, actor_user_id)
-    return user, actor_user_id, actor_label
 
 
 _PUBLISH_GIT_MIRROR_STATES = {
@@ -1159,22 +1006,6 @@ def _set_report_versions_by_path(sess: Session, by_path: Dict[str, List[Dict[str
     sess.interview = interview
 
 
-def _merge_interview_analysis_namespace(existing_raw: Any, incoming_raw: Any) -> Optional[Dict[str, Any]]:
-    existing = existing_raw if isinstance(existing_raw, dict) else {}
-    incoming = incoming_raw if isinstance(incoming_raw, dict) else {}
-    existing_analysis = existing.get("analysis")
-    incoming_has_analysis = "analysis" in incoming
-    existing_obj = copy.deepcopy(existing_analysis) if isinstance(existing_analysis, dict) else None
-    if not incoming_has_analysis:
-        return existing_obj
-    incoming_analysis = incoming.get("analysis")
-    if not isinstance(incoming_analysis, dict):
-        return existing_obj
-    out: Dict[str, Any] = existing_obj or {}
-    out.update(copy.deepcopy(incoming_analysis))
-    return out
-
-
 def _merge_interview_with_server_fields(existing_raw: Any, incoming_raw: Any) -> Dict[str, Any]:
     existing = existing_raw if isinstance(existing_raw, dict) else {}
     incoming = _norm_interview(incoming_raw)
@@ -1203,31 +1034,6 @@ def _merge_interview_with_server_fields(existing_raw: Any, incoming_raw: Any) ->
     return out
 
 
-def _preserve_current_interview_analysis_before_save(
-    st: Storage,
-    sess: Session,
-    *,
-    org_id: Optional[str] = None,
-    is_admin: Optional[bool] = None,
-) -> None:
-    sid = str(getattr(sess, "id", "") or "").strip()
-    if not sid:
-        return
-    current = st.load(sid, org_id=org_id, is_admin=is_admin)
-    if not current:
-        return
-    analysis = _merge_interview_analysis_namespace(
-        getattr(sess, "interview", {}),
-        getattr(current, "interview", {}),
-    )
-    interview = dict(getattr(sess, "interview", {}) or {})
-    if analysis is not None:
-        interview["analysis"] = analysis
-    else:
-        interview.pop("analysis", None)
-    sess.interview = interview
-
-
 def _next_report_version(by_path: Dict[str, List[Dict[str, Any]]], path_id: str) -> int:
     rows = by_path.get(path_id) or []
     max_ver = 0
@@ -1237,51 +1043,6 @@ def _next_report_version(by_path: Dict[str, List[Dict[str, Any]]], path_id: str)
         except Exception:
             continue
     return max_ver + 1
-
-
-def _set_latest_path_report_pointer(sess: Session, path_id: str, row_raw: Any) -> None:
-    pid = str(path_id or "").strip()
-    row = row_raw if isinstance(row_raw, dict) else {}
-    if not pid:
-        return
-    interview = dict(getattr(sess, "interview", {}) or {})
-    latest_raw = interview.get("path_reports")
-    latest_by_path = dict(latest_raw) if isinstance(latest_raw, dict) else {}
-    payload_normalized = row.get("payload_normalized") or row.get("report_json") or {}
-    payload_raw = row.get("payload_raw")
-    latest_by_path[pid] = {
-        "id": str(row.get("id") or ""),
-        "version": int(row.get("version") or 0),
-        "steps_hash": str(row.get("steps_hash") or ""),
-        "created_at": int(row.get("created_at") or 0),
-        "status": str(row.get("status") or "error"),
-        "model": str(row.get("model") or "deepseek-chat"),
-        "prompt_template_version": str(row.get("prompt_template_version") or "v2"),
-        "payload_normalized": payload_normalized,
-        "payload_raw": payload_raw if payload_raw is not None else {},
-        "report_json": payload_normalized,
-        "raw_json": row.get("raw_json") or (payload_raw if isinstance(payload_raw, dict) else {}),
-        "report_markdown": str(row.get("report_markdown") or row.get("raw_text") or ""),
-        "recommendations": row.get("recommendations_json") or payload_normalized.get("recommendations") or [],
-        "missing_data": row.get("missing_data_json") or payload_normalized.get("missing_data") or [],
-        "risks": row.get("risks_json") or payload_normalized.get("risks") or [],
-        "warnings": row.get("warnings_json") or [],
-    }
-    interview["path_reports"] = latest_by_path
-    sess.interview = interview
-
-
-def _clear_latest_path_report_pointer(sess: Session, path_id: str) -> None:
-    pid = str(path_id or "").strip()
-    if not pid:
-        return
-    interview = dict(getattr(sess, "interview", {}) or {})
-    latest_raw = interview.get("path_reports")
-    latest_by_path = dict(latest_raw) if isinstance(latest_raw, dict) else {}
-    if pid in latest_by_path:
-        latest_by_path.pop(pid, None)
-    interview["path_reports"] = latest_by_path
-    sess.interview = interview
 
 
 def _recompute_latest_path_report_pointer(sess: Session, path_id: str, rows_raw: Any) -> None:
@@ -1294,24 +1055,6 @@ def _recompute_latest_path_report_pointer(sess: Session, path_id: str, rows_raw:
         return
     ordered = sorted(rows, key=lambda x: int((x or {}).get("version") or 0), reverse=True)
     _set_latest_path_report_pointer(sess, pid, ordered[0])
-
-
-def _is_retryable_report_generation_error(exc: Exception) -> bool:
-    msg = str(exc or "").strip().lower()
-    if not msg:
-        return False
-    tokens = (
-        "response ended prematurely",
-        "incomplete read",
-        "connection aborted",
-        "connection reset",
-        "timed out",
-        "temporarily unavailable",
-        "remote disconnected",
-        "chunkedencodingerror",
-        "read timed out",
-    )
-    return any(tok in msg for tok in tokens)
 
 
 def _compact_path_report_payload(payload_raw: Any, *, max_steps: int = 90, notes_limit: int = 240) -> Tuple[Dict[str, Any], bool]:
@@ -1943,12 +1686,6 @@ def _find_report_version_global(
     return None
 
 
-def _ln_tag(tag: str) -> str:
-    if "}" in str(tag or ""):
-        return str(tag).rsplit("}", 1)[-1].lower()
-    return str(tag or "").lower()
-
-
 def _collect_sequence_flow_meta(xml_text: str) -> Dict[str, Any]:
     raw = str(xml_text or "").strip()
     if not raw:
@@ -2098,21 +1835,6 @@ _PATH_TIER_ALIASES: Dict[str, str] = {
 }
 
 
-def _primitive_path_value(value: Any, keys: Tuple[str, ...] = ("value", "key", "code", "tier", "path")) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, (str, int, float, bool)):
-        return str(value or "").strip()
-    if isinstance(value, dict):
-        for key in keys:
-            if key not in value:
-                continue
-            nested = _primitive_path_value(value.get(key), keys)
-            if nested:
-                return nested
-    return ""
-
-
 def _normalize_flow_tier(value: Any) -> Optional[str]:
     txt = _primitive_path_value(value).upper()
     if txt in _FLOW_TIERS:
@@ -2192,19 +1914,6 @@ def _normalize_node_paths(value: Any) -> List[str]:
     return out
 
 
-def _normalize_sequence_key(value: Any) -> str:
-    raw = _primitive_path_value(
-        value,
-        ("key", "value", "sequence_key", "sequenceKey", "id"),
-    ).lower()
-    if not raw:
-        return ""
-    compact = re.sub(r"\s+", "_", raw)
-    compact = re.sub(r"[^a-z0-9_\-]+", "_", compact)
-    compact = re.sub(r"_+", "_", compact).strip("_")
-    return compact[:64]
-
-
 def _normalize_node_path_source(value: Any) -> str:
     src = str(value or "").strip().lower()
     if src in _NODE_PATH_SOURCE_SET:
@@ -2229,112 +1938,6 @@ def _normalize_node_path_entry(entry_raw: Any) -> Optional[Dict[str, Any]]:
     }
     if sequence_key:
         out["sequence_key"] = sequence_key
-    return out
-
-
-def _robot_meta_as_text(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def _robot_meta_as_nullable_text(value: Any) -> Optional[str]:
-    text = _robot_meta_as_text(value)
-    return text or None
-
-
-def _robot_meta_as_non_negative_int(value: Any, fallback: int) -> int:
-    try:
-        num = int(round(float(value)))
-    except Exception:
-        num = int(fallback)
-    return max(num, 0)
-
-
-def _robot_meta_as_nullable_non_negative_int(value: Any) -> Optional[int]:
-    if value is None:
-        return None
-    if isinstance(value, str) and not value.strip():
-        return None
-    try:
-        num = int(round(float(value)))
-    except Exception:
-        return None
-    return max(num, 0)
-
-
-def _stable_robot_meta_value(value: Any) -> Any:
-    if isinstance(value, list):
-        return [_stable_robot_meta_value(item) for item in value]
-    if isinstance(value, dict):
-        out: Dict[str, Any] = {}
-        for key in sorted(value.keys(), key=lambda x: str(x)):
-            out[str(key)] = _stable_robot_meta_value(value[key])
-        return out
-    return value
-
-
-def _normalize_robot_meta_v1(entry_raw: Any) -> Optional[Dict[str, Any]]:
-    entry = entry_raw if isinstance(entry_raw, dict) else {}
-    exec_raw = entry.get("exec") if isinstance(entry.get("exec"), dict) else {}
-    retry_raw = exec_raw.get("retry") if isinstance(exec_raw.get("retry"), dict) else {}
-    mat_raw = entry.get("mat") if isinstance(entry.get("mat"), dict) else {}
-    qc_raw = entry.get("qc") if isinstance(entry.get("qc"), dict) else {}
-
-    mode = str(exec_raw.get("mode") or "").strip().lower()
-    if mode not in {"human", "machine", "hybrid"}:
-        mode = "human"
-
-    executor = _robot_meta_as_text(exec_raw.get("executor") or "manual_ui") or "manual_ui"
-    action_key = _robot_meta_as_nullable_text(exec_raw.get("action_key"))
-    timeout_sec = _robot_meta_as_nullable_non_negative_int(exec_raw.get("timeout_sec"))
-    max_attempts = _robot_meta_as_non_negative_int(retry_raw.get("max_attempts"), 1)
-    backoff_sec = _robot_meta_as_non_negative_int(retry_raw.get("backoff_sec"), 0)
-
-    inputs = entry_raw.get("mat", {}).get("inputs") if isinstance(entry_raw, dict) and isinstance(entry_raw.get("mat"), dict) else None
-    outputs = entry_raw.get("mat", {}).get("outputs") if isinstance(entry_raw, dict) and isinstance(entry_raw.get("mat"), dict) else None
-    checks = qc_raw.get("checks")
-
-    return {
-        "robot_meta_version": "v1",
-        "exec": {
-            "mode": mode,
-            "executor": executor,
-            "action_key": action_key,
-            "timeout_sec": timeout_sec,
-            "retry": {
-                "max_attempts": max_attempts,
-                "backoff_sec": backoff_sec,
-            },
-        },
-        "mat": {
-            "from_zone": _robot_meta_as_nullable_text(mat_raw.get("from_zone")),
-            "to_zone": _robot_meta_as_nullable_text(mat_raw.get("to_zone")),
-            "inputs": _stable_robot_meta_value(inputs) if isinstance(inputs, list) else [],
-            "outputs": _stable_robot_meta_value(outputs) if isinstance(outputs, list) else [],
-        },
-        "qc": {
-            "critical": bool(qc_raw.get("critical")),
-            "checks": _stable_robot_meta_value(checks) if isinstance(checks, list) else [],
-        },
-    }
-
-
-def _normalize_robot_meta_map(
-    value: Any,
-    *,
-    allowed_node_ids: Optional[Set[str]] = None,
-) -> Dict[str, Dict[str, Any]]:
-    raw = value if isinstance(value, dict) else {}
-    out: Dict[str, Dict[str, Any]] = {}
-    for element_id_raw in sorted(raw.keys(), key=lambda x: str(x)):
-        element_id = str(element_id_raw or "").strip()
-        if not element_id:
-            continue
-        if allowed_node_ids is not None and element_id not in allowed_node_ids:
-            continue
-        normalized_entry = _normalize_robot_meta_v1(raw.get(element_id_raw))
-        if not normalized_entry:
-            continue
-        out[element_id] = normalized_entry
     return out
 
 
@@ -3172,14 +2775,6 @@ def _capture_persisted_auto_pass_failed_state(
     )
 
 
-def _merge_hybrid_layer(current: Any, incoming: Any) -> Any:
-    if isinstance(incoming, dict):
-        if not incoming and isinstance(current, dict) and current:
-            return current
-        return incoming
-    return current
-
-
 def _merge_hybrid_v2(current: Any, incoming: Any) -> Any:
     if isinstance(incoming, dict):
         incoming_size = _hybrid_v2_payload_size(incoming)
@@ -3351,15 +2946,7 @@ def _session_graph_fingerprint(sess: Session) -> str:
     return hashlib.sha1(packed.encode("utf-8")).hexdigest()
 
 # == delete helpers (projects/sessions) ==
-def _ws_path(*parts: str) -> Path:
-    # workspace is mounted to /app/workspace in docker; on host it is ./workspace
-    return Path("workspace").joinpath(*parts)
 
-def _canon_path(p: Path) -> str:
-    try:
-        return str(p.resolve())
-    except Exception:
-        return str(p)
 
 def _session_storage_dirs() -> list[Path]:
     out: list[Path] = []
@@ -3500,78 +3087,6 @@ def _delete_sessions_by_project(project_id: str) -> list[str]:
             deleted_ids.append(sid)
     return deleted_ids
 
-def _merge_nodes(existing: List[Node], extracted: List[Node]) -> List[Node]:
-    by_id = {n.id: n for n in existing}
-    merged: List[Node] = []
-    for nn in extracted:
-        old = by_id.get(nn.id)
-        if not old:
-            merged.append(nn)
-            continue
-
-        p = dict(old.parameters or {})
-        if p.get("_manual_title"):
-            nn.title = old.title
-        if p.get("_manual_type"):
-            nn.type = old.type
-        if p.get("_manual_actor"):
-            nn.actor_role = old.actor_role
-        if p.get("_manual_recipient"):
-            nn.recipient_role = old.recipient_role
-        if p.get("_manual_equipment"):
-            nn.equipment = list(old.equipment or [])
-        if p.get("_manual_duration"):
-            nn.duration_min = old.duration_min
-        if p.get("_manual_parameters"):
-            nn.parameters = dict(old.parameters or {})
-        if p.get("_manual_disposition"):
-            nn.disposition = dict(old.disposition or {})
-
-        if not p.get("_manual_equipment") and old.equipment and not nn.equipment:
-            nn.equipment = list(old.equipment)
-        if not p.get("_manual_actor") and old.actor_role and not nn.actor_role:
-            nn.actor_role = old.actor_role
-        if not p.get("_manual_duration") and old.duration_min is not None and nn.duration_min is None:
-            nn.duration_min = old.duration_min
-        if not p.get("_manual_disposition") and old.disposition and not nn.disposition:
-            nn.disposition = dict(old.disposition)
-
-        if old.qc:
-            nn.qc = list(old.qc)
-        if old.exceptions:
-            nn.exceptions = list(old.exceptions)
-
-        merged.append(nn)
-    return merged
-
-
-def _merge_question_states(old_questions, new_questions):
-    old_by_id = {q.id: q for q in (old_questions or [])}
-
-    merged = []
-    for q in new_questions:
-        old = old_by_id.get(q.id)
-        if old:
-            q.status = old.status
-            q.answer = old.answer
-        q.orphaned = False
-        merged.append(q)
-
-    seen_ids = {q.id for q in merged}
-
-    orphans = []
-    for old in (old_questions or []):
-        if old.id in seen_ids:
-            continue
-        if old.status != "answered":
-            continue
-        keep = old.model_copy(deep=True)
-        keep.orphaned = True
-        orphans.append(keep)
-
-    merged.extend(orphans[:300])
-    return merged[:900]
-
 
 def _disposition_report(s: Session) -> Dict[str, Any]:
     nodes = []
@@ -3595,45 +3110,6 @@ def _disposition_report(s: Session) -> Dict[str, Any]:
         if not isinstance(eq_actions, dict) or len(eq_actions) == 0:
             open_nodes.append({"id": n.id, "title": n.title, "equipment": eq})
     return {"nodes": nodes, "open": open_nodes, "open_count": len(open_nodes)}
-
-
-def _recompute_session(s: Session) -> Session:
-    seed = load_seed_glossary(GLOSSARY_SEED)
-    s.normalized = normalize_nodes(s.nodes, seed)
-
-    resources_report, conflict_questions = build_resources_report(s.nodes, s.edges)
-    s.resources = resources_report
-
-    base_questions = build_questions(s.nodes, roles=s.roles)
-    disp_questions = build_disposition_questions(s.nodes)
-    loss_questions = build_loss_questions(s.nodes)
-
-    new_questions = base_questions + conflict_questions + disp_questions + loss_questions
-
-    keep_llm = [q for q in (s.questions or []) if (getattr(q, 'id', '') or '').startswith('llm_')]
-    new_questions = new_questions + keep_llm
-
-    seen = set()
-    dedup = []
-    for q in new_questions:
-        qid = getattr(q, 'id', None)
-        if not qid or qid in seen:
-            continue
-        seen.add(qid)
-        dedup.append(q)
-    new_questions = dedup
-
-    s.questions = _merge_question_states(s.questions, new_questions)
-
-    s.mermaid_simple = render_mermaid(s.nodes, s.edges, roles=s.roles, mode="simple")
-    s.mermaid_lanes = render_mermaid(s.nodes, s.edges, roles=s.roles, mode="lanes")
-    s.mermaid = s.mermaid_lanes
-
-
-    s.analytics = compute_analytics(s)
-
-    s.version += 1
-    return s
 
 
 @app.get("/")
@@ -3699,260 +3175,25 @@ def metrics_endpoint():
     return Response(content=metrics(), media_type="text/plain")
 
 
-# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
-@app.post("/api/auth/login", response_model=AuthTokenOut)
-def auth_login(inp: AuthLoginIn, request: Request):
-    login_limit = max(1, _env_int("RL_LOGIN_PER_MIN", 30))
-    ip_key = str(_request_client_ip(request) or "ip_unknown")
-    if not _rate_limit_check(f"login:{ip_key}", login_limit, 60):
-        raise HTTPException(status_code=429, detail="too_many_requests")
-    try:
-        user = authenticate_user(inp.email, inp.password)
-    except AuthError as _e:
-        import logging
-        logging.getLogger("auth_debug").warning(f"auth_login failed: email={inp.email} error={_e}")
-        raise HTTPException(status_code=401, detail="invalid_credentials")
-
-    issued = issue_login_tokens(
-        user=user,
-        user_agent=request.headers.get("user-agent", ""),
-        ip=_request_client_ip(request),
-    )
-    max_age = max(1, int(issued.get("refresh_expires_at", 0)) - int(time.time()))
-    payload = {
-        "access_token": str(issued.get("access_token") or ""),
-        "token_type": "bearer",
-    }
-    try:
-        uid = str(user.get("id") or "").strip()
-        oid = resolve_active_org_id(
-            uid,
-            requested_org_id=_extract_org_from_headers(request),
-            is_admin=bool(user.get("is_admin", False)),
-        )
-        if uid and oid:
-            append_audit_log(
-                actor_user_id=uid,
-                org_id=oid,
-                action="login",
-                entity_type="auth",
-                entity_id=uid,
-                status="ok",
-                meta={"ip": _request_client_ip(request), "user_agent": str(request.headers.get("user-agent") or "")[:180]},
-            )
-    except Exception:
-        pass
-    resp = JSONResponse(status_code=200, content=payload)
-    _set_refresh_cookie(resp, str(issued.get("refresh_token") or ""), max_age)
-    return resp
-
-
-# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
-@app.post("/api/auth/refresh", response_model=AuthTokenOut)
-def auth_refresh(request: Request):
-    refresh_token = str(request.cookies.get("refresh_token") or "").strip()
-    if not refresh_token:
-        _auth_logger.warning("refresh_failed: missing_refresh_token ip=%s ua=%s", _request_client_ip(request), str(request.headers.get("user-agent", ""))[:120])
-        resp = JSONResponse(status_code=401, content={"detail": "missing_refresh_token"})
-        _clear_refresh_cookie(resp)
-        return resp
-
-    try:
-        rotated = rotate_refresh_token(
-            refresh_token,
-            user_agent=request.headers.get("user-agent", ""),
-            ip=_request_client_ip(request),
-        )
-    except AuthError as e:
-        _auth_logger.warning("refresh_failed: %s ip=%s ua=%s", e, _request_client_ip(request), str(request.headers.get("user-agent", ""))[:120])
-        resp = JSONResponse(status_code=401, content={"detail": str(e)})
-        _clear_refresh_cookie(resp)
-        return resp
-
-    max_age = max(1, int(rotated.get("refresh_expires_at", 0)) - int(time.time()))
-    payload = {
-        "access_token": str(rotated.get("access_token") or ""),
-        "token_type": "bearer",
-    }
-    resp = JSONResponse(status_code=200, content=payload)
-    _set_refresh_cookie(resp, str(rotated.get("refresh_token") or ""), max_age)
-    return resp
-
-
-# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
-@app.post("/api/auth/logout")
-def auth_logout(request: Request):
-    refresh_token = str(request.cookies.get("refresh_token") or "").strip()
-    if refresh_token:
-        revoke_refresh_from_token(refresh_token)
-    resp = JSONResponse(status_code=200, content={"ok": True})
-    _clear_refresh_cookie(resp)
-    return resp
-
-
-# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
-@app.get("/api/auth/me", response_model=AuthMeOut)
-def auth_me(request: Request):
-    user = getattr(request.state, "auth_user", None)
-    if not isinstance(user, dict):
-        try:
-            user = user_from_bearer_header(request.headers.get("authorization", ""))
-        except AuthError:
-            raise HTTPException(status_code=401, detail="unauthorized")
-    user_id = str(user.get("id") or "").strip()
-    is_admin = bool(user.get("is_admin", False))
-    memberships = list_user_org_memberships(user_id, is_admin=is_admin)
-    requested_org_id = _extract_org_from_headers(request)
-    active_org_id = resolve_active_org_id(user_id, requested_org_id=requested_org_id, is_admin=is_admin)
-    groups = list_user_groups(user_id, org_id=active_org_id)
-    return build_auth_me_payload(
-        user_id=user_id,
-        email=str(user.get("email") or ""),
-        is_admin=is_admin,
-        active_org_id=active_org_id,
-        default_org_id=get_default_org_id(),
-        orgs=memberships,
-        groups=groups,
-        role=str(user.get("role") or ""),
-    )
-
-
-# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
-@app.post("/api/auth/invite/preview")
-@app.post("/api/invite/resolve")
-def auth_invite_preview(inp: InvitePreviewIn, request: Request):
-    token = extract_invite_token(inp)
-    if not token:
-        return _enterprise_error(422, "validation_error", "token is required")
-    try:
-        invite = preview_org_invite(token)
-    except ValueError as exc:
-        return _invite_error_to_response(str(exc or "").strip().lower())
-
-    identity = find_user_by_email(str(invite.get("email") or "").strip().lower())
-    return build_invite_preview_payload(
-        invite,
-        identity_state=invited_identity_state(identity),
-        single_org_mode=count_org_records() <= 1,
-    )
-
-
-# DEPRECATED: route moved to routers/auth.py — kept for backward compatibility during migration.
-@app.post("/api/auth/invite/activate")
-@app.post("/api/invite/activate")
-def auth_invite_activate(inp: InviteActivateIn, request: Request):
-    token = extract_invite_token(inp)
-    password = str(getattr(inp, "password", "") or "")
-    password_confirm = str(getattr(inp, "password_confirm", "") or "")
-    if not token:
-        return _enterprise_error(422, "validation_error", "token is required")
-    if not password:
-        return _enterprise_error(422, "validation_error", "password_required")
-    if len(password) < 8:
-        return _enterprise_error(422, "validation_error", "password_too_short")
-    if password_confirm and password_confirm != password:
-        return _enterprise_error(422, "validation_error", "password_mismatch")
-
-    accept_limit = max(1, _env_int("RL_ACCEPT_PER_MIN", 30))
-    ip_key = str(_request_client_ip(request) or "ip_unknown")
-    if not _rate_limit_check(f"auth:invite_activate:{ip_key}", accept_limit, 60):
-        return _enterprise_error(429, "too_many_requests", "too_many_requests")
-
-    try:
-        invite = preview_org_invite(token)
-    except ValueError as exc:
-        return _invite_error_to_response(str(exc or "").strip().lower())
-
-    invited_email = str(invite.get("email") or "").strip().lower()
-    identity = find_user_by_email(invited_email)
-    if isinstance(identity, dict):
-        if bool(identity.get("is_active", False)) and str(identity.get("password_hash") or "").strip():
-            return _invite_error_to_response("identity_already_active")
-    try:
-        base_identity = ensure_invited_identity(invited_email)
-        accepted = accept_org_invite(
-            str(invite.get("org_id") or "") or None,
-            token,
-            accepted_by=str(base_identity.get("id") or ""),
-            accepted_email=invited_email,
-        )
-        activated_user = set_invited_identity_password(invited_email, password)
-    except (ValueError, AuthError) as exc:
-        return _invite_error_to_response(str(exc or "").strip().lower())
-
-    issued = issue_login_tokens(
-        user=activated_user,
-        user_agent=request.headers.get("user-agent", ""),
-        ip=_request_client_ip(request),
-    )
-    max_age = max(1, int(issued.get("refresh_expires_at", 0)) - int(time.time()))
-    payload = build_invite_activate_payload(
-        issued=issued,
-        accepted=accepted,
-        activated_user=activated_user,
-        invited_email=invited_email,
-    )
-    _audit_log_safe(
-        request,
-        org_id=str(accepted.get("org_id") or get_default_org_id()),
-        action="invite.activate",
-        entity_type="org_invite",
-        entity_id=str(accepted.get("id") or ""),
-        status="ok",
-        meta={
-            "email": invited_email,
-            "role": str(accepted.get("role") or ""),
-            "team_name": str(accepted.get("team_name") or ""),
-            "subgroup_name": str(accepted.get("subgroup_name") or ""),
-        },
-    )
-    resp = JSONResponse(status_code=200, content=payload)
-    _set_refresh_cookie(resp, str(issued.get("refresh_token") or ""), max_age)
-    return resp
+# /api/auth/* handlers live in app/services/auth_service.py (PR-6 auth) and are
+# re-registered here so LEGACY_ROUTE_EXPORT keeps the same routes, methods,
+# registration order and endpoint objects as before the extraction.
+app.post("/api/auth/login", response_model=AuthTokenOut)(auth_login)
+app.post("/api/auth/refresh", response_model=AuthTokenOut)(auth_refresh)
+app.post("/api/auth/logout")(auth_logout)
+app.get("/api/auth/me", response_model=AuthMeOut)(auth_me)
+app.post("/api/invite/resolve")(auth_invite_preview)
+app.post("/api/auth/invite/preview")(auth_invite_preview)
+app.post("/api/invite/activate")(auth_invite_activate)
+app.post("/api/auth/invite/activate")(auth_invite_activate)
 
 
 # DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
-@app.post("/api/sessions")
-def create_session(inp: CreateSessionIn) -> Dict[str, Any]:
-    st = get_storage()
-
-    roles = _norm_roles(getattr(inp, "roles", None))
-    if not roles:
-        roles = ["cook_1", "technolog"]
-
-    sr = getattr(inp, "start_role", None)
-    if sr is not None and str(sr).strip() != "":
-        sr = str(sr).strip()
-        if sr not in roles:
-            return {"error": "start_role must be one of roles", "start_role": sr, "roles": roles}
-    else:
-        sr = None
-
-    prep_questions = _norm_prep_questions(getattr(inp, "ai_prep_questions", None))
-
-    sid = uuid.uuid4().hex[:10]
-    sess = Session(
-        id=sid,
-        title=inp.title,
-        roles=roles,
-        start_role=sr,
-        interview={"prep_questions": prep_questions},
-        notes=_notes_encode([]),
-        notes_by_element={},
-        nodes=[],
-        edges=[],
-        questions=[],
-        mermaid="",
-        mermaid_simple="",
-        mermaid_lanes="",
-        normalized={},
-        resources={},
-        version=1,
-    )
-    sess = _recompute_session(sess)
-    st.save(sess)
-    _invalidate_session_caches(sess, org_id=getattr(sess, "org_id", "") or get_default_org_id())
-    return _session_api_dump(sess)
+# /api/sessions/* handler implementations live in app/sessions_core.py
+# (PR-9 sessions-core) and are re-registered here so LEGACY_ROUTE_EXPORT
+# keeps the same routes, methods, registration order and endpoint objects
+# as before the extraction.
+app.post("/api/sessions")(create_session)
 
 
 
@@ -3999,388 +3240,34 @@ def get_session_analytics(session_id: str, request: Request = None) -> dict:
     return {"session_id": sess.id, "analytics": getattr(sess, "analytics", {})}
 
 
-@app.patch("/api/sessions/{session_id}")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def patch_session(session_id: str, inp: UpdateSessionIn, request: Request = None) -> Dict[str, Any]:
-    user = _request_auth_user(request) if request is not None else {}
-    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
-    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
-    effective_is_admin = is_admin or request is None
-    st = get_storage()
-    sess, oid, _ = _legacy_load_session_scoped(session_id, request)
-    if not sess:
-        raise_session_not_found(session_id)
-    role = _org_role_for_request(request, oid) if request is not None and oid else ("org_admin" if effective_is_admin else "")
-    _require_org_active_for_writes(request, oid)
-
-    data = inp.model_dump(exclude_unset=True)
-    if "status" in data:
-        from .save_services.status_service import change_session_status
-        return change_session_status(session_id, inp, request)
-
-    _reject_draft_graph_write_on_xml_session(sess, data)
-
-    diagram_changed_keys = sorted({key for key in data.keys() if key in _DIAGRAM_TRUTH_PATCH_KEYS})
-    diagram_write_requested = len(diagram_changed_keys) > 0
-    client_base_diagram_state_version = _resolve_base_diagram_state_version(request=request, payload=data)
-    if diagram_write_requested:
-        _require_diagram_cas_or_409(
-            sess=sess,
-            session_id=session_id,
-            request=request,
-            client_base_version=client_base_diagram_state_version,
-        )
-
-    handled = False
-    need_recompute = False
-    auto_pass_state_write_requested = False
-
-    if "title" in data and data["title"] is not None:
-        if not _can_edit_workspace(role, is_admin=effective_is_admin):
-            raise HTTPException(status_code=403, detail="forbidden")
-        title = _clean_name(data["title"])
-        if title:
-            sibling_titles = {
-                _clean_name(str((row or {}).get("title") or ""))
-                for row in st.list(project_id=str(getattr(sess, "project_id", "") or "").strip(), limit=500, org_id=oid, is_admin=True)
-                if str((row or {}).get("id") or "").strip() != str(session_id).strip()
-            }
-            if title in sibling_titles:
-                raise HTTPException(status_code=409, detail="session title already exists")
-            try:
-                sess2 = st.rename(session_id, title, user_id=user_id, is_admin=True, org_id=oid)
-            except _storage_mod.SessionTitleConflictError:
-                raise HTTPException(status_code=409, detail="session title already exists")
-            if not sess2:
-                raise_session_not_found(session_id)
-            sess = sess2
-            handled = True
-
-    if "roles" in data:
-        if not _can_edit_workspace(role, is_admin=effective_is_admin):
-            raise HTTPException(status_code=403, detail="forbidden")
-        sess.roles = _norm_roles(data.get("roles"))
-        if sess.start_role and sess.roles and sess.start_role not in sess.roles:
-            sess.start_role = None
-        handled = True
-        need_recompute = True
-
-    if "start_role" in data:
-        if not _can_edit_workspace(role, is_admin=effective_is_admin):
-            raise HTTPException(status_code=403, detail="forbidden")
-        sr = data.get("start_role")
-        if sr is None or str(sr).strip() == "":
-            sess.start_role = None
-        else:
-            sr = str(sr).strip()
-            if sess.roles and sr not in sess.roles:
-                return {"error": "start_role must be one of roles", "start_role": sr, "roles": sess.roles}
-            sess.start_role = sr
-        handled = True
-        need_recompute = True
-
-    if "notes" in data:
-        if not _can_edit_workspace(role, is_admin=effective_is_admin):
-            raise HTTPException(status_code=403, detail="forbidden")
-        sess.notes = _notes_encode(data.get("notes"))
-        handled = True
-        need_recompute = True
-
-    if "notes_by_element" in data:
-        if not _can_edit_workspace(role, is_admin=effective_is_admin):
-            raise HTTPException(status_code=403, detail="forbidden")
-        sess.notes_by_element = _norm_notes_by_element(data.get("notes_by_element"))
-        handled = True
-
-    if "interview" in data:
-        if not _can_edit_workspace(role, is_admin=effective_is_admin):
-            raise HTTPException(status_code=403, detail="forbidden")
-        sess.interview = _merge_interview_with_server_fields(sess.interview, data.get("interview"))
-        handled = True
-
-    if "nodes" in data:
-        if not _can_edit_workspace(role, is_admin=effective_is_admin):
-            raise HTTPException(status_code=403, detail="forbidden")
-        sess.nodes = _norm_nodes(data.get("nodes"))
-        handled = True
-        need_recompute = True
-
-    if "edges" in data:
-        if not _can_edit_workspace(role, is_admin=effective_is_admin):
-            raise HTTPException(status_code=403, detail="forbidden")
-        sess.edges = _norm_edges(data.get("edges"))
-        handled = True
-        need_recompute = True
-
-    if "questions" in data:
-        if not _can_edit_workspace(role, is_admin=effective_is_admin):
-            raise HTTPException(status_code=403, detail="forbidden")
-        sess.questions = _norm_questions(data.get("questions"))
-        handled = True
-        need_recompute = True
-
-    if "bpmn_meta" in data:
-        if not _can_edit_workspace(role, is_admin=effective_is_admin):
-            raise HTTPException(status_code=403, detail="forbidden")
-        sess_xml = str(getattr(sess, "bpmn_xml", "") or "")
-        flow_ctx = _collect_sequence_flow_meta(sess_xml)
-        normalized_meta, auto_pass_state_write_requested = _merge_and_normalize_bpmn_meta(
-            getattr(sess, "bpmn_meta", {}),
-            data.get("bpmn_meta"),
-            sess_xml,
-            flow_ctx,
-        )
-        sess.bpmn_meta = normalized_meta
-        handled = True
-
-    # игнорируем любые extra поля без ошибки
-    if need_recompute:
-        sess = _recompute_session(sess)
-    if diagram_write_requested:
-        _mark_diagram_truth_write(
-            sess,
-            changed_keys=diagram_changed_keys,
-            actor_user_id=user_id,
-            actor_label=_resolve_actor_label_from_user(user, user_id),
-        )
-    # SQL-CAS for diagram-truth writes (audit P2): loses the race -> 409,
-    # never a silent mixed-path overwrite.
-    _save_session_with_cas(
-        st,
-        sess,
-        client_base_version=client_base_diagram_state_version if diagram_write_requested else None,
-        user_id=user_id,
-        org_id=oid,
-        is_admin=True,
-    )
-    if auto_pass_state_write_requested:
-        _capture_persisted_auto_pass_failed_state(
-            sess,
-            request=request,
-            route=f"/api/sessions/{session_id}",
-            org_id=oid,
-            user_id=user_id,
-        )
-
-    _audit_log_safe(
-        request,
-        org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
-        action="session.update",
-        entity_type="session",
-        entity_id=str(getattr(sess, "id", "") or session_id),
-        project_id=str(getattr(sess, "project_id", "") or ""),
-        session_id=str(getattr(sess, "id", "") or session_id),
-        meta={"keys": sorted(list(data.keys()))},
-    )
-    _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
-    from .save_services.analytics_aggregator import publish_session_saved
-    publish_session_saved(
-        str(getattr(sess, "id", "") or session_id),
-        oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
-    )
-    return _session_api_dump(sess)
+# /api/sessions/* handler implementations live in app/sessions_core.py
+# (PR-9 sessions-core) and are re-registered here so LEGACY_ROUTE_EXPORT
+# keeps the same routes, methods, registration order and endpoint objects
+# as before the extraction.
+app.patch("/api/sessions/{session_id}")(patch_session)
 
 
-@app.delete("/api/projects/{project_id}")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def delete_project_api(project_id: str, request: Request = None):
-    pid = str(project_id or "").strip()
-    if not pid:
-        return {"ok": False, "error": "project_not_found", "project_id": str(project_id), "deleted_sessions": []}
-    proj, oid, _ = _legacy_load_project_scoped(pid, request)
-    ps = get_project_storage()
-    if proj is None:
-        return {"ok": False, "error": "project_not_found", "project_id": pid, "deleted_sessions": []}
-    role = _org_role_for_request(request, oid) if request is not None and oid else ""
-    user = _request_auth_user(request) if request is not None else {}
-    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
-    if not _can_delete_workspace_content(role, is_admin=is_admin):
-        raise HTTPException(status_code=403, detail="forbidden")
-    _invalidate_explorer_children_for_project(pid, oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
-    st = get_storage()
-    related = st.list(project_id=pid, limit=500, org_id=oid, is_admin=True)
-    deleted_sessions: list[str] = []
-    for row in related:
-        sid = str((row or {}).get("id") or "").strip()
-        if not sid:
-            continue
-        if st.delete(sid, org_id=oid, is_admin=True):
-            deleted_sessions.append(sid)
-            _invalidate_tldr_cache_for_session(sid)
-    deleted_project = ps.delete(pid, org_id=oid, is_admin=True)
-    if not deleted_project:
-        return {"ok": False, "error": "project_not_found", "project_id": pid, "deleted_sessions": deleted_sessions}
-    _audit_log_safe(
-        request,
-        org_id=oid or str(getattr(proj, "org_id", "") or get_default_org_id()),
-        action="project.delete",
-        entity_type="project",
-        entity_id=pid,
-        project_id=pid,
-        meta={"deleted_sessions": deleted_sessions},
-    )
-    _invalidate_workspace_cache_for_org(oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
-    return {"ok": True, "project_id": pid, "deleted_sessions": deleted_sessions}
+# /api/projects/* handler implementations live in app/projects.py (PR-8 projects)
+# and are re-registered here so LEGACY_ROUTE_EXPORT keeps the same routes,
+# methods, registration order and endpoint objects as before the extraction.
+app.delete("/api/projects/{project_id}")(delete_project_api)
 
 
 # DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
-def _broadcast_session_deleted(session_id: str) -> None:
-    """Publish session_deleted event to all SSE subscribers (best-effort)."""
-    try:
-        from .services.session_event_bus import get_session_event_bus
-        bus = get_session_event_bus()
-        bus.publish_nowait(session_id, {
-            "type": "session_deleted",
-            "data": {"session_id": session_id},
-        })
-    except Exception:
-        logger.warning("Failed to broadcast session_deleted for %s", session_id, exc_info=True)
 
 
-@app.delete("/api/sessions/{session_id}")
-def delete_session_api(session_id: str, request: Request = None):
-    sid = str(session_id or "").strip()
-    if not sid:
-        return {"ok": False, "error": "session_not_found", "session_id": str(session_id)}
-    sess, oid, _ = _legacy_load_session_scoped(sid, request)
-    if not sess:
-        return {"ok": False, "error": "session_not_found", "session_id": sid}
-    role = _org_role_for_request(request, oid) if request is not None and oid else ""
-    user = _request_auth_user(request) if request is not None else {}
-    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
-    if not _can_delete_workspace_content(role, is_admin=is_admin):
-        raise HTTPException(status_code=403, detail="forbidden")
-    st = get_storage()
-    deleted = st.delete(sid, org_id=oid, is_admin=True)
-    if not deleted:
-        return {"ok": False, "error": "session_not_found", "session_id": sid}
-    _audit_log_safe(
-        request,
-        org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
-        action="session.delete",
-        entity_type="session",
-        entity_id=sid,
-        project_id=str(getattr(sess, "project_id", "") or ""),
-        session_id=sid,
-    )
-    _invalidate_session_caches(sess, session_id=sid, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
-    _broadcast_session_deleted(sid)
-    return {"ok": True, "session_id": sid, "deleted_files": 1}
+# /api/sessions/* handler implementations live in app/sessions_core.py
+# (PR-9 sessions-core) and are re-registered here so LEGACY_ROUTE_EXPORT
+# keeps the same routes, methods, registration order and endpoint objects
+# as before the extraction.
+app.delete("/api/sessions/{session_id}")(delete_session_api)
 
 
-@app.put("/api/sessions/{session_id}")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def put_session(session_id: str, inp: UpdateSessionIn, request: Request = None) -> Dict[str, Any]:
-    user = _request_auth_user(request) if request is not None else {}
-    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
-    st = get_storage()
-    sess, oid, _ = _legacy_load_session_scoped(session_id, request)
-    if not sess:
-        raise_session_not_found(session_id)
-    _require_org_active_for_writes(request, oid)
-
-    data = inp.model_dump()
-    explicit_data = inp.model_dump(exclude_unset=True)
-    _reject_draft_graph_write_on_xml_session(sess, explicit_data)
-    client_base_diagram_state_version = _resolve_base_diagram_state_version(request=request, payload=data)
-    _require_diagram_cas_or_409(
-        sess=sess,
-        session_id=session_id,
-        request=request,
-        client_base_version=client_base_diagram_state_version,
-    )
-
-    if data.get("title") is not None:
-        title = str(data["title"]).strip()
-        if title:
-            try:
-                sess2 = st.rename(session_id, title, org_id=oid)
-            except _storage_mod.SessionTitleConflictError:
-                raise HTTPException(status_code=409, detail="session title already exists")
-            if not sess2:
-                raise_session_not_found(session_id)
-            sess = sess2
-
-    sess.roles = _norm_roles(data.get("roles"))
-
-    sr = data.get("start_role")
-    if sr is None or str(sr).strip() == "":
-        sess.start_role = None
-    else:
-        sr = str(sr).strip()
-        if sess.roles and sr not in sess.roles:
-            return {"error": "start_role must be one of roles", "start_role": sr, "roles": sess.roles}
-        sess.start_role = sr
-
-    sess.notes = _notes_encode(data.get("notes"))
-    sess.notes_by_element = _norm_notes_by_element(data.get("notes_by_element"))
-    sess.interview = _merge_interview_with_server_fields(sess.interview, data.get("interview"))
-    sess.nodes = _norm_nodes(data.get("nodes"))
-    sess.edges = _norm_edges(data.get("edges"))
-    sess.questions = _norm_questions(data.get("questions"))
-    sess_xml = str(getattr(sess, "bpmn_xml", "") or "")
-    flow_ctx = _collect_sequence_flow_meta(sess_xml)
-    flow_ids = flow_ctx.get("flow_ids")
-    node_ids = flow_ctx.get("node_ids")
-    raw_bpmn_meta = data.get("bpmn_meta") if data.get("bpmn_meta") is not None else getattr(sess, "bpmn_meta", {})
-    auto_pass_state_write_requested = (
-        isinstance(data.get("bpmn_meta"), dict)
-        and "auto_pass_v1" in data.get("bpmn_meta")
-    )
-    normalized_meta = _normalize_bpmn_meta(
-        raw_bpmn_meta,
-        allowed_flow_ids=flow_ids if sess_xml.strip() else None,
-        allowed_node_ids=node_ids if sess_xml.strip() else None,
-    )
-    normalized_meta["flow_meta"] = _enforce_gateway_tier_constraints(
-        dict(normalized_meta.get("flow_meta") or {}),
-        outgoing_by_source=flow_ctx.get("outgoing_by_source"),
-        gateway_mode_by_node=flow_ctx.get("gateway_mode_by_node"),
-    )
-    sess.bpmn_meta = normalized_meta
-
-    sess = _recompute_session(sess)
-    _mark_diagram_truth_write(
-        sess,
-        changed_keys=list(_DIAGRAM_TRUTH_PUT_CHANGED_KEYS),
-        actor_user_id=user_id,
-        actor_label=_resolve_actor_label_from_user(user, user_id),
-    )
-    # SQL-CAS (audit P2): PUT /sessions races with PUT /bpmn on the same row;
-    # a lost race must surface 409 instead of silently dropping one of the writes.
-    _save_session_with_cas(
-        st,
-        sess,
-        client_base_version=client_base_diagram_state_version,
-        user_id=user_id,
-        org_id=oid,
-        is_admin=True,
-    )
-    if auto_pass_state_write_requested:
-        _capture_persisted_auto_pass_failed_state(
-            sess,
-            request=request,
-            route=f"/api/sessions/{session_id}",
-            org_id=oid,
-            user_id=user_id,
-        )
-    _audit_log_safe(
-        request,
-        org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
-        action="session.update",
-        entity_type="session",
-        entity_id=str(getattr(sess, "id", "") or session_id),
-        project_id=str(getattr(sess, "project_id", "") or ""),
-        session_id=str(getattr(sess, "id", "") or session_id),
-        meta={"put": True},
-    )
-    _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
-    from .save_services.analytics_aggregator import publish_session_saved
-    publish_session_saved(
-        str(getattr(sess, "id", "") or session_id),
-        oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
-    )
-    return _session_api_dump(sess)
+# /api/sessions/* handler implementations live in app/sessions_core.py
+# (PR-9 sessions-core) and are re-registered here so LEGACY_ROUTE_EXPORT
+# keeps the same routes, methods, registration order and endpoint objects
+# as before the extraction.
+app.put("/api/sessions/{session_id}")(put_session)
 
 @app.post("/api/sessions/{session_id}/recompute")
   # DEPRECATED: moved to routers/sessions.py + session_service.py
@@ -4398,616 +3285,11 @@ def recompute(session_id: str) -> Dict[str, Any]:
     return s.model_dump()
 
 
-
-def _collect_node_llm_questions(s: Session, node_id: str) -> List[Question]:
-    nid = str(node_id or "").strip()
-    if not nid:
-        return []
-    return [
-        q
-        for q in (s.questions or [])
-        if str(getattr(q, "id", "") or "").startswith("llm_")
-        and str(getattr(q, "node_id", "") or "").strip() == nid
-    ]
-
-
-def _prune_node_llm_questions(s: Session, node_id: str, keep_max: int = 5) -> List[Question]:
-    nid = str(node_id or "").strip()
-    if not nid:
-        return []
-    keep = max(int(keep_max or 0), 1)
-    kept_for_node: List[Question] = []
-    next_questions: List[Question] = []
-    for q in (s.questions or []):
-        is_node_llm = str(getattr(q, "id", "") or "").startswith("llm_") and str(getattr(q, "node_id", "") or "").strip() == nid
-        if not is_node_llm:
-            next_questions.append(q)
-            continue
-        if len(kept_for_node) < keep:
-            kept_for_node.append(q)
-            next_questions.append(q)
-    s.questions = next_questions
-    return kept_for_node
-
-
-def _llm_question_status_to_interview(status: Any) -> str:
-    s = str(status or "").strip().lower()
-    if s == "answered":
-        return "подтверждено"
-    if s == "open":
-        return "уточнить"
-    return "неизвестно"
-
-
-def _sync_interview_ai_questions_for_node(
-    s: Session,
-    node_id: str,
-    *,
-    preferred_step_id: str = "",
-    keep_max: int = 5,
-) -> Dict[str, Any]:
-    nid = str(node_id or "").strip()
-    preferred_sid = str(preferred_step_id or "").strip()
-    keep = max(int(keep_max or 0), 1)
-
-    iv = dict(getattr(s, "interview", {}) or {})
-    steps = iv.get("steps")
-    if not isinstance(steps, list):
-        steps = []
-
-    step_ids: List[str] = []
-    seen_sid: Set[str] = set()
-
-    def _add_step_id(sid: str) -> None:
-        sid = str(sid or "").strip()
-        if not sid or sid in seen_sid:
-            return
-        seen_sid.add(sid)
-        step_ids.append(sid)
-
-    if preferred_sid:
-        _add_step_id(preferred_sid)
-
-    for st in steps:
-        if not isinstance(st, dict):
-            continue
-        sid = str(st.get("id") or "").strip()
-        st_node = str(st.get("node_id") or st.get("nodeId") or "").strip()
-        if not sid:
-            continue
-        if nid and st_node == nid:
-            _add_step_id(sid)
-
-    llm_for_node = _collect_node_llm_questions(s, nid)[:keep]
-    normalized_items: List[Dict[str, Any]] = []
-    for q in llm_for_node:
-        txt = str(getattr(q, "question", "") or "").strip()
-        if not txt:
-            continue
-        normalized_items.append(
-            {
-                "id": str(getattr(q, "id", "") or "").strip(),
-                "text": txt,
-                "status": _llm_question_status_to_interview(getattr(q, "status", "")),
-                "on_diagram": False,
-            }
-        )
-
-    ai_map_raw = iv.get("ai_questions")
-    ai_map: Dict[str, List[Dict[str, Any]]] = dict(ai_map_raw) if isinstance(ai_map_raw, dict) else {}
-
-    for sid in step_ids:
-        existing = ai_map.get(sid)
-        if not isinstance(existing, list):
-            existing = []
-        keep_on_diagram: Dict[str, bool] = {}
-        keep_status: Dict[str, str] = {}
-        for it in existing:
-            if not isinstance(it, dict):
-                continue
-            iid = str(it.get("id") or "").strip()
-            itxt = str(it.get("text") or it.get("question") or "").strip()
-            key = iid or itxt.lower()
-            if not key:
-                continue
-            keep_on_diagram[key] = bool(it.get("on_diagram"))
-            stxt = str(it.get("status") or "").strip()
-            if stxt:
-                keep_status[key] = stxt
-
-        merged: List[Dict[str, Any]] = []
-        for it in normalized_items:
-            iid = str(it.get("id") or "").strip()
-            itxt = str(it.get("text") or "").strip()
-            key = iid or itxt.lower()
-            row = dict(it)
-            if key in keep_on_diagram:
-                row["on_diagram"] = keep_on_diagram[key]
-            if key in keep_status and row.get("status") == "уточнить":
-                row["status"] = keep_status[key]
-            merged.append(row)
-        ai_map[sid] = merged[:keep]
-
-    iv["ai_questions"] = ai_map
-    s.interview = iv
-
-    primary_sid = step_ids[0] if step_ids else ""
-    step_questions = ai_map.get(primary_sid) if primary_sid else []
-    if not isinstance(step_questions, list):
-        step_questions = []
-    return {
-        "step_id": primary_sid or None,
-        "step_ids": step_ids,
-        "step_questions": step_questions[:keep],
-        "node_questions_count": len(normalized_items),
-    }
-
-
-_AI_QUESTIONS_ELEMENT_MODES = {"sequential", "node_step", "one_by_one"}
-
-
-def _ai_questions_module_id(mode: str, inp: AiQuestionsIn) -> str:
-    normalized_mode = str(mode or "").strip().lower()
-    if normalized_mode in _AI_QUESTIONS_ELEMENT_MODES:
-        return "ai.questions.element"
-    return "ai.questions.session"
-
-
-def _ai_questions_scope(s: Session) -> Dict[str, str]:
-    return {
-        "org_id": str(getattr(s, "org_id", "") or get_default_org_id()).strip(),
-        "workspace_id": "",
-        "project_id": str(getattr(s, "project_id", "") or "").strip(),
-        "session_id": str(getattr(s, "id", "") or "").strip(),
-    }
-
-
-def _ai_questions_actor_user_id(request: Request, s: Session) -> str:
-    try:
-        _user, actor_user_id, _actor_label = _resolve_actor_context(request)
-    except Exception:
-        actor_user_id = ""
-    return (
-        str(actor_user_id or "").strip()
-        or str(getattr(s, "updated_by", "") or "").strip()
-        or str(getattr(s, "created_by", "") or "").strip()
-        or str(getattr(s, "owner_user_id", "") or "").strip()
-    )
-
-
-def _ai_questions_active_prompt(module_id: str, scope: Dict[str, Any]) -> Dict[str, Any]:
-    candidates = [
-        ("session", str((scope or {}).get("session_id") or "").strip()),
-        ("project", str((scope or {}).get("project_id") or "").strip()),
-        ("workspace", str((scope or {}).get("workspace_id") or "").strip()),
-        ("org", str((scope or {}).get("org_id") or "").strip()),
-        ("global", ""),
-    ]
-    for scope_level, scope_id in candidates:
-        if scope_level != "global" and not scope_id:
-            continue
-        try:
-            item = get_active_prompt(module_id=module_id, scope_level=scope_level, scope_id=scope_id)
-        except Exception:
-            continue
-        if isinstance(item, dict) and str(item.get("template") or "").strip():
-            return item
-    return {}
-
-
-def _record_ai_questions_execution_safe(**kwargs: Any) -> None:
-    try:
-        record_ai_execution(**kwargs)
-    except Exception:
-        logging.getLogger(__name__).warning("failed to record ai questions execution", exc_info=True)
-
-
-@app.post("/api/sessions/{session_id}/ai/questions")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def ai_questions(session_id: str, inp: AiQuestionsIn, request: Request = None) -> Dict[str, Any]:
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        return {"error": "not found"}
-
-    llm = load_llm_settings()
-    api_key = (llm.get("api_key") or "").strip()
-    base_url = (llm.get("base_url") or "").strip()
-    model_name = str(llm.get("model") or "deepseek-chat").strip() or "deepseek-chat"
-
-    limit = int(inp.limit or 10)
-    if limit < 1:
-        limit = 1
-    if limit > 10:
-        limit = 10
-
-    mode = (inp.mode or "strict").strip().lower()
-    if mode not in ("strict", "soft", "sequential", "node_step", "one_by_one"):
-        mode = "strict"
-
-    module_id = _ai_questions_module_id(mode, inp)
-    scope = _ai_questions_scope(s)
-    actor_user_id = _ai_questions_actor_user_id(request, s)
-    input_payload = {
-        "endpoint": "POST /api/sessions/{session_id}/ai/questions",
-        "session_id": str(session_id or ""),
-        "mode": mode,
-        "limit": limit,
-        "reset": bool(getattr(inp, "reset", False)),
-        "node_id": str(getattr(inp, "node_id", "") or "").strip(),
-        "step_id": str(getattr(inp, "step_id", "") or "").strip(),
-    }
-    started_at = time.time()
-    created_at = int(started_at)
-    active_prompt = _ai_questions_active_prompt(module_id, scope)
-    system_prompt = str(active_prompt.get("template") or "").strip()
-    prompt_id = str(active_prompt.get("prompt_id") or "").strip()
-    prompt_version = str(active_prompt.get("version") or "").strip()
-
-    def _finish(
-        response: Dict[str, Any],
-        *,
-        status: str,
-        output_summary: str = "",
-        error_code: str = "",
-        error_message: str = "",
-        usage: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        finished_at = int(time.time())
-        latency_ms = int(max(0.0, time.time() - started_at) * 1000)
-        _record_ai_questions_execution_safe(
-            module_id=module_id,
-            actor_user_id=actor_user_id,
-            scope=scope,
-            provider="deepseek",
-            model=model_name,
-            prompt_id=prompt_id,
-            prompt_version=prompt_version,
-            status=status,
-            input_payload=input_payload,
-            output_summary=output_summary,
-            usage=usage if isinstance(usage, dict) else {},
-            latency_ms=latency_ms,
-            error_code=error_code,
-            error_message=error_message,
-            created_at=created_at,
-            finished_at=finished_at,
-        )
-        return response
-
-    if not api_key:
-        return _finish(
-            {"error": "deepseek api_key is not set"},
-            status="error",
-            output_summary="missing provider api key",
-            error_code="missing_api_key",
-            error_message="deepseek api_key is not set",
-        )
-
-    try:
-        rate = check_ai_rate_limit(module_id=module_id, actor_user_id=actor_user_id, scope=scope)
-    except Exception:
-        rate = {"allowed": True}
-    if not bool(rate.get("allowed", rate.get("ok", True))):
-        return _finish(
-            {
-                "error": "ai_rate_limit_exceeded",
-                "rate_limit": {
-                    "limit": int(rate.get("limit") or 0),
-                    "window_sec": int(rate.get("window_sec") or 0),
-                    "reset_at": int(rate.get("reset_at") or 0),
-                },
-            },
-            status="error",
-            output_summary="rate limit blocked",
-            error_code="ai_rate_limit_exceeded",
-            error_message="ai_rate_limit_exceeded",
-        )
-
-    try:
-        from .ai.deepseek_questions import (
-            generate_llm_questions,
-            generate_llm_questions_for_node,
-            collect_node_ids_in_bpmn_order,
-            extract_node_xml_snippet,
-        )
-    except Exception as e:
-        return _finish(
-            {"error": f"deepseek questions module not available: {e}"},
-            status="error",
-            output_summary="deepseek questions module unavailable",
-            error_code="module_unavailable",
-            error_message=str(e),
-        )
-
-    if mode in ("sequential", "node_step", "one_by_one"):
-        known = {str(getattr(n, "id", "") or "").strip() for n in (s.nodes or []) if str(getattr(n, "id", "") or "").strip()}
-        ordered = collect_node_ids_in_bpmn_order(str(getattr(s, "bpmn_xml", "") or ""), known)
-        for n in (s.nodes or []):
-            nid = str(getattr(n, "id", "") or "").strip()
-            if nid and nid not in ordered:
-                ordered.append(nid)
-
-        state = dict(getattr(s, "ai_llm_state", {}) or {})
-        if bool(getattr(inp, "reset", False)):
-            state = {}
-        processed_old = [str(x).strip() for x in (state.get("processed_node_ids") or []) if str(x).strip()]
-        processed_set = set(processed_old)
-        requested_node_id = str(getattr(inp, "node_id", "") or "").strip()
-        requested_step_id = str(getattr(inp, "step_id", "") or "").strip()
-
-        llm_count_by_node: Dict[str, int] = {}
-        for q in (s.questions or []):
-            if not str(getattr(q, "id", "") or "").startswith("llm_"):
-                continue
-            qnid = str(getattr(q, "node_id", "") or "").strip()
-            if not qnid:
-                continue
-            llm_count_by_node[qnid] = int(llm_count_by_node.get(qnid, 0)) + 1
-
-        skipped_existing = 0
-        selected_node = None
-        if requested_node_id:
-            selected_node = next((n for n in (s.nodes or []) if str(getattr(n, "id", "") or "").strip() == requested_node_id), None)
-            if selected_node is None:
-                return _finish(
-                    {"error": "node not found", "node_id": requested_node_id},
-                    status="error",
-                    output_summary="node not found",
-                    error_code="node_not_found",
-                    error_message=requested_node_id,
-                )
-            if requested_node_id not in ordered:
-                ordered.append(requested_node_id)
-            existing_requested = _prune_node_llm_questions(s, requested_node_id, keep_max=5)
-            if len(existing_requested) >= 5:
-                processed_set.add(requested_node_id)
-                processed_order = [nid for nid in ordered if nid in processed_set]
-                remaining = len([x for x in ordered if x not in processed_set])
-                sync = _sync_interview_ai_questions_for_node(
-                    s,
-                    requested_node_id,
-                    preferred_step_id=requested_step_id,
-                    keep_max=5,
-                )
-                state["processed_node_ids"] = processed_order
-                state["last_node_id"] = requested_node_id
-                state["last_status"] = "processed"
-                state["updated_at"] = int(time.time())
-                s.ai_llm_state = state
-                _preserve_current_interview_analysis_before_save(st, s)
-                st.save(s)
-                out = _session_api_dump(s)
-                questions_for_step = sync.get("step_questions") if isinstance(sync, dict) else []
-                if not isinstance(questions_for_step, list):
-                    questions_for_step = []
-                out["llm_step"] = {
-                    "status": "processed",
-                    "node_id": requested_node_id,
-                    "node_title": str(getattr(selected_node, "title", "") or requested_node_id),
-                    "requested_node_id": requested_node_id,
-                    "step_id": sync.get("step_id") if isinstance(sync, dict) else None,
-                    "step_ids": sync.get("step_ids") if isinstance(sync, dict) else [],
-                    "generated": 0,
-                    "reused": True,
-                    "questions": questions_for_step,
-                    "new_questions": [],
-                    "existing_questions_returned": len(questions_for_step),
-                    "processed": len(processed_order),
-                    "total": len(ordered),
-                    "remaining": remaining,
-                    "skipped_existing": skipped_existing,
-                }
-                return _finish(
-                    out,
-                    status="success",
-                    output_summary=f"reused questions for node {requested_node_id}",
-                )
-        else:
-            for nid in ordered:
-                if nid in processed_set:
-                    continue
-                if int(llm_count_by_node.get(nid, 0)) >= 5:
-                    processed_set.add(nid)
-                    skipped_existing += 1
-                    continue
-                selected_node = next((n for n in (s.nodes or []) if str(getattr(n, "id", "") or "").strip() == nid), None)
-                if selected_node is not None:
-                    break
-
-        if selected_node is None:
-            processed_order = [nid for nid in ordered if nid in processed_set]
-            state["processed_node_ids"] = processed_order
-            state["last_status"] = "completed"
-            state["updated_at"] = int(time.time())
-            s.ai_llm_state = state
-            _preserve_current_interview_analysis_before_save(st, s)
-            st.save(s)
-            out = _session_api_dump(s)
-            out["llm_step"] = {
-                "status": "completed",
-                "processed": len(processed_order),
-                "total": len(ordered),
-                "remaining": 0,
-                "skipped_existing": skipped_existing,
-            }
-            return _finish(
-                out,
-                status="success",
-                output_summary="sequential questions completed without provider call",
-            )
-
-        node_xml = extract_node_xml_snippet(str(getattr(s, "bpmn_xml", "") or ""), str(getattr(selected_node, "id", "") or ""))
-        existing_for_node_before = _collect_node_llm_questions(s, str(getattr(selected_node, "id", "") or ""))
-        remain_for_node = max(0, 5 - len(existing_for_node_before))
-        if remain_for_node <= 0:
-            new_qs = []
-        else:
-            try:
-                new_qs = generate_llm_questions_for_node(
-                    s,
-                    selected_node,
-                    api_key=api_key,
-                    base_url=base_url,
-                    limit=min(limit, remain_for_node, 5),
-                    node_xml=node_xml,
-                    system_prompt=system_prompt,
-                )
-            except Exception as e:
-                return _finish(
-                    {"error": f"deepseek failed: {e}"},
-                    status="error",
-                    output_summary="deepseek provider failed",
-                    error_code="provider_error",
-                    error_message=str(e),
-                )
-        generated = 0
-        added_questions: List[Dict[str, Any]] = []
-        existing_ids = {q.id for q in (s.questions or []) if getattr(q, "id", None)}
-        for q in (new_qs or []):
-            if q.id in existing_ids:
-                continue
-            (s.questions or []).append(q)
-            existing_ids.add(q.id)
-            generated += 1
-            added_questions.append(q.model_dump())
-
-        nid = str(getattr(selected_node, "id", "") or "").strip()
-        _prune_node_llm_questions(s, nid, keep_max=5)
-        if nid:
-            processed_set.add(nid)
-        processed_order = [x for x in ordered if x in processed_set]
-        remaining = len([x for x in ordered if x not in processed_set])
-
-        node_results = state.get("node_results")
-        if not isinstance(node_results, dict):
-            node_results = {}
-        node_results[nid] = {
-            "node_title": str(getattr(selected_node, "title", "") or nid),
-            "generated": generated,
-            "ts": int(time.time()),
-            "mode": "node_step" if requested_node_id else "sequential",
-        }
-        state["node_results"] = node_results
-        state["processed_node_ids"] = processed_order
-        state["last_node_id"] = nid
-        state["last_status"] = "processed"
-        state["updated_at"] = int(time.time())
-        s.ai_llm_state = state
-
-        s = _recompute_session(s)
-        sync = _sync_interview_ai_questions_for_node(
-            s,
-            nid,
-            preferred_step_id=requested_step_id,
-            keep_max=5,
-        )
-        _preserve_current_interview_analysis_before_save(st, s)
-        st.save(s)
-        out = _session_api_dump(s)
-        llm_questions_for_step = sync.get("step_questions") if isinstance(sync, dict) else []
-        if not isinstance(llm_questions_for_step, list):
-            llm_questions_for_step = []
-        out["llm_step"] = {
-            "status": "processed",
-            "node_id": nid,
-            "node_title": str(getattr(selected_node, "title", "") or nid),
-            "requested_node_id": requested_node_id or None,
-            "step_id": sync.get("step_id") if isinstance(sync, dict) else None,
-            "step_ids": sync.get("step_ids") if isinstance(sync, dict) else [],
-            "generated": generated,
-            "reused": generated == 0,
-            "questions": llm_questions_for_step,
-            "new_questions": added_questions,
-            "existing_questions_returned": max(len(llm_questions_for_step) - generated, 0),
-            "processed": len(processed_order),
-            "total": len(ordered),
-            "remaining": remaining,
-            "skipped_existing": skipped_existing,
-        }
-        return _finish(
-            out,
-            status="success",
-            output_summary=f"generated={generated} node_id={nid}",
-        )
-
-    try:
-        new_qs = generate_llm_questions(
-            s,
-            api_key=api_key,
-            base_url=base_url,
-            limit=limit,
-            mode=mode,
-            system_prompt=system_prompt,
-        )
-    except Exception as e:
-        return _finish(
-            {"error": f"deepseek failed: {e}"},
-            status="error",
-            output_summary="deepseek provider failed",
-            error_code="provider_error",
-            error_message=str(e),
-        )
-
-    if new_qs:
-        existing_ids = {q.id for q in (s.questions or []) if getattr(q, "id", None)}
-        for q in new_qs:
-            if q.id not in existing_ids:
-                (s.questions or []).append(q)
-                existing_ids.add(q.id)
-
-    s = _recompute_session(s)
-    _preserve_current_interview_analysis_before_save(st, s)
-    st.save(s)
-    return _finish(
-        s.model_dump(),
-        status="success",
-        output_summary=f"generated={len(new_qs or [])} mode={mode}",
-    )
-
-
-def _report_version_summary(row_raw: Any) -> Dict[str, Any]:
-    row = row_raw if isinstance(row_raw, dict) else {}
-    error_message = str(row.get("error_message") or "").strip()
-    return {
-        "id": str(row.get("id") or ""),
-        "version": int(row.get("version") or 0),
-        "created_at": int(row.get("created_at") or 0),
-        "status": str(row.get("status") or "error"),
-        "steps_hash": str(row.get("steps_hash") or ""),
-        "provider": "deepseek",
-        "error": error_message or None,
-        "model": str(row.get("model") or "deepseek-chat"),
-        "prompt_template_version": str(row.get("prompt_template_version") or "v2"),
-    }
-
-
-def _report_version_detail_payload(row_raw: Any) -> Dict[str, Any]:
-    found = row_raw if isinstance(row_raw, dict) else {}
-    payload_normalized = found.get("payload_normalized") or found.get("report_json") or {}
-    payload_raw = found.get("payload_raw")
-    return {
-        "id": str(found.get("id") or ""),
-        "session_id": str(found.get("session_id") or ""),
-        "path_id": str(found.get("path_id") or ""),
-        "version": int(found.get("version") or 0),
-        "steps_hash": str(found.get("steps_hash") or ""),
-        "created_at": int(found.get("created_at") or 0),
-        "status": str(found.get("status") or "error"),
-        "model": str(found.get("model") or "deepseek-chat"),
-        "prompt_template_version": str(found.get("prompt_template_version") or "v2"),
-        "request_payload_json": found.get("request_payload_json") or {},
-        "payload_normalized": payload_normalized,
-        "payload_raw": payload_raw if payload_raw is not None else {},
-        "report_json": payload_normalized,
-        "raw_json": found.get("raw_json") or (payload_raw if isinstance(payload_raw, dict) else {}),
-        "report_markdown": str(found.get("report_markdown") or found.get("raw_text") or ""),
-        "recommendations_json": found.get("recommendations_json") or payload_normalized.get("recommendations") or [],
-        "missing_data_json": found.get("missing_data_json") or payload_normalized.get("missing_data") or [],
-        "risks_json": found.get("risks_json") or payload_normalized.get("risks") or [],
-        "warnings_json": found.get("warnings_json") or [],
-        "error_message": found.get("error_message"),
-    }
+# /api/sessions/* handler implementations live in app/ai_questions.py
+# (PR-10B ai-questions) and are re-registered here so LEGACY_ROUTE_EXPORT
+# keeps the same routes, methods, registration order and endpoint objects
+# as before the extraction.
+app.post("/api/sessions/{session_id}/ai/questions")(ai_questions)
 
 
 def _resolve_report_scope(
@@ -5452,679 +3734,13 @@ def post_llm_verify(inp: LlmVerifyIn) -> Dict[str, Any]:
     return verify_llm_settings(api_key=inp.api_key, base_url=inp.base_url)
 
 
-@app.post("/api/sessions/{session_id}/notes")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def post_notes(session_id: str, inp: NotesIn, request: Request = None) -> Dict[str, Any]:
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=_resolve_base_diagram_state_version(
-            request=request,
-            payload=inp.model_dump(exclude_unset=True),
-        ),
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    s.notes = inp.notes
-
-    llm = load_llm_settings()
-    try:
-        from .ai.deepseek_client import extract_process
-    except Exception as e:
-        return {"error": f"deepseek client module not available: {e}"}
-
-    try:
-        extracted = extract_process(
-            s.notes,
-            api_key=llm.get("api_key", ""),
-            base_url=llm.get("base_url", ""),
-        )
-    except Exception as e:
-        return {"error": f"deepseek failed: {e}"}
-
-    nodes_raw = extracted.get("nodes", []) or []
-    edges_raw = extracted.get("edges", []) or []
-    existing_roles = _norm_roles(getattr(s, "roles", None))
-    extracted_roles = _norm_roles(extracted.get("roles", []))
-    roles = existing_roles if existing_roles else extracted_roles
-
-    extracted_nodes = [Node.model_validate(nr) for nr in nodes_raw]
-    extracted_edges = [Edge.model_validate(er) for er in edges_raw]
-
-    s.roles = roles
-    sr = str(getattr(s, "start_role", "") or "").strip()
-    if roles:
-        if not sr or sr not in roles:
-            s.start_role = roles[0]
-    else:
-        s.start_role = None
-
-    s.nodes = _merge_nodes(s.nodes, extracted_nodes)
-    s.edges = extracted_edges
-
-    s = _recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["notes", "roles", "start_role", "nodes", "edges", "questions"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    st.save(s)
-    return s.model_dump()
-
-
-_NOTES_EXTRACTION_MODULE_ID = "ai.process.extract_from_notes"
-
-
-def _notes_preview_scope(sess: Session, org_id: Optional[str] = None) -> Dict[str, str]:
-    return {
-        "org_id": str(org_id or getattr(sess, "org_id", "") or get_default_org_id()).strip(),
-        "workspace_id": "",
-        "project_id": str(getattr(sess, "project_id", "") or "").strip(),
-        "session_id": str(getattr(sess, "id", "") or "").strip(),
-    }
-
-
-def _record_notes_preview_execution_safe(**kwargs: Any) -> None:
-    try:
-        record_ai_execution(**kwargs)
-    except Exception:
-        logging.getLogger(__name__).warning("failed to record notes extraction ai execution", exc_info=True)
-
-
-def _safe_model_dump(value: Any) -> Dict[str, Any]:
-    if hasattr(value, "model_dump"):
-        try:
-            dumped = value.model_dump()
-            return dumped if isinstance(dumped, dict) else {}
-        except Exception:
-            return {}
-    return dict(value or {}) if isinstance(value, dict) else {}
-
-
-def _safe_model_dump_list(values: Any) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
-    for item in values or []:
-        dumped = _safe_model_dump(item)
-        if dumped:
-            out.append(dumped)
-    return out
-
-
-def _entity_key(value: Any) -> str:
-    row = _safe_model_dump(value)
-    if not row and isinstance(value, dict):
-        row = value
-    if row:
-        return str(row.get("id") or row.get("question_id") or row.get("from_id") or "").strip()
-    return ""
-
-
-def _stable_entity_signature(value: Any) -> str:
-    row = _safe_model_dump(value)
-    if not row and isinstance(value, dict):
-        row = value
-    try:
-        return json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    except Exception:
-        return str(row)
-
-
-def _edge_key(value: Any) -> str:
-    row = _safe_model_dump(value)
-    if not row and isinstance(value, dict):
-        row = value
-    return f"{str(row.get('from_id') or '').strip()}->{str(row.get('to_id') or '').strip()}"
-
-
-def _list_diff_by_id(current: Any, candidate: Any) -> Dict[str, Any]:
-    current_rows = list(current or [])
-    candidate_rows = list(candidate or [])
-    current_by_id = {_entity_key(item): item for item in current_rows if _entity_key(item)}
-    candidate_by_id = {_entity_key(item): item for item in candidate_rows if _entity_key(item)}
-    added: List[str] = []
-    updated: List[str] = []
-    unchanged: List[str] = []
-    for item_id, cand in candidate_by_id.items():
-        cur = current_by_id.get(item_id)
-        if cur is None:
-            added.append(item_id)
-        elif _stable_entity_signature(cur) == _stable_entity_signature(cand):
-            unchanged.append(item_id)
-        else:
-            updated.append(item_id)
-    removed = [item_id for item_id in current_by_id.keys() if item_id not in candidate_by_id]
-    return {
-        "added": sorted(added),
-        "updated": sorted(updated),
-        "unchanged": sorted(unchanged),
-        "removed": sorted(removed),
-        "added_count": len(added),
-        "updated_count": len(updated),
-        "unchanged_count": len(unchanged),
-        "removed_count": len(removed),
-    }
-
-
-def _edge_diff(current: Any, candidate: Any) -> Dict[str, Any]:
-    current_rows = list(current or [])
-    candidate_rows = list(candidate or [])
-    current_keys = {_edge_key(item) for item in current_rows if _edge_key(item)}
-    candidate_keys = {_edge_key(item) for item in candidate_rows if _edge_key(item)}
-    return {
-        "added": sorted(candidate_keys - current_keys),
-        "removed": sorted(current_keys - candidate_keys),
-        "unchanged": sorted(candidate_keys & current_keys),
-        "added_count": len(candidate_keys - current_keys),
-        "removed_count": len(current_keys - candidate_keys),
-        "unchanged_count": len(candidate_keys & current_keys),
-    }
-
-
-def _role_diff(current_roles: Any, candidate_roles: Any) -> Dict[str, Any]:
-    current = set(_norm_roles(current_roles))
-    candidate = set(_norm_roles(candidate_roles))
-    return {
-        "added": sorted(candidate - current),
-        "removed": sorted(current - candidate),
-        "unchanged": sorted(candidate & current),
-        "added_count": len(candidate - current),
-        "removed_count": len(current - candidate),
-        "unchanged_count": len(candidate & current),
-    }
-
-
-def _redact_notes_preview_message(message: Any, *, api_key: str = "", base_url: str = "") -> str:
-    text = str(message or "").strip()
-    for secret in (api_key,):
-        secret_text = str(secret or "")
-        if secret_text:
-            text = text.replace(secret_text, "[redacted]")
-    if base_url:
-        text = text.replace(f"Bearer {base_url}", "Bearer [redacted]")
-    return text
-
-
-def _sanitize_notes_preview_warnings(warnings: Any, *, api_key: str = "", base_url: str = "") -> List[Dict[str, str]]:
-    out: List[Dict[str, str]] = []
-    for item in warnings or []:
-        row = item if isinstance(item, dict) else {"code": "warning", "message": str(item or "")}
-        code = str(row.get("code") or "warning").strip() or "warning"
-        message = _redact_notes_preview_message(row.get("message"), api_key=api_key, base_url=base_url)
-        out.append({"code": code, "message": message})
-    return out
-
-
-def _notes_preview_response_from_extraction(
-    *,
-    sess: Session,
-    notes_text: str,
-    extraction: Dict[str, Any],
-    input_hash: str,
-    warnings: List[Dict[str, str]],
-) -> Dict[str, Any]:
-    extracted = extraction if isinstance(extraction, dict) else {}
-    nodes_raw = extracted.get("nodes", []) or []
-    edges_raw = extracted.get("edges", []) or []
-    extracted_roles = _norm_roles(extracted.get("roles", []))
-    current_roles = _norm_roles(getattr(sess, "roles", None))
-    candidate_roles = current_roles if current_roles else extracted_roles
-
-    current_start_role = str(getattr(sess, "start_role", "") or "").strip()
-    candidate_start_role = current_start_role
-    if candidate_roles:
-        if not candidate_start_role or candidate_start_role not in candidate_roles:
-            candidate_start_role = candidate_roles[0]
-    else:
-        candidate_start_role = ""
-
-    candidate_nodes = [Node.model_validate(nr) for nr in nodes_raw]
-    candidate_edges = [Edge.model_validate(er) for er in edges_raw]
-    proposed_nodes = _merge_nodes(list(getattr(sess, "nodes", []) or []), candidate_nodes)
-
-    preview_sess = copy.deepcopy(sess)
-    preview_sess.roles = list(candidate_roles)
-    preview_sess.start_role = candidate_start_role or None
-    preview_sess.nodes = list(proposed_nodes)
-    preview_sess.edges = list(candidate_edges)
-    preview_sess = _recompute_session(preview_sess)
-    candidate_questions = list(getattr(preview_sess, "questions", []) or [])
-
-    base_version = int(getattr(sess, "diagram_state_version", 0) or 0)
-    return {
-        "ok": True,
-        "module_id": _NOTES_EXTRACTION_MODULE_ID,
-        "status": "preview",
-        "source": str((extracted.get("_source") or "")).strip() or "unknown",
-        "input_hash": input_hash,
-        "current_diagram_state_version": base_version,
-        "candidate_roles": list(candidate_roles),
-        "candidate_start_role": candidate_start_role or None,
-        "candidate_nodes": _safe_model_dump_list(candidate_nodes),
-        "candidate_edges": _safe_model_dump_list(candidate_edges),
-        "candidate_questions": _safe_model_dump_list(candidate_questions),
-        "warnings": warnings,
-        "diff": {
-            "notes": {
-                "changed": str(notes_text or "") != str(getattr(sess, "notes", "") or ""),
-                "current_length": len(str(getattr(sess, "notes", "") or "")),
-                "candidate_length": len(str(notes_text or "")),
-            },
-            "roles": _role_diff(getattr(sess, "roles", []) or [], candidate_roles),
-            "start_role": {
-                "current": current_start_role or None,
-                "candidate": candidate_start_role or None,
-                "changed": (current_start_role or "") != (candidate_start_role or ""),
-            },
-            "nodes": _list_diff_by_id(getattr(sess, "nodes", []) or [], candidate_nodes),
-            "edges": _edge_diff(getattr(sess, "edges", []) or [], candidate_edges),
-            "questions": _list_diff_by_id(getattr(sess, "questions", []) or [], candidate_questions),
-        },
-    }
-
-
-def _notes_apply_flag(inp: NotesExtractionApplyIn, name: str) -> bool:
-    value = getattr(inp, name, None)
-    if value is not None:
-        return bool(value)
-    options = getattr(inp, "options", None)
-    if isinstance(options, dict) and name in options:
-        return bool(options.get(name))
-    return False
-
-
-def _notes_apply_require_cas(
-    *,
-    sess: Session,
-    session_id: str,
-    inp: NotesExtractionApplyIn,
-    request: Request = None,
-) -> None:
-    base_version = _resolve_base_diagram_state_version(
-        request=request,
-        payload=inp.model_dump(exclude_unset=True),
-    )
-    current_version = int(getattr(sess, "diagram_state_version", 0) or 0)
-    if base_version is None:
-        raise HTTPException(
-            status_code=409,
-            detail=_diagram_state_conflict_payload(
-                code="DIAGRAM_STATE_BASE_VERSION_REQUIRED",
-                session_id=str(getattr(sess, "id", "") or session_id),
-                client_base_version=None,
-                server_current_version=current_version,
-                sess=sess,
-            ),
-        )
-    if int(base_version) != current_version:
-        raise HTTPException(
-            status_code=409,
-            detail=_diagram_state_conflict_payload(
-                code="DIAGRAM_STATE_CONFLICT",
-                session_id=str(getattr(sess, "id", "") or session_id),
-                client_base_version=int(base_version),
-                server_current_version=current_version,
-                sess=sess,
-            ),
-        )
-
-
-def _edge_identity(edge: Edge) -> str:
-    return f"{str(edge.from_id or '').strip()}->{str(edge.to_id or '').strip()}::{str(edge.when or '').strip()}"
-
-
-def _merge_selected_edges(existing: Any, selected: Any) -> List[Edge]:
-    merged: Dict[str, Edge] = {}
-    for edge in list(existing or []):
-        parsed = edge if isinstance(edge, Edge) else Edge.model_validate(edge)
-        key = _edge_identity(parsed)
-        if key:
-            merged[key] = parsed
-    for edge in list(selected or []):
-        parsed = edge if isinstance(edge, Edge) else Edge.model_validate(edge)
-        key = _edge_identity(parsed)
-        if key:
-            merged[key] = parsed
-    return list(merged.values())
-
-
-def _merge_selected_nodes(existing: Any, selected: Any) -> List[Node]:
-    current = [item if isinstance(item, Node) else Node.model_validate(item) for item in list(existing or [])]
-    by_id = {str(node.id or "").strip(): node for node in current if str(node.id or "").strip()}
-    selected_nodes = [item if isinstance(item, Node) else Node.model_validate(item) for item in list(selected or [])]
-    appended: List[Node] = []
-    for node in selected_nodes:
-        node_id = str(node.id or "").strip()
-        if not node_id:
-            continue
-        old = by_id.get(node_id)
-        if old:
-            by_id[node_id] = _merge_nodes([old], [node])[0]
-        else:
-            by_id[node_id] = node
-            appended.append(node)
-    out: List[Node] = []
-    seen: Set[str] = set()
-    for node in current:
-        node_id = str(node.id or "").strip()
-        if node_id and node_id in by_id:
-            out.append(by_id[node_id])
-            seen.add(node_id)
-    for node in appended:
-        node_id = str(node.id or "").strip()
-        if node_id and node_id not in seen:
-            out.append(node)
-            seen.add(node_id)
-    return out
-
-
-def _entity_list_signature(values: Any) -> str:
-    dumped = _safe_model_dump_list(values)
-    try:
-        return json.dumps(dumped, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    except Exception:
-        return str(dumped)
-
-
-@app.post("/api/sessions/{session_id}/notes/extraction-apply")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def post_notes_extraction_apply(
-    session_id: str,
-    inp: NotesExtractionApplyIn,
-    request: Request = None,
-) -> Dict[str, Any]:
-    s, _, _ = _legacy_load_session_scoped(session_id, request)
-    if not s:
-        return {"error": "not found"}
-    st = get_storage()
-
-    _notes_apply_require_cas(sess=s, session_id=session_id, inp=inp, request=request)
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    before = {
-        "notes": str(getattr(s, "notes", "") or ""),
-        "roles": list(getattr(s, "roles", []) or []),
-        "start_role": str(getattr(s, "start_role", "") or ""),
-        "nodes": _entity_list_signature(getattr(s, "nodes", []) or []),
-        "edges": _entity_list_signature(getattr(s, "edges", []) or []),
-        "questions": _entity_list_signature(getattr(s, "questions", []) or []),
-        "bpmn_xml": str(getattr(s, "bpmn_xml", "") or ""),
-        "diagram_state_version": int(getattr(s, "diagram_state_version", 0) or 0),
-    }
-
-    changed_keys: Set[str] = set()
-    graph_changed = False
-
-    if _notes_apply_flag(inp, "apply_notes") and inp.notes is not None:
-        next_notes = str(inp.notes or "")
-        if next_notes != before["notes"]:
-            s.notes = next_notes
-            changed_keys.add("notes")
-
-    if _notes_apply_flag(inp, "apply_roles"):
-        next_roles = _norm_roles(inp.roles if inp.roles is not None else getattr(s, "roles", []))
-        next_start_role = inp.start_role
-        if next_start_role is None:
-            next_start = str(getattr(s, "start_role", "") or "").strip()
-        else:
-            next_start = str(next_start_role or "").strip()
-        if next_start and next_roles and next_start not in next_roles:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "start_role must be one of roles",
-                    "start_role": next_start,
-                    "roles": next_roles,
-                },
-            )
-        if list(getattr(s, "roles", []) or []) != next_roles:
-            s.roles = next_roles
-            changed_keys.add("roles")
-        current_start = str(getattr(s, "start_role", "") or "").strip()
-        if next_start != current_start:
-            s.start_role = next_start or None
-            changed_keys.add("start_role")
-
-    if _notes_apply_flag(inp, "apply_nodes_edges"):
-        selected_nodes = [Node.model_validate(item) for item in list(inp.nodes or [])]
-        selected_edges = [Edge.model_validate(item) for item in list(inp.edges or [])]
-        if selected_nodes:
-            s.nodes = _merge_selected_nodes(list(getattr(s, "nodes", []) or []), selected_nodes)
-        if selected_edges:
-            s.edges = _merge_selected_edges(list(getattr(s, "edges", []) or []), selected_edges)
-        if _entity_list_signature(getattr(s, "nodes", []) or []) != before["nodes"]:
-            changed_keys.add("nodes")
-            graph_changed = True
-        if _entity_list_signature(getattr(s, "edges", []) or []) != before["edges"]:
-            changed_keys.add("edges")
-            graph_changed = True
-
-    if graph_changed:
-        s = _recompute_session(s)
-
-    if _notes_apply_flag(inp, "apply_questions"):
-        selected_questions = [Question.model_validate(item) for item in list(inp.questions or [])]
-        s.questions = selected_questions
-
-    if _entity_list_signature(getattr(s, "questions", []) or []) != before["questions"]:
-        changed_keys.add("questions")
-
-    if not changed_keys:
-        return {
-            "ok": True,
-            "status": "noop",
-            "module_id": _NOTES_EXTRACTION_MODULE_ID,
-            "changed_keys": [],
-            "diagram_state_version": before["diagram_state_version"],
-            "session": s.model_dump(),
-            "result": s.model_dump(),
-        }
-
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=sorted(changed_keys),
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    st.save(s)
-    session_payload = s.model_dump()
-    return {
-        "ok": True,
-        "status": "applied",
-        "module_id": _NOTES_EXTRACTION_MODULE_ID,
-        "changed_keys": sorted(changed_keys),
-        "input_hash": str(inp.input_hash or "").strip(),
-        "diagram_state_version": int(getattr(s, "diagram_state_version", 0) or 0),
-        "session": session_payload,
-        "result": session_payload,
-    }
-
-
-@app.post("/api/sessions/{session_id}/notes/extraction-preview")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def post_notes_extraction_preview(
-    session_id: str,
-    inp: NotesExtractionPreviewIn,
-    request: Request = None,
-) -> Dict[str, Any]:
-    sess, org_id, _ = _legacy_load_session_scoped(session_id, request)
-    if not sess:
-        return {"error": "not found"}
-
-    _, actor_user_id, _ = _resolve_actor_context(request)
-    scope = _notes_preview_scope(sess, org_id=org_id)
-    notes_text = str(getattr(inp, "notes", "") or "")
-    llm = load_llm_settings()
-    api_key = str(llm.get("api_key") or "").strip()
-    base_url = str(llm.get("base_url") or "").strip()
-    model_name = str(llm.get("model") or "deepseek-chat").strip() or "deepseek-chat"
-    input_hash = hash_ai_input(
-        {
-            "endpoint": "POST /api/sessions/{session_id}/notes/extraction-preview",
-            "session_id": str(getattr(sess, "id", "") or session_id),
-            "notes": notes_text,
-        }
-    )
-    input_payload = {
-        "endpoint": "POST /api/sessions/{session_id}/notes/extraction-preview",
-        "session_id": str(getattr(sess, "id", "") or session_id),
-        "notes_len": len(notes_text),
-        "options": sorted((getattr(inp, "options", None) or {}).keys()) if isinstance(getattr(inp, "options", None), dict) else [],
-    }
-    started_at = time.time()
-    created_at = int(started_at)
-
-    def _finish(
-        response: Dict[str, Any],
-        *,
-        status: str,
-        output_summary: str = "",
-        error_code: str = "",
-        error_message: str = "",
-        usage: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        finished_at = int(time.time())
-        latency_ms = int(max(0.0, time.time() - started_at) * 1000)
-        _record_notes_preview_execution_safe(
-            module_id=_NOTES_EXTRACTION_MODULE_ID,
-            actor_user_id=actor_user_id,
-            scope=scope,
-            provider="deepseek",
-            model=model_name,
-            status=status,
-            input_payload=input_payload,
-            input_hash=input_hash,
-            output_summary=output_summary,
-            usage=usage if isinstance(usage, dict) else {},
-            latency_ms=latency_ms,
-            error_code=error_code,
-            error_message=_redact_notes_preview_message(error_message, api_key=api_key, base_url=base_url),
-            created_at=created_at,
-            finished_at=finished_at,
-        )
-        return response
-
-    try:
-        rate = check_ai_rate_limit(module_id=_NOTES_EXTRACTION_MODULE_ID, actor_user_id=actor_user_id, scope=scope)
-    except Exception:
-        rate = {"allowed": True}
-    if not bool(rate.get("allowed", rate.get("ok", True))):
-        return _finish(
-            {
-                "error": "ai_rate_limit_exceeded",
-                "module_id": _NOTES_EXTRACTION_MODULE_ID,
-                "input_hash": input_hash,
-                "rate_limit": {
-                    "limit": int(rate.get("limit") or 0),
-                    "window_sec": int(rate.get("window_sec") or 0),
-                    "reset_at": int(rate.get("reset_at") or 0),
-                },
-            },
-            status="error",
-            output_summary="rate limit blocked",
-            error_code="ai_rate_limit_exceeded",
-            error_message="ai_rate_limit_exceeded",
-        )
-
-    try:
-        from .ai.deepseek_client import extract_process_preview
-    except Exception as exc:
-        message = _redact_notes_preview_message(exc, api_key=api_key, base_url=base_url)
-        return _finish(
-            {"error": f"deepseek client module not available: {message}", "module_id": _NOTES_EXTRACTION_MODULE_ID, "input_hash": input_hash},
-            status="error",
-            output_summary="notes extraction module unavailable",
-            error_code="module_unavailable",
-            error_message=message,
-        )
-
-    warnings: List[Dict[str, str]] = []
-    base_version = _resolve_base_diagram_state_version(request=request, payload=inp.model_dump(exclude_unset=True))
-    current_version = int(getattr(sess, "diagram_state_version", 0) or 0)
-    if base_version is not None and int(base_version) != current_version:
-        warnings.append(
-            {
-                "code": "diagram_state_version_mismatch",
-                "message": "Preview was generated against the current session, but the submitted base diagram version is stale.",
-            }
-        )
-
-    try:
-        preview = extract_process_preview(notes_text, api_key=api_key, base_url=base_url)
-        source = str((preview or {}).get("source") or "fallback").strip().lower()
-        if source not in {"llm", "fallback"}:
-            source = "fallback"
-        extracted = dict((preview or {}).get("result") or {})
-        extracted["_source"] = source
-        warnings.extend(_sanitize_notes_preview_warnings((preview or {}).get("warnings"), api_key=api_key, base_url=base_url))
-        response = _notes_preview_response_from_extraction(
-            sess=sess,
-            notes_text=notes_text,
-            extraction=extracted,
-            input_hash=input_hash,
-            warnings=warnings,
-        )
-        response["source"] = source
-        summary = (
-            f"source={source} "
-            f"nodes={len(response.get('candidate_nodes') or [])} "
-            f"edges={len(response.get('candidate_edges') or [])} "
-            f"questions={len(response.get('candidate_questions') or [])}"
-        )
-        return _finish(
-            response,
-            status="success",
-            output_summary=summary,
-            usage={
-                "source": source,
-                "candidate_nodes": len(response.get("candidate_nodes") or []),
-                "candidate_edges": len(response.get("candidate_edges") or []),
-                "candidate_questions": len(response.get("candidate_questions") or []),
-                "warnings": len(warnings),
-            },
-        )
-    except Exception as exc:
-        message = _redact_notes_preview_message(exc, api_key=api_key, base_url=base_url)
-        return _finish(
-            {"error": f"notes extraction preview failed: {message}", "module_id": _NOTES_EXTRACTION_MODULE_ID, "input_hash": input_hash},
-            status="error",
-            output_summary="notes extraction preview failed",
-            error_code="preview_failed",
-            error_message=message,
-        )
-
-
-def _map_disposition_answer(answer: str) -> Optional[str]:
-    a = (answer or "").strip().lower()
-    if not a:
-        return None
-    if "остав" in a:
-        return "leave"
-    if "вернут" in a or "хран" in a:
-        return "return_storage"
-    if "мойк" in a:
-        return "wash"
-    if "сан" in a or "дез" in a:
-        return "sanitize"
-    if "утилиз" in a or "спис" in a:
-        return "dispose"
-    if "друго" in a:
-        return "other"
-    return None
-
-
-def _ensure_loss_dict(node: Node) -> Dict[str, Any]:
-    node.parameters = dict(node.parameters or {})
-    loss = node.parameters.get("loss")
-    if not isinstance(loss, dict):
-        loss = {}
-    node.parameters["loss"] = loss
-    return loss
+# /api/sessions/* handler implementations live in app/notes_extraction.py
+# (PR-10A notes-extraction) and are re-registered here so LEGACY_ROUTE_EXPORT
+# keeps the same routes, methods, registration order and endpoint objects
+# as before the extraction.
+app.post("/api/sessions/{session_id}/notes")(post_notes)
+app.post("/api/sessions/{session_id}/notes/extraction-apply")(post_notes_extraction_apply)
+app.post("/api/sessions/{session_id}/notes/extraction-preview")(post_notes_extraction_preview)
 
 
 def _parse_equipment_list(answer: str) -> List[str]:
@@ -6177,196 +3793,12 @@ def _normalize_choice(answer: str, allowed: List[str]) -> str:
     return a
 
 
-def _ensure_dict_at_path(root: Dict[str, Any], keys: List[str]) -> Dict[str, Any]:
-    cur = root
-    for k in keys:
-        v = cur.get(k)
-        if not isinstance(v, dict):
-            v = {}
-            cur[k] = v
-        cur = v
-    return cur
-
-
-def _apply_target_to_node(s: Session, node: Node, q, answer: str) -> None:
-    target = q.target or {}
-    field = (target.get("field") or "").strip()
-    mode = (target.get("mode") or "set").strip().lower()
-    transform = (target.get("transform") or "text").strip().lower()
-
-    if not field:
-        node.parameters = dict(node.parameters or {})
-        node.parameters.setdefault("notes", [])
-        if isinstance(node.parameters.get("notes"), list):
-            node.parameters["notes"].append(answer)
-        node.parameters["_manual_parameters"] = True
-        return
-
-    if field == "actor_role":
-        node.actor_role = _normalize_choice(answer, s.roles)
-        node.parameters["_manual_actor"] = True
-        return
-
-    if field == "recipient_role":
-        node.recipient_role = _normalize_choice(answer, s.roles)
-        node.parameters["_manual_recipient"] = True
-        return
-
-    if field == "equipment":
-        new_items = _parse_equipment_list(answer)
-        if mode == "merge":
-            merged = list(node.equipment or [])
-            for x in new_items:
-                if x not in merged:
-                    merged.append(x)
-            node.equipment = merged
-        else:
-            node.equipment = new_items
-        node.parameters["_manual_equipment"] = True
-        return
-
-    if field == "duration_min":
-        mins = _parse_minutes(answer)
-        if mins is not None:
-            node.duration_min = mins
-            node.parameters["_manual_duration"] = True
-        return
-
-    if field.startswith("disposition.") or field == "disposition":
-        node.disposition = dict(node.disposition or {})
-        node.parameters["_manual_disposition"] = True
-
-        if transform == "disposition_equipment_action":
-            action = _map_disposition_answer(answer)
-            node.disposition.setdefault("equipment_actions", {})
-            if isinstance(node.disposition.get("equipment_actions"), dict) and action and action != "other":
-                for eq in (node.equipment or []):
-                    eqid = (eq or "").strip()
-                    if eqid:
-                        node.disposition["equipment_actions"][eqid] = action
-            if action == "other" or not action:
-                node.disposition["note"] = answer
-            return
-
-        if field == "disposition":
-            node.disposition["note"] = answer
-            return
-
-        path = field.split(".")[1:]
-        if not path:
-            node.disposition["note"] = answer
-            return
-
-        cur = _ensure_dict_at_path(node.disposition, path[:-1]) if len(path) > 1 else node.disposition
-        key = path[-1]
-
-        if mode == "append":
-            lst = cur.get(key)
-            if not isinstance(lst, list):
-                lst = []
-            lst.append(answer)
-            cur[key] = lst
-        else:
-            cur[key] = answer
-        return
-
-    if field.startswith("parameters."):
-        node.parameters = dict(node.parameters or {})
-        node.parameters["_manual_parameters"] = True
-        path = field.split(".")[1:]
-        if not path:
-            return
-
-        if path and path[0] == "loss":
-            loss = _ensure_loss_dict(node)
-            if len(path) >= 2:
-                loss[path[1]] = answer
-            return
-
-        cur = _ensure_dict_at_path(node.parameters, path[:-1]) if len(path) > 1 else node.parameters
-        key = path[-1]
-
-        if transform == "minutes":
-            v = _parse_minutes(answer)
-            if v is None:
-                v = answer
-        else:
-            v = answer
-
-        if mode == "append":
-            lst = cur.get(key)
-            if not isinstance(lst, list):
-                lst = []
-            lst.append(v)
-            cur[key] = lst
-        else:
-            cur[key] = v
-        return
-
-    node.parameters = dict(node.parameters or {})
-    node.parameters.setdefault("notes", [])
-    if isinstance(node.parameters.get("notes"), list):
-        node.parameters["notes"].append(answer)
-    node.parameters["_manual_parameters"] = True
-
-
-def _apply_answer(s: Session, inp: AnswerIn) -> None:
-    q = next((x for x in s.questions if x.id == inp.question_id), None)
-    if not q:
-        raise KeyError("question not found")
-
-    q.status = "answered"
-    q.answer = inp.answer
-
-    node_id = (inp.node_id or q.node_id or "").strip()
-    if not node_id:
-        return
-
-    node = next((n for n in s.nodes if n.id == node_id), None)
-    if not node:
-        return
-
-    _apply_target_to_node(s, node, q, inp.answer)
-
-
-@app.post("/api/sessions/{session_id}/answer")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def answer(session_id: str, inp: AnswerIn, request: Request = None) -> Dict[str, Any]:
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-
-    try:
-        _apply_answer(s, inp)
-    except KeyError:
-        return {"error": "question not found"}
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=_resolve_base_diagram_state_version(
-            request=request,
-            payload=inp.model_dump(exclude_unset=True),
-        ),
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    s = _recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["questions", "nodes"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    st.save(s)
-    return s.model_dump()
-
-
-@app.post("/api/sessions/{session_id}/answers")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def answer_v2(session_id: str, inp: AnswerIn, request: Request = None) -> Dict[str, Any]:
-    return answer(session_id, inp, request=request)
+# /api/sessions/* handler implementations live in app/session_answers.py
+# (PR-10C session-answers) and are re-registered here so LEGACY_ROUTE_EXPORT
+# keeps the same routes, methods, registration order and endpoint objects
+# as before the extraction.
+app.post("/api/sessions/{session_id}/answer")(answer)
+app.post("/api/sessions/{session_id}/answers")(answer_v2)
 
 
 
@@ -7838,240 +5270,8 @@ def _is_role_allowed(role_raw: Any, allowed: Set[str]) -> bool:
     return role in {str(item or "").strip().lower() for item in allowed}
 
 
-def _invite_email_enabled() -> bool:
-    return _env_bool("INVITE_EMAIL_ENABLED", default=False)
 
 
-def _invite_ttl_hours_default() -> int:
-    return max(1, _env_int("INVITE_TTL_HOURS", 72))
-
-
-def _audit_retention_days() -> int:
-    return max(1, _env_int("AUDIT_RETENTION_DAYS", 90))
-
-
-def _invite_cleanup_keep_days() -> int:
-    return max(1, _env_int("INVITE_CLEANUP_KEEP_DAYS", 30))
-
-
-def _invite_email_config() -> Dict[str, Any]:
-    return {
-        "host": str(os.environ.get("SMTP_HOST", "") or "").strip(),
-        "port": max(1, _env_int("SMTP_PORT", 587)),
-        "user": str(os.environ.get("SMTP_USER", "") or "").strip(),
-        "password": str(os.environ.get("SMTP_PASS", "") or ""),
-        "from": str(os.environ.get("SMTP_FROM", "") or "").strip(),
-        "tls": _env_bool("SMTP_TLS", default=True),
-        "base_url": str(os.environ.get("APP_BASE_URL", "") or "").strip(),
-    }
-
-
-def _invite_email_config_ready() -> Tuple[bool, str, Dict[str, Any]]:
-    cfg = _invite_email_config()
-    missing: List[str] = []
-    for key in ("host", "port", "from", "base_url"):
-        val = cfg.get(key)
-        if not val:
-            missing.append(key)
-    if missing:
-        return False, f"invite_email_config_missing:{','.join(missing)}", cfg
-    return True, "", cfg
-
-
-def _validate_invite_email_config_on_boot() -> None:
-    if not _invite_email_enabled():
-        return
-    ok, reason, _ = _invite_email_config_ready()
-    if not ok:
-        print(f"[INVITE_EMAIL] boot_warning reason={reason}")
-
-
-def _resolve_invite_base_url(request: Optional[Request], *, explicit_base_url: str = "") -> str:
-    configured = str(explicit_base_url or os.environ.get("APP_BASE_URL") or os.environ.get("PUBLIC_BASE_URL") or "").strip()
-    if configured:
-        return configured.rstrip("/")
-    return ""
-
-
-def _build_invite_link(base_url: str, token: str) -> str:
-    base = str(base_url or "").strip().rstrip("/")
-    invite_token = str(token or "").strip()
-    if not invite_token:
-        return f"{base}/accept-invite" if base else "/accept-invite"
-    return f"{base}/accept-invite?token={invite_token}"
-
-
-
-
-def _send_org_invite_email(
-    *,
-    to_email: str,
-    org_name: str,
-    role: str,
-    invite_link: str,
-    expires_at: int,
-) -> None:
-    cfg = _invite_email_config()
-    host = str(cfg.get("host") or "").strip()
-    port = int(cfg.get("port") or 587)
-    sender = str(cfg.get("from") or "").strip()
-    username = str(cfg.get("user") or "").strip()
-    password = str(cfg.get("password") or "")
-    use_tls = bool(cfg.get("tls"))
-
-    msg = EmailMessage()
-    msg["Subject"] = f"ProcessMap invite: {org_name}"
-    msg["From"] = sender
-    msg["To"] = str(to_email or "").strip().lower()
-    expires_dt = datetime.fromtimestamp(int(expires_at or 0), tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    body = (
-        f"Вы приглашены в организацию \"{org_name}\".\n\n"
-        f"Роль: {role}\n"
-        f"Ссылка для принятия приглашения:\n{invite_link}\n\n"
-        f"Срок действия: {expires_dt}\n"
-    )
-    msg.set_content(body)
-
-    with smtplib.SMTP(host=host, port=port, timeout=20) as smtp:
-        if use_tls:
-            smtp.starttls()
-        if username and password:
-            smtp.login(username, password)
-        smtp.send_message(msg)
-
-
-def _should_reveal_invite_token(request: Optional[Request]) -> bool:
-    raw = str(os.environ.get("FPC_ENTERPRISE_INVITE_TOKEN_EXPOSE", "") or "").strip().lower()
-    if raw in {"1", "true", "yes", "on"}:
-        return True
-    user = _request_auth_user(request) if request is not None else {}
-    return bool((user or {}).get("is_admin", False))
-
-
-def _audit_log_safe(
-    request: Optional[Request],
-    *,
-    org_id: str,
-    action: str,
-    entity_type: str,
-    entity_id: str,
-    status: str = "ok",
-    project_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-    meta: Optional[Dict[str, Any]] = None,
-) -> None:
-    uid, _ = _request_user_meta(request)
-    if not uid:
-        return
-    try:
-        append_audit_log(
-            actor_user_id=uid,
-            org_id=str(org_id or "").strip() or _request_active_org_id(request),
-            action=action,
-            entity_type=entity_type,
-            entity_id=str(entity_id or "").strip() or "-",
-            status=status,
-            project_id=project_id,
-            session_id=session_id,
-            meta=meta if isinstance(meta, dict) else {},
-        )
-    except Exception as exc:
-        print(f"[AUDIT] write_failed action={action} entity={entity_type}:{entity_id} err={exc}")
-
-
-def _enrich_members_with_email(items_raw: Any) -> List[Dict[str, Any]]:
-    items = items_raw if isinstance(items_raw, list) else []
-    out: List[Dict[str, Any]] = []
-    for row_raw in items:
-        row = dict(row_raw or {}) if isinstance(row_raw, dict) else {}
-        uid = str(row.get("user_id") or "").strip()
-        if uid:
-            found = find_user_by_id(uid) or {}
-            email = str(found.get("email") or "").strip().lower()
-            if email:
-                row["email"] = email
-        out.append(row)
-    return out
-
-
-def _request_org_candidates(request: Optional[Request], preferred_org_id: str) -> List[str]:
-    out: List[str] = []
-    seen: Set[str] = set()
-
-    def _push(org_id_raw: Any) -> None:
-        org_id = str(org_id_raw or "").strip()
-        if not org_id or org_id in seen:
-            return
-        seen.add(org_id)
-        out.append(org_id)
-
-    _push(preferred_org_id)
-    if request is not None:
-        user_id, is_admin = _request_user_meta(request)
-        if user_id:
-            for row in list_user_org_memberships(user_id, is_admin=is_admin):
-                if isinstance(row, dict):
-                    _push(row.get("org_id"))
-    if not out:
-        _push(get_default_org_id())
-    return out
-
-
-def _legacy_load_project_scoped(
-    project_id: str,
-    request: Optional[Request] = None,
-) -> Tuple[Optional[Project], str, Optional[Dict[str, Any]]]:
-    oid = _request_active_org_id(request) if request is not None else ""
-    pid = str(project_id or "").strip()
-    if not pid:
-        return None, oid, None
-    ps = get_project_storage()
-    proj: Optional[Project] = None
-    resolved_oid = oid
-    for org_candidate in _request_org_candidates(request, oid):
-        proj = ps.load(pid, org_id=(org_candidate or None), is_admin=True)
-        if proj:
-            resolved_oid = org_candidate
-            break
-    if not proj:
-        return None, oid, None
-    scope = _project_scope_for_request(
-        request,
-        resolved_oid or str(getattr(proj, "org_id", "") or "").strip() or get_default_org_id(),
-    )
-    allowed = _scope_allowed_project_ids(scope)
-    if allowed and str(getattr(proj, "id", "") or "").strip() not in allowed:
-        return None, resolved_oid, scope
-    return proj, (resolved_oid or str(getattr(proj, "org_id", "") or "").strip() or get_default_org_id()), scope
-
-
-def _legacy_load_session_scoped(
-    session_id: str,
-    request: Optional[Request] = None,
-) -> Tuple[Optional[Session], str, Optional[Dict[str, Any]]]:
-    oid = _request_active_org_id(request) if request is not None else ""
-    sid = str(session_id or "").strip()
-    if not sid:
-        return None, oid, None
-    st = get_storage()
-    sess: Optional[Session] = None
-    resolved_oid = oid
-    for org_candidate in _request_org_candidates(request, oid):
-        sess = st.load(sid, org_id=(org_candidate or None), is_admin=True)
-        if sess:
-            resolved_oid = org_candidate
-            break
-    if not sess:
-        return None, oid, None
-    scope = _project_scope_for_request(
-        request,
-        resolved_oid or str(getattr(sess, "org_id", "") or "").strip() or get_default_org_id(),
-    )
-    allowed = _scope_allowed_project_ids(scope)
-    project_id = str(getattr(sess, "project_id", "") or "").strip()
-    if allowed and project_id and project_id not in allowed:
-        return None, resolved_oid, scope
-    return sess, (resolved_oid or str(getattr(sess, "org_id", "") or "").strip() or get_default_org_id()), scope
 
 
   # DEPRECATED: moved to utils/authz.py
@@ -8113,15 +5313,6 @@ def _accessible_session_ids_for_request(
     return out
 
 
-def _workspace_parse_owner_ids(raw: str) -> List[str]:
-    out: List[str] = []
-    for part in str(raw or "").split(","):
-        value = str(part or "").strip()
-        if value:
-            out.append(value)
-    return sorted(set(out))
-
-
 def _workspace_reports_count(interview_raw: Any) -> int:
     interview = interview_raw if isinstance(interview_raw, dict) else {}
     by_path = _get_report_versions_by_path(interview)
@@ -8130,28 +5321,6 @@ def _workspace_reports_count(interview_raw: Any) -> int:
         if isinstance(rows, list):
             total += len(rows)
     return int(total)
-
-
-def _workspace_needs_attention_count(interview_raw: Any) -> int:
-    interview = interview_raw if isinstance(interview_raw, dict) else {}
-    candidates = [
-        interview.get("needs_attention"),
-        interview.get("needs_attention_count"),
-        interview.get("attention_count"),
-        interview.get("attention_total"),
-        interview.get("missing_count"),
-    ]
-    for raw in candidates:
-        try:
-            value = int(raw or 0)
-        except Exception:
-            value = 0
-        if value > 0:
-            return value
-    attention_items = interview.get("attention_items")
-    if isinstance(attention_items, list):
-        return len(attention_items)
-    return 0
 
 
 def _workspace_attention_markers_info(bpmn_meta_raw: Any, user_id: str) -> Dict[str, Any]:
@@ -8213,24 +5382,6 @@ def _workspace_session_status(
     interview = interview_raw if isinstance(interview_raw, dict) else {}
     manual = _normalize_session_status(interview.get("status"))
     return manual or derived
-
-
-def _as_dict_obj(value: Any) -> Dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _as_list_obj(value: Any) -> List[Any]:
-    return value if isinstance(value, list) else []
-
-
-def _safe_json_dict(raw: Any) -> Dict[str, Any]:
-    if isinstance(raw, dict):
-        return raw
-    try:
-        parsed = json.loads(str(raw or "{}"))
-    except Exception:
-        parsed = {}
-    return parsed if isinstance(parsed, dict) else {}
 
 
 def _workspace_collect_dod_artifacts(
@@ -8343,42 +5494,10 @@ def _workspace_collect_dod_artifacts(
     }
 
 
-def _resolved_org_for_cache(org_id: Any) -> str:
-    return str(org_id or "").strip() or get_default_org_id()
 
 
-def _invalidate_workspace_cache_for_org(org_id: Any) -> None:
-    invalidate_workspace_org(_resolved_org_for_cache(org_id))
 
 
-def _invalidate_tldr_cache_for_session(session_id: Any) -> None:
-    sid = str(session_id or "").strip()
-    if not sid:
-        return
-    invalidate_tldr_session(sid)
-
-
-def _invalidate_session_open_cache_for_session(session_id: Any) -> None:
-    sid = str(session_id or "").strip()
-    if not sid:
-        return
-    invalidate_session_open(sid)
-
-
-def _invalidate_explorer_children_for_project(project_id: Any, org_id: Any) -> None:
-    pid = str(project_id or "").strip()
-    oid = _resolved_org_for_cache(org_id)
-    if not pid or not oid:
-        return
-    try:
-        targets = get_project_explorer_invalidation_targets(oid, pid)
-    except Exception:
-        targets = None
-    if not targets:
-        return
-    wid = str(targets.get("workspace_id") or "").strip()
-    for folder_id in (targets.get("children_folder_ids") or []):
-        explorer_invalidate_children(oid, wid, str(folder_id or ""))
 
 
 def _workspace_id_for_project(project_id: str) -> str:
@@ -8395,32 +5514,6 @@ def _workspace_id_for_project(project_id: str) -> str:
     return ""
 
 
-def _invalidate_session_caches(session_obj: Any = None, *, session_id: Any = None, org_id: Any = None) -> None:
-    sid = str(session_id or getattr(session_obj, "id", "") or "").strip()
-    oid = _resolved_org_for_cache(org_id or getattr(session_obj, "org_id", ""))
-    project_id = str(getattr(session_obj, "project_id", "") or "").strip()
-    _invalidate_workspace_cache_for_org(oid)
-    if project_id:
-        explorer_invalidate_sessions(project_id)
-        _invalidate_explorer_children_for_project(project_id, oid)
-    if sid:
-        _invalidate_session_open_cache_for_session(sid)
-        _invalidate_tldr_cache_for_session(sid)
-        try:
-            session_cache.invalidate_session(sid)
-        except Exception as exc:
-            logger.warning("_invalidate_session_caches: session_cache invalidation failed for %s: %s", sid, exc)
-    try:
-        from .analytics_cache import invalidate_analytics_scope
-        if sid:
-            invalidate_analytics_scope("session", sid, oid)
-        if project_id:
-            invalidate_analytics_scope("project", project_id, oid)
-            workspace_id = _workspace_id_for_project(project_id)
-            if workspace_id:
-                invalidate_analytics_scope("workspace", workspace_id, oid)
-    except Exception as exc:
-        logger.warning("_invalidate_session_caches: analytics cache invalidation failed: %s", exc)
 
 
 def _extract_report_summary_text(report_row: Dict[str, Any]) -> str:
@@ -8770,1180 +5863,51 @@ def enterprise_workspace(
     return result
 
 
-def list_orgs_endpoint(request: Request) -> Dict[str, Any]:
-    user = _request_auth_user(request)
-    user_id = str(user.get("id") or "").strip()
-    is_admin = bool(user.get("is_admin", False))
-    active_org_id = str(getattr(request.state, "active_org_id", "") or "").strip() or resolve_active_org_id(user_id, is_admin=is_admin)
-    items = list_user_org_memberships(user_id, is_admin=is_admin)
-    return build_items_payload(items, active_org_id=active_org_id, default_org_id=get_default_org_id())
-
-
-@app.post("/api/orgs")
-def create_org_endpoint(inp: OrgCreateIn, request: Request) -> Dict[str, Any]:
-    user = _request_auth_user(request)
-    user_id = str(user.get("id") or "").strip()
-    is_admin = bool(user.get("is_admin", False))
-    current_org_id = str(getattr(request.state, "active_org_id", "") or "").strip()
-    current_role = _org_role_for_request(request, current_org_id) if current_org_id else ""
-    if not is_admin and current_role not in _ORG_WRITE_ROLES:
-        raise HTTPException(status_code=403, detail="forbidden")
-    name = str(getattr(inp, "name", "") or "").strip()
-    if not name:
-        raise HTTPException(status_code=422, detail="name is required")
-    org = create_org_record(name=name, created_by=user_id, org_id=getattr(inp, "id", None))
-    return org
-
-
-@app.patch("/api/orgs/{org_id}")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def patch_org_endpoint(org_id: str, inp: OrgPatchIn, request: Request) -> Dict[str, Any]:
-    oid = str(org_id or "").strip()
-    role, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
-    if err is not None:
-        return err
-    uid, is_admin = _request_user_meta(request)
-    if not _can_manage_workspace(role, is_admin=is_admin):
-        return _enterprise_error(403, "forbidden", "insufficient_permissions")
-    name = _clean_name(getattr(inp, "name", ""))
-    if not name:
-        return _enterprise_error(422, "validation_error", "name is required")
-    try:
-        org = rename_org_with_validation(oid, name)
-    except ValueError as exc:
-        marker = str(exc or "").strip().lower()
-        if "exists" in marker:
-            return _enterprise_error(409, "conflict", "workspace_name_exists")
-        if "not found" in marker:
-            return _enterprise_error(404, "not_found", "not_found")
-        return _enterprise_error(422, "validation_error", str(exc))
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="org.rename",
-        entity_type="org",
-        entity_id=oid,
-        meta={"name": name, "actor_user_id": uid},
-    )
-    _invalidate_workspace_cache_for_org(oid)
-    return org
-
-
-@app.get("/api/orgs/{org_id}/git-mirror")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def get_org_git_mirror_endpoint(org_id: str, request: Request) -> Dict[str, Any]:
-    oid = str(org_id or "").strip()
-    role, err = _enterprise_require_org_member(request, oid)
-    if err is not None:
-        return err
-    _uid, is_admin = _request_user_meta(request)
-    role_l = str(role or "").strip().lower()
-    if not (is_admin or _is_role_allowed(role_l, _ORG_READ_ROLES)):
-        return _enterprise_error(403, "forbidden", "insufficient_permissions")
-    try:
-        config = get_org_git_mirror_config(oid)
-    except ValueError:
-        return _enterprise_error(404, "not_found", "not_found")
-    return {"ok": True, "org_id": oid, "config": config}
-
-
-@app.patch("/api/orgs/{org_id}/git-mirror")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def patch_org_git_mirror_endpoint(org_id: str, inp: OrgGitMirrorPatchIn, request: Request) -> Dict[str, Any]:
-    oid = str(org_id or "").strip()
-    role, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
-    if err is not None:
-        return err
-    uid, is_admin = _request_user_meta(request)
-    if not _can_manage_workspace(role, is_admin=is_admin):
-        return _enterprise_error(403, "forbidden", "insufficient_permissions")
-
-    try:
-        current = get_org_git_mirror_config(oid)
-    except ValueError:
-        return _enterprise_error(404, "not_found", "not_found")
-
-    patch = inp.model_dump(exclude_unset=True)
-    candidate = {
-        "git_mirror_enabled": bool(current.get("git_mirror_enabled")),
-        "git_provider": current.get("git_provider"),
-        "git_repository": current.get("git_repository"),
-        "git_branch": current.get("git_branch"),
-        "git_base_path": current.get("git_base_path"),
-    }
-    if "git_mirror_enabled" in patch:
-        candidate["git_mirror_enabled"] = bool(patch.get("git_mirror_enabled"))
-    if "git_provider" in patch:
-        candidate["git_provider"] = patch.get("git_provider")
-    if "git_repository" in patch:
-        candidate["git_repository"] = patch.get("git_repository")
-    if "git_branch" in patch:
-        candidate["git_branch"] = patch.get("git_branch")
-    if "git_base_path" in patch:
-        candidate["git_base_path"] = patch.get("git_base_path")
-
-    evaluated = evaluate_org_git_mirror_config(candidate)
-    try:
-        saved = update_org_git_mirror_config(
-            oid,
-            git_mirror_enabled=bool(evaluated.get("git_mirror_enabled")),
-            git_provider=evaluated.get("git_provider"),
-            git_repository=evaluated.get("git_repository"),
-            git_branch=evaluated.get("git_branch"),
-            git_base_path=evaluated.get("git_base_path"),
-            git_health_status=evaluated.get("git_health_status"),
-            git_health_message=evaluated.get("git_health_message"),
-            git_updated_by=uid,
-        )
-    except ValueError:
-        return _enterprise_error(404, "not_found", "not_found")
-
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="org.git_mirror_update",
-        entity_type="org",
-        entity_id=oid,
-        meta={
-            "actor_user_id": uid,
-            "git_mirror_enabled": bool(saved.get("git_mirror_enabled")),
-            "git_provider": str(saved.get("git_provider") or ""),
-            "git_repository": str(saved.get("git_repository") or ""),
-            "git_branch": str(saved.get("git_branch") or ""),
-            "git_base_path": str(saved.get("git_base_path") or ""),
-            "git_health_status": str(saved.get("git_health_status") or "unknown"),
-        },
-    )
-    _invalidate_workspace_cache_for_org(oid)
-    return {"ok": True, "org_id": oid, "config": saved}
-
-
-@app.post("/api/orgs/{org_id}/git-mirror/validate")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def validate_org_git_mirror_endpoint(org_id: str, inp: OrgGitMirrorPatchIn, request: Request) -> Dict[str, Any]:
-    oid = str(org_id or "").strip()
-    role, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
-    if err is not None:
-        return err
-    _uid, is_admin = _request_user_meta(request)
-    if not _can_manage_workspace(role, is_admin=is_admin):
-        return _enterprise_error(403, "forbidden", "insufficient_permissions")
-
-    try:
-        current = get_org_git_mirror_config(oid)
-    except ValueError:
-        return _enterprise_error(404, "not_found", "not_found")
-
-    patch = inp.model_dump(exclude_unset=True)
-    candidate = {
-        "git_mirror_enabled": bool(current.get("git_mirror_enabled")),
-        "git_provider": current.get("git_provider"),
-        "git_repository": current.get("git_repository"),
-        "git_branch": current.get("git_branch"),
-        "git_base_path": current.get("git_base_path"),
-    }
-    if "git_mirror_enabled" in patch:
-        candidate["git_mirror_enabled"] = bool(patch.get("git_mirror_enabled"))
-    if "git_provider" in patch:
-        candidate["git_provider"] = patch.get("git_provider")
-    if "git_repository" in patch:
-        candidate["git_repository"] = patch.get("git_repository")
-    if "git_branch" in patch:
-        candidate["git_branch"] = patch.get("git_branch")
-    if "git_base_path" in patch:
-        candidate["git_base_path"] = patch.get("git_base_path")
-
-    evaluated = evaluate_org_git_mirror_config(candidate)
-    return {"ok": True, "org_id": oid, "config": evaluated}
-
-
-def list_org_members_endpoint(org_id: str, request: Request) -> Dict[str, Any]:
-    oid = str(org_id or "").strip()
-    role, err = _enterprise_require_org_member(request, oid)
-    if err is not None:
-        return err
-    uid, is_admin = _request_user_meta(request)
-    role_l = str(role or "").strip().lower()
-    if not (is_admin or _is_role_allowed(role_l, {"org_owner", "org_admin", "auditor"})):
-        return _enterprise_error(403, "forbidden", "insufficient_permissions")
-    items = _enrich_members_with_email(list_org_memberships(oid))
-    return build_items_count_payload(items, org_id=oid)
-
-
-@app.patch("/api/orgs/{org_id}/members/{user_id}")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def patch_org_member_endpoint(org_id: str, user_id: str, inp: OrgMemberPatchIn, request: Request):
-    oid = str(org_id or "").strip()
-    uid = str(user_id or "").strip()
-    _, err = _enterprise_require_org_role(request, oid, _ORG_MEMBER_MANAGE_ROLES)
-    if err is not None:
-        return err
-    if not uid:
-        return _enterprise_error(422, "validation_error", "user_id is required")
-    role = str(getattr(inp, "role", "") or "").strip()
-    if not role:
-        return _enterprise_error(422, "validation_error", "role is required")
-    try:
-        row = upsert_org_membership(oid, uid, role)
-    except ValueError as exc:
-        return _enterprise_error(422, "validation_error", str(exc))
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="member.role_change",
-        entity_type="org_membership",
-        entity_id=f"{oid}:{uid}",
-        meta={"target_user_id": uid, "role": str(row.get('role') or '')},
-    )
-    return row
-
-
-@app.get("/api/orgs/{org_id}/projects")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def list_org_projects(org_id: str, request: Request) -> List[Dict[str, Any]]:
-    oid = str(org_id or "").strip()
-    _, err = _enterprise_require_org_member(request, oid)
-    if err is not None:
-        return err
-    scope = _project_scope_for_request(request, oid)
-    st = get_project_storage()
-    items = st.list(org_id=oid, is_admin=True)
-    if str(scope.get("mode") or "") != "all":
-        allowed = {str(item or "").strip() for item in (scope.get("project_ids") or []) if str(item or "").strip()}
-        items = [proj for proj in items if str(getattr(proj, "id", "") or "").strip() in allowed]
-    return [p.model_dump() for p in items]
-
-
-@app.post("/api/orgs/{org_id}/projects")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def create_org_project(org_id: str, inp: CreateProjectIn, request: Request) -> Dict[str, Any]:
-    oid = str(org_id or "").strip()
-    _, err = _enterprise_require_org_role(request, oid, _ORG_WRITE_ROLES)
-    if err is not None:
-        return err
-    title = str(getattr(inp, "title", "") or "").strip()
-    if not title:
-        return _enterprise_error(422, "validation_error", "title required")
-    passport = inp.passport if isinstance(inp.passport, dict) else {}
-    user = _request_auth_user(request)
-    uid = str(user.get("id") or "").strip()
-    st = get_project_storage()
-    pid = st.create(title=title, passport=passport, user_id=uid, org_id=oid)
-    proj = st.load(pid, org_id=oid, is_admin=True)
-    if not proj:
-        return _enterprise_error(404, "not_found", "not_found")
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="project.create",
-        entity_type="project",
-        entity_id=pid,
-        project_id=pid,
-        meta={"title": str(getattr(proj, "title", "") or title)},
-    )
-    _invalidate_workspace_cache_for_org(oid)
-    return proj.model_dump()
-
-
-@app.get("/api/orgs/{org_id}/projects/{project_id}")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def get_org_project(org_id: str, project_id: str, request: Request) -> Dict[str, Any]:
-    oid = str(org_id or "").strip()
-    _, _, err = _enterprise_require_project_access(request, oid, project_id)
-    if err is not None:
-        return err
-    st = get_project_storage()
-    proj = st.load(project_id, org_id=oid, is_admin=True)
-    if not proj:
-        return _enterprise_error(404, "not_found", "not_found")
-    return proj.model_dump()
-
-
-@app.get("/api/orgs/{org_id}/projects/{project_id}/sessions")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def list_org_project_sessions(org_id: str, project_id: str, request: Request, mode: str | None = None, view: str | None = None) -> List[Dict[str, Any]]:
-    oid = str(org_id or "").strip()
-    _, _, err = _enterprise_require_project_access(request, oid, project_id)
-    if err is not None:
-        return err
-    raw_mode = mode
-    mode = _norm_project_session_mode(mode)
-    if raw_mode is not None and mode is None:
-        return _enterprise_error(422, "validation_error", "invalid mode; allowed: quick_skeleton, deep_audit")
-    view_mode = _norm_project_sessions_view(view)
-    if not view_mode:
-        return _enterprise_error(422, "validation_error", "invalid view; allowed: summary, full")
-    ps = get_project_storage()
-    if ps.load(project_id, org_id=oid, is_admin=True) is None:
-        return _enterprise_error(404, "not_found", "not_found")
-    st = get_storage()
-    if view_mode == "summary":
-        return st.list_project_session_summaries(project_id=project_id, mode=mode, limit=500, org_id=oid, is_admin=True)
-    rows = st.list(project_id=project_id, mode=mode, limit=500, org_id=oid, is_admin=True)
-    out: List[Dict[str, Any]] = []
-    for row in rows:
-        if isinstance(row, dict):
-            out.append(_session_api_dump(Session.model_validate(row)))
-    return out
-
-
-@app.post("/api/orgs/{org_id}/projects/{project_id}/sessions")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def create_org_project_session(
-    org_id: str,
-    project_id: str,
-    inp: CreateSessionIn,
-    request: Request,
-    mode: str | None = Query(default="quick_skeleton"),
-) -> Dict[str, Any]:
-    oid = str(org_id or "").strip()
-    role, scope, err = _enterprise_require_project_access(request, oid, project_id)
-    if err is not None:
-        return err
-    if str(role or "").strip().lower() not in _ORG_EDITOR_ROLES:
-        return _enterprise_error(403, "forbidden", "insufficient_permissions")
-    raw_mode = mode
-    mode = _norm_project_session_mode(mode)
-    if raw_mode is not None and mode is None:
-        return _enterprise_error(422, "validation_error", "invalid mode; allowed: quick_skeleton, deep_audit")
-    ps = get_project_storage()
-    scope_obj = scope if isinstance(scope, dict) else {}
-    if str(scope_obj.get("mode") or "") != "all":
-        allowed = {str(item or "").strip() for item in (scope_obj.get("project_ids") or []) if str(item or "").strip()}
-        if str(project_id or "").strip() not in allowed:
-            return _enterprise_error(404, "not_found", "not_found")
-    if ps.load(project_id, org_id=oid, is_admin=True) is None:
-        return _enterprise_error(404, "not_found", "not_found")
-    roles = _norm_roles(getattr(inp, "roles", None))
-    sr = getattr(inp, "start_role", None)
-    if sr is not None and str(sr).strip() != "":
-        sr = str(sr).strip()
-        if roles and sr not in roles:
-            return _enterprise_error(422, "validation_error", "start_role must be one of roles")
-    else:
-        sr = None
-    prep_questions = _norm_prep_questions(getattr(inp, "ai_prep_questions", None))
-    user = _request_auth_user(request)
-    uid = str(user.get("id") or "").strip()
-    st = get_storage()
-    sid = st.create(
-        title=str(getattr(inp, "title", "") or "process"),
-        roles=roles,
-        start_role=sr,
-        project_id=project_id,
-        mode=mode,
-        user_id=uid,
-        org_id=oid,
-    )
-    sess = st.load(sid, org_id=oid)
-    if not sess:
-        return _enterprise_error(404, "not_found", "not_found")
-    if prep_questions:
-        sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
-        st.save(sess, user_id=uid, org_id=oid)
-        sess = st.load(sid, org_id=oid) or sess
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="session.create",
-        entity_type="session",
-        entity_id=str(getattr(sess, "id", "") or sid),
-        project_id=project_id,
-        session_id=str(getattr(sess, "id", "") or sid),
-        meta={"title": str(getattr(sess, "title", "") or ""), "mode": str(getattr(sess, "mode", "") or "")},
-    )
-    _invalidate_session_caches(sess, org_id=oid)
-    return _session_api_dump(sess)
-
-
-@app.get("/api/orgs/{org_id}/projects/{project_id}/members")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def list_org_project_members(org_id: str, project_id: str, request: Request) -> Dict[str, Any]:
-    oid = str(org_id or "").strip()
-    pid = str(project_id or "").strip()
-    _, _, err = _enterprise_manage_project_members_guard(request, oid, pid)
-    if err is not None:
-        return err
-    ps = get_project_storage()
-    if ps.load(pid, org_id=oid, is_admin=True) is None:
-        return _enterprise_error(404, "not_found", "not_found")
-    items = list_project_memberships(oid, project_id=pid)
-    return build_items_count_payload(items)
-
-
-@app.post("/api/orgs/{org_id}/projects/{project_id}/members")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def create_org_project_member(org_id: str, project_id: str, inp: ProjectMemberUpsertIn, request: Request):
-    oid = str(org_id or "").strip()
-    pid = str(project_id or "").strip()
-    _, _, err = _enterprise_manage_project_members_guard(request, oid, pid)
-    if err is not None:
-        return err
-    ps = get_project_storage()
-    if ps.load(pid, org_id=oid, is_admin=True) is None:
-        return _enterprise_error(404, "not_found", "not_found")
-    user_id = str(getattr(inp, "user_id", "") or "").strip()
-    role = str(getattr(inp, "role", "") or "").strip()
-    if not user_id or not role:
-        return _enterprise_error(422, "validation_error", "user_id and role are required")
-    try:
-        row = upsert_project_membership(oid, pid, user_id, role)
-    except ValueError as exc:
-        return _enterprise_error(422, "validation_error", str(exc))
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="project.member.add",
-        entity_type="project_membership",
-        entity_id=f"{oid}:{pid}:{user_id}",
-        project_id=pid,
-        meta={"target_user_id": user_id, "role": str(row.get("role") or role)},
-    )
-    return row
-
-
-@app.patch("/api/orgs/{org_id}/projects/{project_id}/members/{user_id}")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def patch_org_project_member(org_id: str, project_id: str, user_id: str, inp: ProjectMemberPatchIn, request: Request):
-    oid = str(org_id or "").strip()
-    pid = str(project_id or "").strip()
-    uid = str(user_id or "").strip()
-    _, _, err = _enterprise_manage_project_members_guard(request, oid, pid)
-    if err is not None:
-        return err
-    ps = get_project_storage()
-    if ps.load(pid, org_id=oid, is_admin=True) is None:
-        return _enterprise_error(404, "not_found", "not_found")
-    role = str(getattr(inp, "role", "") or "").strip()
-    if not uid or not role:
-        return _enterprise_error(422, "validation_error", "role is required")
-    try:
-        row = upsert_project_membership(oid, pid, uid, role)
-    except ValueError as exc:
-        return _enterprise_error(422, "validation_error", str(exc))
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="project.member.role_change",
-        entity_type="project_membership",
-        entity_id=f"{oid}:{pid}:{uid}",
-        project_id=pid,
-        meta={"target_user_id": uid, "role": str(row.get("role") or role)},
-    )
-    return row
-
-
-@app.delete("/api/orgs/{org_id}/projects/{project_id}/members/{user_id}")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def delete_org_project_member(org_id: str, project_id: str, user_id: str, request: Request):
-    oid = str(org_id or "").strip()
-    pid = str(project_id or "").strip()
-    uid = str(user_id or "").strip()
-    _, _, err = _enterprise_manage_project_members_guard(request, oid, pid)
-    if err is not None:
-        return err
-    ps = get_project_storage()
-    if ps.load(pid, org_id=oid, is_admin=True) is None:
-        return _enterprise_error(404, "not_found", "not_found")
-    deleted = delete_project_membership(oid, pid, uid)
-    if not deleted:
-        return _enterprise_error(404, "not_found", "not_found")
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="project.member.delete",
-        entity_type="project_membership",
-        entity_id=f"{oid}:{pid}:{uid}",
-        project_id=pid,
-        meta={"target_user_id": uid},
-    )
-    return Response(status_code=204)
-
-
-def _with_invite_links(items_raw: Any, *, base_url: str) -> List[Dict[str, Any]]:
-    rows = items_raw if isinstance(items_raw, list) else []
-    out: List[Dict[str, Any]] = []
-    for row_raw in rows:
-        row = dict(row_raw or {}) if isinstance(row_raw, dict) else {}
-        token = str(row.get("invite_key") or "").strip()
-        status = str(row.get("status") or "").strip().lower()
-        row["invite_link"] = _build_invite_link(base_url, token) if (token and status == "pending") else ""
-        out.append(row)
-    return out
-
-
-def _pick_current_org_invite(items_raw: Any) -> Dict[str, Any]:
-    rows = items_raw if isinstance(items_raw, list) else []
-    for row_raw in rows:
-        row = row_raw if isinstance(row_raw, dict) else {}
-        status = str(row.get("status") or "").strip().lower()
-        token = str(row.get("invite_key") or "").strip()
-        if status == "pending" and token:
-            return dict(row)
-    return {}
-
-
-@app.get("/api/orgs/{org_id}/invites")
-@app.get("/api/admin/organizations/{org_id}/invites")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def list_org_invites_endpoint(org_id: str, request: Request):
-    oid = str(org_id or "").strip()
-    _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
-    if err is not None:
-        return err
-    base_url = _resolve_invite_base_url(
-        request,
-        explicit_base_url=str(_invite_email_config().get("base_url") or ""),
-    )
-    items = _with_invite_links(list_org_invites(oid, include_inactive=True), base_url=base_url)
-    current_invite = _pick_current_org_invite(items)
-    return build_items_count_payload(items, current_invite=current_invite)
-
-
-@app.post("/api/orgs/{org_id}/invites")
-@app.post("/api/admin/organizations/{org_id}/invites")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def create_org_invite_endpoint(org_id: str, inp: OrgInviteCreateIn, request: Request):
-    oid = str(org_id or "").strip()
-    _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
-    if err is not None:
-        return err
-    email = str(getattr(inp, "email", "") or "").strip().lower()
-    full_name = str(getattr(inp, "full_name", "") or "").strip()
-    job_title = str(getattr(inp, "job_title", "") or "").strip()
-    regenerate = bool(getattr(inp, "regenerate", False))
-    try:
-        normalized_invite_role = normalize_invite_role(getattr(inp, "role", "viewer"))
-    except ValueError as exc:
-        return _enterprise_error(422, "validation_error", str(exc))
-    if not email or "@" not in email:
-        return _enterprise_error(422, "validation_error", "valid email is required")
-    invite_limit = max(1, _env_int("RL_INVITES_PER_MIN", 20))
-    ip_key = str(_request_client_ip(request) or "ip_unknown")
-    if not _rate_limit_check(f"invites:create:{oid}:{ip_key}", invite_limit, 60):
-        return _enterprise_error(429, "too_many_requests", "too_many_requests")
-    uid, is_admin = _request_user_meta(request)
-    if not uid:
-        return _enterprise_error(401, "unauthorized", "unauthorized")
-    ttl_days = normalize_invite_ttl_days(getattr(inp, "ttl_days", 0), _invite_ttl_hours_default())
-    email_delivery = _invite_email_enabled()
-    staged_regenerate = bool(regenerate and email_delivery)
-    if email_delivery:
-        ready, reason, _ = _invite_email_config_ready()
-        if not ready:
-            print(f"[INVITE_EMAIL] unavailable reason={reason}")
-            return _enterprise_error(503, "service_unavailable", "invite_email_unavailable")
-    try:
-        # Identity is pre-created by admin; end-user only activates password on invite redemption.
-        ensure_invited_identity(email)
-        created = create_org_invite(
-            oid,
-            email,
-            created_by=uid,
-            full_name=full_name,
-            job_title=job_title,
-            role=normalized_invite_role,
-            ttl_days=ttl_days,
-            regenerate=(regenerate and not staged_regenerate),
-            activate_now=(not staged_regenerate),
-            permissions=getattr(inp, "permissions", None),
-        )
-    except ValueError as exc:
-        return _enterprise_error(422, "validation_error", str(exc))
-    except AuthError as exc:
-        return _enterprise_error(422, "validation_error", str(exc))
-    token = str(created.pop("token", "") or "")
-    response_payload: Dict[str, Any] = {"invite": created}
-    invite_base_url = _resolve_invite_base_url(
-        request,
-        explicit_base_url=str(_invite_email_config().get("base_url") or ""),
-    )
-    if email_delivery:
-        ok_cfg, _, cfg = _invite_email_config_ready()
-        if not ok_cfg:
-            _ = delete_org_invite(oid, str(created.get("id") or ""))
-            return _enterprise_error(503, "service_unavailable", "invite_email_unavailable")
-        invite_link = _build_invite_link(
-            _resolve_invite_base_url(
-                request,
-                explicit_base_url=str(cfg.get("base_url") or ""),
-            ),
-            token,
-        )
-        try:
-            _send_org_invite_email(
-                to_email=email,
-                org_name=str(created.get("org_name") or created.get("org_id") or oid),
-                role=str(created.get("role") or "viewer"),
-                invite_link=invite_link,
-                expires_at=int(created.get("expires_at") or 0),
-            )
-        except Exception:
-            _ = delete_org_invite(oid, str(created.get("id") or ""))
-            _audit_log_safe(
-                request,
-                org_id=oid,
-                action="invite.create",
-                entity_type="org_invite",
-                entity_id=str(created.get("id") or ""),
-                status="fail",
-                meta={
-                    "email": email,
-                    "role": str(created.get("role") or ""),
-                    "full_name": full_name,
-                    "job_title": job_title,
-                    "invite_mode": "one_time",
-                    "reason": "smtp_send_failed",
-                },
-            )
-            return _enterprise_error(502, "upstream_error", "invite_email_send_failed")
-        if staged_regenerate:
-            promoted = promote_regenerated_org_invite(
-                oid,
-                email,
-                str(created.get("id") or ""),
-                actor=uid,
-            )
-            if not promoted:
-                _ = delete_org_invite(oid, str(created.get("id") or ""))
-                return _enterprise_error(500, "server_error", "invite_regenerate_finalize_failed")
-            refreshed = get_org_invite_by_id(oid, str(created.get("id") or ""))
-            if refreshed:
-                created = refreshed
-                response_payload["invite"] = refreshed
-        response_payload["delivery"] = "email"
-    else:
-        expose_token = _should_reveal_invite_token(request)
-        if expose_token and token:
-            response_payload["invite_key"] = token
-            response_payload["invite_token"] = token
-            response_payload["invite_link"] = _build_invite_link(invite_base_url, token)
-        response_payload["delivery"] = "token"
-    audit_meta = build_invite_create_audit_meta(
-        email=email,
-        role=str(created.get("role") or ""),
-        full_name=full_name,
-        job_title=job_title,
-        delivery=str(response_payload.get("delivery") or "token"),
-        is_admin=bool(is_admin),
-    )
-    audit_meta["regenerate"] = regenerate
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="invite.create",
-        entity_type="org_invite",
-        entity_id=str(created.get("id") or ""),
-        status="ok",
-        meta=audit_meta,
-    )
-    return response_payload
-
-
-def _accept_org_invite_response(request: Request, *, org_id: Optional[str], token: str):
-    oid = str(org_id or "").strip()
-    uid, _ = _request_user_meta(request)
-    if not uid:
-        return _enterprise_error(401, "unauthorized", "unauthorized")
-    accept_limit = max(1, _env_int("RL_ACCEPT_PER_MIN", 30))
-    ip_key = str(_request_client_ip(request) or "ip_unknown")
-    if not _rate_limit_check(f"invites:accept:{ip_key}", accept_limit, 60):
-        return _enterprise_error(429, "too_many_requests", "too_many_requests")
-    token = str(token or "").strip()
-    if not token:
-        return _enterprise_error(422, "validation_error", "token is required")
-    email = _request_user_email(request)
-    if not email:
-        return _enterprise_error(404, "not_found", "user_email_not_found")
-    try:
-        accepted = accept_org_invite(oid or None, token, accepted_by=uid, accepted_email=email)
-    except ValueError as exc:
-        marker = str(exc or "").strip().lower()
-        audit_org = oid or _request_active_org_id(request)
-        _audit_log_safe(
-            request,
-            org_id=audit_org,
-            action="invite.accept",
-            entity_type="org_invite",
-            entity_id="-",
-            status="fail",
-            meta={"reason": marker or "validation_error"},
-        )
-        if marker in {"invite_not_found"}:
-            return _enterprise_error(404, "not_found", "not_found")
-        if marker == "invite_revoked":
-            return _enterprise_error(409, "conflict", "invite_revoked")
-        if marker == "invite_expired":
-            return _enterprise_error(410, "gone", "invite_expired")
-        if marker in {"invite_already_accepted", "invite_used", "invite_email_mismatch"}:
-            return _enterprise_error(409, "conflict", marker)
-        return _enterprise_error(422, "validation_error", marker or "validation_error")
-    accepted_org = str(accepted.get("org_id") or oid or "").strip()
-    _audit_log_safe(
-        request,
-        org_id=accepted_org or _request_active_org_id(request),
-        action="invite.accept",
-        entity_type="org_invite",
-        entity_id=str(accepted.get("id") or ""),
-        status="ok",
-        meta={"email": email, "role": str(accepted.get("role") or "")},
-    )
-    return {"invite": accepted, "membership": {"org_id": accepted_org, "user_id": uid, "role": str(accepted.get("role") or "viewer")}}
-
-
-@app.post("/api/orgs/{org_id}/invites/accept")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def accept_org_invite_endpoint(org_id: str, inp: OrgInviteAcceptIn, request: Request):
-    oid = str(org_id or "").strip()
-    token = str(getattr(inp, "token", "") or "").strip()
-    return _accept_org_invite_response(request, org_id=oid, token=token)
-
-
-@app.post("/api/invites/accept")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def accept_invite_endpoint(inp: OrgInviteAcceptIn, request: Request):
-    token = str(getattr(inp, "token", "") or "").strip()
-    return _accept_org_invite_response(request, org_id=None, token=token)
-
-
-@app.post("/api/orgs/{org_id}/invites/{invite_id}/revoke")
-@app.post("/api/admin/organizations/{org_id}/invites/{invite_id}/revoke")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def revoke_org_invite_endpoint(org_id: str, invite_id: str, request: Request):
-    oid = str(org_id or "").strip()
-    iid = str(invite_id or "").strip()
-    _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
-    if err is not None:
-        return err
-    uid, _ = _request_user_meta(request)
-    deleted = revoke_org_invite(oid, iid, revoked_by=uid)
-    if not deleted:
-        return _enterprise_error(404, "not_found", "not_found")
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="invite.revoke",
-        entity_type="org_invite",
-        entity_id=iid,
-        status="ok",
-    )
-    return Response(status_code=204)
-
-
-@app.post("/api/orgs/{org_id}/invites/cleanup")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def cleanup_org_invites_endpoint(org_id: str, request: Request, keep_days: int = 0):
-    oid = str(org_id or "").strip()
-    _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
-    if err is not None:
-        return err
-    keep = int(keep_days or 0)
-    if keep <= 0:
-        keep = _invite_cleanup_keep_days()
-    deleted = cleanup_org_invites(oid, keep_days=keep)
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="invite.cleanup",
-        entity_type="org_invite",
-        entity_id=f"cleanup:{oid}",
-        status="ok",
-        meta={"deleted": int(deleted or 0), "keep_days": int(keep)},
-    )
-    return {"ok": True, "org_id": oid, "deleted": int(deleted or 0), "keep_days": int(keep)}
-
-
-@app.get("/api/orgs/{org_id}/audit")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def list_org_audit_endpoint(
-    org_id: str,
-    request: Request,
-    limit: int = 100,
-    action: str = "",
-    project_id: str = "",
-    session_id: str = "",
-    status: str = "",
-):
-    oid = str(org_id or "").strip()
-    role, err = _enterprise_require_org_member(request, oid)
-    if err is not None:
-        return err
-    uid, is_admin = _request_user_meta(request)
-    role_l = str(role or "").strip().lower()
-    if not (is_admin or _is_role_allowed(role_l, _ORG_AUDIT_READ_ROLES)):
-        return _enterprise_error(403, "forbidden", "insufficient_permissions")
-    scope = _project_scope_for_request(request, oid)
-    requested_project = str(project_id or "").strip()
-    if requested_project and str(scope.get("mode") or "") != "all":
-        allowed = _scope_allowed_project_ids(scope)
-        if requested_project not in allowed:
-            return _enterprise_error(404, "not_found", "not_found")
-    rows = list_audit_log(
-        oid,
-        limit=limit,
-        action=action,
-        project_id=requested_project or None,
-        session_id=str(session_id or "").strip() or None,
-        status=str(status or "").strip() or None,
-    )
-    if str(scope.get("mode") or "") != "all":
-        allowed = _scope_allowed_project_ids(scope)
-        filtered: List[Dict[str, Any]] = []
-        for row in rows:
-            pid = str((row or {}).get("project_id") or "").strip()
-            if not pid or pid in allowed:
-                filtered.append(row)
-        rows = filtered
-    for row in rows:
-        actor_id = str((row or {}).get("actor_user_id") or "").strip()
-        if actor_id:
-            actor = find_user_by_id(actor_id) or {}
-            email = str(actor.get("email") or "").strip().lower()
-            if email:
-                row["actor_email"] = email
-    _ = uid
-    return {"items": rows, "count": len(rows)}
-
-
-@app.post("/api/orgs/{org_id}/audit/cleanup")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def cleanup_org_audit_endpoint(org_id: str, request: Request, retention_days: int = 0):
-    oid = str(org_id or "").strip()
-    _, err = _enterprise_require_org_role(request, oid, _ORG_INVITE_MANAGE_ROLES)
-    if err is not None:
-        return err
-    retention = int(retention_days or 0)
-    if retention <= 0:
-        retention = _audit_retention_days()
-    deleted = cleanup_audit_log(oid, retention_days=retention)
-    _audit_log_safe(
-        request,
-        org_id=oid,
-        action="audit.cleanup",
-        entity_type="audit_log",
-        entity_id=f"cleanup:{oid}",
-        status="ok",
-        meta={"deleted": int(deleted or 0), "retention_days": int(retention)},
-    )
-    return {"ok": True, "org_id": oid, "deleted": int(deleted or 0), "retention_days": int(retention)}
-
-
-@app.get("/api/orgs/{org_id}/sessions/{session_id}/reports/versions")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def list_org_session_report_versions(
-    org_id: str,
-    session_id: str,
-    request: Request,
-    path_id: str = "",
-    steps_hash: str = "",
-):
-    oid = str(org_id or "").strip()
-    sess, _, err = _session_access_from_request(request, session_id, org_id=oid)
-    if err is not None:
-        return err
-    uid, is_admin = _request_user_meta(request)
-    role = str((_project_scope_for_request(request, oid) or {}).get("org_role") or "").strip().lower()
-    if not (is_admin or _is_role_allowed(role, _ORG_READ_ROLES)):
-        return _enterprise_error(403, "forbidden", "insufficient_permissions")
-    pid = str(path_id or "").strip()
-    if not pid:
-        return _enterprise_error(422, "validation_error", "path_id is required")
-    rows = _list_path_report_versions_core(
-        session_id=str(getattr(sess, "id", "") or session_id),
-        path_id=pid,
-        steps_hash=steps_hash,
-        request=request,
-        org_id=oid,
-        is_admin=True,
-    )
-    _ = uid
-    return rows
-
-
-@app.post("/api/orgs/{org_id}/sessions/{session_id}/reports/build")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def build_org_session_report(
-    org_id: str,
-    session_id: str,
-    inp: OrgReportBuildIn,
-    request: Request,
-):
-    oid = str(org_id or "").strip()
-    sess, scope, err = _session_access_from_request(request, session_id, org_id=oid)
-    if err is not None:
-        return err
-    uid, is_admin = _request_user_meta(request)
-    role = str(((scope if isinstance(scope, dict) else {}).get("org_role") or "")).strip().lower()
-    if not (is_admin or _is_role_allowed(role, _ORG_EDITOR_ROLES)):
-        return _enterprise_error(403, "forbidden", "insufficient_permissions")
-    path_id = str(getattr(inp, "path_id", "") or "").strip()
-    if not path_id:
-        return _enterprise_error(422, "validation_error", "path_id is required")
-    created = _create_path_report_version_core(
-        session_id=str(getattr(sess, "id", "") or session_id),
-        path_id=path_id,
-        inp=CreatePathReportVersionIn(
-            steps_hash=str(getattr(inp, "steps_hash", "") or ""),
-            request_payload_json=(getattr(inp, "request_payload_json", {}) or {}),
-            prompt_template_version=str(getattr(inp, "prompt_template_version", "v2") or "v2"),
-        ),
-        request=request,
-        org_id=oid,
-        is_admin=True,
-    )
-    if isinstance(created, dict) and created.get("error"):
-        marker = str(created.get("error") or "").strip().lower()
-        if "required" in marker or "invalid" in marker or "missing" in marker:
-            return _enterprise_error(422, "validation_error", str(created.get("error") or "validation_error"))
-        return _enterprise_error(404, "not_found", "not_found")
-    _ = uid
-    return created
-
-
-@app.get("/api/orgs/{org_id}/sessions/{session_id}/reports/{version_id}")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def get_org_session_report_version(
-    org_id: str,
-    session_id: str,
-    version_id: str,
-    request: Request,
-    path_id: str = "",
-):
-    oid = str(org_id or "").strip()
-    sess, scope, err = _session_access_from_request(request, session_id, org_id=oid)
-    if err is not None:
-        return err
-    uid, is_admin = _request_user_meta(request)
-    role = str(((scope if isinstance(scope, dict) else {}).get("org_role") or "")).strip().lower()
-    if not (is_admin or _is_role_allowed(role, _ORG_READ_ROLES)):
-        return _enterprise_error(403, "forbidden", "insufficient_permissions")
-    pid = str(path_id or "").strip()
-    rid = str(version_id or "").strip()
-    if not rid:
-        return _enterprise_error(404, "not_found", "not_found")
-    if not pid:
-        by_path = _get_report_versions_by_path(getattr(sess, "interview", {}))
-        for candidate_pid, rows in by_path.items():
-            if any(str((row or {}).get("id") or "").strip() == rid for row in (rows or [])):
-                pid = str(candidate_pid or "").strip()
-                break
-    if not pid:
-        return _enterprise_error(404, "not_found", "not_found")
-    detail = _get_path_report_version_detail_core(
-        session_id=str(getattr(sess, "id", "") or session_id),
-        path_id=pid,
-        report_id=rid,
-        request=request,
-        org_id=oid,
-        is_admin=True,
-    )
-    if isinstance(detail, dict) and detail.get("error"):
-        return _enterprise_error(404, "not_found", "not_found")
-    _ = uid
-    return detail
-
-
-@app.delete("/api/orgs/{org_id}/sessions/{session_id}/reports/{version_id}")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def delete_org_session_report_version(
-    org_id: str,
-    session_id: str,
-    version_id: str,
-    request: Request,
-    path_id: str = "",
-):
-    oid = str(org_id or "").strip()
-    sess, scope, err = _session_access_from_request(request, session_id, org_id=oid)
-    if err is not None:
-        return err
-    uid, is_admin = _request_user_meta(request)
-    role = str(((scope if isinstance(scope, dict) else {}).get("org_role") or "")).strip().lower()
-    if not (is_admin or _is_role_allowed(role, _ORG_REPORT_DELETE_ROLES)):
-        return _enterprise_error(403, "forbidden", "insufficient_permissions")
-    pid = str(path_id or "").strip()
-    rid = str(version_id or "").strip()
-    if not rid:
-        return _enterprise_error(404, "not_found", "not_found")
-    if not pid:
-        by_path = _get_report_versions_by_path(getattr(sess, "interview", {}))
-        for candidate_pid, rows in by_path.items():
-            if any(str((row or {}).get("id") or "").strip() == rid for row in (rows or [])):
-                pid = str(candidate_pid or "").strip()
-                break
-    if not pid:
-        return _enterprise_error(404, "not_found", "not_found")
-    try:
-        response = _delete_path_report_version_core(
-            session_id=str(getattr(sess, "id", "") or session_id),
-            path_id=pid,
-            report_id=rid,
-            request=request,
-            org_id=oid,
-            is_admin=True,
-        )
-    except HTTPException as exc:
-        if int(exc.status_code or 0) == 404:
-            return _enterprise_error(404, "not_found", "not_found")
-        return _enterprise_error(422, "validation_error", str(exc.detail or "validation_error"))
-    _ = uid
-    return response
+# /api/orgs/* handler implementations live in app/orgs.py (PR-7 orgs) and are
+# re-registered here so LEGACY_ROUTE_EXPORT keeps the same routes, methods,
+# registration order and endpoint objects as before the extraction.
+app.post("/api/orgs")(create_org_endpoint)
+app.patch("/api/orgs/{org_id}")(patch_org_endpoint)
+app.get("/api/orgs/{org_id}/git-mirror")(get_org_git_mirror_endpoint)
+app.patch("/api/orgs/{org_id}/members/{user_id}")(patch_org_member_endpoint)
+app.get("/api/orgs/{org_id}/projects")(list_org_projects)
+app.post("/api/orgs/{org_id}/projects")(create_org_project)
+app.get("/api/orgs/{org_id}/projects/{project_id}")(get_org_project)
+app.get("/api/orgs/{org_id}/projects/{project_id}/sessions")(list_org_project_sessions)
+app.post("/api/orgs/{org_id}/projects/{project_id}/sessions")(create_org_project_session)
+app.get("/api/orgs/{org_id}/projects/{project_id}/members")(list_org_project_members)
+app.post("/api/orgs/{org_id}/projects/{project_id}/members")(create_org_project_member)
+app.patch("/api/orgs/{org_id}/projects/{project_id}/members/{user_id}")(patch_org_project_member)
+app.delete("/api/orgs/{org_id}/projects/{project_id}/members/{user_id}")(delete_org_project_member)
+app.get("/api/admin/organizations/{org_id}/invites")(list_org_invites_endpoint)
+app.get("/api/orgs/{org_id}/invites")(list_org_invites_endpoint)
+app.post("/api/admin/organizations/{org_id}/invites")(create_org_invite_endpoint)
+app.post("/api/orgs/{org_id}/invites")(create_org_invite_endpoint)
+app.post("/api/orgs/{org_id}/invites/accept")(accept_org_invite_endpoint)
+app.post("/api/invites/accept")(accept_invite_endpoint)
+app.post("/api/admin/organizations/{org_id}/invites/{invite_id}/revoke")(revoke_org_invite_endpoint)
+app.post("/api/orgs/{org_id}/invites/{invite_id}/revoke")(revoke_org_invite_endpoint)
+app.post("/api/orgs/{org_id}/invites/cleanup")(cleanup_org_invites_endpoint)
+app.get("/api/orgs/{org_id}/audit")(list_org_audit_endpoint)
+app.post("/api/orgs/{org_id}/audit/cleanup")(cleanup_org_audit_endpoint)
+app.get("/api/orgs/{org_id}/sessions/{session_id}/reports/versions")(list_org_session_report_versions)
+app.post("/api/orgs/{org_id}/sessions/{session_id}/reports/build")(build_org_session_report)
+app.get("/api/orgs/{org_id}/sessions/{session_id}/reports/{version_id}")(get_org_session_report_version)
+app.delete("/api/orgs/{org_id}/sessions/{session_id}/reports/{version_id}")(delete_org_session_report_version)
 
 
 # -----------------------------
 # Epic #1: Projects + Process Passport
 # -----------------------------
 
-@app.get("/api/projects")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def list_projects(request: Request = None) -> list[dict]:
-    oid = _request_active_org_id(request) if request is not None else ""
-    scope = _project_scope_for_request(request, oid or get_default_org_id())
-    allowed = _scope_allowed_project_ids(scope)
-    st = get_project_storage()
-    items = st.list(org_id=(oid or None), is_admin=True)
-    if allowed:
-        items = [proj for proj in items if str(getattr(proj, "id", "") or "").strip() in allowed]
-    return [p.model_dump() for p in items]
-
-
-@app.post("/api/projects")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def create_project(inp: CreateProjectIn, request: Request = None) -> dict:
-    user = _request_auth_user(request) if request is not None else {}
-    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
-    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
-    oid = _request_active_org_id(request) if request is not None else ""
-    role = _org_role_for_request(request, oid) if request is not None and oid else ""
-    if oid and not _can_edit_workspace(role, is_admin=is_admin):
-        raise HTTPException(status_code=403, detail="forbidden")
-    st = get_project_storage()
-    title = _clean_name(inp.title)
-    if not title:
-        raise HTTPException(status_code=422, detail="title required")
-    sibling_titles = {
-        _clean_name(getattr(item, "title", ""))
-        for item in st.list(org_id=(oid or None), is_admin=True)
-    }
-    if title in sibling_titles:
-        raise HTTPException(status_code=409, detail="project title already exists")
-    executor_user_id = _validate_org_user_assignable(oid or get_default_org_id(), getattr(inp, "executor_user_id", ""))
-    pid = st.create(
-        title=title,
-        passport=inp.passport,
-        user_id=user_id,
-        org_id=(oid or None),
-        executor_user_id=executor_user_id,
-    )
-    proj = st.load(pid, org_id=(oid or None), is_admin=True)
-    if not proj:
-        raise HTTPException(status_code=500, detail="create failed")
-    _audit_log_safe(
-        request,
-        org_id=oid or str(getattr(proj, "org_id", "") or get_default_org_id()),
-        action="project.create",
-        entity_type="project",
-        entity_id=pid,
-        project_id=pid,
-        meta={"title": str(getattr(proj, "title", "") or "")},
-    )
-    _invalidate_workspace_cache_for_org(oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
-    _invalidate_explorer_children_for_project(pid, oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
-    return proj.model_dump()
-
-
-@app.get("/api/projects/{project_id}")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def get_project(project_id: str, request: Request = None) -> dict:
-    proj, _, _ = _legacy_load_project_scoped(project_id, request)
-    if not proj:
-        raise HTTPException(status_code=404, detail="not found")
-    return proj.model_dump()
-
-
-@app.patch("/api/projects/{project_id}")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def patch_project(project_id: str, inp: UpdateProjectIn, request: Request = None) -> dict:
-    user = _request_auth_user(request) if request is not None else {}
-    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
-    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
-    proj, oid, _ = _legacy_load_project_scoped(project_id, request)
-    st = get_project_storage()
-    if not proj:
-        raise HTTPException(status_code=404, detail="not found")
-    role = _org_role_for_request(request, oid) if request is not None and oid else ""
-    if not _can_edit_workspace(role, is_admin=is_admin):
-        raise HTTPException(status_code=403, detail="forbidden")
-
-    payload = inp.model_dump(exclude_unset=True)
-
-    if "title" in payload and payload["title"] is not None:
-        t = _clean_name(payload["title"])
-        if t:
-            sibling_titles = {
-                _clean_name(getattr(item, "title", ""))
-                for item in st.list(org_id=(oid or None), is_admin=True)
-                if str(getattr(item, "id", "") or "").strip() != str(getattr(proj, "id", "") or project_id).strip()
-            }
-            if t in sibling_titles:
-                raise HTTPException(status_code=409, detail="project title already exists")
-            proj.title = t
-
-    if "passport" in payload and payload["passport"] is not None:
-        if not isinstance(payload["passport"], dict):
-            raise HTTPException(status_code=400, detail="passport must be an object")
-        merged = dict(proj.passport or {})
-        merged.update(payload["passport"])
-        proj.passport = merged
-
-    if "executor_user_id" in payload:
-        proj.executor_user_id = _validate_org_user_assignable(oid or get_default_org_id(), payload.get("executor_user_id")) or None
-
-    st.save(proj, user_id=user_id, org_id=oid, is_admin=True)
-    _audit_log_safe(
-        request,
-        org_id=oid or str(getattr(proj, "org_id", "") or get_default_org_id()),
-        action="project.update",
-        entity_type="project",
-        entity_id=str(getattr(proj, "id", "") or project_id),
-        project_id=str(getattr(proj, "id", "") or project_id),
-        meta={"title": str(getattr(proj, "title", "") or "")},
-    )
-    _invalidate_workspace_cache_for_org(oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
-    _invalidate_explorer_children_for_project(str(getattr(proj, "id", "") or project_id), oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
-    return proj.model_dump()
-
-
-@app.put("/api/projects/{project_id}")
-  # DEPRECATED: moved to routers/orgs.py + org_service.py
-def put_project(project_id: str, inp: CreateProjectIn, request: Request = None) -> dict:
-    user = _request_auth_user(request) if request is not None else {}
-    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
-    proj, oid, _ = _legacy_load_project_scoped(project_id, request)
-    st = get_project_storage()
-    if not proj:
-        raise HTTPException(status_code=404, detail="not found")
-
-    t = str(inp.title).strip()
-    if not t:
-        raise HTTPException(status_code=400, detail="title required")
-    if not isinstance(inp.passport, dict):
-        raise HTTPException(status_code=400, detail="passport must be an object")
-
-    proj.title = t
-    proj.passport = inp.passport or {}
-    st.save(proj, user_id=user_id, org_id=oid, is_admin=True)
-    _audit_log_safe(
-        request,
-        org_id=oid or str(getattr(proj, "org_id", "") or get_default_org_id()),
-        action="project.update",
-        entity_type="project",
-        entity_id=str(getattr(proj, "id", "") or project_id),
-        project_id=str(getattr(proj, "id", "") or project_id),
-        meta={"title": str(getattr(proj, "title", "") or ""), "put": True},
-    )
-    _invalidate_workspace_cache_for_org(oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
-    _invalidate_explorer_children_for_project(str(getattr(proj, "id", "") or project_id), oid or str(getattr(proj, "org_id", "") or get_default_org_id()))
-    return proj.model_dump()
+# /api/projects/* handler implementations live in app/projects.py (PR-8 projects)
+# and are re-registered here so LEGACY_ROUTE_EXPORT keeps the same routes,
+# methods, registration order and endpoint objects as before the extraction.
+app.get("/api/projects")(list_projects)
+app.post("/api/projects")(create_project)
+app.get("/api/projects/{project_id}")(get_project)
+app.patch("/api/projects/{project_id}")(patch_project)
+app.put("/api/projects/{project_id}")(put_project)
 
 
 def _build_legacy_route_export() -> Tuple[APIRoute, ...]:
@@ -9992,503 +5956,34 @@ _oc_mod.render_overlay_xml = _wired_render_overlay_xml
 
 
 
-# Restored legacy session helpers removed by router split
-def list_project_sessions(project_id: str, mode: str | None = None, view: str | None = None, request: Request = None):
-    proj, oid, _ = _legacy_load_project_scoped(project_id, request)
-    if proj is None:
-        raise HTTPException(status_code=404, detail="project not found")
-    raw_mode = mode
-    mode = _norm_project_session_mode(mode)
-    if raw_mode is not None and mode is None:
-        raise HTTPException(status_code=422, detail="invalid mode; allowed: quick_skeleton, deep_audit")
-    view_mode = _norm_project_sessions_view(view)
-    if not view_mode:
-        raise HTTPException(status_code=422, detail="invalid view; allowed: summary, full")
-    st = get_storage()
-    if view_mode == "summary":
-        return st.list_project_session_summaries(project_id=project_id, mode=mode, limit=500, org_id=oid, is_admin=True)
-    rows = st.list(project_id=project_id, mode=mode, limit=500, org_id=oid, is_admin=True)
-    out = []
-    for row in rows:
-        if isinstance(row, dict):
-            out.append(_session_api_dump(Session.model_validate(row)))
-    return out
+# list_project_sessions / create_project_session implementations live in
+# app/projects.py (PR-8 projects); the route decorator is re-registered below.
 
 
 # DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
-@app.post("/api/projects/{project_id}/sessions")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def create_project_session(project_id: str, inp: CreateSessionIn, mode: str | None = Query(default="quick_skeleton"), request: Request = None):
-    user = _request_auth_user(request) if request is not None else {}
-    user_id = str(user.get("id") or "").strip() if isinstance(user, dict) else ""
-    is_admin = bool(user.get("is_admin", False)) if isinstance(user, dict) else False
-    proj, oid, _ = _legacy_load_project_scoped(project_id, request)
-    if proj is None:
-        raise HTTPException(status_code=404, detail="project not found")
-    role = _org_role_for_request(request, oid) if request is not None and oid else ""
-    if not _can_edit_workspace(role, is_admin=is_admin):
-        raise HTTPException(status_code=403, detail="forbidden")
-
-    st = get_storage()
-    title = _clean_name(getattr(inp, "title", None) or "process") or "process"
-    sibling_titles = {
-        _clean_name(str((row or {}).get("title") or ""))
-        for row in st.list(project_id=project_id, mode=mode, limit=500, org_id=oid, is_admin=True)
-    }
-    if title in sibling_titles:
-        raise HTTPException(status_code=409, detail="session title already exists")
-    roles = _norm_roles(getattr(inp, "roles", None))
-    sr = getattr(inp, "start_role", None)
-    if sr is not None and str(sr).strip() != "":
-        sr = str(sr).strip()
-        if roles and sr not in roles:
-            return {"error": "start_role must be one of roles", "start_role": sr, "roles": roles}
-    else:
-        sr = None
-    prep_questions = _norm_prep_questions(getattr(inp, "ai_prep_questions", None))
-    # W4: тип сессии (as_is|to_be) + связь с AS IS (extra="allow" в CreateSessionIn)
-    process_layer = str(getattr(inp, "process_layer", "") or "as_is").strip() or "as_is"
-    derived_from = str(getattr(inp, "derived_from_session_id", "") or "").strip()
-    if process_layer not in ("as_is", "to_be"):
-        process_layer = "as_is"
-    # prefer storage-native create signature if it supports project_id/mode
-    try:
-        # process_layer/derived_from задаются атомарно при INSERT (audit P3):
-        # TO BE-дедуп по derived_from_session_id не оставляет сирот при гонке.
-        sid = st.create(
-            title=title,
-            roles=roles,
-            start_role=sr,
-            project_id=project_id,
-            mode=mode,
-            process_layer=process_layer,
-            derived_from_session_id=derived_from,
-            user_id=user_id,
-            org_id=oid,
-        )
-        sess = st.load(sid, org_id=oid, is_admin=True)
-        if sess is None:
-            raise HTTPException(status_code=500, detail="session not persisted")
-        if prep_questions:
-            sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
-            st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
-        _audit_log_safe(
-            request,
-            org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
-            action="session.create",
-            entity_type="session",
-            entity_id=str(getattr(sess, "id", "") or sid),
-            project_id=project_id,
-            session_id=str(getattr(sess, "id", "") or sid),
-            meta={"mode": str(getattr(sess, "mode", "") or ""), "title": str(getattr(sess, "title", "") or "")},
-        )
-        _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
-        return _session_api_dump(sess)
-    except _storage_mod.SessionTitleConflictError:
-        # Race-safe dedup (audit P3): concurrent create with the same natural
-        # key hits the unique index -> same 409 contract as the title pre-check.
-        raise HTTPException(status_code=409, detail="session title already exists")
-    except TypeError:
-        # fallback: create base session then attach fields
-        sid = st.create(title=title, roles=roles, start_role=sr, user_id=user_id, org_id=oid)
-        sess = st.load(sid, org_id=oid, is_admin=True)
-        if sess is None:
-            raise HTTPException(status_code=500, detail="session not persisted")
-        if hasattr(sess, "project_id"):
-            sess.project_id = project_id
-        if hasattr(sess, "mode"):
-            sess.mode = mode
-        # W4: тип сессии + связь AS IS (fallback-путь)
-        if hasattr(sess, "process_layer"):
-            _pl = str(getattr(inp, "process_layer", "") or "as_is").strip() or "as_is"
-            sess.process_layer = _pl if _pl in ("as_is", "to_be") else "as_is"
-        if hasattr(sess, "derived_from_session_id"):
-            sess.derived_from_session_id = str(getattr(inp, "derived_from_session_id", "") or "").strip()
-        if prep_questions:
-            sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
-        st.save(sess, user_id=user_id, org_id=oid, is_admin=True)
-        _audit_log_safe(
-            request,
-            org_id=oid or str(getattr(sess, "org_id", "") or get_default_org_id()),
-            action="session.create",
-            entity_type="session",
-            entity_id=str(getattr(sess, "id", "") or sid),
-            project_id=project_id,
-            session_id=str(getattr(sess, "id", "") or sid),
-            meta={"mode": str(getattr(sess, "mode", "") or ""), "title": str(getattr(sess, "title", "") or ""), "fallback": True},
-        )
-        _invalidate_session_caches(sess, org_id=oid or getattr(sess, "org_id", "") or get_default_org_id())
-        return _session_api_dump(sess)
+app.post("/api/projects/{project_id}/sessions")(create_project_session)
 
 
 # DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
-@app.get("/api/sessions")
-def list_sessions(q: Optional[str] = None, limit: int = 200, request: Request = None) -> Dict[str, Any]:
-    oid = _request_active_org_id(request) if request is not None else ""
-    scope = _project_scope_for_request(request, oid or get_default_org_id())
-    allowed = _scope_allowed_project_ids(scope)
-    st = get_storage()
-    items = st.list(query=q, limit=min(max(int(limit), 1), 500), org_id=(oid or None), is_admin=True)
-    if allowed:
-        items = [
-            item for item in items
-            if str((item or {}).get("project_id") or "").strip() in allowed
-        ]
-    return {"items": items, "count": len(items)}
+# /api/sessions/* handler implementations live in app/sessions_core.py
+# (PR-9 sessions-core) and are re-registered here so LEGACY_ROUTE_EXPORT
+# keeps the same routes, methods, registration order and endpoint objects
+# as before the extraction.
+app.get("/api/sessions/{session_id}")(get_session)
 
 
-# DEPRECATED: session routes moved to routers/sessions.py — kept for backward compatibility during migration.
-@app.get("/api/sessions/{session_id}")
-def get_session(session_id: str, request: Request = None) -> Dict[str, Any]:
-    sess, _, _ = _legacy_load_session_scoped(session_id, request)
-    if not sess:
-        raise_session_not_found(session_id)
-    sid = str(getattr(sess, "id", "") or session_id).strip()
-    version_token = session_open_version_token(sess)
-    cache_key = session_open_cache_key(sid, version_token)
-    cached = cache_get_json(cache_key)
-    if isinstance(cached, dict):
-        logger.info(
-            "session_open_cache: hit session_id=%s version=%s",
-            sid,
-            version_token,
-        )
-        return cached
-    logger.info(
-        "session_open_cache: miss session_id=%s version=%s",
-        sid,
-        version_token,
-    )
-    payload = _session_api_dump(sess)
-    if cache_set_json(cache_key, payload, ttl_sec=session_open_cache_ttl_sec()):
-        logger.info(
-            "session_open_cache: write session_id=%s version=%s",
-            sid,
-            version_token,
-        )
-    return payload
+# /api/sessions/* handler implementations live in app/sessions_core.py
+# (PR-9 sessions-core) and are re-registered here so LEGACY_ROUTE_EXPORT
+# keeps the same routes, methods, registration order and endpoint objects
+# as before the extraction.
+app.post("/api/sessions/{session_id}/presence")(touch_session_presence_api)
 
 
-@app.post("/api/sessions/{session_id}/presence")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def touch_session_presence_api(
-    session_id: str,
-    inp: SessionPresenceTouchIn,
-    request: Request = None,
-) -> Dict[str, Any]:
-    user_id, is_admin = _request_user_meta(request)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="authentication required")
-    sess, oid, _ = _legacy_load_session_scoped(session_id, request)
-    if not sess:
-        raise HTTPException(status_code=404, detail="session not found")
-    client_id = _normalize_session_presence_client_id(getattr(inp, "client_id", ""))
-    if not client_id:
-        raise HTTPException(status_code=422, detail="client_id is required")
-    surface = _normalize_session_presence_surface(getattr(inp, "surface", "process_stage"))
-    sid = str(getattr(sess, "id", "") or session_id).strip()
-    project_id = str(getattr(sess, "project_id", "") or "").strip()
-    org_id = str(oid or getattr(sess, "org_id", "") or get_default_org_id()).strip()
-    active_org_id = _request_active_org_id(request) if request is not None else org_id
-    if active_org_id and org_id and active_org_id != org_id:
-        raise HTTPException(status_code=404, detail="session not found")
-    if not _user_is_member_of_org(user_id, org_id, is_admin=is_admin):
-        raise HTTPException(status_code=404, detail="session not found")
-    now = int(time.time())
-    touch_session_presence(
-        sid,
-        user_id,
-        client_id,
-        org_id=org_id,
-        project_id=project_id,
-        surface=surface,
-        now_ts=now,
-    )
-    prune_stale_session_presence(ttl_seconds=_SESSION_PRESENCE_TTL_SECONDS, now_ts=now)
-    active_users = list_session_presence(
-        sid,
-        org_id=org_id,
-        project_id=project_id,
-        ttl_seconds=_SESSION_PRESENCE_TTL_SECONDS,
-        now_ts=now,
-        current_user_id=user_id,
-    )
-    return {
-        "ok": True,
-        "session_id": sid,
-        "ttl_seconds": _SESSION_PRESENCE_TTL_SECONDS,
-        "active_users": active_users,
-        "diagram_state_version": int(getattr(sess, "diagram_state_version", 0) or 0),
-    }
-
-
-@app.delete("/api/sessions/{session_id}/presence")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def leave_session_presence_api(
-    session_id: str,
-    inp: SessionPresenceTouchIn,
-    request: Request = None,
-) -> Dict[str, Any]:
-    user_id, is_admin = _request_user_meta(request)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="authentication required")
-    sess, oid, _ = _legacy_load_session_scoped(session_id, request)
-    if not sess:
-        raise HTTPException(status_code=404, detail="session not found")
-    client_id = _normalize_session_presence_client_id(getattr(inp, "client_id", ""))
-    if not client_id:
-        raise HTTPException(status_code=422, detail="client_id is required")
-    sid = str(getattr(sess, "id", "") or session_id).strip()
-    project_id = str(getattr(sess, "project_id", "") or "").strip()
-    org_id = str(oid or getattr(sess, "org_id", "") or get_default_org_id()).strip()
-    active_org_id = _request_active_org_id(request) if request is not None else org_id
-    if active_org_id and org_id and active_org_id != org_id:
-        raise HTTPException(status_code=404, detail="session not found")
-    if not _user_is_member_of_org(user_id, org_id, is_admin=is_admin):
-        raise HTTPException(status_code=404, detail="session not found")
-    removed = leave_session_presence(
-        sid,
-        user_id,
-        client_id,
-        org_id=org_id,
-        project_id=project_id,
-    )
-    prune_stale_session_presence(ttl_seconds=_SESSION_PRESENCE_TTL_SECONDS)
-    return {
-        "ok": True,
-        "session_id": sid,
-        "removed": removed,
-    }
-
-
-@app.get("/api/sessions/{session_id}/tldr")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def patch_node(session_id: str, node_id: str, inp: NodePatchIn, request: Request = None) -> Dict[str, Any]:
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-
-    node = next((n for n in s.nodes if n.id == node_id), None)
-    if not node:
-        return {"error": "node not found"}
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=_resolve_base_diagram_state_version(
-            request=request,
-            payload=inp.model_dump(exclude_unset=True),
-        ),
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    data = inp.model_dump(exclude_unset=True)
-
-    if "title" in data:
-        node.title = data["title"] or node.title
-        node.parameters["_manual_title"] = True
-    if "type" in data:
-        node.type = data["type"] or node.type
-        node.parameters["_manual_type"] = True
-    if "actor_role" in data:
-        node.actor_role = data["actor_role"] or None
-        node.parameters["_manual_actor"] = True
-    if "recipient_role" in data:
-        node.recipient_role = data["recipient_role"] or None
-        node.parameters["_manual_recipient"] = True
-    if "equipment" in data and data["equipment"] is not None:
-        node.equipment = data["equipment"]
-        node.parameters["_manual_equipment"] = True
-    if "duration_min" in data:
-        node.duration_min = data["duration_min"]
-        node.parameters["_manual_duration"] = True
-    if "parameters" in data and data["parameters"] is not None:
-        node.parameters = data["parameters"]
-        node.parameters["_manual_parameters"] = True
-    if "disposition" in data and data["disposition"] is not None:
-        node.disposition = data["disposition"]
-        node.parameters["_manual_disposition"] = True
-
-    s = _recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["nodes"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    st.save(s)
-    return s.model_dump()
-
-
-@app.post("/api/sessions/{session_id}/nodes")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def add_node(session_id: str, inp: CreateNodeIn, request: Request = None) -> Dict[str, Any]:
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=_resolve_base_diagram_state_version(
-            request=request,
-            payload=inp.model_dump(exclude_unset=True),
-        ),
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    node_id = (inp.id or "").strip() or f"n_{uuid.uuid4().hex[:8]}"
-    if any(n.id == node_id for n in s.nodes):
-        return {"error": "node already exists", "node_id": node_id}
-
-    node = Node(
-        id=node_id,
-        title=inp.title,
-        type=inp.type or "step",
-        actor_role=inp.actor_role,
-        recipient_role=inp.recipient_role,
-        equipment=list(inp.equipment or []),
-        parameters=dict(inp.parameters or {}),
-        duration_min=inp.duration_min,
-        disposition=dict(inp.disposition or {}),
-        qc=[],
-        exceptions=[],
-        evidence=[],
-        confidence=0.0,
-    )
-    s.nodes.append(node)
-
-    s = _recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["nodes"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    st.save(s)
-    return s.model_dump()
-
-
-@app.delete("/api/sessions/{session_id}/nodes/{node_id}")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def delete_node(session_id: str, node_id: str, request: Request = None) -> Dict[str, Any]:
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=_resolve_base_diagram_state_version(request=request),
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    before_n = len(s.nodes)
-    s.nodes = [n for n in s.nodes if n.id != node_id]
-    if len(s.nodes) == before_n:
-        return {"error": "node not found"}
-
-    s.edges = [e for e in s.edges if e.from_id != node_id and e.to_id != node_id]
-
-    s = _recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["nodes", "edges"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    st.save(s)
-    return s.model_dump()
-
-
-@app.post("/api/sessions/{session_id}/edges")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def add_edge(session_id: str, inp: CreateEdgeIn, request: Request = None) -> Dict[str, Any]:
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=_resolve_base_diagram_state_version(
-            request=request,
-            payload=inp.model_dump(exclude_unset=True),
-        ),
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    if not any(n.id == inp.from_id for n in s.nodes):
-        return {"error": "from_id not found", "from_id": inp.from_id}
-    if not any(n.id == inp.to_id for n in s.nodes):
-        return {"error": "to_id not found", "to_id": inp.to_id}
-
-    exists = any((e.from_id == inp.from_id and e.to_id == inp.to_id and (e.when or None) == (inp.when or None)) for e in s.edges)
-    if exists:
-        return {"error": "edge already exists"}
-
-    s.edges.append(Edge(from_id=inp.from_id, to_id=inp.to_id, when=inp.when))
-
-    s = _recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["edges"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    st.save(s)
-    return s.model_dump()
-
-
-@app.delete("/api/sessions/{session_id}/edges")
-  # DEPRECATED: moved to routers/sessions.py + session_service.py
-def delete_edge(session_id: str, inp: CreateEdgeIn, request: Request = None) -> Dict[str, Any]:
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=_resolve_base_diagram_state_version(
-            request=request,
-            payload=inp.model_dump(exclude_unset=True),
-        ),
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    before = len(s.edges)
-    s.edges = [
-        e for e in s.edges
-        if not (e.from_id == inp.from_id and e.to_id == inp.to_id and (e.when or None) == (inp.when or None))
-    ]
-    if len(s.edges) == before:
-        return {"error": "edge not found"}
-
-    s = _recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["edges"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    st.save(s)
-    return s.model_dump()
-
-
-def _coerce_bool(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return False
+# /api/sessions/* handler implementations live in app/sessions_core.py
+# (PR-9 sessions-core) and are re-registered here so LEGACY_ROUTE_EXPORT
+# keeps the same routes, methods, registration order and endpoint objects
+# as before the extraction.
+app.delete("/api/sessions/{session_id}/presence")(leave_session_presence_api)
 
 
 # Legacy test compatibility re-exports (router/service split).
@@ -10496,7 +5991,14 @@ def _coerce_bool(value: Any) -> bool:
 # existing legacy implementations to avoid recursion.
 try:
     if 'auth_invite_activate' not in globals():
-        from app.routers.auth import auth_invite_activate, auth_invite_preview, auth_me  # noqa: F401
+        from app.services.auth_service import (  # noqa: F401
+            auth_invite_activate,
+            auth_invite_preview,
+            auth_login,
+            auth_logout,
+            auth_me,
+            auth_refresh,
+        )
     if 'cleanup_org_audit_endpoint' not in globals():
         from app.routers.org import (
             cleanup_org_audit_endpoint,
@@ -10505,6 +6007,8 @@ try:
             patch_org_endpoint,
             patch_org_git_mirror_endpoint,
         )  # noqa: F401
+    if 'patch_org_git_mirror_endpoint' not in globals():
+        from app.routers.org import patch_org_git_mirror_endpoint  # noqa: F401
     if 'create_session' not in globals():
         from app.routers.sessions import create_session  # noqa: F401
     if 'create_org_project' not in globals():
@@ -10515,16 +6019,12 @@ try:
         'add_edge', 'add_node', 'create_project_session', 'delete_edge', 'delete_node',
         'get_session', 'list_project_sessions', 'patch_node',
     }
-    if not _session_reexports.issubset(globals()):
-        from app.services.session_service import (
-            add_edge,
-            add_node,
-            create_project_session,
-            delete_edge,
-            delete_node,
-            get_session,
-            list_project_sessions,
-            patch_node,
-        )  # noqa: F401
+    # Per-name back-fill: never shadow legacy implementations that still live
+    # in this module (session_service delegates some of them back here).
+    _missing_session_reexports = _session_reexports - set(globals())
+    if _missing_session_reexports:
+        from app.services import session_service as _session_service_mod
+        for _reexport_name in _missing_session_reexports:
+            globals()[_reexport_name] = getattr(_session_service_mod, _reexport_name)
 except Exception:  # pragma: no cover
     pass
