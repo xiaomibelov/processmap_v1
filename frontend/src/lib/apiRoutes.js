@@ -155,6 +155,18 @@ export const apiRoutes = {
     llmAnalysis: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/llm/analysis`, {
       force: options?.force === true ? "1" : "",
     }),
+    llmSuggestNext: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/llm/suggest-next`, {
+      after_step_id: String(options?.afterStepId || "").trim(),
+      force: options?.force === true ? "1" : "",
+    }),
+    llmExplainStep: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/llm/explain-step`, {
+      step_id: String(options?.stepId || "").trim(),
+      force: options?.force === true ? "1" : "",
+    }),
+    llmStepQa: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/llm/step-qa`, {
+      step_id: String(options?.stepId || "").trim(),
+      force: options?.force === true ? "1" : "",
+    }),
     recompute: (sessionId) => `/api/sessions/${encode(sessionId)}/recompute`,
     analytics: (sessionId) => `/api/sessions/${encode(sessionId)}/analytics`,
     export: (sessionId) => `/api/sessions/${encode(sessionId)}/export`,

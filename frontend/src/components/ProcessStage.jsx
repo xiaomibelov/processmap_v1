@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import DocStage from "./process/DocStage";
 import DodStage from "./process/DodStage";
 import InterviewStage from "./process/InterviewStage";
+import SchemaAssistantBlock from "./process/SchemaAssistantBlock";
 import ProductActionsRegistry from "../features/analytics/ProductActionsRegistry.jsx";
 import ProcessPropertiesRegistryPage from "./process/analysis/ProcessPropertiesRegistryPage.jsx";
 import AnalyticsDashboards from "../features/analytics/AnalyticsDashboards.jsx";
@@ -7898,6 +7899,9 @@ function ProcessStage({
                   />
                 ) : null}
                 <ProcessDiagramOverlayLayers {...diagramOverlayLayersProps} />
+                {tab === "diagram" && !isInterview ? (
+                  <SchemaAssistantBlock sessionId={sid} selectedElement={selectedBpmnElement} />
+                ) : null}
                 <BottomViewportScrubber
                   active={tab === "diagram" && !isInterview}
                   canvasApi={bpmnCanvasApi}
