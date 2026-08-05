@@ -368,6 +368,8 @@ export default {
   "ws.emptyAsIsTitle": "Сессия AS IS пуста",
   "ws.emptyAsIsHint": "В выбранной сессии нет BPMN-схемы. Начните TO BE с чистого листа или вернитесь и выберите другую сессию-источник.",
   "ws.emptyBack": "Выбрать другую сессию",
+  "ws.pickSession": "Выбрать сессию",
+  "ws.asIsUnavailableTitle": "Схема AS IS недоступна",
   "ws.emptyCanvasTitle": "На канвасе пока пусто",
   "ws.emptyCanvasHint": "Перетащите первый блок из Каталога операций или добавьте блок из палитры.",
   "ws.asIsReadonly": "AS IS — только просмотр (редактируется TO BE)",
