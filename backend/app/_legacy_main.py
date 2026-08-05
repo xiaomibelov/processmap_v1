@@ -4340,7 +4340,7 @@ def session_bpmn_export(
     raw_mode = bool(int(raw or 0))
     overlay_mode = bool(int(include_overlay or 0))
     if overlay_mode and not raw_mode:
-        result = get_overlay(session_id, zoom, pan_x, pan_y)
+        result = get_overlay(session_id, zoom, pan_x, pan_y, request=request)
         if result.status == 200:
             return Response(content=result.body, media_type="application/xml", headers={"Cache-Control": "max-age=60"})
         if result.status == 202:
@@ -4422,7 +4422,7 @@ def session_overlays(session_id: str, request: Request = None):
     if not s:
         raise HTTPException(status_code=404, detail="not found")
     from .overlay_cache import get_overlays_json
-    return JSONResponse(content=get_overlays_json(session_id))
+    return JSONResponse(content=get_overlays_json(session_id, request=request))
 
 
 _USER_FACING_BPMN_VERSION_ACTIONS = {
@@ -5936,17 +5936,17 @@ def export_legacy_routes() -> Tuple[APIRoute, ...]:
 from .exporters.bpmn import _collect_interview_comments
 from . import overlay_cache as _oc_mod
 
-def _wired_fetch_session_bpmn(sid: str) -> str:
-    s = _legacy_load_session_scoped(sid, None)[0]
+def _wired_fetch_session_bpmn(sid: str, request=None) -> str:
+    s = _legacy_load_session_scoped(sid, request)[0]
     return str(getattr(s, "bpmn_xml", "") or "")
 
-def _wired_fetch_annotations(sid: str) -> list:
-    s = _legacy_load_session_scoped(sid, None)[0]
+def _wired_fetch_annotations(sid: str, request=None) -> list:
+    s = _legacy_load_session_scoped(sid, request)[0]
     model = s.model_dump() if hasattr(s, "model_dump") else {}
     return _collect_interview_comments(model, model.get("nodes") or [])
 
-def _wired_compute_overlays_json(sid: str) -> list[dict[str, Any]]:
-    s = _legacy_load_session_scoped(sid, None)[0]
+def _wired_compute_overlays_json(sid: str, request=None) -> list[dict[str, Any]]:
+    s = _legacy_load_session_scoped(sid, request)[0]
     if not s:
         return []
     xml = str(getattr(s, "bpmn_xml", "") or "")
@@ -5954,8 +5954,8 @@ def _wired_compute_overlays_json(sid: str) -> list[dict[str, Any]]:
         return []
     return _compute_overlays_json(s, xml)
 
-def _wired_render_overlay_xml(sid: str, bpmn_xml: str) -> str:
-    s = _legacy_load_session_scoped(sid, None)[0]
+def _wired_render_overlay_xml(sid: str, bpmn_xml: str, request=None) -> str:
+    s = _legacy_load_session_scoped(sid, request)[0]
     if not s:
         return bpmn_xml
     return _overlay_interview_annotations_on_bpmn_xml(s, bpmn_xml)
