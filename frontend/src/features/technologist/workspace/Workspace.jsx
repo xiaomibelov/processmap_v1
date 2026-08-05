@@ -25,6 +25,7 @@ import {
   computeReachable,
   deleteFlow,
   deleteNode,
+  duplicateNode,
   emptyUiModel,
   findFlow,
   findNode,
@@ -327,6 +328,17 @@ export default function Workspace({
     markDirty(deleteNode(uiModel, id));
     if (selectedNodeId === id) setSelectedNodeId("");
     setPanelTab("step");
+  }
+
+  // T3#2 — дублирование блока (без потоков, смещение x/y; см. modelUtils.duplicateNode)
+  function handleDuplicateNode(id) {
+    const { model, node } = duplicateNode(uiModel, id, { nameSuffix: t("ctor.copySuffix") });
+    if (!node) return;
+    markDirty(model);
+    setSelectedNodeId(node.id);
+    setSelectedFlowId("");
+    setPanelTab("block");
+    setNotice(tf("ctor.blockDuplicated", { name: String(node?.display_name || node?.name || node.id) }));
   }
 
   function handleDeleteFlow(id) {
@@ -996,6 +1008,7 @@ export default function Workspace({
                 setNotice(tf("ctor.blockSaved", { name: patch.display_name || selectedNodeId }));
               }}
               onDelete={() => handleDeleteNode(selectedNodeId)}
+              onDuplicate={() => handleDuplicateNode(selectedNodeId)}
             />
           ) : null}
           {panelTab === "block" && !selectedNode && selectedAsisNode ? (
@@ -1242,6 +1255,7 @@ export default function Workspace({
                 setNotice(tf("ctor.blockSaved", { name: patch.display_name || selectedNodeId }));
               }}
               onDelete={() => handleDeleteNode(selectedNodeId)}
+              onDuplicate={() => handleDuplicateNode(selectedNodeId)}
             />
           ) : null}
           {panelTab === "block" && !selectedNode && selectedAsisNode ? (

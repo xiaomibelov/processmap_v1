@@ -17,6 +17,7 @@ import {
   computeReachable,
   deleteFlow,
   deleteNode,
+  duplicateNode,
   emptyUiModel,
   findFlow,
   findNode,
@@ -299,6 +300,17 @@ export function Constructor() {
     setUiModel((prev) => deleteNode(prev, id));
     if (selectedNodeId === id) setSelectedNodeId("");
     setPanelTab("template");
+  }
+
+  // T3#2 — дублирование блока (без потоков, смещение x/y; см. modelUtils.duplicateNode)
+  function handleDuplicateNode(id) {
+    const { model, node } = duplicateNode(uiModel, id, { nameSuffix: t("ctor.copySuffix") });
+    if (!node) return;
+    setUiModel(model);
+    setSelectedNodeId(node.id);
+    setSelectedFlowId("");
+    setPanelTab("block");
+    setNotice(tf("ctor.blockDuplicated", { name: nodeLabel(node) }));
   }
 
   function handleDeleteFlow(id) {
@@ -884,6 +896,7 @@ export function Constructor() {
                   setNotice(tf("ctor.blockSaved", { name: patch.display_name || selectedNode.id }));
                 }}
                 onDelete={() => handleDeleteNode(selectedNode.id)}
+                onDuplicate={() => handleDuplicateNode(selectedNode.id)}
               />
             ) : (
               <div className="ctor-block" data-testid="node-form">

@@ -85,6 +85,26 @@ export function addNode(model, node) {
   return { ...model, nodes: [...asArray(model.nodes), node] };
 }
 
+// T3#2 — дублирование блока: копия node с nextId, смещение x/y, БЕЗ потоков.
+// Чистая функция (как addNode/addFlow) — будущий undo/redo wrapper останется тривиальным.
+export function duplicateNode(model, nodeId, { dx = 40, dy = 40, nameSuffix = "" } = {}) {
+  const id = String(nodeId || "");
+  const src = asArray(model?.nodes).find((n) => String(n?.id || "") === id);
+  if (!src) return { model, node: null };
+  const prefix = String(src.id || "").replace(/_?\d+$/, "") || "Node";
+  const node = {
+    ...src,
+    id: nextId(model, prefix),
+    x: (Number(src.x) || 0) + dx,
+    y: (Number(src.y) || 0) + dy,
+  };
+  if (nameSuffix) {
+    if (src.display_name) node.display_name = `${src.display_name}${nameSuffix}`;
+    if (src.name) node.name = `${src.name}${nameSuffix}`;
+  }
+  return { model: addNode(model, node), node };
+}
+
 export function updateNode(model, nodeId, patch) {
   const id = String(nodeId || "");
   return {
