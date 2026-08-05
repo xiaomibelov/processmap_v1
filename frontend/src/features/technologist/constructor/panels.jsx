@@ -26,7 +26,7 @@ function nodeLabel(node) {
   return String(node?.display_name || node?.name || node?.id || "");
 }
 
-function BlockForm({ node, opDetail, declaredRefs, recipeKeys, onSave, onDelete }) {
+function BlockForm({ node, opDetail, declaredRefs, recipeKeys, onSave, onDelete, onDuplicate }) {
   const schema = asObject(opDetail?.parameter_schema);
   const schemaKeys = Object.keys(schema);
   const [displayName, setDisplayName] = useState(String(node?.display_name || ""));
@@ -222,6 +222,11 @@ function BlockForm({ node, opDetail, declaredRefs, recipeKeys, onSave, onDelete 
         >
           {t("ctor.blockSave")}
         </button>
+        {onDuplicate ? (
+          <button type="button" className="ctor-btn" data-testid="block-duplicate" onClick={onDuplicate}>
+            {t("ctor.blockDuplicate")}
+          </button>
+        ) : null}
         <button type="button" className="ctor-btn ctor-btn--danger" data-testid="block-delete" onClick={onDelete}>
           {t("ctor.blockDelete")}
         </button>
