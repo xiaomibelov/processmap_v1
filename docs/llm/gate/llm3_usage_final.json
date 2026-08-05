@@ -1,0 +1,32 @@
+{
+    "ok": true,
+    "items": [
+        {
+            "day": "2026-08-05",
+            "feature": "schema_assistant",
+            "model": "",
+            "calls": 3,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "cached_hits": 0,
+            "errors": 3
+        },
+        {
+            "day": "2026-08-05",
+            "feature": "schema_assistant",
+            "model": "deepseek-v4-flash",
+            "calls": 8,
+            "prompt_tokens": 2193,
+            "completion_tokens": 481,
+            "cached_hits": 4,
+            "errors": 0
+        }
+    ],
+    "totals": {
+        "calls": 11,
+        "prompt_tokens": 2193,
+        "completion_tokens": 481,
+        "cached_hits": 4,
+        "errors": 3
+    }
+}
