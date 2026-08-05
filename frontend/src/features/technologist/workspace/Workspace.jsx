@@ -148,13 +148,16 @@ export default function Workspace({
       setAsIsEmpty(false);
       setBlankOverride(false); // UXF: новая сессия-источник — сброс «с чистого листа»
       try {
-        const r = await apiGetBpmnXml(asIsSource.sessionId);
+        // fix(overlay): читаем AS IS как основной канвас — raw, без overlay-кэша
+        // (overlay-путь мог вернуть пустое тело 200: потеря org-контекста, backend-фикс рядом).
+        const r = await apiGetBpmnXml(asIsSource.sessionId, { raw: true, includeOverlay: false, cacheBust: true });
         if (canceled) return;
         // B0.1: пустая/невалидная сессия — понятное сообщение, НЕ «bpmn load failed»
         const xmlText = String(r?.xml || "").trim();
         if (!r?.ok || !xmlText) {
           setError("");
-          setNotice(t("ws.asIsEmpty"));
+          // r.ok=false (404/503/сеть) — это НЕ «пустая сессия», честная причина
+          setNotice(r?.ok ? t("ws.asIsEmpty") : t("ws.asIsLoadFailed"));
           setAsIsModel(null);
           setImportReport(null);
           setAsIsEmpty(true);
