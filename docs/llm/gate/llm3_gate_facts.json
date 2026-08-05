@@ -1,0 +1,106 @@
+{
+  "gate": "LLM3 «Помощник на Схеме» — golden-gate на stage",
+  "date": "2026-08-05",
+  "stage": {
+    "base": "https://stage.processmap.ru",
+    "commit": "52ef0e9da75cd9d994be78f13154effb05e7a112",
+    "env": "stage",
+    "migrations": {"alembic_version": "015", "head": "015", "ok": true},
+    "health_status": "ok",
+    "redis_mode": "ON"
+  },
+  "session": {
+    "sid": "13f1f10b20",
+    "name": "Разогрев супа",
+    "project": "c0494e0667",
+    "org": "org_default",
+    "rev": 14
+  },
+  "provider": {"name": "deepseek-main", "model_used": "deepseek-v4-flash", "enabled_restored": true},
+  "feature_flag": {"feature": "schema_assistant", "enabled": true, "daily_token_limit": 100000},
+  "prompt": {"id": "llmprompt_schema_assistant_v1", "version": 1, "status": "active", "max_tokens": 800, "model_class": "cheap"},
+  "checks": {
+    "gate1_autocall_free": {
+      "passed": true,
+      "fact": "открытие панели — 0 запросов к /llm/* (request-counter в Playwright); explain/ask disabled без выделенного шага",
+      "screens": ["llm3_gate1_block.png", "llm3_gate2_panel.png"]
+    },
+    "gate3_suggest_next": {
+      "passed": true,
+      "status": "ok",
+      "candidates": ["get_from_storage", "check", "move"],
+      "catalog_live_codes": 13,
+      "candidates_strictly_in_catalog": true,
+      "dropped": 0,
+      "note": "LLM сам указал недостаточность данных; кандидаты — типичные операции из живого каталога",
+      "screens": ["llm3_gate3_suggest.png"]
+    },
+    "gate4_suggest_cached": {
+      "passed": true,
+      "fact": "повторный suggest без изменений схемы → бейдж «Результат из кэша (контекст не менялся, 0 токенов)»",
+      "screens": ["llm3_gate4_suggest_cached.png"]
+    },
+    "gate5_explain_step": {
+      "passed": true,
+      "status": "ok",
+      "step_id": "Activity_1k9t4a7",
+      "trace_rule": "R02_get_from_storage",
+      "trace_source": "deterministic",
+      "fact": "пересказ строго записи trace_map; ответ содержит маркер «Пересказано только по приложенной записи trace; новых решений не принималось»",
+      "screens": ["llm3_gate5_explain.png"]
+    },
+    "gate6_step_qa": {
+      "passed": true,
+      "status": "ok",
+      "step_id": "Activity_1k9t4a7",
+      "question": "Что делает этот шаг и зачем он нужен?",
+      "answer_excerpt": "Этот шаг выполняет оборудование: выдаёт контейнер-1 из холодильника. Он нужен, чтобы подготовить контейнер-1 к следующем…",
+      "fact": "ответ в контексте сессии (контейнер-1, холодильник — реквизиты именно этой схемы)",
+      "screens": ["llm3_gate6_qa.png"]
+    },
+    "gate7_no_provider_negative": {
+      "passed": true,
+      "scenario": "provider deepseek-main disabled (PATCH /api/admin/llm/providers) → suggest-next?force=1 → HTTP 200 {ok:false,status:no_provider}; UI explain-step по некэшированному шагу Activity_171znbt → честная строка статуса, 0 ответов 5xx, зависаний нет → provider enabled restored + sanity live-call ok",
+      "http_5xx_on_llm_endpoints": 0,
+      "ui_status_text": "no enabled LLM providers with api key",
+      "screens": ["llm3_gate7_no_provider.png"]
+    }
+  },
+  "economics": {
+    "usage_before": {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "cached_hits": 0, "errors": 0},
+    "usage_final": {"calls": 11, "prompt_tokens": 2193, "completion_tokens": 481, "cached_hits": 4, "errors": 3},
+    "breakdown": {
+      "live_calls": 4,
+      "live_detail": "suggest-next (1), explain-step Activity_1k9t4a7 (1), step-qa (1), explain-step Activity_171znbt sanity после восстановления провайдера (1)",
+      "cached_calls": 4,
+      "cached_detail": "повтор suggest (гейт), повтор explain (API), повтор qa (API), suggest без force во время отключения провайдера — отдан из кэша, 0 токенов",
+      "error_calls": 3,
+      "error_detail": "все 3 — сценарий no_provider (suggest force=1 + 2 UI explain), все HTTP 200 с честным статусом, 0 токенов"
+    },
+    "max_tokens_check": {
+      "passed": true,
+      "fact": "суммарно 481 completion на 4 живых вызова < 800 → каждый ответ гарантированно ≤800; max одиночный замеренный ответ: 96 completion (explain), prompt 396",
+      "limit": 800
+    },
+    "cached_repeat_zero_tokens": {
+      "passed": true,
+      "fact": "повторы explain/qa через API: usage {prompt_tokens:0, completion_tokens:0}, cached=true"
+    },
+    "usage_dump_files": ["llm3_usage_before.json", "llm3_usage_final.json"]
+  },
+  "deviations": [
+    {
+      "id": "W3-D1",
+      "severity": "minor",
+      "fact": "при no_provider UI показывает raw-текст ошибки backend («no enabled LLM providers with api key», EN) вместо дружелюбной RU-строки — маппер берёт data.error при наличии; статус честный, не 500, косметика",
+      "carry": "backlog: schemaAssistantView — приоритет SA_ERROR_TEXTS над raw error для известных статусов"
+    },
+    {
+      "id": "W3-D2",
+      "severity": "minor",
+      "fact": "скрин gate6 снят до скролла к ответу QA — ответ зафиксирован в логе гейта и API-повторе (cached), на скрине виден вопрос и контекст панели",
+      "carry": "не требует действий"
+    }
+  ],
+  "verdict": "PASSED"
+}
