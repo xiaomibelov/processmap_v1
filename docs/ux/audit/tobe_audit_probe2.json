@@ -1,0 +1,37 @@
+{
+  "p1_zones": {
+    "viewportH": 1000,
+    "wsMain": {
+      "y": 285,
+      "h": 664
+    },
+    "canvases": {
+      "y": 295,
+      "h": 640
+    },
+    "svg": {
+      "y": 334,
+      "h": 318
+    },
+    "svgMaxHeight": "620px",
+    "svgViewBox": "20 420 8290 2000"
+  },
+  "p2_card": {
+    "cls": "",
+    "color": "rgb(235, 240, 249)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "childColor": "rgb(235, 240, 249)",
+    "childBg": "rgb(255, 255, 255)",
+    "text": "отсутствует pm:metadata на уровне процессаMISSING_PROCESS_METADATA"
+  },
+  "p2_importFindings": {
+    "count": 190,
+    "withSeverityClass": 0
+  },
+  "p5_pending": {
+    "textColor": "rgb(159, 176, 200)",
+    "opacity": "0.55",
+    "barBg": "rgb(22, 32, 47)",
+    "note": "эффективный цвет = textColor × opacity на barBg"
+  }
+}
