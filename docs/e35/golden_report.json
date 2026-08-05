@@ -24,8 +24,8 @@
   },
   "over_carried": [],
   "missed_recipe_checks": [
-    "measure_temperature",
-    "check"
+    "check",
+    "measure_temperature"
   ],
   "expert_only_not_derivable": [
     {
