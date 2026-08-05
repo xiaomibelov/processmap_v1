@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import datetime
-import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException, Request
@@ -28,6 +27,7 @@ from ..services.bpmn_navigation import (
     element_type,
     find_subprocess_elements,
 )
+from .session_recompute import _recompute_session
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +74,10 @@ def create_session(
     if prep_questions:
         sess.interview = {**(sess.interview or {}), "prep_questions": prep_questions}
         session_repo.save(sess, user_id=user_id, org_id=org_id, is_admin=is_admin)
-    # Note: _recompute_session and _session_api_dump are still in _legacy_main.py
-    # Full extraction requires moving those helpers first.
+    # Note: _session_api_dump is still in _legacy_main.py
+    # Full extraction requires moving that helper first.
     import app._legacy_main as _lm
-    sess = _lm._recompute_session(sess)
+    sess = _recompute_session(sess)
     session_repo.save(sess, user_id=user_id, org_id=org_id, is_admin=is_admin)
     _lm._invalidate_session_caches(sess, org_id=org_id or getattr(sess, "org_id", "") or "")
     return _lm._session_api_dump(sess)
@@ -465,27 +465,14 @@ def get_session_graph(
     request: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Return only nodes/edges for a session (used by graph analysis / AI)."""
-    ctx = _request_context(request)
-    ctx_user_id = user_id if user_id is not None else ctx.get("user_id")
-    ctx_org_id = org_id if org_id is not None else ctx.get("org_id")
-    ctx_is_admin = is_admin if is_admin is not None else ctx.get("is_admin")
-
-    sid = str(session_id or "").strip()
-    if not sid:
-        raise_session_not_found(session_id)
-
-    sess = session_repo.load(sid, user_id=ctx_user_id, org_id=ctx_org_id, is_admin=ctx_is_admin)
-    if not sess:
-        raise_session_not_found(session_id)
-
-    return {
-        "session_id": sid,
-        "nodes": [n.model_dump() if hasattr(n, "model_dump") else dict(n) for n in (getattr(sess, "nodes", None) or [])],
-        "edges": [e.model_dump() if hasattr(e, "model_dump") else dict(e) for e in (getattr(sess, "edges", None) or [])],
-        "bpmn_graph_fingerprint": str(getattr(sess, "bpmn_graph_fingerprint", "") or ""),
-        "version": int(getattr(sess, "version", 0) or 0),
-        "diagram_state_version": int(getattr(sess, "diagram_state_version", 0) or 0),
-    }
+    import app._legacy_main as _lm
+    return _lm.get_session_graph(
+        session_id,
+        user_id=user_id,
+        org_id=org_id,
+        is_admin=is_admin,
+        request=request,
+    )
 
 
 def session_bpmn_save(session_id: str, inp: Any, request: Any = None) -> Dict[str, Any]:
@@ -603,255 +590,39 @@ def overlays(session_id: str) -> Any:
     return get_overlays_json(session_id)
 
 
-# ── Node / Edge subdomain ─────────────────────────────────────────
+# ── Node / Edge subdomain (PR-11 sessions-graph) ──────────────────
 
-from ..models import Node, Edge
-from ..utils.session_helpers import (
-    _require_diagram_cas_or_409,
-    _resolve_base_diagram_state_version,
-    _resolve_actor_context,
-    _mark_diagram_truth_write,
-    _save_session_with_cas,
-    raise_session_not_found,
-)
+from ..utils.session_helpers import raise_session_not_found
 
 
 def patch_node(session_id: str, node_id: str, inp, request=None) -> Dict[str, Any]:
     """Patch a single node in a session."""
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-
-    node = next((n for n in s.nodes if n.id == node_id), None)
-    if not node:
-        return {"error": "node not found"}
-
-    client_base_version = _resolve_base_diagram_state_version(
-        request=request,
-        payload=inp.model_dump(exclude_unset=True),
-    )
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=client_base_version,
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    data = inp.model_dump(exclude_unset=True)
-
-    if "title" in data:
-        node.title = data["title"] or node.title
-        node.parameters["_manual_title"] = True
-    if "type" in data:
-        node.type = data["type"] or node.type
-        node.parameters["_manual_type"] = True
-    if "actor_role" in data:
-        node.actor_role = data["actor_role"] or None
-        node.parameters["_manual_actor"] = True
-    if "recipient_role" in data:
-        node.recipient_role = data["recipient_role"] or None
-        node.parameters["_manual_recipient"] = True
-    if "equipment" in data and data["equipment"] is not None:
-        node.equipment = data["equipment"]
-        node.parameters["_manual_equipment"] = True
-    if "duration_min" in data:
-        node.duration_min = data["duration_min"]
-        node.parameters["_manual_duration"] = True
-    if "parameters" in data and data["parameters"] is not None:
-        node.parameters = data["parameters"]
-        node.parameters["_manual_parameters"] = True
-    if "disposition" in data and data["disposition"] is not None:
-        node.disposition = data["disposition"]
-        node.parameters["_manual_disposition"] = True
-
     import app._legacy_main as _lm
-    s = _lm._recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["nodes"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    _save_session_with_cas(st, s, client_base_version=client_base_version)
-    session_cache.invalidate_session(session_id)
-    return s.model_dump()
+    return _lm.patch_node(session_id, node_id, inp, request)
 
 
 def add_node(session_id: str, inp, request=None) -> Dict[str, Any]:
     """Add a new node to a session."""
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-
-    client_base_version = _resolve_base_diagram_state_version(
-        request=request,
-        payload=inp.model_dump(exclude_unset=True),
-    )
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=client_base_version,
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    node_id = (inp.id or "").strip() or f"n_{uuid.uuid4().hex[:8]}"
-    if any(n.id == node_id for n in s.nodes):
-        return {"error": "node already exists", "node_id": node_id}
-
-    node = Node(
-        id=node_id,
-        title=inp.title,
-        type=inp.type or "step",
-        actor_role=inp.actor_role,
-        recipient_role=inp.recipient_role,
-        equipment=list(inp.equipment or []),
-        parameters=dict(inp.parameters or {}),
-        duration_min=inp.duration_min,
-        disposition=dict(inp.disposition or {}),
-        qc=[],
-        exceptions=[],
-        evidence=[],
-        confidence=0.0,
-    )
-    s.nodes.append(node)
-
     import app._legacy_main as _lm
-    s = _lm._recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["nodes"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    _save_session_with_cas(st, s, client_base_version=client_base_version)
-    session_cache.invalidate_session(session_id)
-    return s.model_dump()
+    return _lm.add_node(session_id, inp, request)
 
 
 def delete_node(session_id: str, node_id: str, request=None) -> Dict[str, Any]:
     """Delete a node (and incident edges) from a session."""
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-
-    client_base_version = _resolve_base_diagram_state_version(request=request)
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=client_base_version,
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    before_n = len(s.nodes)
-    s.nodes = [n for n in s.nodes if n.id != node_id]
-    if len(s.nodes) == before_n:
-        return {"error": "node not found"}
-
-    s.edges = [e for e in s.edges if e.from_id != node_id and e.to_id != node_id]
-
     import app._legacy_main as _lm
-    s = _lm._recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["nodes", "edges"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    _save_session_with_cas(st, s, client_base_version=client_base_version)
-    session_cache.invalidate_session(session_id)
-    return s.model_dump()
+    return _lm.delete_node(session_id, node_id, request)
 
 
 def add_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
     """Add a new edge to a session."""
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-
-    client_base_version = _resolve_base_diagram_state_version(
-        request=request,
-        payload=inp.model_dump(exclude_unset=True),
-    )
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=client_base_version,
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    if not any(n.id == inp.from_id for n in s.nodes):
-        return {"error": "from_id not found", "from_id": inp.from_id}
-    if not any(n.id == inp.to_id for n in s.nodes):
-        return {"error": "to_id not found", "to_id": inp.to_id}
-
-    exists = any(
-        (e.from_id == inp.from_id and e.to_id == inp.to_id and (e.when or None) == (inp.when or None))
-        for e in s.edges
-    )
-    if exists:
-        return {"error": "edge already exists"}
-
-    s.edges.append(Edge(from_id=inp.from_id, to_id=inp.to_id, when=inp.when))
-
     import app._legacy_main as _lm
-    s = _lm._recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["edges"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    _save_session_with_cas(st, s, client_base_version=client_base_version)
-    session_cache.invalidate_session(session_id)
-    return s.model_dump()
+    return _lm.add_edge(session_id, inp, request)
 
 
 def delete_edge(session_id: str, inp, request=None) -> Dict[str, Any]:
     """Delete an edge from a session."""
-    st = get_storage()
-    s = st.load(session_id)
-    if not s:
-        raise_session_not_found(session_id)
-
-    client_base_version = _resolve_base_diagram_state_version(
-        request=request,
-        payload=inp.model_dump(exclude_unset=True),
-    )
-    _require_diagram_cas_or_409(
-        sess=s,
-        session_id=session_id,
-        request=request,
-        client_base_version=client_base_version,
-    )
-    _, actor_user_id, actor_label = _resolve_actor_context(request)
-
-    before = len(s.edges)
-    s.edges = [
-        e for e in s.edges
-        if not (e.from_id == inp.from_id and e.to_id == inp.to_id and (e.when or None) == (inp.when or None))
-    ]
-    if len(s.edges) == before:
-        return {"error": "edge not found"}
-
     import app._legacy_main as _lm
-    s = _lm._recompute_session(s)
-    _mark_diagram_truth_write(
-        s,
-        changed_keys=["edges"],
-        actor_user_id=actor_user_id,
-        actor_label=actor_label,
-    )
-    _save_session_with_cas(st, s, client_base_version=client_base_version)
-    session_cache.invalidate_session(session_id)
-    return s.model_dump()
+    return _lm.delete_edge(session_id, inp, request)
 
 
 # ── Notes / Answers / AI subdomain (thin extraction) ──────────────
@@ -1010,7 +781,7 @@ def recompute_session(session_id: str, request: Optional[Request] = None):
     sess, oid, _ = _lm._legacy_load_session_scoped(session_id, request)
     if not sess:
         return {"error": "not found"}
-    sess = _lm._recompute_session(sess)
+    sess = _recompute_session(sess)
     get_storage().save(sess)
     try:
         refresh_analytics_for_session(
