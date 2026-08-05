@@ -139,6 +139,12 @@ def recompute(session_id: str, request: Request = None):
 def ai_questions(session_id: str, inp: AiQuestionsIn, request: Request = None):
     return _svc.ai_questions(session_id, inp, request)
 
+@router.post('/api/sessions/{session_id}/llm/analysis')
+def llm_analysis(session_id: str, request: Request = None, force: int = 0):
+    # LLM1 — анализ процесса через LLM-гейтвей (app.ai.process_analysis)
+    from ..ai.process_analysis import llm_process_analysis
+    return llm_process_analysis(session_id, request, force)
+
 @router.post('/api/sessions/{session_id}/notes')
 def post_notes(session_id: str, inp: NotesIn, request: Request = None):
     return _svc.post_notes(session_id, inp, request)

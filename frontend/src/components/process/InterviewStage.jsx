@@ -13,6 +13,7 @@ import TransitionsBlock from "./interview/TransitionsBlock";
 import SummaryBlock from "./interview/SummaryBlock";
 import ExceptionsBlock from "./interview/ExceptionsBlock";
 import AiQuestionsBlock from "./interview/AiQuestionsBlock";
+import LlmAnalysisBlock from "./interview/LlmAnalysisBlock";
 import BindingAssistantModal from "./interview/BindingAssistantModal";
 import InterviewDebugOverlay from "./interview/InterviewDebugOverlay";
 import { apiGetSessionAnalysisViewModel } from "../../lib/api.js";
@@ -1147,6 +1148,8 @@ export default function InterviewStage({
           patchQuestionStatus={patchQuestionStatus}
         />
       ) : null}
+
+      <LlmAnalysisBlock sessionId={sid} steps={Array.isArray(timelineView) ? timelineView : []} />
 
 
       <BindingAssistantModal
