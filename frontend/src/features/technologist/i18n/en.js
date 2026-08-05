@@ -352,6 +352,8 @@ export default {
   "ws.emptyAsIsTitle": "AS IS session is empty",
   "ws.emptyAsIsHint": "The selected session has no BPMN diagram. Start TO BE from scratch or go back and pick another source session.",
   "ws.emptyBack": "Pick another session",
+  "ws.pickSession": "Pick a session",
+  "ws.asIsUnavailableTitle": "AS IS diagram unavailable",
   "ws.emptyCanvasTitle": "The canvas is empty",
   "ws.emptyCanvasHint": "Drag the first block from the Operation catalog or add a block from the palette.",
   "ws.asIsReadonly": "AS IS is read-only (edit TO BE instead)",

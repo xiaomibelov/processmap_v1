@@ -95,6 +95,8 @@ export default function Workspace({
   const [traceLinksMode, setTraceLinksMode] = useState("selection"); // OL1.4: selection | always
   // UXF/B1: сессия AS IS выбрана, но пуста/не распознана — трансформация недоступна
   const [asIsEmpty, setAsIsEmpty] = useState(false);
+  // причина пустого AS IS: empty | load_failed | no_nodes | import_failed — единый текст в центр-карточке
+  const [asIsEmptyReason, setAsIsEmptyReason] = useState("");
   // UXF/B1+B5: пользователь осознанно выбрал «с чистого листа» поверх пустой AS IS
   const [blankOverride, setBlankOverride] = useState(false);
 
@@ -146,6 +148,7 @@ export default function Workspace({
     (async () => {
       setBusy(true); setError("");
       setAsIsEmpty(false);
+      setAsIsEmptyReason("");
       setBlankOverride(false); // UXF: новая сессия-источник — сброс «с чистого листа»
       try {
         // fix(overlay): читаем AS IS как основной канвас — raw, без overlay-кэша
@@ -156,11 +159,12 @@ export default function Workspace({
         const xmlText = String(r?.xml || "").trim();
         if (!r?.ok || !xmlText) {
           setError("");
+          // UXF: единое сообщение — центр-карточка (баннер не дублируем);
           // r.ok=false (404/503/сеть) — это НЕ «пустая сессия», честная причина
-          setNotice(r?.ok ? t("ws.asIsEmpty") : t("ws.asIsLoadFailed"));
           setAsIsModel(null);
           setImportReport(null);
           setAsIsEmpty(true);
+          setAsIsEmptyReason(r?.ok ? "empty" : "load_failed");
           setLayerMode("tobe");
           return;
         }
@@ -182,10 +186,10 @@ export default function Workspace({
           // UXF/B2: XML есть, но не распознан — это НЕ «пустая сессия»,
           // показываем честную причину (раньше маскировалось под asIsEmpty)
           setError("");
-          setNotice(ir?.ok ? t("ws.asIsImportNoNodes") : t("ws.asIsImportFailed"));
           setAsIsModel(null);
           setImportReport(null);
           setAsIsEmpty(true);
+          setAsIsEmptyReason(ir?.ok ? "no_nodes" : "import_failed");
           setLayerMode("tobe");
         }
       } finally { if (!canceled) setBusy(false); }
@@ -651,10 +655,10 @@ export default function Workspace({
   const action = useMemo(() => {
     if (!asIsModel && !hasTemplate) {
       if (asIsSource?.sessionId && !blankOverride) {
-        // UXF/B1: AS IS пуста — главное действие «с чистого листа»,
-        // трансформация показывается отдельно (disabled + причина), а не мёртвой кнопкой
+        // UXF/B1: AS IS пуста — действия только в центр-карточке;
+        // тулбар — disabled «Трансформация» с title-причиной, без дублирующих активных CTA
         return asIsEmpty
-          ? { id: "blank", label: t("ws.actionBlank") }
+          ? { id: "transform_blocked", label: t("wf.nextTransform") }
           : { id: "transform", label: t("wf.nextTransform") };
       }
       // UXF/B5: чистый лист без блоков — главное действие «открыть палитру/каталог»
@@ -678,6 +682,7 @@ export default function Workspace({
   async function handleAction() {
     if (action.id === "import") { document.getElementById("ws-file-input")?.click(); return; }
     if (action.id === "blank") { handleBlankStart(); return; }
+    if (action.id === "transform_blocked") return; // disabled-кнопка, действия — в центр-карточке
     if (action.id === "palette") { setPaletteOpen(true); return; }
     if (action.id === "transform") return handleTransform();
     if (action.id === "save") return handleSave();
@@ -701,6 +706,15 @@ export default function Workspace({
   ];
 
   const importFindings = asArray(importReport?.findings);
+
+  // UXF: empty-state — ОДНО сообщение (центр-карточка, текст по причине) и ОДИН набор действий
+  const emptyCardText = asIsEmptyReason === "load_failed"
+    ? { title: t("ws.asIsUnavailableTitle"), hint: t("ws.asIsLoadFailed") }
+    : asIsEmptyReason === "no_nodes"
+      ? { title: t("ws.asIsUnavailableTitle"), hint: t("ws.asIsImportNoNodes") }
+      : asIsEmptyReason === "import_failed"
+        ? { title: t("ws.asIsUnavailableTitle"), hint: t("ws.asIsImportFailed") }
+        : { title: t("ws.emptyAsIsTitle"), hint: t("ws.emptyAsIsHint") };
 
   return (
     <div className="ws">
@@ -752,7 +766,8 @@ export default function Workspace({
               type="button"
               className="ctor-btn ctor-btn--primary"
               data-testid="ws-action"
-              disabled={busy}
+              disabled={busy || action.id === "transform_blocked"}
+              title={action.id === "transform_blocked" ? t("ws.transformDisabledEmpty") : undefined}
               onClick={handleAction}
             >
               {action.label}
@@ -769,17 +784,6 @@ export default function Workspace({
               {t("ws.diskImport")}
             </button>
           )}
-          {asIsEmpty && asIsSource?.sessionId && !blankOverride ? (
-            <button
-              type="button"
-              className="ctor-btn"
-              data-testid="ws-transform-disabled"
-              disabled
-              title={t("ws.transformDisabledEmpty")}
-            >
-              {t("wf.nextTransform")}
-            </button>
-          ) : null}
           <input
             id="ws-file-input"
             type="file"
@@ -923,22 +927,27 @@ export default function Workspace({
             />
             {asIsEmpty && asIsSource?.sessionId && !blankOverride ? (
               <div className="ws__empty" data-testid="ws-empty">
-                <div className="ws__empty-title">{t("ws.emptyAsIsTitle")}</div>
-                <div className="ws__empty-hint">{t("ws.emptyAsIsHint")}</div>
+                <div className="ws__empty-title">{emptyCardText.title}</div>
+                <div className="ws__empty-hint">{emptyCardText.hint}</div>
                 <div className="ws__empty-actions">
+                  {typeof onClose === "function" ? (
+                    <button
+                      type="button"
+                      className="ctor-btn ctor-btn--primary"
+                      data-testid="ws-pick-session"
+                      onClick={onClose}
+                    >
+                      {t("ws.pickSession")}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
-                    className="ctor-btn ctor-btn--primary"
+                    className="ctor-btn"
                     data-testid="ws-blank-start"
                     onClick={handleBlankStart}
                   >
                     {t("ws.actionBlank")}
                   </button>
-                  {embedded && onClose ? (
-                    <button type="button" className="ctor-btn" data-testid="ws-empty-back" onClick={onClose}>
-                      {t("ws.emptyBack")}
-                    </button>
-                  ) : null}
                 </div>
               </div>
             ) : !busy && !asIsModel && asArray(effectiveModel.nodes).length === 0 ? (
