@@ -93,6 +93,38 @@ class ProjectSessionsSummaryTests(unittest.TestCase):
         self.assertGreater(len(str(row.get("bpmn_xml") or "")), 10000)
         self.assertEqual(row.get("interview", {}).get("status"), "review")
 
+    def test_summary_includes_formal_subprocess_flag(self):
+        """T1: summary отдаёт формальный признак сабпроцесса
+        (parent_session_id / element_id_in_parent / is_subprocess) —
+        пикер источника TO BE исключает сабпроцессы по флагу, не по имени."""
+        storage = self.get_storage()
+        child_id = storage.create(
+            "Хранение шпильки в Холодильной камере",
+            roles=["cook"],
+            project_id=self.project_id,
+            mode="quick_skeleton",
+            org_id=self.org_id,
+            is_admin=True,
+        )
+        child = storage.load(child_id, org_id=self.org_id, is_admin=True)
+        self.assertIsNotNone(child)
+        child.parent_session_id = self.session_id
+        child.element_id_in_parent = "Activity_abc123"
+        storage.save(child, org_id=self.org_id, is_admin=True)
+
+        rows = self.list_project_sessions(self.project_id, view="summary")
+        by_id = {str(row.get("id") or ""): row for row in rows}
+        self.assertEqual(len(rows), 2)
+
+        child_row = by_id[child_id]
+        self.assertEqual(child_row.get("parent_session_id"), self.session_id)
+        self.assertEqual(child_row.get("element_id_in_parent"), "Activity_abc123")
+        self.assertEqual(child_row.get("is_subprocess"), True)
+
+        root_row = by_id[self.session_id]
+        self.assertEqual(root_row.get("parent_session_id"), "")
+        self.assertEqual(root_row.get("is_subprocess"), False)
+
     def test_invalid_summary_view_is_rejected(self):
         with self.assertRaises(HTTPException) as ctx:
             self.list_project_sessions(self.project_id, view="tiny")
