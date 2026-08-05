@@ -1,0 +1,255 @@
+{
+  "as_is_fixture": "itmo_razogrev_v02.bpmn",
+  "to_be_fixture": "tobe_razogrev_supa_rtk_v03.bpmn",
+  "llm": {
+    "mode": "live-stage",
+    "base_url": "https://stage.processmap.ru",
+    "llm_status": "disabled"
+  },
+  "matched_decisions_pct": 100.0,
+  "false_carries_pct": 0.0,
+  "missed_recipe_checks_pct": 100.0,
+  "draft_validation": {
+    "errors": 0,
+    "warnings": 25,
+    "nodes": 25,
+    "flows": 25
+  },
+  "counts": {
+    "as_is_tasks": 23,
+    "matched": 23,
+    "draft_nodes": 25,
+    "expert_nodes": 35,
+    "open_questions": 7,
+    "llm_sourced_decisions": 0
+  },
+  "over_carried": [],
+  "missed_recipe_checks": [
+    "measure_temperature",
+    "check"
+  ],
+  "details": [
+    {
+      "element_id": "Activity_1k9t4a7",
+      "name": "Выдать контейнер-1 из холодильника",
+      "expected": "transformed_to:get_from_storage",
+      "actual": "transformed_to:get_from_storage",
+      "rule_id": "R02_get_from_storage",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_0eqhdco",
+      "name": "Перенести контейнер-1 в устройство-вскрытия-1",
+      "expected": "transformed_to:move",
+      "actual": "transformed_to:move",
+      "rule_id": "R01_move",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_1spcm9y",
+      "name": "Вскрыть контейнер-1 в устройство-вскрытия-1",
+      "expected": "transformed_to:open_container",
+      "actual": "transformed_to:open_container",
+      "rule_id": "R06_open_container",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_1tghc67",
+      "name": "Открыть СВЧ-1",
+      "expected": "transformed_to:open_equipment",
+      "actual": "transformed_to:open_equipment",
+      "rule_id": "R04_open_equipment",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_1tsk3kf",
+      "name": "Перенести контейнер-1 в СВЧ-1",
+      "expected": "transformed_to:move",
+      "actual": "transformed_to:move",
+      "rule_id": "R01_move",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_1jw2q8u",
+      "name": "Закрыть СВЧ-1",
+      "expected": "transformed_to:close_equipment",
+      "actual": "transformed_to:close_equipment",
+      "rule_id": "R05_close_equipment",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_0238wyw",
+      "name": "Настроить СВЧ-1",
+      "expected": "transformed_to:set_equipment",
+      "actual": "transformed_to:set_equipment",
+      "rule_id": "R08_configure_equipment",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_07dw2ru",
+      "name": "Запустить СВЧ-1",
+      "expected": "transformed_to:start_equipment",
+      "actual": "transformed_to:start_equipment",
+      "rule_id": "R09_start_equipment",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_1i8s5wl",
+      "name": "Выдать контейнер-2 из устройства-выдачи-1",
+      "expected": "transformed_to:get_from_storage",
+      "actual": "transformed_to:get_from_storage",
+      "rule_id": "R02_get_from_storage",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_1r18m6r",
+      "name": "Перенести контейнер-2 в устройство-перетаривания-1",
+      "expected": "transformed_to:move",
+      "actual": "transformed_to:move",
+      "rule_id": "R01_move",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_1gmqktc",
+      "name": "Открыть СВЧ-1",
+      "expected": "transformed_to:open_equipment",
+      "actual": "transformed_to:open_equipment",
+      "rule_id": "R04_open_equipment",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_1nmuo3d",
+      "name": "Поднести контейнер-1 к устройству-перетаривания-1",
+      "expected": "pushed_below",
+      "actual": "pushed_below",
+      "rule_id": "R11_grasp_below",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_0flva8y",
+      "name": "Закрыть СВЧ-1",
+      "expected": "transformed_to:close_equipment",
+      "actual": "transformed_to:close_equipment",
+      "rule_id": "R05_close_equipment",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_171znbt",
+      "name": "Перетарить (содержимое) контейнер-1 в контейнер-2",
+      "expected": "transformed_to:transfer",
+      "actual": "transformed_to:transfer",
+      "rule_id": "R10_transfer",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_1vz1obl",
+      "name": "Открыть урну-1",
+      "expected": "pushed_below",
+      "actual": "pushed_below",
+      "rule_id": "R03_open_bin_below",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_1epghx4",
+      "name": "Открыть урну-1",
+      "expected": "pushed_below",
+      "actual": "pushed_below",
+      "rule_id": "R03_open_bin_below",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_12cgz6a",
+      "name": "Перенести контейнер-1 в урну-1",
+      "expected": "transformed_to:move",
+      "actual": "transformed_to:move",
+      "rule_id": "R01_move",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_164zb9r",
+      "name": "Перенести контейнер-2 в запайщик-1",
+      "expected": "transformed_to:move",
+      "actual": "transformed_to:move",
+      "rule_id": "R01_move",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_0eh2m0x",
+      "name": "Запустить запайщик-1",
+      "expected": "transformed_to:close_container",
+      "actual": "transformed_to:close_container",
+      "rule_id": "R07_seal_container",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_1grwh4i",
+      "name": "Перенести контейнер-2 в зону упаковки",
+      "expected": "transformed_to:move",
+      "actual": "transformed_to:move",
+      "rule_id": "R18_move_to_packaging",
+      "source": "deterministic",
+      "ok": true
+    },
+    {
+      "element_id": "Activity_03kv40i",
+      "name": "",
+      "expected": "open_question",
+      "actual": "open_question",
+      "rule_id": null,
+      "source": null,
+      "ok": true
+    },
+    {
+      "element_id": "Activity_0jv0gg5",
+      "name": "",
+      "expected": "open_question",
+      "actual": "open_question",
+      "rule_id": null,
+      "source": null,
+      "ok": true
+    },
+    {
+      "element_id": "Activity_020el8s",
+      "name": "",
+      "expected": "open_question",
+      "actual": "open_question",
+      "rule_id": null,
+      "source": null,
+      "ok": true
+    }
+  ],
+  "live_probe": {
+    "task": "Согласовать отгрузку с клиентом по телефону (unmatched для rules)",
+    "llm_status": "llm",
+    "result": "rule_id=null → open_question (LLM честно не знает, не угадывает)",
+    "llm_usage_as_is_transform": {
+      "day": "2026-08-05",
+      "calls": 1,
+      "prompt_tokens": 1790,
+      "completion_tokens": 28,
+      "cached_hits": 0,
+      "errors": 0
+    },
+    "note": "golden-фикстура: 3 unmatched — пустые безымянные, LLM не вызывается (0 calls); live-путь доказан probe-задачей",
+    "schema_safety": "endpoint возвращает draft JSON; запись в схему — только через TransformReview accept (код не менялся)"
+  }
+}
