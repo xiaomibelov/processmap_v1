@@ -14,6 +14,7 @@ import {
   addNode,
   asArray,
   asObject,
+  buildOperationNode,
   computeReachable,
   deleteFlow,
   deleteNode,
@@ -71,6 +72,8 @@ function nodeLabel(node) {
 
 export function Constructor() {
   const [uiModel, setUiModel] = useState(() => emptyUiModel());
+  // T3#1 — точка вставки следующего блока (клик по пустому канвасу); null → дефолт «в хвост справа»
+  const [insertPoint, setInsertPoint] = useState(null);
   const [templateId, setTemplateId] = useState("");
   const [templateName, setTemplateName] = useState("Новый шаблон");
   const [templateVersion, setTemplateVersion] = useState("0.1.0");
@@ -254,22 +257,10 @@ export function Constructor() {
   }
 
   function handleAddOperation(op) {
-    const pos = nextNodePosition(uiModel);
-    const node = {
-      id: nextId(uiModel, "Task"),
-      bpmn_type: "task",
-      name: String(op?.name_ru || op?.name || op?.code || ""),
-      operation_code: String(op?.code || ""),
-      // display_name — на языке UI (name_ru), переименовывается в блоке
-      display_name: String(op?.name_ru || op?.name || op?.code || ""),
-      params: {},
-      outputs: {},
-      recipe_params: [],
-      x: pos.x,
-      y: pos.y,
-      width: 140,
-      height: 70,
-    };
+    // T3#1: точка клика по канвасу приоритетнее дефолта «в хвост справа»
+    const pos = insertPoint || nextNodePosition(uiModel);
+    const node = buildOperationNode(uiModel, op, pos);
+    setInsertPoint(null);
     setUiModel((prev) => addNode(prev, node));
     setSelectedNodeId(node.id);
     setSelectedFlowId("");
@@ -795,6 +786,8 @@ export function Constructor() {
             connectSourceId={connectSourceId}
             unreachableNodeIds={unreachableIds}
             nodeRefs={nodeRefs}
+            onCanvasClick={(x, y) => setInsertPoint({ x, y })}
+            insertPoint={insertPoint}
             ariaLabel={t("ctor.canvasAria")}
           />
         </section>
