@@ -58,6 +58,7 @@
 .tobeSteps__item--done .tobeSteps__num { background: var(--ws-step-done-bg, #1e4630); color: var(--ws-step-done, #7fce9b); }
 .tobeSteps__item--current { color: var(--ws-step-current, #fff); border-color: var(--ws-step-current-border, #3f6fd1); background: var(--ws-step-current-bg, #1d2c47); }
 .tobeSteps__item--current .tobeSteps__num { background: var(--ws-step-current-num-bg, #3f6fd1); color: var(--ws-step-current, #fff); }
-.tobeSteps__item--pending { opacity: 0.55; }
-.tobeSteps__item--na { opacity: 0.4; }
+/* Z0 TOBE-UX: как .wfbar__step--* — solid-токены вместо opacity (дубль степпера) */
+.tobeSteps__item--pending { color: var(--pm-tobe-step-pending, #b8c6da); }
+.tobeSteps__item--na { color: var(--pm-tobe-step-na, #8496ad); }
 .tobeSteps__item--na .tobeSteps__num { background: transparent; }
