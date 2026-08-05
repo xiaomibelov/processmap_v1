@@ -344,6 +344,7 @@ export default {
   "ws.backToSession": "← Back to session",
   "ws.asIsFromSession": "AS IS loaded from a ProcessMap session",
   "ws.asIsEmpty": "The AS IS session is empty — start TO BE from scratch or pick another session",
+  "ws.asIsLoadFailed": "Failed to load the AS IS session (server or network error) — try again or pick another session",
   "ws.asIsImportNoNodes": "The AS IS diagram loaded but no blocks were recognized — start from scratch or pick another session",
   "ws.asIsImportFailed": "Failed to parse the AS IS diagram — start from scratch or pick another session",
   "ws.actionBlank": "Start from scratch",
