@@ -254,7 +254,15 @@ assert в тесте), ни в телеметрии.
 - [x] Галлюцинированные step_id/operation_code отброшены (`test_antihallucination_filter`: шаг-призрак + package_meal + код вне каталога, dropped=3)
 - [x] Только по клику: ни одного фонового/авто-вызова (`llmAnalysisBlock.source.test.mjs`: нет useEffect, apiLlmAnalysis только в run())
 - [x] shape-тест эндпоинта (`test_shape_ok` + роут зарегистрирован); регрессии пустые (backend 26≡26, frontend 61≡61); i18n — блок следует стилю InterviewStage (русские строки, как соседние блоки)
-- [ ] Gate: скрин кнопки во вкладке «Анализ процессов» на stage (после мержа/деплоя)
+- [x] Gate: скрин кнопки во вкладке «Анализ процессов» на stage — **ПРОЙДЕН 2026-08-05** (артефакты `docs/llm/gate/`):
+  (1) `/api/health.migrations` = `{013, 013, ok:true}`, status ok — самолечение F1–F3: 013 применилась сама при деплое;
+  (2) кнопка на месте (llm1_gate2_button.png); (3) живой прогон + повтор → cached=true,
+  llm_usage: calls=3, cached_hits=1, errors=0, повтор 0 токенов (llm1_gate3_*.png);
+  (4) force с inline-confirm (llm1_gate4_*.png).
+
+## BACKLOG
+- LLM-эндпоинты — переход на RBAC при появлении ролей в backend-auth
+  (зафиксировано при мерже LLM1: гейтинг сейчас org-scoped, как у всех session-эндпоинтов).
 
 ---
 
