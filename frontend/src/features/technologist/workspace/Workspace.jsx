@@ -15,6 +15,7 @@ import WorkflowBar, { WORKFLOW_STEPS } from "../workflow/WorkflowBar";
 import CheckPanel from "../constructor/CheckPanel";
 import AuditHistory from "../audit/AuditHistory";
 import { BlockForm, FlowForm, EntitiesPanel, TemplatePanel } from "../constructor/panels";
+import OperationPalette from "../constructor/OperationPalette";
 import {
   DICTIONARY_BY_CATEGORY,
   ENTITY_CATEGORIES,
@@ -22,9 +23,11 @@ import {
   addNode,
   asArray,
   asObject,
+  buildOperationNode,
   computeReachable,
   deleteFlow,
   deleteNode,
+  duplicateNode,
   emptyUiModel,
   findFlow,
   findNode,
@@ -34,6 +37,7 @@ import {
   normalizeUiModel,
   updateFlow,
   updateNode,
+  upsertEntity,
 } from "../constructor/modelUtils";
 import WorkspacePanel from "./WorkspacePanel";
 import { attachProcessStageFlushBeforeLeaveListener } from "../../process/navigation/processLeaveFlush";
@@ -63,6 +67,8 @@ export default function Workspace({
 } = {}) {
   // ---- модель процесса (TO BE) ----
   const [uiModel, setUiModel] = useState(() => emptyUiModel());
+  // T3#1 — точка вставки следующего блока (клик по пустому канвасу); null → ступенчатый дефолт
+  const [insertPoint, setInsertPoint] = useState(null);
   const [templateId, setTemplateId] = useState("");
   const [templateName, setTemplateName] = useState(t("ctor.newTemplate"));
   const [templateVersion, setTemplateVersion] = useState("0.1.0");
@@ -293,18 +299,10 @@ export default function Workspace({
   }
 
   function handleAddOperation(op) {
-    const pos = { x: 40 + ((uiModel.nodes?.length || 0) % 6) * 170, y: 60 };
-    const node = {
-      id: nextId(uiModel, "Task"),
-      bpmn_type: "task",
-      name: String(op?.name_ru || op?.name || op?.code || ""),
-      operation_code: String(op?.code || ""),
-      display_name: String(op?.name_ru || op?.name || op?.code || ""),
-      params: {},
-      outputs: {},
-      recipe_params: [],
-      x: pos.x, y: pos.y, width: 140, height: 70,
-    };
+    // T3#1: точка клика по канвасу приоритетнее дефолта (ступенчатая раскладка)
+    const pos = insertPoint || { x: 40 + ((uiModel.nodes?.length || 0) % 6) * 170, y: 60 };
+    const node = buildOperationNode(uiModel, op, pos);
+    setInsertPoint(null);
     markDirty(addNode(uiModel, node));
     setSelectedNodeId(node.id);
     setSelectedFlowId("");
@@ -327,6 +325,17 @@ export default function Workspace({
     markDirty(deleteNode(uiModel, id));
     if (selectedNodeId === id) setSelectedNodeId("");
     setPanelTab("step");
+  }
+
+  // T3#2 — дублирование блока (без потоков, смещение x/y; см. modelUtils.duplicateNode)
+  function handleDuplicateNode(id) {
+    const { model, node } = duplicateNode(uiModel, id, { nameSuffix: t("ctor.copySuffix") });
+    if (!node) return;
+    markDirty(model);
+    setSelectedNodeId(node.id);
+    setSelectedFlowId("");
+    setPanelTab("block");
+    setNotice(tf("ctor.blockDuplicated", { name: String(node?.display_name || node?.name || node.id) }));
   }
 
   function handleDeleteFlow(id) {
@@ -878,6 +887,8 @@ export default function Workspace({
                 connectSourceId={connectSourceId}
                 nodeBadges={decisionBadges}
                 nodeRefs={nodeRefs}
+                onCanvasClick={(x, y) => setInsertPoint({ x, y })}
+                insertPoint={insertPoint}
                 ariaLabel="TO BE"
               />
             </div>
@@ -991,11 +1002,16 @@ export default function Workspace({
               opDetail={opDetails[String(selectedNode?.operation_code || "")]}
               declaredRefs={listDeclaredRefs(uiModel)}
               recipeKeys={Object.keys(uiModel?.recipe_context || {})}
+              dicts={dicts}
+              onAddEntity={(category, ref, typeId) =>
+                markDirty(upsertEntity(uiModel, category, ref, { type_id: typeId, source: "manual" }))
+              }
               onSave={(patch) => {
                 markDirty(updateNode(uiModel, selectedNodeId, patch));
                 setNotice(tf("ctor.blockSaved", { name: patch.display_name || selectedNodeId }));
               }}
               onDelete={() => handleDeleteNode(selectedNodeId)}
+              onDuplicate={() => handleDuplicateNode(selectedNodeId)}
             />
           ) : null}
           {panelTab === "block" && !selectedNode && selectedAsisNode ? (
@@ -1237,11 +1253,16 @@ export default function Workspace({
               opDetail={opDetails[String(selectedNode?.operation_code || "")]}
               declaredRefs={listDeclaredRefs(uiModel)}
               recipeKeys={Object.keys(uiModel?.recipe_context || {})}
+              dicts={dicts}
+              onAddEntity={(category, ref, typeId) =>
+                markDirty(upsertEntity(uiModel, category, ref, { type_id: typeId, source: "manual" }))
+              }
               onSave={(patch) => {
                 markDirty(updateNode(uiModel, selectedNodeId, patch));
                 setNotice(tf("ctor.blockSaved", { name: patch.display_name || selectedNodeId }));
               }}
               onDelete={() => handleDeleteNode(selectedNodeId)}
+              onDuplicate={() => handleDuplicateNode(selectedNodeId)}
             />
           ) : null}
           {panelTab === "block" && !selectedNode && selectedAsisNode ? (
@@ -1446,32 +1467,12 @@ export default function Workspace({
               {t("ctor.close")}
             </button>
           </div>
-          {catalog.map((op) => (
-            <div className="ctor-palette-item" key={String(op?.code || op?.name)}>
-              <div className="ctor-palette-item-name">{String(op?.name_ru || op?.name || op?.code || "")}</div>
-              <div className="ctor-palette-item-code">{String(op?.code || "")}</div>
-              <button
-                type="button"
-                className="ctor-btn ctor-btn--small"
-                data-testid={`palette-add-${String(op?.code || "")}`}
-                onClick={() => handleAddOperation(op)}
-              >
-                {t("ctor.addBlock")}
-              </button>
-            </div>
-          ))}
-          <h4>{t("ctor.paletteStructural")}</h4>
-          {STRUCTURAL_BLOCKS.map((spec) => (
-            <button
-              type="button"
-              key={spec.bpmn_type}
-              className="ctor-btn ctor-palette-struct"
-              data-testid={`palette-${spec.bpmn_type}`}
-              onClick={() => handleAddStructural(spec)}
-            >
-              {spec.label}
-            </button>
-          ))}
+          <OperationPalette
+            catalog={catalog}
+            structuralBlocks={STRUCTURAL_BLOCKS}
+            onAddOperation={handleAddOperation}
+            onAddStructural={handleAddStructural}
+          />
         </div>
       ) : null}
     </div>
