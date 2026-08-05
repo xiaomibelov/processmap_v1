@@ -158,15 +158,15 @@ class MigrationBootstrapResilienceTests(unittest.TestCase):
 
     def test_gate_010_twice_second_run_is_noop(self):
         """Гейт: db_bootstrap дважды на одной БД (stamped 009, как stage
-        после бага #646) → оба прогона rc=0, второй — no-op, head=012."""
+        после бага #646) → оба прогона rc=0, второй — no-op, head=013 (LLM1)."""
         rc1 = self._bootstrap()
         self.assertEqual(rc1, 0, "первый прогон db_bootstrap failed (010 неидемпотентна?)")
-        self.assertEqual(self._current(), "012")
+        self.assertEqual(self._current(), "013")
 
         self._force_version("009")  # stamped-down состояние снова (повторный деплой)
         rc2 = self._bootstrap()
         self.assertEqual(rc2, 0, "второй прогон db_bootstrap failed — 010 не no-op")
-        self.assertEqual(self._current(), "012")
+        self.assertEqual(self._current(), "013")
 
         with psycopg.connect(self.db_url) as con:
             cols = {
@@ -195,7 +195,7 @@ class MigrationBootstrapResilienceTests(unittest.TestCase):
             con.execute("UPDATE alembic_version SET version_num='bogus_legacy_hash'")
         rc2 = self._bootstrap()
         self.assertEqual(rc2, 0, "db_bootstrap не вылечил невалидную версию по маркерам")
-        self.assertEqual(self._current(), "012")
+        self.assertEqual(self._current(), "013")
 
     def test_f3_head_constant_matches_db_bootstrap(self):
         """F3: ALEMBIC_HEAD в migration_state синхронен с db_bootstrap.LINEAR."""
@@ -219,7 +219,7 @@ class MigrationStateUnitTests(unittest.TestCase):
                 os.environ["DATABASE_URL"] = old
         self.assertIsNone(state.get("ok"))
         self.assertEqual(state.get("error"), "no_database_url")
-        self.assertEqual(state.get("head"), "012")
+        self.assertEqual(state.get("head"), "013")
 
 
 if __name__ == "__main__":

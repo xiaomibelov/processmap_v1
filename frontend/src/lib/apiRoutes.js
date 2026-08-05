@@ -26,6 +26,9 @@ export const apiRoutes = {
     resolve: () => "/api/invite/resolve",
     activate: () => "/api/invite/activate",
   },
+  operationCatalog: {
+    list: () => "/api/operation-catalog",
+  },
   orgs: {
     list: () => "/api/orgs",
     item: (orgId) => `/api/orgs/${encode(orgId)}`,
@@ -149,6 +152,9 @@ export const apiRoutes = {
     answer: (sessionId) => `/api/sessions/${encode(sessionId)}/answer`,
     answers: (sessionId) => `/api/sessions/${encode(sessionId)}/answers`,
     aiQuestions: (sessionId) => `/api/sessions/${encode(sessionId)}/ai/questions`,
+    llmAnalysis: (sessionId, options = {}) => withQuery(`/api/sessions/${encode(sessionId)}/llm/analysis`, {
+      force: options?.force === true ? "1" : "",
+    }),
     recompute: (sessionId) => `/api/sessions/${encode(sessionId)}/recompute`,
     analytics: (sessionId) => `/api/sessions/${encode(sessionId)}/analytics`,
     export: (sessionId) => `/api/sessions/${encode(sessionId)}/export`,
