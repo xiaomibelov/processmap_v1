@@ -88,3 +88,20 @@ test("AppShell forwards subprocess breadcrumb props into ProcessStage without Re
   assert.equal(attrs.get("onBreadcrumbNavigate"), "onBreadcrumbNavigate");
   assert.equal(attrs.get("onReturnToParent"), "onReturnToParent");
 });
+
+test("AppShell forwards tobeActive into TopBar (T2: крошка «TO BE»)", () => {
+  const fn = getAppShellFunction();
+  const topbars = findJsxElements(fn, "TopBar");
+  assert.ok(topbars.length > 0, "AppShell should render TopBar");
+  const topbar = topbars[0];
+  const found = topbar.openingElement.attributes.some((attr) => {
+    if (attr.type !== "JSXAttribute" || attr.name?.name !== "tobeActive") return false;
+    const expr = attr.value?.type === "JSXExpressionContainer" ? attr.value.expression : null;
+    // tobeActive={!!stageOverride}
+    return expr?.type === "UnaryExpression" && expr.operator === "!"
+      && expr.argument?.type === "UnaryExpression" && expr.argument.operator === "!"
+      && expr.argument.argument?.type === "Identifier"
+      && expr.argument.argument.name === "stageOverride";
+  });
+  assert.equal(found, true, "TopBar should receive tobeActive={!!stageOverride}");
+});

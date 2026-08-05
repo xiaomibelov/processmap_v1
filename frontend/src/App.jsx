@@ -4,6 +4,13 @@ import AppShell from "./components/AppShell";
 import ModeSwitchSegment from "./components/ModeSwitchSegment";
 import { apiRequest } from "./lib/apiCore";
 import TechnologistWorkspace from "./features/technologist/workspace/Workspace";
+import TobeLeaveConfirmModal from "./features/technologist/workspace/TobeLeaveConfirmModal";
+import {
+  TOBE_LEAVE_CANCEL,
+  TOBE_LEAVE_DISCARD,
+  TOBE_LEAVE_SAVE,
+  shouldConfirmTobeLeave,
+} from "./features/technologist/workspace/tobeLeaveGuard";
 import NotesPanel from "./components/NotesPanel";
 import NotesMvpPanel from "./components/NotesMvpPanel";
 import NoSession from "./components/stages/NoSession";
@@ -3302,6 +3309,13 @@ export default function App() {
     const shouldFlushBeforeLeave = options?.flushBeforeLeave !== false;
     const shouldRunLeaveGuard = options?.skipLeaveGuard !== true;
     const sid = String(draft?.session_id || "").trim();
+    // T2: выход «К проекту» из dirty TO BE — через тот же styled-модал.
+    if (shouldRunLeaveGuard && shouldConfirmTobeLeave({ tobeActive: !!tobeMode, dirty: tobeDirtyRef.current })) {
+      const tobeExit = await requestTobeExit(() => {});
+      if (!tobeExit?.ok) {
+        return { ok: false, cancelled: true, error: "tobe_leave_cancelled" };
+      }
+    }
     if (sid && shouldRunLeaveGuard && !confirmLeaveIfUnsafe(reason)) {
       return { ok: false, cancelled: true, error: "leave_guard_cancelled" };
     }
@@ -3520,6 +3534,9 @@ export default function App() {
   const tobeClosedSidRef = useRef(""); // сессия, для которой пользователь сам закрыл TO BE
 
   const openTobeWorkspace = useCallback((asIsSession) => {
+    // T2: свежее рабочее место — чистое
+    tobeDirtyRef.current = false;
+    setTobeDirty(false);
     // W4.3: TO BE-сессия открывается со СВОЕЙ связанной AS IS (derived_from),
     // а не с самой собой в роли AS IS.
     if (asIsSession && String(asIsSession?.process_layer || "") === "to_be") {
@@ -3545,7 +3562,81 @@ export default function App() {
     // запоминаем ручное закрытие, чтобы эффект не переоткрыл TO BE автоматически
     tobeClosedSidRef.current = String(draft?.session_id || "").trim();
     setTobeMode(null);
+    tobeDirtyRef.current = false; // T2
+    setTobeDirty(false); // T2
   }, [draft?.session_id]);
+
+  // ---- T2: единый guarded выход из TO BE (dirty → styled-модал) ----
+  // Решения владельца: origin входа не запоминаем (возврат всегда в «Схему»
+  // текущей сессии); кнопки-дубли («← К схеме», сегмент, «← Вернуться к
+  // сессии», ws-close) — alias на requestTobeExit; confirm — styled-модал.
+  const tobeDirtyRef = useRef(false);
+  const [tobeDirty, setTobeDirty] = useState(false);
+  const [tobeLeaveOpen, setTobeLeaveOpen] = useState(false);
+  const [tobeLeaveBusy, setTobeLeaveBusy] = useState(false);
+  const [tobeLeaveError, setTobeLeaveError] = useState("");
+  const tobeLeaveResolveRef = useRef(null);
+
+  const handleTobeDirtyChange = useCallback((value) => {
+    tobeDirtyRef.current = value === true;
+    setTobeDirty(value === true);
+  }, []);
+
+  const askTobeLeaveChoice = useCallback(() => {
+    setTobeLeaveError("");
+    setTobeLeaveBusy(false);
+    setTobeLeaveOpen(true);
+    return new Promise((resolve) => { tobeLeaveResolveRef.current = resolve; });
+  }, []);
+
+  const settleTobeLeave = useCallback((choice) => {
+    setTobeLeaveOpen(false);
+    const resolve = tobeLeaveResolveRef.current;
+    tobeLeaveResolveRef.current = null;
+    if (typeof resolve === "function") resolve(choice);
+  }, []);
+
+  // «Сохранить и выйти»: flush через T0-механизм (слушатель — само рабочее
+  // место TO BE); при сбое модал остаётся с честной ошибкой.
+  const handleTobeLeaveSave = useCallback(async () => {
+    const sid = String(draft?.session_id || "").trim();
+    setTobeLeaveBusy(true);
+    setTobeLeaveError("");
+    try {
+      const result = await requestProcessStageFlushBeforeLeave({
+        sessionId: sid,
+        reason: "tobe_leave_save",
+        timeoutMs: 7000,
+      });
+      if (!result?.ok) {
+        setTobeLeaveError(String(result?.error || result?.reason || "save_failed"));
+        setTobeLeaveBusy(false);
+        return;
+      }
+      setTobeLeaveBusy(false);
+      settleTobeLeave(TOBE_LEAVE_SAVE);
+    } catch (err) {
+      setTobeLeaveError(String(err?.message || err || "save_failed"));
+      setTobeLeaveBusy(false);
+    }
+  }, [draft?.session_id, settleTobeLeave]);
+
+  // Единый exit: без dirty — сразу proceed(); dirty — модал, выбор → proceed().
+  const requestTobeExit = useCallback(async (proceed) => {
+    const run = typeof proceed === "function" ? proceed : closeTobeWorkspace;
+    if (!shouldConfirmTobeLeave({ tobeActive: !!tobeMode, dirty: tobeDirtyRef.current })) {
+      run();
+      return { ok: true };
+    }
+    // модал уже открыт (двойной клик по выходам) — не плодим промисы
+    if (tobeLeaveResolveRef.current) return { ok: false, cancelled: true };
+    const choice = await askTobeLeaveChoice();
+    if (choice === TOBE_LEAVE_SAVE || choice === TOBE_LEAVE_DISCARD) {
+      run();
+      return { ok: true };
+    }
+    return { ok: false, cancelled: true };
+  }, [tobeMode, askTobeLeaveChoice, closeTobeWorkspace]);
 
   // W4: открытие to_be-сессии автоматически включает рабочее место TO BE
   // (её естественный вид — канвас TO BE с AS IS из derived_from);
@@ -3658,9 +3749,9 @@ export default function App() {
       canEnterTobe: !!tobeEntryView,
       enterTobeTitle: String(tobeEntryView?.title || ""),
       onEnterTobe: () => tobeEntryView?.onEnter?.(),
-      onExitTobe: closeTobeWorkspace,
+      onExitTobe: () => { void requestTobeExit(); },
     };
-  }, [tobeMode, tobeEntryView, closeTobeWorkspace]);
+  }, [tobeMode, tobeEntryView, requestTobeExit]);
 
   const tobeLeftPanel = tobeMode ? (
     <div className="tobeLeft" data-testid="tobe-left-panel">
@@ -3670,7 +3761,7 @@ export default function App() {
       <button
         type="button"
         className="secondaryBtn tobeLeft__back"
-        onClick={closeTobeWorkspace}
+        onClick={() => { void requestTobeExit(); }}
         data-testid="tobe-left-back"
         title="Вернуться в режим «Схема»"
       >
@@ -3763,7 +3854,7 @@ export default function App() {
         tobeActive={!!tobeMode}
         tobeSessions={sessions}
         onOpenTobeWorkspace={openTobeWorkspace}
-        onCloseTobeWorkspace={closeTobeWorkspace}
+        onCloseTobeWorkspace={() => { void requestTobeExit(); }}
         sidebarHidden={leftHidden}
         sidebarCompact={leftCompact}
         sidebarDockSide={dockSide}
@@ -4137,8 +4228,9 @@ export default function App() {
           <TechnologistWorkspace
             embedded
             asIsSource={tobeMode.asIsSessionId ? { sessionId: tobeMode.asIsSessionId, title: tobeMode.asIsTitle } : null}
-            onClose={closeTobeWorkspace}
+            onClose={() => { void requestTobeExit(); }}
             onPublishedTobe={handleTobePublished}
+            onDirtyChange={handleTobeDirtyChange}
           />
         ) : null}
         modeSwitch={modeSwitchView}
@@ -4308,6 +4400,15 @@ export default function App() {
         onClose={() => setSessionFlowOpen(false)}
         onSubmit={runSessionFlow}
         projectSessions={sessions}
+      />
+
+      <TobeLeaveConfirmModal
+        open={tobeLeaveOpen}
+        busy={tobeLeaveBusy}
+        error={tobeLeaveError}
+        onSaveAndExit={() => { void handleTobeLeaveSave(); }}
+        onDiscardAndExit={() => settleTobeLeave(TOBE_LEAVE_DISCARD)}
+        onCancel={() => settleTobeLeave(TOBE_LEAVE_CANCEL)}
       />
 
       <DeploymentNoticeModal />
