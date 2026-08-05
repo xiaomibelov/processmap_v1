@@ -991,7 +991,13 @@ export default function Workspace({
             <div data-testid="panel-step">
               <h3>{t("wf.aria")}</h3>
               <p className="ctor-hint">{t("ws.stepHint")}</p>
-              <button type="button" className="ctor-btn ctor-btn--primary" onClick={handleAction}>
+              <button
+                type="button"
+                className="ctor-btn ctor-btn--primary"
+                disabled={action.id === "transform_blocked"}
+                title={action.id === "transform_blocked" ? t("ws.transformDisabledEmpty") : undefined}
+                onClick={handleAction}
+              >
                 {action.label}
               </button>
               <p className="ctor-hint" style={{ marginTop: 12 }}>
@@ -1242,7 +1248,13 @@ export default function Workspace({
             <div data-testid="panel-step">
               <h3>{t("wf.aria")}</h3>
               <p className="ctor-hint">{t("ws.stepHint")}</p>
-              <button type="button" className="ctor-btn ctor-btn--primary" onClick={handleAction}>
+              <button
+                type="button"
+                className="ctor-btn ctor-btn--primary"
+                disabled={action.id === "transform_blocked"}
+                title={action.id === "transform_blocked" ? t("ws.transformDisabledEmpty") : undefined}
+                onClick={handleAction}
+              >
                 {action.label}
               </button>
               <p className="ctor-hint" style={{ marginTop: 12 }}>
