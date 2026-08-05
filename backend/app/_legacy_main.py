@@ -428,6 +428,7 @@ from .ai_questions import (  # noqa: F401  # re-export facade (PR-10B ai-questio
     _sync_interview_ai_questions_for_node,
     ai_questions,
 )
+from .ai.process_analysis import llm_process_analysis  # noqa: F401  # LLM1
 from .session_answers import (  # noqa: F401  # re-export facade (PR-10C session-answers)
     _apply_answer,
     _apply_target_to_node,
@@ -3298,6 +3299,9 @@ def recompute(session_id: str) -> Dict[str, Any]:
 # keeps the same routes, methods, registration order and endpoint objects
 # as before the extraction.
 app.post("/api/sessions/{session_id}/ai/questions")(ai_questions)
+
+# LLM1 — анализ процесса через LLM-гейтвей (complete_cached, feature=process_analysis)
+app.post("/api/sessions/{session_id}/llm/analysis")(llm_process_analysis)
 
 
 def _resolve_report_scope(
