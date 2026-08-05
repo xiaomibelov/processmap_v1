@@ -891,6 +891,10 @@ export function Constructor() {
                 }
                 declaredRefs={declaredRefs}
                 recipeKeys={recipeKeys}
+                dicts={dicts}
+                onAddEntity={(category, ref, typeId) =>
+                  setUiModel((prev) => upsertEntity(prev, category, ref, { type_id: typeId, source: "manual" }))
+                }
                 onSave={(patch) => {
                   setUiModel((prev) => updateNode(prev, selectedNode.id, patch));
                   setNotice(tf("ctor.blockSaved", { name: patch.display_name || selectedNode.id }));

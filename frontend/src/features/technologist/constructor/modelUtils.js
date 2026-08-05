@@ -15,6 +15,25 @@ export const DICTIONARY_BY_CATEGORY = {
   zones: "zone-types",
 };
 
+// T3#3 — чип «＋ в справочник» в BlockForm: категория сущности по имени ref-параметра.
+export const REF_CATEGORY_BY_PARAM = {
+  container_ref: "containers",
+  equipment_ref: "equipment",
+  zone_ref: "zones",
+};
+
+export function categoryForRefParam(paramKey) {
+  return REF_CATEGORY_BY_PARAM[String(paramKey || "").trim()] || "";
+}
+
+// Валидация нового ref перед upsertEntity: "" = ok, "empty" | "exists".
+export function validateEntityRef(model, ref) {
+  const value = String(ref || "").trim();
+  if (!value) return "empty";
+  if (listDeclaredRefs(model).includes(value)) return "exists";
+  return "";
+}
+
 export function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
