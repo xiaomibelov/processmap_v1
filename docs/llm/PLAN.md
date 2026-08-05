@@ -305,10 +305,17 @@ assert в тесте), ни в телеметрии.
 - Запрещённые поля v0.3 фильтруются и здесь.
 
 ### Критерии LLM3
-- [ ] Все вызовы по клику; max_tokens ≤ 800; cheap-модель из конфига фичи
-- [ ] Кандидаты только из каталога (фильтр-валидация, тест)
-- [ ] no_provider/rate_limited — честные статусы в UI
-- [ ] shape-тесты; i18n; регрессия пустая
+- [x] Все вызовы по клику; max_tokens ≤ 800; cheap-модель из конфига фичи —
+  `schemaAssistantBlock.source.test.mjs` 6/6 (нет useEffect, 0 вызовов при
+  открытии панели); миграция 015 (max_tokens=800, model_class=cheap)
+- [x] Кандидаты только из каталога (фильтр-валидация, тест) —
+  `test_llm_schema_assistant.py` 9/9 (код вне живого каталога → dropped)
+- [x] no_provider/rate_limited — честные статусы в UI — маппер
+  `schemaAssistantView.js` + строки в блоке (как LLM1)
+- [x] shape-тесты; регрессия пустая (backend 26≡26, frontend 61≡61 поимённо);
+  i18n — RU-хардкод как в LlmAnalysisBlock (единый паттерн LLM1)
+- [ ] Golden-gate на stage («Разогрев супа», org_default) — **после мержа+деплоя**
+  (скрипт `scripts/llm3_stage_gate.mjs` → `docs/llm/gate/llm3_*.png`)
 
 ---
 
