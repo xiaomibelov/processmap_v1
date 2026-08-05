@@ -1091,6 +1091,40 @@ export async function apiLlmAnalysis(sessionId, options = {}) {
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
+// LLM3 — помощник на Схеме (3 действия, только по клику).
+export async function apiLlmSuggestNext(sessionId, options = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.llmSuggestNext(sid, options), {
+    method: "POST",
+    body: {},
+    signal: options?.signal,
+  }));
+  return r.ok ? { ok: true, status: r.status, result: r.data } : r;
+}
+
+export async function apiLlmExplainStep(sessionId, options = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.llmExplainStep(sid, options), {
+    method: "POST",
+    body: {},
+    signal: options?.signal,
+  }));
+  return r.ok ? { ok: true, status: r.status, result: r.data } : r;
+}
+
+export async function apiLlmStepQa(sessionId, options = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { ok: false, status: 0, error: "missing session_id" };
+  const r = okOrError(await request(apiRoutes.sessions.llmStepQa(sid, options), {
+    method: "POST",
+    body: { question: String(options?.question || "") },
+    signal: options?.signal,
+  }));
+  return r.ok ? { ok: true, status: r.status, result: r.data } : r;
+}
+
 // Каталог операций (расшифровка operation_code в блоке «Анализ LLM»).
 export async function apiGetOperationCatalog(options = {}) {
   const r = okOrError(await request(apiRoutes.operationCatalog.list(), { signal: options?.signal }));
