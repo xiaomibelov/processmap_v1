@@ -31,6 +31,12 @@ LINEAR = ["001", "002", "004", "003", "005", "006", "007", "008", "009", "010", 
 
 # маркер «объект ревизии существует» (SELECT 1 ... LIMIT 1)
 MARKERS = {
+    # F2: маркеры 010/011/012 — baseline по реальному состоянию схемы.
+    # 010: колонки добавляются рантаймом вне alembic (storage._ensure_schema),
+    # поэтому stamped-down база с рабочей схемой детектится корректно.
+    "012": "SELECT 1 FROM information_schema.tables WHERE table_name='llm_providers' LIMIT 1",
+    "011": "SELECT 1 FROM pg_indexes WHERE indexname='idx_sessions_natural_key_unique' LIMIT 1",
+    "010": "SELECT 1 FROM information_schema.columns WHERE table_name='sessions' AND column_name='process_layer' LIMIT 1",
     "009": "SELECT 1 FROM information_schema.columns WHERE table_name='operation_catalog' AND column_name='name_ru' LIMIT 1",
     "008": "SELECT 1 FROM recipe_param_def WHERE name='dish_sku_id' LIMIT 1",
     "007": "SELECT 1 FROM information_schema.columns WHERE table_name='sku_binding' AND column_name='pilot_kitchen_id' LIMIT 1",
@@ -92,10 +98,24 @@ def main() -> int:
         if not baseline:
             print("[db_bootstrap] база пустая — миграции с нуля")
         else:
-            print(f"[db_bootstrap] baseline по маркерам схемы: {baseline} → alembic stamp")
-            rc = subprocess.call([sys.executable, "-m", "alembic", "-c", ini, "stamp", baseline], cwd=cwd)
-            if rc != 0:
-                print(f"[db_bootstrap] stamp {baseline} FAILED rc={rc}")
+            # Прямая запись alembic_version вместо `alembic stamp`: CLI-штамп
+            # резолвит ТЕКУЩУЮ ревизию и падает на значениях вне цепочки
+            # («Can't locate revision identified by 'bogus…'») — а именно для
+            # таких состояний baseline и существует.
+            print(f"[db_bootstrap] baseline по маркерам схемы: {baseline} → alembic_version (прямая запись)")
+            try:
+                con.execute(
+                    "CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(32) NOT NULL)"
+                )
+                con.execute("DELETE FROM alembic_version")
+                con.execute("INSERT INTO alembic_version (version_num) VALUES (%s)", (baseline,))
+                con.commit()
+            except Exception as exc:
+                try:
+                    con.rollback()
+                except Exception:
+                    pass
+                print(f"[db_bootstrap] stamp {baseline} FAILED: {exc}")
                 return 1
     con.close()
 
