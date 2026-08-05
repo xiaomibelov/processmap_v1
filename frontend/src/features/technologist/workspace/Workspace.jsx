@@ -23,6 +23,7 @@ import {
   addNode,
   asArray,
   asObject,
+  buildOperationNode,
   computeReachable,
   deleteFlow,
   deleteNode,
@@ -66,6 +67,8 @@ export default function Workspace({
 } = {}) {
   // ---- модель процесса (TO BE) ----
   const [uiModel, setUiModel] = useState(() => emptyUiModel());
+  // T3#1 — точка вставки следующего блока (клик по пустому канвасу); null → ступенчатый дефолт
+  const [insertPoint, setInsertPoint] = useState(null);
   const [templateId, setTemplateId] = useState("");
   const [templateName, setTemplateName] = useState(t("ctor.newTemplate"));
   const [templateVersion, setTemplateVersion] = useState("0.1.0");
@@ -296,18 +299,10 @@ export default function Workspace({
   }
 
   function handleAddOperation(op) {
-    const pos = { x: 40 + ((uiModel.nodes?.length || 0) % 6) * 170, y: 60 };
-    const node = {
-      id: nextId(uiModel, "Task"),
-      bpmn_type: "task",
-      name: String(op?.name_ru || op?.name || op?.code || ""),
-      operation_code: String(op?.code || ""),
-      display_name: String(op?.name_ru || op?.name || op?.code || ""),
-      params: {},
-      outputs: {},
-      recipe_params: [],
-      x: pos.x, y: pos.y, width: 140, height: 70,
-    };
+    // T3#1: точка клика по канвасу приоритетнее дефолта (ступенчатая раскладка)
+    const pos = insertPoint || { x: 40 + ((uiModel.nodes?.length || 0) % 6) * 170, y: 60 };
+    const node = buildOperationNode(uiModel, op, pos);
+    setInsertPoint(null);
     markDirty(addNode(uiModel, node));
     setSelectedNodeId(node.id);
     setSelectedFlowId("");
@@ -892,6 +887,8 @@ export default function Workspace({
                 connectSourceId={connectSourceId}
                 nodeBadges={decisionBadges}
                 nodeRefs={nodeRefs}
+                onCanvasClick={(x, y) => setInsertPoint({ x, y })}
+                insertPoint={insertPoint}
                 ariaLabel="TO BE"
               />
             </div>

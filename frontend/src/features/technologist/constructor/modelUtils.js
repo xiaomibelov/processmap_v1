@@ -104,6 +104,27 @@ export function addNode(model, node) {
   return { ...model, nodes: [...asArray(model.nodes), node] };
 }
 
+// T3#1 — вынос дубля handleAddOperation (Constructor/Workspace ×2) в shared-хелпер.
+// Чистая функция: создаёт node из операции каталога в позиции pos (точка клика
+// или дефолт «в хвост справа» — решает вызывающий).
+export function buildOperationNode(model, op, pos) {
+  return {
+    id: nextId(model, "Task"),
+    bpmn_type: "task",
+    name: String(op?.name_ru || op?.name || op?.code || ""),
+    operation_code: String(op?.code || ""),
+    // display_name — на языке UI (name_ru), переименовывается в блоке
+    display_name: String(op?.name_ru || op?.name || op?.code || ""),
+    params: {},
+    outputs: {},
+    recipe_params: [],
+    x: Number(pos?.x) || 0,
+    y: Number(pos?.y) || 0,
+    width: 140,
+    height: 70,
+  };
+}
+
 // T3#2 — дублирование блока: копия node с nextId, смещение x/y, БЕЗ потоков.
 // Чистая функция (как addNode/addFlow) — будущий undo/redo wrapper останется тривиальным.
 export function duplicateNode(model, nodeId, { dx = 40, dy = 40, nameSuffix = "" } = {}) {
