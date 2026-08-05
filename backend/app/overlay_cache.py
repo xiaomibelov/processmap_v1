@@ -55,15 +55,15 @@ def _lk(sid: str, ver: int, qx: int, qy: int, qs: int) -> str: return f"pm:{{{si
 def _enc(d: dict[str, Any]) -> bytes: return zstd.ZstdCompressor(level=ZSTD_LEVEL).compress(json.dumps(d).encode())
 def _dec(b: bytes) -> dict[str, Any]: return json.loads(zstd.ZstdDecompressor().decompress(b))
 
-def fetch_session_bpmn(sid: str) -> str: raise NotImplementedError  # app-provided
-def fetch_annotations(sid: str) -> list[dict[str, Any]]: raise NotImplementedError  # app-provided
+def fetch_session_bpmn(sid: str, request: Any = None) -> str: raise NotImplementedError  # app-provided
+def fetch_annotations(sid: str, request: Any = None) -> list[dict[str, Any]]: raise NotImplementedError  # app-provided
 def render_svg(bpmn_xml: str, annotations: list[dict[str, Any]]) -> str:  # TODO: real overlay logic
     return bpmn_xml
 
-def render_overlay_xml(sid: str, bpmn_xml: str) -> str:
+def render_overlay_xml(sid: str, bpmn_xml: str, request: Any = None) -> str:
     raise NotImplementedError  # app-provided
 
-def _get_overlay(sid: str, zoom: float, pan_x: float, pan_y: float, attempt: int = 0) -> Result:
+def _get_overlay(sid: str, zoom: float, pan_x: float, pan_y: float, attempt: int = 0, request: Any = None) -> Result:
     qx, qy, qs = int(pan_x // 100), int(pan_y // 100), int(zoom * 10)
     ver, redis_up = 0, True
     try:
@@ -74,8 +74,8 @@ def _get_overlay(sid: str, zoom: float, pan_x: float, pan_y: float, attempt: int
             if now < e["fresh_until"]: return Result(200, e["xml"])
             if now < e["stale_until"]:
                 try:
-                    bpmn = fetch_session_bpmn(sid)
-                    annots = fetch_annotations(sid)
+                    bpmn = fetch_session_bpmn(sid, request)
+                    annots = fetch_annotations(sid, request)
                     from .tasks import render_overlay_task
                     render_overlay_task.delay(sid, bpmn, annots, ver, qx, qy, qs)
                 except Exception:
@@ -85,7 +85,7 @@ def _get_overlay(sid: str, zoom: float, pan_x: float, pan_y: float, attempt: int
 
     if not redis_up:
         try:
-            xml = render_overlay_xml(sid, fetch_session_bpmn(sid))
+            xml = render_overlay_xml(sid, fetch_session_bpmn(sid, request), request)
             return Result(200, xml)
         except Exception:
             if pg_cb.is_open: return Result(200, {"wireframe": True, "elements": []})
@@ -96,8 +96,8 @@ def _get_overlay(sid: str, zoom: float, pan_x: float, pan_y: float, attempt: int
 
     if got:
         try:
-            bpmn = fetch_session_bpmn(sid)
-            annots = fetch_annotations(sid)
+            bpmn = fetch_session_bpmn(sid, request)
+            annots = fetch_annotations(sid, request)
             from .tasks import render_overlay_task
             render_overlay_task.delay(sid, bpmn, annots, ver, qx, qy, qs)
         except Exception:
@@ -105,16 +105,16 @@ def _get_overlay(sid: str, zoom: float, pan_x: float, pan_y: float, attempt: int
 
     # Always serve fallback render on miss so frontend never sees 202.
     try:
-        xml = render_overlay_xml(sid, fetch_session_bpmn(sid))
+        xml = render_overlay_xml(sid, fetch_session_bpmn(sid, request), request)
         return Result(200, xml)
     except Exception:
         if pg_cb.is_open:
             return Result(200, {"wireframe": True, "elements": []})
         return Result(503, {"error": "origin unavailable"}, {"Retry-After": "2"})
 
-def get_overlay(sid: str, zoom: float, pan_x: float, pan_y: float, attempt: int = 0) -> Result:
+def get_overlay(sid: str, zoom: float, pan_x: float, pan_y: float, attempt: int = 0, request: Any = None) -> Result:
     start = time.monotonic()
-    res = _get_overlay(sid, zoom, pan_x, pan_y, attempt)
+    res = _get_overlay(sid, zoom, pan_x, pan_y, attempt, request)
     from .metrics import observe_hit
     observe_hit(res.status, time.monotonic() - start)
     return res
@@ -124,10 +124,10 @@ def invalidate_overlay(sid: str) -> None:
     except redis.RedisError: pass
 
 
-def compute_overlays_json(sid: str) -> list[dict[str, Any]]:
+def compute_overlays_json(sid: str, request: Any = None) -> list[dict[str, Any]]:
     raise NotImplementedError  # app-provided
 
-def get_overlays_json(sid: str) -> list[dict[str, Any]]:
+def get_overlays_json(sid: str, request: Any = None) -> list[dict[str, Any]]:
     ver = 0
     try:
         ver = int(r.get(f"pm:{{{sid}}}:ver") or 0)
@@ -141,7 +141,7 @@ def get_overlays_json(sid: str) -> list[dict[str, Any]]:
     except Exception:
         pass
     try:
-        overlays = compute_overlays_json(sid)
+        overlays = compute_overlays_json(sid, request)
         payload = json.dumps(overlays).encode()
         compressed = zstd.ZstdCompressor(level=ZSTD_LEVEL).compress(payload)
         r.setex(key, 30, compressed)
