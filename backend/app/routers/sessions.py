@@ -145,6 +145,24 @@ def llm_analysis(session_id: str, request: Request = None, force: int = 0):
     from ..ai.process_analysis import llm_process_analysis
     return llm_process_analysis(session_id, request, force)
 
+@router.post('/api/sessions/{session_id}/llm/suggest-next')
+def llm_suggest_next_route(session_id: str, request: Request = None, after_step_id: str = "", force: int = 0):
+    # LLM3 — «предложить следующий блок» (кандидаты строго из живого каталога)
+    from ..ai.schema_assistant import llm_suggest_next
+    return llm_suggest_next(session_id, request, after_step_id, force)
+
+@router.post('/api/sessions/{session_id}/llm/explain-step')
+def llm_explain_step_route(session_id: str, request: Request = None, step_id: str = "", force: int = 0):
+    # LLM3 — «объяснить AI-решение» (пересказ строго записи trace_map)
+    from ..ai.schema_assistant import llm_explain_step
+    return llm_explain_step(session_id, request, step_id, force)
+
+@router.post('/api/sessions/{session_id}/llm/step-qa')
+def llm_step_qa_route(session_id: str, request: Request = None, step_id: str = "", question: str = Body("", embed=True), force: int = 0):
+    # LLM3 — «спросить про шаг» (контекст = проекция шага, не вся схема)
+    from ..ai.schema_assistant import llm_step_qa
+    return llm_step_qa(session_id, request, step_id, question, force)
+
 @router.post('/api/sessions/{session_id}/notes')
 def post_notes(session_id: str, inp: NotesIn, request: Request = None):
     return _svc.post_notes(session_id, inp, request)
