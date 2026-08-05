@@ -40,11 +40,15 @@ test("empty-state: центр-карточка — единственный ис
     "старая дублирующая кнопка ws-empty-back удалена из карточки");
 });
 
-test("empty-state: тулбар — disabled с title-причиной, без активных дублей", () => {
+test("empty-state: тулбар и панель шага — disabled с title-причиной, без активных дублей", () => {
   assert.ok(ws.includes('{ id: "transform_blocked", label: t("wf.nextTransform") }'), "заблокированное действие тулбара");
-  assert.ok(ws.includes('disabled={busy || action.id === "transform_blocked"}'), "кнопка disabled");
+  assert.ok(ws.includes('disabled={busy || action.id === "transform_blocked"}'), "кнопка тулбара disabled");
   assert.ok(ws.includes('action.id === "transform_blocked" ? t("ws.transformDisabledEmpty") : undefined'), "title-причина");
   assert.ok(!ws.includes('data-testid="ws-transform-disabled"'), "отдельная дублирующая disabled-кнопка удалена");
+  const stepPanels = ws.split('data-testid="panel-step"').length - 1;
+  const blockedPanels = ws.split('disabled={action.id === "transform_blocked"}').length - 1;
+  assert.ok(stepPanels >= 2, "панель шага рендерится в двух раскладках");
+  assert.equal(blockedPanels, stepPanels, "CTA панели шага disabled в обеих раскладках (сайдбар не дублирует активную кнопку)");
 });
 
 test("empty-state: баннер не дублирует сообщение карточки", () => {
