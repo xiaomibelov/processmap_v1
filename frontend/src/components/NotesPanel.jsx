@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { buildDerivedSet, classifySourceSessions } from "../lib/tobeSources.js";
+import { buildDerivedSet, classifySourceSessions, pickTobeSourceCandidates } from "../lib/tobeSources.js";
+import { t as tobeT, tf as tobeTf } from "../features/technologist/i18n/index.js";
 import { computeProcessSummary } from "../lib/processSummary.js";
 import {
   elementNotesForId,
@@ -3862,7 +3863,10 @@ function TobeActionRow({ testid, icon, name, status, primary = false, disabled =
 function TobeSection({ active, sessions, currentSessionId, onOpen, onClose }) {
   const list = Array.isArray(sessions) ? sessions : [];
   const tobeSessions = list.filter((x) => String(x?.process_layer || "as_is") === "to_be");
-  const asisSessions = list.filter((x) => String(x?.process_layer || "as_is") !== "to_be");
+  // T1: сабпроцессы (формальный признак) исключены из пикера полностью.
+  const asisSessions = pickTobeSourceCandidates(
+    list.filter((x) => String(x?.process_layer || "as_is") !== "to_be"),
+  );
   const derivedSet = buildDerivedSet(tobeSessions);
   const { main: asisMain, other: asisOther } = classifySourceSessions(asisSessions);
   const currentSource = asisSessions.find((x) => String(x?.id || "") === String(currentSessionId || "")) || null;
@@ -3871,7 +3875,7 @@ function TobeSection({ active, sessions, currentSessionId, onOpen, onClose }) {
     const sid = String(session.id);
     const exists = derivedSet.has(sid);
     const empty = session.has_bpmn_xml === false;
-    const status = empty ? "пустая" : exists ? "Открыть" : "Создать";
+    const status = empty ? tobeT("tobe.source.noBpmn") : exists ? "Открыть" : "Создать";
     return (
       <TobeActionRow
         key={sid}
@@ -3882,7 +3886,7 @@ function TobeSection({ active, sessions, currentSessionId, onOpen, onClose }) {
         disabled={empty}
         tobeExists={exists ? "1" : "0"}
         title={empty
-          ? `«${String(session.title || "процесс")}»: в сессии нет BPMN-схемы` 
+          ? tobeTf("tobe.source.noBpmnHint", { name: String(session.title || "процесс") })
           : `${exists ? "Открыть" : "Создать"} TO BE из «${String(session.title || "процесс")}»`}
         onClick={() => onOpen?.(session)}
       />
