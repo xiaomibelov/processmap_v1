@@ -1,0 +1,11 @@
+{
+    "ok": true,
+    "items": [],
+    "totals": {
+        "calls": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "cached_hits": 0,
+        "errors": 0
+    }
+}
