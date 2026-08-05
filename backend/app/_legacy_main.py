@@ -434,6 +434,14 @@ from .session_answers import (  # noqa: F401  # re-export facade (PR-10C session
     answer,
     answer_v2,
 )
+from .sessions_graph import (  # noqa: F401  # re-export facade (PR-11 sessions-graph)
+    add_edge,
+    add_node,
+    delete_edge,
+    delete_node,
+    get_session_graph,
+    patch_node,
+)
 # /api/auth/* handler implementations live in app/services/auth_service.py (PR-6);
 # they are re-registered on this app below (see "auth" route registrations).
 
