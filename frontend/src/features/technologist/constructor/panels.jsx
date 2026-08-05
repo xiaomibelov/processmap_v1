@@ -8,6 +8,7 @@ import {
   GATEWAY_CONDITION_UNKNOWN_OUTPUT,
   asArray,
   asObject,
+  categoryForRefParam,
   findFlow,
   findNode,
   findRefUsages,
@@ -26,7 +27,7 @@ function nodeLabel(node) {
   return String(node?.display_name || node?.name || node?.id || "");
 }
 
-function BlockForm({ node, opDetail, declaredRefs, recipeKeys, onSave, onDelete }) {
+function BlockForm({ node, opDetail, declaredRefs, recipeKeys, dicts, onSave, onDelete, onDuplicate, onAddEntity }) {
   const schema = asObject(opDetail?.parameter_schema);
   const schemaKeys = Object.keys(schema);
   const [displayName, setDisplayName] = useState(String(node?.display_name || ""));
@@ -35,6 +36,34 @@ function BlockForm({ node, opDetail, declaredRefs, recipeKeys, onSave, onDelete 
     Object.entries(asObject(node?.outputs)).map(([key, value]) => ({ key, value: String(value) })),
   );
   const [recipeParams, setRecipeParams] = useState(() => asArray(node?.recipe_params).map(String));
+  // T3#3 — чип «＋ в справочник»: inline-форма добавления сущности к ref-параметру
+  const [refAddFor, setRefAddFor] = useState(""); // paramKey или ""
+  const [refAddName, setRefAddName] = useState("");
+  const [refAddType, setRefAddType] = useState("");
+  const [refAddError, setRefAddError] = useState("");
+
+  function resetRefAdd() {
+    setRefAddFor("");
+    setRefAddName("");
+    setRefAddType("");
+    setRefAddError("");
+  }
+
+  function handleRefAddApply(paramKey) {
+    const ref = refAddName.trim();
+    if (!ref) {
+      setRefAddError(t("ctor.refAddEmpty"));
+      return;
+    }
+    if (declaredRefs.includes(ref)) {
+      setRefAddError(tf("ctor.refAddExists", { ref }));
+      return;
+    }
+    const category = categoryForRefParam(paramKey);
+    onAddEntity?.(category, ref, refAddType);
+    setParam(paramKey, ref);
+    resetRefAdd();
+  }
 
   // Effective params = schema defaults + explicitly set values.
   const effectiveParams = useMemo(() => {
@@ -119,18 +148,63 @@ function BlockForm({ node, opDetail, declaredRefs, recipeKeys, onSave, onDelete 
                 {required ? " *" : ""}
               </span>
               {isRef ? (
-                <select
-                  data-testid={`param-${key}`}
-                  value={value}
-                  onChange={(e) => setParam(key, e.target.value)}
-                >
-                  <option value="">{t("ctor.entitySelectPlaceholder")}</option>
-                  {declaredRefs.map((ref) => (
-                    <option key={ref} value={ref}>
-                      {ref}
-                    </option>
-                  ))}
-                </select>
+                <>
+                  <select
+                    data-testid={`param-${key}`}
+                    value={value}
+                    onChange={(e) => setParam(key, e.target.value)}
+                  >
+                    <option value="">{t("ctor.entitySelectPlaceholder")}</option>
+                    {declaredRefs.map((ref) => (
+                      <option key={ref} value={ref}>
+                        {ref}
+                      </option>
+                    ))}
+                  </select>
+                  {onAddEntity && categoryForRefParam(key) ? (
+                    refAddFor === key ? (
+                      <div className="ctor-ref-add" data-testid={`ref-add-${key}`}>
+                        <input
+                          type="text"
+                          data-testid="ref-add-name"
+                          placeholder={t("ctor.refAddPlaceholder")}
+                          value={refAddName}
+                          onChange={(e) => setRefAddName(e.target.value)}
+                        />
+                        {asArray(dicts?.[categoryForRefParam(key)]).length ? (
+                          <select
+                            data-testid="ref-add-type"
+                            value={refAddType}
+                            onChange={(e) => setRefAddType(e.target.value)}
+                          >
+                            <option value="">{t("ctor.entityTypePlaceholder")}</option>
+                            {asArray(dicts?.[categoryForRefParam(key)]).map((item) => (
+                              <option key={String(item?.code || item?.id || item?.name)} value={String(item?.code || "")}>
+                                {String(item?.name || item?.code || item?.id || "")}
+                              </option>
+                            ))}
+                          </select>
+                        ) : null}
+                        <button type="button" className="ctor-btn" data-testid="ref-add-apply" onClick={() => handleRefAddApply(key)}>
+                          {t("ctor.refAddApply")}
+                        </button>
+                        <button type="button" className="ctor-btn" data-testid="ref-add-cancel" onClick={resetRefAdd}>
+                          {t("ctor.refAddCancel")}
+                        </button>
+                        {refAddError ? <div className="ctor-hint ctor-hint--error" data-testid="ref-add-error">{refAddError}</div> : null}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="ctor-btn ctor-btn--chip"
+                        data-testid={`ref-add-chip-${key}`}
+                        onClick={() => { resetRefAdd(); setRefAddFor(key); }}
+                      >
+                        {t("ctor.refAddChip")}
+                      </button>
+                    )
+                  ) : null}
+                </>
               ) : (
                 <input
                   type="text"
@@ -222,6 +296,11 @@ function BlockForm({ node, opDetail, declaredRefs, recipeKeys, onSave, onDelete 
         >
           {t("ctor.blockSave")}
         </button>
+        {onDuplicate ? (
+          <button type="button" className="ctor-btn" data-testid="block-duplicate" onClick={onDuplicate}>
+            {t("ctor.blockDuplicate")}
+          </button>
+        ) : null}
         <button type="button" className="ctor-btn ctor-btn--danger" data-testid="block-delete" onClick={onDelete}>
           {t("ctor.blockDelete")}
         </button>

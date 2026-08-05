@@ -107,6 +107,8 @@ export default function GraphCanvas({
   selectedFlowId = "",
   nodeRefs = null,
   ariaLabel = "Граф процесса",
+  onCanvasClick,
+  insertPoint = null,
 }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null);
@@ -192,6 +194,15 @@ export default function GraphCanvas({
     if (id && typeof onSelectNode === "function") onSelectNode(id);
   }
 
+  // T3#1 — клик по пустому месту канваса → точка вставки следующего блока.
+  function handleCanvasClick(event) {
+    if (suppressClickRef.current) return;
+    if (typeof onCanvasClick !== "function") return;
+    if (event.target !== svgRef.current) return; // только фон, не узлы/потоки/подписи
+    const p = svgPoint(event);
+    onCanvasClick(p.x, p.y);
+  }
+
   return (
     <svg
       ref={svgRef}
@@ -202,6 +213,7 @@ export default function GraphCanvas({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
+      onClick={handleCanvasClick}
     >
       <defs>
         <marker
@@ -263,6 +275,20 @@ export default function GraphCanvas({
           </g>
         );
       })}
+      {insertPoint ? (
+        <circle
+          data-testid="canvas-insert-point"
+          className="graph-canvas__insert-point"
+          cx={Number(insertPoint.x) || 0}
+          cy={Number(insertPoint.y) || 0}
+          r={10}
+          fill="none"
+          stroke="#2f6fed"
+          strokeWidth={2}
+          strokeDasharray="4 3"
+          pointerEvents="none"
+        />
+      ) : null}
       {nodes.map((node) => {
         const id = String(node?.id || "");
         const { x, y, w, h, cx, cy } = nodeCenter(node);

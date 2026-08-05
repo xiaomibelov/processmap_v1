@@ -14,9 +14,11 @@ import {
   addNode,
   asArray,
   asObject,
+  buildOperationNode,
   computeReachable,
   deleteFlow,
   deleteNode,
+  duplicateNode,
   emptyUiModel,
   findFlow,
   findNode,
@@ -38,6 +40,7 @@ import {
 } from "./modelUtils";
 import "./Constructor.css";
 import { BlockForm, FlowForm, EntitiesPanel, TemplatePanel } from "./panels";
+import OperationPalette from "./OperationPalette";
 
 export const E4_HANDOFF_KEY = "fpc_e4_handoff";
 
@@ -69,6 +72,8 @@ function nodeLabel(node) {
 
 export function Constructor() {
   const [uiModel, setUiModel] = useState(() => emptyUiModel());
+  // T3#1 — точка вставки следующего блока (клик по пустому канвасу); null → дефолт «в хвост справа»
+  const [insertPoint, setInsertPoint] = useState(null);
   const [templateId, setTemplateId] = useState("");
   const [templateName, setTemplateName] = useState("Новый шаблон");
   const [templateVersion, setTemplateVersion] = useState("0.1.0");
@@ -252,22 +257,10 @@ export function Constructor() {
   }
 
   function handleAddOperation(op) {
-    const pos = nextNodePosition(uiModel);
-    const node = {
-      id: nextId(uiModel, "Task"),
-      bpmn_type: "task",
-      name: String(op?.name_ru || op?.name || op?.code || ""),
-      operation_code: String(op?.code || ""),
-      // display_name — на языке UI (name_ru), переименовывается в блоке
-      display_name: String(op?.name_ru || op?.name || op?.code || ""),
-      params: {},
-      outputs: {},
-      recipe_params: [],
-      x: pos.x,
-      y: pos.y,
-      width: 140,
-      height: 70,
-    };
+    // T3#1: точка клика по канвасу приоритетнее дефолта «в хвост справа»
+    const pos = insertPoint || nextNodePosition(uiModel);
+    const node = buildOperationNode(uiModel, op, pos);
+    setInsertPoint(null);
     setUiModel((prev) => addNode(prev, node));
     setSelectedNodeId(node.id);
     setSelectedFlowId("");
@@ -299,6 +292,17 @@ export function Constructor() {
     setUiModel((prev) => deleteNode(prev, id));
     if (selectedNodeId === id) setSelectedNodeId("");
     setPanelTab("template");
+  }
+
+  // T3#2 — дублирование блока (без потоков, смещение x/y; см. modelUtils.duplicateNode)
+  function handleDuplicateNode(id) {
+    const { model, node } = duplicateNode(uiModel, id, { nameSuffix: t("ctor.copySuffix") });
+    if (!node) return;
+    setUiModel(model);
+    setSelectedNodeId(node.id);
+    setSelectedFlowId("");
+    setPanelTab("block");
+    setNotice(tf("ctor.blockDuplicated", { name: nodeLabel(node) }));
   }
 
   function handleDeleteFlow(id) {
@@ -763,33 +767,12 @@ export function Constructor() {
       <div className="ctor__main">
         <aside className="ctor__palette">
           <h3>{t("ctor.palette")}</h3>
-          {catalog.length === 0 ? <div className="ctor-hint">{t("ctor.paletteEmpty")}</div> : null}
-          {catalog.map((op) => (
-            <div className="ctor-palette-item" key={String(op?.code || op?.name)}>
-              <div className="ctor-palette-item-name">{String(op?.name_ru || op?.name || op?.code || "")}</div>
-              <div className="ctor-palette-item-code">{String(op?.code || "")}</div>
-              <button
-                type="button"
-                className="ctor-btn ctor-btn--small"
-                data-testid={`palette-add-${String(op?.code || "")}`}
-                onClick={() => handleAddOperation(op)}
-              >
-                {t("ctor.addBlock")}
-              </button>
-            </div>
-          ))}
-          <h3>{t("ctor.paletteStructural")}</h3>
-          {STRUCTURAL_BLOCKS.map((spec) => (
-            <button
-              type="button"
-              key={spec.bpmn_type}
-              className="ctor-btn ctor-palette-struct"
-              data-testid={`palette-${spec.bpmn_type}`}
-              onClick={() => handleAddStructural(spec)}
-            >
-              {spec.label}
-            </button>
-          ))}
+          <OperationPalette
+            catalog={catalog}
+            structuralBlocks={STRUCTURAL_BLOCKS}
+            onAddOperation={handleAddOperation}
+            onAddStructural={handleAddStructural}
+          />
         </aside>
 
         <section className="ctor__canvas">
@@ -803,6 +786,8 @@ export function Constructor() {
             connectSourceId={connectSourceId}
             unreachableNodeIds={unreachableIds}
             nodeRefs={nodeRefs}
+            onCanvasClick={(x, y) => setInsertPoint({ x, y })}
+            insertPoint={insertPoint}
             ariaLabel={t("ctor.canvasAria")}
           />
         </section>
@@ -879,11 +864,16 @@ export function Constructor() {
                 }
                 declaredRefs={declaredRefs}
                 recipeKeys={recipeKeys}
+                dicts={dicts}
+                onAddEntity={(category, ref, typeId) =>
+                  setUiModel((prev) => upsertEntity(prev, category, ref, { type_id: typeId, source: "manual" }))
+                }
                 onSave={(patch) => {
                   setUiModel((prev) => updateNode(prev, selectedNode.id, patch));
                   setNotice(tf("ctor.blockSaved", { name: patch.display_name || selectedNode.id }));
                 }}
                 onDelete={() => handleDeleteNode(selectedNode.id)}
+                onDuplicate={() => handleDuplicateNode(selectedNode.id)}
               />
             ) : (
               <div className="ctor-block" data-testid="node-form">
