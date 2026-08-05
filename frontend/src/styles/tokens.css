@@ -176,4 +176,22 @@
   --ws-step-current-bg: #1d2c47;
   --ws-step-current-num-bg: #3f6fd1;
   --ws-step-next-border: #6b5bd2;
+
+  /* TO BE workspace — дизайн-система design-system/processmap-to-be/MASTER.md
+     (шаг «Токены» трека TOBE-UX; потребители появляются в зонах Z0–Z5,
+     здесь только объявления — визуальных изменений нет) */
+  --pm-tobe-primary: #1e3a5f;        /* primary действие шага, степпер-current   */
+  --pm-tobe-on-primary: #ffffff;
+  --pm-tobe-secondary: #2563eb;      /* ссылки, фокус-ринги, вторичные акценты   */
+  --pm-tobe-accent: #059669;         /* CTA «опубликовать»/успех                 */
+  --pm-tobe-bg: #f8fafc;             /* фон рабочей зоны                         */
+  --pm-tobe-fg: #0f172a;             /* основной текст (16.7:1 на bg)            */
+  --pm-tobe-muted: #f1f3f5;          /* карточки-заглушки                        */
+  --pm-tobe-muted-fg: #64748b;       /* вторичный текст (4.8:1 на bg)            */
+  --pm-tobe-border: #e4e7eb;         /* границы                                  */
+  --pm-tobe-danger: #dc2626;         /* ошибки findings (4.5:1 на белом)         */
+  --pm-tobe-warning: #b45309;        /* предупреждения (4.5:1 на белом)          */
+  --pm-tobe-step-pending: #b8c6da;   /* степпер pending на #16202f ≈ 7:1 (Z0)    */
+  --pm-tobe-font-body: 'Fira Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pm-tobe-font-mono: 'Fira Code', ui-monospace, 'Cascadia Code', monospace;
 }
