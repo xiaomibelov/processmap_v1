@@ -314,8 +314,12 @@ assert в тесте), ни в телеметрии.
   `schemaAssistantView.js` + строки в блоке (как LLM1)
 - [x] shape-тесты; регрессия пустая (backend 26≡26, frontend 61≡61 поимённо);
   i18n — RU-хардкод как в LlmAnalysisBlock (единый паттерн LLM1)
-- [ ] Golden-gate на stage («Разогрев супа», org_default) — **после мержа+деплоя**
-  (скрипт `scripts/llm3_stage_gate.mjs` → `docs/llm/gate/llm3_*.png`)
+- [x] Golden-gate на stage («Разогрев супа», org_default, sid 13f1f10b20,
+  stage@52ef0e9d, 2026-08-05): все 3 действия ok, 0 авто-вызовов, повторы из
+  кэша (0 токенов), ответы ≤800, no_provider — честный статус без 5xx —
+  артефакты `docs/llm/gate/llm3_*` (скрины + `llm3_gate_facts.json` + дампы
+  llm_usage). **Эпик LLM3 закрыт; трек LLM (LLM0–LLM3) завершён на stage.**
+  Прод-окно — отдельное решение владельца.
 
 ---
 
