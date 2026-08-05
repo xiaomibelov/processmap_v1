@@ -15,6 +15,7 @@ import WorkflowBar, { WORKFLOW_STEPS } from "../workflow/WorkflowBar";
 import CheckPanel from "../constructor/CheckPanel";
 import AuditHistory from "../audit/AuditHistory";
 import { BlockForm, FlowForm, EntitiesPanel, TemplatePanel } from "../constructor/panels";
+import OperationPalette from "../constructor/OperationPalette";
 import {
   DICTIONARY_BY_CATEGORY,
   ENTITY_CATEGORIES,
@@ -1469,32 +1470,12 @@ export default function Workspace({
               {t("ctor.close")}
             </button>
           </div>
-          {catalog.map((op) => (
-            <div className="ctor-palette-item" key={String(op?.code || op?.name)}>
-              <div className="ctor-palette-item-name">{String(op?.name_ru || op?.name || op?.code || "")}</div>
-              <div className="ctor-palette-item-code">{String(op?.code || "")}</div>
-              <button
-                type="button"
-                className="ctor-btn ctor-btn--small"
-                data-testid={`palette-add-${String(op?.code || "")}`}
-                onClick={() => handleAddOperation(op)}
-              >
-                {t("ctor.addBlock")}
-              </button>
-            </div>
-          ))}
-          <h4>{t("ctor.paletteStructural")}</h4>
-          {STRUCTURAL_BLOCKS.map((spec) => (
-            <button
-              type="button"
-              key={spec.bpmn_type}
-              className="ctor-btn ctor-palette-struct"
-              data-testid={`palette-${spec.bpmn_type}`}
-              onClick={() => handleAddStructural(spec)}
-            >
-              {spec.label}
-            </button>
-          ))}
+          <OperationPalette
+            catalog={catalog}
+            structuralBlocks={STRUCTURAL_BLOCKS}
+            onAddOperation={handleAddOperation}
+            onAddStructural={handleAddStructural}
+          />
         </div>
       ) : null}
     </div>
