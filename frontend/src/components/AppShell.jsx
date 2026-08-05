@@ -267,6 +267,7 @@ export default function AppShell({
           sessions={sessions}
           sessionId={String(shellSessionId || sessionId || "").trim()}
           sessionStatus={sessionStatus}
+          tobeActive={!!stageOverride}
           onDeleteSession={onDeleteSession}
           onChangeSessionStatus={onChangeSessionStatus}
           isChangingSessionStatus={isChangingSessionStatus}

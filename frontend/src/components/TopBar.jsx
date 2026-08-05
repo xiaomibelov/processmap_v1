@@ -142,6 +142,7 @@ export default function TopBar({
   sessions,
   sessionId,
   sessionStatus = "draft",
+  tobeActive = false, // T2: третья крошка «TO BE»
   onOpenSession,
   onOpenWorkspace,
   onOpen,
@@ -494,6 +495,18 @@ export default function TopBar({
             >
               {shortLabel(selectedSessionTitle, 36)}
             </span>
+            {tobeActive === true ? (
+              <>
+                <span className="shrink-0 text-muted" aria-hidden="true">/</span>
+                <span
+                  className="shrink-0 px-1.5 py-1 font-semibold text-fg"
+                  title="Режим: рабочее место TO BE"
+                  data-testid="topbar-crumb-tobe"
+                >
+                  TO BE
+                </span>
+              </>
+            ) : null}
           </nav>
         ) : null}
       </div>
