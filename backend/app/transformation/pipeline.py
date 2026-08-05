@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import xml.etree.ElementTree as ET
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -46,6 +45,12 @@ _EVENT_TYPES = {"startEvent", "endEvent", "intermediateCatchEvent", "intermediat
 _GATEWAY_TYPES = {"exclusiveGateway", "parallelGateway", "inclusiveGateway", "eventBasedGateway"}
 
 FATES = {"transformed_to", "pushed_below", "dropped", "open_question"}
+
+# LLM2 — порог confidence для LLM-решений: ниже → open_question, не угадывание.
+LLM_CONFIDENCE_THRESHOLD = 0.6
+# LLM2 — feature гейтвея и лимит ответа (решение владельца L3: transform 2000).
+LLM_FEATURE = "as_is_transform"
+LLM_MAX_TOKENS = 2000
 
 LLM_SYSTEM_PROMPT = (
     "Ты — эксперт по трансформации BPMN-процессов кухни AS IS -> TO BE (формат v0.3). "
@@ -170,41 +175,47 @@ def _rule_score(rule: Dict[str, Any], fact: Dict[str, Any]) -> Optional[int]:
     return int(rule.get("priority") or 0) + (1000 if prop_hit else 0)
 
 
-def match_deterministic(fact: Dict[str, Any], rules: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    best: Optional[Tuple[int, Dict[str, Any]]] = None
+def match_deterministic_winners(fact: Dict[str, Any], rules: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Все правила с максимальным score. >1 победителя = tie (неоднозначность)."""
+    best_score: Optional[int] = None
+    winners: List[Dict[str, Any]] = []
     for rule in rules:
         score = _rule_score(rule, fact)
         if score is None:
             continue
-        if best is None or score > best[0]:
-            best = (score, rule)
-    return best[1] if best else None
+        if best_score is None or score > best_score:
+            best_score = score
+            winners = [rule]
+        elif score == best_score:
+            winners.append(rule)
+    return winners
+
+
+def match_deterministic(fact: Dict[str, Any], rules: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    # Поведение для прямых вызовов сохранено: первый из победителей (rules отсортированы по -priority).
+    winners = match_deterministic_winners(fact, rules)
+    return winners[0] if winners else None
 
 
 def _default_llm_call(system_prompt: str, user_prompt: str) -> str:
-    """DeepSeek chat completion. Raises on any failure (offline mode upstream)."""
-    import requests
+    """LLM2 — вызов через LLM-гейтвей (feature=as_is_transform). Raises on failure
+    (upstream превращает в llm_status="offline" + open_questions, как раньше).
 
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-    if not api_key:
-        raise RuntimeError("DEEPSEEK_API_KEY is not set")
-    base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
-    response = requests.post(
-        f"{base_url}/v1/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={
-            "model": "deepseek-chat",
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": 0.1,
-            "response_format": {"type": "json_object"},
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"]
+    Контракт caller(system, user) -> raw string сохранён; mock-фолбэк НЕ удалён —
+    caller подменяется параметром llm_call (тесты, оффлайн-прогоны).
+    Промт (system) — из llm_prompts(feature=as_is_transform, active), сид v1 —
+    миграция 014; текст совпадает с LLM_SYSTEM_PROMPT.
+    """
+    from ..ai.gateway import complete
+
+    try:
+        payload = json.loads(user_prompt)
+    except Exception:
+        payload = {"input": user_prompt}
+    result = complete(LLM_FEATURE, payload, max_tokens=LLM_MAX_TOKENS)
+    if not result.get("ok"):
+        raise RuntimeError(f"llm gateway {result.get('status')}: {result.get('error')}")
+    return str(result.get("text") or "")
 
 
 def match_with_llm(
@@ -258,6 +269,14 @@ def match_with_llm(
                 rule_id = str(rule_id)
                 if rule_id not in known_rules:
                     continue  # LLM hallucination -> reject
+                # LLM2: confidence ниже порога -> open_question, не угадывание
+                confidence = item.get("confidence")
+                if confidence is not None:
+                    try:
+                        if float(confidence) < LLM_CONFIDENCE_THRESHOLD:
+                            continue
+                    except (TypeError, ValueError):
+                        continue
                 out[element_id] = rule_id
             return out, "llm"
         except Exception:
@@ -708,11 +727,17 @@ def transform_asis(
     for fact in facts["elements"]:
         if fact["bpmn_type"] not in _TASK_LIKE:
             continue
-        rule = match_deterministic(fact, rules)
-        decisions[fact["id"]] = rule
-        if rule is not None:
+        winners = match_deterministic_winners(fact, rules)
+        if len(winners) == 1:
+            decisions[fact["id"]] = winners[0]
             decision_sources[fact["id"]] = "deterministic"
+        elif len(winners) > 1:
+            # LLM2: tie между правилами → LLM-арбитр (не угадываем первым по списку);
+            # оффлайн/низкий confidence → open_question
+            decisions[fact["id"]] = None
+            unmatched.append(fact)
         else:
+            decisions[fact["id"]] = None
             # безымянные/пустые задачи LLM не поможет — сразу open_question
             if not (fact.get("name") or "").strip() and not (fact.get("camunda_props") or {}):
                 decision_sources[fact["id"]] = "unmatched"
