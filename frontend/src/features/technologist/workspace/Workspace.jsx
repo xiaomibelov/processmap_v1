@@ -35,6 +35,7 @@ import {
   normalizeUiModel,
   updateFlow,
   updateNode,
+  upsertEntity,
 } from "../constructor/modelUtils";
 import WorkspacePanel from "./WorkspacePanel";
 import { attachProcessStageFlushBeforeLeaveListener } from "../../process/navigation/processLeaveFlush";
@@ -1003,6 +1004,10 @@ export default function Workspace({
               opDetail={opDetails[String(selectedNode?.operation_code || "")]}
               declaredRefs={listDeclaredRefs(uiModel)}
               recipeKeys={Object.keys(uiModel?.recipe_context || {})}
+              dicts={dicts}
+              onAddEntity={(category, ref, typeId) =>
+                markDirty(upsertEntity(uiModel, category, ref, { type_id: typeId, source: "manual" }))
+              }
               onSave={(patch) => {
                 markDirty(updateNode(uiModel, selectedNodeId, patch));
                 setNotice(tf("ctor.blockSaved", { name: patch.display_name || selectedNodeId }));
@@ -1250,6 +1255,10 @@ export default function Workspace({
               opDetail={opDetails[String(selectedNode?.operation_code || "")]}
               declaredRefs={listDeclaredRefs(uiModel)}
               recipeKeys={Object.keys(uiModel?.recipe_context || {})}
+              dicts={dicts}
+              onAddEntity={(category, ref, typeId) =>
+                markDirty(upsertEntity(uiModel, category, ref, { type_id: typeId, source: "manual" }))
+              }
               onSave={(patch) => {
                 markDirty(updateNode(uiModel, selectedNodeId, patch));
                 setNotice(tf("ctor.blockSaved", { name: patch.display_name || selectedNodeId }));
