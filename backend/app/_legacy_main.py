@@ -28,6 +28,7 @@ from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
 
 from .exporters.mermaid import render_mermaid
+from .migration_state import get_migration_state
 from .exporters.yaml_export import dump_yaml, session_to_process_dict
 from .glossary import normalize_kind, slugify_canon, upsert_term
 from .models import Node, Edge, Question, ReportVersion, Session, Project, CreateProjectIn, UpdateProjectIn
@@ -3133,10 +3134,17 @@ def health():
     redis = runtime_status(force_ping=True)
     mode = str(redis.get("mode") or "UNKNOWN").upper()
     overall_status = "ok" if mode == "ON" else ("incident" if mode == "ERROR" else "degraded")
+    # F3: degraded-старт entrypoint (миграции не применились) виден наружу.
+    # ok=False — версия БД точно старше head; ok=None — неизвестно (не PG),
+    # статус НЕ понижаем.
+    migrations = get_migration_state()
+    if migrations.get("ok") is False and overall_status == "ok":
+        overall_status = "degraded"
     return {
         "ok": True,
         "status": overall_status,
         "redis": redis,
+        "migrations": migrations,
     }
 
 
