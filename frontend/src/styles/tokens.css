@@ -188,10 +188,12 @@
   --pm-tobe-fg: #0f172a;             /* основной текст (16.7:1 на bg)            */
   --pm-tobe-muted: #f1f3f5;          /* карточки-заглушки                        */
   --pm-tobe-muted-fg: #64748b;       /* вторичный текст (4.8:1 на bg)            */
+  --pm-tobe-disabled-fg: #55627a;    /* disabled-текст (5.5:1 на --pm-tobe-muted, Z0) */
   --pm-tobe-border: #e4e7eb;         /* границы                                  */
   --pm-tobe-danger: #dc2626;         /* ошибки findings (4.5:1 на белом)         */
   --pm-tobe-warning: #b45309;        /* предупреждения (4.5:1 на белом)          */
   --pm-tobe-step-pending: #b8c6da;   /* степпер pending на #16202f ≈ 7:1 (Z0)    */
+  --pm-tobe-step-na: #8496ad;        /* степпер «не требуется» на #16202f ≈ 5.3:1 (Z0) */
   --pm-tobe-font-body: 'Fira Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --pm-tobe-font-mono: 'Fira Code', ui-monospace, 'Cascadia Code', monospace;
 }
