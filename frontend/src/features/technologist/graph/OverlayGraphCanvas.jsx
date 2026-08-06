@@ -3,7 +3,7 @@
 // z-order: группа TO BE рендерится ПОСЛЕ AS IS → нативный hit-priority SVG:
 // клик по пересечению слоёв выделяет TO BE (OL1.5). AS IS — без drag
 // (инвариант read-only), клик — только выделение для просмотра.
-import React, { useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 
 import {
   asArray,
@@ -13,6 +13,10 @@ import {
   NodeShape,
 } from "./GraphCanvas";
 import { traceHighlights, traceLinkPairs } from "./overlay";
+import useViewBoxZoom from "./useViewBoxZoom";
+import { MINIMAP_NODE_THRESHOLD, parseViewBox } from "./viewBoxZoom";
+import GraphZoomControls from "./GraphZoomControls";
+import GraphMinimap from "./GraphMinimap";
 import "./GraphCanvas.css";
 
 function isGatewayType(t) {
@@ -40,6 +44,9 @@ export default function OverlayGraphCanvas({
   nodeBadges = {},
   nodeRefs = null,
   ariaLabel = "TO BE поверх AS IS",
+  resetKey = "",       // смена сессии/шаблона → сброс zoom на fit (Z1)
+  focusNodeId = "",    // центрирование вида на узле (навигация из замечаний, Z1)
+  focusSeq = 0,        // nonce — повторный клик по тому же узлу тоже центрирует
 }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null);
@@ -51,12 +58,16 @@ export default function OverlayGraphCanvas({
   const asisFlows = asArray(asIsModel?.flows);
   const asisLanes = asArray(asIsModel?.lanes);
 
-  // общий viewBox по обеим моделям (OL1: единый вьюпорт)
-  const viewBox = useMemo(() => computeViewBox({
+  // общий fit-viewBox по обеим моделям (OL1: единый вьюпорт)
+  const fitViewBox = useMemo(() => computeViewBox({
     nodes: [...asisNodes, ...tobeNodes],
     lanes: asisLanes,
     flows: [],
   }), [asisNodes, tobeNodes, asisLanes]);
+  const fitView = useMemo(() => parseViewBox(fitViewBox), [fitViewBox]);
+
+  // Z1: zoom/pan поверх viewBox (±/fit/1:1, wheel, drag по фону)
+  const zoom = useViewBoxZoom({ fitView, resetKey, svgRef });
 
   const tobeById = useMemo(() => {
     const m = new Map();
@@ -98,7 +109,7 @@ export default function OverlayGraphCanvas({
       }
     }
     const rect = svg.getBoundingClientRect();
-    const [vx, vy, vw, vh] = viewBox.split(" ").map(Number);
+    const [vx, vy, vw, vh] = zoom.viewBox.split(" ").map(Number);
     const sx = rect.width ? vw / rect.width : 1;
     const sy = rect.height ? vh / rect.height : 1;
     return { x: vx + (event.clientX - rect.left) * sx, y: vy + (event.clientY - rect.top) * sy };
@@ -114,7 +125,10 @@ export default function OverlayGraphCanvas({
   }
   function handlePointerMove(event) {
     const drag = dragRef.current;
-    if (!drag) return;
+    if (!drag) {
+      zoom.panMove(event); // Z1: pan по фону
+      return;
+    }
     const p = svgPoint(event);
     const dx = p.x - drag.startX;
     const dy = p.y - drag.startY;
@@ -125,11 +139,23 @@ export default function OverlayGraphCanvas({
   function handlePointerUp() {
     const drag = dragRef.current;
     dragRef.current = null;
-    if (drag?.moved) {
+    const panned = zoom.panEnd();
+    if (drag?.moved || panned) {
       suppressClickRef.current = true;
       setTimeout(() => { suppressClickRef.current = false; }, 0);
     }
   }
+
+  // Z1: центрирование вида на узле (навигация из замечаний; замена scrollIntoView)
+  useEffect(() => {
+    const id = String(focusNodeId || "");
+    if (!id) return;
+    const node = tobeById.get(id) || asisById.get(id);
+    if (!node) return;
+    const c = nodeCenter(node);
+    zoom.focusOn(c.cx, c.cy, Math.max(c.w * 8, 300));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusNodeId, focusSeq]);
 
   function renderFlow(flow, nodesById, layer) {
     const source = nodesById.get(String(flow?.source_ref || ""));
@@ -213,17 +239,28 @@ export default function OverlayGraphCanvas({
     );
   }
 
+  // Z1: миникарта при >MINIMAP_NODE_THRESHOLD узлах (оба слоя)
+  const minimapNodes = useMemo(
+    () => [...asisNodes.map((n) => ({ ...n, layer: "asis" })), ...tobeNodes],
+    [asisNodes, tobeNodes],
+  );
+  const showMinimap = minimapNodes.length > MINIMAP_NODE_THRESHOLD;
+
   return (
-    <svg
-      ref={svgRef}
-      className="import-bpmn__svg graph-canvas graph-canvas--overlay"
-      viewBox={viewBox}
-      role="img"
-      aria-label={ariaLabel}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerUp}
-    >
+    <div className="graph-canvas-viewport">
+      <svg
+        ref={svgRef}
+        className="import-bpmn__svg graph-canvas graph-canvas--overlay"
+        viewBox={zoom.viewBox}
+        role="img"
+        aria-label={ariaLabel}
+        data-testid="graph-canvas-svg"
+        data-zoom={zoom.percent}
+        onPointerDown={zoom.panStart}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
+      >
       <defs>
         <marker id="import-bpmn-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" fill="#555" />
@@ -278,6 +315,22 @@ export default function OverlayGraphCanvas({
         {tobeFlows.map((f) => renderFlow(f, tobeById, "tobe"))}
         {tobeNodes.map((n) => renderNode(n, "tobe"))}
       </g>
-    </svg>
+      </svg>
+      <GraphZoomControls
+        percent={zoom.percent}
+        onZoomIn={zoom.zoomIn}
+        onZoomOut={zoom.zoomOut}
+        onFit={zoom.fit}
+        onActualSize={zoom.actualSize}
+      />
+      {showMinimap ? (
+        <GraphMinimap
+          nodes={minimapNodes}
+          fitView={fitView}
+          view={zoom.view}
+          onNavigate={(x, y) => zoom.focusOn(x, y, zoom.view.w)}
+        />
+      ) : null}
+    </div>
   );
 }
