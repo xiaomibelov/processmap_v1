@@ -1,0 +1,159 @@
+{
+  "p1_canvas": {
+    "error": "canvas host not found",
+    "viewport": {
+      "w": 1680,
+      "h": 1000
+    }
+  },
+  "p1_controls": {
+    "zoomFitControls": [],
+    "minimapNode": false
+  },
+  "p5_steps": [
+    {
+      "text": "✓Импорт AS IS",
+      "tag": "DIV",
+      "cls": "tobeSteps__item tobeSteps__item--done",
+      "disabled": false,
+      "color": "rgb(127, 206, 155)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "opacity": "1",
+      "cursor": "auto"
+    },
+    {
+      "text": "2Трансформация",
+      "tag": "DIV",
+      "cls": "tobeSteps__item tobeSteps__item--current",
+      "disabled": false,
+      "color": "rgb(255, 255, 255)",
+      "bg": "rgb(29, 44, 71)",
+      "opacity": "1",
+      "cursor": "auto"
+    },
+    {
+      "text": "3Конструктор",
+      "tag": "DIV",
+      "cls": "tobeSteps__item tobeSteps__item--pending",
+      "disabled": false,
+      "color": "rgb(159, 176, 200)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "opacity": "0.55",
+      "cursor": "auto"
+    },
+    {
+      "text": "5Проверка",
+      "tag": "DIV",
+      "cls": "tobeSteps__item tobeSteps__item--pending",
+      "disabled": false,
+      "color": "rgb(159, 176, 200)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "opacity": "0.55",
+      "cursor": "auto"
+    },
+    {
+      "text": "6Публикация",
+      "tag": "DIV",
+      "cls": "tobeSteps__item tobeSteps__item--pending",
+      "disabled": false,
+      "color": "rgb(159, 176, 200)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "opacity": "0.55",
+      "cursor": "auto"
+    },
+    {
+      "text": "7Пилот",
+      "tag": "DIV",
+      "cls": "tobeSteps__item tobeSteps__item--pending",
+      "disabled": false,
+      "color": "rgb(159, 176, 200)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "opacity": "0.55",
+      "cursor": "auto"
+    },
+    {
+      "text": "Пилот",
+      "tag": "BUTTON",
+      "cls": "ws-panel__tab",
+      "disabled": false,
+      "color": "rgb(60, 76, 102)",
+      "bg": "rgb(255, 255, 255)",
+      "opacity": "1",
+      "cursor": "pointer"
+    },
+    {
+      "text": "Проверка по кухням ещё н",
+      "tag": "DIV",
+      "cls": "ctor-hint",
+      "disabled": false,
+      "color": "rgb(119, 119, 119)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "opacity": "1",
+      "cursor": "auto"
+    }
+  ],
+  "p6_toolbar": [
+    {
+      "text": "Связать",
+      "title": "",
+      "aria": "",
+      "visible": true
+    },
+    {
+      "text": "AS IS",
+      "title": "Показать/скрыть приглушённую подложку AS IS",
+      "aria": "",
+      "visible": true
+    },
+    {
+      "text": "Связи происхождения",
+      "title": "Показать все derived_from-связи (по умолчанию — при выделени",
+      "aria": "",
+      "visible": true
+    }
+  ],
+  "p3_tabs": {
+    "count": 9,
+    "tabs": [
+      "Шаг",
+      "Блок",
+      "Поток",
+      "Шаблон",
+      "Сущности",
+      "Замечания",
+      "Рецепт",
+      "История",
+      "Пилот"
+    ]
+  },
+  "p2_remarks": {
+    "sampleCards": [
+      {
+        "cls": "ctor-check",
+        "text": "Результаты проверкиСкрытьПроверка схемыузлов 0потоков 0ошибок 0предупреждений 0Замечаний нетПроверка по кухнямКухни:Режи"
+      },
+      {
+        "cls": "ctor-check__summary",
+        "text": "узлов 0потоков 0ошибок 0предупреждений 0"
+      },
+      {
+        "cls": "ctor-check__precheck-controls",
+        "text": "Кухни:Режим:с предупреждениями (по умолчанию)строгийОбновить проверку по кухням"
+      }
+    ],
+    "groupHeaders": [
+      "✓Импорт AS IS",
+      "2Трансформация",
+      "5Проверка",
+      "Замечания проверки",
+      "Результаты проверкиСкрыть",
+      "Проверка схемы",
+      "Проверка по кухням",
+      "Проверка по кухням ещё не запускалась"
+    ]
+  },
+  "p4_recipe_step": {
+    "recipeFormVisible": false,
+    "canvasStillVisible": false
+  }
+}
