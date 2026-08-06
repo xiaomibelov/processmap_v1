@@ -1,0 +1,17 @@
+{
+  "finding": {
+    "color": "rgb(15, 23, 42)",
+    "bg": "rgb(255, 255, 255)",
+    "text": "отсутствует pm:metadata на уровне процессаMISSING_PROCESS_ME"
+  },
+  "stepPending": {
+    "color": "rgb(184, 198, 218)",
+    "opacity": "1"
+  },
+  "disabledBtn": {
+    "text": "Обновить проверку по кухням",
+    "color": "rgb(85, 98, 122)",
+    "bg": "rgb(241, 243, 245)",
+    "opacity": "1"
+  }
+}
