@@ -41,8 +41,9 @@
   background: var(--ws-step-current-bg, #1d2c47);
 }
 .wfbar__step--current .wfbar__num { background: var(--ws-step-current-num-bg, #3f6fd1); color: var(--ws-step-current, #fff); }
-/* UXF/B3: недоступные шаги приглушены, «не требуется» — ещё слабее */
-.wfbar__step--pending { opacity: 0.55; }
-.wfbar__step--na { opacity: 0.4; }
+/* UXF/B3 + Z0 TOBE-UX: недоступные шаги — solid-токены вместо opacity-гашения
+   (было #9fb0c8×0.55 ≈ 3.1:1 на #16202f; теперь ≥4.5:1, визуальная иерархия сохранена) */
+.wfbar__step--pending { color: var(--pm-tobe-step-pending, #b8c6da); }
+.wfbar__step--na { color: var(--pm-tobe-step-na, #8496ad); }
 .wfbar__step--na .wfbar__num { background: transparent; }
 .wfbar__step--next { border-color: var(--ws-step-next-border, #6b5bd2); }
