@@ -44,15 +44,9 @@ import { attachProcessStageFlushBeforeLeaveListener } from "../../process/naviga
 import { buildTobeLeaveFlushHandler } from "./tobeLeaveFlush";
 import RecipePanel from "./RecipePanel";
 import PilotPanel from "./PilotPanel";
+import { getStructuralBlocks } from "../constructor/structuralBlocks";
 import { decorateSteps } from "./stepStates";
 import "./Workspace.css";
-
-const STRUCTURAL_BLOCKS = [
-  { bpmn_type: "exclusiveGateway", label: "Развилка «исключающая»", prefix: "Gateway", width: 60, height: 60 },
-  { bpmn_type: "parallelGateway", label: "Развилка «параллельная»", prefix: "Gateway", width: 60, height: 60 },
-  { bpmn_type: "startEvent", label: "Событие «старт»", prefix: "StartEvent", width: 40, height: 40 },
-  { bpmn_type: "endEvent", label: "Событие «завершение»", prefix: "EndEvent", width: 40, height: 40 },
-];
 
 function readQuery() {
   return new URLSearchParams(window.location.search);
@@ -65,10 +59,14 @@ export default function Workspace({
   onPublishedTobe = null,
   onDirtyChange = null, // T2: dirty наружу (App строит leave-guard выхода из TO BE)
 } = {}) {
+  // Z1: подписи структурных блоков палитры — i18n (без RU-hardcode)
+  const structuralBlocks = getStructuralBlocks();
   // ---- модель процесса (TO BE) ----
   const [uiModel, setUiModel] = useState(() => emptyUiModel());
   // T3#1 — точка вставки следующего блока (клик по пустому канвасу); null → ступенчатый дефолт
   const [insertPoint, setInsertPoint] = useState(null);
+  // Z1 — цель центрирования zoom-канваса (навигация из замечаний); {id, seq}
+  const [focusTarget, setFocusTarget] = useState(null);
   const [templateId, setTemplateId] = useState("");
   const [templateName, setTemplateName] = useState(t("ctor.newTemplate"));
   const [templateVersion, setTemplateVersion] = useState("0.1.0");
@@ -511,8 +509,8 @@ export default function Workspace({
     if (findNode(uiModel, id)) {
       setSelectedNodeId(id);
       setSelectedFlowId("");
-      const el = nodeRefs.current[id];
-      if (el?.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+      // Z1: центрирование zoom-канваса на узле (замена scrollIntoView — канвас теперь 100% высоты, скролла нет)
+      setFocusTarget({ id, seq: Date.now() });
     } else if (findFlow(uiModel, id)) {
       setSelectedFlowId(id);
       setSelectedNodeId("");
@@ -923,6 +921,9 @@ export default function Workspace({
               connectSourceId={connectSourceId}
               nodeBadges={decisionBadges}
               nodeRefs={nodeRefs}
+              resetKey={`${asIsSource?.sessionId || ""}:${templateId}`}
+              focusNodeId={focusTarget?.id || ""}
+              focusSeq={focusTarget?.seq || 0}
               ariaLabel="TO BE поверх AS IS"
             />
             {asIsEmpty && asIsSource?.sessionId && !blankOverride ? (
@@ -1493,7 +1494,7 @@ export default function Workspace({
           </div>
           <OperationPalette
             catalog={catalog}
-            structuralBlocks={STRUCTURAL_BLOCKS}
+            structuralBlocks={structuralBlocks}
             onAddOperation={handleAddOperation}
             onAddStructural={handleAddStructural}
           />

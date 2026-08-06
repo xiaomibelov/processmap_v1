@@ -41,16 +41,9 @@ import {
 import "./Constructor.css";
 import { BlockForm, FlowForm, EntitiesPanel, TemplatePanel } from "./panels";
 import OperationPalette from "./OperationPalette";
+import { getStructuralBlocks } from "./structuralBlocks";
 
 export const E4_HANDOFF_KEY = "fpc_e4_handoff";
-
-const STRUCTURAL_BLOCKS = [
-  { bpmn_type: "exclusiveGateway", label: "Развилка «исключающая»", prefix: "Gateway", width: 60, height: 60 },
-  { bpmn_type: "parallelGateway", label: "Развилка «параллельная»", prefix: "Gateway", width: 60, height: 60 },
-  { bpmn_type: "startEvent", label: "Событие «старт»", prefix: "StartEvent", width: 40, height: 40 },
-  { bpmn_type: "endEvent", label: "Событие «завершение»", prefix: "EndEvent", width: 40, height: 40 },
-  { bpmn_type: "intermediateCatchEvent", label: "Событие «промежуточное»", prefix: "IntermediateEvent", width: 40, height: 40 },
-];
 
 function readQuery() {
   if (typeof window === "undefined") return new URLSearchParams("");
@@ -71,6 +64,8 @@ function nodeLabel(node) {
 // ---------- Block (task) edit form ------------------------------------------
 
 export function Constructor() {
+  // Z1: подписи структурных блоков палитры — i18n (без RU-hardcode)
+  const structuralBlocks = getStructuralBlocks({ withIntermediate: true });
   const [uiModel, setUiModel] = useState(() => emptyUiModel());
   // T3#1 — точка вставки следующего блока (клик по пустому канвасу); null → дефолт «в хвост справа»
   const [insertPoint, setInsertPoint] = useState(null);
@@ -769,7 +764,7 @@ export function Constructor() {
           <h3>{t("ctor.palette")}</h3>
           <OperationPalette
             catalog={catalog}
-            structuralBlocks={STRUCTURAL_BLOCKS}
+            structuralBlocks={structuralBlocks}
             onAddOperation={handleAddOperation}
             onAddStructural={handleAddStructural}
           />
