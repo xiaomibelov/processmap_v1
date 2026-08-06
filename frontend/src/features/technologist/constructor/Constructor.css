@@ -47,8 +47,8 @@
   background: #f0f0f0;
 }
 
+/* Z0 TOBE-UX: фактический disabled-вид — блок после модификаторов (см. ниже) */
 .ctor-btn:disabled {
-  opacity: 0.5;
   cursor: not-allowed;
 }
 
@@ -80,6 +80,19 @@
   border-color: #007bff;
   background: #eef4ff;
   color: #0056b3;
+}
+
+/* Z0 TOBE-UX: disabled без opacity-гашения (было ~3.2:1) — muted-токены, ≥4.5:1.
+   Блок ПОСЛЕ модификаторов: при равной специфичности побеждает disabled-вид. */
+.ctor-btn:disabled,
+.ctor-btn--primary:disabled,
+.ctor-btn--danger:disabled,
+.ctor-btn--active:disabled {
+  opacity: 1;
+  background: var(--pm-tobe-muted, #f1f3f5);
+  border-color: var(--pm-tobe-border, #e4e7eb);
+  color: var(--pm-tobe-disabled-fg, #55627a);
+  cursor: not-allowed;
 }
 
 .ctor__error {
@@ -210,8 +223,11 @@
   color: #fff;
 }
 
+/* Z0 TOBE-UX: disabled-табы без opacity-гашения — muted-токены, ≥4.5:1 */
 .ctor-tab:disabled {
-  opacity: 0.45;
+  opacity: 1;
+  background: var(--pm-tobe-muted, #f1f3f5);
+  color: var(--pm-tobe-disabled-fg, #55627a);
   cursor: not-allowed;
 }
 
@@ -524,13 +540,14 @@
   margin-bottom: 6px;
 }
 
+/* Z0 TOBE-UX: warning/error-тексты сводки и бейджей — токены ≥4.5:1 (было #b9770e 3.9:1) */
 .ctor-check__summary-errors {
-  color: #c0392b;
+  color: var(--pm-tobe-danger, #dc2626);
   font-weight: 600;
 }
 
 .ctor-check__summary-warnings {
-  color: #b9770e;
+  color: var(--pm-tobe-warning, #b45309);
   font-weight: 600;
 }
 
@@ -549,6 +566,8 @@
   background: #fff;
   border: 1px solid #d7dce3;
   border-radius: 6px;
+  /* Z0 TOBE-UX: текст был наследуемым #EBF0F9 на белом (1.14:1) — токен 16.7:1 */
+  color: var(--pm-tobe-fg, #0f172a);
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -564,12 +583,13 @@
   background: #eef4ff;
 }
 
+/* Z0 TOBE-UX: severity-бордеры токенами (warning был #b9770e ≈3.9:1 — ниже 4.5:1) */
 .ctor-check__finding--error {
-  border-left: 3px solid #c0392b;
+  border-left: 3px solid var(--pm-tobe-danger, #dc2626);
 }
 
 .ctor-check__finding--warning {
-  border-left: 3px solid #b9770e;
+  border-left: 3px solid var(--pm-tobe-warning, #b45309);
 }
 
 .ctor-check__finding-head {
@@ -646,12 +666,12 @@
 
 .ctor-check__badge--warning {
   background: #fdf2dc;
-  color: #b9770e;
+  color: var(--pm-tobe-warning, #b45309);
 }
 
 .ctor-check__badge--blocked {
   background: #fbe3e3;
-  color: #c0392b;
+  color: var(--pm-tobe-danger, #dc2626);
 }
 
 .ctor-check__unmet {
