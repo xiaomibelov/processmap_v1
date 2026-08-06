@@ -58,6 +58,11 @@ test("Z0-3: disabled кнопок/табов — muted-токены без opaci
   assert.ok(contrast("#55627a", "#f1f3f5") >= 4.5, "disabled-fg на muted");
 });
 
+test("Z0-4: кнопки слоёв тулбара — явный --pm-tobe-fg (наследуемый #EBF0F9 на белом 1.14:1)", () => {
+  assert.match(ws, /\.ws__layer-btn \{[\s\S]*?color: var\(--pm-tobe-fg, #0f172a\);/);
+  assert.ok(contrast("#0f172a", "#ffffff") >= 4.5, "layer-btn на белом");
+});
+
 test("Z0: никаких других правок значений — hover/active/primary не тронуты", () => {
   assert.match(ctor, /\.ctor-check__finding:hover \{\s*border-color: #007bff;\s*background: #eef4ff;/);
   assert.match(ctor, /\.ctor-btn--primary \{\s*border-color: #007bff;\s*background: #007bff;\s*color: #fff;/);
