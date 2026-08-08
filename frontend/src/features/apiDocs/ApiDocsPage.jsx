@@ -8,9 +8,9 @@ import { convertOpenApi31to30 } from "./openapi30Convert.js";
 
 // Роут /api-docs — Swagger UI внутри SPA (fix: браузерная навигация на
 // /api/docs не подставляет Bearer → 401 missing_bearer).
-// Спека грузится с /api/openapi.json через API-клиент (Bearer), конвертируется
-// 3.1→3.0 на клиенте (swagger-ui@4 не поддерживает 3.1; backend-контракт не
-// меняется). requestInterceptor подставляет актуальный Bearer во все запросы
+// Спека — РУССКАЯ обогащённая /api/openapi_ru.json (защищённый эндпоинт,
+// OpenAPI 3.0.3); конвертер 3.1→3.0 оставлен как страховка (идемпотентен).
+// requestInterceptor подставляет актуальный Bearer во все запросы
 // «Try it out».
 
 export default function ApiDocsPage() {
@@ -20,7 +20,7 @@ export default function ApiDocsPage() {
   useEffect(() => {
     let cancelled = false;
     setError("");
-    void apiRequest("/api/openapi.json")
+    void apiRequest("/api/openapi_ru.json")
       .then((r) => {
         if (cancelled) return;
         if (r?.ok && r.data && typeof r.data === "object") {
@@ -44,7 +44,16 @@ export default function ApiDocsPage() {
   }
 
   return (
-    <div className="apiDocsPage" data-testid="api-docs-page" style={{ background: "#ffffff", minHeight: "100vh" }}>
+    <div
+      className="apiDocsPage"
+      data-testid="api-docs-page"
+      style={{
+        background: "#ffffff",
+        // собственный скролл-контейнер: body у SPA с overflow-hidden
+        height: "100vh",
+        overflowY: "auto",
+      }}
+    >
       {spec ? (
         <SwaggerUI
           spec={spec}

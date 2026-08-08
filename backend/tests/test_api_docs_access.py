@@ -28,7 +28,8 @@ from backend.app.main import app  # noqa: E402
 from backend.app.auth import create_access_token  # noqa: E402
 from backend.app.storage import create_org_record, upsert_org_membership  # noqa: E402
 
-DOCS_PATHS = ("/api/docs", "/api/redoc", "/api/openapi.json")
+DOCS_PATHS = ("/api/docs", "/api/redoc", "/api/openapi.json", "/api/openapi_ru.json")
+SCHEMA_DOCS_PATHS = ("/api/docs", "/api/redoc", "/api/openapi.json")  # вне paths спеки (include_in_schema=False)
 
 
 @pytest.fixture(autouse=True)
@@ -162,7 +163,37 @@ def test_docs_html_and_openapi_json_valid(client):
         body = spec.json()
         assert isinstance(body.get("paths"), dict) and len(body["paths"]) > 0
         # контракт не изменился: docs-ручки не попадают в спеку
-        for p in DOCS_PATHS:
+        for p in SCHEMA_DOCS_PATHS + ("/api/openapi_ru.json",):
             assert p not in body["paths"], f"{p} не должна быть в openapi.json (include_in_schema=False)"
+    finally:
+        _delete_user(u["uid"], u["oid"])
+
+
+def test_openapi_ru_enriched_spec(client):
+    """/api/openapi_ru.json: русские summary/description, openapi 3.0.3,
+    без 3.1-специфики (type:'null'), security по правилам."""
+    u = _user_with_role("org_owner")
+    try:
+        resp = client.get("/api/openapi_ru.json", headers=_auth(u["token"]))
+        assert resp.status_code == 200
+        body = resp.json()
+        raw = resp.text
+        assert body["openapi"] == "3.0.3"
+        assert '"type": "null"' not in raw, "type:'null' сконвертирован в nullable"
+        assert '"examples"' not in raw, "examples → example"
+        put_session = body["paths"]["/api/sessions/{session_id}"]["put"]
+        assert "Сохранить" in put_session["summary"], "русский summary"
+        assert "409" in put_session["responses"], "409 конфликт версий документирован"
+        assert "401" in put_session["responses"]
+        login = body["paths"]["/api/auth/login"]["post"]
+        assert login.get("security") == [], "публичный логин — security: []"
+        # пустых summary/description нет
+        empty = [
+            (p, m)
+            for p, item in body["paths"].items()
+            for m, op in item.items()
+            if isinstance(op, dict) and (not op.get("summary") or not op.get("description"))
+        ]
+        assert empty == [], f"операции без summary/description: {empty[:5]}"
     finally:
         _delete_user(u["uid"], u["oid"])

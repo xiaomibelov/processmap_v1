@@ -20,6 +20,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from .. import _legacy_main
+from ..services.api_docs_ru import build_ru_openapi
 from ..storage import list_user_org_memberships
 
 router = APIRouter()
@@ -79,3 +80,23 @@ def api_docs_openapi_json(request: Request) -> Any:
             routes=app.routes,
         )
     )
+
+
+@router.get("/api/openapi_ru.json", include_in_schema=False)
+def api_docs_openapi_ru_json(request: Request) -> Any:
+    """Русская обогащённая спека (OpenAPI 3.0.3) для Swagger UI внутри SPA.
+
+    Те же права, что у /api/docs. Генерируется на лету из get_openapi —
+    без файловых дублей; правила идентичны экспорту docs/openapi.yaml (#694).
+    """
+    _uid, err = _api_docs_access(request)
+    if err is not None:
+        return err
+    app = request.app
+    spec = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    return JSONResponse(build_ru_openapi(spec))
