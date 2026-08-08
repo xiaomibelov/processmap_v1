@@ -127,9 +127,33 @@ def test_fallback_chain_by_priority(sandbox):
     assert calls == ["key-a", "key-b"], "порядок фолбэка = priority ASC"
     assert result["provider_id"] == p2["id"] and result["model"] == "m2"
     assert result["usage"] == {"prompt_tokens": 11, "completion_tokens": 7}
+    assert result["fallback"] is True, "ответил НЕ первый провайдер цепочки → fallback=True (LLM4 S8)"
     rows = _usage_rows(feature)
     assert [r["status"] for r in rows].count("error") == 1, "ошибка p1 записана"
     assert rows[-1]["status"] == "ok" and rows[-1]["prompt_tokens"] == 11
+
+
+def test_fallback_false_when_primary_answers(sandbox):
+    """LLM4 S8: первый провайдер ответил → fallback=False."""
+    org, feature = sandbox["org_id"], sandbox["feature"]
+    llm_store.create_provider(org_id=org, name="p-primary", base_url="https://a", model="m1",
+                              api_key="key-a", priority=10)
+    with mock.patch.object(gateway, "_deepseek_chat_request", return_value=_llm_response()):
+        result = gateway.complete(feature, {"x": 1}, org_id=org)
+    assert result["ok"] is True and result["fallback"] is False
+
+
+def test_fallback_true_for_env_provider(sandbox):
+    """LLM4 S8: env-фолбэк — всегда fallback=True (в т.ч. из кэша)."""
+    org, feature = sandbox["org_id"], sandbox["feature"]
+    fake_redis = _FakeRedis()
+    with mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "env-key"}):
+        with mock.patch.object(gateway, "_deepseek_chat_request", return_value=_llm_response()):
+            first = gateway.complete_cached(feature, "digest-fb-1", {"x": 1}, org_id=org, cache_client=fake_redis)
+    assert first["ok"] is True and first["fallback"] is True and first["cached"] is False
+    # попадание в redis-кэш сохраняет признак fallback (бейдж не теряется)
+    second = gateway.complete_cached(feature, "digest-fb-1", {"x": 1}, org_id=org, cache_client=fake_redis)
+    assert second["cached"] is True and second["fallback"] is True
 
 
 def test_all_providers_failed(sandbox):
@@ -166,6 +190,7 @@ def test_env_fallback_when_table_empty(sandbox):
                                return_value=_llm_response()) as mocked:
             result = gateway.complete(feature, {}, org_id=org)
     assert result["ok"] is True and result["provider_id"] == "env_fallback"
+    assert result["fallback"] is True, "env-фолбэк = fallback (LLM4 S8)"
     assert mocked.call_args.kwargs["api_key"] == "env-key"
 
 

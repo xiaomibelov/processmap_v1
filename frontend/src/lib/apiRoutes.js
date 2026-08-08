@@ -241,6 +241,10 @@ export const apiRoutes = {
     sessionTitleQuestions: () => "/api/llm/session-title/questions",
     settings: () => "/api/settings/llm",
     verify: () => "/api/settings/llm/verify",
+    // LLM4 — статус LLM-гейтвея (configured + дневная квота токенов). Вне sessions.
+    status: () => "/api/llm/status",
+    // LLM4 — feedback 👍/👎 панели PROCESSMAN → llm_usage (0 токенов, без LLM-вызова).
+    feedback: () => "/api/llm/feedback",
   },
   enterprise: {
     workspace: (params = {}) => withQuery("/api/enterprise/workspace", params),

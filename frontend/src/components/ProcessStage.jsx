@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import DocStage from "./process/DocStage";
 import DodStage from "./process/DodStage";
 import InterviewStage from "./process/InterviewStage";
-import SchemaAssistantBlock from "./process/SchemaAssistantBlock";
 import ProductActionsRegistry from "../features/analytics/ProductActionsRegistry.jsx";
 import ProcessPropertiesRegistryPage from "./process/analysis/ProcessPropertiesRegistryPage.jsx";
 import AnalyticsDashboards from "../features/analytics/AnalyticsDashboards.jsx";
@@ -27,6 +26,7 @@ import {
   apiCreateProjectSession,
   apiGetExportZip,
   apiListProjectSessions,
+  apiLlmStatus,
 } from "../lib/api.js";
 import { seedSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
 import {
@@ -49,6 +49,8 @@ import {
 import { buildManualSaveProjectionSyncPlan } from "../features/process/bpmn/save/manualSaveProjectionSync.js";
 import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
 import useBpmnSync from "../features/process/hooks/useBpmnSync";
+import ProcessmanPanel from "../features/process/processman/ProcessmanPanel";
+import { isLlmNotConfigured } from "../features/process/processman/processmanView";
 import { useViewportResizeController } from "../features/process/bpmn/stage/viewport/useViewportResizeController";
 import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
 import useProcessWorkbenchController from "../features/process/hooks/useProcessWorkbenchController";
@@ -2893,6 +2895,58 @@ function ProcessStage({
       laneName: selectedElementLaneName,
     };
   }, [selectedElementId, selectedElementName, selectedElementType, selectedElementLaneName]);
+
+  // LLM4 — панель PROCESSMAN. Token economy: открытие/смена контекста/выбор =
+  // 0 LLM-вызовов; 1× GET /api/llm/status на сессию (не LLM-gateway, 0 токенов)
+  // — для disabled кнопки (S1) и квоты (S7). Кэш ответов v1 = in-memory (ref).
+  const [processmanOpen, setProcessmanOpen] = useState(false);
+  const [processmanClosing, setProcessmanClosing] = useState(false);
+  const [processmanEntering, setProcessmanEntering] = useState(false);
+  const [processmanLlmStatus, setProcessmanLlmStatus] = useState(null);
+  const processmanStatusLoadedRef = useRef(false);
+  const processmanCacheRef = useRef(new Map());
+  const processmanCloseTimerRef = useRef(null);
+  useEffect(() => {
+    if (!sid || processmanStatusLoadedRef.current) return;
+    processmanStatusLoadedRef.current = true;
+    let cancelled = false;
+    void apiLlmStatus()
+      .then((r) => { if (!cancelled) setProcessmanLlmStatus(r); })
+      .catch(() => { if (!cancelled) setProcessmanLlmStatus({ ok: false, status: 0, error: "fetch_failed" }); });
+    return () => { cancelled = true; };
+  }, [sid]);
+  // анимация выхода 150ms (только transform), вход 200ms — классы в processman.css
+  const closeProcessman = useCallback(() => {
+    setProcessmanClosing(true);
+    if (processmanCloseTimerRef.current) clearTimeout(processmanCloseTimerRef.current);
+    processmanCloseTimerRef.current = setTimeout(() => {
+      processmanCloseTimerRef.current = null;
+      setProcessmanOpen(false);
+      setProcessmanClosing(false);
+    }, 150);
+  }, []);
+  const toggleProcessman = useCallback(() => {
+    if (processmanOpen && !processmanClosing) {
+      closeProcessman();
+      return;
+    }
+    if (processmanCloseTimerRef.current) {
+      clearTimeout(processmanCloseTimerRef.current);
+      processmanCloseTimerRef.current = null;
+    }
+    setProcessmanClosing(false);
+    setProcessmanEntering(true);
+    setProcessmanOpen(true);
+  }, [processmanOpen, processmanClosing, closeProcessman]);
+  useEffect(() => {
+    if (!processmanOpen || !processmanEntering) return undefined;
+    const raf = requestAnimationFrame(() => setProcessmanEntering(false));
+    return () => cancelAnimationFrame(raf);
+  }, [processmanOpen, processmanEntering]);
+  useEffect(() => () => {
+    if (processmanCloseTimerRef.current) clearTimeout(processmanCloseTimerRef.current);
+  }, []);
+
   const sessionMetaPersist = useSessionMetaPersist({
     sid,
     isLocal,
@@ -7619,6 +7673,8 @@ function ProcessStage({
             <AnalyticsPage scope="session" scopeId={sid} module="overview" orgId={activeOrgId} embedded />
           </div>
         ) : (
+          <div className="pm-processman-layout">
+          <div className="pm-processman-layout__canvas">
           <div className="relative h-full min-h-0">
             {!isInterview && (
             <div className="absolute inset-0">
@@ -7895,13 +7951,13 @@ function ProcessStage({
                     insertBetweenBusy,
                     canInsertBetween,
                     insertBetweenErrorMessage,
+                    processmanOpen,
+                    onToggleProcessman: toggleProcessman,
+                    processmanNoKey: isLlmNotConfigured(processmanLlmStatus),
                   })}
                   />
                 ) : null}
                 <ProcessDiagramOverlayLayers {...diagramOverlayLayersProps} />
-                {tab === "diagram" && !isInterview ? (
-                  <SchemaAssistantBlock sessionId={sid} selectedElement={selectedBpmnElement} />
-                ) : null}
                 <BottomViewportScrubber
                   active={tab === "diagram" && !isInterview}
                   canvasApi={bpmnCanvasApi}
@@ -7997,6 +8053,20 @@ function ProcessStage({
                 />
               </div>
             ) : null}
+          </div>
+          </div>
+          {(processmanOpen || processmanClosing) ? (
+            <ProcessmanPanel
+              sessionId={sid}
+              tab={tab}
+              selectedBpmnElement={selectedBpmnElement}
+              llmStatus={processmanLlmStatus}
+              cacheRef={processmanCacheRef}
+              closing={processmanClosing || processmanEntering}
+              onOpenFullAnalysis={() => switchTab("interview")}
+              onClose={closeProcessman}
+            />
+          ) : null}
           </div>
         )}
       </div>

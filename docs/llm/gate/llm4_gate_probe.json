@@ -1,0 +1,199 @@
+{
+  "screenshots": [
+    "llm4_s1_no_key.png",
+    "llm4_s2_empty.png",
+    "llm4_s4_loading.png",
+    "llm4_s5_answer.png",
+    "llm4_s3_cached.png",
+    "llm4_context_analysis.png",
+    "llm4_context_neutral.png",
+    "llm4_s8_fallback.png",
+    "llm4_s6_error.png",
+    "llm4_s7_quota.png"
+  ],
+  "probes": {
+    "button": {
+      "color": "rgb(255, 255, 255)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "text": "PROCESSMAN"
+    },
+    "buttonBgFrom": "rgb(23, 48, 63)",
+    "panelTitle": {
+      "color": "rgb(15, 23, 42)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "text": "PROCESSMAN"
+    },
+    "panelTitleBgFrom": "rgb(248, 250, 252)"
+  },
+  "checks": [
+    {
+      "name": "S1 кнопка aria-disabled при has_api_key=false",
+      "ok": true,
+      "detail": "{\"ariaDisabled\":\"true\",\"title\":\"Настройте LLM-провайдера в админ-панели (раздел LLM)\",\"ariaLabel\":\"PROCESSMAN — ИИ-помощник по процессу\",\"focusable\":true}"
+    },
+    {
+      "name": "S1 тултип про настройку провайдера",
+      "ok": true,
+      "detail": "Настройте LLM-провайдера в админ-панели (раздел LLM)"
+    },
+    {
+      "name": "S1 aria-label из i18n",
+      "ok": true,
+      "detail": "PROCESSMAN — ИИ-помощник по процессу"
+    },
+    {
+      "name": "S1 тултип доступен с клавиатуры (фокусируемая кнопка)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "S1 панель не открывается",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "S2 пустое состояние (шаг не выбран)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "клавиатура: фокус в панели при открытии",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "выбор узла активирует действия",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "S4 skeleton при загрузке >300ms",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "S4 анти-даблклик (disabled во время запроса)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "S5 ответ показан",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "S5 время ответа",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "S5 ↻ Обновить",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "S5 👍/👎 в футере",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "S5 бейдж «новый запрос»",
+      "ok": true,
+      "detail": "новый запрос"
+    },
+    {
+      "name": "👍 записан (thanks)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "👍 → POST /api/llm/feedback (не LLM-gateway)",
+      "ok": true,
+      "detail": "POST http://127.0.0.1:5178/api/llm/feedback"
+    },
+    {
+      "name": "S3 повтор = 0 вызовов (in-memory кэш)",
+      "ok": true,
+      "detail": "1→1"
+    },
+    {
+      "name": "S3 бейдж «из кэша · 0 токенов»",
+      "ok": true,
+      "detail": "из кэша · 0 токенов"
+    },
+    {
+      "name": "вкладка «Анализ процессов» активирована",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "П.1 панель не закрывается при смене вкладки",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "контекст «Анализ» при tab=interview",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "нейтральное состояние (AS IS/Отчёты/прочие)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Esc закрывает панель",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "S8 бейдж fallback-провайдера",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "S6 ошибка человекочитаемо (RU)",
+      "ok": true,
+      "detail": "Не удалось получить ответОшибка при обращении к LLM — попробуйте ещё раз.Повторить"
+    },
+    {
+      "name": "S6 кнопка [Повторить]",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "S7 состояние исчерпания quota",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "S7 действия disabled при exhausted (даже с выбранным шагом)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "контраст кнопки ≥ 4.5:1",
+      "ok": true,
+      "detail": "13.72"
+    },
+    {
+      "name": "контраст заголовка панели ≥ 4.5:1",
+      "ok": true,
+      "detail": "17.06"
+    }
+  ],
+  "contrast": {
+    "button": {
+      "color": "rgb(255, 255, 255)",
+      "bg": "rgb(23, 48, 63)",
+      "text": "PROCESSMAN",
+      "ratio": 13.716624494319033
+    },
+    "panelTitle": {
+      "color": "rgb(15, 23, 42)",
+      "bg": "rgb(248, 250, 252)",
+      "text": "PROCESSMAN",
+      "ratio": 17.062933971317335
+    }
+  }
+}

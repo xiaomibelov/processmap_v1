@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { apiGetOperationCatalog, apiLlmAnalysis } from "../../../lib/api";
+import { writeLastAnalysis } from "../../../features/process/processman/lastAnalysisStore";
 import {
   LLM_ANALYSIS_STATUS,
   buildOperationLabels,
@@ -36,6 +37,8 @@ export default function LlmAnalysisBlock({ sessionId, steps = [] }) {
     const resp = await apiLlmAnalysis(sessionId, { force });
     const mapped = mapLlmAnalysisResponse(resp);
     setState(mapped);
+    // LLM4: делимся последним анализом с панелью PROCESSMAN (in-memory, 0 запросов).
+    if (mapped.analysis) writeLastAnalysis(sessionId, mapped.analysis);
     void loadCatalogOnce(mapped.analysis);
   }, [sessionId, loadCatalogOnce]);
 
