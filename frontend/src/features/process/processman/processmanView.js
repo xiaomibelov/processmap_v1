@@ -1,53 +1,135 @@
-// LLM4 — чистая view-логика панели PROCESSMAN (без React, тестируется).
-// Token economy: построение табов/контекста/статуса НЕ вызывает API и НЕ делает
-// side-effect — только клик по действию в SchemaAssistantBlock/LlmAnalysisBlock
-// делает LLM-вызов (1 вызов = 1 действие). Статус LLM кэшируется на сессию.
+// LLM4 — чистая view-логика панели PROCESSMAN (без React, тестируется node:test).
+// Источник истины UX — документ владельца «PROCESSMAN-панель» (ревизия 1):
+// контент следует за активной вкладкой воркбенча; состояния S1–S8; экономика
+// токенов — построение контекста/статуса/кэша НЕ вызывает API и не делает
+// side-effect (LLM-вызов только по клику действия/↻).
 
-export const PROCESSMAN_TAB_IDS = ["schema", "tobe", "analysis", "asis", "reports"];
+import { SA_STATUS, SA_ERROR_TEXTS } from "../../../components/process/schemaAssistantView.js";
 
-export function buildProcessmanTabs(labels = {}) {
-  return PROCESSMAN_TAB_IDS.map((id) => ({
-    id,
-    label: String(labels[id] || id).trim(),
-  }));
+// Контексты панели = активная поверхность воркбенча (П.4 документа владельца).
+export const PROCESSMAN_CONTEXTS = ["schema", "tobe", "analysis", "neutral"];
+
+/**
+ * Активная вкладка воркбенча → контекст панели.
+ * tab === "interview" («Анализ процессов») → analysis;
+ * tab === "diagram": mode === "tobe" (ModeSwitchSegment) → tobe, иначе → schema;
+ * остальные вкладки (xml/doc/dod/analytics) и AS IS/Отчёты → neutral.
+ */
+export function resolvePanelContext({ tab = "", mode = "" } = {}) {
+  const t = String(tab || "").trim();
+  const m = String(mode || "").trim();
+  if (t === "interview") return "analysis";
+  if (t === "diagram") return m === "tobe" ? "tobe" : "schema";
+  return "neutral";
 }
+
+export function contextBadgeKey(context = "") {
+  return {
+    schema: "contextSchema",
+    tobe: "contextTobe",
+    analysis: "contextAnalysis",
+    neutral: "contextNeutral",
+  }[context] || "contextNeutral";
+}
+
+// Действия TO BE-контекста (кнопки 40px): те же API, что у SchemaAssistantBlock.
+export const PROCESSMAN_ACTIONS = ["suggest", "explain", "qa"];
 
 export function readElementId(element) {
   return String(element?.id || "").trim();
 }
 
-// Поиск шага маршрута, привязанного к выбранному BPMN-узлу.
-// Поле bpmn_ref поддерживается в нескольких вариантах записи (см. ProcessStage).
-export function readStepBpmnId(stepRaw) {
-  const s = stepRaw && typeof stepRaw === "object" ? stepRaw : {};
-  return String(
-    s.bpmn_ref
-    || s.bpmnRef
-    || s.node_bind_id
-    || s.nodeBindId
-    || s.node_id
-    || s.nodeId
-    || "",
-  ).trim();
+// ---------------------------------------------------------------- S-состояния
+// S1 no-key / S2 empty / S3 cache-hit / S4 loading / S5 answer / S6 error /
+// S7 quota-exhausted / S8 fallback-badge — собираются в resolveTobeView.
+
+export const ANSWER_STATUS = {
+  IDLE: "idle", // S2: ничего не запрашивалось
+  LOADING: "loading", // S4 (skeleton — при slow=true, т.е. >300ms)
+  OK: "ok", // S5
+  ERROR: "error", // S6
+};
+
+/** Ключ in-memory кэша v1: действие + шаг. */
+export function answerCacheKey(action = "", stepId = "") {
+  return `${String(action || "")}:${String(stepId || "")}`;
 }
 
-export function findStepForElement(steps = [], bpmnId = "") {
-  const target = String(bpmnId || "").trim();
-  if (!target) return null;
-  return (Array.isArray(steps) ? steps : []).find((stepRaw) => readStepBpmnId(stepRaw) === target) || null;
+/** Текст ответа из result конкретного действия (suggest/explain/qa). */
+export function extractAnswerText(action = "", data = {}) {
+  const d = data && typeof data === "object" ? data : {};
+  if (action === "suggest") {
+    const candidates = d?.suggestions?.candidates;
+    const list = Array.isArray(candidates) ? candidates : [];
+    const lines = list.map((c) => `• ${String(c?.code || "")} — ${String(c?.rationale || "")}`.trim());
+    const note = String(d?.suggestions?.note || "").trim();
+    return [lines.join("\n"), note].filter(Boolean).join("\n\n");
+  }
+  if (action === "explain") {
+    const explanation = String(d?.explanation || "").trim();
+    const note = String(d?.note || "").trim();
+    return [explanation, note].filter(Boolean).join("\n\n");
+  }
+  if (action === "qa") {
+    const answer = String(d?.answer || "").trim();
+    const note = String(d?.note || "").trim();
+    return [answer, note].filter(Boolean).join("\n\n");
+  }
+  return "";
 }
 
-export function buildTobeContext({ selectedElement = null, steps = [] } = {}) {
-  const elementId = readElementId(selectedElement);
-  if (!elementId) return { elementId: "", step: null, inRoute: false };
-  const step = findStepForElement(steps, elementId);
+/** Открытые вопросы из ответа (confidence < 0.6 — компонент LLM2, спека S5). */
+export function extractOpenQuestions(data = {}) {
+  const list = data?.open_questions;
+  return Array.isArray(list) ? list : [];
+}
+
+/**
+ * Ответ api-действия ({ok, result}|{ok:false,...}) → state зоны ответа.
+ * Статусы ошибок маппятся через SA_STATUS/SA_ERROR_TEXTS (S6, человекочитаемо).
+ */
+export function mapActionResponse(resp) {
+  if (!resp || typeof resp !== "object" || resp.ok !== true) {
+    // okOrError (apiCore) конвертирует domain-ошибку {ok:false, status, error}
+    // в HTTP-уровень (resp.ok=false), сохраняя исходный payload в data —
+    // восстанавливаем честный статус (no_provider/rate_limited/disabled) оттуда.
+    const data = resp?.data && typeof resp.data === "object" ? resp.data : null;
+    const st = String(data?.status || "");
+    const known = Object.values(SA_STATUS).includes(st) ? st : SA_STATUS.ERROR;
+    const err = String(resp?.error || "");
+    return {
+      status: ANSWER_STATUS.ERROR,
+      errorStatus: known,
+      errorText: SA_ERROR_TEXTS[known] || err || SA_ERROR_TEXTS.error,
+    };
+  }
+  const data = resp.result || {};
+  if (data.ok === false) {
+    const st = String(data.status || "error");
+    const known = Object.values(SA_STATUS).includes(st) ? st : SA_STATUS.ERROR;
+    return {
+      status: ANSWER_STATUS.ERROR,
+      errorStatus: known,
+      // S6 — человекочитаемо: локализованный текст статуса приоритетнее сырого
+      // backend error (англ.); сырой — только fallback для неизвестных статусов.
+      errorText: SA_ERROR_TEXTS[known] || String(data.error || "") || SA_ERROR_TEXTS.error,
+    };
+  }
+  return { status: ANSWER_STATUS.OK, data };
+}
+
+/** Метаданные ответа для S5/S8/бейджа кэша (без секретов — только флаги/числа). */
+export function buildAnswerMeta(data = {}, { fromCache = false } = {}) {
+  const usage = data?.usage && typeof data.usage === "object" ? data.usage : {};
+  const confidence = Number(data?.confidence);
   return {
-    elementId,
-    name: String(selectedElement?.name || selectedElement?.title || elementId || ""),
-    type: String(selectedElement?.type || "").trim(),
-    laneName: String(selectedElement?.laneName || selectedElement?.lane || "").trim(),
-    step,
-    inRoute: !!step,
+    fallback: data?.fallback === true, // S8
+    cachedBackend: data?.cached === true, // redis-кэш gateway (НЕ бейдж «из кэша»)
+    fromCache: fromCache === true, // in-memory попадание v1 (бейдж «из кэша · 0 токенов»)
+    confidence: Number.isFinite(confidence) && confidence > 0 ? confidence : null,
+    openQuestions: extractOpenQuestions(data),
+    promptTokens: Number(usage.prompt_tokens || 0),
+    completionTokens: Number(usage.completion_tokens || 0),
   };
 }
 
@@ -56,13 +138,8 @@ function toInt(value) {
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
 }
 
-export function formatDuration(sec) {
-  const s = toInt(sec);
-  return s === 0 ? "0" : String(s);
-}
-
-// Статус LLM для вкладки «Анализ процессов».
-// llmStatus — результат apiLlmStatus(): { ok, status, result? } | null (ещё грузится).
+// Статус LLM для панели (S1/S7). llmStatus — результат apiLlmStatus():
+// { ok, status, result? } | null (ещё грузится).
 export function resolveLlmStatusView(llmStatus = null) {
   if (llmStatus === null) return { kind: "idle" };
   if (llmStatus?.ok !== true) return { kind: "unknown" };
@@ -77,4 +154,19 @@ export function resolveLlmStatusView(llmStatus = null) {
     limit,
     exhausted: limit > 0 && used >= limit,
   };
+}
+
+/** has_api_key=false для кнопки: known ответ и configured === false (S1). */
+export function isLlmNotConfigured(llmStatus = null) {
+  return resolveLlmStatusView(llmStatus).kind === "not_configured";
+}
+
+/** Локализация времени последнего ответа (S5). */
+export function formatClock(ts) {
+  const n = Number(ts);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  const d = new Date(n);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }

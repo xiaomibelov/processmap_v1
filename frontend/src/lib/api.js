@@ -1138,6 +1138,17 @@ export async function apiLlmStatus(options = {}) {
   return r.ok ? { ok: true, status: r.status, result: r.data } : r;
 }
 
+// LLM4 — feedback 👍/👎 панели PROCESSMAN (POST /api/llm/feedback).
+// Пишет оценку в llm_usage без обращения к LLM (0 токенов). Ошибки не бросает.
+export async function apiLlmFeedback({ rating, sessionId = "", action = "" } = {}, options = {}) {
+  const r = okOrError(await request(apiRoutes.llm.feedback(), {
+    method: "POST",
+    body: { rating, session_id: sessionId, action },
+    signal: options?.signal,
+  }));
+  return r.ok ? { ok: true, status: r.status, result: r.data } : r;
+}
+
 function resolveReportOrgId(options = {}) {
   const explicit = String(options?.orgId || "").trim();
   if (explicit) return explicit;
