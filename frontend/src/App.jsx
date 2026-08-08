@@ -3753,6 +3753,17 @@ export default function App() {
     };
   }, [tobeMode, tobeEntryView, requestTobeExit]);
 
+  // UX-UPDATE: guard кнопки [Обновить] — при грязной TO BE показываем
+  // существующий requestTobeExit («Сохранить перед обновлением?»), reload
+  // выполняется только после подтверждения; чистая сессия — без модала.
+  const appUpdateGuardView = useMemo(() => {
+    if (!tobeMode) return null;
+    return async () => {
+      const result = await requestTobeExit(() => {});
+      return { ok: result?.ok === true };
+    };
+  }, [tobeMode, requestTobeExit]);
+
   const tobeLeftPanel = tobeMode ? (
     <div className="tobeLeft" data-testid="tobe-left-panel">
       <div className="seg mb-2" role="presentation" data-testid="tobe-left-mode-switch-wrap">
@@ -4234,6 +4245,7 @@ export default function App() {
           />
         ) : null}
         modeSwitch={modeSwitchView}
+        appUpdateGuard={appUpdateGuardView}
         tobeEntry={tobeMode ? null : tobeEntryView}
         draft={draft}
         shellSessionId={shellSessionId}
