@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { appVersionInfo } from "../../config/appVersion.js";
-import { apiMeta } from "../../lib/api.js";
+import { buildInfo } from "../../config/buildInfo.js";
 import {
   getCurrentAppRefreshRisk,
   runSafeRefreshBeforeReload,
@@ -9,22 +8,27 @@ import {
 } from "./appSafeRefreshController.js";
 import {
   APP_UPDATE_POLL_INTERVAL_MS,
-  getRuntimeDismissId,
-  normalizeRuntimeMeta,
+  APP_UPDATE_VERSION_URL,
+  getCurrentBuildSha,
+  normalizeVersionJson,
   reloadPage,
-  setDismissedRuntimeId,
-  shouldShowUpdateBanner,
+  setUpdateSnooze,
+  shouldShowUpdateToast,
 } from "./appUpdateModel.js";
 
-const CURRENT_APP_VERSION = String(import.meta?.env?.VITE_APP_VERSION || appVersionInfo.currentVersion || "").trim();
-const CURRENT_BUILD_ID = String(import.meta?.env?.VITE_BUILD_ID || "").trim();
+// UX-UPDATE (документ владельца): поллинг GET /version.json (cache:'no-store')
+// 5 мин + visibilitychange→visible; ошибки молча. SHA ≠ SHA бандла → тост
+// (не модалка), один раз на SHA за сессию; [Обновить] → guard (грязная TO BE
+// → requestTobeExit) → safe-flush → reload; [Позже] = snooze 30 мин.
+// Принудительного reload НЕТ нигде.
+const CURRENT_BUILD_SHA = getCurrentBuildSha({ VITE_BUILD_ID: buildInfo.buildId });
 
 function isDocumentHidden() {
   if (typeof document === "undefined") return false;
   return document.visibilityState === "hidden";
 }
 
-export default function useAppUpdateAvailable() {
+export default function useAppUpdateAvailable({ refreshGuard = null } = {}) {
   const inFlightRef = useRef(false);
   const [availableRuntime, setAvailableRuntime] = useState(null);
   const [refreshRisk, setRefreshRisk] = useState(() => getCurrentAppRefreshRisk());
@@ -36,23 +40,20 @@ export default function useAppUpdateAvailable() {
     if (inFlightRef.current) return false;
     inFlightRef.current = true;
     try {
-      const res = await apiMeta();
-      if (!res?.ok) {
+      const res = await fetch(`${APP_UPDATE_VERSION_URL}?t=${Date.now()}`, { cache: "no-store" });
+      if (!res.ok) {
         setAvailableRuntime(null);
         return false;
       }
-      const runtime = normalizeRuntimeMeta(res.meta);
-      if (shouldShowUpdateBanner({
-        currentVersion: CURRENT_APP_VERSION,
-        currentBuildId: CURRENT_BUILD_ID,
-        runtime,
-      })) {
+      const runtime = normalizeVersionJson(await res.json().catch(() => null));
+      if (shouldShowUpdateToast({ currentSha: CURRENT_BUILD_SHA, remoteSha: runtime?.sha })) {
         setAvailableRuntime(runtime);
         return true;
       }
       setAvailableRuntime(null);
       return false;
     } catch {
+      // ошибки — молча (офлайн/старый nginx без version.json): тост не показываем
       setAvailableRuntime(null);
       return false;
     } finally {
@@ -74,28 +75,22 @@ export default function useAppUpdateAvailable() {
       void checkForUpdate("interval");
     }, APP_UPDATE_POLL_INTERVAL_MS);
 
-    function onFocus() {
-      void checkForUpdate("focus");
-    }
-
     function onVisibilityChange() {
       if (!isDocumentHidden()) {
         void checkForUpdate("visibility");
       }
     }
 
-    window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       window.clearInterval(intervalId);
-      window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [checkForUpdate]);
 
+  // [Позже] = snooze 30 мин для текущего sha (новая семантика, не постоянный dismiss)
   const dismiss = useCallback(() => {
-    const runtimeId = getRuntimeDismissId(availableRuntime);
-    setDismissedRuntimeId(runtimeId);
+    if (availableRuntime?.sha) setUpdateSnooze(availableRuntime.sha);
     setAvailableRuntime(null);
     setRefreshError("");
   }, [availableRuntime]);
@@ -105,6 +100,12 @@ export default function useAppUpdateAvailable() {
     setRefreshBusy(true);
     setRefreshError("");
     try {
+      // guard грязной TO BE: существующий requestTobeExit (#672), НЕ дублируем —
+      // показывает «Сохранить перед обновлением?»; отмена → reload НЕ выполняется
+      if (typeof refreshGuard === "function") {
+        const guarded = await refreshGuard();
+        if (guarded?.ok !== true) return guarded || { ok: false, status: "cancelled" };
+      }
       const result = await runSafeRefreshBeforeReload({ reason: "app_update_refresh" });
       if (result?.ok === true) {
         reloadPage(window);
@@ -120,7 +121,7 @@ export default function useAppUpdateAvailable() {
     } finally {
       setRefreshBusy(false);
     }
-  }, [refreshBusy]);
+  }, [refreshBusy, refreshGuard]);
 
   const refreshViewRisk = visibleRuntimeRisk(refreshRisk);
 

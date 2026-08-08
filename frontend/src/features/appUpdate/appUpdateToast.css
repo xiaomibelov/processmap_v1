@@ -1,0 +1,100 @@
+/* UX-UPDATE — тост «Вышло обновление» (fixed внизу, не модалка).
+   Только токены --pm-tobe-* (MASTER.md); анимация — только transform 200ms,
+   prefers-reduced-motion → 0ms. */
+
+.appUpdateToast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 120;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(460px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--pm-tobe-border);
+  background: var(--pm-tobe-bg);
+  color: var(--pm-tobe-fg);
+  font-family: var(--pm-tobe-font-body);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--pm-tobe-fg) 25%, transparent);
+  transform: translateY(0);
+  transition: transform 200ms ease;
+}
+
+.appUpdateToast__icon {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--pm-tobe-accent);
+}
+
+.appUpdateToast__icon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.appUpdateToast__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.appUpdateToast__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pm-tobe-fg);
+}
+
+.appUpdateToast__description {
+  font-size: 12px;
+  color: var(--pm-tobe-muted-fg);
+  margin-top: 2px;
+}
+
+.appUpdateToast__error {
+  font-size: 12px;
+  color: var(--pm-tobe-danger);
+  margin-top: 4px;
+}
+
+.appUpdateToast__actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+}
+
+.appUpdateToast__btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--pm-tobe-border);
+  background: var(--pm-tobe-muted);
+  color: var(--pm-tobe-fg);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.appUpdateToast__btn:hover:not(:disabled) {
+  border-color: var(--pm-tobe-secondary);
+}
+
+.appUpdateToast__btn:disabled {
+  color: var(--pm-tobe-disabled-fg);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.appUpdateToast__btn--primary {
+  background: var(--pm-tobe-secondary);
+  border-color: var(--pm-tobe-secondary);
+  color: var(--pm-tobe-on-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .appUpdateToast {
+    transition-duration: 0ms;
+  }
+}

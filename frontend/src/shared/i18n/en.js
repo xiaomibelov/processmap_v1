@@ -1,7 +1,7 @@
-// LLM4 — английский словарь панели PROCESSMAN (парный к shared/i18n/ru.js).
-// Паритет ключей ru.processman ↔ en.processman проверяется тестом
-// frontend/src/features/process/processman/processmanI18n.test.mjs.
+// Парный английский словарь к shared/i18n/ru.js (объединение веток LLM4 + UX-UPDATE).
+// Паритет ключей: processman.* ↔ processmanI18n.test.mjs; app_update.* ↔ appUpdateModel.test.mjs.
 export const en = {
+  // LLM4 — processman.* (панель PROCESSMAN).
   processman: {
     buttonLabel: "PROCESSMAN",
     buttonTitle: "Process manager: assistant, TO BE, analysis",
@@ -53,5 +53,18 @@ export const en = {
     analysisStatusUnknownText: "Could not fetch LLM gateway status. You can still open the full analysis — errors are shown honestly.",
     neutralTitle: "PROCESSMAN assistant",
     neutralText: "Assistant actions do not apply on this surface. Open the “Diagram” tab (diagram assistant, TO BE mode) or “Process analysis” (analysis summary).",
+  },
+  // UX-UPDATE — app_update.* (тост «Вышло обновление»).
+  app_update: {
+    title: "A ProcessMap update is available",
+    titleDirty: "A ProcessMap update is available. Save your changes before updating.",
+    description: "Reload the page to get the latest fixes.",
+    descriptionSaving: "Wait for the save to finish before updating.",
+    refresh: "Update",
+    refreshDirty: "Save and update",
+    refreshBusy: "Saving…",
+    later: "Later",
+    laterTitle: "Hide for 30 minutes",
+    iconAria: "Update available",
   },
 };

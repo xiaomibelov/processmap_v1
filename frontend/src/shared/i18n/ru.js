@@ -613,6 +613,20 @@ export const ru = {
     neutralTitle: "Помощник PROCESSMAN",
     neutralText: "На этой поверхности действия помощника не применимы. Откройте вкладку «Схема» (помощник по диаграмме, режим TO BE) или «Анализ процессов» (сводка анализа).",
   },
+  // UX-UPDATE — тост «Вышло обновление ProcessMap» (version.json + snooze 30 мин).
+  // Парный словарь: shared/i18n/en.js.
+  app_update: {
+    title: "Вышло обновление ProcessMap",
+    titleDirty: "Вышло обновление ProcessMap. Сохраните изменения перед обновлением.",
+    description: "Обновите страницу, чтобы получить последние исправления.",
+    descriptionSaving: "Дождитесь завершения сохранения перед обновлением.",
+    refresh: "Обновить",
+    refreshDirty: "Сохранить и обновить",
+    refreshBusy: "Сохраняем…",
+    later: "Позже",
+    laterTitle: "Скрыть на 30 минут",
+    iconAria: "Доступно обновление",
+  },
 };
 
 export function trStatusInvite(status) {

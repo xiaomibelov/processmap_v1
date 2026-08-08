@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+  <!-- UX-UPDATE: круговая стрелка обновления -->
+  <path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89"/>
+  <path d="M13.5 2.5v3h-3"/>
+</svg>
