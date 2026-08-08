@@ -12,6 +12,7 @@ import {
   apiMarkNoteThreadRead,
 } from "../lib/api.js";
 import { useSessionNoteAggregate, useSessionNoteAggregates } from "../lib/sessionNoteAggregates.js";
+import { canOpenOrgSettings as canOpenOrgSettingsRole } from "../features/admin/adminUtils";
 
 function asArray(x) {
   return Array.isArray(x) ? x : [];
@@ -280,7 +281,7 @@ export default function TopBar({
   );
   const hasMultiOrg = orgList.length > 1;
   const sessionStatusMeta = getManualSessionStatusMeta(normalizedSessionStatus);
-  const canOpenOrgSettings = Boolean(user?.is_admin) || ["org_owner", "org_admin", "auditor"].includes(activeOrgRole);
+  const canOpenOrgSettings = canOpenOrgSettingsRole(user, orgList, String(activeOrgId || ""));
   // Точка входа в technologist-воркфлоу (E1–E9): роли analyst/admin (роль из /api/auth/me)
   const canOpenTechnologist = Boolean(user?.is_admin) || ["analyst", "admin"].includes(String(user?.role || "").trim().toLowerCase());
   const mentionItems = asArray(mentionNotifications);
@@ -591,11 +592,9 @@ export default function TopBar({
           {canOpenOrgSettings ? (
             <a
               className="secondaryBtn h-8 min-h-0 whitespace-nowrap px-2.5 py-0 text-xs inline-flex items-center gap-1"
-              href="/api/docs"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/api-docs"
               data-testid="topbar-api-docs-button"
-              title="Открыть Swagger UI (OpenAPI) в новой вкладке"
+              title="Открыть Swagger UI (OpenAPI) внутри приложения"
             >
               API Docs
             </a>
