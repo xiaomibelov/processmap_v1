@@ -152,9 +152,8 @@ test("роль org_owner (право уровня админки): кнопка 
     const doc = await renderTopBar(env, mods, { orgRole: "org_owner" });
     const btn = doc.querySelector('[data-testid="topbar-api-docs-button"]');
     assert.notEqual(btn, null, "кнопка должна быть в DOM");
-    assert.equal(btn.getAttribute("href"), "/api/docs");
-    assert.equal(btn.getAttribute("target"), "_blank");
-    assert.equal(btn.getAttribute("rel"), "noopener noreferrer");
+    assert.equal(btn.getAttribute("href"), "/api-docs", "кнопка ведёт на внутренний роут SPA");
+    assert.equal(btn.getAttribute("target"), null, "не открывается в новой вкладке (Bearer не теряется)");
     // рядом — кнопка «Админ-панель» (то же условие видимости)
     assert.notEqual(doc.querySelector('[data-testid="topbar-admin-button"]'), null);
   } finally {

@@ -119,6 +119,20 @@ export function canAccessAdminConsole(userRaw, orgsRaw = []) {
   return asArray(orgsRaw).some((row) => allowed.has(toLower(asObject(row).role)));
 }
 
+// Право уровня админки для кнопки «Админ-панель» / «API Docs» и роута /api-docs:
+// platform admin (is_admin) ИЛИ роль в АКТИВНОЙ организации ∈ {org_owner, org_admin, auditor}.
+// Единый источник — используется TopBar (canOpenOrgSettings) и RootApp.
+export const ORG_SETTINGS_ROLES = ["org_owner", "org_admin", "auditor"];
+
+export function canOpenOrgSettings(userRaw, orgsRaw = [], activeOrgId = "") {
+  const user = asObject(userRaw);
+  if (Boolean(user.is_admin)) return true;
+  const activeId = toText(activeOrgId);
+  if (!activeId) return false;
+  const row = asArray(orgsRaw).find((item) => toText(asObject(item).org_id || asObject(item).id) === activeId);
+  return ORG_SETTINGS_ROLES.includes(toLower(asObject(row).role));
+}
+
 function deriveSessionStatusFlags(sessionRaw) {
   const session = asObject(sessionRaw);
   const dod = computeDodPercent(session);
