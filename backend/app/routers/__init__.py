@@ -1,6 +1,7 @@
 from .auto_pass import router as auto_pass_router
 from .admin import router as admin_router
 from .admin_llm import router as admin_llm_router
+from .llm_status import router as llm_status_router
 from .version import router as version_router
 from .analytics import router as analytics_router
 from .clipboard import router as clipboard_router
@@ -44,6 +45,7 @@ ROUTERS = (
     (system_router, ["system"]),
     (admin_router, ["admin"]),
     (admin_llm_router, ["admin"]),
+    (llm_status_router, ["llm"]),
     (error_events_router, ["error-events"]),
     (explorer_router, ["explorer"]),
     (projects_router, ["projects"]),

@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import DocStage from "./process/DocStage";
 import DodStage from "./process/DodStage";
 import InterviewStage from "./process/InterviewStage";
-import SchemaAssistantBlock from "./process/SchemaAssistantBlock";
 import ProductActionsRegistry from "../features/analytics/ProductActionsRegistry.jsx";
 import ProcessPropertiesRegistryPage from "./process/analysis/ProcessPropertiesRegistryPage.jsx";
 import AnalyticsDashboards from "../features/analytics/AnalyticsDashboards.jsx";
@@ -27,6 +26,7 @@ import {
   apiCreateProjectSession,
   apiGetExportZip,
   apiListProjectSessions,
+  apiLlmStatus,
 } from "../lib/api.js";
 import { seedSessionNoteAggregate } from "../lib/sessionNoteAggregates.js";
 import {
@@ -49,6 +49,7 @@ import {
 import { buildManualSaveProjectionSyncPlan } from "../features/process/bpmn/save/manualSaveProjectionSync.js";
 import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
 import useBpmnSync from "../features/process/hooks/useBpmnSync";
+import ProcessmanPanel from "../features/process/processman/ProcessmanPanel";
 import { useViewportResizeController } from "../features/process/bpmn/stage/viewport/useViewportResizeController";
 import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
 import useProcessWorkbenchController from "../features/process/hooks/useProcessWorkbenchController";
@@ -2893,6 +2894,23 @@ function ProcessStage({
       laneName: selectedElementLaneName,
     };
   }, [selectedElementId, selectedElementName, selectedElementType, selectedElementLaneName]);
+
+  // LLM4 — панель PROCESSMAN. Token economy: открытие/табы/выбор = 0 LLM-вызовов;
+  // допускается 1× GET /api/llm/status при первом открытии + кэш на сессию.
+  const [processmanOpen, setProcessmanOpen] = useState(false);
+  const [processmanLlmStatus, setProcessmanLlmStatus] = useState(null);
+  const processmanStatusLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!processmanOpen || processmanStatusLoadedRef.current) return;
+    processmanStatusLoadedRef.current = true;
+    let cancelled = false;
+    void apiLlmStatus()
+      .then((r) => { if (!cancelled) setProcessmanLlmStatus(r); })
+      .catch(() => { if (!cancelled) setProcessmanLlmStatus({ ok: false, status: 0, error: "fetch_failed" }); });
+    return () => { cancelled = true; };
+  }, [processmanOpen]);
+  const toggleProcessman = useCallback(() => setProcessmanOpen((v) => !v), []);
+
   const sessionMetaPersist = useSessionMetaPersist({
     sid,
     isLocal,
@@ -7895,12 +7913,21 @@ function ProcessStage({
                     insertBetweenBusy,
                     canInsertBetween,
                     insertBetweenErrorMessage,
+                    processmanOpen,
+                    onToggleProcessman: toggleProcessman,
                   })}
                   />
                 ) : null}
                 <ProcessDiagramOverlayLayers {...diagramOverlayLayersProps} />
-                {tab === "diagram" && !isInterview ? (
-                  <SchemaAssistantBlock sessionId={sid} selectedElement={selectedBpmnElement} />
+                {processmanOpen && tab === "diagram" && !isInterview ? (
+                  <ProcessmanPanel
+                    sessionId={sid}
+                    steps={executionPlanSource?.steps}
+                    selectedBpmnElement={selectedBpmnElement}
+                    llmStatus={processmanLlmStatus}
+                    onOpenFullAnalysis={() => switchTab("analysis")}
+                    onClose={() => setProcessmanOpen(false)}
+                  />
                 ) : null}
                 <BottomViewportScrubber
                   active={tab === "diagram" && !isInterview}

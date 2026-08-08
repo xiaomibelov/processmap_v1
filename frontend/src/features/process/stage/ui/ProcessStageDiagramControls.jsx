@@ -136,6 +136,8 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     insertBetweenBusy,
     canInsertBetween,
     insertBetweenErrorMessage,
+    processmanOpen,
+    onToggleProcessman,
   } = reportsTemplatesProblemsSection;
 
   const {
@@ -578,6 +580,34 @@ export default function ProcessStageDiagramControls({ view = {} }) {
               <path d="M13 12V3" />
             </svg>
             <span className="diagramActionBtnLabel">Отчёты</span>
+          </button>
+          <button
+            type="button"
+            className="secondaryBtn diagramActionBtn"
+            onClick={() => {
+              closeDiagramPopovers();
+              onToggleProcessman?.();
+            }}
+            disabled={!hasSession}
+            aria-pressed={processmanOpen === true}
+            title="Процесс-менеджер: помощник, TO BE, анализ"
+            data-testid="diagram-action-processman"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="diagramActionBtnIcon"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="2" y="3" width="12" height="10" rx="1.5" />
+              <path d="M2 7h12" />
+              <path d="M6 10h4" />
+            </svg>
+            <span className="diagramActionBtnLabel">PROCESSMAN</span>
           </button>
           <button
             type="button"
