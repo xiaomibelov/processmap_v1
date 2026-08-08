@@ -5,6 +5,10 @@ import GatewaysPanel from "../../playback/ui/GatewaysPanel";
 import DiagramSearchInlineInput from "../search/diagramSearchInlineInput";
 import NotesAggregateBadge from "../../../../components/NotesAggregateBadge.jsx";
 import { useSessionNoteAggregate } from "../../../../lib/sessionNoteAggregates.js";
+import { ru } from "../../../../shared/i18n/ru";
+import processmanIconRaw from "../../../../assets/icons/processman.svg?raw";
+
+const tProcessman = ru.processman;
 
 function ensureObject(value) {
   return value && typeof value === "object" ? value : {};
@@ -136,6 +140,9 @@ export default function ProcessStageDiagramControls({ view = {} }) {
     insertBetweenBusy,
     canInsertBetween,
     insertBetweenErrorMessage,
+    processmanOpen,
+    onToggleProcessman,
+    processmanNoKey,
   } = reportsTemplatesProblemsSection;
 
   const {
@@ -578,6 +585,30 @@ export default function ProcessStageDiagramControls({ view = {} }) {
               <path d="M13 12V3" />
             </svg>
             <span className="diagramActionBtnLabel">Отчёты</span>
+          </button>
+          <button
+            type="button"
+            className={`secondaryBtn diagramActionBtn${processmanOpen === true ? " diagramActionBtn--processman-on" : ""}`}
+            onClick={() => {
+              if (processmanNoKey) return; // S1: нет ключа — действие заблокировано (aria-disabled)
+              closeDiagramPopovers();
+              onToggleProcessman?.();
+            }}
+            {...(processmanNoKey
+              ? { "aria-disabled": "true" } // тултип доступен с клавиатуры (кнопка фокусируется)
+              : { disabled: !hasSession })}
+            aria-pressed={processmanOpen === true}
+            aria-label={tProcessman.buttonAriaLabel}
+            title={processmanNoKey ? tProcessman.buttonDisabledNoKey : tProcessman.buttonTitle}
+            data-testid="diagram-action-processman"
+          >
+            <span
+              className="diagramActionBtnIcon"
+              aria-hidden="true"
+              // eslint-disable-next-line react/no-danger -- статичный SVG проекта (assets/icons/processman.svg)
+              dangerouslySetInnerHTML={{ __html: processmanIconRaw }}
+            />
+            <span className="diagramActionBtnLabel">{tProcessman.buttonLabel}</span>
           </button>
           <button
             type="button"

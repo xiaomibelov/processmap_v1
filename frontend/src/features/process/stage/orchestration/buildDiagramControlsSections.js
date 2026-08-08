@@ -273,6 +273,9 @@ const REPORTS_TEMPLATES_PROBLEMS_KEYS = [
   "insertBetweenBusy",
   "canInsertBetween",
   "insertBetweenErrorMessage",
+  "processmanOpen",
+  "onToggleProcessman",
+  "processmanNoKey",
 ];
 
 const OVERFLOW_MODES_KEYS = [

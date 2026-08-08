@@ -10,6 +10,7 @@ const blockSrc = readFileSync(fileURLToPath(new URL("./SchemaAssistantBlock.jsx"
 const viewSrc = readFileSync(fileURLToPath(new URL("./schemaAssistantView.js", import.meta.url)), "utf8");
 const apiSrc = readFileSync(fileURLToPath(new URL("../../lib/api.js", import.meta.url)), "utf8");
 const routesSrc = readFileSync(fileURLToPath(new URL("../../lib/apiRoutes.js", import.meta.url)), "utf8");
+const panelSrc = readFileSync(fileURLToPath(new URL("../../features/process/processman/ProcessmanPanel.jsx", import.meta.url)), "utf8");
 const stageSrc = readFileSync(fileURLToPath(new URL("../ProcessStage.jsx", import.meta.url)), "utf8");
 
 test("SchemaAssistantBlock: нет useEffect — помощник не дергается автоматически (даже при открытии панели)", () => {
@@ -58,14 +59,25 @@ const SA_TEXT = {
   step_not_found: "Шаг не найден",
 };
 
-test("блок встроен во вкладку «Схема» ProcessStage (diagram, не interview)", () => {
-  assert.ok(/import SchemaAssistantBlock from "\.\/process\/SchemaAssistantBlock";/.test(stageSrc), "импорт в ProcessStage");
+test("блок перенесён в панель PROCESSMAN (schema-pane внутри TO BE-контента «Схема»)", () => {
+  assert.ok(/import SchemaAssistantBlock from "\.\.\/\.\.\/\.\.\/components\/process\/SchemaAssistantBlock";/.test(panelSrc), "импорт в ProcessmanPanel");
   assert.ok(
-    /<SchemaAssistantBlock sessionId=\{sid\} selectedElement=\{selectedBpmnElement\} \/>/.test(stageSrc),
-    "рендер с sid и выделенным элементом",
+    /<SchemaAssistantBlock sessionId=\{sessionId\} selectedElement=\{selectedBpmnElement\} \/>/.test(panelSrc),
+    "рендер с sessionId и выделенным элементом",
   );
   assert.ok(
-    /tab === "diagram" && !isInterview \? \(\s*<SchemaAssistantBlock/.test(stageSrc),
-    "рендер только на вкладке «Схема»",
+    /<div data-testid="processman-schema-pane">/.test(panelSrc),
+    "schema-pane в панели (документ владельца: SchemaAssistantBlock перенесён в панель)",
+  );
+  assert.ok(/import ProcessmanPanel/.test(stageSrc), "панель подключена в ProcessStage");
+  assert.ok(
+    /\(processmanOpen \|\| processmanClosing\)/.test(stageSrc),
+    "панель рендерится по open/closing (не закрывается при переключении вкладок воркбенча)",
+  );
+  // из прежнего места (overlay на diagram-вкладке) блок удалён — рендер только внутри панели
+  const stageWithoutPanel = stageSrc.replace(/<ProcessmanPanel[\s\S]*?\/>/g, "");
+  assert.ok(
+    !/<SchemaAssistantBlock/.test(stageWithoutPanel),
+    "в ProcessStage вне панели SchemaAssistantBlock не рендерится",
   );
 });
