@@ -165,6 +165,7 @@ export default function AppShell({
   restoreViewportSnapshot = null,
   onRestoreViewportSnapshotApplied = null,
   modeSwitch = null, // UXF addendum-3: сегмент «Схема | TO BE» (в среднем хедере и в панели TO BE)
+  appUpdateGuard = null, // UX-UPDATE: guard [Обновить] при грязной TO BE (requestTobeExit)
   tobeEntry = null,  // UXF: точка входа «Создать/Открыть TO BE» в тулбаре диаграммы
 }) {
   const hasActiveSession = String(shellSessionId || sessionId || "").trim().length > 0;
@@ -185,7 +186,7 @@ export default function AppShell({
     if (typeof window === "undefined") return false;
     return String(window.location.pathname || "").startsWith("/analytics");
   });
-  const appUpdate = useAppUpdateAvailable();
+  const appUpdate = useAppUpdateAvailable({ refreshGuard: appUpdateGuard });
   const { width: sidebarWidth, startDragging } = useSidebarWidth({ invert: dockSide === "right" });
   const showResizeHandle = !effectiveLeftHidden && !leftCompact;
 
