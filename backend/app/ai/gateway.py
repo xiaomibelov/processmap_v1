@@ -136,7 +136,9 @@ def complete(
         return _finish("no_provider", error="no enabled LLM providers with api key")
 
     last_error = ""
-    for provider in chain:
+    for provider_index, provider in enumerate(chain):
+        # LLM4 S8: fallback = ответил НЕ первый провайдер цепочки (или env-фолбэк).
+        fallback_used = provider_index > 0 or str(provider.get("id") or "") == "env_fallback"
         try:
             resp = _deepseek_chat_request(
                 api_key=str(provider.get("api_key") or ""),
@@ -171,6 +173,7 @@ def complete(
             provider_id=str(provider.get("id") or ""),
             model=str(resp.get("model") or provider.get("model") or ""),
             prompt_version=int((prompt or {}).get("version") or 0),
+            fallback=fallback_used,
         )
 
     return _finish("error", error=last_error or "all providers failed")
@@ -207,6 +210,7 @@ def complete_cached(
             provider_id=str(cached_payload.get("provider_id") or ""),
             model=str(cached_payload.get("model") or ""),
             prompt_version=int(cached_payload.get("prompt_version") or 0),
+            fallback=bool(cached_payload.get("fallback")),
         )
     result = complete(feature, payload, **kwargs)
     result["cached"] = False
@@ -218,6 +222,7 @@ def complete_cached(
                 "model": result.get("model") or "",
                 "provider_id": result.get("provider_id") or "",
                 "prompt_version": result.get("prompt_version") or 0,
+                "fallback": bool(result.get("fallback")),
             },
             ttl_sec=CACHE_TTL_SEC,
             client=cache_client,
