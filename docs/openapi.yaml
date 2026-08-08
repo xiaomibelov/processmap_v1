@@ -13177,6 +13177,55 @@ paths:
       security:
       - bearerAuth: []
       description: Получить здоровье сервиса.
+  /api/docs:
+    get:
+      tags:
+      - system
+      summary: Swagger UI (HTML)
+      description: Интерактивная документация OpenAPI. Закрыта правом уровня админки (is_admin или org-роль org_owner/org_admin/auditor); без
+        токена — 401, без права — 403.
+      operationId: api_docs_docs
+      responses:
+        '200':
+          description: Swagger UI (HTML)
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access token'
+        '403':
+          description: 'Доступ запрещён: требуется право уровня админки (is_admin или org-роль org_owner/org_admin/auditor)'
+      security:
+      - bearerAuth: []
+  /api/redoc:
+    get:
+      tags:
+      - system
+      summary: ReDoc (HTML)
+      description: 'Альтернативный рендер OpenAPI-спеки. Те же права, что у /api/docs: 401 без токена, 403 без права.'
+      operationId: api_docs_redoc
+      responses:
+        '200':
+          description: ReDoc (HTML)
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access token'
+        '403':
+          description: 'Доступ запрещён: требуется право уровня админки (is_admin или org-роль org_owner/org_admin/auditor)'
+      security:
+      - bearerAuth: []
+  /api/openapi.json:
+    get:
+      tags:
+      - system
+      summary: OpenAPI-спецификация (JSON)
+      description: 'Машиночитаемая OpenAPI 3.1 спецификация всех эндпоинтов (автогенерация FastAPI). Те же права: 401 без токена, 403 без права.'
+      operationId: api_docs_openapi_json
+      responses:
+        '200':
+          description: OpenAPI-спецификация (JSON)
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access token'
+        '403':
+          description: 'Доступ запрещён: требуется право уровня админки (is_admin или org-роль org_owner/org_admin/auditor)'
+      security:
+      - bearerAuth: []
 components:
   schemas:
     AddNoteCommentBody:
