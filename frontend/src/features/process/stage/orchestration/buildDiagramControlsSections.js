@@ -275,6 +275,7 @@ const REPORTS_TEMPLATES_PROBLEMS_KEYS = [
   "insertBetweenErrorMessage",
   "processmanOpen",
   "onToggleProcessman",
+  "processmanNoKey",
 ];
 
 const OVERFLOW_MODES_KEYS = [

@@ -59,16 +59,25 @@ const SA_TEXT = {
   step_not_found: "Шаг не найден",
 };
 
-test("блок встроен во вкладку «Схема» панели PROCESSMAN (activeTab schema, не то be)", () => {
+test("блок встроен в «Схема»-контекст панели PROCESSMAN (context === schema)", () => {
   assert.ok(/import SchemaAssistantBlock from "\.\.\/\.\.\/\.\.\/components\/process\/SchemaAssistantBlock";/.test(panelSrc), "импорт в ProcessmanPanel");
   assert.ok(
     /<SchemaAssistantBlock sessionId=\{sessionId\} selectedElement=\{selectedBpmnElement\} \/>/.test(panelSrc),
     "рендер с sessionId и выделенным элементом",
   );
   assert.ok(
-    /activeTab === "schema" \? \(\s*<div data-testid="processman-schema-pane">/.test(panelSrc),
-    "рендер только на вкладке «Схема»",
+    /context === "schema" \? \(\s*<div data-testid="processman-schema-pane">/.test(panelSrc),
+    "рендер только в «Схема»-контексте (документ владельца: SchemaAssistantBlock перенесён в панель)",
   );
   assert.ok(/import ProcessmanPanel/.test(stageSrc), "панель подключена в ProcessStage");
-  assert.ok(/processmanOpen && tab === "diagram" && !isInterview/.test(stageSrc), "панель только на вкладке «Схема» воркбенча");
+  assert.ok(
+    /\(processmanOpen \|\| processmanClosing\)/.test(stageSrc),
+    "панель рендерится по open/closing (не закрывается при переключении вкладок воркбенча)",
+  );
+  // из прежнего места (overlay на diagram-вкладке) блок удалён — рендер только внутри панели
+  const stageWithoutPanel = stageSrc.replace(/<ProcessmanPanel[\s\S]*?\/>/g, "");
+  assert.ok(
+    !/<SchemaAssistantBlock/.test(stageWithoutPanel),
+    "в ProcessStage вне панели SchemaAssistantBlock не рендерится",
+  );
 });
