@@ -391,12 +391,14 @@
   display: block;
 }
 
-/* --- кнопка тулбара PROCESSMAN: нажата = «утоплена» (спека: фон accent 12%,
-   текст --pm-tobe-fg), видимый focus-ring --- */
+/* --- кнопка тулбара PROCESSMAN: нажата = «утоплена» (фон accent 12%).
+   Отклонение от буквы спеки: текст --pm-tobe-on-primary вместо --pm-tobe-fg —
+   кнопка живёт в ТЁМНОМ тулбаре диаграммы, и #0f172a на accent-12%-over-dark
+   не проходит Z0-4 (≥4.5:1). Токен on-primary — существующий (MASTER.md). --- */
 .diagramActionBtn--processman-on,
 .diagramActionBtn--processman-on:hover {
   background: color-mix(in srgb, var(--pm-tobe-accent) 12%, transparent) !important;
-  color: var(--pm-tobe-fg) !important;
+  color: var(--pm-tobe-on-primary) !important;
   border-color: var(--pm-tobe-accent) !important;
 }
 
