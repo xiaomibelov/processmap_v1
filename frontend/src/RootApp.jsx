@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import App from "./App";
 import AdminApp from "./features/admin/AdminApp";
+import ApiDocsPage from "./features/apiDocs/ApiDocsPage";
 import { AuthProvider, useAuth } from "./features/auth/AuthProvider";
 import { FeatureFlagsProvider } from "./features/config/featureFlagsContext";
 import LoginModal from "./features/auth/LoginModal";
@@ -16,7 +17,7 @@ import TechnologistRecipes from "./features/technologist/recipes/Recipes";
 import TechnologistAudit from "./features/technologist/audit/AuditPage";
 import TechnologistPilots from "./features/technologist/pilots/Pilots";
 import TechnologistHome from "./features/technologist/home/Home";
-import { canAccessAdminConsole } from "./features/admin/adminUtils";
+import { canAccessAdminConsole, canOpenOrgSettings } from "./features/admin/adminUtils";
 import {
   buildAnalyticsPath,
   readLegacyAnalyticsRedirect,
@@ -130,6 +131,7 @@ function AppRoutes() {
   const isWorkspaceLike = pathname.startsWith("/app") || pathname.startsWith("/analytics");
   const shouldSelectOrg = Boolean(isAuthed && isWorkspaceLike && orgItems.length > 1 && !orgChoiceDone);
   const canAccessAdmin = useMemo(() => canAccessAdminConsole(user, orgItems), [orgItems, user]);
+  const canOpenApiDocs = useMemo(() => canOpenOrgSettings(user, orgItems, activeOrgId), [orgItems, user, activeOrgId]);
 
   const nextFromQuery = useMemo(() => {
     const params = new URLSearchParams(search);
@@ -475,6 +477,44 @@ function AppRoutes() {
   }
   const showAnalytics = wantsAnalytics && isAuthed;
   const showAdmin = wantsAdmin && isAuthed;
+  const wantsApiDocs = pathname === "/api-docs";
+
+  // /api-docs — Swagger UI внутри SPA (право = как у кнопки, canOpenOrgSettings)
+  if (wantsApiDocs) {
+    if (!isAuthed) {
+      return (
+        <LoginPage
+          onBack={() => navigate("/")}
+          onSuccess={() => {
+            setReauthRequired(false);
+            navigate("/api-docs", { replace: true });
+          }}
+        />
+      );
+    }
+    if (!canOpenApiDocs) {
+      return (
+        <div className="flex min-h-screen items-center justify-center px-4">
+          <div className="w-full max-w-lg rounded-2xl border border-border bg-panel p-6" data-testid="api-docs-access-denied">
+            <h1 className="text-xl font-semibold text-fg">{ru.admin.accessDenied.title}</h1>
+            <p className="mt-2 text-sm text-muted">
+              {ru.admin.accessDenied.description}
+            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="primaryBtn h-10 min-h-0 px-4 py-0 text-sm"
+                onClick={() => navigate("/app", { replace: true })}
+              >
+                {ru.admin.accessDenied.back}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return <ApiDocsPage />;
+  }
 
   return (
     <>

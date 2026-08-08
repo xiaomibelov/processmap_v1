@@ -117,7 +117,14 @@ export default defineConfig({
       "/api": {
         target: apiProxyTarget,
         changeOrigin: true,
-        secure: false
+        secure: false,
+        // SPA-роут /api-docs (Swagger UI внутри приложения) НЕ проксируется на
+        // backend: префикс "/api" иначе перехватывает его → 401 missing_bearer.
+        bypass(req) {
+          const url = String(req?.url || "");
+          if (url === "/api-docs" || url.startsWith("/api-docs?")) return url;
+          return undefined;
+        },
       }
     }
   },
