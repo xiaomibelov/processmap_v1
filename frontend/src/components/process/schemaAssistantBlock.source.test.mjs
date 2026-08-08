@@ -10,6 +10,7 @@ const blockSrc = readFileSync(fileURLToPath(new URL("./SchemaAssistantBlock.jsx"
 const viewSrc = readFileSync(fileURLToPath(new URL("./schemaAssistantView.js", import.meta.url)), "utf8");
 const apiSrc = readFileSync(fileURLToPath(new URL("../../lib/api.js", import.meta.url)), "utf8");
 const routesSrc = readFileSync(fileURLToPath(new URL("../../lib/apiRoutes.js", import.meta.url)), "utf8");
+const panelSrc = readFileSync(fileURLToPath(new URL("../../features/process/processman/ProcessmanPanel.jsx", import.meta.url)), "utf8");
 const stageSrc = readFileSync(fileURLToPath(new URL("../ProcessStage.jsx", import.meta.url)), "utf8");
 
 test("SchemaAssistantBlock: нет useEffect — помощник не дергается автоматически (даже при открытии панели)", () => {
@@ -58,14 +59,16 @@ const SA_TEXT = {
   step_not_found: "Шаг не найден",
 };
 
-test("блок встроен во вкладку «Схема» ProcessStage (diagram, не interview)", () => {
-  assert.ok(/import SchemaAssistantBlock from "\.\/process\/SchemaAssistantBlock";/.test(stageSrc), "импорт в ProcessStage");
+test("блок встроен во вкладку «Схема» панели PROCESSMAN (activeTab schema, не то be)", () => {
+  assert.ok(/import SchemaAssistantBlock from "\.\.\/\.\.\/\.\.\/components\/process\/SchemaAssistantBlock";/.test(panelSrc), "импорт в ProcessmanPanel");
   assert.ok(
-    /<SchemaAssistantBlock sessionId=\{sid\} selectedElement=\{selectedBpmnElement\} \/>/.test(stageSrc),
-    "рендер с sid и выделенным элементом",
+    /<SchemaAssistantBlock sessionId=\{sessionId\} selectedElement=\{selectedBpmnElement\} \/>/.test(panelSrc),
+    "рендер с sessionId и выделенным элементом",
   );
   assert.ok(
-    /tab === "diagram" && !isInterview \? \(\s*<SchemaAssistantBlock/.test(stageSrc),
+    /activeTab === "schema" \? \(\s*<div data-testid="processman-schema-pane">/.test(panelSrc),
     "рендер только на вкладке «Схема»",
   );
+  assert.ok(/import ProcessmanPanel/.test(stageSrc), "панель подключена в ProcessStage");
+  assert.ok(/processmanOpen && tab === "diagram" && !isInterview/.test(stageSrc), "панель только на вкладке «Схема» воркбенча");
 });

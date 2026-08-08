@@ -1131,6 +1131,13 @@ export async function apiGetOperationCatalog(options = {}) {
   return r.ok ? { ok: true, status: r.status, result: Array.isArray(r.data) ? r.data : [] } : r;
 }
 
+// LLM4 — статус LLM-гейтвея для панели PROCESSMAN (GET /api/llm/status).
+// Ответ: { configured: bool, quota: { used: int, limit: int } }. Только чтение.
+export async function apiLlmStatus(options = {}) {
+  const r = okOrError(await request(apiRoutes.llm.status(), { signal: options?.signal }));
+  return r.ok ? { ok: true, status: r.status, result: r.data } : r;
+}
+
 function resolveReportOrgId(options = {}) {
   const explicit = String(options?.orgId || "").trim();
   if (explicit) return explicit;
