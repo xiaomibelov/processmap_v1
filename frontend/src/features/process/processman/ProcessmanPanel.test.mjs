@@ -120,7 +120,6 @@ async function renderPanel(env, mod, props = {}) {
     env.root.render(React.createElement(mod.default, {
       sessionId: "sess_1",
       tab: "diagram",
-      mode: "tobe",
       selectedBpmnElement: { id: "Act_1", name: "Шаг 1", type: "task" },
       llmStatus: { ok: true, status: 200, result: { configured: true, quota: { used: 0, limit: 200000 } } },
       cacheRef,
@@ -154,7 +153,7 @@ test("каркас: role=complementary, шапка 48px (PROCESSMAN капсом
     assert.equal(panel.getAttribute("role"), "complementary");
     assert.ok(doc.querySelector(".pm-processman__header"), "шапка");
     assert.ok(doc.querySelector(".pm-processman__title")?.textContent.includes("PROCESSMAN"), "капс");
-    assert.equal(doc.querySelector('[data-testid="processman-context-badge"]')?.textContent.trim(), "TO BE");
+    assert.equal(doc.querySelector('[data-testid="processman-context-badge"]')?.textContent.trim(), "Схема", "бейдж = активная вкладка «Схема»");
     assert.notEqual(doc.querySelector('[data-testid="processman-close"]'), null, "крестик");
     const footer = doc.querySelector('[data-testid="processman-footer"]');
     assert.ok(footer?.textContent.includes("Ответ генерирует ИИ"), "дисклеймер в футере");
@@ -166,37 +165,26 @@ test("каркас: role=complementary, шапка 48px (PROCESSMAN капсом
 });
 
 // ------------------------------------------------- контент за вкладкой воркбенча
-test("контент следует за вкладкой: interview → analysis, diagram+tobe → TO BE-действия, xml → neutral", async () => {
+test("контент следует за вкладкой: interview → analysis, diagram → TO BE-действия (+ SchemaAssistantBlock), xml → neutral", async () => {
   const mod = await loadPanel();
   const env = setupDom();
   try {
     // analysis
-    let doc = await renderPanel(env, mod, { tab: "interview", mode: "schema" });
+    let doc = await renderPanel(env, mod, { tab: "interview" });
     assert.notEqual(doc.querySelector('[data-testid="processman-analysis"]'), null, "analysis-контент");
     assert.equal(doc.querySelector('[data-testid="processman-context-badge"]')?.textContent.trim(), "Анализ");
     assert.notEqual(doc.querySelector('[data-testid="processman-analysis-open-full"]'), null, "CTA «Открыть полный анализ»");
-    // tobe
-    doc = await renderPanel(env, mod, { tab: "diagram", mode: "tobe" });
+    // diagram → TO BE-контент (основной контент схемы v1) + SchemaAssistantBlock в панели
+    doc = await renderPanel(env, mod, { tab: "diagram" });
     assert.notEqual(doc.querySelector('[data-testid="processman-action-suggest"]'), null, "кнопка suggest-next");
     assert.notEqual(doc.querySelector('[data-testid="processman-action-explain"]'), null, "кнопка explain-step");
     assert.notEqual(doc.querySelector('[data-testid="processman-action-qa"]'), null, "кнопка step-qa");
+    assert.notEqual(doc.querySelector('[data-testid="processman-schema-pane"]'), null, "schema-pane с SchemaAssistantBlock");
+    assert.notEqual(doc.querySelector('[data-testid="schema-assistant-block"]'), null, "SchemaAssistantBlock перенесён в панель");
     // neutral
-    doc = await renderPanel(env, mod, { tab: "xml", mode: "schema" });
+    doc = await renderPanel(env, mod, { tab: "xml" });
     assert.notEqual(doc.querySelector('[data-testid="processman-neutral"]'), null, "нейтральное состояние");
     assert.equal(env.calls.length, 0, "смена контекста = 0 сетевых вызовов");
-  } finally {
-    await env.cleanup();
-  }
-});
-
-test("schema-контекст: SchemaAssistantBlock перенесён в панель", async () => {
-  const mod = await loadPanel();
-  const env = setupDom();
-  try {
-    const doc = await renderPanel(env, mod, { tab: "diagram", mode: "schema" });
-    assert.notEqual(doc.querySelector('[data-testid="processman-schema-pane"]'), null, "schema-pane");
-    assert.notEqual(doc.querySelector('[data-testid="schema-assistant-block"]'), null, "SchemaAssistantBlock в панели");
-    assert.equal(env.calls.length, 0);
   } finally {
     await env.cleanup();
   }

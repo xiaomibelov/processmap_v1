@@ -8059,7 +8059,6 @@ function ProcessStage({
             <ProcessmanPanel
               sessionId={sid}
               tab={tab}
-              mode={String(modeSwitch?.mode || "")}
               selectedBpmnElement={selectedBpmnElement}
               llmStatus={processmanLlmStatus}
               cacheRef={processmanCacheRef}

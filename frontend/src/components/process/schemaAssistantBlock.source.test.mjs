@@ -59,15 +59,15 @@ const SA_TEXT = {
   step_not_found: "Шаг не найден",
 };
 
-test("блок встроен в «Схема»-контекст панели PROCESSMAN (context === schema)", () => {
+test("блок перенесён в панель PROCESSMAN (schema-pane внутри TO BE-контента «Схема»)", () => {
   assert.ok(/import SchemaAssistantBlock from "\.\.\/\.\.\/\.\.\/components\/process\/SchemaAssistantBlock";/.test(panelSrc), "импорт в ProcessmanPanel");
   assert.ok(
     /<SchemaAssistantBlock sessionId=\{sessionId\} selectedElement=\{selectedBpmnElement\} \/>/.test(panelSrc),
     "рендер с sessionId и выделенным элементом",
   );
   assert.ok(
-    /context === "schema" \? \(\s*<div data-testid="processman-schema-pane">/.test(panelSrc),
-    "рендер только в «Схема»-контексте (документ владельца: SchemaAssistantBlock перенесён в панель)",
+    /<div data-testid="processman-schema-pane">/.test(panelSrc),
+    "schema-pane в панели (документ владельца: SchemaAssistantBlock перенесён в панель)",
   );
   assert.ok(/import ProcessmanPanel/.test(stageSrc), "панель подключена в ProcessStage");
   assert.ok(

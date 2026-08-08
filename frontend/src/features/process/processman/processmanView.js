@@ -7,25 +7,34 @@
 import { SA_STATUS, SA_ERROR_TEXTS } from "../../../components/process/schemaAssistantView.js";
 
 // Контексты панели = активная поверхность воркбенча (П.4 документа владельца).
-export const PROCESSMAN_CONTEXTS = ["schema", "tobe", "analysis", "neutral"];
+export const PROCESSMAN_CONTEXTS = ["tobe", "analysis", "neutral"];
 
 /**
  * Активная вкладка воркбенча → контекст панели.
  * tab === "interview" («Анализ процессов») → analysis;
- * tab === "diagram": mode === "tobe" (ModeSwitchSegment) → tobe, иначе → schema;
+ * tab === "diagram" («Схема») → tobe — TO BE-контент (3 действия + последний
+ *   ответ) — ОСНОВНОЙ контент схемы v1 (решение владельца 2026-08-08: в v1
+ *   ProcessStage mode всегда "schema", TO BE workspace ProcessStage
+ *   демонтирует — поэтому TO BE-контент показывается на вкладке «Схема»);
  * остальные вкладки (xml/doc/dod/analytics) и AS IS/Отчёты → neutral.
  */
-export function resolvePanelContext({ tab = "", mode = "" } = {}) {
+export function resolvePanelContext({ tab = "" } = {}) {
   const t = String(tab || "").trim();
-  const m = String(mode || "").trim();
   if (t === "interview") return "analysis";
-  if (t === "diagram") return m === "tobe" ? "tobe" : "schema";
+  if (t === "diagram") return "tobe";
   return "neutral";
+}
+
+/** Бейдж шапки = активная вкладка воркбенча (не контекст панели). */
+export function tabBadgeKey(tab = "") {
+  const t = String(tab || "").trim();
+  if (t === "interview") return "contextAnalysis";
+  if (t === "diagram") return "contextSchema";
+  return "contextNeutral";
 }
 
 export function contextBadgeKey(context = "") {
   return {
-    schema: "contextSchema",
     tobe: "contextTobe",
     analysis: "contextAnalysis",
     neutral: "contextNeutral",
