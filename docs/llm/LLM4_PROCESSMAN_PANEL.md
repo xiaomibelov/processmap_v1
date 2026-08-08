@@ -153,3 +153,8 @@ in-memory попаданиях.
    принудительный reload запрещён в любом виде); [Позже] = snooze 30 мин;
    i18n `app_update.*`, role="status", aria-live="polite", токены MASTER.md,
    SVG, клавиатура, transform 200ms, prefers-reduced-motion.
+5. **TO BE-контекст (2026-08-08):** в v1 ProcessStage `mode` всегда
+   `"schema"`, а TO BE workspace демонтирует ProcessStage (stageOverride) —
+   поэтому **TO BE-контент (3 действия + последний ответ) — основной
+   контент вкладки «Схема» v1**; SchemaAssistantBlock остаётся в панели
+   (под TO BE-действиями). Workspace.jsx НЕ трогаем.

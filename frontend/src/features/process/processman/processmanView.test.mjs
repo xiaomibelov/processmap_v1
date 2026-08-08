@@ -14,28 +14,31 @@ import {
   mapActionResponse,
   resolveLlmStatusView,
   resolvePanelContext,
+  tabBadgeKey,
 } from "./processmanView.js";
 
 // ------------------------------------------------------------- контекст (П.4)
 test("resolvePanelContext: вкладка «Анализ процессов» (interview) → analysis", () => {
-  assert.equal(resolvePanelContext({ tab: "interview", mode: "schema" }), "analysis");
-  assert.equal(resolvePanelContext({ tab: "interview", mode: "tobe" }), "analysis");
+  assert.equal(resolvePanelContext({ tab: "interview" }), "analysis");
 });
 
-test("resolvePanelContext: «Схема» — mode решает schema vs tobe", () => {
-  assert.equal(resolvePanelContext({ tab: "diagram", mode: "schema" }), "schema");
-  assert.equal(resolvePanelContext({ tab: "diagram", mode: "" }), "schema");
-  assert.equal(resolvePanelContext({ tab: "diagram", mode: "tobe" }), "tobe");
+test("resolvePanelContext: «Схема» (diagram) → TO BE-контент (основной контент схемы v1, решение владельца 2026-08-08)", () => {
+  assert.equal(resolvePanelContext({ tab: "diagram" }), "tobe");
 });
 
 test("resolvePanelContext: прочие вкладки (xml/doc/dod/analytics) → neutral", () => {
   for (const tab of ["xml", "doc", "dod", "analytics", ""]) {
-    assert.equal(resolvePanelContext({ tab, mode: "schema" }), "neutral", `tab=${tab}`);
+    assert.equal(resolvePanelContext({ tab }), "neutral", `tab=${tab}`);
   }
 });
 
+test("tabBadgeKey: бейдж шапки = активная вкладка воркбенча", () => {
+  assert.equal(tabBadgeKey("diagram"), "contextSchema");
+  assert.equal(tabBadgeKey("interview"), "contextAnalysis");
+  assert.equal(tabBadgeKey("xml"), "contextNeutral");
+});
+
 test("contextBadgeKey: у каждого контекста есть i18n-ключ бейджа", () => {
-  assert.equal(contextBadgeKey("schema"), "contextSchema");
   assert.equal(contextBadgeKey("tobe"), "contextTobe");
   assert.equal(contextBadgeKey("analysis"), "contextAnalysis");
   assert.equal(contextBadgeKey("neutral"), "contextNeutral");

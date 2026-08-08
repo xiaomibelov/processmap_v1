@@ -6,7 +6,7 @@ import processmanIconRaw from "../../../assets/icons/processman.svg?raw";
 import ProcessmanTobe from "./ProcessmanTobe";
 import ProcessmanAnalysis from "./ProcessmanAnalysis";
 import ProcessmanNeutral from "./ProcessmanNeutral";
-import { contextBadgeKey, resolvePanelContext } from "./processmanView";
+import { resolvePanelContext, tabBadgeKey } from "./processmanView";
 import "./processman.css";
 
 // LLM4 — панель PROCESSMAN (документ владельца «PROCESSMAN-панель», ревизия 1).
@@ -30,7 +30,6 @@ function ThumbIcon({ up }) {
 export default function ProcessmanPanel({
   sessionId,
   tab = "",
-  mode = "",
   selectedBpmnElement = null,
   llmStatus = null,
   cacheRef,
@@ -42,7 +41,7 @@ export default function ProcessmanPanel({
   const [answerInfo, setAnswerInfo] = useState({ hasAnswer: false, fromCache: false, action: "" });
   const [feedbackGiven, setFeedbackGiven] = useState("");
 
-  const context = resolvePanelContext({ tab, mode });
+  const context = resolvePanelContext({ tab });
 
   // Клавиатура (спека §10): фокус в панель при открытии; Esc закрывает;
   // при закрытии фокус возвращается на кнопку тулбара. Focus-trap нет (не нужен).
@@ -88,7 +87,7 @@ export default function ProcessmanPanel({
           />
           <span className="pm-processman__title">{t.buttonLabel}</span>
           <span className="pm-processman__context-badge" data-testid="processman-context-badge">
-            {t[contextBadgeKey(context)]}
+            {t[tabBadgeKey(tab)]}
           </span>
           <button
             type="button"
@@ -103,19 +102,21 @@ export default function ProcessmanPanel({
         </div>
 
         <div className="pm-processman__body" data-testid="processman-body">
-          {context === "schema" ? (
-            <div data-testid="processman-schema-pane">
-              <SchemaAssistantBlock sessionId={sessionId} selectedElement={selectedBpmnElement} />
-            </div>
-          ) : null}
           {context === "tobe" ? (
-            <ProcessmanTobe
-              sessionId={sessionId}
-              selectedElement={selectedBpmnElement}
-              llmStatus={llmStatus}
-              cacheRef={cacheRef}
-              onAnswerChange={setAnswerInfo}
-            />
+            <>
+              <ProcessmanTobe
+                sessionId={sessionId}
+                selectedElement={selectedBpmnElement}
+                llmStatus={llmStatus}
+                cacheRef={cacheRef}
+                onAnswerChange={setAnswerInfo}
+              />
+              {/* SchemaAssistantBlock перенесён в панель (критерий 4): помощник
+                  схемы остаётся доступен под основным TO BE-контентом */}
+              <div data-testid="processman-schema-pane">
+                <SchemaAssistantBlock sessionId={sessionId} selectedElement={selectedBpmnElement} />
+              </div>
+            </>
           ) : null}
           {context === "analysis" ? (
             <ProcessmanAnalysis

@@ -161,7 +161,6 @@ function panelProps(extra = {}) {
   return {
     sessionId: "sess_1",
     tab: "diagram",
-    mode: "tobe",
     selectedBpmnElement: { id: "Act_1", name: "Шаг 1", type: "task" },
     llmStatus: { ok: true, status: 200, result: { configured: true, quota: { used: 0, limit: 200000 } } },
     cacheRef: { current: new Map() },
@@ -181,18 +180,17 @@ test("behavior: открытие панели + смена контекста (�
     await flush();
     assert.equal(env.calls.length, 0, "рендер панели не вызывает сеть");
 
-    // смена контекста: tobe → analysis → schema → neutral → обратно
+    // смена контекста: diagram → interview → xml → обратно
     for (const props of [
-      { tab: "interview", mode: "schema" },
-      { tab: "diagram", mode: "schema" },
-      { tab: "xml", mode: "schema" },
-      { tab: "diagram", mode: "tobe" },
+      { tab: "interview" },
+      { tab: "xml" },
+      { tab: "diagram" },
     ]) {
       await act(async () => {
         env.root.render(React.createElement(mod.default, panelProps(props)));
       });
       await flush();
-      assert.equal(env.calls.length, 0, `контекст ${props.tab}/${props.mode} не вызывает сеть`);
+      assert.equal(env.calls.length, 0, `контекст ${props.tab} не вызывает сеть`);
     }
 
     // выбор другого узла = 0 вызовов
@@ -229,9 +227,9 @@ test("behavior: только клик действия = ровно 1 вызов
     assert.ok(env.calls[0].url.includes("/suggest-next"), `URL suggest-next: ${env.calls[0].url}`);
     assert.equal(env.calls[0].method, "POST");
 
-    // schema-контекст: клик по действию SchemaAssistantBlock
+    // diagram-контекст: клик по действию SchemaAssistantBlock (перенесён в панель)
     await act(async () => {
-      env.root.render(React.createElement(mod.default, panelProps({ tab: "diagram", mode: "schema" })));
+      env.root.render(React.createElement(mod.default, panelProps({ tab: "diagram" })));
     });
     await flush();
     const toggle = doc.querySelector('[data-testid="schema-assistant-toggle"]');
