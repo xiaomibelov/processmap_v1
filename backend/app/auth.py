@@ -42,11 +42,8 @@ AUTH_PUBLIC_PATHS = {
     "/api/meta",
     "/api/feature-flags",
     "/api/deployment-notice",
-    # Swagger / OpenAPI endpoints are routed through /api so the frontend nginx
-    # does not serve the SPA fallback for them.
-    "/api/docs",
-    "/api/redoc",
-    "/api/openapi.json",
+    # /api/docs, /api/redoc, /api/openapi.json — НЕ публичные: закрыты правом
+    # уровня админки (routers/api_docs.py); 401 без токена — через auth_guard.
 }
 
 

@@ -588,6 +588,18 @@ export default function TopBar({
               Админ-панель
             </button>
           ) : null}
+          {canOpenOrgSettings ? (
+            <a
+              className="secondaryBtn h-8 min-h-0 whitespace-nowrap px-2.5 py-0 text-xs inline-flex items-center gap-1"
+              href="/api/docs"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="topbar-api-docs-button"
+              title="Открыть Swagger UI (OpenAPI) в новой вкладке"
+            >
+              API Docs
+            </a>
+          ) : null}
         </div>
 
         <div className="topGroup relative flex shrink-0 items-center gap-2">

@@ -4,6 +4,7 @@ from .admin_llm import router as admin_llm_router
 from .llm_status import router as llm_status_router
 from .llm_feedback import router as llm_feedback_router
 from .version import router as version_router
+from .api_docs import router as api_docs_router
 from .analytics import router as analytics_router
 from .clipboard import router as clipboard_router
 from .error_events import router as error_events_router
@@ -72,6 +73,7 @@ ROUTERS = (
     (org_property_dictionary_router, ["org-property-dictionary"]),
     (org_router, ["organizations"]),
     (version_router, ["version"]),
+    (api_docs_router, ["system"]),
     (feature_flags_router, ["feature-flags"]),
     (reference_resolver_router, ["reference-resolver"]),
     (deployment_notices_router, ["deployment-notices"]),
