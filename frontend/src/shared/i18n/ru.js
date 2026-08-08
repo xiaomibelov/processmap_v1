@@ -558,6 +558,20 @@ export const ru = {
       defaultRole: "наблюдатель",
     },
   },
+  // UX-UPDATE — тост «Вышло обновление ProcessMap» (version.json + snooze 30 мин).
+  // Парный словарь: shared/i18n/en.js.
+  app_update: {
+    title: "Вышло обновление ProcessMap",
+    titleDirty: "Вышло обновление ProcessMap. Сохраните изменения перед обновлением.",
+    description: "Обновите страницу, чтобы получить последние исправления.",
+    descriptionSaving: "Дождитесь завершения сохранения перед обновлением.",
+    refresh: "Обновить",
+    refreshDirty: "Сохранить и обновить",
+    refreshBusy: "Сохраняем…",
+    later: "Позже",
+    laterTitle: "Скрыть на 30 минут",
+    iconAria: "Доступно обновление",
+  },
 };
 
 export function trStatusInvite(status) {
