@@ -80,6 +80,20 @@ export default defineConfig({
   plugins: [
     react(),
     {
+      // UX-UPDATE: static/version.json {sha, builtAt} в dist — источник правды
+      // для тоста «Вышло обновление» (поллинг с cache:'no-store', без кэша CDN).
+      name: "app-version-json",
+      generateBundle() {
+        const sha = String(process.env.VITE_BUILD_ID || "dev").trim() || "dev";
+        const builtAt = String(process.env.VITE_BUILD_TIME || new Date().toISOString()).trim();
+        this.emitFile({
+          type: "asset",
+          fileName: "version.json",
+          source: JSON.stringify({ sha, builtAt }),
+        });
+      },
+    },
+    {
       name: "stage-deploy-fingerprint-banner",
       generateBundle(_, bundle) {
         if (!stageDeployFingerprintBanner) return;

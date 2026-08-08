@@ -4,75 +4,92 @@ import test from "node:test";
 
 const hookSource = fs.readFileSync(new URL("./useAppUpdateAvailable.js", import.meta.url), "utf8");
 const bannerSource = fs.readFileSync(new URL("./AppUpdateBanner.jsx", import.meta.url), "utf8");
+const modelSource = fs.readFileSync(new URL("./appUpdateModel.js", import.meta.url), "utf8");
 const controllerSource = fs.readFileSync(new URL("./appSafeRefreshController.js", import.meta.url), "utf8");
 const shellSource = fs.readFileSync(new URL("../../components/AppShell.jsx", import.meta.url), "utf8");
-const processStageSource = fs.readFileSync(new URL("../../components/ProcessStage.jsx", import.meta.url), "utf8");
+const appSource = fs.readFileSync(new URL("../../App.jsx", import.meta.url), "utf8");
+const viteSource = fs.readFileSync(new URL("../../../vite.config.js", import.meta.url), "utf8");
+const toastCssSource = fs.readFileSync(new URL("./appUpdateToast.css", import.meta.url), "utf8");
 
-test("app update hook polls /api/meta through apiMeta without overlapping requests", () => {
-  assert.match(hookSource, /import \{ apiMeta \} from "\.\.\/\.\.\/lib\/api\.js"/);
-  assert.match(hookSource, /const res = await apiMeta\(\)/);
+// ---------------------------------------------------------------- build
+test("build генерирует static/version.json {sha, builtAt} в dist", () => {
+  assert.match(viteSource, /app-version-json/, "плагин в vite.config");
+  assert.match(viteSource, /fileName: "version\.json"/);
+  assert.match(viteSource, /sha/);
+  assert.match(viteSource, /builtAt/);
+});
+
+// ---------------------------------------------------------------- хук
+test("хук поллит GET /version.json с cache:'no-store', без overlap-запросов", () => {
+  assert.match(hookSource, /APP_UPDATE_VERSION_URL/);
+  assert.match(hookSource, /cache: "no-store"/);
   assert.match(hookSource, /inFlightRef\.current/);
   assert.match(hookSource, /if \(inFlightRef\.current\) return false/);
 });
 
-test("app update hook uses boot, interval, focus, and visible-tab checks with cleanup", () => {
+test("хук: boot + interval(5 мин) + visibilitychange→visible, cleanup, ошибки молча", () => {
   assert.match(hookSource, /checkForUpdate\("boot"\)/);
   assert.match(hookSource, /window\.setInterval/);
   assert.match(hookSource, /APP_UPDATE_POLL_INTERVAL_MS/);
-  assert.match(hookSource, /window\.addEventListener\("focus"/);
   assert.match(hookSource, /document\.addEventListener\("visibilitychange"/);
   assert.match(hookSource, /document\.visibilityState === "hidden"/);
   assert.match(hookSource, /window\.clearInterval/);
-  assert.match(hookSource, /removeEventListener\("focus"/);
   assert.match(hookSource, /removeEventListener\("visibilitychange"/);
+  assert.match(hookSource, /catch \{\s*\/\/ ошибки — молча/s);
+  assert.doesNotMatch(hookSource, /apiMeta/, "apiMeta больше не используется");
 });
 
-test("app update hook silently hides banner on failed or missing meta and never auto reloads", () => {
-  assert.match(hookSource, /if \(!res\?\.ok\) \{/);
-  assert.match(hookSource, /setAvailableRuntime\(null\)/);
-  assert.equal(hookSource.includes("reloadPage(window);"), true);
-  assert.ok(hookSource.indexOf("reloadPage(window);") > hookSource.indexOf("runSafeRefreshBeforeReload"));
+test("reload только по клику [Обновить]: refresh() → guard → flush → reloadPage; автозагрузки нет", () => {
+  assert.match(hookSource, /reloadPage\(window\)/);
+  const autoReloads = hookSource.match(/reloadPage\(window\)/g) || [];
+  assert.equal(autoReloads.length, 1, "reloadPage вызывается ровно в одном месте (refresh)");
+  assert.match(hookSource, /runSafeRefreshBeforeReload/);
+  assert.match(hookSource, /refreshGuard/);
+  // checkForUpdate НЕ вызывает reload
+  const checkFn = hookSource.split("const checkForUpdate")[1]?.split("useEffect")[0] || "";
+  assert.doesNotMatch(checkFn, /reloadPage/);
 });
 
-test("app update banner has the expected copy and safe refresh/dismiss actions", () => {
-  assert.match(bannerSource, /Доступна новая версия ProcessMap\./);
-  assert.match(bannerSource, /Сохраните изменения перед обновлением/);
-  assert.match(bannerSource, /Обновите страницу, чтобы получить последние исправления/);
-  assert.match(bannerSource, /Обновить/);
-  assert.match(bannerSource, /Сохранить и обновить/);
-  assert.match(bannerSource, /Позже/);
-  assert.match(bannerSource, /disabled=\{actionDisabled\}/);
-  assert.match(bannerSource, /onClick=\{onRefresh\}/);
-  assert.match(bannerSource, /onClick=\{onDismiss\}/);
-  assert.match(bannerSource, /data-testid="app-update-banner"/);
+test("[Позже] = snooze 30 мин (новая семантика), не постоянный dismiss", () => {
+  assert.match(hookSource, /setUpdateSnooze/);
+  assert.match(modelSource, /APP_UPDATE_SNOOZE_MS = 30 \* 60 \* 1000/);
+  assert.doesNotMatch(modelSource, /DISMISS/, "постоянный dismiss-per-runtimeId убран");
+});
+
+// ---------------------------------------------------------------- тост
+test("тост: fixed внизу, role=status, aria-live=polite, НЕ модалка", () => {
+  assert.match(bannerSource, /data-testid="app-update-toast"/);
   assert.match(bannerSource, /role="status"/);
+  assert.match(bannerSource, /aria-live="polite"/);
+  assert.match(toastCssSource, /position: fixed/);
+  assert.match(toastCssSource, /bottom: 16px/);
+  assert.doesNotMatch(bannerSource, /role="dialog"|aria-modal/, "не модалка");
 });
 
-test("AppShell renders the app-level update banner below TopBar and before session notice", () => {
-  assert.match(shellSource, /import AppUpdateBanner from "\.\.\/features\/appUpdate\/AppUpdateBanner\.jsx"/);
-  assert.match(shellSource, /useAppUpdateAvailable/);
-  assert.ok(shellSource.indexOf("<TopBar") < shellSource.indexOf("<AppUpdateBanner"));
-  assert.ok(shellSource.indexOf("<AppUpdateBanner") < shellSource.indexOf("{sessionNavNotice ?"));
-  assert.match(shellSource, /refreshRisk=\{appUpdate\.refreshRisk\}/);
-  assert.match(shellSource, /refreshBusy=\{appUpdate\.refreshBusy\}/);
-  assert.match(shellSource, /refreshError=\{appUpdate\.refreshError\}/);
-  assert.match(shellSource, /Версия \{appVersionInfo\.currentVersion\}/);
+test("тост: i18n app_update.* (без хардкода RU), SVG-иконка из файла, фокус при появлении", () => {
+  assert.match(bannerSource, /ru\.app_update/);
+  assert.match(bannerSource, /assets\/icons\/app-update\.svg\?raw/);
+  assert.match(bannerSource, /toastRef\.current\?\.focus\(\)/);
+  const code = bannerSource.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
+  assert.doesNotMatch(code, /Вышло обновление|Сохраните изменения|Обновите страницу/, "строк не хардкожено в коде");
 });
 
-test("app update banner is not wired into ProcessStage remote-save toast", () => {
-  assert.equal(hookSource.includes("ProcessSaveAckToast"), false);
-  assert.equal(bannerSource.includes("ProcessSaveAckToast"), false);
-  assert.equal(shellSource.includes("ProcessSaveAckToast"), false);
-  assert.match(processStageSource, /ProcessSaveAckToast/);
+test("стили: только токены --pm-tobe-*, transform 200ms, reduced-motion", () => {
+  const hex = toastCssSource.match(/#[0-9a-fA-F]{3,8}\b/g) || [];
+  assert.deepEqual(hex, [], `сырых hex быть не должно: ${hex.join(",")}`);
+  assert.match(toastCssSource, /transition: transform 200ms/);
+  assert.match(toastCssSource, /prefers-reduced-motion/);
 });
 
-test("app update safe refresh uses a single coordinator and app update reason", () => {
-  assert.match(hookSource, /runSafeRefreshBeforeReload\(\{ reason: "app_update_refresh" \}\)/);
-  assert.match(controllerSource, /registerAppSafeRefreshHandler/);
-  assert.match(controllerSource, /getCurrentAppRefreshRisk/);
-  assert.match(controllerSource, /ok: true,\s*status: "clean"/);
-  assert.match(controllerSource, /status: "timeout"/);
-  assert.match(processStageSource, /registerAppSafeRefreshHandler/);
-  assert.match(processStageSource, /source: "app_update_refresh"/);
-  assert.match(processStageSource, /reason,\s*\}/);
+// ---------------------------------------------------------------- guard TO BE
+test("грязная TO BE: AppShell пробрасывает appUpdateGuard; App строит его через requestTobeExit (#672)", () => {
+  assert.match(shellSource, /appUpdateGuard = null/);
+  assert.match(shellSource, /useAppUpdateAvailable\(\{ refreshGuard: appUpdateGuard \}\)/);
+  assert.match(appSource, /appUpdateGuardView/);
+  assert.match(appSource, /requestTobeExit\(\(\) => \{\}\)/, "переиспользуем существующий guard, не дублируем");
+});
+
+test("safe-flush контроллер не изменён (грязная v1 → flush перед reload)", () => {
+  assert.match(controllerSource, /runSafeRefreshBeforeReload/);
+  assert.match(controllerSource, /activeHandler\.flush/);
 });
