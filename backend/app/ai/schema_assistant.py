@@ -86,6 +86,8 @@ def _usage_extra(result: Dict[str, Any]) -> Dict[str, Any]:
         "provider_id": str(result.get("provider_id") or ""),
         "model": str(result.get("model") or ""),
         "prompt_version": int(result.get("prompt_version") or 0),
+        # LLM4 S8: признак ответа резервного провайдера (бейдж в панели PROCESSMAN).
+        "fallback": bool(result.get("fallback")),
     }
 
 
