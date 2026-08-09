@@ -665,6 +665,11 @@ function ProcessStage({
   const [saveConflictActionBusy, setSaveConflictActionBusy] = useState(false);
   const [propertySaveConflictOpen, setPropertySaveConflictOpen] = useState(false);
   const [propertySaveConflictFallback, setPropertySaveConflictFallback] = useState("");
+  // Org-drift (fix presence-404): presence-404 подтверждён как смена org,
+  // а не удаление — мягкий баннер вместо экрана мёртвой сессии.
+  const [presenceOrgDriftDismissed, setPresenceOrgDriftDismissed] = useState(false);
+  useEffect(() => { setPresenceOrgDriftDismissed(false); }, [sid]);
+
   const [mergePanelOpen, setMergePanelOpen] = useState(false);
   const [mergePanelBusy, setMergePanelBusy] = useState(false);
   const [mergePanelSource, setMergePanelSource] = useState("");
@@ -8086,6 +8091,35 @@ function ProcessStage({
       <ProcessDialogs
         view={shellVm.dialogsProps}
       />
+      {hasSession && sessionPresence.orgDrift && !presenceOrgDriftDismissed ? (
+        <div
+          data-testid="presence-org-drift-notice"
+          className="absolute left-1/2 top-2 z-[70] flex w-[min(720px,calc(100%-32px))] -translate-x-1/2 items-center gap-3 rounded-lg border border-warn/50 bg-warn/15 px-4 py-2.5 text-sm text-fg shadow-lg"
+          role="status"
+        >
+          <span className="min-w-0 flex-1">
+            <b>Контекст организации изменился.</b>{" "}
+            Сессия может быть недоступна в текущей организации — данные на экране загружены ранее.
+            {/* TODO(follow-up): предложить переключение org прямо из уведомления, когда org-switch будет доступен на этом экране */}
+          </span>
+          <button
+            type="button"
+            className="primaryBtn smallBtn shrink-0"
+            data-testid="presence-org-drift-reload"
+            onClick={() => { if (typeof window !== "undefined") window.location.reload(); }}
+          >
+            Перезагрузить сессию
+          </button>
+          <button
+            type="button"
+            className="secondaryBtn smallBtn shrink-0"
+            data-testid="presence-org-drift-dismiss"
+            onClick={() => setPresenceOrgDriftDismissed(true)}
+          >
+            Скрыть
+          </button>
+        </div>
+      ) : null}
       <ProcessStageDeadSessionModal
         open={hasSession && !!deadSessionInfo}
         view={deadSessionView}
