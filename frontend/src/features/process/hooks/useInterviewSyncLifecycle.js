@@ -192,11 +192,18 @@ export default function useInterviewSyncLifecycle({
   const interviewEditSeqRef = useRef(0);
   const sessionEpochRef = useRef(0);
   const sidRef = useRef(String(sid || ""));
+  // FIX-BPMN-IMPORT-SAVE: признак XML-truth сессии (непустой bpmn_xml) —
+  // для таких сессий nodes/edges не отправляются в session-PATCH.
+  const isXmlTruthSessionRef = useRef(String(draft?.bpmn_xml || "").trim() !== "");
 
   useEffect(() => {
     sidRef.current = String(sid || "");
     sessionEpochRef.current += 1;
   }, [sid]);
+
+  useEffect(() => {
+    isXmlTruthSessionRef.current = String(draft?.bpmn_xml || "").trim() !== "";
+  }, [draft?.bpmn_xml]);
 
   useEffect(() => {
     interviewEditSeqRef.current = 0;
@@ -277,6 +284,7 @@ export default function useInterviewSyncLifecycle({
         apiPatchSession,
         getBaseDiagramStateVersion,
         rememberDiagramStateVersion,
+        isXmlTruthSession: isXmlTruthSessionRef.current,
       });
       if (isSessionStale()) return true;
       if (hasAiQuestionsByElement) {
@@ -668,6 +676,9 @@ export default function useInterviewSyncLifecycle({
         apiPatchSession,
         getBaseDiagramStateVersion,
         rememberDiagramStateVersion,
+        // FIX-BPMN-IMPORT-SAVE: hydrate строится из непустого BPMN-XML →
+        // сессия XML-truth; nodes/edges из проекции в PATCH не идут.
+        isXmlTruthSession: String(xml || "").trim() !== "",
       });
       if (isHydrateStale()) return;
       if (!r.ok && !cancelled) {

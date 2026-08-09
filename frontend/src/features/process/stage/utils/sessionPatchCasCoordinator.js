@@ -4,6 +4,7 @@ import {
   setVersion as setTrackedDiagramStateVersion,
 } from "../../../../lib/casVersionTracker.js";
 import { saveCoordinator } from "../../../../features/session/saveCoordinator.js";
+import { stripDraftGraphKeysFromSessionPatch } from "../../lib/xmlTruthSession.js";
 
 const PIPELINE_NAME = "meta";
 
@@ -25,7 +26,12 @@ saveCoordinator.registerPipeline(PIPELINE_NAME, {
     const patch = payload?.patch && typeof payload.patch === "object" ? { ...payload.patch } : {};
     delete patch.base_diagram_state_version;
     delete patch.baseDiagramStateVersion;
-    return { patchBody: patch, apiPatchSession: payload?.apiPatchSession };
+    // FIX-BPMN-IMPORT-SAVE: для XML-truth сессий (непустой bpmn_xml) nodes/edges
+    // — мёртвая draft-модель; бэкенд отклоняет их 409 DRAFT_GRAPH_READ_ONLY_XML_TRUTH
+    // (_legacy_main.py:899-920). Единая точка strip'а для ВСЕХ session-PATCH записей
+    // (import sync, diagram/interview autosave, hydrate). Истина — PUT /bpmn.
+    const { patch: strippedPatch } = stripDraftGraphKeysFromSessionPatch(patch, payload?.isXmlTruthSession === true);
+    return { patchBody: strippedPatch, apiPatchSession: payload?.apiPatchSession };
   },
   getBaseVersion: (sessionId, payload) => resolveSessionPatchBaseAtSendTime({
     sessionId,
@@ -124,6 +130,7 @@ export function enqueueSessionPatchCasWrite({
   apiPatchSession,
   getBaseDiagramStateVersion,
   rememberDiagramStateVersion,
+  isXmlTruthSession,
 } = {}) {
   const sid = normalizeDiagramSessionId(sessionId);
   if (!sid || typeof apiPatchSession !== "function") {
@@ -135,5 +142,6 @@ export function enqueueSessionPatchCasWrite({
     apiPatchSession,
     getBaseDiagramStateVersion,
     rememberDiagramStateVersion,
+    isXmlTruthSession: isXmlTruthSession === true,
   });
 }
