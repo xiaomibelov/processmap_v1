@@ -50,6 +50,7 @@ import { buildManualSaveProjectionSyncPlan } from "../features/process/bpmn/save
 import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
 import useBpmnSync from "../features/process/hooks/useBpmnSync";
 import ProcessmanPanel from "../features/process/processman/ProcessmanPanel";
+import ProcessmanErrorBoundary from "../features/process/processman/ProcessmanErrorBoundary";
 import { isLlmNotConfigured } from "../features/process/processman/processmanView";
 import { useViewportResizeController } from "../features/process/bpmn/stage/viewport/useViewportResizeController";
 import useProcessOrchestrator from "../features/process/hooks/useProcessOrchestrator";
@@ -8068,6 +8069,7 @@ function ProcessStage({
           </div>
           </div>
           {(processmanOpen || processmanClosing) ? (
+            <ProcessmanErrorBoundary>
             <ProcessmanPanel
               sessionId={sid}
               tab={tab}
@@ -8092,6 +8094,7 @@ function ProcessStage({
                 bpmnRef.current?.selectElements?.([], { source: "processman_panel" });
               }}
             />
+            </ProcessmanErrorBoundary>
           ) : null}
           </div>
         )}
