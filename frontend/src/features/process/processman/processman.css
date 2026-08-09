@@ -1,7 +1,11 @@
-/* LLM4 — панель PROCESSMAN (документ владельца, ревизия 1).
+/* LLM4 — панель PROCESSMAN (документ владельца, ревизия 2 — visual redesign
+   feat/processman-panel-styling, style: Trust & Authority, palette: slate + assistant violet).
    Только токены --pm-tobe-* (design-system/processmap-to-be/MASTER.md);
-   новые цвета/шрифты запрещены. BEM pm-*. Анимация — только transform
-   (translateX 200ms вход / 150ms выход), prefers-reduced-motion → 0ms. */
+   новые цвета/шрифты запрещены. BEM pm-*. Анимация — transform/opacity
+   (вход панели 200ms / выход 150ms; сообщения fade+slide 180ms; пульс только
+   у loading-состояний), prefers-reduced-motion → отключает всё.
+   Радиусы: 8 (контролы/иконки) / 10 (чипы, инсеты) / 12 (карточки, пузыри) / 999 (пилюли).
+   Тени — только плавающим элементам (--pm-tobe-shadow-pop) и hover-подъёму (--pm-tobe-shadow-lift). */
 
 .pm-processman-layout {
   display: flex;
@@ -52,7 +56,7 @@
     width: 360px;
     flex: none;
     z-index: 30;
-    box-shadow: -8px 0 24px color-mix(in srgb, var(--pm-tobe-fg) 18%, transparent);
+    box-shadow: var(--pm-tobe-shadow-pop);
   }
   .pm-processman-backdrop {
     display: block;
@@ -82,11 +86,17 @@
   border-bottom: 1px solid var(--pm-tobe-border);
 }
 
+/* ✦-аватар ассистента: 28px SOLID-фиолетовая плашка radius 8 (видимый agent-цвет) */
 .pm-processman__icon {
-  flex: 0 0 16px;
-  width: 16px;
-  height: 16px;
-  color: var(--pm-tobe-fg);
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-on-primary);
 }
 
 .pm-processman__icon svg {
@@ -407,19 +417,26 @@
   cursor: not-allowed;
 }
 
-/* ================= PROCESSMAN-REDESIGN (PR-1) =================
+
+/* ================= PROCESSMAN-REDESIGN (PR-1 + styling) =================
    Чат-лента, контекст-чип, quick actions, empty state, onboarding,
-   collapse-to-icon rail. Только токены --pm-tobe-* (MASTER.md). */
+   collapse-to-icon rail. Только токены --pm-tobe-* (MASTER.md).
+   Styling-pass (feat/processman-panel-styling): style Trust & Authority —
+   плоские тона без градиентов, единый радиус-скейл 8/10/12, тени только
+   плавающим элементам, кликабельное всегда отличимо (cursor + hover). */
 
 /* --- шапка: текстовый блок (название + статус) --- */
 .pm-processman__header-text {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  line-height: 1.15;
+  line-height: 1.2;
 }
 
 .pm-processman__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   color: var(--pm-tobe-muted-fg);
   white-space: nowrap;
@@ -427,8 +444,28 @@
   text-overflow: ellipsis;
 }
 
+/* живая точка статуса: спокойная (success) в ready, пульс agent-цвета при генерации */
+.pm-processman__status::before {
+  content: "";
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--pm-tobe-accent);
+}
+
 .pm-processman__status--active {
   color: var(--pm-tobe-assistant);
+}
+
+.pm-processman__status--active::before {
+  background: var(--pm-tobe-assistant);
+  animation: pm-processman-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pm-processman-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.7); opacity: 0.5; }
 }
 
 .pm-processman__header-btn {
@@ -438,19 +475,21 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--pm-tobe-border);
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   background: transparent;
   color: var(--pm-tobe-muted-fg);
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
   padding: 0;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
 }
 
 .pm-processman__header-btn:hover {
   background: var(--pm-tobe-muted);
   color: var(--pm-tobe-fg);
+  border-color: var(--pm-tobe-border);
 }
 
 /* --- collapse-to-icon: rail 48px (прецедент — workspaceLeft--rail) --- */
@@ -475,24 +514,30 @@
   border-bottom: none;
 }
 
+.pm-processman--collapsed .pm-processman__icon {
+  border-radius: 999px;
+}
+
 .pm-processman__expand {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--pm-tobe-border);
-  border-radius: 8px;
+  border-radius: 999px;
   background: transparent;
   color: var(--pm-tobe-muted-fg);
   font-size: 14px;
   cursor: pointer;
   padding: 0;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
 }
 
 .pm-processman__expand:hover {
-  background: var(--pm-tobe-muted);
+  background: var(--pm-tobe-assistant-soft);
   color: var(--pm-tobe-assistant);
+  border-color: var(--pm-tobe-assistant);
 }
 
 .pm-processman__feedback-btn--active {
@@ -522,7 +567,7 @@
   min-height: 0;
 }
 
-/* --- лента сообщений --- */
+/* --- лента сообщений (тонкий стилизованный скроллбар) --- */
 .pm-processman-feed {
   flex: 1 1 auto;
   min-height: 120px;
@@ -530,25 +575,51 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding-right: 2px;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--pm-tobe-muted-fg) 45%, transparent) transparent;
 }
 
+.pm-processman-feed::-webkit-scrollbar {
+  width: 6px;
+}
+
+.pm-processman-feed::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--pm-tobe-muted-fg) 45%, transparent);
+  border-radius: 999px;
+}
+
+.pm-processman-feed::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* микродвижение: fade+slide 180ms для новых сообщений (60 FPS: opacity+transform) */
+.pm-processman-msg {
+  animation: pm-processman-msg-in 180ms ease-out;
+}
+
+@keyframes pm-processman-msg-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* user-пузырь: вправо, нейтральный (не agent-цвет) */
 .pm-processman-msg--user {
   align-self: flex-end;
   max-width: 86%;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border-radius: 12px 12px 4px 12px;
-  background: var(--pm-tobe-assistant-soft);
+  background: var(--pm-tobe-muted);
   border: 1px solid var(--pm-tobe-border);
 }
 
 .pm-processman-msg__user-label {
   font-size: 10px;
   font-weight: 600;
-  color: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-muted-fg);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -560,14 +631,16 @@
   word-break: break-word;
 }
 
+/* agent-карточка: full-width, левая кромка + soft-фиолетовый фон, аватар ✦ */
 .pm-processman-msg--agent {
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  padding: 8px;
-  border-radius: 10px;
-  background: var(--pm-tobe-muted);
-  border: 1px solid var(--pm-tobe-border);
+  padding: 10px 12px 10px 10px;
+  border-radius: 12px;
+  background: var(--pm-tobe-assistant-soft);
+  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 22%, var(--pm-tobe-border));
+  border-left: 3px solid var(--pm-tobe-assistant);
 }
 
 .pm-processman-msg--streaming {
@@ -575,17 +648,22 @@
 }
 
 .pm-processman-msg__avatar {
-  flex: 0 0 16px;
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
-  color: var(--pm-tobe-assistant);
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-on-primary);
 }
 
 .pm-processman-msg__avatar svg {
   display: block;
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
 }
 
 .pm-processman-msg__body {
@@ -598,7 +676,7 @@
 
 .pm-processman-msg__text {
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--pm-tobe-fg);
   white-space: pre-wrap;
   word-break: break-word;
@@ -618,13 +696,7 @@
   to { visibility: hidden; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .pm-processman-caret {
-    animation: none;
-  }
-}
-
-/* --- индикатор этапов pending (честный lifecycle) --- */
+/* --- индикатор этапов pending: компактный, с тонким анимированным треком --- */
 .pm-processman-stages {
   display: flex;
   flex-direction: column;
@@ -640,6 +712,7 @@
 .pm-processman-stages__item--active {
   color: var(--pm-tobe-assistant);
   opacity: 1;
+  font-weight: 600;
 }
 
 .pm-processman-stages__item--done {
@@ -647,7 +720,26 @@
   text-decoration: line-through;
 }
 
-/* --- «Источники» (trace explain) --- */
+/* тонкий indeterminate-трек: solid-сегмент agent-цвета скользит по soft-полосе
+   (hard-stop linear-gradient — плоские сегменты, не градиент-эстетика) */
+.pm-processman-stages::after {
+  content: "";
+  display: block;
+  height: 2px;
+  margin-top: 6px;
+  border-radius: 2px;
+  background-color: color-mix(in srgb, var(--pm-tobe-assistant) 16%, transparent);
+  background-image: linear-gradient(90deg, var(--pm-tobe-assistant) 0 25%, transparent 25% 100%);
+  background-size: 200% 100%;
+  animation: pm-processman-stages-slide 1.4s linear infinite;
+}
+
+@keyframes pm-processman-stages-slide {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+/* --- «Источники» (trace explain): светлый инсет внутри agent-карточки --- */
 .pm-processman-sources {
   font-size: 12px;
   color: var(--pm-tobe-muted-fg);
@@ -656,14 +748,19 @@
 .pm-processman-sources summary {
   cursor: pointer;
   color: var(--pm-tobe-assistant);
+  font-weight: 600;
+}
+
+.pm-processman-sources summary:hover {
+  color: var(--pm-tobe-assistant-strong);
 }
 
 .pm-processman-sources__body {
   margin-top: 4px;
-  padding: 6px 8px;
+  padding: 6px 10px;
   border-left: 2px solid var(--pm-tobe-assistant);
-  background: var(--pm-tobe-assistant-soft);
-  border-radius: 0 6px 6px 0;
+  background: var(--pm-tobe-surface);
+  border-radius: 0 8px 8px 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -674,20 +771,22 @@
   color: var(--pm-tobe-fg);
 }
 
-/* --- кликабельные чипы узлов 📍 в ответах --- */
+/* --- кликабельные чипы узлов 📍 в ответах: pill-кнопки, mono-имя узла --- */
 .pm-processman-nodechip {
   display: inline-flex;
   align-items: center;
-  padding: 0 6px;
+  padding: 1px 8px;
   margin: 0 1px;
   border-radius: 999px;
   border: 1px solid var(--pm-tobe-assistant);
-  background: var(--pm-tobe-assistant-soft);
+  background: var(--pm-tobe-surface);
   color: var(--pm-tobe-assistant);
-  font-size: 12px;
+  font-family: var(--pm-tobe-font-mono);
+  font-size: 11px;
   font-weight: 600;
   line-height: 1.6;
   cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
 }
 
 .pm-processman-nodechip:hover {
@@ -698,13 +797,15 @@
 /* --- кнопка «Стоп» --- */
 .pm-processman-stop {
   align-self: flex-start;
-  padding: 2px 10px;
-  border-radius: 6px;
+  padding: 3px 12px;
+  border-radius: 8px;
   border: 1px solid var(--pm-tobe-border);
-  background: transparent;
+  background: var(--pm-tobe-bg);
   color: var(--pm-tobe-muted-fg);
   font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
 }
 
 .pm-processman-stop:hover {
@@ -713,16 +814,21 @@
   border-color: var(--pm-tobe-assistant);
 }
 
-/* --- контекст-чип под шапкой --- */
+/* --- контекст-чип под шапкой: PILL (radius 999) soft-фиолетовый, имя узла mono --- */
 .pm-processman-contextchip {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
-  border-radius: 8px;
-  border: 1px dashed var(--pm-tobe-border);
+  padding: 4px 5px 4px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 35%, var(--pm-tobe-border));
   background: var(--pm-tobe-assistant-soft);
   font-size: 12px;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.pm-processman-contextchip:has(.pm-processman-contextchip__main:hover) {
+  border-color: var(--pm-tobe-assistant);
 }
 
 .pm-processman-contextchip__dot {
@@ -743,6 +849,13 @@
   text-align: left;
   cursor: pointer;
   padding: 0;
+  border-radius: 6px;
+}
+
+/* hover → affordance «показать на схеме» (нативная подсказка — title у кнопки) */
+.pm-processman-contextchip__main:hover .pm-processman-contextchip__node {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .pm-processman-contextchip__label {
@@ -753,10 +866,13 @@
 }
 
 .pm-processman-contextchip__node {
+  font-family: var(--pm-tobe-font-mono);
+  font-size: 11px;
   font-weight: 600;
   color: var(--pm-tobe-assistant);
 }
 
+/* крестик сброса — в круге (surface на soft-пилюле; hover → solid agent) */
 .pm-processman-contextchip__reset {
   flex: 0 0 auto;
   width: 20px;
@@ -765,20 +881,22 @@
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 6px;
-  background: transparent;
+  border-radius: 999px;
+  background: var(--pm-tobe-surface);
   color: var(--pm-tobe-muted-fg);
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1;
   cursor: pointer;
   padding: 0;
+  transition: background 160ms ease, color 160ms ease;
 }
 
 .pm-processman-contextchip__reset:hover {
-  background: var(--pm-tobe-muted);
-  color: var(--pm-tobe-fg);
+  background: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-on-primary);
 }
 
-/* --- quick actions: full-width карточки --- */
+/* --- quick actions: КАРТОЧКИ на surface (белые на фоне панели), плашка-иконка 36px --- */
 .pm-processman-quick-wrap {
   display: flex;
   flex-direction: column;
@@ -788,27 +906,32 @@
 .pm-processman-quick {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .pm-processman-quick__card {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
   border: 1px solid var(--pm-tobe-border);
-  background: var(--pm-tobe-bg);
+  background: var(--pm-tobe-surface);
+  box-shadow: var(--pm-tobe-shadow-sm);
   color: var(--pm-tobe-fg);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease,
+    border-color 160ms ease, background 160ms ease;
 }
 
 .pm-processman-quick__card:hover:not(:disabled) {
   border-color: var(--pm-tobe-assistant);
   background: var(--pm-tobe-assistant-soft);
+  transform: translateY(-1px);
+  box-shadow: var(--pm-tobe-shadow-lift);
 }
 
 .pm-processman-quick__card:disabled {
@@ -816,31 +939,49 @@
   cursor: not-allowed;
 }
 
+/* плашка-иконка 36px в --pm-tobe-assistant-soft; на hover инвертируется в solid */
 .pm-processman-quick__icon {
   flex: 0 0 auto;
-  width: 20px;
-  text-align: center;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--pm-tobe-assistant-soft);
   color: var(--pm-tobe-assistant);
-  font-size: 14px;
+  font-size: 16px;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.pm-processman-quick__card:hover:not(:disabled) .pm-processman-quick__icon {
+  background: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-on-primary);
+}
+
+.pm-processman-quick__text {
+  font-weight: 600;
 }
 
 .pm-processman-quick__more {
   align-self: flex-start;
-  padding: 2px 10px;
-  border-radius: 6px;
+  padding: 3px 12px;
+  border-radius: 8px;
   border: 1px solid var(--pm-tobe-border);
   background: transparent;
   color: var(--pm-tobe-muted-fg);
   font-size: 12px;
   cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
 }
 
 .pm-processman-quick__more:hover {
   color: var(--pm-tobe-assistant);
   border-color: var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant-soft);
 }
 
-/* --- пустое состояние --- */
+/* --- пустое состояние: по центру, ✦-маркер solid, примеры — пилюли surface --- */
 .pm-processman-empty {
   flex: 1 1 auto;
   display: flex;
@@ -852,8 +993,22 @@
   text-align: center;
 }
 
+.pm-processman-empty::before {
+  content: "✦";
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-on-primary);
+  font-size: 22px;
+}
+
 .pm-processman-empty__title {
   font-size: 13px;
+  line-height: 1.5;
   color: var(--pm-tobe-muted-fg);
   max-width: 260px;
 }
@@ -861,93 +1016,163 @@
 .pm-processman-empty__chips {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
   max-width: 280px;
 }
 
+/* примеры вопросов: чипы-пилюли с border на surface; hover — заливка soft + border agent */
 .pm-processman-empty__chip {
-  padding: 8px 12px;
+  padding: 8px 14px;
   border-radius: 999px;
   border: 1px solid var(--pm-tobe-border);
-  background: var(--pm-tobe-bg);
+  background: var(--pm-tobe-surface);
+  box-shadow: var(--pm-tobe-shadow-sm);
   color: var(--pm-tobe-assistant);
   font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
 
 .pm-processman-empty__chip:hover {
   border-color: var(--pm-tobe-assistant);
   background: var(--pm-tobe-assistant-soft);
+  transform: translateY(-1px);
 }
 
-/* --- composer --- */
+/* --- composer: focus-ring 2px violet, отправка — круг 32px solid agent --- */
 .pm-processman-composer {
   flex: 0 0 auto;
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
 }
 
 .pm-processman-composer .pm-processman__qa-input {
   flex: 1 1 auto;
+  background: var(--pm-tobe-surface);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.pm-processman-composer .pm-processman__qa-input:focus {
+  outline: none;
+  border-color: var(--pm-tobe-assistant);
+  box-shadow: 0 0 0 2px var(--pm-tobe-assistant);
 }
 
 .pm-processman-composer__send {
   flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: 999px;
   border: 1px solid var(--pm-tobe-assistant);
   background: var(--pm-tobe-assistant);
   color: var(--pm-tobe-on-primary);
-  font-size: 15px;
+  font-size: 14px;
   cursor: pointer;
   padding: 0;
+  transition: background 160ms ease, border-color 160ms ease, opacity 160ms ease;
+}
+
+.pm-processman-composer__send:hover:not(:disabled) {
+  background: var(--pm-tobe-assistant-strong);
+  border-color: var(--pm-tobe-assistant-strong);
 }
 
 .pm-processman-composer__send:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-/* --- onboarding-карточка (one-shot, затем «?» в шапке) --- */
+/* --- onboarding: карточка surface + border + shadow-sm, шаги с номерами 20px --- */
 .pm-processman-onboarding {
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--pm-tobe-assistant);
-  background: var(--pm-tobe-assistant-soft);
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 35%, var(--pm-tobe-border));
+  background: var(--pm-tobe-surface);
+  box-shadow: var(--pm-tobe-shadow-sm);
 }
 
 .pm-processman-onboarding__title {
   font-size: 13px;
   font-weight: 700;
   color: var(--pm-tobe-assistant);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .pm-processman-onboarding__list {
-  margin: 0 0 8px;
-  padding-left: 16px;
+  margin: 0 0 10px;
+  padding-left: 0;
+  list-style: none;
+  counter-reset: pm-processman-onboarding;
   font-size: 12px;
   line-height: 1.5;
   color: var(--pm-tobe-fg);
 }
 
+.pm-processman-onboarding__list li {
+  counter-increment: pm-processman-onboarding;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+
+.pm-processman-onboarding__list li::before {
+  content: counter(pm-processman-onboarding);
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-on-primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .pm-processman-onboarding__hide {
-  padding: 4px 10px;
-  border-radius: 6px;
+  padding: 6px 14px;
+  border-radius: 8px;
   border: 1px solid var(--pm-tobe-assistant);
-  background: transparent;
-  color: var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-on-primary);
   font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
 }
 
 .pm-processman-onboarding__hide:hover {
-  background: var(--pm-tobe-assistant);
-  color: var(--pm-tobe-on-primary);
+  background: var(--pm-tobe-assistant-strong);
+  border-color: var(--pm-tobe-assistant-strong);
+}
+
+/* --- reduced motion: все новые анимации отключаются --- */
+@media (prefers-reduced-motion: reduce) {
+  .pm-processman-msg,
+  .pm-processman-caret {
+    animation: none;
+  }
+  .pm-processman__status--active::before {
+    animation: none;
+  }
+  .pm-processman-stages::after {
+    animation: none;
+  }
+  .pm-processman-quick__card,
+  .pm-processman-quick__icon,
+  .pm-processman-empty__chip,
+  .pm-processman-composer__send,
+  .pm-processman-contextchip,
+  .pm-processman-nodechip {
+    transition: none;
+  }
 }
