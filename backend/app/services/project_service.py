@@ -40,7 +40,7 @@ def _request_org_candidates(request: Optional[Request], preferred_org_id: str) -
 
     _push(preferred_org_id)
     if request is not None:
-        user_id, is_admin = request_user_meta(request)
+        user_id, is_admin = _request_user_meta(request)
         if user_id:
             for row in list_user_org_memberships(user_id, is_admin=is_admin):
                 if isinstance(row, dict):

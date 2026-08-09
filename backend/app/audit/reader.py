@@ -18,7 +18,13 @@ _COLUMNS = (
 )
 
 
+def _as_dict(row: Any) -> Dict[str, Any]:
+    """sqlite3.Row не имеет .get() (postgres-строки — dict-like): нормализуем."""
+    return row if isinstance(row, dict) else dict(row)
+
+
 def _row_to_dict(row: Any) -> Dict[str, Any]:
+    row = _as_dict(row)
     meta_raw = row.get("meta_json")
     if isinstance(meta_raw, dict):
         meta = meta_raw
@@ -118,6 +124,7 @@ def resolve_actors(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 f"SELECT id, email FROM users WHERE id IN ({placeholders})", ids
             ).fetchall()
         for row in rows:
+            row = _as_dict(row)
             emails[str(row.get("id") or "")] = str(row.get("email") or "")
     out: List[Dict[str, Any]] = []
     for event in events:
@@ -140,4 +147,4 @@ def find_user_id_by_email(email: str) -> Optional[str]:
         return None
     with _connect() as con:
         row = con.execute("SELECT id FROM users WHERE LOWER(email) = ? LIMIT 1", [em]).fetchone()
-    return str(row.get("id")) if row else None
+    return str(_as_dict(row).get("id")) if row else None
