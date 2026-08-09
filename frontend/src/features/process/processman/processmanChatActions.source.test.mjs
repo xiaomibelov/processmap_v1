@@ -75,3 +75,27 @@ test("панель подключена в ProcessStage и получает focu
   assert.ok(/onFocusElement=\{/.test(stageSrc), "проброс фокуса узла (чипы 📍, чип контекста)");
   assert.ok(/onClearSelection=\{/.test(stageSrc), "проброс сброса выделения");
 });
+
+// HOTFIX 2026-08-09 — stage-инцидент: потерянный импорт processman.css при
+// редизайне уронил layout всей рабочей области (стили pm-processman-layout/__canvas
+// живут в том же файле). Регрессионные гарантии:
+test("HOTFIX: ProcessmanPanel импортирует processman.css (иначе layout канваса рассыпается)", () => {
+  assert.ok(
+    /import "\.\/processman\.css";/.test(panelSrc),
+    "import \"./processman.css\" обязателен: там стили layout-обёртки канваса",
+  );
+});
+
+test("HOTFIX: панель обёрнута в Error Boundary (сбой панели не роняет канвас)", () => {
+  assert.ok(
+    /import ProcessmanErrorBoundary from "\.\.\/features\/process\/processman\/ProcessmanErrorBoundary";/.test(stageSrc),
+    "импорт ProcessmanErrorBoundary в ProcessStage",
+  );
+  assert.ok(
+    /<ProcessmanErrorBoundary>\s*<ProcessmanPanel/.test(stageSrc),
+    "ProcessmanPanel обёрнута в ProcessmanErrorBoundary",
+  );
+  const boundarySrc = readFileSync(fileURLToPath(new URL("./ProcessmanErrorBoundary.jsx", import.meta.url)), "utf8");
+  assert.ok(/getDerivedStateFromError/.test(boundarySrc), "boundary ловит ошибки рендера");
+  assert.ok(/if \(this\.state\.hasError\) return null;/.test(boundarySrc), "при ошибке — null, канвас жив");
+});
