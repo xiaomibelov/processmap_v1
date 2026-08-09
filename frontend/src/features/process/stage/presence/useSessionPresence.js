@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { apiLeaveSessionPresence, apiTouchSessionPresence } from "../../../../lib/api.js";
+import { apiGetSession, apiLeaveSessionPresence, apiTouchSessionPresence } from "../../../../lib/api.js";
+import { getActiveOrgId, setActiveOrgId } from "../../../../lib/apiCore.js";
 import {
   isSessionNotFound,
+  isSessionNotFoundResult,
   noteSessionApiResult,
   subscribeSessionNotFound,
 } from "../../../session/sessionLiveness.js";
@@ -77,6 +79,7 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
   const surface = toText(options.surface) || "process_stage";
   const touchPresence = typeof options.apiTouch === "function" ? options.apiTouch : apiTouchSessionPresence;
   const leavePresenceApi = typeof options.apiLeave === "function" ? options.apiLeave : apiLeaveSessionPresence;
+  const getSessionConfirm = typeof options.apiGetSession === "function" ? options.apiGetSession : apiGetSession;
   const initialActiveUsers = Array.isArray(options.initialActiveUsers) ? options.initialActiveUsers : [];
   const skipMountHeartbeat = options.skipMountHeartbeat === true && initialActiveUsers.length > 0;
   const initialTtlSeconds = Number(options.initialTtlSeconds || 0);
@@ -93,6 +96,19 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
   // P-1: терминальный 404 — сессия удалена. Heartbeat останавливается,
   // опрос не возобновляется (404 ≠ сетевая ошибка).
   const [sessionDead, setSessionDead] = useState(() => isSessionNotFound(sessionId));
+  // Org-drift fix: presence-404 может означать НЕ удаление, а смену активной
+  // org (сессия живёт в другой организации). Прежде чем помечать сессию
+  // мёртвой, делаем confirm GET /api/sessions/{id}: 200 → org-drift (мягкое
+  // уведомление, dead-флаг НЕ ставим), 404 → реальное удаление.
+  const [orgDrift, setOrgDrift] = useState(false);
+  const [confirmPending, setConfirmPending] = useState(false);
+  const confirmRef = useRef(null);       // Promise | null — ровно один confirm на эпизод
+  const driftEpisodeRef = useRef(false); // эпизод org-drift подтверждён (до presence-200)
+  // Org, с которой сессия работала (инициализация + последний успешный
+  // presence). Confirm GET идёт с НЕЙ, а не с текущей (после drift) org —
+  // иначе при настоящем org-drift confirm дал бы 404 и баг повторился.
+  const orgInitRef = useRef("");
+  const lastGoodOrgRef = useRef("");
 
   const clearPresence = useCallback(() => {
     setActiveUsers([]);
@@ -102,6 +118,8 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
   const heartbeat = useCallback(async (reason = "interval") => {
     if (!sessionId || !currentUserId) return { ok: false, reason: "disabled" };
     if (isSessionNotFound(sessionId)) return { ok: false, reason: "session_deleted" };
+    // Пока идёт confirm org-drift — heartbeat приостановлен (без сети).
+    if (confirmRef.current) return { ok: false, reason: "confirm_pending" };
     if (typeof document !== "undefined" && document.visibilityState === "hidden" && reason === "interval") {
       return { ok: false, reason: "hidden" };
     }
@@ -113,15 +131,59 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
       if (!out?.ok) {
         // P-1: терминальный 404 помечает сессию мёртвой — таймер снимается
         // через sessionDead-эффект, дальнейшие heartbeat не уходят в сеть.
-        const deadInfo = noteSessionApiResult(sessionId, out, "presence");
-        if (deadInfo) {
-          setSessionDead(true);
-          setLastError("session_not_found");
+        // Org-drift fix: сначала confirm GET — 404 может быть сменой org, а
+        // не удалением. Отсев саб-ресурсов (node/edge/version/…) — как раньше:
+        // isSessionNotFoundResult возвращает false → обычная ошибка.
+        if (isSessionNotFoundResult(out)) {
+          if (driftEpisodeRef.current) {
+            // эпизод org-drift уже подтверждён — без повторных confirm и без dead
+            setLastError("org_drift");
+            return out;
+          }
+          if (!confirmRef.current) {
+            setConfirmPending(true);
+            confirmRef.current = (async () => {
+              // confirm GET — с org, с которой сессия работала (последний
+              // успешный presence / инициализация). Временно переключаем
+              // apiCore на неё без persist, затем возвращаем как было.
+              const targetOrg = toText(lastGoodOrgRef.current) || toText(orgInitRef.current);
+              const prevOrg = getActiveOrgId();
+              const swapped = !!targetOrg && targetOrg !== prevOrg;
+              try {
+                if (swapped) setActiveOrgId(targetOrg, { persist: false });
+                const conf = await getSessionConfirm(sessionId);
+                if (!mountedRef.current) return;
+                if (conf?.ok === true) {
+                  // confirm 200: сессия доступна с рабочей org → это смена
+                  // контекста org (org-drift), НЕ удаление. dead-флаг не ставим.
+                  driftEpisodeRef.current = true;
+                  setOrgDrift(true);
+                  setLastError("org_drift");
+                } else {
+                  // confirm 404: реальное удаление — поведение как раньше.
+                  const deadInfo = noteSessionApiResult(sessionId, out, "presence");
+                  if (deadInfo) {
+                    setSessionDead(true);
+                    setLastError("session_not_found");
+                  }
+                }
+              } finally {
+                if (swapped) setActiveOrgId(prevOrg, { persist: false });
+                if (mountedRef.current) setConfirmPending(false);
+                confirmRef.current = null;
+              }
+            })();
+          }
           return out;
         }
         setLastError(toText(out?.error || out?.reason || "presence_failed"));
         return out;
       }
+      // presence-200: эпизод org-drift завершён (org вернулась/перезагрузка).
+      driftEpisodeRef.current = false;
+      setOrgDrift(false);
+      // запоминаем рабочую org последнего успешного presence
+      lastGoodOrgRef.current = getActiveOrgId();
       setActiveUsers(normalizeSessionPresenceUsers(out.active_users || out.activeUsers));
       setNowMs(Date.now());
       const ttlSeconds = Number(out.ttl_seconds || out.ttlSeconds || 0);
@@ -185,6 +247,8 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
     }
 
     clientIdRef.current = getSessionPresenceClientId();
+    // org инициализации presence — база confirm при отсутствии успешных presence
+    if (!orgInitRef.current) orgInitRef.current = getActiveOrgId();
     if (!skipMountHeartbeat) {
       void heartbeat("mount");
     }
@@ -243,9 +307,13 @@ export default function useSessionPresence(sessionIdRaw = "", currentUserRaw = n
     nowMs,
     lastError: effectiveLastError,
     sessionDead,
+    // Org-drift: presence-404 подтверждён как смена org-контекста (не удаление).
+    // UI показывает мягкое уведомление с «Перезагрузить сессию» вместо dead-modal.
+    orgDrift,
+    confirmPending,
     heartbeat,
     leavePresence,
     setActiveUsers,
     setTtlMs,
-  }), [activeUsers, effectiveLastError, heartbeat, leavePresence, nowMs, sessionDead, ttlMs]);
+  }), [activeUsers, confirmPending, effectiveLastError, heartbeat, leavePresence, nowMs, orgDrift, sessionDead, ttlMs]);
 }
