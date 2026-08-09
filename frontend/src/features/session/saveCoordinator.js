@@ -15,6 +15,7 @@ import {
 import {
   SAVE_CONFLICT_RESOLUTION,
   isSaveConflictStatus,
+  isSaveXmlTruthGuardResponse,
 } from "./conflictModel.js";
 import {
   isSessionNotFound,
@@ -490,6 +491,24 @@ class SaveCoordinator {
           rollbackTrackedDiagramStateVersion(sid);
           this._setPipelineStatus(pipelineName, sid, "idle", { outcome: "session_not_found" });
           this.emit("session_not_found", { pipeline: pipelineName, sessionId: sid, response: result });
+          return result;
+        }
+        // FIX-BPMN-IMPORT-SAVE: guard-409 (DRAFT_GRAPH_READ_ONLY_XML_TRUTH) —
+        // отказ по ТИПУ сессии, а не CAS-конфликт. Запись отклонена до инкремента
+        // версии, поэтому: НЕ взводим conflict gate (он блокирует и легитимные
+        // PUT /bpmn), НЕ откатываем tracked-base (она пришла от успешной записи
+        // /bpmn и остаётся валидной), НЕ ретраим (отказ детерминирован).
+        // Ошибку пробрасываем вызывающему коду как есть (не маскируем).
+        if (isSaveXmlTruthGuardResponse(result)) {
+          this._setPipelineStatus(pipelineName, sid, "idle", { outcome: "xml_truth_guard" });
+          if (pipeline.onError) {
+            try {
+              pipeline.onError(result, sid, payload);
+            } catch {
+              // no-op
+            }
+          }
+          this.emit("error", { pipeline: pipelineName, sessionId: sid, response: result, guard: "xml_truth" });
           return result;
         }
         if (isConflictResponse(result)) {
