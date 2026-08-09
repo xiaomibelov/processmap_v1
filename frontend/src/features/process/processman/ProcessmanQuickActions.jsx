@@ -29,6 +29,7 @@ export default function ProcessmanQuickActions({
       >
         <span className="pm-processman-quick__icon" aria-hidden="true">→</span>
         <span className="pm-processman-quick__text">{t.suggestLabel}</span>
+        <span className="pm-processman-quick__chevron" aria-hidden="true">›</span>
       </button>
       <button
         type="button"
@@ -40,6 +41,7 @@ export default function ProcessmanQuickActions({
       >
         <span className="pm-processman-quick__icon" aria-hidden="true">💡</span>
         <span className="pm-processman-quick__text">{t.explainLabel}</span>
+        <span className="pm-processman-quick__chevron" aria-hidden="true">›</span>
       </button>
       <button
         type="button"
@@ -50,6 +52,7 @@ export default function ProcessmanQuickActions({
       >
         <span className="pm-processman-quick__icon" aria-hidden="true">⚠</span>
         <span className="pm-processman-quick__text">{t.exampleQ3}</span>
+        <span className="pm-processman-quick__chevron" aria-hidden="true">›</span>
       </button>
     </div>
   );
@@ -67,6 +70,7 @@ export default function ProcessmanQuickActions({
           <span aria-hidden="true">⋯</span> {t.actionsMore}
         </button>
       ) : null}
+      {visible ? <div className="pm-processman-quick__section">{t.actionsMore}</div> : null}
       {visible ? cards : null}
     </div>
   );

@@ -142,3 +142,44 @@ skill.json v2.13.0; workflow skill-content.md: Step 2 `--design-system` — вы
 чип-выбор узла кликом по канвасу («Выбран шаг: StartEvent_1»), agent-карточка
 OK (noStepReply) и error-карточка (LLM недоступен на smoke-прогоне) — обе
 отрисованы корректно.
+
+## REVIEW-FIX v3 (2026-08-09, карточный UI — снято ограничение «не трогать JSX»)
+
+Владелец: «ограничение не трогать JSX было ошибкой — карточный UI требует новой
+разметки». Разрешено: JSX-структура и CSS; запрещено: логика (стор, обработчики,
+API, i18n-ключи, имена пропсов). Эталон — сгенерированный прототип
+`prototype.html` (утверждён владельцем скриншотом `shots/v3-prototype.png`),
+перенесён 1:1 и подключён к существующим данным/обработчикам.
+
+JSX-изменения (только разметка, вся логика и testid сохранены):
+- `ProcessmanChatFeed.jsx` — agent-сообщение → карточка из трёх зон:
+  header (аватар ✦ в solid-круге + подпись PROCESSMAN (существующий
+  `t.buttonLabel`) + время), body (skeleton/этапы/ошибка/текст/источники/стоп),
+  meta-футер (чип уверенности `--violet`, fallback-бейдж, ghost-кнопка «↻ Обновить»
+  — заменила `__action` с inline-style). Время теперь в header карточки
+  (testid `processman-answer-time` — только у последней, условие показа
+  answer-ok не изменено: `isLast && done && !stopped && !pending && !failed`).
+- `ProcessmanQuickActions.jsx` — секционный лейбл «Быстрые действия»
+  (существующий `t.actionsMore`) над карточками + chevron-аффорданс «›»
+  в каждой карточке (декоративный, aria-hidden).
+- `ProcessmanComposer.jsx` — БЕЗ изменений: структура уже совпадала с эталоном
+  (обёртка + input + send), pill-стиль реализован в CSS через `:focus-within`.
+
+CSS (processman.css) по эталону:
+- шапка 56px white surface, аватар 32px solid radius 10; футер white surface;
+- agent-карточка: surface + border + border-left 3px agent + shadow-sm,
+  header soft-violet с hairline-разделителем (color-mix 18%), meta-футер
+  с border-top; новые классы `__header`, `__agent-name`, `__time`, `__metachip(--violet)`,
+  `__ghostbtn`;
+- composer: плавающая pill-плашка radius 999 (padding 6/6/6/14, surface,
+  shadow-sm), focus-ring 2px violet на `:focus-within`, input внутри borderless;
+- quick: `__section` (uppercase 11px muted), `__chevron` (muted → agent на hover);
+- empty: ✦-маркер с soft-ореолом (`box-shadow: 0 0 0 6px assistant-soft`);
+- «Источники» — muted-инсет (на белой карточке).
+
+Проверки v3: processman 58/58 PASS (тесты НЕ потребовали правок — все testid
+и поведение сохранены), tokens 4/4 PASS, полный suite: 62 fail = baseline 61 +
+1 flaky `useSessionPresence heartbeats` (timing-тест, 3/3 PASS при одиночном
+прогоне; к контуру отношения не имеет — изменены только файлы processman).
+Smoke на production build: все состояния (onboarding, empty, chip-выбор узла,
+quick hover, composer focus, agent OK/error-карточки, rail) — `shots/v3-*`.

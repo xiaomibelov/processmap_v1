@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>PROCESSMAN panel — prototype (card UI)</title>
+<style>
+  :root {
+    --pm-tobe-bg: #f8fafc;
+    --pm-tobe-fg: #0f172a;
+    --pm-tobe-muted: #f1f3f5;
+    --pm-tobe-muted-fg: #64748b;
+    --pm-tobe-disabled-fg: #55627a;
+    --pm-tobe-border: #e4e7eb;
+    --pm-tobe-accent: #059669;
+    --pm-tobe-on-primary: #ffffff;
+    --pm-tobe-assistant: #6d28d9;
+    --pm-tobe-assistant-soft: #ede9fe;
+    --pm-tobe-assistant-strong: #5b21b6;
+    --pm-tobe-surface: #ffffff;
+    --pm-tobe-warning: #b45309;
+    --pm-tobe-danger: #dc2626;
+    --pm-tobe-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08);
+    --pm-tobe-shadow-lift: 0 4px 14px rgba(15, 23, 42, 0.10);
+    --pm-tobe-shadow-pop: 0 10px 28px rgba(15, 23, 42, 0.16);
+    --pm-tobe-font-body: 'Fira Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --pm-tobe-font-mono: 'Fira Code', ui-monospace, 'Cascadia Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #16202f;
+    font-family: var(--pm-tobe-font-body);
+    display: flex;
+    gap: 24px;
+    padding: 24px;
+    justify-content: center;
+    align-items: flex-start;
+  }
+  .variant-label { color: #8496ad; font-size: 12px; text-align: center; margin-top: 8px; }
+  .col { display: flex; flex-direction: column; }
+
+  /* ============ PANEL ============ */
+  .pm-processman {
+    width: 380px;
+    height: 720px;
+    display: flex;
+    flex-direction: column;
+    background: var(--pm-tobe-bg);
+    border-left: 1px solid var(--pm-tobe-border);
+    border-radius: 12px;
+    overflow: hidden;
+    color: var(--pm-tobe-fg);
+    box-shadow: var(--pm-tobe-shadow-pop);
+  }
+
+  /* --- header --- */
+  .pm-header {
+    flex: 0 0 56px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 12px;
+    background: var(--pm-tobe-surface);
+    border-bottom: 1px solid var(--pm-tobe-border);
+  }
+  .pm-avatar {
+    flex: 0 0 32px;
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 10px;
+    background: var(--pm-tobe-assistant);
+    color: var(--pm-tobe-on-primary);
+    font-size: 16px;
+  }
+  .pm-header-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+  .pm-title { font-size: 14px; font-weight: 700; letter-spacing: 0.02em; }
+  .pm-status {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--pm-tobe-muted-fg);
+  }
+  .pm-status::before {
+    content: ""; width: 6px; height: 6px; border-radius: 999px;
+    background: var(--pm-tobe-accent);
+  }
+  .pm-status--active { color: var(--pm-tobe-assistant); }
+  .pm-status--active::before { background: var(--pm-tobe-assistant); }
+  .pm-badge {
+    margin-left: auto;
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 600;
+    color: var(--pm-tobe-muted-fg);
+    background: var(--pm-tobe-muted);
+    border: 1px solid var(--pm-tobe-border);
+  }
+  .pm-hbtn {
+    flex: 0 0 auto; width: 26px; height: 26px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid transparent; border-radius: 8px;
+    background: transparent; color: var(--pm-tobe-muted-fg);
+    font-size: 14px; cursor: pointer;
+  }
+  .pm-hbtn:hover { background: var(--pm-tobe-muted); color: var(--pm-tobe-fg); border-color: var(--pm-tobe-border); }
+
+  /* --- body --- */
+  .pm-body {
+    flex: 1 1 auto; min-height: 0;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+
+  /* context chip — pill */
+  .pm-chip {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 5px 4px 12px;
+    border-radius: 999px;
+    border: 1px solid #d5c8f5;
+    background: var(--pm-tobe-assistant-soft);
+    font-size: 12px;
+  }
+  .pm-chip__dot { color: var(--pm-tobe-assistant); font-size: 10px; }
+  .pm-chip__label { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pm-chip__node { font-family: var(--pm-tobe-font-mono); font-size: 11px; font-weight: 600; color: var(--pm-tobe-assistant); }
+  .pm-chip__reset {
+    flex: 0 0 20px; width: 20px; height: 20px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: none; border-radius: 999px;
+    background: var(--pm-tobe-surface);
+    color: var(--pm-tobe-muted-fg); font-size: 13px; cursor: pointer;
+  }
+
+  /* section label */
+  .pm-section {
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--pm-tobe-muted-fg);
+    margin-top: 2px;
+  }
+
+  /* quick action cards */
+  .pm-quick { display: flex; flex-direction: column; gap: 8px; }
+  .pm-qcard {
+    width: 100%;
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid var(--pm-tobe-border);
+    background: var(--pm-tobe-surface);
+    box-shadow: var(--pm-tobe-shadow-sm);
+    color: var(--pm-tobe-fg);
+    font-size: 13px; text-align: left; cursor: pointer;
+  }
+  .pm-qcard__icon {
+    flex: 0 0 36px; width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 10px;
+    background: var(--pm-tobe-assistant-soft);
+    color: var(--pm-tobe-assistant);
+    font-size: 16px;
+  }
+  .pm-qcard__text { flex: 1 1 auto; font-weight: 600; }
+  .pm-qcard__chevron { color: var(--pm-tobe-muted-fg); font-size: 15px; }
+  .pm-qcard--hover {
+    border-color: var(--pm-tobe-assistant);
+    background: var(--pm-tobe-assistant-soft);
+    transform: translateY(-1px);
+    box-shadow: var(--pm-tobe-shadow-lift);
+  }
+  .pm-qcard--hover .pm-qcard__icon { background: var(--pm-tobe-assistant); color: #fff; }
+  .pm-qcard--hover .pm-qcard__chevron { color: var(--pm-tobe-assistant); }
+
+  /* empty state */
+  .pm-empty {
+    flex: 1 1 auto;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; padding: 18px 8px; text-align: center;
+  }
+  .pm-empty__mark {
+    width: 44px; height: 44px; border-radius: 999px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--pm-tobe-assistant); color: #fff; font-size: 22px;
+    box-shadow: 0 0 0 6px var(--pm-tobe-assistant-soft);
+  }
+  .pm-empty__title { font-size: 13px; line-height: 1.5; color: var(--pm-tobe-muted-fg); max-width: 250px; }
+  .pm-empty__chips { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 280px; }
+  .pm-example {
+    padding: 8px 14px; border-radius: 999px;
+    border: 1px solid var(--pm-tobe-border);
+    background: var(--pm-tobe-surface);
+    box-shadow: var(--pm-tobe-shadow-sm);
+    color: var(--pm-tobe-assistant);
+    font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+
+  /* onboarding card */
+  .pm-onboarding {
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid #cdbcf3;
+    background: var(--pm-tobe-surface);
+    box-shadow: var(--pm-tobe-shadow-sm);
+  }
+  .pm-onboarding__title { font-size: 13px; font-weight: 700; color: var(--pm-tobe-assistant); margin-bottom: 8px; }
+  .pm-onboarding__list { list-style: none; font-size: 12px; line-height: 1.5; margin-bottom: 10px; }
+  .pm-onboarding__list li { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 6px; }
+  .pm-onboarding__num {
+    flex: 0 0 20px; width: 20px; height: 20px; margin-top: 1px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 999px; background: var(--pm-tobe-assistant); color: #fff;
+    font-size: 11px; font-weight: 700;
+  }
+  .pm-btn-primary {
+    padding: 7px 14px; border-radius: 8px;
+    border: 1px solid var(--pm-tobe-assistant);
+    background: var(--pm-tobe-assistant); color: #fff;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+
+  /* chat feed */
+  .pm-feed { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; padding-right: 4px; }
+  .pm-msg-user {
+    align-self: flex-end; max-width: 86%;
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 8px 12px;
+    border-radius: 12px 12px 4px 12px;
+    background: var(--pm-tobe-muted);
+    border: 1px solid var(--pm-tobe-border);
+  }
+  .pm-msg-user__label { font-size: 10px; font-weight: 600; color: var(--pm-tobe-muted-fg); text-transform: uppercase; letter-spacing: 0.04em; }
+  .pm-msg-user__text { font-size: 13px; }
+
+  /* agent card — карточная структура: header / body / meta */
+  .pm-agent {
+    border-radius: 12px;
+    background: var(--pm-tobe-surface);
+    border: 1px solid var(--pm-tobe-border);
+    border-left: 3px solid var(--pm-tobe-assistant);
+    box-shadow: var(--pm-tobe-shadow-sm);
+    overflow: hidden;
+  }
+  .pm-agent__header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px;
+    background: var(--pm-tobe-assistant-soft);
+    border-bottom: 1px solid #e3dafb;
+  }
+  .pm-agent__avatar {
+    flex: 0 0 20px; width: 20px; height: 20px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 999px; background: var(--pm-tobe-assistant); color: #fff; font-size: 11px;
+  }
+  .pm-agent__name { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--pm-tobe-assistant); }
+  .pm-agent__time { margin-left: auto; font-size: 11px; color: var(--pm-tobe-muted-fg); }
+  .pm-agent__body { padding: 10px 12px; font-size: 13px; line-height: 1.5; }
+  .pm-agent__meta {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 8px 12px;
+    border-top: 1px solid var(--pm-tobe-border);
+    font-size: 11px; color: var(--pm-tobe-muted-fg);
+  }
+  .pm-metachip {
+    padding: 1px 8px; border-radius: 999px;
+    background: var(--pm-tobe-muted); border: 1px solid var(--pm-tobe-border);
+    font-weight: 600;
+  }
+  .pm-metachip--violet { color: var(--pm-tobe-assistant); background: var(--pm-tobe-assistant-soft); border-color: #d5c8f5; }
+  .pm-ghostbtn {
+    margin-left: auto;
+    padding: 3px 10px; border-radius: 8px;
+    border: 1px solid var(--pm-tobe-border); background: transparent;
+    color: var(--pm-tobe-muted-fg); font-size: 11px; font-weight: 600; cursor: pointer;
+  }
+  .pm-ghostbtn:hover { color: var(--pm-tobe-assistant); border-color: var(--pm-tobe-assistant); background: var(--pm-tobe-assistant-soft); }
+
+  .pm-nodechip {
+    display: inline-flex; align-items: center;
+    padding: 1px 8px; margin: 0 1px;
+    border-radius: 999px;
+    border: 1px solid var(--pm-tobe-assistant);
+    background: var(--pm-tobe-surface);
+    color: var(--pm-tobe-assistant);
+    font-family: var(--pm-tobe-font-mono);
+    font-size: 11px; font-weight: 600; line-height: 1.6;
+    cursor: pointer;
+  }
+
+  /* stages */
+  .pm-stages { display: flex; flex-direction: column; gap: 2px; font-size: 12px; padding: 0 2px; }
+  .pm-stages__item { color: var(--pm-tobe-muted-fg); opacity: 0.55; }
+  .pm-stages__item--active { color: var(--pm-tobe-assistant); opacity: 1; font-weight: 600; }
+  .pm-stages__track { height: 2px; margin-top: 6px; border-radius: 2px; background: #e2d9f8; position: relative; overflow: hidden; }
+  .pm-stages__bar { position: absolute; top: 0; left: 30%; width: 25%; height: 100%; background: var(--pm-tobe-assistant); border-radius: 2px; }
+
+  /* composer — карточная плашка */
+  .pm-composer {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 6px 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--pm-tobe-border);
+    background: var(--pm-tobe-surface);
+    box-shadow: var(--pm-tobe-shadow-sm);
+  }
+  .pm-composer--focus { border-color: var(--pm-tobe-assistant); box-shadow: 0 0 0 2px var(--pm-tobe-assistant); }
+  .pm-composer input {
+    flex: 1 1 auto; min-width: 0;
+    border: none; outline: none; background: transparent;
+    font-family: var(--pm-tobe-font-body);
+    font-size: 13px; color: var(--pm-tobe-fg);
+  }
+  .pm-composer input::placeholder { color: var(--pm-tobe-muted-fg); }
+  .pm-send {
+    flex: 0 0 32px; width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 999px; border: 1px solid var(--pm-tobe-assistant);
+    background: var(--pm-tobe-assistant); color: #fff;
+    font-size: 14px; cursor: pointer;
+  }
+  .pm-send:disabled, .pm-send--disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* footer */
+  .pm-footer {
+    flex: 0 0 40px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 12px;
+    background: var(--pm-tobe-surface);
+    border-top: 1px solid var(--pm-tobe-border);
+    font-size: 11px; color: var(--pm-tobe-muted-fg);
+  }
+  .pm-footer__disc { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pm-cache {
+    flex: 0 0 auto; padding: 2px 8px; border-radius: 999px; font-weight: 600;
+    background: var(--pm-tobe-muted); border: 1px solid var(--pm-tobe-border);
+  }
+  .pm-fb {
+    width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid transparent; border-radius: 8px; background: transparent;
+    color: var(--pm-tobe-muted-fg); cursor: pointer; font-size: 12px;
+  }
+
+  /* rail */
+  .pm-rail {
+    width: 48px; height: 720px;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 10px; padding: 10px 0;
+    background: var(--pm-tobe-surface);
+    border-left: 1px solid var(--pm-tobe-border);
+    border-radius: 12px;
+    box-shadow: var(--pm-tobe-shadow-pop);
+  }
+  .pm-rail .pm-avatar { border-radius: 999px; }
+  .pm-expand {
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--pm-tobe-border); border-radius: 999px;
+    background: transparent; color: var(--pm-tobe-muted-fg); font-size: 14px; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ VARIANT A: onboarding + empty + quick actions ============ -->
+<div class="col">
+  <div class="pm-processman">
+    <div class="pm-header">
+      <div class="pm-avatar">✦</div>
+      <div class="pm-header-text">
+        <span class="pm-title">PROCESSMAN</span>
+        <span class="pm-status">Готов помочь</span>
+      </div>
+      <span class="pm-badge">Схема</span>
+      <button class="pm-hbtn">?</button>
+      <button class="pm-hbtn">«</button>
+      <button class="pm-hbtn">×</button>
+    </div>
+    <div class="pm-body">
+      <div class="pm-chip">
+        <span class="pm-chip__dot">◉</span>
+        <span class="pm-chip__label">Контекст: вся схема</span>
+      </div>
+
+      <div class="pm-onboarding">
+        <div class="pm-onboarding__title">Помощник на схеме (LLM)</div>
+        <ul class="pm-onboarding__list">
+          <li><span class="pm-onboarding__num">1</span><span>→ Предложить следующий блок — кандидаты из каталога операций после выбранного шага.</span></li>
+          <li><span class="pm-onboarding__num">2</span><span>💡 Объяснить шаг — почему ИИ предложил именно этот блок.</span></li>
+          <li><span class="pm-onboarding__num">3</span><span>⚠ Найти проблемы на схеме — вопрос по выбранному шагу или всей карте.</span></li>
+        </ul>
+        <button class="pm-btn-primary">Понятно, больше не показывать</button>
+      </div>
+
+      <div class="pm-empty" style="flex:0 0 auto; padding: 12px 8px;">
+        <div class="pm-empty__mark">✦</div>
+        <div class="pm-empty__title">Выберите шаг на схеме или задайте вопрос по всей карте</div>
+      </div>
+      <div class="pm-empty__chips" style="align-self:center;">
+        <button class="pm-example">Что происходит на этом шаге?</button>
+        <button class="pm-example">Какой блок логично добавить дальше?</button>
+      </div>
+
+      <div class="pm-section">Быстрые действия</div>
+      <div class="pm-quick">
+        <button class="pm-qcard pm-qcard--hover">
+          <span class="pm-qcard__icon">→</span>
+          <span class="pm-qcard__text">Предложить следующий блок</span>
+          <span class="pm-qcard__chevron">›</span>
+        </button>
+        <button class="pm-qcard">
+          <span class="pm-qcard__icon">💡</span>
+          <span class="pm-qcard__text">Объяснить шаг</span>
+          <span class="pm-qcard__chevron">›</span>
+        </button>
+        <button class="pm-qcard">
+          <span class="pm-qcard__icon">⚠</span>
+          <span class="pm-qcard__text">Есть ли проблемы на схеме?</span>
+          <span class="pm-qcard__chevron">›</span>
+        </button>
+      </div>
+
+      <div style="flex:1"></div>
+      <div class="pm-composer">
+        <input placeholder="Вопрос по схеме…">
+        <button class="pm-send pm-send--disabled">➤</button>
+      </div>
+    </div>
+    <div class="pm-footer">
+      <span class="pm-footer__disc">Ответ генерирует ИИ · проверяйте перед применением</span>
+    </div>
+  </div>
+  <div class="variant-label">A — onboarding + empty + quick actions (первая карточка в hover)</div>
+</div>
+
+<!-- ============ VARIANT B: chat feed + agent card + focus composer ============ -->
+<div class="col">
+  <div class="pm-processman">
+    <div class="pm-header">
+      <div class="pm-avatar">✦</div>
+      <div class="pm-header-text">
+        <span class="pm-title">PROCESSMAN</span>
+        <span class="pm-status pm-status--active">Анализирую схему…</span>
+      </div>
+      <span class="pm-badge">Схема</span>
+      <button class="pm-hbtn">?</button>
+      <button class="pm-hbtn">«</button>
+      <button class="pm-hbtn">×</button>
+    </div>
+    <div class="pm-body">
+      <div class="pm-chip">
+        <span class="pm-chip__dot">◉</span>
+        <span class="pm-chip__label">Выбран шаг: <span class="pm-chip__node">op_cook_pasta</span></span>
+        <button class="pm-chip__reset">×</button>
+      </div>
+
+      <div class="pm-feed">
+        <div class="pm-msg-user">
+          <span class="pm-msg-user__label">Вы</span>
+          <span class="pm-msg-user__text">Что происходит на этом шаге?</span>
+        </div>
+
+        <div class="pm-agent">
+          <div class="pm-agent__header">
+            <span class="pm-agent__avatar">✦</span>
+            <span class="pm-agent__name">PROCESSMAN</span>
+            <span class="pm-agent__time">19:42</span>
+          </div>
+          <div class="pm-agent__body">
+            Шаг <span class="pm-nodechip">📍 op_cook_pasta</span> варит пасту по каталогу операций.
+            Следующий логичный блок — <span class="pm-nodechip">📍 op_plate_dish</span>: после варки
+            блюдо почти всегда переходит к сервировке.
+          </div>
+          <div class="pm-agent__meta">
+            <span class="pm-metachip pm-metachip--violet">Уверенность: высокая</span>
+            <span class="pm-metachip">новый запрос</span>
+            <button class="pm-ghostbtn">↻ Обновить</button>
+          </div>
+        </div>
+
+        <div class="pm-agent">
+          <div class="pm-agent__header">
+            <span class="pm-agent__avatar">✦</span>
+            <span class="pm-agent__name">PROCESSMAN</span>
+          </div>
+          <div class="pm-agent__body" style="padding-bottom: 8px;">
+            <div class="pm-stages">
+              <span class="pm-stages__item" style="opacity:.8; text-decoration: line-through;">Отправляю вопрос…</span>
+              <span class="pm-stages__item pm-stages__item--active">Анализирую схему…</span>
+              <div class="pm-stages__track"><div class="pm-stages__bar"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pm-composer pm-composer--focus">
+        <input value="А почему именно этот блок?">
+        <button class="pm-send">➤</button>
+      </div>
+    </div>
+    <div class="pm-footer">
+      <span class="pm-footer__disc">Ответ генерирует ИИ · проверяйте перед применением</span>
+      <span class="pm-cache">из кэша · 0 токенов</span>
+      <button class="pm-fb">👍</button>
+      <button class="pm-fb">👎</button>
+    </div>
+  </div>
+  <div class="variant-label">B — лента: agent-карточка (header/body/meta) + этапы + composer focus</div>
+</div>
+
+<!-- ============ VARIANT C: rail ============ -->
+<div class="col">
+  <div class="pm-rail">
+    <div class="pm-avatar">✦</div>
+    <button class="pm-expand">»</button>
+  </div>
+  <div class="variant-label">C — collapse rail 48px</div>
+</div>
+
+</body>
+</html>

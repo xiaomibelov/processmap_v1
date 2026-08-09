@@ -75,26 +75,27 @@
   }
 }
 
-/* --- шапка 48px: иконка + PROCESSMAN + бейдж вкладки + крестик --- */
+/* --- шапка 56px: white surface, аватар + статус + действия --- */
 .pm-processman__header {
-  flex: 0 0 48px;
-  height: 48px;
+  flex: 0 0 56px;
+  height: 56px;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 0 12px;
+  background: var(--pm-tobe-surface);
   border-bottom: 1px solid var(--pm-tobe-border);
 }
 
-/* ✦-аватар ассистента: 28px SOLID-фиолетовая плашка radius 8 (видимый agent-цвет) */
+/* ✦-аватар ассистента: 32px SOLID-фиолетовая плашка radius 10 (видимый agent-цвет) */
 .pm-processman__icon {
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--pm-tobe-assistant);
   color: var(--pm-tobe-on-primary);
 }
@@ -245,14 +246,49 @@
   word-break: break-word;
 }
 
+/* meta-футер agent-карточки: чипы + ghost-кнопка «Обновить» */
 .pm-processman__answer-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  margin-top: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--pm-tobe-border);
   font-size: 11px;
   color: var(--pm-tobe-muted-fg);
+}
+
+.pm-processman__metachip {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--pm-tobe-muted);
+  border: 1px solid var(--pm-tobe-border);
+  font-weight: 600;
+}
+
+.pm-processman__metachip--violet {
+  color: var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant-soft);
+  border-color: color-mix(in srgb, var(--pm-tobe-assistant) 30%, var(--pm-tobe-border));
+}
+
+.pm-processman__ghostbtn {
+  margin-left: auto;
+  padding: 3px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--pm-tobe-border);
+  background: transparent;
+  color: var(--pm-tobe-muted-fg);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.pm-processman__ghostbtn:hover {
+  color: var(--pm-tobe-assistant);
+  border-color: var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant-soft);
 }
 
 .pm-processman__fallback-badge {
@@ -335,7 +371,7 @@
   border: 1px solid var(--pm-tobe-accent);
 }
 
-/* --- футер 40px: дисклеймер + бейдж кэша + 👍/👎 --- */
+/* --- футер 40px: white surface, дисклеймер + бейдж кэша + 👍/👎 --- */
 .pm-processman__footer {
   flex: 0 0 40px;
   height: 40px;
@@ -343,6 +379,7 @@
   align-items: center;
   gap: 8px;
   padding: 0 12px;
+  background: var(--pm-tobe-surface);
   border-top: 1px solid var(--pm-tobe-border);
   font-size: 11px;
   color: var(--pm-tobe-muted-fg);
@@ -631,27 +668,36 @@
   word-break: break-word;
 }
 
-/* agent-карточка: full-width, левая кромка + soft-фиолетовый фон, аватар ✦ */
+/* agent-карточка (прототип v3): header (soft-violet) / body (surface) / meta-футер;
+   левая кромка 3px agent-цвета, белая surface, тень карточки */
 .pm-processman-msg--agent {
   display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  padding: 10px 12px 10px 10px;
+  flex-direction: column;
   border-radius: 12px;
-  background: var(--pm-tobe-assistant-soft);
-  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 22%, var(--pm-tobe-border));
+  background: var(--pm-tobe-surface);
+  border: 1px solid var(--pm-tobe-border);
   border-left: 3px solid var(--pm-tobe-assistant);
+  box-shadow: var(--pm-tobe-shadow-sm);
+  overflow: hidden;
 }
 
 .pm-processman-msg--streaming {
   cursor: pointer;
 }
 
+.pm-processman-msg__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--pm-tobe-assistant-soft);
+  border-bottom: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 18%, var(--pm-tobe-border));
+}
+
 .pm-processman-msg__avatar {
   flex: 0 0 20px;
   width: 20px;
   height: 20px;
-  margin-top: 1px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -662,8 +708,22 @@
 
 .pm-processman-msg__avatar svg {
   display: block;
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
+}
+
+.pm-processman-msg__agent-name {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--pm-tobe-assistant);
+}
+
+.pm-processman-msg__time {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--pm-tobe-muted-fg);
 }
 
 .pm-processman-msg__body {
@@ -672,6 +732,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding: 10px 12px;
 }
 
 .pm-processman-msg__text {
@@ -759,7 +820,7 @@
   margin-top: 4px;
   padding: 6px 10px;
   border-left: 2px solid var(--pm-tobe-assistant);
-  background: var(--pm-tobe-surface);
+  background: var(--pm-tobe-muted);
   border-radius: 0 8px 8px 0;
   display: flex;
   flex-direction: column;
@@ -903,6 +964,16 @@
   gap: 6px;
 }
 
+/* секционный лейбл над карточками */
+.pm-processman-quick__section {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--pm-tobe-muted-fg);
+  margin-top: 2px;
+}
+
 .pm-processman-quick {
   display: flex;
   flex-direction: column;
@@ -960,7 +1031,19 @@
 }
 
 .pm-processman-quick__text {
+  flex: 1 1 auto;
   font-weight: 600;
+}
+
+.pm-processman-quick__chevron {
+  flex: 0 0 auto;
+  color: var(--pm-tobe-muted-fg);
+  font-size: 15px;
+  transition: color 160ms ease;
+}
+
+.pm-processman-quick__card:hover:not(:disabled) .pm-processman-quick__chevron {
+  color: var(--pm-tobe-assistant);
 }
 
 .pm-processman-quick__more {
@@ -1004,6 +1087,7 @@
   background: var(--pm-tobe-assistant);
   color: var(--pm-tobe-on-primary);
   font-size: 22px;
+  box-shadow: 0 0 0 6px var(--pm-tobe-assistant-soft);
 }
 
 .pm-processman-empty__title {
@@ -1041,24 +1125,43 @@
   transform: translateY(-1px);
 }
 
-/* --- composer: focus-ring 2px violet, отправка — круг 32px solid agent --- */
+/* --- composer: плавающая pill-плашка (surface), borderless input + круг send 32px --- */
 .pm-processman-composer {
   flex: 0 0 auto;
   display: flex;
   gap: 8px;
   align-items: center;
+  padding: 6px 6px 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--pm-tobe-border);
+  background: var(--pm-tobe-surface);
+  box-shadow: var(--pm-tobe-shadow-sm);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+/* focus-ring 2px violet — на всей плашке (input внутри без рамки) */
+.pm-processman-composer:focus-within {
+  border-color: var(--pm-tobe-assistant);
+  box-shadow: 0 0 0 2px var(--pm-tobe-assistant);
 }
 
 .pm-processman-composer .pm-processman__qa-input {
   flex: 1 1 auto;
-  background: var(--pm-tobe-surface);
-  transition: border-color 160ms ease, box-shadow 160ms ease;
+  height: auto;
+  padding: 6px 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
 }
 
 .pm-processman-composer .pm-processman__qa-input:focus {
   outline: none;
-  border-color: var(--pm-tobe-assistant);
-  box-shadow: 0 0 0 2px var(--pm-tobe-assistant);
+  border: none;
+  box-shadow: none;
+}
+
+.pm-processman-composer .pm-processman__qa-input:disabled {
+  background: transparent;
 }
 
 .pm-processman-composer__send {
