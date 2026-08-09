@@ -5500,6 +5500,9 @@ function ProcessStage({
               apiPatchSession,
               getBaseDiagramStateVersion,
               rememberDiagramStateVersion,
+              // FIX-BPMN-IMPORT-SAVE: восстановленная версия содержит XML →
+              // сессия XML-truth; nodes/edges из проекции в PATCH не идут.
+              isXmlTruthSession: String(xml || "").trim() !== "",
             });
             if (syncRes.ok) {
               const serverSession =
@@ -6877,6 +6880,10 @@ function ProcessStage({
               apiPatchSession,
               getBaseDiagramStateVersion,
               rememberDiagramStateVersion,
+              // FIX-BPMN-IMPORT-SAVE: XML только что персистнут через PUT /bpmn
+              // (import_bpmn) → сессия XML-truth; nodes/edges из проекции в PATCH
+              // не отправляем (409 DRAFT_GRAPH_READ_ONLY_XML_TRUTH).
+              isXmlTruthSession: true,
             });
             if (syncRes.ok) {
               const serverSession =
