@@ -118,6 +118,7 @@ function AgentCard({
   const failed = msg.status === AGENT_STATUS.ERROR;
   const meta = msg.meta || {};
   const trace = meta.trace && typeof meta.trace === "object" ? meta.trace : null;
+  const complete = !pending && !failed && done && !stopped;
 
   return (
     <div
@@ -128,8 +129,20 @@ function AgentCard({
       }}
       title={streaming && !done ? t.skipRevealAria : undefined}
     >
-      <div className="pm-processman-msg__avatar" aria-hidden="true"
-        dangerouslySetInnerHTML={{ __html: processmanIconRaw }} />
+      {/* карточка агента (прототип v3): header / body / meta */}
+      <div className="pm-processman-msg__header">
+        <span className="pm-processman-msg__avatar" aria-hidden="true"
+          dangerouslySetInnerHTML={{ __html: processmanIconRaw }} />
+        <span className="pm-processman-msg__agent-name">{t.buttonLabel}</span>
+        {complete ? (
+          <span
+            className="pm-processman-msg__time"
+            data-testid={isLast ? "processman-answer-time" : undefined}
+          >
+            {formatClock(msg.at)}
+          </span>
+        ) : null}
+      </div>
       <div className="pm-processman-msg__body">
         {pending ? (
           <div data-testid="processman-answer-loading">
@@ -175,32 +188,6 @@ function AgentCard({
                 </div>
               </details>
             ) : null}
-
-            {isLast && done && !stopped ? (
-              <div className="pm-processman__answer-meta" data-testid="processman-answer-ok">
-                {meta.confidence != null ? (
-                  <span data-testid="processman-answer-confidence">
-                    {t.confidenceLabel}: {Math.round(meta.confidence * 100)}%
-                  </span>
-                ) : null}
-                <span data-testid="processman-answer-time">{formatClock(msg.at)}</span>
-                {meta.fallback ? (
-                  <span className="pm-processman__fallback-badge" data-testid="processman-answer-fallback">
-                    {t.fallbackBadge}
-                  </span>
-                ) : null}
-                <button
-                  type="button"
-                  className="pm-processman__action"
-                  style={{ height: 28, fontSize: 12, marginLeft: "auto" }}
-                  data-testid="processman-answer-refresh"
-                  aria-label={t.refreshAria}
-                  onClick={(e) => { e.stopPropagation(); onRefresh?.(msg); }}
-                >
-                  ↻ {t.refreshLabel}
-                </button>
-              </div>
-            ) : null}
           </>
         ) : null}
 
@@ -219,6 +206,29 @@ function AgentCard({
           </button>
         ) : null}
       </div>
+      {isLast && complete ? (
+        <div className="pm-processman__answer-meta" data-testid="processman-answer-ok">
+          {meta.confidence != null ? (
+            <span className="pm-processman__metachip pm-processman__metachip--violet" data-testid="processman-answer-confidence">
+              {t.confidenceLabel}: {Math.round(meta.confidence * 100)}%
+            </span>
+          ) : null}
+          {meta.fallback ? (
+            <span className="pm-processman__fallback-badge" data-testid="processman-answer-fallback">
+              {t.fallbackBadge}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className="pm-processman__ghostbtn"
+            data-testid="processman-answer-refresh"
+            aria-label={t.refreshAria}
+            onClick={(e) => { e.stopPropagation(); onRefresh?.(msg); }}
+          >
+            ↻ {t.refreshLabel}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
