@@ -43,8 +43,8 @@ test("ApiDocsPage: SwaggerUI из swagger-ui-react, спека через API-к
   const src = fs.readFileSync(path.join(FRONTEND_ROOT, "src/features/apiDocs/ApiDocsPage.jsx"), "utf8");
   assert.match(src, /import SwaggerUI from "swagger-ui-react"/);
   assert.match(src, /import "swagger-ui-react\/swagger-ui.css"/);
-  assert.match(src, /apiRequest\("\/api\/openapi.json"\)/, "спека грузится API-клиентом (Bearer, как у приложения)");
-  assert.match(src, /convertOpenApi31to30/, "конвертация 3.1→3.0 на клиенте (swagger-ui@4)");
+  assert.match(src, /apiRequest\("\/api\/openapi_ru.json"\)/, "русская обогащённая спека (защищённый эндпоинт)");
+  assert.match(src, /convertOpenApi31to30/, "конвертер 3.1→3.0 на клиенте (страховка)");
   assert.match(src, /spec=\{spec\}/);
   assert.match(src, /requestInterceptor=\{withBearerToken\}/);
   assert.match(src, /tryItOutEnabled/, "«Try it out» включён");
