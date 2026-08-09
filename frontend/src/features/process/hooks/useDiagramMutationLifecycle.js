@@ -174,6 +174,10 @@ export default function useDiagramMutationLifecycle({
         apiPatchSession,
         getBaseDiagramStateVersion,
         rememberDiagramStateVersion,
+        // FIX-BPMN-IMPORT-SAVE: XML только что сохранён через PUT /bpmn выше
+        // (saveFromModeler/saveFromXmlDraft) → сессия XML-truth; nodes/edges
+        // из проекции в PATCH не отправляем (409 DRAFT_GRAPH_READ_ONLY_XML_TRUTH).
+        isXmlTruthSession: xml.trim() !== "",
       });
       traceProcess("diagram.autosave_patch_backend", {
         sid,

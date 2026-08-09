@@ -95,6 +95,56 @@ test("session PATCH response readers normalize ack and conflict versions", () =>
   }), 82);
 });
 
+test("session PATCH coordinator strips nodes/edges for XML-truth sessions (FIX-BPMN-IMPORT-SAVE)", async () => {
+  const sent = [];
+  const apiPatchSession = async (sid, payload) => {
+    sent.push({ sid, payload: { ...payload } });
+    return { ok: true, session: { diagram_state_version: 21 } };
+  };
+
+  const response = await enqueueSessionPatchCasWrite({
+    sessionId: "sid_xml_truth",
+    patch: {
+      interview: { steps: [{ id: "s1" }] },
+      nodes: [{ id: "n1" }],
+      edges: [{ id: "e1" }],
+      base_diagram_state_version: 20,
+    },
+    apiPatchSession,
+    isXmlTruthSession: true,
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(sent.length, 1);
+  assert.equal("nodes" in sent[0].payload, false, "nodes must be stripped for XML-truth session");
+  assert.equal("edges" in sent[0].payload, false, "edges must be stripped for XML-truth session");
+  assert.deepEqual(sent[0].payload.interview, { steps: [{ id: "s1" }] });
+  assert.equal(sent[0].payload.base_diagram_state_version, 20);
+});
+
+test("session PATCH coordinator keeps nodes/edges for draft-graph sessions (no flag)", async () => {
+  const sent = [];
+  const apiPatchSession = async (sid, payload) => {
+    sent.push({ sid, payload: { ...payload } });
+    return { ok: true, session: { diagram_state_version: 31 } };
+  };
+
+  const response = await enqueueSessionPatchCasWrite({
+    sessionId: "sid_draft_graph",
+    patch: {
+      interview: { steps: [] },
+      nodes: [{ id: "n1" }],
+      edges: [{ id: "e1" }],
+    },
+    apiPatchSession,
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0].payload.nodes, [{ id: "n1" }]);
+  assert.deepEqual(sent[0].payload.edges, [{ id: "e1" }]);
+});
+
 test("session PATCH coordinator bumps tracked version on successful ack", async () => {
   const response = await enqueueSessionPatchCasWrite({
     sessionId: "sid_ack",
