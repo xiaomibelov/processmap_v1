@@ -24,7 +24,14 @@ const analysisSrc = readFileSync(fileURLToPath(new URL("./ProcessmanAnalysis.jsx
 const neutralSrc = readFileSync(fileURLToPath(new URL("./ProcessmanNeutral.jsx", import.meta.url)), "utf8");
 const viewSrc = readFileSync(fileURLToPath(new URL("./processmanView.js", import.meta.url)), "utf8");
 const stageSrc = readFileSync(fileURLToPath(new URL("../../../components/ProcessStage.jsx", import.meta.url)), "utf8");
-const blockSrc = readFileSync(fileURLToPath(new URL("../../../components/process/SchemaAssistantBlock.jsx", import.meta.url)), "utf8");
+const chatFeedSrc = readFileSync(fileURLToPath(new URL("./ProcessmanChatFeed.jsx", import.meta.url)), "utf8");
+const composerSrc = readFileSync(fileURLToPath(new URL("./ProcessmanComposer.jsx", import.meta.url)), "utf8");
+const contextChipSrc = readFileSync(fileURLToPath(new URL("./ProcessmanContextChip.jsx", import.meta.url)), "utf8");
+const quickActionsSrc = readFileSync(fileURLToPath(new URL("./ProcessmanQuickActions.jsx", import.meta.url)), "utf8");
+const emptyStateSrc = readFileSync(fileURLToPath(new URL("./ProcessmanEmptyState.jsx", import.meta.url)), "utf8");
+const onboardingSrc = readFileSync(fileURLToPath(new URL("./ProcessmanOnboarding.jsx", import.meta.url)), "utf8");
+const chatStoreSrc = readFileSync(fileURLToPath(new URL("./chat/processmanChatStore.js", import.meta.url)), "utf8");
+const mentionsSrc = readFileSync(fileURLToPath(new URL("./chat/nodeMentions.js", import.meta.url)), "utf8");
 
 let viteServer = null;
 
@@ -65,10 +72,23 @@ test("source: компоненты панели без авто-LLM-вызово
   for (const effect of panelEffects) {
     assert.ok(!/apiLlm|fetch\(/.test(effect), `useEffect панели без сетевых вызовов: ${effect.slice(0, 80)}…`);
   }
+  // Новые чат-компоненты (PR-1): вообще без apiLlm/fetch — чистый UI
+  for (const [name, src] of [
+    ["ProcessmanChatFeed", chatFeedSrc],
+    ["ProcessmanComposer", composerSrc],
+    ["ProcessmanContextChip", contextChipSrc],
+    ["ProcessmanQuickActions", quickActionsSrc],
+    ["ProcessmanEmptyState", emptyStateSrc],
+    ["ProcessmanOnboarding", onboardingSrc],
+    ["processmanChatStore", chatStoreSrc],
+    ["nodeMentions", mentionsSrc],
+  ]) {
+    const code = src.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
+    assert.ok(!/apiLlm[A-Za-z]*\(/.test(code), `${name}: нет LLM-вызовов`);
+    assert.ok(!/\bfetch\(/.test(code), `${name}: нет fetch`);
+  }
   assert.ok(panelSrc.includes("apiLlmFeedback"), "feedback-вызов есть (по клику 👍/👎)");
   assert.ok(!/apiLlm(SuggestNext|ExplainStep|StepQa|Analysis)\(/.test(panelSrc), "ProcessmanPanel не вызывает LLM-действия сам");
-  // SchemaAssistantBlock перенесён целиком: действия только в обработчиках клика
-  assert.ok(!/\buseEffect\b/.test(blockSrc), "SchemaAssistantBlock: нет useEffect");
 });
 
 test("source: ровно один apiLlmStatus() в ProcessStage, 1× на сессию через ref", () => {
@@ -157,6 +177,15 @@ async function flush() {
   });
 }
 
+// Ждём появления testid (typewriter + passive effects — не мгновенны).
+async function waitFor(doc, testid, { tries = 12, stepMs = 150 } = {}) {
+  for (let i = 0; i < tries; i += 1) {
+    if (doc.querySelector(`[data-testid="${testid}"]`)) return true;
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, stepMs)); });
+  }
+  return !!doc.querySelector(`[data-testid="${testid}"]`);
+}
+
 function panelProps(extra = {}) {
   return {
     sessionId: "sess_1",
@@ -206,47 +235,58 @@ test("behavior: открытие панели + смена контекста (�
   }
 });
 
-test("behavior: только клик действия = ровно 1 вызов /suggest-next; клик по «Схема»-помощнику = 1 вызов", async () => {
+test("behavior: только клик действия = ровно 1 вызов /suggest-next; отправка вопроса из composer = 1 вызов /step-qa", async () => {
   const mod = await loadPanel();
+  const store = await viteServer.ssrLoadModule("/src/features/process/processman/chat/processmanChatStore.js");
+  store.resetChatHistories();
   const env = setupDom();
   try {
-    // TO BE-контекст: клик suggest
     let doc;
     await act(async () => {
       env.root.render(React.createElement(mod.default, panelProps()));
     });
     await flush();
     doc = env.dom.window.document;
+
+    // composer: пример вопроса → отправка = ровно 1 вызов /step-qa
+    // (клик по чипу-примеру подставляет текст без сети; send активен при выбранном шаге)
+    const example = doc.querySelector('[data-testid="processman-example-q1"]');
+    assert.notEqual(example, null, "чип-пример вопроса (empty state)");
+    await act(async () => {
+      example.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+    const send = doc.querySelector('[data-testid="processman-action-qa"]');
+    assert.notEqual(send, null, "кнопка отправки вопроса");
+    assert.equal(send.disabled, false, "send активен после подстановки примера");
+    assert.equal(env.calls.length, 0, "подстановка примера — без вызовов");
+    await act(async () => {
+      send.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+    assert.equal(env.calls.length, 1, "отправка вопроса = ровно 1 вызов");
+    assert.ok(env.calls[0].url.includes("/step-qa"), `URL step-qa: ${env.calls[0].url}`);
+    assert.equal(env.calls[0].method, "POST");
+
+    // ждём завершения typewriter предыдущего ответа (пока reveal — действия disabled)
+    assert.equal(await waitFor(doc, "processman-answer-ok"), true, "ответ qa доиграл");
+
+    // TO BE-контекст: клик suggest (quick actions свернуты под «⋯» после первого сообщения)
+    const more = doc.querySelector('[data-testid="processman-actions-more"]');
+    assert.notEqual(more, null, "кнопка «⋯»");
+    await act(async () => {
+      more.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
     const suggest = doc.querySelector('[data-testid="processman-action-suggest"]');
     assert.notEqual(suggest, null);
     await act(async () => {
       suggest.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
     });
     await flush();
-    assert.equal(env.calls.length, 1, "клик suggest = ровно 1 вызов");
-    assert.ok(env.calls[0].url.includes("/suggest-next"), `URL suggest-next: ${env.calls[0].url}`);
-    assert.equal(env.calls[0].method, "POST");
-
-    // diagram-контекст: клик по действию SchemaAssistantBlock (перенесён в панель)
-    await act(async () => {
-      env.root.render(React.createElement(mod.default, panelProps({ tab: "diagram" })));
-    });
-    await flush();
-    const toggle = doc.querySelector('[data-testid="schema-assistant-toggle"]');
-    assert.notEqual(toggle, null);
-    await act(async () => {
-      toggle.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
-    });
-    await flush();
-    assert.equal(env.calls.length, 1, "открытие помощника — без новых вызовов");
-    const suggestSa = doc.querySelector('[data-testid="schema-assistant-suggest"]');
-    assert.notEqual(suggestSa, null);
-    await act(async () => {
-      suggestSa.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
-    });
-    await flush();
-    assert.equal(env.calls.length, 2, "клик действия помощника = ровно 1 новый вызов");
+    assert.equal(env.calls.length, 2, "клик suggest = ровно 1 новый вызов");
     assert.ok(env.calls[1].url.includes("/suggest-next"), `URL suggest-next: ${env.calls[1].url}`);
+    assert.equal(env.calls[1].method, "POST");
   } finally {
     await env.cleanup();
   }
