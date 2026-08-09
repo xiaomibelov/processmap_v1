@@ -194,6 +194,8 @@
   --pm-tobe-warning: #b45309;        /* предупреждения (4.5:1 на белом)          */
   --pm-tobe-step-pending: #b8c6da;   /* степпер pending на #16202f ≈ 7:1 (Z0)    */
   --pm-tobe-step-na: #8496ad;        /* степпер «не требуется» на #16202f ≈ 5.3:1 (Z0) */
+  --pm-tobe-assistant: #6d28d9;      /* PROCESSMAN-ассистент: аватар/чипы/spotlight (5.9:1 на белом) */
+  --pm-tobe-assistant-soft: #ede9fe; /* фон карточек/чипов ассистента            */
   --pm-tobe-font-body: 'Fira Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --pm-tobe-font-mono: 'Fira Code', ui-monospace, 'Cascadia Code', monospace;
 }

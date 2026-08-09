@@ -8077,6 +8077,20 @@ function ProcessStage({
               closing={processmanClosing || processmanEntering}
               onOpenFullAnalysis={() => switchTab("interview")}
               onClose={closeProcessman}
+              diagramNodes={draft?.nodes}
+              onFocusElement={(elementId) => {
+                bpmnRef.current?.focusNode?.(elementId, {
+                  markerClass: "fpcAttentionJumpFocus",
+                  durationMs: 2200,
+                  targetZoom: 0.92,
+                  centerInViewport: true,
+                  clearExistingSelection: true,
+                  source: "processman_panel",
+                });
+              }}
+              onClearSelection={() => {
+                bpmnRef.current?.selectElements?.([], { source: "processman_panel" });
+              }}
             />
           ) : null}
           </div>
