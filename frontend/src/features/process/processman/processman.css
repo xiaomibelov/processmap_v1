@@ -406,3 +406,548 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* ================= PROCESSMAN-REDESIGN (PR-1) =================
+   Чат-лента, контекст-чип, quick actions, empty state, onboarding,
+   collapse-to-icon rail. Только токены --pm-tobe-* (MASTER.md). */
+
+/* --- шапка: текстовый блок (название + статус) --- */
+.pm-processman__header-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.pm-processman__status {
+  font-size: 11px;
+  color: var(--pm-tobe-muted-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pm-processman__status--active {
+  color: var(--pm-tobe-assistant);
+}
+
+.pm-processman__header-btn {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--pm-tobe-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pm-tobe-muted-fg);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.pm-processman__header-btn:hover {
+  background: var(--pm-tobe-muted);
+  color: var(--pm-tobe-fg);
+}
+
+/* --- collapse-to-icon: rail 48px (прецедент — workspaceLeft--rail) --- */
+.pm-processman--collapsed {
+  flex: 0 0 48px;
+  width: 48px;
+  overflow: hidden;
+}
+
+@media (max-width: 1199px) {
+  .pm-processman--collapsed {
+    width: 48px;
+    box-shadow: none;
+  }
+}
+
+.pm-processman--collapsed .pm-processman__header {
+  flex-direction: column;
+  height: auto;
+  padding: 10px 0;
+  gap: 10px;
+  border-bottom: none;
+}
+
+.pm-processman__expand {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--pm-tobe-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pm-tobe-muted-fg);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.pm-processman__expand:hover {
+  background: var(--pm-tobe-muted);
+  color: var(--pm-tobe-assistant);
+}
+
+.pm-processman__feedback-btn--active {
+  color: var(--pm-tobe-assistant);
+  border-color: var(--pm-tobe-assistant);
+}
+
+.pm-processman__feedback-thanks {
+  font-size: 11px;
+  color: var(--pm-tobe-assistant);
+}
+
+/* --- обёртка чата в теле панели --- */
+.pm-processman__chat-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.pm-processman-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* --- лента сообщений --- */
+.pm-processman-feed {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 2px;
+}
+
+.pm-processman-msg--user {
+  align-self: flex-end;
+  max-width: 86%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 12px 12px 4px 12px;
+  background: var(--pm-tobe-assistant-soft);
+  border: 1px solid var(--pm-tobe-border);
+}
+
+.pm-processman-msg__user-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--pm-tobe-assistant);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pm-processman-msg__user-text {
+  font-size: 13px;
+  color: var(--pm-tobe-fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pm-processman-msg--agent {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px;
+  border-radius: 10px;
+  background: var(--pm-tobe-muted);
+  border: 1px solid var(--pm-tobe-border);
+}
+
+.pm-processman-msg--streaming {
+  cursor: pointer;
+}
+
+.pm-processman-msg__avatar {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--pm-tobe-assistant);
+}
+
+.pm-processman-msg__avatar svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.pm-processman-msg__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-processman-msg__text {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--pm-tobe-fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pm-processman-msg__stopped {
+  font-size: 11px;
+  color: var(--pm-tobe-muted-fg);
+}
+
+.pm-processman-caret {
+  color: var(--pm-tobe-assistant);
+  animation: pm-processman-caret-blink 900ms steps(2, start) infinite;
+}
+
+@keyframes pm-processman-caret-blink {
+  to { visibility: hidden; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pm-processman-caret {
+    animation: none;
+  }
+}
+
+/* --- индикатор этапов pending (честный lifecycle) --- */
+.pm-processman-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.pm-processman-stages__item {
+  color: var(--pm-tobe-muted-fg);
+  opacity: 0.55;
+}
+
+.pm-processman-stages__item--active {
+  color: var(--pm-tobe-assistant);
+  opacity: 1;
+}
+
+.pm-processman-stages__item--done {
+  opacity: 0.8;
+  text-decoration: line-through;
+}
+
+/* --- «Источники» (trace explain) --- */
+.pm-processman-sources {
+  font-size: 12px;
+  color: var(--pm-tobe-muted-fg);
+}
+
+.pm-processman-sources summary {
+  cursor: pointer;
+  color: var(--pm-tobe-assistant);
+}
+
+.pm-processman-sources__body {
+  margin-top: 4px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant-soft);
+  border-radius: 0 6px 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pm-processman-sources__rule {
+  font-weight: 600;
+  color: var(--pm-tobe-fg);
+}
+
+/* --- кликабельные чипы узлов 📍 в ответах --- */
+.pm-processman-nodechip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  margin: 0 1px;
+  border-radius: 999px;
+  border: 1px solid var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant-soft);
+  color: var(--pm-tobe-assistant);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.pm-processman-nodechip:hover {
+  background: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-on-primary);
+}
+
+/* --- кнопка «Стоп» --- */
+.pm-processman-stop {
+  align-self: flex-start;
+  padding: 2px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--pm-tobe-border);
+  background: transparent;
+  color: var(--pm-tobe-muted-fg);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pm-processman-stop:hover {
+  color: var(--pm-tobe-fg);
+  background: var(--pm-tobe-muted);
+  border-color: var(--pm-tobe-assistant);
+}
+
+/* --- контекст-чип под шапкой --- */
+.pm-processman-contextchip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px dashed var(--pm-tobe-border);
+  background: var(--pm-tobe-assistant-soft);
+  font-size: 12px;
+}
+
+.pm-processman-contextchip__dot {
+  color: var(--pm-tobe-assistant);
+  font-size: 10px;
+}
+
+.pm-processman-contextchip__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: var(--pm-tobe-fg);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+
+.pm-processman-contextchip__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-processman-contextchip__node {
+  font-weight: 600;
+  color: var(--pm-tobe-assistant);
+}
+
+.pm-processman-contextchip__reset {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pm-tobe-muted-fg);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.pm-processman-contextchip__reset:hover {
+  background: var(--pm-tobe-muted);
+  color: var(--pm-tobe-fg);
+}
+
+/* --- quick actions: full-width карточки --- */
+.pm-processman-quick-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-processman-quick {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-processman-quick__card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--pm-tobe-border);
+  background: var(--pm-tobe-bg);
+  color: var(--pm-tobe-fg);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pm-processman-quick__card:hover:not(:disabled) {
+  border-color: var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant-soft);
+}
+
+.pm-processman-quick__card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pm-processman-quick__icon {
+  flex: 0 0 auto;
+  width: 20px;
+  text-align: center;
+  color: var(--pm-tobe-assistant);
+  font-size: 14px;
+}
+
+.pm-processman-quick__more {
+  align-self: flex-start;
+  padding: 2px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--pm-tobe-border);
+  background: transparent;
+  color: var(--pm-tobe-muted-fg);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pm-processman-quick__more:hover {
+  color: var(--pm-tobe-assistant);
+  border-color: var(--pm-tobe-assistant);
+}
+
+/* --- пустое состояние --- */
+.pm-processman-empty {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 18px 8px;
+  text-align: center;
+}
+
+.pm-processman-empty__title {
+  font-size: 13px;
+  color: var(--pm-tobe-muted-fg);
+  max-width: 260px;
+}
+
+.pm-processman-empty__chips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 280px;
+}
+
+.pm-processman-empty__chip {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--pm-tobe-border);
+  background: var(--pm-tobe-bg);
+  color: var(--pm-tobe-assistant);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pm-processman-empty__chip:hover {
+  border-color: var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant-soft);
+}
+
+/* --- composer --- */
+.pm-processman-composer {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.pm-processman-composer .pm-processman__qa-input {
+  flex: 1 1 auto;
+}
+
+.pm-processman-composer__send {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-on-primary);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.pm-processman-composer__send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* --- onboarding-карточка (one-shot, затем «?» в шапке) --- */
+.pm-processman-onboarding {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant-soft);
+}
+
+.pm-processman-onboarding__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--pm-tobe-assistant);
+  margin-bottom: 6px;
+}
+
+.pm-processman-onboarding__list {
+  margin: 0 0 8px;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pm-tobe-fg);
+}
+
+.pm-processman-onboarding__hide {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--pm-tobe-assistant);
+  background: transparent;
+  color: var(--pm-tobe-assistant);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pm-processman-onboarding__hide:hover {
+  background: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-on-primary);
+}

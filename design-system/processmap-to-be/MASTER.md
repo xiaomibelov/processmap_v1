@@ -29,8 +29,13 @@
 | Border | `#E4E7EB` | `--color-border` |
 | Destructive | `#DC2626` | `--color-destructive` |
 | Ring | `#1E3A5F` | `--color-ring` |
+| Assistant (PROCESSMAN) | `#6D28D9` | `--pm-tobe-assistant` |
+| Assistant Soft | `#EDE9FE` | `--pm-tobe-assistant-soft` |
 
-**Color Notes:** Navy professional + paid green
+**Color Notes:** Navy professional + paid green. Assistant violet is reserved
+exclusively for the PROCESSMAN assistant (avatar, chips, canvas spotlight/ghost)
+and MUST NOT be used for semantic diagram states (selection=blue, problems=red,
+coverage=green/amber, search=yellow).
 
 ### Typography
 

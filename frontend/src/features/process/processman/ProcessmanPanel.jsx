@@ -1,171 +1,235 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ru } from "../../../shared/i18n/ru";
-import SchemaAssistantBlock from "../../../components/process/SchemaAssistantBlock";
 import { apiLlmFeedback } from "../../../lib/api";
 import processmanIconRaw from "../../../assets/icons/processman.svg?raw";
-import ProcessmanTobe from "./ProcessmanTobe";
 import ProcessmanAnalysis from "./ProcessmanAnalysis";
 import ProcessmanNeutral from "./ProcessmanNeutral";
+import ProcessmanTobe from "./ProcessmanTobe";
+import ProcessmanContextChip from "./ProcessmanContextChip";
+import ProcessmanOnboarding from "./ProcessmanOnboarding";
+import { isOnboardingSeen, markOnboardingSeen } from "./chat/processmanOnboarding";
 import { resolvePanelContext, tabBadgeKey } from "./processmanView";
-import "./processman.css";
 
-// LLM4 — панель PROCESSMAN (документ владельца «PROCESSMAN-панель», ревизия 1).
-// Push-дровер 380px (<1200px — overlay 360px + подложка, см. processman.css).
-// Контент следует за активной вкладкой воркбенча (tab + mode), панель НЕ
-// закрывается при переключении вкладок; клик по канвасу НЕ закрывает.
-// Экономика токенов: открытие/смена контекста/выбор шага = 0 LLM-вызовов
-// (запрос только по клику действия в TO BE/Схема-контексте или ↻).
+// PROCESSMAN-REDESIGN (PR-1) — каркас панели: новая шапка (✦ + статус +
+// «?» onboarding + свернуть/закрыть), collapse-to-icon rail (48px),
+// чат-лента в tobe-контексте, футер с дисклеймером + cache badge + 👍/👎.
+// Экономика токенов: панель сама НЕ дёргает LLM API; useEffect без apiLlm/fetch.
 const t = ru.processman;
-
-function ThumbIcon({ up }) {
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
-      strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"
-      style={up ? undefined : { transform: "rotate(180deg)" }}>
-      <path d="M4.5 7v6H2.8a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h1.7zm0 0 2.6-4.6c.8-1.4 2.6-.8 2.6.8V5h3.4a1.2 1.2 0 0 1 1.2 1.4l-1 5A1.2 1.2 0 0 1 12.1 12.6H4.5" />
-    </svg>
-  );
-}
 
 export default function ProcessmanPanel({
   sessionId,
-  tab = "",
+  tab,
   selectedBpmnElement = null,
   llmStatus = null,
   cacheRef,
   closing = false,
   onClose,
   onOpenFullAnalysis,
+  diagramNodes = [],
+  onFocusElement,
+  onClearSelection,
 }) {
   const panelRef = useRef(null);
   const [answerInfo, setAnswerInfo] = useState({ hasAnswer: false, fromCache: false, action: "" });
-  const [feedbackGiven, setFeedbackGiven] = useState("");
-
+  const [feedback, setFeedback] = useState("");
+  const [assistantStatus, setAssistantStatus] = useState("ready");
+  const [collapsed, setCollapsed] = useState(false);
+  const [onboardingSeen, setOnboardingSeen] = useState(() => isOnboardingSeen(globalThis.localStorage));
+  const [helpOpen, setHelpOpen] = useState(false);
   const context = resolvePanelContext({ tab });
 
-  // Клавиатура (спека §10): фокус в панель при открытии; Esc закрывает;
-  // при закрытии фокус возвращается на кнопку тулбара. Focus-trap нет (не нужен).
   useEffect(() => {
-    panelRef.current?.focus();
-  }, []);
-  useEffect(() => () => {
-    // возврат фокуса на кнопку PROCESSMAN после закрытия (размонтирование)
-    const btn = document.querySelector('[data-testid="diagram-action-processman"]');
-    if (btn instanceof HTMLElement) btn.focus();
+    if (closing) return undefined;
+    const node = panelRef.current;
+    node?.focus?.();
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose?.();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [closing, onClose]);
+
+  const handleAnswerChange = useCallback((next) => {
+    setAnswerInfo(next);
+    setFeedback("");
   }, []);
 
-  const sendFeedback = useCallback((rating) => {
-    if (feedbackGiven) return;
-    setFeedbackGiven(rating); // оптимистично; ошибки — молча (спека v1)
-    void apiLlmFeedback({ rating, sessionId, action: answerInfo.action }).catch(() => {});
-  }, [feedbackGiven, sessionId, answerInfo.action]);
+  const handleStatusChange = useCallback((next) => {
+    setAssistantStatus(next);
+  }, []);
+
+  const handleHideOnboarding = useCallback(() => {
+    markOnboardingSeen(globalThis.localStorage);
+    setOnboardingSeen(true);
+    setHelpOpen(false);
+  }, []);
+
+  const sendFeedback = (rating) => {
+    if (!answerInfo.action) return;
+    setFeedback(rating === "up" ? "up" : "down");
+    apiLlmFeedback({
+      rating,
+      sessionId,
+      action: answerInfo.action,
+    }).catch(() => {
+      // Фидбек — оптимистичный: ошибку не показываем в UI.
+    });
+  };
+
+  const statusLabel = assistantStatus === "writing"
+    ? t.statusWriting
+    : assistantStatus === "analyzing"
+      ? t.statusAnalyzing
+      : t.statusReady;
+
+  const showOnboarding = context === "tobe" && (!onboardingSeen || helpOpen);
 
   return (
     <>
-      <div className="pm-processman-backdrop" data-testid="processman-backdrop" aria-hidden="true" />
+      <div
+        className={`pm-processman-backdrop${closing ? " pm-processman-backdrop--closing" : ""}`}
+        data-testid="processman-backdrop"
+        aria-hidden="true"
+      />
       <aside
         ref={panelRef}
-        className={`pm-processman${closing ? " pm-processman--closing" : ""}`}
-        data-testid="processman-panel"
+        className={`pm-processman${closing ? " pm-processman--closing" : ""}${collapsed ? " pm-processman--collapsed" : ""}`}
         role="complementary"
-        aria-label={t.buttonAriaLabel}
+        aria-label={t.buttonLabel}
         tabIndex={-1}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.stopPropagation();
-            onClose?.();
-          }
-        }}
+        data-testid="processman-panel"
       >
-        <div className="pm-processman__header">
-          <span
-            className="pm-processman__icon"
-            data-testid="processman-icon"
-            aria-hidden="true"
-            // SVG из assets/icons/processman.svg (currentColor), статичный файл проекта
-            dangerouslySetInnerHTML={{ __html: processmanIconRaw }}
-          />
-          <span className="pm-processman__title">{t.buttonLabel}</span>
-          <span className="pm-processman__context-badge" data-testid="processman-context-badge">
-            {t[tabBadgeKey(tab)]}
-          </span>
-          <button
-            type="button"
-            className="pm-processman__close"
-            data-testid="processman-close"
-            aria-label={t.close}
-            title={t.close}
-            onClick={() => onClose?.()}
-          >
-            <span aria-hidden="true">×</span>
-          </button>
-        </div>
-
-        <div className="pm-processman__body" data-testid="processman-body">
-          {context === "tobe" ? (
+        <header className="pm-processman__header" data-testid="processman-header">
+          <div className="pm-processman__icon" aria-hidden="true" dangerouslySetInnerHTML={{ __html: processmanIconRaw }} />
+          {!collapsed ? (
             <>
-              <ProcessmanTobe
-                sessionId={sessionId}
-                selectedElement={selectedBpmnElement}
-                llmStatus={llmStatus}
-                cacheRef={cacheRef}
-                onAnswerChange={setAnswerInfo}
-              />
-              {/* SchemaAssistantBlock перенесён в панель (критерий 4): помощник
-                  схемы остаётся доступен под основным TO BE-контентом */}
-              <div data-testid="processman-schema-pane">
-                <SchemaAssistantBlock sessionId={sessionId} selectedElement={selectedBpmnElement} />
+              <div className="pm-processman__header-text">
+                <span className="pm-processman__title">{t.buttonLabel}</span>
+                <span className={`pm-processman__status${assistantStatus !== "ready" ? " pm-processman__status--active" : ""}`} data-testid="processman-status">
+                  {statusLabel}
+                </span>
               </div>
+              <span className="pm-processman__context-badge" data-testid="processman-tab-badge">{t[tabBadgeKey(tab)]}</span>
+              {context === "tobe" && onboardingSeen ? (
+                <button
+                  type="button"
+                  className="pm-processman__header-btn"
+                  data-testid="processman-help"
+                  aria-label={t.helpAria}
+                  title={t.helpAria}
+                  onClick={() => setHelpOpen((v) => !v)}
+                >
+                  ?
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="pm-processman__header-btn"
+                data-testid="processman-collapse"
+                aria-label={t.collapseAria}
+                title={t.collapseAria}
+                onClick={() => setCollapsed(true)}
+              >
+                «
+              </button>
+              <button
+                type="button"
+                className="pm-processman__close"
+                data-testid="processman-close"
+                onClick={onClose}
+                aria-label={t.close}
+                title={t.close}
+              >
+                ×
+              </button>
             </>
-          ) : null}
-          {context === "analysis" ? (
-            <ProcessmanAnalysis
-              sessionId={sessionId}
-              llmStatus={llmStatus}
-              onOpenFullAnalysis={onOpenFullAnalysis}
-            />
-          ) : null}
-          {context === "neutral" ? <ProcessmanNeutral /> : null}
-        </div>
+          ) : (
+            <button
+              type="button"
+              className="pm-processman__expand"
+              data-testid="processman-expand"
+              aria-label={t.expandAria}
+              title={t.expandAria}
+              onClick={() => setCollapsed(false)}
+            >
+              »
+            </button>
+          )}
+        </header>
 
-        <div className="pm-processman__footer" data-testid="processman-footer">
-          <span className="pm-processman__footer-disclaimer" title={t.disclaimer}>{t.disclaimer}</span>
-          {answerInfo.hasAnswer ? (
-            <span className="pm-processman__cache-badge" data-testid="processman-cache-badge">
-              {answerInfo.fromCache ? t.cacheCached : t.cacheFresh}
-            </span>
-          ) : null}
-          {answerInfo.hasAnswer ? (
-            <span className="pm-processman__feedback">
-              {feedbackGiven ? (
-                <span data-testid="processman-feedback-thanks">{t.feedbackThanks}</span>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="pm-processman__feedback-btn"
-                    data-testid="processman-feedback-up"
-                    aria-label={t.feedbackUpAria}
-                    title={t.feedbackUpAria}
-                    onClick={() => sendFeedback("up")}
-                  >
-                    <ThumbIcon up />
-                  </button>
-                  <button
-                    type="button"
-                    className="pm-processman__feedback-btn"
-                    data-testid="processman-feedback-down"
-                    aria-label={t.feedbackDownAria}
-                    title={t.feedbackDownAria}
-                    onClick={() => sendFeedback("down")}
-                  >
-                    <ThumbIcon up={false} />
-                  </button>
-                </>
-              )}
-            </span>
-          ) : null}
-        </div>
+        {!collapsed ? (
+          <div className="pm-processman__body" data-testid="processman-body">
+            {context === "tobe" ? (
+              <div className="pm-processman__chat-wrap">
+                <ProcessmanContextChip
+                  selectedElement={selectedBpmnElement}
+                  onFocus={onFocusElement}
+                  onReset={onClearSelection}
+                />
+                {showOnboarding ? <ProcessmanOnboarding onHide={handleHideOnboarding} /> : null}
+                <ProcessmanTobe
+                  sessionId={sessionId}
+                  selectedElement={selectedBpmnElement}
+                  llmStatus={llmStatus}
+                  cacheRef={cacheRef}
+                  onAnswerChange={handleAnswerChange}
+                  onStatusChange={handleStatusChange}
+                  diagramNodes={diagramNodes}
+                  onFocusElement={onFocusElement}
+                />
+              </div>
+            ) : null}
+            {context === "analysis" ? (
+              <ProcessmanAnalysis
+                sessionId={sessionId}
+                llmStatus={llmStatus}
+                onOpenFullAnalysis={onOpenFullAnalysis}
+              />
+            ) : null}
+            {context === "neutral" ? <ProcessmanNeutral /> : null}
+          </div>
+        ) : null}
+
+        {!collapsed ? (
+          <footer className="pm-processman__footer" data-testid="processman-footer">
+            <span className="pm-processman__footer-disclaimer">{t.disclaimer}</span>
+            {answerInfo.hasAnswer ? (
+              <span className="pm-processman__cache-badge" data-testid="processman-cache-badge">
+                {answerInfo.fromCache ? t.cacheCached : t.cacheFresh}
+              </span>
+            ) : null}
+            {answerInfo.hasAnswer && context === "tobe" ? (
+              <div className="pm-processman__feedback" data-testid="processman-feedback">
+                <button
+                  type="button"
+                  className={`pm-processman__feedback-btn${feedback === "up" ? " pm-processman__feedback-btn--active" : ""}`}
+                  data-testid="processman-feedback-up"
+                  onClick={() => sendFeedback("up")}
+                  aria-label={t.feedbackUpAria}
+                  title={t.feedbackUpAria}
+                >
+                  👍
+                </button>
+                <button
+                  type="button"
+                  className={`pm-processman__feedback-btn${feedback === "down" ? " pm-processman__feedback-btn--active" : ""}`}
+                  data-testid="processman-feedback-down"
+                  onClick={() => sendFeedback("down")}
+                  aria-label={t.feedbackDownAria}
+                  title={t.feedbackDownAria}
+                >
+                  👎
+                </button>
+                {feedback ? (
+                  <span className="pm-processman__feedback-thanks" data-testid="processman-feedback-thanks">{t.feedbackThanks}</span>
+                ) : null}
+              </div>
+            ) : null}
+          </footer>
+        ) : null}
       </aside>
     </>
   );
