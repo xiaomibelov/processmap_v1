@@ -32,6 +32,8 @@
 | Assistant (PROCESSMAN) | `#6D28D9` | `--pm-tobe-assistant` |
 | Assistant Soft | `#EDE9FE` | `--pm-tobe-assistant-soft` |
 | Assistant Strong (hover/active) | `#5B21B6` | `--pm-tobe-assistant-strong` |
+| Surface (cards on bg) | `#FFFFFF` | `--pm-tobe-surface` |
+| Shadow SM (cards) | `rgba(15,23,42,.08)` | `--pm-tobe-shadow-sm` |
 | Shadow Pop (floating) | `rgba(15,23,42,.16)` | `--pm-tobe-shadow-pop` |
 | Shadow Lift (card hover) | `rgba(15,23,42,.10)` | `--pm-tobe-shadow-lift` |
 

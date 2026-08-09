@@ -86,7 +86,7 @@
   border-bottom: 1px solid var(--pm-tobe-border);
 }
 
-/* ✦-аватар ассистента: 28px плашка soft-фиолетового с agent-цветом глифа */
+/* ✦-аватар ассистента: 28px SOLID-фиолетовая плашка radius 8 (видимый agent-цвет) */
 .pm-processman__icon {
   flex: 0 0 28px;
   width: 28px;
@@ -95,8 +95,8 @@
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  background: var(--pm-tobe-assistant-soft);
-  color: var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-on-primary);
 }
 
 .pm-processman__icon svg {
@@ -759,7 +759,7 @@
   margin-top: 4px;
   padding: 6px 10px;
   border-left: 2px solid var(--pm-tobe-assistant);
-  background: var(--pm-tobe-bg);
+  background: var(--pm-tobe-surface);
   border-radius: 0 8px 8px 0;
   display: flex;
   flex-direction: column;
@@ -779,7 +779,7 @@
   margin: 0 1px;
   border-radius: 999px;
   border: 1px solid var(--pm-tobe-assistant);
-  background: var(--pm-tobe-bg);
+  background: var(--pm-tobe-surface);
   color: var(--pm-tobe-assistant);
   font-family: var(--pm-tobe-font-mono);
   font-size: 11px;
@@ -814,14 +814,14 @@
   border-color: var(--pm-tobe-assistant);
 }
 
-/* --- контекст-чип под шапкой: скруглённая плашка soft-цвета, имя узла mono --- */
+/* --- контекст-чип под шапкой: PILL (radius 999) soft-фиолетовый, имя узла mono --- */
 .pm-processman-contextchip {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 25%, var(--pm-tobe-border));
+  padding: 4px 5px 4px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 35%, var(--pm-tobe-border));
   background: var(--pm-tobe-assistant-soft);
   font-size: 12px;
   transition: border-color 160ms ease, background 160ms ease;
@@ -872,6 +872,7 @@
   color: var(--pm-tobe-assistant);
 }
 
+/* крестик сброса — в круге (surface на soft-пилюле; hover → solid agent) */
 .pm-processman-contextchip__reset {
   flex: 0 0 auto;
   width: 20px;
@@ -880,21 +881,22 @@
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 6px;
-  background: transparent;
+  border-radius: 999px;
+  background: var(--pm-tobe-surface);
   color: var(--pm-tobe-muted-fg);
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1;
   cursor: pointer;
   padding: 0;
   transition: background 160ms ease, color 160ms ease;
 }
 
 .pm-processman-contextchip__reset:hover {
-  background: color-mix(in srgb, var(--pm-tobe-assistant) 12%, transparent);
-  color: var(--pm-tobe-fg);
+  background: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-on-primary);
 }
 
-/* --- quick actions: карточки с иконкой в цветной плашке, hover-подъём --- */
+/* --- quick actions: КАРТОЧКИ на surface (белые на фоне панели), плашка-иконка 36px --- */
 .pm-processman-quick-wrap {
   display: flex;
   flex-direction: column;
@@ -911,11 +913,12 @@
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 12px;
+  padding: 12px;
   border-radius: 12px;
   border: 1px solid var(--pm-tobe-border);
-  background: var(--pm-tobe-bg);
+  background: var(--pm-tobe-surface);
+  box-shadow: var(--pm-tobe-shadow-sm);
   color: var(--pm-tobe-fg);
   font-size: 13px;
   text-align: left;
@@ -936,18 +939,18 @@
   cursor: not-allowed;
 }
 
-/* иконка в цветной плашке; на hover плашка инвертируется в agent-цвет */
+/* плашка-иконка 36px в --pm-tobe-assistant-soft; на hover инвертируется в solid */
 .pm-processman-quick__icon {
   flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--pm-tobe-assistant-soft);
   color: var(--pm-tobe-assistant);
-  font-size: 14px;
+  font-size: 16px;
   transition: background 160ms ease, color 160ms ease;
 }
 
@@ -978,7 +981,7 @@
   background: var(--pm-tobe-assistant-soft);
 }
 
-/* --- пустое состояние: по центру, ✦-маркер, примеры — кликабельные пилюли --- */
+/* --- пустое состояние: по центру, ✦-маркер solid, примеры — пилюли surface --- */
 .pm-processman-empty {
   flex: 1 1 auto;
   display: flex;
@@ -998,8 +1001,8 @@
   width: 44px;
   height: 44px;
   border-radius: 999px;
-  background: var(--pm-tobe-assistant-soft);
-  color: var(--pm-tobe-assistant);
+  background: var(--pm-tobe-assistant);
+  color: var(--pm-tobe-on-primary);
   font-size: 22px;
 }
 
@@ -1018,11 +1021,13 @@
   max-width: 280px;
 }
 
+/* примеры вопросов: чипы-пилюли с border на surface; hover — заливка soft + border agent */
 .pm-processman-empty__chip {
   padding: 8px 14px;
   border-radius: 999px;
   border: 1px solid var(--pm-tobe-border);
-  background: var(--pm-tobe-bg);
+  background: var(--pm-tobe-surface);
+  box-shadow: var(--pm-tobe-shadow-sm);
   color: var(--pm-tobe-assistant);
   font-size: 12px;
   font-weight: 600;
@@ -1036,7 +1041,7 @@
   transform: translateY(-1px);
 }
 
-/* --- composer: focus-ring agent-цвета, отправка — иконка в круге --- */
+/* --- composer: focus-ring 2px violet, отправка — круг 32px solid agent --- */
 .pm-processman-composer {
   flex: 0 0 auto;
   display: flex;
@@ -1046,19 +1051,20 @@
 
 .pm-processman-composer .pm-processman__qa-input {
   flex: 1 1 auto;
+  background: var(--pm-tobe-surface);
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .pm-processman-composer .pm-processman__qa-input:focus {
   outline: none;
   border-color: var(--pm-tobe-assistant);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pm-tobe-assistant) 22%, transparent);
+  box-shadow: 0 0 0 2px var(--pm-tobe-assistant);
 }
 
 .pm-processman-composer__send {
   flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1066,10 +1072,10 @@
   border: 1px solid var(--pm-tobe-assistant);
   background: var(--pm-tobe-assistant);
   color: var(--pm-tobe-on-primary);
-  font-size: 15px;
+  font-size: 14px;
   cursor: pointer;
   padding: 0;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+  transition: background 160ms ease, border-color 160ms ease, opacity 160ms ease;
 }
 
 .pm-processman-composer__send:hover:not(:disabled) {
@@ -1078,18 +1084,17 @@
 }
 
 .pm-processman-composer__send:disabled {
-  background: var(--pm-tobe-muted);
-  border-color: var(--pm-tobe-border);
-  color: var(--pm-tobe-disabled-fg);
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-/* --- onboarding: карточка с рамкой/фоном, нумерованные шаги, primary-кнопка --- */
+/* --- onboarding: карточка surface + border + shadow-sm, шаги с номерами 20px --- */
 .pm-processman-onboarding {
   padding: 12px 14px;
   border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 40%, var(--pm-tobe-border));
-  background: var(--pm-tobe-assistant-soft);
+  border: 1px solid color-mix(in srgb, var(--pm-tobe-assistant) 35%, var(--pm-tobe-border));
+  background: var(--pm-tobe-surface);
+  box-shadow: var(--pm-tobe-shadow-sm);
 }
 
 .pm-processman-onboarding__title {
@@ -1119,9 +1124,9 @@
 
 .pm-processman-onboarding__list li::before {
   content: counter(pm-processman-onboarding);
-  flex: 0 0 18px;
-  width: 18px;
-  height: 18px;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
   margin-top: 1px;
   display: inline-flex;
   align-items: center;

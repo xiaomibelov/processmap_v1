@@ -92,3 +92,53 @@
 - `frontend/src/styles/tokens.css` (+3 токена)
 - `design-system/processmap-to-be/MASTER.md` (+3 строки палитры)
 - `.planning/contours/uiux/processman-panel-styling/` (этот отчёт + shots/)
+
+## REVIEW-FIX v2 (2026-08-09, по комментарию к PR #704)
+
+Вердикт ревью: «типографика, а не дизайн» — корневая причина: карточки/чипы
+красились в `--pm-tobe-bg` (#f8fafc) = фон панели → границы элементов визуально
+исчезали, оставался «текст на полотне». Палитра скилла «B2B Service» задаёт
+**Card #FFFFFF на Background #F8FAFC** — введён токен `--pm-tobe-surface`
+и все элементы подняты на белые поверхности; фиолетовый усилен до solid.
+
+Источник решений (скилл ui-ux-pro-max, `/root/vendor/ui-ux-pro-max-skill`,
+skill.json v2.13.0; workflow skill-content.md: Step 2 `--design-system` — выполнен):
+- **Style**: `Trust & Authority` (styles.csv через `--design-system`;
+  AVOID «AI purple/pink gradients» → только плоские тона);
+- **Palette**: `B2B Service` (colors.csv: Primary #0F172A, Background #F8FAFC,
+  **Card #FFFFFF**, Muted #E8ECF1, Border #E2E8F0; Accent #0369A1 НЕ применён —
+  конфликт с selection-синим канваса, акцент = `--pm-tobe-assistant` #6d28d9);
+- **Font**: `Minimal Swiss` (typography.csv: Inter/Inter, single-family weight-шкала;
+  начертание перенесено на продуктовые Fira Sans/Fira Code — кириллица, self-hosted).
+
+Новые токены v2: `--pm-tobe-surface: #ffffff`, `--pm-tobe-shadow-sm: 0 1px 3px rgba(15,23,42,.08)`.
+
+Пункты ревью → исправление:
+1. **Quick actions → карточки**: bg `--pm-tobe-surface` + shadow-sm, плашка-иконка
+   **36px** radius 10 в assistant-soft, заголовок 600, hover = border
+   `--pm-tobe-assistant` + translateY(-1px) + shadow-lift + инверсия плашки в solid.
+2. **Контекст-чип → pill**: radius **999px**, bg assistant-soft, имя узла mono,
+   крестик — в белом круге 20px (hover → solid agent).
+3. **Примеры вопросов**: пилюли surface + border + shadow-sm, hover — заливка
+   assistant-soft + border agent.
+4. **Шапка**: аватар ✦ 28px **solid** `--pm-tobe-assistant` radius 8 (белый глиф),
+   статус с зелёной точкой (`--pm-tobe-accent`; при генерации — фиолетовый пульс).
+5. **Онбординг**: карточка bg surface + border (color-mix agent 35%) + shadow-sm,
+   шаги — номера в solid-кругах **20px**, кнопка primary solid.
+6. **Composer**: send — круг **32px** solid `--pm-tobe-assistant`, disabled =
+   **opacity .4** (фиолетовый сохраняется), focus-ring **2px violet**
+   (`box-shadow: 0 0 0 2px var(--pm-tobe-assistant)`); input поднят на surface.
+7. **Фиолетовый виден**: solid-аватар, solid-send, violet-soft пилюля чипа,
+   violet-soft заливки hover, agent-карточки с левой кромкой + soft-фоном,
+   solid ✦-маркер empty state, hover-бордеры agent-цвета на всех контролах.
+8. **Скилл**: SKILL.md-эквивалент (skill.json + templates/base/skill-content.md)
+   открыт и сверен; конкретные имена style/palette/font — выше; скриншоты по
+   каждому пункту — в `shots/` (добавлены в git через `git add -f`: политика
+   `.gitignore:56 .planning/contours/**/*.png` осознанно переопределена ради
+   обязательных before/after в PR) и встроены в тело PR #704.
+
+Проверки v2: processman 58/58 PASS, tokens 4/4 PASS, suite = baseline (61 fail,
+те же unrelated), smoke на production build: панель 380px, канвас цел,
+чип-выбор узла кликом по канвасу («Выбран шаг: StartEvent_1»), agent-карточка
+OK (noStepReply) и error-карточка (LLM недоступен на smoke-прогоне) — обе
+отрисованы корректно.
