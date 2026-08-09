@@ -9,6 +9,7 @@ import ProcessmanContextChip from "./ProcessmanContextChip";
 import ProcessmanOnboarding from "./ProcessmanOnboarding";
 import { isOnboardingSeen, markOnboardingSeen } from "./chat/processmanOnboarding";
 import { resolvePanelContext, tabBadgeKey } from "./processmanView";
+import "./processman.css";
 
 // PROCESSMAN-REDESIGN (PR-1) — каркас панели: новая шапка (✦ + статус +
 // «?» onboarding + свернуть/закрыть), collapse-to-icon rail (48px),
