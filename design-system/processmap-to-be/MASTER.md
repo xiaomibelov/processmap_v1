@@ -31,6 +31,9 @@
 | Ring | `#1E3A5F` | `--color-ring` |
 | Assistant (PROCESSMAN) | `#6D28D9` | `--pm-tobe-assistant` |
 | Assistant Soft | `#EDE9FE` | `--pm-tobe-assistant-soft` |
+| Assistant Strong (hover/active) | `#5B21B6` | `--pm-tobe-assistant-strong` |
+| Shadow Pop (floating) | `rgba(15,23,42,.16)` | `--pm-tobe-shadow-pop` |
+| Shadow Lift (card hover) | `rgba(15,23,42,.10)` | `--pm-tobe-shadow-lift` |
 
 **Color Notes:** Navy professional + paid green. Assistant violet is reserved
 exclusively for the PROCESSMAN assistant (avatar, chips, canvas spotlight/ghost)
