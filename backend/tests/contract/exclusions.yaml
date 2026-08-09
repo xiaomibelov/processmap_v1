@@ -1,0 +1,267 @@
+# Осознанные исключения contract-фаззинга (schemathesis).
+# Каждое правило ОБЯЗАНО иметь reason. Операции указываются по operationId из /api/openapi.json.
+#
+# Баги, найденные фаззингом, НЕ маскируются здесь: им заводится запись в отчёте
+# (.planning/contours/test/contract-openapi/EXEC_REPORT.md) и фикс отдельным коммитом.
+# Сюда попадают только осознанные решения (см. reason).
+
+# Политика методов: по умолчанию фаззим только read-only методы.
+# Мутирующие операции на seeded-БД безопасны далеко не все (DELETE/PUT/PATCH ломают
+# состояние между примерами hypothesis, POST — местами деструктивен или ходит во внешние
+# сервисы). Безопасные create/query-операции — белым списком allowed_extra_operations.
+method_policy:
+  reason: >
+    Деструктивные операции пока пропускаем (Этап 1, ТЗ): нет seed-фикстур, восстанавливающих
+    состояние между примерами; иначе фаззинг одного примера ломает данные для следующего
+    (ложные 404/409) и делает прогон недетерминированным. Расширение — через allowed_extra
+    после появления reset-фикстур.
+  allowed_methods: [GET]
+  allowed_extra_operations:
+    - id: auth_login_api_auth_login_post
+      reason: "Публичный login: read-only по сути, валидные/невалидные креды — безопасны."
+    - id: auth_refresh_api_auth_refresh_post
+      reason: "Публичный refresh: ротация токенов в песочнице, безопасно."
+    - id: auth_logout_api_auth_logout_post
+      reason: "Публичный logout: инвалидация случайных/seeded токенов не влияет на другие операции (токен пересоздаётся на запрос)."
+    - id: create_session_api_sessions_post
+      reason: "Создание сессии в seeded org — аддитивно, не ломает другие операции; это и есть seed-фикстура для session_id."
+    - id: create_project_session_api_projects__project_id__sessions_post
+      reason: "Аналогично: аддитивное создание сессии в seeded project."
+    - id: create_session_in_project_api_projects__project_id__explorer_sessions_post
+      reason: "Аналогично: аддитивное создание сессии через explorer."
+    - id: create_org_project_session_api_orgs__org_id__projects__project_id__sessions_post
+      reason: "Аналогично: аддитивное создание сессии в org-scope."
+    - id: query_product_actions_registry_api_analysis_product_actions_registry_query_post
+      reason: "POST-запрос чтения (query над реестром), состояние не меняет."
+    - id: query_process_properties_registry_api_analysis_properties_registry_query_post
+      reason: "POST-запрос чтения, состояние не меняет."
+
+# LLM-эндпоинты: доменные ошибки возвращаются как HTTP 200 {"ok": false, ...} / {"error": ...}
+# (контракт product_actions_ai._controlled_error и legacy-конверты). Для них
+# response_schema_conformance/status_code_conformance к успешной схеме неприменимы —
+# отказ LLM (нет ключа провайдера, rate limit) валиден. Проверяем: not_a_server_error,
+# content_type_conformance + кастомный чек конверта.
+domain_error_envelope_operations:
+  - id: llm_session_title_questions_api_llm_session_title_questions_post
+    reason: "Legacy LLM: 200 {'error': ...} при отсутствии ключа провайдера/rate-limit — задокументированное поведение."
+  - id: ai_questions_api_sessions__session_id__ai_questions_post
+    reason: "Legacy LLM: 200 {'error': ...} — доменный отказ без HTTP-ошибки."
+  - id: llm_analysis_api_sessions__session_id__llm_analysis_post
+    reason: "LLM-анализ: доменный отказ как 200-конверт."
+  - id: llm_suggest_next_route_api_sessions__session_id__llm_suggest_next_post
+    reason: "LLM-suggest: доменный отказ как 200-конверт."
+  - id: llm_explain_step_route_api_sessions__session_id__llm_explain_step_post
+    reason: "LLM-explain: доменный отказ как 200-конверт."
+  - id: llm_step_qa_route_api_sessions__session_id__llm_step_qa_post
+    reason: "LLM step-qa: доменный отказ как 200-конверт."
+  - id: suggest_product_actions_api_sessions__session_id__analysis_product_actions_suggest_post
+    reason: "Controlled AI envelope: _controlled_error → 200 {ok: false, ...}."
+  - id: batch_suggest_product_actions_api_sessions__session_id__analysis_product_actions_batch_suggest_post
+    reason: "Controlled AI envelope: 200 {ok: false, ...}."
+  - id: suggest_product_actions_bulk_api_analysis_product_actions_suggest_bulk_post
+    reason: "Controlled AI envelope: 200 {ok: false, ...}."
+  - id: rag_search_api_rag_search_get
+    reason: "RAG выключен в тестовом окружении: 200 {ok: false, error: rag_disabled} — штатно."
+  - id: rag_index_api_rag_index_post
+    reason: "RAG выключен в тестовом окружении: 200 {ok: false} — штатно; POST, но мутирует только индекс песочницы."
+  - id: rag_index_product_actions_api_rag_product_actions_index_post
+    reason: "Аналогично rag_index."
+
+# Полный пропуск операций (из фаззинга вообще).
+skip_operations:
+  - id: session_events_api_sessions__session_id__events_get
+    reason: "SSE-стрим (text/event-stream): соединение не закрывается, request-response фаззинг неприменим — прогон виснет."
+  - id: post_llm_verify_api_settings_llm_verify_post
+    reason: "Ходит во внешний LLM-провайдер сетью из обработчика — недетерминировано и медленно в фаззинге."
+  - id: admin_verify_ai_provider_settings_api_admin_ai_provider_settings_verify_post
+    reason: "Внешний сетевой вызов к провайдеру."
+  - id: admin_llm_test_provider_api_admin_llm_providers__provider_id__test_post
+    reason: "Внешний сетевой вызов к провайдеру."
+  - id: health_overlay_cache_health_overlay_cache_get
+    reason: "Инфра-эндпоинт вне /api-контракта: 503 degraded без redis/postgres — ожидаемо в тестовом окружении, не баг."
+  # --- sqlite-env: таблицы создаются alembic-миграциями, которые pg-only. ---
+  # В sqlite-окружении фаззинга их нет → OperationalError 'no such table' → 500.
+  # Это ограничение окружения (в prod postgres таблицы есть), НЕ баг кода.
+  - id: list_recipes_api_recipes_get
+    reason: "sqlite-env: таблица recipes создаётся alembic/pg-only миграцией; в sqlite её нет → OperationalError."
+  - id: get_recipe_api_recipes__recipe_id__get
+    reason: "sqlite-env: см. list_recipes."
+  - id: list_recipe_versions_api_recipes__recipe_id__versions_get
+    reason: "sqlite-env: см. list_recipes."
+  - id: diff_recipe_versions_api_recipes__recipe_id__diff_get
+    reason: "sqlite-env: см. list_recipes."
+  - id: get_recipe_params_api_recipe_params_get
+    reason: "sqlite-env: таблица recipe_params — alembic/pg-only миграция."
+  - id: list_templates_api_process_templates_get
+    reason: "sqlite-env: таблица process_templates — alembic/pg-only миграция."
+  - id: get_template_api_process_templates__template_id__get
+    reason: "sqlite-env: см. list_templates (process_templates)."
+  - id: list_versions_api_process_templates__template_id__versions_get
+    reason: "sqlite-env: см. list_templates (process_templates)."
+  - id: version_bpmn_api_process_templates__template_id__versions__version__bpmn_get
+    reason: "sqlite-env: см. list_templates (process_templates)."
+  - id: list_operations_api_operation_catalog_get
+    reason: "sqlite-env: таблица operation_catalog — alembic/pg-only миграция."
+  - id: get_operation_api_operation_catalog__code__get
+    reason: "sqlite-env: см. list_operations (operation_catalog)."
+  - id: list_equipment_types_api_dictionaries_equipment_types_get
+    reason: "sqlite-env: таблицы dictionaries — alembic/pg-only миграция."
+  - id: list_container_types_api_dictionaries_container_types_get
+    reason: "sqlite-env: см. list_equipment_types (dictionaries)."
+  - id: list_zone_types_api_dictionaries_zone_types_get
+    reason: "sqlite-env: см. list_equipment_types (dictionaries)."
+  - id: list_sku_api_dictionaries_sku_get
+    reason: "sqlite-env: см. list_equipment_types (dictionaries)."
+  - id: list_kitchens_api_kitchens_get
+    reason: "sqlite-env: таблица kitchens — alembic/pg-only миграция."
+  - id: list_bindings_api_sku_bindings_get
+    reason: "sqlite-env: таблица sku_bindings — alembic/pg-only миграция."
+  - id: pilot_metrics_api_sku_bindings__binding_id__pilot_metrics_get
+    reason: "sqlite-env: см. list_bindings (sku_bindings)."
+  - id: llm_status_api_llm_status_get
+    reason: "sqlite-env: таблица llm_feature_flags — alembic/pg-only миграция."
+  - id: llm_analysis_api_sessions__session_id__llm_analysis_post
+    reason: "sqlite-env: llm_feature_flags — alembic/pg-only миграция; LLM-домен тестируется на pg."
+  - id: llm_suggest_next_route_api_sessions__session_id__llm_suggest_next_post
+    reason: "sqlite-env: см. llm_analysis (llm_feature_flags)."
+  - id: suggest_product_actions_bulk_api_analysis_product_actions_suggest_bulk_post
+    reason: "sqlite-env: см. llm_analysis (llm_feature_flags)."
+
+# Spec-gap статусы: операция фаззится, но для перечисленных статусов conformance-
+# чеки (status/content-type/schema) отключаются — статус доменно валиден, но
+# сознательно не задокументирован в спеке. Каждая запись — кандидат на доработку
+# спеки (см. EXEC_REPORT.md). 5xx сюда НЕ попадает никогда.
+spec_gap_status_operations:
+  # Админские GET: seed-пользователь org_owner, не platform admin → 403 штатно.
+  - id: admin_users_api_admin_users_get
+    statuses: [403]
+    reason: "Доменный 403 (нужен platform admin, seed=org_owner); в спеке только 200/422 — spec-gap."
+  - id: admin_llm_list_providers_api_admin_llm_providers_get
+    statuses: [403]
+    reason: "Доменный 403 (platform admin); spec-gap."
+  - id: admin_llm_list_prompts_api_admin_llm_prompts_get
+    statuses: [403]
+    reason: "Доменный 403 (platform admin); spec-gap."
+  - id: admin_llm_list_features_api_admin_llm_features_get
+    statuses: [403]
+    reason: "Доменный 403 (platform admin); spec-gap."
+  - id: admin_llm_usage_api_admin_llm_usage_get
+    statuses: [403]
+    reason: "Доменный 403 (platform admin); spec-gap."
+  - id: list_deployment_notices_api_admin_deployment_notices_get
+    statuses: [403]
+    reason: "Доменный 403 (platform admin); spec-gap."
+  # Админские GET с предпроверкой существования ресурса: 404 до/без 403.
+  - id: admin_ai_active_prompt_api_admin_ai_prompts_active_get
+    statuses: [403, 404]
+    reason: "Доменные 403/404 (platform admin / prompt не найден); spec-gap."
+  - id: admin_ai_prompt_detail_api_admin_ai_prompts__prompt_id__get
+    statuses: [403, 404]
+    reason: "Доменные 403/404; spec-gap."
+  - id: admin_error_event_detail_api_admin_error_events__event_id__get
+    statuses: [403, 404]
+    reason: "Доменные 403/404 (сгенерированный event_id не существует); spec-gap."
+  - id: proxy_get_error_event_api_notifications_error_events__event_id__get
+    statuses: [404]
+    reason: "Доменный 404 (event не существует); spec-gap."
+  # Доменные 404.
+  - id: get_project_explorer_api_projects__project_id__explorer_get
+    statuses: [404]
+    reason: "Проект seed не привязан к workspace → доменный not_found; в спеке не задокументирован — spec-gap."
+  - id: export_zip_api_sessions__session_id__export_zip_get
+    statuses: [404]
+    reason: "У seed-сессии нет экспортного пакета → доменный 404; spec-gap (zip content-type см. spec_gap_content_type_operations)."
+  - id: get_folder_api_folders__folder_id__get
+    statuses: [404]
+    reason: "Coverage-кейсы с чужими folder_id → доменный 404; spec-gap."
+  - id: get_folder_note_aggregate_api_folders__folder_id__note_aggregate_get
+    statuses: [404]
+    reason: "Доменный 404; spec-gap."
+  # Конфликт дубликата названия сессии (фаззер создаёт повторы).
+  - id: create_session_api_sessions_post
+    statuses: [409]
+    reason: "Доменный 409 'session title already exists' на дубликатах от фаззера; в спеке не задокументирован — spec-gap."
+  # Доменный 404 на coverage-кейсах с несуществующим project_id (фаззер частично
+  # генерирует id=0 мимо seed-подстановки) — как и у create_session.
+  - id: create_project_session_api_projects__project_id__sessions_post
+    statuses: [404, 409]
+    reason: "Доменные 404 (project не найден) / 409 (duplicate-title); spec-gap."
+  - id: create_session_in_project_api_projects__project_id__explorer_sessions_post
+    statuses: [404, 409]
+    reason: "Доменные 404 (project не привязан к workspace) / 409 (duplicate-title); spec-gap."
+  - id: create_org_project_session_api_orgs__org_id__projects__project_id__sessions_post
+    statuses: [404, 409]
+    reason: "Доменные 404 (несуществующий org/project id от coverage) / 409 (duplicate-title); spec-gap."
+  # Версии отчётов/группы: сгенерированные id не существуют → доменный 404.
+  - id: get_org_session_report_version_api_orgs__org_id__sessions__session_id__reports__version_id__get
+    statuses: [404]
+    reason: "Доменный 404 (version_id=0 не существует); spec-gap."
+  - id: list_group_members_api_admin_organizations__org_id__groups__group_id__members_get
+    statuses: [403, 404]
+    reason: "Доменные 403 (platform admin) / 404 (group_id=0); spec-gap."
+  - id: list_group_members_api_orgs__org_id__groups__group_id__members_get
+    statuses: [404]
+    reason: "Доменный 404 (group_id=0 не существует); spec-gap."
+  # auto-pass precheck: 202 pending — доменно валидный статус.
+  - id: auto_pass_precheck_api_sessions__session_id__auto_pass_precheck_get
+    statuses: [202]
+    reason: "Доменный 202 (precheck pending) не задокументирован; spec-gap."
+  # Доменные 422 с телом {"detail": "..."} — спека описывает 422 только как
+  # HTTPValidationError (detail: list). Это системный паттерн legacy-обработчиков;
+  # в отчёте как spec-gap, массовую правку хендлеров сознательно не делаем.
+  - id: get_reference_options_api_reference__source__options_get
+    statuses: [422]
+    reason: "Доменный 422 'invalid source format' с detail:str — не матчит HTTPValidationError; spec-gap."
+  - id: query_process_properties_registry_api_analysis_properties_registry_query_post
+    statuses: [404, 422]
+    reason: "Доменные 404 (scope-сущность не найдена) / 422 'workspace_id required' с detail:str; spec-gap."
+  - id: query_product_actions_registry_api_analysis_product_actions_registry_query_post
+    statuses: [404, 422]
+    reason: "Доменные 404 (scope-сущность не найдена) / 422 'workspace_id required' с detail:str; spec-gap."
+  - id: export_property_registry_api_analysis_properties_registry_export_get
+    statuses: [422]
+    reason: "Доменный 422 (невалидный format) с detail:str; spec-gap."
+  - id: auto_pass_status_api_sessions__session_id__auto_pass_get
+    statuses: [404]
+    reason: "Доменный 404 (job_id не найден); spec-gap."
+  - id: list_audit_log_endpoint_api_audit_log_get
+    statuses: [422]
+    reason: "Доменный 422 'Некорректная дата: null' с detail:str — не матчит HTTPValidationError; spec-gap."
+  - id: export_advanced_calculation_xlsx_api_analytics_export_advanced_calculation_xlsx_get
+    statuses: [422]
+    reason: "Доменный 422 'session has empty BPMN XML' с detail:str; spec-gap."
+  - id: export_properties_recalculated_xlsx_api_analytics_properties_export_recalculated_xlsx_get
+    statuses: [422]
+    reason: "Доменный 422 (пустой/непересчитанный scope) с detail:str; spec-gap."
+  - id: list_session_note_threads_api_sessions__session_id__note_threads_get
+    statuses: [202, 422]
+    reason: "Доменные 202 (pending) и 422 (invalid status filter) не задокументированы; spec-gap."
+  # Доменный 400 у RAG (выключен/невалидный source_type в тестовом окружении).
+  - id: rag_index_api_rag_index_post
+    statuses: [400]
+    reason: "Доменный 400 'invalid source_type' при rag_disabled; spec-gap."
+  - id: rag_index_product_actions_api_rag_product_actions_index_post
+    statuses: [400, 404, 422]
+    reason: "Доменные 400 (rag_disabled) / 404 (session не найден) / 422 'session_id required' с detail:str; spec-gap."
+
+# Export-эндпоинты: отдают csv/xlsx/xml/zip, но спека документирует только JSON.
+# Фаззим (500 ловим), content_type_conformance отключён — spec-gap в отчёте.
+spec_gap_content_type_operations:
+  - id: session_bpmn_export_api_sessions__session_id__bpmn_get
+    reason: "BPMN XML (application/xml) не задокументирован в спеке — spec-gap."
+  - id: export_zip_api_sessions__session_id__export_zip_get
+    reason: "application/zip не задокументирован — spec-gap."
+  - id: export_property_registry_api_analysis_properties_registry_export_get
+    reason: "text/csv не задокументирован — spec-gap."
+  - id: export_properties_csv_api_analytics_properties_export_csv_get
+    reason: "text/csv не задокументирован — spec-gap."
+  - id: export_properties_xlsx_api_analytics_properties_export_xlsx_get
+    reason: "xlsx (spreadsheetml) не задокументирован — spec-gap."
+  - id: export_actions_csv_api_analytics_actions_export_csv_get
+    reason: "text/csv не задокументирован — spec-gap."
+  - id: export_actions_xlsx_api_analytics_actions_export_xlsx_get
+    reason: "xlsx (spreadsheetml) не задокументирован — spec-gap."
+  - id: export_properties_recalculated_xlsx_api_analytics_properties_export_recalculated_xlsx_get
+    reason: "xlsx (spreadsheetml) не задокументирован — spec-gap."
+  - id: export_advanced_calculation_xlsx_api_analytics_export_advanced_calculation_xlsx_get
+    reason: "xlsx (spreadsheetml) не задокументирован — spec-gap."
