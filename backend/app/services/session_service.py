@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import HTTPException, Request
 
 from fastapi import HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
 
 from ..cache import session_cache
 from ..legacy.request_context import request_user_meta, request_active_org_id
@@ -58,6 +59,21 @@ def create_session(
     is_admin: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Create a new session."""
+    # roles приходит как Optional[Any] (legacy-контракт CreateSessionIn):
+    # невалидные типы (bool/int/dict) раньше падали с TypeError → 500.
+    # Нормализуем str → [str] и честно отвечаем 422 на мусор.
+    if isinstance(roles, str):
+        roles = [roles]
+    elif roles is not None and not isinstance(roles, (list, tuple)):
+        raise RequestValidationError(
+            errors=[
+                {
+                    "loc": ("body", "roles"),
+                    "msg": "roles must be an array of strings",
+                    "type": "value_error",
+                }
+            ]
+        )
     st = get_storage()
     sid = session_repo.create(
         title=title,

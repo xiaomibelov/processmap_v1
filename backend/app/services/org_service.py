@@ -29,6 +29,7 @@ from ..storage import (
 from ..utils.authz import (
     can_manage_workspace,
     is_role_allowed,
+    ORG_AUDIT_READ_ROLES,
     ORG_INVITE_MANAGE_ROLES,
     ORG_MEMBER_MANAGE_ROLES,
     ORG_PROJECT_MEMBER_MANAGE_ROLES,
@@ -65,7 +66,7 @@ def _audit_log_safe(
     try:
         append_audit_log(
             actor_user_id=uid,
-            org_id=str(org_id or "").strip() or request_active_org_id(request),
+            org_id=str(org_id or "").strip() or _request_active_org_id(request),
             action=action,
             entity_type=entity_type,
             entity_id=str(entity_id or "").strip() or "-",
@@ -496,9 +497,34 @@ def _audit_retention_days() -> int:
 
 # ── Workspace / Invites (thin — keep in legacy for now) ───────────
 
-def get_enterprise_workspace(request=None):
+def get_enterprise_workspace(
+    request=None,
+    *,
+    group_by: str = "users",
+    q: str = "",
+    owner_ids: str = "",
+    project_id: str = "",
+    status: str = "",
+    updated_from: Optional[int] = None,
+    updated_to: Optional[int] = None,
+    needs_attention: Optional[int] = None,
+    limit: int = 50,
+    offset: int = 0,
+):
     import app._legacy_main as _lm
-    return _lm.get_enterprise_workspace(request)
+    return _lm.enterprise_workspace(
+        request,
+        group_by=group_by,
+        q=q,
+        owner_ids=owner_ids,
+        project_id=project_id,
+        status=status,
+        updated_from=updated_from,
+        updated_to=updated_to,
+        needs_attention=needs_attention,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def list_org_invites(org_id: str, request=None):

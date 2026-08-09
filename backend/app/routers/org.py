@@ -107,5 +107,29 @@ def cleanup_org_audit_endpoint(org_id: str, request: Request, retention_days: in
 
 
 @router.get("/api/enterprise/workspace")
-def get_enterprise_workspace(request: Request):
-    return _svc.get_enterprise_workspace(request)
+def get_enterprise_workspace(
+    request: Request,
+    group_by: str = "users",
+    q: str = "",
+    owner_ids: str = "",
+    project_id: str = "",
+    status: str = "",
+    updated_from: int | None = None,
+    updated_to: int | None = None,
+    needs_attention: int | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    return _svc.get_enterprise_workspace(
+        request,
+        group_by=group_by,
+        q=q,
+        owner_ids=owner_ids,
+        project_id=project_id,
+        status=status,
+        updated_from=updated_from,
+        updated_to=updated_to,
+        needs_attention=needs_attention,
+        limit=limit,
+        offset=offset,
+    )

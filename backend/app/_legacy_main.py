@@ -3114,7 +3114,7 @@ def _disposition_report(s: Session) -> Dict[str, Any]:
     return {"nodes": nodes, "open": open_nodes, "open_count": len(open_nodes)}
 
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
 def index():
     idx_file = STATIC_DIR / "index.html"
     if idx_file.exists():
@@ -3122,7 +3122,7 @@ def index():
     return {"ok": True, "service": "foodproc_process_copilot"}
 
 
-@app.get("/favicon.ico")
+@app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     ico = STATIC_DIR / "favicon.ico"
     if ico.exists():
@@ -3178,7 +3178,7 @@ def health_overlay_cache():
     return JSONResponse(content={**checks,"degraded":degraded},status_code=503 if degraded else 200)
 
 
-@app.get("/metrics")
+@app.get("/metrics", include_in_schema=False)
 def metrics_endpoint():
     from .metrics import metrics
     return Response(content=metrics(), media_type="text/plain")
@@ -3187,8 +3187,9 @@ def metrics_endpoint():
 # /api/auth/* handlers live in app/services/auth_service.py (PR-6 auth) and are
 # re-registered here so LEGACY_ROUTE_EXPORT keeps the same routes, methods,
 # registration order and endpoint objects as before the extraction.
-app.post("/api/auth/login", response_model=AuthTokenOut)(auth_login)
-app.post("/api/auth/refresh", response_model=AuthTokenOut)(auth_refresh)
+_AUTH_401 = {"description": "Невалидные/просроченные креды или отсутствующий refresh token"}
+app.post("/api/auth/login", response_model=AuthTokenOut, responses={401: _AUTH_401})(auth_login)
+app.post("/api/auth/refresh", response_model=AuthTokenOut, responses={401: _AUTH_401})(auth_refresh)
 app.post("/api/auth/logout")(auth_logout)
 app.get("/api/auth/me", response_model=AuthMeOut)(auth_me)
 app.post("/api/invite/resolve")(auth_invite_preview)
