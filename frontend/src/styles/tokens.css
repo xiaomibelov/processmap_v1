@@ -83,6 +83,32 @@
   --c-warning: hsl(var(--warning));
   --c-danger: hsl(var(--danger));
   --c-info: hsl(var(--info));
+
+  /* TO BE workspace — light/root scope for PROCESSMAN and TO BE surfaces. */
+  --pm-tobe-primary: #1e3a5f;
+  --pm-tobe-on-primary: #ffffff;
+  --pm-tobe-secondary: #2563eb;
+  --pm-tobe-accent: #059669;
+  --pm-tobe-bg: #f8fafc;
+  --pm-tobe-fg: #0f172a;
+  --pm-tobe-muted: #f1f3f5;
+  --pm-tobe-muted-fg: #64748b;
+  --pm-tobe-disabled-fg: #55627a;
+  --pm-tobe-border: #e4e7eb;
+  --pm-tobe-danger: #dc2626;
+  --pm-tobe-destructive: #b91c1c;
+  --pm-tobe-warning: #b45309;
+  --pm-tobe-step-pending: #b8c6da;
+  --pm-tobe-step-na: #8496ad;
+  --pm-tobe-assistant: #6d28d9;
+  --pm-tobe-assistant-soft: #ede9fe;
+  --pm-tobe-assistant-strong: #5b21b6;
+  --pm-tobe-surface: #ffffff;
+  --pm-tobe-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --pm-tobe-shadow-pop: 0 10px 28px rgba(15, 23, 42, 0.16);
+  --pm-tobe-shadow-lift: 0 4px 14px rgba(15, 23, 42, 0.10);
+  --pm-tobe-font-body: 'Fira Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pm-tobe-font-mono: 'Fira Code', ui-monospace, 'Cascadia Code', monospace;
 }
 
 .dark {
@@ -191,6 +217,7 @@
   --pm-tobe-disabled-fg: #55627a;    /* disabled-текст (5.5:1 на --pm-tobe-muted, Z0) */
   --pm-tobe-border: #e4e7eb;         /* границы                                  */
   --pm-tobe-danger: #dc2626;         /* ошибки findings (4.5:1 на белом)         */
+  --pm-tobe-destructive: #b91c1c;    /* PROCESSMAN destructive edge/text on red-50 */
   --pm-tobe-warning: #b45309;        /* предупреждения (4.5:1 на белом)          */
   --pm-tobe-step-pending: #b8c6da;   /* степпер pending на #16202f ≈ 7:1 (Z0)    */
   --pm-tobe-step-na: #8496ad;        /* степпер «не требуется» на #16202f ≈ 5.3:1 (Z0) */
