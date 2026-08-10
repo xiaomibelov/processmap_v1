@@ -183,3 +183,44 @@ CSS (processman.css) по эталону:
 прогоне; к контуру отношения не имеет — изменены только файлы processman).
 Smoke на production build: все состояния (onboarding, empty, chip-выбор узла,
 quick hover, composer focus, agent OK/error-карточки, rail) — `shots/v3-*`.
+
+## REVIEW-FIX v4 (2026-08-10, финальный чеклист владельца — точные размеры/состояния)
+
+Ветка: `feat/processman-panel-visual` от актуального `origin/main`.
+Скилл ui-ux-pro-max зафиксирован в v1/v2 (Style `Trust & Authority`, Palette `B2B Service`
+Card #FFFFFF на Background #F8FAFC, Font `Minimal Swiss` → Fira Sans/Fira Code) — без изменений.
+
+Дельта к чеклисту (только CSS + разметка quick-карточек + 3 i18n-ключа описаний):
+1. **Шапка**: аватар ✦ 32→**28px**, radius 10→**8**; title 700→**600**; точка статуса 6→**8px**.
+2. **Контекст-чип**: hover → **bg темнее на 5%** (color-mix soft 95% + assistant 5%).
+3. **Quick actions**: в карточках добавлены **описания 12px muted** (заголовок 15px/600 +
+   desc; новые i18n-ключи `suggestDesc`/`explainDesc`/`findIssuesDesc` — осознанное
+   отступление от «не трогать i18n»: существующих строк для описаний нет);
+   hover = border assistant + translateY(-1px) + **shadow-sm** (без заливки soft);
+   плашка-иконка 36px radius **8**, без инверсии в solid.
+4. **Empty state**: ✦-маркер 44→**40px** в **soft**-плашке (был solid-круг + ореол).
+8. **Баг совместного висения онбординга и empty state**: `.pm-processman__chat-wrap:has(.pm-processman-onboarding) .pm-processman-empty { display: none }`.
+
+Проверки v4:
+- processman-suite **58/58 PASS** (вкл. i18n-parity), tokens **PASS** — логика/testid не тронуты.
+- Визуальная верификация: production build + vite preview + Playwright против живого
+  backend (127.0.0.1:8011), xvfb + Google Chrome для скроллбара. Скриншоты `shots/v4-*`:
+  - `v4-01-onboarding` — онбординг виден, empty СКРЫТ (фикс п.8);
+  - `v4-02-empty-quick` — после «Понятно»: empty + quick-карточки с описаниями;
+  - `v4-03-quick-hover` — hover карточки: violet border + подъём + shadow-sm;
+  - `v4-04-header` — шапка: ✦ 28px solid radius 8, 600 title, точка 8px;
+  - `v4-05-composer-focus` — focus-ring 2px violet, send disabled = 40% opacity;
+  - `v4-06-chip` / `v4-07-chip-hover` — чип pill 999 + hover (bg темнее, underline);
+  - `v4-09-agent-card` — **реальная** error-карточка (на хосте развёрнут backend-образ
+    старше worktree: `/api/llm/*` → 404, живой ответ невозможен);
+  - `v4-09b-agent-answer` — OK-карточка с чипами узлов 📍 pill/mono (ответ LLM подменён
+    мок-роутом; рендер и разметка реальные; узлы сессии подмешаны в payload — у старого
+    backend GET session.nodes пустой даже после add_node);
+  - `v4-10-collapsed` — collapse-to-icon rail 48px;
+  - `v4-12-scrollbar-full` + `v4-12-scrollbar-zoom` — тонкий 6px стилизованный скроллбар
+    ленты (xvfb + Chrome; в headless classic-скроллбары не рисуются).
+
+Замеченное вне scope v4 (логика не менялась): typewriter-печать ответа медленная
+(skip по клику на карточку); при быстрой серии вопросов pending-карточки могут не
+резолвиться (race в chat-store); развёрнутый на хосте backend-образ отстаёт от main
+(`/api/llm/*` 404, add_node → 500/409, GET session.nodes пустой).

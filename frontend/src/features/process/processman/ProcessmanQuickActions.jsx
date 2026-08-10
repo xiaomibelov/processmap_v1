@@ -28,7 +28,10 @@ export default function ProcessmanQuickActions({
         onClick={() => onSuggest?.()}
       >
         <span className="pm-processman-quick__icon" aria-hidden="true">→</span>
-        <span className="pm-processman-quick__text">{t.suggestLabel}</span>
+        <span className="pm-processman-quick__text">
+          <span className="pm-processman-quick__title">{t.suggestLabel}</span>
+          <span className="pm-processman-quick__desc">{t.suggestDesc}</span>
+        </span>
         <span className="pm-processman-quick__chevron" aria-hidden="true">›</span>
       </button>
       <button
@@ -40,7 +43,10 @@ export default function ProcessmanQuickActions({
         onClick={() => onExplain?.()}
       >
         <span className="pm-processman-quick__icon" aria-hidden="true">💡</span>
-        <span className="pm-processman-quick__text">{t.explainLabel}</span>
+        <span className="pm-processman-quick__text">
+          <span className="pm-processman-quick__title">{t.explainLabel}</span>
+          <span className="pm-processman-quick__desc">{t.explainDesc}</span>
+        </span>
         <span className="pm-processman-quick__chevron" aria-hidden="true">›</span>
       </button>
       <button
@@ -51,7 +57,10 @@ export default function ProcessmanQuickActions({
         onClick={() => onFindIssues?.()}
       >
         <span className="pm-processman-quick__icon" aria-hidden="true">⚠</span>
-        <span className="pm-processman-quick__text">{t.exampleQ3}</span>
+        <span className="pm-processman-quick__text">
+          <span className="pm-processman-quick__title">{t.exampleQ3}</span>
+          <span className="pm-processman-quick__desc">{t.findIssuesDesc}</span>
+        </span>
         <span className="pm-processman-quick__chevron" aria-hidden="true">›</span>
       </button>
     </div>
