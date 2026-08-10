@@ -44,7 +44,7 @@
   - nightly: полный suite с `--api-coverage` + nightly-профиль фаззинга +
     HTML/JSON отчёты покрытия.
 
-## Найденные и исправленные баги (6)
+## Найденные и исправленные баги (7)
 
 | # | Эндпоинт | Симптом | Корень | Фикс |
 |---|----------|---------|--------|------|
@@ -54,8 +54,9 @@
 | B4 | `GET /api/enterprise/workspace` | 500 AttributeError | роутер звал несуществующий `_lm.get_enterprise_workspace` | прямой вызов legacy-функции с Query-параметрами |
 | B5 | `POST /api/sessions` `{"roles": true}` | 500 TypeError | `roles: bool/int/dict` падал в `set(roles)` | валидация → `RequestValidationError` (422 по схеме) |
 | B6 | `GET /api/audit-log` при ≥1 событии | 500 AttributeError | `sqlite3.Row` не имеет `.get()` (на pg — dict-like) | нормализация строк `dict(row)` в `audit/reader.py` |
+| B7 | `GET /api/admin/ai/executions`, `GET /api/admin/ai/prompts`, `GET /api/notifications/error_events` | 500 OverflowError | Python int ~2^66 в `offset`/`occurred_from` не биндится в SQLite INTEGER | зажим в int64 на границе роутеров (PR #707) |
 
-Регрессии: `backend/tests/test_contract_fuzz_regressions.py` — 7 тестов, зелёные.
+Регрессии: `backend/tests/test_contract_fuzz_regressions.py` — 10 тестов, зелёные.
 
 Спека (spec hygiene, без изменения поведения):
 - `/`, `/favicon.ico`, `/metrics` убраны из спеки (`include_in_schema=False`) —

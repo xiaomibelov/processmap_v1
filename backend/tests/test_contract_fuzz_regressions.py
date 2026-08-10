@@ -8,6 +8,9 @@
 - B4: GET /api/enterprise/workspace → 500 AttributeError (_lm.get_enterprise_workspace)
 - B5: POST /api/sessions {"roles": true} → 500 TypeError вместо 422
 - B6: GET /api/audit-log с ≥1 событием → 500 AttributeError (sqlite3.Row.get)
+- B7: GET /api/admin/ai/executions, /api/admin/ai/prompts,
+  /api/notifications/error_events → 500 OverflowError (int ~2^66 в offset/ts
+  не биндится в SQLite INTEGER; зажим в int64 на границе роутеров)
 """
 from __future__ import annotations
 
@@ -95,6 +98,31 @@ class ContractFuzzRegressionTest(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json().get("roles"), ["operator"])
+
+    # ----------------------------------------------------------- B7 (PR #707)
+
+    def test_b7_admin_ai_executions_huge_offset_not_500(self):
+        # CI fuzz: offset ~2^66 → OverflowError при биндинге в SQLite → 500.
+        r = self.client.get(
+            "/api/admin/ai/executions?offset=474793763510629620476127739904",
+            headers=self.headers,
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def test_b7_admin_ai_prompts_huge_offset_not_500(self):
+        r = self.client.get(
+            "/api/admin/ai/prompts?offset=474793763510629620476127739904&scope_id=5d04dc4f73",
+            headers=self.headers,
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def test_b7_notifications_error_events_huge_ts_not_500(self):
+        # CI fuzz: occurred_from ~2^66 + мусорный order → 500 в fallback-репо.
+        r = self.client.get(
+            "/api/notifications/error_events?occurred_from=9299150674545163573215100928&order=%C3%B3&limit=500",
+            headers=self.headers,
+        )
+        self.assertEqual(r.status_code, 200, r.text)
 
 
 if __name__ == "__main__":
