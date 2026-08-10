@@ -168,6 +168,68 @@ def _has_element_children(node: ET.Element) -> bool:
     return False
 
 
+def _execution_platform_preference(root: ET.Element) -> str:
+    """Return "cloud" | "platform" | "" based on the definitions executionPlatform.
+
+    Camunda Modeler writes e.g. ``ns1:executionPlatform="Camunda Cloud"`` (C8 /
+    Zeebe) or ``"Camunda Platform"`` (C7). The attribute may live in any
+    namespace, so it is matched by local name.
+    """
+    try:
+        attrib = root.attrib or {}
+    except Exception:
+        return ""
+    for attr_name, attr_value in attrib.items():
+        if _local_name(str(attr_name)).lower() != "executionplatform":
+            continue
+        value = str(attr_value or "").strip().lower()
+        if "cloud" in value or "zeebe" in value:
+            return "cloud"
+        if "platform" in value:
+            return "platform"
+    return ""
+
+
+def _active_properties_namespace(
+    extension_elements_node: ET.Element,
+    platform_preference: str,
+) -> Optional[str]:
+    """Choose which properties namespace is authoritative for one element.
+
+    Camunda Cloud exports may carry two parallel blocks: ``zeebe:properties``
+    (live, written by the modeler) and legacy ``camunda:properties`` (C7, often
+    stale). When both exist, exactly one namespace wins:
+
+    - platform_preference == "platform" -> camunda: wins (legacy C7 files);
+    - otherwise ("cloud" or no marker) -> zeebe: wins.
+
+    Returns None when the element has no properties blocks at all.
+    """
+    has_zeebe = False
+    has_camunda = False
+    for child in extension_elements_node:
+        if not isinstance(child.tag, str):
+            continue
+        if _local_name(child.tag).lower() != "properties":
+            continue
+        ns = _namespace_uri(child.tag)
+        if ns == _ZEEBE_NS:
+            has_zeebe = True
+        elif ns == _CAMUNDA_NS:
+            has_camunda = True
+    if platform_preference == "platform":
+        if has_camunda:
+            return _CAMUNDA_NS
+        if has_zeebe:
+            return _ZEEBE_NS
+        return None
+    if has_zeebe:
+        return _ZEEBE_NS
+    if has_camunda:
+        return _CAMUNDA_NS
+    return None
+
+
 def extract_camunda_extensions_from_bpmn_xml(xml_text: str) -> Dict[str, Any]:
     """Derive the normalized Camunda extension state map from BPMN XML.
 
@@ -197,6 +259,8 @@ def extract_camunda_extensions_from_bpmn_xml(xml_text: str) -> Dict[str, Any]:
     except Exception:
         return {}
 
+    platform_preference = _execution_platform_preference(root)
+
     result: Dict[str, Any] = {}
     for element in root.iter():
         element_id = str(element.get("id") or "").strip()
@@ -213,6 +277,8 @@ def extract_camunda_extensions_from_bpmn_xml(xml_text: str) -> Dict[str, Any]:
         if extension_elements_node is None or not _has_element_children(extension_elements_node):
             continue
 
+        active_props_ns = _active_properties_namespace(extension_elements_node, platform_preference)
+
         managed_properties: List[Dict[str, Any]] = []
         managed_listeners: List[Dict[str, Any]] = []
         preserved_raw: List[str] = []
@@ -227,6 +293,14 @@ def extract_camunda_extensions_from_bpmn_xml(xml_text: str) -> Dict[str, Any]:
                 continue
 
             if _is_managed_properties_node(child):
+                if active_props_ns is not None and ns != active_props_ns:
+                    # Shadowed legacy namespace (see _active_properties_namespace):
+                    # not read as managed properties, but kept as a preserved raw
+                    # fragment so the user's data survives projection round-trips.
+                    raw_fragment = _serialize_child_to_preserved_raw(child)
+                    if raw_fragment:
+                        preserved_raw.append(raw_fragment)
+                    continue
                 parsed = _parse_extension_properties(child, ns)
                 if parsed is not None:
                     managed_properties.extend(parsed)
@@ -275,3 +349,83 @@ def extract_camunda_extensions_from_bpmn_xml(xml_text: str) -> Dict[str, Any]:
             "preservedExtensionElements": unique_raw,
         }
     return result
+
+
+def detect_camunda_namespace_divergence(xml_text: str) -> List[Dict[str, Any]]:
+    """Return elements whose camunda: and zeebe: properties blocks diverge.
+
+    For every element that carries BOTH a ``camunda:properties`` and a
+    ``zeebe:properties`` block (and both blocks are cleanly parseable), the
+    property multisets are compared. Diverging elements are reported as::
+
+        [{"element_id": ..., "camunda_only": [{"name", "value"}], "zeebe_only": [...]}]
+
+    ``camunda_only`` rows are stale legacy values that the parser now ignores
+    in favour of ``zeebe:`` (unless executionPlatform says otherwise).
+    """
+    raw = str(xml_text or "").strip()
+    if not raw:
+        return []
+    try:
+        root = ET.fromstring(raw.encode("utf-8"))
+    except Exception:
+        return []
+
+    diverged: List[Dict[str, Any]] = []
+    for element in root.iter():
+        element_id = str(element.get("id") or "").strip()
+        if not element_id:
+            continue
+        extension_elements_node: Optional[ET.Element] = None
+        for child in element:
+            if not isinstance(child.tag, str):
+                continue
+            if _local_name(child.tag).lower() == "extensionelements":
+                extension_elements_node = child
+                break
+        if extension_elements_node is None:
+            continue
+
+        camunda_rows: List[Dict[str, Any]] = []
+        zeebe_rows: List[Dict[str, Any]] = []
+        for child in extension_elements_node:
+            if not isinstance(child.tag, str):
+                continue
+            ns = _namespace_uri(child.tag)
+            if ns not in {_CAMUNDA_NS, _ZEEBE_NS}:
+                continue
+            if _local_name(child.tag).lower() != "properties":
+                continue
+            parsed = _parse_extension_properties(child, ns)
+            if parsed is None:
+                continue
+            if ns == _CAMUNDA_NS:
+                camunda_rows.extend(parsed)
+            else:
+                zeebe_rows.extend(parsed)
+
+        if not camunda_rows and not zeebe_rows:
+            continue
+        camunda_keys = sorted({(r["name"], r["value"]) for r in camunda_rows})
+        zeebe_keys = sorted({(r["name"], r["value"]) for r in zeebe_rows})
+        if not camunda_keys or not zeebe_keys:
+            # Element has only one namespace block -> nothing to diverge.
+            continue
+        if camunda_keys == zeebe_keys:
+            continue
+        camunda_only = [
+            {"name": name, "value": value}
+            for name, value in camunda_keys
+            if (name, value) not in set(zeebe_keys)
+        ]
+        zeebe_only = [
+            {"name": name, "value": value}
+            for name, value in zeebe_keys
+            if (name, value) not in set(camunda_keys)
+        ]
+        diverged.append({
+            "element_id": element_id,
+            "camunda_only": camunda_only,
+            "zeebe_only": zeebe_only,
+        })
+    return diverged
