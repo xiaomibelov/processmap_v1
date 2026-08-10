@@ -323,6 +323,30 @@ export async function apiAdminLlmUsage(params = {}) {
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
 
+// ------- Admin TestGen (LLM-генерация API-тестов через GitHub Actions) -------
+
+export async function apiAdminTestgenRun(payload = {}) {
+  const body = {
+    tag: String(payload?.tag || "").trim(),
+    limit: Math.round(Number(payload?.limit || 5)),
+  };
+  const r = okOrError(await request(apiRoutes.admin.testgenRun(), { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminTestgenListRuns(params = {}) {
+  const endpoint = apiRoutes.admin.testgenRuns(normalizeAdminParams(params));
+  const r = okOrError(await request(endpoint, { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminTestgenGetRun(runId) {
+  const id = String(runId || "").trim();
+  if (!id) return { ok: false, status: 0, error: "missing run_id" };
+  const r = okOrError(await request(apiRoutes.admin.testgenRunDetail(id), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
 export async function apiAdminLlmListModels() {
   const r = okOrError(await request(apiRoutes.admin.llmModels(), { method: "GET" }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
