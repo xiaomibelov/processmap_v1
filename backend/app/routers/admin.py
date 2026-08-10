@@ -144,9 +144,21 @@ def _as_text(value: Any) -> str:
 
 def _as_int(value: Any, default: int = 0) -> int:
     try:
-        return int(value)
+        n = int(value)
     except Exception:
         return int(default)
+    # Клэмп в int64: значения за пределами bigint не представимы в БД и роняли
+    # запросы с OverflowError → 500 (contract-fuzz, PR #707).
+    return max(-(2**63), min(n, 2**63 - 1))
+
+
+_SQL_INT64_MAX = 9_223_372_036_854_775_807
+
+
+def _clamp_sql_int(value: int) -> int:
+    """Зажим в int64: Python int > SQLite INTEGER при биндинге даёт OverflowError
+    (500 вместо пустой страницы; найдено contract-фаззингом: offset/ts ~2^66)."""
+    return max(-_SQL_INT64_MAX, min(int(value), _SQL_INT64_MAX))
 
 
 def _autopass_used_fallback(autopass_raw: Dict[str, Any], bpmn_meta_raw: Dict[str, Any]) -> bool:
@@ -926,10 +938,10 @@ def admin_ai_executions(
         workspace_id=workspace_id,
         project_id=project_id,
         session_id=session_id,
-        created_from=max(0, _as_int(created_from, 0)),
-        created_to=max(0, _as_int(created_to, 0)),
+        created_from=max(0, _clamp_sql_int(_as_int(created_from, 0))),
+        created_to=max(0, _clamp_sql_int(_as_int(created_to, 0))),
         limit=max(1, min(_as_int(limit, 50), 200)),
-        offset=max(0, _as_int(offset, 0)),
+        offset=max(0, _clamp_sql_int(_as_int(offset, 0))),
     )
 
 
@@ -953,7 +965,7 @@ def admin_ai_prompts(
             scope_level=scope_level,
             scope_id=scope_id,
             limit=max(1, min(_as_int(limit, 50), 200)),
-            offset=max(0, _as_int(offset, 0)),
+            offset=max(0, _clamp_sql_int(_as_int(offset, 0))),
         )
     except ValueError as exc:
         return _legacy_main._enterprise_error(422, "validation_error", str(exc))
@@ -1714,10 +1726,10 @@ def admin_error_events(
         return _legacy_main._enterprise_error(422, "validation_error", "org_id is required")
 
     lim = max(1, min(_as_int(limit, 50), 100))
-    off = max(0, _as_int(offset, 0))
+    off = max(0, _clamp_sql_int(_as_int(offset, 0)))
     sort_order = "desc" if _as_text(order).lower() == "desc" else "asc"
-    from_ts_raw = _as_int(occurred_from, 0)
-    to_ts_raw = _as_int(occurred_to, 0)
+    from_ts_raw = _clamp_sql_int(_as_int(occurred_from, 0))
+    to_ts_raw = _clamp_sql_int(_as_int(occurred_to, 0))
     filters = {
         "session_id": _as_text(session_id) or None,
         "request_id": _as_text(request_id) or None,

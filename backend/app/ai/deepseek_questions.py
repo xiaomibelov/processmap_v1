@@ -780,9 +780,10 @@ def _deepseek_chat_request(
     max_tokens: Optional[int] = None,
     max_attempts: int = 3,
     retry_backoff_sec: float = 0.8,
+    model: str = "deepseek-chat",
 ) -> Dict[str, Any]:
     payload = {
-        "model": "deepseek-chat",
+        "model": str(model or "deepseek-chat"),
         "messages": messages,
         "temperature": float(temperature),
     }

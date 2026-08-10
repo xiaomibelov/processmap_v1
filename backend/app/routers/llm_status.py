@@ -1,8 +1,10 @@
 """LLM4 — GET /api/llm/status (viewer+: любой аутентифицированный член организации).
 
-Панель PROCESSMAN (v1) показывает статус LLM: настроен ли провайдер и квоту
-по фиче `analysis`. Секретов, base_url, model и имён провайдеров в ответе НЕТ —
-только `{configured, quota:{used, limit}}` (решения владельца Q1/Q2, 2026-08-06).
+Панель PROCESSMAN (v1) показывает статус LLM: настроен ли провайдер, квоту
+по фиче `analysis` и активную модель из реестра (feat/llm-model-config).
+Секретов, base_url и имён провайдеров в ответе НЕТ — только
+`{configured, quota:{used, limit}, model:{name, display_name, source}}`
+(решения владельца Q1/Q2, 2026-08-06; model добавлен контуром llm-model-config).
 """
 from __future__ import annotations
 
@@ -41,6 +43,22 @@ def llm_status(request: Request) -> Any:
         oid,
         int(time.time()) - LLM_STATUS_WINDOW_SEC,
     )
+    # Активная модель из реестра (миграция 016): default модели. Пустой реестр →
+    # env-дефолт (поведение до миграции), чтобы панель всегда показывала модель.
+    registry_name = llm_store.resolve_model("", oid) or ""
+    if registry_name:
+        display = ""
+        for m in llm_store.list_models(oid):
+            if m.get("is_default"):
+                display = str(m.get("display_name") or "")
+                break
+        model_info = {
+            "name": registry_name,
+            "display_name": display or registry_name,
+            "source": "registry",
+        }
+    else:
+        model_info = {"name": "deepseek-chat", "display_name": "DeepSeek Chat", "source": "env"}
     return {
         # configured = enabled провайдер с непустым ключом (решение владельца Q2:
         # не any_enabled_provider — без ключа фолбэк-цепочка не работает).
@@ -49,4 +67,5 @@ def llm_status(request: Request) -> Any:
             "used": int(used),
             "limit": int(limit),
         },
+        "model": model_info,
     }

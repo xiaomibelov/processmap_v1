@@ -111,6 +111,67 @@ function installFetchMock() {
     const method = String(init?.method || "GET").toUpperCase();
     calls.push({ url, method, body: init?.body ? String(init.body) : "" });
 
+    if (url.startsWith("/api/admin/llm/models/model_2/set-default") && method === "POST") {
+      return jsonResponse({
+        ok: true,
+        item: {
+          id: "model_2", org_id: "org1", provider: "deepseek", model_name: "deepseek-reasoner",
+          display_name: "DeepSeek Reasoner", enabled: true, is_default: true, params: {},
+          created_by: "admin", created_at: 110, updated_by: "admin", updated_at: 190,
+        },
+      });
+    }
+    if (url.startsWith("/api/admin/llm/models/model_2") && method === "PATCH") {
+      return jsonResponse({
+        ok: true,
+        item: {
+          id: "model_2", org_id: "org1", provider: "deepseek", model_name: "deepseek-reasoner",
+          display_name: "DeepSeek Reasoner", enabled: false, is_default: false, params: {},
+          created_by: "admin", created_at: 110, updated_by: "admin", updated_at: 190,
+        },
+      });
+    }
+    if (url === "/api/admin/llm/models" && method === "POST") {
+      return jsonResponse({
+        ok: true,
+        item: {
+          id: "model_3", org_id: "org1", provider: "openai", model_name: "gpt-4o-mini",
+          display_name: "GPT-4o mini", enabled: true, is_default: false, params: {},
+          created_by: "admin", created_at: 120, updated_by: "admin", updated_at: 120,
+        },
+      }, 201);
+    }
+    if (url === "/api/admin/llm/models" && method === "GET") {
+      return jsonResponse({
+        ok: true,
+        items: [
+          {
+            id: "model_1", org_id: "org1", provider: "deepseek", model_name: "deepseek-chat",
+            display_name: "DeepSeek Chat", enabled: true, is_default: true, params: {},
+            created_by: "migration-016", created_at: 100, updated_by: "migration-016", updated_at: 100,
+          },
+          {
+            id: "model_2", org_id: "org1", provider: "deepseek", model_name: "deepseek-reasoner",
+            display_name: "DeepSeek Reasoner", enabled: true, is_default: false, params: {},
+            created_by: "admin", created_at: 110, updated_by: "admin", updated_at: 150,
+          },
+        ],
+        count: 2,
+      });
+    }
+    if (url.startsWith("/api/admin/llm/feature-models/") && method === "PUT") {
+      return jsonResponse({ ok: true, item: { feature: "schema_assistant", model_id: "model_2" } });
+    }
+    if (url === "/api/admin/llm/feature-models" && method === "GET") {
+      return jsonResponse({
+        ok: true,
+        items: [
+          { feature: "process_analysis", model_id: "model_2", model_name: "deepseek-reasoner",
+            model_enabled: true, updated_by: "admin", updated_at: 170 },
+        ],
+        count: 1,
+      });
+    }
     if (url.startsWith("/api/admin/llm/providers/prov_1/test") && method === "POST") {
       return jsonResponse({
         ok: true,
@@ -386,6 +447,84 @@ test("AdminLlmPage: features tab toggle fires PATCH", async () => {
     assert.equal(JSON.parse(patchCall.body).enabled, false);
     const text = env.container.textContent || "";
     assert.ok(text.includes("1200 / 50000"));
+  } finally {
+    await env.cleanup();
+    mock.restore();
+  }
+});
+
+test("AdminLlmPage: models tab renders registry, toggle and set-default fire API calls", async () => {
+  const mock = installFetchMock();
+  const env = await renderPage();
+  try {
+    await switchTab(env, "models");
+    const text = env.container.textContent || "";
+    assert.ok(env.container.querySelector('[data-testid="llm-model-row-deepseek-chat"]'));
+    assert.ok(env.container.querySelector('[data-testid="llm-model-row-deepseek-reasoner"]'));
+    assert.ok(text.includes("DeepSeek Chat"));
+    // default-модель не имеет кнопки set-default
+    assert.equal(env.container.querySelector('[data-testid="llm-model-set-default-deepseek-chat"]'), null);
+    assert.ok(env.container.querySelector('[data-testid="llm-model-set-default-deepseek-reasoner"]'));
+    // override-селекты по известным фичам
+    assert.ok(env.container.querySelector('[data-testid="llm-feature-model-row-schema_assistant"]'));
+
+    await act(async () => {
+      env.container.querySelector('[data-testid="llm-model-toggle-deepseek-reasoner"]')?.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
+    });
+    await flush(60);
+    const patchCall = mock.calls.find((call) => call.url === "/api/admin/llm/models/model_2" && call.method === "PATCH");
+    assert.ok(patchCall);
+    assert.equal(JSON.parse(patchCall.body).enabled, false);
+
+    await act(async () => {
+      env.container.querySelector('[data-testid="llm-model-set-default-deepseek-reasoner"]')?.dispatchEvent(new env.dom.window.MouseEvent("click", { bubbles: true }));
+    });
+    await flush(60);
+    assert.ok(mock.calls.some((call) => call.url === "/api/admin/llm/models/model_2/set-default" && call.method === "POST"));
+  } finally {
+    await env.cleanup();
+    mock.restore();
+  }
+});
+
+test("AdminLlmPage: models tab create form fires POST and override select fires PUT", async () => {
+  const mock = installFetchMock();
+  const env = await renderPage();
+  try {
+    await switchTab(env, "models");
+    const providerInput = env.container.querySelector('[data-testid="llm-model-form-provider"]');
+    const nameInput = env.container.querySelector('[data-testid="llm-model-form-model-name"]');
+    const displayInput = env.container.querySelector('[data-testid="llm-model-form-display-name"]');
+    const form = env.container.querySelector('[data-testid="llm-model-create-form"]');
+    assert.ok(providerInput && nameInput && displayInput && form);
+
+    await act(async () => {
+      setFieldValue(providerInput, "openai", env.dom);
+      setFieldValue(nameInput, "gpt-4o-mini", env.dom);
+      setFieldValue(displayInput, "GPT-4o mini", env.dom);
+    });
+    await flush();
+    await act(async () => {
+      form.dispatchEvent(new env.dom.window.Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flush(50);
+    const createCall = mock.calls.find((call) => call.url === "/api/admin/llm/models" && call.method === "POST");
+    assert.ok(createCall);
+    const body = JSON.parse(createCall.body);
+    assert.equal(body.model_name, "gpt-4o-mini");
+    assert.equal(body.provider, "openai");
+    assert.equal(body.is_default, false);
+
+    const select = env.container.querySelector('[data-testid="llm-feature-model-select-schema_assistant"]');
+    assert.ok(select);
+    await act(async () => {
+      select.value = "model_2";
+      select.dispatchEvent(new env.dom.window.Event("change", { bubbles: true }));
+    });
+    await flush(60);
+    const putCall = mock.calls.find((call) => call.url === "/api/admin/llm/feature-models/schema_assistant" && call.method === "PUT");
+    assert.ok(putCall);
+    assert.equal(JSON.parse(putCall.body).model_id, "model_2");
   } finally {
     await env.cleanup();
     mock.restore();

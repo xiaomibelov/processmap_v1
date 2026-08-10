@@ -139,6 +139,9 @@ def complete(
     for provider_index, provider in enumerate(chain):
         # LLM4 S8: fallback = ответил НЕ первый провайдер цепочки (или env-фолбэк).
         fallback_used = provider_index > 0 or str(provider.get("id") or "") == "env_fallback"
+        # Резолв модели: реестр (override фичи → default) → provider.model (старое
+        # поведение при пустом реестре, env-фолбэк несёт свой хардкод).
+        resolved_model = llm_store.resolve_model(feature, org_id) or str(provider.get("model") or "")
         try:
             resp = _deepseek_chat_request(
                 api_key=str(provider.get("api_key") or ""),
@@ -148,11 +151,12 @@ def complete(
                 timeout=timeout_sec,
                 max_tokens=effective_max_tokens,
                 max_attempts=_GATEWAY_MAX_ATTEMPTS,
+                model=resolved_model,
             )
         except Exception as exc:  # фолбэк на следующего провайдера
             last_error = f"{provider.get('name')}: {exc.__class__.__name__}: {exc}"
             llm_store.record_usage(
-                org_id=org_id, feature=feature, model=str(provider.get("model") or ""),
+                org_id=org_id, feature=feature, model=resolved_model or str(provider.get("model") or ""),
                 provider_id=str(provider.get("id") or ""), cached=False,
                 user_id=user_id, project_id=project_id, session_id=session_id,
                 latency_ms=int((time.monotonic() - started) * 1000), status="error",
