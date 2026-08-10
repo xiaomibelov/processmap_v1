@@ -169,6 +169,13 @@ def make_conformance_check(status_map: Dict[str, set], ctype_waived: set):
         op_id = case.operation.definition.raw.get("operationId", "")
         if response.status_code in status_map.get(op_id, set()):
             return None
+        # 308 Permanent Redirect — осознанный deprecated-endpoint middleware
+        # (каноникализация trailing-slash/мусорных сегментов, лог «Deprecated
+        # endpoint used: canonical=...»). Срабатывает на любом path-param роуте
+        # при param='%20' и т.п.; не доменный ответ операции и не ошибка —
+        # не документируется per-operation, глобальный waiver (PR #707, CI fuzz).
+        if response.status_code == 308:
+            return None
         status_code_conformance(ctx, response, case)
         if op_id not in ctype_waived:
             content_type_conformance(ctx, response, case)

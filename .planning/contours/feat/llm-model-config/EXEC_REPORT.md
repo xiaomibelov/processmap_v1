@@ -122,8 +122,20 @@ CI красный по двум джобам — оба разобраны:
 
 Контрактные тесты новых ручек — `test_admin_llm_api.py` (happy path CRUD,
 403 non-admin / 401, 404, конфликт is_default: «default ровно один» + 422/409).
-Contract fuzz (pr profile) локально: 139 passed + 1 flaky `GET /api/admin/audit`
-(в одиночном прогоне PASS, доменно не связан).
+Contract fuzz (pr profile) локально: 140 passed / 0 failed (дважды).
+
+4. **Fuzz-found 500s (pre-existing, не маскированы — пофикшены)**: schemathesis
+   нашёл latent OverflowError → 500 на GET /api/admin/ai/executions,
+   /api/admin/ai/prompts, /api/notifications/error_events (offset/ts > int64 →
+   OverflowError на sqlite/psycopg-биндинге). Фикс: `storage._clamp_int64`
+   (error_events offset + occurred_from/to в _build_error_events_where) +
+   клэмп `_as_int` в routers/admin.py. Регрессия:
+   `tests/test_int64_clamp_regression.py` (6 тестов).
+5. **308 deprecation-alias middleware (pre-existing, осознанное поведение)**:
+   whitespace path-параметр (`%20`) → strip → canonical list-path → 308 с
+   Deprecation-заголовками (middleware-уровень, не домен роута). Глобальный
+   waiver в contract_support.make_conformance_check (308 → skip conformance,
+   5xx по-прежнему не маскируется никогда). Per-op исключения — избыточны.
 
 ## Риски / заметки
 
