@@ -125,8 +125,18 @@ def proxy_list_error_events(
     offset: int = 0,
     order: str = "asc",
 ) -> Any:
+    # Зажим числовых фильтров в int64: Python int > SQLite INTEGER при биндинге
+    # даёт OverflowError (500 в fallback-репозитории; contract-фаззинг, ts ~2^66).
+    _I64 = 9_223_372_036_854_775_807
+
+    def _clamped(v: Any) -> Any:
+        try:
+            return max(-_I64, min(int(v), _I64))
+        except Exception:
+            return v
+
     params = {
-        k: v
+        k: (_clamped(v) if k in ("occurred_from", "occurred_to", "limit", "offset") else v)
         for k, v in {
             "session_id": session_id,
             "request_id": request_id,

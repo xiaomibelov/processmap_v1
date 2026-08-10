@@ -51,6 +51,28 @@ class LlmFeaturePatchBody(BaseModel):
     daily_token_limit: Optional[int] = None
 
 
+class LlmModelBody(BaseModel):
+    provider: str = ""
+    model_name: str = ""
+    display_name: str = ""
+    enabled: Optional[bool] = None
+    is_default: Optional[bool] = None
+    params: Optional[dict] = None
+
+
+class LlmModelPatchBody(BaseModel):
+    provider: Optional[str] = None
+    model_name: Optional[str] = None
+    display_name: Optional[str] = None
+    enabled: Optional[bool] = None
+    is_default: Optional[bool] = None
+    params: Optional[dict] = None
+
+
+class LlmFeatureModelBody(BaseModel):
+    model_id: Optional[str] = None  # None/"" = снять override
+
+
 # ---------------------------------------------------------------- providers
 
 @router.get("/api/admin/llm/providers")
@@ -133,6 +155,7 @@ def admin_llm_test_provider(request: Request, provider_id: str) -> Any:
             timeout=20,
             max_tokens=16,
             max_attempts=1,
+            model=str(provider.get("model") or "") or "deepseek-chat",
         )
         latency_ms = int((time.monotonic() - started) * 1000)
         preview = ""
@@ -161,6 +184,109 @@ def admin_llm_test_provider(request: Request, provider_id: str) -> Any:
         return {"ok": True, "item": {"ok": False, "latency_ms": latency_ms,
                                      "model": provider.get("model") or "", "preview": "",
                                      "error": f"{exc.__class__.__name__}: {exc}"}}
+
+
+# ------------------------------------------------------------------ models
+# Реестр моделей (миграция 016): что реально уходит в payload["model"].
+
+@router.get("/api/admin/llm/models")
+def admin_llm_list_models(request: Request) -> Any:
+    uid, oid, err = _platform_admin_context(request)
+    if err is not None:
+        return err
+    items = [llm_store.public_model(m) for m in llm_store.list_models(oid or "org_default")]
+    return {"ok": True, "items": items, "count": len(items)}
+
+
+@router.post("/api/admin/llm/models", status_code=201)
+def admin_llm_create_model(request: Request, body: LlmModelBody) -> Any:
+    uid, oid, err = _platform_admin_context(request)
+    if err is not None:
+        return err
+    model_name = (body.model_name or "").strip()
+    if not model_name:
+        return _legacy_main._enterprise_error(422, "validation_error", "model_name is required")
+    row = llm_store.create_model(
+        org_id=oid or "org_default", model_name=model_name,
+        provider=(body.provider or "").strip(), display_name=(body.display_name or "").strip(),
+        enabled=True if body.enabled is None else bool(body.enabled),
+        is_default=bool(body.is_default), params=body.params or {}, actor=uid or "",
+    )
+    return {"ok": True, "item": llm_store.public_model(row)}
+
+
+@router.patch("/api/admin/llm/models/{model_id}")
+def admin_llm_patch_model(request: Request, model_id: str, body: LlmModelPatchBody) -> Any:
+    uid, _oid, err = _platform_admin_context(request)
+    if err is not None:
+        return err
+    current = llm_store.get_model(model_id)
+    if current is None:
+        return _legacy_main._enterprise_error(404, "not_found", "model not found")
+    fields = body.model_dump(exclude_unset=True)
+    if current.get("is_default") and fields.get("enabled") is False:
+        return _legacy_main._enterprise_error(
+            422, "validation_error", "default model cannot be disabled (set another default first)")
+    if current.get("is_default") and fields.get("is_default") is False:
+        return _legacy_main._enterprise_error(
+            422, "validation_error", "use set-default on another model instead")
+    row = llm_store.update_model(model_id, fields, actor=uid or "")
+    return {"ok": True, "item": llm_store.public_model(row or {})}
+
+
+@router.delete("/api/admin/llm/models/{model_id}", responses={
+    409: {"description": "Конфликт: default-модель нельзя удалить (сначала назначьте другой default)"},
+    404: {"description": "Не найдено: модель отсутствует"},
+    403: {"description": "Доступ запрещён: требуется platform admin"},
+})
+def admin_llm_delete_model(request: Request, model_id: str) -> Any:
+    uid, _oid, err = _platform_admin_context(request)
+    if err is not None:
+        return err
+    current = llm_store.get_model(model_id)
+    if current is None:
+        return _legacy_main._enterprise_error(404, "not_found", "model not found")
+    if current.get("is_default"):
+        return _legacy_main._enterprise_error(
+            409, "conflict", "default model cannot be deleted (set another default first)")
+    llm_store.delete_model(model_id)
+    return {"ok": True, "deleted": True, "id": model_id}
+
+
+@router.post("/api/admin/llm/models/{model_id}/set-default")
+def admin_llm_set_default_model(request: Request, model_id: str) -> Any:
+    uid, _oid, err = _platform_admin_context(request)
+    if err is not None:
+        return err
+    row = llm_store.set_default_model(model_id, actor=uid or "")
+    if row is None:
+        return _legacy_main._enterprise_error(404, "not_found", "model not found")
+    return {"ok": True, "item": llm_store.public_model(row)}
+
+
+@router.get("/api/admin/llm/feature-models")
+def admin_llm_list_feature_models(request: Request) -> Any:
+    uid, oid, err = _platform_admin_context(request)
+    if err is not None:
+        return err
+    items = llm_store.list_feature_model_overrides(oid or "org_default")
+    return {"ok": True, "items": items, "count": len(items)}
+
+
+@router.put("/api/admin/llm/feature-models/{feature}")
+def admin_llm_put_feature_model(request: Request, feature: str, body: LlmFeatureModelBody) -> Any:
+    uid, oid, err = _platform_admin_context(request)
+    if err is not None:
+        return err
+    feature = (feature or "").strip()
+    if not feature:
+        return _legacy_main._enterprise_error(422, "validation_error", "feature is required")
+    model_id = (body.model_id or "").strip() or None
+    if model_id is not None and llm_store.get_model(model_id) is None:
+        return _legacy_main._enterprise_error(422, "validation_error", "model not found")
+    llm_store.set_feature_model_override(
+        feature, model_id, org_id=oid or "org_default", actor=uid or "")
+    return {"ok": True, "item": {"feature": feature, "model_id": model_id or ""}}
 
 
 # ------------------------------------------------------------------ prompts

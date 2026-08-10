@@ -110,11 +110,19 @@ test("resolveLlmStatusView: idle/unknown/not_configured/configured/exhausted", (
   assert.deepEqual(resolveLlmStatusView({ ok: true, result: { configured: false } }), { kind: "not_configured" });
   assert.deepEqual(
     resolveLlmStatusView({ ok: true, result: { configured: true, quota: { used: 10, limit: 200 } } }),
-    { kind: "configured", used: 10, limit: 200, exhausted: false },
+    { kind: "configured", used: 10, limit: 200, exhausted: false,
+      modelName: "", modelDisplayName: "", modelSource: "" },
   );
   assert.equal(
     resolveLlmStatusView({ ok: true, result: { configured: true, quota: { used: 200, limit: 200 } } }).exhausted,
     true,
+  );
+  // feat/llm-model-config: активная модель из apiLlmStatus.model
+  assert.deepEqual(
+    resolveLlmStatusView({ ok: true, result: { configured: true, quota: { used: 1, limit: 10 },
+      model: { name: "deepseek-chat", display_name: "DeepSeek Chat", source: "registry" } } }),
+    { kind: "configured", used: 1, limit: 10, exhausted: false,
+      modelName: "deepseek-chat", modelDisplayName: "DeepSeek Chat", modelSource: "registry" },
   );
 });
 

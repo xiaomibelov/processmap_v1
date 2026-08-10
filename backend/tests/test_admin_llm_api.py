@@ -385,3 +385,146 @@ def test_no_secret_in_any_llm_endpoint(client, admin_token, sandbox):
         assert SECRET_KEY_VALUE not in resp.text, f"утечка ключа в {url}"
     assert json.dumps(client.get("/api/admin/llm/providers",
                                  headers=_auth(admin_token)).json()) .find(SECRET_KEY_VALUE[-4:]) >= 0
+
+
+# =================================================================== models
+# feat/llm-model-config: реестр моделей (миграция 016) — CRUD + default-гарды
+# + per-feature overrides. ВАЖНО: тесты работают в org_default (контекст
+# admin-токена), поэтому в конце восстанавливают сид-default deepseek-chat.
+
+MODEL_SHAPE = {
+    "id": str, "org_id": str, "provider": str, "model_name": str, "display_name": str,
+    "enabled": bool, "is_default": bool, "params": dict,
+    "created_by": str, "created_at": int, "updated_by": str, "updated_at": int,
+}
+
+SEED_MODEL_ID = "llmmodel_deepseek_chat"
+
+
+@pytest.fixture
+def models_sandbox(admin_token, client):
+    """Уборка тестовых моделей/overrides + восстановление сид-default."""
+    marker = uuid.uuid4().hex[:8]
+    yield {"marker": marker, "model_name": f"test-model-{marker}", "feature": f"test_mdl_{marker}"}
+    import psycopg
+
+    with psycopg.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM llm_feature_models WHERE feature LIKE %s", (f"test_mdl_{marker}%",))
+            cur.execute("DELETE FROM llm_models WHERE model_name LIKE %s", (f"test-model-{marker}%",))
+            cur.execute(
+                "UPDATE llm_models SET is_default = true WHERE id = %s"
+                " AND NOT EXISTS (SELECT 1 FROM llm_models WHERE org_id = 'org_default'"
+                "                AND is_default = true AND id != %s)",
+                (SEED_MODEL_ID, SEED_MODEL_ID),
+            )
+        conn.commit()
+    llm_store.invalidate_model_cache()
+
+
+def _restore_seed_default(client, admin_token):
+    """Если тест сменил default — вернуть сид (идемпотентно)."""
+    client.post(f"/api/admin/llm/models/{SEED_MODEL_ID}/set-default", headers=_auth(admin_token))
+
+
+def test_models_rbac(client, admin_token, user_token, models_sandbox):
+    assert client.get("/api/admin/llm/models").status_code == 401
+    assert client.get("/api/admin/llm/models", headers=_auth(user_token)).status_code == 403
+    assert client.get("/api/admin/llm/feature-models", headers=_auth(user_token)).status_code == 403
+    assert client.put(f"/api/admin/llm/feature-models/{models_sandbox['feature']}",
+                      headers=_auth(user_token), json={"model_id": ""}).status_code == 403
+    resp = client.get("/api/admin/llm/models", headers=_auth(admin_token))
+    assert resp.status_code == 200 and resp.json()["ok"] is True
+    seed = [m for m in resp.json()["items"] if m["id"] == SEED_MODEL_ID]
+    assert seed and seed[0]["is_default"] is True, "сид миграции 016 — default"
+    _assert_shape(seed[0], MODEL_SHAPE, "model.seed")
+
+
+def test_models_crud_and_default_guards(client, admin_token, models_sandbox):
+    name = models_sandbox["model_name"]
+    # create
+    resp = client.post("/api/admin/llm/models", headers=_auth(admin_token), json={
+        "provider": "deepseek", "model_name": name, "display_name": "Test Model",
+    })
+    assert resp.status_code == 201, resp.text
+    item = resp.json()["item"]
+    _assert_shape(item, MODEL_SHAPE, "model.item")
+    assert item["is_default"] is False and item["enabled"] is True
+    # create без model_name → 422
+    assert client.post("/api/admin/llm/models", headers=_auth(admin_token),
+                       json={"model_name": ""}).status_code == 422
+    # patch
+    resp = client.patch(f"/api/admin/llm/models/{item['id']}", headers=_auth(admin_token),
+                        json={"display_name": "Renamed", "enabled": False})
+    assert resp.status_code == 200 and resp.json()["item"]["display_name"] == "Renamed"
+    assert resp.json()["item"]["enabled"] is False
+    # patch 404
+    assert client.patch("/api/admin/llm/models/nope", headers=_auth(admin_token),
+                        json={"enabled": True}).status_code == 404
+    # set-default → сид перестаёт быть default
+    resp = client.post(f"/api/admin/llm/models/{item['id']}/set-default", headers=_auth(admin_token))
+    assert resp.status_code == 200 and resp.json()["item"]["is_default"] is True
+    items = client.get("/api/admin/llm/models", headers=_auth(admin_token)).json()["items"]
+    defaults = [m for m in items if m["is_default"]]
+    assert len(defaults) == 1 and defaults[0]["id"] == item["id"], "default ровно один"
+    # default нельзя выключить (422) и удалить (409)
+    assert client.patch(f"/api/admin/llm/models/{item['id']}", headers=_auth(admin_token),
+                        json={"enabled": False}).status_code == 422
+    assert client.delete(f"/api/admin/llm/models/{item['id']}",
+                         headers=_auth(admin_token)).status_code == 409
+    # вернуть сид-default → модель можно удалить
+    _restore_seed_default(client, admin_token)
+    resp = client.delete(f"/api/admin/llm/models/{item['id']}", headers=_auth(admin_token))
+    assert resp.status_code == 200 and resp.json()["deleted"] is True
+    assert client.delete(f"/api/admin/llm/models/{item['id']}",
+                         headers=_auth(admin_token)).status_code == 404
+
+
+def test_feature_model_overrides(client, admin_token, models_sandbox):
+    feature = models_sandbox["feature"]
+    resp = client.post("/api/admin/llm/models", headers=_auth(admin_token), json={
+        "model_name": models_sandbox["model_name"],
+    })
+    model_id = resp.json()["item"]["id"]
+    # пустой список по новой фиче
+    items = client.get("/api/admin/llm/feature-models", headers=_auth(admin_token)).json()["items"]
+    assert not [o for o in items if o["feature"] == feature]
+    # несуществующая модель → 422
+    assert client.put(f"/api/admin/llm/feature-models/{feature}", headers=_auth(admin_token),
+                      json={"model_id": "nope"}).status_code == 422
+    # установить override
+    resp = client.put(f"/api/admin/llm/feature-models/{feature}", headers=_auth(admin_token),
+                      json={"model_id": model_id})
+    assert resp.status_code == 200 and resp.json()["item"]["model_id"] == model_id
+    items = client.get("/api/admin/llm/feature-models", headers=_auth(admin_token)).json()["items"]
+    mine = [o for o in items if o["feature"] == feature]
+    assert mine and mine[0]["model_id"] == model_id
+    assert mine[0]["model_name"] == models_sandbox["model_name"]
+    # снять override (пустой model_id)
+    resp = client.put(f"/api/admin/llm/feature-models/{feature}", headers=_auth(admin_token),
+                      json={"model_id": ""})
+    assert resp.status_code == 200 and resp.json()["item"]["model_id"] == ""
+    items = client.get("/api/admin/llm/feature-models", headers=_auth(admin_token)).json()["items"]
+    assert not [o for o in items if o["feature"] == feature]
+
+
+def test_model_store_resolve_cache_invalidation(models_sandbox):
+    """In-memory кэш резолва: write → invalidate → resolve видит новое значение."""
+    org = "org_default"
+    feature = models_sandbox["feature"]
+    # default сида
+    assert llm_store.resolve_model(feature, org) == "deepseek-chat"
+    row = llm_store.create_model(org_id=org, model_name=models_sandbox["model_name"],
+                                 is_default=True, actor="test")
+    assert llm_store.resolve_model(feature, org) == models_sandbox["model_name"], \
+        "create с is_default инвалидирует кэш"
+    # override фичи
+    other = llm_store.create_model(org_id=org, model_name=f"{models_sandbox['model_name']}-b",
+                                   actor="test")
+    llm_store.set_feature_model_override(feature, other["id"], org_id=org, actor="test")
+    assert llm_store.resolve_model(feature, org) == f"{models_sandbox['model_name']}-b"
+    # снятие override → снова default
+    llm_store.set_feature_model_override(feature, None, org_id=org, actor="test")
+    assert llm_store.resolve_model(feature, org) == models_sandbox["model_name"]
+    llm_store.set_default_model(SEED_MODEL_ID, actor="test")
+    assert llm_store.resolve_model(feature, org) == "deepseek-chat"

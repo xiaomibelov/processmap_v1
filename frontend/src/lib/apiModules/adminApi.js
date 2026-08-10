@@ -323,6 +323,65 @@ export async function apiAdminLlmUsage(params = {}) {
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
 }
 
+export async function apiAdminLlmListModels() {
+  const r = okOrError(await request(apiRoutes.admin.llmModels(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmCreateModel(payload = {}) {
+  const body = {
+    provider: String(payload?.provider || "").trim(),
+    model_name: String(payload?.model_name || payload?.modelName || "").trim(),
+    display_name: String(payload?.display_name || payload?.displayName || "").trim(),
+    enabled: payload?.enabled !== false,
+    is_default: payload?.is_default === true || payload?.isDefault === true,
+  };
+  if (payload?.params && typeof payload.params === "object") body.params = payload.params;
+  const r = okOrError(await request(apiRoutes.admin.llmModels(), { method: "POST", body }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmPatchModel(id, payload = {}) {
+  const mid = String(id || "").trim();
+  if (!mid) return { ok: false, status: 0, error: "missing model_id" };
+  const body = {};
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "provider")) body.provider = String(payload?.provider || "").trim();
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "model_name")) body.model_name = String(payload?.model_name || "").trim();
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "display_name")) body.display_name = String(payload?.display_name || "").trim();
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "enabled")) body.enabled = Boolean(payload?.enabled);
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "is_default")) body.is_default = Boolean(payload?.is_default);
+  if (Object.prototype.hasOwnProperty.call(payload || {}, "params")) body.params = payload?.params && typeof payload.params === "object" ? payload.params : {};
+  const r = okOrError(await request(apiRoutes.admin.llmModel(mid), { method: "PATCH", body }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmDeleteModel(id) {
+  const mid = String(id || "").trim();
+  if (!mid) return { ok: false, status: 0, error: "missing model_id" };
+  const r = okOrError(await request(apiRoutes.admin.llmModel(mid), { method: "DELETE" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmSetDefaultModel(id) {
+  const mid = String(id || "").trim();
+  if (!mid) return { ok: false, status: 0, error: "missing model_id" };
+  const r = okOrError(await request(apiRoutes.admin.llmModelSetDefault(mid), { method: "POST" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmListFeatureModels() {
+  const r = okOrError(await request(apiRoutes.admin.llmFeatureModels(), { method: "GET" }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
+export async function apiAdminLlmPutFeatureModel(feature, modelId) {
+  const name = String(feature || "").trim();
+  if (!name) return { ok: false, status: 0, error: "missing feature" };
+  const body = { model_id: String(modelId || "").trim() };
+  const r = okOrError(await request(apiRoutes.admin.llmFeatureModel(name), { method: "PUT", body }));
+  return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;
+}
+
 export async function apiAdminListAgentRuns() {
   const r = okOrError(await request(apiRoutes.admin.agentRuns(), { method: "GET" }));
   return r.ok ? { ok: true, status: r.status, data: r.data && typeof r.data === "object" ? r.data : {} } : r;

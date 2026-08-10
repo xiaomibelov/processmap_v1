@@ -2324,6 +2324,254 @@ paths:
           description: 'Доступ запрещён: требуется роль admin или членство в организации с нужными правами'
         '404':
           description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+  /api/admin/llm/feature-models:
+    get:
+      description: 'Получить feature models. Особенности: доступ: администратор платформы/организации.'
+      operationId: admin_llm_list_feature_models_api_admin_llm_feature_models_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Llm List Feature Models Api Admin Llm Feature
+                  Models Get
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+      security:
+      - bearerAuth: []
+      summary: Получить feature models
+      tags:
+      - admin
+  /api/admin/llm/feature-models/{feature}:
+    put:
+      description: 'Сохранить (replace) feature models. Особенности: доступ: администратор
+        платформы/организации; тело валидируется схемой (422 при несоответствии); 404
+        — ресурс не найден/вне scope.'
+      operationId: admin_llm_put_feature_model_api_admin_llm_feature_models__feature__put
+      parameters:
+      - in: path
+        name: feature
+        required: true
+        schema:
+          title: Feature
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LlmFeatureModelBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Llm Put Feature Model Api Admin Llm Feature Models  Feature  Put
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+        '404':
+          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Сохранить (replace) feature models
+      tags:
+      - admin
+  /api/admin/llm/models:
+    get:
+      description: 'Получить models. Особенности: доступ: администратор платформы/организации.'
+      operationId: admin_llm_list_models_api_admin_llm_models_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Llm List Models Api Admin Llm Models Get
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+      security:
+      - bearerAuth: []
+      summary: Получить models
+      tags:
+      - admin
+    post:
+      description: 'Создать/выполнить models. Особенности: доступ: администратор платформы/организации;
+        тело валидируется схемой (422 при несоответствии).'
+      operationId: admin_llm_create_model_api_admin_llm_models_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LlmModelBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Llm Create Model Api Admin Llm Models Post
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Создать/выполнить models
+      tags:
+      - admin
+  /api/admin/llm/models/{model_id}:
+    delete:
+      description: 'Удалить models. Особенности: доступ: администратор платформы/организации;
+        404 — ресурс не найден/вне scope.'
+      operationId: admin_llm_delete_model_api_admin_llm_models__model_id__delete
+      parameters:
+      - in: path
+        name: model_id
+        required: true
+        schema:
+          title: Model Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Llm Delete Model Api Admin Llm Models  Model Id  Delete
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется platform admin'
+        '404':
+          description: 'Не найдено: модель отсутствует'
+        '409':
+          description: 'Конфликт: default-модель нельзя удалить (сначала назначьте другой
+            default)'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Удалить models
+      tags:
+      - admin
+    patch:
+      description: 'Обновить частично models. Особенности: доступ: администратор платформы/организации;
+        тело валидируется схемой (422 при несоответствии); 404 — ресурс не найден/вне
+        scope.'
+      operationId: admin_llm_patch_model_api_admin_llm_models__model_id__patch
+      parameters:
+      - in: path
+        name: model_id
+        required: true
+        schema:
+          title: Model Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LlmModelPatchBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Llm Patch Model Api Admin Llm Models  Model Id  Patch
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+        '404':
+          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Обновить частично models
+      tags:
+      - admin
+  /api/admin/llm/models/{model_id}/set-default:
+    post:
+      description: 'Создать/выполнить set default. Особенности: доступ: администратор
+        платформы/организации; тело валидируется схемой (422 при несоответствии); 404
+        — ресурс не найден/вне scope.'
+      operationId: admin_llm_set_default_model_api_admin_llm_models__model_id__set_default_post
+      parameters:
+      - in: path
+        name: model_id
+        required: true
+        schema:
+          title: Model Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                title: Response Admin Llm Set Default Model Api Admin Llm Models  Model
+                  Id  Set Default Post
+          description: Successful Response
+        '401':
+          description: 'Не аутентифицирован: отсутствует или недействителен JWT access
+            token (Authorization: Bearer)'
+        '403':
+          description: 'Доступ запрещён: требуется роль admin или членство в организации
+            с нужными правами'
+        '404':
+          description: 'Не найдено: ресурс отсутствует или недоступен в текущем org-scope'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Создать/выполнить set default
+      tags:
+      - admin
   /api/admin/llm/prompts:
     get:
       tags:
@@ -14678,6 +14926,70 @@ components:
       required:
       - rating
       title: LlmFeedbackIn
+    LlmFeatureModelBody:
+      properties:
+        model_id:
+          nullable: true
+          title: Model Id
+          type: string
+      title: LlmFeatureModelBody
+      type: object
+    LlmModelBody:
+      properties:
+        display_name:
+          default: ''
+          title: Display Name
+          type: string
+        enabled:
+          nullable: true
+          title: Enabled
+          type: boolean
+        is_default:
+          nullable: true
+          title: Is Default
+          type: boolean
+        model_name:
+          default: ''
+          title: Model Name
+          type: string
+        params:
+          nullable: true
+          title: Params
+          type: object
+        provider:
+          default: ''
+          title: Provider
+          type: string
+      title: LlmModelBody
+      type: object
+    LlmModelPatchBody:
+      properties:
+        display_name:
+          nullable: true
+          title: Display Name
+          type: string
+        enabled:
+          nullable: true
+          title: Enabled
+          type: boolean
+        is_default:
+          nullable: true
+          title: Is Default
+          type: boolean
+        model_name:
+          nullable: true
+          title: Model Name
+          type: string
+        params:
+          nullable: true
+          title: Params
+          type: object
+        provider:
+          nullable: true
+          title: Provider
+          type: string
+      title: LlmModelPatchBody
+      type: object
     LlmPromptBody:
       properties:
         feature:
