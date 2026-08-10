@@ -8,6 +8,8 @@
 - B4: GET /api/enterprise/workspace → 500 AttributeError (_lm.get_enterprise_workspace)
 - B5: POST /api/sessions {"roles": true} → 500 TypeError вместо 422
 - B6: GET /api/audit-log с ≥1 событием → 500 AttributeError (sqlite3.Row.get)
+- B7: admin-эндпоинты с гигантскими int-параметрами (ts > 2^63) → 500 OverflowError
+  (sqlite bind); фикс — кламп к sqlite-safe диапазону
 """
 from __future__ import annotations
 
@@ -65,6 +67,17 @@ class ContractFuzzRegressionTest(unittest.TestCase):
     def test_b4_enterprise_workspace_not_500(self):
         r = self.client.get("/api/enterprise/workspace", headers=self.headers)
         self.assertEqual(r.status_code, 200, r.text)
+
+    def test_b7_admin_endpoints_huge_int_params_not_500(self):
+        huge = "18248248804317161151490775056384"
+        for path in (
+            f"/api/admin/ai/executions?created_to={huge}&created_from=19948282402",
+            f"/api/admin/error-events?occurred_from={huge}",
+            f"/api/admin/audit?updated_to={huge}&updated_from=833792517193",
+            f"/api/audit-log?date_from={huge}",
+        ):
+            r = self.client.get(path, headers=self.headers)
+            self.assertNotEqual(r.status_code, 500, f"{path}: {r.text[:200]}")
 
     def test_b6_audit_log_with_events_not_500(self):
         # Создаём событие аудита (project.create), затем читаем журнал —
