@@ -147,8 +147,14 @@ deepseek-v4-flash) и `GITHUB_TOKEN`/`GH_PAT` на бэкенде (repo + action
   существующий `AdminLlmPage.test.mjs` — 8 passed (не сломан).
 - contract fuzz: 404 `runs/{run_id}` закрыт spec-gap waiver (фаззер детерминирован).
 - spec-drift: docs/openapi.yaml дополнен 3 эндпоинтами + схемой TestgenRunBody.
-- Регрессы: основной suite + contract — см. блок «Верификация (git-proof)» выше
-  и финальный прогон перед PR (ниже, после мержа параллельных коммитов).
+- **Финальные регрессы на fa1d0ce8** (2026-08-10):
+  - основной suite: **1078 passed, 26 failed** — список 26 побайтово идентичен
+    baseline (pg/redis); `test_gate_010_twice_second_run_is_noop` — флаки
+    (в одном прогоне 27-е падение, в повторном и при изоляции 3/3 — зелёный;
+    не связан с изменениями ветки);
+  - contract (pr-профиль): **142 passed** (fuzzed=133, +3 новые testgen-операции),
+    404 `runs/{run_id}` под waiver — фаззер детерминирован;
+  - CI #709: spec-drift pass, contract pass, nightly skipping (по дизайну).
 
 ## Ограничения / follow-up (Часть 2)
 
