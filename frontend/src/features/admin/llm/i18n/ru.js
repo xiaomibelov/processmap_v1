@@ -2,6 +2,7 @@
 export default {
   // ---- вкладки ----
   "tab.providers": "Провайдеры",
+  "tab.models": "Модели",
   "tab.prompts": "Промты",
   "tab.features": "Фичи",
   "tab.usage": "Расход",
@@ -50,6 +51,28 @@ export default {
   "providers.action.deleteConfirm": "Удалить провайдера {name}?",
   "providers.test.ok": "OK · {latency} мс · {preview}",
   "providers.test.fail": "ошибка: {error}",
+
+  // ---- модели ----
+  "models.title": "Модели LLM",
+  "models.subtitle": "Реестр моделей: какая модель уходит в запросы, default и per-feature override",
+  "models.empty": "Модели не настроены.",
+  "models.col.model": "Модель",
+  "models.col.provider": "Провайдер",
+  "models.col.displayName": "Отображение",
+  "models.col.default": "Default",
+  "models.col.enabled": "Статус",
+  "models.col.updated": "Обновлено",
+  "models.action.setDefault": "Сделать default",
+  "models.action.deleteConfirm": "Удалить модель {name}?",
+  "models.form.createTitle": "Новая модель",
+  "models.form.provider": "Провайдер",
+  "models.form.modelName": "Имя модели",
+  "models.form.displayName": "Отображаемое имя",
+  "models.form.isDefault": "Сделать default",
+  "models.form.submit": "Добавить модель",
+  "models.overrides.title": "Per-feature override",
+  "models.overrides.subtitle": "Какая модель обслуживает конкретную фичу (по умолчанию — default-модель)",
+  "models.overrides.useDefault": "default-модель",
 
   // ---- промты ----
   "prompts.title": "Промты",

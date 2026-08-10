@@ -43,6 +43,11 @@ export default function ProcessmanAnalysis({ sessionId, llmStatus = null, onOpen
       {view.kind === "configured" ? (
         <div style={{ marginBottom: 10 }}>
           <span className="pm-processman__ok-badge" data-testid="processman-analysis-configured">{t.analysisConfigured}</span>
+          {view.modelDisplayName || view.modelName ? (
+            <div className="pm-processman__hint" data-testid="processman-analysis-model" style={{ marginTop: 6 }}>
+              {t.analysisModelLine.replace("{model}", view.modelDisplayName || view.modelName)}
+            </div>
+          ) : null}
           <div className="pm-processman__hint" data-testid="processman-analysis-quota" style={{ marginTop: 6 }}>{quotaLine()}</div>
           {view.exhausted ? (
             <div className="pm-processman__state pm-processman__state--warning" data-testid="processman-analysis-exhausted" style={{ marginTop: 8 }}>
