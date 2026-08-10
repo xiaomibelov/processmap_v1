@@ -87,15 +87,15 @@
   border-bottom: 1px solid var(--pm-tobe-border);
 }
 
-/* ✦-аватар ассистента: 32px SOLID-фиолетовая плашка radius 10 (видимый agent-цвет) */
+/* ✦-аватар ассистента: 28px SOLID-фиолетовая плашка radius 8 (видимый agent-цвет) */
 .pm-processman__icon {
-  flex: 0 0 32px;
-  width: 32px;
-  height: 32px;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--pm-tobe-assistant);
   color: var(--pm-tobe-on-primary);
 }
@@ -108,7 +108,7 @@
 
 .pm-processman__title {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--pm-tobe-fg);
 }
@@ -481,12 +481,12 @@
   text-overflow: ellipsis;
 }
 
-/* живая точка статуса: спокойная (success) в ready, пульс agent-цвета при генерации */
+/* живая точка статуса 8px: спокойная (success) в ready, пульс agent-цвета при генерации */
 .pm-processman__status::before {
   content: "";
-  flex: 0 0 6px;
-  width: 6px;
-  height: 6px;
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
   background: var(--pm-tobe-accent);
 }
@@ -888,6 +888,11 @@
   transition: border-color 160ms ease, background 160ms ease;
 }
 
+/* hover чипа → bg темнее на 5% (soft + 5% agent) */
+.pm-processman-contextchip:hover {
+  background: color-mix(in srgb, var(--pm-tobe-assistant-soft) 95%, var(--pm-tobe-assistant));
+}
+
 .pm-processman-contextchip:has(.pm-processman-contextchip__main:hover) {
   border-color: var(--pm-tobe-assistant);
 }
@@ -910,7 +915,7 @@
   text-align: left;
   cursor: pointer;
   padding: 0;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 
 /* hover → affordance «показать на схеме» (нативная подсказка — title у кнопки) */
@@ -1000,9 +1005,8 @@
 
 .pm-processman-quick__card:hover:not(:disabled) {
   border-color: var(--pm-tobe-assistant);
-  background: var(--pm-tobe-assistant-soft);
   transform: translateY(-1px);
-  box-shadow: var(--pm-tobe-shadow-lift);
+  box-shadow: var(--pm-tobe-shadow-sm);
 }
 
 .pm-processman-quick__card:disabled {
@@ -1010,7 +1014,7 @@
   cursor: not-allowed;
 }
 
-/* плашка-иконка 36px в --pm-tobe-assistant-soft; на hover инвертируется в solid */
+/* плашка-иконка 36px в --pm-tobe-assistant-soft, иконка agent-цвета (radius 8 — шкала 8/12/999) */
 .pm-processman-quick__icon {
   flex: 0 0 auto;
   width: 36px;
@@ -1018,21 +1022,32 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--pm-tobe-assistant-soft);
   color: var(--pm-tobe-assistant);
   font-size: 16px;
   transition: background 160ms ease, color 160ms ease;
 }
 
-.pm-processman-quick__card:hover:not(:disabled) .pm-processman-quick__icon {
-  background: var(--pm-tobe-assistant);
-  color: var(--pm-tobe-on-primary);
-}
-
 .pm-processman-quick__text {
   flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pm-processman-quick__title {
+  font-size: 15px;
   font-weight: 600;
+  line-height: 1.3;
+}
+
+.pm-processman-quick__desc {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--pm-tobe-muted-fg);
 }
 
 .pm-processman-quick__chevron {
@@ -1076,18 +1091,18 @@
   text-align: center;
 }
 
+/* ✦-маркер 40px в soft-плашке (круг), глиф agent-цвета — по центру */
 .pm-processman-empty::before {
   content: "✦";
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: 999px;
-  background: var(--pm-tobe-assistant);
-  color: var(--pm-tobe-on-primary);
-  font-size: 22px;
-  box-shadow: 0 0 0 6px var(--pm-tobe-assistant-soft);
+  background: var(--pm-tobe-assistant-soft);
+  color: var(--pm-tobe-assistant);
+  font-size: 20px;
 }
 
 .pm-processman-empty__title {
@@ -1256,6 +1271,12 @@
 .pm-processman-onboarding__hide:hover {
   background: var(--pm-tobe-assistant-strong);
   border-color: var(--pm-tobe-assistant-strong);
+}
+
+/* --- онбординг и empty state не показываются одновременно (структурный баг
+       совместного висения): пока видна карточка онбординга, empty state скрыт --- */
+.pm-processman__chat-wrap:has(.pm-processman-onboarding) .pm-processman-empty {
+  display: none;
 }
 
 /* --- reduced motion: все новые анимации отключаются --- */
