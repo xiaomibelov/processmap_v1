@@ -6,6 +6,8 @@ import {
   apiListProjects,
   apiPutBpmnXml,
 } from "../lib/api.js";
+import { setVersion as setTrackedDiagramStateVersion } from "../lib/casVersionTracker.js";
+import { recordSaveDiagnostic } from "../features/session/saveDiagnosticsTrail.js";
 import {
   getLatestBpmnSnapshot,
   shouldAutoRestoreFromSnapshot,
@@ -37,6 +39,62 @@ export function shouldAttemptRequestedSessionRestore({
     urlSessionId,
     requestedExists,
   });
+}
+
+function pickServerCurrentVersionFromConflict(payload) {
+  const data = payload && typeof payload === "object" ? payload.data : null;
+  const detail = data && typeof data === "object" ? data.detail : null;
+  const candidates = [
+    data && typeof data === "object" ? data.server_current_version : null,
+    detail && typeof detail === "object" ? detail.server_current_version : null,
+  ];
+  for (const candidate of candidates) {
+    const num = Number(candidate);
+    if (Number.isFinite(num) && num >= 0) return Math.round(num);
+  }
+  return null;
+}
+
+/**
+ * Apply the result of the fire-and-forget snapshot-restore PUT to the unified
+ * CAS version tracker. The PUT bypasses saveCoordinator by design (background
+ * restore persist), so without this the tracker stays on the pre-restore base
+ * while the server has already bumped diagram_state_version — producing a
+ * spurious single-tab DIAGRAM_STATE_CONFLICT on the next coordinated save.
+ *
+ * @param {object} args
+ * @param {string} args.sessionId
+ * @param {object} args.putRes result of apiPutBpmnXml
+ * @returns {{applied: boolean, reason: string, serverVersion?: number|null, status?: number}}
+ */
+export function applySnapshotRestorePutResult({ sessionId, putRes } = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return { applied: false, reason: "missing_session_id" };
+  const res = putRes && typeof putRes === "object" ? putRes : {};
+  if (res.ok === true) {
+    const serverVersion = Number(res.diagramStateVersion);
+    if (Number.isFinite(serverVersion) && serverVersion >= 0) {
+      const normalized = Math.round(serverVersion);
+      setTrackedDiagramStateVersion(sid, normalized);
+      recordSaveDiagnostic("snapshot_restore_ok", { sid, serverVersion: normalized });
+      return { applied: true, reason: "ok", serverVersion: normalized };
+    }
+    recordSaveDiagnostic("snapshot_restore_ok", { sid, serverVersion: null });
+    return { applied: false, reason: "ok_no_version", serverVersion: null };
+  }
+  const status = Number(res.status || 0);
+  if (status === 409) {
+    const serverVersion = pickServerCurrentVersionFromConflict(res);
+    if (serverVersion !== null) {
+      // Self-write conflict: adopt the server base so subsequent coordinated
+      // saves go through without surfacing a spurious conflict modal.
+      setTrackedDiagramStateVersion(sid, serverVersion);
+    }
+    recordSaveDiagnostic("snapshot_restore_conflict", { sid, serverVersion });
+    return { applied: serverVersion !== null, reason: "conflict", serverVersion };
+  }
+  recordSaveDiagnostic("snapshot_restore_error", { sid, status });
+  return { applied: false, reason: "error", status };
 }
 
 export function buildSnapshotRestorePutOptions({
@@ -296,10 +354,12 @@ export default function useSessionActivationOrchestration({
       const ts = Number(restoredSnapshot?.ts || Date.now()) || Date.now();
       setSnapshotRestoreNotice({ sid, ts, nonce: Date.now() });
       void (async () => {
+        recordSaveDiagnostic("snapshot_restore_put", { sid });
         const putRes = await apiPutBpmnXml(sid, xml, buildSnapshotRestorePutOptions({
           sessionLike: nextRaw,
           restoredSnapshot,
         }));
+        applySnapshotRestorePutResult({ sessionId: sid, putRes });
         logSnapshotTrace("restore_persist_backend", {
           sid,
           ok: putRes?.ok ? 1 : 0,
