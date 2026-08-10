@@ -234,7 +234,11 @@ def admin_llm_patch_model(request: Request, model_id: str, body: LlmModelPatchBo
     return {"ok": True, "item": llm_store.public_model(row or {})}
 
 
-@router.delete("/api/admin/llm/models/{model_id}")
+@router.delete("/api/admin/llm/models/{model_id}", responses={
+    409: {"description": "Конфликт: default-модель нельзя удалить (сначала назначьте другой default)"},
+    404: {"description": "Не найдено: модель отсутствует"},
+    403: {"description": "Доступ запрещён: требуется platform admin"},
+})
 def admin_llm_delete_model(request: Request, model_id: str) -> Any:
     uid, _oid, err = _platform_admin_context(request)
     if err is not None:
