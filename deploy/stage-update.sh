@@ -65,8 +65,9 @@ fi
 log "1/4 Обновляю репозиторий до origin/main…"
 git fetch origin main --quiet
 
-if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-  fail "В working tree есть незакоммиченные изменения (tracked). Разберитесь вручную: git status"
+dirty="$(git status --porcelain --untracked-files=no | grep -v '^ M .env$' || true)"
+if [ -n "${dirty}" ]; then
+  fail "В working tree есть незакоммиченные изменения (tracked, кроме .env — его перегенерирует deploy.sh):\n${dirty}"
 fi
 
 # Untracked-файлы, которые перезапишет merge, — в backup (инцидент 2026-08-10:
