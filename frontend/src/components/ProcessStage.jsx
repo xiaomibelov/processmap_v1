@@ -48,6 +48,7 @@ import {
 } from "../features/process/bpmn/diff/semanticDiff.js";
 import { buildManualSaveProjectionSyncPlan } from "../features/process/bpmn/save/manualSaveProjectionSync.js";
 import { parseAndProjectBpmnToInterview } from "../features/process/hooks/useInterviewProjection";
+import { detectCamundaNamespaceDivergence } from "../features/process/camunda/camundaExtensions.js";
 import useBpmnSync from "../features/process/hooks/useBpmnSync";
 import ProcessmanPanel from "../features/process/processman/ProcessmanPanel";
 import ProcessmanErrorBoundary from "../features/process/processman/ProcessmanErrorBoundary";
@@ -6826,6 +6827,10 @@ function ProcessStage({
         setGenErr(shortErr(imported.error || "Импорт не выполнен."));
         return;
       }
+      const camundaNsDivergenceCount = detectCamundaNamespaceDivergence(text).length;
+      const camundaNsDivergenceWarning = camundaNsDivergenceCount > 0
+        ? ` Файл содержит устаревшие свойства в формате Camunda 7 (camunda:), которые расходятся с актуальными (zeebe:). Использованы актуальные значения. Элементов с расхождениями: ${camundaNsDivergenceCount}.`
+        : "";
       const replaceSeedInterview = isLikelySeedBpmnXml(draft?.bpmn_xml);
       const projected = parseAndProjectBpmnToInterview({
         xmlText: text,
@@ -6905,12 +6910,14 @@ function ProcessStage({
             ? `BPMN распознан: ${projected.parsed.nodes.length} узл., ${projected.parsed.edges.length} связей.`
               + `${importDiagnostics.importHasAnchorImpact ? ` Overlay anchors affected: ${importDiagnostics.affectedObjectIds.length}.` : " Overlay anchors unchanged."}`
               + " Стартовый seed BPMN заменён импортом."
+              + camundaNsDivergenceWarning
             : `BPMN распознан: ${projected.parsed.nodes.length} узл., ${projected.parsed.edges.length} связей.`
-              + `${importDiagnostics.importHasAnchorImpact ? ` Overlay anchors affected: ${importDiagnostics.affectedObjectIds.length}.` : " Overlay anchors unchanged."}`,
+              + `${importDiagnostics.importHasAnchorImpact ? ` Overlay anchors affected: ${importDiagnostics.affectedObjectIds.length}.` : " Overlay anchors unchanged."}`
+              + camundaNsDivergenceWarning,
         );
       } else {
         setDrawioAnchorImportDiagnostics(null);
-        setInfoMsg(projected.error || "BPMN загружен, но парсинг не выполнен.");
+        setInfoMsg((projected.error || "BPMN загружен, но парсинг не выполнен.") + camundaNsDivergenceWarning);
       }
       setApiClarifyHints([]);
       setApiClarifyList([]);
