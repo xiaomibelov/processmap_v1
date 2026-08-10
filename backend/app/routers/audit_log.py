@@ -37,7 +37,8 @@ def _parse_date(value: Optional[str], *, end_of_day: bool = False) -> int:
     if not src:
         return 0
     if src.isdigit():
-        return int(src)
+        # sqlite INTEGER — 64-бит; гигантские ts падают OverflowError на bind.
+        return min(int(src), 2**62 - 1)
     if _DATE_RE.match(src):
         try:
             dt = datetime.strptime(src, "%Y-%m-%d").replace(tzinfo=timezone.utc)
