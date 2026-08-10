@@ -6,7 +6,7 @@ import LoadingBlock from "./components/common/LoadingBlock";
 import { AdminQueryProvider } from "./providers/AdminQueryProvider";
 import { getAdminRouteMeta } from "./constants/adminRoutes.constants";
 import AdminShell from "./layout/AdminShell";
-import { buildAdminBreadcrumbs, canAccessAdminConsole, parseAdminRoute, toText } from "./adminUtils";
+import { buildAdminBreadcrumbs, canAccessAdminConsole, canOpenOrgSettings, parseAdminRoute, toText } from "./adminUtils";
 import useAdminAuditData from "./hooks/useAdminAuditData";
 import useAdminDashboardData from "./hooks/useAdminDashboardData";
 import useAdminJobsData from "./hooks/useAdminJobsData";
@@ -102,6 +102,11 @@ function AdminAppInner({
   }, [onNavigate, pathname, rawSearch]);
 
   const canAccessAdmin = useMemo(() => canAccessAdminConsole(user, orgs), [orgs, user]);
+  // Право «API Docs» — гейт таба TestGen в /admin/llm.
+  const canOpenApiDocs = useMemo(
+    () => canOpenOrgSettings(user, orgs, toText(activeOrgId)),
+    [orgs, user, activeOrgId],
+  );
   const currentOrg = useMemo(() => {
     return (Array.isArray(orgs) ? orgs : []).find((row) => toText(row?.org_id || row?.id) === toText(activeOrgId)) || null;
   }, [orgs, activeOrgId]);
@@ -376,7 +381,7 @@ function AdminAppInner({
       return <AdminAiModulesPage />;
     }
     if (route.section === "llm") {
-      return <AdminLlmPage />;
+      return <AdminLlmPage showTestgen={canOpenApiDocs} />;
     }
     if (route.section === "rag") {
       return <AdminRagPage payload={ragQ} />;

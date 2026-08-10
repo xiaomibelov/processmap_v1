@@ -2186,6 +2186,27 @@ def _ensure_schema() -> None:
             )
             con.execute("CREATE INDEX IF NOT EXISTS idx_ai_prompt_module_scope ON ai_prompt_versions(module_id, scope_level, scope_id)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_ai_prompt_status ON ai_prompt_versions(status)")
+            # Контур test/llm-testgen-admin: учёт запусков LLM-генератора тестов
+            # (генератор исполняется в GitHub Actions, здесь только метаданные).
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS testgen_runs (
+                  run_id TEXT PRIMARY KEY,
+                  status TEXT NOT NULL DEFAULT 'queued',
+                  tag TEXT NOT NULL DEFAULT '',
+                  batch_limit INTEGER NOT NULL DEFAULT 5,
+                  github_run_id TEXT NOT NULL DEFAULT '',
+                  pr_url TEXT NOT NULL DEFAULT '',
+                  summary_json TEXT NOT NULL DEFAULT '{}',
+                  error TEXT NOT NULL DEFAULT '',
+                  requested_by TEXT NOT NULL DEFAULT '',
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_testgen_runs_status ON testgen_runs(status)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_testgen_runs_created ON testgen_runs(created_at)")
             con.execute(
                 """
                 CREATE TABLE IF NOT EXISTS error_events (

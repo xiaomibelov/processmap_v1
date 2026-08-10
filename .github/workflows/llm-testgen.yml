@@ -1,0 +1,209 @@
+name: llm-testgen
+run-name: "testgen ${{ inputs.tag }} x${{ inputs.limit }} [${{ inputs.run_id || 'manual' }}]"
+
+# LLM-генератор API-тестов (контур test/llm-testgen-admin) — ТОЛЬКО ручной запуск.
+#
+# Источник запуска: админ-панель (POST /api/admin/testgen/run → workflow_dispatch)
+# или ручной Run workflow. Генератор НЕ исполняется на сервере приложения.
+#
+# Пайплайн: checkout → deps → покрытие (pytest --api-coverage + report) →
+# генерация батча scripts/llm_test_generator/ → ветка test/llm-gen-<run>-<ts> +
+# PR с отчётом → артефакты (coverage JSON/HTML, дельта, needs_human.md, usage).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "OpenAPI-тег целей (белый список спеки, например notes)"
+        required: true
+        type: string
+      limit:
+        description: "Размер батча (1..20)"
+        required: true
+        type: string
+        default: "5"
+      run_id:
+        description: "ID запуска из админки (для имени ветки/PR; пусто = ручной запуск)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11" # как в продовом Docker-образе backend
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Validate inputs (whitelist тегов + limit <= 20)
+        run: |
+          python - <<'EOF'
+          import re, sys
+          tag = "${{ inputs.tag }}".strip()
+          limit_raw = "${{ inputs.limit }}".strip()
+          run_id = "${{ inputs.run_id }}".strip()
+          allowed = {
+              "admin", "analytics", "audit-log", "auto-pass", "clipboard",
+              "deployment-notices", "dictionaries", "error-events", "explorer",
+              "feature-flags", "health", "kitchens", "llm", "notes",
+              "operation-catalog", "org-groups", "org-invites", "org-listing",
+              "org-members", "org-property-dictionary", "organizations",
+              "process-properties-registry", "process-templates",
+              "product-actions-ai", "product-actions-registry",
+              "project-analytics", "projects", "rag", "recipes",
+              "reference-resolver", "reports", "save-status", "session-events",
+              "sessions", "sku-bindings", "system", "templates",
+              "transformation", "version",
+          }
+          if tag not in allowed:
+              sys.exit(f"tag '{tag}' вне белого списка спеки")
+          if not re.fullmatch(r"\d+", limit_raw) or not (1 <= int(limit_raw) <= 20):
+              sys.exit(f"limit '{limit_raw}' вне диапазона 1..20")
+          if run_id and not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", run_id):
+              sys.exit(f"run_id '{run_id}' содержит недопустимые символы")
+          print(f"inputs ok: tag={tag}, limit={limit_raw}, run_id={run_id or '-'}")
+          EOF
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+
+      - name: Coverage baseline (pytest --api-coverage)
+        run: |
+          cd backend
+          python -m pytest tests --api-coverage -q || true
+        # || true: baseline содержит pg/redis-зависимые падения — собираем
+        # покрытие, а не гейтим suite (как nightly в backend-contract.yml).
+
+      - name: Coverage report (before)
+        run: |
+          python scripts/dump_openapi.py --format json --out build/openapi-live.json
+          python scripts/api_coverage_report.py \
+            --calls build/api-coverage-output/calls.jsonl \
+            --spec build/openapi-live.json \
+            --out-json build/api-coverage-before.json \
+            --out-html build/api-coverage-before.html
+
+      - name: LLM test generation
+        id: gen
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.LLM_TESTGEN_API_KEY }}
+          DEEPSEEK_BASE_URL: ${{ secrets.LLM_TESTGEN_BASE_URL }}
+          LLM_TEST_GENERATOR_MODEL: ${{ vars.LLM_TESTGEN_MODEL || 'deepseek-v4-flash' }}
+        run: |
+          python scripts/llm_test_generator/generate.py \
+            --tag "${{ inputs.tag }}" --limit "${{ inputs.limit }}" || echo "GEN_INCOMPLETE=1" >> "$GITHUB_OUTPUT"
+
+      - name: Прогон сгенерированных тестов в общий coverage
+        run: |
+          cd backend
+          python -m pytest tests/llm_generated --api-coverage -q || true
+
+      - name: Coverage report (after) + delta
+        run: |
+          python scripts/api_coverage_report.py \
+            --calls build/api-coverage-output/calls.jsonl \
+            --spec build/openapi-live.json \
+            --out-json build/api-coverage-after.json \
+            --out-html build/api-coverage-after.html
+          python - <<'EOF' | tee build/api-coverage-delta.txt
+          import json
+          def load(p):
+              try:
+                  return json.load(open(p, encoding="utf-8"))
+              except FileNotFoundError:
+                  return {}
+          def counts(d):
+              s = d.get("summary") or {}
+              return {k: int(s.get(k, 0) or 0) for k in ("covered", "partial", "not_covered")}
+          b, a = counts(load("build/api-coverage-before.json")), counts(load("build/api-coverage-after.json"))
+          print("Дельта покрытия (before → after):")
+          for k in ("covered", "partial", "not_covered"):
+              print(f"  {k}: {b.get(k, 0)} → {a.get(k, 0)} ({a.get(k, 0) - b.get(k, 0):+d})")
+          EOF
+
+      - name: Branch + PR с отчётом
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          ts=$(date -u +%Y%m%d-%H%M%S)
+          suffix="${{ inputs.run_id }}"
+          suffix="${suffix:-manual}"
+          branch="test/llm-gen-${suffix}-${ts}"
+          git config user.name "llm-testgen-bot"
+          git config user.email "llm-testgen-bot@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add backend/tests/llm_generated
+          if git diff --cached --quiet; then
+            echo "Новых тестов не сгенерировано — PR не создаётся."
+            echo "PR_URL=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m "test(llm-generated): батч ${{ inputs.tag }} x${{ inputs.limit }} (run ${suffix})"
+          git push -u origin "$branch"
+          {
+            echo "## LLM-генерация API-тестов"
+            echo ""
+            echo "- Тег: \`${{ inputs.tag }}\`, батч: ${{ inputs.limit }}, запуск: \`${suffix}\`"
+            echo "- Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ""
+            echo '```'
+            cat build/api-coverage-delta.txt || true
+            echo '```'
+            echo ""
+            echo "### Usage (LLM)"
+            echo '```json'
+            python -c "import json;d=json.load(open('build/llm-test-generator/last_run.json'));print(json.dumps(d.get('usage', d), ensure_ascii=False, indent=2))" || true
+            echo '```'
+            echo ""
+            echo "### needs_human"
+            cat build/llm-test-generator/needs_human.md 2>/dev/null || echo "(пусто — все цели прошли гейты)"
+          } > build/pr-body.md
+          pr_url=$(gh pr create --base main --head "$branch" \
+            --title "[testgen] ${{ inputs.tag }} x${{ inputs.limit }} (run ${suffix}, ${ts})" \
+            --body-file build/pr-body.md)
+          echo "PR: $pr_url"
+          echo "PR_URL=$pr_url" >> "$GITHUB_OUTPUT"
+
+      - name: Step summary
+        if: always()
+        run: |
+          {
+            echo "## llm-testgen: ${{ inputs.tag }} x${{ inputs.limit }}"
+            echo ""
+            cat build/api-coverage-delta.txt 2>/dev/null || true
+            echo ""
+            echo "PR: ${{ steps.pr.outputs.PR_URL || '(не создан)' }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-testgen-${{ inputs.tag }}-${{ github.run_id }}
+          path: |
+            build/api-coverage-before.json
+            build/api-coverage-after.json
+            build/api-coverage-after.html
+            build/api-coverage-delta.txt
+            build/llm-test-generator/last_run.json
+            build/llm-test-generator/needs_human.md
+            build/pr-body.md
+          if-no-files-found: ignore

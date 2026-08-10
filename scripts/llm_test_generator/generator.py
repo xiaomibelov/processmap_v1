@@ -40,7 +40,22 @@ _RULES = """\
 10. Эндпоинты требуют авторизованного пользователя С membership в org — иначе 401/403.
 11. Семантика ошибок: несуществующий id в path → 404 (не 422!). 422 получается ТОЛЬКО
     невалидными ЗНАЧЕНИЯМИ параметров (строка вместо int, невалидный enum и т.п.).
+12. НЕ ВЫДУМЫВАЙ негативные кейсы: если 4xx не воспроизводится реальными входами
+    (например, все query-параметры необязательные строки → 422 недостижим),
+    оставь только достижимые проверки (200 + структура ответа). Лучше меньше
+    ассертов, но честных.
 """
+
+# Тег-специфичные дополнения к правилам (авто-подстановка по тегу цели).
+_TAG_RULES = {
+    "admin": (
+        "12. Эндпоинты /api/admin/* требуют PLATFORM admin: создавай пользователя\n"
+        "    user = create_user('admin_x@local', 'password', is_admin=True) — флаг is_admin=True\n"
+        "    ОБЯЗАТЕЛЕН (по умолчанию False → будет 403). Org/membership можно не создавать,\n"
+        "    но не запрещено.\n"
+        "13. Для негативного кейса 403: второй пользователь с is_admin=False → 403."
+    ),
+}
 
 
 def _extract_code(text: str) -> str:
@@ -85,7 +100,11 @@ def build_prompt(target: Dict[str, Any]) -> List[Dict[str, str]]:
         parts.append("Дополнительный образец стиля (может быть unittest-стилем — ориентируйся на канонический выше):")
         for fname, code in samples:
             parts.append(f"# --- {fname} ---\n{code}")
-    parts += ["", _RULES, f"Имя файла: tests/llm_generated/test_{target.get('operation_id', 'op')}.py — один файл, 1–3 тестовых функции."]
+    parts += ["", _RULES]
+    tag_rules = "\n".join(_TAG_RULES[t] for t in (target.get("tags") or []) if t in _TAG_RULES)
+    if tag_rules:
+        parts.append(tag_rules)
+    parts.append(f"Имя файла: tests/llm_generated/test_{target.get('operation_id', 'op')}.py — один файл, 1–3 тестовых функции.")
     return [
         {"role": "system", "content": _SYSTEM},
         {"role": "user", "content": "\n".join(parts)},
