@@ -95,6 +95,18 @@ _ENTERPRISE_BOOTSTRAP_MARK = "enterprise_org_bootstrap_v1"
 _AUTH_USERS_BACKFILL_MARK = "auth_users_json_to_db_v1"
 _DEFAULT_ORG_ID = str(os.environ.get("FPC_DEFAULT_ORG_ID", "org_default") or "org_default").strip() or "org_default"
 _DEFAULT_ORG_NAME = str(os.environ.get("FPC_DEFAULT_ORG_NAME", "Default") or "Default").strip() or "Default"
+
+# Верхняя граница int64 (sqlite/psycopg bigint): query-параметры за пределами
+# int64 клэмпятся, а не роняют запрос с OverflowError → 500 (contract-fuzz).
+_INT64_MAX = 2**63 - 1
+
+
+def _clamp_int64(value: Any, default: int = 0) -> int:
+    try:
+        n = int(value)
+    except Exception:
+        n = int(default)
+    return max(-_INT64_MAX - 1, min(n, _INT64_MAX))
 SESSION_PRESENCE_TTL_SECONDS = 60
 _DEFAULT_WORKSPACE_NAME = (
     str(os.environ.get("FPC_DEFAULT_WORKSPACE_NAME", "Main Workspace") or "Main Workspace").strip()
@@ -9878,10 +9890,10 @@ def _build_error_events_where(
     _eq("severity", severity)
     if occurred_from is not None and int(occurred_from or 0) > 0:
         clauses.append("occurred_at >= ?")
-        params.append(int(occurred_from or 0))
+        params.append(_clamp_int64(occurred_from))
     if occurred_to is not None and int(occurred_to or 0) > 0:
         clauses.append("occurred_at <= ?")
-        params.append(int(occurred_to or 0))
+        params.append(_clamp_int64(occurred_to))
     return " AND ".join(clauses), params
 
 
@@ -9903,7 +9915,7 @@ def list_error_events(
     order: str = "asc",
 ) -> List[Dict[str, Any]]:
     lim = max(1, min(int(limit or 50), 100))
-    off = max(0, int(offset or 0))
+    off = max(0, _clamp_int64(offset or 0))
     direction = "DESC" if str(order or "").strip().lower() == "desc" else "ASC"
     where, params = _build_error_events_where(
         session_id=session_id,
