@@ -1,0 +1,9 @@
+services:
+  gateway:
+    depends_on: !override
+      api:
+        condition: service_started
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway.prod
+    image: ${GATEWAY_IMAGE_TAG:-processmap-gateway:dev}
