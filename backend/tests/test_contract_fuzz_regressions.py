@@ -135,6 +135,22 @@ class ContractFuzzRegressionTest(unittest.TestCase):
             r = self.client.get(path, headers=self.headers)
             self.assertNotEqual(r.status_code, 500, f"{path}: {r.text[:200]}")
 
+    def test_b7_overflow_error_handler_422_documented_shape(self):
+        # Системный handler OverflowError → 422 в формате HTTPValidationError
+        # (CI #703: GET .../bpmn/versions?offset=~1.8e28 → 500).
+        from app.storage import get_storage
+
+        sid = get_storage().create(title="b7 overflow", user_id=self.uid, org_id=self.org_id)
+        huge = "18248248804317161151490775056384"
+        r = self.client.get(
+            f"/api/sessions/{sid}/bpmn/versions?offset={huge}",
+            headers=self.headers,
+        )
+        self.assertEqual(r.status_code, 422, r.text)
+        detail = r.json()["detail"]
+        self.assertIsInstance(detail, list)
+        self.assertIn("int64", detail[0]["msg"])
+
 
 if __name__ == "__main__":
     unittest.main()
