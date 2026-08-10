@@ -159,7 +159,7 @@ async function resetChat() {
 }
 
 // ------------------------------------------------------------------ каркас
-test("каркас: role=complementary, шапка (✦ + PROCESSMAN + статус + «?»/свернуть/крестик), футер с дисклеймером", async () => {
+test("каркас: role=complementary, компактная шапка (✦ + PROCESSMAN + статус + новая беседа/?/свернуть/крестик), футер только с дисклеймером", async () => {
   const mod = await loadPanel();
   const env = setupDom();
   try {
@@ -170,12 +170,15 @@ test("каркас: role=complementary, шапка (✦ + PROCESSMAN + стат�
     assert.ok(doc.querySelector(".pm-processman__header"), "шапка");
     assert.ok(doc.querySelector(".pm-processman__title")?.textContent.includes("PROCESSMAN"), "капс");
     assert.ok(doc.querySelector(".pm-processman__icon svg"), "SVG-иконка ✦ в шапке");
-    assert.equal(doc.querySelector('[data-testid="processman-tab-badge"]')?.textContent.trim(), "Схема", "бейдж = активная вкладка «Схема»");
+    assert.equal(doc.querySelector(".pm-processman__mission"), null, "нет обрезанного подзаголовка в шапке");
     assert.equal(doc.querySelector('[data-testid="processman-status"]')?.textContent.trim(), "Готов помочь", "текстовый статус");
+    assert.notEqual(doc.querySelector('[data-testid="processman-new-conversation"]'), null, "кнопка новой беседы");
     assert.notEqual(doc.querySelector('[data-testid="processman-collapse"]'), null, "кнопка «свернуть»");
     assert.notEqual(doc.querySelector('[data-testid="processman-close"]'), null, "крестик");
     const footer = doc.querySelector('[data-testid="processman-footer"]');
     assert.ok(footer?.textContent.includes("Ответ генерирует ИИ"), "дисклеймер в футере");
+    assert.equal(doc.querySelector('[data-testid="processman-cache-badge"]'), null, "нет cache/new-request чипа в футере");
+    assert.equal(doc.querySelector('[data-testid="processman-feedback"]'), null, "нет feedback-компонента в футере");
     assert.equal(env.calls.length, 0, "открытие панели = 0 сетевых вызовов");
   } finally {
     await env.cleanup();
@@ -190,7 +193,6 @@ test("контент следует за вкладкой: interview → analysi
     // analysis
     let doc = await renderPanel(env, mod, { tab: "interview" });
     assert.notEqual(doc.querySelector('[data-testid="processman-analysis"]'), null, "analysis-контент");
-    assert.equal(doc.querySelector('[data-testid="processman-tab-badge"]')?.textContent.trim(), "Анализ");
     assert.notEqual(doc.querySelector('[data-testid="processman-analysis-open-full"]'), null, "CTA «Открыть полный анализ»");
     // diagram → чат-контент
     doc = await renderPanel(env, mod, { tab: "diagram" });
@@ -294,15 +296,19 @@ test("S4/S5/S8: клик → loading (анти-даблклик) → ответ 
     assert.notEqual(doc.querySelector('[data-testid="processman-stages"]'), null, "индикатор этапов");
     // S5: ответ (ждём конца typewriter поллингом — passive effects не мгновенны)
     assert.equal(await waitFor(doc, "processman-answer-ok"), true, "ответ показан");
-    assert.ok(doc.querySelector('[data-testid="processman-answer-text"]')?.textContent.includes("op_cook"));
-    assert.notEqual(doc.querySelector('[data-testid="processman-answer-time"]'), null, "время ответа");
-    assert.notEqual(doc.querySelector('[data-testid="processman-answer-refresh"]'), null, "↻ Обновить");
+    assert.equal(doc.querySelector('[data-testid="processman-answer-text"]')?.textContent.includes("op_cook"), false, "код кандидата не дублируется plain-text bullet");
+    assert.notEqual(doc.querySelector('[data-testid="processman-candidate-card"]'), null, "кандидаты отрисованы карточками");
+    assert.equal(doc.querySelector('[data-testid="processman-answer-time"]'), null, "время ответа не шумит в теле");
+    assert.equal(doc.querySelector('[data-testid="processman-answer-refresh"]'), null, "новый запрос не живёт под ответом");
     // S8: fallback-бейдж
     assert.notEqual(doc.querySelector('[data-testid="processman-answer-fallback"]'), null, "бейдж fallback-провайдера");
     // user-сообщение в ленте
-    assert.notEqual(doc.querySelector('[data-testid="processman-msg-user"]'), null, "реплика пользователя в ленте");
-    // футер: «новый запрос»
-    assert.equal(doc.querySelector('[data-testid="processman-cache-badge"]')?.textContent.trim(), "новый запрос");
+    const userMsg = doc.querySelector('[data-testid="processman-msg-user"]');
+    assert.notEqual(userMsg, null, "реплика пользователя в ленте");
+    assert.equal(userMsg?.textContent.includes("Вы"), false, "лейбл «Вы» не повторяется");
+    assert.match(userMsg?.getAttribute("title") || "", /^\d{2}:\d{2}$/, "время пользователя только в title");
+    // футер больше не содержит состояние запроса
+    assert.equal(doc.querySelector('[data-testid="processman-cache-badge"]'), null);
   } finally {
     await env.cleanup();
   }
@@ -329,7 +335,7 @@ test("S3: повторный клик по тому же шагу — из in-me
     await click(doc, env.dom.window, "processman-action-explain");
     await flush(120);
     assert.equal(env.calls.length, 1, "повторный клик = 0 запросов (in-memory)");
-    assert.equal(doc.querySelector('[data-testid="processman-cache-badge"]')?.textContent.trim(), "из кэша · 0 токенов");
+    assert.equal(doc.querySelector('[data-testid="processman-cache-badge"]'), null, "cache badge не захламляет footer");
   } finally {
     await env.cleanup();
   }
@@ -414,7 +420,7 @@ test("имена узлов в ответе — кликабельные чип�
 });
 
 // ------------------------------------------------------------------ 👍/👎
-test("👍/👎 в футере: появляются с ответом, клик → POST /api/llm/feedback (без LLM-вызова)", async () => {
+test("feedback в сообщении агента: появляется под ответом, клик → POST /api/llm/feedback (без LLM-вызова)", async () => {
   const mod = await loadPanel();
   await resetChat();
   const env = setupDom({
@@ -431,11 +437,13 @@ test("👍/👎 в футере: появляются с ответом, кли�
   });
   try {
     const doc = await renderPanel(env, mod);
-    assert.equal(doc.querySelector('[data-testid="processman-feedback-up"]'), null, "без ответа 👍👎 скрыты");
+    assert.equal(doc.querySelector('[data-testid="processman-feedback-up"]'), null, "без ответа feedback скрыт");
     await click(doc, env.dom.window, "processman-action-suggest");
     await flush(120);
     assert.notEqual(doc.querySelector('[data-testid="processman-answer-ok"]'), null, "ответ показан");
-    assert.notEqual(doc.querySelector('[data-testid="processman-feedback-up"]'), null, "👍 появился с ответом");
+    const footer = doc.querySelector('[data-testid="processman-footer"]');
+    assert.equal(footer?.querySelector('[data-testid="processman-feedback-up"]'), null, "feedback не в футере");
+    assert.notEqual(doc.querySelector('[data-testid="processman-msg-actions"] [data-testid="processman-feedback-up"]'), null, "feedback появился под сообщением");
     await click(doc, env.dom.window, "processman-feedback-up");
     await flush(60);
     const feedbackCalls = env.calls.filter((c) => c.url.includes("/api/llm/feedback"));

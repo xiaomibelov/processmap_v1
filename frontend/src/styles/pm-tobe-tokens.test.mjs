@@ -18,6 +18,7 @@ test("tokens.css: блок --pm-tobe-* объявлен полностью (цв
     "--pm-tobe-muted-fg": "#64748b",
     "--pm-tobe-border": "#e4e7eb",
     "--pm-tobe-danger": "#dc2626",
+    "--pm-tobe-destructive": "#b91c1c",
     "--pm-tobe-warning": "#b45309",
     "--pm-tobe-step-pending": "#b8c6da",
   };
@@ -27,6 +28,13 @@ test("tokens.css: блок --pm-tobe-* объявлен полностью (цв
       `${name}: ${value} не найден в tokens.css`,
     );
   }
+});
+
+test("tokens.css: --pm-tobe-* доступны в :root/.light, а не только в .dark", () => {
+  const lightBlock = tokensSource.slice(0, tokensSource.indexOf(".dark {"));
+  assert.match(lightBlock, /--pm-tobe-assistant: #6d28d9;/);
+  assert.match(lightBlock, /--pm-tobe-surface: #ffffff;/);
+  assert.match(lightBlock, /--pm-tobe-fg: #0f172a;/);
 });
 
 test("tokens.css: типографика Fira с system-fallback (без внешнего @import — self-hosted)", () => {
@@ -59,6 +67,7 @@ test("токены Z0-пар дают контраст ≥4.5:1 (расчёт WC
   assert.ok(contrast("#0f172a", "#f8fafc") >= 4.5, "fg/bg");           // ~16.7:1
   assert.ok(contrast("#0f172a", "#ffffff") >= 4.5, "fg/white-card");   // findings в Z0
   assert.ok(contrast("#dc2626", "#ffffff") >= 4.5, "danger/white");    // error findings
+  assert.ok(contrast("#b91c1c", "#fff1f2") >= 4.5, "destructive/red-50");
   assert.ok(contrast("#b45309", "#ffffff") >= 4.5, "warning/white");   // warning findings
   assert.ok(contrast("#64748b", "#f8fafc") >= 4.5, "muted-fg/bg");     // вторичный текст
   assert.ok(contrast("#b8c6da", "#16202f") >= 4.5, "step-pending/bar");// pending-степпер в Z0

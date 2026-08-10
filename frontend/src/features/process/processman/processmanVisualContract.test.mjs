@@ -13,24 +13,29 @@ const cssSrc = readFileSync(fileURLToPath(new URL("./processman.css", import.met
 const ruSrc = readFileSync(fileURLToPath(new URL("../../../shared/i18n/ru.js", import.meta.url)), "utf8");
 
 test("PROCESSMAN panel presents a real agent chat console, not a plain side drawer", () => {
-  assert.match(panelSrc, /pm-processman__mission/, "panel header has an agent mission line");
+  assert.doesNotMatch(panelSrc, /pm-processman__mission/, "panel header does not carry a clipped subtitle");
   assert.match(panelSrc, /processman-workbench/, "chat body is wrapped as a branded workbench");
-  assert.match(panelSrc, /processmanWorkbench/, "workbench label is localized");
-  assert.match(panelSrc, /processmanRunbook/, "footer exposes an operational runbook cue");
-  assert.match(ruSrc, /processmanRunbook: "Контекст \+ ответ \+ действия"/, "Russian copy names the visible chat system");
-  assert.match(ruSrc, /processmanWorkbench: "Рабочее место агента"/, "Russian copy names the workbench");
+  assert.match(panelSrc, /processman-new-conversation/, "header exposes a new conversation icon action");
+  assert.doesNotMatch(panelSrc, /processmanRunbook/, "footer no longer carries duplicated quick-action copy");
+  assert.doesNotMatch(panelSrc, /processman-cache-badge/, "cache/new request chip is not rendered in the footer");
+  assert.doesNotMatch(panelSrc, /processman-feedback/, "feedback is not rendered in the panel footer");
 });
 
 test("PROCESSMAN chat feed has distinct assistant/user message architecture", () => {
-  assert.match(feedSrc, /pm-processman-msg__rail/, "assistant card has a visual rail");
-  assert.match(feedSrc, /pm-processman-msg__role/, "assistant card names the speaking role");
-  assert.match(feedSrc, /pm-processman-feed__ambient/, "feed includes a non-blocking activity surface");
+  assert.match(feedSrc, /pm-processman-msg__avatar-row/, "assistant card has one compact avatar row");
+  assert.match(feedSrc, /pm-processman-msg__actions/, "message-level feedback/actions live under the answer");
+  assert.match(feedSrc, /processman-candidate-card/, "suggest-next candidates render as cards");
+  assert.match(feedSrc, /hasAgentContent/, "empty agent messages are guarded from rendering");
+  assert.doesNotMatch(feedSrc, /pm-processman-msg__role/, "assistant messages do not repeat the panel mission");
+  assert.doesNotMatch(feedSrc, /pm-processman-msg__agent-name/, "assistant messages do not repeat PROCESSMAN");
+  assert.doesNotMatch(feedSrc, /pm-processman-msg__user-label/, "user bubbles do not repeat the user label");
 });
 
 test("PROCESSMAN visual system uses TO BE tokens and responsive chat dimensions", () => {
   for (const token of [
     "--pm-tobe-assistant",
     "--pm-tobe-assistant-soft",
+    "--pm-tobe-destructive",
     "--pm-tobe-shadow-pop",
     "--pm-tobe-surface",
   ]) {
@@ -39,4 +44,10 @@ test("PROCESSMAN visual system uses TO BE tokens and responsive chat dimensions"
   assert.match(cssSrc, /\.pm-processman-workbench/, "workbench CSS exists");
   assert.match(cssSrc, /grid-template-rows: minmax\(0, 1fr\) auto/, "chat reserves stable feed/composer rows");
   assert.match(cssSrc, /@media \(max-width: 640px\)/, "mobile contract exists");
+  assert.doesNotMatch(cssSrc, /linear-gradient\([^;]*--pm-tobe-assistant/, "no AI purple gradient treatment");
+});
+
+test("PROCESSMAN source does not use emoji as action icons", () => {
+  const source = `${panelSrc}\n${feedSrc}`;
+  assert.doesNotMatch(source, /[👍👎💡⚠📍➤↻]/u);
 });

@@ -2,7 +2,7 @@
 // Источник истины UX — документ владельца «PROCESSMAN-панель» (ревизия 1):
 // контент следует за активной вкладкой воркбенча; состояния S1–S8; экономика
 // токенов — построение контекста/статуса/кэша НЕ вызывает API и не делает
-// side-effect (LLM-вызов только по клику действия/↻).
+// side-effect (LLM-вызов только по клику действия или retry).
 
 import { SA_STATUS, SA_ERROR_TEXTS } from "../../../components/process/schemaAssistantView.js";
 
@@ -131,12 +131,23 @@ export function mapActionResponse(resp) {
 export function buildAnswerMeta(data = {}, { fromCache = false } = {}) {
   const usage = data?.usage && typeof data.usage === "object" ? data.usage : {};
   const confidence = Number(data?.confidence);
+  const candidatesRaw = data?.suggestions?.candidates;
+  const candidates = Array.isArray(candidatesRaw)
+    ? candidatesRaw.map((c) => ({
+      code: String(c?.code || "").trim(),
+      rationale: String(c?.rationale || "").trim(),
+    })).filter((c) => c.code || c.rationale)
+    : [];
+  const suggestions = candidates.length
+    ? { candidates, note: String(data?.suggestions?.note || "").trim() }
+    : null;
   return {
     fallback: data?.fallback === true, // S8
     cachedBackend: data?.cached === true, // redis-кэш gateway (НЕ бейдж «из кэша»)
     fromCache: fromCache === true, // in-memory попадание v1 (бейдж «из кэша · 0 токенов»)
     confidence: Number.isFinite(confidence) && confidence > 0 ? confidence : null,
     openQuestions: extractOpenQuestions(data),
+    suggestions,
     promptTokens: Number(usage.prompt_tokens || 0),
     completionTokens: Number(usage.completion_tokens || 0),
   };
