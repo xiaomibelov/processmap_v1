@@ -48,6 +48,7 @@ export const en = {
     analysisQuotaLine: "Used {used} of {limit} tokens in the last 24 hours",
     analysisQuotaNoLimit: "Used {used} tokens in the last 24 hours (no limit set)",
     analysisConfigured: "LLM configured",
+    analysisModelLine: "Running on: {model}",
     analysisNotConfigured: "LLM provider not configured",
     analysisStatusUnknown: "LLM status unknown",
     analysisStatusUnknownText: "Could not fetch LLM gateway status. You can still open the full analysis — errors are shown honestly.",

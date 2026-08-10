@@ -607,6 +607,7 @@ export const ru = {
     analysisQuotaLine: "Использовано {used} из {limit} токенов за 24 часа",
     analysisQuotaNoLimit: "Использовано {used} токенов за 24 часа (лимит не задан)",
     analysisConfigured: "LLM настроен",
+    analysisModelLine: "Работает на: {model}",
     analysisNotConfigured: "LLM-провайдер не настроен",
     analysisStatusUnknown: "Статус LLM неизвестен",
     analysisStatusUnknownText: "Не удалось получить статус LLM-гейтвея. Полный анализ можно открыть — ошибка будет показана честно.",

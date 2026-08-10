@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+import json
+import threading
 import time
 import uuid
 from typing import Any, Dict, List, Optional
@@ -127,6 +129,242 @@ def enabled_providers_with_key(org_id: str = "org_default") -> List[Dict[str, An
 
 def any_enabled_provider(org_id: str = "org_default") -> bool:
     return any(p.get("enabled") for p in list_providers(org_id))
+
+
+# ------------------------------------------------------------------ models
+# Реестр моделей (миграция 016): резолв «какая модель работает» =
+# per-feature override → default модели → None (фолбэк на provider.model/env).
+# In-memory кэш с TTL (0 запросов к БД на LLM-вызов), инвалидация при write.
+
+_MODEL_CACHE_TTL_SEC = 60
+_model_cache_lock = threading.Lock()
+_model_cache: Dict[str, Any] = {"ts": 0.0, "defaults": {}, "overrides": {}}
+
+
+def invalidate_model_cache() -> None:
+    """Сброс кэша резолва моделей (вызывается из всех write-операций реестра)."""
+    with _model_cache_lock:
+        _model_cache["ts"] = 0.0
+        _model_cache["defaults"] = {}
+        _model_cache["overrides"] = {}
+
+
+def list_models(org_id: str = "org_default") -> List[Dict[str, Any]]:
+    with _connect() as con:
+        cur = con.execute(
+            "SELECT * FROM llm_models WHERE org_id = ? ORDER BY is_default DESC, model_name ASC",
+            (org_id,),
+        )
+        return _rows(cur)
+
+
+def get_model(model_id: str) -> Optional[Dict[str, Any]]:
+    with _connect() as con:
+        cur = con.execute("SELECT * FROM llm_models WHERE id = ?", (model_id,))
+        return _row(cur)
+
+
+def _parse_model_params(row: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        return dict(json.loads(str(row.get("params") or "{}")))
+    except Exception:
+        return {}
+
+
+def public_model(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Публичная форма модели (params отдаётся распарсенным объектом)."""
+    return {
+        "id": row["id"],
+        "org_id": row.get("org_id") or "org_default",
+        "provider": row.get("provider") or "",
+        "model_name": row.get("model_name") or "",
+        "display_name": row.get("display_name") or "",
+        "enabled": bool(row.get("enabled")),
+        "is_default": bool(row.get("is_default")),
+        "params": _parse_model_params(row),
+        "created_by": row.get("created_by") or "",
+        "created_at": int(row.get("created_at") or 0),
+        "updated_by": row.get("updated_by") or "",
+        "updated_at": int(row.get("updated_at") or 0),
+    }
+
+
+def create_model(
+    *,
+    org_id: str,
+    model_name: str,
+    provider: str = "",
+    display_name: str = "",
+    enabled: bool = True,
+    is_default: bool = False,
+    params: Optional[Dict[str, Any]] = None,
+    actor: str = "",
+) -> Dict[str, Any]:
+    mid = _new_id("llmmodel")
+    now = _now()
+    with _connect() as con:
+        if is_default:
+            con.execute(
+                "UPDATE llm_models SET is_default = false, updated_by = ?, updated_at = ?"
+                " WHERE org_id = ? AND is_default = true",
+                (actor, now, org_id),
+            )
+        con.execute(
+            "INSERT INTO llm_models"
+            " (id, org_id, provider, model_name, display_name, enabled, is_default,"
+            "  params, created_by, created_at, updated_by, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (mid, org_id, provider, model_name, display_name, bool(enabled),
+             bool(is_default), json.dumps(params or {}, ensure_ascii=False),
+             actor, now, actor, now),
+        )
+    invalidate_model_cache()
+    return get_model(mid) or {}
+
+
+def update_model(model_id: str, fields: Dict[str, Any], *, actor: str = "") -> Optional[Dict[str, Any]]:
+    allowed = {"provider", "model_name", "display_name", "enabled", "is_default"}
+    sets: List[str] = []
+    params: List[Any] = []
+    for key in sorted(fields):
+        if key == "params":
+            if fields[key] is not None:
+                sets.append("params = ?")
+                params.append(json.dumps(dict(fields[key] or {}), ensure_ascii=False))
+            continue
+        if key not in allowed or fields[key] is None:
+            continue
+        sets.append(f"{key} = ?")
+        params.append(fields[key])
+    row = get_model(model_id)
+    if row is None:
+        return None
+    now = _now()
+    with _connect() as con:
+        if fields.get("is_default"):
+            con.execute(
+                "UPDATE llm_models SET is_default = false, updated_by = ?, updated_at = ?"
+                " WHERE org_id = ? AND is_default = true AND id != ?",
+                (actor, now, row.get("org_id") or "org_default", model_id),
+            )
+        if sets:
+            sets.append("updated_by = ?")
+            params.append(actor)
+            sets.append("updated_at = ?")
+            params.append(now)
+            params.append(model_id)
+            con.execute(f"UPDATE llm_models SET {', '.join(sets)} WHERE id = ?", tuple(params))
+    invalidate_model_cache()
+    return get_model(model_id)
+
+
+def delete_model(model_id: str) -> bool:
+    with _connect() as con:
+        cur = con.execute("DELETE FROM llm_models WHERE id = ?", (model_id,))
+        con.execute("DELETE FROM llm_feature_models WHERE model_id = ?", (model_id,))
+    invalidate_model_cache()
+    return bool(getattr(cur, "rowcount", 0))
+
+
+def set_default_model(model_id: str, *, actor: str = "") -> Optional[Dict[str, Any]]:
+    row = get_model(model_id)
+    if row is None:
+        return None
+    now = _now()
+    with _connect() as con:
+        con.execute(
+            "UPDATE llm_models SET is_default = false, updated_by = ?, updated_at = ?"
+            " WHERE org_id = ? AND is_default = true AND id != ?",
+            (actor, now, row.get("org_id") or "org_default", model_id),
+        )
+        con.execute(
+            "UPDATE llm_models SET is_default = true, updated_by = ?, updated_at = ? WHERE id = ?",
+            (actor, now, model_id),
+        )
+    invalidate_model_cache()
+    return get_model(model_id)
+
+
+def list_feature_model_overrides(org_id: str = "org_default") -> List[Dict[str, Any]]:
+    """Overrides с присоединённым именем модели (модель может быть удалена → '')."""
+    with _connect() as con:
+        cur = con.execute(
+            "SELECT fm.feature, fm.model_id, fm.updated_by, fm.updated_at,"
+            "       COALESCE(m.model_name, '') AS model_name,"
+            "       COALESCE(m.enabled, false) AS model_enabled"
+            " FROM llm_feature_models fm"
+            " LEFT JOIN llm_models m ON m.id = fm.model_id"
+            " WHERE fm.org_id = ? ORDER BY fm.feature ASC",
+            (org_id,),
+        )
+        return _rows(cur)
+
+
+def set_feature_model_override(
+    feature: str,
+    model_id: Optional[str],
+    *,
+    org_id: str = "org_default",
+    actor: str = "",
+) -> None:
+    """model_id=None/'' → снять override (фича снова на default-модели)."""
+    now = _now()
+    with _connect() as con:
+        con.execute(
+            "DELETE FROM llm_feature_models WHERE org_id = ? AND feature = ?",
+            (org_id, feature),
+        )
+        if model_id:
+            con.execute(
+                "INSERT INTO llm_feature_models (feature, org_id, model_id, updated_by, updated_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (feature, org_id, model_id, actor, now),
+            )
+    invalidate_model_cache()
+
+
+def _load_model_resolve_state() -> None:
+    """Перечитать default-модели и overrides всех организаций в кэш."""
+    defaults: Dict[str, str] = {}
+    overrides: Dict[str, Dict[str, str]] = {}
+    with _connect() as con:
+        cur = con.execute(
+            "SELECT org_id, model_name FROM llm_models WHERE is_default = true AND enabled = true"
+        )
+        for row in cur.fetchall():
+            defaults[str(row["org_id"])] = str(row["model_name"])
+        cur = con.execute(
+            "SELECT fm.org_id, fm.feature, m.model_name"
+            " FROM llm_feature_models fm"
+            " JOIN llm_models m ON m.id = fm.model_id AND m.enabled = true"
+        )
+        for row in cur.fetchall():
+            overrides.setdefault(str(row["org_id"]), {})[str(row["feature"])] = str(row["model_name"])
+    _model_cache["defaults"] = defaults
+    _model_cache["overrides"] = overrides
+    _model_cache["ts"] = time.monotonic()
+
+
+def resolve_model(feature: str = "", org_id: str = "org_default") -> Optional[str]:
+    """model_name для вызова: override фичи → default → None (пустой реестр).
+
+    None означает «реестр не настроен» — вызывающий код обязан откатиться на
+    provider.model / env-хардкод (обратная совместимость до миграции 016).
+    """
+    with _model_cache_lock:
+        stale = (time.monotonic() - float(_model_cache["ts"])) > _MODEL_CACHE_TTL_SEC
+        if stale:
+            try:
+                _load_model_resolve_state()
+            except Exception:
+                # Таблицы ещё нет (миграция не применена) — считаем реестр пустым.
+                _model_cache["defaults"] = {}
+                _model_cache["overrides"] = {}
+                _model_cache["ts"] = time.monotonic()
+        org_overrides = _model_cache["overrides"].get(org_id) or {}
+        if feature and feature in org_overrides:
+            return org_overrides[feature]
+        return _model_cache["defaults"].get(org_id)
 
 
 # ------------------------------------------------------------------ prompts
