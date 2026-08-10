@@ -45,4 +45,25 @@ def create_app() -> FastAPI:
         seed_admin=seed_admin_user_if_enabled,
         validate_invite_email_config=_legacy_main._validate_invite_email_config_on_boot,
     )
+
+    # Системный фикс класса «int-параметр > int64 → OverflowError на sqlite-bind
+    # → 500» (contract-fuzz B7-класс, CI #703): любой такой параметр — по сути
+    # невалидный ввод, отвечаем 422 в формате HTTPValidationError (задокументирован).
+    @app.exception_handler(OverflowError)
+    async def _overflow_error_handler(request, exc):  # noqa: ANN001, ANN202
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": [
+                    {
+                        "loc": ["query"],
+                        "msg": "integer parameter out of supported range (int64)",
+                        "type": "value_error",
+                    }
+                ]
+            },
+        )
+
     return app
